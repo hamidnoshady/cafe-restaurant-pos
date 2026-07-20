@@ -2,7 +2,7 @@
 
 Persian-first (RTL, Jalali calendar, Toman display) point-of-sale system for cafes and restaurants. Built with Next.js + PostgreSQL.
 
-Development is phased — see [docs/phases/README.md](docs/phases/README.md) for the phase index. **Current status: Phase 0 (Foundation) implemented.**
+Development is phased — see [docs/phases/README.md](docs/phases/README.md) for the phase index. **Current status: Phase 1 (Setup Wizard) implemented.**
 
 ## Stack
 
@@ -21,13 +21,38 @@ docker compose up -d
 # 2. Configure environment
 cp .env.example .env    # defaults match docker-compose
 
-# 3. Install, migrate, seed
+# 3. Install, migrate
 npm install
 npm run db:migrate
-npm run db:seed         # creates owner@example.com / owner1234 and a cashier with PIN 1234
 
 # 4. Run
 npm run dev             # http://localhost:3000
+```
+
+### First run — the Setup Wizard (Phase 1)
+
+On a **completely empty database**, opening the app sends you to `/welcome`, which
+creates the business + first Owner account, then walks you through an 8-step guided
+wizard (`/setup/*`) — no manual DB edits needed:
+
+1. **Business info** — name, location, currency/language defaults
+2. **Chart of accounts** — editable pre-built F&B template
+3. **Inventory costing** — FIFO vs Weighted Average (locked after the first transaction)
+4. **Tax** — default VAT rate + per-category rates
+5. **Roles & users** — Manager (email/password) and Cashier/Waiter/Kitchen (4-digit PIN)
+6. **Menu** — manual entry or CSV/Excel import (downloadable template)
+7. **Hardware** — printer pairing + test print (stubbed until Phase 5)
+8. **Opening balances** — opening inventory count + balanced opening journal entry
+
+Until the wizard is completed, Owner/Manager logins are routed into it; the dashboard
+shows a "resume setup" banner.
+
+### Optional: seed a demo business instead
+
+To skip the wizard and get a ready-to-log-in demo:
+
+```bash
+npm run db:seed         # creates owner@example.com / owner1234 and a cashier with PIN 1234
 ```
 
 Log in at `/login`:

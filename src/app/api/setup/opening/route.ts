@@ -1,0 +1,253 @@
+import { NextRequest, NextResponse } from "next/server";
+import { getPool, query } from "@/lib/db";
+import { getSetting, markStepDone, setSetting, SETTING_KEYS } from "@/lib/settings";
+import {
+  costingLocked,
+  getPrimaryLocation,
+  requireManager,
+  type CostingSetting,
+} from "@/lib/setup-state";
+import { checkBalance, validateOpeningLines, withAutoOffset, type OpeningLine } from "@/lib/opening";
+import { WELL_KNOWN_CODES } from "@/lib/coa-template";
+
+/** Step 8 — opening balances (inventory count + opening journal entry). */
+export async function GET() {
+  const { session, error } = await requireManager();
+  if (error) return error;
+
+  const location = await getPrimaryLocation(session.businessId);
+  const [{ rows: accounts }, { rows: openingEntry }, inventory] = await Promise.all([
+    query(
+      `SELECT id, code, name, type,
+              (SELECT count(*) FROM accounts c WHERE c.parent_id = a.id) AS children
+         FROM accounts a WHERE business_id = $1 AND is_active ORDER BY code`,
+      [session.businessId],
+    ),
+    query(
+      `SELECT je.id, je.entry_date, je.memo,
+              (SELECT COALESCE(SUM(debit), 0) FROM journal_lines WHERE entry_id = je.id) AS total
+         FROM journal_entries je
+        WHERE je.business_id = $1 AND je.source_type = 'opening'`,
+      [session.businessId],
+    ),
+    location
+      ? query(
+          `SELECT ii.id, ii.name, ii.unit,
+                  COALESCE((SELECT SUM(quantity) FROM stock_movements sm
+                             WHERE sm.inventory_item_id = ii.id), 0) AS quantity
+             FROM inventory_items ii WHERE ii.location_id = $1 ORDER BY ii.name`,
+          [location.id],
+        )
+      : Promise.resolve({ rows: [] }),
+  ]);
+
+  return NextResponse.json({
+    accounts,
+    openingEntry: openingEntry[0] ?? null,
+    inventoryItems: inventory.rows,
+    costingLocked: await costingLocked(session.businessId),
+  });
+}
+
+interface OpeningInventoryRow {
+  name?: string;
+  unit?: string;
+  quantity?: number;
+  /** Rial per unit */
+  unitCost?: number;
+}
+
+export async function POST(request: NextRequest) {
+  const { session, error } = await requireManager();
+  if (error) return error;
+
+  let body: {
+    inventory?: { items?: OpeningInventoryRow[] };
+    balances?: { lines?: OpeningLine[]; autoOffset?: boolean };
+  };
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "bad_request" }, { status: 400 });
+  }
+
+  if (body.inventory) return openingInventory(session.businessId, session.sub, body.inventory);
+  if (body.balances) return openingBalances(session.businessId, session.sub, body.balances);
+  return NextResponse.json({ error: "bad_request" }, { status: 400 });
+}
+
+/**
+ * Opening physical count: creates inventory items and one 'adjustment' stock
+ * movement each. This is the business's first inventory transaction, so it
+ * also locks the costing method.
+ */
+async function openingInventory(
+  businessId: string,
+  userId: string,
+  payload: { items?: OpeningInventoryRow[] },
+) {
+  const items = payload.items ?? [];
+  if (items.length === 0) {
+    return NextResponse.json({ error: "no_items" }, { status: 400 });
+  }
+  for (const it of items) {
+    const qty = Number(it.quantity);
+    const cost = Number(it.unitCost ?? 0);
+    if (
+      !it.name?.trim() ||
+      !Number.isFinite(qty) ||
+      qty <= 0 ||
+      !Number.isSafeInteger(cost) ||
+      cost < 0
+    ) {
+      return NextResponse.json({ error: "invalid_item" }, { status: 400 });
+    }
+  }
+
+  const costing = await getSetting<CostingSetting>(businessId, SETTING_KEYS.costing);
+  if (!costing) {
+    return NextResponse.json({ error: "costing_not_set" }, { status: 409 });
+  }
+
+  const location = await getPrimaryLocation(businessId);
+  if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
+
+  let totalValue = 0;
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    for (const it of items) {
+      const name = it.name!.trim();
+      const unit = it.unit?.trim() || "unit";
+      const qty = Number(it.quantity);
+      const cost = Number(it.unitCost ?? 0);
+
+      const { rows: existing } = await client.query(
+        "SELECT id FROM inventory_items WHERE location_id = $1 AND name = $2",
+        [location.id, name],
+      );
+      const itemId: string = existing.length
+        ? existing[0].id
+        : (
+            await client.query(
+              "INSERT INTO inventory_items (location_id, name, unit) VALUES ($1, $2, $3) RETURNING id",
+              [location.id, name, unit],
+            )
+          ).rows[0].id;
+
+      await client.query(
+        `INSERT INTO stock_movements
+           (location_id, inventory_item_id, type, quantity, unit_cost, source_type, note, created_by)
+         VALUES ($1, $2, 'adjustment', $3, $4, 'opening', 'شمارش افتتاحیه', $5)`,
+        [location.id, itemId, qty, cost, userId],
+      );
+      totalValue += Math.round(qty * cost);
+    }
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+
+  // First inventory transaction → costing method is now locked.
+  if (!costing.lockedAt) {
+    await setSetting(businessId, SETTING_KEYS.costing, {
+      ...costing,
+      lockedAt: new Date().toISOString(),
+    });
+  }
+
+  const progress = await markStepDone(businessId, "opening");
+  return NextResponse.json({ ok: true, totalValue, progress });
+}
+
+/** Opening ledger balances → one balanced journal entry (source_type 'opening'). */
+async function openingBalances(
+  businessId: string,
+  userId: string,
+  payload: { lines?: OpeningLine[]; autoOffset?: boolean },
+) {
+  const rawLines = (payload.lines ?? []).map((l) => ({
+    accountId: String(l.accountId ?? ""),
+    debit: Number(l.debit) || 0,
+    credit: Number(l.credit) || 0,
+  }));
+
+  const { rows: existingEntry } = await query(
+    "SELECT id FROM journal_entries WHERE business_id = $1 AND source_type = 'opening'",
+    [businessId],
+  );
+  if (existingEntry.length > 0) {
+    return NextResponse.json({ error: "opening_entry_exists" }, { status: 409 });
+  }
+
+  let lines = rawLines.filter((l) => l.debit !== 0 || l.credit !== 0);
+
+  if (payload.autoOffset) {
+    const { rows: offsetAccount } = await query<{ id: string }>(
+      "SELECT id FROM accounts WHERE business_id = $1 AND code = $2",
+      [businessId, WELL_KNOWN_CODES.openingEquity],
+    );
+    if (offsetAccount.length === 0) {
+      return NextResponse.json({ error: "offset_account_missing" }, { status: 409 });
+    }
+    lines = withAutoOffset(lines, offsetAccount[0].id);
+  }
+
+  const errors = validateOpeningLines(lines);
+  if (errors.length > 0) {
+    return NextResponse.json({ error: "invalid_lines", messages: errors }, { status: 400 });
+  }
+  const balance = checkBalance(lines);
+  if (!balance.balanced) {
+    return NextResponse.json(
+      { error: "not_balanced", totalDebit: balance.totalDebit, totalCredit: balance.totalCredit },
+      { status: 400 },
+    );
+  }
+
+  // All referenced accounts must belong to this business.
+  const accountIds = lines.map((l) => l.accountId);
+  const { rows: owned } = await query(
+    "SELECT id FROM accounts WHERE business_id = $1 AND id = ANY($2::uuid[])",
+    [businessId, accountIds],
+  );
+  if (owned.length !== new Set(accountIds).size) {
+    return NextResponse.json({ error: "unknown_account" }, { status: 400 });
+  }
+
+  const client = await getPool().connect();
+  let entryId: string;
+  try {
+    await client.query("BEGIN");
+    const { rows: entry } = await client.query(
+      `INSERT INTO journal_entries (business_id, entry_date, memo, source_type, created_by)
+       VALUES ($1, CURRENT_DATE, 'تراز افتتاحیه', 'opening', $2) RETURNING id`,
+      [businessId, userId],
+    );
+    entryId = entry[0].id;
+    for (const l of lines) {
+      await client.query(
+        "INSERT INTO journal_lines (entry_id, account_id, debit, credit) VALUES ($1, $2, $3, $4)",
+        [entryId, l.accountId, l.debit, l.credit],
+      );
+    }
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+
+  const progress = await markStepDone(businessId, "opening");
+  return NextResponse.json({
+    ok: true,
+    entryId,
+    totalDebit: balance.totalDebit,
+    totalCredit: balance.totalCredit,
+    progress,
+  });
+}
