@@ -1,0 +1,9 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: var(--font-vazirmatn), "Vazirmatn", Tahoma, "Segoe UI", sans-serif;
+}
+
+body {
+  @apply bg-stone-100 text-stone-900 antialiased;
+}
