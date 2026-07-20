@@ -33,7 +33,17 @@ jobs:
             - ~/.npm
       - run:
           name: Wait for Postgres
-          command: dockerize -wait tcp://localhost:5432 -timeout 1m
+          command: |
+            for i in $(seq 1 30); do
+              if (echo > /dev/tcp/localhost/5432) >/dev/null 2>&1; then
+                echo "Postgres is accepting connections."
+                exit 0
+              fi
+              echo "Waiting for Postgres... ($i)"
+              sleep 2
+            done
+            echo "Postgres did not become ready in time." >&2
+            exit 1
       - run:
           name: Run migrations
           command: npm run db:migrate
@@ -46,6 +56,11 @@ jobs:
 
   build:
     executor: node
+    environment:
+      # next build does not connect to the DB (pages using cookies() are
+      # rendered dynamically at request time, not prerendered). A dummy
+      # secret is provided only to satisfy production env checks.
+      JWT_SECRET: ci-build-secret
     steps:
       - checkout
       - restore_cache:
@@ -61,9 +76,6 @@ jobs:
       - run:
           name: Production build
           command: npm run build
-          environment:
-            DATABASE_URL: postgres://pos:pos@localhost:5432/pos
-            JWT_SECRET: ci-build-secret
 
 workflows:
   build-and-test:
