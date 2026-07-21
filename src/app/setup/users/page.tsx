@@ -1,0 +1,160 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import { toPersianDigits } from "@/lib/digits";
+import { api, ErrorBox, errorMessage, Field, inputClass, PrimaryButton, StepShell } from "../ui";
+
+type CreatableRole = "manager" | "cashier" | "waiter" | "kitchen";
+
+const ROLE_LABELS: Record<string, string> = {
+  owner: "مالک",
+  manager: "مدیر",
+  cashier: "صندوق‌دار",
+  waiter: "گارسون",
+  kitchen: "آشپزخانه",
+};
+
+interface UserRow {
+  id: string;
+  role: string;
+  full_name: string;
+  email: string | null;
+  has_pin: boolean;
+}
+
+export default function UsersStep() {
+  const [users, setUsers] = useState<UserRow[]>([]);
+  const [role, setRole] = useState<CreatableRole>("cashier");
+  const [fullName, setFullName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [pin, setPin] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(() => {
+    api<{ users: UserRow[] }>("/api/setup/users").then(({ data }) => {
+      if (data.users) setUsers(data.users);
+    });
+  }, []);
+  useEffect(load, [load]);
+
+  const needsEmail = role === "manager";
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError("");
+    const { ok, data } = await api<{ error?: string }>("/api/setup/users", {
+      method: "POST",
+      body: JSON.stringify(
+        needsEmail ? { role, fullName, email, password } : { role, fullName, pin },
+      ),
+    });
+    setBusy(false);
+    if (!ok) {
+      setError(errorMessage(data.error));
+      return;
+    }
+    setFullName("");
+    setEmail("");
+    setPassword("");
+    setPin("");
+    load();
+  }
+
+  return (
+    <StepShell
+      step="users"
+      description="حساب مالک ساخته شده است. این‌جا مدیر (ایمیل و گذرواژه) و صندوق‌دار/گارسون/آشپزخانه (پین ۴ رقمی برای ورود سریع) اضافه کنید."
+      showSkip
+      showNext
+    >
+      <div className="grid gap-8 lg:grid-cols-2">
+        <form onSubmit={submit}>
+          <ErrorBox>{error}</ErrorBox>
+          <Field label="نقش">
+            <select
+              className={inputClass}
+              value={role}
+              onChange={(e) => setRole(e.target.value as CreatableRole)}
+            >
+              <option value="manager">مدیر</option>
+              <option value="cashier">صندوق‌دار</option>
+              <option value="waiter">گارسون</option>
+              <option value="kitchen">آشپزخانه</option>
+            </select>
+          </Field>
+          <Field label="نام و نام خانوادگی *">
+            <input
+              className={inputClass}
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              required
+            />
+          </Field>
+          {needsEmail ? (
+            <>
+              <Field label="ایمیل *">
+                <input
+                  className={inputClass}
+                  dir="ltr"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                />
+              </Field>
+              <Field label="گذرواژه *" hint="حداقل ۸ کاراکتر">
+                <input
+                  className={inputClass}
+                  dir="ltr"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                />
+              </Field>
+            </>
+          ) : (
+            <Field label="پین ۴ رقمی *" hint="برای ورود سریع در صفحهٔ ورود؛ در هر شعبه باید یکتا باشد.">
+              <input
+                className={`${inputClass} w-28 text-center tracking-[0.5em]`}
+                dir="ltr"
+                inputMode="numeric"
+                maxLength={4}
+                value={pin}
+                onChange={(e) => setPin(e.target.value.replace(/[^0-9]/g, ""))}
+                required
+              />
+            </Field>
+          )}
+          <div className="mt-4">
+            <PrimaryButton disabled={busy}>افزودن کاربر</PrimaryButton>
+          </div>
+        </form>
+
+        <div>
+          <p className="mb-2 text-sm font-medium text-stone-700">
+            کاربران فعلی ({toPersianDigits(users.length)})
+          </p>
+          <ul className="divide-y divide-stone-100 rounded-lg border border-stone-200">
+            {users.map((u) => (
+              <li key={u.id} className="flex items-center justify-between px-4 py-2.5 text-sm">
+                <span>
+                  <span className="font-medium">{u.full_name}</span>
+                  <span className="ms-2 rounded bg-stone-100 px-2 py-0.5 text-xs text-stone-600">
+                    {ROLE_LABELS[u.role] ?? u.role}
+                  </span>
+                </span>
+                <span className="text-xs text-stone-400" dir="ltr">
+                  {u.email ?? (u.has_pin ? "PIN ****" : "")}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    </StepShell>
+  );
+}

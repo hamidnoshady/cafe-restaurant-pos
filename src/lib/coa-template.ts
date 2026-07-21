@@ -1,0 +1,88 @@
+/**
+ * Pre-built F&B chart of accounts template (Persian).
+ * The wizard offers this as the default; the user can edit/add/remove rows
+ * before the accounts are created. Codes follow the common 4-digit convention:
+ * 1xxx assets, 2xxx liabilities, 3xxx equity, 4xxx revenue, 5xxx expenses.
+ */
+
+export type AccountType = "asset" | "liability" | "equity" | "revenue" | "expense";
+
+export interface TemplateAccount {
+  code: string;
+  name: string;
+  type: AccountType;
+  /** code of the parent account, if any */
+  parentCode?: string;
+}
+
+/** Accounts other parts of the system rely on (opening balances, later phases). */
+export const WELL_KNOWN_CODES = {
+  cash: "1100",
+  inventory: "1300",
+  openingEquity: "3900",
+  vatPayable: "2200",
+} as const;
+
+export const FNB_COA_TEMPLATE: TemplateAccount[] = [
+  { code: "1000", name: "دارایی‌ها", type: "asset" },
+  { code: "1100", name: "صندوق", type: "asset", parentCode: "1000" },
+  { code: "1110", name: "بانک", type: "asset", parentCode: "1000" },
+  { code: "1120", name: "کارت‌خوان (در راه)", type: "asset", parentCode: "1000" },
+  { code: "1200", name: "حساب‌های دریافتنی", type: "asset", parentCode: "1000" },
+  { code: "1300", name: "موجودی مواد و کالا", type: "asset", parentCode: "1000" },
+  { code: "1400", name: "پیش‌پرداخت‌ها", type: "asset", parentCode: "1000" },
+  { code: "1500", name: "اثاثه و تجهیزات", type: "asset", parentCode: "1000" },
+
+  { code: "2000", name: "بدهی‌ها", type: "liability" },
+  { code: "2100", name: "حساب‌های پرداختنی", type: "liability", parentCode: "2000" },
+  { code: "2200", name: "مالیات بر ارزش افزوده پرداختنی", type: "liability", parentCode: "2000" },
+  { code: "2300", name: "حقوق پرداختنی", type: "liability", parentCode: "2000" },
+
+  { code: "3000", name: "حقوق صاحبان سرمایه", type: "equity" },
+  { code: "3100", name: "سرمایه", type: "equity", parentCode: "3000" },
+  { code: "3900", name: "تراز افتتاحیه", type: "equity", parentCode: "3000" },
+
+  { code: "4000", name: "درآمدها", type: "revenue" },
+  { code: "4100", name: "فروش غذا", type: "revenue", parentCode: "4000" },
+  { code: "4200", name: "فروش نوشیدنی", type: "revenue", parentCode: "4000" },
+  { code: "4900", name: "سایر درآمدها", type: "revenue", parentCode: "4000" },
+
+  { code: "5000", name: "هزینه‌ها", type: "expense" },
+  { code: "5100", name: "بهای تمام‌شده مواد", type: "expense", parentCode: "5000" },
+  { code: "5200", name: "حقوق و دستمزد", type: "expense", parentCode: "5000" },
+  { code: "5300", name: "اجاره", type: "expense", parentCode: "5000" },
+  { code: "5400", name: "آب، برق و گاز", type: "expense", parentCode: "5000" },
+  { code: "5500", name: "ملزومات مصرفی", type: "expense", parentCode: "5000" },
+  { code: "5900", name: "سایر هزینه‌ها", type: "expense", parentCode: "5000" },
+];
+
+export const ACCOUNT_TYPES: AccountType[] = ["asset", "liability", "equity", "revenue", "expense"];
+
+/**
+ * Validate a (possibly user-edited) account list before creation.
+ * Returns error strings (Persian, shown directly in the wizard); empty = valid.
+ */
+export function validateAccounts(accounts: TemplateAccount[]): string[] {
+  const errors: string[] = [];
+  if (accounts.length === 0) {
+    errors.push("حداقل یک حساب لازم است.");
+    return errors;
+  }
+  const codes = new Set<string>();
+  for (const a of accounts) {
+    if (!a.code?.trim()) errors.push(`حساب «${a.name || "?"}» کد ندارد.`);
+    else if (codes.has(a.code)) errors.push(`کد حساب «${a.code}» تکراری است.`);
+    else codes.add(a.code);
+    if (!a.name?.trim()) errors.push(`حساب با کد «${a.code}» نام ندارد.`);
+    if (!ACCOUNT_TYPES.includes(a.type)) errors.push(`نوع حساب «${a.code}» نامعتبر است.`);
+  }
+  for (const a of accounts) {
+    if (a.parentCode && !codes.has(a.parentCode)) {
+      errors.push(`حساب والد «${a.parentCode}» برای «${a.code}» وجود ندارد.`);
+    }
+    if (a.parentCode === a.code) {
+      errors.push(`حساب «${a.code}» نمی‌تواند والد خودش باشد.`);
+    }
+  }
+  return errors;
+}

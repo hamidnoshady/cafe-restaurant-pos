@@ -1,0 +1,116 @@
+"use client";
+
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { toLatinDigits, toPersianDigits } from "@/lib/digits";
+import { api, ErrorBox, errorMessage, Field, InfoBox, inputClass, PrimaryButton, StepShell } from "../ui";
+import { nextPath } from "../steps";
+
+interface Category {
+  id: string;
+  name: string;
+  tax_rate: string | number;
+}
+
+interface TaxResponse {
+  tax: { defaultRate: number } | null;
+  categories: Category[];
+  error?: string;
+}
+
+export default function TaxStep() {
+  const router = useRouter();
+  const [defaultRate, setDefaultRate] = useState("10");
+  const [categories, setCategories] = useState<{ id: string; name: string; rate: string }[]>([]);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    api<TaxResponse>("/api/setup/tax").then(({ data }) => {
+      if (data.tax) setDefaultRate(String(data.tax.defaultRate));
+      if (data.categories) {
+        setCategories(
+          data.categories.map((c) => ({ id: c.id, name: c.name, rate: String(Number(c.tax_rate)) })),
+        );
+      }
+    });
+  }, []);
+
+  function parseRate(s: string): number {
+    return Number(toLatinDigits(s).replace(/[٫]/g, "."));
+  }
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError("");
+    const { ok, data } = await api<{ error?: string }>("/api/setup/tax", {
+      method: "POST",
+      body: JSON.stringify({
+        defaultRate: parseRate(defaultRate),
+        categories: categories.map((c) => ({ id: c.id, taxRate: parseRate(c.rate) })),
+      }),
+    });
+    setBusy(false);
+    if (!ok) {
+      setError(errorMessage(data.error));
+      return;
+    }
+    router.push(nextPath("tax"));
+  }
+
+  return (
+    <StepShell
+      step="tax"
+      description="نرخ پیش‌فرض مالیات بر ارزش افزوده را تعیین کنید. دسته‌های منو با همین نرخ ساخته می‌شوند و بعد از ساخت منو می‌توانید برای هر دسته نرخ جدا (یا صفر برای معاف) بگذارید."
+    >
+      <form onSubmit={submit} className="max-w-lg">
+        <ErrorBox>{error}</ErrorBox>
+        <Field label="نرخ پیش‌فرض مالیات (٪)" hint="نرخ رایج ارزش افزوده ۱۰٪ است؛ اگر مشمول نیستید ۰ بگذارید.">
+          <input
+            className={`${inputClass} w-28`}
+            dir="ltr"
+            inputMode="decimal"
+            value={defaultRate}
+            onChange={(e) => setDefaultRate(e.target.value)}
+            required
+          />
+        </Field>
+
+        {categories.length > 0 ? (
+          <div className="mt-6">
+            <p className="mb-2 text-sm font-medium text-stone-700">نرخ هر دسته از منو</p>
+            <div className="space-y-2">
+              {categories.map((c, i) => (
+                <div key={c.id} className="flex items-center gap-3">
+                  <span className="w-40 truncate text-sm">{c.name}</span>
+                  <input
+                    className={`${inputClass} w-24`}
+                    dir="ltr"
+                    inputMode="decimal"
+                    value={c.rate}
+                    onChange={(e) =>
+                      setCategories((cs) =>
+                        cs.map((x, j) => (j === i ? { ...x, rate: e.target.value } : x)),
+                      )
+                    }
+                  />
+                  <span className="text-sm text-stone-400">٪</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <InfoBox>
+            هنوز دسته‌ای در منو ندارید — بعد از مرحلهٔ {toPersianDigits(6)} (ورود منو) می‌توانید به
+            این‌جا برگردید و نرخ هر دسته را جدا تنظیم کنید.
+          </InfoBox>
+        )}
+
+        <div className="mt-6">
+          <PrimaryButton disabled={busy}>ذخیره و ادامه</PrimaryButton>
+        </div>
+      </form>
+    </StepShell>
+  );
+}

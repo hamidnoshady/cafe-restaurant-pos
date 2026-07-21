@@ -1,0 +1,209 @@
+"use client";
+
+/** Small shared UI pieces for the wizard steps. */
+import { useRouter } from "next/navigation";
+import { useState } from "react";
+import { nextPath, prevPath, stepIndex, STEPS } from "./steps";
+import type { WizardStep } from "@/lib/setup-state";
+
+export async function api<T = Record<string, unknown>>(
+  url: string,
+  init?: RequestInit,
+): Promise<{ ok: boolean; status: number; data: T }> {
+  const res = await fetch(url, {
+    headers: init?.body instanceof FormData ? undefined : { "Content-Type": "application/json" },
+    ...init,
+  });
+  let data: T;
+  try {
+    data = (await res.json()) as T;
+  } catch {
+    data = {} as T;
+  }
+  return { ok: res.ok, status: res.status, data };
+}
+
+/** Persian messages for the API's error codes. */
+export function errorMessage(code: string | undefined, messages?: string[]): string {
+  if (messages?.length) return messages.join(" ");
+  const map: Record<string, string> = {
+    unauthorized: "وارد نشده‌اید.",
+    forbidden: "دسترسی فقط برای مالک و مدیر است.",
+    bad_request: "درخواست نامعتبر بود.",
+    missing_fields: "فیلدهای الزامی را پر کنید.",
+    invalid_email: "ایمیل معتبر نیست.",
+    weak_password: "گذرواژه باید حداقل ۸ کاراکتر باشد.",
+    email_taken: "این ایمیل قبلاً ثبت شده است.",
+    invalid_pin: "پین باید دقیقاً ۴ رقم باشد.",
+    pin_taken: "این پین در این شعبه استفاده شده است. پین دیگری انتخاب کنید.",
+    already_initialized: "این سیستم قبلاً راه‌اندازی شده است.",
+    costing_locked: "روش قیمت‌گذاری قفل شده و از این‌جا قابل تغییر نیست.",
+    costing_not_set: "اول روش قیمت‌گذاری را در مرحلهٔ ۳ انتخاب کنید.",
+    accounts_in_use: "حساب‌ها دارای سند هستند و قابل جایگزینی نیستند.",
+    invalid_rate: "نرخ مالیات باید بین ۰ و ۱۰۰ باشد.",
+    category_exists: "دسته‌ای با این نام وجود دارد.",
+    category_not_found: "دسته پیدا نشد.",
+    unsupported_format: "فرمت فایل پشتیبانی نمی‌شود (CSV یا Excel .xlsx).",
+    parse_failed: "خواندن فایل ممکن نشد.",
+    file_too_large: "حجم فایل بیش از حد مجاز است.",
+    nothing_to_import: "هیچ سطر معتبری در فایل نبود.",
+    printer_not_found: "چاپگر پیدا نشد.",
+    no_items: "حداقل یک قلم لازم است.",
+    invalid_item: "مقدار یا بهای یکی از اقلام معتبر نیست.",
+    opening_entry_exists: "سند افتتاحیه قبلاً ثبت شده است.",
+    not_balanced: "سند تراز نیست: جمع بدهکار و بستانکار برابر نیستند.",
+    unknown_account: "حساب ناشناخته در سطرها وجود دارد.",
+    offset_account_missing: "حساب «تراز افتتاحیه» (کد ۳۹۰۰) در سرفصل‌ها نیست.",
+    incomplete: "هنوز مراحل الزامی کامل نشده‌اند.",
+    no_location: "شعبه‌ای ثبت نشده است.",
+  };
+  return map[code ?? ""] ?? "خطای غیرمنتظره. دوباره تلاش کنید.";
+}
+
+export function ErrorBox({ children }: { children: React.ReactNode }) {
+  if (!children) return null;
+  return (
+    <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+      {children}
+    </div>
+  );
+}
+
+export function InfoBox({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="mb-4 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
+      {children}
+    </div>
+  );
+}
+
+export function Field({
+  label,
+  children,
+  hint,
+}: {
+  label: string;
+  children: React.ReactNode;
+  hint?: string;
+}) {
+  return (
+    <label className="mb-4 block">
+      <span className="mb-1 block text-sm font-medium text-stone-700">{label}</span>
+      {children}
+      {hint ? <span className="mt-1 block text-xs text-stone-400">{hint}</span> : null}
+    </label>
+  );
+}
+
+export const inputClass =
+  "w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100";
+
+export function PrimaryButton({
+  children,
+  disabled,
+  onClick,
+  type = "submit",
+}: {
+  children: React.ReactNode;
+  disabled?: boolean;
+  onClick?: () => void;
+  type?: "submit" | "button";
+}) {
+  return (
+    <button
+      type={type}
+      onClick={onClick}
+      disabled={disabled}
+      className="rounded-lg bg-amber-600 px-5 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-50"
+    >
+      {children}
+    </button>
+  );
+}
+
+export function SecondaryButton({
+  children,
+  onClick,
+  disabled,
+}: {
+  children: React.ReactNode;
+  onClick?: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="rounded-lg border border-stone-300 bg-white px-4 py-2 text-sm text-stone-700 hover:bg-stone-50 disabled:opacity-50"
+    >
+      {children}
+    </button>
+  );
+}
+
+/**
+ * Common frame for a wizard step: title, description, content, and the
+ * back / skip navigation row. "Next" is each form's own submit button.
+ */
+export function StepShell({
+  step,
+  description,
+  children,
+  showSkip,
+  showNext,
+}: {
+  step: WizardStep;
+  description: React.ReactNode;
+  children: React.ReactNode;
+  showSkip?: boolean;
+  /** steps whose forms don't auto-advance (menu, users, …) get a plain next button */
+  showNext?: boolean;
+}) {
+  const router = useRouter();
+  const meta = STEPS[stepIndex(step)];
+  const back = prevPath(step);
+  const [skipping, setSkipping] = useState(false);
+
+  async function skip() {
+    setSkipping(true);
+    await api("/api/setup/progress", { method: "POST", body: JSON.stringify({ step }) });
+    router.push(nextPath(step));
+  }
+
+  return (
+    <div>
+      <header className="mb-6">
+        <h1 className="text-xl font-bold">{meta.title}</h1>
+        <p className="mt-1 text-sm text-stone-500">{description}</p>
+      </header>
+
+      {children}
+
+      <div className="mt-8 flex items-center justify-between border-t border-stone-200 pt-4">
+        <div>
+          {back ? (
+            <SecondaryButton onClick={() => router.push(back)}>مرحلهٔ قبل</SecondaryButton>
+          ) : null}
+        </div>
+        <div className="flex items-center gap-4">
+          {showSkip ? (
+            <button
+              type="button"
+              onClick={skip}
+              disabled={skipping}
+              className="text-sm text-stone-500 underline-offset-4 hover:underline disabled:opacity-50"
+            >
+              فعلاً رد شدن از این مرحله
+            </button>
+          ) : null}
+          {showNext ? (
+            <PrimaryButton type="button" onClick={() => router.push(nextPath(step))}>
+              مرحلهٔ بعد
+            </PrimaryButton>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}

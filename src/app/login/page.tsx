@@ -62,7 +62,8 @@ function PasswordForm() {
     });
     setBusy(false);
     if (res.ok) {
-      router.push("/dashboard");
+      // Root routes owners/managers to the wizard until setup is complete.
+      router.push("/");
       router.refresh();
     } else {
       setError("ایمیل یا رمز عبور نادرست است.");

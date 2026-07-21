@@ -1,7 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { SESSION_COOKIE, verifySession } from "@/lib/auth";
 
-const PUBLIC_PATHS = ["/login", "/api/auth/login", "/api/auth/pin-login"];
+const PUBLIC_PATHS = [
+  "/login",
+  "/api/auth/login",
+  "/api/auth/pin-login",
+  // First-run flow: /welcome bootstraps an empty install; the state endpoint
+  // answers "needsBootstrap" (and nothing more) without a session.
+  "/welcome",
+  "/api/setup/bootstrap",
+  "/api/setup/state",
+];
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
