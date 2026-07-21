@@ -3,7 +3,13 @@
 import { useEffect, useRef } from "react";
 
 export interface RealtimeEvent {
-  type: "order.created" | "order.updated" | "order.item_status" | "table.status" | "table_session.updated";
+  type:
+    | "order.created"
+    | "order.updated"
+    | "order.item_status"
+    | "table.status"
+    | "table_session.updated"
+    | "inventory.low_stock";
   [key: string]: unknown;
 }
 

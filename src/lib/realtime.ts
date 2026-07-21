@@ -17,7 +17,14 @@ export type RealtimeEvent =
   | { type: "order.updated"; orderId: string }
   | { type: "order.item_status"; orderId: string; itemId: string; status: string }
   | { type: "table.status"; tableId: string; status: string }
-  | { type: "table_session.updated"; sessionId: string };
+  | { type: "table_session.updated"; sessionId: string }
+  | {
+      type: "inventory.low_stock";
+      inventoryItemId: string;
+      name: string;
+      quantity: number;
+      reorderLevel: number;
+    };
 
 interface Connection {
   ws: WebSocket;
