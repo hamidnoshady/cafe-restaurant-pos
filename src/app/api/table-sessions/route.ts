@@ -3,6 +3,7 @@ import { requireRole } from "@/lib/auth";
 import { getPool, query } from "@/lib/db";
 import { getPrimaryLocation } from "@/lib/setup-state";
 import { openSession } from "@/lib/table-session-service";
+import { broadcast } from "@/lib/realtime";
 
 /** Open table sessions (with their tables), for a management/list view. */
 export async function GET() {
@@ -62,6 +63,7 @@ export async function POST(request: NextRequest) {
       openedBy: session.sub,
     });
     await client.query("COMMIT");
+    broadcast(location.id, { type: "table_session.updated", sessionId: id });
     return NextResponse.json({ ok: true, id });
   } catch (err) {
     await client.query("ROLLBACK");

@@ -6,9 +6,9 @@
     "node": ">=20"
   },
   "scripts": {
-    "dev": "next dev",
+    "dev": "tsx watch server.ts",
     "build": "next build",
-    "start": "next start",
+    "start": "NODE_ENV=production tsx server.ts",
     "lint": "next lint",
     "test": "vitest run",
     "db:migrate": "tsx scripts/migrate.ts",
@@ -21,7 +21,8 @@
     "next": "^15.4.0",
     "pg": "^8.16.0",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "ws": "^8.21.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.0",
@@ -29,6 +30,7 @@
     "@types/pg": "^8.15.0",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
+    "@types/ws": "^8.18.1",
     "dotenv": "^17.0.0",
     "tailwindcss": "^4.1.0",
     "tsx": "^4.20.0",

@@ -4,6 +4,7 @@ import { getPool, query } from "@/lib/db";
 import { recomputeOrderTotals } from "@/lib/order-totals";
 import type { DiscountInput } from "@/lib/orders";
 import { getPrimaryLocation } from "@/lib/setup-state";
+import { broadcast } from "@/lib/realtime";
 
 async function loadOrder(locationId: string, id: string) {
   const { rows } = await query(
@@ -73,6 +74,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
         WHERE id = $1`,
       [id, body.void.reason?.trim() || null, session.sub],
     );
+    broadcast(location.id, { type: "order.updated", orderId: id });
     return NextResponse.json({ ok: true });
   }
 
@@ -93,6 +95,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       await client.query("BEGIN");
       const totals = await recomputeOrderTotals(client, id, discount);
       await client.query("COMMIT");
+      broadcast(location.id, { type: "order.updated", orderId: id });
       return NextResponse.json({ ok: true, totals });
     } catch (err) {
       await client.query("ROLLBACK");

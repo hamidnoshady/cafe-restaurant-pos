@@ -2,7 +2,7 @@
 
 Persian-first (RTL, Jalali calendar, Toman display) point-of-sale system for cafes and restaurants. Built with Next.js + PostgreSQL.
 
-Development is phased — see [docs/phases/README.md](docs/phases/README.md) for the phase index. **Current status: Phase 2 (Menu & Cashier Order Flow) implemented.**
+Development is phased — see [docs/phases/README.md](docs/phases/README.md) for the phase index. **Current status: Phase 4 (Waiter + Kitchen Apps, Real-Time Sync) implemented.**
 
 ## Stack
 
@@ -75,13 +75,33 @@ The seed also creates 3 sample dining tables and a small demo menu (2 categories
 - **`/dashboard/orders`** — open orders list and detail view; while an order is `open` you
   can add items, change quantity, void an item, edit the discount, or void the whole order.
 
+### Waiter app & Kitchen Display (Phase 4)
+
+Orders sync live over a WebSocket (`/ws`, see `server.ts` + `src/lib/realtime.ts`) — no
+polling. Submitting an order (from the cashier POS or the waiter app) *is* "send to
+kitchen": its items land on the KDS as `sent` immediately.
+
+- **`/dashboard/waiter`** (Waiter, + Owner/Manager "all tables" overview) — only the
+  sections assigned to the logged-in waiter (`floor_sections.assigned_waiter_id`, set on
+  the floor plan). Tap a seated table to add items to its open order/round, see each
+  item's live kitchen status, and mark a `ready` item `served` once it's delivered.
+- **`/dashboard/kitchen`** (Kitchen, + Owner/Manager) — the KDS: one ticket per table
+  (grouping every round on that table's open session) or per takeaway order, oldest
+  first. Tickets outstanding ≥ 10 minutes (`DEFAULT_TICKET_AGING_MINUTES`,
+  `src/lib/order-item-status.ts`) flag red. "Bump" moves an item `sent → preparing →
+  ready`.
+- Every open dashboard screen (cashier orders list, floor plan, waiter board, KDS)
+  refetches on the relevant WebSocket event, so no two screens ever show conflicting
+  order/table state.
+
 ## Scripts
 
 | Command | What it does |
 |---|---|
-| `npm run dev` | Next.js dev server |
-| `npm run build` / `start` | Production build / serve |
-| `npm test` | Unit tests (Jalali, digits, money, order totals, …) |
+| `npm run dev` | Custom dev server (`server.ts`, via `tsx watch`) — Next.js + the `/ws` WebSocket sync channel |
+| `npm run build` | Production build (plain `next build`; no server needed to build) |
+| `npm start` | Custom production server (`server.ts`) — same as `dev`, without hot reload |
+| `npm test` | Unit tests (Jalali, digits, money, order totals, kitchen ticket status, …) |
 | `npm run db:migrate` | Apply pending SQL migrations from `migrations/` |
 | `npm run db:seed` | Seed business, location, owner, sample cashier (idempotent) |
 

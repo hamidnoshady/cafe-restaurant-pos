@@ -4,6 +4,7 @@ import { getPool, query } from "@/lib/db";
 import { recomputeOrderTotals } from "@/lib/order-totals";
 import type { DiscountInput } from "@/lib/orders";
 import { getPrimaryLocation } from "@/lib/setup-state";
+import { broadcast } from "@/lib/realtime";
 
 const MAX_QTY = 50;
 
@@ -73,6 +74,9 @@ export async function PATCH(
 
     const totals = await recomputeOrderTotals(client, id, discount);
     await client.query("COMMIT");
+    broadcast(location.id, body.void
+      ? { type: "order.item_status", orderId: id, itemId, status: "voided" }
+      : { type: "order.updated", orderId: id });
     return NextResponse.json({ ok: true, totals });
   } catch (err) {
     await client.query("ROLLBACK");

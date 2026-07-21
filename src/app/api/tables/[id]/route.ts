@@ -4,6 +4,7 @@ import { query } from "@/lib/db";
 import { resolveSectionId } from "@/lib/floor";
 import { getPrimaryLocation } from "@/lib/setup-state";
 import { canTransitionTable, type TableStatus } from "@/lib/table-sessions";
+import { broadcast } from "@/lib/realtime";
 
 /**
  * Edit a table. Managers can change its name/section/capacity/geometry (floor
@@ -118,6 +119,9 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
 
   if (fields.length === 0) return NextResponse.json({ error: "bad_request" }, { status: 400 });
   await query(`UPDATE dining_tables SET ${fields.join(", ")} WHERE id = $1`, [id, ...values]);
+  if (body.status !== undefined) {
+    broadcast(location.id, { type: "table.status", tableId: id, status: body.status });
+  }
   return NextResponse.json({ ok: true });
 }
 

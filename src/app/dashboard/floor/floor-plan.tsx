@@ -5,6 +5,7 @@ import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import { formatToman } from "@/lib/money";
 import { TABLE_STATUS_LABELS, type TableStatus } from "@/lib/table-sessions";
+import { useRealtime } from "../use-realtime";
 import { api, ErrorBox, errorMessage, inputClass, PrimaryButton, SecondaryButton } from "../ui";
 import { SessionPanel } from "./session-panel";
 
@@ -80,6 +81,14 @@ export function FloorPlan({ canEdit }: { canEdit: boolean }) {
   useEffect(() => {
     load();
   }, [load]);
+  useRealtime(
+    useCallback(
+      (event) => {
+        if (["table.status", "table_session.updated", "order.created", "order.updated"].includes(event.type)) load();
+      },
+      [load],
+    ),
+  );
   useEffect(() => {
     if (canEdit) api<{ waiters: Waiter[] }>("/api/staff").then((r) => r.ok && setWaiters(r.data.waiters));
   }, [canEdit]);

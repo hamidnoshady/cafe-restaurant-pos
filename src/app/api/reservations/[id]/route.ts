@@ -4,6 +4,7 @@ import { getPool, query } from "@/lib/db";
 import { parseDate, tableConflicts } from "@/lib/reservation-service";
 import { getPrimaryLocation } from "@/lib/setup-state";
 import { openSession } from "@/lib/table-session-service";
+import { broadcast } from "@/lib/realtime";
 
 type ReservationRow = {
   id: string;
@@ -114,6 +115,7 @@ async function seatReservation(
       [reservation.id, sessionId],
     );
     await client.query("COMMIT");
+    broadcast(locationId, { type: "table_session.updated", sessionId });
     return NextResponse.json({ ok: true, sessionId });
   } catch (err) {
     await client.query("ROLLBACK");
