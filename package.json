@@ -13,6 +13,7 @@
     "test": "vitest run",
     "db:migrate": "tsx scripts/migrate.ts",
     "db:seed": "tsx scripts/seed.ts",
+    "db:restore": "tsx scripts/restore.ts",
     "print-agent": "tsx print-agent/server.ts"
   },
   "dependencies": {
