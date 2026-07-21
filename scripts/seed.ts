@@ -90,6 +90,73 @@ async function main() {
       console.log("Created sample cashier with PIN 1234.");
     }
 
+    const existingTable = await client.query(
+      "SELECT id FROM dining_tables WHERE location_id = $1 LIMIT 1",
+      [locationId],
+    );
+    if (existingTable.rowCount) {
+      console.log("Sample tables already exist, skipping.");
+    } else {
+      for (const name of ["میز ۱", "میز ۲", "میز ۳"]) {
+        await client.query(
+          "INSERT INTO dining_tables (location_id, name, capacity) VALUES ($1, $2, 4)",
+          [locationId, name],
+        );
+      }
+      console.log("Created 3 sample dining tables.");
+    }
+
+    const existingCategory = await client.query(
+      "SELECT id FROM menu_categories WHERE location_id = $1 LIMIT 1",
+      [locationId],
+    );
+    if (existingCategory.rowCount) {
+      console.log("Sample menu already exists, skipping.");
+    } else {
+      const hotDrinks = await client.query(
+        "INSERT INTO menu_categories (location_id, name, sort_order) VALUES ($1, 'نوشیدنی گرم', 0) RETURNING id",
+        [locationId],
+      );
+      const food = await client.query(
+        "INSERT INTO menu_categories (location_id, name, sort_order) VALUES ($1, 'غذا', 1) RETURNING id",
+        [locationId],
+      );
+
+      const espresso = await client.query(
+        `INSERT INTO menu_items (location_id, category_id, name, price, sort_order)
+         VALUES ($1, $2, 'اسپرسو', 850000, 0) RETURNING id`,
+        [locationId, hotDrinks.rows[0].id],
+      );
+      await client.query(
+        `INSERT INTO menu_items (location_id, category_id, name, price, sort_order)
+         VALUES ($1, $2, 'کاپوچینو', 1200000, 1)`,
+        [locationId, hotDrinks.rows[0].id],
+      );
+      await client.query(
+        `INSERT INTO menu_items (location_id, category_id, name, price, sort_order)
+         VALUES ($1, $2, 'پاستا آلفردو', 3200000, 0)`,
+        [locationId, food.rows[0].id],
+      );
+
+      const milkGroup = await client.query(
+        `INSERT INTO modifier_groups (location_id, name, min_select, max_select)
+         VALUES ($1, 'نوع شیر', 0, 1) RETURNING id`,
+        [locationId],
+      );
+      await client.query(
+        `INSERT INTO modifiers (location_id, group_id, name, price_delta, sort_order) VALUES
+           ($1, $2, 'شیر معمولی', 0, 0),
+           ($1, $2, 'شیر بادام', 150000, 1),
+           ($1, $2, 'شیر جو دوسر', 150000, 2)`,
+        [locationId, milkGroup.rows[0].id],
+      );
+      await client.query(
+        `INSERT INTO menu_item_modifier_groups (menu_item_id, modifier_group_id) VALUES ($1, $2)`,
+        [espresso.rows[0].id, milkGroup.rows[0].id],
+      );
+      console.log("Created sample menu (2 categories, 3 items, 1 modifier group).");
+    }
+
     await client.query("COMMIT");
     console.log("Seed complete.");
   } catch (err) {

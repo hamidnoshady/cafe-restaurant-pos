@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { LogoutButton } from "./logout-button";
@@ -10,10 +11,17 @@ const ROLE_LABELS: Record<string, string> = {
   kitchen: "آشپزخانه",
 };
 
-const NAV_ITEMS = [
-  { label: "داشبورد", active: true },
-  { label: "سفارش‌ها" },
-  { label: "منو" },
+interface NavItem {
+  label: string;
+  href?: string;
+  roles?: string[];
+}
+
+const NAV_ITEMS: NavItem[] = [
+  { label: "داشبورد", href: "/dashboard" },
+  { label: "سفارش‌ها", href: "/dashboard/orders", roles: ["owner", "manager", "cashier", "waiter"] },
+  { label: "صندوق (فروش)", href: "/dashboard/pos", roles: ["owner", "manager", "cashier"] },
+  { label: "منو", href: "/dashboard/menu", roles: ["owner", "manager"] },
   { label: "میزها" },
   { label: "انبار" },
   { label: "حسابداری" },
@@ -36,18 +44,25 @@ export default async function DashboardLayout({
           <p className="text-xs text-stone-500">نسخهٔ آزمایشی</p>
         </div>
         <nav className="flex-1 space-y-1 p-3">
-          {NAV_ITEMS.map((item) => (
-            <span
-              key={item.label}
-              className={`block rounded-lg px-3 py-2 text-sm ${
-                item.active
-                  ? "bg-amber-50 font-semibold text-amber-800"
-                  : "cursor-default text-stone-400"
-              }`}
-            >
-              {item.label}
-            </span>
-          ))}
+          {NAV_ITEMS.map((item) => {
+            const allowed = !item.roles || item.roles.includes(session.role);
+            if (item.href && allowed) {
+              return (
+                <Link
+                  key={item.label}
+                  href={item.href}
+                  className="block rounded-lg px-3 py-2 text-sm text-stone-600 transition hover:bg-amber-50 hover:text-amber-800"
+                >
+                  {item.label}
+                </Link>
+              );
+            }
+            return (
+              <span key={item.label} className="block cursor-default rounded-lg px-3 py-2 text-sm text-stone-400">
+                {item.label}
+              </span>
+            );
+          })}
         </nav>
         <div className="border-t border-stone-200 p-4 text-sm">
           <p className="font-semibold">{session.fullName}</p>

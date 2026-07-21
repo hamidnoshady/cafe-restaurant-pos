@@ -2,7 +2,7 @@
 
 Persian-first (RTL, Jalali calendar, Toman display) point-of-sale system for cafes and restaurants. Built with Next.js + PostgreSQL.
 
-Development is phased — see [docs/phases/README.md](docs/phases/README.md) for the phase index. **Current status: Phase 1 (Setup Wizard) implemented.**
+Development is phased — see [docs/phases/README.md](docs/phases/README.md) for the phase index. **Current status: Phase 2 (Menu & Cashier Order Flow) implemented.**
 
 ## Stack
 
@@ -60,13 +60,28 @@ Log in at `/login`:
 - **Owner/Manager tab:** `owner@example.com` / `owner1234` (override via `SEED_OWNER_*` env vars before seeding)
 - **PIN tab:** `1234` (sample cashier)
 
+The seed also creates 3 sample dining tables and a small demo menu (2 categories, 3 items,
+1 modifier group) so the cashier POS screen has something to sell right away.
+
+### Menu management & the cashier POS (Phase 2)
+
+- **`/dashboard/menu`** (Owner/Manager) — CRUD for categories, items, modifier groups and
+  modifiers, plus attaching modifier groups to items. Independent of the wizard's initial
+  import — ongoing management.
+- **`/dashboard/pos`** (Owner/Manager/Cashier) — the cashier screen: category tabs → item
+  grid → cart with per-item modifiers, quantity, and an order-level discount (percent or
+  fixed amount). Choose dine-in (pick a table from the stub list) or takeaway (gets a
+  queue number, e.g. `T-42`), then submit.
+- **`/dashboard/orders`** — open orders list and detail view; while an order is `open` you
+  can add items, change quantity, void an item, edit the discount, or void the whole order.
+
 ## Scripts
 
 | Command | What it does |
 |---|---|
 | `npm run dev` | Next.js dev server |
 | `npm run build` / `start` | Production build / serve |
-| `npm test` | Unit tests (Jalali, digits, money utilities) |
+| `npm test` | Unit tests (Jalali, digits, money, order totals, …) |
 | `npm run db:migrate` | Apply pending SQL migrations from `migrations/` |
 | `npm run db:seed` | Seed business, location, owner, sample cashier (idempotent) |
 
