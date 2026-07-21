@@ -209,17 +209,24 @@ GROUP BY sm.location_id, l.business_id, (sm.occurred_at AT TIME ZONE l.timezone)
 -- validated in the app layer (src/lib/reports.ts: view/metric/dimension/
 -- filters) — never raw SQL, so a saved report can only ever run against
 -- the view whitelist above.
+-- standard_key identifies which STANDARD_REPORTS entry a standard row
+-- materializes (src/lib/reports.ts) — lets ensureStandardSavedReports
+-- upsert idempotently per business instead of guessing by name. Null for
+-- actual custom (user-authored) reports.
 CREATE TABLE saved_reports (
-    id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    business_id uuid NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
-    created_by  uuid REFERENCES users(id) ON DELETE SET NULL,
-    name        text NOT NULL,
-    config      jsonb NOT NULL,
-    is_standard boolean NOT NULL DEFAULT false,
-    created_at  timestamptz NOT NULL DEFAULT now(),
-    updated_at  timestamptz NOT NULL DEFAULT now()
+    id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    business_id   uuid NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+    created_by    uuid REFERENCES users(id) ON DELETE SET NULL,
+    name          text NOT NULL,
+    config        jsonb NOT NULL,
+    is_standard   boolean NOT NULL DEFAULT false,
+    standard_key  text,
+    created_at    timestamptz NOT NULL DEFAULT now(),
+    updated_at    timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX idx_saved_reports_business ON saved_reports (business_id);
+CREATE UNIQUE INDEX idx_saved_reports_standard_key ON saved_reports (business_id, standard_key)
+    WHERE standard_key IS NOT NULL;
 
 -- A widget pinned to a dashboard grid. Personal layout (user_id set) takes
 -- precedence; a role's default (role set, user_id null) is what a user
