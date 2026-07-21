@@ -5,10 +5,11 @@ import { resolveCartItems, validateItemShape, type CartItemInput } from "@/lib/o
 import { recomputeOrderTotals } from "@/lib/order-totals";
 import type { DiscountInput } from "@/lib/orders";
 import { getPrimaryLocation } from "@/lib/setup-state";
+import { broadcast } from "@/lib/realtime";
 
 /** Add one or more items to an already-submitted order, while it's still 'open'. */
 export async function POST(request: NextRequest, context: { params: Promise<{ id: string }> }) {
-  const { session, error } = await requireRole("owner", "manager", "cashier");
+  const { session, error } = await requireRole("owner", "manager", "cashier", "waiter");
   if (error) return error;
   const { id } = await context.params;
 
@@ -50,9 +51,10 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
   try {
     await client.query("BEGIN");
     for (const item of preparedItems) {
+      // Adding an item to a live order is also "send to kitchen" (Phase 4).
       const { rows: itemRows } = await client.query<{ id: string }>(
-        `INSERT INTO order_items (location_id, order_id, menu_item_id, name_snapshot, unit_price, quantity, note)
-         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+        `INSERT INTO order_items (location_id, order_id, menu_item_id, name_snapshot, unit_price, quantity, note, status, sent_to_kitchen_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'sent', now()) RETURNING id`,
         [location.id, id, item.menuItemId, item.name, item.unitPrice, item.quantity, item.note],
       );
       const orderItemId = itemRows[0].id;
@@ -66,6 +68,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     }
     const totals = await recomputeOrderTotals(client, id, discount);
     await client.query("COMMIT");
+    broadcast(location.id, { type: "order.updated", orderId: id });
     return NextResponse.json({ ok: true, totals });
   } catch (err) {
     await client.query("ROLLBACK");

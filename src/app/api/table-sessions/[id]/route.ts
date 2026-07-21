@@ -8,6 +8,7 @@ import {
   mergeTableIntoSession,
   requestBill,
 } from "@/lib/table-session-service";
+import { broadcast } from "@/lib/realtime";
 
 /** Session detail: header, its tables, its orders, and the combined bill. */
 export async function GET(_request: NextRequest, context: { params: Promise<{ id: string }> }) {
@@ -91,6 +92,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       throw Object.assign(new Error("bad_request"), { code: "bad_request", status: 400 });
     }
     await client.query("COMMIT");
+    broadcast(location.id, { type: "table_session.updated", sessionId: id });
     return NextResponse.json({ ok: true });
   } catch (err) {
     await client.query("ROLLBACK");

@@ -5,6 +5,7 @@ import { resolveCartItems, validateItemShape, type CartItemInput } from "@/lib/o
 import { computeOrderTotals, type DiscountInput } from "@/lib/orders";
 import { ensureSessionForTable } from "@/lib/table-session-service";
 import { getPrimaryLocation } from "@/lib/setup-state";
+import { broadcast } from "@/lib/realtime";
 
 /** Open orders for the cashier's "current orders" list. */
 export async function GET() {
@@ -36,7 +37,7 @@ interface CreateOrderBody {
 
 /** Builds the cart, computes totals, and creates Orders + OrderItems (+ modifiers) atomically. */
 export async function POST(request: NextRequest) {
-  const { session, error } = await requireRole("owner", "manager", "cashier");
+  const { session, error } = await requireRole("owner", "manager", "cashier", "waiter");
   if (error) return error;
 
   let body: CreateOrderBody;
@@ -128,9 +129,11 @@ export async function POST(request: NextRequest) {
     const orderId = orderRows[0].id;
 
     for (const item of preparedItems) {
+      // Submitting the order *is* "send to kitchen": items land as 'sent'
+      // straight away so they appear on the KDS within ~1s (Phase 4).
       const { rows: itemRows } = await client.query<{ id: string }>(
-        `INSERT INTO order_items (location_id, order_id, menu_item_id, name_snapshot, unit_price, quantity, note)
-         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+        `INSERT INTO order_items (location_id, order_id, menu_item_id, name_snapshot, unit_price, quantity, note, status, sent_to_kitchen_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'sent', now()) RETURNING id`,
         [location.id, orderId, item.menuItemId, item.name, item.unitPrice, item.quantity, item.note],
       );
       const orderItemId = itemRows[0].id;
@@ -144,6 +147,7 @@ export async function POST(request: NextRequest) {
     }
 
     await client.query("COMMIT");
+    broadcast(location.id, { type: "order.created", orderId });
     return NextResponse.json({ ok: true, id: orderId, orderNumber, type: body.type, totals });
   } catch (err) {
     await client.query("ROLLBACK");

@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
 import { formatToman } from "@/lib/money";
 import { formatQueueLabel } from "@/lib/orders";
+import { useRealtime } from "../use-realtime";
 import { api } from "../ui";
 
 interface OpenOrder {
@@ -20,11 +21,21 @@ interface OpenOrder {
 export function OrdersList() {
   const [orders, setOrders] = useState<OpenOrder[] | null>(null);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     api<{ orders: OpenOrder[] }>("/api/orders").then(({ ok, data }) => {
       if (ok) setOrders(data.orders);
     });
   }, []);
+  useEffect(load, [load]);
+
+  useRealtime(
+    useCallback(
+      (event) => {
+        if (["order.created", "order.updated"].includes(event.type)) load();
+      },
+      [load],
+    ),
+  );
 
   if (!orders) return <p className="text-sm text-stone-400">در حال بارگذاری…</p>;
   if (orders.length === 0) return <p className="text-sm text-stone-400">سفارش بازی وجود ندارد.</p>;
