@@ -10,6 +10,9 @@ const PUBLIC_PATHS = [
   "/welcome",
   "/api/setup/bootstrap",
   "/api/setup/state",
+  // Phase 9: the caller is another location's server, not a browser — the
+  // route authenticates it with a per-location bearer token, not a session.
+  "/api/rollup/ingest",
 ];
 
 export async function middleware(request: NextRequest) {

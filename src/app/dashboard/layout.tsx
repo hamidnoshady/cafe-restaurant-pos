@@ -31,7 +31,8 @@ const NAV_ITEMS: NavItem[] = [
   { label: "انبار", href: "/dashboard/inventory", roles: ["owner", "manager"] },
   { label: "حسابداری", href: "/dashboard/ledger", roles: ["owner", "manager"] },
   { label: "گزارش‌ها", href: "/dashboard/reports", roles: ["owner", "manager"] },
-  { label: "تنظیمات" },
+  { label: "شعبه‌ها", href: "/dashboard/locations", roles: ["owner"] },
+  { label: "تنظیمات", href: "/setup", roles: ["owner", "manager"] },
 ];
 
 export default async function DashboardLayout({

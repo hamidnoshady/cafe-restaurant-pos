@@ -13,6 +13,10 @@ export const SETTING_KEYS = {
   tax: "tax.config",
   /** { steps: Record<string, string>, completedAt: string|null } — step → ISO time done */
   wizardProgress: "setup.progress",
+  /** { centralUrl, token, enabled } — this location's push target (Phase 9) */
+  rollupConfig: "rollup.config",
+  /** { lastAttemptAt, lastSuccessAt, lastSuccessDay, lastError } — local push status (Phase 9) */
+  rollupSyncState: "rollup.sync_state",
 } as const;
 
 export async function getSetting<T>(businessId: string, key: string): Promise<T | null> {
