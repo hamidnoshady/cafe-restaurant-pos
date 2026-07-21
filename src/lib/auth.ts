@@ -1,5 +1,6 @@
 import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
+import { NextResponse } from "next/server";
 
 export const SESSION_COOKIE = "pos_session";
 
@@ -54,6 +55,20 @@ export async function getSession(): Promise<SessionPayload | null> {
   const token = store.get(SESSION_COOKIE)?.value;
   if (!token) return null;
   return verifySession(token);
+}
+
+/** Session + role guard for API routes. Returns a response to short-circuit with, or the session. */
+export async function requireRole(
+  ...roles: Role[]
+): Promise<{ session: SessionPayload; error: null } | { session: null; error: NextResponse }> {
+  const session = await getSession();
+  if (!session) {
+    return { session: null, error: NextResponse.json({ error: "unauthorized" }, { status: 401 }) };
+  }
+  if (!roles.includes(session.role)) {
+    return { session: null, error: NextResponse.json({ error: "forbidden" }, { status: 403 }) };
+  }
+  return { session, error: null };
 }
 
 export function sessionCookieOptions() {

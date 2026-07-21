@@ -6,7 +6,7 @@ Each phase is a self-contained file with its own scope, exit criteria, and open 
 |---|---|---|
 | 0 | Phase-0-Foundation.md | Implemented |
 | 1 | Phase-1-Setup-Wizard.md | Implemented |
-| 2 | Phase-2-Menu-Cashier-Order-Flow.md | Not started |
+| 2 | Phase-2-Menu-Cashier-Order-Flow.md | Implemented |
 | 3 | Phase-3-Table-Management-Reservations.md | Not started |
 | 4 | Phase-4-Waiter-Kitchen-RealTime-Sync.md | Not started |
 | 5 | Phase-5-Offline-Queue-Hardware.md | Not started |
