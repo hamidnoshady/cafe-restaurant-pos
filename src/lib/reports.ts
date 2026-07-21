@@ -325,6 +325,16 @@ export function buildReportQuery(
   return { sql, params };
 }
 
+/** Persian labels for a config's dimension/metric — used to build export table headers and chart axis labels. */
+export function reportConfigLabels(config: ReportConfig): { viewLabel: string; dimensionLabel: string; metricLabel: string } {
+  const view = REPORT_VIEWS[config.view];
+  if (!view) throw new Error(`unknown_view: ${config.view}`);
+  const dimension = view.dimensions.find((d) => d.key === config.dimension);
+  const metric = view.metrics.find((m) => m.key === config.metric);
+  if (!dimension || !metric) throw new Error("invalid_report_config");
+  return { viewLabel: view.label, dimensionLabel: dimension.label, metricLabel: metric.label };
+}
+
 export type ChartType = "line" | "bar" | "pie" | "number";
 
 export interface StandardReportDef {

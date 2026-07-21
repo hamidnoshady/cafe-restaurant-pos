@@ -9,6 +9,8 @@
  * isn't — same split the repo already uses elsewhere.
  */
 import ExcelJS from "exceljs";
+import { toPersianDigits } from "./digits";
+import { formatJalali } from "./jalali";
 
 export interface ReportColumn {
   key: string;
@@ -20,9 +22,16 @@ export interface ReportTable {
   rows: Record<string, unknown>[];
 }
 
-function csvCell(value: unknown): string {
+/** DB date/timestamp columns (e.g. a date-bucketed dimension) come back as JS Date objects — shown in Jalali, like everywhere else in the app (dates are stored ISO/Gregorian, Jalali is display-only). */
+function cellValue(value: unknown): string | number {
   if (value === null || value === undefined) return "";
-  const s = String(value);
+  if (value instanceof Date) return toPersianDigits(formatJalali(value));
+  if (typeof value === "number") return value;
+  return String(value);
+}
+
+function csvCell(value: unknown): string {
+  const s = String(cellValue(value));
   if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
   return s;
 }
@@ -39,7 +48,9 @@ export async function rowsToXlsxBuffer(table: ReportTable, sheetName: string): P
   const sheet = workbook.addWorksheet(sheetName.slice(0, 31), { views: [{ rightToLeft: true }] });
   sheet.columns = table.columns.map((c) => ({ header: c.label, key: c.key, width: Math.max(c.label.length + 4, 14) }));
   sheet.getRow(1).font = { bold: true };
-  for (const row of table.rows) sheet.addRow(row);
+  for (const row of table.rows) {
+    sheet.addRow(Object.fromEntries(table.columns.map((c) => [c.key, cellValue(row[c.key])])));
+  }
   const buffer = await workbook.xlsx.writeBuffer();
   return Buffer.from(buffer);
 }
