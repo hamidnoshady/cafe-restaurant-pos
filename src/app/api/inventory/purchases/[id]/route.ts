@@ -2,11 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth";
 import { getPool, query } from "@/lib/db";
 import { receivePurchase } from "@/lib/inventory-service";
+import { MissingLedgerAccountError, postPurchaseEntry } from "@/lib/ledger-service";
 import { getPrimaryLocation } from "@/lib/setup-state";
 
+const SETTLEMENT_METHODS = ["cash", "bank", "credit"] as const;
+type SettlementMethod = (typeof SETTLEMENT_METHODS)[number];
+
 async function loadPurchase(locationId: string, id: string) {
-  const { rows } = await query<{ id: string; status: string }>(
-    "SELECT id, status FROM purchases WHERE id = $1 AND location_id = $2",
+  const { rows } = await query<{ id: string; status: string; total: string }>(
+    "SELECT id, status, total FROM purchases WHERE id = $1 AND location_id = $2",
     [id, locationId],
   );
   return rows[0] ?? null;
@@ -56,7 +60,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
   const purchase = await loadPurchase(location.id, id);
   if (!purchase) return NextResponse.json({ error: "not_found" }, { status: 404 });
 
-  let body: { status?: string };
+  let body: { status?: string; settlementMethod?: string };
   try {
     body = await request.json();
   } catch {
@@ -79,7 +83,12 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     return NextResponse.json({ ok: true });
   }
 
-  // received: increases stock and (weighted-average) rolls avg_cost forward.
+  // received: increases stock, (weighted-average) rolls avg_cost forward, and
+  // posts the Phase 7 journal entry (Debit Inventory / Credit AP or Cash/Bank).
+  const settlementMethod: SettlementMethod = SETTLEMENT_METHODS.includes(body.settlementMethod as SettlementMethod)
+    ? (body.settlementMethod as SettlementMethod)
+    : "credit";
+
   const { rows: items } = await query<{ inventory_item_id: string; quantity: string; unit_cost: string }>(
     "SELECT inventory_item_id, quantity, unit_cost FROM purchase_items WHERE purchase_id = $1",
     [id],
@@ -100,10 +109,24 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       })),
       session.sub,
     );
-    await client.query("UPDATE purchases SET status = 'received', received_at = now() WHERE id = $1", [id]);
+    await client.query(
+      "UPDATE purchases SET status = 'received', received_at = now(), settlement_method = $2 WHERE id = $1",
+      [id, settlementMethod],
+    );
+    await postPurchaseEntry(client, {
+      businessId: session.businessId,
+      locationId: location.id,
+      purchaseId: id,
+      createdBy: session.sub,
+      total: Number(purchase.total),
+      settlementMethod,
+    });
     await client.query("COMMIT");
   } catch (err) {
     await client.query("ROLLBACK");
+    if (err instanceof MissingLedgerAccountError) {
+      return NextResponse.json({ error: "ledger_account_missing", code: err.code }, { status: 409 });
+    }
     throw err;
   } finally {
     client.release();

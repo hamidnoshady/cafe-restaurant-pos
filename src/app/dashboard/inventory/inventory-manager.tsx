@@ -197,6 +197,7 @@ function errorMessage(code: string | undefined): string {
     unauthorized: "وارد نشده‌اید.",
     forbidden: "دسترسی مجاز نیست.",
     bad_request: "درخواست نامعتبر بود.",
+    ledger_account_missing: "یکی از حساب‌های مورد نیاز سیستم در سرفصل حساب‌ها یافت نشد. سرفصل حساب‌ها را بررسی کنید.",
   };
   return map[code ?? ""] ?? "خطای غیرمنتظره. دوباره تلاش کنید.";
 }

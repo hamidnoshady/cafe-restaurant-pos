@@ -11,7 +11,7 @@ Each phase is a self-contained file with its own scope, exit criteria, and open 
 | 4 | Phase-4-Waiter-Kitchen-RealTime-Sync.md | Implemented |
 | 5 | Phase-5-Offline-Queue-Hardware.md | Implemented |
 | 6 | Phase-6-Inventory.md | Implemented |
-| 7 | Phase-7-Double-Entry-Ledger.md | Not started |
+| 7 | Phase-7-Double-Entry-Ledger.md | Implemented |
 | 8 | Phase-8-Reporting-Analytics-Engine.md | Not started |
 | 9 | Phase-9-Multi-Location-Rollup-Polish.md | Not started |
 | 10 | Phase-10-Delivery-Post-V1.md | Not started |

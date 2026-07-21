@@ -71,6 +71,8 @@ export function errorMessage(code: string | undefined): string {
     conflict: "این تغییر با یک عملیات دیگر تداخل دارد و باید دستی بررسی شود.",
     printer_not_found: "چاپگر پیدا نشد.",
     agent_unreachable: "دستگاه چاپ در دسترس نیست. اتصال چاپگر محلی را بررسی کنید.",
+    // Phase 7 — ledger
+    ledger_account_missing: "یکی از حساب‌های مورد نیاز سیستم در سرفصل حساب‌ها یافت نشد. سرفصل حساب‌ها را بررسی کنید.",
   };
   return map[code ?? ""] ?? "خطای غیرمنتظره. دوباره تلاش کنید.";
 }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth";
 import { getPool, query } from "@/lib/db";
 import { consumeInventory } from "@/lib/inventory-service";
+import { MissingLedgerAccountError, postWasteEntry } from "@/lib/ledger-service";
 import { getPrimaryLocation } from "@/lib/setup-state";
 
 const WASTE_REASONS = ["spoilage", "prep_error", "customer_return", "staff_meal", "other"] as const;
@@ -69,10 +70,20 @@ export async function POST(request: NextRequest) {
       wasteReason: reason,
       createdBy: session.sub,
     });
+    await postWasteEntry(client, {
+      businessId: session.businessId,
+      locationId: location.id,
+      sourceId: null,
+      createdBy: session.sub,
+      totalCost: result.totalCost,
+    });
     await client.query("COMMIT");
     return NextResponse.json({ ok: true, totalCost: result.totalCost });
   } catch (err) {
     await client.query("ROLLBACK");
+    if (err instanceof MissingLedgerAccountError) {
+      return NextResponse.json({ error: "ledger_account_missing", code: err.code }, { status: 409 });
+    }
     throw err;
   } finally {
     client.release();
