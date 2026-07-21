@@ -1,9 +1,9 @@
 import Link from "next/link";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
-import { formatToman } from "@/lib/money";
 import { getSession } from "@/lib/auth";
 import { isSetupComplete } from "@/lib/setup-state";
+import { DashboardGrid } from "./dashboard-grid";
 
 export default async function DashboardPage() {
   const today = toPersianDigits(formatJalali(new Date(), { withMonthName: true }));
@@ -31,24 +31,7 @@ export default async function DashboardPage() {
         </Link>
       ) : null}
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <StatCard title="فروش امروز" value={formatToman(0)} />
-        <StatCard title="سفارش‌های باز" value="—" />
-        <StatCard title="میزهای فعال" value="—" />
-      </div>
-
-      <p className="mt-8 text-sm text-muted-foreground">
-        اسکلت اولیه (فاز صفر) — امکانات فروش در فازهای بعدی اضافه می‌شود.
-      </p>
-    </div>
-  );
-}
-
-function StatCard({ title, value }: { title: string; value: string }) {
-  return (
-    <div className="rounded-2xl bg-card p-5 shadow-sm">
-      <p className="mb-2 text-sm text-muted-foreground">{title}</p>
-      <p className="text-xl font-bold">{value}</p>
+      <DashboardGrid canEdit={canSetup} />
     </div>
   );
 }

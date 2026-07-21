@@ -1,0 +1,60 @@
+"use client";
+
+import { toPersianDigits } from "@/lib/digits";
+import { formatJalali } from "@/lib/jalali";
+
+export interface ReportRow {
+  dim: string | null;
+  value: string | number | null;
+}
+
+export type ChartType = "line" | "bar" | "pie" | "number";
+export type Aggregation = "sum" | "avg" | "count";
+
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}/;
+
+/** dim comes back over JSON as a plain string — Jalali-format it if it looks like an ISO date, otherwise it's already an entity label (item name, staff name, …). */
+export function formatDim(dim: string | null): string {
+  if (dim === null) return "—";
+  if (ISO_DATE_RE.test(dim)) return toPersianDigits(formatJalali(dim));
+  return dim;
+}
+
+export function rowsToChartData(rows: ReportRow[]) {
+  return rows.map((r) => ({ label: formatDim(r.dim), value: Number(r.value) || 0 }));
+}
+
+export interface ExportRequest {
+  format: "csv" | "excel" | "pdf";
+  title: string;
+  kind?: "chart" | "pnl" | "balance_sheet";
+  config?: Record<string, unknown>;
+  dateFrom?: string;
+  dateTo?: string;
+}
+
+/** POSTs /api/reports/export and triggers a browser download of the returned file. */
+export async function triggerExport(req: ExportRequest): Promise<string | null> {
+  const res = await fetch("/api/reports/export", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(req),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    return data.error ?? "خطا در دریافت خروجی.";
+  }
+  const disposition = res.headers.get("content-disposition") ?? "";
+  const match = /filename\*=UTF-8''([^;]+)/.exec(disposition);
+  const filename = match ? decodeURIComponent(match[1]) : `${req.title}.${req.format === "excel" ? "xlsx" : req.format}`;
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  return null;
+}

@@ -1,0 +1,193 @@
+import { NextRequest, NextResponse } from "next/server";
+import { requireRole } from "@/lib/auth";
+import { query } from "@/lib/db";
+import { getPrimaryLocation } from "@/lib/setup-state";
+import { toPersianDigits } from "@/lib/digits";
+import { formatJalali } from "@/lib/jalali";
+import { reportConfigLabels, validateReportConfig, type ReportConfig } from "@/lib/reports";
+import { getBalanceSheet, getProfitAndLoss, runCustomReportQuery } from "@/lib/reports-service";
+import { rowsToCsv, rowsToXlsxBuffer, type ReportTable } from "@/lib/report-export";
+import { renderReportLedgerHtml, renderReportTableHtml, type ReportPdfBusinessInfo } from "@/lib/report-pdf-template";
+import { renderHtmlToPdf } from "@/lib/pdf-render";
+
+type ExportFormat = "csv" | "excel" | "pdf";
+
+interface ExportBody {
+  format?: ExportFormat;
+  title?: string;
+  kind?: "chart" | "pnl" | "balance_sheet";
+  config?: ReportConfig;
+  dateFrom?: string;
+  dateTo?: string;
+}
+
+async function getBusinessInfo(businessId: string): Promise<ReportPdfBusinessInfo> {
+  const { rows } = await query<{ name: string }>("SELECT name FROM businesses WHERE id = $1", [businessId]);
+  const location = await getPrimaryLocation(businessId);
+  return { name: rows[0]?.name ?? "", address: location?.address ?? null, phone: location?.phone ?? null };
+}
+
+/** filename carries Persian text — a bare `filename=` header value must be a ByteString (ASCII), so it's RFC 5987-encoded with an ASCII fallback for older clients. */
+function fileResponse(body: string | Buffer, contentType: string, filename: string): NextResponse {
+  const ext = filename.slice(filename.lastIndexOf("."));
+  const encoded = encodeURIComponent(filename);
+  return new NextResponse(typeof body === "string" ? body : new Uint8Array(body), {
+    headers: {
+      "Content-Type": contentType,
+      "Content-Disposition": `attachment; filename="report${ext}"; filename*=UTF-8''${encoded}`,
+    },
+  });
+}
+
+function periodLabel(dateFrom?: string, dateTo?: string): string {
+  if (dateFrom && dateTo) return `از ${toPersianDigits(formatJalali(dateFrom))} تا ${toPersianDigits(formatJalali(dateTo))}`;
+  if (dateTo) return `تا تاریخ ${toPersianDigits(formatJalali(dateTo))}`;
+  if (dateFrom) return `از تاریخ ${toPersianDigits(formatJalali(dateFrom))}`;
+  return "تمام بازه‌ها";
+}
+
+/** Exports a report (custom or standard chart config, or P&L/Balance Sheet) as CSV, Excel, or PDF. */
+export async function POST(request: NextRequest) {
+  const { session, error } = await requireRole("owner", "manager");
+  if (error) return error;
+
+  let body: ExportBody;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "bad_request" }, { status: 400 });
+  }
+
+  const format = body.format;
+  if (format !== "csv" && format !== "excel" && format !== "pdf") {
+    return NextResponse.json({ error: "invalid_format" }, { status: 400 });
+  }
+  const kind = body.kind ?? "chart";
+
+  if (kind === "chart") {
+    if (!body.config) return NextResponse.json({ error: "missing_fields" }, { status: 400 });
+    const errors = validateReportConfig(body.config);
+    if (errors.length > 0) return NextResponse.json({ error: "invalid_config", details: errors }, { status: 400 });
+
+    const { dimensionLabel, metricLabel, viewLabel } = reportConfigLabels(body.config);
+    const rows = await runCustomReportQuery(session.businessId, body.config);
+    const table: ReportTable = {
+      columns: [
+        { key: "dim", label: dimensionLabel },
+        { key: "value", label: metricLabel },
+      ],
+      rows,
+    };
+    const title = body.title?.trim() || viewLabel;
+    return respondWithTable(table, title, format, session.businessId, body.config.filters);
+  }
+
+  if (kind === "pnl") {
+    const report = await getProfitAndLoss(session.businessId, { dateFrom: body.dateFrom, dateTo: body.dateTo });
+    const title = body.title?.trim() || "صورت سود و زیان";
+    if (format === "pdf") {
+      const html = renderReportLedgerHtml({
+        business: await getBusinessInfo(session.businessId),
+        title,
+        generatedAt: new Date(),
+        periodLabel: periodLabel(body.dateFrom, body.dateTo),
+        sections: [
+          { heading: "درآمدها", rows: report.revenue.map((l) => ({ code: l.accountCode, name: l.accountName, amount: l.amount })), totalLabel: "جمع درآمدها", totalAmount: report.totalRevenue },
+          { heading: "هزینه‌ها", rows: report.expenses.map((l) => ({ code: l.accountCode, name: l.accountName, amount: l.amount })), totalLabel: "جمع هزینه‌ها", totalAmount: report.totalExpenses },
+        ],
+        grandTotalLabel: "سود (زیان) خالص",
+        grandTotalAmount: report.netIncome,
+      });
+      return fileResponse(await renderHtmlToPdf(html), "application/pdf", `${title}.pdf`);
+    }
+    const table = ledgerTable(
+      [
+        ["درآمدها", report.revenue],
+        ["هزینه‌ها", report.expenses],
+      ],
+      [["جمع کل", "", report.netIncome]],
+    );
+    return respondWithTable(table, title, format, session.businessId);
+  }
+
+  if (kind === "balance_sheet") {
+    const report = await getBalanceSheet(session.businessId, body.dateTo);
+    const title = body.title?.trim() || "ترازنامه";
+    if (format === "pdf") {
+      const html = renderReportLedgerHtml({
+        business: await getBusinessInfo(session.businessId),
+        title,
+        generatedAt: new Date(),
+        periodLabel: periodLabel(undefined, body.dateTo),
+        sections: [
+          { heading: "دارایی‌ها", rows: report.assets.map((l) => ({ code: l.accountCode, name: l.accountName, amount: l.amount })), totalLabel: "جمع دارایی‌ها", totalAmount: report.totalAssets },
+          { heading: "بدهی‌ها", rows: report.liabilities.map((l) => ({ code: l.accountCode, name: l.accountName, amount: l.amount })), totalLabel: "جمع بدهی‌ها", totalAmount: report.totalLiabilities },
+          { heading: "حقوق صاحبان سرمایه", rows: [...report.equity.map((l) => ({ code: l.accountCode, name: l.accountName, amount: l.amount })), { code: "", name: "سود انباشته (جاری)", amount: report.retainedEarnings }], totalLabel: "جمع حقوق صاحبان سرمایه", totalAmount: report.totalEquity },
+        ],
+        grandTotalLabel: "بدهی‌ها + حقوق صاحبان سرمایه",
+        grandTotalAmount: report.totalLiabilities + report.totalEquity,
+      });
+      return fileResponse(await renderHtmlToPdf(html), "application/pdf", `${title}.pdf`);
+    }
+    const table = ledgerTable(
+      [
+        ["دارایی‌ها", report.assets],
+        ["بدهی‌ها", report.liabilities],
+        ["حقوق صاحبان سرمایه", [...report.equity, { accountCode: "", accountName: "سود انباشته (جاری)", amount: report.retainedEarnings }]],
+      ],
+      [["جمع دارایی‌ها", "", report.totalAssets], ["جمع بدهی‌ها + حقوق صاحبان سرمایه", "", report.totalLiabilities + report.totalEquity]],
+    );
+    return respondWithTable(table, title, format, session.businessId);
+  }
+
+  return NextResponse.json({ error: "invalid_kind" }, { status: 400 });
+}
+
+function ledgerTable(
+  sections: [string, { accountCode: string; accountName: string; amount: number }[]][],
+  totals: [string, string, number][],
+): ReportTable {
+  const rows: Record<string, unknown>[] = [];
+  for (const [heading, lines] of sections) {
+    for (const l of lines) rows.push({ section: heading, code: l.accountCode, name: l.accountName, amount: l.amount });
+  }
+  for (const [label, , amount] of totals) rows.push({ section: label, code: "", name: "", amount });
+  return {
+    columns: [
+      { key: "section", label: "بخش" },
+      { key: "code", label: "کد" },
+      { key: "name", label: "حساب" },
+      { key: "amount", label: "مبلغ" },
+    ],
+    rows,
+  };
+}
+
+async function respondWithTable(
+  table: ReportTable,
+  title: string,
+  format: ExportFormat,
+  businessId: string,
+  filters?: { dateFrom?: string; dateTo?: string },
+): Promise<NextResponse> {
+  if (format === "csv") {
+    return fileResponse(rowsToCsv(table), "text/csv; charset=utf-8", `${title}.csv`);
+  }
+  if (format === "excel") {
+    const buffer = await rowsToXlsxBuffer(table, title);
+    return fileResponse(
+      buffer,
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      `${title}.xlsx`,
+    );
+  }
+  const html = renderReportTableHtml({
+    business: await getBusinessInfo(businessId),
+    title,
+    generatedAt: new Date(),
+    filterSummary: periodLabel(filters?.dateFrom, filters?.dateTo),
+    columns: table.columns,
+    rows: table.rows,
+  });
+  return fileResponse(await renderHtmlToPdf(html), "application/pdf", `${title}.pdf`);
+}
