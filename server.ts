@@ -44,6 +44,16 @@ app.prepare().then(async () => {
   // AsyncLocalStorage stub that then breaks every page render.
   const { SESSION_COOKIE, verifySession } = await import("./src/lib/auth");
   const { registerConnection } = await import("./src/lib/realtime");
+  const { runRollupSyncTick } = await import("./src/lib/rollup-service");
+  const { ROLLUP_SYNC_INTERVAL_MS } = await import("./src/lib/rollup");
+
+  // Phase 9: push this location's daily rollup to the configured central
+  // server. A tick that can't reach central just records the error and the
+  // next one retries the widened window — that's the offline catch-up story.
+  const rollupTick = () =>
+    runRollupSyncTick().catch((err) => console.error("rollup sync tick failed:", err));
+  setInterval(rollupTick, ROLLUP_SYNC_INTERVAL_MS).unref();
+  setTimeout(rollupTick, 30_000).unref();
 
   const server = createServer((req, res) => {
     handle(req, res, parse(req.url ?? "/", true));

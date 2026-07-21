@@ -104,6 +104,7 @@ kitchen": its items land on the KDS as `sent` immediately.
 | `npm test` | Unit tests (Jalali, digits, money, order totals, kitchen ticket status, …) |
 | `npm run db:migrate` | Apply pending SQL migrations from `migrations/` |
 | `npm run db:seed` | Seed business, location, owner, sample cashier (idempotent) |
+| `npx tsx scripts/ws-load-test.ts` | WebSocket load test against a running, seeded server (Phase 9 — see the script header for env knobs) |
 
 ## Conventions (important)
 
