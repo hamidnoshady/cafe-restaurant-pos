@@ -104,7 +104,64 @@ kitchen": its items land on the KDS as `sent` immediately.
 | `npm test` | Unit tests (Jalali, digits, money, order totals, kitchen ticket status, …) |
 | `npm run db:migrate` | Apply pending SQL migrations from `migrations/` |
 | `npm run db:seed` | Seed business, location, owner, sample cashier (idempotent) |
+| `npm run db:backup` | Dump the whole database to `BACKUP_DIR` (see «پشتیبان‌گیری» below) |
+| `npm run db:restore -- --latest --yes` | Restore the newest dump (destructive — see below) |
 | `npx tsx scripts/ws-load-test.ts` | WebSocket load test against a running, seeded server (Phase 9 — see the script header for env knobs) |
+
+## پشتیبان‌گیری (Backups)
+
+The database is the business's **system of record** — sales, the double-entry
+ledger, inventory, tax. On a single on-site till PC it is one disk failure (or
+one wrong command) away from total loss, so treat backups as a go-live
+requirement, not an optional extra. There is no separate off-box copy unless
+you make one.
+
+**Take a backup**
+
+```bash
+npm run db:backup
+```
+
+`scripts/backup.ts` runs `pg_dump -Fc` (compressed custom format) and writes a
+UTC-timestamped file like `pos-backup-20260721-183045.dump`, then prunes
+anything older than the retention count.
+
+- `BACKUP_DIR` — where dumps go (default `./backups`). **Point this at a disk
+  separate from the database** — a mounted USB stick, a second drive, or a LAN
+  share. A backup sitting on the same disk that fails doesn't help you.
+- `BACKUP_RETENTION` — how many newest dumps to keep (default `14`; `<1` keeps
+  all). Old ones beyond that are deleted after each successful backup; files
+  that aren't our backups are never touched.
+
+Requires the PostgreSQL 16 client tools (`pg_dump`/`pg_restore`) on `PATH`. If
+Postgres runs only inside Docker and you don't have the client installed, dump
+through the container instead:
+
+```bash
+docker compose exec -T db pg_dump -U pos -Fc --no-owner --no-privileges pos > backups/pos-backup-$(date -u +%Y%m%d-%H%M%S).dump
+```
+
+**Schedule it** — the app doesn't run backups itself (a crashed app must not
+mean no backups); use the OS scheduler. A nightly cron entry at 03:30, writing
+to a USB mount, keeping 14 days:
+
+```cron
+30 3 * * *  cd /opt/cafe-pos && BACKUP_DIR=/mnt/usb-backup BACKUP_RETENTION=14 npm run db:backup >> /var/log/cafe-pos-backup.log 2>&1
+```
+
+**Restore** (destructive — replaces everything in the target database):
+
+```bash
+npm run db:restore -- --latest --yes                       # newest dump in BACKUP_DIR
+npm run db:restore -- ./backups/pos-backup-….dump --yes    # a specific dump
+```
+
+`scripts/restore.ts` refuses to run without `--yes` (or `RESTORE_CONFIRM=1`),
+printing the target database and source file first so you can confirm. It uses
+`pg_restore --clean --if-exists`, so it works both over an existing database
+and into an empty one. Restart the app afterwards so it reconnects cleanly.
+**Test a restore into a scratch database occasionally** — an untested backup
+isn't a backup.
 
 ## Conventions (important)
 

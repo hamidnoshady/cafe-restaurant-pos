@@ -13,3 +13,6 @@ npm-debug.log*
 next-env.d.ts
 
 .DS_Store
+
+# Local database backups (scripts/backup.ts) — never commit business data
+/backups/
