@@ -38,7 +38,7 @@ export function ItemsSection({ items, busy, run }: { items: InventoryItem[]; bus
   }
 
   return (
-    <section className="rounded-2xl bg-white p-5 shadow-sm">
+    <section className="rounded-2xl bg-card p-5 shadow-sm">
       <h2 className="mb-3 font-semibold">اقلام انبار (مواد اولیه)</h2>
       <form onSubmit={add} className="mb-4 grid gap-2 sm:grid-cols-6">
         <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} placeholder="نام (مثلاً قهوه)" required />
@@ -68,11 +68,11 @@ export function ItemsSection({ items, busy, run }: { items: InventoryItem[]; bus
         <PrimaryButton disabled={busy}>افزودن</PrimaryButton>
       </form>
 
-      <ul className="divide-y divide-stone-100 rounded-lg border border-stone-200">
+      <ul className="divide-y divide-border rounded-lg border border-border">
         {items.map((it) => (
           <ItemRow key={it.id} item={it} busy={busy} run={run} />
         ))}
-        {items.length === 0 ? <li className="p-3 text-sm text-stone-400">قلمی ثبت نشده است.</li> : null}
+        {items.length === 0 ? <li className="p-3 text-sm text-muted-foreground">قلمی ثبت نشده است.</li> : null}
       </ul>
     </section>
   );
@@ -84,12 +84,12 @@ function ItemRow({ item, busy, run }: { item: InventoryItem; busy: boolean; run:
 
   return (
     <li className="flex flex-wrap items-center justify-between gap-2 px-4 py-2 text-sm">
-      <span className={item.is_active ? "" : "text-stone-400 line-through"}>
+      <span className={item.is_active ? "" : "text-muted-foreground line-through"}>
         {item.name}
-        {item.sku ? <span className="text-xs text-stone-400"> ({item.sku})</span> : null}
+        {item.sku ? <span className="text-xs text-muted-foreground"> ({item.sku})</span> : null}
       </span>
-      <div className="flex items-center gap-3 text-xs text-stone-500">
-        <span className={isLow ? "font-semibold text-amber-700" : ""}>
+      <div className="flex items-center gap-3 text-xs text-muted-foreground">
+        <span className={isLow ? "font-semibold text-primary" : ""}>
           موجودی: {toPersianDigits(item.stock)} {item.unit}
         </span>
         <span>میانگین بها: {formatToman(Number(item.avg_cost))}</span>

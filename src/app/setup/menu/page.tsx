@@ -130,11 +130,11 @@ export default function MenuStep() {
     >
       <ErrorBox>{error}</ErrorBox>
 
-      <section className="mb-8 rounded-xl border border-stone-200 p-4">
+      <section className="mb-8 rounded-xl border border-border p-4">
         <h2 className="mb-3 font-semibold">ورود از فایل (CSV یا Excel)</h2>
-        <p className="mb-3 text-sm text-stone-500">
+        <p className="mb-3 text-sm text-muted-foreground">
           ستون‌های لازم: «دسته»، «نام»، «قیمت» (تومان) — ستون‌های «توضیحات» و «کد» اختیاری‌اند.{" "}
-          <a className="text-amber-700 underline underline-offset-4" href="/api/setup/menu/template">
+          <a className="text-primary underline underline-offset-4" href="/api/setup/menu/template">
             دانلود فایل نمونه
           </a>
         </p>
@@ -143,13 +143,13 @@ export default function MenuStep() {
             ref={fileRef}
             type="file"
             accept=".csv,.tsv,.txt,.xlsx"
-            className="text-sm file:me-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-4 file:py-2 file:text-sm"
+            className="text-sm file:me-3 file:rounded-lg file:border-0 file:bg-muted file:px-4 file:py-2 file:text-sm"
           />
           <PrimaryButton disabled={busy}>ورود فایل</PrimaryButton>
         </form>
         {importSummary ? <InfoBox>{importSummary}</InfoBox> : null}
         {importErrors.length > 0 ? (
-          <div className="mt-3 rounded-lg bg-amber-50 p-3 text-xs text-amber-800">
+          <div className="mt-3 rounded-lg bg-primary/5 p-3 text-xs text-primary">
             {importErrors.map((e, i) => (
               <p key={i}>{e}</p>
             ))}
@@ -158,7 +158,7 @@ export default function MenuStep() {
       </section>
 
       <section className="mb-8 grid gap-6 lg:grid-cols-2">
-        <div className="rounded-xl border border-stone-200 p-4">
+        <div className="rounded-xl border border-border p-4">
           <h2 className="mb-3 font-semibold">افزودن دسته</h2>
           <div className="flex gap-2">
             <input
@@ -173,7 +173,7 @@ export default function MenuStep() {
           </div>
         </div>
 
-        <form onSubmit={addItem} className="rounded-xl border border-stone-200 p-4">
+        <form onSubmit={addItem} className="rounded-xl border border-border p-4">
           <h2 className="mb-3 font-semibold">افزودن آیتم</h2>
           <div className="grid gap-3 sm:grid-cols-3">
             <select
@@ -217,19 +217,19 @@ export default function MenuStep() {
           منوی فعلی — {toPersianDigits(categories.length)} دسته، {toPersianDigits(items.length)} آیتم
         </h2>
         {categories.length === 0 ? (
-          <p className="text-sm text-stone-400">هنوز چیزی ثبت نشده است.</p>
+          <p className="text-sm text-muted-foreground">هنوز چیزی ثبت نشده است.</p>
         ) : (
           <div className="space-y-4">
             {categories.map((c) => (
               <div key={c.id}>
-                <p className="mb-1 text-sm font-medium text-stone-700">{c.name}</p>
-                <ul className="divide-y divide-stone-100 rounded-lg border border-stone-200">
+                <p className="mb-1 text-sm font-medium text-foreground">{c.name}</p>
+                <ul className="divide-y divide-border rounded-lg border border-border">
                   {items
                     .filter((i) => i.category_id === c.id)
                     .map((i) => (
                       <li key={i.id} className="flex justify-between px-4 py-2 text-sm">
                         <span>{i.name}</span>
-                        <span className="text-stone-500">{formatToman(Number(i.price))}</span>
+                        <span className="text-muted-foreground">{formatToman(Number(i.price))}</span>
                       </li>
                     ))}
                 </ul>

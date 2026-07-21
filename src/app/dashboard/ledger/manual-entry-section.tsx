@@ -76,9 +76,9 @@ export function ManualEntrySection({ accounts, busy, run }: { accounts: AccountR
   }
 
   return (
-    <section className="rounded-2xl bg-white p-5 shadow-sm">
+    <section className="rounded-2xl bg-card p-5 shadow-sm">
       <h2 className="mb-3 font-semibold">ثبت سند دستی</h2>
-      <p className="mb-3 text-xs text-stone-500">
+      <p className="mb-3 text-xs text-muted-foreground">
         برای مثال ثبت هزینه (بدهکار حساب هزینه، بستانکار صندوق/بانک) یا تسویه مالیات بر ارزش افزوده پرداختنی (بدهکار مالیات
         پرداختنی، بستانکار صندوق/بانک). سند فقط در صورت برابری مجموع بدهکار و بستانکار ثبت می‌شود.
       </p>
@@ -131,7 +131,7 @@ export function ManualEntrySection({ accounts, busy, run }: { accounts: AccountR
         <div className="flex flex-wrap items-center gap-3">
           <SecondaryButton onClick={addLine}>افزودن ردیف</SecondaryButton>
           <PrimaryButton disabled={busy || !balanced || !memo.trim()}>ثبت سند</PrimaryButton>
-          <span className={`text-xs ${balanced ? "text-emerald-700" : "text-stone-400"}`}>
+          <span className={`text-xs ${balanced ? "text-emerald-700 dark:text-emerald-400" : "text-muted-foreground"}`}>
             بدهکار: {totalDebit.toLocaleString("en-US")} ریال — بستانکار: {totalCredit.toLocaleString("en-US")} ریال
             {balanced ? " (متوازن)" : ""}
           </span>

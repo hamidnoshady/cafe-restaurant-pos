@@ -11,18 +11,18 @@ export default function LoginPage() {
 
   return (
     <main className="flex min-h-screen items-center justify-center p-4">
-      <div className="w-full max-w-sm rounded-2xl bg-white p-8 shadow-sm">
+      <div className="w-full max-w-sm rounded-2xl bg-card p-8 shadow-sm">
         <h1 className="mb-1 text-center text-xl font-bold">
           سیستم فروش کافه و رستوران
         </h1>
-        <p className="mb-6 text-center text-sm text-stone-500">ورود به سامانه</p>
+        <p className="mb-6 text-center text-sm text-muted-foreground">ورود به سامانه</p>
 
-        <div className="mb-6 grid grid-cols-2 rounded-lg bg-stone-100 p-1 text-sm">
+        <div className="mb-6 grid grid-cols-2 rounded-lg bg-muted p-1 text-sm">
           <button
             type="button"
             onClick={() => setMode("password")}
             className={`rounded-md py-2 transition ${
-              mode === "password" ? "bg-white font-semibold shadow-sm" : "text-stone-500"
+              mode === "password" ? "bg-card font-semibold shadow-sm" : "text-muted-foreground"
             }`}
           >
             مدیر / مالک
@@ -31,7 +31,7 @@ export default function LoginPage() {
             type="button"
             onClick={() => setMode("pin")}
             className={`rounded-md py-2 transition ${
-              mode === "pin" ? "bg-white font-semibold shadow-sm" : "text-stone-500"
+              mode === "pin" ? "bg-card font-semibold shadow-sm" : "text-muted-foreground"
             }`}
           >
             ورود سریع با پین
@@ -73,7 +73,7 @@ function PasswordForm() {
   return (
     <form onSubmit={submit} className="space-y-4">
       <div>
-        <label htmlFor="email" className="mb-1 block text-sm text-stone-600">
+        <label htmlFor="email" className="mb-1 block text-sm text-muted-foreground">
           ایمیل
         </label>
         <input
@@ -83,11 +83,11 @@ function PasswordForm() {
           required
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          className="w-full rounded-lg border border-stone-300 px-3 py-2 text-start focus:border-amber-500 focus:outline-none"
+          className="w-full rounded-lg border border-input px-3 py-2 text-start focus:border-primary focus:outline-none"
         />
       </div>
       <div>
-        <label htmlFor="password" className="mb-1 block text-sm text-stone-600">
+        <label htmlFor="password" className="mb-1 block text-sm text-muted-foreground">
           رمز عبور
         </label>
         <input
@@ -97,14 +97,14 @@ function PasswordForm() {
           required
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className="w-full rounded-lg border border-stone-300 px-3 py-2 focus:border-amber-500 focus:outline-none"
+          className="w-full rounded-lg border border-input px-3 py-2 focus:border-primary focus:outline-none"
         />
       </div>
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-destructive">{error}</p>}
       <button
         type="submit"
         disabled={busy}
-        className="w-full rounded-lg bg-amber-600 py-2.5 font-semibold text-white transition hover:bg-amber-700 disabled:opacity-50"
+        className="w-full rounded-lg bg-primary py-2.5 font-semibold text-primary-foreground transition hover:bg-primary/85 disabled:opacity-50"
       >
         {busy ? "در حال ورود…" : "ورود"}
       </button>
@@ -149,7 +149,7 @@ function PinPad() {
         {[0, 1, 2, 3].map((i) => (
           <span
             key={i}
-            className={`size-3.5 rounded-full ${i < pin.length ? "bg-amber-600" : "bg-stone-200"}`}
+            className={`size-3.5 rounded-full ${i < pin.length ? "bg-primary" : "bg-muted"}`}
           />
         ))}
       </div>
@@ -165,8 +165,8 @@ function PinPad() {
           muted
         />
       </div>
-      {error && <p className="mt-3 text-center text-sm text-red-600">{error}</p>}
-      {busy && <p className="mt-3 text-center text-sm text-stone-500">در حال ورود…</p>}
+      {error && <p className="mt-3 text-center text-sm text-destructive">{error}</p>}
+      {busy && <p className="mt-3 text-center text-sm text-muted-foreground">در حال ورود…</p>}
     </div>
   );
 }
@@ -185,7 +185,7 @@ function PadButton({
       type="button"
       onClick={onClick}
       className={`rounded-lg py-3 text-lg font-semibold transition active:scale-95 ${
-        muted ? "bg-stone-100 text-stone-500 hover:bg-stone-200" : "bg-stone-100 hover:bg-amber-100"
+        muted ? "bg-muted text-muted-foreground hover:bg-muted-foreground/20" : "bg-muted hover:bg-primary/10"
       }`}
     >
       {label}

@@ -225,20 +225,20 @@ export function PosScreen() {
     load();
   }
 
-  if (!menu) return <p className="text-sm text-stone-400">در حال بارگذاری…</p>;
+  if (!menu) return <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>;
 
   if (result) {
     return (
-      <div className="mx-auto max-w-md rounded-2xl bg-white p-8 text-center shadow-sm">
+      <div className="mx-auto max-w-md rounded-2xl bg-card p-8 text-center shadow-sm">
         {result.queued ? (
           <>
-            <p className="mb-2 text-sm text-amber-700">اتصال قطع است — سفارش ذخیره شد و پس از اتصال مجدد ارسال می‌شود.</p>
-            <p className="mb-4 text-2xl font-bold text-amber-700">در صف ارسال</p>
+            <p className="mb-2 text-sm text-primary">اتصال قطع است — سفارش ذخیره شد و پس از اتصال مجدد ارسال می‌شود.</p>
+            <p className="mb-4 text-2xl font-bold text-primary">در صف ارسال</p>
           </>
         ) : (
           <>
-            <p className="mb-2 text-sm text-stone-500">سفارش ثبت شد</p>
-            <p className="mb-4 text-3xl font-bold text-amber-700">
+            <p className="mb-2 text-sm text-muted-foreground">سفارش ثبت شد</p>
+            <p className="mb-4 text-3xl font-bold text-primary">
               {toPersianDigits(formatQueueLabel(result.type, result.orderNumber!))}
             </p>
           </>
@@ -255,15 +255,17 @@ export function PosScreen() {
   return (
     <div className="flex h-[calc(100vh-3rem)] gap-4">
       {/* Item grid */}
-      <div className="flex flex-1 flex-col overflow-hidden rounded-2xl bg-white shadow-sm">
-        <div className="flex gap-1 overflow-x-auto border-b border-stone-200 p-3">
+      <div className="flex flex-1 flex-col overflow-hidden rounded-2xl bg-card shadow-sm">
+        <div className="flex gap-1 overflow-x-auto border-b border-border p-3">
           {activeCategories.map((c) => (
             <button
               key={c.id}
               type="button"
               onClick={() => setActiveCategory(c.id)}
-              className={`shrink-0 rounded-lg px-4 py-2 text-sm ${
-                activeCategory === c.id ? "bg-amber-600 text-white" : "bg-stone-100 text-stone-600 hover:bg-stone-200"
+              className={`shrink-0 rounded-lg px-4 py-2 text-sm transition-colors ${
+                activeCategory === c.id
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-muted text-muted-foreground hover:text-foreground"
               }`}
             >
               {c.name}
@@ -276,19 +278,19 @@ export function PosScreen() {
               key={item.id}
               type="button"
               onClick={() => pickItem(item)}
-              className="flex flex-col items-start rounded-xl border border-stone-200 p-3 text-start transition hover:border-amber-400 hover:bg-amber-50"
+              className="flex flex-col items-start rounded-xl border border-border p-3 text-start transition hover:border-primary/60 hover:bg-primary/5 hover:shadow-sm active:scale-[0.98]"
             >
               <span className="text-sm font-medium">{item.name}</span>
-              <span className="mt-1 text-xs text-stone-500">{formatToman(Number(item.price))}</span>
+              <span className="mt-1 text-xs text-muted-foreground">{formatToman(Number(item.price))}</span>
             </button>
           ))}
-          {gridItems.length === 0 ? <p className="col-span-full text-sm text-stone-400">آیتمی در این دسته نیست.</p> : null}
+          {gridItems.length === 0 ? <p className="col-span-full text-sm text-muted-foreground">آیتمی در این دسته نیست.</p> : null}
         </div>
       </div>
 
       {/* Cart */}
-      <div className="flex w-96 shrink-0 flex-col overflow-hidden rounded-2xl bg-white shadow-sm">
-        <div className="border-b border-stone-200 p-4">
+      <div className="flex w-96 shrink-0 flex-col overflow-hidden rounded-2xl bg-card shadow-sm">
+        <div className="border-b border-border p-4">
           <ErrorBox>{error}</ErrorBox>
           <div className="mb-3 grid grid-cols-2 gap-2 text-sm">
             <button
@@ -296,7 +298,7 @@ export function PosScreen() {
               onClick={() => {
                 setOrderType("dine_in");
               }}
-              className={`rounded-lg py-2 ${orderType === "dine_in" ? "bg-amber-600 text-white" : "bg-stone-100"}`}
+              className={`rounded-lg py-2 transition-colors ${orderType === "dine_in" ? "bg-primary text-primary-foreground" : "bg-muted hover:text-foreground"}`}
             >
               حضوری
             </button>
@@ -306,7 +308,7 @@ export function PosScreen() {
                 setOrderType("takeaway");
                 setTableId("");
               }}
-              className={`rounded-lg py-2 ${orderType === "takeaway" ? "bg-amber-600 text-white" : "bg-stone-100"}`}
+              className={`rounded-lg py-2 transition-colors ${orderType === "takeaway" ? "bg-primary text-primary-foreground" : "bg-muted hover:text-foreground"}`}
             >
               بیرون‌بر
             </button>
@@ -323,44 +325,52 @@ export function PosScreen() {
                     onClick={() => setTableId(t.id)}
                     className={`rounded-lg border px-3 py-1.5 text-xs ${
                       tableId === t.id
-                        ? "border-amber-500 bg-amber-50 text-amber-800"
+                        ? "border-primary bg-primary/5 text-primary"
                         : occupied
-                          ? "border-stone-200 bg-stone-100 text-stone-300"
-                          : "border-stone-300 text-stone-600 hover:border-amber-400"
+                          ? "border-border bg-muted text-muted-foreground/60"
+                          : "border-input text-muted-foreground hover:border-primary/60"
                     }`}
                   >
                     {t.name}
                   </button>
                 );
               })}
-              {tables.length === 0 ? <p className="text-xs text-stone-400">میزی ثبت نشده است.</p> : null}
+              {tables.length === 0 ? <p className="text-xs text-muted-foreground">میزی ثبت نشده است.</p> : null}
             </div>
           ) : null}
         </div>
 
         <div className="flex-1 overflow-y-auto p-4">
           {cart.length === 0 ? (
-            <p className="text-sm text-stone-400">سبد خالی است.</p>
+            <p className="text-sm text-muted-foreground">سبد خالی است.</p>
           ) : (
             <ul className="space-y-3">
               {cart.map((l) => (
-                <li key={l.key} className="text-sm">
+                <li key={l.key} className="text-sm animate-in fade-in slide-in-from-top-1 duration-150">
                   <div className="flex items-start justify-between">
                     <div>
                       <p className="font-medium">{l.name}</p>
-                      {l.modifierLabel ? <p className="text-xs text-stone-500">{l.modifierLabel}</p> : null}
+                      {l.modifierLabel ? <p className="text-xs text-muted-foreground">{l.modifierLabel}</p> : null}
                     </div>
-                    <p className="text-stone-600">{formatToman((l.unitPrice + l.modifierDeltas.reduce((a, b) => a + b, 0)) * l.quantity)}</p>
+                    <p className="text-muted-foreground">{formatToman((l.unitPrice + l.modifierDeltas.reduce((a, b) => a + b, 0)) * l.quantity)}</p>
                   </div>
                   <div className="mt-1 flex items-center gap-2">
-                    <button type="button" onClick={() => setQty(l.key, l.quantity - 1)} className="size-6 rounded bg-stone-100 text-stone-600 hover:bg-stone-200">
+                    <button
+                      type="button"
+                      onClick={() => setQty(l.key, l.quantity - 1)}
+                      className="size-6 rounded bg-muted text-muted-foreground transition-colors hover:bg-muted-foreground/20 hover:text-foreground active:scale-95"
+                    >
                       −
                     </button>
                     <span className="w-4 text-center">{toPersianDigits(l.quantity)}</span>
-                    <button type="button" onClick={() => setQty(l.key, l.quantity + 1)} className="size-6 rounded bg-stone-100 text-stone-600 hover:bg-stone-200">
+                    <button
+                      type="button"
+                      onClick={() => setQty(l.key, l.quantity + 1)}
+                      className="size-6 rounded bg-muted text-muted-foreground transition-colors hover:bg-muted-foreground/20 hover:text-foreground active:scale-95"
+                    >
                       +
                     </button>
-                    <button type="button" onClick={() => removeLine(l.key)} className="ms-auto text-xs text-red-600 hover:underline">
+                    <button type="button" onClick={() => removeLine(l.key)} className="ms-auto text-xs text-destructive hover:underline">
                       حذف
                     </button>
                   </div>
@@ -370,7 +380,7 @@ export function PosScreen() {
           )}
         </div>
 
-        <div className="border-t border-stone-200 p-4">
+        <div className="border-t border-border p-4">
           <div className="mb-3 flex gap-2">
             <select className={inputClass} value={discountType} onChange={(e) => setDiscountType(e.target.value as "" | "percent" | "amount")}>
               <option value="">بدون تخفیف</option>
@@ -419,7 +429,7 @@ export function PosScreen() {
 
 function Row({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
   return (
-    <div className={`flex justify-between ${bold ? "text-base font-bold" : "text-stone-600"}`}>
+    <div className={`flex justify-between ${bold ? "text-base font-bold" : "text-muted-foreground"}`}>
       <dt>{label}</dt>
       <dd>{value}</dd>
     </div>

@@ -151,13 +151,13 @@ export default function OpeningStep() {
       <ErrorBox>{error}</ErrorBox>
       {notice ? <InfoBox>{notice}</InfoBox> : null}
 
-      <section className="mb-8 rounded-xl border border-stone-200 p-4">
+      <section className="mb-8 rounded-xl border border-border p-4">
         <h2 className="mb-1 font-semibold">۱) شمارش اولیهٔ انبار</h2>
-        <p className="mb-3 text-sm text-stone-500">
+        <p className="mb-3 text-sm text-muted-foreground">
           هر قلم با مقدار شمارش‌شده و بهای هر واحد (تومان). با اولین ثبت، روش قیمت‌گذاری قفل می‌شود.
         </p>
         {existingInventory.length > 0 ? (
-          <p className="mb-3 text-xs text-stone-500">
+          <p className="mb-3 text-xs text-muted-foreground">
             اقلام ثبت‌شده: {existingInventory.map((i) => `${i.name} (${toPersianDigits(Number(i.quantity))} ${i.unit})`).join("، ")}
           </p>
         ) : null}
@@ -199,7 +199,7 @@ export default function OpeningStep() {
               />
               <button
                 type="button"
-                className="text-sm text-stone-400 hover:text-red-600"
+                className="text-sm text-muted-foreground hover:text-destructive"
                 onClick={() => setInvRows((rs) => rs.filter((_, j) => j !== i))}
               >
                 حذف
@@ -217,9 +217,9 @@ export default function OpeningStep() {
         </div>
       </section>
 
-      <section className="rounded-xl border border-stone-200 p-4">
+      <section className="rounded-xl border border-border p-4">
         <h2 className="mb-1 font-semibold">۲) مانده‌های افتتاحیهٔ دفاتر</h2>
-        <p className="mb-3 text-sm text-stone-500">
+        <p className="mb-3 text-sm text-muted-foreground">
           مانده‌ها به تومان. سند فقط وقتی ثبت می‌شود که بدهکار و بستانکار برابر باشند.
         </p>
 
@@ -264,7 +264,7 @@ export default function OpeningStep() {
                   />
                   <button
                     type="button"
-                    className="text-sm text-stone-400 hover:text-red-600"
+                    className="text-sm text-muted-foreground hover:text-destructive"
                     onClick={() => setBalRows((rs) => rs.filter((_, j) => j !== i))}
                   >
                     حذف
@@ -280,14 +280,14 @@ export default function OpeningStep() {
               <span>
                 جمع بستانکار: <b>{formatToman(balTotals.credit)}</b>
               </span>
-              <span className={balTotals.debit === balTotals.credit ? "text-emerald-600" : "text-red-600"}>
+              <span className={balTotals.debit === balTotals.credit ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"}>
                 {balTotals.debit === balTotals.credit
                   ? "تراز است ✓"
                   : `اختلاف: ${formatToman(Math.abs(balTotals.debit - balTotals.credit))}`}
               </span>
             </div>
 
-            <label className="mt-3 flex items-center gap-2 text-sm text-stone-600">
+            <label className="mt-3 flex items-center gap-2 text-sm text-muted-foreground">
               <input type="checkbox" checked={autoOffset} onChange={(e) => setAutoOffset(e.target.checked)} />
               اختلاف به‌طور خودکار به حساب «تراز افتتاحیه» (کد ۳۹۰۰) منظور شود
             </label>

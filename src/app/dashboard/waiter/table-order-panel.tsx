@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 import { toPersianDigits } from "@/lib/digits";
 import type { KitchenTicketData } from "@/lib/kitchen-ticket-template";
 import { formatToman } from "@/lib/money";
@@ -81,12 +82,12 @@ interface WaiterTable {
 }
 
 const STATUS_BADGE: Record<OrderItemStatus, string> = {
-  pending: "bg-stone-100 text-stone-600",
-  sent: "bg-stone-100 text-stone-600",
-  preparing: "bg-amber-100 text-amber-800",
-  ready: "bg-emerald-100 text-emerald-800",
-  served: "bg-stone-100 text-stone-400",
-  voided: "bg-red-100 text-red-500",
+  pending: "bg-muted text-muted-foreground",
+  sent: "bg-muted text-muted-foreground",
+  preparing: "bg-primary/10 text-primary",
+  ready: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300",
+  served: "bg-muted text-muted-foreground",
+  voided: "bg-destructive/10 text-destructive",
 };
 
 export function TableOrderPanel({
@@ -217,6 +218,7 @@ export function TableOrderPanel({
     if (res.queued) {
       setInfo("اتصال قطع است — این ارسال ذخیره شد و پس از اتصال مجدد به آشپزخانه ارسال می‌شود.");
     } else {
+      toast.success("سفارش به آشپزخانه ارسال شد");
       const kitchenPrinter = firstPrinter(printers, "kitchen");
       if (kitchenPrinter) {
         const ticket: KitchenTicketData = {
@@ -247,28 +249,28 @@ export function TableOrderPanel({
       <div className="mb-4 flex items-center gap-3">
         <SecondaryButton onClick={onBack}>بازگشت</SecondaryButton>
         <h2 className="text-lg font-bold">{table.name}</h2>
-        {table.guest_name ? <span className="text-sm text-stone-500">{table.guest_name}</span> : null}
+        {table.guest_name ? <span className="text-sm text-muted-foreground">{table.guest_name}</span> : null}
       </div>
 
       {!table.session_id ? (
-        <p className="text-sm text-stone-400">این میز آزاد است. برای نشاندن مهمان از پلان سالن استفاده کنید.</p>
+        <p className="text-sm text-muted-foreground">این میز آزاد است. برای نشاندن مهمان از پلان سالن استفاده کنید.</p>
       ) : (
         <div className="flex flex-col gap-4 lg:flex-row">
           <div className="w-full lg:w-64">
-            <h3 className="mb-2 text-sm font-semibold text-stone-500">سفارش فعلی</h3>
+            <h3 className="mb-2 text-sm font-semibold text-muted-foreground">سفارش فعلی</h3>
             {orderItems.length === 0 ? (
-              <p className="text-sm text-stone-400">هنوز آیتمی ثبت نشده.</p>
+              <p className="text-sm text-muted-foreground">هنوز آیتمی ثبت نشده.</p>
             ) : (
               <ul className="space-y-2">
                 {orderItems.map((it) => (
-                  <li key={it.id} className="rounded-xl bg-white p-3 shadow-sm">
+                  <li key={it.id} className="rounded-xl bg-card p-3 shadow-sm">
                     <div className="flex items-start justify-between gap-2">
                       <div>
                         <p className="text-sm font-medium">
                           {toPersianDigits(it.quantity)}× {it.name_snapshot}
                         </p>
                         {(modsByItem.get(it.id) ?? []).length > 0 ? (
-                          <p className="text-xs text-stone-500">{(modsByItem.get(it.id) ?? []).join("، ")}</p>
+                          <p className="text-xs text-muted-foreground">{(modsByItem.get(it.id) ?? []).join("، ")}</p>
                         ) : null}
                       </div>
                       <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${STATUS_BADGE[it.status]}`}>
@@ -279,7 +281,7 @@ export function TableOrderPanel({
                       <button
                         type="button"
                         onClick={() => markServed(it.id)}
-                        className="mt-2 w-full rounded-lg bg-emerald-600 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700"
+                        className="mt-2 w-full rounded-lg bg-emerald-700 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-emerald-800 dark:bg-emerald-600 dark:hover:bg-emerald-500"
                       >
                         تحویل داده شد
                       </button>
@@ -290,14 +292,14 @@ export function TableOrderPanel({
             )}
           </div>
 
-          <div className="flex-1 rounded-2xl bg-white p-4 shadow-sm">
+          <div className="flex-1 rounded-2xl bg-card p-4 shadow-sm">
             <ErrorBox>{error}</ErrorBox>
             {info ? <InfoBox>{info}</InfoBox> : null}
             {!menu ? (
-              <p className="text-sm text-stone-400">در حال بارگذاری منو…</p>
+              <p className="text-sm text-muted-foreground">در حال بارگذاری منو…</p>
             ) : (
               <>
-                <div className="mb-3 flex gap-1 overflow-x-auto border-b border-stone-200 pb-3">
+                <div className="mb-3 flex gap-1 overflow-x-auto border-b border-border pb-3">
                   {menu.categories
                     .filter((c) => c.is_active)
                     .map((c) => (
@@ -306,7 +308,7 @@ export function TableOrderPanel({
                         type="button"
                         onClick={() => setActiveCategory(c.id)}
                         className={`shrink-0 rounded-lg px-4 py-2 text-sm ${
-                          activeCategory === c.id ? "bg-amber-600 text-white" : "bg-stone-100 text-stone-600 hover:bg-stone-200"
+                          activeCategory === c.id ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground transition-colors hover:bg-muted-foreground/20 hover:text-foreground"
                         }`}
                       >
                         {c.name}
@@ -321,29 +323,29 @@ export function TableOrderPanel({
                         key={item.id}
                         type="button"
                         onClick={() => pickItem(item)}
-                        className="flex flex-col items-start rounded-xl border border-stone-200 p-3 text-start hover:border-amber-400 hover:bg-amber-50"
+                        className="flex flex-col items-start rounded-xl border border-border p-3 text-start hover:border-primary/60 hover:bg-primary/5"
                       >
                         <span className="text-sm font-medium">{item.name}</span>
-                        <span className="mt-1 text-xs text-stone-500">{formatToman(Number(item.price))}</span>
+                        <span className="mt-1 text-xs text-muted-foreground">{formatToman(Number(item.price))}</span>
                       </button>
                     ))}
                 </div>
 
                 {cart.length > 0 ? (
-                  <div className="border-t border-stone-200 pt-3">
+                  <div className="border-t border-border pt-3">
                     <ul className="mb-3 space-y-2">
                       {cart.map((l) => (
                         <li key={l.key} className="flex items-center justify-between text-sm">
                           <span>
                             {l.name}
-                            {l.modifierLabel ? <span className="text-xs text-stone-500"> ({l.modifierLabel})</span> : null}
+                            {l.modifierLabel ? <span className="text-xs text-muted-foreground"> ({l.modifierLabel})</span> : null}
                           </span>
                           <span className="flex items-center gap-2">
-                            <button type="button" onClick={() => setQty(l.key, l.quantity - 1)} className="size-6 rounded bg-stone-100">
+                            <button type="button" onClick={() => setQty(l.key, l.quantity - 1)} className="size-6 rounded bg-muted">
                               −
                             </button>
                             <span className="w-4 text-center">{toPersianDigits(l.quantity)}</span>
-                            <button type="button" onClick={() => setQty(l.key, l.quantity + 1)} className="size-6 rounded bg-stone-100">
+                            <button type="button" onClick={() => setQty(l.key, l.quantity + 1)} className="size-6 rounded bg-muted">
                               +
                             </button>
                           </span>

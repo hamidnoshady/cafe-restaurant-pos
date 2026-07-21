@@ -81,8 +81,8 @@ export default function CostingStep() {
               key={o.value}
               className={`block cursor-pointer rounded-xl border p-4 transition ${
                 method === o.value
-                  ? "border-amber-500 bg-amber-50/60 ring-2 ring-amber-100"
-                  : "border-stone-200 hover:border-stone-300"
+                  ? "border-primary bg-primary/5 ring-2 ring-ring/30"
+                  : "border-border hover:border-muted-foreground/40"
               } ${locked ? "opacity-70" : ""}`}
             >
               <span className="flex items-center gap-2">
@@ -95,7 +95,7 @@ export default function CostingStep() {
                 />
                 <span className="font-semibold">{o.title}</span>
               </span>
-              <span className="mt-2 block text-sm leading-6 text-stone-600">{o.example}</span>
+              <span className="mt-2 block text-sm leading-6 text-muted-foreground">{o.example}</span>
             </label>
           ))}
         </div>

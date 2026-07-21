@@ -135,19 +135,19 @@ export default function UsersStep() {
         </form>
 
         <div>
-          <p className="mb-2 text-sm font-medium text-stone-700">
+          <p className="mb-2 text-sm font-medium text-foreground">
             کاربران فعلی ({toPersianDigits(users.length)})
           </p>
-          <ul className="divide-y divide-stone-100 rounded-lg border border-stone-200">
+          <ul className="divide-y divide-border rounded-lg border border-border">
             {users.map((u) => (
               <li key={u.id} className="flex items-center justify-between px-4 py-2.5 text-sm">
                 <span>
                   <span className="font-medium">{u.full_name}</span>
-                  <span className="ms-2 rounded bg-stone-100 px-2 py-0.5 text-xs text-stone-600">
+                  <span className="ms-2 rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground">
                     {ROLE_LABELS[u.role] ?? u.role}
                   </span>
                 </span>
-                <span className="text-xs text-stone-400" dir="ltr">
+                <span className="text-xs text-muted-foreground" dir="ltr">
                   {u.email ?? (u.has_pin ? "PIN ****" : "")}
                 </span>
               </li>

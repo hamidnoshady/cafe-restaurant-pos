@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { LogoutButton } from "./logout-button";
 import { OfflineBanner } from "./offline-banner";
 
@@ -42,10 +43,13 @@ export default async function DashboardLayout({
   return (
     <div className="flex min-h-screen">
       {/* Sidebar sits on the inline-start side (right in RTL) */}
-      <aside className="flex w-56 shrink-0 flex-col border-e border-stone-200 bg-white">
-        <div className="border-b border-stone-200 p-4">
-          <p className="font-bold">کافه و رستوران</p>
-          <p className="text-xs text-stone-500">نسخهٔ آزمایشی</p>
+      <aside className="flex w-56 shrink-0 flex-col border-e bg-card">
+        <div className="flex items-start justify-between border-b p-4">
+          <div>
+            <p className="font-bold">کافه و رستوران</p>
+            <p className="text-xs text-muted-foreground">نسخهٔ آزمایشی</p>
+          </div>
+          <ThemeToggle />
         </div>
         <nav className="flex-1 space-y-1 p-3">
           {NAV_ITEMS.map((item) => {
@@ -55,22 +59,25 @@ export default async function DashboardLayout({
                 <Link
                   key={item.label}
                   href={item.href}
-                  className="block rounded-lg px-3 py-2 text-sm text-stone-600 transition hover:bg-amber-50 hover:text-amber-800"
+                  className="block rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
                 >
                   {item.label}
                 </Link>
               );
             }
             return (
-              <span key={item.label} className="block cursor-default rounded-lg px-3 py-2 text-sm text-stone-400">
+              <span
+                key={item.label}
+                className="block cursor-default rounded-lg px-3 py-2 text-sm text-muted-foreground/50"
+              >
                 {item.label}
               </span>
             );
           })}
         </nav>
-        <div className="border-t border-stone-200 p-4 text-sm">
+        <div className="border-t p-4 text-sm">
           <p className="font-semibold">{session.fullName}</p>
-          <p className="mb-3 text-xs text-stone-500">
+          <p className="mb-3 text-xs text-muted-foreground">
             {ROLE_LABELS[session.role] ?? session.role}
           </p>
           <LogoutButton />

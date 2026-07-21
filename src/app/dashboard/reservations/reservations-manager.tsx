@@ -39,11 +39,11 @@ const STATUS_LABELS: Record<Reservation["status"], string> = {
   no_show: "عدم حضور",
 };
 const STATUS_STYLE: Record<Reservation["status"], string> = {
-  booked: "bg-sky-100 text-sky-800",
-  seated: "bg-emerald-100 text-emerald-800",
-  completed: "bg-stone-100 text-stone-600",
-  cancelled: "bg-stone-100 text-stone-400 line-through",
-  no_show: "bg-red-100 text-red-700",
+  booked: "bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300",
+  seated: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300",
+  completed: "bg-muted text-muted-foreground",
+  cancelled: "bg-muted text-muted-foreground line-through",
+  no_show: "bg-destructive/10 text-destructive",
 };
 
 function tehranTime(iso: string): string {
@@ -90,7 +90,7 @@ export function ReservationsManager({ canBook }: { canBook: boolean }) {
     load();
   }
 
-  if (!loaded) return <p className="text-sm text-stone-400">در حال بارگذاری…</p>;
+  if (!loaded) return <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>;
 
   const now = Date.now();
 
@@ -99,7 +99,7 @@ export function ReservationsManager({ canBook }: { canBook: boolean }) {
       <div className="flex-1">
         <ErrorBox>{error}</ErrorBox>
         {reservations.length === 0 ? (
-          <p className="rounded-2xl bg-white p-6 text-sm text-stone-400 shadow-sm">
+          <p className="rounded-2xl bg-card p-6 text-sm text-muted-foreground shadow-sm">
             رزروی در بازهٔ پیش‌رو ثبت نشده است.
           </p>
         ) : (
@@ -109,25 +109,25 @@ export function ReservationsManager({ canBook }: { canBook: boolean }) {
               return (
                 <li
                   key={r.id}
-                  className={`rounded-xl border bg-white p-4 shadow-sm ${overdue ? "border-red-300" : "border-stone-200"}`}
+                  className={`rounded-xl border bg-card p-4 shadow-sm ${overdue ? "border-destructive/40" : "border-border"}`}
                 >
                   <div className="flex items-start justify-between">
                     <div>
                       <p className="font-semibold">
                         {r.customer_name}
                         {r.customer_phone ? (
-                          <span className="ms-2 text-xs text-stone-400" dir="ltr">
+                          <span className="ms-2 text-xs text-muted-foreground" dir="ltr">
                             {toPersianDigits(r.customer_phone)}
                           </span>
                         ) : null}
                       </p>
-                      <p className="mt-1 text-sm text-stone-600">
+                      <p className="mt-1 text-sm text-muted-foreground">
                         {toPersianDigits(formatJalali(r.reserved_at, { withMonthName: true }))} · ساعت{" "}
                         {tehranTime(r.reserved_at)} · {toPersianDigits(r.party_size)} نفر
                         {r.table_name ? ` · میز ${r.table_name}` : " · بدون میز"}
                       </p>
-                      {r.note ? <p className="mt-1 text-xs text-stone-400">{r.note}</p> : null}
-                      {overdue ? <p className="mt-1 text-xs text-red-600">از زمان رزرو گذشته — احتمال عدم حضور</p> : null}
+                      {r.note ? <p className="mt-1 text-xs text-muted-foreground">{r.note}</p> : null}
+                      {overdue ? <p className="mt-1 text-xs text-destructive">از زمان رزرو گذشته — احتمال عدم حضور</p> : null}
                     </div>
                     <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${STATUS_STYLE[r.status]}`}>
                       {STATUS_LABELS[r.status]}
@@ -139,14 +139,14 @@ export function ReservationsManager({ canBook }: { canBook: boolean }) {
                       <button
                         type="button"
                         onClick={() => changeStatus(r.id, "no_show")}
-                        className="text-xs text-stone-500 hover:text-red-600"
+                        className="text-xs text-muted-foreground hover:text-destructive"
                       >
                         ثبت عدم حضور
                       </button>
                       <button
                         type="button"
                         onClick={() => changeStatus(r.id, "cancel")}
-                        className="text-xs text-stone-500 hover:text-red-600"
+                        className="text-xs text-muted-foreground hover:text-destructive"
                       >
                         لغو رزرو
                       </button>
@@ -245,7 +245,7 @@ function BookingForm({ tables, onBooked }: { tables: Table[]; onBooked: () => vo
   }
 
   return (
-    <div className="rounded-2xl bg-white p-5 shadow-sm">
+    <div className="rounded-2xl bg-card p-5 shadow-sm">
       <h2 className="mb-4 text-lg font-bold">رزرو جدید</h2>
       <ErrorBox>{error}</ErrorBox>
 
@@ -289,7 +289,7 @@ function BookingForm({ tables, onBooked }: { tables: Table[]; onBooked: () => vo
       </Field>
 
       {conflicts ? (
-        <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        <div className="mb-4 rounded-lg border border-primary/40 bg-primary/5 px-4 py-3 text-sm text-primary">
           <p className="mb-1 font-semibold">این میز در این بازه رزرو دیگری دارد:</p>
           <ul className="mb-2 list-disc pe-5 text-xs">
             {conflicts.map((c, i) => (

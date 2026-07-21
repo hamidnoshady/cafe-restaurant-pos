@@ -27,11 +27,11 @@ interface Section {
 }
 
 const STATUS_STYLE: Record<TableStatus, string> = {
-  free: "border-emerald-400 bg-emerald-50 text-emerald-900",
-  seated: "border-amber-500 bg-amber-100 text-amber-900",
-  bill_requested: "border-purple-500 bg-purple-100 text-purple-900",
-  cleaning: "border-stone-400 bg-stone-200 text-stone-600",
-  out_of_service: "border-red-300 bg-red-50 text-red-400",
+  free: "border-emerald-400 bg-emerald-50 text-emerald-900 dark:border-emerald-600 dark:bg-emerald-950 dark:text-emerald-200",
+  seated: "border-primary bg-primary/10 text-primary",
+  bill_requested: "border-purple-500 bg-purple-100 text-purple-900 dark:border-purple-500 dark:bg-purple-950 dark:text-purple-200",
+  cleaning: "border-muted-foreground/40 bg-muted text-muted-foreground",
+  out_of_service: "border-destructive/40 bg-destructive/5 text-destructive/80",
 };
 
 export function WaiterBoard() {
@@ -64,7 +64,7 @@ export function WaiterBoard() {
 
   const selected = tables.find((t) => t.id === selectedId) ?? null;
 
-  if (!loaded) return <p className="text-sm text-stone-400">در حال بارگذاری…</p>;
+  if (!loaded) return <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>;
   if (selected) {
     return <TableOrderPanel table={selected} onBack={() => setSelectedId(null)} onChanged={load} />;
   }
@@ -76,14 +76,14 @@ export function WaiterBoard() {
   }
 
   if (tables.length === 0) {
-    return <p className="text-sm text-stone-400">میزی به شما تخصیص داده نشده است.</p>;
+    return <p className="text-sm text-muted-foreground">میزی به شما تخصیص داده نشده است.</p>;
   }
 
   return (
     <div className="space-y-6">
       {[...bySection.entries()].map(([sectionId, sectionTables]) => (
         <div key={sectionId ?? "none"}>
-          <h2 className="mb-2 text-sm font-semibold text-stone-500">
+          <h2 className="mb-2 text-sm font-semibold text-muted-foreground">
             {sections.find((s) => s.id === sectionId)?.name ?? "بدون بخش"}
           </h2>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -95,12 +95,12 @@ export function WaiterBoard() {
                   key={t.id}
                   type="button"
                   onClick={() => setSelectedId(t.id)}
-                  className={`rounded-2xl border-2 p-4 text-start shadow-sm transition hover:ring-2 hover:ring-amber-200 ${STATUS_STYLE[t.status]}`}
+                  className={`rounded-2xl border-2 p-4 text-start shadow-sm transition hover:ring-2 hover:ring-ring/40 ${STATUS_STYLE[t.status]}`}
                 >
                   <div className="mb-1 flex items-center justify-between">
                     <span className="font-bold">{t.name}</span>
                     {ready > 0 ? (
-                      <span className="rounded-full bg-emerald-600 px-2 py-0.5 text-xs text-white">
+                      <span className="rounded-full bg-emerald-700 px-2 py-0.5 text-xs text-white dark:bg-emerald-600">
                         {toPersianDigits(ready)} آماده
                       </span>
                     ) : null}

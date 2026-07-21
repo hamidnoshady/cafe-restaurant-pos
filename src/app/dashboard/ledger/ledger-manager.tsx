@@ -48,20 +48,20 @@ export function LedgerManager() {
     return true;
   }
 
-  if (!accounts) return <p className="text-sm text-stone-400">در حال بارگذاری…</p>;
+  if (!accounts) return <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>;
 
   return (
     <div className="space-y-6">
       <ErrorBox>{error}</ErrorBox>
 
-      <div className="flex flex-wrap gap-2 border-b border-stone-200 pb-2">
+      <div className="flex flex-wrap gap-2 border-b border-border pb-2">
         {TABS.map((t) => (
           <button
             key={t.key}
             type="button"
             onClick={() => setTab(t.key)}
             className={`rounded-lg px-3 py-1.5 text-sm ${
-              tab === t.key ? "bg-amber-100 font-semibold text-amber-800" : "text-stone-600 hover:bg-stone-100"
+              tab === t.key ? "bg-primary/10 font-semibold text-primary" : "text-muted-foreground hover:bg-muted"
             }`}
           >
             {t.label}

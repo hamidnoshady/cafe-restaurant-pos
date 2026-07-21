@@ -15,13 +15,13 @@ export default async function DashboardPage() {
     <div>
       <header className="mb-6 flex items-baseline justify-between">
         <h1 className="text-2xl font-bold">داشبورد</h1>
-        <p className="text-sm text-stone-500">امروز: {today}</p>
+        <p className="text-sm text-muted-foreground">امروز: {today}</p>
       </header>
 
       {canSetup && !setupDone ? (
         <Link
           href="/setup"
-          className="mb-6 flex items-center justify-between rounded-xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-900 transition hover:bg-amber-100"
+          className="mb-6 flex items-center justify-between rounded-xl border border-primary/30 bg-primary/5 px-5 py-4 text-sm text-primary transition hover:bg-primary/10"
         >
           <span>
             <b>راه‌اندازی اولیه کامل نشده است.</b> برای آماده‌شدن جهت ثبت سفارش، جادوگر راه‌اندازی را
@@ -37,7 +37,7 @@ export default async function DashboardPage() {
         <StatCard title="میزهای فعال" value="—" />
       </div>
 
-      <p className="mt-8 text-sm text-stone-400">
+      <p className="mt-8 text-sm text-muted-foreground">
         اسکلت اولیه (فاز صفر) — امکانات فروش در فازهای بعدی اضافه می‌شود.
       </p>
     </div>
@@ -46,8 +46,8 @@ export default async function DashboardPage() {
 
 function StatCard({ title, value }: { title: string; value: string }) {
   return (
-    <div className="rounded-2xl bg-white p-5 shadow-sm">
-      <p className="mb-2 text-sm text-stone-500">{title}</p>
+    <div className="rounded-2xl bg-card p-5 shadow-sm">
+      <p className="mb-2 text-sm text-muted-foreground">{title}</p>
       <p className="text-xl font-bold">{value}</p>
     </div>
   );

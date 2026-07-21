@@ -47,18 +47,18 @@ export function StockCountsSection({ items, busy, run }: { items: InventoryItem[
 
   return (
     <div className="space-y-6">
-      <section className="rounded-2xl bg-white p-5 shadow-sm">
+      <section className="rounded-2xl bg-card p-5 shadow-sm">
         <h2 className="mb-1 font-semibold">شمارش فیزیکی انبار</h2>
-        <p className="mb-3 text-xs text-stone-500">
+        <p className="mb-3 text-xs text-muted-foreground">
           فقط اقلامی که مقدار شمارش‌شده برایشان وارد شود ثبت می‌شوند؛ اختلاف با موجودی سیستم به‌صورت خودکار به‌عنوان اصلاحیه ثبت می‌شود.
         </p>
         <form onSubmit={submit} className="space-y-3">
           <input className={inputClass} value={note} onChange={(e) => setNote(e.target.value)} placeholder="یادداشت (اختیاری)" />
-          <ul className="divide-y divide-stone-100 rounded-lg border border-stone-200">
+          <ul className="divide-y divide-border rounded-lg border border-border">
             {activeItems.map((i) => (
               <li key={i.id} className="flex items-center justify-between gap-2 px-3 py-2 text-sm">
                 <span>
-                  {i.name} <span className="text-xs text-stone-400">(موجودی سیستم: {toPersianDigits(i.stock)} {i.unit})</span>
+                  {i.name} <span className="text-xs text-muted-foreground">(موجودی سیستم: {toPersianDigits(i.stock)} {i.unit})</span>
                 </span>
                 <input
                   className={`${inputClass} w-32`}
@@ -75,20 +75,20 @@ export function StockCountsSection({ items, busy, run }: { items: InventoryItem[
         </form>
       </section>
 
-      <section className="rounded-2xl bg-white p-5 shadow-sm">
+      <section className="rounded-2xl bg-card p-5 shadow-sm">
         <h2 className="mb-3 font-semibold">شمارش‌های اخیر</h2>
-        <ul className="divide-y divide-stone-100 rounded-lg border border-stone-200">
+        <ul className="divide-y divide-border rounded-lg border border-border">
           {(counts ?? []).map((c) => (
             <li key={c.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2 text-sm">
               <span>
                 {toPersianDigits(c.line_count)} قلم {c.note ? `— ${c.note}` : ""}
               </span>
-              <span className="text-xs text-stone-400">
+              <span className="text-xs text-muted-foreground">
                 {c.counted_by_name ?? ""} — {formatJalali(c.counted_at)}
               </span>
             </li>
           ))}
-          {counts && counts.length === 0 ? <li className="p-3 text-sm text-stone-400">شمارشی ثبت نشده است.</li> : null}
+          {counts && counts.length === 0 ? <li className="p-3 text-sm text-muted-foreground">شمارشی ثبت نشده است.</li> : null}
         </ul>
       </section>
     </div>

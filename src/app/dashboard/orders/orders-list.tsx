@@ -37,8 +37,8 @@ export function OrdersList() {
     ),
   );
 
-  if (!orders) return <p className="text-sm text-stone-400">در حال بارگذاری…</p>;
-  if (orders.length === 0) return <p className="text-sm text-stone-400">سفارش بازی وجود ندارد.</p>;
+  if (!orders) return <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>;
+  if (orders.length === 0) return <p className="text-sm text-muted-foreground">سفارش بازی وجود ندارد.</p>;
 
   return (
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -46,13 +46,13 @@ export function OrdersList() {
         <Link
           key={o.id}
           href={`/dashboard/orders/${o.id}`}
-          className="rounded-2xl bg-white p-4 shadow-sm transition hover:ring-2 hover:ring-amber-200"
+          className="rounded-2xl bg-card p-4 shadow-sm transition hover:ring-2 hover:ring-ring/40"
         >
           <div className="mb-1 flex items-center justify-between">
-            <span className="font-bold text-amber-700">{toPersianDigits(formatQueueLabel(o.type, o.order_number))}</span>
-            <span className="text-xs text-stone-400">{o.type === "dine_in" ? "حضوری" : "بیرون‌بر"}</span>
+            <span className="font-bold text-primary">{toPersianDigits(formatQueueLabel(o.type, o.order_number))}</span>
+            <span className="text-xs text-muted-foreground">{o.type === "dine_in" ? "حضوری" : "بیرون‌بر"}</span>
           </div>
-          {o.table_name ? <p className="text-sm text-stone-600">{o.table_name}</p> : null}
+          {o.table_name ? <p className="text-sm text-muted-foreground">{o.table_name}</p> : null}
           <p className="mt-2 text-sm font-medium">{formatToman(Number(o.total))}</p>
         </Link>
       ))}

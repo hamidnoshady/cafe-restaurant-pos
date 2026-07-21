@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toPersianDigits } from "@/lib/digits";
 import { formatToman } from "@/lib/money";
 import { api, errorMessage, inputClass, PrimaryButton, SecondaryButton } from "../ui";
@@ -60,36 +62,40 @@ export function SessionPanel({
       body: JSON.stringify(body),
     });
     setBusy(false);
-    if (!res.ok) return setError(errorMessage(res.data.error));
+    if (!res.ok) {
+      setError(errorMessage(res.data.error));
+      return false;
+    }
     await load();
     onChange();
+    return true;
   }
 
-  if (!detail) return <p className="mt-4 text-xs text-stone-400">در حال بارگذاری نشست…</p>;
+  if (!detail) return <p className="mt-4 text-xs text-muted-foreground">در حال بارگذاری نشست…</p>;
 
   const { session, tables, orders, bill } = detail;
 
   return (
-    <div className="mt-4 border-t border-stone-200 pt-4">
+    <div className="mt-4 border-t border-border pt-4">
       <div className="mb-2 flex items-baseline justify-between">
         <h3 className="font-bold">نشست میز</h3>
-        <span className="text-xs text-stone-500">
+        <span className="text-xs text-muted-foreground">
           {session.party_size ? `${toPersianDigits(session.party_size)} نفر` : "—"}
           {session.guest_name ? ` · ${session.guest_name}` : ""}
         </span>
       </div>
       {tables.length > 1 ? (
-        <p className="mb-2 text-xs text-stone-500">میزهای ادغام‌شده: {tables.map((t) => t.name).join("، ")}</p>
+        <p className="mb-2 text-xs text-muted-foreground">میزهای ادغام‌شده: {tables.map((t) => t.name).join("، ")}</p>
       ) : null}
 
-      <div className="mb-3 rounded-lg bg-stone-50 p-3 text-sm">
+      <div className="mb-3 rounded-lg bg-muted/50 p-3 text-sm">
         {orders.length === 0 ? (
-          <p className="text-xs text-stone-400">هنوز سفارشی ثبت نشده است.</p>
+          <p className="text-xs text-muted-foreground">هنوز سفارشی ثبت نشده است.</p>
         ) : (
           <ul className="space-y-1">
             {orders.map((o) => (
               <li key={o.id} className="flex justify-between">
-                <span className="text-stone-600">
+                <span className="text-muted-foreground">
                   سفارش #{toPersianDigits(o.order_number)}
                   {o.status === "voided" ? " (باطل)" : ""}
                 </span>
@@ -98,7 +104,7 @@ export function SessionPanel({
             ))}
           </ul>
         )}
-        <div className="mt-2 flex justify-between border-t border-stone-200 pt-2 font-bold">
+        <div className="mt-2 flex justify-between border-t border-border pt-2 font-bold">
           <span>جمع صورتحساب</span>
           <span>{formatToman(bill.total)}</span>
         </div>
@@ -110,12 +116,18 @@ export function SessionPanel({
             درخواست صورتحساب
           </SecondaryButton>
         ) : (
-          <span className="rounded-lg bg-purple-50 px-3 py-2 text-xs text-purple-700">صورتحساب درخواست شد</span>
+          <span className="rounded-lg bg-purple-50 px-3 py-2 text-xs text-purple-700 dark:bg-purple-950 dark:text-purple-300">صورتحساب درخواست شد</span>
         )}
         <SecondaryButton onClick={() => setShowSplit(true)} disabled={busy || bill.total <= 0}>
           تقسیم صورتحساب
         </SecondaryButton>
-        <PrimaryButton type="button" onClick={() => action({ action: "close" })} disabled={busy}>
+        <PrimaryButton
+          type="button"
+          onClick={async () => {
+            if (await action({ action: "close" })) toast.success("میز تسویه و بسته شد");
+          }}
+          disabled={busy}
+        >
           بستن میز (تسویه)
         </PrimaryButton>
       </div>
@@ -181,23 +193,20 @@ function SplitDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-lg" onClick={(e) => e.stopPropagation()}>
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-lg font-bold">تقسیم صورتحساب</h3>
-          <button type="button" onClick={onClose} className="text-stone-400 hover:text-stone-600">
-            ✕
-          </button>
-        </div>
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>تقسیم صورتحساب</DialogTitle>
+        </DialogHeader>
 
-        <div className="mb-4 flex gap-1 rounded-lg bg-stone-100 p-1 text-sm">
+        <div className="mb-4 flex gap-1 rounded-lg bg-muted p-1 text-sm">
           <button
             type="button"
             onClick={() => {
               setMode("even");
               setShares(null);
             }}
-            className={`flex-1 rounded-md py-1.5 ${mode === "even" ? "bg-white shadow-sm" : "text-stone-500"}`}
+            className={`flex-1 rounded-md py-1.5 ${mode === "even" ? "bg-card shadow-sm" : "text-muted-foreground"}`}
           >
             تقسیم مساوی
           </button>
@@ -207,7 +216,7 @@ function SplitDialog({
               setMode("itemized");
               setShares(null);
             }}
-            className={`flex-1 rounded-md py-1.5 ${mode === "itemized" ? "bg-white shadow-sm" : "text-stone-500"}`}
+            className={`flex-1 rounded-md py-1.5 ${mode === "itemized" ? "bg-card shadow-sm" : "text-muted-foreground"}`}
           >
             به تفکیک اقلام
           </button>
@@ -225,11 +234,11 @@ function SplitDialog({
         </div>
 
         {mode === "itemized" ? (
-          <div className="mb-4 max-h-56 space-y-1 overflow-y-auto rounded-lg border border-stone-200 p-2 text-sm">
+          <div className="mb-4 max-h-56 space-y-1 overflow-y-auto rounded-lg border border-border p-2 text-sm">
             {bill.lines.map((l) => (
               <div key={l.orderItemId} className="flex items-center justify-between gap-2">
                 <span className="flex-1 truncate">
-                  {l.name} <span className="text-xs text-stone-400">{formatToman(l.amount)}</span>
+                  {l.name} <span className="text-xs text-muted-foreground">{formatToman(l.amount)}</span>
                 </span>
                 <select
                   className={`${inputClass} w-28 py-1 text-xs`}
@@ -260,7 +269,7 @@ function SplitDialog({
         </PrimaryButton>
 
         {shares ? (
-          <div className="mt-4 rounded-lg bg-stone-50 p-3 text-sm">
+          <div className="mt-4 rounded-lg bg-muted/50 p-3 text-sm">
             <p className="mb-2 font-semibold">سهم هر مهمان:</p>
             <ul className="space-y-1">
               {shares.map((s, i) => (
@@ -270,13 +279,13 @@ function SplitDialog({
                 </li>
               ))}
             </ul>
-            <div className="mt-2 flex justify-between border-t border-stone-200 pt-2 font-bold">
+            <div className="mt-2 flex justify-between border-t border-border pt-2 font-bold">
               <span>جمع</span>
               <span>{formatToman(shares.reduce((a, b) => a + b, 0))}</span>
             </div>
           </div>
         ) : null}
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
