@@ -313,7 +313,7 @@ export interface DashboardWidgetRow extends Record<string, unknown> {
   standard_key: string | null;
 }
 
-/** A user's personal widget layout, or (if they have none yet) their role's default layout. */
+/** A user's personal widget layout, or (if they have none yet) their role's default layout — seeded once for the Owner (see Phase 8 doc, "Dashboard defaults"). */
 export async function getDashboardWidgets(
   businessId: string,
   userId: string,
@@ -321,8 +321,36 @@ export async function getDashboardWidgets(
 ): Promise<{ scope: "personal" | "role-default"; widgets: DashboardWidgetRow[] }> {
   const personal = await queryWidgets(businessId, "user_id = $2", [businessId, userId]);
   if (personal.length > 0) return { scope: "personal", widgets: personal };
-  const roleDefault = await queryWidgets(businessId, "role = $2", [businessId, role]);
+  let roleDefault = await queryWidgets(businessId, "role = $2", [businessId, role]);
+  if (roleDefault.length === 0 && role === "owner") {
+    await seedOwnerDashboardDefaults(businessId);
+    roleDefault = await queryWidgets(businessId, "role = $2", [businessId, role]);
+  }
   return { scope: "role-default", widgets: roleDefault };
+}
+
+/**
+ * The Owner's day-to-day picture on first login after this phase ships:
+ * today's revenue trend, cash/card reconciliation, what's selling, and who's
+ * closing sales — the four things worth a glance without opening a report.
+ * Seeded once (lazily, on first dashboard view); the Owner can then
+ * rearrange or replace freely, same as any personal layout.
+ */
+async function seedOwnerDashboardDefaults(businessId: string): Promise<void> {
+  const ids = await ensureStandardSavedReports(businessId);
+  const defaults: { key: string; chartType: ChartType; x: number; y: number; w: number; h: number }[] = [
+    { key: "daily_sales_summary", chartType: "bar", x: 0, y: 0, w: 6, h: 3 },
+    { key: "shift_reconciliation", chartType: "bar", x: 6, y: 0, w: 6, h: 3 },
+    { key: "top_selling_items", chartType: "pie", x: 0, y: 3, w: 6, h: 3 },
+    { key: "staff_performance", chartType: "bar", x: 6, y: 3, w: 6, h: 3 },
+  ];
+  await saveDashboardWidgets(
+    businessId,
+    { role: "owner" },
+    defaults
+      .filter((d) => ids.has(d.key))
+      .map((d) => ({ savedReportId: ids.get(d.key)!, chartType: d.chartType, x: d.x, y: d.y, w: d.w, h: d.h })),
+  );
 }
 
 async function queryWidgets(businessId: string, extraWhere: string, params: unknown[]): Promise<DashboardWidgetRow[]> {
