@@ -15,12 +15,24 @@ export interface TemplateAccount {
   parentCode?: string;
 }
 
-/** Accounts other parts of the system rely on (opening balances, later phases). */
+/**
+ * Accounts other parts of the system rely on (opening balances, Phase 7
+ * auto-posting). Revenue isn't split by menu category here (no
+ * category → account mapping exists in the schema — see Phase 7 doc), so
+ * every order posts to one general `salesRevenue` account; 4100/4200 stay
+ * available for manual/future per-category use.
+ */
 export const WELL_KNOWN_CODES = {
   cash: "1100",
+  bankClearing: "1120",
+  accountsReceivable: "1200",
   inventory: "1300",
-  openingEquity: "3900",
+  accountsPayable: "2100",
   vatPayable: "2200",
+  openingEquity: "3900",
+  salesRevenue: "4300",
+  cogs: "5100",
+  wasteExpense: "5150",
 } as const;
 
 export const FNB_COA_TEMPLATE: TemplateAccount[] = [
@@ -45,14 +57,17 @@ export const FNB_COA_TEMPLATE: TemplateAccount[] = [
   { code: "4000", name: "درآمدها", type: "revenue" },
   { code: "4100", name: "فروش غذا", type: "revenue", parentCode: "4000" },
   { code: "4200", name: "فروش نوشیدنی", type: "revenue", parentCode: "4000" },
+  { code: "4300", name: "فروش (عمومی)", type: "revenue", parentCode: "4000" },
   { code: "4900", name: "سایر درآمدها", type: "revenue", parentCode: "4000" },
 
   { code: "5000", name: "هزینه‌ها", type: "expense" },
   { code: "5100", name: "بهای تمام‌شده مواد", type: "expense", parentCode: "5000" },
+  { code: "5150", name: "ضایعات مواد", type: "expense", parentCode: "5000" },
   { code: "5200", name: "حقوق و دستمزد", type: "expense", parentCode: "5000" },
   { code: "5300", name: "اجاره", type: "expense", parentCode: "5000" },
   { code: "5400", name: "آب، برق و گاز", type: "expense", parentCode: "5000" },
   { code: "5500", name: "ملزومات مصرفی", type: "expense", parentCode: "5000" },
+  { code: "5600", name: "بازاریابی و تبلیغات", type: "expense", parentCode: "5000" },
   { code: "5900", name: "سایر هزینه‌ها", type: "expense", parentCode: "5000" },
 ];
 

@@ -28,6 +28,12 @@ const STATUS_LABELS: Record<Purchase["status"], string> = {
   cancelled: "لغوشده",
 };
 
+const SETTLEMENT_LABELS: Record<string, string> = {
+  credit: "نسیه (حساب‌های پرداختنی)",
+  cash: "نقدی (صندوق)",
+  bank: "بانک/کارت‌خوان",
+};
+
 export function PurchasesSection({
   items,
   suppliers,
@@ -43,6 +49,7 @@ export function PurchasesSection({
   const [supplierId, setSupplierId] = useState("");
   const [note, setNote] = useState("");
   const [lines, setLines] = useState<DraftLine[]>([{ inventoryItemId: "", purchaseQty: "", totalCost: "" }]);
+  const [settlementByPurchase, setSettlementByPurchase] = useState<Record<string, string>>({});
 
   const loadPurchases = useCallback(() => {
     api<{ purchases: Purchase[] }>("/api/inventory/purchases").then(({ ok, data }) => {
@@ -91,8 +98,10 @@ export function PurchasesSection({
     }
   }
 
-  async function transition(id: string, status: string) {
-    const ok = await run(() => api(`/api/inventory/purchases/${id}`, { method: "PATCH", body: JSON.stringify({ status }) }));
+  async function transition(id: string, status: string, settlementMethod?: string) {
+    const ok = await run(() =>
+      api(`/api/inventory/purchases/${id}`, { method: "PATCH", body: JSON.stringify({ status, settlementMethod }) }),
+    );
     if (ok) loadPurchases();
   }
 
@@ -174,22 +183,28 @@ export function PurchasesSection({
               </span>
               <div className="flex items-center gap-2">
                 <span className="text-xs">{STATUS_LABELS[p.status]}</span>
-                {p.status === "draft" ? (
+                {p.status === "draft" || p.status === "ordered" ? (
                   <>
-                    <SecondaryButton disabled={busy} onClick={() => transition(p.id, "ordered")}>
-                      ثبت سفارش
-                    </SecondaryButton>
-                    <SecondaryButton disabled={busy} onClick={() => transition(p.id, "received")}>
-                      دریافت کالا
-                    </SecondaryButton>
-                    <SecondaryButton disabled={busy} onClick={() => transition(p.id, "cancelled")}>
-                      لغو
-                    </SecondaryButton>
-                  </>
-                ) : null}
-                {p.status === "ordered" ? (
-                  <>
-                    <SecondaryButton disabled={busy} onClick={() => transition(p.id, "received")}>
+                    {p.status === "draft" ? (
+                      <SecondaryButton disabled={busy} onClick={() => transition(p.id, "ordered")}>
+                        ثبت سفارش
+                      </SecondaryButton>
+                    ) : null}
+                    <select
+                      className={`${inputClass} w-auto py-1`}
+                      value={settlementByPurchase[p.id] ?? "credit"}
+                      onChange={(e) => setSettlementByPurchase((prev) => ({ ...prev, [p.id]: e.target.value }))}
+                    >
+                      {Object.entries(SETTLEMENT_LABELS).map(([key, label]) => (
+                        <option key={key} value={key}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
+                    <SecondaryButton
+                      disabled={busy}
+                      onClick={() => transition(p.id, "received", settlementByPurchase[p.id] ?? "credit")}
+                    >
                       دریافت کالا
                     </SecondaryButton>
                     <SecondaryButton disabled={busy} onClick={() => transition(p.id, "cancelled")}>
