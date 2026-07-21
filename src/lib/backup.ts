@@ -1,0 +1,374 @@
+/**
+ * Phase 10 — backup system: the framework-free half.
+ *
+ * A backup is a `pg_dump --format=custom` of the WHOLE local database,
+ * written to local disk on a schedule (and optionally mirrored to a second
+ * local directory, e.g. a mounted USB drive/NAS), then encrypted and
+ * uploaded to S3-compatible cloud storage. This module holds everything
+ * about that pipeline that doesn't touch the database or the filesystem:
+ * config validation, schedule computation (wall-clock, in the location's
+ * timezone), artifact naming, retention selection, staleness/alerting, and
+ * the encryption format for cloud artifacts.
+ *
+ * Encrypted artifact format (`.dump.enc`):
+ *   magic "POSBKP1\0" (8) | scrypt salt (16) | AES-256-GCM IV (12) |
+ *   ciphertext | GCM auth tag (16)
+ * The key is derived from the Owner's passphrase with scrypt — the cloud
+ * provider only ever stores ciphertext (backups contain the full financial
+ * ledger and customer data). Losing the passphrase makes cloud artifacts
+ * unrecoverable; local artifacts are plaintext and stay on-site.
+ */
+import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from "node:crypto";
+
+/** How often the scheduler wakes up to check whether a backup slot passed (ms). */
+export const BACKUP_TICK_INTERVAL_MS = 60 * 1000;
+/** Wait this long before re-trying a failed cloud upload of the same artifact (ms). */
+export const CLOUD_RETRY_MS = 10 * 60 * 1000;
+/** Recent-runs page size for the dashboard history table. */
+export const BACKUP_RUNS_SHOWN = 20;
+
+export const ALLOWED_INTERVAL_HOURS = [1, 2, 3, 4, 6, 8, 12, 24] as const;
+export const MAX_RETENTION = 365;
+
+export interface BackupCloudConfig {
+  enabled: boolean;
+  /** S3-compatible endpoint, e.g. https://s3.ir-thr-at1.arvanstorage.ir or a LAN MinIO */
+  endpoint: string;
+  region: string;
+  bucket: string;
+  /** object key prefix, normalized to end with "/" (empty = bucket root) */
+  prefix: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+  /** encryption passphrase for `.dump.enc` artifacts — never sent to the provider */
+  passphrase: string;
+  /** keep this many newest objects under the prefix */
+  retention: number;
+}
+
+export interface BackupConfig {
+  /** master switch for scheduled local backups (manual "backup now" always works) */
+  enabled: boolean;
+  /** run every N hours (24 = nightly) at slots anchored on `anchorTime` */
+  intervalHours: number;
+  /** "HH:MM" wall time in the location's timezone; slots are anchor + k·interval */
+  anchorTime: string;
+  /** keep this many newest artifacts in the local backup directory */
+  localRetention: number;
+  cloud: BackupCloudConfig;
+}
+
+export const DEFAULT_BACKUP_CONFIG: BackupConfig = {
+  enabled: false,
+  intervalHours: 24,
+  anchorTime: "03:30",
+  localRetention: 14,
+  cloud: {
+    enabled: false,
+    endpoint: "",
+    region: "us-east-1",
+    bucket: "",
+    prefix: "pos-backups/",
+    accessKeyId: "",
+    secretAccessKey: "",
+    passphrase: "",
+    retention: 30,
+  },
+};
+
+const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
+const MIN_PASSPHRASE_LENGTH = 8;
+
+export type BackupConfigValidation =
+  | { ok: true; config: BackupConfig }
+  | { ok: false; error: string };
+
+/** Normalize + validate an Owner-submitted config (PUT /api/backup/config body). */
+export function validateBackupConfig(body: unknown): BackupConfigValidation {
+  if (typeof body !== "object" || body === null) return { ok: false, error: "not_an_object" };
+  const b = body as Record<string, unknown>;
+
+  const enabled = Boolean(b.enabled);
+  const intervalHours = Number(b.intervalHours);
+  if (!(ALLOWED_INTERVAL_HOURS as readonly number[]).includes(intervalHours)) {
+    return { ok: false, error: "invalid_interval" };
+  }
+  const anchorTime = typeof b.anchorTime === "string" ? b.anchorTime : "";
+  if (!TIME_RE.test(anchorTime)) return { ok: false, error: "invalid_anchor_time" };
+  const localRetention = Number(b.localRetention);
+  if (!Number.isInteger(localRetention) || localRetention < 1 || localRetention > MAX_RETENTION) {
+    return { ok: false, error: "invalid_local_retention" };
+  }
+
+  const rawCloud = (b.cloud ?? {}) as Record<string, unknown>;
+  if (typeof rawCloud !== "object" || rawCloud === null) return { ok: false, error: "invalid_cloud" };
+  const cloudEnabled = Boolean(rawCloud.enabled);
+  const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+  let prefix = str(rawCloud.prefix);
+  if (prefix && !prefix.endsWith("/")) prefix += "/";
+  if (prefix.startsWith("/")) return { ok: false, error: "invalid_cloud_prefix" };
+  const cloud: BackupCloudConfig = {
+    enabled: cloudEnabled,
+    endpoint: str(rawCloud.endpoint).replace(/\/+$/, ""),
+    region: str(rawCloud.region) || "us-east-1",
+    bucket: str(rawCloud.bucket),
+    prefix,
+    accessKeyId: str(rawCloud.accessKeyId),
+    secretAccessKey: str(rawCloud.secretAccessKey),
+    passphrase: typeof rawCloud.passphrase === "string" ? rawCloud.passphrase : "",
+    retention: Number(rawCloud.retention),
+  };
+  if (!Number.isInteger(cloud.retention) || cloud.retention < 1 || cloud.retention > MAX_RETENTION) {
+    return { ok: false, error: "invalid_cloud_retention" };
+  }
+  if (cloudEnabled) {
+    if (!/^https?:\/\//.test(cloud.endpoint)) return { ok: false, error: "invalid_cloud_endpoint" };
+    if (!cloud.bucket) return { ok: false, error: "missing_cloud_bucket" };
+    if (!cloud.accessKeyId || !cloud.secretAccessKey) {
+      return { ok: false, error: "missing_cloud_credentials" };
+    }
+    if (cloud.passphrase.length < MIN_PASSPHRASE_LENGTH) {
+      return { ok: false, error: "weak_passphrase" };
+    }
+  }
+
+  return { ok: true, config: { enabled, intervalHours, anchorTime, localRetention, cloud } };
+}
+
+// ---------------------------------------------------------------------------
+// Artifact naming
+// ---------------------------------------------------------------------------
+
+/** Matches an artifact name (or an object key ending in one), capturing the UTC stamp. */
+export const ARTIFACT_RE = /pos-backup-(\d{8})-(\d{6})\.dump(\.enc)?$/;
+
+/** `pos-backup-YYYYMMDD-HHMMSS.dump` — UTC stamp, so names sort chronologically. */
+export function makeArtifactName(now: Date = new Date()): string {
+  const iso = now.toISOString(); // 2026-07-21T03:30:05.123Z
+  const stamp = `${iso.slice(0, 10).replaceAll("-", "")}-${iso.slice(11, 19).replaceAll(":", "")}`;
+  return `pos-backup-${stamp}.dump`;
+}
+
+/** ISO timestamp embedded in an artifact name/key, or null if it isn't one. */
+export function parseArtifactTimestamp(name: string): string | null {
+  const m = ARTIFACT_RE.exec(name);
+  if (!m) return null;
+  const [, d, t] = m;
+  const iso = `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}T${t.slice(0, 2)}:${t.slice(2, 4)}:${t.slice(4, 6)}Z`;
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime()) || parsed.toISOString() !== `${iso.slice(0, 19)}.000Z`) {
+    return null;
+  }
+  return iso;
+}
+
+/** Object key an artifact is uploaded under (encrypted, hence `.enc`). */
+export function cloudKeyFor(prefix: string, artifactName: string): string {
+  return `${prefix}${artifactName}.enc`;
+}
+
+// ---------------------------------------------------------------------------
+// Scheduling — wall-clock slots in the location's timezone
+// ---------------------------------------------------------------------------
+
+interface WallClock {
+  /** local calendar date, YYYY-MM-DD */
+  date: string;
+  /** minutes since local midnight */
+  minutes: number;
+}
+
+/** An instant expressed as wall-clock time in `timeZone` (Intl, no tz math by hand). */
+export function toWallClock(instant: Date, timeZone: string): WallClock {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(instant);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "00";
+  return {
+    date: `${get("year")}-${get("month")}-${get("day")}`,
+    minutes: Number(get("hour")) * 60 + Number(get("minute")),
+  };
+}
+
+function anchorMinutes(anchorTime: string): number {
+  const m = TIME_RE.exec(anchorTime);
+  return m ? Number(m[1]) * 60 + Number(m[2]) : 210; // fall back to 03:30
+}
+
+function previousDate(date: string): string {
+  const d = new Date(`${date}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * The most recent schedule slot at or before `now` (wall clock). Slots each
+ * day are anchor + k·interval for k = 0.. while under 24h; if `now` is
+ * before the day's first slot, the answer is yesterday's last slot.
+ */
+export function latestSlotBefore(nowWall: WallClock, anchorTime: string, intervalHours: number): WallClock {
+  const anchor = anchorMinutes(anchorTime);
+  const step = intervalHours * 60;
+  if (nowWall.minutes >= anchor) {
+    const k = Math.floor((nowWall.minutes - anchor) / step);
+    return { date: nowWall.date, minutes: anchor + k * step };
+  }
+  const lastK = Math.floor((24 * 60 - 1 - anchor) / step);
+  return { date: previousDate(nowWall.date), minutes: anchor + lastK * step };
+}
+
+function compareWall(a: WallClock, b: WallClock): number {
+  return a.date === b.date ? a.minutes - b.minutes : a.date.localeCompare(b.date);
+}
+
+/**
+ * Should the scheduler start a backup now? True when the latest slot at or
+ * before `now` hasn't been covered by any run started at/after it. Comparing
+ * wall clocks (not instants) keeps this exact across any timezone offset,
+ * including half-hour ones like Asia/Tehran (+03:30).
+ */
+export function isBackupDue(
+  lastStartedAt: string | Date | null,
+  now: Date,
+  config: Pick<BackupConfig, "enabled" | "anchorTime" | "intervalHours">,
+  timeZone: string,
+): boolean {
+  if (!config.enabled) return false;
+  const slot = latestSlotBefore(toWallClock(now, timeZone), config.anchorTime, config.intervalHours);
+  if (!lastStartedAt) return true;
+  const last = new Date(lastStartedAt);
+  if (Number.isNaN(last.getTime())) return true;
+  return compareWall(toWallClock(last, timeZone), slot) < 0;
+}
+
+// ---------------------------------------------------------------------------
+// Retention
+// ---------------------------------------------------------------------------
+
+/**
+ * Which artifacts to delete, keeping the `keep` newest. Accepts local file
+ * names or full object keys; anything that isn't a backup artifact is left
+ * alone (never delete files we didn't write). Names sort chronologically
+ * because the stamp is zero-padded UTC.
+ */
+export function selectPrunable(names: string[], keep: number): string[] {
+  const artifacts = names
+    .filter((n) => ARTIFACT_RE.test(n))
+    .sort((a, b) => (ARTIFACT_RE.exec(b)![0] < ARTIFACT_RE.exec(a)![0] ? -1 : 1));
+  return artifacts.slice(Math.max(0, keep));
+}
+
+// ---------------------------------------------------------------------------
+// Health / alerting
+// ---------------------------------------------------------------------------
+
+/**
+ * A backup is stale when no success landed within one interval plus a grace
+ * period (a quarter interval, at least an hour) — the "expected window" the
+ * dashboard alert fires in. Nightly (24h) ⇒ alert after 30h without success.
+ */
+export function backupStaleAfterMs(intervalHours: number): number {
+  const graceMs = Math.max(1, intervalHours / 4) * 60 * 60 * 1000;
+  return intervalHours * 60 * 60 * 1000 + graceMs;
+}
+
+export function isBackupStale(
+  lastSuccessAt: string | Date | null,
+  intervalHours: number,
+  now: Date = new Date(),
+): boolean {
+  if (!lastSuccessAt) return true;
+  const t = new Date(lastSuccessAt).getTime();
+  if (Number.isNaN(t)) return true;
+  return now.getTime() - t > backupStaleAfterMs(intervalHours);
+}
+
+export type BackupAlert =
+  | { level: "ok"; reason: "ok" }
+  | { level: "warning"; reason: "disabled" }
+  | { level: "error"; reason: "local_failed" | "local_stale" | "cloud_failed" | "cloud_stale" };
+
+export interface BackupAlertInput {
+  enabled: boolean;
+  cloudEnabled: boolean;
+  intervalHours: number;
+  localLastSuccessAt: string | null;
+  /** error of the newest local run, null when it succeeded / none ran */
+  localLastError: string | null;
+  cloudLastSuccessAt: string | null;
+  cloudLastError: string | null;
+}
+
+/**
+ * The single alert the Owner dashboard surfaces. A failed *latest* run alerts
+ * immediately (don't wait out the window — the failure already happened);
+ * otherwise silence past the expected window alerts as stale. Cloud only
+ * counts while cloud backup is enabled.
+ */
+export function computeBackupAlert(input: BackupAlertInput, now: Date = new Date()): BackupAlert {
+  if (!input.enabled) return { level: "warning", reason: "disabled" };
+  if (input.localLastError !== null) return { level: "error", reason: "local_failed" };
+  if (isBackupStale(input.localLastSuccessAt, input.intervalHours, now)) {
+    return { level: "error", reason: "local_stale" };
+  }
+  if (input.cloudEnabled) {
+    if (input.cloudLastError !== null) return { level: "error", reason: "cloud_failed" };
+    if (isBackupStale(input.cloudLastSuccessAt, input.intervalHours, now)) {
+      return { level: "error", reason: "cloud_stale" };
+    }
+  }
+  return { level: "ok", reason: "ok" };
+}
+
+// ---------------------------------------------------------------------------
+// Encryption for cloud artifacts
+// ---------------------------------------------------------------------------
+
+const MAGIC = Buffer.from("POSBKP1\0", "latin1");
+const SALT_LENGTH = 16;
+const IV_LENGTH = 12;
+const TAG_LENGTH = 16;
+const KEY_LENGTH = 32;
+/** scrypt cost — 16 MiB memory, interactive-grade; bump only with a new magic. */
+const SCRYPT_PARAMS = { N: 16384, r: 8, p: 1 };
+
+function deriveKey(passphrase: string, salt: Buffer): Buffer {
+  return scryptSync(passphrase, salt, KEY_LENGTH, SCRYPT_PARAMS);
+}
+
+export function isEncryptedBackup(data: Buffer): boolean {
+  return data.length > MAGIC.length && data.subarray(0, MAGIC.length).equals(MAGIC);
+}
+
+export function encryptBackup(plain: Buffer, passphrase: string): Buffer {
+  const salt = randomBytes(SALT_LENGTH);
+  const iv = randomBytes(IV_LENGTH);
+  const cipher = createCipheriv("aes-256-gcm", deriveKey(passphrase, salt), iv);
+  const ciphertext = Buffer.concat([cipher.update(plain), cipher.final()]);
+  return Buffer.concat([MAGIC, salt, iv, ciphertext, cipher.getAuthTag()]);
+}
+
+/** Throws on wrong passphrase, truncation, or any tampering (GCM auth). */
+export function decryptBackup(data: Buffer, passphrase: string): Buffer {
+  if (!isEncryptedBackup(data)) throw new Error("not an encrypted backup (bad magic)");
+  const minLength = MAGIC.length + SALT_LENGTH + IV_LENGTH + TAG_LENGTH;
+  if (data.length < minLength) throw new Error("encrypted backup is truncated");
+  let off = MAGIC.length;
+  const salt = data.subarray(off, (off += SALT_LENGTH));
+  const iv = data.subarray(off, (off += IV_LENGTH));
+  const ciphertext = data.subarray(off, data.length - TAG_LENGTH);
+  const tag = data.subarray(data.length - TAG_LENGTH);
+  const decipher = createDecipheriv("aes-256-gcm", deriveKey(passphrase, salt), iv);
+  decipher.setAuthTag(tag);
+  try {
+    return Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+  } catch {
+    throw new Error("decryption failed — wrong passphrase or corrupted file");
+  }
+}

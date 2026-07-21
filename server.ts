@@ -46,6 +46,8 @@ app.prepare().then(async () => {
   const { registerConnection } = await import("./src/lib/realtime");
   const { runRollupSyncTick } = await import("./src/lib/rollup-service");
   const { ROLLUP_SYNC_INTERVAL_MS } = await import("./src/lib/rollup");
+  const { runBackupTick } = await import("./src/lib/backup-service");
+  const { BACKUP_TICK_INTERVAL_MS } = await import("./src/lib/backup");
 
   // Phase 9: push this location's daily rollup to the configured central
   // server. A tick that can't reach central just records the error and the
@@ -54,6 +56,14 @@ app.prepare().then(async () => {
     runRollupSyncTick().catch((err) => console.error("rollup sync tick failed:", err));
   setInterval(rollupTick, ROLLUP_SYNC_INTERVAL_MS).unref();
   setTimeout(rollupTick, 30_000).unref();
+
+  // Phase 10: scheduled backups. The tick just checks whether a schedule
+  // slot passed without a run (and re-nudges failed cloud uploads); failures
+  // land in backup_runs and surface as the dashboard alert.
+  const backupTick = () =>
+    runBackupTick().catch((err) => console.error("backup tick failed:", err));
+  setInterval(backupTick, BACKUP_TICK_INTERVAL_MS).unref();
+  setTimeout(backupTick, 45_000).unref();
 
   const server = createServer((req, res) => {
     handle(req, res, parse(req.url ?? "/", true));

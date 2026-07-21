@@ -1,5 +1,6 @@
 node_modules/
 .next/
+backups/
 out/
 build/
 dist/

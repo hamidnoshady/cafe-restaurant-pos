@@ -32,6 +32,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "حسابداری", href: "/dashboard/ledger", roles: ["owner", "manager"] },
   { label: "گزارش‌ها", href: "/dashboard/reports", roles: ["owner", "manager"] },
   { label: "شعبه‌ها", href: "/dashboard/locations", roles: ["owner"] },
+  { label: "پشتیبان‌گیری", href: "/dashboard/backup", roles: ["owner", "manager"] },
   { label: "تنظیمات", href: "/setup", roles: ["owner", "manager"] },
 ];
 

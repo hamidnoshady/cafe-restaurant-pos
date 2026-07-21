@@ -104,7 +104,19 @@ kitchen": its items land on the KDS as `sent` immediately.
 | `npm test` | Unit tests (Jalali, digits, money, order totals, kitchen ticket status, …) |
 | `npm run db:migrate` | Apply pending SQL migrations from `migrations/` |
 | `npm run db:seed` | Seed business, location, owner, sample cashier (idempotent) |
+| `npm run db:restore` | Restore a backup artifact — dry-runs into a scratch DB first (Phase 10, see [docs/backup-restore.md](docs/backup-restore.md)) |
 | `npx tsx scripts/ws-load-test.ts` | WebSocket load test against a running, seeded server (Phase 9 — see the script header for env knobs) |
+
+### Backups (Phase 10)
+
+`/dashboard/backup` (Owner sets schedule/retention/cloud; Owner+Manager can
+«پشتیبان‌گیری هم‌اکنون» and see run history). Scheduled `pg_dump` of the whole
+local DB to `BACKUP_DIR` (plus an optional `BACKUP_SECONDARY_DIR` — USB/NAS),
+and an AES-256-GCM-encrypted copy uploaded to any S3-compatible storage.
+Failed/overdue backups raise a red banner on the Owner dashboard. Restore
+(always dry-run first): `npm run db:restore` — full runbook in
+[docs/backup-restore.md](docs/backup-restore.md). The host needs
+`postgresql-client` ≥ 16 (`pg_dump`/`pg_restore`).
 
 ## Conventions (important)
 

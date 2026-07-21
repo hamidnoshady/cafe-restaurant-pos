@@ -17,6 +17,8 @@ export const SETTING_KEYS = {
   rollupConfig: "rollup.config",
   /** { lastAttemptAt, lastSuccessAt, lastSuccessDay, lastError } — local push status (Phase 9) */
   rollupSyncState: "rollup.sync_state",
+  /** BackupConfig (src/lib/backup.ts) — schedule/retention/cloud settings (Phase 10) */
+  backupConfig: "backup.config",
 } as const;
 
 export async function getSetting<T>(businessId: string, key: string): Promise<T | null> {

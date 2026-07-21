@@ -90,7 +90,7 @@ describe("every API route is guarded", () => {
 describe("back-office/financial surfaces exclude floor roles", () => {
   // Everything under these prefixes is Owner/Manager-only, per the decisions
   // in Phases 6-8 (inventory admin, ledger, reports) and 9 (rollup).
-  const BACK_OFFICE_PREFIXES = ["ledger/", "reports/", "staff", "setup/", "rollup/"];
+  const BACK_OFFICE_PREFIXES = ["ledger/", "reports/", "staff", "setup/", "rollup/", "backup/"];
   const FLOOR_ROLES = ["cashier", "waiter", "kitchen"];
 
   for (const [key, src] of sources) {
@@ -118,6 +118,21 @@ describe("back-office/financial surfaces exclude floor roles", () => {
       for (const roles of requireRoleCalls(src)) {
         if (key === "inventory/low-stock") {
           expect(roles.sort()).toEqual(["cashier", "manager", "owner"]);
+        } else {
+          expect(roles.sort(), `src/app/api/${key}/route.ts`).toEqual(["manager", "owner"]);
+        }
+      }
+    }
+  });
+
+  it("backup config is Owner-only; run/status allow Owner/Manager (Phase 10 access decision)", () => {
+    for (const [key, src] of sources) {
+      if (!key.startsWith("backup")) continue;
+      const calls = requireRoleCalls(src);
+      expect(calls.length, `src/app/api/${key}/route.ts has no requireRole`).toBeGreaterThan(0);
+      for (const roles of calls) {
+        if (key === "backup/config") {
+          expect(roles, `src/app/api/${key}/route.ts`).toEqual(["owner"]);
         } else {
           expect(roles.sort(), `src/app/api/${key}/route.ts`).toEqual(["manager", "owner"]);
         }

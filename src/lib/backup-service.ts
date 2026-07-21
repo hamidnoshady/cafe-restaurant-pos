@@ -1,0 +1,466 @@
+/**
+ * Phase 10 — backup system: the half that touches the database, the
+ * filesystem, pg_dump, and the network (like the other *-service.ts files,
+ * not unit-tested directly — the decision logic it leans on lives in
+ * src/lib/backup.ts and is).
+ *
+ * Pipeline per run:
+ *   1. `pg_dump --format=custom` of the WHOLE local database into
+ *      BACKUP_DIR (atomic: dump to *.tmp, fsync, rename).
+ *   2. Copy the artifact to BACKUP_SECONDARY_DIR if configured (USB/NAS) —
+ *      a failed copy fails the run, because a silently-unplugged drive is
+ *      exactly what the Owner wants alerted about.
+ *   3. Encrypt (AES-256-GCM, Owner's passphrase) and upload to
+ *      S3-compatible storage when cloud backup is enabled. A failed upload
+ *      is retried on later ticks until a newer artifact supersedes it, so a
+ *      backup taken offline still reaches the cloud when internet returns.
+ *   4. Prune local artifacts and cloud objects beyond their retention
+ *      counts (never touching files that aren't backup artifacts).
+ *
+ * Every step is recorded in `backup_runs`; the dashboard's health card and
+ * the Owner-dashboard alert read from there.
+ */
+import { spawn } from "node:child_process";
+import { constants as fsConstants, promises as fs } from "node:fs";
+import path from "node:path";
+import { query } from "./db";
+import { getSetting, setSetting, SETTING_KEYS } from "./settings";
+import {
+  BACKUP_RUNS_SHOWN,
+  CLOUD_RETRY_MS,
+  cloudKeyFor,
+  computeBackupAlert,
+  DEFAULT_BACKUP_CONFIG,
+  encryptBackup,
+  isBackupDue,
+  makeArtifactName,
+  selectPrunable,
+  type BackupAlert,
+  type BackupConfig,
+} from "./backup";
+import { s3Delete, s3List, s3Put, sha256Hex, type S3Config } from "./s3-lite";
+
+const PG_DUMP_TIMEOUT_MS = 15 * 60 * 1000;
+
+// ---------------------------------------------------------------------------
+// Config + paths
+// ---------------------------------------------------------------------------
+
+export function backupDir(): string {
+  return process.env.BACKUP_DIR || path.join(process.cwd(), "backups");
+}
+
+export function backupSecondaryDir(): string | null {
+  return process.env.BACKUP_SECONDARY_DIR || null;
+}
+
+export async function getBackupConfig(businessId: string): Promise<BackupConfig> {
+  const stored = await getSetting<BackupConfig>(businessId, SETTING_KEYS.backupConfig);
+  if (!stored) return structuredClone(DEFAULT_BACKUP_CONFIG);
+  return { ...DEFAULT_BACKUP_CONFIG, ...stored, cloud: { ...DEFAULT_BACKUP_CONFIG.cloud, ...stored.cloud } };
+}
+
+export async function setBackupConfig(businessId: string, config: BackupConfig): Promise<void> {
+  await setSetting(businessId, SETTING_KEYS.backupConfig, config);
+}
+
+/** Config for the Owner UI: secrets are never echoed back, only "is set" flags. */
+export async function getBackupConfigMasked(businessId: string) {
+  const config = await getBackupConfig(businessId);
+  return {
+    ...config,
+    cloud: {
+      ...config.cloud,
+      secretAccessKey: "",
+      passphrase: "",
+      hasSecretAccessKey: Boolean(config.cloud.secretAccessKey),
+      hasPassphrase: Boolean(config.cloud.passphrase),
+    },
+  };
+}
+
+function s3ConfigOf(config: BackupConfig): S3Config {
+  const { endpoint, region, bucket, accessKeyId, secretAccessKey } = config.cloud;
+  return { endpoint, region, bucket, accessKeyId, secretAccessKey };
+}
+
+/** The business's local timezone (its primary location's; Tehran fallback). */
+async function getBusinessTimezone(businessId: string): Promise<string> {
+  const { rows } = await query<{ timezone: string | null }>(
+    `SELECT timezone FROM locations
+      WHERE business_id = $1 AND is_active ORDER BY created_at LIMIT 1`,
+    [businessId],
+  );
+  return rows[0]?.timezone || "Asia/Tehran";
+}
+
+// ---------------------------------------------------------------------------
+// Run bookkeeping
+// ---------------------------------------------------------------------------
+
+type RunKind = "local" | "cloud";
+type RunTrigger = "scheduled" | "manual";
+
+async function startRun(
+  businessId: string,
+  kind: RunKind,
+  trigger: RunTrigger,
+  artifact: string | null,
+  cloudKey: string | null,
+): Promise<string> {
+  const { rows } = await query<{ id: string }>(
+    `INSERT INTO backup_runs (business_id, kind, trigger, artifact, cloud_key)
+     VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+    [businessId, kind, trigger, artifact, cloudKey],
+  );
+  return rows[0].id;
+}
+
+async function finishRun(
+  runId: string,
+  outcome:
+    | { status: "success"; artifact?: string; sizeBytes: number; sha256: string }
+    | { status: "failed"; error: string },
+): Promise<void> {
+  if (outcome.status === "success") {
+    await query(
+      `UPDATE backup_runs
+          SET status = 'success', artifact = coalesce($2, artifact),
+              size_bytes = $3, sha256 = $4, finished_at = now()
+        WHERE id = $1`,
+      [runId, outcome.artifact ?? null, outcome.sizeBytes, outcome.sha256],
+    );
+  } else {
+    await query(
+      `UPDATE backup_runs SET status = 'failed', error = $2, finished_at = now() WHERE id = $1`,
+      [runId, outcome.error.slice(0, 1000)],
+    );
+  }
+}
+
+function errText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+// ---------------------------------------------------------------------------
+// Local backup (pg_dump)
+// ---------------------------------------------------------------------------
+
+/** One in-flight backup per business per process (the tick is 60s; dumps can be slower). */
+const inFlight = new Set<string>();
+
+function runPgDump(outFile: string): Promise<void> {
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl) return Promise.reject(new Error("DATABASE_URL is not set"));
+  const bin = process.env.PG_DUMP_PATH || "pg_dump";
+  return new Promise((resolve, reject) => {
+    const child = spawn(bin, ["--format=custom", "--no-password", `--file=${outFile}`, databaseUrl], {
+      stdio: ["ignore", "ignore", "pipe"],
+      timeout: PG_DUMP_TIMEOUT_MS,
+    });
+    let stderr = "";
+    child.stderr.on("data", (chunk: Buffer) => {
+      if (stderr.length < 2000) stderr += chunk.toString();
+    });
+    child.on("error", (err) =>
+      reject(new Error(`could not start ${bin}: ${err.message} (set PG_DUMP_PATH or install postgresql-client)`)),
+    );
+    child.on("close", (code, signal) => {
+      if (code === 0) resolve();
+      else reject(new Error(`pg_dump exited with ${signal ?? code}: ${stderr.trim().slice(0, 500)}`));
+    });
+  });
+}
+
+async function pruneDirectory(dir: string, keep: number): Promise<void> {
+  let names: string[];
+  try {
+    names = await fs.readdir(dir);
+  } catch {
+    return;
+  }
+  for (const name of selectPrunable(names, keep)) {
+    await fs.unlink(path.join(dir, name)).catch((err) => {
+      console.error(`backup: failed to prune ${path.join(dir, name)}:`, errText(err));
+    });
+  }
+}
+
+export type LocalBackupResult =
+  | { status: "ok"; runId: string; artifact: string; sizeBytes: number }
+  | { status: "busy" }
+  | { status: "failed"; error: string };
+
+/**
+ * Take one local backup now (scheduled tick and the dashboard's "backup now"
+ * share this code path). Never throws — failures land in backup_runs.
+ */
+export async function runLocalBackup(businessId: string, trigger: RunTrigger): Promise<LocalBackupResult> {
+  if (inFlight.has(businessId)) return { status: "busy" };
+  inFlight.add(businessId);
+  try {
+    const config = await getBackupConfig(businessId);
+    const artifact = makeArtifactName();
+    const runId = await startRun(businessId, "local", trigger, artifact, null);
+    try {
+      const dir = backupDir();
+      await fs.mkdir(dir, { recursive: true });
+      const finalPath = path.join(dir, artifact);
+      const tmpPath = `${finalPath}.tmp`;
+      await runPgDump(tmpPath);
+      const data = await fs.readFile(tmpPath);
+      await fs.rename(tmpPath, finalPath);
+
+      const secondary = backupSecondaryDir();
+      if (secondary) {
+        await fs.mkdir(secondary, { recursive: true });
+        await fs.copyFile(finalPath, path.join(secondary, artifact), fsConstants.COPYFILE_FICLONE).catch(
+          (err) => {
+            throw new Error(`secondary copy to ${secondary} failed: ${errText(err)}`);
+          },
+        );
+        await pruneDirectory(secondary, config.localRetention);
+      }
+      await pruneDirectory(dir, config.localRetention);
+
+      await finishRun(runId, { status: "success", sizeBytes: data.length, sha256: sha256Hex(data) });
+      return { status: "ok", runId, artifact, sizeBytes: data.length };
+    } catch (err) {
+      await finishRun(runId, { status: "failed", error: errText(err) });
+      return { status: "failed", error: errText(err) };
+    }
+  } catch (err) {
+    // couldn't even record the run (DB down &c.) — nothing sensible to persist
+    console.error(`backup: local run failed to start for business ${businessId}:`, errText(err));
+    return { status: "failed", error: errText(err) };
+  } finally {
+    inFlight.delete(businessId);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Cloud upload
+// ---------------------------------------------------------------------------
+
+export type CloudBackupResult =
+  | { status: "ok"; key: string; sizeBytes: number }
+  | { status: "disabled" }
+  | { status: "failed"; error: string };
+
+/** Encrypt a local artifact and upload it, then prune the bucket prefix. */
+export async function runCloudUpload(
+  businessId: string,
+  artifact: string,
+  trigger: RunTrigger,
+): Promise<CloudBackupResult> {
+  const config = await getBackupConfig(businessId);
+  if (!config.cloud.enabled) return { status: "disabled" };
+
+  const key = cloudKeyFor(config.cloud.prefix, artifact);
+  const runId = await startRun(businessId, "cloud", trigger, artifact, key);
+  try {
+    const plain = await fs.readFile(path.join(backupDir(), artifact));
+    const encrypted = encryptBackup(plain, config.cloud.passphrase);
+    const s3 = s3ConfigOf(config);
+    await s3Put(s3, key, encrypted);
+
+    try {
+      const objects = await s3List(s3, config.cloud.prefix);
+      for (const stale of selectPrunable(objects.map((o) => o.key), config.cloud.retention)) {
+        await s3Delete(s3, stale);
+      }
+    } catch (err) {
+      // pruning is best-effort — the upload itself succeeded
+      console.error(`backup: cloud prune failed for business ${businessId}:`, errText(err));
+    }
+
+    await finishRun(runId, {
+      status: "success",
+      sizeBytes: encrypted.length,
+      sha256: sha256Hex(encrypted),
+    });
+    return { status: "ok", key, sizeBytes: encrypted.length };
+  } catch (err) {
+    await finishRun(runId, { status: "failed", error: errText(err) });
+    return { status: "failed", error: errText(err) };
+  }
+}
+
+/**
+ * If the newest successful local artifact never made it to the cloud, try
+ * again — but back off CLOUD_RETRY_MS between attempts so an offline café
+ * isn't hammering its (dead) uplink every tick.
+ */
+async function maybeCatchUpCloud(businessId: string, config: BackupConfig): Promise<void> {
+  if (!config.cloud.enabled) return;
+  const { rows } = await query<{ artifact: string }>(
+    `SELECT artifact FROM backup_runs
+      WHERE business_id = $1 AND kind = 'local' AND status = 'success'
+      ORDER BY started_at DESC LIMIT 1`,
+    [businessId],
+  );
+  const artifact = rows[0]?.artifact;
+  if (!artifact) return;
+
+  const { rows: cloudRows } = await query<{ status: string; started_at: Date }>(
+    `SELECT status, started_at FROM backup_runs
+      WHERE business_id = $1 AND kind = 'cloud' AND artifact = $2
+      ORDER BY started_at DESC LIMIT 1`,
+    [businessId, artifact],
+  );
+  const last = cloudRows[0];
+  if (last?.status === "success" || last?.status === "running") return;
+  if (last && Date.now() - last.started_at.getTime() < CLOUD_RETRY_MS) return;
+
+  await runCloudUpload(businessId, artifact, "scheduled");
+}
+
+// ---------------------------------------------------------------------------
+// Scheduler tick + manual trigger
+// ---------------------------------------------------------------------------
+
+/**
+ * Timer entry point (server.ts, every BACKUP_TICK_INTERVAL_MS): for each
+ * business, take a backup if a schedule slot has passed uncovered, and keep
+ * nudging any not-yet-uploaded artifact toward the cloud.
+ */
+export async function runBackupTick(): Promise<void> {
+  const { rows } = await query<{ id: string }>(`SELECT id FROM businesses`, []);
+  for (const { id: businessId } of rows) {
+    try {
+      const config = await getBackupConfig(businessId);
+      if (!config.enabled) continue;
+
+      const { rows: lastRows } = await query<{ started_at: Date }>(
+        `SELECT started_at FROM backup_runs
+          WHERE business_id = $1 AND kind = 'local'
+          ORDER BY started_at DESC LIMIT 1`,
+        [businessId],
+      );
+      const timeZone = await getBusinessTimezone(businessId);
+      if (isBackupDue(lastRows[0]?.started_at ?? null, new Date(), config, timeZone)) {
+        const local = await runLocalBackup(businessId, "scheduled");
+        if (local.status === "ok" && config.cloud.enabled) {
+          await runCloudUpload(businessId, local.artifact, "scheduled");
+        }
+      } else {
+        await maybeCatchUpCloud(businessId, config);
+      }
+    } catch (err) {
+      // never let one business's failure stop the tick
+      console.error(`backup tick failed for business ${businessId}:`, errText(err));
+    }
+  }
+}
+
+/** The dashboard's «پشتیبان‌گیری هم‌اکنون»: local backup + cloud upload, one call. */
+export async function runBackupNow(
+  businessId: string,
+): Promise<{ local: LocalBackupResult; cloud: CloudBackupResult }> {
+  const local = await runLocalBackup(businessId, "manual");
+  const cloud: CloudBackupResult =
+    local.status === "ok"
+      ? await runCloudUpload(businessId, local.artifact, "manual")
+      : { status: "disabled" };
+  return { local, cloud };
+}
+
+// ---------------------------------------------------------------------------
+// Status / health for the dashboard
+// ---------------------------------------------------------------------------
+
+export interface BackupRunRow {
+  id: string;
+  kind: RunKind;
+  trigger: RunTrigger;
+  status: "running" | "success" | "failed";
+  artifact: string | null;
+  cloudKey: string | null;
+  sizeBytes: number | null;
+  error: string | null;
+  startedAt: string;
+  finishedAt: string | null;
+}
+
+export interface BackupHealth {
+  enabled: boolean;
+  cloudEnabled: boolean;
+  intervalHours: number;
+  localLastSuccessAt: string | null;
+  localLastError: string | null;
+  cloudLastSuccessAt: string | null;
+  cloudLastError: string | null;
+  alert: BackupAlert;
+}
+
+async function latestRuns(businessId: string, kind: RunKind) {
+  const [{ rows: successRows }, { rows: lastRows }] = await Promise.all([
+    query<{ finished_at: Date }>(
+      `SELECT finished_at FROM backup_runs
+        WHERE business_id = $1 AND kind = $2 AND status = 'success'
+        ORDER BY started_at DESC LIMIT 1`,
+      [businessId, kind],
+    ),
+    query<{ status: string; error: string | null }>(
+      `SELECT status, error FROM backup_runs
+        WHERE business_id = $1 AND kind = $2 AND status <> 'running'
+        ORDER BY started_at DESC LIMIT 1`,
+      [businessId, kind],
+    ),
+  ]);
+  return {
+    lastSuccessAt: successRows[0]?.finished_at?.toISOString() ?? null,
+    lastError: lastRows[0]?.status === "failed" ? lastRows[0].error : null,
+  };
+}
+
+export async function getBackupHealth(businessId: string): Promise<BackupHealth> {
+  const config = await getBackupConfig(businessId);
+  const [local, cloud] = await Promise.all([
+    latestRuns(businessId, "local"),
+    latestRuns(businessId, "cloud"),
+  ]);
+  const input = {
+    enabled: config.enabled,
+    cloudEnabled: config.cloud.enabled,
+    intervalHours: config.intervalHours,
+    localLastSuccessAt: local.lastSuccessAt,
+    localLastError: local.lastError,
+    cloudLastSuccessAt: cloud.lastSuccessAt,
+    cloudLastError: cloud.lastError,
+  };
+  return { ...input, alert: computeBackupAlert(input) };
+}
+
+export async function listBackupRuns(businessId: string): Promise<BackupRunRow[]> {
+  const { rows } = await query<{
+    id: string;
+    kind: RunKind;
+    trigger: RunTrigger;
+    status: "running" | "success" | "failed";
+    artifact: string | null;
+    cloud_key: string | null;
+    size_bytes: string | null;
+    error: string | null;
+    started_at: Date;
+    finished_at: Date | null;
+  }>(
+    `SELECT id, kind, trigger, status, artifact, cloud_key, size_bytes, error,
+            started_at, finished_at
+       FROM backup_runs WHERE business_id = $1
+      ORDER BY started_at DESC LIMIT ${BACKUP_RUNS_SHOWN}`,
+    [businessId],
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    kind: r.kind,
+    trigger: r.trigger,
+    status: r.status,
+    artifact: r.artifact,
+    cloudKey: r.cloud_key,
+    sizeBytes: r.size_bytes === null ? null : Number(r.size_bytes),
+    error: r.error,
+    startedAt: r.started_at.toISOString(),
+    finishedAt: r.finished_at ? r.finished_at.toISOString() : null,
+  }));
+}
