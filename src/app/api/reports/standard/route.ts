@@ -11,6 +11,7 @@ export async function GET() {
     key: r.key,
     label: r.label,
     chartType: r.defaultChart?.chartType ?? null,
+    config: r.defaultChart?.config ?? null,
   }));
   return NextResponse.json({ reports });
 }
