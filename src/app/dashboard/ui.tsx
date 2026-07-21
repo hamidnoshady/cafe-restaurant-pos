@@ -1,6 +1,9 @@
 "use client";
 
 /** Small shared UI pieces for dashboard pages (menu management, POS). */
+import { CircleAlertIcon, InfoIcon } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 
 export async function api<T = Record<string, unknown>>(
   url: string,
@@ -80,17 +83,19 @@ export function errorMessage(code: string | undefined): string {
 export function ErrorBox({ children }: { children: React.ReactNode }) {
   if (!children) return null;
   return (
-    <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-      {children}
-    </div>
+    <Alert variant="destructive" className="mb-4 border-destructive/30 bg-destructive/5">
+      <CircleAlertIcon />
+      <AlertDescription className="text-destructive">{children}</AlertDescription>
+    </Alert>
   );
 }
 
 export function InfoBox({ children }: { children: React.ReactNode }) {
   return (
-    <div className="mb-4 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
-      {children}
-    </div>
+    <Alert className="mb-4 border-primary/30 bg-primary/5">
+      <InfoIcon className="text-primary" />
+      <AlertDescription>{children}</AlertDescription>
+    </Alert>
   );
 }
 
@@ -105,15 +110,16 @@ export function Field({
 }) {
   return (
     <label className="mb-4 block">
-      <span className="mb-1 block text-sm font-medium text-stone-700">{label}</span>
+      <span className="mb-1 block text-sm font-medium text-foreground">{label}</span>
       {children}
-      {hint ? <span className="mt-1 block text-xs text-stone-400">{hint}</span> : null}
+      {hint ? <span className="mt-1 block text-xs text-muted-foreground">{hint}</span> : null}
     </label>
   );
 }
 
+/** shadcn <Input>-equivalent classes for raw <input>/<select>/<textarea> elements. */
 export const inputClass =
-  "w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100";
+  "h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/30";
 
 export function PrimaryButton({
   children,
@@ -127,14 +133,9 @@ export function PrimaryButton({
   type?: "submit" | "button";
 }) {
   return (
-    <button
-      type={type}
-      onClick={onClick}
-      disabled={disabled}
-      className="rounded-lg bg-amber-600 px-5 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-50"
-    >
+    <Button type={type} onClick={onClick} disabled={disabled} className="px-5 font-semibold">
       {children}
-    </button>
+    </Button>
   );
 }
 
@@ -148,13 +149,8 @@ export function SecondaryButton({
   disabled?: boolean;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className="rounded-lg border border-stone-300 bg-white px-4 py-2 text-sm text-stone-700 hover:bg-stone-50 disabled:opacity-50"
-    >
+    <Button type="button" variant="outline" onClick={onClick} disabled={disabled} className="px-4">
       {children}
-    </button>
+    </Button>
   );
 }

@@ -71,7 +71,7 @@ function MenuItemRecipeCard({
   }
 
   return (
-    <section className="rounded-2xl bg-white p-5 shadow-sm">
+    <section className="rounded-2xl bg-card p-5 shadow-sm">
       <h2 className="mb-3 font-semibold">دستورالعمل مصرف آیتم منو (رسپی)</h2>
       <div className="mb-3">
         <select className={inputClass} value={menuItemId} onChange={(e) => setMenuItemId(e.target.value)}>
@@ -86,7 +86,7 @@ function MenuItemRecipeCard({
 
       {menuItemId ? (
         <>
-          <ul className="mb-3 divide-y divide-stone-100 rounded-lg border border-stone-200">
+          <ul className="mb-3 divide-y divide-border rounded-lg border border-border">
             {lines.map((l) => {
               const invItem = items.find((i) => i.id === l.inventory_item_id);
               return (
@@ -110,7 +110,7 @@ function MenuItemRecipeCard({
                 </li>
               );
             })}
-            {lines.length === 0 ? <li className="px-3 py-2 text-xs text-stone-400">هنوز مواد اولیه‌ای ثبت نشده است.</li> : null}
+            {lines.length === 0 ? <li className="px-3 py-2 text-xs text-muted-foreground">هنوز مواد اولیه‌ای ثبت نشده است.</li> : null}
           </ul>
           <form onSubmit={add} className="flex flex-wrap gap-2">
             <select className={inputClass} value={inventoryItemId} onChange={(e) => setInventoryItemId(e.target.value)} required>
@@ -172,9 +172,9 @@ function ModifierRecipeCard({
   }
 
   return (
-    <section className="rounded-2xl bg-white p-5 shadow-sm">
+    <section className="rounded-2xl bg-card p-5 shadow-sm">
       <h2 className="mb-1 font-semibold">اثر افزودنی‌ها بر مصرف مواد</h2>
-      <p className="mb-3 text-xs text-stone-500">
+      <p className="mb-3 text-xs text-muted-foreground">
         عدد مثبت یعنی مصرف اضافه (مثلاً «شات اضافه»)، عدد منفی یعنی کاهش/جایگزینی مادهٔ پایه (مثلاً «شیر بادام» جایگزین شیر معمولی).
       </p>
       <div className="mb-3">
@@ -190,7 +190,7 @@ function ModifierRecipeCard({
 
       {modifierId ? (
         <>
-          <ul className="mb-3 divide-y divide-stone-100 rounded-lg border border-stone-200">
+          <ul className="mb-3 divide-y divide-border rounded-lg border border-border">
             {lines.map((l) => {
               const invItem = items.find((i) => i.id === l.inventory_item_id);
               const value = Number(l.quantity_delta);
@@ -216,7 +216,7 @@ function ModifierRecipeCard({
                 </li>
               );
             })}
-            {lines.length === 0 ? <li className="px-3 py-2 text-xs text-stone-400">هنوز اثری روی مواد ثبت نشده است.</li> : null}
+            {lines.length === 0 ? <li className="px-3 py-2 text-xs text-muted-foreground">هنوز اثری روی مواد ثبت نشده است.</li> : null}
           </ul>
           <form onSubmit={add} className="flex flex-wrap gap-2">
             <select className={inputClass} value={inventoryItemId} onChange={(e) => setInventoryItemId(e.target.value)} required>

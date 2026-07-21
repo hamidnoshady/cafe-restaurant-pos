@@ -11,7 +11,7 @@ export default async function InventoryPage() {
     <div>
       <header className="mb-6">
         <h1 className="text-2xl font-bold">انبار</h1>
-        <p className="mt-1 text-sm text-stone-500">
+        <p className="mt-1 text-sm text-muted-foreground">
           اقلام انبار، دستورالعمل مصرف (رسپی)، تأمین‌کنندگان، خرید، ضایعات و شمارش فیزیکی.
         </p>
       </header>

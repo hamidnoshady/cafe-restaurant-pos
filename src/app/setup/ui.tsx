@@ -3,6 +3,9 @@
 /** Small shared UI pieces for the wizard steps. */
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { CircleAlertIcon, InfoIcon } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 import { nextPath, prevPath, stepIndex, STEPS } from "./steps";
 import type { WizardStep } from "@/lib/setup-state";
 
@@ -63,17 +66,19 @@ export function errorMessage(code: string | undefined, messages?: string[]): str
 export function ErrorBox({ children }: { children: React.ReactNode }) {
   if (!children) return null;
   return (
-    <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-      {children}
-    </div>
+    <Alert variant="destructive" className="mb-4 border-destructive/30 bg-destructive/5">
+      <CircleAlertIcon />
+      <AlertDescription className="text-destructive">{children}</AlertDescription>
+    </Alert>
   );
 }
 
 export function InfoBox({ children }: { children: React.ReactNode }) {
   return (
-    <div className="mb-4 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
-      {children}
-    </div>
+    <Alert className="mb-4 border-primary/30 bg-primary/5">
+      <InfoIcon className="text-primary" />
+      <AlertDescription>{children}</AlertDescription>
+    </Alert>
   );
 }
 
@@ -88,15 +93,16 @@ export function Field({
 }) {
   return (
     <label className="mb-4 block">
-      <span className="mb-1 block text-sm font-medium text-stone-700">{label}</span>
+      <span className="mb-1 block text-sm font-medium text-foreground">{label}</span>
       {children}
-      {hint ? <span className="mt-1 block text-xs text-stone-400">{hint}</span> : null}
+      {hint ? <span className="mt-1 block text-xs text-muted-foreground">{hint}</span> : null}
     </label>
   );
 }
 
+/** shadcn <Input>-equivalent classes for raw <input>/<select>/<textarea> elements. */
 export const inputClass =
-  "w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100";
+  "h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/30";
 
 export function PrimaryButton({
   children,
@@ -110,14 +116,9 @@ export function PrimaryButton({
   type?: "submit" | "button";
 }) {
   return (
-    <button
-      type={type}
-      onClick={onClick}
-      disabled={disabled}
-      className="rounded-lg bg-amber-600 px-5 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-50"
-    >
+    <Button type={type} onClick={onClick} disabled={disabled} className="px-5 font-semibold">
       {children}
-    </button>
+    </Button>
   );
 }
 
@@ -131,14 +132,9 @@ export function SecondaryButton({
   disabled?: boolean;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className="rounded-lg border border-stone-300 bg-white px-4 py-2 text-sm text-stone-700 hover:bg-stone-50 disabled:opacity-50"
-    >
+    <Button type="button" variant="outline" onClick={onClick} disabled={disabled} className="px-4">
       {children}
-    </button>
+    </Button>
   );
 }
 
@@ -175,12 +171,12 @@ export function StepShell({
     <div>
       <header className="mb-6">
         <h1 className="text-xl font-bold">{meta.title}</h1>
-        <p className="mt-1 text-sm text-stone-500">{description}</p>
+        <p className="mt-1 text-sm text-muted-foreground">{description}</p>
       </header>
 
       {children}
 
-      <div className="mt-8 flex items-center justify-between border-t border-stone-200 pt-4">
+      <div className="mt-8 flex items-center justify-between border-t pt-4">
         <div>
           {back ? (
             <SecondaryButton onClick={() => router.push(back)}>مرحلهٔ قبل</SecondaryButton>
@@ -192,7 +188,7 @@ export function StepShell({
               type="button"
               onClick={skip}
               disabled={skipping}
-              className="text-sm text-stone-500 underline-offset-4 hover:underline disabled:opacity-50"
+              className="text-sm text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline disabled:opacity-50"
             >
               فعلاً رد شدن از این مرحله
             </button>

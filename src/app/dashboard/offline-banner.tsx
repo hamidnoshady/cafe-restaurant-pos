@@ -11,7 +11,7 @@ export function OfflineBanner() {
   return (
     <div
       className={`px-4 py-2 text-center text-sm font-medium ${
-        isOnline ? "bg-amber-100 text-amber-800" : "bg-red-100 text-red-700"
+        isOnline ? "bg-primary/10 text-primary" : "bg-destructive/10 text-destructive"
       }`}
     >
       {!isOnline ? "اتصال به سرور قطع است — عملیات‌ها ذخیره می‌شوند و پس از اتصال مجدد ارسال خواهند شد." : "در حال همگام‌سازی…"}

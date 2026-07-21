@@ -62,9 +62,9 @@ export function WasteSection({ items, busy, run }: { items: InventoryItem[]; bus
 
   return (
     <div className="space-y-6">
-      <section className="rounded-2xl bg-white p-5 shadow-sm">
+      <section className="rounded-2xl bg-card p-5 shadow-sm">
         <h2 className="mb-3 font-semibold">ثبت ضایعات</h2>
-        <p className="mb-3 text-xs text-stone-500">
+        <p className="mb-3 text-xs text-muted-foreground">
           ضایعات مستقل از فروش است و تنها موجودی را کاهش می‌دهد؛ در ارقام فروش اثری ندارد.
         </p>
         <form onSubmit={submit} className="grid gap-2 sm:grid-cols-5">
@@ -97,20 +97,20 @@ export function WasteSection({ items, busy, run }: { items: InventoryItem[]; bus
         </form>
       </section>
 
-      <section className="rounded-2xl bg-white p-5 shadow-sm">
+      <section className="rounded-2xl bg-card p-5 shadow-sm">
         <h2 className="mb-3 font-semibold">ضایعات اخیر</h2>
-        <ul className="divide-y divide-stone-100 rounded-lg border border-stone-200">
+        <ul className="divide-y divide-border rounded-lg border border-border">
           {(entries ?? []).map((e) => (
             <li key={e.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2 text-sm">
               <span>
                 {e.inventory_item_name} — {toPersianDigits(e.quantity)} {e.unit} ({REASON_LABELS[e.waste_reason] ?? e.waste_reason})
               </span>
-              <span className="text-xs text-stone-400">
+              <span className="text-xs text-muted-foreground">
                 {formatToman(Number(e.quantity) * Number(e.unit_cost))} — {formatJalali(e.occurred_at)}
               </span>
             </li>
           ))}
-          {entries && entries.length === 0 ? <li className="p-3 text-sm text-stone-400">ضایعاتی ثبت نشده است.</li> : null}
+          {entries && entries.length === 0 ? <li className="p-3 text-sm text-muted-foreground">ضایعاتی ثبت نشده است.</li> : null}
         </ul>
       </section>
     </div>

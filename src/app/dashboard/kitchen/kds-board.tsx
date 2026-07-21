@@ -1,6 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { CheckCircle2Icon, CircleIcon, FlameIcon } from "lucide-react";
+import { KdsDarkDefault } from "@/components/kds-dark-default";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { toPersianDigits } from "@/lib/digits";
 import { formatQueueLabel } from "@/lib/orders";
 import { DEFAULT_TICKET_AGING_MINUTES, ORDER_ITEM_STATUS_LABELS, ticketAgeMinutes } from "@/lib/order-item-status";
@@ -113,22 +117,28 @@ export function KdsBoard() {
   }
 
   if (tickets.length === 0) {
-    return <p className="text-sm text-stone-400">فعلاً سفارشی برای آشپزخانه نیست.</p>;
+    return (
+      <>
+        <KdsDarkDefault />
+        <p className="text-sm text-muted-foreground">فعلاً سفارشی برای آشپزخانه نیست.</p>
+      </>
+    );
   }
 
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      <KdsDarkDefault />
       {tickets.map((ticket) => {
         const age = ticketAgeMinutes(ticket.earliestSentAt, now);
         const late = age >= DEFAULT_TICKET_AGING_MINUTES;
         return (
           <div
             key={ticket.key}
-            className={`rounded-2xl border-2 bg-white p-4 shadow-sm ${late ? "border-red-400" : "border-stone-200"}`}
+            className={`rounded-2xl border-2 bg-card p-4 shadow-sm ${late ? "border-destructive/60" : "border-border"}`}
           >
             <div className="mb-3 flex items-center justify-between">
-              <span className="font-bold text-amber-700">{toPersianDigits(ticket.label)}</span>
-              <span className={`text-xs ${late ? "font-semibold text-red-600" : "text-stone-400"}`}>
+              <span className="font-bold text-primary">{toPersianDigits(ticket.label)}</span>
+              <span className={`text-xs ${late ? "font-semibold text-destructive" : "text-muted-foreground"}`}>
                 {toPersianDigits(Math.floor(age))} دقیقه پیش
               </span>
             </div>
@@ -137,35 +147,44 @@ export function KdsBoard() {
                 const next = NEXT_STATUS[item.status];
                 const mods = modifiersByItem.get(item.id) ?? [];
                 return (
-                  <li key={item.id} className="border-t border-stone-100 pt-2 first:border-t-0 first:pt-0">
+                  <li key={item.id} className="border-t border-border pt-2 first:border-t-0 first:pt-0">
                     <div className="flex items-start justify-between gap-2">
                       <div>
                         <p className="text-sm font-medium">
                           {toPersianDigits(item.quantity)}× {item.name_snapshot}
                         </p>
-                        {mods.length > 0 ? <p className="text-xs text-stone-500">{mods.join("، ")}</p> : null}
-                        {item.note ? <p className="text-xs text-amber-700">{item.note}</p> : null}
+                        {mods.length > 0 ? <p className="text-xs text-muted-foreground">{mods.join("، ")}</p> : null}
+                        {item.note ? <p className="text-xs text-primary">{item.note}</p> : null}
                       </div>
-                      <span
-                        className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${
+                      <Badge
+                        variant="outline"
+                        className={`shrink-0 border-transparent transition-colors duration-300 ${
                           item.status === "ready"
-                            ? "bg-emerald-100 text-emerald-800"
+                            ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
                             : item.status === "preparing"
-                              ? "bg-amber-100 text-amber-800"
-                              : "bg-stone-100 text-stone-600"
+                              ? "bg-primary/10 text-primary"
+                              : "bg-muted text-muted-foreground"
                         }`}
                       >
+                        {item.status === "ready" ? (
+                          <CheckCircle2Icon />
+                        ) : item.status === "preparing" ? (
+                          <FlameIcon />
+                        ) : (
+                          <CircleIcon />
+                        )}
                         {ORDER_ITEM_STATUS_LABELS[item.status]}
-                      </span>
+                      </Badge>
                     </div>
                     {next ? (
-                      <button
+                      <Button
                         type="button"
+                        size="sm"
                         onClick={() => bump(item.id, next)}
-                        className="mt-2 w-full rounded-lg bg-amber-600 py-1.5 text-xs font-semibold text-white hover:bg-amber-700"
+                        className="mt-2 w-full text-xs font-semibold"
                       >
                         {BUMP_LABEL[item.status]}
-                      </button>
+                      </Button>
                     ) : null}
                   </li>
                 );

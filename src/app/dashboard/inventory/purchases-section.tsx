@@ -107,7 +107,7 @@ export function PurchasesSection({
 
   return (
     <div className="space-y-6">
-      <section className="rounded-2xl bg-white p-5 shadow-sm">
+      <section className="rounded-2xl bg-card p-5 shadow-sm">
         <h2 className="mb-3 font-semibold">ثبت خرید (رسید ورود کالا)</h2>
         <form onSubmit={submit} className="space-y-3">
           <div className="flex flex-wrap gap-2">
@@ -155,7 +155,7 @@ export function PurchasesSection({
                     onChange={(e) => updateLine(i, { totalCost: e.target.value })}
                     placeholder="مبلغ کل (تومان)"
                   />
-                  <span className="self-center text-xs text-stone-400">
+                  <span className="self-center text-xs text-muted-foreground">
                     {invItem?.purchase_unit ? `= ${invItem.purchase_unit_factor} ${invItem.unit} به ازای هر واحد خرید` : null}
                   </span>
                   <SecondaryButton onClick={() => removeLine(i)} disabled={lines.length === 1}>
@@ -172,14 +172,14 @@ export function PurchasesSection({
         </form>
       </section>
 
-      <section className="rounded-2xl bg-white p-5 shadow-sm">
+      <section className="rounded-2xl bg-card p-5 shadow-sm">
         <h2 className="mb-3 font-semibold">خریدهای اخیر</h2>
-        <ul className="divide-y divide-stone-100 rounded-lg border border-stone-200">
+        <ul className="divide-y divide-border rounded-lg border border-border">
           {(purchases ?? []).map((p) => (
             <li key={p.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2 text-sm">
               <span>
                 {p.supplier_name ?? "بدون تأمین‌کننده"} — {formatToman(Number(p.total))} —{" "}
-                <span className="text-xs text-stone-400">{formatJalali(p.created_at)}</span>
+                <span className="text-xs text-muted-foreground">{formatJalali(p.created_at)}</span>
               </span>
               <div className="flex items-center gap-2">
                 <span className="text-xs">{STATUS_LABELS[p.status]}</span>
@@ -215,7 +215,7 @@ export function PurchasesSection({
               </div>
             </li>
           ))}
-          {purchases && purchases.length === 0 ? <li className="p-3 text-sm text-stone-400">خریدی ثبت نشده است.</li> : null}
+          {purchases && purchases.length === 0 ? <li className="p-3 text-sm text-muted-foreground">خریدی ثبت نشده است.</li> : null}
         </ul>
       </section>
     </div>

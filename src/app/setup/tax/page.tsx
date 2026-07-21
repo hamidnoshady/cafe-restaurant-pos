@@ -79,7 +79,7 @@ export default function TaxStep() {
 
         {categories.length > 0 ? (
           <div className="mt-6">
-            <p className="mb-2 text-sm font-medium text-stone-700">نرخ هر دسته از منو</p>
+            <p className="mb-2 text-sm font-medium text-foreground">نرخ هر دسته از منو</p>
             <div className="space-y-2">
               {categories.map((c, i) => (
                 <div key={c.id} className="flex items-center gap-3">
@@ -95,7 +95,7 @@ export default function TaxStep() {
                       )
                     }
                   />
-                  <span className="text-sm text-stone-400">٪</span>
+                  <span className="text-sm text-muted-foreground">٪</span>
                 </div>
               ))}
             </div>

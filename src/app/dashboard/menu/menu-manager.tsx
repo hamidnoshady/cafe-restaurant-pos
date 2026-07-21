@@ -71,7 +71,7 @@ export function MenuManager() {
     return true;
   }
 
-  if (!data) return <p className="text-sm text-stone-400">در حال بارگذاری…</p>;
+  if (!data) return <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>;
 
   return (
     <div className="space-y-8">
@@ -95,7 +95,7 @@ function CategorySection({ data, busy, run }: { data: MenuData; busy: boolean; r
   }
 
   return (
-    <section className="rounded-2xl bg-white p-5 shadow-sm">
+    <section className="rounded-2xl bg-card p-5 shadow-sm">
       <h2 className="mb-3 font-semibold">دسته‌ها</h2>
       <div className="mb-4 flex gap-2">
         <input
@@ -108,11 +108,11 @@ function CategorySection({ data, busy, run }: { data: MenuData; busy: boolean; r
           افزودن
         </SecondaryButton>
       </div>
-      <ul className="divide-y divide-stone-100">
+      <ul className="divide-y divide-border">
         {data.categories.map((c) => (
           <li key={c.id} className="flex items-center justify-between py-2 text-sm">
-            <span className={c.is_active ? "" : "text-stone-400 line-through"}>
-              {c.name} <span className="text-xs text-stone-400">(مالیات {toPersianDigits(c.tax_rate)}%)</span>
+            <span className={c.is_active ? "" : "text-muted-foreground line-through"}>
+              {c.name} <span className="text-xs text-muted-foreground">(مالیات {toPersianDigits(c.tax_rate)}%)</span>
             </span>
             <SecondaryButton
               disabled={busy}
@@ -129,7 +129,7 @@ function CategorySection({ data, busy, run }: { data: MenuData; busy: boolean; r
             </SecondaryButton>
           </li>
         ))}
-        {data.categories.length === 0 ? <p className="text-sm text-stone-400">دسته‌ای ثبت نشده است.</p> : null}
+        {data.categories.length === 0 ? <p className="text-sm text-muted-foreground">دسته‌ای ثبت نشده است.</p> : null}
       </ul>
     </section>
   );
@@ -163,7 +163,7 @@ function ItemSection({ data, busy, run }: { data: MenuData; busy: boolean; run: 
   const activeCategories = data.categories.filter((c) => c.is_active);
 
   return (
-    <section className="rounded-2xl bg-white p-5 shadow-sm">
+    <section className="rounded-2xl bg-card p-5 shadow-sm">
       <h2 className="mb-3 font-semibold">آیتم‌ها</h2>
       <form onSubmit={add} className="mb-4 grid gap-2 sm:grid-cols-4">
         <select className={inputClass} value={categoryId} onChange={(e) => setCategoryId(e.target.value)} required>
@@ -193,8 +193,8 @@ function ItemSection({ data, busy, run }: { data: MenuData; busy: boolean; run: 
           if (items.length === 0) return null;
           return (
             <div key={c.id}>
-              <p className="mb-1 text-sm font-medium text-stone-700">{c.name}</p>
-              <ul className="divide-y divide-stone-100 rounded-lg border border-stone-200">
+              <p className="mb-1 text-sm font-medium text-foreground">{c.name}</p>
+              <ul className="divide-y divide-border rounded-lg border border-border">
                 {items.map((i) => (
                   <ItemRow key={i.id} item={i} groups={data.modifierGroups} links={data.itemModifierGroups} busy={busy} run={run} />
                 ))}
@@ -226,9 +226,9 @@ function ItemRow({
   return (
     <li className="px-4 py-2 text-sm">
       <div className="flex items-center justify-between">
-        <span className={item.is_active ? "" : "text-stone-400 line-through"}>{item.name}</span>
+        <span className={item.is_active ? "" : "text-muted-foreground line-through"}>{item.name}</span>
         <div className="flex items-center gap-2">
-          <span className="text-stone-500">{formatToman(Number(item.price))}</span>
+          <span className="text-muted-foreground">{formatToman(Number(item.price))}</span>
           <SecondaryButton onClick={() => setExpanded((v) => !v)}>افزودنی‌ها</SecondaryButton>
           <SecondaryButton
             disabled={busy}
@@ -246,9 +246,9 @@ function ItemRow({
         </div>
       </div>
       {expanded ? (
-        <div className="mt-2 flex flex-wrap gap-2 border-t border-stone-100 pt-2">
+        <div className="mt-2 flex flex-wrap gap-2 border-t border-border pt-2">
           {groups.length === 0 ? (
-            <span className="text-xs text-stone-400">گروه افزودنی‌ای ثبت نشده است.</span>
+            <span className="text-xs text-muted-foreground">گروه افزودنی‌ای ثبت نشده است.</span>
           ) : (
             groups.map((g) => {
               const isOn = attached.has(g.id);
@@ -271,7 +271,7 @@ function ItemRow({
                     )
                   }
                   className={`rounded-full border px-3 py-1 text-xs ${
-                    isOn ? "border-amber-300 bg-amber-50 text-amber-800" : "border-stone-300 text-stone-500"
+                    isOn ? "border-primary/40 bg-primary/5 text-primary" : "border-input text-muted-foreground"
                   }`}
                 >
                   {g.name}
@@ -306,7 +306,7 @@ function ModifierSection({ data, busy, run }: { data: MenuData; busy: boolean; r
   }
 
   return (
-    <section className="rounded-2xl bg-white p-5 shadow-sm">
+    <section className="rounded-2xl bg-card p-5 shadow-sm">
       <h2 className="mb-3 font-semibold">گروه‌های افزودنی</h2>
       <div className="mb-4 grid gap-2 sm:grid-cols-4">
         <input className={inputClass} value={groupName} onChange={(e) => setGroupName(e.target.value)} placeholder="نام گروه (مثلاً «نوع شیر»)" />
@@ -321,7 +321,7 @@ function ModifierSection({ data, busy, run }: { data: MenuData; busy: boolean; r
         {data.modifierGroups.map((g) => (
           <ModifierGroupRow key={g.id} group={g} modifiers={data.modifiers.filter((m) => m.group_id === g.id)} busy={busy} run={run} />
         ))}
-        {data.modifierGroups.length === 0 ? <p className="text-sm text-stone-400">گروهی ثبت نشده است.</p> : null}
+        {data.modifierGroups.length === 0 ? <p className="text-sm text-muted-foreground">گروهی ثبت نشده است.</p> : null}
       </div>
     </section>
   );
@@ -362,19 +362,19 @@ function ModifierGroupRow({
   }
 
   return (
-    <div className="rounded-lg border border-stone-200 p-3">
+    <div className="rounded-lg border border-border p-3">
       <p className="mb-2 text-sm font-medium">
         {group.name}{" "}
-        <span className="text-xs text-stone-400">
+        <span className="text-xs text-muted-foreground">
           (انتخاب {toPersianDigits(group.min_select)} تا {toPersianDigits(group.max_select)})
         </span>
       </p>
-      <ul className="mb-2 divide-y divide-stone-100">
+      <ul className="mb-2 divide-y divide-border">
         {modifiers.map((m) => (
           <li key={m.id} className="flex items-center justify-between py-1.5 text-sm">
-            <span className={m.is_active ? "" : "text-stone-400 line-through"}>{m.name}</span>
+            <span className={m.is_active ? "" : "text-muted-foreground line-through"}>{m.name}</span>
             <div className="flex items-center gap-2">
-              <span className="text-stone-500">{formatToman(Number(m.price_delta))}</span>
+              <span className="text-muted-foreground">{formatToman(Number(m.price_delta))}</span>
               <SecondaryButton
                 disabled={busy}
                 onClick={() =>
@@ -391,7 +391,7 @@ function ModifierGroupRow({
             </div>
           </li>
         ))}
-        {modifiers.length === 0 ? <p className="py-1 text-xs text-stone-400">افزودنی‌ای ثبت نشده است.</p> : null}
+        {modifiers.length === 0 ? <p className="py-1 text-xs text-muted-foreground">افزودنی‌ای ثبت نشده است.</p> : null}
       </ul>
       <div className="flex gap-2">
         <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} placeholder="نام افزودنی" />

@@ -96,9 +96,9 @@ export default function AccountsStep() {
       ) : null}
       <form onSubmit={submit}>
         <ErrorBox>{error}</ErrorBox>
-        <div className="overflow-x-auto rounded-lg border border-stone-200">
+        <div className="overflow-x-auto rounded-lg border border-border">
           <table className="w-full min-w-[560px] text-sm">
-            <thead className="bg-stone-50 text-stone-500">
+            <thead className="bg-muted/50 text-muted-foreground">
               <tr>
                 <th className="p-2 text-start font-medium">کد</th>
                 <th className="p-2 text-start font-medium">نام حساب</th>
@@ -109,7 +109,7 @@ export default function AccountsStep() {
             </thead>
             <tbody>
               {rows.map((r, i) => (
-                <tr key={i} className="border-t border-stone-100">
+                <tr key={i} className="border-t border-border">
                   <td className="p-1.5">
                     <input
                       className={`${inputClass} w-20`}
@@ -151,7 +151,7 @@ export default function AccountsStep() {
                     <button
                       type="button"
                       onClick={() => removeRow(i)}
-                      className="text-stone-400 hover:text-red-600"
+                      className="text-muted-foreground hover:text-destructive"
                       title="حذف"
                     >
                       ✕

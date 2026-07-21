@@ -11,7 +11,7 @@ export default async function MenuPage() {
     <div>
       <header className="mb-6">
         <h1 className="text-2xl font-bold">مدیریت منو</h1>
-        <p className="mt-1 text-sm text-stone-500">
+        <p className="mt-1 text-sm text-muted-foreground">
           دسته‌ها، آیتم‌ها و افزودنی‌ها — مستقل از ورود اولیهٔ جادوگر راه‌اندازی.
         </p>
       </header>

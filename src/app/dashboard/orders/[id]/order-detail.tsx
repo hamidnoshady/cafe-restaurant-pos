@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
 import { toPersianDigits } from "@/lib/digits";
 import { formatToman } from "@/lib/money";
 import { formatQueueLabel } from "@/lib/orders";
@@ -207,6 +208,7 @@ export function OrderDetail({ orderId, canEdit }: { orderId: string; canEdit: bo
     });
     setPaying(false);
     if (!ok) return setError(errorMessage(data.error));
+    toast.success("پرداخت ثبت شد");
     load();
 
     const receiptPrinter = firstPrinter(printers, "receipt");
@@ -239,7 +241,7 @@ export function OrderDetail({ orderId, canEdit }: { orderId: string; canEdit: bo
     }
   }
 
-  if (!order) return <p className="text-sm text-stone-400">در حال بارگذاری…</p>;
+  if (!order) return <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>;
 
   const isOpen = order.status === "open";
   const editable = canEdit && isOpen;
@@ -250,7 +252,7 @@ export function OrderDetail({ orderId, canEdit }: { orderId: string; canEdit: bo
       <header className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">{toPersianDigits(formatQueueLabel(order.type, order.order_number))}</h1>
-          <p className="text-sm text-stone-500">
+          <p className="text-sm text-muted-foreground">
             {order.type === "dine_in" ? `حضوری${order.table_name ? ` — ${order.table_name}` : ""}` : "بیرون‌بر"} ·{" "}
             {STATUS_LABELS[order.status]}
           </p>
@@ -265,8 +267,8 @@ export function OrderDetail({ orderId, canEdit }: { orderId: string; canEdit: bo
       <ErrorBox>{error}</ErrorBox>
       {info ? <InfoBox>{info}</InfoBox> : null}
 
-      <section className="mb-6 rounded-2xl bg-white p-5 shadow-sm">
-        <ul className="divide-y divide-stone-100">
+      <section className="mb-6 rounded-2xl bg-card p-5 shadow-sm">
+        <ul className="divide-y divide-border">
           {items.map((it) => {
             const mods = modifiers.filter((m) => m.order_item_id === it.id);
             const voided = it.status === "voided";
@@ -274,13 +276,13 @@ export function OrderDetail({ orderId, canEdit }: { orderId: string; canEdit: bo
               <li key={it.id} className="py-3 text-sm">
                 <div className="flex items-start justify-between">
                   <div>
-                    <p className={voided ? "text-stone-400 line-through" : "font-medium"}>{it.name_snapshot}</p>
+                    <p className={voided ? "text-muted-foreground line-through" : "font-medium"}>{it.name_snapshot}</p>
                     {mods.length > 0 ? (
-                      <p className="text-xs text-stone-500">{mods.map((m) => m.name_snapshot).join("، ")}</p>
+                      <p className="text-xs text-muted-foreground">{mods.map((m) => m.name_snapshot).join("، ")}</p>
                     ) : null}
-                    {voided && it.void_reason ? <p className="text-xs text-red-500">باطل: {it.void_reason}</p> : null}
+                    {voided && it.void_reason ? <p className="text-xs text-destructive">باطل: {it.void_reason}</p> : null}
                   </div>
-                  <p className="text-stone-600">
+                  <p className="text-muted-foreground">
                     {formatToman((Number(it.unit_price) + mods.reduce((a, m) => a + Number(m.price_delta), 0)) * it.quantity)}
                   </p>
                 </div>
@@ -290,7 +292,7 @@ export function OrderDetail({ orderId, canEdit }: { orderId: string; canEdit: bo
                       type="button"
                       onClick={() => setItemQty(it.id, it.quantity - 1)}
                       disabled={busy || it.quantity <= 1}
-                      className="size-6 rounded bg-stone-100 text-stone-600 hover:bg-stone-200 disabled:opacity-40"
+                      className="size-6 rounded bg-muted text-muted-foreground transition-colors hover:bg-muted-foreground/20 hover:text-foreground disabled:opacity-40"
                     >
                       −
                     </button>
@@ -299,16 +301,16 @@ export function OrderDetail({ orderId, canEdit }: { orderId: string; canEdit: bo
                       type="button"
                       onClick={() => setItemQty(it.id, it.quantity + 1)}
                       disabled={busy}
-                      className="size-6 rounded bg-stone-100 text-stone-600 hover:bg-stone-200"
+                      className="size-6 rounded bg-muted text-muted-foreground transition-colors hover:bg-muted-foreground/20 hover:text-foreground"
                     >
                       +
                     </button>
-                    <button type="button" onClick={() => voidItem(it.id)} disabled={busy} className="ms-auto text-xs text-red-600 hover:underline">
+                    <button type="button" onClick={() => voidItem(it.id)} disabled={busy} className="ms-auto text-xs text-destructive hover:underline">
                       ابطال قلم
                     </button>
                   </div>
                 ) : !voided ? (
-                  <p className="mt-1 text-xs text-stone-400">تعداد: {toPersianDigits(it.quantity)}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">تعداد: {toPersianDigits(it.quantity)}</p>
                 ) : null}
               </li>
             );
@@ -317,7 +319,7 @@ export function OrderDetail({ orderId, canEdit }: { orderId: string; canEdit: bo
       </section>
 
       {editable ? (
-        <section className="mb-6 rounded-2xl bg-white p-5 shadow-sm">
+        <section className="mb-6 rounded-2xl bg-card p-5 shadow-sm">
           <h2 className="mb-3 font-semibold">افزودن قلم</h2>
           <div className="flex flex-wrap gap-2">
             <select className={inputClass} value={addItemId} onChange={(e) => setAddItemId(e.target.value)}>
@@ -342,9 +344,9 @@ export function OrderDetail({ orderId, canEdit }: { orderId: string; canEdit: bo
         </section>
       ) : null}
 
-      <section className="rounded-2xl bg-white p-5 shadow-sm">
+      <section className="rounded-2xl bg-card p-5 shadow-sm">
         {editable ? (
-          <div className="mb-4 flex flex-wrap items-end gap-2 border-b border-stone-100 pb-4">
+          <div className="mb-4 flex flex-wrap items-end gap-2 border-b border-border pb-4">
             <select className={inputClass} value={discountType} onChange={(e) => setDiscountType(e.target.value as "" | "percent" | "amount")}>
               <option value="">بدون تخفیف</option>
               <option value="percent">درصدی</option>
@@ -374,7 +376,7 @@ export function OrderDetail({ orderId, canEdit }: { orderId: string; canEdit: bo
         </dl>
 
         {editable ? (
-          <div className="mt-4 border-t border-stone-100 pt-4">
+          <div className="mt-4 border-t border-border pt-4">
             <h2 className="mb-3 font-semibold">دریافت وجه و تکمیل سفارش</h2>
             <div className="mb-3 flex gap-2">
               {PAYMENT_METHODS.map((m) => (
@@ -382,7 +384,7 @@ export function OrderDetail({ orderId, canEdit }: { orderId: string; canEdit: bo
                   key={m.value}
                   type="button"
                   onClick={() => setPayMethod(m.value)}
-                  className={`rounded-lg px-4 py-2 text-sm ${payMethod === m.value ? "bg-amber-600 text-white" : "bg-stone-100 text-stone-600 hover:bg-stone-200"}`}
+                  className={`rounded-lg px-4 py-2 text-sm ${payMethod === m.value ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground transition-colors hover:bg-muted-foreground/20 hover:text-foreground"}`}
                 >
                   {m.label}
                 </button>
@@ -412,7 +414,7 @@ export function OrderDetail({ orderId, canEdit }: { orderId: string; canEdit: bo
 
 function Row({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
   return (
-    <div className={`flex justify-between ${bold ? "text-base font-bold" : "text-stone-600"}`}>
+    <div className={`flex justify-between ${bold ? "text-base font-bold" : "text-muted-foreground"}`}>
       <dt>{label}</dt>
       <dd>{value}</dd>
     </div>

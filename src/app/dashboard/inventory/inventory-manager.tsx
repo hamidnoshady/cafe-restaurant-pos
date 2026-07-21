@@ -123,13 +123,13 @@ export function InventoryManager() {
     return true;
   }
 
-  if (!data) return <p className="text-sm text-stone-400">در حال بارگذاری…</p>;
+  if (!data) return <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>;
 
   return (
     <div className="space-y-6">
       <ErrorBox>{error}</ErrorBox>
       {lowStock.length > 0 ? (
-        <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        <div className="rounded-lg border border-primary/40 bg-primary/5 px-4 py-3 text-sm text-primary">
           <p className="mb-1 font-semibold">هشدار کمبود موجودی</p>
           <ul className="list-inside list-disc space-y-0.5">
             {lowStock.map((it) => (
@@ -142,14 +142,14 @@ export function InventoryManager() {
         </div>
       ) : null}
 
-      <div className="flex flex-wrap gap-2 border-b border-stone-200 pb-2">
+      <div className="flex flex-wrap gap-2 border-b border-border pb-2">
         {TABS.map((t) => (
           <button
             key={t.key}
             type="button"
             onClick={() => setTab(t.key)}
             className={`rounded-lg px-3 py-1.5 text-sm ${
-              tab === t.key ? "bg-amber-100 font-semibold text-amber-800" : "text-stone-600 hover:bg-stone-100"
+              tab === t.key ? "bg-primary/10 font-semibold text-primary" : "text-muted-foreground hover:bg-muted"
             }`}
           >
             {t.label}

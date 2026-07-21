@@ -48,7 +48,7 @@ export default function FinishPage() {
     <div>
       <header className="mb-6">
         <h1 className="text-xl font-bold">پایان راه‌اندازی</h1>
-        <p className="mt-1 text-sm text-stone-500">
+        <p className="mt-1 text-sm text-muted-foreground">
           مرور وضعیت مراحل و تکمیل نهایی — بعد از این، سیستم آمادهٔ ثبت سفارش است.
         </p>
       </header>
@@ -56,22 +56,22 @@ export default function FinishPage() {
       <ErrorBox>{error}</ErrorBox>
 
       {completed ? (
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-6 text-center">
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 dark:border-emerald-900 dark:bg-emerald-950 p-6 text-center">
           <p className="mb-2 text-2xl">🎉</p>
-          <p className="mb-1 font-bold text-emerald-800">راه‌اندازی کامل شد!</p>
-          <p className="mb-4 text-sm text-emerald-700">
+          <p className="mb-1 font-bold text-emerald-800 dark:text-emerald-200">راه‌اندازی کامل شد!</p>
+          <p className="mb-4 text-sm text-emerald-700 dark:text-emerald-300">
             کسب‌وکار شما آمادهٔ ثبت سفارش است. امکانات فروش در فاز ۲ فعال می‌شود.
           </p>
           <Link
             href="/dashboard"
-            className="inline-block rounded-lg bg-emerald-600 px-5 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
+            className="inline-block rounded-lg bg-emerald-700 px-5 py-2 text-sm font-semibold text-white transition-colors hover:bg-emerald-800 dark:bg-emerald-600 dark:hover:bg-emerald-500"
           >
             رفتن به داشبورد
           </Link>
         </div>
       ) : (
         <>
-          <ul className="mb-6 divide-y divide-stone-100 rounded-xl border border-stone-200">
+          <ul className="mb-6 divide-y divide-border rounded-xl border border-border">
             {STEPS.map((s) => {
               const done = Boolean(state?.progress?.steps[s.id]);
               return (
@@ -79,15 +79,15 @@ export default function FinishPage() {
                   <span className="flex items-center gap-2">
                     <span
                       className={`flex h-5 w-5 items-center justify-center rounded-full text-[11px] ${
-                        done ? "bg-emerald-500 text-white" : "bg-stone-200 text-stone-500"
+                        done ? "bg-emerald-700 text-white dark:bg-emerald-600" : "bg-muted text-muted-foreground"
                       }`}
                     >
                       {done ? "✓" : "•"}
                     </span>
                     {s.title}
-                    {s.optional ? <span className="text-xs text-stone-400">(اختیاری)</span> : null}
+                    {s.optional ? <span className="text-xs text-muted-foreground">(اختیاری)</span> : null}
                   </span>
-                  <Link href={s.path} className="text-xs text-amber-700 hover:underline">
+                  <Link href={s.path} className="text-xs text-primary hover:underline">
                     {done ? "ویرایش" : "تکمیل"}
                   </Link>
                 </li>
@@ -96,7 +96,7 @@ export default function FinishPage() {
           </ul>
 
           {state?.counts ? (
-            <p className="mb-6 text-sm text-stone-500">
+            <p className="mb-6 text-sm text-muted-foreground">
               {toPersianDigits(state.counts.accounts)} حساب، {toPersianDigits(state.counts.users)} کاربر،{" "}
               {toPersianDigits(state.counts.categories)} دستهٔ منو، {toPersianDigits(state.counts.items)} آیتم،{" "}
               {toPersianDigits(state.counts.printers)} چاپگر ثبت شده است.
@@ -104,7 +104,7 @@ export default function FinishPage() {
           ) : null}
 
           {missing.length > 0 ? (
-            <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+            <div className="mb-6 rounded-lg border border-primary/30 bg-primary/5 p-4 text-sm text-primary">
               <p className="mb-1 font-semibold">برای تکمیل، این موارد باقی مانده‌اند:</p>
               {missing.map((m, i) => (
                 <p key={i}>• {m}</p>

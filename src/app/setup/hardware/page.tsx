@@ -95,7 +95,7 @@ export default function HardwareStep() {
       <ErrorBox>{error}</ErrorBox>
 
       <div className="grid gap-8 lg:grid-cols-2">
-        <form onSubmit={addPrinter} className="rounded-xl border border-stone-200 p-4">
+        <form onSubmit={addPrinter} className="rounded-xl border border-border p-4">
           <h2 className="mb-3 font-semibold">افزودن چاپگر</h2>
           <Field label="نام *">
             <input
@@ -131,19 +131,19 @@ export default function HardwareStep() {
         <div>
           <h2 className="mb-3 font-semibold">چاپگرهای ثبت‌شده</h2>
           {printers.length === 0 ? (
-            <p className="text-sm text-stone-400">هنوز چاپگری ثبت نشده است.</p>
+            <p className="text-sm text-muted-foreground">هنوز چاپگری ثبت نشده است.</p>
           ) : (
             <ul className="space-y-2">
               {printers.map((p) => (
-                <li key={p.id} className="rounded-lg border border-stone-200 px-4 py-3">
+                <li key={p.id} className="rounded-lg border border-border px-4 py-3">
                   <div className="mb-2 flex items-center justify-between text-sm">
                     <span className="font-medium">
                       {p.name}
-                      <span className="ms-2 rounded bg-stone-100 px-2 py-0.5 text-xs text-stone-600">
+                      <span className="ms-2 rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground">
                         {p.kind === "kitchen" ? "آشپزخانه" : "رسید"}
                       </span>
                     </span>
-                    <span className="text-xs text-stone-400" dir="ltr">
+                    <span className="text-xs text-muted-foreground" dir="ltr">
                       {p.connection?.ip ?? "—"}
                     </span>
                   </div>
@@ -161,7 +161,7 @@ export default function HardwareStep() {
           )}
 
           {preview ? (
-            <pre className="mt-4 whitespace-pre-wrap rounded-lg bg-stone-900 p-4 font-sans text-sm leading-7 text-stone-100">
+            <pre className="mt-4 whitespace-pre-wrap rounded-lg bg-foreground p-4 font-sans text-sm leading-7 text-background">
               {preview}
             </pre>
           ) : null}

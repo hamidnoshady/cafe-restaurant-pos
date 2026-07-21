@@ -62,7 +62,7 @@ export default function WelcomePage() {
 
   if (checking) {
     return (
-      <div className="flex min-h-screen items-center justify-center text-sm text-stone-400">
+      <div className="flex min-h-screen items-center justify-center text-sm text-muted-foreground">
         در حال بررسی…
       </div>
     );
@@ -70,24 +70,24 @@ export default function WelcomePage() {
 
   return (
     <div className="flex min-h-screen items-center justify-center p-4">
-      <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-sm">
+      <div className="w-full max-w-md rounded-2xl bg-card p-8 shadow-sm">
         <h1 className="mb-1 text-2xl font-bold">به سیستم فروش خوش آمدید</h1>
-        <p className="mb-6 text-sm text-stone-500">
+        <p className="mb-6 text-sm text-muted-foreground">
           برای شروع، کسب‌وکار و حساب مالک را بسازید. بعد از آن، جادوگر راه‌اندازی شما را قدم‌به‌قدم
           تا آماده‌شدن برای فروش همراهی می‌کند.
         </p>
 
         {error ? (
-          <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <div className="mb-4 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
             {error}
           </div>
         ) : null}
 
         <form onSubmit={submit} className="space-y-4">
           <label className="block">
-            <span className="mb-1 block text-sm font-medium text-stone-700">نام کسب‌وکار *</span>
+            <span className="mb-1 block text-sm font-medium text-foreground">نام کسب‌وکار *</span>
             <input
-              className="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100"
+              className="w-full rounded-lg border border-input px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-ring/30"
               value={businessName}
               onChange={(e) => setBusinessName(e.target.value)}
               placeholder="مثلاً کافه بهار"
@@ -95,28 +95,28 @@ export default function WelcomePage() {
             />
           </label>
           <label className="block">
-            <span className="mb-1 block text-sm font-medium text-stone-700">نام شعبهٔ اول *</span>
+            <span className="mb-1 block text-sm font-medium text-foreground">نام شعبهٔ اول *</span>
             <input
-              className="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100"
+              className="w-full rounded-lg border border-input px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-ring/30"
               value={locationName}
               onChange={(e) => setLocationName(e.target.value)}
               required
             />
           </label>
-          <hr className="border-stone-100" />
+          <hr className="border-border" />
           <label className="block">
-            <span className="mb-1 block text-sm font-medium text-stone-700">نام مالک *</span>
+            <span className="mb-1 block text-sm font-medium text-foreground">نام مالک *</span>
             <input
-              className="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100"
+              className="w-full rounded-lg border border-input px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-ring/30"
               value={ownerName}
               onChange={(e) => setOwnerName(e.target.value)}
               required
             />
           </label>
           <label className="block">
-            <span className="mb-1 block text-sm font-medium text-stone-700">ایمیل مالک *</span>
+            <span className="mb-1 block text-sm font-medium text-foreground">ایمیل مالک *</span>
             <input
-              className="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100"
+              className="w-full rounded-lg border border-input px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-ring/30"
               dir="ltr"
               type="email"
               value={email}
@@ -125,9 +125,9 @@ export default function WelcomePage() {
             />
           </label>
           <label className="block">
-            <span className="mb-1 block text-sm font-medium text-stone-700">گذرواژه *</span>
+            <span className="mb-1 block text-sm font-medium text-foreground">گذرواژه *</span>
             <input
-              className="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100"
+              className="w-full rounded-lg border border-input px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-ring/30"
               dir="ltr"
               type="password"
               value={password}
@@ -139,7 +139,7 @@ export default function WelcomePage() {
           <button
             type="submit"
             disabled={busy}
-            className="w-full rounded-lg bg-amber-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-50"
+            className="w-full rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/85 disabled:opacity-50"
           >
             {busy ? "در حال ساخت…" : "ساخت و شروع راه‌اندازی"}
           </button>

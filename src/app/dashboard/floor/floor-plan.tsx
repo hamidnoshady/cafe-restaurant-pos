@@ -1,6 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  BanIcon,
+  CircleCheckIcon,
+  ReceiptIcon,
+  SparklesIcon,
+  UsersIcon,
+  type LucideIcon,
+} from "lucide-react";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import { formatToman } from "@/lib/money";
@@ -51,11 +59,20 @@ interface Waiter {
 }
 
 const STATUS_STYLE: Record<TableStatus, string> = {
-  free: "border-emerald-400 bg-emerald-50 text-emerald-900",
-  seated: "border-amber-500 bg-amber-100 text-amber-900",
-  bill_requested: "border-purple-500 bg-purple-100 text-purple-900",
-  cleaning: "border-stone-400 bg-stone-200 text-stone-600",
-  out_of_service: "border-red-300 bg-red-50 text-red-400",
+  free: "border-emerald-400 bg-emerald-50 text-emerald-900 dark:border-emerald-600 dark:bg-emerald-950 dark:text-emerald-200",
+  seated: "border-primary bg-primary/10 text-primary",
+  bill_requested:
+    "border-purple-500 bg-purple-100 text-purple-900 dark:border-purple-500 dark:bg-purple-950 dark:text-purple-200",
+  cleaning: "border-muted-foreground/40 bg-muted text-muted-foreground",
+  out_of_service: "border-destructive/40 bg-destructive/5 text-destructive/80",
+};
+/* Status is never color-only: each state also carries an icon (and label in the legend). */
+const STATUS_ICON: Record<TableStatus, LucideIcon> = {
+  free: CircleCheckIcon,
+  seated: UsersIcon,
+  bill_requested: ReceiptIcon,
+  cleaning: SparklesIcon,
+  out_of_service: BanIcon,
 };
 const LEGEND: TableStatus[] = ["free", "seated", "bill_requested", "cleaning", "out_of_service"];
 const GRID = 10;
@@ -95,21 +112,21 @@ export function FloorPlan({ canEdit }: { canEdit: boolean }) {
 
   const selected = tables.find((t) => t.id === selectedId) ?? null;
 
-  if (!loaded) return <p className="text-sm text-stone-400">در حال بارگذاری…</p>;
+  if (!loaded) return <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>;
 
   return (
     <div>
       <ErrorBox>{error}</ErrorBox>
       <div className="mb-4 flex flex-wrap items-center gap-3">
         {canEdit ? (
-          <div className="flex gap-1 rounded-lg bg-stone-100 p-1 text-sm">
+          <div className="flex gap-1 rounded-lg bg-muted p-1 text-sm">
             <button
               type="button"
               onClick={() => {
                 setMode("view");
                 setSelectedId(null);
               }}
-              className={`rounded-md px-3 py-1.5 ${mode === "view" ? "bg-white shadow-sm" : "text-stone-500"}`}
+              className={`rounded-md px-3 py-1.5 ${mode === "view" ? "bg-card shadow-sm" : "text-muted-foreground"}`}
             >
               نمای سالن
             </button>
@@ -119,19 +136,26 @@ export function FloorPlan({ canEdit }: { canEdit: boolean }) {
                 setMode("edit");
                 setSelectedId(null);
               }}
-              className={`rounded-md px-3 py-1.5 ${mode === "edit" ? "bg-white shadow-sm" : "text-stone-500"}`}
+              className={`rounded-md px-3 py-1.5 ${mode === "edit" ? "bg-card shadow-sm" : "text-muted-foreground"}`}
             >
               ویرایش پلان
             </button>
           </div>
         ) : null}
-        <div className="flex flex-wrap gap-3 text-xs text-stone-500">
-          {LEGEND.map((s) => (
-            <span key={s} className="flex items-center gap-1.5">
-              <span className={`inline-block size-3 rounded-full border ${STATUS_STYLE[s]}`} />
-              {TABLE_STATUS_LABELS[s]}
-            </span>
-          ))}
+        <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+          {LEGEND.map((s) => {
+            const Icon = STATUS_ICON[s];
+            return (
+              <span key={s} className="flex items-center gap-1.5">
+                <span
+                  className={`inline-flex size-4 items-center justify-center rounded-full border ${STATUS_STYLE[s]}`}
+                >
+                  <Icon className="size-2.5" />
+                </span>
+                {TABLE_STATUS_LABELS[s]}
+              </span>
+            );
+          })}
         </div>
       </div>
 
@@ -162,7 +186,7 @@ export function FloorPlan({ canEdit }: { canEdit: boolean }) {
           ) : selected ? (
             <ViewPanel table={selected} onChange={load} setError={setError} onClose={() => setSelectedId(null)} />
           ) : (
-            <div className="rounded-2xl bg-white p-6 text-sm text-stone-400 shadow-sm">
+            <div className="rounded-2xl bg-card p-6 text-sm text-muted-foreground shadow-sm">
               میزی را برای مشاهده یا نشاندن مهمان انتخاب کنید.
             </div>
           )}
@@ -227,17 +251,17 @@ function Canvas({
       ref={canvasRef}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
-      className="relative min-h-[520px] flex-1 overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-sm"
+      className="relative min-h-[520px] flex-1 overflow-hidden rounded-2xl border border-border bg-card shadow-sm"
       style={{
         backgroundImage:
           mode === "edit"
-            ? "linear-gradient(to right,#f1f5f9 1px,transparent 1px),linear-gradient(to bottom,#f1f5f9 1px,transparent 1px)"
+            ? "linear-gradient(to right,var(--border) 1px,transparent 1px),linear-gradient(to bottom,var(--border) 1px,transparent 1px)"
             : undefined,
         backgroundSize: `${GRID * 2}px ${GRID * 2}px`,
       }}
     >
       {tables.length === 0 ? (
-        <p className="absolute inset-0 flex items-center justify-center text-sm text-stone-400">
+        <p className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">
           هنوز میزی روی پلان نیست.
         </p>
       ) : null}
@@ -249,8 +273,8 @@ function Canvas({
             key={t.id}
             type="button"
             onPointerDown={(e) => onPointerDown(e, t)}
-            className={`absolute flex flex-col items-center justify-center border-2 p-1 text-center text-xs shadow-sm transition ${STATUS_STYLE[t.status]} ${
-              selectedId === t.id ? "ring-2 ring-sky-400 ring-offset-1" : ""
+            className={`absolute flex flex-col items-center justify-center border-2 p-1 text-center text-xs shadow-sm transition-[color,background-color,border-color,box-shadow,transform] duration-300 hover:shadow-md active:scale-[0.98] ${STATUS_STYLE[t.status]} ${
+              selectedId === t.id ? "ring-2 ring-ring ring-offset-1 ring-offset-background" : ""
             } ${mode === "edit" ? "cursor-move" : "cursor-pointer"}`}
             style={{
               insetInlineStart: t.pos_x,
@@ -260,7 +284,13 @@ function Canvas({
               borderRadius: t.shape === "circle" ? "9999px" : "0.5rem",
             }}
           >
-            <span className="font-bold leading-tight">{t.name}</span>
+            <span className="flex items-center gap-1 font-bold leading-tight">
+              {(() => {
+                const Icon = STATUS_ICON[t.status];
+                return <Icon className="size-3" />;
+              })()}
+              {t.name}
+            </span>
             <span className="text-[10px] opacity-70">
               {toPersianDigits(t.capacity)} نفره{sectionName(t.section_id) ? ` · ${sectionName(t.section_id)}` : ""}
             </span>
@@ -268,7 +298,7 @@ function Canvas({
               <span className="mt-0.5 text-[10px] font-semibold">{formatToman(total)}</span>
             ) : null}
             {reserved && t.status === "free" ? (
-              <span className="mt-0.5 rounded bg-sky-600 px-1 text-[9px] text-white">
+              <span className="mt-0.5 rounded bg-sky-700 px-1 text-[9px] text-white dark:bg-sky-600">
                 رزرو {toPersianDigits(formatJalali(reserved.reserved_at).slice(5))}
               </span>
             ) : null}
@@ -326,21 +356,21 @@ function ViewPanel({
   }
 
   return (
-    <div className="rounded-2xl bg-white p-5 shadow-sm">
+    <div className="rounded-2xl bg-card p-5 shadow-sm">
       <div className="mb-3 flex items-center justify-between">
         <div>
           <h2 className="text-lg font-bold">میز {table.name}</h2>
-          <p className="text-xs text-stone-500">
+          <p className="text-xs text-muted-foreground">
             {toPersianDigits(table.capacity)} نفره · {TABLE_STATUS_LABELS[table.status]}
           </p>
         </div>
-        <button type="button" onClick={onClose} className="text-sm text-stone-400 hover:text-stone-600">
+        <button type="button" onClick={onClose} className="text-sm text-muted-foreground hover:text-foreground">
           ✕
         </button>
       </div>
 
       {table.upcoming_reservation ? (
-        <div className="mb-3 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800">
+        <div className="mb-3 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800 dark:border-sky-900 dark:bg-sky-950 dark:text-sky-200">
           رزرو پیش‌رو: {table.upcoming_reservation.customer_name} ·{" "}
           {toPersianDigits(formatJalali(table.upcoming_reservation.reserved_at, { withMonthName: true }))} ·{" "}
           {toPersianDigits(new Date(table.upcoming_reservation.reserved_at).toLocaleTimeString("en-GB", {
@@ -398,7 +428,7 @@ function ViewPanel({
         <button
           type="button"
           onClick={() => act({ status: "out_of_service" })}
-          className="mt-3 block text-xs text-stone-400 hover:text-red-600"
+          className="mt-3 block text-xs text-muted-foreground hover:text-destructive"
         >
           خارج کردن از سرویس
         </button>
@@ -435,11 +465,11 @@ function EditorPanel({
       {selected ? (
         <TableEditor table={selected} sections={sections} onChange={onChange} setError={setError} />
       ) : (
-        <div className="rounded-2xl bg-white p-4 text-xs text-stone-400 shadow-sm">
+        <div className="rounded-2xl bg-card p-4 text-xs text-muted-foreground shadow-sm">
           برای ویرایش یک میز، آن را روی پلان انتخاب کنید. برای جابه‌جایی، میز را بکشید.
         </div>
       )}
-      <p className="text-xs text-stone-400">تعداد میزها: {toPersianDigits(tables.length)}</p>
+      <p className="text-xs text-muted-foreground">تعداد میزها: {toPersianDigits(tables.length)}</p>
     </div>
   );
 }
@@ -485,7 +515,7 @@ function SectionEditor({
   }
 
   return (
-    <div className="rounded-2xl bg-white p-4 shadow-sm">
+    <div className="rounded-2xl bg-card p-4 shadow-sm">
       <h3 className="mb-3 font-bold">بخش‌ها و گارسون‌ها</h3>
       <div className="mb-3 flex gap-2">
         <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} placeholder="نام بخش جدید" />
@@ -509,12 +539,12 @@ function SectionEditor({
                 </option>
               ))}
             </select>
-            <button type="button" onClick={() => removeSection(s.id)} className="text-xs text-red-600 hover:underline">
+            <button type="button" onClick={() => removeSection(s.id)} className="text-xs text-destructive hover:underline">
               حذف
             </button>
           </li>
         ))}
-        {sections.length === 0 ? <li className="text-xs text-stone-400">هنوز بخشی تعریف نشده است.</li> : null}
+        {sections.length === 0 ? <li className="text-xs text-muted-foreground">هنوز بخشی تعریف نشده است.</li> : null}
       </ul>
     </div>
   );
@@ -554,7 +584,7 @@ function AddTable({
   }
 
   return (
-    <div className="rounded-2xl bg-white p-4 shadow-sm">
+    <div className="rounded-2xl bg-card p-4 shadow-sm">
       <h3 className="mb-3 font-bold">افزودن میز</h3>
       <div className="grid grid-cols-2 gap-2">
         <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} placeholder="نام/شماره میز" />
@@ -643,7 +673,7 @@ function TableEditor({
   }
 
   return (
-    <div className="rounded-2xl bg-white p-4 shadow-sm">
+    <div className="rounded-2xl bg-card p-4 shadow-sm">
       <h3 className="mb-3 font-bold">ویرایش میز {table.name}</h3>
       <div className="grid grid-cols-2 gap-2">
         <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} placeholder="نام" />
@@ -688,7 +718,7 @@ function TableEditor({
         <PrimaryButton type="button" onClick={save} disabled={busy}>
           ذخیره
         </PrimaryButton>
-        <button type="button" onClick={remove} className="text-xs text-red-600 hover:underline">
+        <button type="button" onClick={remove} className="text-xs text-destructive hover:underline">
           حذف میز
         </button>
       </div>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toPersianDigits } from "@/lib/digits";
 import { formatToman } from "@/lib/money";
 import { inputClass, PrimaryButton, SecondaryButton } from "./ui";
@@ -48,14 +49,16 @@ export function ModifierPicker({
   });
 
   return (
-    <div className="fixed inset-0 z-10 flex items-center justify-center bg-black/30 p-4" onClick={onCancel}>
-      <div className="max-h-[80vh] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-5" onClick={(e) => e.stopPropagation()}>
-        <h3 className="mb-4 font-semibold">{itemName}</h3>
+    <Dialog open onOpenChange={(open) => !open && onCancel()}>
+      <DialogContent className="max-h-[80vh] max-w-md overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>{itemName}</DialogTitle>
+        </DialogHeader>
         {groups.map((g) => (
           <div key={g.id} className="mb-4">
-            <p className="mb-2 text-sm font-medium text-stone-700">
+            <p className="mb-2 text-sm font-medium text-foreground">
               {g.name}{" "}
-              <span className="text-xs text-stone-400">
+              <span className="text-xs text-muted-foreground">
                 (انتخاب {toPersianDigits(g.min_select)} تا {toPersianDigits(g.max_select)})
               </span>
             </p>
@@ -67,8 +70,10 @@ export function ModifierPicker({
                     key={m.id}
                     type="button"
                     onClick={() => toggle(g, m.id)}
-                    className={`rounded-full border px-3 py-1.5 text-xs ${
-                      isOn ? "border-amber-500 bg-amber-50 text-amber-800" : "border-stone-300 text-stone-600"
+                    className={`rounded-full border px-3 py-1.5 text-xs transition-colors active:scale-95 ${
+                      isOn
+                        ? "border-primary bg-primary/5 text-primary"
+                        : "border-input text-muted-foreground hover:border-primary/50 hover:text-foreground"
                     }`}
                   >
                     {m.name}
@@ -90,7 +95,7 @@ export function ModifierPicker({
             افزودن
           </PrimaryButton>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
