@@ -4,8 +4,18 @@ import { useCallback, useEffect, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
 import { formatToman } from "@/lib/money";
 import { formatQueueLabel } from "@/lib/orders";
+import { kickDrawer, printReceipt } from "@/lib/print-agent-client";
+import type { ReceiptData } from "@/lib/receipt-template";
 import { ModifierPicker, type ModifierGroupWithModifiers } from "../../modifier-picker";
-import { api, ErrorBox, errorMessage, inputClass, PrimaryButton, SecondaryButton } from "../../ui";
+import { apiOrQueue } from "../../offline-queue";
+import { api, ErrorBox, errorMessage, InfoBox, inputClass, PrimaryButton, SecondaryButton } from "../../ui";
+import { firstPrinter, useBusinessInfo, usePrinters } from "../../use-printers";
+
+const PAYMENT_METHODS: { value: "cash" | "card" | "card_to_card"; label: string }[] = [
+  { value: "cash", label: "نقدی" },
+  { value: "card", label: "کارت‌خوان" },
+  { value: "card_to_card", label: "کارت‌به‌کارت" },
+];
 
 interface OrderRow {
   id: string;
@@ -62,6 +72,7 @@ export function OrderDetail({ orderId, canEdit }: { orderId: string; canEdit: bo
   const [modifiers, setModifiers] = useState<ModifierRow[]>([]);
   const [menu, setMenu] = useState<MenuData | null>(null);
   const [error, setError] = useState("");
+  const [info, setInfo] = useState("");
   const [busy, setBusy] = useState(false);
 
   const [addItemId, setAddItemId] = useState("");
@@ -69,6 +80,10 @@ export function OrderDetail({ orderId, canEdit }: { orderId: string; canEdit: bo
   const [pickerItem, setPickerItem] = useState<MenuItem | null>(null);
   const [discountType, setDiscountType] = useState<"" | "percent" | "amount">("");
   const [discountValue, setDiscountValue] = useState("");
+  const [payMethod, setPayMethod] = useState<"cash" | "card" | "card_to_card">("cash");
+  const [paying, setPaying] = useState(false);
+  const printers = usePrinters();
+  const business = useBusinessInfo();
 
   const load = useCallback(() => {
     api<{ order: OrderRow; items: OrderItemRow[]; modifiers: ModifierRow[] }>(`/api/orders/${orderId}`).then(
@@ -121,16 +136,27 @@ export function OrderDetail({ orderId, canEdit }: { orderId: string; canEdit: bo
 
   async function addItem(menuItemId: string, modifierIds: string[], note: string) {
     const quantity = Number(addQty) || 1;
-    const ok = await run(() =>
-      api(`/api/orders/${orderId}/items`, {
-        method: "POST",
-        body: JSON.stringify({ items: [{ menuItemId, quantity, modifierIds, note: note || undefined }] }),
-      }),
+    const items = [{ menuItemId, quantity, modifierIds, note: note || undefined }];
+    setBusy(true);
+    setError("");
+    setInfo("");
+    const { ok, queued, data } = await apiOrQueue<{ error?: string }>(
+      `/api/orders/${orderId}/items`,
+      { method: "POST", body: { items } },
+      { type: "order.add_items", payload: { orderId, items }, description: "افزودن قلم به سفارش" },
     );
-    if (ok) {
-      setAddItemId("");
-      setAddQty("1");
+    setBusy(false);
+    if (!ok) {
+      setError(errorMessage(data.error));
+      return;
     }
+    if (queued) {
+      setInfo("اتصال قطع است — افزودن این قلم ذخیره شد و پس از اتصال مجدد ارسال می‌شود.");
+    } else {
+      load();
+    }
+    setAddItemId("");
+    setAddQty("1");
   }
 
   async function saveDiscount() {
@@ -162,6 +188,57 @@ export function OrderDetail({ orderId, canEdit }: { orderId: string; canEdit: bo
     );
   }
 
+  /**
+   * Checkout: records the payment (POST /api/orders/[id]/pay), then — best
+   * effort, never blocking checkout success — asks the local print agent to
+   * print the receipt and, for cash, kick the drawer. If no receipt printer
+   * is configured or the agent isn't reachable, checkout still succeeds;
+   * printing just silently doesn't happen (same principle as offline
+   * queueing: the business transaction and the peripheral side-effect are
+   * decoupled).
+   */
+  async function pay() {
+    if (!order) return;
+    setPaying(true);
+    setError("");
+    const { ok, data } = await api<{ error?: string }>(`/api/orders/${orderId}/pay`, {
+      method: "POST",
+      body: JSON.stringify({ method: payMethod }),
+    });
+    setPaying(false);
+    if (!ok) return setError(errorMessage(data.error));
+    load();
+
+    const receiptPrinter = firstPrinter(printers, "receipt");
+    if (receiptPrinter) {
+      const receipt: ReceiptData = {
+        business: { name: business.name, address: business.address, phone: business.phone },
+        orderLabel: formatQueueLabel(order.type, order.order_number),
+        orderTypeLabel: order.type === "dine_in" ? `حضوری${order.table_name ? ` — ${order.table_name}` : ""}` : "بیرون‌بر",
+        issuedAt: new Date().toISOString(),
+        lines: items
+          .filter((it) => it.status !== "voided")
+          .map((it) => {
+            const mods = modifiers.filter((m) => m.order_item_id === it.id);
+            const modSum = mods.reduce((a, m) => a + Number(m.price_delta), 0);
+            return {
+              name: it.name_snapshot,
+              quantity: it.quantity,
+              lineTotal: (Number(it.unit_price) + modSum) * it.quantity,
+              modifiersLabel: mods.map((m) => m.name_snapshot).join("، ") || null,
+            };
+          }),
+        subtotal: Number(order.subtotal),
+        discount: Number(order.discount),
+        tax: Number(order.tax),
+        total: Number(order.total),
+        paymentMethod: payMethod,
+      };
+      void printReceipt(receiptPrinter.connection, receipt);
+      if (payMethod === "cash") void kickDrawer(receiptPrinter.connection);
+    }
+  }
+
   if (!order) return <p className="text-sm text-stone-400">در حال بارگذاری…</p>;
 
   const isOpen = order.status === "open";
@@ -186,6 +263,7 @@ export function OrderDetail({ orderId, canEdit }: { orderId: string; canEdit: bo
       </header>
 
       <ErrorBox>{error}</ErrorBox>
+      {info ? <InfoBox>{info}</InfoBox> : null}
 
       <section className="mb-6 rounded-2xl bg-white p-5 shadow-sm">
         <ul className="divide-y divide-stone-100">
@@ -294,6 +372,27 @@ export function OrderDetail({ orderId, canEdit }: { orderId: string; canEdit: bo
           {Number(order.tax) > 0 ? <Row label="مالیات" value={formatToman(Number(order.tax))} /> : null}
           <Row label="جمع کل" value={formatToman(Number(order.total))} bold />
         </dl>
+
+        {editable ? (
+          <div className="mt-4 border-t border-stone-100 pt-4">
+            <h2 className="mb-3 font-semibold">دریافت وجه و تکمیل سفارش</h2>
+            <div className="mb-3 flex gap-2">
+              {PAYMENT_METHODS.map((m) => (
+                <button
+                  key={m.value}
+                  type="button"
+                  onClick={() => setPayMethod(m.value)}
+                  className={`rounded-lg px-4 py-2 text-sm ${payMethod === m.value ? "bg-amber-600 text-white" : "bg-stone-100 text-stone-600 hover:bg-stone-200"}`}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+            <PrimaryButton type="button" onClick={pay} disabled={paying}>
+              {paying ? "در حال ثبت پرداخت…" : "دریافت و تکمیل سفارش"}
+            </PrimaryButton>
+          </div>
+        ) : null}
       </section>
 
       {pickerItem ? (

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { kickDrawer, testPrint } from "@/lib/print-agent-client";
 import {
   api,
   ErrorBox,
@@ -51,17 +52,33 @@ export default function HardwareStep() {
     load();
   }
 
-  async function test(printerId: string, target: "print" | "drawer") {
+  async function test(printer: Printer, target: "print" | "drawer") {
     setBusy(true);
     setError("");
     setPreview("");
+
+    // Try the real local print agent first (src/lib/print-agent-client.ts);
+    // it's a separate process on the till PC and may not be running,
+    // especially during the wizard on a fresh setup — that's fine, the
+    // stub call below still marks the wizard step done and shows a
+    // simulated preview so the pairing flow works either way.
+    const agentResult =
+      target === "drawer" ? await kickDrawer(printer.connection) : await testPrint(printer.connection, printer.kind);
+
     const { ok, data } = await api<{ error?: string; preview?: string }>("/api/setup/hardware", {
       method: "POST",
-      body: JSON.stringify({ test: { printerId, target } }),
+      body: JSON.stringify({ test: { printerId: printer.id, target } }),
     });
     setBusy(false);
     if (!ok) return setError(errorMessage(data.error));
-    setPreview(data.preview ?? "");
+
+    setPreview(
+      agentResult.ok
+        ? target === "drawer"
+          ? "کشوی پول با موفقیت باز شد."
+          : "چاپ آزمایشی روی چاپگر واقعی ارسال شد."
+        : `${data.preview ?? ""}\n\n(دستگاه چاپ محلی در دسترس نیست — این فقط یک پیش‌نمایش شبیه‌سازی‌شده است.)`,
+    );
   }
 
   return (
@@ -131,10 +148,10 @@ export default function HardwareStep() {
                     </span>
                   </div>
                   <div className="flex gap-2">
-                    <SecondaryButton onClick={() => test(p.id, "print")} disabled={busy}>
+                    <SecondaryButton onClick={() => test(p, "print")} disabled={busy}>
                       چاپ آزمایشی
                     </SecondaryButton>
-                    <SecondaryButton onClick={() => test(p.id, "drawer")} disabled={busy}>
+                    <SecondaryButton onClick={() => test(p, "drawer")} disabled={busy}>
                       آزمایش کشوی پول
                     </SecondaryButton>
                   </div>

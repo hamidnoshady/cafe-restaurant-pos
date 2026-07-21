@@ -12,14 +12,18 @@
     "lint": "next lint",
     "test": "vitest run",
     "db:migrate": "tsx scripts/migrate.ts",
-    "db:seed": "tsx scripts/seed.ts"
+    "db:seed": "tsx scripts/seed.ts",
+    "print-agent": "tsx print-agent/server.ts"
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",
+    "dexie": "^4.4.4",
     "exceljs": "^4.4.0",
     "jose": "^6.0.0",
     "next": "^15.4.0",
     "pg": "^8.16.0",
+    "playwright-core": "^1.61.1",
+    "pngjs": "^7.0.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "ws": "^8.21.1"
@@ -28,6 +32,7 @@
     "@tailwindcss/postcss": "^4.1.0",
     "@types/node": "^22.15.0",
     "@types/pg": "^8.15.0",
+    "@types/pngjs": "^6.0.5",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@types/ws": "^8.18.1",
