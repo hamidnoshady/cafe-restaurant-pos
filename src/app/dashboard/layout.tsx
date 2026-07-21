@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { LogoutButton } from "./logout-button";
+import { OfflineBanner } from "./offline-banner";
 
 const ROLE_LABELS: Record<string, string> = {
   owner: "مالک",
@@ -76,7 +77,10 @@ export default async function DashboardLayout({
         </div>
       </aside>
 
-      <main className="flex-1 p-6">{children}</main>
+      <div className="flex flex-1 flex-col overflow-hidden">
+        <OfflineBanner />
+        <main className="flex-1 overflow-y-auto p-6">{children}</main>
+      </div>
     </div>
   );
 }

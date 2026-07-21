@@ -66,6 +66,11 @@ export function errorMessage(code: string | undefined): string {
     time_in_past: "زمان رزرو نمی‌تواند در گذشته باشد.",
     invalid_party_size: "تعداد نفرات باید بزرگ‌تر از صفر باشد.",
     no_tables: "حداقل یک میز لازم است.",
+    // Phase 5 — offline queue, payments, hardware
+    invalid_payment_method: "روش پرداخت نامعتبر است.",
+    conflict: "این تغییر با یک عملیات دیگر تداخل دارد و باید دستی بررسی شود.",
+    printer_not_found: "چاپگر پیدا نشد.",
+    agent_unreachable: "دستگاه چاپ در دسترس نیست. اتصال چاپگر محلی را بررسی کنید.",
   };
   return map[code ?? ""] ?? "خطای غیرمنتظره. دوباره تلاش کنید.";
 }

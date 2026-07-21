@@ -2,11 +2,15 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
+import type { KitchenTicketData } from "@/lib/kitchen-ticket-template";
 import { formatToman } from "@/lib/money";
 import { ORDER_ITEM_STATUS_LABELS, type OrderItemStatus } from "@/lib/order-item-status";
+import { printKitchenTicket } from "@/lib/print-agent-client";
 import { ModifierPicker } from "../modifier-picker";
+import { apiOrQueue } from "../offline-queue";
 import { useRealtime } from "../use-realtime";
-import { api, ErrorBox, errorMessage, PrimaryButton, SecondaryButton } from "../ui";
+import { api, ErrorBox, errorMessage, InfoBox, PrimaryButton, SecondaryButton } from "../ui";
+import { firstPrinter, usePrinters } from "../use-printers";
 
 interface Category {
   id: string;
@@ -101,7 +105,9 @@ export function TableOrderPanel({
   const [cart, setCart] = useState<CartUiLine[]>([]);
   const [pickerItem, setPickerItem] = useState<Item | null>(null);
   const [error, setError] = useState("");
+  const [info, setInfo] = useState("");
   const [busy, setBusy] = useState(false);
+  const printers = usePrinters();
 
   useEffect(() => {
     api<MenuData>("/api/menu").then(({ ok, data }) => {
@@ -190,22 +196,50 @@ export function TableOrderPanel({
 
   async function sendToKitchen() {
     setError("");
+    setInfo("");
     if (cart.length === 0) return;
     setBusy(true);
     const items = cart.map((l) => ({ menuItemId: l.menuItemId, quantity: l.quantity, modifierIds: l.modifierIds, note: l.note || undefined }));
     const res = table.order_id
-      ? await api(`/api/orders/${table.order_id}/items`, { method: "POST", body: JSON.stringify({ items }) })
-      : await api("/api/orders", { method: "POST", body: JSON.stringify({ type: "dine_in", tableId: table.id, items }) });
+      ? await apiOrQueue(
+          `/api/orders/${table.order_id}/items`,
+          { method: "POST", body: { items } },
+          { type: "order.add_items", payload: { orderId: table.order_id, items }, description: `افزودن قلم — ${table.name}` },
+        )
+      : await apiOrQueue(
+          "/api/orders",
+          { method: "POST", body: { type: "dine_in", tableId: table.id, items } },
+          { type: "order.create", payload: { type: "dine_in", tableId: table.id, items }, description: `سفارش حضوری — ${table.name}` },
+        );
     setBusy(false);
     if (!res.ok) return setError(errorMessage((res.data as { error?: string }).error));
+
+    if (res.queued) {
+      setInfo("اتصال قطع است — این ارسال ذخیره شد و پس از اتصال مجدد به آشپزخانه ارسال می‌شود.");
+    } else {
+      const kitchenPrinter = firstPrinter(printers, "kitchen");
+      if (kitchenPrinter) {
+        const ticket: KitchenTicketData = {
+          label: table.name,
+          orderTypeLabel: "حضوری",
+          sentAt: new Date().toISOString(),
+          lines: cart.map((l) => ({ name: l.name, quantity: l.quantity, modifiersLabel: l.modifierLabel || null, note: l.note || null })),
+        };
+        void printKitchenTicket(kitchenPrinter.connection, ticket);
+      }
+      onChanged();
+      loadOrder();
+    }
     setCart([]);
-    onChanged();
-    loadOrder();
   }
 
   async function markServed(itemId: string) {
-    const res = await api(`/api/kitchen/items/${itemId}`, { method: "PATCH", body: JSON.stringify({ status: "served" }) });
-    if (res.ok) loadOrder();
+    const res = await apiOrQueue(
+      `/api/kitchen/items/${itemId}`,
+      { method: "PATCH", body: { status: "served" } },
+      { type: "order_item.status", payload: { itemId, status: "served" }, description: "تحویل قلم" },
+    );
+    if (res.ok && !res.queued) loadOrder();
   }
 
   return (
@@ -258,6 +292,7 @@ export function TableOrderPanel({
 
           <div className="flex-1 rounded-2xl bg-white p-4 shadow-sm">
             <ErrorBox>{error}</ErrorBox>
+            {info ? <InfoBox>{info}</InfoBox> : null}
             {!menu ? (
               <p className="text-sm text-stone-400">در حال بارگذاری منو…</p>
             ) : (

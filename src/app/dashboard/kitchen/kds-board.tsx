@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
 import { formatQueueLabel } from "@/lib/orders";
 import { DEFAULT_TICKET_AGING_MINUTES, ORDER_ITEM_STATUS_LABELS, ticketAgeMinutes } from "@/lib/order-item-status";
+import { apiOrQueue } from "../offline-queue";
 import { useRealtime } from "../use-realtime";
 import { api } from "../ui";
 
@@ -103,8 +104,12 @@ export function KdsBoard() {
   }, [items]);
 
   async function bump(itemId: string, status: "preparing" | "ready") {
-    const res = await api(`/api/kitchen/items/${itemId}`, { method: "PATCH", body: JSON.stringify({ status }) });
-    if (res.ok) load();
+    const res = await apiOrQueue(
+      `/api/kitchen/items/${itemId}`,
+      { method: "PATCH", body: { status } },
+      { type: "order_item.status", payload: { itemId, status }, description: "بروزرسانی وضعیت آشپزخانه" },
+    );
+    if (res.ok && !res.queued) load();
   }
 
   if (tickets.length === 0) {

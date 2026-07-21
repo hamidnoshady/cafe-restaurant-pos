@@ -2,10 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
+import type { KitchenTicketData } from "@/lib/kitchen-ticket-template";
 import { formatToman } from "@/lib/money";
 import { computeOrderTotals, formatQueueLabel, type CartLine, type DiscountInput } from "@/lib/orders";
+import { printKitchenTicket } from "@/lib/print-agent-client";
 import { ModifierPicker } from "../modifier-picker";
+import { apiOrQueue } from "../offline-queue";
 import { api, ErrorBox, errorMessage, inputClass, PrimaryButton } from "../ui";
+import { firstPrinter, usePrinters } from "../use-printers";
 
 interface Category {
   id: string;
@@ -83,7 +87,8 @@ export function PosScreen() {
   const [pickerItem, setPickerItem] = useState<Item | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<{ orderNumber: number; type: OrderType; total: number } | null>(null);
+  const [result, setResult] = useState<{ orderNumber: number | null; type: OrderType; total: number; queued: boolean } | null>(null);
+  const printers = usePrinters();
 
   const load = useCallback(() => {
     Promise.all([api<MenuData>("/api/menu"), api<{ tables: Table[] }>("/api/tables"), api<{ orders: OpenOrder[] }>("/api/orders")]).then(
@@ -181,20 +186,37 @@ export function PosScreen() {
     if (orderType === "dine_in" && !tableId) return setError("انتخاب میز الزامی است.");
 
     setBusy(true);
-    const { ok, data } = await api<{ error?: string; orderNumber?: number }>("/api/orders", {
-      method: "POST",
-      body: JSON.stringify({
-        type: orderType,
-        tableId: orderType === "dine_in" ? tableId : undefined,
-        guestCount: guestCount ? Number(guestCount) : undefined,
-        discount: discountType ? { type: discountType, value: Number(discountValue) || 0 } : undefined,
-        items: cart.map((l) => ({ menuItemId: l.menuItemId, quantity: l.quantity, modifierIds: l.modifierIds, note: l.note || undefined })),
-      }),
-    });
+    const orderBody = {
+      type: orderType,
+      tableId: orderType === "dine_in" ? tableId : undefined,
+      guestCount: guestCount ? Number(guestCount) : undefined,
+      discount: discountType ? { type: discountType, value: Number(discountValue) || 0 } : undefined,
+      items: cart.map((l) => ({ menuItemId: l.menuItemId, quantity: l.quantity, modifierIds: l.modifierIds, note: l.note || undefined })),
+    };
+    const { ok, queued, data } = await apiOrQueue<{ error?: string; orderNumber?: number }>(
+      "/api/orders",
+      { method: "POST", body: orderBody },
+      { type: "order.create", payload: orderBody, description: `سفارش ${orderType === "dine_in" ? "حضوری" : "بیرون‌بر"}` },
+    );
     setBusy(false);
     if (!ok) return setError(errorMessage(data.error));
 
-    setResult({ orderNumber: data.orderNumber!, type: orderType, total: totals.total });
+    setResult({ orderNumber: queued ? null : (data.orderNumber ?? null), type: orderType, total: totals.total, queued });
+
+    // Kitchen ticket, in addition to the KDS (Phase 4) — best effort, never
+    // blocks order submission on a missing/unreachable printer.
+    const kitchenPrinter = firstPrinter(printers, "kitchen");
+    if (!queued && kitchenPrinter) {
+      const tableName = orderType === "dine_in" ? tables.find((t) => t.id === tableId)?.name : undefined;
+      const ticket: KitchenTicketData = {
+        label: orderType === "dine_in" ? (tableName ?? "میز") : "بیرون‌بر",
+        orderTypeLabel: orderType === "dine_in" ? "حضوری" : "بیرون‌بر",
+        sentAt: new Date().toISOString(),
+        lines: cart.map((l) => ({ name: l.name, quantity: l.quantity, modifiersLabel: l.modifierLabel || null, note: l.note || null })),
+      };
+      void printKitchenTicket(kitchenPrinter.connection, ticket);
+    }
+
     setCart([]);
     setTableId("");
     setGuestCount("");
@@ -208,10 +230,19 @@ export function PosScreen() {
   if (result) {
     return (
       <div className="mx-auto max-w-md rounded-2xl bg-white p-8 text-center shadow-sm">
-        <p className="mb-2 text-sm text-stone-500">سفارش ثبت شد</p>
-        <p className="mb-4 text-3xl font-bold text-amber-700">
-          {toPersianDigits(formatQueueLabel(result.type, result.orderNumber))}
-        </p>
+        {result.queued ? (
+          <>
+            <p className="mb-2 text-sm text-amber-700">اتصال قطع است — سفارش ذخیره شد و پس از اتصال مجدد ارسال می‌شود.</p>
+            <p className="mb-4 text-2xl font-bold text-amber-700">در صف ارسال</p>
+          </>
+        ) : (
+          <>
+            <p className="mb-2 text-sm text-stone-500">سفارش ثبت شد</p>
+            <p className="mb-4 text-3xl font-bold text-amber-700">
+              {toPersianDigits(formatQueueLabel(result.type, result.orderNumber!))}
+            </p>
+          </>
+        )}
         <p className="mb-6 text-lg">{formatToman(result.total)}</p>
         <PrimaryButton onClick={() => setResult(null)}>سفارش جدید</PrimaryButton>
       </div>

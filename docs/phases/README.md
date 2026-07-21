@@ -9,7 +9,7 @@ Each phase is a self-contained file with its own scope, exit criteria, and open 
 | 2 | Phase-2-Menu-Cashier-Order-Flow.md | Implemented |
 | 3 | Phase-3-Table-Management-Reservations.md | Implemented |
 | 4 | Phase-4-Waiter-Kitchen-RealTime-Sync.md | Implemented |
-| 5 | Phase-5-Offline-Queue-Hardware.md | Not started |
+| 5 | Phase-5-Offline-Queue-Hardware.md | Implemented |
 | 6 | Phase-6-Inventory.md | Not started |
 | 7 | Phase-7-Double-Entry-Ledger.md | Not started |
 | 8 | Phase-8-Reporting-Analytics-Engine.md | Not started |
