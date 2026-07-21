@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth";
-import { query } from "@/lib/db";
+import { getPool, query } from "@/lib/db";
 import { getPrimaryLocation } from "@/lib/setup-state";
 import { broadcast } from "@/lib/realtime";
+import { deductForOrder } from "@/lib/inventory-service";
 
 const PAYMENT_METHODS = ["cash", "card", "card_to_card", "online", "credit"] as const;
 type PaymentMethod = (typeof PAYMENT_METHODS)[number];
@@ -22,6 +23,12 @@ interface PayBody {
  * dine-in table session's "split the bill" flow (Phase 3,
  * /api/table-sessions/[id]/split) computes shares for display, but each
  * share is still collected as its own order-level payment.
+ *
+ * This is also the inventory deduction trigger (Phase 6): completing an
+ * order is the one place order_items become immutable (they can only be
+ * added/voided/requantified while status = 'open'), so it's the only
+ * correct, exactly-once point to consume recipe ingredients. Payment
+ * recording, order completion, and deduction all happen in one transaction.
  */
 export async function POST(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   const { session, error } = await requireRole("owner", "manager", "cashier");
@@ -51,17 +58,28 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
   if (order.status !== "open") return NextResponse.json({ error: "order_not_open" }, { status: 409 });
 
   const total = Number(order.total);
-  if (total > 0) {
-    await query(
-      `INSERT INTO payments (location_id, order_id, method, amount, reference, received_by)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [location.id, id, method, total, body.reference?.trim() || null, session.sub],
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    if (total > 0) {
+      await client.query(
+        `INSERT INTO payments (location_id, order_id, method, amount, reference, received_by)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [location.id, id, method, total, body.reference?.trim() || null, session.sub],
+      );
+    }
+    await client.query(
+      "UPDATE orders SET status = 'completed', closed_by = $2, closed_at = now() WHERE id = $1",
+      [id, session.sub],
     );
+    await deductForOrder(client, session.businessId, location.id, id, session.sub);
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
   }
-  await query(
-    "UPDATE orders SET status = 'completed', closed_by = $2, closed_at = now() WHERE id = $1",
-    [id, session.sub],
-  );
 
   broadcast(location.id, { type: "order.updated", orderId: id });
   return NextResponse.json({ ok: true, amount: total, method });

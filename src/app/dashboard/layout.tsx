@@ -27,7 +27,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "میزهای من", href: "/dashboard/waiter", roles: ["owner", "manager", "waiter"] },
   { label: "آشپزخانه", href: "/dashboard/kitchen", roles: ["owner", "manager", "kitchen"] },
   { label: "رزروها", href: "/dashboard/reservations", roles: ["owner", "manager", "cashier", "waiter"] },
-  { label: "انبار" },
+  { label: "انبار", href: "/dashboard/inventory", roles: ["owner", "manager"] },
   { label: "حسابداری" },
   { label: "گزارش‌ها" },
   { label: "تنظیمات" },
