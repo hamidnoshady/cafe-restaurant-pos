@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth";
 import { query } from "@/lib/db";
+import { resolveSectionId } from "@/lib/floor";
 import { getPrimaryLocation } from "@/lib/setup-state";
 
 /**
@@ -15,7 +16,9 @@ export async function GET() {
   if (!location) return NextResponse.json({ tables: [] });
 
   const { rows: tables } = await query(
-    `SELECT id, name, zone, capacity, status, sort_order FROM dining_tables
+    `SELECT id, name, zone, section_id, capacity, status, sort_order,
+            pos_x, pos_y, width, height, shape
+       FROM dining_tables
       WHERE location_id = $1 AND is_active ORDER BY sort_order, name`,
     [location.id],
   );
@@ -26,7 +29,17 @@ export async function POST(request: NextRequest) {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
 
-  let body: { name?: string; zone?: string; capacity?: number };
+  let body: {
+    name?: string;
+    zone?: string;
+    sectionId?: string | null;
+    capacity?: number;
+    posX?: number;
+    posY?: number;
+    width?: number;
+    height?: number;
+    shape?: string;
+  };
   try {
     body = await request.json();
   } catch {
@@ -36,6 +49,7 @@ export async function POST(request: NextRequest) {
   const name = body.name?.trim();
   const capacity = Number.isFinite(body.capacity) ? Number(body.capacity) : 2;
   if (!name || capacity <= 0) return NextResponse.json({ error: "missing_fields" }, { status: 400 });
+  const shape = body.shape === "circle" ? "circle" : "rect";
 
   const location = await getPrimaryLocation(session.businessId);
   if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
@@ -46,12 +60,31 @@ export async function POST(request: NextRequest) {
   ]);
   if (dup.length > 0) return NextResponse.json({ error: "table_exists" }, { status: 409 });
 
+  const sectionId = await resolveSectionId(location.id, body.sectionId);
+  if (sectionId === false) return NextResponse.json({ error: "section_not_found" }, { status: 400 });
+
+  const clampPos = (v: unknown, def: number) => (Number.isFinite(v) ? Math.max(0, Math.round(Number(v))) : def);
+  const clampSize = (v: unknown, def: number) =>
+    Number.isFinite(v) ? Math.min(400, Math.max(30, Math.round(Number(v)))) : def;
+
   const { rows } = await query<{ id: string }>(
-    `INSERT INTO dining_tables (location_id, name, zone, capacity, sort_order)
-     SELECT $1, $2, $3, $4, COALESCE(MAX(sort_order) + 1, 0)
+    `INSERT INTO dining_tables (location_id, name, zone, section_id, capacity, sort_order,
+            pos_x, pos_y, width, height, shape)
+     SELECT $1, $2, $3, $4, $5, COALESCE(MAX(sort_order) + 1, 0), $6, $7, $8, $9, $10
        FROM dining_tables WHERE location_id = $1
      RETURNING id`,
-    [location.id, name, body.zone?.trim() || null, capacity],
+    [
+      location.id,
+      name,
+      body.zone?.trim() || null,
+      sectionId,
+      capacity,
+      clampPos(body.posX, 20),
+      clampPos(body.posY, 20),
+      clampSize(body.width, 80),
+      clampSize(body.height, 80),
+      shape,
+    ],
   );
   return NextResponse.json({ ok: true, id: rows[0].id });
 }

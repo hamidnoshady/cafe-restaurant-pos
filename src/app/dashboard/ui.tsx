@@ -47,6 +47,25 @@ export function errorMessage(code: string | undefined): string {
     order_not_open: "این سفارش دیگر باز نیست و قابل ویرایش نیست.",
     item_already_voided: "این قلم قبلاً باطل شده است.",
     not_found: "پیدا نشد.",
+    // Phase 3 — tables, sessions, reservations
+    section_exists: "بخشی با این نام وجود دارد.",
+    section_not_found: "بخش پیدا نشد.",
+    waiter_not_found: "گارسون انتخاب‌شده معتبر نیست.",
+    table_unavailable: "این میز در دسترس نیست (نظافت یا خارج از سرویس).",
+    table_in_use: "این میز نشست باز دارد و حذف نمی‌شود.",
+    invalid_status: "وضعیت میز نامعتبر است.",
+    invalid_transition: "این تغییر وضعیت میز مجاز نیست.",
+    seat_via_session: "برای نشاندن مهمان از «باز کردن میز» استفاده کنید.",
+    session_not_found: "نشست میز پیدا نشد.",
+    invalid_guests: "تعداد مهمان‌ها برای تقسیم صورتحساب معتبر نیست.",
+    invalid_split: "تقسیم صورتحساب معتبر نیست.",
+    reservation_conflict: "این میز در این بازهٔ زمانی رزرو دیگری دارد.",
+    reservation_not_found: "رزرو پیدا نشد.",
+    reservation_not_booked: "این رزرو دیگر در وضعیت رزرو نیست.",
+    invalid_time: "زمان واردشده معتبر نیست.",
+    time_in_past: "زمان رزرو نمی‌تواند در گذشته باشد.",
+    invalid_party_size: "تعداد نفرات باید بزرگ‌تر از صفر باشد.",
+    no_tables: "حداقل یک میز لازم است.",
   };
   return map[code ?? ""] ?? "خطای غیرمنتظره. دوباره تلاش کنید.";
 }
