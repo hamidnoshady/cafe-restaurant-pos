@@ -3,6 +3,7 @@ import { requireRole } from "@/lib/auth";
 import { getPool, query } from "@/lib/db";
 import { resolveCartItems, validateItemShape, type CartItemInput } from "@/lib/order-cart";
 import { computeOrderTotals, type DiscountInput } from "@/lib/orders";
+import { ensureSessionForTable } from "@/lib/table-session-service";
 import { getPrimaryLocation } from "@/lib/setup-state";
 
 /** Open orders for the cashier's "current orders" list. */
@@ -66,16 +67,16 @@ export async function POST(request: NextRequest) {
   if (body.type === "dine_in") {
     tableId = body.tableId ?? null;
     if (!tableId) return NextResponse.json({ error: "table_required" }, { status: 400 });
-    const { rows: table } = await query(
-      "SELECT id FROM dining_tables WHERE id = $1 AND location_id = $2 AND is_active",
+    const { rows: table } = await query<{ id: string; status: string }>(
+      "SELECT id, status FROM dining_tables WHERE id = $1 AND location_id = $2 AND is_active",
       [tableId, location.id],
     );
     if (table.length === 0) return NextResponse.json({ error: "table_not_found" }, { status: 404 });
-    const { rows: occupied } = await query(
-      "SELECT id FROM orders WHERE location_id = $1 AND table_id = $2 AND status = 'open'",
-      [location.id, tableId],
-    );
-    if (occupied.length > 0) return NextResponse.json({ error: "table_occupied" }, { status: 409 });
+    if (table[0].status === "cleaning" || table[0].status === "out_of_service") {
+      return NextResponse.json({ error: "table_unavailable" }, { status: 409 });
+    }
+    // A dine-in order joins the table's open session (grouping order rounds),
+    // or opens a fresh one below inside the transaction.
   }
 
   const resolved = await resolveCartItems(location.id, items);
@@ -96,17 +97,24 @@ export async function POST(request: NextRequest) {
     );
     const orderNumber = Number(counter[0].next_number);
 
+    const guestCount = Number.isFinite(body.guestCount) ? Number(body.guestCount) : null;
+    let tableSessionId: string | null = null;
+    if (body.type === "dine_in" && tableId) {
+      tableSessionId = await ensureSessionForTable(client, location.id, tableId, session.sub, guestCount);
+    }
+
     const { rows: orderRows } = await client.query<{ id: string }>(
-      `INSERT INTO orders (location_id, order_number, type, status, table_id, guest_count,
+      `INSERT INTO orders (location_id, order_number, type, status, table_id, table_session_id, guest_count,
               subtotal, discount, discount_type, discount_value, tax, total, note, opened_by)
-       VALUES ($1, $2, $3, 'open', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+       VALUES ($1, $2, $3, 'open', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
        RETURNING id`,
       [
         location.id,
         orderNumber,
         body.type,
         tableId,
-        Number.isFinite(body.guestCount) ? Number(body.guestCount) : null,
+        tableSessionId,
+        guestCount,
         totals.subtotal,
         totals.discount,
         discountType,

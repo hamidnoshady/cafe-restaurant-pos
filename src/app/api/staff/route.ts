@@ -1,0 +1,22 @@
+import { NextResponse } from "next/server";
+import { requireRole } from "@/lib/auth";
+import { query } from "@/lib/db";
+import { getPrimaryLocation } from "@/lib/setup-state";
+
+/** Active waiters at this location — for section assignment on the floor plan. */
+export async function GET() {
+  const { session, error } = await requireRole("owner", "manager");
+  if (error) return error;
+
+  const location = await getPrimaryLocation(session.businessId);
+  if (!location) return NextResponse.json({ waiters: [] });
+
+  const { rows: waiters } = await query(
+    `SELECT id, full_name FROM users
+      WHERE business_id = $1 AND role = 'waiter' AND is_active
+        AND (location_id IS NULL OR location_id = $2)
+      ORDER BY full_name`,
+    [session.businessId, location.id],
+  );
+  return NextResponse.json({ waiters });
+}
