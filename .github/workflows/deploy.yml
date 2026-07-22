@@ -112,19 +112,46 @@ jobs:
     needs: build-and-push
     runs-on: ubuntu-latest
     steps:
-      - name: Trigger Komodo redeploy
+      - name: Trigger Komodo redeploy and wait for the result
         env:
           KOMODO_URL: ${{ secrets.KOMODO_URL }}
           KOMODO_KEY: ${{ secrets.KOMODO_API_KEY }}
           KOMODO_SECRET: ${{ secrets.KOMODO_API_SECRET }}
         run: |
-          if [ -z "$KOMODO_URL" ]; then
-            echo "Komodo secrets not configured - skipping deploy." >&2
-            exit 0
+          set -euo pipefail
+          # Fail loudly rather than reporting a green deploy that never ran.
+          if [ -z "${KOMODO_URL}" ] || [ -z "${KOMODO_KEY}" ] || [ -z "${KOMODO_SECRET}" ]; then
+            echo "::error::Komodo deploy secrets are missing (KOMODO_URL / KOMODO_API_KEY / KOMODO_API_SECRET)."
+            exit 1
           fi
-          # Komodo pulls the freshly published :latest and recreates the stack.
-          curl -fsS --max-time 900 "${KOMODO_URL}/execute" \
-            -H "X-Api-Key: ${KOMODO_KEY}" \
-            -H "X-Api-Secret: ${KOMODO_SECRET}" \
-            -H 'Content-Type: application/json' \
-            -d '{"type":"DeployStack","params":{"stack":"pos"}}'
+
+          auth=(-H "X-Api-Key: ${KOMODO_KEY}" -H "X-Api-Secret: ${KOMODO_SECRET}"
+                -H 'Content-Type: application/json')
+
+          # DeployStack is asynchronous: this returns as soon as Komodo accepts
+          # the request, long before the pull and `compose up` have finished.
+          # Without polling, a failed deploy would still show a green job.
+          update_id=$(curl -fsS --max-time 120 "${KOMODO_URL}/execute" "${auth[@]}" \
+            -d '{"type":"DeployStack","params":{"stack":"pos"}}' | jq -r '.id')
+          echo "Komodo update: ${update_id}"
+
+          for _ in $(seq 1 120); do
+            body=$(curl -fsS --max-time 60 "${KOMODO_URL}/read" "${auth[@]}" \
+              -d "{\"type\":\"GetUpdate\",\"params\":{\"id\":\"${update_id}\"}}")
+
+            if [ "$(printf '%s' "$body" | jq -r '.status // ""')" = "Complete" ]; then
+              printf '%s' "$body" \
+                | jq -r '.logs[]? | "--- \(.stage) (success=\(.success))", (.stderr // ""), (.stdout // "")'
+
+              if [ "$(printf '%s' "$body" | jq -r '.success')" != "true" ]; then
+                echo "::error::Komodo reported the deploy as failed."
+                exit 1
+              fi
+              echo "Deploy complete."
+              exit 0
+            fi
+            sleep 10
+          done
+
+          echo "::error::Timed out waiting for Komodo to finish the deploy."
+          exit 1
