@@ -286,9 +286,9 @@ export function PosScreen() {
   const gridItems = menu.items.filter((i) => i.is_active && i.category_id === activeCategory);
 
   return (
-    <div className="flex h-[calc(100vh-3rem)] gap-4">
+    <div className="flex flex-col gap-4 lg:h-[calc(100vh-3rem)] lg:flex-row">
       {/* Item grid */}
-      <div className="flex flex-1 flex-col overflow-hidden rounded-2xl bg-card shadow-sm">
+      <div className="flex min-h-[55vh] flex-1 flex-col overflow-hidden rounded-2xl bg-card shadow-sm lg:min-h-0">
         <div className="flex gap-1 overflow-x-auto border-b border-border p-3">
           {activeCategories.map((c) => (
             <button
@@ -322,7 +322,7 @@ export function PosScreen() {
       </div>
 
       {/* Cart */}
-      <div className="flex w-96 shrink-0 flex-col overflow-hidden rounded-2xl bg-card shadow-sm">
+      <div className="flex w-full shrink-0 flex-col overflow-hidden rounded-2xl bg-card shadow-sm lg:w-96">
         <div className="border-b border-border p-4">
           <ErrorBox>{error}</ErrorBox>
           <div className="mb-3 grid grid-cols-3 gap-2 text-sm">
