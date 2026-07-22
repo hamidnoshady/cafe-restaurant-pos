@@ -33,38 +33,38 @@ export default async function DashboardPage() {
       {canSetup && !setupDone ? (
         <Link
           href="/setup"
-          className="mb-6 flex items-center justify-between rounded-xl border border-primary/30 bg-primary/5 px-5 py-4 text-sm text-primary transition hover:bg-primary/10"
+          className="mb-6 flex flex-col items-start gap-2 rounded-xl border border-primary/30 bg-primary/5 px-5 py-4 text-sm text-primary transition hover:bg-primary/10 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
         >
           <span>
             <b>راه‌اندازی اولیه کامل نشده است.</b> برای آماده‌شدن جهت ثبت سفارش، جادوگر راه‌اندازی را
             تکمیل کنید.
           </span>
-          <span className="font-semibold">ادامهٔ راه‌اندازی ←</span>
+          <span className="shrink-0 font-semibold">ادامهٔ راه‌اندازی ←</span>
         </Link>
       ) : null}
 
       {backupHealth?.alert.level === "error" ? (
         <Link
           href="/dashboard/backup"
-          className="mb-6 flex items-center justify-between rounded-xl border border-destructive/40 bg-destructive/10 px-5 py-4 text-sm text-destructive transition hover:bg-destructive/15"
+          className="mb-6 flex flex-col items-start gap-2 rounded-xl border border-destructive/40 bg-destructive/10 px-5 py-4 text-sm text-destructive transition hover:bg-destructive/15 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
         >
           <span>
             <b>هشدار پشتیبان‌گیری:</b>{" "}
             {BACKUP_ALERT_LABELS[backupHealth.alert.reason] ?? "وضعیت پشتیبان‌گیری را بررسی کنید."}
           </span>
-          <span className="font-semibold">بررسی ←</span>
+          <span className="shrink-0 font-semibold">بررسی ←</span>
         </Link>
       ) : null}
       {session?.role === "owner" && backupHealth?.alert.reason === "disabled" && setupDone ? (
         <Link
           href="/dashboard/backup"
-          className="mb-6 flex items-center justify-between rounded-xl border border-amber-500/40 bg-amber-500/10 px-5 py-4 text-sm text-amber-700 transition hover:bg-amber-500/15 dark:text-amber-400"
+          className="mb-6 flex flex-col items-start gap-2 rounded-xl border border-amber-500/40 bg-amber-500/10 px-5 py-4 text-sm text-amber-700 transition hover:bg-amber-500/15 dark:text-amber-400 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
         >
           <span>
             <b>پشتیبان‌گیری خودکار هنوز فعال نیست.</b> برای محافظت از داده‌ها، زمان‌بندی پشتیبان‌گیری
             را فعال کنید.
           </span>
-          <span className="font-semibold">فعال‌سازی ←</span>
+          <span className="shrink-0 font-semibold">فعال‌سازی ←</span>
         </Link>
       ) : null}
 
