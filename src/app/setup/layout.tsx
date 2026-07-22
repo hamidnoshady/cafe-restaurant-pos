@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { StepNav } from "./step-nav";
+import { SetupAssistant } from "./setup-assistant";
 
 export default async function SetupLayout({
   children,
@@ -21,6 +22,7 @@ export default async function SetupLayout({
         </div>
       </aside>
       <main className="min-w-0 flex-1 rounded-2xl bg-card p-6 shadow-sm">{children}</main>
+      <SetupAssistant />
     </div>
   );
 }
