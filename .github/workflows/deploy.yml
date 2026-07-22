@@ -131,8 +131,16 @@ jobs:
           # DeployStack is asynchronous: this returns as soon as Komodo accepts
           # the request, long before the pull and `compose up` have finished.
           # Without polling, a failed deploy would still show a green job.
+          # /execute returns the raw Update document, whose id is Mongo-style
+          # ({"_id":{"$oid":...}}). Only the list endpoints flatten it to .id.
           update_id=$(curl -fsS --max-time 120 "${KOMODO_URL}/execute" "${auth[@]}" \
-            -d '{"type":"DeployStack","params":{"stack":"pos"}}' | jq -r '.id')
+            -d '{"type":"DeployStack","params":{"stack":"pos"}}' \
+            | jq -r '._id["$oid"] // .id // empty')
+
+          if [ -z "${update_id}" ]; then
+            echo "::error::Komodo did not return an update id for the deploy."
+            exit 1
+          fi
           echo "Komodo update: ${update_id}"
 
           for _ in $(seq 1 120); do
