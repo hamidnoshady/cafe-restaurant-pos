@@ -13,6 +13,7 @@ import { useCallback, useEffect, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import { formatToman } from "@/lib/money";
+import { JalaliDatePicker } from "../jalali-date-picker";
 import { BarChart } from "../charts";
 import { ErrorBox, Field, InfoBox, PrimaryButton, SecondaryButton, api, inputClass } from "../ui";
 
@@ -134,9 +135,13 @@ function ComparisonCard() {
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <h2 className="font-semibold">مقایسهٔ شعبه‌ها</h2>
         <div className="flex flex-wrap items-center gap-2">
-          <input type="date" dir="ltr" className={inputClass} value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+          <div className="w-36">
+            <JalaliDatePicker value={dateFrom} onChange={setDateFrom} placeholder="از تاریخ" />
+          </div>
           <span className="text-xs text-muted-foreground">تا</span>
-          <input type="date" dir="ltr" className={inputClass} value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+          <div className="w-36">
+            <JalaliDatePicker value={dateTo} onChange={setDateTo} placeholder="تا تاریخ" />
+          </div>
         </div>
       </div>
 

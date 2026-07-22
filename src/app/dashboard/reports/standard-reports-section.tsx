@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { JalaliDatePicker } from "../jalali-date-picker";
 import { inputClass } from "../ui";
 import { ChartPreview, DataTable } from "./chart-preview";
 import { ExportButtons } from "./export-buttons";
@@ -117,9 +118,13 @@ export function StandardReportsSection() {
               <div className="flex flex-wrap items-center gap-2">
                 {(hasDateColumn || LEDGER_KEYS.has(selected.key)) && (
                   <>
-                    <input type="date" dir="ltr" className={inputClass} value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+                    <div className="w-36">
+                      <JalaliDatePicker value={dateFrom} onChange={setDateFrom} placeholder="از تاریخ" />
+                    </div>
                     <span className="text-xs text-muted-foreground">تا</span>
-                    <input type="date" dir="ltr" className={inputClass} value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+                    <div className="w-36">
+                      <JalaliDatePicker value={dateTo} onChange={setDateTo} placeholder="تا تاریخ" />
+                    </div>
                   </>
                 )}
                 {selected.chartType ? (

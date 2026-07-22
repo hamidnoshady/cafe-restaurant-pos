@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   formatJalali,
   isLeapJalaliYear,
+  isoDateToJalali,
   isValidJalaliDate,
   jalaliMonthLength,
   jalaliToIsoDate,
+  jalaliWeekdayColumn,
   toGregorian,
   toJalali,
 } from "./jalali";
@@ -65,5 +67,28 @@ describe("jalali conversion", () => {
   it("parses Jalali back to ISO date string", () => {
     expect(jalaliToIsoDate(1403, 1, 1)).toBe("2024-03-20");
     expect(() => jalaliToIsoDate(1404, 12, 30)).toThrow();
+  });
+
+  it("parses ISO date strings to Jalali parts", () => {
+    expect(isoDateToJalali("2024-03-20")).toEqual({ jy: 1403, jm: 1, jd: 1 });
+    expect(isoDateToJalali("2026-07-22")).toEqual({ jy: 1405, jm: 4, jd: 31 });
+    expect(isoDateToJalali("")).toBeNull();
+    expect(isoDateToJalali("not-a-date")).toBeNull();
+    expect(isoDateToJalali("2024-13-01")).toBeNull();
+  });
+
+  it("round-trips ISO ⇄ Jalali via the picker helpers", () => {
+    const j = isoDateToJalali("2026-07-22")!;
+    expect(jalaliToIsoDate(j.jy, j.jm, j.jd)).toBe("2026-07-22");
+  });
+
+  it("places Jalali dates in the right weekday column (0 = شنبه)", () => {
+    // 1403/01/01 (Nowruz 1403) = 2024-03-20, a Wednesday → column 4.
+    expect(jalaliWeekdayColumn(1403, 1, 1)).toBe(4);
+    // 1404/01/01 = 2025-03-21, a Friday → column 6.
+    expect(jalaliWeekdayColumn(1404, 1, 1)).toBe(6);
+    // 2026-07-25 is a Saturday → column 0.
+    const sat = isoDateToJalali("2026-07-25")!;
+    expect(jalaliWeekdayColumn(sat.jy, sat.jm, sat.jd)).toBe(0);
   });
 });

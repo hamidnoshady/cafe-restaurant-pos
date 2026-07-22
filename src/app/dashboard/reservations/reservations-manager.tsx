@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { toLatinDigits, toPersianDigits } from "@/lib/digits";
-import { formatJalali, jalaliToIsoDate, toJalali } from "@/lib/jalali";
+import { formatJalali, jalaliToIsoDate, todayJalali } from "@/lib/jalali";
 import { isNoShowOverdue } from "@/lib/reservations";
+import { JalaliDatePicker } from "../jalali-date-picker";
 import { api, ErrorBox, errorMessage, Field, inputClass, PrimaryButton, SecondaryButton } from "../ui";
 
 // Iran no longer observes DST, so wall-clock Tehran time is a fixed +03:30.
@@ -168,26 +169,16 @@ export function ReservationsManager({ canBook }: { canBook: boolean }) {
   );
 }
 
-function todayJalali() {
-  const now = new Date();
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "Asia/Tehran",
-    year: "numeric",
-    month: "numeric",
-    day: "numeric",
-  }).formatToParts(now);
-  const get = (t: string) => Number(parts.find((p) => p.type === t)?.value);
-  return toJalali(get("year"), get("month"), get("day"));
+function todayIso(): string {
+  const j = todayJalali();
+  return jalaliToIsoDate(j.jy, j.jm, j.jd);
 }
 
 function BookingForm({ tables, onBooked }: { tables: Table[]; onBooked: () => void }) {
-  const j = todayJalali();
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [partySize, setPartySize] = useState("2");
-  const [jy, setJy] = useState(String(j.jy));
-  const [jm, setJm] = useState(String(j.jm));
-  const [jd, setJd] = useState(String(j.jd));
+  const [date, setDate] = useState(todayIso());
   const [time, setTime] = useState("20:00");
   const [tableId, setTableId] = useState("");
   const [duration, setDuration] = useState("90");
@@ -197,15 +188,11 @@ function BookingForm({ tables, onBooked }: { tables: Table[]; onBooked: () => vo
   const [busy, setBusy] = useState(false);
 
   function buildReservedAt(): string | null {
-    try {
-      const iso = jalaliToIsoDate(Number(toLatinDigits(jy)), Number(toLatinDigits(jm)), Number(toLatinDigits(jd)));
-      const t = toLatinDigits(time).trim();
-      if (!/^\d{1,2}:\d{2}$/.test(t)) return null;
-      const [hh, mm] = t.split(":");
-      return `${iso}T${hh.padStart(2, "0")}:${mm}:00${TEHRAN_OFFSET}`;
-    } catch {
-      return null;
-    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+    const t = toLatinDigits(time).trim();
+    if (!/^\d{1,2}:\d{2}$/.test(t)) return null;
+    const [hh, mm] = t.split(":");
+    return `${date}T${hh.padStart(2, "0")}:${mm}:00${TEHRAN_OFFSET}`;
   }
 
   async function submit(allowConflict = false) {
@@ -264,12 +251,8 @@ function BookingForm({ tables, onBooked }: { tables: Table[]; onBooked: () => vo
         </Field>
       </div>
 
-      <Field label="تاریخ (شمسی: سال / ماه / روز)">
-        <div className="grid grid-cols-3 gap-2" dir="ltr">
-          <input className={inputClass} inputMode="numeric" value={jy} onChange={(e) => setJy(e.target.value)} placeholder="سال" />
-          <input className={inputClass} inputMode="numeric" value={jm} onChange={(e) => setJm(e.target.value)} placeholder="ماه" />
-          <input className={inputClass} inputMode="numeric" value={jd} onChange={(e) => setJd(e.target.value)} placeholder="روز" />
-        </div>
+      <Field label="تاریخ (شمسی)">
+        <JalaliDatePicker value={date} onChange={setDate} clearable={false} />
       </Field>
       <Field label="ساعت (۲۴ ساعته، مثل 20:00)">
         <input className={inputClass} dir="ltr" value={time} onChange={(e) => setTime(e.target.value)} placeholder="HH:MM" />

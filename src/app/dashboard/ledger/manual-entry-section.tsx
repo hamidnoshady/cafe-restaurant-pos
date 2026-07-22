@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { parseToRial } from "@/lib/money";
+import { JalaliDatePicker } from "../jalali-date-picker";
 import { api, inputClass, PrimaryButton, SecondaryButton } from "../ui";
 import type { AccountRow, Runner } from "./ledger-manager";
 
@@ -85,13 +86,9 @@ export function ManualEntrySection({ accounts, busy, run }: { accounts: AccountR
       <form onSubmit={submit} className="space-y-3">
         <div className="flex flex-wrap gap-2">
           <input className={inputClass} value={memo} onChange={(e) => setMemo(e.target.value)} placeholder="شرح سند" required />
-          <input
-            className={inputClass}
-            dir="ltr"
-            type="date"
-            value={entryDate}
-            onChange={(e) => setEntryDate(e.target.value)}
-          />
+          <div className="w-44">
+            <JalaliDatePicker value={entryDate} onChange={setEntryDate} placeholder="تاریخ سند" />
+          </div>
         </div>
 
         <div className="space-y-2">
