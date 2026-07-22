@@ -1,0 +1,69 @@
+# Production stack for srv1.eshobe.com.
+#
+# The topology here differs from docker-compose.komodo.yml, which targets a
+# conventional Traefik that owns 443 and issues its own certificates.
+#
+# On this host:
+#   - DirectAdmin/OpenLiteSpeed owns 80/443 and terminates TLS (Let's Encrypt).
+#   - It reverse-proxies the subdomain to Traefik on 127.0.0.1:8090.
+#   - Traefik runs with network_mode: host and the *file* provider only, so
+#     container labels are never read — routing for this app lives in Traefik's
+#     dynamic.yml, not here.
+#
+# Consequences reflected below:
+#   - No traefik.* labels (they would be silently ignored).
+#   - No external "traefik" network (none exists; host-mode Traefik can't use one).
+#   - No certresolver/websecure entrypoint (TLS is DirectAdmin's job).
+#   - The app MUST publish on loopback so host-mode Traefik can reach it.
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-pos}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-pos}
+    volumes:
+      - pos-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-pos} -d ${POSTGRES_DB:-pos}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - internal
+    # Deliberately not published to the host: only the app reaches it.
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      DATABASE_URL: postgres://${POSTGRES_USER:-pos}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-pos}
+      # MUST be a real secret. Generate with: openssl rand -hex 32
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
+      SESSION_HOURS: ${SESSION_HOURS:-12}
+      BACKUP_DIR: /app/backups
+    # Loopback only. This host runs live customer sites on 80/443 via
+    # OpenLiteSpeed; binding 0.0.0.0 here would expose the POS directly and
+    # bypass the TLS front door. Traefik connects to 127.0.0.1:${POS_HOST_PORT}.
+    ports:
+      - "127.0.0.1:${POS_HOST_PORT:-3000}:3000"
+    volumes:
+      - pos-backups:/app/backups
+    networks:
+      - internal
+
+volumes:
+  pos-pgdata:
+  pos-backups:
+
+networks:
+  internal:
