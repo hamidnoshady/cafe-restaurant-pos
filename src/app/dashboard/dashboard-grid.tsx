@@ -155,10 +155,19 @@ export function DashboardGrid({ canEdit }: { canEdit: boolean }) {
         translate() lands far off in the wrong place. Isolating the grid to
         dir="ltr" fixes the positioning; widget content re-declares dir="rtl"
         so Persian text still reads correctly inside each tile.
+
+        We also don't import react-grid-layout's stylesheet, so the grid root
+        never picks up its `position: relative`. Without it the absolutely
+        positioned tiles resolve their offsetParent to a far-up ancestor, and
+        the drag math (which bases the moving tile on clientRect - offsetParent
+        rect) makes the box jump away from the cursor on grab. The `relative`
+        class on GridLayout below makes the grid its own offsetParent so the
+        tile tracks the pointer exactly.
       */}
       <div ref={containerRef} dir="ltr">
         {mounted ? (
           <GridLayout
+            className="relative"
             width={width}
             layout={layout}
             gridConfig={{ cols: 12, rowHeight: 90, margin: [12, 12] }}
