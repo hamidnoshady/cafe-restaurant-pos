@@ -1,0 +1,83 @@
+# Production stack for Komodo + Traefik.
+#
+# Runs the POS app together with its own Postgres 16, and publishes the app
+# through an existing Traefik reverse proxy (TLS terminated at Traefik). The
+# app container is NOT published to the host — Traefik reaches it over the
+# shared external network, so the only way in is your HTTPS subdomain.
+#
+# Usage in Komodo (Stack / Compose):
+#   1. Point the stack at this repo + this compose file.
+#   2. Provide the variables below via the stack's Environment (see
+#      .env.komodo.example). At minimum: POS_DOMAIN, JWT_SECRET,
+#      POSTGRES_PASSWORD, TRAEFIK_NETWORK, TRAEFIK_CERTRESOLVER.
+#   3. Deploy. The app's entrypoint waits for Postgres and runs migrations
+#      automatically on first boot and every subsequent deploy.
+#
+# Full walkthrough: docs/deployment-local-network.md
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-pos}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-pos}
+    volumes:
+      - pos-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-pos} -d ${POSTGRES_DB:-pos}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - internal
+    # Not published to the host — only the app (same internal network) talks to it.
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      DATABASE_URL: postgres://${POSTGRES_USER:-pos}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-pos}
+      # MUST be a real secret. Generate with: openssl rand -hex 32
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
+      SESSION_HOURS: ${SESSION_HOURS:-12}
+      # Scheduled backups (Phase 10) land here; the volume below keeps them.
+      BACKUP_DIR: /app/backups
+    volumes:
+      - pos-backups:/app/backups
+    networks:
+      - internal
+      - traefik
+    labels:
+      traefik.enable: "true"
+      # Which Docker network Traefik should use to reach this service.
+      traefik.docker.network: ${TRAEFIK_NETWORK:-traefik}
+      # HTTPS router on your subdomain, e.g. pos.example.com
+      traefik.http.routers.pos.rule: Host(`${POS_DOMAIN:?set POS_DOMAIN}`)
+      traefik.http.routers.pos.entrypoints: ${TRAEFIK_ENTRYPOINT:-websecure}
+      traefik.http.routers.pos.tls: "true"
+      traefik.http.routers.pos.tls.certresolver: ${TRAEFIK_CERTRESOLVER:?set TRAEFIK_CERTRESOLVER}
+      # The app (Next.js + /ws WebSocket) listens on 3000. Traefik forwards the
+      # WebSocket upgrade automatically — no extra config needed for live sync.
+      traefik.http.services.pos.loadbalancer.server.port: "3000"
+
+volumes:
+  pos-pgdata:
+  pos-backups:
+
+networks:
+  # Private network between app and db (not reachable from outside the stack).
+  internal:
+  # Traefik's existing network, created outside this stack. Set its real name
+  # in TRAEFIK_NETWORK (Komodo's Traefik commonly uses "traefik").
+  traefik:
+    external: true
+    name: ${TRAEFIK_NETWORK:-traefik}
