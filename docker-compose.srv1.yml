@@ -1,20 +1,21 @@
 # Production stack for srv1.eshobe.com.
 #
-# The topology here differs from docker-compose.komodo.yml, which targets a
-# conventional Traefik that owns 443 and issues its own certificates.
-#
-# On this host:
+# Differs from docker-compose.komodo.yml, which targets a conventional Traefik
+# that owns 443 and issues its own certificates. On this host:
 #   - DirectAdmin/OpenLiteSpeed owns 80/443 and terminates TLS (Let's Encrypt).
 #   - It reverse-proxies the subdomain to Traefik on 127.0.0.1:8090.
-#   - Traefik runs with network_mode: host and the *file* provider only, so
+#   - Traefik runs network_mode: host with the *file* provider only, so
 #     container labels are never read — routing for this app lives in Traefik's
 #     dynamic.yml, not here.
 #
-# Consequences reflected below:
-#   - No traefik.* labels (they would be silently ignored).
-#   - No external "traefik" network (none exists; host-mode Traefik can't use one).
-#   - No certresolver/websecure entrypoint (TLS is DirectAdmin's job).
-#   - The app MUST publish on loopback so host-mode Traefik can reach it.
+# The image is built by GitHub Actions and pulled from GHCR rather than built
+# here: the server cannot clone from GitHub (its git links against
+# libcurl-gnutls, whose TLS handshake is filtered upstream), and building a
+# Next.js app on the same machine as the live customer sites is best avoided.
+#
+# NOTE: Komodo holds the operative copy of this file in the stack's Environment
+# /compose configuration, because it cannot fetch from git either. This file is
+# the version-controlled reference — if you edit it, update the Komodo stack too.
 
 services:
   db:
@@ -36,9 +37,10 @@ services:
     # Deliberately not published to the host: only the app reaches it.
 
   app:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ghcr.io/hamidnoshady/cafe-restaurant-pos:${POS_IMAGE_TAG:-latest}
+    # Without this a redeploy would happily reuse the cached :latest and the
+    # new build would never actually go live.
+    pull_policy: always
     restart: unless-stopped
     depends_on:
       db:
