@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { AiAssistant } from "@/components/ai/ai-assistant";
 import { LogoutButton } from "./logout-button";
 import { OfflineBanner } from "./offline-banner";
 
@@ -34,6 +35,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "گزارش‌ها", href: "/dashboard/reports", roles: ["owner", "manager"] },
   { label: "شعبه‌ها", href: "/dashboard/locations", roles: ["owner"] },
   { label: "پشتیبان‌گیری", href: "/dashboard/backup", roles: ["owner", "manager"] },
+  { label: "دستیار هوشمند", href: "/dashboard/ai", roles: ["owner", "manager"] },
   { label: "تنظیمات", href: "/setup", roles: ["owner", "manager"] },
 ];
 
@@ -91,6 +93,10 @@ export default async function DashboardLayout({
         <OfflineBanner />
         <main className="flex-1 overflow-y-auto p-6">{children}</main>
       </div>
+
+      {(session.role === "owner" || session.role === "manager") && (
+        <AiAssistant mode="dashboard" />
+      )}
     </div>
   );
 }

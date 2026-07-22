@@ -118,6 +118,35 @@ Failed/overdue backups raise a red banner on the Owner dashboard. Restore
 [docs/backup-restore.md](docs/backup-restore.md). The host needs
 `postgresql-client` ≥ 16 (`pg_dump`/`pg_restore`).
 
+### AI assistant (دستیار هوشمند)
+
+A floating assistant (bottom-left launcher) built with the shadcn UI kit, in two
+modes:
+
+- **Wizard mode** — mounted on every `/setup/*` step. You describe the
+  cafe/restaurant in chat and the agent gathers the missing details, then
+  proposes a fully-filled payload for that step. Nothing is written until you
+  press **«تأیید و اجرا»** (human-in-the-loop); on apply it POSTs to the existing
+  `/api/setup/*` endpoint and jumps to the next incomplete step. The wizard pages
+  themselves are unchanged — the assistant sits on top of them.
+- **Dashboard mode** — mounted for Owner/Manager. It runs the standard reports
+  (`run_report`/`list_reports`), inspects setup state, answers questions, and can
+  perform allowed "jobs" (e.g. add a menu category/item) — again only through the
+  same confirmed-action gate.
+
+The agent's mutations are restricted to a fixed allowlist (`ACTION_CATALOG` in
+`src/lib/ai.ts`) that maps each proposed action to an already role-guarded
+endpoint, so it can never call an arbitrary URL. Read tools run server-side and
+never mutate data.
+
+**Providers.** Two OpenAI-compatible providers are supported — **OpenRouter** and
+**ArvanCloud AI** — via one provider-agnostic client. Configure provider, model,
+base URL and API key at `/dashboard/ai` (Owner/Manager); values are stored
+business-wide in the `settings` table (the key never leaves the server), with
+`.env` fallbacks (`AI_PROVIDER`, `AI_MODEL`, `AI_BASE_URL`, `OPENROUTER_API_KEY`,
+`ARVAN_AI_API_KEY` — see `.env.example`). ArvanCloud's base URL can vary by
+plan/region, so it is editable in the UI.
+
 ## Conventions (important)
 
 - **Money** is stored as `BIGINT` **Rial** (smallest unit) everywhere — DB, API, calculations. Formatting as Toman with Persian digits happens only at display time (`src/lib/money.ts`).
