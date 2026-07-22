@@ -219,20 +219,34 @@ function Canvas({
   const drag = useRef<{ id: string; dx: number; dy: number; moved: boolean } | null>(null);
   const sectionName = (id: string | null) => sections.find((s) => s.id === id)?.name;
 
+  /* pos_x is the inline-start offset, so in RTL it is measured from the right edge —
+     mirror the pointer's x accordingly so dragging tracks the cursor in both directions. */
+  function inlineStartX(clientX: number, rect: DOMRect) {
+    const rtl = canvasRef.current
+      ? getComputedStyle(canvasRef.current).direction === "rtl"
+      : false;
+    return rtl ? rect.right - clientX : clientX - rect.left;
+  }
+
   function onPointerDown(e: React.PointerEvent, t: FloorTable) {
     if (mode !== "edit") {
       onSelect(t.id);
       return;
     }
     const rect = canvasRef.current!.getBoundingClientRect();
-    drag.current = { id: t.id, dx: e.clientX - rect.left - t.pos_x, dy: e.clientY - rect.top - t.pos_y, moved: false };
+    drag.current = {
+      id: t.id,
+      dx: inlineStartX(e.clientX, rect) - t.pos_x,
+      dy: e.clientY - rect.top - t.pos_y,
+      moved: false,
+    };
     onSelect(t.id);
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
   }
   function onPointerMove(e: React.PointerEvent) {
     if (!drag.current) return;
     const rect = canvasRef.current!.getBoundingClientRect();
-    const x = snap(e.clientX - rect.left - drag.current.dx);
+    const x = snap(inlineStartX(e.clientX, rect) - drag.current.dx);
     const y = snap(e.clientY - rect.top - drag.current.dy);
     drag.current.moved = true;
     onMove(drag.current.id, x, y);
