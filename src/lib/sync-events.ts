@@ -43,12 +43,13 @@ export interface SyncEventResult {
 }
 
 interface OrderCreatePayload {
-  type?: "dine_in" | "takeaway";
+  type?: "dine_in" | "takeaway" | "delivery";
   tableId?: string;
   guestCount?: number;
   note?: string;
   discount?: { type?: "percent" | "amount"; value?: number };
   items?: CartItemInput[];
+  delivery?: { address?: string; phone?: string; fee?: number; courierId?: string; note?: string };
 }
 interface OrderAddItemsPayload {
   orderId?: string;
@@ -78,7 +79,9 @@ async function dispatch(
 
   if (event.type === "order.create") {
     const payload = event.payload as OrderCreatePayload;
-    if (payload.type !== "dine_in" && payload.type !== "takeaway") return { error: "invalid_order_type" };
+    if (payload.type !== "dine_in" && payload.type !== "takeaway" && payload.type !== "delivery") {
+      return { error: "invalid_order_type" };
+    }
     const discountType =
       payload.discount?.type === "percent" || payload.discount?.type === "amount" ? payload.discount.type : null;
     const discount: DiscountInput = discountType
@@ -93,6 +96,15 @@ async function dispatch(
       discount,
       items: payload.items ?? [],
       openedBy: actor.userId,
+      delivery: payload.type === "delivery" && payload.delivery
+        ? {
+            address: payload.delivery.address ?? "",
+            phone: payload.delivery.phone ?? null,
+            fee: payload.delivery.fee ?? 0,
+            courierId: payload.delivery.courierId ?? null,
+            note: payload.delivery.note ?? null,
+          }
+        : null,
     });
     if (!result.ok) return { error: result.error };
     broadcast(locationId, { type: "order.created", orderId: result.data.id });

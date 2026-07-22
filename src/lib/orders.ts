@@ -77,7 +77,9 @@ export function computeOrderTotals(
   return { subtotal, discount: discountAmount, tax, total, lines: lineResults };
 }
 
-/** Cashier-facing queue/order label. Takeaway orders get a "T-" prefix. */
+/** Cashier-facing queue/order label. Takeaway gets a "T-" prefix, delivery a "D-", dine-in a plain "#". */
 export function formatQueueLabel(type: "dine_in" | "takeaway" | "delivery", orderNumber: number): string {
-  return type === "takeaway" ? `T-${orderNumber}` : `#${orderNumber}`;
+  if (type === "takeaway") return `T-${orderNumber}`;
+  if (type === "delivery") return `D-${orderNumber}`;
+  return `#${orderNumber}`;
 }

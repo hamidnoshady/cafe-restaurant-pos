@@ -97,5 +97,6 @@ describe("formatQueueLabel", () => {
   it("prefixes takeaway with T-, dine-in with #", () => {
     expect(formatQueueLabel("takeaway", 42)).toBe("T-42");
     expect(formatQueueLabel("dine_in", 7)).toBe("#7");
+    expect(formatQueueLabel("delivery", 9)).toBe("D-9");
   });
 });

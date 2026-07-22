@@ -169,6 +169,40 @@ export const REPORT_VIEWS: Record<string, ReportViewDef> = {
       { key: "avg_ticket", label: "میانگین صورتحساب", column: "avg_ticket", aggregations: ["avg"] },
     ],
   },
+  v_delivery_performance: {
+    label: "عملکرد ارسال",
+    dateColumn: "delivery_date",
+    dimensions: [
+      { key: "day", label: "روز", dateTrunc: "day" },
+      { key: "week", label: "هفته", dateTrunc: "week" },
+      { key: "month", label: "ماه", dateTrunc: "month" },
+      { key: "courier", label: "پیک", columns: ["courier_id", "courier_name"] },
+      { key: "status", label: "وضعیت", columns: ["delivery_status"] },
+    ],
+    metrics: [
+      { key: "delivery_minutes", label: "زمان تحویل (دقیقه)", column: "delivery_minutes", aggregations: ["avg", "sum"] },
+      { key: "revenue", label: "درآمد", column: "revenue", aggregations: ["sum", "avg"] },
+      { key: "fee", label: "هزینهٔ ارسال", column: "fee", aggregations: ["sum", "avg"] },
+      { key: "rows", label: "تعداد ارسال", column: null, aggregations: ["count"] },
+    ],
+    filters: [{ key: "status", label: "وضعیت", column: "delivery_status" }],
+  },
+  v_courier_performance: {
+    label: "عملکرد پیک‌ها",
+    dateColumn: "delivery_date",
+    dimensions: [
+      { key: "day", label: "روز", dateTrunc: "day" },
+      { key: "week", label: "هفته", dateTrunc: "week" },
+      { key: "month", label: "ماه", dateTrunc: "month" },
+      { key: "courier", label: "پیک", columns: ["courier_id", "courier_name"] },
+    ],
+    metrics: [
+      { key: "delivery_count", label: "تعداد تحویل", column: "delivery_count", aggregations: ["sum", "avg"] },
+      { key: "avg_delivery_minutes", label: "میانگین زمان تحویل (دقیقه)", column: "avg_delivery_minutes", aggregations: ["avg"] },
+      { key: "revenue", label: "درآمد", column: "revenue", aggregations: ["sum", "avg"] },
+      { key: "fees", label: "هزینهٔ ارسال", column: "fees", aggregations: ["sum", "avg"] },
+    ],
+  },
   v_waste_summary: {
     label: "گزارش ضایعات",
     dateColumn: "waste_date",
@@ -452,6 +486,30 @@ export const STANDARD_REPORTS: StandardReportDef[] = [
     defaultChart: {
       chartType: "bar",
       config: { view: "v_table_turnover", metric: "duration_minutes", aggregation: "avg", dimension: "table" },
+    },
+  },
+  {
+    key: "delivery_performance",
+    label: "عملکرد ارسال",
+    view: "v_delivery_performance",
+    defaultChart: {
+      chartType: "line",
+      config: { view: "v_delivery_performance", metric: "delivery_minutes", aggregation: "avg", dimension: "day" },
+    },
+  },
+  {
+    key: "courier_performance",
+    label: "عملکرد پیک‌ها",
+    view: "v_courier_performance",
+    defaultChart: {
+      chartType: "bar",
+      config: {
+        view: "v_courier_performance",
+        metric: "delivery_count",
+        aggregation: "sum",
+        dimension: "courier",
+        sort: { by: "metric", dir: "desc" },
+      },
     },
   },
 ];
