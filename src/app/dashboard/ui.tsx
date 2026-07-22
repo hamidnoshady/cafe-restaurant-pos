@@ -76,6 +76,16 @@ export function errorMessage(code: string | undefined): string {
     agent_unreachable: "دستگاه چاپ در دسترس نیست. اتصال چاپگر محلی را بررسی کنید.",
     // Phase 7 — ledger
     ledger_account_missing: "یکی از حساب‌های مورد نیاز سیستم در سرفصل حساب‌ها یافت نشد. سرفصل حساب‌ها را بررسی کنید.",
+    // Phase 11 — delivery
+    address_required: "برای سفارش ارسالی، آدرس الزامی است.",
+    invalid_delivery_fee: "هزینهٔ ارسال معتبر نیست.",
+    courier_not_found: "پیک انتخاب‌شده معتبر نیست.",
+    courier_required: "برای این وضعیت باید ابتدا پیک تخصیص یابد.",
+    name_required: "نام الزامی است.",
+    delivery_not_found: "سفارش ارسالی پیدا نشد.",
+    delivery_already_closed: "این ارسال بسته شده و قابل تغییر نیست.",
+    invalid_delivery_transition: "این تغییر وضعیت ارسال مجاز نیست.",
+    invalid_delivery_status: "وضعیت ارسال نامعتبر است.",
   };
   return map[code ?? ""] ?? "خطای غیرمنتظره. دوباره تلاش کنید.";
 }

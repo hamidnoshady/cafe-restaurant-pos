@@ -27,12 +27,13 @@ export async function GET() {
 }
 
 interface CreateOrderBody {
-  type?: "dine_in" | "takeaway";
+  type?: "dine_in" | "takeaway" | "delivery";
   tableId?: string;
   guestCount?: number;
   note?: string;
   discount?: { type?: "percent" | "amount"; value?: number };
   items?: CartItemInput[];
+  delivery?: { address?: string; phone?: string; fee?: number; courierId?: string; note?: string };
 }
 
 /** Builds the cart, computes totals, and creates Orders + OrderItems (+ modifiers) atomically. */
@@ -47,7 +48,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
 
-  if (body.type !== "dine_in" && body.type !== "takeaway") {
+  if (body.type !== "dine_in" && body.type !== "takeaway" && body.type !== "delivery") {
     return NextResponse.json({ error: "invalid_order_type" }, { status: 400 });
   }
   const items = body.items ?? [];
@@ -72,6 +73,15 @@ export async function POST(request: NextRequest) {
     discount,
     items,
     openedBy: session.sub,
+    delivery: body.type === "delivery" && body.delivery
+      ? {
+          address: body.delivery.address ?? "",
+          phone: body.delivery.phone ?? null,
+          fee: body.delivery.fee ?? 0,
+          courierId: body.delivery.courierId ?? null,
+          note: body.delivery.note ?? null,
+        }
+      : null,
   });
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status });
 

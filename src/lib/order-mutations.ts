@@ -7,6 +7,7 @@
  * created while offline must behave identically to one created online.
  */
 import { getPool, query } from "./db";
+import { createDeliveryForOrder } from "./delivery-service";
 import { resolveCartItems, validateItemShape, type CartItemInput } from "./order-cart";
 import { computeOrderTotals, type DiscountInput, type OrderTotals } from "./orders";
 import { recomputeOrderTotals } from "./order-totals";
@@ -14,21 +15,36 @@ import { ensureSessionForTable } from "./table-session-service";
 
 export type MutationResult<T> = { ok: true; data: T } | { ok: false; error: string; status: number };
 
+export type OrderType = "dine_in" | "takeaway" | "delivery";
+
+/** Delivery details supplied at intake for a `type: 'delivery'` order. */
+export interface DeliveryInput {
+  address: string;
+  phone?: string | null;
+  /** flat delivery fee, Rial — rides on the order's service_charge so it flows through payment + ledger. */
+  fee?: number | null;
+  /** optional courier assigned right at intake; otherwise the delivery starts pending on the dispatch board. */
+  courierId?: string | null;
+  note?: string | null;
+}
+
 export interface CreateOrderInput {
   locationId: string;
-  type: "dine_in" | "takeaway";
+  type: OrderType;
   tableId?: string | null;
   guestCount?: number | null;
   note?: string | null;
   discount: DiscountInput;
   items: CartItemInput[];
   openedBy: string | null;
+  /** required when type === 'delivery', ignored otherwise. */
+  delivery?: DeliveryInput | null;
 }
 
 export interface CreateOrderOutput {
   id: string;
   orderNumber: number;
-  type: "dine_in" | "takeaway";
+  type: OrderType;
   totals: OrderTotals;
 }
 
@@ -51,10 +67,32 @@ export async function createOrder(input: CreateOrderInput): Promise<MutationResu
     }
   }
 
+  // Delivery orders carry an address (required) and a flat fee. The fee is
+  // set as the order's service_charge below so it's inside orders.total and
+  // flows through payment + COGS/ledger with no delivery-specific handling.
+  let deliveryAddress: string | null = null;
+  let deliveryFee = 0;
+  let deliveryCourierId: string | null = null;
+  if (input.type === "delivery") {
+    deliveryAddress = input.delivery?.address?.trim() || null;
+    if (!deliveryAddress) return { ok: false, error: "address_required", status: 400 };
+    const fee = Number(input.delivery?.fee ?? 0);
+    if (!Number.isFinite(fee) || fee < 0) return { ok: false, error: "invalid_delivery_fee", status: 400 };
+    deliveryFee = Math.round(fee);
+    deliveryCourierId = input.delivery?.courierId ?? null;
+    if (deliveryCourierId) {
+      const { rows: courier } = await query<{ id: string }>(
+        "SELECT id FROM couriers WHERE id = $1 AND location_id = $2 AND is_active",
+        [deliveryCourierId, input.locationId],
+      );
+      if (courier.length === 0) return { ok: false, error: "courier_not_found", status: 404 };
+    }
+  }
+
   const resolved = await resolveCartItems(input.locationId, input.items);
   if (!resolved.ok) return { ok: false, error: resolved.error, status: resolved.status };
   const { cartLines, preparedItems } = resolved;
-  const totals = computeOrderTotals(cartLines, input.discount);
+  const totals = computeOrderTotals(cartLines, input.discount, deliveryFee);
 
   const client = await getPool().connect();
   try {
@@ -76,8 +114,8 @@ export async function createOrder(input: CreateOrderInput): Promise<MutationResu
     const discountType = input.discount.type;
     const { rows: orderRows } = await client.query<{ id: string }>(
       `INSERT INTO orders (location_id, order_number, type, status, table_id, table_session_id, guest_count,
-              subtotal, discount, discount_type, discount_value, tax, total, note, opened_by)
-       VALUES ($1, $2, $3, 'open', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+              subtotal, discount, discount_type, discount_value, service_charge, tax, total, note, opened_by)
+       VALUES ($1, $2, $3, 'open', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
        RETURNING id`,
       [
         input.locationId,
@@ -90,6 +128,7 @@ export async function createOrder(input: CreateOrderInput): Promise<MutationResu
         totals.discount,
         discountType,
         discountType ? input.discount.value : null,
+        deliveryFee,
         totals.tax,
         totals.total,
         input.note?.trim() || null,
@@ -97,6 +136,18 @@ export async function createOrder(input: CreateOrderInput): Promise<MutationResu
       ],
     );
     const orderId = orderRows[0].id;
+
+    if (input.type === "delivery" && deliveryAddress) {
+      await createDeliveryForOrder(client, {
+        locationId: input.locationId,
+        orderId,
+        address: deliveryAddress,
+        phone: input.delivery?.phone?.trim() || null,
+        fee: deliveryFee,
+        courierId: deliveryCourierId,
+        note: input.delivery?.note?.trim() || null,
+      });
+    }
 
     for (const item of preparedItems) {
       // Submitting the order *is* "send to kitchen": items land as 'sent'

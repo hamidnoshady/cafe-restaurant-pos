@@ -245,9 +245,9 @@ describe("buildReportQuery", () => {
 });
 
 describe("STANDARD_REPORTS", () => {
-  it("has 10 pre-built reports with unique keys", () => {
-    expect(STANDARD_REPORTS).toHaveLength(10);
-    expect(new Set(STANDARD_REPORTS.map((r) => r.key)).size).toBe(10);
+  it("has 12 pre-built reports with unique keys", () => {
+    expect(STANDARD_REPORTS).toHaveLength(12);
+    expect(new Set(STANDARD_REPORTS.map((r) => r.key)).size).toBe(12);
   });
 
   it("every defaultChart config validates cleanly against REPORT_VIEWS", () => {

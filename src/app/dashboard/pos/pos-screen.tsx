@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
 import type { KitchenTicketData } from "@/lib/kitchen-ticket-template";
-import { formatToman } from "@/lib/money";
+import { formatToman, tomanToRial } from "@/lib/money";
 import { computeOrderTotals, formatQueueLabel, type CartLine, type DiscountInput } from "@/lib/orders";
 import { printKitchenTicket } from "@/lib/print-agent-client";
 import { ModifierPicker } from "../modifier-picker";
@@ -57,6 +57,11 @@ interface OpenOrder {
   id: string;
   table_id: string | null;
 }
+interface Courier {
+  id: string;
+  name: string;
+  phone: string | null;
+}
 
 interface CartUiLine {
   key: string;
@@ -71,17 +76,22 @@ interface CartUiLine {
   note: string;
 }
 
-type OrderType = "dine_in" | "takeaway";
+type OrderType = "dine_in" | "takeaway" | "delivery";
 
 export function PosScreen() {
   const [menu, setMenu] = useState<MenuData | null>(null);
   const [tables, setTables] = useState<Table[]>([]);
   const [openOrders, setOpenOrders] = useState<OpenOrder[]>([]);
+  const [couriers, setCouriers] = useState<Courier[]>([]);
   const [activeCategory, setActiveCategory] = useState<string>("");
   const [cart, setCart] = useState<CartUiLine[]>([]);
   const [orderType, setOrderType] = useState<OrderType>("dine_in");
   const [tableId, setTableId] = useState("");
   const [guestCount, setGuestCount] = useState("");
+  const [deliveryAddress, setDeliveryAddress] = useState("");
+  const [deliveryPhone, setDeliveryPhone] = useState("");
+  const [deliveryFee, setDeliveryFee] = useState("");
+  const [deliveryCourierId, setDeliveryCourierId] = useState("");
   const [discountType, setDiscountType] = useState<"" | "percent" | "amount">("");
   const [discountValue, setDiscountValue] = useState("");
   const [pickerItem, setPickerItem] = useState<Item | null>(null);
@@ -91,18 +101,22 @@ export function PosScreen() {
   const printers = usePrinters();
 
   const load = useCallback(() => {
-    Promise.all([api<MenuData>("/api/menu"), api<{ tables: Table[] }>("/api/tables"), api<{ orders: OpenOrder[] }>("/api/orders")]).then(
-      ([menuRes, tablesRes, ordersRes]) => {
-        if (menuRes.ok) {
-          setMenu(menuRes.data);
-          if (!activeCategory && menuRes.data.categories.length > 0) {
-            setActiveCategory(menuRes.data.categories.find((c) => c.is_active)?.id ?? "");
-          }
+    Promise.all([
+      api<MenuData>("/api/menu"),
+      api<{ tables: Table[] }>("/api/tables"),
+      api<{ orders: OpenOrder[] }>("/api/orders"),
+      api<{ couriers: Courier[] }>("/api/couriers"),
+    ]).then(([menuRes, tablesRes, ordersRes, couriersRes]) => {
+      if (menuRes.ok) {
+        setMenu(menuRes.data);
+        if (!activeCategory && menuRes.data.categories.length > 0) {
+          setActiveCategory(menuRes.data.categories.find((c) => c.is_active)?.id ?? "");
         }
-        if (tablesRes.ok) setTables(tablesRes.data.tables);
-        if (ordersRes.ok) setOpenOrders(ordersRes.data.orders);
-      },
-    );
+      }
+      if (tablesRes.ok) setTables(tablesRes.data.tables);
+      if (ordersRes.ok) setOpenOrders(ordersRes.data.orders);
+      if (couriersRes.ok) setCouriers(couriersRes.data.couriers);
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   useEffect(load, [load]);
@@ -178,12 +192,15 @@ export function PosScreen() {
     modifierDeltas: l.modifierDeltas,
     taxRatePercent: l.taxRatePercent,
   }));
-  const totals = computeOrderTotals(cartLines, discount);
+  // Fee is entered in Toman (like menu prices) but stored/sent in Rial.
+  const feeNum = orderType === "delivery" ? tomanToRial(Math.max(0, Math.round(Number(deliveryFee) || 0))) : 0;
+  const totals = computeOrderTotals(cartLines, discount, feeNum);
 
   async function submit() {
     setError("");
     if (cart.length === 0) return setError("سبد خرید خالی است.");
     if (orderType === "dine_in" && !tableId) return setError("انتخاب میز الزامی است.");
+    if (orderType === "delivery" && !deliveryAddress.trim()) return setError("برای سفارش ارسالی آدرس الزامی است.");
 
     setBusy(true);
     const orderBody = {
@@ -192,11 +209,21 @@ export function PosScreen() {
       guestCount: guestCount ? Number(guestCount) : undefined,
       discount: discountType ? { type: discountType, value: Number(discountValue) || 0 } : undefined,
       items: cart.map((l) => ({ menuItemId: l.menuItemId, quantity: l.quantity, modifierIds: l.modifierIds, note: l.note || undefined })),
+      delivery:
+        orderType === "delivery"
+          ? {
+              address: deliveryAddress.trim(),
+              phone: deliveryPhone.trim() || undefined,
+              fee: feeNum,
+              courierId: deliveryCourierId || undefined,
+            }
+          : undefined,
     };
+    const typeLabel = orderType === "dine_in" ? "حضوری" : orderType === "takeaway" ? "بیرون‌بر" : "ارسالی";
     const { ok, queued, data } = await apiOrQueue<{ error?: string; orderNumber?: number }>(
       "/api/orders",
       { method: "POST", body: orderBody },
-      { type: "order.create", payload: orderBody, description: `سفارش ${orderType === "dine_in" ? "حضوری" : "بیرون‌بر"}` },
+      { type: "order.create", payload: orderBody, description: `سفارش ${typeLabel}` },
     );
     setBusy(false);
     if (!ok) return setError(errorMessage(data.error));
@@ -208,9 +235,11 @@ export function PosScreen() {
     const kitchenPrinter = firstPrinter(printers, "kitchen");
     if (!queued && kitchenPrinter) {
       const tableName = orderType === "dine_in" ? tables.find((t) => t.id === tableId)?.name : undefined;
+      const label =
+        orderType === "dine_in" ? (tableName ?? "میز") : orderType === "takeaway" ? "بیرون‌بر" : "ارسالی";
       const ticket: KitchenTicketData = {
-        label: orderType === "dine_in" ? (tableName ?? "میز") : "بیرون‌بر",
-        orderTypeLabel: orderType === "dine_in" ? "حضوری" : "بیرون‌بر",
+        label,
+        orderTypeLabel: label,
         sentAt: new Date().toISOString(),
         lines: cart.map((l) => ({ name: l.name, quantity: l.quantity, modifiersLabel: l.modifierLabel || null, note: l.note || null })),
       };
@@ -222,6 +251,10 @@ export function PosScreen() {
     setGuestCount("");
     setDiscountType("");
     setDiscountValue("");
+    setDeliveryAddress("");
+    setDeliveryPhone("");
+    setDeliveryFee("");
+    setDeliveryCourierId("");
     load();
   }
 
@@ -292,7 +325,7 @@ export function PosScreen() {
       <div className="flex w-96 shrink-0 flex-col overflow-hidden rounded-2xl bg-card shadow-sm">
         <div className="border-b border-border p-4">
           <ErrorBox>{error}</ErrorBox>
-          <div className="mb-3 grid grid-cols-2 gap-2 text-sm">
+          <div className="mb-3 grid grid-cols-3 gap-2 text-sm">
             <button
               type="button"
               onClick={() => {
@@ -311,6 +344,16 @@ export function PosScreen() {
               className={`rounded-lg py-2 transition-colors ${orderType === "takeaway" ? "bg-primary text-primary-foreground" : "bg-muted hover:text-foreground"}`}
             >
               بیرون‌بر
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setOrderType("delivery");
+                setTableId("");
+              }}
+              className={`rounded-lg py-2 transition-colors ${orderType === "delivery" ? "bg-primary text-primary-foreground" : "bg-muted hover:text-foreground"}`}
+            >
+              ارسالی
             </button>
           </div>
           {orderType === "dine_in" ? (
@@ -336,6 +379,47 @@ export function PosScreen() {
                 );
               })}
               {tables.length === 0 ? <p className="text-xs text-muted-foreground">میزی ثبت نشده است.</p> : null}
+            </div>
+          ) : null}
+          {orderType === "delivery" ? (
+            <div className="space-y-2">
+              <textarea
+                className={`${inputClass} h-auto`}
+                rows={2}
+                value={deliveryAddress}
+                onChange={(e) => setDeliveryAddress(e.target.value)}
+                placeholder="آدرس تحویل *"
+              />
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  className={inputClass}
+                  dir="ltr"
+                  inputMode="tel"
+                  value={deliveryPhone}
+                  onChange={(e) => setDeliveryPhone(e.target.value)}
+                  placeholder="تلفن مشتری"
+                />
+                <input
+                  className={inputClass}
+                  dir="ltr"
+                  inputMode="numeric"
+                  value={deliveryFee}
+                  onChange={(e) => setDeliveryFee(e.target.value)}
+                  placeholder="هزینهٔ ارسال (تومان)"
+                />
+              </div>
+              <select
+                className={inputClass}
+                value={deliveryCourierId}
+                onChange={(e) => setDeliveryCourierId(e.target.value)}
+              >
+                <option value="">تخصیص پیک بعداً (در صف ارسال)</option>
+                {couriers.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
             </div>
           ) : null}
         </div>
@@ -403,6 +487,7 @@ export function PosScreen() {
             <Row label="جمع جزء" value={formatToman(totals.subtotal)} />
             {totals.discount > 0 ? <Row label="تخفیف" value={`- ${formatToman(totals.discount)}`} /> : null}
             {totals.tax > 0 ? <Row label="مالیات" value={formatToman(totals.tax)} /> : null}
+            {feeNum > 0 ? <Row label="هزینهٔ ارسال" value={formatToman(feeNum)} /> : null}
             <Row label="جمع کل" value={formatToman(totals.total)} bold />
           </dl>
 
