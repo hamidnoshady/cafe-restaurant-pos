@@ -1,0 +1,29 @@
+# Keep the build context small and avoid leaking local state into the image.
+node_modules
+.next
+out
+build
+dist
+.git
+.gitignore
+*.tsbuildinfo
+next-env.d.ts
+
+# Local env / secrets — never bake these into an image.
+.env
+.env.local
+.env*.local
+.env.komodo
+
+# Local Postgres data and backup artifacts.
+backups
+pos-pgdata
+
+# Tooling / docs that the runtime doesn't need.
+.circleci
+.design-sync
+.ds-sync
+ds-bundle
+**/*.test.ts
+.DS_Store
+npm-debug.log*
