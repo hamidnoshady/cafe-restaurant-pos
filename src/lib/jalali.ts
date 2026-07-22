@@ -185,3 +185,40 @@ export function jalaliToIsoDate(jy: number, jm: number, jd: number): string {
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${gy}-${pad(gm)}-${pad(gd)}`;
 }
+
+/**
+ * Parse an ISO calendar date string (YYYY-MM-DD) into its Jalali parts, or
+ * null if the input isn't a well-formed ISO date. The mirror of
+ * jalaliToIsoDate — used by date-picker UIs that store ISO but display Jalali.
+ */
+export function isoDateToJalali(iso: string): JalaliDate | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso.trim());
+  if (!m) return null;
+  const gy = Number(m[1]);
+  const gm = Number(m[2]);
+  const gd = Number(m[3]);
+  if (gm < 1 || gm > 12 || gd < 1 || gd > 31) return null;
+  return toJalali(gy, gm, gd);
+}
+
+/** Today's date as Jalali parts, in the given IANA time zone (default Asia/Tehran). */
+export function todayJalali(timeZone = "Asia/Tehran"): JalaliDate {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+  }).formatToParts(new Date());
+  const get = (t: string) => Number(parts.find((p) => p.type === t)?.value);
+  return toJalali(get("year"), get("month"), get("day"));
+}
+
+/**
+ * Which weekday column (0 = شنبه/Saturday … 6 = جمعه/Friday) the given Jalali
+ * date falls in — the layout the Persian calendar grid uses.
+ */
+export function jalaliWeekdayColumn(jy: number, jm: number, jd: number): number {
+  const { gy, gm, gd } = toGregorian(jy, jm, jd);
+  // getUTCDay: 0 = Sunday … 6 = Saturday. Shift so Saturday = 0.
+  return (new Date(Date.UTC(gy, gm - 1, gd)).getUTCDay() + 1) % 7;
+}
