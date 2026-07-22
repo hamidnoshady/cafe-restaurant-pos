@@ -68,11 +68,23 @@ function WidgetBody({ widget }: { widget: WidgetRow }) {
   return <BarChart data={data} />;
 }
 
+// Below this container width the 12-column grid is too cramped to be usable —
+// widgets get sub-30px columns and their content overflows — so we collapse to
+// a single full-width column and stack the tiles in reading order instead.
+const STACK_MAX_WIDTH = 640;
+
 export function DashboardGrid({ canEdit }: { canEdit: boolean }) {
   const { width, containerRef, mounted } = useContainerWidth();
   const [widgets, setWidgets] = useState<WidgetRow[] | null>(null);
   const [editMode, setEditMode] = useState(false);
   const [error, setError] = useState("");
+
+  const stacked = mounted && width > 0 && width < STACK_MAX_WIDTH;
+  const cols = stacked ? 1 : 12;
+  // Editing (drag/resize) persists positions in 12-column coordinates, so we
+  // only allow it on the full grid — never in the stacked mobile view, whose
+  // one-column layout would otherwise clobber the saved desktop arrangement.
+  const canEditLayout = canEdit && !stacked;
 
   const load = useCallback(() => {
     api<{ widgets: WidgetRow[] }>("/api/dashboard/widgets").then(({ ok, data }) => {
@@ -81,10 +93,22 @@ export function DashboardGrid({ canEdit }: { canEdit: boolean }) {
   }, []);
   useEffect(load, [load]);
 
-  const layout: Layout = useMemo(
-    () => (widgets ?? []).map((w) => ({ i: w.id, x: w.x, y: w.y, w: w.w, h: w.h, minW: 2, minH: 2 })),
-    [widgets],
-  );
+  const layout: Layout = useMemo(() => {
+    const items = widgets ?? [];
+    if (stacked) {
+      // Full-width tiles stacked top-to-bottom in the saved reading order.
+      let y = 0;
+      return [...items]
+        .sort((a, b) => a.y - b.y || a.x - b.x)
+        .map((w) => {
+          const h = Math.max(w.h, 3);
+          const item = { i: w.id, x: 0, y, w: 1, h, minW: 1, minH: 2 };
+          y += h;
+          return item;
+        });
+    }
+    return items.map((w) => ({ i: w.id, x: w.x, y: w.y, w: w.w, h: w.h, minW: 2, minH: 2 }));
+  }, [widgets, stacked]);
 
   async function persist(next: WidgetRow[]) {
     setWidgets(next);
@@ -107,7 +131,7 @@ export function DashboardGrid({ canEdit }: { canEdit: boolean }) {
   }
 
   function onLayoutChange(next: Layout) {
-    if (!widgets || !editMode) return;
+    if (!widgets || !editMode || stacked) return;
     const byId = new Map(next.map((l: LayoutItem) => [l.i, l]));
     const updated = widgets.map((w) => {
       const l = byId.get(w.id);
@@ -136,7 +160,7 @@ export function DashboardGrid({ canEdit }: { canEdit: boolean }) {
   return (
     <div>
       <ErrorBox>{error}</ErrorBox>
-      {canEdit ? (
+      {canEditLayout ? (
         <div className="mb-3 flex justify-end">
           <button
             type="button"
@@ -170,9 +194,9 @@ export function DashboardGrid({ canEdit }: { canEdit: boolean }) {
             className="relative"
             width={width}
             layout={layout}
-            gridConfig={{ cols: 12, rowHeight: 90, margin: [12, 12] }}
-            dragConfig={{ enabled: editMode }}
-            resizeConfig={{ enabled: editMode }}
+            gridConfig={{ cols, rowHeight: 90, margin: [12, 12] }}
+            dragConfig={{ enabled: editMode && !stacked }}
+            resizeConfig={{ enabled: editMode && !stacked }}
             onDragStop={onLayoutChange}
             onResizeStop={onLayoutChange}
             autoSize
