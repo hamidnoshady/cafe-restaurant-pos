@@ -74,7 +74,13 @@ function WidgetBody({ widget }: { widget: WidgetRow }) {
 const STACK_MAX_WIDTH = 640;
 
 export function DashboardGrid({ canEdit }: { canEdit: boolean }) {
-  const { width, containerRef, mounted } = useContainerWidth();
+  // measureBeforeMount keeps `mounted` false until the container's real width
+  // is measured, so the grid below (gated on `mounted`) never renders at the
+  // hook's 1280px default first. Without it, the first paint lays the grid out
+  // as a 1280px desktop layout — wider than any phone viewport, and above the
+  // STACK_MAX_WIDTH threshold so it never collapses to one column — which
+  // overflows the screen horizontally on mobile before the effect corrects it.
+  const { width, containerRef, mounted } = useContainerWidth({ measureBeforeMount: true });
   const [widgets, setWidgets] = useState<WidgetRow[] | null>(null);
   const [editMode, setEditMode] = useState(false);
   const [error, setError] = useState("");
