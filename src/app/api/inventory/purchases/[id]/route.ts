@@ -18,14 +18,17 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ id
 
   const { rows: header } = await query(
     `SELECT p.*, s.name AS supplier_name FROM purchases p
-       LEFT JOIN suppliers s ON s.id = p.supplier_id WHERE p.id = $1`,
-    [id],
+       LEFT JOIN suppliers s ON s.id = p.supplier_id AND s.location_id = p.location_id
+      WHERE p.id = $1 AND p.location_id = $2`,
+    [id, location.id],
   );
+  if (!header[0]) return NextResponse.json({ error: "not_found" }, { status: 404 });
   const { rows: items } = await query(
     `SELECT pi.id, pi.inventory_item_id, ii.name AS inventory_item_name, ii.unit, pi.quantity, pi.unit_cost
        FROM purchase_items pi JOIN inventory_items ii ON ii.id = pi.inventory_item_id
-      WHERE pi.purchase_id = $1`,
-    [id],
+      WHERE pi.purchase_id = $1 AND ii.location_id = $2
+        AND EXISTS (SELECT 1 FROM purchases p WHERE p.id=pi.purchase_id AND p.location_id=$2)`,
+    [id, location.id],
   );
   return NextResponse.json({ purchase: header[0], items });
 }
@@ -106,8 +109,8 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       createdBy: session.sub,
       total: Number(purchase.total),
       settlementMethod,
+      inventoryEventId: eventId,
     });
-    await client.query("UPDATE journal_entries SET inventory_event_id=$2 WHERE source_type='purchase' AND source_id=$1", [id,eventId]);
     await client.query("UPDATE inventory_events SET posting_status='posted' WHERE id=$1", [eventId]);
     await client.query("COMMIT");
   } catch (err) {
