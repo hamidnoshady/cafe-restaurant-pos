@@ -151,22 +151,10 @@ export function DashboardGrid({ canEdit }: { canEdit: boolean }) {
     persist(widgets.filter((w) => w.id !== id));
   }
 
-  if (widgets === null) return <p className="text-sm text-muted-foreground">در حال بارگذاری داشبورد…</p>;
-
-  if (widgets.length === 0) {
-    return (
-      <p className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
-        {canEdit
-          ? "هنوز ابزارکی به داشبورد سنجاق نشده است. از صفحهٔ «گزارش‌ها» یک گزارش را به داشبورد سنجاق کنید."
-          : "هنوز ابزارکی برای این نقش تنظیم نشده است."}
-      </p>
-    );
-  }
-
   return (
     <div>
       <ErrorBox>{error}</ErrorBox>
-      {canEditLayout ? (
+      {canEditLayout && widgets && widgets.length > 0 ? (
         <div className="mb-3 flex justify-end">
           <button
             type="button"
@@ -194,8 +182,27 @@ export function DashboardGrid({ canEdit }: { canEdit: boolean }) {
         class on GridLayout below makes the grid its own offsetParent so the
         tile tracks the pointer exactly.
       */}
+      {/*
+        The container ref must stay in the DOM from the first render, before
+        widgets have loaded. useContainerWidth (with measureBeforeMount) only
+        flips `mounted` to true when its effect finds `containerRef.current`
+        attached, and that effect never re-runs while `mounted` stays false —
+        so if this element were behind a `widgets === null` early return, the
+        width would never be measured and the grid would never mount. Keeping
+        it always rendered lets the width be measured on first paint; the
+        loading and empty states live inside it (re-declaring dir="rtl" so the
+        Persian text reads correctly).
+      */}
       <div ref={containerRef} dir="ltr">
-        {mounted ? (
+        {widgets === null ? (
+          <p dir="rtl" className="text-sm text-muted-foreground">در حال بارگذاری داشبورد…</p>
+        ) : widgets.length === 0 ? (
+          <p dir="rtl" className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
+            {canEdit
+              ? "هنوز ابزارکی به داشبورد سنجاق نشده است. از صفحهٔ «گزارش‌ها» یک گزارش را به داشبورد سنجاق کنید."
+              : "هنوز ابزارکی برای این نقش تنظیم نشده است."}
+          </p>
+        ) : mounted ? (
           <GridLayout
             className="relative"
             width={width}
