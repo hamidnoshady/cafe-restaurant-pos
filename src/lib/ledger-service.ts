@@ -63,6 +63,8 @@ export interface PostJournalEntryInput {
   sourceId: string | null;
   lines: JournalLine[];
   createdBy: string | null;
+  postingKind?: string | null;
+  inventoryEventId?: string | null;
 }
 
 /**
@@ -84,9 +86,9 @@ export async function postJournalEntry(client: PoolClient, input: PostJournalEnt
   }
 
   const { rows } = await client.query<{ id: string }>(
-    `INSERT INTO journal_entries (business_id, location_id, entry_date, memo, source_type, source_id, created_by)
-     VALUES ($1, $2, COALESCE($3, CURRENT_DATE), $4, $5, $6, $7) RETURNING id`,
-    [input.businessId, input.locationId, input.entryDate ?? null, input.memo, input.sourceType, input.sourceId, input.createdBy],
+    `INSERT INTO journal_entries (business_id, location_id, entry_date, memo, source_type, source_id, created_by, posting_kind, inventory_event_id)
+     VALUES ($1, $2, COALESCE($3, CURRENT_DATE), $4, $5, $6, $7, $8, $9) RETURNING id`,
+    [input.businessId, input.locationId, input.entryDate ?? null, input.memo, input.sourceType, input.sourceId, input.createdBy, input.postingKind ?? null, input.inventoryEventId ?? null],
   );
   const entryId = rows[0].id;
   for (const l of lines) {
@@ -138,6 +140,7 @@ export async function postOrderPaymentEntry(
     sourceId: params.orderId,
     lines,
     createdBy: params.createdBy,
+    postingKind: "revenue",
   });
 }
 
@@ -159,13 +162,14 @@ export async function postCogsEntry(
     sourceId: params.orderId,
     lines,
     createdBy: params.createdBy,
+    postingKind: "cogs",
   });
 }
 
 /** Waste logged → Debit Waste Expense / Credit Inventory Asset. */
 export async function postWasteEntry(
   client: PoolClient,
-  params: { businessId: string; locationId: string; sourceId: string | null; createdBy: string | null; totalCost: Rial },
+  params: { businessId: string; locationId: string; sourceId: string; createdBy: string | null; totalCost: Rial; inventoryEventId?: string },
 ): Promise<string | null> {
   const accounts = await accountIdsByCode(client, params.businessId, [
     WELL_KNOWN_CODES.wasteExpense,
@@ -183,6 +187,8 @@ export async function postWasteEntry(
     sourceId: params.sourceId,
     lines,
     createdBy: params.createdBy,
+    postingKind: "waste",
+    inventoryEventId: params.inventoryEventId,
   });
 }
 
@@ -221,5 +227,25 @@ export async function postPurchaseEntry(
     sourceId: params.purchaseId,
     lines,
     createdBy: params.createdBy,
+    postingKind: "receipt",
   });
+}
+
+/** Physical count variance: shortage is expense; surplus is count gain. */
+export async function postStockCountEntry(client: PoolClient, params: {
+  businessId: string; locationId: string; stockCountId: string; inventoryEventId: string;
+  createdBy: string | null; varianceValue: Rial;
+}): Promise<string | null> {
+  const codes = [WELL_KNOWN_CODES.inventory, params.varianceValue < 0
+    ? WELL_KNOWN_CODES.inventoryCountExpense : WELL_KNOWN_CODES.inventoryCountGain];
+  const accounts = await accountIdsByCode(client, params.businessId, codes);
+  const value = Math.abs(params.varianceValue);
+  const inventory = accounts.get(WELL_KNOWN_CODES.inventory)!;
+  const variance = accounts.get(codes[1])!;
+  const lines = params.varianceValue < 0
+    ? [{ accountId: variance, debit: value, credit: 0 }, { accountId: inventory, debit: 0, credit: value }]
+    : [{ accountId: inventory, debit: value, credit: 0 }, { accountId: variance, debit: 0, credit: value }];
+  return postJournalEntry(client, { businessId: params.businessId, locationId: params.locationId,
+    memo: "مغایرت شمارش موجودی", sourceType: "stock_count", sourceId: params.stockCountId,
+    postingKind: "variance", inventoryEventId: params.inventoryEventId, lines, createdBy: params.createdBy });
 }

@@ -88,10 +88,11 @@ export async function POST(request: NextRequest) {
     const factor = factorById.get(it.inventoryItemId!)!;
     const baseQty = convertPurchaseQuantity(Number(it.purchaseQty), factor);
     const totalCost = Number(it.totalCost);
-    const unitCost = Math.round(totalCost / baseQty);
-    return { inventoryItemId: it.inventoryItemId!, baseQty, unitCost, totalCost };
+    return { inventoryItemId: it.inventoryItemId!, baseQty, totalCost };
   });
-  const total = lines.reduce((sum, l) => sum + l.totalCost, 0);
+  const totalBigInt = lines.reduce((sum, l) => sum + BigInt(l.totalCost), 0n);
+  if (totalBigInt > BigInt(Number.MAX_SAFE_INTEGER)) return NextResponse.json({ error: "amount_too_large" }, { status: 400 });
+  const total = totalBigInt.toString();
 
   const client = await getPool().connect();
   try {
@@ -104,9 +105,9 @@ export async function POST(request: NextRequest) {
     const purchaseId = purchaseRows[0].id;
     for (const line of lines) {
       await client.query(
-        `INSERT INTO purchase_items (purchase_id, inventory_item_id, quantity, unit_cost)
-         VALUES ($1, $2, $3, $4)`,
-        [purchaseId, line.inventoryItemId, line.baseQty, line.unitCost],
+        `INSERT INTO purchase_items (purchase_id, inventory_item_id, quantity, unit_cost, extended_cost)
+         VALUES ($1, $2, $3, $4::numeric / $3::numeric, $4)`,
+        [purchaseId, line.inventoryItemId, String(line.baseQty), String(line.totalCost)],
       );
     }
     await client.query("COMMIT");
