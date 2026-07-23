@@ -35,8 +35,10 @@ ALTER TABLE journal_entries
 CREATE UNIQUE INDEX uq_journal_business_source_posting
   ON journal_entries(business_id, source_type, source_id, posting_kind)
   WHERE source_id IS NOT NULL AND posting_kind IS NOT NULL;
-CREATE UNIQUE INDEX uq_stock_event_item_type
-  ON stock_movements(inventory_event_id, inventory_item_id, type)
+-- A single FIFO consumption can legitimately create several movement rows for
+-- one item (one per consumed layer), so movement-level uniqueness must not be
+-- imposed here. Idempotency is enforced at the event and journal-posting level.
+CREATE INDEX idx_stock_movements_event ON stock_movements(inventory_event_id)
   WHERE inventory_event_id IS NOT NULL;
 
 ALTER TABLE stock_count_lines
@@ -46,6 +48,11 @@ ALTER TABLE stock_counts ADD COLUMN inventory_event_id uuid UNIQUE REFERENCES in
 
 -- Preserve exact extended invoice value rather than attempting to reconstruct
 -- it from a rounded per-base-unit cost.
+-- The reporting view depends on these columns and PostgreSQL will reject a
+-- type change while that dependency exists. It is recreated below in the same
+-- migration transaction, so readers never observe it missing.
+DROP VIEW v_inventory_valuation;
+DROP VIEW v_waste_summary;
 ALTER TABLE purchase_items ALTER COLUMN unit_cost TYPE numeric(24,9) USING unit_cost::numeric;
 ALTER TABLE stock_movements ALTER COLUMN unit_cost TYPE numeric(24,9) USING unit_cost::numeric;
 ALTER TABLE inventory_lots ALTER COLUMN unit_cost TYPE numeric(24,9) USING unit_cost::numeric;
@@ -63,10 +70,11 @@ FROM businesses b CROSS JOIN (VALUES
 ) AS v(code,name,type)
 ON CONFLICT (business_id, code) DO NOTHING;
 
-CREATE OR REPLACE VIEW v_inventory_valuation AS
+CREATE VIEW v_inventory_valuation AS
 WITH method AS (
  SELECT l.id location_id, COALESCE(s.value->>'method','fifo') costing_method
- FROM locations l JOIN settings s ON s.business_id=l.business_id AND s.key='inventory.costing'
+ FROM locations l JOIN settings s ON s.business_id=l.business_id
+   AND s.location_id IS NULL AND s.key='inventory.costing'
 ), stock AS (
  SELECT inventory_item_id, sum(quantity) stock_qty,
         sum(CASE WHEN quantity < 0 THEN -quantity ELSE 0 END) FILTER (WHERE unit_cost=0) unpriced_qty
@@ -91,3 +99,17 @@ JOIN method m ON m.location_id=ii.location_id
 LEFT JOIN stock s ON s.inventory_item_id=ii.id
 LEFT JOIN lots lo ON lo.inventory_item_id=ii.id
 WHERE ii.is_active OR COALESCE(s.stock_qty,0)<>0 OR COALESCE(lo.lot_value,0)<>0;
+
+CREATE VIEW v_waste_summary AS
+SELECT sm.location_id, l.business_id,
+       (sm.occurred_at AT TIME ZONE l.timezone)::date AS waste_date,
+       sm.inventory_item_id, ii.name AS item_name, ii.unit, sm.waste_reason,
+       sum(-sm.quantity) AS quantity,
+       sum(-sm.quantity * COALESCE(sm.unit_cost,0)) AS cost
+FROM stock_movements sm
+JOIN locations l ON l.id=sm.location_id
+JOIN inventory_items ii ON ii.id=sm.inventory_item_id
+WHERE sm.type='waste'
+GROUP BY sm.location_id,l.business_id,
+         (sm.occurred_at AT TIME ZONE l.timezone)::date,
+         sm.inventory_item_id,ii.name,ii.unit,sm.waste_reason;
