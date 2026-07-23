@@ -8,14 +8,6 @@ import { getPrimaryLocation } from "@/lib/setup-state";
 const SETTLEMENT_METHODS = ["cash", "bank", "credit"] as const;
 type SettlementMethod = (typeof SETTLEMENT_METHODS)[number];
 
-async function loadPurchase(locationId: string, id: string) {
-  const { rows } = await query<{ id: string; status: string; total: string }>(
-    "SELECT id, status, total FROM purchases WHERE id = $1 AND location_id = $2",
-    [id, locationId],
-  );
-  return rows[0] ?? null;
-}
-
 export async function GET(_request: NextRequest, context: { params: Promise<{ id: string }> }) {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
@@ -23,9 +15,6 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ id
 
   const location = await getPrimaryLocation(session.businessId);
   if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
-
-  const purchase = await loadPurchase(location.id, id);
-  if (!purchase) return NextResponse.json({ error: "not_found" }, { status: 404 });
 
   const { rows: header } = await query(
     `SELECT p.*, s.name AS supplier_name FROM purchases p
@@ -57,9 +46,6 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
   const location = await getPrimaryLocation(session.businessId);
   if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
 
-  const purchase = await loadPurchase(location.id, id);
-  if (!purchase) return NextResponse.json({ error: "not_found" }, { status: 404 });
-
   let body: { status?: string; settlementMethod?: string };
   try {
     body = await request.json();
@@ -68,20 +54,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
   }
 
   const nextStatus = body.status;
-  const allowed = VALID_TRANSITIONS[purchase.status] ?? [];
-  if (!nextStatus || !allowed.includes(nextStatus)) {
-    return NextResponse.json({ error: "invalid_transition" }, { status: 409 });
-  }
-
-  if (nextStatus === "cancelled") {
-    await query("UPDATE purchases SET status = 'cancelled' WHERE id = $1", [id]);
-    return NextResponse.json({ ok: true });
-  }
-
-  if (nextStatus === "ordered") {
-    await query("UPDATE purchases SET status = 'ordered', ordered_at = now() WHERE id = $1", [id]);
-    return NextResponse.json({ ok: true });
-  }
+  if (!nextStatus) return NextResponse.json({ error: "invalid_transition" }, { status: 409 });
 
   // received: increases stock, (weighted-average) rolls avg_cost forward, and
   // posts the Phase 7 journal entry (Debit Inventory / Credit AP or Cash/Bank).
@@ -89,14 +62,26 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     ? (body.settlementMethod as SettlementMethod)
     : "credit";
 
-  const { rows: items } = await query<{ inventory_item_id: string; quantity: string; unit_cost: string }>(
-    "SELECT inventory_item_id, quantity, unit_cost FROM purchase_items WHERE purchase_id = $1",
-    [id],
-  );
-
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
+    const { rows: locked } = await client.query<{ id:string; status:string; total:string }>(
+      "SELECT id,status,total FROM purchases WHERE id=$1 AND location_id=$2 FOR UPDATE", [id, location.id]);
+    const purchase = locked[0];
+    if (!purchase) { await client.query("ROLLBACK"); return NextResponse.json({ error:"not_found" }, { status:404 }); }
+    if (!(VALID_TRANSITIONS[purchase.status] ?? []).includes(nextStatus)) {
+      await client.query("ROLLBACK"); return NextResponse.json({ error:"invalid_transition" }, { status:409 });
+    }
+    if (nextStatus !== "received") {
+      await client.query(`UPDATE purchases SET status=$2, ordered_at=CASE WHEN $2='ordered' THEN now() ELSE ordered_at END WHERE id=$1`, [id,nextStatus]);
+      await client.query("COMMIT"); return NextResponse.json({ok:true});
+    }
+    const { rows: items } = await client.query<{ inventory_item_id:string; quantity:string; unit_cost:string }>(
+      "SELECT inventory_item_id,quantity,unit_cost FROM purchase_items WHERE purchase_id=$1 ORDER BY inventory_item_id", [id]);
+    const { rows: eventRows } = await client.query<{id:string}>(
+      `INSERT INTO inventory_events(business_id,location_id,event_type,source_type,source_id,created_by)
+       VALUES($1,$2,'purchase_receipt','purchase',$3,$4) RETURNING id`, [session.businessId,location.id,id,session.sub]);
+    const eventId=eventRows[0].id;
     await receivePurchase(
       client,
       location.id,
@@ -108,6 +93,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
         unitCost: Number(i.unit_cost),
       })),
       session.sub,
+      eventId,
     );
     await client.query(
       "UPDATE purchases SET status = 'received', received_at = now(), settlement_method = $2 WHERE id = $1",
@@ -121,6 +107,8 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       total: Number(purchase.total),
       settlementMethod,
     });
+    await client.query("UPDATE journal_entries SET inventory_event_id=$2 WHERE source_type='purchase' AND source_id=$1", [id,eventId]);
+    await client.query("UPDATE inventory_events SET posting_status='posted' WHERE id=$1", [eventId]);
     await client.query("COMMIT");
   } catch (err) {
     await client.query("ROLLBACK");

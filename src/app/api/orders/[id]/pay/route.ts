@@ -55,18 +55,16 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     return NextResponse.json({ error: "invalid_payment_method" }, { status: 400 });
   }
 
-  const { rows } = await query<{ id: string; status: string; total: string; tax: string }>(
-    "SELECT id, status, total, tax FROM orders WHERE id = $1 AND location_id = $2",
-    [id, location.id],
-  );
-  const order = rows[0];
-  if (!order) return NextResponse.json({ error: "order_not_found" }, { status: 404 });
-  if (order.status !== "open") return NextResponse.json({ error: "order_not_open" }, { status: 409 });
-
-  const total = Number(order.total);
   const client = await getPool().connect();
+  let total = 0;
   try {
     await client.query("BEGIN");
+    const { rows } = await client.query<{ id:string;status:string;total:string;tax:string }>(
+      "SELECT id,status,total,tax FROM orders WHERE id=$1 AND location_id=$2 FOR UPDATE", [id,location.id]);
+    const order=rows[0];
+    if (!order) { await client.query("ROLLBACK"); return NextResponse.json({error:"order_not_found"},{status:404}); }
+    if (order.status !== "open") { await client.query("ROLLBACK"); return NextResponse.json({error:"order_not_open"},{status:409}); }
+    total=Number(order.total);
     if (total > 0) {
       await client.query(
         `INSERT INTO payments (location_id, order_id, method, amount, reference, received_by)

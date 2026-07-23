@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPool, query } from "@/lib/db";
-import { getSetting, markStepDone, setSetting, SETTING_KEYS } from "@/lib/settings";
+import { getSetting, markStepDone, SETTING_KEYS } from "@/lib/settings";
 import {
   costingLocked,
   getPrimaryLocation,
@@ -20,8 +20,8 @@ export async function GET() {
     query(
       `SELECT id, code, name, type,
               (SELECT count(*) FROM accounts c WHERE c.parent_id = a.id) AS children
-         FROM accounts a WHERE business_id = $1 AND is_active ORDER BY code`,
-      [session.businessId],
+         FROM accounts a WHERE business_id = $1 AND is_active AND code <> $2 ORDER BY code`,
+      [session.businessId, WELL_KNOWN_CODES.inventory],
     ),
     query(
       `SELECT je.id, je.entry_date, je.memo,
@@ -112,10 +112,17 @@ async function openingInventory(
   const location = await getPrimaryLocation(businessId);
   if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
 
-  let totalValue = 0;
+  let totalValue = 0n;
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
+    const { rows: prior } = await client.query<{id:string}>(
+      "SELECT id FROM inventory_events WHERE business_id=$1 AND event_type='opening' FOR UPDATE",[businessId]);
+    if (prior.length) { await client.query("ROLLBACK"); return NextResponse.json({ok:true,eventId:prior[0].id,idempotent:true}); }
+    const { rows: eventRows } = await client.query<{id:string}>(
+      `INSERT INTO inventory_events(business_id,location_id,event_type,source_type,created_by)
+       VALUES($1,$2,'opening','setup_opening',$3) RETURNING id`,[businessId,location.id,userId]);
+    const eventId=eventRows[0].id;
     for (const it of items) {
       const name = it.name!.trim();
       const unit = it.unit?.trim() || "unit";
@@ -135,14 +142,32 @@ async function openingInventory(
             )
           ).rows[0].id;
 
-      await client.query(
+      const { rows: movement } = await client.query<{value:string}>(
         `INSERT INTO stock_movements
-           (location_id, inventory_item_id, type, quantity, unit_cost, source_type, note, created_by)
-         VALUES ($1, $2, 'adjustment', $3, $4, 'opening', 'شمارش افتتاحیه', $5)`,
-        [location.id, itemId, qty, cost, userId],
+           (location_id, inventory_item_id, type, quantity, unit_cost, source_type, source_id, note, created_by, inventory_event_id)
+         VALUES ($1, $2, 'adjustment', $3, $4, 'opening', $5, 'شمارش افتتاحیه', $6, $5)
+         RETURNING round(quantity*unit_cost)::bigint::text value`,
+        [location.id, itemId, String(qty), String(cost), eventId, userId],
       );
-      totalValue += Math.round(qty * cost);
+      totalValue += BigInt(movement[0].value);
+      if (costing.method === "fifo") await client.query(
+        `INSERT INTO inventory_lots(location_id,inventory_item_id,remaining_qty,unit_cost,source_type,source_id,inventory_event_id)
+         VALUES($1,$2,$3,$4,'opening',$5,$5)`,[location.id,itemId,String(qty),String(cost),eventId]);
+      else await client.query("UPDATE inventory_items SET avg_cost=$2 WHERE id=$1",[itemId,String(cost)]);
     }
+    const {rows: accounts}=await client.query<{id:string;code:string}>(
+      "SELECT id,code FROM accounts WHERE business_id=$1 AND code=ANY($2::text[]) AND is_active",[businessId,[WELL_KNOWN_CODES.inventory,WELL_KNOWN_CODES.openingEquity]]);
+    const byCode=new Map(accounts.map(a=>[a.code,a.id]));
+    if (!byCode.has(WELL_KNOWN_CODES.inventory)||!byCode.has(WELL_KNOWN_CODES.openingEquity)) throw new Error("opening_accounts_missing");
+    const {rows: entries}=await client.query<{id:string}>(
+      `INSERT INTO journal_entries(business_id,location_id,entry_date,memo,source_type,source_id,created_by,posting_kind,inventory_event_id)
+       VALUES($1,$2,CURRENT_DATE,'موجودی افتتاحیه','opening_inventory',$3,$4,'inventory',$3) RETURNING id`,[businessId,location.id,eventId,userId]);
+    await client.query(`INSERT INTO journal_lines(entry_id,account_id,debit,credit) VALUES($1,$2,$3,0),($1,$4,0,$3)`,
+      [entries[0].id,byCode.get(WELL_KNOWN_CODES.inventory),totalValue.toString(),byCode.get(WELL_KNOWN_CODES.openingEquity)]);
+    await client.query("UPDATE inventory_events SET posting_status='posted' WHERE id=$1",[eventId]);
+    if (!costing.lockedAt) await client.query(
+      `UPDATE settings SET value=jsonb_set(value,'{lockedAt}',to_jsonb(now()::text)),updated_at=now()
+       WHERE business_id=$1 AND location_id IS NULL AND key=$2`,[businessId,SETTING_KEYS.costing]);
     await client.query("COMMIT");
   } catch (err) {
     await client.query("ROLLBACK");
@@ -151,16 +176,8 @@ async function openingInventory(
     client.release();
   }
 
-  // First inventory transaction → costing method is now locked.
-  if (!costing.lockedAt) {
-    await setSetting(businessId, SETTING_KEYS.costing, {
-      ...costing,
-      lockedAt: new Date().toISOString(),
-    });
-  }
-
   const progress = await markStepDone(businessId, "opening");
-  return NextResponse.json({ ok: true, totalValue, progress });
+  return NextResponse.json({ ok: true, totalValue: totalValue.toString(), progress });
 }
 
 /** Opening ledger balances → one balanced journal entry (source_type 'opening'). */
@@ -210,6 +227,11 @@ async function openingBalances(
 
   // All referenced accounts must belong to this business.
   const accountIds = lines.map((l) => l.accountId);
+  const { rows: inventoryAccount } = await query<{id:string}>(
+    "SELECT id FROM accounts WHERE business_id=$1 AND code=$2", [businessId,WELL_KNOWN_CODES.inventory]);
+  if (inventoryAccount.some(a => accountIds.includes(a.id))) {
+    return NextResponse.json({ error: "inventory_opening_is_automatic" }, { status: 409 });
+  }
   const { rows: owned } = await query(
     "SELECT id FROM accounts WHERE business_id = $1 AND id = ANY($2::uuid[])",
     [businessId, accountIds],

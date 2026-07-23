@@ -58,6 +58,12 @@ export async function POST(request: NextRequest) {
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
+    const { rows: events } = await client.query<{id:string}>(
+      `INSERT INTO inventory_events(business_id,location_id,event_type,source_type,created_by,metadata)
+       VALUES($1,$2,'waste','waste',$3,jsonb_build_object('reason',$4::text)) RETURNING id`,
+      [session.businessId,location.id,session.sub,reason]);
+    const eventId=events[0].id;
+    await client.query("UPDATE inventory_events SET source_id=id WHERE id=$1",[eventId]);
     const result = await consumeInventory(client, {
       locationId: location.id,
       businessId: session.businessId,
@@ -65,18 +71,21 @@ export async function POST(request: NextRequest) {
       quantity,
       type: "waste",
       sourceType: "waste",
-      sourceId: null,
+      sourceId: eventId,
       note: body.note?.trim() || null,
       wasteReason: reason,
       createdBy: session.sub,
+      inventoryEventId: eventId,
     });
     await postWasteEntry(client, {
       businessId: session.businessId,
       locationId: location.id,
-      sourceId: null,
+      sourceId: eventId,
       createdBy: session.sub,
       totalCost: result.totalCost,
+      inventoryEventId: eventId,
     });
+    await client.query("UPDATE inventory_events SET posting_status='posted' WHERE id=$1",[eventId]);
     await client.query("COMMIT");
     return NextResponse.json({ ok: true, totalCost: result.totalCost });
   } catch (err) {

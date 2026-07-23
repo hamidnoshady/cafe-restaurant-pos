@@ -76,6 +76,7 @@ export interface ConsumeInventoryInput {
   note?: string | null;
   wasteReason?: string | null;
   createdBy: string | null;
+  inventoryEventId?: string | null;
 }
 
 export interface ConsumeInventoryResult {
@@ -123,8 +124,8 @@ export async function consumeInventory(
     }
     await client.query(
       `INSERT INTO stock_movements
-         (location_id, inventory_item_id, type, quantity, unit_cost, source_type, source_id, note, waste_reason, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+         (location_id, inventory_item_id, type, quantity, unit_cost, source_type, source_id, note, waste_reason, created_by, inventory_event_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
       [
         input.locationId,
         input.inventoryItemId,
@@ -136,6 +137,7 @@ export async function consumeInventory(
         input.note ?? null,
         input.wasteReason ?? null,
         input.createdBy,
+        input.inventoryEventId ?? null,
       ],
     );
   }
@@ -258,13 +260,14 @@ export async function applyStockAdjustment(
     sourceType: string;
     sourceId: string | null;
     createdBy: string | null;
+    inventoryEventId?: string | null;
   },
-): Promise<void> {
+): Promise<Rial> {
   const { locationId, businessId, inventoryItemId, delta, sourceType, sourceId, createdBy } = params;
-  if (delta === 0) return;
+  if (delta === 0) return 0;
 
   if (delta < 0) {
-    await consumeInventory(client, {
+    const result = await consumeInventory(client, {
       locationId,
       businessId,
       inventoryItemId,
@@ -273,32 +276,41 @@ export async function applyStockAdjustment(
       sourceType,
       sourceId,
       createdBy,
+      inventoryEventId: params.inventoryEventId,
     });
-    return;
+    return -result.totalCost;
   }
 
   const item = await lockInventoryItem(client, inventoryItemId);
   const currentStock = await getCurrentStock(client, inventoryItemId);
   const method = await getCostingMethod(businessId);
-  const unitCost = Number(item.avg_cost);
+  let unitCost = Number(item.avg_cost);
+  if (method === "fifo") {
+    const { rows } = await client.query<{ cost: string }>(
+      `SELECT COALESCE(sum(remaining_qty * unit_cost) / NULLIF(sum(remaining_qty),0),0) cost
+         FROM inventory_lots WHERE inventory_item_id=$1 AND remaining_qty>0`, [inventoryItemId]);
+    unitCost = Number(rows[0].cost);
+  }
 
   await client.query(
     `INSERT INTO stock_movements
-       (location_id, inventory_item_id, type, quantity, unit_cost, source_type, source_id, created_by)
-     VALUES ($1, $2, 'adjustment', $3, $4, $5, $6, $7)`,
-    [locationId, inventoryItemId, delta, unitCost, sourceType, sourceId, createdBy],
+       (location_id, inventory_item_id, type, quantity, unit_cost, source_type, source_id, created_by, inventory_event_id)
+     VALUES ($1, $2, 'adjustment', $3, $4, $5, $6, $7, $8)`,
+    [locationId, inventoryItemId, delta, unitCost, sourceType, sourceId, createdBy, params.inventoryEventId ?? null],
   );
 
   if (method === "fifo") {
     await client.query(
       `INSERT INTO inventory_lots (location_id, inventory_item_id, remaining_qty, unit_cost, source_type, source_id)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
       [locationId, inventoryItemId, delta, unitCost, sourceType, sourceId],
     );
+    await client.query("UPDATE inventory_lots SET inventory_event_id=$2 WHERE source_type=$3 AND source_id=$4 AND inventory_item_id=$1 AND inventory_event_id IS NULL", [inventoryItemId, params.inventoryEventId ?? null, sourceType, sourceId]);
   } else {
     const newAvg = calculateNewAverageCost(currentStock, unitCost, delta, unitCost);
     await client.query("UPDATE inventory_items SET avg_cost = $2 WHERE id = $1", [inventoryItemId, newAvg]);
   }
+  return Math.round(delta * unitCost);
 }
 
 export interface ReceivePurchaseItem {
@@ -316,25 +328,26 @@ export async function receivePurchase(
   purchaseId: string,
   items: ReceivePurchaseItem[],
   createdBy: string | null,
+  inventoryEventId?: string | null,
 ): Promise<void> {
   const method = await getCostingMethod(businessId);
-  for (const it of items) {
+  for (const it of [...items].sort((a, b) => a.inventoryItemId.localeCompare(b.inventoryItemId))) {
     if (it.quantity <= 0) continue;
     const item = await lockInventoryItem(client, it.inventoryItemId);
     const currentStock = await getCurrentStock(client, it.inventoryItemId);
 
     await client.query(
       `INSERT INTO stock_movements
-         (location_id, inventory_item_id, type, quantity, unit_cost, source_type, source_id, created_by)
-       VALUES ($1, $2, 'purchase', $3, $4, 'purchase', $5, $6)`,
-      [locationId, it.inventoryItemId, it.quantity, it.unitCost, purchaseId, createdBy],
+         (location_id, inventory_item_id, type, quantity, unit_cost, source_type, source_id, created_by, inventory_event_id)
+       VALUES ($1, $2, 'purchase', $3, $4, 'purchase', $5, $6, $7)`,
+      [locationId, it.inventoryItemId, it.quantity, it.unitCost, purchaseId, createdBy, inventoryEventId ?? null],
     );
 
     if (method === "fifo") {
       await client.query(
-        `INSERT INTO inventory_lots (location_id, inventory_item_id, remaining_qty, unit_cost, source_type, source_id)
-         VALUES ($1, $2, $3, $4, 'purchase', $5)`,
-        [locationId, it.inventoryItemId, it.quantity, it.unitCost, purchaseId],
+        `INSERT INTO inventory_lots (location_id, inventory_item_id, remaining_qty, unit_cost, source_type, source_id, inventory_event_id)
+         VALUES ($1, $2, $3, $4, 'purchase', $5, $6)`,
+        [locationId, it.inventoryItemId, it.quantity, it.unitCost, purchaseId, inventoryEventId ?? null],
       );
     } else {
       const newAvg = calculateNewAverageCost(currentStock, Number(item.avg_cost), it.quantity, it.unitCost);

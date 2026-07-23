@@ -33,6 +33,8 @@ export const WELL_KNOWN_CODES = {
   salesRevenue: "4300",
   cogs: "5100",
   wasteExpense: "5150",
+  inventoryCountExpense: "5160",
+  inventoryCountGain: "4910",
 } as const;
 
 export const FNB_COA_TEMPLATE: TemplateAccount[] = [
@@ -59,10 +61,12 @@ export const FNB_COA_TEMPLATE: TemplateAccount[] = [
   { code: "4200", name: "فروش نوشیدنی", type: "revenue", parentCode: "4000" },
   { code: "4300", name: "فروش (عمومی)", type: "revenue", parentCode: "4000" },
   { code: "4900", name: "سایر درآمدها", type: "revenue", parentCode: "4000" },
+  { code: "4910", name: "درآمد اضافه شمارش موجودی", type: "revenue", parentCode: "4000" },
 
   { code: "5000", name: "هزینه‌ها", type: "expense" },
   { code: "5100", name: "بهای تمام‌شده مواد", type: "expense", parentCode: "5000" },
   { code: "5150", name: "ضایعات مواد", type: "expense", parentCode: "5000" },
+  { code: "5160", name: "هزینه کسری و مغایرت شمارش", type: "expense", parentCode: "5000" },
   { code: "5200", name: "حقوق و دستمزد", type: "expense", parentCode: "5000" },
   { code: "5300", name: "اجاره", type: "expense", parentCode: "5000" },
   { code: "5400", name: "آب، برق و گاز", type: "expense", parentCode: "5000" },
