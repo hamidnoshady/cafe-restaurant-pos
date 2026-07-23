@@ -113,6 +113,7 @@ export async function postOrderPaymentEntry(
     method: string;
     amount: Rial;
     tax: Rial;
+    inventoryEventId?: string | null;
   },
 ): Promise<string | null> {
   const accounts = await accountIdsByCode(client, params.businessId, [
@@ -141,13 +142,14 @@ export async function postOrderPaymentEntry(
     lines,
     createdBy: params.createdBy,
     postingKind: "revenue",
+    inventoryEventId: params.inventoryEventId,
   });
 }
 
 /** Stock deducted on sale → Debit COGS / Credit Inventory Asset. */
 export async function postCogsEntry(
   client: PoolClient,
-  params: { businessId: string; locationId: string; orderId: string; createdBy: string | null; totalCost: Rial },
+  params: { businessId: string; locationId: string; orderId: string; createdBy: string | null; totalCost: Rial; inventoryEventId?: string | null },
 ): Promise<string | null> {
   const accounts = await accountIdsByCode(client, params.businessId, [WELL_KNOWN_CODES.cogs, WELL_KNOWN_CODES.inventory]);
   const lines = buildCogsLines(
@@ -163,6 +165,7 @@ export async function postCogsEntry(
     lines,
     createdBy: params.createdBy,
     postingKind: "cogs",
+    inventoryEventId: params.inventoryEventId,
   });
 }
 
@@ -202,6 +205,7 @@ export async function postPurchaseEntry(
     createdBy: string | null;
     total: Rial;
     settlementMethod: SettlementMethod;
+    inventoryEventId?: string | null;
   },
 ): Promise<string | null> {
   const accounts = await accountIdsByCode(client, params.businessId, [
@@ -228,23 +232,24 @@ export async function postPurchaseEntry(
     lines,
     createdBy: params.createdBy,
     postingKind: "receipt",
+    inventoryEventId: params.inventoryEventId,
   });
 }
 
 /** Physical count variance: shortage is expense; surplus is count gain. */
 export async function postStockCountEntry(client: PoolClient, params: {
   businessId: string; locationId: string; stockCountId: string; inventoryEventId: string;
-  createdBy: string | null; varianceValue: Rial;
+  createdBy: string | null; shortageValue: Rial; surplusValue: Rial;
 }): Promise<string | null> {
-  const codes = [WELL_KNOWN_CODES.inventory, params.varianceValue < 0
-    ? WELL_KNOWN_CODES.inventoryCountExpense : WELL_KNOWN_CODES.inventoryCountGain];
+  const codes = [WELL_KNOWN_CODES.inventory, WELL_KNOWN_CODES.inventoryCountExpense, WELL_KNOWN_CODES.inventoryCountGain];
   const accounts = await accountIdsByCode(client, params.businessId, codes);
-  const value = Math.abs(params.varianceValue);
   const inventory = accounts.get(WELL_KNOWN_CODES.inventory)!;
-  const variance = accounts.get(codes[1])!;
-  const lines = params.varianceValue < 0
-    ? [{ accountId: variance, debit: value, credit: 0 }, { accountId: inventory, debit: 0, credit: value }]
-    : [{ accountId: inventory, debit: value, credit: 0 }, { accountId: variance, debit: 0, credit: value }];
+  const lines = [
+    { accountId: accounts.get(WELL_KNOWN_CODES.inventoryCountExpense)!, debit: params.shortageValue, credit: 0 },
+    { accountId: inventory, debit: 0, credit: params.shortageValue },
+    { accountId: inventory, debit: params.surplusValue, credit: 0 },
+    { accountId: accounts.get(WELL_KNOWN_CODES.inventoryCountGain)!, debit: 0, credit: params.surplusValue },
+  ];
   return postJournalEntry(client, { businessId: params.businessId, locationId: params.locationId,
     memo: "مغایرت شمارش موجودی", sourceType: "stock_count", sourceId: params.stockCountId,
     postingKind: "variance", inventoryEventId: params.inventoryEventId, lines, createdBy: params.createdBy });

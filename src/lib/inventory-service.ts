@@ -114,6 +114,7 @@ export async function consumeInventory(
 
   const strategy = getCostingStrategy(method);
   const result = strategy.calculateCOGS(lots, input.quantity, avgCost);
+  const physicalShortfall = Math.max(input.quantity - Math.max(currentStock, 0), 0);
 
   for (const line of result.lines) {
     if (line.lotId) {
@@ -142,6 +143,19 @@ export async function consumeInventory(
     );
   }
 
+  if (physicalShortfall > 0) {
+    if (!input.inventoryEventId) throw new Error("inventory_event_required_for_shortfall");
+    const provisionalCost = result.lines[result.lines.length - 1]?.unitCost ?? avgCost;
+    await client.query(
+      `INSERT INTO inventory_negative_layers
+       (business_id,location_id,inventory_item_id,source_inventory_event_id,source_order_id,
+        original_quantity,remaining_quantity,provisional_unit_cost,is_unpriced)
+       VALUES($1,$2,$3,$4,$5,$6,$6,$7,$8)`,
+      [input.businessId,input.locationId,input.inventoryItemId,input.inventoryEventId,
+       input.type === "sale" ? input.sourceId : null,physicalShortfall,provisionalCost,Number(provisionalCost) === 0],
+    );
+  }
+
   const newStock = currentStock - input.quantity;
   const reorderLevel = item.reorder_level === null ? null : Number(item.reorder_level);
   if (crossedLowStockThreshold(currentStock, newStock, reorderLevel)) {
@@ -154,7 +168,7 @@ export async function consumeInventory(
     });
   }
 
-  return { totalCost: result.totalCost, shortfall: result.shortfall };
+  return { totalCost: result.totalCost, shortfall: physicalShortfall };
 }
 
 /**
@@ -169,6 +183,7 @@ export async function deductForOrder(
   locationId: string,
   orderId: string,
   createdBy: string | null,
+  inventoryEventId: string,
 ): Promise<{ totalCost: Rial }> {
   const { rows: items } = await client.query<{ id: string; menu_item_id: string | null; quantity: number }>(
     "SELECT id, menu_item_id, quantity FROM order_items WHERE order_id = $1 AND status != 'voided'",
@@ -219,12 +234,29 @@ export async function deductForOrder(
     modifierRecipes.set(r.modifier_id, list);
   }
 
-  const lines: OrderLineForDeduction[] = items.map((i) => ({
-    menuItemId: i.menu_item_id,
-    quantity: i.quantity,
-    modifierIds: modifiersByItem.get(i.id) ?? [],
-  }));
-  const requirements = computeIngredientRequirements(lines, recipes, modifierRecipes);
+  // Legacy open orders created before 0013 get one auditable fallback capture.
+  for (const item of items) {
+    const { rows: existing } = await client.query("SELECT 1 FROM order_item_inventory_snapshots WHERE order_item_id=$1 LIMIT 1", [item.id]);
+    if (existing.length || !item.menu_item_id) continue;
+    const line = computeIngredientRequirements([{
+      menuItemId: item.menu_item_id, quantity: 1, modifierIds: modifiersByItem.get(item.id) ?? [],
+    }], recipes, modifierRecipes);
+    for (const [inventoryItemId, quantity] of line) {
+      if (quantity < 0) throw new Error("negative_ingredient_requirement");
+      if (quantity === 0) continue;
+      await client.query(
+        `INSERT INTO order_item_inventory_snapshots
+         (order_item_id,inventory_item_id,required_quantity,source_menu_item_id,source_modifier_ids,capture_method,audit_metadata)
+         VALUES($1,$2,$3,$4,$5,'legacy_payment_fallback',$6)`,
+        [item.id,inventoryItemId,quantity,item.menu_item_id,modifiersByItem.get(item.id) ?? [],JSON.stringify({ orderId })],
+      );
+    }
+  }
+  const { rows: snapshotRows } = await client.query<{ inventory_item_id:string; required_quantity:string }>(
+    `SELECT s.inventory_item_id, sum(s.required_quantity * oi.quantity)::text required_quantity
+       FROM order_item_inventory_snapshots s JOIN order_items oi ON oi.id=s.order_item_id
+      WHERE oi.order_id=$1 AND oi.status!='voided' GROUP BY s.inventory_item_id ORDER BY s.inventory_item_id`, [orderId]);
+  const requirements = new Map(snapshotRows.map((r) => [r.inventory_item_id, Number(r.required_quantity)]));
 
   let totalCost = 0;
   for (const [inventoryItemId, quantity] of requirements) {
@@ -237,6 +269,7 @@ export async function deductForOrder(
       sourceType: "order",
       sourceId: orderId,
       createdBy,
+      inventoryEventId,
     });
     totalCost += result.totalCost;
   }
@@ -335,6 +368,19 @@ export async function receivePurchase(
     if (it.quantity <= 0) continue;
     const item = await lockInventoryItem(client, it.inventoryItemId);
     const currentStock = await getCurrentStock(client, it.inventoryItemId);
+    let availableQuantity = it.quantity;
+    const { rows: shortages } = await client.query<{id:string;remaining_quantity:string}>(
+      `SELECT id,remaining_quantity FROM inventory_negative_layers
+       WHERE inventory_item_id=$1 AND remaining_quantity>0 ORDER BY created_at,id FOR UPDATE`, [it.inventoryItemId]);
+    for (const shortage of shortages) {
+      if (availableQuantity <= 0) break;
+      const settled = Math.min(availableQuantity, Number(shortage.remaining_quantity));
+      await client.query(
+        `UPDATE inventory_negative_layers SET remaining_quantity=remaining_quantity-$2,
+         settled_at=CASE WHEN remaining_quantity-$2=0 THEN now() ELSE NULL END WHERE id=$1`,
+        [shortage.id,settled]);
+      availableQuantity -= settled;
+    }
 
     await client.query(
       `INSERT INTO stock_movements
@@ -344,10 +390,10 @@ export async function receivePurchase(
     );
 
     if (method === "fifo") {
-      await client.query(
+      if (availableQuantity > 0) await client.query(
         `INSERT INTO inventory_lots (location_id, inventory_item_id, remaining_qty, unit_cost, source_type, source_id, inventory_event_id)
          VALUES ($1, $2, $3, $4, 'purchase', $5, $6)`,
-        [locationId, it.inventoryItemId, it.quantity, it.unitCost, purchaseId, inventoryEventId ?? null],
+        [locationId, it.inventoryItemId, availableQuantity, it.unitCost, purchaseId, inventoryEventId ?? null],
       );
     } else {
       const newAvg = calculateNewAverageCost(currentStock, Number(item.avg_cost), it.quantity, it.unitCost);

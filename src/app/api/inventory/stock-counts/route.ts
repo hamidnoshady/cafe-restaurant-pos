@@ -69,19 +69,20 @@ export async function POST(request: NextRequest) {
     await client.query("BEGIN");
     // One deterministic lock acquisition prevents count/sale/purchase deadlocks.
     await client.query("SELECT id FROM inventory_items WHERE id=ANY($1::uuid[]) ORDER BY id FOR UPDATE", [itemIds]);
-    const { rows: eventRows } = await client.query<{ id: string }>(
-      `INSERT INTO inventory_events(business_id,location_id,event_type,source_type,created_by)
-       VALUES($1,$2,'stock_count_adjustment','stock_count',$3) RETURNING id`,
-      [session.businessId, location.id, session.sub]);
-    const eventId = eventRows[0].id;
     const { rows: countRows } = await client.query<{ id: string }>(
-      "INSERT INTO stock_counts (location_id, note, counted_by, inventory_event_id) VALUES ($1, $2, $3, $4) RETURNING id",
-      [location.id, body.note?.trim() || null, session.sub, eventId],
+      "INSERT INTO stock_counts (location_id, note, counted_by) VALUES ($1, $2, $3) RETURNING id",
+      [location.id, body.note?.trim() || null, session.sub],
     );
     const stockCountId = countRows[0].id;
-    await client.query("UPDATE inventory_events SET source_id=$2 WHERE id=$1", [eventId, stockCountId]);
+    const { rows: eventRows } = await client.query<{ id: string }>(
+      `INSERT INTO inventory_events(business_id,location_id,event_type,source_type,source_id,created_by,idempotency_key)
+       VALUES($1,$2,'stock_count_adjustment','stock_count',$3,$4,'stock-count:' || $3) RETURNING id`,
+      [session.businessId, location.id, stockCountId, session.sub]);
+    const eventId = eventRows[0].id;
+    await client.query("UPDATE stock_counts SET inventory_event_id=$2 WHERE id=$1", [stockCountId,eventId]);
 
-    let totalVarianceValue = 0;
+    let shortageValue = 0;
+    let surplusValue = 0;
     for (const l of [...lines].sort((a,b) => lId(a).localeCompare(lId(b)))) {
       const inventoryItemId = l.inventoryItemId!;
       const countedQty = Number(l.countedQty);
@@ -98,7 +99,8 @@ export async function POST(request: NextRequest) {
         createdBy: session.sub,
         inventoryEventId: eventId,
       });
-      totalVarianceValue += varianceValue;
+      if (varianceValue < 0) shortageValue += Math.abs(varianceValue);
+      else surplusValue += varianceValue;
       const unitCost = variance === 0 ? 0 : Math.abs(varianceValue / variance);
       await client.query(
         `INSERT INTO stock_count_lines (stock_count_id, inventory_item_id, system_qty, counted_qty, variance, unit_carrying_cost, variance_value)
@@ -108,7 +110,7 @@ export async function POST(request: NextRequest) {
     }
 
     await postStockCountEntry(client, { businessId: session.businessId, locationId: location.id,
-      stockCountId, inventoryEventId: eventId, createdBy: session.sub, varianceValue: totalVarianceValue });
+      stockCountId, inventoryEventId: eventId, createdBy: session.sub, shortageValue, surplusValue });
     await client.query("UPDATE inventory_events SET posting_status='posted' WHERE id=$1", [eventId]);
 
     await client.query("COMMIT");

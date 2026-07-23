@@ -12,6 +12,38 @@ import { resolveCartItems, validateItemShape, type CartItemInput } from "./order
 import { computeOrderTotals, type DiscountInput, type OrderTotals } from "./orders";
 import { recomputeOrderTotals } from "./order-totals";
 import { ensureSessionForTable } from "./table-session-service";
+import type { PoolClient } from "pg";
+
+/** Capture the recipe plus modifier deltas as an immutable per-unit snapshot. */
+async function captureInventorySnapshot(
+  client: PoolClient,
+  orderItemId: string,
+  menuItemId: string,
+  modifierIds: string[],
+): Promise<void> {
+  const { rows } = await client.query<{ inventory_item_id: string; required_quantity: string }>(
+    `WITH requirements AS (
+       SELECT inventory_item_id, quantity::numeric AS qty
+       FROM menu_item_ingredients WHERE menu_item_id=$1
+       UNION ALL
+       SELECT inventory_item_id, quantity_delta::numeric
+       FROM modifier_ingredients WHERE modifier_id=ANY($2::uuid[])
+     )
+     SELECT inventory_item_id, sum(qty)::text required_quantity
+     FROM requirements GROUP BY inventory_item_id`,
+    [menuItemId, modifierIds],
+  );
+  for (const row of rows) {
+    if (Number(row.required_quantity) < 0) throw new Error("negative_ingredient_requirement");
+    if (row.required_quantity === "0" || Number(row.required_quantity) === 0) continue;
+    await client.query(
+      `INSERT INTO order_item_inventory_snapshots
+       (order_item_id,inventory_item_id,required_quantity,source_menu_item_id,source_modifier_ids)
+       VALUES($1,$2,$3,$4,$5)`,
+      [orderItemId,row.inventory_item_id,row.required_quantity,menuItemId,modifierIds],
+    );
+  }
+}
 
 export type MutationResult<T> = { ok: true; data: T } | { ok: false; error: string; status: number };
 
@@ -165,6 +197,7 @@ export async function createOrder(input: CreateOrderInput): Promise<MutationResu
           [orderItemId, mod.id, mod.name, mod.priceDelta],
         );
       }
+      await captureInventorySnapshot(client, orderItemId, item.menuItemId, item.modifiers.map((m) => m.id));
     }
 
     await client.query("COMMIT");
@@ -226,6 +259,7 @@ export async function addItemsToOrder(input: AddItemsInput): Promise<MutationRes
           [orderItemId, mod.id, mod.name, mod.priceDelta],
         );
       }
+      await captureInventorySnapshot(client, orderItemId, item.menuItemId, item.modifiers.map((m) => m.id));
     }
     const totals = await recomputeOrderTotals(client, input.orderId, discount);
     await client.query("COMMIT");

@@ -64,6 +64,12 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     const order=rows[0];
     if (!order) { await client.query("ROLLBACK"); return NextResponse.json({error:"order_not_found"},{status:404}); }
     if (order.status !== "open") { await client.query("ROLLBACK"); return NextResponse.json({error:"order_not_open"},{status:409}); }
+    const { rows: eventRows } = await client.query<{id:string}>(
+      `INSERT INTO inventory_events
+       (business_id,location_id,event_type,source_type,source_id,created_by,idempotency_key)
+       VALUES($1,$2,'sale_consumption','order',$3,$4,'order-payment:' || $3)
+       RETURNING id`, [session.businessId,location.id,id,session.sub]);
+    const inventoryEventId = eventRows[0].id;
     total=Number(order.total);
     if (total > 0) {
       await client.query(
@@ -76,7 +82,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
       "UPDATE orders SET status = 'completed', closed_by = $2, closed_at = now() WHERE id = $1",
       [id, session.sub],
     );
-    const { totalCost } = await deductForOrder(client, session.businessId, location.id, id, session.sub);
+    const { totalCost } = await deductForOrder(client, session.businessId, location.id, id, session.sub, inventoryEventId);
     await postOrderPaymentEntry(client, {
       businessId: session.businessId,
       locationId: location.id,
@@ -85,6 +91,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
       method,
       amount: total,
       tax: Number(order.tax),
+      inventoryEventId,
     });
     await postCogsEntry(client, {
       businessId: session.businessId,
@@ -92,7 +99,9 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
       orderId: id,
       createdBy: session.sub,
       totalCost,
+      inventoryEventId,
     });
+    await client.query("UPDATE inventory_events SET posting_status='posted' WHERE id=$1", [inventoryEventId]);
     await client.query("COMMIT");
   } catch (err) {
     await client.query("ROLLBACK");
