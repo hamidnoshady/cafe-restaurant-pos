@@ -100,6 +100,17 @@ export const REPORT_VIEWS: Record<string, ReportViewDef> = {
       { key: "rows", label: "تعداد کالا", column: null, aggregations: ["count"] },
     ],
   },
+  v_inventory_nrv_valuation: {
+    label: "ارزش نهایی موجودی پس از ذخیره کاهش ارزش",
+    dateColumn: null,
+    dimensions: [{ key: "item", label: "کالا", columns: ["inventory_item_id", "item_name"] }],
+    metrics: [
+      { key: "stock_qty", label: "موجودی", column: "stock_qty", aggregations: ["sum", "avg"] },
+      { key: "gross_value", label: "ارزش ناخالص", column: "gross_carrying_value", aggregations: ["sum"] },
+      { key: "nrv_allowance", label: "ذخیره کاهش ارزش", column: "nrv_allowance_rial", aggregations: ["sum"] },
+      { key: "valuation", label: "ارزش نهایی", column: "valuation", aggregations: ["sum", "avg"] },
+    ],
+  },
   v_inventory_history_coverage: {
     label: "پوشش تاریخی موجودی و بهای تمام‌شده",
     dateColumn: "effective_at",

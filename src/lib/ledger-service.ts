@@ -265,6 +265,66 @@ export async function postExactOrderPaymentEntry(
   });
 }
 
+export async function postExactOperationalInventoryEntry(
+  client: PoolClient,
+  params: {
+    businessId: string;
+    locationId: string;
+    sourceType: string;
+    sourceId: string;
+    postingKind: string;
+    memo: string;
+    createdBy: string | null;
+    inventoryEventId: string;
+    debitCode: string;
+    creditCode: string;
+    amount: RialText;
+  },
+): Promise<string | null> {
+  const accounts = await accountIdsByCode(client, params.businessId, [params.debitCode, params.creditCode]);
+  const zero = "0" as RialText;
+  return postExactJournalEntry(client, {
+    businessId: params.businessId,
+    locationId: params.locationId,
+    memo: params.memo,
+    sourceType: params.sourceType,
+    sourceId: params.sourceId,
+    createdBy: params.createdBy,
+    postingKind: params.postingKind,
+    inventoryEventId: params.inventoryEventId,
+    lines: [
+      { accountId: accounts.get(params.debitCode)!, debit: params.amount, credit: zero },
+      { accountId: accounts.get(params.creditCode)!, debit: zero, credit: params.amount },
+    ],
+  });
+}
+
+export async function postExactCustomerRefundEntry(
+  client: PoolClient,
+  params: {
+    businessId:string; locationId:string; customerReturnId:string; createdBy:string;
+    inventoryEventId:string; paymentMethod:string; amount:RialText; tax:RialText;
+  },
+): Promise<string|null> {
+  const accounts=await accountIdsByCode(client,params.businessId,[
+    WELL_KNOWN_CODES.cash,WELL_KNOWN_CODES.bankClearing,WELL_KNOWN_CODES.accountsReceivable,
+    WELL_KNOWN_CODES.salesReturns,WELL_KNOWN_CODES.vatPayable,
+  ]);
+  const refundAccount=params.paymentMethod==="cash"?WELL_KNOWN_CODES.cash:
+    params.paymentMethod==="credit"?WELL_KNOWN_CODES.accountsReceivable:WELL_KNOWN_CODES.bankClearing;
+  const net=rialBigInt(params.amount)-rialBigInt(params.tax);
+  if(net<0n)throw new Error("tax_exceeds_refund");
+  const zero="0" as RialText;
+  return postExactJournalEntry(client,{businessId:params.businessId,locationId:params.locationId,
+    memo:"Customer refund",sourceType:"customer_return",sourceId:params.customerReturnId,
+    createdBy:params.createdBy,postingKind:"customer_refund",inventoryEventId:params.inventoryEventId,
+    lines:[
+      {accountId:accounts.get(WELL_KNOWN_CODES.salesReturns)!,debit:net.toString() as RialText,credit:zero},
+      {accountId:accounts.get(WELL_KNOWN_CODES.vatPayable)!,debit:params.tax,credit:zero},
+      {accountId:accounts.get(refundAccount)!,debit:zero,credit:params.amount},
+    ]});
+}
+
 export interface PostJournalEntryInput {
   businessId: string;
   locationId: string | null;

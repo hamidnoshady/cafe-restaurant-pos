@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Client } from "pg";
@@ -125,6 +125,24 @@ describe("migration runner", () => {
 
     expect([first.applied, second.applied].sort()).toEqual([0, 1]);
   });
+
+  it("upgrades an existing 0011 database through every later migration", async () => {
+    const database = await createDatabase();
+    const dir = await mkdtemp(join(tmpdir(), "pos-upgrade-"));
+    tempDirs.push(dir);
+    const files = readdirSync(migrationsDirectory).filter((name) => /^\d{4}_.+\.sql$/.test(name)).sort();
+    for (const file of files.filter((name) => name <= "0011_delivery.sql")) {
+      await copyFile(join(migrationsDirectory, file), join(dir, file));
+    }
+    await runMigrations({ databaseUrl: database.url, migrationsDir: dir, quiet: true });
+    for (const file of files.filter((name) => name > "0011_delivery.sql")) {
+      await copyFile(join(migrationsDirectory, file), join(dir, file));
+    }
+    const upgraded = await runMigrations({ databaseUrl: database.url, migrationsDir: dir, quiet: true });
+    const rerun = await runMigrations({ databaseUrl: database.url, migrationsDir: dir, quiet: true });
+    expect(upgraded.applied).toBe(files.length - 11);
+    expect(rerun).toEqual({ applied: 0, adoptedChecksums: 0 });
+  }, 60_000);
 
   it("adopts a checksum for legacy migration rows once", async () => {
     const database = await createDatabase();
