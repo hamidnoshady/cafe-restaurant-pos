@@ -33,6 +33,20 @@ export function formatRial(rial: Rial, opts: { withUnit?: boolean } = {}): strin
   return withUnit ? `${s} ریال` : s;
 }
 
+export function formatTomanText(rial: string, opts: { withUnit?: boolean } = {}): string {
+  if (!/^-?\d+$/.test(rial)) throw new Error(`Not a valid amount: ${rial}`);
+  const toman = BigInt(rial) / 10n;
+  const value = formatPersianNumber(toman);
+  return opts.withUnit === false ? value : `${value} تومان`;
+}
+
+export function parseToRialText(input: string, unit: "toman" | "rial" = "toman"): string {
+  const cleaned = toLatinDigits(input).replace(/[٬,\s]/g, "");
+  if (!/^-?\d+$/.test(cleaned)) throw new Error(`Not a valid amount: ${input}`);
+  const value = BigInt(cleaned);
+  return (unit === "toman" ? value * 10n : value).toString();
+}
+
 /**
  * Parse user input (possibly Persian digits, with separators) into integer
  * Rial. `unit` says which unit the input is denominated in.

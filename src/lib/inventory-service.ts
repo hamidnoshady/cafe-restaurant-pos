@@ -20,8 +20,18 @@ import { broadcast } from "./realtime";
 import { getSetting, SETTING_KEYS } from "./settings";
 import type { CostingSetting } from "./setup-state";
 import type { Rial } from "./money";
+import { consumeInventoryExact } from "./inventory-consumption-exact";
+import { positiveQuantityText, rialBigInt, rialText, type RialText } from "./inventory-exact";
 
-export async function getCostingMethod(businessId: string): Promise<CostingMethod> {
+export async function getCostingMethod(businessId: string, client?: PoolClient): Promise<CostingMethod> {
+  if (client) {
+    const { rows } = await client.query<{ value: CostingSetting }>(
+      `SELECT value FROM settings
+        WHERE business_id=$1 AND location_id IS NULL AND key=$2`,
+      [businessId, SETTING_KEYS.costing],
+    );
+    return rows[0]?.value?.method ?? "fifo";
+  }
   const costing = await getSetting<CostingSetting>(businessId, SETTING_KEYS.costing);
   return costing?.method ?? "fifo";
 }
@@ -97,7 +107,7 @@ export async function consumeInventory(
   if (input.quantity <= 0) return { totalCost: 0, shortfall: 0 };
 
   const item = await lockInventoryItem(client, input.inventoryItemId);
-  const method = await getCostingMethod(input.businessId);
+  const method = await getCostingMethod(input.businessId, client);
   const currentStock = await getCurrentStock(client, input.inventoryItemId);
   const avgCost = Number(item.avg_cost);
 
@@ -184,12 +194,12 @@ export async function deductForOrder(
   orderId: string,
   createdBy: string | null,
   inventoryEventId: string,
-): Promise<{ totalCost: Rial }> {
+): Promise<{ totalCost: RialText }> {
   const { rows: items } = await client.query<{ id: string; menu_item_id: string | null; quantity: number }>(
     "SELECT id, menu_item_id, quantity FROM order_items WHERE order_id = $1 AND status != 'voided'",
     [orderId],
   );
-  if (items.length === 0) return { totalCost: 0 };
+  if (items.length === 0) return { totalCost: rialText("0") };
 
   const { rows: mods } = await client.query<{ order_item_id: string; modifier_id: string | null }>(
     `SELECT oim.order_item_id, oim.modifier_id FROM order_item_modifiers oim
@@ -256,11 +266,13 @@ export async function deductForOrder(
     `SELECT s.inventory_item_id, sum(s.required_quantity * oi.quantity)::text required_quantity
        FROM order_item_inventory_snapshots s JOIN order_items oi ON oi.id=s.order_item_id
       WHERE oi.order_id=$1 AND oi.status!='voided' GROUP BY s.inventory_item_id ORDER BY s.inventory_item_id`, [orderId]);
-  const requirements = new Map(snapshotRows.map((r) => [r.inventory_item_id, Number(r.required_quantity)]));
+  const requirements = new Map(
+    snapshotRows.map((r) => [r.inventory_item_id, positiveQuantityText(r.required_quantity)]),
+  );
 
-  let totalCost = 0;
+  let totalCost = 0n;
   for (const [inventoryItemId, quantity] of requirements) {
-    const result = await consumeInventory(client, {
+    const result = await consumeInventoryExact(client, {
       locationId,
       businessId,
       inventoryItemId,
@@ -271,9 +283,9 @@ export async function deductForOrder(
       createdBy,
       inventoryEventId,
     });
-    totalCost += result.totalCost;
+    totalCost += rialBigInt(result.postedCost);
   }
-  return { totalCost };
+  return { totalCost: rialText(totalCost.toString()) };
 }
 
 /**
@@ -316,7 +328,7 @@ export async function applyStockAdjustment(
 
   const item = await lockInventoryItem(client, inventoryItemId);
   const currentStock = await getCurrentStock(client, inventoryItemId);
-  const method = await getCostingMethod(businessId);
+  const method = await getCostingMethod(businessId, client);
   let unitCost = Number(item.avg_cost);
   if (method === "fifo") {
     const { rows } = await client.query<{ cost: string }>(
@@ -363,7 +375,7 @@ export async function receivePurchase(
   createdBy: string | null,
   inventoryEventId?: string | null,
 ): Promise<void> {
-  const method = await getCostingMethod(businessId);
+  const method = await getCostingMethod(businessId, client);
   for (const it of [...items].sort((a, b) => a.inventoryItemId.localeCompare(b.inventoryItemId))) {
     if (it.quantity <= 0) continue;
     const item = await lockInventoryItem(client, it.inventoryItemId);

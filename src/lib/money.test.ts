@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   formatRial,
   formatToman,
+  formatTomanText,
   parseToRial,
+  parseToRialText,
   rialToToman,
   tomanToRial,
 } from "./money";
@@ -28,5 +30,13 @@ describe("money", () => {
     expect(parseToRial("125000", "toman")).toBe(1_250_000);
     expect(parseToRial("۱٬۲۵۰٬۰۰۰", "rial")).toBe(1_250_000);
     expect(() => parseToRial("abc")).toThrow();
+  });
+});
+
+describe("string money beyond JavaScript safe integers", () => {
+  it("parses and formats without converting through Number", () => {
+    expect(parseToRialText("900719925474099312345", "rial")).toBe("900719925474099312345");
+    expect(parseToRialText("90071992547409931234", "toman")).toBe("900719925474099312340");
+    expect(formatTomanText("900719925474099312340", { withUnit: false })).toHaveLength(26);
   });
 });

@@ -3,6 +3,8 @@ import { requireRole } from "@/lib/auth";
 import { getPool, query } from "@/lib/db";
 import { convertPurchaseQuantity } from "@/lib/inventory";
 import { getPrimaryLocation } from "@/lib/setup-state";
+import Decimal from "decimal.js";
+import { positiveQuantityText, quantityText, rialText } from "@/lib/inventory-exact";
 
 /** Recent purchases, newest first (headers only — GET /api/inventory/purchases/[id] has line items). */
 export async function GET() {
@@ -25,9 +27,9 @@ export async function GET() {
 interface PurchaseItemInput {
   inventoryItemId?: string;
   /** quantity in the item's purchase_unit (or base unit if none is set) */
-  purchaseQty?: number;
+  purchaseQty?: string;
   /** total Rial cost for this line (however the supplier invoiced it) */
-  totalCost?: number;
+  totalCost?: string;
 }
 
 /**
@@ -54,11 +56,15 @@ export async function POST(request: NextRequest) {
   for (const it of items) {
     if (
       !it.inventoryItemId ||
-      !Number.isFinite(Number(it.purchaseQty)) ||
-      Number(it.purchaseQty) <= 0 ||
-      !Number.isSafeInteger(Number(it.totalCost)) ||
-      Number(it.totalCost) < 0
+      typeof it.purchaseQty !== "string" ||
+      typeof it.totalCost !== "string"
     ) {
+      return NextResponse.json({ error: "invalid_item" }, { status: 400 });
+    }
+    try {
+      positiveQuantityText(it.purchaseQty);
+      rialText(it.totalCost);
+    } catch {
       return NextResponse.json({ error: "invalid_item" }, { status: 400 });
     }
   }
@@ -71,7 +77,7 @@ export async function POST(request: NextRequest) {
     "SELECT id, purchase_unit_factor FROM inventory_items WHERE id = ANY($1::uuid[]) AND location_id = $2",
     [inventoryItemIds, location.id],
   );
-  const factorById = new Map(invItems.map((i) => [i.id, Number(i.purchase_unit_factor)]));
+  const factorById = new Map(invItems.map((i) => [i.id, positiveQuantityText(i.purchase_unit_factor)]));
   if (invItems.length !== new Set(inventoryItemIds).size) {
     return NextResponse.json({ error: "item_not_found" }, { status: 404 });
   }
@@ -84,14 +90,17 @@ export async function POST(request: NextRequest) {
     if (supplier.length === 0) return NextResponse.json({ error: "supplier_not_found" }, { status: 404 });
   }
 
-  const lines = items.map((it) => {
-    const factor = factorById.get(it.inventoryItemId!)!;
-    const baseQty = convertPurchaseQuantity(Number(it.purchaseQty), factor);
-    const totalCost = Number(it.totalCost);
-    return { inventoryItemId: it.inventoryItemId!, baseQty, totalCost };
-  });
-  const totalBigInt = lines.reduce((sum, l) => sum + BigInt(l.totalCost), 0n);
-  if (totalBigInt > BigInt(Number.MAX_SAFE_INTEGER)) return NextResponse.json({ error: "amount_too_large" }, { status: 400 });
+  let lines: Array<{ inventoryItemId: string; baseQty: string; totalCost: string }>;
+  try {
+    lines = items.map((it) => {
+      const factor = factorById.get(it.inventoryItemId!)!;
+      const baseQty = quantityText(new Decimal(it.purchaseQty!).times(new Decimal(factor)).toFixed());
+      return { inventoryItemId: it.inventoryItemId!, baseQty, totalCost: rialText(it.totalCost!) };
+    });
+  } catch {
+    return NextResponse.json({ error: "invalid_item" }, { status: 400 });
+  }
+  const totalBigInt = lines.reduce((sum, line) => sum + BigInt(line.totalCost), 0n);
   const total = totalBigInt.toString();
 
   const client = await getPool().connect();
@@ -107,7 +116,7 @@ export async function POST(request: NextRequest) {
       await client.query(
         `INSERT INTO purchase_items (purchase_id, inventory_item_id, quantity, unit_cost, extended_cost)
          VALUES ($1, $2, $3, $4::numeric / $3::numeric, $4)`,
-        [purchaseId, line.inventoryItemId, String(line.baseQty), String(line.totalCost)],
+        [purchaseId, line.inventoryItemId, line.baseQty, line.totalCost],
       );
     }
     await client.query("COMMIT");

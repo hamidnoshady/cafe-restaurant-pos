@@ -20,6 +20,7 @@ import {
   type SettlementMethod,
 } from "./ledger";
 import type { Rial } from "./money";
+import { rialBigInt, type RialText } from "./inventory-exact";
 
 /**
  * Thrown when an auto-posting event needs a well-known account (by Chart of
@@ -51,6 +52,217 @@ async function accountIdsByCode(
     if (!map.has(code)) throw new MissingLedgerAccountError(code);
   }
   return map;
+}
+
+interface ExactJournalLine {
+  accountId: string;
+  debit: RialText;
+  credit: RialText;
+}
+
+async function postExactJournalEntry(
+  client: PoolClient,
+  input: Omit<PostJournalEntryInput, "lines"> & { lines: ExactJournalLine[] },
+): Promise<string | null> {
+  const lines = input.lines.filter((line) => rialBigInt(line.debit) !== 0n || rialBigInt(line.credit) !== 0n);
+  if (lines.length === 0) return null;
+  let debit = 0n;
+  let credit = 0n;
+  for (const line of lines) {
+    const lineDebit = rialBigInt(line.debit);
+    const lineCredit = rialBigInt(line.credit);
+    if (!line.accountId || lineDebit < 0n || lineCredit < 0n || (lineDebit !== 0n && lineCredit !== 0n)) {
+      throw new Error("invalid_exact_journal_line");
+    }
+    debit += lineDebit;
+    credit += lineCredit;
+  }
+  if (debit !== credit) throw new Error("unbalanced_journal_entry");
+
+  const { rows } = await client.query<{ id: string }>(
+    `INSERT INTO journal_entries
+       (business_id,location_id,entry_date,memo,source_type,source_id,created_by,posting_kind,inventory_event_id)
+     VALUES($1,$2,COALESCE($3,CURRENT_DATE),$4,$5,$6,$7,$8,$9)
+     RETURNING id`,
+    [
+      input.businessId,
+      input.locationId,
+      input.entryDate ?? null,
+      input.memo,
+      input.sourceType,
+      input.sourceId,
+      input.createdBy,
+      input.postingKind ?? null,
+      input.inventoryEventId ?? null,
+    ],
+  );
+  for (const line of lines) {
+    await client.query(
+      "INSERT INTO journal_lines(entry_id,account_id,debit,credit) VALUES($1,$2,$3,$4)",
+      [rows[0].id, line.accountId, line.debit, line.credit],
+    );
+  }
+  return rows[0].id;
+}
+
+export async function postExactPurchaseEntry(
+  client: PoolClient,
+  params: {
+    businessId: string;
+    locationId: string;
+    purchaseId: string;
+    createdBy: string | null;
+    total: RialText;
+    settlementMethod: SettlementMethod;
+    inventoryEventId: string;
+  },
+): Promise<string | null> {
+  const accounts = await accountIdsByCode(client, params.businessId, [
+    WELL_KNOWN_CODES.inventory,
+    WELL_KNOWN_CODES.accountsPayable,
+    WELL_KNOWN_CODES.cash,
+    WELL_KNOWN_CODES.bankClearing,
+  ]);
+  const creditCode =
+    params.settlementMethod === "cash"
+      ? WELL_KNOWN_CODES.cash
+      : params.settlementMethod === "bank"
+        ? WELL_KNOWN_CODES.bankClearing
+        : WELL_KNOWN_CODES.accountsPayable;
+  return postExactJournalEntry(client, {
+    businessId: params.businessId,
+    locationId: params.locationId,
+    memo: "Purchase receipt",
+    sourceType: "purchase",
+    sourceId: params.purchaseId,
+    createdBy: params.createdBy,
+    postingKind: "receipt",
+    inventoryEventId: params.inventoryEventId,
+    lines: [
+      { accountId: accounts.get(WELL_KNOWN_CODES.inventory)!, debit: params.total, credit: "0" as RialText },
+      { accountId: accounts.get(creditCode)!, debit: "0" as RialText, credit: params.total },
+    ],
+  });
+}
+
+export async function postNegativeStockSettlementEntry(
+  client: PoolClient,
+  params: {
+    businessId: string;
+    locationId: string;
+    purchaseId: string;
+    createdBy: string | null;
+    upward: RialText;
+    downward: RialText;
+    inventoryEventId: string;
+  },
+): Promise<string | null> {
+  const accounts = await accountIdsByCode(client, params.businessId, [
+    WELL_KNOWN_CODES.inventory,
+    WELL_KNOWN_CODES.cogs,
+  ]);
+  const zero = "0" as RialText;
+  return postExactJournalEntry(client, {
+    businessId: params.businessId,
+    locationId: params.locationId,
+    memo: "Negative stock cost settlement",
+    sourceType: "purchase",
+    sourceId: params.purchaseId,
+    createdBy: params.createdBy,
+    postingKind: "negative_stock_settlement",
+    inventoryEventId: params.inventoryEventId,
+    lines: [
+      { accountId: accounts.get(WELL_KNOWN_CODES.cogs)!, debit: params.upward, credit: zero },
+      { accountId: accounts.get(WELL_KNOWN_CODES.inventory)!, debit: zero, credit: params.upward },
+      { accountId: accounts.get(WELL_KNOWN_CODES.inventory)!, debit: params.downward, credit: zero },
+      { accountId: accounts.get(WELL_KNOWN_CODES.cogs)!, debit: zero, credit: params.downward },
+    ],
+  });
+}
+
+export async function postExactCogsEntry(
+  client: PoolClient,
+  params: {
+    businessId: string;
+    locationId: string;
+    orderId: string;
+    createdBy: string | null;
+    totalCost: RialText;
+    inventoryEventId: string;
+  },
+): Promise<string | null> {
+  const accounts = await accountIdsByCode(client, params.businessId, [
+    WELL_KNOWN_CODES.inventory,
+    WELL_KNOWN_CODES.cogs,
+  ]);
+  const zero = "0" as RialText;
+  return postExactJournalEntry(client, {
+    businessId: params.businessId,
+    locationId: params.locationId,
+    memo: "Cost of goods sold",
+    sourceType: "order",
+    sourceId: params.orderId,
+    createdBy: params.createdBy,
+    postingKind: "cogs",
+    inventoryEventId: params.inventoryEventId,
+    lines: [
+      { accountId: accounts.get(WELL_KNOWN_CODES.cogs)!, debit: params.totalCost, credit: zero },
+      { accountId: accounts.get(WELL_KNOWN_CODES.inventory)!, debit: zero, credit: params.totalCost },
+    ],
+  });
+}
+
+export async function postExactOrderPaymentEntry(
+  client: PoolClient,
+  params: {
+    businessId: string;
+    locationId: string;
+    orderId: string;
+    createdBy: string | null;
+    method: string;
+    amount: RialText;
+    tax: RialText;
+    inventoryEventId: string;
+  },
+): Promise<string | null> {
+  const accounts = await accountIdsByCode(client, params.businessId, [
+    WELL_KNOWN_CODES.cash,
+    WELL_KNOWN_CODES.bankClearing,
+    WELL_KNOWN_CODES.accountsReceivable,
+    WELL_KNOWN_CODES.salesRevenue,
+    WELL_KNOWN_CODES.vatPayable,
+  ]);
+  const debitCode =
+    params.method === "cash"
+      ? WELL_KNOWN_CODES.cash
+      : params.method === "credit"
+        ? WELL_KNOWN_CODES.accountsReceivable
+        : WELL_KNOWN_CODES.bankClearing;
+  if (!["cash", "card", "card_to_card", "online", "credit"].includes(params.method)) {
+    throw new Error(`unknown_payment_method: ${params.method}`);
+  }
+  const revenue = rialBigInt(params.amount) - rialBigInt(params.tax);
+  if (revenue < 0n) throw new Error("tax_exceeds_payment");
+  const zero = "0" as RialText;
+  return postExactJournalEntry(client, {
+    businessId: params.businessId,
+    locationId: params.locationId,
+    memo: "Order payment",
+    sourceType: "order",
+    sourceId: params.orderId,
+    createdBy: params.createdBy,
+    postingKind: "revenue",
+    inventoryEventId: params.inventoryEventId,
+    lines: [
+      { accountId: accounts.get(debitCode)!, debit: params.amount, credit: zero },
+      {
+        accountId: accounts.get(WELL_KNOWN_CODES.salesRevenue)!,
+        debit: zero,
+        credit: revenue.toString() as RialText,
+      },
+      { accountId: accounts.get(WELL_KNOWN_CODES.vatPayable)!, debit: zero, credit: params.tax },
+    ],
+  });
 }
 
 export interface PostJournalEntryInput {

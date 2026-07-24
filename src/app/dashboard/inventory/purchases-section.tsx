@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { formatToman, parseToRial } from "@/lib/money";
+import { formatTomanText, parseToRialText } from "@/lib/money";
 import { formatJalali } from "@/lib/jalali";
 import { api, inputClass, PrimaryButton, SecondaryButton } from "../ui";
 import type { InventoryItem, Runner, Supplier } from "./inventory-manager";
@@ -75,13 +75,13 @@ export function PurchasesSection({
     const payloadLines = lines
       .filter((l) => l.inventoryItemId && l.purchaseQty.trim())
       .map((l) => {
-        let totalCostRial: number;
+        let totalCostRial: string;
         try {
-          totalCostRial = parseToRial(l.totalCost || "0", "toman");
+          totalCostRial = parseToRialText(l.totalCost || "0", "toman");
         } catch {
-          totalCostRial = NaN;
+          totalCostRial = "";
         }
-        return { inventoryItemId: l.inventoryItemId, purchaseQty: Number(l.purchaseQty), totalCost: totalCostRial };
+        return { inventoryItemId: l.inventoryItemId, purchaseQty: l.purchaseQty, totalCost: totalCostRial };
       });
     if (payloadLines.length === 0) return;
 
@@ -178,7 +178,7 @@ export function PurchasesSection({
           {(purchases ?? []).map((p) => (
             <li key={p.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2 text-sm">
               <span>
-                {p.supplier_name ?? "بدون تأمین‌کننده"} — {formatToman(Number(p.total))} —{" "}
+                {p.supplier_name ?? "بدون تأمین‌کننده"} — {formatTomanText(String(p.total))} —{" "}
                 <span className="text-xs text-muted-foreground">{formatJalali(p.created_at)}</span>
               </span>
               <div className="flex items-center gap-2">

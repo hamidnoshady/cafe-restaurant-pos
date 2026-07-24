@@ -1,8 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth";
 import { getPool, query } from "@/lib/db";
-import { receivePurchase } from "@/lib/inventory-service";
-import { MissingLedgerAccountError, postPurchaseEntry } from "@/lib/ledger-service";
+import {
+  MissingLedgerAccountError,
+  postExactPurchaseEntry,
+  postNegativeStockSettlementEntry,
+} from "@/lib/ledger-service";
+import { positiveQuantityText, rialText } from "@/lib/inventory-exact";
+import { applyPurchaseReceiptCosting } from "@/lib/purchase-receipt-costing";
 import { getPrimaryLocation } from "@/lib/setup-state";
 
 const SETTLEMENT_METHODS = ["cash", "bank", "credit"] as const;
@@ -79,36 +84,54 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       await client.query(`UPDATE purchases SET status=$2, ordered_at=CASE WHEN $2='ordered' THEN now() ELSE ordered_at END WHERE id=$1`, [id,nextStatus]);
       await client.query("COMMIT"); return NextResponse.json({ok:true});
     }
-    const { rows: items } = await client.query<{ inventory_item_id:string; quantity:string; unit_cost:string }>(
-      "SELECT inventory_item_id,quantity,unit_cost FROM purchase_items WHERE purchase_id=$1 ORDER BY inventory_item_id", [id]);
+    const { rows: items } = await client.query<{
+      id:string; inventory_item_id:string; quantity:string; extended_cost:string;
+    }>(
+      `SELECT id,inventory_item_id,quantity::text,extended_cost::text
+         FROM purchase_items WHERE purchase_id=$1 ORDER BY inventory_item_id,id`, [id]);
     const { rows: eventRows } = await client.query<{id:string}>(
-      `INSERT INTO inventory_events(business_id,location_id,event_type,source_type,source_id,created_by)
-       VALUES($1,$2,'purchase_receipt','purchase',$3,$4) RETURNING id`, [session.businessId,location.id,id,session.sub]);
+      `INSERT INTO inventory_events
+         (business_id,location_id,event_type,source_type,source_id,created_by,costing_version)
+       VALUES($1,$2,'purchase_receipt','purchase',$3,$4,2) RETURNING id`,
+      [session.businessId,location.id,id,session.sub]);
     const eventId=eventRows[0].id;
-    await receivePurchase(
+    const costing = await applyPurchaseReceiptCosting(
       client,
-      location.id,
-      session.businessId,
-      id,
-      items.map((i) => ({
-        inventoryItemId: i.inventory_item_id,
-        quantity: Number(i.quantity),
-        unitCost: Number(i.unit_cost),
-      })),
-      session.sub,
-      eventId,
+      {
+        locationId: location.id,
+        businessId: session.businessId,
+        purchaseId: id,
+        inventoryEventId: eventId,
+        createdBy: session.sub,
+        items: items.map((item) => ({
+          purchaseItemId: item.id,
+          inventoryItemId: item.inventory_item_id,
+          quantity: positiveQuantityText(item.quantity),
+          extendedCost: rialText(item.extended_cost),
+        })),
+      },
     );
+    if (costing.receiptValue !== rialText(purchase.total)) throw new Error("purchase_total_mismatch");
     await client.query(
       "UPDATE purchases SET status = 'received', received_at = now(), settlement_method = $2 WHERE id = $1",
       [id, settlementMethod],
     );
-    await postPurchaseEntry(client, {
+    await postExactPurchaseEntry(client, {
       businessId: session.businessId,
       locationId: location.id,
       purchaseId: id,
       createdBy: session.sub,
-      total: Number(purchase.total),
+      total: costing.receiptValue,
       settlementMethod,
+      inventoryEventId: eventId,
+    });
+    await postNegativeStockSettlementEntry(client, {
+      businessId: session.businessId,
+      locationId: location.id,
+      purchaseId: id,
+      createdBy: session.sub,
+      upward: costing.upwardSettlementAdjustment,
+      downward: costing.downwardSettlementAdjustment,
       inventoryEventId: eventId,
     });
     await client.query("UPDATE inventory_events SET posting_status='posted' WHERE id=$1", [eventId]);
