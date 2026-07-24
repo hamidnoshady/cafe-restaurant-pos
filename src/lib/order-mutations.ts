@@ -11,6 +11,7 @@ import { createDeliveryForOrder } from "./delivery-service";
 import { resolveCartItems, validateItemShape, type CartItemInput } from "./order-cart";
 import { computeOrderTotals, type DiscountInput, type OrderTotals } from "./orders";
 import { recomputeOrderTotals } from "./order-totals";
+import { lockOpenOrder } from "./order-lock";
 import { ensureSessionForTable } from "./table-session-service";
 import type { PoolClient } from "pg";
 
@@ -218,33 +219,27 @@ export interface AddItemsInput {
 
 /** Same validation + transaction as POST /api/orders/[id]/items. */
 export async function addItemsToOrder(input: AddItemsInput): Promise<MutationResult<{ totals: OrderTotals }>> {
-  const { rows: orderRows } = await query<{
-    id: string;
-    status: string;
-    discount_type: "percent" | "amount" | null;
-    discount_value: string | null;
-  }>("SELECT id, status, discount_type, discount_value FROM orders WHERE id = $1 AND location_id = $2", [
-    input.orderId,
-    input.locationId,
-  ]);
-  const order = orderRows[0];
-  if (!order) return { ok: false, error: "order_not_found", status: 404 };
-  if (order.status !== "open") return { ok: false, error: "order_not_open", status: 409 };
-
   const shapeError = validateItemShape(input.items);
   if (shapeError) return { ok: false, error: shapeError, status: 400 };
-
-  const resolved = await resolveCartItems(input.locationId, input.items);
-  if (!resolved.ok) return { ok: false, error: resolved.error, status: resolved.status };
-  const { preparedItems } = resolved;
-
-  const discount: DiscountInput = order.discount_type
-    ? { type: order.discount_type, value: Number(order.discount_value ?? 0) }
-    : { type: null };
 
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
+    const locked = await lockOpenOrder(client, input.locationId, input.orderId);
+    if (!locked.ok) {
+      await client.query("ROLLBACK");
+      return locked;
+    }
+    const resolved = await resolveCartItems(input.locationId, input.items, client);
+    if (!resolved.ok) {
+      await client.query("ROLLBACK");
+      return { ok: false, error: resolved.error, status: resolved.status };
+    }
+    const { preparedItems } = resolved;
+    const discount: DiscountInput = locked.order.discount_type
+      ? { type: locked.order.discount_type, value: Number(locked.order.discount_value ?? 0) }
+      : { type: null };
+
     for (const item of preparedItems) {
       const { rows: itemRows } = await client.query<{ id: string }>(
         `INSERT INTO order_items (location_id, order_id, menu_item_id, name_snapshot, unit_price, quantity, note, status, sent_to_kitchen_at)

@@ -4,6 +4,7 @@
  * (never the client), and validates modifier group min/max select.
  */
 import { query } from "./db";
+import type { PoolClient } from "pg";
 import type { CartLine } from "./orders";
 
 export interface CartItemInput {
@@ -39,9 +40,15 @@ export function validateItemShape(items: CartItemInput[]): string | null {
   return null;
 }
 
-export async function resolveCartItems(locationId: string, items: CartItemInput[]): Promise<ResolveCartResult> {
+export async function resolveCartItems(
+  locationId: string,
+  items: CartItemInput[],
+  client?: PoolClient,
+): Promise<ResolveCartResult> {
+  const execute = async <T extends Record<string, unknown>>(text: string, params?: unknown[]) =>
+    client ? client.query<T>(text, params as never) : query<T>(text, params);
   const menuItemIds = [...new Set(items.map((i) => i.menuItemId!))];
-  const { rows: menuItems } = await query<{
+  const { rows: menuItems } = await execute<{
     id: string;
     name: string;
     price: string;
@@ -66,7 +73,7 @@ export async function resolveCartItems(locationId: string, items: CartItemInput[
   >();
   const allowedGroupsByItem = new Map<string, Set<string>>();
   if (modifierIds.length > 0) {
-    const { rows: modifiers } = await query<{
+    const { rows: modifiers } = await execute<{
       id: string;
       group_id: string;
       name: string;
@@ -78,7 +85,7 @@ export async function resolveCartItems(locationId: string, items: CartItemInput[
     );
     for (const m of modifiers) modifierMap.set(m.id, m);
 
-    const { rows: links } = await query<{ menu_item_id: string; modifier_group_id: string }>(
+    const { rows: links } = await execute<{ menu_item_id: string; modifier_group_id: string }>(
       "SELECT menu_item_id, modifier_group_id FROM menu_item_modifier_groups WHERE menu_item_id = ANY($1::uuid[])",
       [menuItemIds],
     );
@@ -88,7 +95,7 @@ export async function resolveCartItems(locationId: string, items: CartItemInput[
     }
   }
 
-  const { rows: groups } = await query<{ id: string; min_select: number; max_select: number }>(
+  const { rows: groups } = await execute<{ id: string; min_select: number; max_select: number }>(
     "SELECT id, min_select, max_select FROM modifier_groups WHERE location_id = $1",
     [locationId],
   );

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth";
-import { getPool, query } from "@/lib/db";
+import { getPool } from "@/lib/db";
 import { recomputeOrderTotals } from "@/lib/order-totals";
+import { lockOpenOrder } from "@/lib/order-lock";
 import type { DiscountInput } from "@/lib/orders";
 import { getPrimaryLocation } from "@/lib/setup-state";
 import { broadcast } from "@/lib/realtime";
@@ -20,26 +21,6 @@ export async function PATCH(
   const location = await getPrimaryLocation(session.businessId);
   if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
 
-  const { rows: orderRows } = await query<{
-    status: string;
-    discount_type: "percent" | "amount" | null;
-    discount_value: string | null;
-  }>("SELECT status, discount_type, discount_value FROM orders WHERE id = $1 AND location_id = $2", [
-    id,
-    location.id,
-  ]);
-  const order = orderRows[0];
-  if (!order) return NextResponse.json({ error: "order_not_found" }, { status: 404 });
-  if (order.status !== "open") return NextResponse.json({ error: "order_not_open" }, { status: 409 });
-
-  const { rows: itemRows } = await query<{ id: string; status: string }>(
-    "SELECT id, status FROM order_items WHERE id = $1 AND order_id = $2",
-    [itemId, id],
-  );
-  const item = itemRows[0];
-  if (!item) return NextResponse.json({ error: "item_not_found" }, { status: 404 });
-  if (item.status === "voided") return NextResponse.json({ error: "item_already_voided" }, { status: 409 });
-
   let body: { quantity?: number; void?: { reason?: string } };
   try {
     body = await request.json();
@@ -47,13 +28,30 @@ export async function PATCH(
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
 
-  const discount: DiscountInput = order.discount_type
-    ? { type: order.discount_type, value: Number(order.discount_value ?? 0) }
-    : { type: null };
-
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
+    const locked = await lockOpenOrder(client, location.id, id);
+    if (!locked.ok) {
+      await client.query("ROLLBACK");
+      return NextResponse.json({ error: locked.error }, { status: locked.status });
+    }
+    const { rows: itemRows } = await client.query<{ id: string; status: string }>(
+      "SELECT id, status FROM order_items WHERE id = $1 AND order_id = $2",
+      [itemId, id],
+    );
+    const item = itemRows[0];
+    if (!item) {
+      await client.query("ROLLBACK");
+      return NextResponse.json({ error: "item_not_found" }, { status: 404 });
+    }
+    if (item.status === "voided") {
+      await client.query("ROLLBACK");
+      return NextResponse.json({ error: "item_already_voided" }, { status: 409 });
+    }
+    const discount: DiscountInput = locked.order.discount_type
+      ? { type: locked.order.discount_type, value: Number(locked.order.discount_value ?? 0) }
+      : { type: null };
 
     if (body.void) {
       await client.query(

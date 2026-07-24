@@ -5,6 +5,7 @@ import { getPrimaryLocation } from "@/lib/setup-state";
 import { broadcast } from "@/lib/realtime";
 import { deductForOrder } from "@/lib/inventory-service";
 import { MissingLedgerAccountError, postCogsEntry, postOrderPaymentEntry } from "@/lib/ledger-service";
+import { lockOpenOrder } from "@/lib/order-lock";
 
 const PAYMENT_METHODS = ["cash", "card", "card_to_card", "online", "credit"] as const;
 type PaymentMethod = (typeof PAYMENT_METHODS)[number];
@@ -59,11 +60,12 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
   let total = 0;
   try {
     await client.query("BEGIN");
-    const { rows } = await client.query<{ id:string;status:string;total:string;tax:string }>(
-      "SELECT id,status,total,tax FROM orders WHERE id=$1 AND location_id=$2 FOR UPDATE", [id,location.id]);
-    const order=rows[0];
-    if (!order) { await client.query("ROLLBACK"); return NextResponse.json({error:"order_not_found"},{status:404}); }
-    if (order.status !== "open") { await client.query("ROLLBACK"); return NextResponse.json({error:"order_not_open"},{status:409}); }
+    const locked = await lockOpenOrder(client, location.id, id);
+    if (!locked.ok) {
+      await client.query("ROLLBACK");
+      return NextResponse.json({ error: locked.error }, { status: locked.status });
+    }
+    const order = locked.order;
     const { rows: eventRows } = await client.query<{id:string}>(
       `INSERT INTO inventory_events
        (business_id,location_id,event_type,source_type,source_id,created_by,idempotency_key)
@@ -78,10 +80,16 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
         [location.id, id, method, total, body.reference?.trim() || null, session.sub],
       );
     }
-    await client.query(
-      "UPDATE orders SET status = 'completed', closed_by = $2, closed_at = now() WHERE id = $1",
+    const { rowCount: completed } = await client.query(
+      `UPDATE orders SET status = 'completed', closed_by = $2, closed_at = now()
+        WHERE id = $1 AND status = 'open'
+        RETURNING id`,
       [id, session.sub],
     );
+    if (completed !== 1) {
+      await client.query("ROLLBACK");
+      return NextResponse.json({ error: "order_not_open" }, { status: 409 });
+    }
     const { totalCost } = await deductForOrder(client, session.businessId, location.id, id, session.sub, inventoryEventId);
     await postOrderPaymentEntry(client, {
       businessId: session.businessId,
