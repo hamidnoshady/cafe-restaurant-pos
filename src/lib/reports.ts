@@ -100,6 +100,23 @@ export const REPORT_VIEWS: Record<string, ReportViewDef> = {
       { key: "rows", label: "تعداد کالا", column: null, aggregations: ["count"] },
     ],
   },
+  v_inventory_history_coverage: {
+    label: "پوشش تاریخی موجودی و بهای تمام‌شده",
+    dateColumn: "effective_at",
+    dimensions: [
+      { key: "classification", label: "وضعیت پوشش", columns: ["classification"] },
+      { key: "source_type", label: "نوع منبع", columns: ["source_type"] },
+      { key: "cogs_available", label: "بهای تمام‌شده موجود", columns: ["cogs_available"] },
+    ],
+    metrics: [
+      { key: "source_count", label: "تعداد سوابق", column: "source_count", aggregations: ["sum"] },
+      { key: "rows", label: "تعداد گروه‌ها", column: null, aggregations: ["count"] },
+    ],
+    filters: [
+      { key: "classification", label: "وضعیت پوشش", column: "classification" },
+      { key: "source_type", label: "نوع منبع", column: "source_type" },
+    ],
+  },
   v_ledger_by_account: {
     label: "دفتر حساب‌ها",
     dateColumn: "entry_date",
