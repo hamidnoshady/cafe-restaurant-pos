@@ -48,6 +48,10 @@ jobs:
       - run: npm ci
       - name: Run migrations
         run: npm run db:migrate
+      - name: Verify migration rerun
+        run: npm run db:migrate
+      - name: Database integration tests
+        run: npm run test:db
       - name: Type check
         run: npx tsc --noEmit
       - name: Unit tests

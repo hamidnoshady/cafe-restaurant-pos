@@ -11,6 +11,7 @@
     "start": "NODE_ENV=production tsx server.ts",
     "lint": "next lint",
     "test": "vitest run",
+    "test:db": "vitest run --config vitest.db.config.ts",
     "db:migrate": "tsx scripts/migrate.ts",
     "db:seed": "tsx scripts/seed.ts",
     "db:restore": "tsx scripts/restore.ts",
