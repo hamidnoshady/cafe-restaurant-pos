@@ -60,7 +60,7 @@ function NavLinks({
               onClick={onNavigate}
               aria-current={active ? "page" : undefined}
               className={cn(
-                "block rounded-lg px-3 py-2.5 text-sm transition-colors md:py-2",
+                "block rounded-lg px-3 py-3 text-sm transition-colors md:py-2.5",
                 active
                   ? "bg-primary/10 font-medium text-primary"
                   : "text-muted-foreground hover:bg-primary/10 hover:text-primary",
@@ -73,7 +73,7 @@ function NavLinks({
         return (
           <span
             key={item.label}
-            className="block cursor-default rounded-lg px-3 py-2.5 text-sm text-muted-foreground/50 md:py-2"
+            className="block cursor-default rounded-lg px-3 py-3 text-sm text-muted-foreground/50 md:py-2.5"
           >
             {item.label}
           </span>

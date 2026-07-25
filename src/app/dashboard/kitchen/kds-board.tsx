@@ -126,7 +126,7 @@ export function KdsBoard() {
   }
 
   return (
-    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
       <KdsDarkDefault />
       {tickets.map((ticket) => {
         const age = ticketAgeMinutes(ticket.earliestSentAt, now);
@@ -134,7 +134,7 @@ export function KdsBoard() {
         return (
           <div
             key={ticket.key}
-            className={`rounded-2xl border-2 bg-card p-4 shadow-sm ${late ? "border-destructive/60" : "border-border"}`}
+            className={`rounded-2xl border-2 bg-card p-3 shadow-sm ${late ? "border-destructive/60" : "border-border"}`}
           >
             <div className="mb-3 flex items-center justify-between">
               <span className="font-bold text-primary">{toPersianDigits(ticket.label)}</span>
@@ -179,9 +179,9 @@ export function KdsBoard() {
                     {next ? (
                       <Button
                         type="button"
-                        size="sm"
+                        size="lg"
                         onClick={() => bump(item.id, next)}
-                        className="mt-2 w-full text-xs font-semibold"
+                        className="mt-2 w-full text-sm font-semibold"
                       >
                         {BUMP_LABEL[item.status]}
                       </Button>

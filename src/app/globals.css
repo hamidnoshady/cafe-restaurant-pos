@@ -143,7 +143,19 @@
   html {
     @apply font-sans;
   }
+  /* Touch-first: remove the 300ms tap delay and double-tap zoom on controls
+     so buttons feel instant on tablets and touch POS screens. */
+  button,
+  a,
+  [role="button"],
+  input,
+  select,
+  textarea,
+  label {
+    touch-action: manipulation;
+  }
 }
+
 
 /* Non-essential motion is disabled when the OS asks for reduced motion. */
 @media (prefers-reduced-motion: reduce) {

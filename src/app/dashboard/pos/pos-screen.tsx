@@ -289,15 +289,15 @@ export function PosScreen() {
     <div className="flex flex-col gap-4 lg:h-[calc(100vh-3rem)] lg:flex-row">
       {/* Item grid */}
       <div className="flex min-h-[55vh] flex-1 flex-col overflow-hidden rounded-2xl bg-card shadow-sm lg:min-h-0">
-        <div className="flex gap-1 overflow-x-auto border-b border-border p-3">
+        <div className="flex gap-1.5 overflow-x-auto border-b border-border p-2.5">
           {activeCategories.map((c) => (
             <button
               key={c.id}
               type="button"
               onClick={() => setActiveCategory(c.id)}
-              className={`shrink-0 rounded-lg px-4 py-2 text-sm transition-colors ${
+              className={`shrink-0 rounded-lg px-5 py-3 text-base font-medium transition-colors ${
                 activeCategory === c.id
-                  ? "bg-primary text-primary-foreground"
+                  ? "bg-primary text-primary-foreground shadow-sm"
                   : "bg-muted text-muted-foreground hover:text-foreground"
               }`}
             >
@@ -305,16 +305,16 @@ export function PosScreen() {
             </button>
           ))}
         </div>
-        <div className="grid flex-1 auto-rows-min grid-cols-2 gap-3 overflow-y-auto p-4 sm:grid-cols-3 lg:grid-cols-4">
+        <div className="grid flex-1 auto-rows-min grid-cols-3 gap-2.5 overflow-y-auto p-3 sm:grid-cols-4 lg:grid-cols-5">
           {gridItems.map((item) => (
             <button
               key={item.id}
               type="button"
               onClick={() => pickItem(item)}
-              className="flex flex-col items-start rounded-xl border border-border p-3 text-start transition hover:border-primary/60 hover:bg-primary/5 hover:shadow-sm active:scale-[0.98]"
+              className="flex min-h-20 flex-col items-start justify-between rounded-xl border border-border p-3 text-start transition hover:border-primary/60 hover:bg-primary/5 hover:shadow-sm active:scale-[0.98]"
             >
-              <span className="text-sm font-medium">{item.name}</span>
-              <span className="mt-1 text-xs text-muted-foreground">{formatToman(Number(item.price))}</span>
+              <span className="text-sm font-medium leading-snug">{item.name}</span>
+              <span className="mt-1.5 text-sm font-semibold text-primary">{formatToman(Number(item.price))}</span>
             </button>
           ))}
           {gridItems.length === 0 ? <p className="col-span-full text-sm text-muted-foreground">آیتمی در این دسته نیست.</p> : null}
@@ -325,13 +325,13 @@ export function PosScreen() {
       <div className="flex w-full shrink-0 flex-col overflow-hidden rounded-2xl bg-card shadow-sm lg:w-96">
         <div className="border-b border-border p-4">
           <ErrorBox>{error}</ErrorBox>
-          <div className="mb-3 grid grid-cols-3 gap-2 text-sm">
+          <div className="mb-3 grid grid-cols-3 gap-2 text-sm font-medium">
             <button
               type="button"
               onClick={() => {
                 setOrderType("dine_in");
               }}
-              className={`rounded-lg py-2 transition-colors ${orderType === "dine_in" ? "bg-primary text-primary-foreground" : "bg-muted hover:text-foreground"}`}
+              className={`rounded-lg py-3 transition-colors ${orderType === "dine_in" ? "bg-primary text-primary-foreground shadow-sm" : "bg-muted hover:text-foreground"}`}
             >
               حضوری
             </button>
@@ -341,7 +341,7 @@ export function PosScreen() {
                 setOrderType("takeaway");
                 setTableId("");
               }}
-              className={`rounded-lg py-2 transition-colors ${orderType === "takeaway" ? "bg-primary text-primary-foreground" : "bg-muted hover:text-foreground"}`}
+              className={`rounded-lg py-3 transition-colors ${orderType === "takeaway" ? "bg-primary text-primary-foreground shadow-sm" : "bg-muted hover:text-foreground"}`}
             >
               بیرون‌بر
             </button>
@@ -351,7 +351,7 @@ export function PosScreen() {
                 setOrderType("delivery");
                 setTableId("");
               }}
-              className={`rounded-lg py-2 transition-colors ${orderType === "delivery" ? "bg-primary text-primary-foreground" : "bg-muted hover:text-foreground"}`}
+              className={`rounded-lg py-3 transition-colors ${orderType === "delivery" ? "bg-primary text-primary-foreground shadow-sm" : "bg-muted hover:text-foreground"}`}
             >
               ارسالی
             </button>
@@ -366,9 +366,9 @@ export function PosScreen() {
                     type="button"
                     disabled={occupied}
                     onClick={() => setTableId(t.id)}
-                    className={`rounded-lg border px-3 py-1.5 text-xs ${
+                    className={`rounded-lg border px-4 py-2.5 text-sm font-medium ${
                       tableId === t.id
-                        ? "border-primary bg-primary/5 text-primary"
+                        ? "border-primary bg-primary/10 text-primary"
                         : occupied
                           ? "border-border bg-muted text-muted-foreground/60"
                           : "border-input text-muted-foreground hover:border-primary/60"
@@ -428,33 +428,35 @@ export function PosScreen() {
           {cart.length === 0 ? (
             <p className="text-sm text-muted-foreground">سبد خالی است.</p>
           ) : (
-            <ul className="space-y-3">
+            <ul className="space-y-2.5">
               {cart.map((l) => (
                 <li key={l.key} className="text-sm animate-in fade-in slide-in-from-top-1 duration-150">
-                  <div className="flex items-start justify-between">
-                    <div>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
                       <p className="font-medium">{l.name}</p>
                       {l.modifierLabel ? <p className="text-xs text-muted-foreground">{l.modifierLabel}</p> : null}
                     </div>
-                    <p className="text-muted-foreground">{formatToman((l.unitPrice + l.modifierDeltas.reduce((a, b) => a + b, 0)) * l.quantity)}</p>
+                    <p className="shrink-0 font-medium">{formatToman((l.unitPrice + l.modifierDeltas.reduce((a, b) => a + b, 0)) * l.quantity)}</p>
                   </div>
-                  <div className="mt-1 flex items-center gap-2">
+                  <div className="mt-1.5 flex items-center gap-2">
                     <button
                       type="button"
+                      aria-label="کاهش تعداد"
                       onClick={() => setQty(l.key, l.quantity - 1)}
-                      className="size-6 rounded bg-muted text-muted-foreground transition-colors hover:bg-muted-foreground/20 hover:text-foreground active:scale-95"
+                      className="flex size-10 items-center justify-center rounded-lg bg-muted text-lg text-muted-foreground transition-colors hover:bg-muted-foreground/20 hover:text-foreground active:scale-95"
                     >
                       −
                     </button>
-                    <span className="w-4 text-center">{toPersianDigits(l.quantity)}</span>
+                    <span className="w-8 text-center text-base font-semibold">{toPersianDigits(l.quantity)}</span>
                     <button
                       type="button"
+                      aria-label="افزایش تعداد"
                       onClick={() => setQty(l.key, l.quantity + 1)}
-                      className="size-6 rounded bg-muted text-muted-foreground transition-colors hover:bg-muted-foreground/20 hover:text-foreground active:scale-95"
+                      className="flex size-10 items-center justify-center rounded-lg bg-muted text-lg text-muted-foreground transition-colors hover:bg-muted-foreground/20 hover:text-foreground active:scale-95"
                     >
                       +
                     </button>
-                    <button type="button" onClick={() => removeLine(l.key)} className="ms-auto text-xs text-destructive hover:underline">
+                    <button type="button" onClick={() => removeLine(l.key)} className="ms-auto px-2 py-1 text-sm text-destructive hover:underline">
                       حذف
                     </button>
                   </div>
