@@ -48,6 +48,7 @@ app.prepare().then(async () => {
   const { ROLLUP_SYNC_INTERVAL_MS } = await import("./src/lib/rollup");
   const { runBackupTick } = await import("./src/lib/backup-service");
   const { BACKUP_TICK_INTERVAL_MS } = await import("./src/lib/backup");
+  const { runServerSyncTick, SERVER_SYNC_INTERVAL_MS } = await import("./src/lib/server-sync");
 
   // Phase 9: push this location's daily rollup to the configured central
   // server. A tick that can't reach central just records the error and the
@@ -64,6 +65,18 @@ app.prepare().then(async () => {
     runBackupTick().catch((err) => console.error("backup tick failed:", err));
   setInterval(backupTick, BACKUP_TICK_INTERVAL_MS).unref();
   setTimeout(backupTick, 45_000).unref();
+
+  // Phase 11: bidirectional server-to-server sync (café laptop ←→ VPS). Each
+  // tick pushes locally-born sync_events to the configured remote and pulls
+  // the remote's events back, replaying both through the same idempotent
+  // applySyncEvent() engine the client offline-queue uses. A tick that can't
+  // reach the remote just records the error; the next tick resumes from the
+  // stored high-water mark. Disabled unless a business has configured a
+  // server-sync target (settings key server_sync.config).
+  const serverSyncTick = () =>
+    runServerSyncTick().catch((err) => console.error("server-sync tick failed:", err));
+  setInterval(serverSyncTick, SERVER_SYNC_INTERVAL_MS).unref();
+  setTimeout(serverSyncTick, 20_000).unref();
 
   const server = createServer((req, res) => {
     handle(req, res, parse(req.url ?? "/", true));

@@ -164,13 +164,20 @@ export async function applySyncEvent(
   locationId: string,
   actor: { userId: string; role: Role },
   event: SyncEventInput,
+  /**
+   * Where this event came from. 'local' (default) = a client on this server;
+   * 'remote' = replayed from the peer server via server-sync pull. The origin
+   * is stored so the push side (server-sync.ts) only forwards locally-born
+   * events and never bounces a pulled event back to its source.
+   */
+  origin: "local" | "remote" = "local",
 ): Promise<SyncEventResult> {
   const { rows: inserted } = await query<{ id: string }>(
-    `INSERT INTO sync_events (location_id, client_event_id, event_type, payload, occurred_at)
-     VALUES ($1, $2, $3, $4, $5)
+    `INSERT INTO sync_events (location_id, client_event_id, event_type, payload, occurred_at, actor_user_id, actor_role, origin)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
      ON CONFLICT (location_id, client_event_id) DO NOTHING
      RETURNING id`,
-    [locationId, event.clientEventId, event.type, JSON.stringify(event.payload), event.occurredAt],
+    [locationId, event.clientEventId, event.type, JSON.stringify(event.payload), event.occurredAt, actor.userId, actor.role, origin],
   );
 
   if (inserted.length === 0) {

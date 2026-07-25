@@ -1,0 +1,70 @@
+# On-site "local server" stack — the café laptop / mini-PC (Phase 11).
+#
+# This is the box that lives INSIDE the café on the same LAN as the phones,
+# cashier, and kitchen display. It runs the full app + its own Postgres, so
+# the café keeps working with ZERO internet. When internet is up, it syncs
+# bidirectionally with the VPS (pos.eshobe.com) via the server-sync engine.
+#
+# Unlike docker-compose.komodo.yml (which hides the app behind Traefik), this
+# stack PUBLISHES the app on the host's port 3000 so LAN devices can reach it
+# directly at http://<laptop-lan-ip>:3000.
+#
+# Setup:
+#   1. Give this machine a fixed LAN IP (router DHCP reservation or static).
+#   2. Copy .env.local.example → .env and fill JWT_SECRET, POSTGRES_PASSWORD.
+#   3. docker compose -f docker-compose.local.yml up -d --build
+#   4. In the Owner dashboard, configure server-sync to point at the VPS URL
+#      + shared token (see docs/server-sync.md).
+#
+# NOTE on HTTPS: LAN devices reach this over plain http://<ip>:3000. The
+# session cookie's Secure flag is only set when NODE_ENV=production, so this
+# stack runs with NODE_ENV unset->development semantics for the cookie is NOT
+# desired in a real deployment. See docs/server-sync.md "Local TLS" for the
+# recommended options (self-signed cert on a local reverse proxy, or a local
+# hostname with a trusted cert). For a quick LAN-only trial you can run as-is.
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-pos}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-pos}
+    volumes:
+      - pos-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-pos} -d ${POSTGRES_DB:-pos}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      DATABASE_URL: postgres://${POSTGRES_USER:-pos}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-pos}
+      # MUST be a real secret. Generate with: openssl rand -hex 32
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
+      SESSION_HOURS: ${SESSION_HOURS:-12}
+      BACKUP_DIR: /app/backups
+      # Shared bearer token guarding THIS server's /api/server-sync endpoints.
+      # If you want the VPS to also push/pull to this laptop, set the same
+      # token the laptop's dashboard config uses. Generate: openssl rand -hex 32
+      REMOTE_SYNC_TOKEN: ${REMOTE_SYNC_TOKEN:-}
+    ports:
+      # Published on the host so LAN devices reach it at http://<lan-ip>:3000
+      - "${APP_PORT:-3000}:3000"
+    volumes:
+      - pos-backups:/app/backups
+
+volumes:
+  pos-pgdata:
+  pos-backups:

@@ -17,6 +17,10 @@ export const SETTING_KEYS = {
   rollupConfig: "rollup.config",
   /** { lastAttemptAt, lastSuccessAt, lastSuccessDay, lastError } — local push status (Phase 9) */
   rollupSyncState: "rollup.sync_state",
+  /** { remoteUrl, token, enabled, batchSize } — bidirectional server-to-server sync target (Phase 11) */
+  serverSyncConfig: "server_sync.config",
+  /** ServerSyncState (src/lib/server-sync.ts) — push/pull high-water marks + status (Phase 11) */
+  serverSyncState: "server_sync.state",
   /** BackupConfig (src/lib/backup.ts) — schedule/retention/cloud settings (Phase 10) */
   backupConfig: "backup.config",
   /** AiConfig (src/lib/ai.ts) — provider/model/baseUrl/apiKey for the AI assistant */

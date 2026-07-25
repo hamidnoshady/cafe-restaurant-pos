@@ -1,0 +1,123 @@
+<#
+    Install-CafePOS.ps1  (Phase 12)  — run ONCE per café laptop.
+
+    Turns the POS into "normal software" for a non-technical user:
+      * Creates a Desktop shortcut  "Cafe POS"  (icon.svg-based .ico).
+      * Creates a Start-menu shortcut so it shows up when you press the
+        Windows key and type "Cafe".
+      * Adds a shortcut to the current user's Startup folder so the POS
+        starts (and its window opens) automatically every time the user
+        logs in — no clicking needed.
+
+    All shortcuts point at Start-CafePOS.vbs, which launches the app HIDDEN
+    (no black console window) and opens it in its own app window.
+
+    Usage (from an elevated OR normal PowerShell — no admin needed for
+    per-user shortcuts):
+
+        powershell -ExecutionPolicy Bypass -File .\windows\Install-CafePOS.ps1
+
+    Optional switches:
+        -NoAutoLaunch   Skip adding the Startup-folder entry.
+        -Uninstall      Remove all shortcuts this script creates.
+#>
+
+[CmdletBinding()]
+param(
+    [switch]$NoAutoLaunch,
+    [switch]$Uninstall
+)
+
+$ErrorActionPreference = "Stop"
+
+# --- Resolve key paths --------------------------------------------------------
+# Repo root = parent of the "windows" folder this script lives in.
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$RepoRoot  = Split-Path -Parent $ScriptDir
+$VbsPath   = Join-Path $ScriptDir "Start-CafePOS.vbs"
+$IconSvg   = Join-Path $RepoRoot "public\icon.svg"
+$IconIco   = Join-Path $ScriptDir "cafe-pos.ico"
+
+$Desktop     = [Environment]::GetFolderPath("Desktop")
+$StartMenu   = [Environment]::GetFolderPath("Programs")   # per-user Start menu
+$Startup     = [Environment]::GetFolderPath("Startup")    # per-user Startup
+$AppName     = "Cafe POS"
+$LnkName     = "$AppName.lnk"
+
+$DesktopLnk = Join-Path $Desktop   $LnkName
+$StartLnk   = Join-Path $StartMenu $LnkName
+$StartupLnk = Join-Path $Startup   $LnkName
+
+# --- Uninstall path -----------------------------------------------------------
+if ($Uninstall) {
+    foreach ($lnk in @($DesktopLnk, $StartLnk, $StartupLnk)) {
+        if (Test-Path $lnk) {
+            Remove-Item $lnk -Force
+            Write-Host "Removed $lnk"
+        }
+    }
+    Write-Host "Cafe POS shortcuts removed. (The app + Docker are untouched.)"
+    return
+}
+
+if (-not (Test-Path $VbsPath)) {
+    throw "Could not find $VbsPath. Run this script from the repo's 'windows' folder."
+}
+
+# --- Build a .ico from the SVG so shortcuts get a real icon -------------------
+# Windows shortcuts can't use .svg directly. We try to render a .ico; if no
+# tooling is available we just fall back to the wscript.exe default icon.
+function Convert-SvgToIco {
+    param([string]$Svg, [string]$Ico)
+
+    if (Test-Path $Ico) { return $true }   # already built
+
+    # Best-effort: use ImageMagick "magick" if the user happens to have it.
+    $magick = Get-Command magick -ErrorAction SilentlyContinue
+    if ($magick) {
+        try {
+            & magick -background none -density 384 "$Svg" -define icon:auto-resize=16,32,48,64,128,256 "$Ico"
+            if (Test-Path $Ico) { return $true }
+        } catch { }
+    }
+    return $false
+}
+
+$haveIcon = Convert-SvgToIco -Svg $IconSvg -Ico $IconIco
+
+# --- Create a shortcut helper -------------------------------------------------
+$WScriptShell = New-Object -ComObject WScript.Shell
+
+function New-CafeShortcut {
+    param([string]$Path)
+
+    $sc = $WScriptShell.CreateShortcut($Path)
+    # Launch the hidden VBS wrapper via the Windows script host.
+    $sc.TargetPath       = Join-Path $env:WINDIR "System32\wscript.exe"
+    $sc.Arguments        = """$VbsPath"""
+    $sc.WorkingDirectory = $RepoRoot
+    $sc.Description       = "Cafe/Restaurant POS"
+    $sc.WindowStyle       = 7   # minimized (the VBS is hidden anyway)
+    if ($haveIcon) {
+        $sc.IconLocation = "$IconIco,0"
+    }
+    $sc.Save()
+    Write-Host "Created $Path"
+}
+
+# --- Create the shortcuts -----------------------------------------------------
+New-CafeShortcut -Path $DesktopLnk
+New-CafeShortcut -Path $StartLnk
+
+if ($NoAutoLaunch) {
+    Write-Host "Skipped auto-launch (Startup folder) per -NoAutoLaunch."
+} else {
+    New-CafeShortcut -Path $StartupLnk
+    Write-Host "Auto-launch enabled: the POS will open automatically at login."
+}
+
+Write-Host ""
+Write-Host "Done. Double-click 'Cafe POS' on the Desktop to start."
+if (-not $haveIcon) {
+    Write-Host "(Using the default script icon — install ImageMagick and re-run to get the coffee icon.)"
+}
