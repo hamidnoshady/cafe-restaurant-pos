@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth";
 import { getPool, query } from "@/lib/db";
-import { consumeInventory } from "@/lib/inventory-service";
-import { MissingLedgerAccountError, postWasteEntry } from "@/lib/ledger-service";
+import { consumeInventoryExact } from "@/lib/inventory-consumption-exact";
+import { MissingLedgerAccountError, postExactOperationalInventoryEntry } from "@/lib/ledger-service";
+import { WELL_KNOWN_CODES } from "@/lib/coa-template";
+import { positiveQuantityText } from "@/lib/inventory-exact";
 import { getPrimaryLocation } from "@/lib/setup-state";
 
 const WASTE_REASONS = ["spoilage", "prep_error", "customer_return", "staff_meal", "other"] as const;
@@ -30,16 +32,23 @@ export async function POST(request: NextRequest) {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
 
-  let body: { inventoryItemId?: string; quantity?: number; reason?: string; note?: string };
+  let body: { inventoryItemId?: string; quantity?: number | string; reason?: string; note?: string };
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
 
-  const quantity = Number(body.quantity);
   const reason = body.reason;
-  if (!body.inventoryItemId || !Number.isFinite(quantity) || quantity <= 0) {
+  // Accept the quantity as text so a caller can send more precision than an
+  // IEEE-754 double carries; `positiveQuantityText` is the validator.
+  let quantity;
+  try {
+    quantity = positiveQuantityText(String(body.quantity ?? ""));
+  } catch {
+    return NextResponse.json({ error: "invalid_item" }, { status: 400 });
+  }
+  if (!body.inventoryItemId) {
     return NextResponse.json({ error: "invalid_item" }, { status: 400 });
   }
   if (!reason || !WASTE_REASONS.includes(reason as (typeof WASTE_REASONS)[number])) {
@@ -59,12 +68,12 @@ export async function POST(request: NextRequest) {
   try {
     await client.query("BEGIN");
     const { rows: events } = await client.query<{id:string}>(
-      `INSERT INTO inventory_events(business_id,location_id,event_type,source_type,created_by,metadata)
-       VALUES($1,$2,'waste','waste',$3,jsonb_build_object('reason',$4::text)) RETURNING id`,
+      `INSERT INTO inventory_events(business_id,location_id,event_type,source_type,created_by,metadata,costing_version)
+       VALUES($1,$2,'waste','waste',$3,jsonb_build_object('reason',$4::text),2) RETURNING id`,
       [session.businessId,location.id,session.sub,reason]);
     const eventId=events[0].id;
     await client.query("UPDATE inventory_events SET source_id=id WHERE id=$1",[eventId]);
-    const result = await consumeInventory(client, {
+    const result = await consumeInventoryExact(client, {
       locationId: location.id,
       businessId: session.businessId,
       inventoryItemId: body.inventoryItemId,
@@ -77,17 +86,22 @@ export async function POST(request: NextRequest) {
       createdBy: session.sub,
       inventoryEventId: eventId,
     });
-    await postWasteEntry(client, {
+    await postExactOperationalInventoryEntry(client, {
       businessId: session.businessId,
       locationId: location.id,
+      sourceType: "waste",
       sourceId: eventId,
+      postingKind: "waste",
+      memo: "ضایعات",
       createdBy: session.sub,
-      totalCost: result.totalCost,
       inventoryEventId: eventId,
+      debitCode: WELL_KNOWN_CODES.wasteExpense,
+      creditCode: WELL_KNOWN_CODES.inventory,
+      amount: result.postedCost,
     });
     await client.query("UPDATE inventory_events SET posting_status='posted' WHERE id=$1",[eventId]);
     await client.query("COMMIT");
-    return NextResponse.json({ ok: true, totalCost: result.totalCost });
+    return NextResponse.json({ ok: true, totalCost: result.postedCost });
   } catch (err) {
     await client.query("ROLLBACK");
     if (err instanceof MissingLedgerAccountError) {

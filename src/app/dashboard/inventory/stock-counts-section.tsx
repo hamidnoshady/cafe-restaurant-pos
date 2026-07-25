@@ -32,7 +32,8 @@ export function StockCountsSection({ items, busy, run }: { items: InventoryItem[
     e.preventDefault();
     const lines = activeItems
       .filter((i) => countedQty[i.id]?.trim())
-      .map((i) => ({ inventoryItemId: i.id, countedQty: Number(countedQty[i.id]) }));
+      // Text, not Number: the count is costed in exact decimal server-side.
+      .map((i) => ({ inventoryItemId: i.id, countedQty: countedQty[i.id].trim() }));
     if (lines.length === 0) return;
 
     const ok = await run(() =>

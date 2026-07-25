@@ -145,12 +145,18 @@ export async function postExactPurchaseEntry(
   });
 }
 
-export async function postNegativeStockSettlementEntry(
+/**
+ * Corrects provisional COGS to the value actually assigned when an incoming
+ * quantity closes a negative layer. Shared by purchase receipts and by
+ * stock-count surpluses, which settle layers on the same terms.
+ */
+export async function postExactNegativeSettlementEntry(
   client: PoolClient,
   params: {
     businessId: string;
     locationId: string;
-    purchaseId: string;
+    sourceType: string;
+    sourceId: string;
     createdBy: string | null;
     upward: RialText;
     downward: RialText;
@@ -166,8 +172,8 @@ export async function postNegativeStockSettlementEntry(
     businessId: params.businessId,
     locationId: params.locationId,
     memo: "Negative stock cost settlement",
-    sourceType: "purchase",
-    sourceId: params.purchaseId,
+    sourceType: params.sourceType,
+    sourceId: params.sourceId,
     createdBy: params.createdBy,
     postingKind: "negative_stock_settlement",
     inventoryEventId: params.inventoryEventId,
@@ -176,6 +182,68 @@ export async function postNegativeStockSettlementEntry(
       { accountId: accounts.get(WELL_KNOWN_CODES.inventory)!, debit: zero, credit: params.upward },
       { accountId: accounts.get(WELL_KNOWN_CODES.inventory)!, debit: params.downward, credit: zero },
       { accountId: accounts.get(WELL_KNOWN_CODES.cogs)!, debit: zero, credit: params.downward },
+    ],
+  });
+}
+
+export async function postNegativeStockSettlementEntry(
+  client: PoolClient,
+  params: {
+    businessId: string;
+    locationId: string;
+    purchaseId: string;
+    createdBy: string | null;
+    upward: RialText;
+    downward: RialText;
+    inventoryEventId: string;
+  },
+): Promise<string | null> {
+  return postExactNegativeSettlementEntry(client, {
+    businessId: params.businessId,
+    locationId: params.locationId,
+    sourceType: "purchase",
+    sourceId: params.purchaseId,
+    createdBy: params.createdBy,
+    upward: params.upward,
+    downward: params.downward,
+    inventoryEventId: params.inventoryEventId,
+  });
+}
+
+/** Stock-count variance → shortage to count expense, surplus to count gain. */
+export async function postExactStockCountEntry(
+  client: PoolClient,
+  params: {
+    businessId: string;
+    locationId: string;
+    stockCountId: string;
+    inventoryEventId: string;
+    createdBy: string | null;
+    shortageValue: RialText;
+    surplusValue: RialText;
+  },
+): Promise<string | null> {
+  const accounts = await accountIdsByCode(client, params.businessId, [
+    WELL_KNOWN_CODES.inventory,
+    WELL_KNOWN_CODES.inventoryCountExpense,
+    WELL_KNOWN_CODES.inventoryCountGain,
+  ]);
+  const inventory = accounts.get(WELL_KNOWN_CODES.inventory)!;
+  const zero = "0" as RialText;
+  return postExactJournalEntry(client, {
+    businessId: params.businessId,
+    locationId: params.locationId,
+    memo: "مغایرت شمارش موجودی",
+    sourceType: "stock_count",
+    sourceId: params.stockCountId,
+    createdBy: params.createdBy,
+    postingKind: "variance",
+    inventoryEventId: params.inventoryEventId,
+    lines: [
+      { accountId: accounts.get(WELL_KNOWN_CODES.inventoryCountExpense)!, debit: params.shortageValue, credit: zero },
+      { accountId: inventory, debit: zero, credit: params.shortageValue },
+      { accountId: inventory, debit: params.surplusValue, credit: zero },
+      { accountId: accounts.get(WELL_KNOWN_CODES.inventoryCountGain)!, debit: zero, credit: params.surplusValue },
     ],
   });
 }

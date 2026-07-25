@@ -45,8 +45,10 @@ export function WasteSection({ items, busy, run }: { items: InventoryItem[]; bus
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    const qty = Number(quantity);
-    if (!inventoryItemId || !Number.isFinite(qty) || qty <= 0) return;
+    // Send the typed quantity as text — the server validates it and costs it
+    // in exact decimal, so it must not lose precision through a double here.
+    const qty = quantity.trim();
+    if (!inventoryItemId || !Number.isFinite(Number(qty)) || Number(qty) <= 0) return;
     const ok = await run(() =>
       api("/api/inventory/waste", {
         method: "POST",
