@@ -36,6 +36,8 @@ const PUBLIC_ROUTES: Record<string, string> = {
   "auth/logout": "only clears the caller's own session cookie",
   "setup/bootstrap": "first-run only — refuses with 409 as soon as any user exists",
   "rollup/ingest": "server-to-server — authenticated by a per-location bearer token, not a session",
+  "server-sync/pull": "server-to-server — authenticated by REMOTE_SYNC_TOKEN bearer token, not a session",
+  "server-sync/push": "server-to-server — authenticated by REMOTE_SYNC_TOKEN bearer token, not a session",
 };
 
 /** Routes that guard via getSession() with route-specific logic instead of requireRole. */
