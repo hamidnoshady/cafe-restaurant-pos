@@ -1,9 +1,15 @@
+import Decimal from "decimal.js";
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth";
 import { getPool, query } from "@/lib/db";
-import { applyStockAdjustment, getCurrentStock } from "@/lib/inventory-service";
+import { applyStockAdjustmentExact } from "@/lib/inventory-adjustment-exact";
+import { quantityText, rialText } from "@/lib/inventory-exact";
 import { getPrimaryLocation } from "@/lib/setup-state";
-import { MissingLedgerAccountError, postStockCountEntry } from "@/lib/ledger-service";
+import {
+  MissingLedgerAccountError,
+  postExactNegativeSettlementEntry,
+  postExactStockCountEntry,
+} from "@/lib/ledger-service";
 
 export async function GET() {
   const { session, error } = await requireRole("owner", "manager");
@@ -24,14 +30,15 @@ export async function GET() {
 
 interface CountLineInput {
   inventoryItemId?: string;
-  countedQty?: number;
+  /** accepted as text so a caller can send more precision than a double carries */
+  countedQty?: number | string;
 }
 
 /**
  * Ad hoc physical count entry: for each line, the counted quantity is
  * compared against system stock at the moment of counting and the
  * difference is posted as an 'adjustment' stock movement (see
- * applyStockAdjustment) so on-hand stock matches reality going forward.
+ * applyStockAdjustmentExact) so on-hand stock matches reality going forward.
  */
 export async function POST(request: NextRequest) {
   const { session, error } = await requireRole("owner", "manager");
@@ -46,8 +53,13 @@ export async function POST(request: NextRequest) {
 
   const lines = body.lines ?? [];
   if (lines.length === 0) return NextResponse.json({ error: "no_items" }, { status: 400 });
+  const countedByItem = new Map<string, string>();
   for (const l of lines) {
-    if (!l.inventoryItemId || !Number.isFinite(Number(l.countedQty)) || Number(l.countedQty) < 0) {
+    if (!l.inventoryItemId) return NextResponse.json({ error: "invalid_item" }, { status: 400 });
+    try {
+      // quantityText rejects anything that is not a canonical non-negative decimal.
+      countedByItem.set(l.inventoryItemId, quantityText(String(l.countedQty ?? "")));
+    } catch {
       return NextResponse.json({ error: "invalid_item" }, { status: 400 });
     }
   }
@@ -75,42 +87,63 @@ export async function POST(request: NextRequest) {
     );
     const stockCountId = countRows[0].id;
     const { rows: eventRows } = await client.query<{ id: string }>(
-      `INSERT INTO inventory_events(business_id,location_id,event_type,source_type,source_id,created_by,idempotency_key)
-       VALUES($1,$2,'stock_count_adjustment','stock_count',$3,$4,'stock-count:' || $3) RETURNING id`,
+      `INSERT INTO inventory_events(business_id,location_id,event_type,source_type,source_id,created_by,idempotency_key,costing_version)
+       VALUES($1,$2,'stock_count_adjustment','stock_count',$3,$4,'stock-count:' || $3,2) RETURNING id`,
       [session.businessId, location.id, stockCountId, session.sub]);
     const eventId = eventRows[0].id;
     await client.query("UPDATE stock_counts SET inventory_event_id=$2 WHERE id=$1", [stockCountId,eventId]);
 
-    let shortageValue = 0;
-    let surplusValue = 0;
-    for (const l of [...lines].sort((a,b) => lId(a).localeCompare(lId(b)))) {
-      const inventoryItemId = l.inventoryItemId!;
-      const countedQty = Number(l.countedQty);
-      const systemQty = await getCurrentStock(client, inventoryItemId);
-      const variance = countedQty - systemQty;
+    let shortageValue = 0n;
+    let surplusValue = 0n;
+    let upward = 0n;
+    let downward = 0n;
+    // Distinct items in a deterministic order: a payload that repeats an item
+    // must not post two variance lines for it, and the fixed order keeps
+    // count/sale/purchase transactions from deadlocking on the same rows.
+    for (const [inventoryItemId, countedQty] of [...countedByItem].sort((a, b) => a[0].localeCompare(b[0]))) {
+      // Read the system quantity as text: the ledger sum is numeric(24,9) and
+      // must not round-trip through a double before the variance is taken.
+      const { rows: stockRows } = await client.query<{ quantity: string }>(
+        "SELECT COALESCE(sum(quantity),0)::text quantity FROM stock_movements WHERE inventory_item_id=$1",
+        [inventoryItemId],
+      );
+      const systemQty = stockRows[0].quantity;
+      const variance = new Decimal(countedQty).minus(new Decimal(systemQty)).toFixed();
 
-      const varianceValue = await applyStockAdjustment(client, {
+      const result = await applyStockAdjustmentExact(client, {
         locationId: location.id,
         businessId: session.businessId,
         inventoryItemId,
         delta: variance,
+        stockCountId,
         sourceType: "stock_count",
         sourceId: stockCountId,
         createdBy: session.sub,
         inventoryEventId: eventId,
       });
-      if (varianceValue < 0) shortageValue += Math.abs(varianceValue);
+      const varianceValue = BigInt(result.varianceValueRial);
+      if (varianceValue < 0n) shortageValue += -varianceValue;
       else surplusValue += varianceValue;
-      const unitCost = variance === 0 ? 0 : Math.abs(varianceValue / variance);
+      upward += BigInt(result.upwardSettlementAdjustment);
+      downward += BigInt(result.downwardSettlementAdjustment);
       await client.query(
         `INSERT INTO stock_count_lines (stock_count_id, inventory_item_id, system_qty, counted_qty, variance, unit_carrying_cost, variance_value)
          VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [stockCountId, inventoryItemId, systemQty, countedQty, variance, unitCost, varianceValue],
+        [stockCountId, inventoryItemId, systemQty, countedQty, variance, result.unitCost, result.varianceValueRial],
       );
     }
 
-    await postStockCountEntry(client, { businessId: session.businessId, locationId: location.id,
-      stockCountId, inventoryEventId: eventId, createdBy: session.sub, shortageValue, surplusValue });
+    await postExactStockCountEntry(client, { businessId: session.businessId, locationId: location.id,
+      stockCountId, inventoryEventId: eventId, createdBy: session.sub,
+      shortageValue: rialText(shortageValue.toString()), surplusValue: rialText(surplusValue.toString()) });
+    // A surplus that closed negative layers releases provisional COGS; the
+    // difference against the value actually assigned is corrected here.
+    await postExactNegativeSettlementEntry(client, {
+      businessId: session.businessId, locationId: location.id,
+      sourceType: "stock_count", sourceId: stockCountId, createdBy: session.sub,
+      upward: rialText(upward.toString()), downward: rialText(downward.toString()),
+      inventoryEventId: eventId,
+    });
     await client.query("UPDATE inventory_events SET posting_status='posted' WHERE id=$1", [eventId]);
 
     await client.query("COMMIT");
@@ -124,4 +157,3 @@ export async function POST(request: NextRequest) {
   }
 }
 
-function lId(line: CountLineInput): string { return line.inventoryItemId ?? ""; }
