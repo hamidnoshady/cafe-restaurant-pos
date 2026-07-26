@@ -12,11 +12,18 @@ import { apiOrQueue } from "../../offline-queue";
 import { api, ErrorBox, errorMessage, InfoBox, inputClass, PrimaryButton, SecondaryButton } from "../../ui";
 import { firstPrinter, useBusinessInfo, usePrinters } from "../../use-printers";
 
-const PAYMENT_METHODS: { value: "cash" | "card" | "card_to_card"; label: string }[] = [
+const PAYMENT_METHODS: { value: "cash" | "card" | "card_to_card" | "credit"; label: string }[] = [
   { value: "cash", label: "نقدی" },
   { value: "card", label: "کارت‌خوان" },
   { value: "card_to_card", label: "کارت‌به‌کارت" },
+  { value: "credit", label: "نسیه" },
 ];
+
+interface Customer {
+  id: string;
+  name: string;
+  phone: string | null;
+}
 
 interface OrderRow {
   id: string;
@@ -81,8 +88,13 @@ export function OrderDetail({ orderId, canEdit }: { orderId: string; canEdit: bo
   const [pickerItem, setPickerItem] = useState<MenuItem | null>(null);
   const [discountType, setDiscountType] = useState<"" | "percent" | "amount">("");
   const [discountValue, setDiscountValue] = useState("");
-  const [payMethod, setPayMethod] = useState<"cash" | "card" | "card_to_card">("cash");
+  const [payMethod, setPayMethod] = useState<"cash" | "card" | "card_to_card" | "credit">("cash");
   const [paying, setPaying] = useState(false);
+  const [customerQuery, setCustomerQuery] = useState("");
+  const [customerResults, setCustomerResults] = useState<Customer[]>([]);
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [showNewCustomer, setShowNewCustomer] = useState(false);
+  const [newCustomerPhone, setNewCustomerPhone] = useState("");
   const printers = usePrinters();
   const business = useBusinessInfo();
 
@@ -102,6 +114,32 @@ export function OrderDetail({ orderId, canEdit }: { orderId: string; canEdit: bo
   useEffect(() => {
     api<MenuData>("/api/menu").then(({ ok, data }) => ok && setMenu(data));
   }, []);
+
+  useEffect(() => {
+    if (payMethod !== "credit" || selectedCustomer) {
+      setCustomerResults([]);
+      return;
+    }
+    const timer = setTimeout(() => {
+      api<{ customers: Customer[] }>(`/api/customers?q=${encodeURIComponent(customerQuery)}`).then(
+        ({ ok, data }) => ok && setCustomerResults(data.customers),
+      );
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [payMethod, customerQuery, selectedCustomer]);
+
+  async function createCustomer() {
+    const name = customerQuery.trim();
+    if (!name) return;
+    const { ok, data } = await api<{ customer: Customer; error?: string }>("/api/customers", {
+      method: "POST",
+      body: JSON.stringify({ name, phone: newCustomerPhone.trim() || undefined }),
+    });
+    if (!ok) return setError(errorMessage(data.error));
+    setSelectedCustomer(data.customer);
+    setShowNewCustomer(false);
+    setNewCustomerPhone("");
+  }
 
   async function run(fn: () => Promise<{ ok: boolean; data: { error?: string } }>) {
     setBusy(true);
@@ -200,11 +238,14 @@ export function OrderDetail({ orderId, canEdit }: { orderId: string; canEdit: bo
    */
   async function pay() {
     if (!order) return;
+    if (payMethod === "credit" && !selectedCustomer) {
+      return setError(errorMessage("customer_required"));
+    }
     setPaying(true);
     setError("");
     const { ok, data } = await api<{ error?: string }>(`/api/orders/${orderId}/pay`, {
       method: "POST",
-      body: JSON.stringify({ method: payMethod }),
+      body: JSON.stringify({ method: payMethod, customerId: selectedCustomer?.id }),
     });
     setPaying(false);
     if (!ok) return setError(errorMessage(data.error));
@@ -383,14 +424,93 @@ export function OrderDetail({ orderId, canEdit }: { orderId: string; canEdit: bo
                 <button
                   key={m.value}
                   type="button"
-                  onClick={() => setPayMethod(m.value)}
+                  onClick={() => {
+                    setPayMethod(m.value);
+                    if (m.value !== "credit") {
+                      setSelectedCustomer(null);
+                      setCustomerQuery("");
+                    }
+                  }}
                   className={`rounded-lg px-4 py-2 text-sm ${payMethod === m.value ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground transition-colors hover:bg-muted-foreground/20 hover:text-foreground"}`}
                 >
                   {m.label}
                 </button>
               ))}
             </div>
-            <PrimaryButton type="button" onClick={pay} disabled={paying}>
+
+            {payMethod === "credit" ? (
+              <div className="mb-3 rounded-lg border border-border p-3">
+                {selectedCustomer ? (
+                  <div className="flex items-center justify-between text-sm">
+                    <span>
+                      {selectedCustomer.name}
+                      {selectedCustomer.phone ? ` — ${toPersianDigits(selectedCustomer.phone)}` : ""}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedCustomer(null)}
+                      className="text-xs text-muted-foreground hover:underline"
+                    >
+                      تغییر مشتری
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <input
+                      className={inputClass}
+                      placeholder="جستجوی نام یا شماره تماس مشتری…"
+                      value={customerQuery}
+                      onChange={(e) => setCustomerQuery(e.target.value)}
+                    />
+                    {customerResults.length > 0 ? (
+                      <ul className="mt-2 max-h-40 divide-y divide-border overflow-y-auto rounded-lg border border-border">
+                        {customerResults.map((c) => (
+                          <li key={c.id}>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedCustomer(c)}
+                              className="block w-full px-3 py-2 text-start text-sm hover:bg-muted"
+                            >
+                              {c.name}
+                              {c.phone ? ` — ${toPersianDigits(c.phone)}` : ""}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                    {customerQuery.trim() && !showNewCustomer ? (
+                      <button
+                        type="button"
+                        onClick={() => setShowNewCustomer(true)}
+                        className="mt-2 text-xs text-primary hover:underline"
+                      >
+                        + مشتری جدید «{customerQuery.trim()}»
+                      </button>
+                    ) : null}
+                    {showNewCustomer ? (
+                      <div className="mt-2 flex gap-2">
+                        <input
+                          className={inputClass}
+                          dir="ltr"
+                          placeholder="شماره تماس (اختیاری)"
+                          value={newCustomerPhone}
+                          onChange={(e) => setNewCustomerPhone(e.target.value)}
+                        />
+                        <SecondaryButton onClick={createCustomer} disabled={!customerQuery.trim()}>
+                          ثبت مشتری
+                        </SecondaryButton>
+                      </div>
+                    ) : null}
+                  </>
+                )}
+              </div>
+            ) : null}
+
+            <PrimaryButton
+              type="button"
+              onClick={pay}
+              disabled={paying || (payMethod === "credit" && !selectedCustomer)}
+            >
               {paying ? "در حال ثبت پرداخت…" : "دریافت و تکمیل سفارش"}
             </PrimaryButton>
           </div>

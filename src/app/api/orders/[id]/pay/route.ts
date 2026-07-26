@@ -18,6 +18,7 @@ type PaymentMethod = (typeof PAYMENT_METHODS)[number];
 interface PayBody {
   method?: string;
   reference?: string;
+  customerId?: string;
 }
 
 /**
@@ -60,6 +61,10 @@ export const POST = withTenantScope(async (request: NextRequest, context: { para
   if (!PAYMENT_METHODS.includes(method)) {
     return NextResponse.json({ error: "invalid_payment_method" }, { status: 400 });
   }
+  const customerId = body.customerId?.trim() || null;
+  if (method === "credit" && !customerId) {
+    return NextResponse.json({ error: "customer_required" }, { status: 400 });
+  }
 
   const client = await getPool().connect();
   let total = "0" as RialText;
@@ -71,11 +76,22 @@ export const POST = withTenantScope(async (request: NextRequest, context: { para
       return NextResponse.json({ error: locked.error }, { status: locked.status });
     }
     const order = locked.order;
+    if (customerId) {
+      const { rowCount: customerOwned } = await client.query(
+        `SELECT 1 FROM customers WHERE id = $1 AND business_id = $2`,
+        [customerId, session.businessId],
+      );
+      if (customerOwned !== 1) {
+        await client.query("ROLLBACK");
+        return NextResponse.json({ error: "customer_not_found" }, { status: 404 });
+      }
+      await client.query(`UPDATE orders SET customer_id = $1 WHERE id = $2`, [customerId, id]);
+    }
     const { rows: eventRows } = await client.query<{id:string}>(
       `INSERT INTO inventory_events
        (business_id,location_id,event_type,source_type,source_id,created_by,idempotency_key,costing_version)
-       VALUES($1,$2,'sale_consumption','order',$3,$4,'order-payment:' || $3,2)
-       RETURNING id`, [session.businessId,location.id,id,session.sub]);
+       VALUES($1,$2,'sale_consumption','order',$3,$4,'order-payment:' || $5,2)
+       RETURNING id`, [session.businessId,location.id,id,session.sub,id]);
     const inventoryEventId = eventRows[0].id;
     total = rialText(order.total);
     if (rialBigInt(total) > 0n) {
