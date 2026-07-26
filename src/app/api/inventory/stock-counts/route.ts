@@ -88,8 +88,8 @@ export const POST = withTenantScope(async (request: NextRequest) => {
     const stockCountId = countRows[0].id;
     const { rows: eventRows } = await client.query<{ id: string }>(
       `INSERT INTO inventory_events(business_id,location_id,event_type,source_type,source_id,created_by,idempotency_key,costing_version)
-       VALUES($1,$2,'stock_count_adjustment','stock_count',$3,$4,'stock-count:' || $3,2) RETURNING id`,
-      [session.businessId, location.id, stockCountId, session.sub]);
+       VALUES($1,$2,'stock_count_adjustment','stock_count',$3,$4,'stock-count:' || $5,2) RETURNING id`,
+      [session.businessId, location.id, stockCountId, session.sub, stockCountId]);
     const eventId = eventRows[0].id;
     await client.query("UPDATE stock_counts SET inventory_event_id=$2 WHERE id=$1", [stockCountId,eventId]);
 

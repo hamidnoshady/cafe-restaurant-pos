@@ -112,6 +112,11 @@ export function errorMessage(code: string | undefined): string {
     branch_has_open_sessions: "این شعبه نشست میز باز دارد و قابل غیرفعال‌سازی نیست.",
     source_branch_not_found: "شعبهٔ مبدأ برای کپی منو پیدا نشد.",
     missing_location: "شعبه‌ای انتخاب نشده است.",
+    // Phase 16 — AR subledger
+    customer_required: "برای پرداخت نسیه انتخاب مشتری الزامی است.",
+    customer_not_found: "مشتری انتخاب‌شده معتبر نیست.",
+    invalid_amount: "مبلغ معتبر نیست.",
+    invalid_method: "روش دریافت معتبر نیست.",
   };
   return map[code ?? ""] ?? "خطای غیرمنتظره. دوباره تلاش کنید.";
 }

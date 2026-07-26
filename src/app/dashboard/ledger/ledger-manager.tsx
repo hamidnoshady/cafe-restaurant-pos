@@ -6,6 +6,7 @@ import { TrialBalanceSection } from "./trial-balance-section";
 import { EntriesSection } from "./entries-section";
 import { ManualEntrySection } from "./manual-entry-section";
 import { FiscalPeriodsSection } from "./fiscal-periods-section";
+import { ArSection } from "./ar-section";
 
 export interface AccountRow {
   id: string;
@@ -20,6 +21,7 @@ const TABS = [
   { key: "entries", label: "دفتر روزنامه" },
   { key: "manual", label: "ثبت سند دستی" },
   { key: "fiscal-periods", label: "دوره‌های مالی" },
+  { key: "ar", label: "حساب‌های دریافتنی" },
 ] as const;
 type TabKey = (typeof TABS)[number]["key"];
 
@@ -75,6 +77,7 @@ export function LedgerManager() {
       {tab === "entries" ? <EntriesSection refreshKey={refreshKey} /> : null}
       {tab === "manual" ? <ManualEntrySection accounts={accounts} busy={busy} run={run} /> : null}
       {tab === "fiscal-periods" ? <FiscalPeriodsSection busy={busy} run={run} /> : null}
+      {tab === "ar" ? <ArSection busy={busy} run={run} /> : null}
     </div>
   );
 }
@@ -92,6 +95,13 @@ function errorMessage(code: string | undefined): string {
     unauthorized: "وارد نشده‌اید.",
     forbidden: "دسترسی مجاز نیست.",
     bad_request: "درخواست نامعتبر بود.",
+    // Phase 16 — AR subledger
+    customer_required: "انتخاب مشتری الزامی است.",
+    customer_not_found: "مشتری انتخاب‌شده معتبر نیست.",
+    invalid_amount: "مبلغ معتبر نیست.",
+    invalid_method: "روش دریافت معتبر نیست.",
+    fiscal_period_locked: "دوره مالی این تاریخ قفل است و امکان ثبت سند وجود ندارد.",
+    fiscal_period_soft_closed: "دوره مالی این تاریخ بسته‌ی موقت است؛ فقط مالک یا حسابدار می‌تواند سند ثبت کند.",
   };
   return map[code ?? ""] ?? "خطای غیرمنتظره. دوباره تلاش کنید.";
 }
