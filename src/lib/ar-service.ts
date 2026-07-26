@@ -10,13 +10,13 @@
  * with the control account to the Rial by construction rather than by care.
  *
  * DB-touching, so per repo convention it has no direct unit test; the pure
- * aging math lives in ar.ts and is what ar.test.ts covers. Covered here by
- * integration/ar.integration.test.ts.
+ * aging math (shared with the AP subledger) lives in aging.ts and is what
+ * aging.test.ts covers. Covered here by integration/ar.integration.test.ts.
  */
 import { getPool, query } from "./db";
 import { WELL_KNOWN_CODES } from "./coa-template";
 import { accountIdsByCode, MissingLedgerAccountError, postJournalEntry } from "./ledger-service";
-import { ageInvoices, summarizeAging, type AgingSummary } from "./ar";
+import { ageOpenItems, summarizeAging, type AgingSummary } from "./aging";
 
 export { MissingLedgerAccountError };
 
@@ -160,7 +160,7 @@ export async function getArAging(businessId: string, asOfDate?: string): Promise
   const rows: AgingRow[] = [];
   const totals: AgingSummary = { current: 0, d31_60: 0, d61_90: 0, over90: 0, total: 0 };
   for (const [customerId, { name, invoices, receipts }] of byCustomer) {
-    const aged = ageInvoices(invoices, receipts, effectiveAsOf);
+    const aged = ageOpenItems(invoices, receipts, effectiveAsOf);
     const summary = summarizeAging(aged);
     if (summary.total === 0) continue;
     rows.push({ customerId, customerName: name, ...summary });

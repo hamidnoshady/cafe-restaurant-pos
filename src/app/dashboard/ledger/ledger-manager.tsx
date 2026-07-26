@@ -7,6 +7,7 @@ import { EntriesSection } from "./entries-section";
 import { ManualEntrySection } from "./manual-entry-section";
 import { FiscalPeriodsSection } from "./fiscal-periods-section";
 import { ArSection } from "./ar-section";
+import { ApSection } from "./ap-section";
 
 export interface AccountRow {
   id: string;
@@ -22,6 +23,7 @@ const TABS = [
   { key: "manual", label: "ثبت سند دستی" },
   { key: "fiscal-periods", label: "دوره‌های مالی" },
   { key: "ar", label: "حساب‌های دریافتنی" },
+  { key: "ap", label: "حساب‌های پرداختنی" },
 ] as const;
 type TabKey = (typeof TABS)[number]["key"];
 
@@ -78,6 +80,7 @@ export function LedgerManager() {
       {tab === "manual" ? <ManualEntrySection accounts={accounts} busy={busy} run={run} /> : null}
       {tab === "fiscal-periods" ? <FiscalPeriodsSection busy={busy} run={run} /> : null}
       {tab === "ar" ? <ArSection busy={busy} run={run} /> : null}
+      {tab === "ap" ? <ApSection busy={busy} run={run} /> : null}
     </div>
   );
 }
@@ -99,7 +102,10 @@ function errorMessage(code: string | undefined): string {
     customer_required: "انتخاب مشتری الزامی است.",
     customer_not_found: "مشتری انتخاب‌شده معتبر نیست.",
     invalid_amount: "مبلغ معتبر نیست.",
-    invalid_method: "روش دریافت معتبر نیست.",
+    invalid_method: "روش دریافت/پرداخت معتبر نیست.",
+    // Phase 16 — AP subledger
+    supplier_required: "انتخاب تأمین‌کننده الزامی است.",
+    supplier_not_found: "تأمین‌کننده انتخاب‌شده معتبر نیست.",
     fiscal_period_locked: "دوره مالی این تاریخ قفل است و امکان ثبت سند وجود ندارد.",
     fiscal_period_soft_closed: "دوره مالی این تاریخ بسته‌ی موقت است؛ فقط مالک یا حسابدار می‌تواند سند ثبت کند.",
   };

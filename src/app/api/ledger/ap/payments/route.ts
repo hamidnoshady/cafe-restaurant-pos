@@ -1,0 +1,62 @@
+import { NextRequest, NextResponse } from "next/server";
+import { requireRole, withTenantScope } from "@/lib/auth";
+import { resolveActiveLocation } from "@/lib/setup-state";
+import { ApError, MissingLedgerAccountError, payBill } from "@/lib/ap-service";
+import { fiscalPeriodLockErrorCode } from "@/lib/fiscal-periods";
+
+interface PaymentBody {
+  supplierId?: string;
+  method?: string;
+  amount?: number;
+  paymentDate?: string;
+  memo?: string;
+}
+
+const METHODS = ["cash", "bank"] as const;
+
+/** Records the business paying down a supplier's AP balance. Same access as posting a manual journal entry. */
+export const POST = withTenantScope(async (request: NextRequest) => {
+  const { session, error } = await requireRole("owner", "manager", "accountant");
+  if (error) return error;
+
+  let body: PaymentBody;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "bad_request" }, { status: 400 });
+  }
+
+  const supplierId = body.supplierId?.trim();
+  if (!supplierId) return NextResponse.json({ error: "supplier_required" }, { status: 400 });
+  if (!METHODS.includes(body.method as (typeof METHODS)[number])) {
+    return NextResponse.json({ error: "invalid_method" }, { status: 400 });
+  }
+  const amount = Number(body.amount);
+  if (!Number.isSafeInteger(amount) || amount <= 0) {
+    return NextResponse.json({ error: "invalid_amount" }, { status: 400 });
+  }
+
+  const location = await resolveActiveLocation(session);
+
+  try {
+    const payment = await payBill({
+      businessId: session.businessId,
+      locationId: location?.id ?? null,
+      supplierId,
+      method: body.method as "cash" | "bank",
+      amount,
+      paymentDate: body.paymentDate?.trim() || null,
+      memo: body.memo,
+      createdBy: session.sub,
+    });
+    return NextResponse.json({ payment }, { status: 201 });
+  } catch (err) {
+    if (err instanceof ApError) return NextResponse.json({ error: err.message }, { status: err.status });
+    if (err instanceof MissingLedgerAccountError) {
+      return NextResponse.json({ error: "ledger_account_missing", code: err.code }, { status: 409 });
+    }
+    const lockCode = fiscalPeriodLockErrorCode(err);
+    if (lockCode) return NextResponse.json({ error: lockCode }, { status: 409 });
+    throw err;
+  }
+});
