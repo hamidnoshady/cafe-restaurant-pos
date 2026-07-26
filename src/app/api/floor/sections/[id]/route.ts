@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { validWaiterId } from "@/lib/floor";
-import { getPrimaryLocation } from "@/lib/setup-state";
+import { resolveActiveLocation } from "@/lib/setup-state";
 
 async function ownSection(locationId: string, id: string) {
   const { rows } = await query("SELECT id FROM floor_sections WHERE id = $1 AND location_id = $2", [id, locationId]);
@@ -15,7 +15,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
   if (error) return error;
   const { id } = await context.params;
 
-  const location = await getPrimaryLocation(session.businessId);
+  const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
   if (!(await ownSection(location.id, id))) return NextResponse.json({ error: "section_not_found" }, { status: 404 });
 
@@ -63,7 +63,7 @@ export async function DELETE(_request: NextRequest, context: { params: Promise<{
   if (error) return error;
   const { id } = await context.params;
 
-  const location = await getPrimaryLocation(session.businessId);
+  const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
   if (!(await ownSection(location.id, id))) return NextResponse.json({ error: "section_not_found" }, { status: 404 });
 

@@ -3,12 +3,12 @@ import { requireRole } from "@/lib/auth";
 import { getPool } from "@/lib/db";
 import { positiveQuantityText, rialText } from "@/lib/inventory-exact";
 import { createCustomerReturn } from "@/lib/customer-return-service";
-import { getPrimaryLocation } from "@/lib/setup-state";
+import { resolveActiveLocation } from "@/lib/setup-state";
 
 export async function POST(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   const { session, error } = await requireRole("owner", "manager", "cashier");
   if (error) return error;
-  const location = await getPrimaryLocation(session.businessId);
+  const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
   let body: {
     refundMethod?: "cash" | "card" | "card_to_card" | "online" | "credit";

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth";
 import { getPool, query } from "@/lib/db";
 import { parseDate, tableConflicts } from "@/lib/reservation-service";
-import { getPrimaryLocation } from "@/lib/setup-state";
+import { resolveActiveLocation } from "@/lib/setup-state";
 import { openSession } from "@/lib/table-session-service";
 import { broadcast } from "@/lib/realtime";
 
@@ -49,7 +49,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
   if (error) return error;
   const { id } = await context.params;
 
-  const location = await getPrimaryLocation(session.businessId);
+  const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
 
   const reservation = await loadReservation(location.id, id);
@@ -209,7 +209,7 @@ export async function DELETE(_request: NextRequest, context: { params: Promise<{
   if (error) return error;
   const { id } = await context.params;
 
-  const location = await getPrimaryLocation(session.businessId);
+  const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
   const reservation = await loadReservation(location.id, id);
   if (!reservation) return NextResponse.json({ error: "reservation_not_found" }, { status: 404 });

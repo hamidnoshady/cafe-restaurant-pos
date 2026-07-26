@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth";
 import { getPool, query } from "@/lib/db";
-import { getPrimaryLocation } from "@/lib/setup-state";
+import { resolveActiveLocation } from "@/lib/setup-state";
 
 /** Recent journal entries (auto-posted + manual), newest first, with their lines. */
 export async function GET() {
@@ -119,7 +119,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "unknown_account" }, { status: 400 });
   }
 
-  const location = await getPrimaryLocation(session.businessId);
+  const location = await resolveActiveLocation(session);
   const entryDate = body.entryDate?.trim() || null;
 
   const client = await getPool().connect();

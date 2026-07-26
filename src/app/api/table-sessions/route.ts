@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth";
 import { getPool, query } from "@/lib/db";
-import { getPrimaryLocation } from "@/lib/setup-state";
+import { resolveActiveLocation } from "@/lib/setup-state";
 import { openSession } from "@/lib/table-session-service";
 import { broadcast } from "@/lib/realtime";
 
@@ -10,7 +10,7 @@ export async function GET() {
   const { session, error } = await requireRole("owner", "manager", "cashier", "waiter");
   if (error) return error;
 
-  const location = await getPrimaryLocation(session.businessId);
+  const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ sessions: [] });
 
   const { rows: sessions } = await query(
@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
   const tableIds = (body.tableIds ?? (body.tableId ? [body.tableId] : [])).filter(Boolean);
   if (tableIds.length === 0) return NextResponse.json({ error: "table_required" }, { status: 400 });
 
-  const location = await getPrimaryLocation(session.businessId);
+  const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
 
   const partySize = Number.isFinite(body.partySize) && Number(body.partySize) > 0 ? Number(body.partySize) : null;

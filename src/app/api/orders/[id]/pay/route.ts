@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth";
 import { getPool, query } from "@/lib/db";
-import { getPrimaryLocation } from "@/lib/setup-state";
+import { resolveActiveLocation } from "@/lib/setup-state";
 import { broadcast } from "@/lib/realtime";
 import { deductForOrder } from "@/lib/inventory-service";
 import {
@@ -47,7 +47,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
   if (error) return error;
   const { id } = await context.params;
 
-  const location = await getPrimaryLocation(session.businessId);
+  const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
 
   let body: PayBody;

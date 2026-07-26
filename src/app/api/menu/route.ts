@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth";
 import { query } from "@/lib/db";
-import { getPrimaryLocation } from "@/lib/setup-state";
+import { resolveActiveLocation } from "@/lib/setup-state";
 
 /**
  * Full menu tree for the cashier POS grid and the menu management screen:
@@ -12,7 +12,7 @@ export async function GET() {
   const { session, error } = await requireRole("owner", "manager", "cashier", "waiter", "kitchen");
   if (error) return error;
 
-  const location = await getPrimaryLocation(session.businessId);
+  const location = await resolveActiveLocation(session);
   if (!location) {
     return NextResponse.json({ categories: [], items: [], modifierGroups: [], modifiers: [] });
   }

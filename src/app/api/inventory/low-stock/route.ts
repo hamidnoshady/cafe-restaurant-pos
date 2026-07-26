@@ -3,14 +3,14 @@ import { requireRole } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { isLowStock } from "@/lib/inventory";
 import { getStockLevels } from "@/lib/inventory-service";
-import { getPrimaryLocation } from "@/lib/setup-state";
+import { resolveActiveLocation } from "@/lib/setup-state";
 
 /** Items at or below their reorder threshold — feeds the dashboard's low-stock banner/badge. */
 export async function GET() {
   const { session, error } = await requireRole("owner", "manager", "cashier");
   if (error) return error;
 
-  const location = await getPrimaryLocation(session.businessId);
+  const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ items: [] });
 
   const [{ rows: items }, stockLevels] = await Promise.all([

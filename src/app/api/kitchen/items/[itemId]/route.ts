@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth";
 import { query } from "@/lib/db";
-import { getPrimaryLocation } from "@/lib/setup-state";
+import { resolveActiveLocation } from "@/lib/setup-state";
 import { canKitchenBump, canMarkServed, type OrderItemStatus } from "@/lib/order-item-status";
 import { broadcast } from "@/lib/realtime";
 
@@ -15,7 +15,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
   if (error) return error;
   const { itemId } = await context.params;
 
-  const location = await getPrimaryLocation(session.businessId);
+  const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
 
   let body: { status?: OrderItemStatus };

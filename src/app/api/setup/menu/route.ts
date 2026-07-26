@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { getSetting, markStepDone, SETTING_KEYS } from "@/lib/settings";
-import { getPrimaryLocation, requireManager, type TaxSetting } from "@/lib/setup-state";
+import { resolveActiveLocation, requireManager, type TaxSetting } from "@/lib/setup-state";
 
 /** Step 6 — menu. GET returns current categories + items for the wizard. */
 export async function GET() {
   const { session, error } = await requireManager();
   if (error) return error;
 
-  const location = await getPrimaryLocation(session.businessId);
+  const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ categories: [], items: [] });
 
   const [{ rows: categories }, { rows: items }] = await Promise.all([
@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
 
-  const location = await getPrimaryLocation(session.businessId);
+  const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
 
   if (body.addCategory) {

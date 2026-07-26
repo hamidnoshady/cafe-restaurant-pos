@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth";
 import { getPool, query } from "@/lib/db";
 import { convertPurchaseQuantity } from "@/lib/inventory";
-import { getPrimaryLocation } from "@/lib/setup-state";
+import { resolveActiveLocation } from "@/lib/setup-state";
 import Decimal from "decimal.js";
 import { positiveQuantityText, quantityText, rialText } from "@/lib/inventory-exact";
 
@@ -11,7 +11,7 @@ export async function GET() {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
 
-  const location = await getPrimaryLocation(session.businessId);
+  const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ purchases: [] });
 
   const { rows } = await query(
@@ -69,7 +69,7 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  const location = await getPrimaryLocation(session.businessId);
+  const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
 
   const inventoryItemIds = items.map((i) => i.inventoryItemId);

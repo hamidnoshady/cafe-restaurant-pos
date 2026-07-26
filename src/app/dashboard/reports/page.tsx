@@ -15,7 +15,7 @@ export default async function ReportsPage() {
           گزارش‌های آمادهٔ فروش، انبار، حسابداری و کارکنان، به‌همراه گزارش‌ساز برای ساخت گزارش سفارشی.
         </p>
       </header>
-      <ReportsManager />
+      <ReportsManager role={session.role} />
     </div>
   );
 }

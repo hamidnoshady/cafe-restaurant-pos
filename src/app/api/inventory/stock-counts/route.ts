@@ -4,7 +4,7 @@ import { requireRole } from "@/lib/auth";
 import { getPool, query } from "@/lib/db";
 import { applyStockAdjustmentExact } from "@/lib/inventory-adjustment-exact";
 import { quantityText, rialText } from "@/lib/inventory-exact";
-import { getPrimaryLocation } from "@/lib/setup-state";
+import { resolveActiveLocation } from "@/lib/setup-state";
 import {
   MissingLedgerAccountError,
   postExactNegativeSettlementEntry,
@@ -15,7 +15,7 @@ export async function GET() {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
 
-  const location = await getPrimaryLocation(session.businessId);
+  const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ counts: [] });
 
   const { rows: counts } = await query(
@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  const location = await getPrimaryLocation(session.businessId);
+  const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
 
   const itemIds = lines.map((l) => l.inventoryItemId);

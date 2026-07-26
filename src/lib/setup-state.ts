@@ -3,8 +3,15 @@
  * /api/setup/* routes and the aggregated wizard state used by the UI.
  */
 import { NextResponse } from "next/server";
-import { getSession, type SessionPayload } from "./auth";
+import { getSession, type Role, type SessionPayload } from "./auth";
 import { query } from "./db";
+import {
+  accessibleLocationIds,
+  canAccessLocation,
+  canSwitchBranches,
+  defaultAccessibleLocationId,
+  type LocationAccessContext,
+} from "./location-access";
 import { getSetting, getWizardProgress, SETTING_KEYS, type WizardProgress } from "./settings";
 
 export const WIZARD_STEPS = [
@@ -89,14 +96,103 @@ export async function isSetupComplete(businessId: string): Promise<boolean> {
   return Boolean(progress.completedAt);
 }
 
-/** The single location the wizard operates on (v1 = one location; more added later). */
-export async function getPrimaryLocation(businessId: string) {
-  const { rows } = await query<{ id: string; name: string; address: string | null; phone: string | null }>(
+export interface LocationRow extends Record<string, unknown> {
+  id: string;
+  name: string;
+  address: string | null;
+  phone: string | null;
+}
+
+/**
+ * The first branch created for a business. Used by the setup wizard, which
+ * necessarily runs before there is more than one branch to choose between,
+ * and by `resolveActiveLocation` as the deterministic tie-breaker for a
+ * fully-roaming member (see `location-access.ts`).
+ */
+export async function getPrimaryLocation(businessId: string): Promise<LocationRow | null> {
+  const { rows } = await query<LocationRow>(
     `SELECT id, name, address, phone FROM locations
       WHERE business_id = $1 AND is_active ORDER BY created_at LIMIT 1`,
     [businessId],
   );
   return rows[0] ?? null;
+}
+
+/** Every active branch of a business, oldest first — the stable order location-access.ts relies on. */
+export async function businessLocations(businessId: string): Promise<LocationRow[]> {
+  const { rows } = await query<LocationRow>(
+    `SELECT id, name, address, phone FROM locations
+      WHERE business_id = $1 AND is_active ORDER BY created_at`,
+    [businessId],
+  );
+  return rows;
+}
+
+/** A membership's role and branch restrictions, as location-access.ts needs them. */
+async function locationAccessContext(userId: string): Promise<LocationAccessContext> {
+  const [{ rows: userRows }, { rows: assignmentRows }] = await Promise.all([
+    query<{ role: Role; location_id: string | null }>(
+      "SELECT role, location_id FROM users WHERE id = $1",
+      [userId],
+    ),
+    query<{ location_id: string }>("SELECT location_id FROM user_locations WHERE user_id = $1", [
+      userId,
+    ]),
+  ]);
+  return {
+    role: userRows[0]?.role ?? "cashier",
+    defaultLocationId: userRows[0]?.location_id ?? null,
+    assignedLocationIds: assignmentRows.map((r) => r.location_id),
+  };
+}
+
+/**
+ * The branch a request should be scoped to: the session's active branch if
+ * the caller can still reach it, otherwise their default accessible branch.
+ *
+ * This is the Phase 14 replacement for calling `getPrimaryLocation` from a
+ * route handler. Role and branch assignment are re-read from the database
+ * (not trusted from the session token), for the same reason `requirePermission`
+ * does: a membership's assignment can change between login and this request,
+ * and access should follow the change rather than the token's age.
+ *
+ * Deliberately returns the same thing `getPrimaryLocation` always did for a
+ * single-location business with no assignments: fully roaming access resolves
+ * to that one branch, so this is a no-op for every install that predates
+ * Phase 14.
+ */
+export async function resolveActiveLocation(session: SessionPayload): Promise<LocationRow | null> {
+  const [locations, ctx] = await Promise.all([
+    businessLocations(session.businessId),
+    locationAccessContext(session.sub),
+  ]);
+  if (locations.length === 0) return null;
+
+  const ids = locations.map((l) => l.id);
+  const requested = session.activeLocationId ?? session.locationId ?? null;
+  const targetId =
+    requested && canAccessLocation(ctx, ids, requested)
+      ? requested
+      : defaultAccessibleLocationId(ctx, ids);
+
+  return locations.find((l) => l.id === targetId) ?? null;
+}
+
+/** Every branch this session's member may switch to, for the branch switcher UI. */
+export async function accessibleLocationsFor(session: SessionPayload): Promise<{
+  locations: LocationRow[];
+  canSwitch: boolean;
+}> {
+  const [locations, ctx] = await Promise.all([
+    businessLocations(session.businessId),
+    locationAccessContext(session.sub),
+  ]);
+  const ids = locations.map((l) => l.id);
+  const accessible = new Set(accessibleLocationIds(ctx, ids));
+  return {
+    locations: locations.filter((l) => accessible.has(l.id)),
+    canSwitch: canSwitchBranches(ctx, ids),
+  };
 }
 
 export async function costingLocked(businessId: string): Promise<boolean> {

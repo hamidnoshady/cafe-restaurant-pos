@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { BranchSwitcher } from "./branch-switcher";
 import { LogoutButton } from "./logout-button";
 
 const ROLE_LABELS: Record<string, string> = {
@@ -100,6 +101,7 @@ function SidebarBrand({ withThemeToggle = true }: { withThemeToggle?: boolean })
 function SidebarFooter({ role, fullName }: { role: string; fullName: string }) {
   return (
     <div className="border-t p-4 text-sm">
+      <BranchSwitcher />
       <p className="font-semibold">{fullName}</p>
       <p className="mb-3 text-xs text-muted-foreground">{ROLE_LABELS[role] ?? role}</p>
       <LogoutButton />

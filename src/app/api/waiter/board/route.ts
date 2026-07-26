@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth";
 import { query } from "@/lib/db";
-import { getPrimaryLocation } from "@/lib/setup-state";
+import { resolveActiveLocation } from "@/lib/setup-state";
 
 /**
  * The waiter app's table list: sections assigned to the logged-in waiter
@@ -14,7 +14,7 @@ export async function GET() {
   const { session, error } = await requireRole("owner", "manager", "waiter");
   if (error) return error;
 
-  const location = await getPrimaryLocation(session.businessId);
+  const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ sections: [], tables: [] });
   const loc = location.id;
 

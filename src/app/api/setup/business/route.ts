@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { markStepDone, setSetting, SETTING_KEYS } from "@/lib/settings";
-import { getPrimaryLocation, requireManager, type BusinessPrefs } from "@/lib/setup-state";
+import { resolveActiveLocation, requireManager, type BusinessPrefs } from "@/lib/setup-state";
 
 /** Step 1 — business info: names, contact, display/currency preferences. */
 export async function POST(request: NextRequest) {
@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
 
   await query("UPDATE businesses SET name = $1 WHERE id = $2", [businessName, session.businessId]);
 
-  const location = await getPrimaryLocation(session.businessId);
+  const location = await resolveActiveLocation(session);
   if (!location) {
     return NextResponse.json({ error: "no_location" }, { status: 409 });
   }

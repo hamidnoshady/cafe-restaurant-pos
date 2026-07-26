@@ -4,7 +4,7 @@ import { getPool } from "@/lib/db";
 import { recomputeOrderTotals } from "@/lib/order-totals";
 import { lockOpenOrder } from "@/lib/order-lock";
 import type { DiscountInput } from "@/lib/orders";
-import { getPrimaryLocation } from "@/lib/setup-state";
+import { resolveActiveLocation } from "@/lib/setup-state";
 import { broadcast } from "@/lib/realtime";
 
 const MAX_QTY = 50;
@@ -18,7 +18,7 @@ export async function PATCH(
   if (error) return error;
   const { id, itemId } = await context.params;
 
-  const location = await getPrimaryLocation(session.businessId);
+  const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
 
   let body: { quantity?: number; void?: { reason?: string } };

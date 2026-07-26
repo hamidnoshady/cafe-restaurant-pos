@@ -54,6 +54,12 @@ const SELF_GUARDING_ROUTES: Record<string, string> = {
   "auth/switch-business":
     "re-issues the caller's own session against another of their memberships; the membership " +
     "lookup is the authorization, so no role is applicable",
+  "auth/switch-location":
+    "re-issues the caller's own session against another branch of their own business; the " +
+    "location-access check is the authorization, so no role is applicable",
+  "locations/active":
+    "returns the caller's own active branch and switchable branches — every member has one, " +
+    "regardless of role",
 };
 
 /** All requireRole(...) argument lists found in a file, as role-name arrays. */
@@ -103,9 +109,9 @@ describe("back-office/financial surfaces exclude floor roles", () => {
   // Everything under these prefixes is Owner/Manager-only, per the decisions
   // in Phases 6-8 (inventory admin, ledger, reports) and 9 (rollup).
   const BACK_OFFICE_PREFIXES = ["ledger/", "reports/", "staff", "setup/", "rollup/", "backup/"];
-  // team/* guards with requirePermission(team.manage) rather than a role list —
-  // asserted separately below, so it's excluded from the role-list sweep.
-  const PERMISSION_GUARDED = ["team"];
+  // team/* and branches/* guard with requirePermission rather than a role
+  // list — asserted separately below, so excluded from the role-list sweep.
+  const PERMISSION_GUARDED = ["team", "branches"];
   const FLOOR_ROLES = ["cashier", "waiter", "kitchen"];
 
   for (const [key, src] of sources) {
@@ -155,18 +161,24 @@ describe("back-office/financial surfaces exclude floor roles", () => {
     }
   });
 
-  it("team management is gated on the team.manage permission, which only Owner holds by preset", () => {
-    const teamRoutes = [...sources].filter(([key]) =>
-      PERMISSION_GUARDED.some((p) => key === p || key.startsWith(`${p}/`)),
-    );
-    expect(teamRoutes.length).toBeGreaterThan(0);
+  function assertPermissionGuarded(prefix: string, permissionConstant: string) {
+    const routes = [...sources].filter(([key]) => key === prefix || key.startsWith(`${prefix}/`));
+    expect(routes.length, `no routes found under ${prefix}/`).toBeGreaterThan(0);
 
-    for (const [key, src] of teamRoutes) {
+    for (const [key, src] of routes) {
       expect(src, `src/app/api/${key}/route.ts`).toMatch(/requirePermission\(/);
-      expect(src, `src/app/api/${key}/route.ts`).toMatch(/PERMISSIONS\.teamManage/);
+      expect(src, `src/app/api/${key}/route.ts`).toMatch(new RegExp(`PERMISSIONS\\.${permissionConstant}`));
       // A role list here would bypass the per-member overrides entirely.
       expect(requireRoleCalls(src), `src/app/api/${key}/route.ts uses requireRole`).toEqual([]);
     }
+  }
+
+  it("team management is gated on the team.manage permission, which only Owner holds by preset", () => {
+    assertPermissionGuarded("team", "teamManage");
+  });
+
+  it("branch management is gated on the locations.manage permission, which only Owner holds by preset", () => {
+    assertPermissionGuarded("branches", "locationsManage");
   });
 
   it("cross-location rollup management is Owner-only (Phase 9 access decision)", () => {

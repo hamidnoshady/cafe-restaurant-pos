@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole } from "@/lib/auth";
+import { requireRole, type SessionPayload } from "@/lib/auth";
 import { query } from "@/lib/db";
-import { getPrimaryLocation } from "@/lib/setup-state";
+import { resolveActiveLocation } from "@/lib/setup-state";
 
-async function ownedModifier(businessId: string, id: string) {
-  const location = await getPrimaryLocation(businessId);
+async function ownedModifier(session: SessionPayload, id: string) {
+  const location = await resolveActiveLocation(session);
   if (!location) return null;
   const { rows } = await query<{ id: string }>(
     "SELECT id FROM modifiers WHERE id = $1 AND location_id = $2",
@@ -18,7 +18,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
   if (error) return error;
   const { id } = await context.params;
 
-  const location = await ownedModifier(session.businessId, id);
+  const location = await ownedModifier(session, id);
   if (!location) return NextResponse.json({ error: "modifier_not_found" }, { status: 404 });
 
   let body: { name?: string; priceDelta?: number; sortOrder?: number; isActive?: boolean };
@@ -58,7 +58,7 @@ export async function DELETE(_request: NextRequest, context: { params: Promise<{
   if (error) return error;
   const { id } = await context.params;
 
-  const location = await ownedModifier(session.businessId, id);
+  const location = await ownedModifier(session, id);
   if (!location) return NextResponse.json({ error: "modifier_not_found" }, { status: 404 });
 
   const { rows: refs } = await query("SELECT id FROM order_item_modifiers WHERE modifier_id = $1 LIMIT 1", [

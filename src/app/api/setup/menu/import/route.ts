@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPool } from "@/lib/db";
 import { getSetting, markStepDone, SETTING_KEYS } from "@/lib/settings";
-import { getPrimaryLocation, requireManager, type TaxSetting } from "@/lib/setup-state";
+import { resolveActiveLocation, requireManager, type TaxSetting } from "@/lib/setup-state";
 import { parseMenuCsv, rowsToImport, type ImportResult } from "@/lib/menu-import";
 import { xlsxToRows } from "@/lib/xlsx-import";
 
@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
   const { session, error } = await requireManager();
   if (error) return error;
 
-  const location = await getPrimaryLocation(session.businessId);
+  const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
 
   let file: File | null = null;

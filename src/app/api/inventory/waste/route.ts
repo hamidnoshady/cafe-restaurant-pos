@@ -5,7 +5,7 @@ import { consumeInventoryExact } from "@/lib/inventory-consumption-exact";
 import { MissingLedgerAccountError, postExactOperationalInventoryEntry } from "@/lib/ledger-service";
 import { WELL_KNOWN_CODES } from "@/lib/coa-template";
 import { positiveQuantityText } from "@/lib/inventory-exact";
-import { getPrimaryLocation } from "@/lib/setup-state";
+import { resolveActiveLocation } from "@/lib/setup-state";
 
 const WASTE_REASONS = ["spoilage", "prep_error", "customer_return", "staff_meal", "other"] as const;
 
@@ -13,7 +13,7 @@ export async function GET() {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
 
-  const location = await getPrimaryLocation(session.businessId);
+  const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ entries: [] });
 
   const { rows } = await query(
@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "invalid_waste_reason" }, { status: 400 });
   }
 
-  const location = await getPrimaryLocation(session.businessId);
+  const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
 
   const { rows: item } = await query(

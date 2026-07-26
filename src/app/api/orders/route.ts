@@ -4,7 +4,7 @@ import { query } from "@/lib/db";
 import { type CartItemInput } from "@/lib/order-cart";
 import { createOrder } from "@/lib/order-mutations";
 import type { DiscountInput } from "@/lib/orders";
-import { getPrimaryLocation } from "@/lib/setup-state";
+import { resolveActiveLocation } from "@/lib/setup-state";
 import { broadcast } from "@/lib/realtime";
 
 /** Open orders for the cashier's "current orders" list. */
@@ -12,7 +12,7 @@ export async function GET() {
   const { session, error } = await requireRole("owner", "manager", "cashier", "waiter");
   if (error) return error;
 
-  const location = await getPrimaryLocation(session.businessId);
+  const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ orders: [] });
 
   const { rows: orders } = await query(
@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
   }
   const discount: DiscountInput = discountType ? { type: discountType, value: discountValue } : { type: null };
 
-  const location = await getPrimaryLocation(session.businessId);
+  const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
 
   const guestCount = Number.isFinite(body.guestCount) ? Number(body.guestCount) : null;
