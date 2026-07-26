@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { getCostingMethod, getStockLevels } from "@/lib/inventory-service";
-import { getPrimaryLocation } from "@/lib/setup-state";
+import { resolveActiveLocation } from "@/lib/setup-state";
 
 /**
  * Everything the inventory management screen needs in one call: items
@@ -14,7 +14,7 @@ export async function GET() {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
 
-  const location = await getPrimaryLocation(session.businessId);
+  const location = await resolveActiveLocation(session);
   if (!location) {
     return NextResponse.json({
       items: [],

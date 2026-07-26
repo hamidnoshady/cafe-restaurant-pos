@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth";
 import { createCourier, listCouriers } from "@/lib/delivery-service";
-import { getPrimaryLocation } from "@/lib/setup-state";
+import { resolveActiveLocation } from "@/lib/setup-state";
 
 /** In-house couriers for delivery dispatch. Cashiers list them (to assign); managers/owners manage the roster. */
 export async function GET(request: NextRequest) {
   const { session, error } = await requireRole("owner", "manager", "cashier");
   if (error) return error;
 
-  const location = await getPrimaryLocation(session.businessId);
+  const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ couriers: [] });
 
   const includeInactive =
@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
 
-  const location = await getPrimaryLocation(session.businessId);
+  const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
 
   let body: CreateCourierBody;

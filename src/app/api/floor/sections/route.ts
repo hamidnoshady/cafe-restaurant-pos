@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { validWaiterId } from "@/lib/floor";
-import { getPrimaryLocation } from "@/lib/setup-state";
+import { resolveActiveLocation } from "@/lib/setup-state";
 
 /** Create a floor section (a zone on the map, optionally owned by a waiter). */
 export async function POST(request: NextRequest) {
@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
   const name = body.name?.trim();
   if (!name) return NextResponse.json({ error: "missing_fields" }, { status: 400 });
 
-  const location = await getPrimaryLocation(session.businessId);
+  const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
 
   const { rows: dup } = await query("SELECT id FROM floor_sections WHERE location_id = $1 AND name = $2", [

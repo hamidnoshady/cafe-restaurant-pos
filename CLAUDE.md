@@ -84,9 +84,11 @@ and left:
 
 ## Repository layout
 
-- `src/app/api/**/route.ts` — route handlers. Every handler starts with a role guard
-  (`requireRole(...)` from `src/lib/auth.ts`) and resolves the caller's location via
-  `getPrimaryLocation` (`src/lib/setup-state.ts`) — v1 is single-location per business.
+- `src/app/api/**/route.ts` — route handlers. Every handler starts with a guard
+  (`requireRole(...)`/`requirePermission(...)` from `src/lib/auth.ts`) and resolves the
+  caller's active branch via `resolveActiveLocation(session)` (`src/lib/setup-state.ts`) —
+  since Phase 14 a business may have several branches; this always returns the one the
+  caller is currently scoped to, validated against their branch assignment.
 - `src/app/dashboard/**` — authenticated UI (role-gated per page/route in the sidebar nav).
 - `src/lib/*.ts` — framework-free logic (money, dates, digits, order totals, …); these are
   what `*.test.ts` files cover. `src/lib/db.ts` and files that call `query()`/`getPool()`

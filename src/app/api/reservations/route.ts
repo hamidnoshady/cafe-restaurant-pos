@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { parseDate, tableConflicts } from "@/lib/reservation-service";
-import { getPrimaryLocation } from "@/lib/setup-state";
+import { resolveActiveLocation } from "@/lib/setup-state";
 
 /**
  * List reservations in a time window (default: from 1h ago through 14 days
@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
   const { session, error } = await requireRole("owner", "manager", "cashier", "waiter");
   if (error) return error;
 
-  const location = await getPrimaryLocation(session.businessId);
+  const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ reservations: [] });
 
   const url = new URL(request.url);
@@ -71,7 +71,7 @@ export async function POST(request: NextRequest) {
       ? Math.min(600, Math.max(15, Math.round(Number(body.durationMinutes))))
       : 90;
 
-  const location = await getPrimaryLocation(session.businessId);
+  const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
 
   let tableId: string | null = null;

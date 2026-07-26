@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { markStepDone } from "@/lib/settings";
-import { getPrimaryLocation, requireManager } from "@/lib/setup-state";
+import { resolveActiveLocation, requireManager } from "@/lib/setup-state";
 import { isPinRole, isValidPin } from "@/lib/team";
 import { TeamError, createMembership, isPinTaken } from "@/lib/team-service";
 import type { Role } from "@/lib/auth";
@@ -72,7 +72,7 @@ export async function POST(request: NextRequest) {
     if (!isValidPin(pin)) {
       return NextResponse.json({ error: "invalid_pin" }, { status: 400 });
     }
-    const location = await getPrimaryLocation(session.businessId);
+    const location = await resolveActiveLocation(session);
     if (!location) {
       return NextResponse.json({ error: "no_location" }, { status: 409 });
     }

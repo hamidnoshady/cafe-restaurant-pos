@@ -8,7 +8,7 @@ import {
 } from "@/lib/ledger-service";
 import { positiveQuantityText, rialText } from "@/lib/inventory-exact";
 import { applyPurchaseReceiptCosting } from "@/lib/purchase-receipt-costing";
-import { getPrimaryLocation } from "@/lib/setup-state";
+import { resolveActiveLocation } from "@/lib/setup-state";
 
 const SETTLEMENT_METHODS = ["cash", "bank", "credit"] as const;
 type SettlementMethod = (typeof SETTLEMENT_METHODS)[number];
@@ -18,7 +18,7 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ id
   if (error) return error;
   const { id } = await context.params;
 
-  const location = await getPrimaryLocation(session.businessId);
+  const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
 
   const { rows: header } = await query(
@@ -51,7 +51,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
   if (error) return error;
   const { id } = await context.params;
 
-  const location = await getPrimaryLocation(session.businessId);
+  const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
 
   let body: { status?: string; settlementMethod?: string };

@@ -3,12 +3,12 @@ import { requireRole } from "@/lib/auth";
 import { getPool } from "@/lib/db";
 import { rialText } from "@/lib/inventory-exact";
 import { createNrvWriteDown } from "@/lib/nrv-service";
-import { getPrimaryLocation } from "@/lib/setup-state";
+import { resolveActiveLocation } from "@/lib/setup-state";
 
 export async function POST(request: NextRequest) {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
-  const location = await getPrimaryLocation(session.businessId);
+  const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
   let body: {
     valuationDate?: string; reason?: string; idempotencyKey?: string;

@@ -3,7 +3,7 @@ import { requireRole } from "@/lib/auth";
 import { getPool, query } from "@/lib/db";
 import { recomputeOrderTotals } from "@/lib/order-totals";
 import type { DiscountInput } from "@/lib/orders";
-import { getPrimaryLocation } from "@/lib/setup-state";
+import { resolveActiveLocation } from "@/lib/setup-state";
 import { broadcast } from "@/lib/realtime";
 import { lockOpenOrder } from "@/lib/order-lock";
 
@@ -22,7 +22,7 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ id
   if (error) return error;
   const { id } = await context.params;
 
-  const location = await getPrimaryLocation(session.businessId);
+  const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
 
   const order = await loadOrder(location.id, id);
@@ -55,7 +55,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
   if (error) return error;
   const { id } = await context.params;
 
-  const location = await getPrimaryLocation(session.businessId);
+  const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
 
   let body: PatchBody;

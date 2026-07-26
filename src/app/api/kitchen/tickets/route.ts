@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth";
 import { query } from "@/lib/db";
-import { getPrimaryLocation } from "@/lib/setup-state";
+import { resolveActiveLocation } from "@/lib/setup-state";
 
 /**
  * Live kitchen ticket queue: every non-voided, non-served order item across
@@ -13,7 +13,7 @@ export async function GET() {
   const { session, error } = await requireRole("owner", "manager", "kitchen");
   if (error) return error;
 
-  const location = await getPrimaryLocation(session.businessId);
+  const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ items: [] });
 
   const { rows: items } = await query(

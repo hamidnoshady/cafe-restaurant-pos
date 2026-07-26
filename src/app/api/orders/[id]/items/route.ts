@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth";
 import type { CartItemInput } from "@/lib/order-cart";
 import { addItemsToOrder } from "@/lib/order-mutations";
-import { getPrimaryLocation } from "@/lib/setup-state";
+import { resolveActiveLocation } from "@/lib/setup-state";
 import { broadcast } from "@/lib/realtime";
 
 /** Add one or more items to an already-submitted order, while it's still 'open'. */
@@ -11,7 +11,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
   if (error) return error;
   const { id } = await context.params;
 
-  const location = await getPrimaryLocation(session.businessId);
+  const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
 
   let body: { items?: CartItemInput[] };

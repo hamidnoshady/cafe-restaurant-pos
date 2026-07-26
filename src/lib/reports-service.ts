@@ -11,6 +11,7 @@ import {
   type ReportConfig,
   type ChartType,
 } from "./reports";
+import { WELL_KNOWN_CODES } from "./coa-template";
 import type { Role } from "./auth";
 
 export interface ReportRow extends Record<string, unknown> {
@@ -424,3 +425,145 @@ export async function saveDashboardWidgets(
 
 /** validateReportConfig re-exported for API routes that need it alongside the DB helpers above. */
 export { validateReportConfig };
+
+// ---------------------------------------------------------------------------
+// Phase 14 — consolidated reporting across a business's own branches
+// ---------------------------------------------------------------------------
+//
+// Distinct from the Phase 9 cross-*server* rollup (rollup_daily_summary,
+// populated by a remote server's HTTP push): this is one business's own
+// branches, all in this same database, queried directly off the Phase 8
+// reporting views — the same views every per-branch report already reads, so
+// a branch's numbers here can never disagree with its own reports.
+
+export interface BranchReportRow {
+  locationId: string;
+  locationName: string;
+  isActive: boolean;
+  orderCount: number;
+  subtotal: number;
+  discount: number;
+  tax: number;
+  total: number;
+  cogs: number;
+  wasteCost: number;
+}
+
+export interface BusinessOverview {
+  from: string | null;
+  to: string | null;
+  branches: BranchReportRow[];
+  /** Sum of every branch above — computed independently, not by adding branches client-side. */
+  consolidated: Omit<BranchReportRow, "locationId" | "locationName" | "isActive">;
+}
+
+function emptyTotals() {
+  return { orderCount: 0, subtotal: 0, discount: 0, tax: 0, total: 0, cogs: 0, wasteCost: 0 };
+}
+
+/**
+ * Per-branch and business-wide totals for a date range, both derived from the
+ * same underlying views so they are guaranteed to reconcile — the exit
+ * criterion isn't "we hope these two numbers agree", it's that there is only
+ * one query path they could have come from.
+ */
+export async function getBusinessOverview(
+  businessId: string,
+  filters: DateRangeFilters = {},
+): Promise<BusinessOverview> {
+  const { dateFrom, dateTo } = filters;
+
+  const [locationsResult, salesResult, cogsResult, wasteResult, consolidatedSales, consolidatedCogs, consolidatedWaste] =
+    await Promise.all([
+      query<{ id: string; name: string; is_active: boolean }>(
+        "SELECT id, name, is_active FROM locations WHERE business_id = $1 ORDER BY created_at",
+        [businessId],
+      ),
+      query<{ location_id: string; order_count: string; subtotal: string; discount: string; tax: string; total: string }>(
+        `SELECT location_id, sum(order_count) AS order_count, sum(subtotal) AS subtotal,
+                sum(discount) AS discount, sum(tax) AS tax, sum(total) AS total
+           FROM v_sales_by_day
+          WHERE business_id = $1
+            AND ($2::date IS NULL OR sale_date >= $2) AND ($3::date IS NULL OR sale_date <= $3)
+          GROUP BY location_id`,
+        [businessId, dateFrom ?? null, dateTo ?? null],
+      ),
+      query<{ location_id: string; cogs: string }>(
+        `SELECT location_id, sum(debit) - sum(credit) AS cogs
+           FROM v_ledger_by_account
+          WHERE business_id = $1 AND account_code = $4
+            AND ($2::date IS NULL OR entry_date >= $2) AND ($3::date IS NULL OR entry_date <= $3)
+          GROUP BY location_id`,
+        [businessId, dateFrom ?? null, dateTo ?? null, WELL_KNOWN_CODES.cogs],
+      ),
+      query<{ location_id: string; cost: string }>(
+        `SELECT location_id, sum(cost) AS cost
+           FROM v_waste_summary
+          WHERE business_id = $1
+            AND ($2::date IS NULL OR waste_date >= $2) AND ($3::date IS NULL OR waste_date <= $3)
+          GROUP BY location_id`,
+        [businessId, dateFrom ?? null, dateTo ?? null],
+      ),
+      query<{ order_count: string; subtotal: string; discount: string; tax: string; total: string }>(
+        `SELECT sum(order_count) AS order_count, sum(subtotal) AS subtotal,
+                sum(discount) AS discount, sum(tax) AS tax, sum(total) AS total
+           FROM v_sales_by_day
+          WHERE business_id = $1
+            AND ($2::date IS NULL OR sale_date >= $2) AND ($3::date IS NULL OR sale_date <= $3)`,
+        [businessId, dateFrom ?? null, dateTo ?? null],
+      ),
+      query<{ cogs: string }>(
+        `SELECT sum(debit) - sum(credit) AS cogs
+           FROM v_ledger_by_account
+          WHERE business_id = $1 AND account_code = $4
+            AND ($2::date IS NULL OR entry_date >= $2) AND ($3::date IS NULL OR entry_date <= $3)`,
+        [businessId, dateFrom ?? null, dateTo ?? null, WELL_KNOWN_CODES.cogs],
+      ),
+      query<{ cost: string }>(
+        `SELECT sum(cost) AS cost
+           FROM v_waste_summary
+          WHERE business_id = $1
+            AND ($2::date IS NULL OR waste_date >= $2) AND ($3::date IS NULL OR waste_date <= $3)`,
+        [businessId, dateFrom ?? null, dateTo ?? null],
+      ),
+    ]);
+
+  const salesByLocation = new Map(salesResult.rows.map((r) => [r.location_id, r]));
+  const cogsByLocation = new Map(cogsResult.rows.map((r) => [r.location_id, r]));
+  const wasteByLocation = new Map(wasteResult.rows.map((r) => [r.location_id, r]));
+
+  const branches: BranchReportRow[] = locationsResult.rows.map((loc) => {
+    const sales = salesByLocation.get(loc.id);
+    const cogs = cogsByLocation.get(loc.id);
+    const waste = wasteByLocation.get(loc.id);
+    return {
+      locationId: loc.id,
+      locationName: loc.name,
+      isActive: loc.is_active,
+      orderCount: Number(sales?.order_count ?? 0),
+      subtotal: Number(sales?.subtotal ?? 0),
+      discount: Number(sales?.discount ?? 0),
+      tax: Number(sales?.tax ?? 0),
+      total: Number(sales?.total ?? 0),
+      cogs: Number(cogs?.cogs ?? 0),
+      wasteCost: Number(waste?.cost ?? 0),
+    };
+  });
+
+  const sales = consolidatedSales.rows[0];
+  const cogs = consolidatedCogs.rows[0];
+  const waste = consolidatedWaste.rows[0];
+  const consolidated = sales
+    ? {
+        orderCount: Number(sales.order_count ?? 0),
+        subtotal: Number(sales.subtotal ?? 0),
+        discount: Number(sales.discount ?? 0),
+        tax: Number(sales.tax ?? 0),
+        total: Number(sales.total ?? 0),
+        cogs: Number(cogs?.cogs ?? 0),
+        wasteCost: Number(waste?.cost ?? 0),
+      }
+    : emptyTotals();
+
+  return { from: dateFrom ?? null, to: dateTo ?? null, branches, consolidated };
+}

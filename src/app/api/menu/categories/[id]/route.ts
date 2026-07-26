@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole } from "@/lib/auth";
+import { requireRole, type SessionPayload } from "@/lib/auth";
 import { query } from "@/lib/db";
-import { getPrimaryLocation } from "@/lib/setup-state";
+import { resolveActiveLocation } from "@/lib/setup-state";
 
-async function ownedCategory(businessId: string, id: string) {
-  const location = await getPrimaryLocation(businessId);
+async function ownedCategory(session: SessionPayload, id: string) {
+  const location = await resolveActiveLocation(session);
   if (!location) return null;
   const { rows } = await query<{ id: string }>(
     "SELECT id FROM menu_categories WHERE id = $1 AND location_id = $2",
@@ -18,7 +18,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
   if (error) return error;
   const { id } = await context.params;
 
-  const location = await ownedCategory(session.businessId, id);
+  const location = await ownedCategory(session, id);
   if (!location) return NextResponse.json({ error: "category_not_found" }, { status: 404 });
 
   let body: { name?: string; taxRate?: number; sortOrder?: number; isActive?: boolean };
@@ -66,7 +66,7 @@ export async function DELETE(_request: NextRequest, context: { params: Promise<{
   if (error) return error;
   const { id } = await context.params;
 
-  const location = await ownedCategory(session.businessId, id);
+  const location = await ownedCategory(session, id);
   if (!location) return NextResponse.json({ error: "category_not_found" }, { status: 404 });
 
   const { rows: items } = await query("SELECT id FROM menu_items WHERE category_id = $1 LIMIT 1", [id]);

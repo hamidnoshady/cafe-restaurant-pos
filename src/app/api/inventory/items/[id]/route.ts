@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole } from "@/lib/auth";
+import { requireRole, type SessionPayload } from "@/lib/auth";
 import { query } from "@/lib/db";
-import { getPrimaryLocation } from "@/lib/setup-state";
+import { resolveActiveLocation } from "@/lib/setup-state";
 
-async function ownedItem(businessId: string, id: string) {
-  const location = await getPrimaryLocation(businessId);
+async function ownedItem(session: SessionPayload, id: string) {
+  const location = await resolveActiveLocation(session);
   if (!location) return null;
   const { rows } = await query<{ id: string }>(
     "SELECT id FROM inventory_items WHERE id = $1 AND location_id = $2",
@@ -18,7 +18,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
   if (error) return error;
   const { id } = await context.params;
 
-  const location = await ownedItem(session.businessId, id);
+  const location = await ownedItem(session, id);
   if (!location) return NextResponse.json({ error: "item_not_found" }, { status: 404 });
 
   let body: {
@@ -83,7 +83,7 @@ export async function DELETE(_request: NextRequest, context: { params: Promise<{
   if (error) return error;
   const { id } = await context.params;
 
-  const location = await ownedItem(session.businessId, id);
+  const location = await ownedItem(session, id);
   if (!location) return NextResponse.json({ error: "item_not_found" }, { status: 404 });
 
   const { rows: refs } = await query(

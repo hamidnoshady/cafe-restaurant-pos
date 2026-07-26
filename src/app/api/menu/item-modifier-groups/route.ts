@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole } from "@/lib/auth";
+import { requireRole, type SessionPayload } from "@/lib/auth";
 import { query } from "@/lib/db";
-import { getPrimaryLocation } from "@/lib/setup-state";
+import { resolveActiveLocation } from "@/lib/setup-state";
 
-async function validatePair(businessId: string, menuItemId: string, modifierGroupId: string) {
-  const location = await getPrimaryLocation(businessId);
+async function validatePair(session: SessionPayload, menuItemId: string, modifierGroupId: string) {
+  const location = await resolveActiveLocation(session);
   if (!location) return false;
   const { rows } = await query(
     `SELECT 1 FROM menu_items WHERE id = $1 AND location_id = $3
@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
   if (!menuItemId || !modifierGroupId) {
     return NextResponse.json({ error: "missing_fields" }, { status: 400 });
   }
-  if (!(await validatePair(session.businessId, menuItemId, modifierGroupId))) {
+  if (!(await validatePair(session, menuItemId, modifierGroupId))) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
 
@@ -52,7 +52,7 @@ export async function DELETE(request: NextRequest) {
   if (!menuItemId || !modifierGroupId) {
     return NextResponse.json({ error: "missing_fields" }, { status: 400 });
   }
-  if (!(await validatePair(session.businessId, menuItemId, modifierGroupId))) {
+  if (!(await validatePair(session, menuItemId, modifierGroupId))) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
 

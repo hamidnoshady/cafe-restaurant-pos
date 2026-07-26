@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import type { SessionPayload } from "@/lib/auth";
 import { getPool, query } from "@/lib/db";
 import { getSetting, markStepDone, SETTING_KEYS } from "@/lib/settings";
 import {
   costingLocked,
-  getPrimaryLocation,
+  resolveActiveLocation,
   requireManager,
   type CostingSetting,
 } from "@/lib/setup-state";
@@ -15,7 +16,7 @@ export async function GET() {
   const { session, error } = await requireManager();
   if (error) return error;
 
-  const location = await getPrimaryLocation(session.businessId);
+  const location = await resolveActiveLocation(session);
   const [{ rows: accounts }, { rows: openingEntry }, inventory] = await Promise.all([
     query(
       `SELECT id, code, name, type,
@@ -71,7 +72,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
 
-  if (body.inventory) return openingInventory(session.businessId, session.sub, body.inventory);
+  if (body.inventory) return openingInventory(session, body.inventory);
   if (body.balances) return openingBalances(session.businessId, session.sub, body.balances);
   return NextResponse.json({ error: "bad_request" }, { status: 400 });
 }
@@ -82,10 +83,11 @@ export async function POST(request: NextRequest) {
  * also locks the costing method.
  */
 async function openingInventory(
-  businessId: string,
-  userId: string,
+  session: SessionPayload,
   payload: { items?: OpeningInventoryRow[] },
 ) {
+  const businessId = session.businessId;
+  const userId = session.sub;
   const items = payload.items ?? [];
   if (items.length === 0) {
     return NextResponse.json({ error: "no_items" }, { status: 400 });
@@ -109,7 +111,7 @@ async function openingInventory(
     return NextResponse.json({ error: "costing_not_set" }, { status: 409 });
   }
 
-  const location = await getPrimaryLocation(businessId);
+  const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
 
   let totalValue = 0n;

@@ -28,8 +28,17 @@ export interface SessionPayload {
   role: Role;
   /** The tenant every query in this request will be scoped to. */
   businessId: string;
-  /** Active branch; null = all branches of this business (owner / roaming manager). */
+  /** This membership's default/home branch; null = roaming (owner or unassigned manager). */
   locationId: string | null;
+  /**
+   * Phase 14 — the branch currently "in view" for scoped screens, chosen via
+   * `/api/auth/switch-location`. Undefined on tokens issued before Phase 14
+   * (and briefly after login, before a switch): `resolveActiveLocation`
+   * (src/lib/setup-state.ts) treats that the same as an inaccessible branch
+   * and falls back to the member's default accessible one, so an old token
+   * degrades gracefully rather than needing everyone to re-log-in.
+   */
+  activeLocationId?: string | null;
   fullName: string;
   /**
    * platform_users.id — the person behind the membership, present only for

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { resolveSectionId } from "@/lib/floor";
-import { getPrimaryLocation } from "@/lib/setup-state";
+import { resolveActiveLocation } from "@/lib/setup-state";
 
 /**
  * Minimal table list for Phase 2's dine-in picker (a plain list, not a
@@ -12,7 +12,7 @@ export async function GET() {
   const { session, error } = await requireRole("owner", "manager", "cashier", "waiter");
   if (error) return error;
 
-  const location = await getPrimaryLocation(session.businessId);
+  const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ tables: [] });
 
   const { rows: tables } = await query(
@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
   if (!name || capacity <= 0) return NextResponse.json({ error: "missing_fields" }, { status: 400 });
   const shape = body.shape === "circle" ? "circle" : "rect";
 
-  const location = await getPrimaryLocation(session.businessId);
+  const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
 
   const { rows: dup } = await query("SELECT id FROM dining_tables WHERE location_id = $1 AND name = $2", [

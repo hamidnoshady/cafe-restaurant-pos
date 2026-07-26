@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { resolveSectionId } from "@/lib/floor";
-import { getPrimaryLocation } from "@/lib/setup-state";
+import { resolveActiveLocation } from "@/lib/setup-state";
 import { canTransitionTable, type TableStatus } from "@/lib/table-sessions";
 import { broadcast } from "@/lib/realtime";
 
@@ -17,7 +17,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
   if (error) return error;
   const { id } = await context.params;
 
-  const location = await getPrimaryLocation(session.businessId);
+  const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
   const { rows: existing } = await query<{ id: string; status: TableStatus }>(
     "SELECT id, status FROM dining_tables WHERE id = $1 AND location_id = $2",
@@ -131,7 +131,7 @@ export async function DELETE(_request: NextRequest, context: { params: Promise<{
   if (error) return error;
   const { id } = await context.params;
 
-  const location = await getPrimaryLocation(session.businessId);
+  const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
   const { rows: existing } = await query("SELECT id FROM dining_tables WHERE id = $1 AND location_id = $2", [
     id,
