@@ -38,6 +38,9 @@ const PUBLIC_ROUTES: Record<string, string> = {
   "setup/signup":
     "self-service business registration — creates the tenant a session would otherwise be scoped to; " +
     "refuses with 403 unless ALLOW_PUBLIC_SIGNUP is explicitly enabled",
+  "auth/accept-invite":
+    "invitation exchange — the invitee has no session and no membership of the inviting " +
+    "business yet; the single-use token is the credential",
   "rollup/ingest": "server-to-server — authenticated by a per-location bearer token, not a session",
   "server-sync/pull": "server-to-server — authenticated by REMOTE_SYNC_TOKEN bearer token, not a session",
   "server-sync/push": "server-to-server — authenticated by REMOTE_SYNC_TOKEN bearer token, not a session",
@@ -83,8 +86,8 @@ describe("every API route is guarded", () => {
         return;
       }
       expect(
-        /requireRole\(/.test(src) || /requireManager\(/.test(src),
-        `src/app/api/${key}/route.ts has no requireRole/requireManager guard and is not in the documented public list`,
+        /requireRole\(/.test(src) || /requireManager\(/.test(src) || /requirePermission\(/.test(src),
+        `src/app/api/${key}/route.ts has no requireRole/requireManager/requirePermission guard and is not in the documented public list`,
       ).toBe(true);
     });
   }
@@ -100,6 +103,9 @@ describe("back-office/financial surfaces exclude floor roles", () => {
   // Everything under these prefixes is Owner/Manager-only, per the decisions
   // in Phases 6-8 (inventory admin, ledger, reports) and 9 (rollup).
   const BACK_OFFICE_PREFIXES = ["ledger/", "reports/", "staff", "setup/", "rollup/", "backup/"];
+  // team/* guards with requirePermission(team.manage) rather than a role list —
+  // asserted separately below, so it's excluded from the role-list sweep.
+  const PERMISSION_GUARDED = ["team"];
   const FLOOR_ROLES = ["cashier", "waiter", "kitchen"];
 
   for (const [key, src] of sources) {
@@ -146,6 +152,20 @@ describe("back-office/financial surfaces exclude floor roles", () => {
           expect(roles.sort(), `src/app/api/${key}/route.ts`).toEqual(["manager", "owner"]);
         }
       }
+    }
+  });
+
+  it("team management is gated on the team.manage permission, which only Owner holds by preset", () => {
+    const teamRoutes = [...sources].filter(([key]) =>
+      PERMISSION_GUARDED.some((p) => key === p || key.startsWith(`${p}/`)),
+    );
+    expect(teamRoutes.length).toBeGreaterThan(0);
+
+    for (const [key, src] of teamRoutes) {
+      expect(src, `src/app/api/${key}/route.ts`).toMatch(/requirePermission\(/);
+      expect(src, `src/app/api/${key}/route.ts`).toMatch(/PERMISSIONS\.teamManage/);
+      // A role list here would bypass the per-member overrides entirely.
+      expect(requireRoleCalls(src), `src/app/api/${key}/route.ts uses requireRole`).toEqual([]);
     }
   });
 

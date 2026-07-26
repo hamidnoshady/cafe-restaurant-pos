@@ -13,6 +13,7 @@ import { LogoutButton } from "./logout-button";
 const ROLE_LABELS: Record<string, string> = {
   owner: "مالک",
   manager: "مدیر",
+  accountant: "حسابدار",
   cashier: "صندوق‌دار",
   waiter: "گارسون",
   kitchen: "آشپزخانه",

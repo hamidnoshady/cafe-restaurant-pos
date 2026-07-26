@@ -17,6 +17,10 @@ const PUBLIC_PATHS = [
   // would otherwise be scoped to, so it cannot require one. Refuses with 403
   // unless ALLOW_PUBLIC_SIGNUP is set.
   "/api/setup/signup",
+  // Phase 13: an invitee has no session and no membership of the inviting
+  // business yet — the single-use token in the link is the credential.
+  "/invite",
+  "/api/auth/accept-invite",
   // Phase 9: the caller is another location's server, not a browser — the
   // route authenticates it with a per-location bearer token, not a session.
   "/api/rollup/ingest",

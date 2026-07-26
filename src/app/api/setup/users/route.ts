@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import bcrypt from "bcryptjs";
 import { query } from "@/lib/db";
 import { markStepDone } from "@/lib/settings";
 import { getPrimaryLocation, requireManager } from "@/lib/setup-state";
+import { isPinRole, isValidPin } from "@/lib/team";
+import { TeamError, createMembership, isPinTaken } from "@/lib/team-service";
 import type { Role } from "@/lib/auth";
 
 /** Step 5 — roles & initial users (owner already exists from bootstrap/seed). */
@@ -20,8 +21,17 @@ export async function GET() {
   return NextResponse.json({ users });
 }
 
-const PIN_ROLES: Role[] = ["cashier", "waiter", "kitchen"];
+const CREATABLE_ROLES: Role[] = ["manager", "cashier", "waiter", "kitchen"];
 
+/**
+ * Creates a member during the setup wizard.
+ *
+ * Delegates to `createMembership` rather than inserting directly. That is not
+ * tidiness: since Phase 12 the login identity lives in `platform_users`, and
+ * this route's own INSERT created a `users` row without one — leaving every
+ * manager added through the wizard unable to sign in, because login resolves
+ * by identity. One creation path is what keeps that fixed.
+ */
 export async function POST(request: NextRequest) {
   const { session, error } = await requireManager();
   if (error) return error;
@@ -35,53 +45,60 @@ export async function POST(request: NextRequest) {
 
   const role = body.role;
   const fullName = body.fullName?.trim();
-  if (!fullName || !role || !["manager", ...PIN_ROLES].includes(role)) {
+  if (!fullName || !role || !CREATABLE_ROLES.includes(role)) {
     return NextResponse.json({ error: "missing_fields" }, { status: 400 });
   }
 
+  let pin: string | null = null;
+  let locationId: string | null = null;
+
   if (role === "manager") {
     const email = body.email?.trim().toLowerCase();
-    const password = body.password ?? "";
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return NextResponse.json({ error: "invalid_email" }, { status: 400 });
     }
-    if (password.length < 8) {
+    if ((body.password ?? "").length < 8) {
       return NextResponse.json({ error: "weak_password" }, { status: 400 });
     }
-    const { rows: dup } = await query("SELECT 1 FROM users WHERE email = $1", [email]);
+    const { rows: dup } = await query(
+      "SELECT 1 FROM users WHERE business_id = $1 AND email = $2",
+      [session.businessId, email],
+    );
     if (dup.length > 0) {
       return NextResponse.json({ error: "email_taken" }, { status: 409 });
     }
-    await query(
-      `INSERT INTO users (business_id, role, full_name, email, password_hash)
-       VALUES ($1, 'manager', $2, $3, $4)`,
-      [session.businessId, fullName, email, await bcrypt.hash(password, 10)],
-    );
-  } else {
-    const pin = body.pin ?? "";
-    if (!/^\d{4}$/.test(pin)) {
+  } else if (isPinRole(role)) {
+    pin = body.pin ?? "";
+    if (!isValidPin(pin)) {
       return NextResponse.json({ error: "invalid_pin" }, { status: 400 });
     }
     const location = await getPrimaryLocation(session.businessId);
     if (!location) {
       return NextResponse.json({ error: "no_location" }, { status: 409 });
     }
-    // PINs are bcrypt-hashed, so uniqueness-per-location is enforced here, not in the DB.
-    const { rows: peers } = await query<{ pin_hash: string }>(
-      `SELECT pin_hash FROM users
-        WHERE location_id = $1 AND is_active AND pin_hash IS NOT NULL`,
-      [location.id],
-    );
-    for (const peer of peers) {
-      if (await bcrypt.compare(pin, peer.pin_hash)) {
-        return NextResponse.json({ error: "pin_taken" }, { status: 409 });
-      }
+    locationId = location.id;
+    if (await isPinTaken(session.businessId, pin)) {
+      return NextResponse.json({ error: "pin_taken" }, { status: 409 });
     }
-    await query(
-      `INSERT INTO users (business_id, location_id, role, full_name, pin_hash)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [session.businessId, location.id, role, fullName, await bcrypt.hash(pin, 10)],
-    );
+  }
+
+  try {
+    await createMembership({
+      businessId: session.businessId,
+      role,
+      fullName,
+      email: role === "manager" ? (body.email ?? null) : null,
+      password: role === "manager" ? (body.password ?? null) : null,
+      pin,
+      defaultLocationId: locationId,
+      locationIds: locationId ? [locationId] : [],
+      actorId: session.sub,
+    });
+  } catch (err) {
+    if (err instanceof TeamError) {
+      return NextResponse.json({ error: err.message }, { status: err.status });
+    }
+    throw err;
   }
 
   const progress = await markStepDone(session.businessId, "users");
