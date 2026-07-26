@@ -86,6 +86,26 @@ export function errorMessage(code: string | undefined): string {
     delivery_already_closed: "این ارسال بسته شده و قابل تغییر نیست.",
     invalid_delivery_transition: "این تغییر وضعیت ارسال مجاز نیست.",
     invalid_delivery_status: "وضعیت ارسال نامعتبر است.",
+    // Phase 13 — teams & permissions
+    invalid_role: "نقش انتخاب‌شده معتبر نیست.",
+    invalid_email: "ایمیل معتبر نیست.",
+    invalid_pin: "رمز عددی باید دقیقاً ۴ رقم باشد.",
+    pin_taken: "این رمز عددی قبلاً برای عضو دیگری ثبت شده است.",
+    email_taken: "این ایمیل قبلاً در این کسب‌وکار ثبت شده است.",
+    email_required: "برای این نقش ایمیل الزامی است.",
+    pin_required: "برای این نقش رمز عددی الزامی است.",
+    weak_password: "رمز عبور باید حداقل ۸ نویسه باشد.",
+    already_a_member: "این شخص هم‌اکنون عضو این کسب‌وکار است.",
+    role_not_invitable: "این نقش با رمز عددی ساخته می‌شود و قابل دعوت نیست.",
+    last_owner: "این تنها مالک فعال کسب‌وکار است؛ ابتدا مالک دیگری اضافه کنید.",
+    invalid_invitation: "این لینک دعوت معتبر نیست.",
+    invitation_accepted: "این دعوت قبلاً پذیرفته شده است.",
+    invitation_revoked: "این دعوت لغو شده است.",
+    invitation_expired: "این دعوت منقضی شده است.",
+    invalid_current_password: "رمز عبور فعلی درست نیست.",
+    no_login: "این عضو حساب ورود با ایمیل ندارد.",
+    nothing_to_change: "تغییری برای ذخیره وجود ندارد.",
+    business_suspended: "دسترسی این کسب‌وکار موقتاً معلق شده است.",
   };
   return map[code ?? ""] ?? "خطای غیرمنتظره. دوباره تلاش کنید.";
 }
