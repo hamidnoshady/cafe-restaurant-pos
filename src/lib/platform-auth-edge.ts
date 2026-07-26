@@ -84,8 +84,17 @@ export function platformSessionCookieOptions() {
     httpOnly: true,
     sameSite: "lax" as const,
     secure: process.env.NODE_ENV === "production",
-    // Scoped to /platform so the browser never even sends it to a tenant route.
-    path: "/platform",
+    // Deliberately "/", not "/platform": per RFC 6265 cookie-path matching, a
+    // cookie scoped to "/platform" is a directory-prefix match only — it is
+    // NEVER sent for a request under "/api/platform/*", since "/api" and
+    // "/platform" don't share a path prefix. That silently broke every
+    // console API call (login would "succeed" and then every subsequent
+    // request would 401, since requirePlatformAdmin never saw the cookie at
+    // all). Isolation from the tenant realm was never actually resting on the
+    // cookie path anyway — it's the distinct cookie NAME and the `realm`
+    // claim check in verifyPlatformSession that keep the two apart, and
+    // neither of those is weakened by widening this.
+    path: "/",
     maxAge: platformSessionHours() * 60 * 60,
   };
 }
