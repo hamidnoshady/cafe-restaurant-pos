@@ -9,7 +9,7 @@ import { query } from "@/lib/db";
  * surfaces that as a visible integrity check, not just an assumption.
  */
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requireRole("owner", "manager", "accountant");
   if (error) return error;
 
   const { rows: accounts } = await query<{

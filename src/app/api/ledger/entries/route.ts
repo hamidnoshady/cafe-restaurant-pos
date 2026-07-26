@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
 import { getPool, query } from "@/lib/db";
+import { fiscalPeriodLockErrorCode } from "@/lib/fiscal-periods";
 import { resolveActiveLocation } from "@/lib/setup-state";
 
 /** Recent journal entries (auto-posted + manual), newest first, with their lines. */
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requireRole("owner", "manager", "accountant");
   if (error) return error;
 
   interface EntryRow extends Record<string, unknown> {
@@ -64,11 +65,11 @@ interface ManualLineInput {
  * Manual journal entry — "for anything not auto-generated" (Phase 7 scope),
  * e.g. recording an expense (Debit Expense account / Credit Cash or Bank)
  * or settling tax payable (Debit Tax Payable / Credit Cash or Bank). Any
- * balanced set of lines against real accounts is accepted; owner/manager
- * only, matching the rest of the back-office/financial surface.
+ * balanced set of lines against real accounts is accepted; owner/manager/
+ * accountant, matching the rest of the back-office/financial surface.
  */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requireRole("owner", "manager", "accountant");
   if (error) return error;
 
   let body: { entryDate?: string; memo?: string; lines?: ManualLineInput[] };
@@ -141,6 +142,8 @@ export const POST = withTenantScope(async (request: NextRequest) => {
     await client.query("COMMIT");
   } catch (err) {
     await client.query("ROLLBACK");
+    const lockCode = fiscalPeriodLockErrorCode(err);
+    if (lockCode) return NextResponse.json({ error: lockCode }, { status: 409 });
     throw err;
   } finally {
     client.release();

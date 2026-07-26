@@ -35,10 +35,17 @@ What exists after Phase 7: a double-entry ledger, a Persian F&B chart of account
 - A locked period rejects every posting path, including the automatic ones (order payment, purchase receipt, waste, inventory adjustment).
 - Reversing an entry leaves both the original and the reversal visible and the net effect zero.
 
-## Open questions
+## Open questions → decisions
 
-1. Which fiscal year does a business use by default — the Jalali year (فروردین–اسفند) or a configurable start month?
-2. Should AR invoices be a new document type, or is an order with `credit` payment method already the invoice?
-3. Who may post to a closed-but-not-locked period — accountant only, or owner too?
-4. Do statements need to be produced in a specific statutory Persian format, or is a clean internal format enough for now?
-5. Should bank reconciliation support importing a bank file, and if so which format do the target banks actually export?
+1. **Fiscal year** — the Jalali year (فروردین–اسفند), no configurable start month. Simplest default; revisit only if a business genuinely needs otherwise.
+2. **AR invoices** — no new document type. An order with `credit` payment method is the invoice; the AR subledger reads off orders already marked credit.
+3. **Closed-but-not-locked posting** — owner and accountant, not accountant-only. Matches `ledger.close_period`'s existing role preset (see `permissions.ts`).
+4. **Statement format** — a clean internal format for now; statutory Persian formatting (already out of scope alongside e-invoicing) can follow later.
+5. **Bank reconciliation import** — manual entry first; a bank-file import format is deferred until reconciliation itself is built.
+
+## Progress
+
+Built incrementally, in dependency order (statements need periods to close against; subledgers etc. come after):
+
+- **Fiscal years & periods — implemented.** `migrations/0024_fiscal_periods.sql` (`fiscal_years`, `fiscal_periods`, RLS), `src/lib/fiscal-periods.ts` (pure: Jalali year → twelve period boundaries, status-transition rules), `src/lib/fiscal-periods-service.ts` (create a year, list, transition a period's status), `/api/ledger/fiscal-years` + `/api/ledger/fiscal-years/[id]/periods` + `/api/ledger/fiscal-periods/[id]`, and a "دوره‌های مالی" tab in the ledger dashboard. The lock itself is enforced by a trigger on `journal_entries` (`enforce_fiscal_period_lock`), not trusted at the app layer, so it rejects every posting path without exception — including the automatic ones, since they all funnel through `postJournalEntry()`. Locked always rejects; soft-closed rejects everyone except the owner or an accountant. Verified in `integration/fiscal-periods.integration.test.ts` and `src/lib/fiscal-periods.test.ts`, and manually end-to-end (API + UI) against a real server.
+- Financial statements, closing entries, AR/AP subledgers, bank reconciliation, expense management, payroll entries, manual-journal workflow, chart-of-accounts customisation, and VAT/tax reporting — not yet started.

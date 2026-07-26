@@ -5,6 +5,7 @@ import { api, ErrorBox } from "../ui";
 import { TrialBalanceSection } from "./trial-balance-section";
 import { EntriesSection } from "./entries-section";
 import { ManualEntrySection } from "./manual-entry-section";
+import { FiscalPeriodsSection } from "./fiscal-periods-section";
 
 export interface AccountRow {
   id: string;
@@ -18,6 +19,7 @@ const TABS = [
   { key: "trial-balance", label: "تراز آزمایشی" },
   { key: "entries", label: "دفتر روزنامه" },
   { key: "manual", label: "ثبت سند دستی" },
+  { key: "fiscal-periods", label: "دوره‌های مالی" },
 ] as const;
 type TabKey = (typeof TABS)[number]["key"];
 
@@ -72,6 +74,7 @@ export function LedgerManager() {
       {tab === "trial-balance" ? <TrialBalanceSection refreshKey={refreshKey} /> : null}
       {tab === "entries" ? <EntriesSection refreshKey={refreshKey} /> : null}
       {tab === "manual" ? <ManualEntrySection accounts={accounts} busy={busy} run={run} /> : null}
+      {tab === "fiscal-periods" ? <FiscalPeriodsSection busy={busy} run={run} /> : null}
     </div>
   );
 }

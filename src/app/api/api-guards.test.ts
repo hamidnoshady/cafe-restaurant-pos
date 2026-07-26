@@ -133,12 +133,15 @@ describe("back-office/financial surfaces exclude floor roles", () => {
   const BACK_OFFICE_PREFIXES = ["ledger/", "reports/", "staff", "setup/", "rollup/", "backup/"];
   // team/* and branches/* guard with requirePermission rather than a role
   // list — asserted separately below, so excluded from the role-list sweep.
-  const PERMISSION_GUARDED = ["team", "branches"];
+  // ledger/fiscal-periods/[id] (Phase 16) is the same: requirePermission(PERMISSIONS.ledgerClosePeriod),
+  // which is owner+accountant by role preset (see permissions.ts) — no floor role ever holds it.
+  const PERMISSION_GUARDED = ["team", "branches", "ledger/fiscal-periods/[id]"];
   const FLOOR_ROLES = ["cashier", "waiter", "kitchen"];
 
   for (const [key, src] of sources) {
     if (!BACK_OFFICE_PREFIXES.some((p) => key === p.replace(/\/$/, "") || key.startsWith(p))) continue;
     if (PUBLIC_ROUTES[key] || SELF_GUARDING_ROUTES[key]) continue; // justified above
+    if (PERMISSION_GUARDED.includes(key)) continue; // requirePermission grants are checked via permissions.ts's role presets, not a role list here
 
     it(`${key} never grants cashier/waiter/kitchen access`, () => {
       const calls = requireRoleCalls(src);

@@ -1,0 +1,79 @@
+/**
+ * Phase 16 — fiscal years & periods, the pure part.
+ *
+ * A fiscal year is the Jalali year (فروردین–اسفند; no configurable start
+ * month for now — see docs/phases/Phase-16-Accounting-Suite.md's resolved
+ * open questions), divided into its twelve Jalali months as periods. This
+ * module computes those boundaries as ISO dates; migration 0024's
+ * fiscal_years/fiscal_periods tables store the result, and its trigger on
+ * journal_entries is what actually enforces a period's lock — this file only
+ * decides what a fiscal year's periods *are*, not what enforcing them means.
+ */
+import { JALALI_MONTHS, jalaliMonthLength, jalaliToIsoDate } from "./jalali";
+
+export interface FiscalPeriodSpec {
+  label: string; // e.g. "1404-01"
+  name: string; // e.g. "فروردین ۱۴۰۴"
+  startsOn: string; // ISO date
+  endsOn: string; // ISO date, inclusive
+}
+
+export interface FiscalYearSpec {
+  label: string; // e.g. "1404"
+  startsOn: string;
+  endsOn: string;
+  periods: FiscalPeriodSpec[];
+}
+
+/** The 12 Jalali-month periods making up fiscal year `jy`, as ISO date ranges. */
+export function fiscalYearSpec(jy: number): FiscalYearSpec {
+  const periods: FiscalPeriodSpec[] = [];
+  for (let jm = 1; jm <= 12; jm++) {
+    const monthLength = jalaliMonthLength(jy, jm);
+    periods.push({
+      label: `${jy}-${String(jm).padStart(2, "0")}`,
+      name: `${JALALI_MONTHS[jm - 1]} ${jy}`,
+      startsOn: jalaliToIsoDate(jy, jm, 1),
+      endsOn: jalaliToIsoDate(jy, jm, monthLength),
+    });
+  }
+  return {
+    label: String(jy),
+    startsOn: periods[0].startsOn,
+    endsOn: periods[periods.length - 1].endsOn,
+    periods,
+  };
+}
+
+export type FiscalPeriodStatus = "open" | "soft_closed" | "locked";
+
+/** Status transitions a period may make. Anything else is rejected up front, before a query is even run. */
+const ALLOWED_TRANSITIONS: Record<FiscalPeriodStatus, FiscalPeriodStatus[]> = {
+  open: ["soft_closed"],
+  soft_closed: ["locked", "open"],
+  locked: ["open"],
+};
+
+export function canTransitionPeriod(from: FiscalPeriodStatus, to: FiscalPeriodStatus): boolean {
+  return ALLOWED_TRANSITIONS[from].includes(to);
+}
+
+/** Roles allowed to post into a soft-closed period, or to change any period's status. Owner is checked separately (see permissions.ts: owner is a rule, not a list). */
+export const FISCAL_PERIOD_MANAGER_ROLES = ["owner", "accountant"] as const;
+
+const LOCK_ERROR_CODES = ["fiscal_period_locked", "fiscal_period_soft_closed"] as const;
+export type FiscalPeriodLockErrorCode = (typeof LOCK_ERROR_CODES)[number];
+
+/**
+ * Whether `err` is migration 0024's trigger rejecting an insert into
+ * journal_entries because the entry's date falls in a locked (or, for a
+ * non-owner/accountant caller, soft-closed) fiscal period. node-postgres
+ * surfaces a `RAISE EXCEPTION 'code'` as an Error whose `.message` is exactly
+ * that code, so this is a plain string match rather than an error-code lookup.
+ */
+export function fiscalPeriodLockErrorCode(err: unknown): FiscalPeriodLockErrorCode | null {
+  if (!(err instanceof Error)) return null;
+  return (LOCK_ERROR_CODES as readonly string[]).includes(err.message)
+    ? (err.message as FiscalPeriodLockErrorCode)
+    : null;
+}
