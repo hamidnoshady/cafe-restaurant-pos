@@ -133,9 +133,10 @@ describe("back-office/financial surfaces exclude floor roles", () => {
   const BACK_OFFICE_PREFIXES = ["ledger/", "reports/", "staff", "setup/", "rollup/", "backup/"];
   // team/* and branches/* guard with requirePermission rather than a role
   // list — asserted separately below, so excluded from the role-list sweep.
-  // ledger/fiscal-periods/[id] (Phase 16) is the same: requirePermission(PERMISSIONS.ledgerClosePeriod),
-  // which is owner+accountant by role preset (see permissions.ts) — no floor role ever holds it.
-  const PERMISSION_GUARDED = ["team", "branches", "ledger/fiscal-periods/[id]"];
+  // ledger/fiscal-periods/[id] and ledger/fiscal-years/[id]/close (Phase 16) are the same:
+  // requirePermission(PERMISSIONS.ledgerClosePeriod), which is owner+accountant by role
+  // preset (see permissions.ts) — no floor role ever holds it.
+  const PERMISSION_GUARDED = ["team", "branches", "ledger/fiscal-periods/[id]", "ledger/fiscal-years/[id]/close"];
   const FLOOR_ROLES = ["cashier", "waiter", "kitchen"];
 
   for (const [key, src] of sources) {

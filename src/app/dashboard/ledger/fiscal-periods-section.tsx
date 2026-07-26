@@ -47,6 +47,12 @@ function errorMessage(code: string | undefined): string {
     fiscal_year_exists: "این سال مالی قبلاً تعریف شده است.",
     period_not_found: "دوره یافت نشد.",
     invalid_transition: "این تغییر وضعیت برای دوره مجاز نیست.",
+    fiscal_year_closed: "سال مالی این دوره قبلاً بسته شده و دیگر قابل بازگشایی نیست.",
+    fiscal_year_not_found: "سال مالی یافت نشد.",
+    fiscal_year_already_closed: "این سال مالی قبلاً بسته شده است.",
+    periods_not_ready: "برای بستن سال مالی، ابتدا باید همه دوره‌های آن به‌صورت موقت بسته شوند.",
+    period_locked_for_closing: "دوره پایانی سال قفل است؛ ابتدا آن را بازگشایی و دوباره بسته‌ی موقت کنید.",
+    ledger_account_missing: "حساب «سود (زیان) انباشته» در سرفصل حساب‌ها یافت نشد.",
     unauthorized: "وارد نشده‌اید.",
     forbidden: "دسترسی مجاز نیست.",
     bad_request: "درخواست نامعتبر بود.",
@@ -67,6 +73,7 @@ export function FiscalPeriodsSection({
   const [newYear, setNewYear] = useState(String(todayJalali().jy));
   const [error, setError] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
+  const [closing, setClosing] = useState(false);
 
   useEffect(() => {
     api<{ fiscalYears: FiscalYear[] }>("/api/ledger/fiscal-years").then(({ ok, data }) => {
@@ -110,7 +117,23 @@ export function FiscalPeriodsSection({
     setRefreshKey((k) => k + 1);
   }
 
+  async function closeYear() {
+    if (!selectedYearId) return;
+    setError("");
+    setClosing(true);
+    const { ok, data } = await api(`/api/ledger/fiscal-years/${selectedYearId}/close`, { method: "POST" });
+    setClosing(false);
+    if (!ok) {
+      setError(errorMessage((data as { error?: string }).error));
+      return;
+    }
+    setRefreshKey((k) => k + 1);
+  }
+
   if (!years) return <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>;
+
+  const selectedYear = years.find((y) => y.id === selectedYearId) ?? null;
+  const allPeriodsSoftClosed = (periods?.length ?? 0) > 0 && periods!.every((p) => p.status === "soft_closed");
 
   return (
     <section className="space-y-4">
@@ -163,7 +186,24 @@ export function FiscalPeriodsSection({
 
       {periods ? (
         <div className="rounded-2xl bg-card p-5 shadow-sm">
-          <h2 className="mb-4 font-semibold">دوره‌های سال مالی</h2>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <h2 className="font-semibold">دوره‌های سال مالی</h2>
+            {selectedYear && !selectedYear.closedAt ? (
+              <button
+                type="button"
+                disabled={closing || !allPeriodsSoftClosed}
+                onClick={closeYear}
+                title={
+                  allPeriodsSoftClosed
+                    ? undefined
+                    : "برای بستن سال مالی، ابتدا همه‌ی دوره‌ها را به‌صورت موقت ببندید."
+                }
+                className="rounded-lg bg-destructive/10 px-4 py-1.5 text-sm font-semibold text-destructive hover:bg-destructive/20 disabled:opacity-50"
+              >
+                بستن سال مالی
+              </button>
+            ) : null}
+          </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>

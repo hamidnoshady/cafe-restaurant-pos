@@ -37,7 +37,7 @@ export class MissingLedgerAccountError extends Error {
   }
 }
 
-async function accountIdsByCode(
+export async function accountIdsByCode(
   client: PoolClient,
   businessId: string,
   codes: string[],

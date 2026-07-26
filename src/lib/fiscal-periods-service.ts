@@ -174,14 +174,22 @@ export async function setPeriodStatus(
   status: FiscalPeriodStatus,
   actorId: string,
 ): Promise<FiscalPeriod> {
-  const { rows } = await query<{ status: FiscalPeriodStatus }>(
-    `SELECT status::text AS status FROM fiscal_periods WHERE id = $1 AND business_id = $2`,
+  const { rows } = await query<{ status: FiscalPeriodStatus; fiscal_year_closed_at: string | null }>(
+    `SELECT fp.status::text AS status, fy.closed_at AS fiscal_year_closed_at
+       FROM fiscal_periods fp JOIN fiscal_years fy ON fy.id = fp.fiscal_year_id
+      WHERE fp.id = $1 AND fp.business_id = $2`,
     [periodId, businessId],
   );
   const current = rows[0];
   if (!current) throw new FiscalPeriodError("period_not_found", 404);
   if (!canTransitionPeriod(current.status, status)) {
     throw new FiscalPeriodError("invalid_transition", 409);
+  }
+  // A period can't be individually reopened once its whole fiscal year has
+  // been closed (closeFiscalYear in closing-service.ts) — that would leave a
+  // year with a posted closing entry but an open period underneath it.
+  if (status === "open" && current.fiscal_year_closed_at) {
+    throw new FiscalPeriodError("fiscal_year_closed", 409);
   }
 
   let updateSql: string;
