@@ -5,7 +5,7 @@ import { runCustomReportQuery } from "@/lib/reports-service";
 
 /** Runs an ad-hoc custom report config (the report builder's "preview" / final run). */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requireRole("owner", "manager", "accountant");
   if (error) return error;
 
   let config: ReportConfig;

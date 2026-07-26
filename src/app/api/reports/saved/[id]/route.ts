@@ -5,7 +5,7 @@ import { deleteSavedReport, getSavedReport, updateSavedReport } from "@/lib/repo
 
 /** Renames or edits a custom saved report's config. Standard (seeded) reports can't be edited — copy them into a new custom report instead. */
 export const PATCH = withTenantScope(async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requireRole("owner", "manager", "accountant");
   if (error) return error;
   const { id } = await context.params;
 
@@ -33,7 +33,7 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
 });
 
 export const DELETE = withTenantScope(async (_request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requireRole("owner", "manager", "accountant");
   if (error) return error;
   const { id } = await context.params;
 

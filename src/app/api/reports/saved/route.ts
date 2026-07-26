@@ -5,7 +5,7 @@ import { createSavedReport, ensureStandardSavedReports, listSavedReports } from 
 
 /** Saved reports (standard + custom), for the "پیام‌های ذخیره‌شده" list and dashboard-widget picker. */
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requireRole("owner", "manager", "accountant");
   if (error) return error;
 
   await ensureStandardSavedReports(session.businessId);
@@ -15,7 +15,7 @@ export const GET = withTenantScope(async () => {
 
 /** Saves a custom report built in the report builder. */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requireRole("owner", "manager", "accountant");
   if (error) return error;
 
   let body: { name?: string; config?: ReportConfig };

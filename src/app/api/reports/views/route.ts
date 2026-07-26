@@ -4,7 +4,7 @@ import { REPORT_VIEWS } from "@/lib/reports";
 
 /** The view whitelist (dimensions/metrics/filters), for the custom report builder's source/metric/dimension pickers. */
 export const GET = withTenantScope(async () => {
-  const { error } = await requireRole("owner", "manager");
+  const { error } = await requireRole("owner", "manager", "accountant");
   if (error) return error;
 
   const views = Object.entries(REPORT_VIEWS).map(([key, view]) => ({

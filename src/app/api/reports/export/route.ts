@@ -5,7 +5,7 @@ import { getPrimaryLocation } from "@/lib/setup-state";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import { reportConfigLabels, validateReportConfig, type ReportConfig } from "@/lib/reports";
-import { getBalanceSheet, getProfitAndLoss, runCustomReportQuery } from "@/lib/reports-service";
+import { getBalanceSheet, getCashFlow, getProfitAndLoss, runCustomReportQuery } from "@/lib/reports-service";
 import { rowsToCsv, rowsToXlsxBuffer, type ReportTable } from "@/lib/report-export";
 import { renderReportLedgerHtml, renderReportTableHtml, type ReportPdfBusinessInfo } from "@/lib/report-pdf-template";
 import { renderHtmlToPdf } from "@/lib/pdf-render";
@@ -15,7 +15,7 @@ type ExportFormat = "csv" | "excel" | "pdf";
 interface ExportBody {
   format?: ExportFormat;
   title?: string;
-  kind?: "chart" | "pnl" | "balance_sheet";
+  kind?: "chart" | "pnl" | "balance_sheet" | "cash_flow";
   config?: ReportConfig;
   dateFrom?: string;
   dateTo?: string;
@@ -48,7 +48,7 @@ function periodLabel(dateFrom?: string, dateTo?: string): string {
 
 /** Exports a report (custom or standard chart config, or P&L/Balance Sheet) as CSV, Excel, or PDF. */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requireRole("owner", "manager", "accountant");
   if (error) return error;
 
   let body: ExportBody;
@@ -136,6 +136,35 @@ export const POST = withTenantScope(async (request: NextRequest) => {
         ["حقوق صاحبان سرمایه", [...report.equity, { accountCode: "", accountName: "سود انباشته (جاری)", amount: report.retainedEarnings }]],
       ],
       [["جمع دارایی‌ها", "", report.totalAssets], ["جمع بدهی‌ها + حقوق صاحبان سرمایه", "", report.totalLiabilities + report.totalEquity]],
+    );
+    return respondWithTable(table, title, format, session.businessId);
+  }
+
+  if (kind === "cash_flow") {
+    const report = await getCashFlow(session.businessId, { dateFrom: body.dateFrom, dateTo: body.dateTo });
+    const title = body.title?.trim() || "صورت گردش وجوه نقد";
+    const lineRows = report.lines.map((l) => ({ code: "", name: l.label, amount: l.amount }));
+    if (format === "pdf") {
+      const html = renderReportLedgerHtml({
+        business: await getBusinessInfo(session.businessId),
+        title,
+        generatedAt: new Date(),
+        periodLabel: periodLabel(body.dateFrom, body.dateTo),
+        sections: [
+          { heading: "بر اساس نوع رویداد", rows: lineRows, totalLabel: "موجودی ابتدای دوره", totalAmount: report.openingCash },
+        ],
+        grandTotalLabel: "موجودی پایان دوره",
+        grandTotalAmount: report.closingCash,
+      });
+      return fileResponse(await renderHtmlToPdf(html), "application/pdf", `${title}.pdf`);
+    }
+    const table = ledgerTable(
+      [["بر اساس نوع رویداد", report.lines.map((l) => ({ accountCode: "", accountName: l.label, amount: l.amount }))]],
+      [
+        ["موجودی ابتدای دوره", "", report.openingCash],
+        ["موجودی پایان دوره", "", report.closingCash],
+        ["تغییر خالص", "", report.netChange],
+      ],
     );
     return respondWithTable(table, title, format, session.businessId);
   }
