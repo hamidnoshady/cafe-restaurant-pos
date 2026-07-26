@@ -19,7 +19,7 @@ Each phase is a self-contained file with its own scope, exit criteria, and open 
 | 12 | Phase-12-Multi-Business-Tenancy.md | Implemented |
 | 13 | Phase-13-Teams-Permissions.md | Implemented |
 | 14 | Phase-14-Multi-Location-Per-Business.md | Implemented |
-| 15 | Phase-15-Super-Admin-Console.md | Planned |
+| 15 | Phase-15-Super-Admin-Console.md | Implemented |
 | 16 | Phase-16-Accounting-Suite.md | Planned |
 | 17 | Phase-17-Feature-Gating-Hardening.md | Planned |
 

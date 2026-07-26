@@ -54,7 +54,27 @@ export interface NoScope {
 
 export type TenantScope = BusinessScope | BypassScope | NoScope;
 
-const storage = new AsyncLocalStorage<TenantScope>();
+// Anchored on globalThis for the same reason src/lib/db.ts anchors the
+// connection pool there: Next.js's webpack bundling can instantiate a shared
+// module more than once across different bundle layers (observed in practice
+// between the "(rsc)" layer used by Route Handlers and other code paths that
+// also import this module), and a plain module-level `const` would then
+// produce a SEPARATE AsyncLocalStorage object per copy. Every read and write
+// of the tenant scope has to land on literally the same object to see each
+// other's state, so two independent instances silently turn
+// `enterTenantScope`/`withoutTenantScope` into a no-op across that boundary:
+// `getTenantScope()` reports `none` regardless of what a different copy of
+// this module just set. That failure fails closed for reads (empty results,
+// not a leak) but throws for writes the instant a table's RLS policy needs a
+// scope that was never actually applied on the connection — which is exactly
+// the class of bug this anchoring prevents.
+const globalForTenantContext = globalThis as unknown as {
+  tenantScopeStorage?: AsyncLocalStorage<TenantScope>;
+};
+
+const storage: AsyncLocalStorage<TenantScope> =
+  globalForTenantContext.tenantScopeStorage ?? new AsyncLocalStorage<TenantScope>();
+globalForTenantContext.tenantScopeStorage = storage;
 
 export const NO_SCOPE: NoScope = { kind: "none" };
 
