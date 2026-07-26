@@ -78,7 +78,7 @@ export default function AuditPage() {
       ) : (
         <div className="overflow-hidden rounded-xl border border-white/10">
           <table className="w-full text-sm">
-            <thead className="bg-white/[0.03] text-white/50">
+            <thead className="bg-white/3 text-white/50">
               <tr>
                 <th className="px-4 py-3 text-start font-medium">زمان</th>
                 <th className="px-4 py-3 text-start font-medium">مدیر</th>

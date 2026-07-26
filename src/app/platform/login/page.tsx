@@ -38,7 +38,7 @@ export default function PlatformLoginPage() {
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-950 p-4 text-white">
-      <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-white/[0.03] p-8 shadow-2xl">
+      <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-white/3 p-8 shadow-2xl">
         <div className="mb-6 text-center">
           <p className="text-xs font-medium uppercase tracking-widest text-sky-400/80">
             Platform Console

@@ -101,7 +101,7 @@ export default function BusinessesPage() {
       ) : (
         <div className="overflow-hidden rounded-xl border border-white/10">
           <table className="w-full text-sm">
-            <thead className="bg-white/[0.03] text-white/50">
+            <thead className="bg-white/3 text-white/50">
               <tr>
                 <th className="px-4 py-3 text-start font-medium">نام</th>
                 <th className="px-4 py-3 text-start font-medium">وضعیت</th>
@@ -115,7 +115,7 @@ export default function BusinessesPage() {
               {businesses.map((b) => (
                 <tr
                   key={b.id}
-                  className="border-t border-white/5 transition-colors hover:bg-white/[0.02]"
+                  className="border-t border-white/5 transition-colors hover:bg-white/3"
                 >
                   <td className="px-4 py-3">
                     <Link

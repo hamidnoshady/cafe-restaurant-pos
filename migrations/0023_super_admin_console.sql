@@ -16,11 +16,12 @@
 --      these rows, which names the admin, the business, the window and whether
 --      the observer is read-only or full-access.
 --
--- Like platform_admins and platform_audit_log, the new platform-realm table is
--- deliberately NOT under row-level security: it is only ever read through a
--- platform session (which runs RLS-bypassed by design, see src/lib/db.ts), and
--- a tenant-scoped connection has no route that touches it. See the note at the
--- end of migration 0021.
+-- impersonation_grants is a platform-realm table read only through a platform
+-- session (which runs RLS-bypassed by design, see src/lib/db.ts). Unlike
+-- platform_admins and platform_audit_log it carries a business_id, so it is
+-- still placed under row-level security for defence in depth — the bypass keeps
+-- platform reads working while a tenant connection fails closed. See the note
+-- at the end of migration 0021 and the policy at the bottom of this file.
 -- ============================================================================
 
 -- ---------------------------------------------------------------------------
@@ -86,7 +87,19 @@ CREATE INDEX IF NOT EXISTS idx_impersonation_grants_active
     ON impersonation_grants (business_id)
     WHERE ended_at IS NULL AND revoked_at IS NULL;
 
--- impersonation_grants is a platform-realm table: NOT RLS-protected, on
--- purpose, for exactly the reasons platform_admins/platform_audit_log aren't
--- (see migration 0021's closing note). It is only ever read through a platform
--- session or from withoutTenantScope('platform', …).
+-- impersonation_grants carries business_id, so — unlike platform_admins and
+-- platform_audit_log, which have no tenant column at all — it is brought under
+-- row-level security for defence in depth. It is only ever read through a
+-- platform session or from withoutTenantScope('platform', …), both of which run
+-- RLS-bypassed (app_rls_bypass() is true) and therefore still see every row.
+-- A tenant-scoped connection has no route that touches this table, but should
+-- one ever arise it now fails closed to the caller's own business instead of
+-- leaking the platform's consent trail. This also keeps the table off the
+-- tenant-isolation coverage check in integration/tenant-isolation, which
+-- flags any business_id-bearing table that lacks a policy.
+ALTER TABLE impersonation_grants ENABLE ROW LEVEL SECURITY;
+ALTER TABLE impersonation_grants FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON impersonation_grants;
+CREATE POLICY tenant_isolation ON impersonation_grants FOR ALL
+    USING (app_rls_bypass() OR business_id = app_current_business())
+    WITH CHECK (app_rls_bypass() OR business_id = app_current_business());

@@ -302,7 +302,7 @@ function UsagePanel({ id }: { id: string }) {
     <Card title="مصرف و فعالیت">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         {stats.map((s) => (
-          <div key={s.label} className="rounded-lg border border-white/10 bg-white/[0.02] p-3">
+          <div key={s.label} className="rounded-lg border border-white/10 bg-white/2 p-3">
             <p className="text-xs text-white/40">{s.label}</p>
             <p className="mt-1 text-lg font-bold">{s.value}</p>
           </div>
@@ -358,7 +358,7 @@ function FeaturesPanel({ id }: { id: string }) {
           {features.map((f) => (
             <div
               key={f.key}
-              className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-white/10 bg-white/[0.02] p-3"
+              className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-white/10 bg-white/2 p-3"
             >
               <div className="min-w-0">
                 <p className="text-sm font-medium">{f.name}</p>
@@ -485,7 +485,7 @@ function ImpersonationPanel({ id, businessName }: { id: string; businessName: st
       <ErrorBox>{error}</ErrorBox>
 
       {canReadOnly || canFull ? (
-        <div className="mb-4 rounded-lg border border-white/10 bg-white/[0.02] p-3">
+        <div className="mb-4 rounded-lg border border-white/10 bg-white/2 p-3">
           <Field label="دلیل (اختیاری، در گزارش ثبت می‌شود)">
             <input
               value={reason}
@@ -521,7 +521,7 @@ function ImpersonationPanel({ id, businessName }: { id: string; businessName: st
             return (
               <div
                 key={g.id}
-                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/10 bg-white/[0.02] p-3 text-sm"
+                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/10 bg-white/2 p-3 text-sm"
               >
                 <div>
                   <span className="font-medium">

@@ -96,7 +96,7 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
   return (
     <CapabilityContext.Provider value={caps}>
       <div className="flex min-h-screen bg-slate-950 text-white" dir="rtl">
-        <aside className="hidden w-60 shrink-0 flex-col border-e border-white/10 bg-white/[0.02] md:flex">
+        <aside className="hidden w-60 shrink-0 flex-col border-e border-white/10 bg-white/2 md:flex">
           <div className="border-b border-white/10 p-4">
             <p className="text-xs font-medium uppercase tracking-widest text-sky-400/80">
               Platform

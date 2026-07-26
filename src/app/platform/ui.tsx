@@ -150,7 +150,7 @@ export function StatusBadge({ status }: { status: string }) {
 
 export function Card({ children, title }: { children: React.ReactNode; title?: string }) {
   return (
-    <div className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
+    <div className="rounded-xl border border-white/10 bg-white/3 p-5">
       {title ? <h2 className="mb-4 text-sm font-semibold text-white/90">{title}</h2> : null}
       {children}
     </div>
