@@ -13,7 +13,7 @@
  * in `platform-admin.ts` and are tested there, and the guard/isolation
  * behaviour is exercised by the platform integration test.
  */
-import { getPool, query } from "./db";
+import { getPool, query, withoutTenantScope } from "./db";
 import type { PoolClient } from "pg";
 import { clampImpersonationMinutes, isDeleteEligible } from "./platform-admin";
 
@@ -71,29 +71,33 @@ function toSummary(row: BusinessRow): BusinessSummary {
 
 /** Every business on the deployment, newest first — the console's landing list. */
 export async function listBusinesses(): Promise<BusinessSummary[]> {
-  const { rows } = await query<BusinessRow>(
-    `SELECT b.id, b.name, b.slug::text AS slug, b.status::text AS status, b.plan,
-            b.timezone, b.created_at, b.suspended_at, b.archived_at,
-            (SELECT count(*) FROM locations l WHERE l.business_id = b.id) AS location_count,
-            (SELECT count(*) FROM users u WHERE u.business_id = b.id AND u.is_active) AS member_count
-       FROM businesses b
-      ORDER BY b.created_at DESC`,
-  );
-  return rows.map(toSummary);
+  return withoutTenantScope("platform", async () => {
+    const { rows } = await query<BusinessRow>(
+      `SELECT b.id, b.name, b.slug::text AS slug, b.status::text AS status, b.plan,
+              b.timezone, b.created_at, b.suspended_at, b.archived_at,
+              (SELECT count(*) FROM locations l WHERE l.business_id = b.id) AS location_count,
+              (SELECT count(*) FROM users u WHERE u.business_id = b.id AND u.is_active) AS member_count
+         FROM businesses b
+        ORDER BY b.created_at DESC`,
+    );
+    return rows.map(toSummary);
+  });
 }
 
 /** One business by id, or null. */
 export async function getBusiness(businessId: string): Promise<BusinessSummary | null> {
-  const { rows } = await query<BusinessRow>(
-    `SELECT b.id, b.name, b.slug::text AS slug, b.status::text AS status, b.plan,
-            b.timezone, b.created_at, b.suspended_at, b.archived_at,
-            (SELECT count(*) FROM locations l WHERE l.business_id = b.id) AS location_count,
-            (SELECT count(*) FROM users u WHERE u.business_id = b.id AND u.is_active) AS member_count
-       FROM businesses b
-      WHERE b.id = $1`,
-    [businessId],
-  );
-  return rows[0] ? toSummary(rows[0]) : null;
+  return withoutTenantScope("platform", async () => {
+    const { rows } = await query<BusinessRow>(
+      `SELECT b.id, b.name, b.slug::text AS slug, b.status::text AS status, b.plan,
+              b.timezone, b.created_at, b.suspended_at, b.archived_at,
+              (SELECT count(*) FROM locations l WHERE l.business_id = b.id) AS location_count,
+              (SELECT count(*) FROM users u WHERE u.business_id = b.id AND u.is_active) AS member_count
+         FROM businesses b
+        WHERE b.id = $1`,
+      [businessId],
+    );
+    return rows[0] ? toSummary(rows[0]) : null;
+  });
 }
 
 /**
@@ -109,19 +113,21 @@ export async function setBusinessStatus(
   businessId: string,
   status: BusinessStatus,
 ): Promise<BusinessSummary | null> {
-  const { rows } = await query<{ id: string }>(
-    `UPDATE businesses
-        SET status = $2::business_status,
-            suspended_at = CASE WHEN $2 = 'suspended' THEN now()
-                                WHEN $2 = 'active' THEN NULL
-                                ELSE suspended_at END,
-            archived_at  = CASE WHEN $2 = 'archived' THEN now()
-                                WHEN $2 = 'active' THEN NULL
-                                ELSE archived_at END,
-            updated_at = now()
-      WHERE id = $1
-      RETURNING id`,
-    [businessId, status],
+  const { rows } = await withoutTenantScope("platform", () =>
+    query<{ id: string }>(
+      `UPDATE businesses
+          SET status = $2::business_status,
+              suspended_at = CASE WHEN $2 = 'suspended' THEN now()
+                                  WHEN $2 = 'active' THEN NULL
+                                  ELSE suspended_at END,
+              archived_at  = CASE WHEN $2 = 'archived' THEN now()
+                                  WHEN $2 = 'active' THEN NULL
+                                  ELSE archived_at END,
+              updated_at = now()
+        WHERE id = $1
+        RETURNING id`,
+      [businessId, status],
+    ),
   );
   return rows[0] ? getBusiness(businessId) : null;
 }
@@ -149,7 +155,9 @@ export async function hardDeleteBusiness(businessId: string): Promise<void> {
   if (!business || !business.deleteEligible) {
     throw new DeleteNotEligibleError();
   }
-  await query(`DELETE FROM businesses WHERE id = $1`, [businessId]);
+  await withoutTenantScope("platform", () =>
+    query(`DELETE FROM businesses WHERE id = $1`, [businessId]),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -188,19 +196,21 @@ export async function listFeatureFlags(): Promise<FeatureFlag[]> {
 
 /** Every flag, with this business's override and the effective value resolved. */
 export async function businessFeatures(businessId: string): Promise<BusinessFeature[]> {
-  const { rows } = await query<{
-    key: string;
-    name: string;
-    description: string | null;
-    default_enabled: boolean;
-    override: boolean | null;
-  }>(
-    `SELECT f.key, f.name, f.description, f.default_enabled, bf.enabled AS override
-       FROM feature_flags f
-       LEFT JOIN business_features bf
-         ON bf.flag_key = f.key AND bf.business_id = $1
-      ORDER BY f.key`,
-    [businessId],
+  const { rows } = await withoutTenantScope("platform", () =>
+    query<{
+      key: string;
+      name: string;
+      description: string | null;
+      default_enabled: boolean;
+      override: boolean | null;
+    }>(
+      `SELECT f.key, f.name, f.description, f.default_enabled, bf.enabled AS override
+         FROM feature_flags f
+         LEFT JOIN business_features bf
+           ON bf.flag_key = f.key AND bf.business_id = $1
+        ORDER BY f.key`,
+      [businessId],
+    ),
   );
   return rows.map((r) => ({
     key: r.key,
@@ -224,28 +234,29 @@ export async function setBusinessFeature(
   flagKey: string,
   enabled: boolean | null,
 ): Promise<void> {
-  if (enabled === null) {
-    await query(`DELETE FROM business_features WHERE business_id = $1 AND flag_key = $2`, [
-      businessId,
-      flagKey,
-    ]);
-    return;
-  }
-  await query(
-    `INSERT INTO business_features (business_id, flag_key, enabled)
-     VALUES ($1, $2, $3)
-     ON CONFLICT (business_id, flag_key)
-     DO UPDATE SET enabled = EXCLUDED.enabled, updated_at = now()`,
-    [businessId, flagKey, enabled],
-  );
+  await withoutTenantScope("platform", async () => {
+    if (enabled === null) {
+      await query(`DELETE FROM business_features WHERE business_id = $1 AND flag_key = $2`, [
+        businessId,
+        flagKey,
+      ]);
+      return;
+    }
+    await query(
+      `INSERT INTO business_features (business_id, flag_key, enabled)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (business_id, flag_key)
+       DO UPDATE SET enabled = EXCLUDED.enabled, updated_at = now()`,
+      [businessId, flagKey, enabled],
+    );
+  });
 }
 
 /** Assign a plan label to a business. Plans are assigned by hand (no billing). */
 export async function setBusinessPlan(businessId: string, plan: string): Promise<void> {
-  await query(`UPDATE businesses SET plan = $2, updated_at = now() WHERE id = $1`, [
-    businessId,
-    plan,
-  ]);
+  await withoutTenantScope("platform", () =>
+    query(`UPDATE businesses SET plan = $2, updated_at = now() WHERE id = $1`, [businessId, plan]),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -271,29 +282,31 @@ export interface BusinessUsage {
  * from a dormant one without a heavy scan.
  */
 export async function businessUsage(businessId: string): Promise<BusinessUsage> {
-  const { rows } = await query<{
-    orders: string;
-    open_orders: string;
-    members: string;
-    locations: string;
-    menu_items: string;
-    journal_entries: string;
-    last_activity: string | null;
-  }>(
-    `SELECT
-       (SELECT count(*) FROM orders o
-          JOIN locations l ON l.id = o.location_id WHERE l.business_id = $1) AS orders,
-       (SELECT count(*) FROM orders o
-          JOIN locations l ON l.id = o.location_id
-         WHERE l.business_id = $1 AND o.status = 'open') AS open_orders,
-       (SELECT count(*) FROM users u WHERE u.business_id = $1 AND u.is_active) AS members,
-       (SELECT count(*) FROM locations l WHERE l.business_id = $1) AS locations,
-       (SELECT count(*) FROM menu_items mi
-          JOIN locations l ON l.id = mi.location_id WHERE l.business_id = $1) AS menu_items,
-       (SELECT count(*) FROM journal_entries je WHERE je.business_id = $1) AS journal_entries,
-       (SELECT max(o.created_at) FROM orders o
-          JOIN locations l ON l.id = o.location_id WHERE l.business_id = $1) AS last_activity`,
-    [businessId],
+  const { rows } = await withoutTenantScope("platform", () =>
+    query<{
+      orders: string;
+      open_orders: string;
+      members: string;
+      locations: string;
+      menu_items: string;
+      journal_entries: string;
+      last_activity: string | null;
+    }>(
+      `SELECT
+         (SELECT count(*) FROM orders o
+            JOIN locations l ON l.id = o.location_id WHERE l.business_id = $1) AS orders,
+         (SELECT count(*) FROM orders o
+            JOIN locations l ON l.id = o.location_id
+           WHERE l.business_id = $1 AND o.status = 'open') AS open_orders,
+         (SELECT count(*) FROM users u WHERE u.business_id = $1 AND u.is_active) AS members,
+         (SELECT count(*) FROM locations l WHERE l.business_id = $1) AS locations,
+         (SELECT count(*) FROM menu_items mi
+            JOIN locations l ON l.id = mi.location_id WHERE l.business_id = $1) AS menu_items,
+         (SELECT count(*) FROM journal_entries je WHERE je.business_id = $1) AS journal_entries,
+         (SELECT max(o.created_at) FROM orders o
+            JOIN locations l ON l.id = o.location_id WHERE l.business_id = $1) AS last_activity`,
+      [businessId],
+    ),
   );
   const r = rows[0];
   return {
@@ -384,57 +397,59 @@ export async function startImpersonation(params: {
 }): Promise<{ grant: ImpersonationGrant; userId: string; fullName: string }> {
   const minutes = clampImpersonationMinutes(params.minutes);
 
-  const client = await getPool().connect();
-  try {
-    await client.query("BEGIN");
+  return withoutTenantScope("platform", async () => {
+    const client = await getPool().connect();
+    try {
+      await client.query("BEGIN");
 
-    const { rows: bizRows } = await client.query<{ status: BusinessStatus }>(
-      `SELECT status::text AS status FROM businesses WHERE id = $1`,
-      [params.businessId],
-    );
-    if (!bizRows[0]) throw new BusinessNotImpersonableError("business_not_found");
-    if (bizRows[0].status === "archived") {
-      throw new BusinessNotImpersonableError("business_archived");
+      const { rows: bizRows } = await client.query<{ status: BusinessStatus }>(
+        `SELECT status::text AS status FROM businesses WHERE id = $1`,
+        [params.businessId],
+      );
+      if (!bizRows[0]) throw new BusinessNotImpersonableError("business_not_found");
+      if (bizRows[0].status === "archived") {
+        throw new BusinessNotImpersonableError("business_archived");
+      }
+
+      // Act as the oldest active owner of the business — a real membership, so
+      // the acting user_id resolves to someone accountable inside the tenant.
+      const { rows: ownerRows } = await client.query<{ id: string; full_name: string }>(
+        `SELECT id, full_name FROM users
+          WHERE business_id = $1 AND role = 'owner' AND is_active
+          ORDER BY created_at LIMIT 1`,
+        [params.businessId],
+      );
+      if (!ownerRows[0]) throw new BusinessNotImpersonableError("no_owner");
+
+      const { rows: grantRows } = await client.query<GrantRow>(
+        `INSERT INTO impersonation_grants
+           (platform_admin_id, business_id, user_id, mode, reason, expires_at)
+         VALUES ($1, $2, $3, $4, $5, now() + ($6 || ' minutes')::interval)
+         RETURNING id, platform_admin_id, business_id, user_id, mode, reason,
+                   created_at, expires_at, ended_at, revoked_at`,
+        [
+          params.adminId,
+          params.businessId,
+          ownerRows[0].id,
+          params.mode,
+          params.reason?.trim() || null,
+          String(minutes),
+        ],
+      );
+
+      await client.query("COMMIT");
+      return {
+        grant: toGrant(grantRows[0]),
+        userId: ownerRows[0].id,
+        fullName: ownerRows[0].full_name,
+      };
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    } finally {
+      client.release();
     }
-
-    // Act as the oldest active owner of the business — a real membership, so
-    // the acting user_id resolves to someone accountable inside the tenant.
-    const { rows: ownerRows } = await client.query<{ id: string; full_name: string }>(
-      `SELECT id, full_name FROM users
-        WHERE business_id = $1 AND role = 'owner' AND is_active
-        ORDER BY created_at LIMIT 1`,
-      [params.businessId],
-    );
-    if (!ownerRows[0]) throw new BusinessNotImpersonableError("no_owner");
-
-    const { rows: grantRows } = await client.query<GrantRow>(
-      `INSERT INTO impersonation_grants
-         (platform_admin_id, business_id, user_id, mode, reason, expires_at)
-       VALUES ($1, $2, $3, $4, $5, now() + ($6 || ' minutes')::interval)
-       RETURNING id, platform_admin_id, business_id, user_id, mode, reason,
-                 created_at, expires_at, ended_at, revoked_at`,
-      [
-        params.adminId,
-        params.businessId,
-        ownerRows[0].id,
-        params.mode,
-        params.reason?.trim() || null,
-        String(minutes),
-      ],
-    );
-
-    await client.query("COMMIT");
-    return {
-      grant: toGrant(grantRows[0]),
-      userId: ownerRows[0].id,
-      fullName: ownerRows[0].full_name,
-    };
-  } catch (err) {
-    await client.query("ROLLBACK");
-    throw err;
-  } finally {
-    client.release();
-  }
+  });
 }
 
 /**
@@ -449,47 +464,55 @@ export async function activeGrant(
   adminId: string,
   businessId: string,
 ): Promise<ImpersonationGrant | null> {
-  const { rows } = await query<GrantRow>(
-    `SELECT id, platform_admin_id, business_id, user_id, mode, reason,
-            created_at, expires_at, ended_at, revoked_at
-       FROM impersonation_grants
-      WHERE platform_admin_id = $1 AND business_id = $2
-        AND ended_at IS NULL AND revoked_at IS NULL AND expires_at > now()
-      ORDER BY created_at DESC LIMIT 1`,
-    [adminId, businessId],
+  const { rows } = await withoutTenantScope("platform", () =>
+    query<GrantRow>(
+      `SELECT id, platform_admin_id, business_id, user_id, mode, reason,
+              created_at, expires_at, ended_at, revoked_at
+         FROM impersonation_grants
+        WHERE platform_admin_id = $1 AND business_id = $2
+          AND ended_at IS NULL AND revoked_at IS NULL AND expires_at > now()
+        ORDER BY created_at DESC LIMIT 1`,
+      [adminId, businessId],
+    ),
   );
   return rows[0] ? toGrant(rows[0]) : null;
 }
 
 /** The admin ends their own window (they left the business). */
 export async function endImpersonation(grantId: string, adminId: string): Promise<void> {
-  await query(
-    `UPDATE impersonation_grants
-        SET ended_at = now()
-      WHERE id = $1 AND platform_admin_id = $2 AND ended_at IS NULL AND revoked_at IS NULL`,
-    [grantId, adminId],
+  await withoutTenantScope("platform", () =>
+    query(
+      `UPDATE impersonation_grants
+          SET ended_at = now()
+        WHERE id = $1 AND platform_admin_id = $2 AND ended_at IS NULL AND revoked_at IS NULL`,
+      [grantId, adminId],
+    ),
   );
 }
 
 /** A different admin pulls the plug on a live grant (kill switch). */
 export async function revokeImpersonation(grantId: string, revokedBy: string): Promise<void> {
-  await query(
-    `UPDATE impersonation_grants
-        SET revoked_at = now(), revoked_by = $2
-      WHERE id = $1 AND ended_at IS NULL AND revoked_at IS NULL`,
-    [grantId, revokedBy],
+  await withoutTenantScope("platform", () =>
+    query(
+      `UPDATE impersonation_grants
+          SET revoked_at = now(), revoked_by = $2
+        WHERE id = $1 AND ended_at IS NULL AND revoked_at IS NULL`,
+      [grantId, revokedBy],
+    ),
   );
 }
 
 /** Recent impersonation grants across the platform, or scoped to one business. */
 export async function listGrants(businessId?: string): Promise<ImpersonationGrant[]> {
-  const { rows } = await query<GrantRow>(
-    `SELECT id, platform_admin_id, business_id, user_id, mode, reason,
-            created_at, expires_at, ended_at, revoked_at
-       FROM impersonation_grants
-      WHERE ($1::uuid IS NULL OR business_id = $1)
-      ORDER BY created_at DESC LIMIT 100`,
-    [businessId ?? null],
+  const { rows } = await withoutTenantScope("platform", () =>
+    query<GrantRow>(
+      `SELECT id, platform_admin_id, business_id, user_id, mode, reason,
+              created_at, expires_at, ended_at, revoked_at
+         FROM impersonation_grants
+        WHERE ($1::uuid IS NULL OR business_id = $1)
+        ORDER BY created_at DESC LIMIT 100`,
+      [businessId ?? null],
+    ),
   );
   return rows.map(toGrant);
 }
@@ -513,28 +536,30 @@ export interface AuditEntry {
 
 /** The platform audit log, newest first, optionally scoped to one business. */
 export async function listAudit(businessId?: string, limit = 200): Promise<AuditEntry[]> {
-  const { rows } = await query<{
-    id: string;
-    platform_admin_id: string | null;
-    admin_name: string | null;
-    business_id: string | null;
-    business_name: string | null;
-    action: string;
-    entity: string | null;
-    entity_id: string | null;
-    payload: unknown;
-    created_at: string;
-  }>(
-    `SELECT al.id::text AS id, al.platform_admin_id, pa.full_name AS admin_name,
-            al.business_id, b.name AS business_name, al.action, al.entity,
-            al.entity_id, al.payload, al.created_at
-       FROM platform_audit_log al
-       LEFT JOIN platform_admins pa ON pa.id = al.platform_admin_id
-       LEFT JOIN businesses b ON b.id = al.business_id
-      WHERE ($1::uuid IS NULL OR al.business_id = $1)
-      ORDER BY al.created_at DESC
-      LIMIT $2`,
-    [businessId ?? null, limit],
+  const { rows } = await withoutTenantScope("platform", () =>
+    query<{
+      id: string;
+      platform_admin_id: string | null;
+      admin_name: string | null;
+      business_id: string | null;
+      business_name: string | null;
+      action: string;
+      entity: string | null;
+      entity_id: string | null;
+      payload: unknown;
+      created_at: string;
+    }>(
+      `SELECT al.id::text AS id, al.platform_admin_id, pa.full_name AS admin_name,
+              al.business_id, b.name AS business_name, al.action, al.entity,
+              al.entity_id, al.payload, al.created_at
+         FROM platform_audit_log al
+         LEFT JOIN platform_admins pa ON pa.id = al.platform_admin_id
+         LEFT JOIN businesses b ON b.id = al.business_id
+        WHERE ($1::uuid IS NULL OR al.business_id = $1)
+        ORDER BY al.created_at DESC
+        LIMIT $2`,
+      [businessId ?? null, limit],
+    ),
   );
   return rows.map((r) => ({
     id: r.id,
@@ -572,26 +597,28 @@ export interface SystemStatus {
 export async function systemStatus(pendingMigrations: number): Promise<SystemStatus> {
   const pool = getPool();
 
-  const [migrations, backups, counts, rls] = await Promise.all([
-    query<{ filename: string; applied_at: string }>(
-      `SELECT filename, applied_at FROM schema_migrations ORDER BY filename DESC LIMIT 30`,
-    ),
-    query<{ business_id: string; business_name: string; status: string; ran_at: string | null }>(
-      `SELECT DISTINCT ON (br.business_id)
-              br.business_id, b.name AS business_name, br.status, br.created_at AS ran_at
-         FROM backup_runs br
-         JOIN businesses b ON b.id = br.business_id
-        ORDER BY br.business_id, br.created_at DESC`,
-    ),
-    query<{ businesses: string; platform_users: string; platform_admins: string }>(
-      `SELECT (SELECT count(*) FROM businesses) AS businesses,
-              (SELECT count(*) FROM platform_users) AS platform_users,
-              (SELECT count(*) FROM platform_admins) AS platform_admins`,
-    ),
-    query<{ privileged: boolean }>(
-      `SELECT (rolsuper OR rolbypassrls) AS privileged FROM pg_roles WHERE rolname = current_user`,
-    ),
-  ]);
+  const [migrations, backups, counts, rls] = await withoutTenantScope("platform", () =>
+    Promise.all([
+      query<{ filename: string; applied_at: string }>(
+        `SELECT filename, applied_at FROM schema_migrations ORDER BY filename DESC LIMIT 30`,
+      ),
+      query<{ business_id: string; business_name: string; status: string; ran_at: string | null }>(
+        `SELECT DISTINCT ON (br.business_id)
+                br.business_id, b.name AS business_name, br.status, br.started_at AS ran_at
+           FROM backup_runs br
+           JOIN businesses b ON b.id = br.business_id
+          ORDER BY br.business_id, br.started_at DESC`,
+      ),
+      query<{ businesses: string; platform_users: string; platform_admins: string }>(
+        `SELECT (SELECT count(*) FROM businesses) AS businesses,
+                (SELECT count(*) FROM platform_users) AS platform_users,
+                (SELECT count(*) FROM platform_admins) AS platform_admins`,
+      ),
+      query<{ privileged: boolean }>(
+        `SELECT (rolsuper OR rolbypassrls) AS privileged FROM pg_roles WHERE rolname = current_user`,
+      ),
+    ]),
+  );
 
   return {
     migrations: migrations.rows.map((m) => ({ filename: m.filename, appliedAt: m.applied_at })),
