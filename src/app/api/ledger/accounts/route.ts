@@ -4,7 +4,7 @@ import { query } from "@/lib/db";
 
 /** Active chart of accounts, for populating manual-entry account pickers. */
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requireRole("owner", "manager", "accountant");
   if (error) return error;
 
   const { rows } = await query(
