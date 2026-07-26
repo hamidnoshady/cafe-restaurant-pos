@@ -5,12 +5,14 @@
 import { query, getPool } from "./db";
 import {
   buildReportQuery,
+  previousPeriodRange,
   REPORT_VIEWS,
   STANDARD_REPORTS,
   validateReportConfig,
   type ReportConfig,
   type ChartType,
 } from "./reports";
+import { addDays } from "./rollup";
 import { WELL_KNOWN_CODES } from "./coa-template";
 import type { Role } from "./auth";
 
@@ -192,6 +194,220 @@ export async function getBalanceSheet(businessId: string, asOfDate?: string): Pr
     totalEquity,
     balanced: totalAssets === totalLiabilities + totalEquity,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Cash flow (direct method, by posting source)
+// ---------------------------------------------------------------------------
+
+/** "Cash and cash equivalents" for this statement: the two accounts the system itself auto-posts cash movements to. A business's own plain "bank" account (template code 1110) isn't included — nothing auto-posts to it today, so there's nothing to reconcile it against yet. */
+const CASH_EQUIVALENT_CODES = [WELL_KNOWN_CODES.cash, WELL_KNOWN_CODES.bankClearing];
+
+const SOURCE_TYPE_LABELS: Record<string, string> = {
+  order: "دریافت از سفارش‌ها",
+  purchase: "پرداخت بابت خرید",
+  waste: "ضایعات",
+  stock_count: "تعدیل شمارش موجودی",
+  customer_return: "بازپرداخت به مشتری",
+  manual: "اسناد دستی",
+};
+
+export interface CashFlowLine {
+  sourceType: string;
+  label: string;
+  amount: number;
+}
+
+export interface CashFlowStatement {
+  openingCash: number;
+  closingCash: number;
+  netChange: number;
+  lines: CashFlowLine[];
+}
+
+async function cashEquivalentAccountIds(businessId: string): Promise<string[]> {
+  const { rows } = await query<{ id: string }>(
+    `SELECT id FROM accounts WHERE business_id = $1 AND code = ANY($2::text[])`,
+    [businessId, CASH_EQUIVALENT_CODES],
+  );
+  return rows.map((r) => r.id);
+}
+
+async function cashBalanceAsOf(
+  businessId: string,
+  cashAccountIds: string[],
+  asOfDate?: string,
+): Promise<number> {
+  const params: unknown[] = [businessId, cashAccountIds];
+  let dateClause = "";
+  if (asOfDate) {
+    params.push(asOfDate);
+    dateClause = `AND je.entry_date <= $${params.length}`;
+  }
+  const { rows } = await query<{ debit: string; credit: string }>(
+    `SELECT COALESCE(SUM(jl.debit), 0) AS debit, COALESCE(SUM(jl.credit), 0) AS credit
+       FROM journal_lines jl JOIN journal_entries je ON je.id = jl.entry_id
+      WHERE je.business_id = $1 AND jl.account_id = ANY($2::uuid[]) ${dateClause}`,
+    params,
+  );
+  return Number(rows[0].debit) - Number(rows[0].credit);
+}
+
+/**
+ * Cash flow for a date range, direct method: every cash/bank-clearing
+ * movement, grouped by the kind of event that posted it (an order payment, a
+ * purchase, a manual entry, …) via journal_entries.source_type — the same
+ * categorisation the auto-posting paths already stamp on every entry, so
+ * this needs no new bookkeeping to be meaningful.
+ */
+export async function getCashFlow(
+  businessId: string,
+  filters: DateRangeFilters = {},
+): Promise<CashFlowStatement> {
+  const cashAccountIds = await cashEquivalentAccountIds(businessId);
+  if (cashAccountIds.length === 0) {
+    return { openingCash: 0, closingCash: 0, netChange: 0, lines: [] };
+  }
+
+  const params: unknown[] = [businessId, cashAccountIds];
+  const where = ["je.business_id = $1", "jl.account_id = ANY($2::uuid[])"];
+  if (filters.dateFrom) {
+    params.push(filters.dateFrom);
+    where.push(`je.entry_date >= $${params.length}`);
+  }
+  if (filters.dateTo) {
+    params.push(filters.dateTo);
+    where.push(`je.entry_date <= $${params.length}`);
+  }
+
+  const [openingCash, closingCash, lineRows] = await Promise.all([
+    filters.dateFrom
+      ? cashBalanceAsOf(businessId, cashAccountIds, addDays(filters.dateFrom, -1))
+      : Promise.resolve(0),
+    cashBalanceAsOf(businessId, cashAccountIds, filters.dateTo),
+    query<{ source_type: string | null; debit: string; credit: string }>(
+      `SELECT je.source_type, SUM(jl.debit) AS debit, SUM(jl.credit) AS credit
+         FROM journal_lines jl JOIN journal_entries je ON je.id = jl.entry_id
+        WHERE ${where.join(" AND ")}
+        GROUP BY je.source_type`,
+      params,
+    ),
+  ]);
+
+  const lines: CashFlowLine[] = lineRows.rows
+    .map((r) => {
+      const sourceType = r.source_type ?? "manual";
+      return {
+        sourceType,
+        label: SOURCE_TYPE_LABELS[sourceType] ?? sourceType,
+        amount: Number(r.debit) - Number(r.credit),
+      };
+    })
+    .sort((a, b) => b.amount - a.amount);
+
+  return { openingCash, closingCash, netChange: closingCash - openingCash, lines };
+}
+
+// ---------------------------------------------------------------------------
+// Period comparison — "vs previous period", same shape as the statement itself
+// ---------------------------------------------------------------------------
+
+export interface Comparison<T> {
+  current: T;
+  /** null when the range is open-ended (no dateFrom) — there's no length to mirror for a previous period. */
+  previous: T | null;
+}
+
+export async function getProfitAndLossComparison(
+  businessId: string,
+  filters: DateRangeFilters,
+): Promise<Comparison<ProfitAndLoss>> {
+  const current = await getProfitAndLoss(businessId, filters);
+  if (!filters.dateFrom || !filters.dateTo) return { current, previous: null };
+  const previous = await getProfitAndLoss(businessId, previousPeriodRange(filters.dateFrom, filters.dateTo));
+  return { current, previous };
+}
+
+export async function getCashFlowComparison(
+  businessId: string,
+  filters: DateRangeFilters,
+): Promise<Comparison<CashFlowStatement>> {
+  const current = await getCashFlow(businessId, filters);
+  if (!filters.dateFrom || !filters.dateTo) return { current, previous: null };
+  const previous = await getCashFlow(businessId, previousPeriodRange(filters.dateFrom, filters.dateTo));
+  return { current, previous };
+}
+
+/**
+ * Balance Sheet comparison: a snapshot has no "length" to mirror, so instead
+ * of guessing one, the caller supplies the earlier as-of date directly (e.g.
+ * "same day last month", or a fiscal period's start).
+ */
+export async function getBalanceSheetComparison(
+  businessId: string,
+  asOfDate: string | undefined,
+  previousAsOfDate: string | undefined,
+): Promise<Comparison<BalanceSheet>> {
+  const current = await getBalanceSheet(businessId, asOfDate);
+  if (!previousAsOfDate) return { current, previous: null };
+  const previous = await getBalanceSheet(businessId, previousAsOfDate);
+  return { current, previous };
+}
+
+// ---------------------------------------------------------------------------
+// Drill-down — the journal entries behind one account's figure in a statement
+// ---------------------------------------------------------------------------
+
+export interface DrillDownLine {
+  entryId: string;
+  entryDate: string;
+  memo: string | null;
+  sourceType: string | null;
+  debit: number;
+  credit: number;
+}
+
+/** Every journal line posted to `accountCode` in the given range, newest first — what a statement figure is made of. */
+export async function getAccountDrillDown(
+  businessId: string,
+  accountCode: string,
+  filters: DateRangeFilters = {},
+): Promise<DrillDownLine[]> {
+  const params: unknown[] = [businessId, accountCode];
+  const where = ["je.business_id = $1", "a.code = $2"];
+  if (filters.dateFrom) {
+    params.push(filters.dateFrom);
+    where.push(`je.entry_date >= $${params.length}`);
+  }
+  if (filters.dateTo) {
+    params.push(filters.dateTo);
+    where.push(`je.entry_date <= $${params.length}`);
+  }
+  const { rows } = await query<{
+    entry_id: string;
+    entry_date: string;
+    memo: string | null;
+    source_type: string | null;
+    debit: string;
+    credit: string;
+  }>(
+    `SELECT je.id AS entry_id, je.entry_date::text AS entry_date, je.memo, je.source_type, jl.debit, jl.credit
+       FROM journal_lines jl
+       JOIN journal_entries je ON je.id = jl.entry_id
+       JOIN accounts a ON a.id = jl.account_id
+      WHERE ${where.join(" AND ")}
+      ORDER BY je.entry_date DESC, je.posted_at DESC
+      LIMIT 500`,
+    params,
+  );
+  return rows.map((r) => ({
+    entryId: r.entry_id,
+    entryDate: r.entry_date,
+    memo: r.memo,
+    sourceType: r.source_type,
+    debit: Number(r.debit),
+    credit: Number(r.credit),
+  }));
 }
 
 interface SavedReportRow extends Record<string, unknown> {

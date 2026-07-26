@@ -13,6 +13,7 @@
  * transactional tables" true by construction, not by convention.
  */
 import { WELL_KNOWN_CODES } from "./coa-template";
+import { addDays } from "./rollup";
 
 export type Aggregation = "sum" | "avg" | "count";
 export type DateGranularity = "day" | "week" | "month";
@@ -492,6 +493,7 @@ export const STANDARD_REPORTS: StandardReportDef[] = [
   },
   { key: "profit_and_loss", label: "صورت سود و زیان", view: null, defaultChart: null },
   { key: "balance_sheet", label: "ترازنامه", view: null, defaultChart: null },
+  { key: "cash_flow", label: "صورت گردش وجوه نقد", view: null, defaultChart: null },
   {
     key: "staff_performance",
     label: "عملکرد کارکنان",
@@ -541,3 +543,19 @@ export const STANDARD_REPORTS: StandardReportDef[] = [
     },
   },
 ];
+
+/**
+ * The immediately-preceding period of the same length, for a P&L/cash-flow
+ * statement's "vs previous period" comparison — e.g. [2025-04-01, 2025-04-30]
+ * (30 days) shifts back to [2025-03-02, 2025-03-31] (also 30 days), not
+ * naively to the previous calendar month, so a comparison is always
+ * apples-to-apples regardless of which range the caller picked.
+ */
+export function previousPeriodRange(dateFrom: string, dateTo: string): { dateFrom: string; dateTo: string } {
+  const from = new Date(`${dateFrom}T00:00:00Z`);
+  const to = new Date(`${dateTo}T00:00:00Z`);
+  const days = Math.round((to.getTime() - from.getTime()) / (24 * 60 * 60 * 1000));
+  const prevTo = addDays(dateFrom, -1);
+  const prevFrom = addDays(prevTo, -days);
+  return { dateFrom: prevFrom, dateTo: prevTo };
+}

@@ -4,7 +4,7 @@ import { STANDARD_REPORTS } from "@/lib/reports";
 
 /** The pre-built report library — key/label list for the standard-reports UI. */
 export const GET = withTenantScope(async () => {
-  const { error } = await requireRole("owner", "manager");
+  const { error } = await requireRole("owner", "manager", "accountant");
   if (error) return error;
 
   const reports = STANDARD_REPORTS.map((r) => ({

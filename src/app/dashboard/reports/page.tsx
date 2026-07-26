@@ -5,7 +5,7 @@ import { ReportsManager } from "./reports-manager";
 export default async function ReportsPage() {
   const session = await getSession();
   if (!session) redirect("/login");
-  if (session.role !== "owner" && session.role !== "manager") redirect("/dashboard");
+  if (!["owner", "manager", "accountant"].includes(session.role)) redirect("/dashboard");
 
   return (
     <div>

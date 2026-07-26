@@ -27,7 +27,7 @@ export function rowsToChartData(rows: ReportRow[]) {
 export interface ExportRequest {
   format: "csv" | "excel" | "pdf";
   title: string;
-  kind?: "chart" | "pnl" | "balance_sheet";
+  kind?: "chart" | "pnl" | "balance_sheet" | "cash_flow";
   config?: Record<string, unknown>;
   dateFrom?: string;
   dateTo?: string;

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildReportQuery,
+  previousPeriodRange,
   REPORT_VIEWS,
   STANDARD_REPORTS,
   validateReportConfig,
@@ -245,9 +246,9 @@ describe("buildReportQuery", () => {
 });
 
 describe("STANDARD_REPORTS", () => {
-  it("has 12 pre-built reports with unique keys", () => {
-    expect(STANDARD_REPORTS).toHaveLength(12);
-    expect(new Set(STANDARD_REPORTS.map((r) => r.key)).size).toBe(12);
+  it("has 13 pre-built reports with unique keys", () => {
+    expect(STANDARD_REPORTS).toHaveLength(13);
+    expect(new Set(STANDARD_REPORTS.map((r) => r.key)).size).toBe(13);
   });
 
   it("every defaultChart config validates cleanly against REPORT_VIEWS", () => {
@@ -257,10 +258,35 @@ describe("STANDARD_REPORTS", () => {
     }
   });
 
-  it("profit_and_loss and balance_sheet have no generic view (computed separately)", () => {
+  it("profit_and_loss, balance_sheet and cash_flow have no generic view (computed separately)", () => {
     const pnl = STANDARD_REPORTS.find((r) => r.key === "profit_and_loss");
     const bs = STANDARD_REPORTS.find((r) => r.key === "balance_sheet");
+    const cf = STANDARD_REPORTS.find((r) => r.key === "cash_flow");
     expect(pnl?.view).toBeNull();
     expect(bs?.view).toBeNull();
+    expect(cf?.view).toBeNull();
+  });
+});
+
+describe("previousPeriodRange", () => {
+  it("shifts back by the same number of days, ending the day before dateFrom", () => {
+    expect(previousPeriodRange("2025-04-01", "2025-04-30")).toEqual({
+      dateFrom: "2025-03-02",
+      dateTo: "2025-03-31",
+    });
+  });
+
+  it("handles a single-day range", () => {
+    expect(previousPeriodRange("2025-04-15", "2025-04-15")).toEqual({
+      dateFrom: "2025-04-14",
+      dateTo: "2025-04-14",
+    });
+  });
+
+  it("crosses a year boundary correctly", () => {
+    expect(previousPeriodRange("2025-01-01", "2025-01-31")).toEqual({
+      dateFrom: "2024-12-01",
+      dateTo: "2024-12-31",
+    });
   });
 });

@@ -6,7 +6,15 @@ import { inputClass } from "../ui";
 import { ChartPreview, DataTable } from "./chart-preview";
 import { ExportButtons } from "./export-buttons";
 import { PinToDashboardButton } from "./pin-button";
-import { BalanceSheetView, ProfitAndLossView, type BalanceSheet, type ProfitAndLoss } from "./ledger-report-view";
+import {
+  BalanceSheetView,
+  CashFlowView,
+  ProfitAndLossView,
+  type BalanceSheet,
+  type CashFlow,
+  type Comparison,
+  type ProfitAndLoss,
+} from "./ledger-report-view";
 import { rowsToChartData, type ChartType, type ReportRow } from "./report-ui";
 
 interface StandardReportDef {
@@ -26,7 +34,15 @@ interface SavedReportRow {
   standard_key: string | null;
 }
 
-const LEDGER_KEYS = new Set(["profit_and_loss", "balance_sheet"]);
+const LEDGER_KEYS = new Set(["profit_and_loss", "balance_sheet", "cash_flow"]);
+
+type LedgerReportData =
+  | ProfitAndLoss
+  | BalanceSheet
+  | CashFlow
+  | Comparison<ProfitAndLoss>
+  | Comparison<BalanceSheet>
+  | Comparison<CashFlow>;
 
 export function StandardReportsSection() {
   const [reports, setReports] = useState<StandardReportDef[] | null>(null);
@@ -36,8 +52,9 @@ export function StandardReportsSection() {
   const [chartType, setChartType] = useState<ChartType>("bar");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [compare, setCompare] = useState(false);
   const [rows, setRows] = useState<ReportRow[] | null>(null);
-  const [ledgerReport, setLedgerReport] = useState<ProfitAndLoss | BalanceSheet | null>(null);
+  const [ledgerReport, setLedgerReport] = useState<LedgerReportData | null>(null);
 
   useEffect(() => {
     fetch("/api/reports/standard").then((r) => r.json()).then((d) => setReports(d.reports ?? []));
@@ -59,9 +76,10 @@ export function StandardReportsSection() {
       const params = new URLSearchParams();
       if (dateFrom) params.set("dateFrom", dateFrom);
       if (dateTo) params.set("dateTo", dateTo);
+      if (compare) params.set("compare", "1");
       const res = await fetch(`/api/reports/standard/${selected.key}?${params}`);
       const data = await res.json();
-      setLedgerReport(data.report ?? null);
+      setLedgerReport(data.report ?? data.comparison ?? null);
       setRows(null);
       return;
     }
@@ -74,7 +92,7 @@ export function StandardReportsSection() {
     const data = await res.json();
     setRows(data.rows ?? []);
     setLedgerReport(null);
-  }, [selected, dateFrom, dateTo]);
+  }, [selected, dateFrom, dateTo, compare]);
 
   useEffect(() => {
     load();
@@ -85,6 +103,7 @@ export function StandardReportsSection() {
     setChartType(report.chartType ?? "bar");
     setDateFrom("");
     setDateTo("");
+    setCompare(false);
     setRows(null);
     setLedgerReport(null);
   }
@@ -127,6 +146,12 @@ export function StandardReportsSection() {
                     </div>
                   </>
                 )}
+                {LEDGER_KEYS.has(selected.key) ? (
+                  <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <input type="checkbox" checked={compare} onChange={(e) => setCompare(e.target.checked)} />
+                    مقایسه با دورهٔ قبل
+                  </label>
+                ) : null}
                 {selected.chartType ? (
                   <select className={inputClass} value={chartType} onChange={(e) => setChartType(e.target.value as ChartType)}>
                     <option value="bar">میله‌ای</option>
@@ -141,9 +166,18 @@ export function StandardReportsSection() {
             {LEDGER_KEYS.has(selected.key) ? (
               ledgerReport ? (
                 selected.key === "profit_and_loss" ? (
-                  <ProfitAndLossView report={ledgerReport as ProfitAndLoss} />
+                  <ProfitAndLossView
+                    report={ledgerReport as ProfitAndLoss | Comparison<ProfitAndLoss>}
+                    dateFrom={dateFrom || undefined}
+                    dateTo={dateTo || undefined}
+                  />
+                ) : selected.key === "balance_sheet" ? (
+                  <BalanceSheetView
+                    report={ledgerReport as BalanceSheet | Comparison<BalanceSheet>}
+                    dateTo={dateTo || undefined}
+                  />
                 ) : (
-                  <BalanceSheetView report={ledgerReport as BalanceSheet} />
+                  <CashFlowView report={ledgerReport as CashFlow | Comparison<CashFlow>} />
                 )
               ) : (
                 <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>
@@ -161,7 +195,17 @@ export function StandardReportsSection() {
               <ExportButtons
                 request={
                   LEDGER_KEYS.has(selected.key)
-                    ? { title: selected.label, kind: selected.key === "profit_and_loss" ? "pnl" : "balance_sheet", dateFrom, dateTo }
+                    ? {
+                        title: selected.label,
+                        kind:
+                          selected.key === "profit_and_loss"
+                            ? "pnl"
+                            : selected.key === "balance_sheet"
+                              ? "balance_sheet"
+                              : "cash_flow",
+                        dateFrom,
+                        dateTo,
+                      }
                     : { title: selected.label, kind: "chart", config: { ...selected.config, filters: { dateFrom: dateFrom || undefined, dateTo: dateTo || undefined } } }
                 }
               />
