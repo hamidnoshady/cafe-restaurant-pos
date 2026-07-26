@@ -1,25 +1,52 @@
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
-import { query } from "@/lib/db";
+import { query, withoutTenantScope } from "@/lib/db";
+import { SESSION_COOKIE, sessionCookieOptions, signSession } from "@/lib/auth";
 import {
-  SESSION_COOKIE,
-  sessionCookieOptions,
-  signSession,
-  type Role,
-} from "@/lib/auth";
+  membershipBlockedReason,
+  membershipsForPlatformUser,
+  type Membership,
+} from "@/lib/memberships";
 
-interface UserRow extends Record<string, unknown> {
+interface PlatformUserRow extends Record<string, unknown> {
   id: string;
-  business_id: string;
-  location_id: string | null;
-  role: Role;
   full_name: string;
-  password_hash: string | null;
+  password_hash: string;
+  is_active: boolean;
 }
 
-/** Email + password login for Owner/Manager. */
+/** A bcrypt hash of nothing in particular, used to keep timing uniform. */
+const DUMMY_HASH = "$2b$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy";
+
+function sessionFor(membership: Membership, platformUserId: string) {
+  return signSession({
+    sub: membership.userId,
+    role: membership.role,
+    businessId: membership.businessId,
+    locationId: membership.locationId,
+    fullName: membership.fullName,
+    platformUserId,
+  });
+}
+
+/**
+ * Email + password login.
+ *
+ * Since Phase 12 an email identifies a *person*, not a user of one business,
+ * so this resolves the identity first and then their memberships:
+ *
+ *   - exactly one usable membership → signed straight in, as before;
+ *   - several → 200 carrying `businesses` and no cookie; the client posts back
+ *     with the chosen `businessId`;
+ *   - none usable → 403 saying why (suspended business, or no membership).
+ *
+ * The whole handler runs bypassed: "which businesses does this email belong
+ * to" is necessarily a cross-tenant question, asked before any business has
+ * been chosen. It is one of the two documented holes in the isolation boundary
+ * — see `withoutTenantScope` in src/lib/db.ts.
+ */
 export async function POST(request: NextRequest) {
-  let body: { email?: string; password?: string };
+  let body: { email?: string; password?: string; businessId?: string };
   try {
     body = await request.json();
   } catch {
@@ -31,29 +58,66 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "missing_credentials" }, { status: 400 });
   }
 
-  const { rows } = await query<UserRow>(
-    `SELECT id, business_id, location_id, role, full_name, password_hash
-       FROM users
-      WHERE email = $1 AND is_active AND role IN ('owner', 'manager')`,
-    [email],
-  );
+  return withoutTenantScope("login", async () => {
+    const { rows } = await query<PlatformUserRow>(
+      `SELECT id, full_name, password_hash, is_active FROM platform_users WHERE email = $1`,
+      [email.trim().toLowerCase()],
+    );
 
-  const user = rows[0];
-  if (!user?.password_hash || !(await bcrypt.compare(password, user.password_hash))) {
-    return NextResponse.json({ error: "invalid_credentials" }, { status: 401 });
-  }
+    // Compare against a dummy hash when the identity is missing or disabled so
+    // a wrong email and a wrong password cost the same time and can't be told
+    // apart by an enumeration attempt.
+    const identity = rows[0];
+    const usableIdentity = identity?.is_active ? identity : null;
+    const passwordOk = await bcrypt.compare(password, usableIdentity?.password_hash ?? DUMMY_HASH);
+    if (!usableIdentity || !passwordOk) {
+      return NextResponse.json({ error: "invalid_credentials" }, { status: 401 });
+    }
 
-  const token = await signSession({
-    sub: user.id,
-    role: user.role,
-    businessId: user.business_id,
-    locationId: user.location_id,
-    fullName: user.full_name,
+    const memberships = await membershipsForPlatformUser(usableIdentity.id);
+    if (memberships.length === 0) {
+      return NextResponse.json({ error: "no_business_membership" }, { status: 403 });
+    }
+
+    const usable = memberships.filter((m) => membershipBlockedReason(m) === null);
+    if (usable.length === 0) {
+      return NextResponse.json(
+        { error: "business_unavailable", reason: membershipBlockedReason(memberships[0]) },
+        { status: 403 },
+      );
+    }
+
+    const chosen = body.businessId
+      ? usable.find((m) => m.businessId === body.businessId)
+      : usable.length === 1
+        ? usable[0]
+        : undefined;
+
+    if (!chosen) {
+      return NextResponse.json({
+        needsBusinessSelection: true,
+        businesses: usable.map((m) => ({
+          id: m.businessId,
+          name: m.businessName,
+          slug: m.businessSlug,
+          role: m.role,
+        })),
+      });
+    }
+
+    await query(`UPDATE platform_users SET last_login_at = now() WHERE id = $1`, [
+      usableIdentity.id,
+    ]);
+
+    const res = NextResponse.json({
+      user: { id: chosen.userId, role: chosen.role, fullName: chosen.fullName },
+      business: { id: chosen.businessId, name: chosen.businessName, slug: chosen.businessSlug },
+    });
+    res.cookies.set(
+      SESSION_COOKIE,
+      await sessionFor(chosen, usableIdentity.id),
+      sessionCookieOptions(),
+    );
+    return res;
   });
-
-  const res = NextResponse.json({
-    user: { id: user.id, role: user.role, fullName: user.full_name },
-  });
-  res.cookies.set(SESSION_COOKIE, token, sessionCookieOptions());
-  return res;
 }

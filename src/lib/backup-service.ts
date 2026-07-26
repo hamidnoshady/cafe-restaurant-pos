@@ -23,7 +23,7 @@
 import { spawn } from "node:child_process";
 import { constants as fsConstants, promises as fs } from "node:fs";
 import path from "node:path";
-import { query } from "./db";
+import { query, withTenant, withoutTenantScope } from "./db";
 import { getSetting, setSetting, SETTING_KEYS } from "./settings";
 import {
   BACKUP_RUNS_SHOWN,
@@ -325,27 +325,35 @@ async function maybeCatchUpCloud(businessId: string, config: BackupConfig): Prom
  * nudging any not-yet-uploaded artifact toward the cloud.
  */
 export async function runBackupTick(): Promise<void> {
-  const { rows } = await query<{ id: string }>(`SELECT id FROM businesses`, []);
+  // Enumerating businesses spans tenants; each business's backup then runs
+  // scoped to it, so a backup can only ever read its own rows (Phase 12).
+  const rows = await withoutTenantScope("platform", async () => {
+    const result = await query<{ id: string }>(`SELECT id FROM businesses`, []);
+    return result.rows;
+  });
+
   for (const { id: businessId } of rows) {
     try {
-      const config = await getBackupConfig(businessId);
-      if (!config.enabled) continue;
+      await withTenant(businessId, async () => {
+        const config = await getBackupConfig(businessId);
+        if (!config.enabled) return;
 
-      const { rows: lastRows } = await query<{ started_at: Date }>(
-        `SELECT started_at FROM backup_runs
-          WHERE business_id = $1 AND kind = 'local'
-          ORDER BY started_at DESC LIMIT 1`,
-        [businessId],
-      );
-      const timeZone = await getBusinessTimezone(businessId);
-      if (isBackupDue(lastRows[0]?.started_at ?? null, new Date(), config, timeZone)) {
-        const local = await runLocalBackup(businessId, "scheduled");
-        if (local.status === "ok" && config.cloud.enabled) {
-          await runCloudUpload(businessId, local.artifact, "scheduled");
+        const { rows: lastRows } = await query<{ started_at: Date }>(
+          `SELECT started_at FROM backup_runs
+            WHERE business_id = $1 AND kind = 'local'
+            ORDER BY started_at DESC LIMIT 1`,
+          [businessId],
+        );
+        const timeZone = await getBusinessTimezone(businessId);
+        if (isBackupDue(lastRows[0]?.started_at ?? null, new Date(), config, timeZone)) {
+          const local = await runLocalBackup(businessId, "scheduled");
+          if (local.status === "ok" && config.cloud.enabled) {
+            await runCloudUpload(businessId, local.artifact, "scheduled");
+          }
+        } else {
+          await maybeCatchUpCloud(businessId, config);
         }
-      } else {
-        await maybeCatchUpCloud(businessId, config);
-      }
+      });
     } catch (err) {
       // never let one business's failure stop the tick
       console.error(`backup tick failed for business ${businessId}:`, errText(err));

@@ -10,7 +10,7 @@
  *    the only thing stored), ingest pushes idempotently, and serve the
  *    Owner's cross-location overview.
  */
-import { getPool, query } from "./db";
+import { getPool, query, withTenant, withoutTenantScope } from "./db";
 import { WELL_KNOWN_CODES } from "./coa-template";
 import { getSetting, setSetting, SETTING_KEYS } from "./settings";
 import {
@@ -262,13 +262,20 @@ export async function runRollupPush(businessId: string): Promise<RollupPushResul
 
 /** Timer entry point (server.ts): push for every business that configured a central. */
 export async function runRollupSyncTick(): Promise<void> {
-  const { rows } = await query<{ business_id: string }>(
-    `SELECT business_id FROM settings WHERE key = $1 AND location_id IS NULL`,
-    [SETTING_KEYS.rollupConfig],
-  );
+  // Finding *which* businesses have a central configured spans tenants, so the
+  // discovery query is bypassed; each business's push then runs scoped to it,
+  // exactly as a request from that business would (Phase 12).
+  const rows = await withoutTenantScope("platform", async () => {
+    const result = await query<{ business_id: string }>(
+      `SELECT business_id FROM settings WHERE key = $1 AND location_id IS NULL`,
+      [SETTING_KEYS.rollupConfig],
+    );
+    return result.rows;
+  });
+
   for (const row of rows) {
     try {
-      await runRollupPush(row.business_id);
+      await withTenant(row.business_id, () => runRollupPush(row.business_id));
     } catch (err) {
       // Never let one business's failure stop the tick; state already records per-business errors.
       console.error(`rollup push failed for business ${row.business_id}:`, err);

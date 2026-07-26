@@ -16,5 +16,16 @@ Each phase is a self-contained file with its own scope, exit criteria, and open 
 | 9 | Phase-9-Multi-Location-Rollup-Polish.md | Implemented |
 | 10 | Phase-10-Backup-System.md | Implemented |
 | 11 | Phase-11-Delivery-Post-V1.md | Implemented |
+| 12 | Phase-12-Multi-Business-Tenancy.md | In progress |
+| 13 | Phase-13-Teams-Permissions.md | Planned |
+| 14 | Phase-14-Multi-Location-Per-Business.md | Planned |
+| 15 | Phase-15-Super-Admin-Console.md | Planned |
+| 16 | Phase-16-Accounting-Suite.md | Planned |
+| 17 | Phase-17-Feature-Gating-Hardening.md | Planned |
+
+Phases 0–11 built a single-business POS. Phases 12–17 turn it into a multi-business platform:
+many businesses isolated in one deployment, teams with real permissions, several branches per
+business, a super-user console, and an accounting suite. Phase 12 is the load-bearing one —
+everything after it depends on the tenancy boundary being right.
 
 For overall architecture, full schema, and product summary, see the master spec doc (POS-Spec.md).

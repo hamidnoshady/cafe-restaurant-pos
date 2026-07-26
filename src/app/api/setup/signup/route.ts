@@ -3,25 +3,22 @@ import { SESSION_COOKIE, sessionCookieOptions, signSession } from "@/lib/auth";
 import {
   EmailPasswordMismatchError,
   provisionBusiness,
+  publicSignupEnabled,
   validateProvisionBody,
   type ProvisionRequestBody,
 } from "@/lib/business-provisioning";
-import { hasAnyUser } from "@/lib/setup-state";
 
 /**
- * First-run bootstrap: on a completely empty database, creates the business,
- * its first location, and the Owner account in one step, then signs the Owner
- * in so the wizard can continue.
+ * Self-service business registration.
  *
- * Still refuses once any user exists. Phase 12 made a deployment capable of
- * holding many businesses, but adding one is a deliberate act — either a
- * super-admin provisioning it (Phase 15) or public signup, which is off unless
- * explicitly enabled (see /api/setup/signup). Leaving this route open would
- * have turned every install into an open registration endpoint by accident.
+ * An email that already belongs to the platform may create a further business
+ * — that is the cross-business identity case — but must supply its existing
+ * password, since adding a business to an account is an action on that
+ * account. `provisionBusiness` enforces it.
  */
 export async function POST(request: NextRequest) {
-  if (await hasAnyUser()) {
-    return NextResponse.json({ error: "already_initialized" }, { status: 409 });
+  if (!publicSignupEnabled()) {
+    return NextResponse.json({ error: "signup_disabled" }, { status: 403 });
   }
 
   let body: ProvisionRequestBody;
@@ -40,6 +37,10 @@ export async function POST(request: NextRequest) {
     created = await provisionBusiness(input);
   } catch (err) {
     if (err instanceof EmailPasswordMismatchError) {
+      // The email exists and the password didn't match. Deliberately the same
+      // response either way would be unhelpful here — the caller is creating
+      // an account, not authenticating — but it must not confirm more than
+      // "these credentials don't go together".
       return NextResponse.json({ error: "email_password_mismatch" }, { status: 409 });
     }
     throw err;
@@ -53,7 +54,11 @@ export async function POST(request: NextRequest) {
     fullName: input.ownerName,
     platformUserId: created.platformUserId,
   });
-  const res = NextResponse.json({ ok: true });
+
+  const res = NextResponse.json({
+    ok: true,
+    business: { id: created.businessId, slug: created.businessSlug },
+  });
   res.cookies.set(SESSION_COOKIE, token, sessionCookieOptions());
   return res;
 }

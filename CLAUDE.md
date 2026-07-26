@@ -26,6 +26,7 @@ npm run db:migrate
 
 npx tsc --noEmit          # type check
 npm test                  # vitest — unit tests for src/lib/*
+npm run test:db           # vitest — integration tests in integration/, needs Postgres
 npm run build             # production build (JWT_SECRET only needs to be set to *something*)
 ```
 
@@ -34,18 +35,35 @@ it (see `src/lib/orders.test.ts` for the pattern: pure functions, integer-Rial f
 DB). If you changed the schema, add a new forward-only `migrations/NNNN_name.sql` file —
 never edit an already-applied migration.
 
-## CircleCI (`.circleci/config.yml`)
+## CI (`.github/workflows/deploy.yml`)
 
-Two jobs run on every push, in parallel:
+GitHub Actions, which replaced the old CircleCI pipeline. On every push to `main` and every
+PR against it:
 
-- **`test`** — `cimg/postgres:16.4` service, `npm ci`, `npm run db:migrate`,
-  `npx tsc --noEmit`, `npm test`.
-- **`build`** — `npm ci`, `npm run build` (no DB service; `JWT_SECRET` is stubbed only to
-  satisfy the production env check — pages that read `cookies()` render dynamically, not
-  at build time).
+- **`test`** — `postgres:16` service, `npm ci`, `npm run db:migrate` (twice, to prove reruns
+  are a no-op), `npm run test:db`, `npx tsc --noEmit`, `npm test`.
+- **`build-and-push`** — builds the production image and pushes it to GHCR.
 
 Treat a red CI run as blocking. Re-diagnose and push a fix rather than working around it or
 declaring the task done with CI failing.
+
+## Tenancy — read before touching the database
+
+Since Phase 12 this is a multi-business platform, and isolation between businesses is
+enforced by Postgres row-level security rather than by query authors (see the "Multi-business
+tenancy" section of [README.md](README.md) and
+[docs/phases/Phase-12-Multi-Business-Tenancy.md](docs/phases/Phase-12-Multi-Business-Tenancy.md)).
+Three rules follow:
+
+- **A new tenant-scoped table needs an RLS policy** in the same migration that creates it.
+  `integration/tenant-isolation.integration.test.ts` fails if one is missing — that failure
+  is a real bug, not a test to update.
+- **Don't add `withoutTenantScope()` calls casually.** Each one is a hole in the isolation
+  boundary; the only justified reasons are login (resolving an email before a business is
+  chosen) and platform administration.
+- **Background work must scope itself.** Anything running outside a request — the ticks in
+  `server.ts`, scripts — has no session to derive a tenant from, so it enumerates businesses
+  bypassed and then wraps each one's work in `withTenant(businessId, …)`.
 
 ## Pull requests — check in until merged, not just at open
 

@@ -13,6 +13,7 @@
     "test": "vitest run",
     "test:db": "vitest run --config vitest.db.config.ts",
     "db:migrate": "tsx scripts/migrate.ts",
+    "db:app-role": "tsx scripts/create-app-role.ts",
     "db:seed": "tsx scripts/seed.ts",
     "db:restore": "tsx scripts/restore.ts",
     "db:reconcile-opening": "tsx scripts/reconcile-opening-inventory.ts",
