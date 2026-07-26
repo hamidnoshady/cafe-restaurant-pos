@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole } from "@/lib/auth";
+import { requireRole, withTenantScope } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { canKitchenBump, canMarkServed, type OrderItemStatus } from "@/lib/order-item-status";
@@ -10,7 +10,7 @@ import { broadcast } from "@/lib/realtime";
  * (ready→served) transitions, kept separate from the cashier-only
  * quantity/void endpoint at /api/orders/[id]/items/[itemId].
  */
-export async function PATCH(request: NextRequest, context: { params: Promise<{ itemId: string }> }) {
+export const PATCH = withTenantScope(async (request: NextRequest, context: { params: Promise<{ itemId: string }> }) => {
   const { session, error } = await requireRole("owner", "manager", "kitchen", "waiter", "cashier");
   if (error) return error;
   const { itemId } = await context.params;
@@ -52,4 +52,4 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
 
   broadcast(location.id, { type: "order.item_status", orderId: item.order_id, itemId, status: to });
   return NextResponse.json({ ok: true });
-}
+});

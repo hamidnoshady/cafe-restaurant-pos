@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireRole } from "@/lib/auth";
+import { requireRole, withTenantScope } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { getCostingMethod, getStockLevels } from "@/lib/inventory-service";
 import { resolveActiveLocation } from "@/lib/setup-state";
@@ -10,7 +10,7 @@ import { resolveActiveLocation } from "@/lib/setup-state";
  * pickers (menu items, modifiers) needed to build recipes. Mirrors
  * GET /api/menu's aggregated shape.
  */
-export async function GET() {
+export const GET = withTenantScope(async () => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
 
@@ -78,4 +78,4 @@ export async function GET() {
     modifierRecipes,
     costingMethod,
   });
-}
+});

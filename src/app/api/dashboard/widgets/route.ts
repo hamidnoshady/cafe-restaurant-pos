@@ -1,17 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, type Role } from "@/lib/auth";
+import { requireRole, type Role, withTenantScope } from "@/lib/auth";
 import { getDashboardWidgets, saveDashboardWidgets, type WidgetInput } from "@/lib/reports-service";
 
 const ROLES: Role[] = ["owner", "manager", "cashier", "waiter", "kitchen"];
 
 /** The caller's dashboard widget layout: their personal one if they have one, else their role's default. Every role can view — only Owner/Manager can edit (see POST). */
-export async function GET() {
+export const GET = withTenantScope(async () => {
   const { session, error } = await requireRole(...ROLES);
   if (error) return error;
 
   const result = await getDashboardWidgets(session.businessId, session.sub, session.role);
   return NextResponse.json(result);
-}
+});
 
 interface WidgetBody {
   scope?: "personal" | "role";
@@ -20,7 +20,7 @@ interface WidgetBody {
 }
 
 /** Replaces a whole widget layout — the caller's own, or (owner/manager only) a role's default. Dashboard customization is an Owner/Manager feature, same as the rest of reporting. */
-export async function POST(request: NextRequest) {
+export const POST = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
 
@@ -55,4 +55,4 @@ export async function POST(request: NextRequest) {
     await saveDashboardWidgets(session.businessId, { userId: session.sub }, widgets);
   }
   return NextResponse.json({ ok: true });
-}
+});

@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole } from "@/lib/auth";
+import { requireRole, withTenantScope } from "@/lib/auth";
 import { getPool } from "@/lib/db";
 import { rialText } from "@/lib/inventory-exact";
 import { createNrvWriteDown } from "@/lib/nrv-service";
 import { resolveActiveLocation } from "@/lib/setup-state";
 
-export async function POST(request: NextRequest) {
+export const POST = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
   const location = await resolveActiveLocation(session);
@@ -36,4 +36,4 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message }, { status: 409 });
   }
-}
+});

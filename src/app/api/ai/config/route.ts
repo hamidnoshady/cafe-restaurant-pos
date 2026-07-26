@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { PROVIDERS, toPublicConfig, validateConfigInput, type AiProvider } from "@/lib/ai";
 import { getAiConfig, saveAiConfig } from "@/lib/ai-config";
 import { requireManager } from "@/lib/setup-state";
+import { withTenantScope } from "@/lib/auth";
 
 /** Current AI assistant config (key redacted) plus provider defaults for the UI. */
-export async function GET() {
+export const GET = withTenantScope(async () => {
   const { session, error } = await requireManager();
   if (error) return error;
 
@@ -18,10 +19,10 @@ export async function GET() {
       defaultModel: p.defaultModel,
     })),
   });
-}
+});
 
 /** Save AI assistant config. A blank apiKey keeps the previously stored key. */
-export async function PUT(request: NextRequest) {
+export const PUT = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireManager();
   if (error) return error;
 
@@ -47,4 +48,4 @@ export async function PUT(request: NextRequest) {
   });
 
   return NextResponse.json({ ok: true, config: toPublicConfig(saved) });
-}
+});

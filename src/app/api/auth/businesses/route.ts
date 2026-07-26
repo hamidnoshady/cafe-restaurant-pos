@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { getSession, withTenantScope } from "@/lib/auth";
 import { withoutTenantScope } from "@/lib/db";
 import { membershipBlockedReason, membershipsForPlatformUser } from "@/lib/memberships";
 
@@ -13,7 +13,7 @@ import { membershipBlockedReason, membershipsForPlatformUser } from "@/lib/membe
  * PIN-only staff have no platform identity and therefore exactly one business;
  * they get an empty list and the UI shows no switcher.
  */
-export async function GET() {
+export const GET = withTenantScope(async () => {
   const session = await getSession();
   if (!session) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -38,4 +38,4 @@ export async function GET() {
       unavailableReason: membershipBlockedReason(m),
     })),
   });
-}
+});

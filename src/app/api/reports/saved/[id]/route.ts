@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole } from "@/lib/auth";
+import { requireRole, withTenantScope } from "@/lib/auth";
 import { validateReportConfig, type ReportConfig } from "@/lib/reports";
 import { deleteSavedReport, getSavedReport, updateSavedReport } from "@/lib/reports-service";
 
 /** Renames or edits a custom saved report's config. Standard (seeded) reports can't be edited — copy them into a new custom report instead. */
-export async function PATCH(request: NextRequest, context: { params: Promise<{ id: string }> }) {
+export const PATCH = withTenantScope(async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
   const { id } = await context.params;
@@ -30,9 +30,9 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
   });
   if (!ok) return NextResponse.json({ error: "bad_request" }, { status: 400 });
   return NextResponse.json({ ok: true });
-}
+});
 
-export async function DELETE(_request: NextRequest, context: { params: Promise<{ id: string }> }) {
+export const DELETE = withTenantScope(async (_request: NextRequest, context: { params: Promise<{ id: string }> }) => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
   const { id } = await context.params;
@@ -43,4 +43,4 @@ export async function DELETE(_request: NextRequest, context: { params: Promise<{
 
   await deleteSavedReport(session.businessId, id);
   return NextResponse.json({ ok: true });
-}
+});

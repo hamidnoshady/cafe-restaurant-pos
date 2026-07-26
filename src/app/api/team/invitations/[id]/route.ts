@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requirePermission } from "@/lib/auth";
+import { requirePermission, withTenantScope } from "@/lib/auth";
 import { PERMISSIONS } from "@/lib/permissions";
 import { TeamError, revokeInvitation } from "@/lib/team-service";
 
 /** Revokes a pending invitation, making its link stop working immediately. */
-export async function DELETE(_request: NextRequest, context: { params: Promise<{ id: string }> }) {
+export const DELETE = withTenantScope(async (_request: NextRequest, context: { params: Promise<{ id: string }> }) => {
   const { session, error } = await requirePermission(PERMISSIONS.teamManage);
   if (error) return error;
 
@@ -18,4 +18,4 @@ export async function DELETE(_request: NextRequest, context: { params: Promise<{
     }
     throw err;
   }
-}
+});

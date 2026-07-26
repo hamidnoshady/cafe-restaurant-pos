@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole } from "@/lib/auth";
+import { requireRole, withTenantScope } from "@/lib/auth";
 import { getPool, query } from "@/lib/db";
 import { consumeInventoryExact } from "@/lib/inventory-consumption-exact";
 import { MissingLedgerAccountError, postExactOperationalInventoryEntry } from "@/lib/ledger-service";
@@ -9,7 +9,7 @@ import { resolveActiveLocation } from "@/lib/setup-state";
 
 const WASTE_REASONS = ["spoilage", "prep_error", "customer_return", "staff_meal", "other"] as const;
 
-export async function GET() {
+export const GET = withTenantScope(async () => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
 
@@ -25,10 +25,10 @@ export async function GET() {
     [location.id],
   );
   return NextResponse.json({ entries: rows });
-}
+});
 
 /** Logs shrinkage: reduces stock without touching sales figures (separate from order deduction). */
-export async function POST(request: NextRequest) {
+export const POST = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
 
@@ -111,4 +111,4 @@ export async function POST(request: NextRequest) {
   } finally {
     client.release();
   }
-}
+});

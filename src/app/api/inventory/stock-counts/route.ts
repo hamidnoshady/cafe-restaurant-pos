@@ -1,6 +1,6 @@
 import Decimal from "decimal.js";
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole } from "@/lib/auth";
+import { requireRole, withTenantScope } from "@/lib/auth";
 import { getPool, query } from "@/lib/db";
 import { applyStockAdjustmentExact } from "@/lib/inventory-adjustment-exact";
 import { quantityText, rialText } from "@/lib/inventory-exact";
@@ -11,7 +11,7 @@ import {
   postExactStockCountEntry,
 } from "@/lib/ledger-service";
 
-export async function GET() {
+export const GET = withTenantScope(async () => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
 
@@ -26,7 +26,7 @@ export async function GET() {
     [location.id],
   );
   return NextResponse.json({ counts });
-}
+});
 
 interface CountLineInput {
   inventoryItemId?: string;
@@ -40,7 +40,7 @@ interface CountLineInput {
  * difference is posted as an 'adjustment' stock movement (see
  * applyStockAdjustmentExact) so on-hand stock matches reality going forward.
  */
-export async function POST(request: NextRequest) {
+export const POST = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
 
@@ -155,5 +155,5 @@ export async function POST(request: NextRequest) {
   } finally {
     client.release();
   }
-}
+});
 

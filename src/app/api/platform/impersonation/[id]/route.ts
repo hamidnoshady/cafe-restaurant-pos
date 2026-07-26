@@ -3,6 +3,7 @@ import {
   requirePlatformAdmin,
   requirePlatformCapability,
   platformAudit,
+  withPlatformScope,
 } from "@/lib/platform-auth";
 import { endImpersonation, revokeImpersonation } from "@/lib/platform-service";
 
@@ -23,7 +24,7 @@ interface Ctx {
  * tenant guard — ending a window takes effect within one request, without
  * waiting for the tenant token to expire.
  */
-export async function DELETE(request: NextRequest, ctx: Ctx) {
+export const DELETE = withPlatformScope(async (request: NextRequest, ctx: Ctx) => {
   const { id } = await ctx.params;
   const action = request.nextUrl.searchParams.get("action");
 
@@ -50,4 +51,4 @@ export async function DELETE(request: NextRequest, ctx: Ctx) {
     entityId: id,
   });
   return NextResponse.json({ ok: true });
-}
+});

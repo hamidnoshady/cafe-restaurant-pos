@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSession, requirePermission } from "@/lib/auth";
+import { getSession, requirePermission, withTenantScope } from "@/lib/auth";
 import { PERMISSIONS } from "@/lib/permissions";
 import { toLatinDigits } from "@/lib/digits";
 import { isValidPin } from "@/lib/team";
@@ -21,7 +21,7 @@ import { TeamError, setPassword, setPin, verifyPassword } from "@/lib/team-servi
  * member's password changes that person's login everywhere they are a member,
  * not only here. A PIN is per-membership and stays local to this business.
  */
-export async function PUT(request: NextRequest, context: { params: Promise<{ id: string }> }) {
+export const PUT = withTenantScope(async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
@@ -63,4 +63,4 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ id:
     }
     throw err;
   }
-}
+});

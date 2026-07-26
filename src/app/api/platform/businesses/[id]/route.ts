@@ -3,6 +3,7 @@ import {
   requirePlatformAdmin,
   requirePlatformCapability,
   platformAudit,
+  withPlatformScope,
 } from "@/lib/platform-auth";
 import {
   getBusiness,
@@ -18,7 +19,7 @@ interface Ctx {
 }
 
 /** One business's summary — any admin reads. */
-export async function GET(_request: NextRequest, ctx: Ctx) {
+export const GET = withPlatformScope(async (_request: NextRequest, ctx: Ctx) => {
   const { error } = await requirePlatformAdmin();
   if (error) return error;
 
@@ -26,7 +27,7 @@ export async function GET(_request: NextRequest, ctx: Ctx) {
   const business = await getBusiness(id);
   if (!business) return NextResponse.json({ error: "not_found" }, { status: 404 });
   return NextResponse.json({ business });
-}
+});
 
 const STATUS_CAPABILITY: Record<BusinessStatus, "business.suspend" | "business.archive"> = {
   active: "business.suspend",
@@ -44,7 +45,7 @@ const STATUS_CAPABILITY: Record<BusinessStatus, "business.suspend" | "business.a
  * new value — suspension leaves data untouched (exit criterion 2); the block
  * happens at login and the API guard, not by deletion.
  */
-export async function PATCH(request: NextRequest, ctx: Ctx) {
+export const PATCH = withPlatformScope(async (request: NextRequest, ctx: Ctx) => {
   // A generic admin check first so we can 401 before parsing; the capability
   // depends on what is being changed and is checked once we know.
   const auth = await requirePlatformAdmin();
@@ -102,7 +103,7 @@ export async function PATCH(request: NextRequest, ctx: Ctx) {
   }
 
   return NextResponse.json({ error: "nothing_to_change" }, { status: 400 });
-}
+});
 
 /**
  * Hard-delete a business — irreversible, and only once it has been archived
@@ -111,7 +112,7 @@ export async function PATCH(request: NextRequest, ctx: Ctx) {
  * `platform_audit_log.business_id` is ON DELETE SET NULL, so the record that
  * it happened outlives the thing it happened to.
  */
-export async function DELETE(_request: NextRequest, ctx: Ctx) {
+export const DELETE = withPlatformScope(async (_request: NextRequest, ctx: Ctx) => {
   const { session, error } = await requirePlatformCapability("business.delete");
   if (error) return error;
 
@@ -138,4 +139,4 @@ export async function DELETE(_request: NextRequest, ctx: Ctx) {
     }
     throw err;
   }
-}
+});

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requirePermission } from "@/lib/auth";
+import { requirePermission, withTenantScope } from "@/lib/auth";
 import { PERMISSIONS } from "@/lib/permissions";
 import { lockoutMessage, sanitizeOverrides } from "@/lib/team";
 import { TeamError, removeMembership, updateMembership } from "@/lib/team-service";
@@ -17,7 +17,7 @@ function errorResponse(err: unknown): NextResponse {
 }
 
 /** Change a member's role, name, branches, permission overrides, or active state. */
-export async function PATCH(request: NextRequest, context: { params: Promise<{ id: string }> }) {
+export const PATCH = withTenantScope(async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
   const { session, error } = await requirePermission(PERMISSIONS.teamManage);
   if (error) return error;
 
@@ -57,7 +57,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
   } catch (err) {
     return errorResponse(err);
   }
-}
+});
 
 /**
  * Removes a member.
@@ -66,7 +66,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
  * foreign key to `users` is ON DELETE SET NULL, so a real delete would orphan
  * "who opened this order" throughout the ledger and audit trail.
  */
-export async function DELETE(_request: NextRequest, context: { params: Promise<{ id: string }> }) {
+export const DELETE = withTenantScope(async (_request: NextRequest, context: { params: Promise<{ id: string }> }) => {
   const { session, error } = await requirePermission(PERMISSIONS.teamManage);
   if (error) return error;
 
@@ -77,4 +77,4 @@ export async function DELETE(_request: NextRequest, context: { params: Promise<{
   } catch (err) {
     return errorResponse(err);
   }
-}
+});

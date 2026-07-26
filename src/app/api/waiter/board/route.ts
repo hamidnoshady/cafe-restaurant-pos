@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireRole } from "@/lib/auth";
+import { requireRole, withTenantScope } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { resolveActiveLocation } from "@/lib/setup-state";
 
@@ -10,7 +10,7 @@ import { resolveActiveLocation } from "@/lib/setup-state";
  * per-status item count so the waiter can see ticket progress at a glance
  * without opening the table.
  */
-export async function GET() {
+export const GET = withTenantScope(async () => {
   const { session, error } = await requireRole("owner", "manager", "waiter");
   if (error) return error;
 
@@ -72,4 +72,4 @@ export async function GET() {
   }));
 
   return NextResponse.json({ sections, tables: tablesOut });
-}
+});

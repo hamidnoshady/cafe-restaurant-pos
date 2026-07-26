@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole } from "@/lib/auth";
+import { requireRole, withTenantScope } from "@/lib/auth";
 import { getPool } from "@/lib/db";
 import { recomputeOrderTotals } from "@/lib/order-totals";
 import { lockOpenOrder } from "@/lib/order-lock";
@@ -10,10 +10,10 @@ import { broadcast } from "@/lib/realtime";
 const MAX_QTY = 50;
 
 /** Change an item's quantity, or void it — only while the order is still 'open'. */
-export async function PATCH(
+export const PATCH = withTenantScope(async (
   request: NextRequest,
   context: { params: Promise<{ id: string; itemId: string }> },
-) {
+) => {
   const { session, error } = await requireRole("owner", "manager", "cashier");
   if (error) return error;
   const { id, itemId } = await context.params;
@@ -82,4 +82,4 @@ export async function PATCH(
   } finally {
     client.release();
   }
-}
+});

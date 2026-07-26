@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole } from "@/lib/auth";
+import { requireRole, withTenantScope } from "@/lib/auth";
 import { STANDARD_REPORTS } from "@/lib/reports";
 import { getBalanceSheet, getProfitAndLoss, runStandardReportRows } from "@/lib/reports-service";
 
@@ -9,7 +9,7 @@ import { getBalanceSheet, getProfitAndLoss, runStandardReportRows } from "@/lib/
  * other standard report is a plain row dump of its backing view, optionally
  * bounded by a date range.
  */
-export async function GET(request: NextRequest, context: { params: Promise<{ key: string }> }) {
+export const GET = withTenantScope(async (request: NextRequest, context: { params: Promise<{ key: string }> }) => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
   const { key } = await context.params;
@@ -29,4 +29,4 @@ export async function GET(request: NextRequest, context: { params: Promise<{ key
   }
   const rows = await runStandardReportRows(key, session.businessId, { dateFrom, dateTo });
   return NextResponse.json({ rows });
-}
+});

@@ -1,7 +1,7 @@
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import { NextResponse } from "next/server";
-import { requirePlatformAdmin } from "@/lib/platform-auth";
+import { requirePlatformAdmin, withPlatformScope } from "@/lib/platform-auth";
 import { query } from "@/lib/db";
 import { systemStatus } from "@/lib/platform-service";
 
@@ -31,10 +31,10 @@ async function pendingMigrationCount(): Promise<number> {
  * recent backup per business, and headline counts. Read-only — a dashboard,
  * not a control surface.
  */
-export async function GET() {
+export const GET = withPlatformScope(async () => {
   const { error } = await requirePlatformAdmin();
   if (error) return error;
 
   const pending = await pendingMigrationCount();
   return NextResponse.json({ status: await systemStatus(pending) });
-}
+});

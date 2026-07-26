@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole } from "@/lib/auth";
+import { requireRole, withTenantScope } from "@/lib/auth";
 import { createCourier, listCouriers } from "@/lib/delivery-service";
 import { resolveActiveLocation } from "@/lib/setup-state";
 
 /** In-house couriers for delivery dispatch. Cashiers list them (to assign); managers/owners manage the roster. */
-export async function GET(request: NextRequest) {
+export const GET = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireRole("owner", "manager", "cashier");
   if (error) return error;
 
@@ -16,14 +16,14 @@ export async function GET(request: NextRequest) {
     request.nextUrl.searchParams.get("includeInactive") === "true";
   const couriers = await listCouriers(location.id, { includeInactive });
   return NextResponse.json({ couriers });
-}
+});
 
 interface CreateCourierBody {
   name?: string;
   phone?: string;
 }
 
-export async function POST(request: NextRequest) {
+export const POST = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
 
@@ -40,4 +40,4 @@ export async function POST(request: NextRequest) {
   const result = await createCourier(location.id, { name: body.name ?? "", phone: body.phone ?? null });
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status });
   return NextResponse.json({ ok: true, courier: result.data });
-}
+});

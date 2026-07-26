@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requirePlatformAdmin } from "@/lib/platform-auth";
+import { requirePlatformAdmin, withPlatformScope } from "@/lib/platform-auth";
 import { listGrants } from "@/lib/platform-service";
 
 /**
@@ -8,10 +8,10 @@ import { listGrants } from "@/lib/platform-service";
  * which business, in what mode, for how long, and whether it is still open. Any
  * admin may see it, since accountability is the point.
  */
-export async function GET(request: NextRequest) {
+export const GET = withPlatformScope(async (request: NextRequest) => {
   const { error } = await requirePlatformAdmin();
   if (error) return error;
 
   const businessId = request.nextUrl.searchParams.get("businessId") ?? undefined;
   return NextResponse.json({ grants: await listGrants(businessId) });
-}
+});

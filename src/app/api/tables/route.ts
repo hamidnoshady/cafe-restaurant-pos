@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole } from "@/lib/auth";
+import { requireRole, withTenantScope } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { resolveSectionId } from "@/lib/floor";
 import { resolveActiveLocation } from "@/lib/setup-state";
@@ -8,7 +8,7 @@ import { resolveActiveLocation } from "@/lib/setup-state";
  * Minimal table list for Phase 2's dine-in picker (a plain list, not a
  * floor plan — the real floor plan/map arrives in Phase 3).
  */
-export async function GET() {
+export const GET = withTenantScope(async () => {
   const { session, error } = await requireRole("owner", "manager", "cashier", "waiter");
   if (error) return error;
 
@@ -23,9 +23,9 @@ export async function GET() {
     [location.id],
   );
   return NextResponse.json({ tables });
-}
+});
 
-export async function POST(request: NextRequest) {
+export const POST = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
 
@@ -87,4 +87,4 @@ export async function POST(request: NextRequest) {
     ],
   );
   return NextResponse.json({ ok: true, id: rows[0].id });
-}
+});

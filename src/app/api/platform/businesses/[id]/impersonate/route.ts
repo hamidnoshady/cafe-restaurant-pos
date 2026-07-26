@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requirePlatformCapability, platformAudit } from "@/lib/platform-auth";
+import { requirePlatformCapability, platformAudit, withPlatformScope } from "@/lib/platform-auth";
 import { SESSION_COOKIE, sessionCookieOptions, signSession } from "@/lib/auth";
 import {
   startImpersonation,
@@ -31,7 +31,7 @@ interface Ctx {
  * `impersonate.full` (owner only) — full access can change a customer's data,
  * so it is the most trusted capability short of hard-delete.
  */
-export async function POST(request: NextRequest, ctx: Ctx) {
+export const POST = withPlatformScope(async (request: NextRequest, ctx: Ctx) => {
   const { id } = await ctx.params;
 
   let body: { mode?: ImpersonationMode; reason?: string; minutes?: number };
@@ -87,7 +87,7 @@ export async function POST(request: NextRequest, ctx: Ctx) {
     }
     throw err;
   }
-}
+});
 
 /** Whole minutes between two ISO timestamps, for the audit payload. */
 function minutesBetween(from: string, to: string): number {

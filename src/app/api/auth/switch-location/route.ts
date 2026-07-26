@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { SESSION_COOKIE, getSession, sessionCookieOptions, signSession } from "@/lib/auth";
+import { SESSION_COOKIE, getSession, sessionCookieOptions, signSession, withTenantScope } from "@/lib/auth";
 import { businessLocations } from "@/lib/setup-state";
 import { canAccessLocation } from "@/lib/location-access";
 import { query } from "@/lib/db";
@@ -19,7 +19,7 @@ import type { Role } from "@/lib/auth";
  * a stale token's role would let someone switch into a branch they were just
  * unassigned from.
  */
-export async function POST(request: NextRequest) {
+export const POST = withTenantScope(async (request: NextRequest) => {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
@@ -66,4 +66,4 @@ export async function POST(request: NextRequest) {
   const res = NextResponse.json({ ok: true, locationId: body.locationId });
   res.cookies.set(SESSION_COOKIE, token, sessionCookieOptions());
   return res;
-}
+});

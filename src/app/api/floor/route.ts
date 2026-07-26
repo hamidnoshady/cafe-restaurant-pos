@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireRole } from "@/lib/auth";
+import { requireRole, withTenantScope } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { resolveActiveLocation } from "@/lib/setup-state";
 
@@ -9,7 +9,7 @@ import { resolveActiveLocation } from "@/lib/setup-state";
  * and each table's next upcoming reservation. One call powers the whole
  * /dashboard/floor screen.
  */
-export async function GET() {
+export const GET = withTenantScope(async () => {
   const { session, error } = await requireRole("owner", "manager", "cashier", "waiter");
   if (error) return error;
 
@@ -64,4 +64,4 @@ export async function GET() {
   }));
 
   return NextResponse.json({ sections, tables: tablesOut });
-}
+});

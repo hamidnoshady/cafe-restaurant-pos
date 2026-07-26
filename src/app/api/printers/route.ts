@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireRole } from "@/lib/auth";
+import { requireRole, withTenantScope } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { resolveActiveLocation } from "@/lib/setup-state";
 
@@ -10,7 +10,7 @@ import { resolveActiveLocation } from "@/lib/setup-state";
  * connection info to hand to the local print agent (print-agent/), which is
  * why every role that can trigger a print needs read access to it.
  */
-export async function GET() {
+export const GET = withTenantScope(async () => {
   const { session, error } = await requireRole("owner", "manager", "cashier", "waiter", "kitchen");
   if (error) return error;
 
@@ -23,4 +23,4 @@ export async function GET() {
     [location.id],
   );
   return NextResponse.json({ printers });
-}
+});

@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
-import { requireRole } from "@/lib/auth";
+import { requireRole, withTenantScope } from "@/lib/auth";
 import { REPORT_VIEWS } from "@/lib/reports";
 
 /** The view whitelist (dimensions/metrics/filters), for the custom report builder's source/metric/dimension pickers. */
-export async function GET() {
+export const GET = withTenantScope(async () => {
   const { error } = await requireRole("owner", "manager");
   if (error) return error;
 
@@ -16,4 +16,4 @@ export async function GET() {
     filters: view.filters?.map((f) => ({ key: f.key, label: f.label })) ?? [],
   }));
   return NextResponse.json({ views });
-}
+});

@@ -1,9 +1,9 @@
 import { NextRequest,NextResponse } from "next/server";
-import { requireRole } from "@/lib/auth";import { getPool } from "@/lib/db";
+import { requireRole, withTenantScope } from "@/lib/auth";import { getPool } from "@/lib/db";
 import { positiveQuantityText } from "@/lib/inventory-exact";
 import { createSupplierReturn } from "@/lib/supplier-return-service";
 import { resolveActiveLocation } from "@/lib/setup-state";
-export async function POST(request:NextRequest){
+export const POST = withTenantScope(async (request:NextRequest) => {
  const {session,error}=await requireRole("owner","manager");if(error)return error;
  const location=await resolveActiveLocation(session);if(!location)return NextResponse.json({error:"no_location"},{status:409});
  let body:{purchaseId?:string;settlementMethod?:"accounts_payable"|"cash"|"bank"|"supplier_receivable";
@@ -18,4 +18,4 @@ export async function POST(request:NextRequest){
  await client.query("COMMIT");return NextResponse.json({ok:true,...result});
  }catch(err){await client.query("ROLLBACK");return NextResponse.json({error:(err as Error).message},{status:409});}
  finally{client.release();}
-}
+});

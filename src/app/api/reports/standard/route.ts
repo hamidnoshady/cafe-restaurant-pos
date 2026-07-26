@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
-import { requireRole } from "@/lib/auth";
+import { requireRole, withTenantScope } from "@/lib/auth";
 import { STANDARD_REPORTS } from "@/lib/reports";
 
 /** The pre-built report library — key/label list for the standard-reports UI. */
-export async function GET() {
+export const GET = withTenantScope(async () => {
   const { error } = await requireRole("owner", "manager");
   if (error) return error;
 
@@ -14,4 +14,4 @@ export async function GET() {
     config: r.defaultChart?.config ?? null,
   }));
   return NextResponse.json({ reports });
-}
+});

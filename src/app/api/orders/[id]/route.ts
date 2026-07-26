@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole } from "@/lib/auth";
+import { requireRole, withTenantScope } from "@/lib/auth";
 import { getPool, query } from "@/lib/db";
 import { recomputeOrderTotals } from "@/lib/order-totals";
 import type { DiscountInput } from "@/lib/orders";
@@ -17,7 +17,7 @@ async function loadOrder(locationId: string, id: string) {
   return rows[0] ?? null;
 }
 
-export async function GET(_request: NextRequest, context: { params: Promise<{ id: string }> }) {
+export const GET = withTenantScope(async (_request: NextRequest, context: { params: Promise<{ id: string }> }) => {
   const { session, error } = await requireRole("owner", "manager", "cashier", "waiter");
   if (error) return error;
   const { id } = await context.params;
@@ -41,7 +41,7 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ id
   );
 
   return NextResponse.json({ order, items, modifiers });
-}
+});
 
 interface PatchBody {
   note?: string;
@@ -50,7 +50,7 @@ interface PatchBody {
 }
 
 /** Update note/discount, or void the whole order — only while status = 'open'. */
-export async function PATCH(request: NextRequest, context: { params: Promise<{ id: string }> }) {
+export const PATCH = withTenantScope(async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
   const { session, error } = await requireRole("owner", "manager", "cashier");
   if (error) return error;
   const { id } = await context.params;
@@ -117,4 +117,4 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
 
   broadcast(location.id, { type: "order.updated", orderId: id });
   return NextResponse.json({ ok: true });
-}
+});

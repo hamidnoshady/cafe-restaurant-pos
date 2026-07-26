@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requirePermission } from "@/lib/auth";
+import { requirePermission, withTenantScope } from "@/lib/auth";
 import { PERMISSIONS } from "@/lib/permissions";
 import { toLatinDigits } from "@/lib/digits";
 import { isPinRole, isValidPin, sanitizeOverrides } from "@/lib/team";
@@ -9,12 +9,12 @@ import type { Role } from "@/lib/auth";
 const ASSIGNABLE_ROLES: Role[] = ["owner", "manager", "accountant", "cashier", "waiter", "kitchen"];
 
 /** The business's members, with their effective permissions resolved. */
-export async function GET() {
+export const GET = withTenantScope(async () => {
   const { session, error } = await requirePermission(PERMISSIONS.teamManage);
   if (error) return error;
 
   return NextResponse.json({ members: await listMembers(session.businessId) });
-}
+});
 
 /**
  * Adds a member directly.
@@ -24,7 +24,7 @@ export async function GET() {
  * by linking an email that already has a platform login), but inviting is the
  * better path for those and is what the UI leads with.
  */
-export async function POST(request: NextRequest) {
+export const POST = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requirePermission(PERMISSIONS.teamManage);
   if (error) return error;
 
@@ -80,4 +80,4 @@ export async function POST(request: NextRequest) {
     }
     throw err;
   }
-}
+});

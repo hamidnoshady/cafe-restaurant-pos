@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole } from "@/lib/auth";
+import { requireRole, withTenantScope } from "@/lib/auth";
 import { addDays, isValidBusinessDay } from "@/lib/rollup";
 import { getBusinessToday, getRollupOverview } from "@/lib/rollup-service";
 
 /** The Owner's cross-location comparison (central side). Defaults to the last 30 business days. */
-export async function GET(request: NextRequest) {
+export const GET = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireRole("owner");
   if (error) return error;
 
@@ -18,4 +18,4 @@ export async function GET(request: NextRequest) {
 
   const overview = await getRollupOverview(session.businessId, from, to);
   return NextResponse.json({ overview });
-}
+});

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requirePlatformCapability } from "@/lib/platform-auth";
+import { requirePlatformCapability, withPlatformScope } from "@/lib/platform-auth";
 import { listPlatformAdmins } from "@/lib/platform-service";
 
 /**
@@ -7,8 +7,8 @@ import { listPlatformAdmins } from "@/lib/platform-service";
  * console — and at what role — is itself sensitive, so it is not a general read
  * surface the way businesses or audit are.
  */
-export async function GET() {
+export const GET = withPlatformScope(async () => {
   const { error } = await requirePlatformCapability("admins.manage");
   if (error) return error;
   return NextResponse.json({ admins: await listPlatformAdmins() });
-}
+});

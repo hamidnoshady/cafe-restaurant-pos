@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole } from "@/lib/auth";
+import { requireRole, withTenantScope } from "@/lib/auth";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { applySyncEvent, type SyncEventInput, type SyncEventType } from "@/lib/sync-events";
 
@@ -11,7 +11,7 @@ import { applySyncEvent, type SyncEventInput, type SyncEventType } from "@/lib/s
  * replay one here — sync-events.ts enforces the same per-event-type
  * permissions the synchronous routes do.
  */
-export async function POST(request: NextRequest) {
+export const POST = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireRole("owner", "manager", "cashier", "waiter", "kitchen");
   if (error) return error;
 
@@ -58,4 +58,4 @@ export async function POST(request: NextRequest) {
   }
 
   return NextResponse.json({ results });
-}
+});

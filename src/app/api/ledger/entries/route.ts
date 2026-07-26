@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole } from "@/lib/auth";
+import { requireRole, withTenantScope } from "@/lib/auth";
 import { getPool, query } from "@/lib/db";
 import { resolveActiveLocation } from "@/lib/setup-state";
 
 /** Recent journal entries (auto-posted + manual), newest first, with their lines. */
-export async function GET() {
+export const GET = withTenantScope(async () => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
 
@@ -52,7 +52,7 @@ export async function GET() {
   return NextResponse.json({
     entries: entries.map((e) => ({ ...e, lines: linesByEntry.get(e.id) ?? [] })),
   });
-}
+});
 
 interface ManualLineInput {
   accountId?: string;
@@ -67,7 +67,7 @@ interface ManualLineInput {
  * balanced set of lines against real accounts is accepted; owner/manager
  * only, matching the rest of the back-office/financial surface.
  */
-export async function POST(request: NextRequest) {
+export const POST = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
 
@@ -147,4 +147,4 @@ export async function POST(request: NextRequest) {
   }
 
   return NextResponse.json({ ok: true, entryId, totalDebit, totalCredit });
-}
+});

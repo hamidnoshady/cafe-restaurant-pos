@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireRole } from "@/lib/auth";
+import { requireRole, withTenantScope } from "@/lib/auth";
 import { query } from "@/lib/db";
 
 /**
@@ -8,7 +8,7 @@ import { query } from "@/lib/db";
  * the manual-entry route), the grand totals always match — this endpoint
  * surfaces that as a visible integrity check, not just an assumption.
  */
-export async function GET() {
+export const GET = withTenantScope(async () => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
 
@@ -40,4 +40,4 @@ export async function GET() {
     totalCredit,
     balanced: totalDebit === totalCredit,
   });
-}
+});

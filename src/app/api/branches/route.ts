@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requirePermission } from "@/lib/auth";
+import { requirePermission, withTenantScope } from "@/lib/auth";
 import { PERMISSIONS } from "@/lib/permissions";
 import { BranchError, createBranch, listBranches } from "@/lib/branch-service";
 
@@ -13,14 +13,14 @@ import { BranchError, createBranch, listBranches } from "@/lib/branch-service";
  * since Postgres RLS in this system draws its line at the business, not the
  * branch.
  */
-export async function GET() {
+export const GET = withTenantScope(async () => {
   const { session, error } = await requirePermission(PERMISSIONS.locationsManage);
   if (error) return error;
 
   return NextResponse.json({ branches: await listBranches(session.businessId) });
-}
+});
 
-export async function POST(request: NextRequest) {
+export const POST = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requirePermission(PERMISSIONS.locationsManage);
   if (error) return error;
 
@@ -58,4 +58,4 @@ export async function POST(request: NextRequest) {
     }
     throw err;
   }
-}
+});

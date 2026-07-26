@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireRole } from "@/lib/auth";
+import { requireRole, withTenantScope } from "@/lib/auth";
 import { runBackupNow } from "@/lib/backup-service";
 
 /**
@@ -7,10 +7,10 @@ import { runBackupNow } from "@/lib/backup-service";
  * the same code path as the scheduler tick. Owner/Manager — the manual
  * trigger is deliberately wider than config editing (Owner-only).
  */
-export async function POST() {
+export const POST = withTenantScope(async () => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
 
   const result = await runBackupNow(session.businessId);
   return NextResponse.json({ result });
-}
+});

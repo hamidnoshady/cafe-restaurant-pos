@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireRole } from "@/lib/auth";
+import { requireRole, withTenantScope } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { resolveActiveLocation } from "@/lib/setup-state";
 
@@ -8,7 +8,7 @@ import { resolveActiveLocation } from "@/lib/setup-state";
  * categories → items → attached modifier groups → modifiers.
  * Any authenticated role may read it (cashier needs it to sell).
  */
-export async function GET() {
+export const GET = withTenantScope(async () => {
   const { session, error } = await requireRole("owner", "manager", "cashier", "waiter", "kitchen");
   if (error) return error;
 
@@ -47,4 +47,4 @@ export async function GET() {
     ]);
 
   return NextResponse.json({ categories, items, modifierGroups, modifiers, itemModifierGroups: links });
-}
+});

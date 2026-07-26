@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole } from "@/lib/auth";
+import { requireRole, withTenantScope } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { resolveActiveLocation } from "@/lib/setup-state";
 
@@ -8,7 +8,7 @@ import { resolveActiveLocation } from "@/lib/setup-state";
  * consumption when this modifier is selected (negative = removes/swaps out,
  * positive = adds), on top of the menu item's own recipe.
  */
-export async function POST(request: NextRequest) {
+export const POST = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
 
@@ -41,9 +41,9 @@ export async function POST(request: NextRequest) {
     [modifierId, inventoryItemId, quantityDelta],
   );
   return NextResponse.json({ ok: true });
-}
+});
 
-export async function DELETE(request: NextRequest) {
+export const DELETE = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
 
@@ -61,4 +61,4 @@ export async function DELETE(request: NextRequest) {
     [modifierId, inventoryItemId, location.id],
   );
   return NextResponse.json({ ok: true });
-}
+});

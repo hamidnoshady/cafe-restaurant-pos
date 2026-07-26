@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole } from "@/lib/auth";
+import { requireRole, withTenantScope } from "@/lib/auth";
 import { getPool, query } from "@/lib/db";
 import {
   MissingLedgerAccountError,
@@ -13,7 +13,7 @@ import { resolveActiveLocation } from "@/lib/setup-state";
 const SETTLEMENT_METHODS = ["cash", "bank", "credit"] as const;
 type SettlementMethod = (typeof SETTLEMENT_METHODS)[number];
 
-export async function GET(_request: NextRequest, context: { params: Promise<{ id: string }> }) {
+export const GET = withTenantScope(async (_request: NextRequest, context: { params: Promise<{ id: string }> }) => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
   const { id } = await context.params;
@@ -36,7 +36,7 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ id
     [id, location.id],
   );
   return NextResponse.json({ purchase: header[0], items });
-}
+});
 
 const VALID_TRANSITIONS: Record<string, string[]> = {
   draft: ["ordered", "received", "cancelled"],
@@ -46,7 +46,7 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
 };
 
 /** Status transitions: draft -> ordered (optional formal PO step) -> received, or straight to received/cancelled. */
-export async function PATCH(request: NextRequest, context: { params: Promise<{ id: string }> }) {
+export const PATCH = withTenantScope(async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
   const { id } = await context.params;
@@ -146,4 +146,4 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     client.release();
   }
   return NextResponse.json({ ok: true });
-}
+});

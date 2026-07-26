@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requirePlatformAdmin } from "@/lib/platform-auth";
+import { requirePlatformAdmin, withPlatformScope } from "@/lib/platform-auth";
 import { listAudit } from "@/lib/platform-service";
 
 /**
@@ -8,7 +8,7 @@ import { listAudit } from "@/lib/platform-service";
  * sees it, because the console's whole accountability story is that these are
  * visible. `?limit=` caps the page (default 200, hard ceiling 500).
  */
-export async function GET(request: NextRequest) {
+export const GET = withPlatformScope(async (request: NextRequest) => {
   const { error } = await requirePlatformAdmin();
   if (error) return error;
 
@@ -17,4 +17,4 @@ export async function GET(request: NextRequest) {
   const limit = Number.isFinite(limitParam) && limitParam > 0 ? Math.min(limitParam, 500) : 200;
 
   return NextResponse.json({ entries: await listAudit(businessId, limit) });
-}
+});

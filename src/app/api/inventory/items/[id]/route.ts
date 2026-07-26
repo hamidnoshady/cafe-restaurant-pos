@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, type SessionPayload } from "@/lib/auth";
+import { requireRole, type SessionPayload, withTenantScope } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { resolveActiveLocation } from "@/lib/setup-state";
 
@@ -13,7 +13,7 @@ async function ownedItem(session: SessionPayload, id: string) {
   return rows[0] ? location : null;
 }
 
-export async function PATCH(request: NextRequest, context: { params: Promise<{ id: string }> }) {
+export const PATCH = withTenantScope(async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
   const { id } = await context.params;
@@ -75,10 +75,10 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
 
   await query(`UPDATE inventory_items SET ${fields.join(", ")} WHERE id = $1`, [id, ...values]);
   return NextResponse.json({ ok: true });
-}
+});
 
 /** Items referenced by a recipe, purchase, or stock movement are deactivated, not deleted. */
-export async function DELETE(_request: NextRequest, context: { params: Promise<{ id: string }> }) {
+export const DELETE = withTenantScope(async (_request: NextRequest, context: { params: Promise<{ id: string }> }) => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
   const { id } = await context.params;
@@ -99,4 +99,4 @@ export async function DELETE(_request: NextRequest, context: { params: Promise<{
   }
   await query("DELETE FROM inventory_items WHERE id = $1", [id]);
   return NextResponse.json({ ok: true, deactivated: false });
-}
+});

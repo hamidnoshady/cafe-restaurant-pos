@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requirePlatformAdmin } from "@/lib/platform-auth";
+import { requirePlatformAdmin, withPlatformScope } from "@/lib/platform-auth";
 import { businessUsage, getBusiness } from "@/lib/platform-service";
 
 interface Ctx {
@@ -11,7 +11,7 @@ interface Ctx {
  * branches, menu size, ledger depth, and last activity. Read-only; any admin
  * may see it — it is the "is this business live or dormant?" panel.
  */
-export async function GET(_request: NextRequest, ctx: Ctx) {
+export const GET = withPlatformScope(async (_request: NextRequest, ctx: Ctx) => {
   const { error } = await requirePlatformAdmin();
   if (error) return error;
 
@@ -19,4 +19,4 @@ export async function GET(_request: NextRequest, ctx: Ctx) {
   const business = await getBusiness(id);
   if (!business) return NextResponse.json({ error: "not_found" }, { status: 404 });
   return NextResponse.json({ usage: await businessUsage(id) });
-}
+});

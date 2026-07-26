@@ -4,13 +4,14 @@ import { markStepDone } from "@/lib/settings";
 import { resolveActiveLocation, requireManager } from "@/lib/setup-state";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
+import { withTenantScope } from "@/lib/auth";
 
 /**
  * Step 7 — hardware pairing. Phase 5 builds the real print agent; this step
  * registers printers and exercises a STUB test-print / drawer-kick flow so the
  * pairing UX exists end-to-end.
  */
-export async function GET() {
+export const GET = withTenantScope(async () => {
   const { session, error } = await requireManager();
   if (error) return error;
 
@@ -23,9 +24,9 @@ export async function GET() {
     [location.id],
   );
   return NextResponse.json({ printers });
-}
+});
 
-export async function POST(request: NextRequest) {
+export const POST = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireManager();
   if (error) return error;
 
@@ -104,4 +105,4 @@ export async function POST(request: NextRequest) {
   }
 
   return NextResponse.json({ error: "bad_request" }, { status: 400 });
-}
+});

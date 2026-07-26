@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { SessionPayload } from "@/lib/auth";
+import { withTenantScope } from "@/lib/auth";
 import { getPool, query } from "@/lib/db";
 import { getSetting, markStepDone, SETTING_KEYS } from "@/lib/settings";
 import {
@@ -12,7 +13,7 @@ import { checkBalance, validateOpeningLines, withAutoOffset, type OpeningLine } 
 import { WELL_KNOWN_CODES } from "@/lib/coa-template";
 
 /** Step 8 — opening balances (inventory count + opening journal entry). */
-export async function GET() {
+export const GET = withTenantScope(async () => {
   const { session, error } = await requireManager();
   if (error) return error;
 
@@ -48,7 +49,7 @@ export async function GET() {
     inventoryItems: inventory.rows,
     costingLocked: await costingLocked(session.businessId),
   });
-}
+});
 
 interface OpeningInventoryRow {
   name?: string;
@@ -58,7 +59,7 @@ interface OpeningInventoryRow {
   unitCost?: number;
 }
 
-export async function POST(request: NextRequest) {
+export const POST = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireManager();
   if (error) return error;
 
@@ -75,7 +76,7 @@ export async function POST(request: NextRequest) {
   if (body.inventory) return openingInventory(session, body.inventory);
   if (body.balances) return openingBalances(session.businessId, session.sub, body.balances);
   return NextResponse.json({ error: "bad_request" }, { status: 400 });
-}
+});
 
 /**
  * Opening physical count: creates inventory items and one 'adjustment' stock

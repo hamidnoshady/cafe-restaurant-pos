@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole } from "@/lib/auth";
+import { requireRole, withTenantScope } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { resolveSectionId } from "@/lib/floor";
 import { resolveActiveLocation } from "@/lib/setup-state";
@@ -12,7 +12,7 @@ import { broadcast } from "@/lib/realtime";
  * table clean: cleaning → free) and is validated against the allowed moves;
  * cashiers/waiters may drive those without full edit rights.
  */
-export async function PATCH(request: NextRequest, context: { params: Promise<{ id: string }> }) {
+export const PATCH = withTenantScope(async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
   const { session, error } = await requireRole("owner", "manager", "cashier", "waiter");
   if (error) return error;
   const { id } = await context.params;
@@ -123,10 +123,10 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     broadcast(location.id, { type: "table.status", tableId: id, status: body.status });
   }
   return NextResponse.json({ ok: true });
-}
+});
 
 /** Delete (deactivate) a table. Blocked while it holds an active session. */
-export async function DELETE(_request: NextRequest, context: { params: Promise<{ id: string }> }) {
+export const DELETE = withTenantScope(async (_request: NextRequest, context: { params: Promise<{ id: string }> }) => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
   const { id } = await context.params;
@@ -147,4 +147,4 @@ export async function DELETE(_request: NextRequest, context: { params: Promise<{
 
   await query("UPDATE dining_tables SET is_active = false, section_id = NULL, status = 'free' WHERE id = $1", [id]);
   return NextResponse.json({ ok: true });
-}
+});

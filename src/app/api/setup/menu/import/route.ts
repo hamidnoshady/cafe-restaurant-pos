@@ -4,6 +4,7 @@ import { getSetting, markStepDone, SETTING_KEYS } from "@/lib/settings";
 import { resolveActiveLocation, requireManager, type TaxSetting } from "@/lib/setup-state";
 import { parseMenuCsv, rowsToImport, type ImportResult } from "@/lib/menu-import";
 import { xlsxToRows } from "@/lib/xlsx-import";
+import { withTenantScope } from "@/lib/auth";
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
 
@@ -13,7 +14,7 @@ const MAX_FILE_BYTES = 5 * 1024 * 1024;
  * an item that already exists in its category gets its price updated,
  * otherwise it is created.
  */
-export async function POST(request: NextRequest) {
+export const POST = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireManager();
   if (error) return error;
 
@@ -129,4 +130,4 @@ export async function POST(request: NextRequest) {
     errors: result.errors,
     progress,
   });
-}
+});

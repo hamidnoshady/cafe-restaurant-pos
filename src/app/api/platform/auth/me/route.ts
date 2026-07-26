@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getPlatformSession } from "@/lib/platform-auth";
+import { getPlatformSession, withPlatformScope } from "@/lib/platform-auth";
 import { CAPABILITIES_FOR } from "@/lib/platform-admin";
 
 /**
@@ -9,7 +9,7 @@ import { CAPABILITIES_FOR } from "@/lib/platform-admin";
  * session → bounce to `/platform/login`; a session → render, using the returned
  * capability list to decide which controls to show.
  */
-export async function GET() {
+export const GET = withPlatformScope(async () => {
   const session = await getPlatformSession();
   if (!session) {
     return NextResponse.json({ admin: null });
@@ -23,4 +23,4 @@ export async function GET() {
     },
     capabilities: CAPABILITIES_FOR(session.role),
   });
-}
+});

@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { markStepDone, setSetting, SETTING_KEYS } from "@/lib/settings";
 import { resolveActiveLocation, requireManager, type BusinessPrefs } from "@/lib/setup-state";
+import { withTenantScope } from "@/lib/auth";
 
 /** Step 1 — business info: names, contact, display/currency preferences. */
-export async function POST(request: NextRequest) {
+export const POST = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireManager();
   if (error) return error;
 
@@ -46,4 +47,4 @@ export async function POST(request: NextRequest) {
   const progress = await markStepDone(session.businessId, "business");
 
   return NextResponse.json({ ok: true, progress });
-}
+});

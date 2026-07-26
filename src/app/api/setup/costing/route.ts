@@ -1,23 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSetting, markStepDone, setSetting, SETTING_KEYS } from "@/lib/settings";
 import { costingLocked, requireManager, type CostingSetting } from "@/lib/setup-state";
+import { withTenantScope } from "@/lib/auth";
 
 /** Step 3 — inventory costing method (FIFO vs weighted average). */
-export async function GET() {
+export const GET = withTenantScope(async () => {
   const { session, error } = await requireManager();
   if (error) return error;
 
   const costing = await getSetting<CostingSetting>(session.businessId, SETTING_KEYS.costing);
   const locked = await costingLocked(session.businessId);
   return NextResponse.json({ costing, locked });
-}
+});
 
 /**
  * Saves the method. Once the first inventory transaction exists the choice is
  * locked — changing it then requires a formal revaluation process (later phase),
  * not this endpoint.
  */
-export async function POST(request: NextRequest) {
+export const POST = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireManager();
   if (error) return error;
 
@@ -40,4 +41,4 @@ export async function POST(request: NextRequest) {
   await setSetting(session.businessId, SETTING_KEYS.costing, setting);
   const progress = await markStepDone(session.businessId, "costing");
   return NextResponse.json({ ok: true, progress });
-}
+});

@@ -2,9 +2,10 @@ import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { getWizardProgress, setSetting, SETTING_KEYS } from "@/lib/settings";
 import { computeSetupState, requireManager } from "@/lib/setup-state";
+import { withTenantScope } from "@/lib/auth";
 
 /** Final step — verifies the required steps and marks the wizard complete. */
-export async function POST() {
+export const POST = withTenantScope(async () => {
   const { session, error } = await requireManager();
   if (error) return error;
 
@@ -28,4 +29,4 @@ export async function POST() {
   }
 
   return NextResponse.json({ ok: true, completedAt: progress.completedAt });
-}
+});
