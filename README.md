@@ -189,6 +189,17 @@ configured role can bypass RLS, and warns in development.
 `integration/tenant-isolation.integration.test.ts` provisions its own unprivileged role, so
 the policies are proven in CI regardless of how the local database is set up.
 
+**Docker deployments (`docker-entrypoint.sh`) do this for you.** Every shipped compose file
+(`docker-compose.komodo.yml`, `docker-compose.local.yml`, `docker-compose.srv1.yml`) hands the
+app container one Postgres superuser — the same one that runs migrations — because asking
+every operator to hand-edit their stack's environment to carry a second role and password
+isn't worth the friction. The entrypoint migrates with that connection as usual, then runs
+`scripts/derive-runtime-database-url.ts`, which provisions `pos_app` from it (reusing its
+password — nothing new to configure) and launches the server with *that* connection instead.
+An already-restricted `DATABASE_URL`, or an explicit `RUNTIME_DATABASE_URL`, are both left
+alone. This is why the compose files' `DATABASE_URL` staying a superuser is fine, on purpose —
+it never reaches the running server process.
+
 **Identity vs membership.** `platform_users` is the login identity (globally unique email);
 a row in `users` is that person's *membership* of one business, carrying their role, PIN,
 permission overrides and default branch. One person can hold several memberships and switch
