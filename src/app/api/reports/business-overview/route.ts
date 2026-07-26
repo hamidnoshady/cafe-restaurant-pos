@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole } from "@/lib/auth";
+import { requireRole, withTenantScope } from "@/lib/auth";
 import { getBusinessOverview } from "@/lib/reports-service";
 
 /**
@@ -14,7 +14,7 @@ import { getBusinessOverview } from "@/lib/reports-service";
  * Owner-only, matching the Phase 9 precedent that cross-branch comparison is
  * one step more restricted than a single branch's own reports.
  */
-export async function GET(request: NextRequest) {
+export const GET = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireRole("owner");
   if (error) return error;
 
@@ -22,4 +22,4 @@ export async function GET(request: NextRequest) {
   const dateTo = request.nextUrl.searchParams.get("dateTo") ?? undefined;
 
   return NextResponse.json(await getBusinessOverview(session.businessId, { dateFrom, dateTo }));
-}
+});

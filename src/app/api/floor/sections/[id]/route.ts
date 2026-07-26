@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole } from "@/lib/auth";
+import { requireRole, withTenantScope } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { validWaiterId } from "@/lib/floor";
 import { resolveActiveLocation } from "@/lib/setup-state";
@@ -10,7 +10,7 @@ async function ownSection(locationId: string, id: string) {
 }
 
 /** Rename / recolor / (re)assign waiter / reorder a section. */
-export async function PATCH(request: NextRequest, context: { params: Promise<{ id: string }> }) {
+export const PATCH = withTenantScope(async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
   const { id } = await context.params;
@@ -55,10 +55,10 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
   if (fields.length === 0) return NextResponse.json({ error: "bad_request" }, { status: 400 });
   await query(`UPDATE floor_sections SET ${fields.join(", ")} WHERE id = $1`, [id, ...values]);
   return NextResponse.json({ ok: true });
-}
+});
 
 /** Delete a section. Tables in it are detached (section_id → NULL), not deleted. */
-export async function DELETE(_request: NextRequest, context: { params: Promise<{ id: string }> }) {
+export const DELETE = withTenantScope(async (_request: NextRequest, context: { params: Promise<{ id: string }> }) => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
   const { id } = await context.params;
@@ -69,4 +69,4 @@ export async function DELETE(_request: NextRequest, context: { params: Promise<{
 
   await query("DELETE FROM floor_sections WHERE id = $1", [id]);
   return NextResponse.json({ ok: true });
-}
+});

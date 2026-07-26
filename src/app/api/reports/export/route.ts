@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole } from "@/lib/auth";
+import { requireRole, withTenantScope } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { getPrimaryLocation } from "@/lib/setup-state";
 import { toPersianDigits } from "@/lib/digits";
@@ -47,7 +47,7 @@ function periodLabel(dateFrom?: string, dateTo?: string): string {
 }
 
 /** Exports a report (custom or standard chart config, or P&L/Balance Sheet) as CSV, Excel, or PDF. */
-export async function POST(request: NextRequest) {
+export const POST = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
 
@@ -141,7 +141,7 @@ export async function POST(request: NextRequest) {
   }
 
   return NextResponse.json({ error: "invalid_kind" }, { status: 400 });
-}
+});
 
 function ledgerTable(
   sections: [string, { accountCode: string; accountName: string; amount: number }[]][],

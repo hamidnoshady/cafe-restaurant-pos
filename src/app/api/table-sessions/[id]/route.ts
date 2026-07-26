@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole } from "@/lib/auth";
+import { requireRole, withTenantScope } from "@/lib/auth";
 import { getPool, query } from "@/lib/db";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import {
@@ -11,7 +11,7 @@ import {
 import { broadcast } from "@/lib/realtime";
 
 /** Session detail: header, its tables, its orders, and the combined bill. */
-export async function GET(_request: NextRequest, context: { params: Promise<{ id: string }> }) {
+export const GET = withTenantScope(async (_request: NextRequest, context: { params: Promise<{ id: string }> }) => {
   const { session, error } = await requireRole("owner", "manager", "cashier", "waiter");
   if (error) return error;
   const { id } = await context.params;
@@ -45,7 +45,7 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ id
   const bill = await computeSessionBill(id);
 
   return NextResponse.json({ session: sessions[0], tables, orders, bill });
-}
+});
 
 interface PatchBody {
   action?: "request_bill" | "close" | "merge" | "set_note";
@@ -54,7 +54,7 @@ interface PatchBody {
 }
 
 /** Session lifecycle actions. */
-export async function PATCH(request: NextRequest, context: { params: Promise<{ id: string }> }) {
+export const PATCH = withTenantScope(async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
   const { session, error } = await requireRole("owner", "manager", "cashier", "waiter");
   if (error) return error;
   const { id } = await context.params;
@@ -103,4 +103,4 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
   } finally {
     client.release();
   }
-}
+});

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, type SessionPayload } from "@/lib/auth";
+import { requireRole, type SessionPayload, withTenantScope } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { resolveActiveLocation } from "@/lib/setup-state";
 
@@ -16,7 +16,7 @@ async function validatePair(session: SessionPayload, menuItemId: string, modifie
 }
 
 /** Attach a modifier group to a menu item. */
-export async function POST(request: NextRequest) {
+export const POST = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
 
@@ -40,10 +40,10 @@ export async function POST(request: NextRequest) {
     [menuItemId, modifierGroupId],
   );
   return NextResponse.json({ ok: true });
-}
+});
 
 /** Detach a modifier group from a menu item. */
-export async function DELETE(request: NextRequest) {
+export const DELETE = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
 
@@ -61,4 +61,4 @@ export async function DELETE(request: NextRequest) {
     [menuItemId, modifierGroupId],
   );
   return NextResponse.json({ ok: true });
-}
+});

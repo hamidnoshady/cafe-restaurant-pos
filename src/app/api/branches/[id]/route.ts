@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requirePermission } from "@/lib/auth";
+import { requirePermission, withTenantScope } from "@/lib/auth";
 import { PERMISSIONS } from "@/lib/permissions";
 import { BranchError, deactivateBranch, reactivateBranch, updateBranch } from "@/lib/branch-service";
 
@@ -11,7 +11,7 @@ function errorResponse(err: unknown): NextResponse {
 }
 
 /** Renames a branch or edits its address/phone. */
-export async function PATCH(request: NextRequest, context: { params: Promise<{ id: string }> }) {
+export const PATCH = withTenantScope(async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
   const { session, error } = await requirePermission(PERMISSIONS.locationsManage);
   if (error) return error;
 
@@ -42,4 +42,4 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
   } catch (err) {
     return errorResponse(err);
   }
-}
+});

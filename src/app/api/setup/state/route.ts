@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { getSession, withTenantScope } from "@/lib/auth";
 import { computeSetupState, hasAnyUser } from "@/lib/setup-state";
 
 /**
@@ -7,7 +7,7 @@ import { computeSetupState, hasAnyUser } from "@/lib/setup-state";
  * "does this install need bootstrapping?" — everything else requires
  * an Owner/Manager session.
  */
-export async function GET() {
+export const GET = withTenantScope(async () => {
   const session = await getSession();
   if (!session) {
     return NextResponse.json({ needsBootstrap: !(await hasAnyUser()) });
@@ -17,4 +17,4 @@ export async function GET() {
   }
   const state = await computeSetupState(session.businessId);
   return NextResponse.json(state);
-}
+});

@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { getSetting, markStepDone, SETTING_KEYS } from "@/lib/settings";
 import { resolveActiveLocation, requireManager, type TaxSetting } from "@/lib/setup-state";
+import { withTenantScope } from "@/lib/auth";
 
 /** Step 6 — menu. GET returns current categories + items for the wizard. */
-export async function GET() {
+export const GET = withTenantScope(async () => {
   const { session, error } = await requireManager();
   if (error) return error;
 
@@ -24,13 +25,13 @@ export async function GET() {
     ),
   ]);
   return NextResponse.json({ categories, items });
-}
+});
 
 /**
  * Manual entry: { addCategory: { name } } or
  * { addItem: { categoryId, name, price (Rial), description?, sku? } }.
  */
-export async function POST(request: NextRequest) {
+export const POST = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireManager();
   if (error) return error;
 
@@ -97,4 +98,4 @@ export async function POST(request: NextRequest) {
   }
 
   return NextResponse.json({ error: "bad_request" }, { status: 400 });
-}
+});

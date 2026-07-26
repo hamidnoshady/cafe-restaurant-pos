@@ -25,7 +25,7 @@ import {
 } from "./platform-auth-edge";
 import { platformCan, type PlatformCapability } from "./platform-admin";
 import { query } from "./db";
-import { enterTenantScope } from "./tenant-context";
+import { enterTenantScope, runInTenantScope } from "./tenant-context";
 
 export {
   PLATFORM_SESSION_COOKIE,
@@ -58,6 +58,31 @@ export async function getPlatformSession(): Promise<PlatformSessionPayload | nul
   );
 
   return session;
+}
+
+/**
+ * Wraps a route handler so the bypass scope survives for its *entire*
+ * execution, not just the moment `getPlatformSession()` runs.
+ *
+ * See the matching comment on `withTenantScope` in auth.ts for the full
+ * explanation: `enterTenantScope()`'s `AsyncLocalStorage.enterWith()` call
+ * only reliably persists until the next concurrent `AsyncLocalStorage.run()`
+ * anywhere in the process — and `server.ts`'s background ticks call exactly
+ * that, on a timer, for the server's whole lifetime. Establishing the scope
+ * here with `run()`, once, up front, is what survives tick interleaving.
+ */
+export function withPlatformScope<Args extends unknown[]>(
+  handler: (...args: Args) => Promise<NextResponse>,
+): (...args: Args) => Promise<NextResponse> {
+  return async (...args: Args) => {
+    const store = await cookies();
+    const token = store.get(PLATFORM_SESSION_COOKIE)?.value;
+    const session = token ? await verifyPlatformSession(token) : null;
+    const scope = session
+      ? ({ kind: "bypass", reason: "platform" } as const)
+      : ({ kind: "none" } as const);
+    return runInTenantScope(scope, () => handler(...args));
+  };
 }
 
 /**

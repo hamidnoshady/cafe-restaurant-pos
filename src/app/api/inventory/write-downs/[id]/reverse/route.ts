@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole } from "@/lib/auth";
+import { requireRole, withTenantScope } from "@/lib/auth";
 import { getPool } from "@/lib/db";
 import { rialText } from "@/lib/inventory-exact";
 import { reverseNrvWriteDown } from "@/lib/nrv-service";
 import { resolveActiveLocation } from "@/lib/setup-state";
 
-export async function POST(request: NextRequest, context: { params: Promise<{ id: string }> }) {
+export const POST = withTenantScope(async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
   const { id } = await context.params;
@@ -29,4 +29,4 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     await client.query("ROLLBACK");
     return NextResponse.json({ error: (err as Error).message }, { status: 409 });
   } finally { client.release(); }
-}
+});

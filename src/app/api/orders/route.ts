@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole } from "@/lib/auth";
+import { requireRole, withTenantScope } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { type CartItemInput } from "@/lib/order-cart";
 import { createOrder } from "@/lib/order-mutations";
@@ -8,7 +8,7 @@ import { resolveActiveLocation } from "@/lib/setup-state";
 import { broadcast } from "@/lib/realtime";
 
 /** Open orders for the cashier's "current orders" list. */
-export async function GET() {
+export const GET = withTenantScope(async () => {
   const { session, error } = await requireRole("owner", "manager", "cashier", "waiter");
   if (error) return error;
 
@@ -24,7 +24,7 @@ export async function GET() {
     [location.id],
   );
   return NextResponse.json({ orders });
-}
+});
 
 interface CreateOrderBody {
   type?: "dine_in" | "takeaway" | "delivery";
@@ -37,7 +37,7 @@ interface CreateOrderBody {
 }
 
 /** Builds the cart, computes totals, and creates Orders + OrderItems (+ modifiers) atomically. */
-export async function POST(request: NextRequest) {
+export const POST = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireRole("owner", "manager", "cashier", "waiter");
   if (error) return error;
 
@@ -87,4 +87,4 @@ export async function POST(request: NextRequest) {
 
   broadcast(location.id, { type: "order.created", orderId: result.data.id });
   return NextResponse.json({ ok: true, ...result.data });
-}
+});

@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole } from "@/lib/auth";
+import { requireRole, withTenantScope } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { getSetting, SETTING_KEYS } from "@/lib/settings";
 import { resolveActiveLocation, type TaxSetting } from "@/lib/setup-state";
 
 /** Create a menu category. Ongoing management, independent of the setup wizard. */
-export async function POST(request: NextRequest) {
+export const POST = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
 
@@ -45,4 +45,4 @@ export async function POST(request: NextRequest) {
     [location.id, name, taxRate],
   );
   return NextResponse.json({ ok: true, id: rows[0].id });
-}
+});

@@ -3,6 +3,7 @@ import {
   requirePlatformAdmin,
   requirePlatformCapability,
   platformAudit,
+  withPlatformScope,
 } from "@/lib/platform-auth";
 import { businessFeatures, setBusinessFeature, getBusiness } from "@/lib/platform-service";
 
@@ -11,7 +12,7 @@ interface Ctx {
 }
 
 /** Every flag with this business's override and effective value — any admin reads. */
-export async function GET(_request: NextRequest, ctx: Ctx) {
+export const GET = withPlatformScope(async (_request: NextRequest, ctx: Ctx) => {
   const { error } = await requirePlatformAdmin();
   if (error) return error;
 
@@ -19,7 +20,7 @@ export async function GET(_request: NextRequest, ctx: Ctx) {
   const business = await getBusiness(id);
   if (!business) return NextResponse.json({ error: "not_found" }, { status: 404 });
   return NextResponse.json({ features: await businessFeatures(id) });
-}
+});
 
 /**
  * Set or clear a per-business flag override (`features.write`).
@@ -29,7 +30,7 @@ export async function GET(_request: NextRequest, ctx: Ctx) {
  * the value written, so a later "why did this business have X on?" has an
  * answer naming the admin who did it.
  */
-export async function PATCH(request: NextRequest, ctx: Ctx) {
+export const PATCH = withPlatformScope(async (request: NextRequest, ctx: Ctx) => {
   const { session, error } = await requirePlatformCapability("features.write");
   if (error) return error;
 
@@ -68,4 +69,4 @@ export async function PATCH(request: NextRequest, ctx: Ctx) {
   });
 
   return NextResponse.json({ features: await businessFeatures(id) });
-}
+});

@@ -1,22 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole } from "@/lib/auth";
+import { requireRole, withTenantScope } from "@/lib/auth";
 import { listRollupLocations, registerRollupLocation } from "@/lib/rollup-service";
 
 /** Central side: registered remote locations, with last-sync/staleness. Owner only (Phase 9 decision). */
-export async function GET() {
+export const GET = withTenantScope(async () => {
   const { session, error } = await requireRole("owner");
   if (error) return error;
 
   const locations = await listRollupLocations(session.businessId);
   return NextResponse.json({ locations });
-}
+});
 
 /**
  * Registers a remote location and returns its bearer token — the one and only
  * time the plaintext token exists; the Owner pastes it into that location's
  * sync settings.
  */
-export async function POST(request: NextRequest) {
+export const POST = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireRole("owner");
   if (error) return error;
 
@@ -32,4 +32,4 @@ export async function POST(request: NextRequest) {
 
   const created = await registerRollupLocation(session.businessId, name);
   return NextResponse.json({ ok: true, ...created });
-}
+});

@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole } from "@/lib/auth";
+import { requireRole, withTenantScope } from "@/lib/auth";
 import { getPool, query } from "@/lib/db";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { openSession } from "@/lib/table-session-service";
 import { broadcast } from "@/lib/realtime";
 
 /** Open table sessions (with their tables), for a management/list view. */
-export async function GET() {
+export const GET = withTenantScope(async () => {
   const { session, error } = await requireRole("owner", "manager", "cashier", "waiter");
   if (error) return error;
 
@@ -29,10 +29,10 @@ export async function GET() {
     [location.id],
   );
   return NextResponse.json({ sessions });
-}
+});
 
 /** Seat a walk-in: open a session on one or more free tables. */
-export async function POST(request: NextRequest) {
+export const POST = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireRole("owner", "manager", "cashier", "waiter");
   if (error) return error;
 
@@ -74,4 +74,4 @@ export async function POST(request: NextRequest) {
   } finally {
     client.release();
   }
-}
+});

@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole } from "@/lib/auth";
+import { requireRole, withTenantScope } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { resolveActiveLocation } from "@/lib/setup-state";
 
 /** Upsert one recipe line: how much of an inventory item one unit of a menu item consumes. */
-export async function POST(request: NextRequest) {
+export const POST = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
 
@@ -37,9 +37,9 @@ export async function POST(request: NextRequest) {
     [menuItemId, inventoryItemId, quantity],
   );
   return NextResponse.json({ ok: true });
-}
+});
 
-export async function DELETE(request: NextRequest) {
+export const DELETE = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
 
@@ -57,4 +57,4 @@ export async function DELETE(request: NextRequest) {
     [menuItemId, inventoryItemId, location.id],
   );
   return NextResponse.json({ ok: true });
-}
+});

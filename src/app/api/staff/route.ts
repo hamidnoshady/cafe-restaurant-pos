@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-import { requireRole } from "@/lib/auth";
+import { requireRole, withTenantScope } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { resolveActiveLocation } from "@/lib/setup-state";
 
 /** Active waiters at this location — for section assignment on the floor plan. */
-export async function GET() {
+export const GET = withTenantScope(async () => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
 
@@ -19,4 +19,4 @@ export async function GET() {
     [session.businessId, location.id],
   );
   return NextResponse.json({ waiters });
-}
+});

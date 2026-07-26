@@ -1,16 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requirePermission } from "@/lib/auth";
+import { requirePermission, withTenantScope } from "@/lib/auth";
 import { PERMISSIONS } from "@/lib/permissions";
 import { isPasswordRole, sanitizeOverrides } from "@/lib/team";
 import { TeamError, createInvitation, listInvitations } from "@/lib/team-service";
 import type { Role } from "@/lib/auth";
 
-export async function GET() {
+export const GET = withTenantScope(async () => {
   const { session, error } = await requirePermission(PERMISSIONS.teamManage);
   if (error) return error;
 
   return NextResponse.json({ invitations: await listInvitations(session.businessId) });
-}
+});
 
 /**
  * Invites someone to join this business.
@@ -21,7 +21,7 @@ export async function GET() {
  * it cannot be recovered afterwards; re-inviting issues a fresh one and
  * supersedes any invitation still pending for that address.
  */
-export async function POST(request: NextRequest) {
+export const POST = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requirePermission(PERMISSIONS.teamManage);
   if (error) return error;
 
@@ -67,4 +67,4 @@ export async function POST(request: NextRequest) {
     }
     throw err;
   }
-}
+});

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { getSession, withTenantScope } from "@/lib/auth";
 import { accessibleLocationsFor, resolveActiveLocation } from "@/lib/setup-state";
 
 /**
@@ -9,7 +9,7 @@ import { accessibleLocationsFor, resolveActiveLocation } from "@/lib/setup-state
  * from a PIN cashier fixed to one location to an owner roaming all of them,
  * so "what's my active branch" needs no permission beyond being signed in.
  */
-export async function GET() {
+export const GET = withTenantScope(async () => {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
@@ -19,4 +19,4 @@ export async function GET() {
   ]);
 
   return NextResponse.json({ active, locations, canSwitch });
-}
+});

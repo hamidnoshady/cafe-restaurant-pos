@@ -4,6 +4,7 @@ import type { AgentMode, PromptContext } from "@/lib/ai";
 import { getAiConfig } from "@/lib/ai-config";
 import { AiError, runAgentTurn, type InboundMessage } from "@/lib/ai-service";
 import { requireManager } from "@/lib/setup-state";
+import { withTenantScope } from "@/lib/auth";
 
 const MAX_MESSAGES = 24;
 const MAX_CONTENT = 8_000;
@@ -26,7 +27,7 @@ function sanitizeMessages(raw: unknown): InboundMessage[] {
  * The assistant turn. Owner/Manager only. Read tools run server-side; a mutation
  * comes back as `proposedAction` for the browser to confirm and apply.
  */
-export async function POST(request: NextRequest) {
+export const POST = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireManager();
   if (error) return error;
 
@@ -77,4 +78,4 @@ export async function POST(request: NextRequest) {
     console.error("ai chat error", err);
     return NextResponse.json({ error: "ai_unknown", message: "خطای غیرمنتظره در دستیار." }, { status: 500 });
   }
-}
+});

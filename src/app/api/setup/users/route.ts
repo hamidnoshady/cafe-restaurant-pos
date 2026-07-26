@@ -5,9 +5,10 @@ import { resolveActiveLocation, requireManager } from "@/lib/setup-state";
 import { isPinRole, isValidPin } from "@/lib/team";
 import { TeamError, createMembership, isPinTaken } from "@/lib/team-service";
 import type { Role } from "@/lib/auth";
+import { withTenantScope } from "@/lib/auth";
 
 /** Step 5 — roles & initial users (owner already exists from bootstrap/seed). */
-export async function GET() {
+export const GET = withTenantScope(async () => {
   const { session, error } = await requireManager();
   if (error) return error;
 
@@ -19,7 +20,7 @@ export async function GET() {
     [session.businessId],
   );
   return NextResponse.json({ users });
-}
+});
 
 const CREATABLE_ROLES: Role[] = ["manager", "cashier", "waiter", "kitchen"];
 
@@ -32,7 +33,7 @@ const CREATABLE_ROLES: Role[] = ["manager", "cashier", "waiter", "kitchen"];
  * manager added through the wizard unable to sign in, because login resolves
  * by identity. One creation path is what keeps that fixed.
  */
-export async function POST(request: NextRequest) {
+export const POST = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireManager();
   if (error) return error;
 
@@ -103,4 +104,4 @@ export async function POST(request: NextRequest) {
 
   const progress = await markStepDone(session.businessId, "users");
   return NextResponse.json({ ok: true, progress });
-}
+});

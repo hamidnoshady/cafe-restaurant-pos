@@ -11,7 +11,7 @@ import {
 } from "./auth-edge";
 import { query } from "./db";
 import { hasPermission, parseOverrides, type Permission } from "./permissions";
-import { businessScope, enterTenantScope, NO_SCOPE } from "./tenant-context";
+import { businessScope, enterTenantScope, NO_SCOPE, runInTenantScope } from "./tenant-context";
 
 // Re-exported so the ~93 route handlers that import these from "@/lib/auth"
 // keep working; the definitions live in auth-edge.ts because src/middleware.ts
@@ -48,6 +48,45 @@ export async function getSession(): Promise<SessionPayload | null> {
   );
 
   return session;
+}
+
+/**
+ * Wraps a route handler so its tenant scope survives for its *entire*
+ * execution, including every query any guard or service call makes along the
+ * way — not just the moment `getSession()` runs.
+ *
+ * `getSession()`'s own `enterTenantScope()` call (via `AsyncLocalStorage.enterWith`)
+ * only reliably affects code that runs before this request's continuation is
+ * next interrupted by a concurrent `AsyncLocalStorage.run()` elsewhere in the
+ * process — and the background ticks in `server.ts` (rollup, backup,
+ * server-sync) call `withTenant()`/`withoutTenantScope()` (`.run()`) on a timer
+ * for the whole lifetime of the server. The instant one of those fires while
+ * this request is in flight, `enterWith()`'s effect is lost for the rest of
+ * the request: reads silently come back empty (RLS fails closed) and writes
+ * throw a row-level-security violation — non-deterministically, since it
+ * depends on exactly when a tick happens to interleave.
+ *
+ * `run()` does not have this problem — establishing the scope for a route
+ * handler's whole execution here, once, up front, is what everything else
+ * (`getSession()`'s later `enterTenantScope()` calls included) then correctly
+ * inherits for the rest of the request, tick interleaving or not. Every route
+ * handler that reaches `getSession()`, `requireRole()`, `requirePermission()`,
+ * or `requireManager()` needs to be wrapped in this (or the platform
+ * equivalent, `withPlatformScope` in platform-auth.ts) for that reason — see
+ * docs/phases/Phase-17-Feature-Gating-Hardening.md.
+ */
+export function withTenantScope<Args extends unknown[]>(
+  handler: (...args: Args) => Promise<NextResponse>,
+): (...args: Args) => Promise<NextResponse> {
+  return async (...args: Args) => {
+    const store = await cookies();
+    const token = store.get(SESSION_COOKIE)?.value;
+    const session = token ? await verifySession(token) : null;
+    const scope = session
+      ? businessScope(session.businessId, session.locationId, session.sub)
+      : NO_SCOPE;
+    return runInTenantScope(scope, () => handler(...args));
+  };
 }
 
 /** Session + role guard for API routes. Returns a response to short-circuit with, or the session. */

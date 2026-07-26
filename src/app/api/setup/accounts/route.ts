@@ -7,9 +7,10 @@ import {
   validateAccounts,
   type TemplateAccount,
 } from "@/lib/coa-template";
+import { withTenantScope } from "@/lib/auth";
 
 /** Step 2 — chart of accounts. GET returns the template + what already exists. */
-export async function GET() {
+export const GET = withTenantScope(async () => {
   const { session, error } = await requireManager();
   if (error) return error;
 
@@ -20,13 +21,13 @@ export async function GET() {
     [session.businessId],
   );
   return NextResponse.json({ template: FNB_COA_TEMPLATE, existing });
-}
+});
 
 /**
  * Creates the chart of accounts from the (possibly customized) template.
  * Replaces an existing chart only while no journal lines reference it.
  */
-export async function POST(request: NextRequest) {
+export const POST = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireManager();
   if (error) return error;
 
@@ -100,4 +101,4 @@ export async function POST(request: NextRequest) {
 
   const progress = await markStepDone(session.businessId, "accounts");
   return NextResponse.json({ ok: true, created: accounts.length, progress });
-}
+});

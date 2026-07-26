@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole } from "@/lib/auth";
+import { requireRole, withTenantScope } from "@/lib/auth";
 import { getPool, query } from "@/lib/db";
 import { parseDate, tableConflicts } from "@/lib/reservation-service";
 import { resolveActiveLocation } from "@/lib/setup-state";
@@ -44,7 +44,7 @@ interface PatchBody {
 }
 
 /** Update reservation fields, change its status, or seat it (opens a session). */
-export async function PATCH(request: NextRequest, context: { params: Promise<{ id: string }> }) {
+export const PATCH = withTenantScope(async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
   const { session, error } = await requireRole("owner", "manager", "cashier", "waiter");
   if (error) return error;
   const { id } = await context.params;
@@ -80,7 +80,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     return NextResponse.json({ error: "reservation_not_booked" }, { status: 409 });
   }
   return updateReservation(location.id, reservation, body);
-}
+});
 
 async function seatReservation(
   locationId: string,
@@ -204,7 +204,7 @@ async function updateReservation(locationId: string, reservation: ReservationRow
 }
 
 /** Delete a reservation outright (rarely needed; cancel is preferred). */
-export async function DELETE(_request: NextRequest, context: { params: Promise<{ id: string }> }) {
+export const DELETE = withTenantScope(async (_request: NextRequest, context: { params: Promise<{ id: string }> }) => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
   const { id } = await context.params;
@@ -216,4 +216,4 @@ export async function DELETE(_request: NextRequest, context: { params: Promise<{
 
   await query("DELETE FROM reservations WHERE id = $1", [id]);
   return NextResponse.json({ ok: true });
-}
+});

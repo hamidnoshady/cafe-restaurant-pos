@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole } from "@/lib/auth";
+import { requireRole, withTenantScope } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { billToSplitLines, computeSessionBill } from "@/lib/table-session-service";
@@ -11,7 +11,7 @@ async function ownOpenSession(locationId: string, id: string): Promise<boolean> 
 }
 
 /** The session's billable lines (for building an itemized split UI). */
-export async function GET(_request: NextRequest, context: { params: Promise<{ id: string }> }) {
+export const GET = withTenantScope(async (_request: NextRequest, context: { params: Promise<{ id: string }> }) => {
   const { session, error } = await requireRole("owner", "manager", "cashier", "waiter");
   if (error) return error;
   const { id } = await context.params;
@@ -22,7 +22,7 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ id
 
   const bill = await computeSessionBill(id);
   return NextResponse.json({ bill });
-}
+});
 
 interface SplitBody {
   mode?: "even" | "itemized";
@@ -32,7 +32,7 @@ interface SplitBody {
 }
 
 /** Compute separately-payable shares for the session bill. */
-export async function POST(request: NextRequest, context: { params: Promise<{ id: string }> }) {
+export const POST = withTenantScope(async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
   const { session, error } = await requireRole("owner", "manager", "cashier", "waiter");
   if (error) return error;
   const { id } = await context.params;
@@ -64,4 +64,4 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
   } catch {
     return NextResponse.json({ error: "invalid_split" }, { status: 400 });
   }
-}
+});

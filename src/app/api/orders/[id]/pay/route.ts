@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole } from "@/lib/auth";
+import { requireRole, withTenantScope } from "@/lib/auth";
 import { getPool, query } from "@/lib/db";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { broadcast } from "@/lib/realtime";
@@ -42,7 +42,7 @@ interface PayBody {
  * Revenue + Tax Payable) and the COGS entry from the deduction's total cost
  * (Debit COGS / Credit Inventory Asset).
  */
-export async function POST(request: NextRequest, context: { params: Promise<{ id: string }> }) {
+export const POST = withTenantScope(async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
   const { session, error } = await requireRole("owner", "manager", "cashier");
   if (error) return error;
   const { id } = await context.params;
@@ -128,4 +128,4 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
 
   broadcast(location.id, { type: "order.updated", orderId: id });
   return NextResponse.json({ ok: true, amount: total, method });
-}
+});

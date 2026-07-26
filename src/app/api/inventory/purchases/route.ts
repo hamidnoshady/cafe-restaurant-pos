@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole } from "@/lib/auth";
+import { requireRole, withTenantScope } from "@/lib/auth";
 import { getPool, query } from "@/lib/db";
 import { convertPurchaseQuantity } from "@/lib/inventory";
 import { resolveActiveLocation } from "@/lib/setup-state";
@@ -7,7 +7,7 @@ import Decimal from "decimal.js";
 import { positiveQuantityText, quantityText, rialText } from "@/lib/inventory-exact";
 
 /** Recent purchases, newest first (headers only — GET /api/inventory/purchases/[id] has line items). */
-export async function GET() {
+export const GET = withTenantScope(async () => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
 
@@ -22,7 +22,7 @@ export async function GET() {
     [location.id],
   );
   return NextResponse.json({ purchases: rows });
-}
+});
 
 interface PurchaseItemInput {
   inventoryItemId?: string;
@@ -40,7 +40,7 @@ interface PurchaseItemInput {
  * unit_cost is derived from the line's total cost, not entered directly,
  * since suppliers invoice by the purchased quantity, not the base unit.
  */
-export async function POST(request: NextRequest) {
+export const POST = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
 
@@ -127,4 +127,4 @@ export async function POST(request: NextRequest) {
   } finally {
     client.release();
   }
-}
+});

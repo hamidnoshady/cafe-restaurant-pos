@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole } from "@/lib/auth";
+import { requireRole, withTenantScope } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { parseDate, tableConflicts } from "@/lib/reservation-service";
 import { resolveActiveLocation } from "@/lib/setup-state";
@@ -8,7 +8,7 @@ import { resolveActiveLocation } from "@/lib/setup-state";
  * List reservations in a time window (default: from 1h ago through 14 days
  * out). `from`/`to` are ISO instants supplied by the client.
  */
-export async function GET(request: NextRequest) {
+export const GET = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireRole("owner", "manager", "cashier", "waiter");
   if (error) return error;
 
@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
     [location.id, from.toISOString(), to.toISOString()],
   );
   return NextResponse.json({ reservations });
-}
+});
 
 interface CreateBody {
   tableId?: string | null;
@@ -43,7 +43,7 @@ interface CreateBody {
 }
 
 /** Book a reservation. Overlaps on the same table are flagged (409) unless overridden. */
-export async function POST(request: NextRequest) {
+export const POST = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireRole("owner", "manager", "cashier");
   if (error) return error;
 
@@ -108,4 +108,4 @@ export async function POST(request: NextRequest) {
     ],
   );
   return NextResponse.json({ ok: true, id: rows[0].id });
-}
+});

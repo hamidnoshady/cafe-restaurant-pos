@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole } from "@/lib/auth";
+import { requireRole, withTenantScope } from "@/lib/auth";
 import { setRollupLocationActive } from "@/lib/rollup-service";
 
 /** Deactivate (or reactivate) a registered location — deactivation also revokes its token at ingest. */
-export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export const PATCH = withTenantScope(async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   const { session, error } = await requireRole("owner");
   if (error) return error;
 
@@ -21,4 +21,4 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const updated = await setRollupLocationActive(session.businessId, id, body.isActive);
   if (!updated) return NextResponse.json({ error: "not_found" }, { status: 404 });
   return NextResponse.json({ ok: true });
-}
+});

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requirePlatformAdmin, requirePlatformCapability, platformAudit } from "@/lib/platform-auth";
+import { requirePlatformAdmin, requirePlatformCapability, platformAudit, withPlatformScope } from "@/lib/platform-auth";
 import { listBusinesses } from "@/lib/platform-service";
 import {
   provisionBusiness,
@@ -9,11 +9,11 @@ import {
 } from "@/lib/business-provisioning";
 
 /** Every business on the deployment — the console's landing list (any admin reads). */
-export async function GET() {
+export const GET = withPlatformScope(async () => {
   const { error } = await requirePlatformAdmin();
   if (error) return error;
   return NextResponse.json({ businesses: await listBusinesses() });
-}
+});
 
 /**
  * Provision a working business end-to-end: identity, owner membership, first
@@ -21,7 +21,7 @@ export async function GET() {
  * chart of accounts, so the owner can log straight in and sell (exit criterion
  * 1). Owner-only (`business.provision`), and audited before we return.
  */
-export async function POST(request: NextRequest) {
+export const POST = withPlatformScope(async (request: NextRequest) => {
   const { session, error } = await requirePlatformCapability("business.provision");
   if (error) return error;
 
@@ -78,4 +78,4 @@ export async function POST(request: NextRequest) {
     }
     throw err;
   }
-}
+});

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { SESSION_COOKIE, getSession, sessionCookieOptions, signSession } from "@/lib/auth";
+import { SESSION_COOKIE, getSession, sessionCookieOptions, signSession, withTenantScope } from "@/lib/auth";
 import { withoutTenantScope } from "@/lib/db";
 import { membershipBlockedReason, membershipForBusiness } from "@/lib/memberships";
 
@@ -14,7 +14,7 @@ import { membershipBlockedReason, membershipForBusiness } from "@/lib/membership
  *
  * A PIN-only member has no platform identity and so has nothing to switch to.
  */
-export async function POST(request: NextRequest) {
+export const POST = withTenantScope(async (request: NextRequest) => {
   const session = await getSession();
   if (!session) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -67,4 +67,4 @@ export async function POST(request: NextRequest) {
   });
   res.cookies.set(SESSION_COOKIE, token, sessionCookieOptions());
   return res;
-}
+});

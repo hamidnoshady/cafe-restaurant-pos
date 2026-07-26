@@ -1,17 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole } from "@/lib/auth";
+import { requireRole, withTenantScope } from "@/lib/auth";
 import { validateBackupConfig } from "@/lib/backup";
 import { getBackupConfig, getBackupConfigMasked, setBackupConfig } from "@/lib/backup-service";
 
 /** Backup schedule/retention/cloud settings — Owner-only (they hold the keys). */
-export async function GET() {
+export const GET = withTenantScope(async () => {
   const { session, error } = await requireRole("owner");
   if (error) return error;
 
   return NextResponse.json({ config: await getBackupConfigMasked(session.businessId) });
-}
+});
 
-export async function PUT(request: NextRequest) {
+export const PUT = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireRole("owner");
   if (error) return error;
 
@@ -38,4 +38,4 @@ export async function PUT(request: NextRequest) {
 
   await setBackupConfig(session.businessId, validated.config);
   return NextResponse.json({ ok: true });
-}
+});

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole } from "@/lib/auth";
+import { requireRole, withTenantScope } from "@/lib/auth";
 import { getServerSyncConfig, getServerSyncState, setServerSyncConfig } from "@/lib/server-sync";
 
 /**
@@ -10,7 +10,7 @@ import { getServerSyncConfig, getServerSyncState, setServerSyncConfig } from "@/
  * same token must be set as REMOTE_SYNC_TOKEN in the VPS's environment so its
  * /api/server-sync/push and /pull endpoints accept the laptop's requests.
  */
-export async function GET() {
+export const GET = withTenantScope(async () => {
   const { session, error } = await requireRole("owner");
   if (error) return error;
 
@@ -23,9 +23,9 @@ export async function GET() {
     ? { ...config, token: config.token ? `${config.token.slice(0, 4)}…${config.token.slice(-4)}` : "" }
     : null;
   return NextResponse.json({ config: masked, syncState });
-}
+});
 
-export async function PUT(request: NextRequest) {
+export const PUT = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireRole("owner");
   if (error) return error;
 
@@ -53,4 +53,4 @@ export async function PUT(request: NextRequest) {
 
   await setServerSyncConfig(session.businessId, { remoteUrl, token, enabled, batchSize });
   return NextResponse.json({ ok: true });
-}
+});

@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { SAMPLE_CSV } from "@/lib/menu-import";
 import { requireManager } from "@/lib/setup-state";
+import { withTenantScope } from "@/lib/auth";
 
 /** Downloadable CSV template for the menu import step (Owner/Manager, like the rest of the wizard). */
-export async function GET() {
+export const GET = withTenantScope(async () => {
   const { error } = await requireManager();
   if (error) return error;
 
@@ -13,4 +14,4 @@ export async function GET() {
       "Content-Disposition": 'attachment; filename="menu-template.csv"',
     },
   });
-}
+});

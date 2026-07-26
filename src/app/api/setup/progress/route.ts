@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { markStepDone } from "@/lib/settings";
 import { OPTIONAL_STEPS, requireManager, WIZARD_STEPS, type WizardStep } from "@/lib/setup-state";
+import { withTenantScope } from "@/lib/auth";
 
 /**
  * Marks a skippable step as done (users / hardware / opening can be skipped;
  * required steps are only marked by their own endpoints).
  */
-export async function POST(request: NextRequest) {
+export const POST = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireManager();
   if (error) return error;
 
@@ -24,4 +25,4 @@ export async function POST(request: NextRequest) {
 
   const progress = await markStepDone(session.businessId, step);
   return NextResponse.json({ ok: true, progress });
-}
+});

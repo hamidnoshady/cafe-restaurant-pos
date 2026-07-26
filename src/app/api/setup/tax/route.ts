@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { getSetting, markStepDone, setSetting, SETTING_KEYS } from "@/lib/settings";
 import { requireManager, type TaxSetting } from "@/lib/setup-state";
+import { withTenantScope } from "@/lib/auth";
 
 /**
  * Step 4 — tax. A default VAT rate (percent) is stored business-wide and
  * stamped onto new menu categories; per-category overrides handle exemptions.
  */
-export async function GET() {
+export const GET = withTenantScope(async () => {
   const { session, error } = await requireManager();
   if (error) return error;
 
@@ -19,9 +20,9 @@ export async function GET() {
     [session.businessId],
   );
   return NextResponse.json({ tax, categories });
-}
+});
 
-export async function POST(request: NextRequest) {
+export const POST = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireManager();
   if (error) return error;
 
@@ -58,4 +59,4 @@ export async function POST(request: NextRequest) {
 
   const progress = await markStepDone(session.businessId, "tax");
   return NextResponse.json({ ok: true, progress });
-}
+});
