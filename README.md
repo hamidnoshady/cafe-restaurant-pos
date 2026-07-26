@@ -206,7 +206,40 @@ permission overrides and default branch. One person can hold several memberships
 between them (`/api/auth/switch-business`). PIN-only staff have no platform identity and
 belong to exactly one business.
 
+## Super-Admin Console (Phase 15)
+
+A platform operator administers every business on the deployment from a **separate console at
+`/platform`** — provisioning, entitlements, health and support — without ever being a member of any
+business. It is a distinct auth realm: `platform_admins` log in against their own JWT cookie
+(`pos_platform_session`, path-scoped to `/platform`), and `src/middleware.ts` keeps the two realms
+disjoint — a tenant session can't reach `/platform`, and a platform session can't be used against a
+tenant API route.
+
+Mint the first platform admin (support / engineer / owner role):
+
+```bash
+npm run db:platform-admin
+```
+
+The console (dark chrome, deliberately unlike the tenant dashboard's light theme) covers:
+
+- **Businesses** — provision a working business end-to-end (owner + chart of accounts + first
+  branch, the owner logs straight in), then suspend / reactivate / archive / hard-delete. Suspending
+  blocks members at login and at the API guard without deleting anything. Hard-delete is never
+  immediate — it opens a grace window with an export (`PLATFORM_DELETE_GRACE_DAYS`, default 30).
+- **Plans & feature flags** — assign a plan or override a single `business_features` flag per
+  business.
+- **Support / impersonation** — enter a business read-only or full-access; impossible without an
+  audit record naming the admin, the business and the time window. Every impersonated action is
+  tagged in `platform_audit_log`, viewable in the console's **Audit** tab.
+- **System** — migration status, RLS effectiveness, pool health, per-business backups.
+- **Admins** — the platform admin roster (owner-only). Capabilities are gated by role
+  (`src/lib/platform-admin.ts`): support = read + read-only impersonation; engineer adds feature
+  writes, suspend/reactivate and impersonation revoke; owner adds full impersonation,
+  provision/archive/delete and admin management.
+
 ## Decisions on Phase 0 open questions
+
 
 Defaults chosen to keep moving; each is easy to revisit.
 

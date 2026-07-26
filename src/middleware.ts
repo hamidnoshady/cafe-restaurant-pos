@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 // where the tenant context (node:async_hooks) and the pg pool that @/lib/auth
 // now pulls in cannot load.
 import { SESSION_COOKIE, verifySession } from "@/lib/auth-edge";
+import { PLATFORM_SESSION_COOKIE, verifyPlatformSession } from "@/lib/platform-auth-edge";
 
 const PUBLIC_PATHS = [
   "/login",
@@ -26,9 +27,52 @@ const PUBLIC_PATHS = [
   "/api/rollup/ingest",
 ];
 
+/**
+ * Phase 15 — the super-admin realm's own public entrances. The platform login
+ * page and its auth endpoints must be reachable without a platform session
+ * (you cannot require the thing you are trying to obtain), and `auth/me`
+ * self-guards (it returns null rather than 401 when signed out, so the console
+ * can bootstrap). Everything else under /platform requires the platform cookie.
+ */
+const PLATFORM_PUBLIC_PATHS = [
+  "/platform/login",
+  "/api/platform/auth/login",
+  "/api/platform/auth/logout",
+  "/api/platform/auth/me",
+];
+
+/** Methods that change state — the ones a read-only impersonation may not use. */
+const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  // ---- Super-admin realm ---------------------------------------------------
+  // A separate auth realm with its own cookie. Handled before the tenant path
+  // so a platform request is never subjected to the tenant session check (and
+  // vice versa) — the two realms share no session (exit criterion 4).
+  if (pathname === "/platform" || pathname.startsWith("/platform/") || pathname.startsWith("/api/platform")) {
+    if (PLATFORM_PUBLIC_PATHS.some((p) => pathname === p)) {
+      return NextResponse.next();
+    }
+
+    // The API routes under /api/platform self-guard (requirePlatformAdmin /
+    // requirePlatformCapability), so let them through and let the handler
+    // return the right 401/403. The console *pages*, being browser
+    // navigations, are gated here: no platform session → the login page.
+    if (pathname.startsWith("/api/platform")) {
+      return NextResponse.next();
+    }
+
+    const platformToken = request.cookies.get(PLATFORM_SESSION_COOKIE)?.value;
+    const platformSession = platformToken ? await verifyPlatformSession(platformToken) : null;
+    if (!platformSession) {
+      return NextResponse.redirect(new URL("/platform/login", request.url));
+    }
+    return NextResponse.next();
+  }
+
+  // ---- Tenant realm --------------------------------------------------------
   if (PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
     return NextResponse.next();
   }
@@ -42,6 +86,20 @@ export async function middleware(request: NextRequest) {
     }
     const loginUrl = new URL("/login", request.url);
     return NextResponse.redirect(loginUrl);
+  }
+
+  // Phase 15 — read-only impersonation. When the super-admin console entered
+  // this business read-only, the tenant token carries `imp.mode === 'read_only'`.
+  // Reads are allowed so the operator can see what the customer sees; any
+  // state-changing request is refused at the edge, before it reaches a handler.
+  // The tenant guards re-check the grant is still live; this is the cheap first
+  // line that makes read-only actually mean read-only across every route.
+  if (
+    session.imp?.mode === "read_only" &&
+    pathname.startsWith("/api/") &&
+    MUTATING_METHODS.has(request.method)
+  ) {
+    return NextResponse.json({ error: "impersonation_read_only" }, { status: 403 });
   }
 
   return NextResponse.next();

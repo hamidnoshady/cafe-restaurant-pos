@@ -47,7 +47,23 @@ export interface SessionPayload {
    * second authentication.
    */
   platformUserId?: string | null;
+  /**
+   * Phase 15 — set only when this tenant session was minted by the super-admin
+   * console entering the business (impersonation). It names the grant, the
+   * platform admin behind it, and the blast radius. Its presence is what the
+   * middleware and guards key on to (a) block every mutating request when the
+   * mode is `read_only`, and (b) tag the acting session as an operator, not the
+   * owner whose seat it borrows. A normal tenant login never carries it.
+   */
+  imp?: {
+    /** impersonation_grants.id — re-checked live on the server, never trusted alone. */
+    grantId: string;
+    /** platform_admins.id — the operator accountable for anything done here. */
+    adminId: string;
+    mode: "read_only" | "full";
+  };
 }
+
 
 function getSecret(): Uint8Array {
   const secret = process.env.JWT_SECRET;

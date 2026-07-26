@@ -44,7 +44,13 @@ const PUBLIC_ROUTES: Record<string, string> = {
   "rollup/ingest": "server-to-server — authenticated by a per-location bearer token, not a session",
   "server-sync/pull": "server-to-server — authenticated by REMOTE_SYNC_TOKEN bearer token, not a session",
   "server-sync/push": "server-to-server — authenticated by REMOTE_SYNC_TOKEN bearer token, not a session",
+  // Phase 15 — the super-admin realm's own credential exchange. Authenticates
+  // against platform_admins and mints the platform cookie; necessarily runs
+  // without a platform session, exactly like the tenant auth/login.
+  "platform/auth/login": "platform credential exchange — necessarily runs without a session",
+  "platform/auth/logout": "only clears the caller's own platform session cookie",
 };
+
 
 /** Routes that guard via getSession() with route-specific logic instead of requireRole. */
 const SELF_GUARDING_ROUTES: Record<string, string> = {
@@ -60,7 +66,16 @@ const SELF_GUARDING_ROUTES: Record<string, string> = {
   "locations/active":
     "returns the caller's own active branch and switchable branches — every member has one, " +
     "regardless of role",
+  // Phase 15 — the super-admin console bootstraps from this: it returns the
+  // caller's own platform session (or null) and nothing else.
+  "platform/auth/me": "returns the caller's own platform session (or null) — nothing else",
 };
+
+/** True for the super-admin console's own routes, which use the platform guards. */
+function isPlatformGuarded(src: string): boolean {
+  return /requirePlatformAdmin\(/.test(src) || /requirePlatformCapability\(/.test(src);
+}
+
 
 /** All requireRole(...) argument lists found in a file, as role-name arrays. */
 function requireRoleCalls(src: string): string[][] {
@@ -88,14 +103,21 @@ describe("every API route is guarded", () => {
     it(`${key} is guarded or explicitly public`, () => {
       if (PUBLIC_ROUTES[key]) return; // documented public route
       if (SELF_GUARDING_ROUTES[key]) {
-        expect(src).toMatch(/getSession\(/);
+        // Tenant self-guarding routes read getSession(); the platform console's
+        // self-guarding route (auth/me) reads getPlatformSession() instead.
+        expect(src).toMatch(/getSession\(|getPlatformSession\(/);
         return;
       }
+      // Phase 15 — the super-admin console guards with requirePlatformAdmin /
+      // requirePlatformCapability, the platform-realm equivalents of the
+      // tenant requireRole/requirePermission guards.
+      if (isPlatformGuarded(src)) return;
       expect(
         /requireRole\(/.test(src) || /requireManager\(/.test(src) || /requirePermission\(/.test(src),
         `src/app/api/${key}/route.ts has no requireRole/requireManager/requirePermission guard and is not in the documented public list`,
       ).toBe(true);
     });
+
   }
 
   it("the public list doesn't cover routes that no longer exist", () => {

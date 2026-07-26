@@ -15,6 +15,8 @@
     "db:migrate": "tsx scripts/migrate.ts",
     "db:app-role": "tsx scripts/create-app-role.ts",
     "db:seed": "tsx scripts/seed.ts",
+    "db:platform-admin": "tsx scripts/seed-platform-admin.ts",
+
     "db:restore": "tsx scripts/restore.ts",
     "db:reconcile-opening": "tsx scripts/reconcile-opening-inventory.ts",
     "inventory:cutover": "tsx scripts/inventory-cutover.ts",

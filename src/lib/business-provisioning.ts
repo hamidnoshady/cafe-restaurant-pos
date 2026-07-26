@@ -12,8 +12,10 @@
  * transactional behaviour is covered by the tenancy integration test.
  */
 import bcrypt from "bcryptjs";
+import type { PoolClient } from "pg";
 import { getPool, withoutTenantScope } from "./db";
 import { slugifyBusinessName, uniqueSlug } from "./slug";
+import { FNB_COA_TEMPLATE } from "./coa-template";
 
 export interface ProvisionBusinessInput {
   businessName: string;
@@ -24,6 +26,16 @@ export interface ProvisionBusinessInput {
   email: string;
   password: string;
   timezone?: string;
+  /**
+   * Seed the default F&B chart of accounts as part of provisioning.
+   *
+   * The first-run wizard leaves this off — it walks the owner through the
+   * (editable) chart as a deliberate step. Phase 15's console turns it on, so
+   * a business an operator provisions is immediately *working*: the ledger's
+   * well-known accounts exist, and the owner can log straight in and sell
+   * without a setup detour. See coa-template.ts for the template itself.
+   */
+  seedChartOfAccounts?: boolean;
 }
 
 export interface ProvisionedBusiness {
@@ -203,6 +215,10 @@ export async function provisionBusiness(
         [userId, locationId],
       );
 
+      if (input.seedChartOfAccounts) {
+        await seedChartOfAccounts(client, businessId);
+      }
+
       await client.query("COMMIT");
       return { businessId, businessSlug: slug, locationId, userId, platformUserId };
     } catch (err) {
@@ -212,6 +228,34 @@ export async function provisionBusiness(
       client.release();
     }
   });
+}
+
+/**
+ * Insert the default F&B chart of accounts for a freshly-created business.
+ *
+ * Runs inside the provisioning transaction (so a failure rolls the whole
+ * business back) and mirrors the ordering logic of `/api/setup/accounts`:
+ * parents before children, so `parent_id` can be resolved from a code→id map
+ * built as we go. FNB_COA_TEMPLATE is already topologically sane (roots first),
+ * but resolving by code rather than array position keeps it correct even if
+ * the template is later reordered.
+ */
+async function seedChartOfAccounts(client: PoolClient, businessId: string): Promise<void> {
+  const idByCode = new Map<string, string>();
+  const pending = [...FNB_COA_TEMPLATE];
+  while (pending.length > 0) {
+    const ready = pending.filter((a) => !a.parentCode || idByCode.has(a.parentCode));
+    // The template is a fixed, cycle-free constant; ready can't be empty.
+    for (const a of ready) {
+      const { rows } = await client.query<{ id: string }>(
+        `INSERT INTO accounts (business_id, parent_id, code, name, type)
+         VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+        [businessId, a.parentCode ? idByCode.get(a.parentCode) : null, a.code, a.name, a.type],
+      );
+      idByCode.set(a.code, rows[0].id);
+      pending.splice(pending.indexOf(a), 1);
+    }
+  }
 }
 
 /** Whether this deployment has any business at all (drives the first-run flow). */
