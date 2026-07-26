@@ -49,6 +49,13 @@ app.prepare().then(async () => {
   const { runBackupTick } = await import("./src/lib/backup-service");
   const { BACKUP_TICK_INTERVAL_MS } = await import("./src/lib/backup");
   const { runServerSyncTick, SERVER_SYNC_INTERVAL_MS } = await import("./src/lib/server-sync");
+  const { assertRlsEffective } = await import("./src/lib/db");
+
+  // Phase 12: tenant isolation is enforced by Postgres row-level security,
+  // which superusers and BYPASSRLS roles ignore outright — silently, with no
+  // error to notice. Refuse to serve production traffic in that state; in
+  // development this only warns (see assertRlsEffective).
+  await assertRlsEffective();
 
   // Phase 9: push this location's daily rollup to the configured central
   // server. A tick that can't reach central just records the error and the

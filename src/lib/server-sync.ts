@@ -22,7 +22,7 @@
  * Config is stored in the settings table under SETTING_KEYS.serverSyncConfig.
  * State (high-water marks) is stored under SETTING_KEYS.serverSyncState.
  */
-import { query } from "./db";
+import { query, withTenant, withoutTenantScope } from "./db";
 import { getSetting, setSetting, SETTING_KEYS } from "./settings";
 import { applySyncEvent, type SyncEventInput, type SyncEventType } from "./sync-events";
 
@@ -334,18 +334,23 @@ export async function runServerPull(businessId: string): Promise<PullResult> {
 // ---------------------------------------------------------------------------
 
 export async function runServerSyncTick(): Promise<void> {
-  const { rows } = await query<{ business_id: string }>(
-    `SELECT business_id FROM settings WHERE key = $1 AND location_id IS NULL`,
-    [SETTING_KEYS.serverSyncConfig],
-  );
+  // Discovery spans tenants; each business's sync then runs scoped to it.
+  const rows = await withoutTenantScope("platform", async () => {
+    const result = await query<{ business_id: string }>(
+      `SELECT business_id FROM settings WHERE key = $1 AND location_id IS NULL`,
+      [SETTING_KEYS.serverSyncConfig],
+    );
+    return result.rows;
+  });
+
   for (const row of rows) {
     try {
-      await runServerPush(row.business_id);
+      await withTenant(row.business_id, () => runServerPush(row.business_id));
     } catch (err) {
       console.error(`server-sync push failed for business ${row.business_id}:`, err);
     }
     try {
-      await runServerPull(row.business_id);
+      await withTenant(row.business_id, () => runServerPull(row.business_id));
     } catch (err) {
       console.error(`server-sync pull failed for business ${row.business_id}:`, err);
     }

@@ -29,6 +29,11 @@ async function main() {
   try {
     await client.query("BEGIN");
 
+    // Seeding creates a tenant, so it necessarily runs outside tenant scope.
+    // Harmless when connected as the owner (who is not subject to RLS anyway)
+    // and required when connected as the unprivileged app role.
+    await client.query("SELECT set_config('app.rls_bypass', 'on', true)");
+
     let businessId: string;
     const existingBusiness = await client.query("SELECT id FROM businesses LIMIT 1");
     if (existingBusiness.rowCount) {
@@ -36,8 +41,8 @@ async function main() {
       console.log("Business already exists, reusing.");
     } else {
       const res = await client.query(
-        "INSERT INTO businesses (name) VALUES ($1) RETURNING id",
-        ["کافه نمونه"],
+        "INSERT INTO businesses (name, slug) VALUES ($1, $2) RETURNING id",
+        ["کافه نمونه", "cafe-nemoone"],
       );
       businessId = res.rows[0].id;
       console.log("Created business «کافه نمونه».");
@@ -61,16 +66,26 @@ async function main() {
     }
 
     const existingOwner = await client.query(
-      "SELECT id FROM users WHERE email = $1",
-      [email],
+      "SELECT id FROM users WHERE business_id = $1 AND email = $2",
+      [businessId, email],
     );
     if (existingOwner.rowCount) {
       console.log(`Owner ${email} already exists, skipping.`);
     } else {
+      // Phase 12: the login identity is global (platform_users) and the row in
+      // `users` is this person's membership of this business.
+      const passwordHash = await bcrypt.hash(password, 10);
+      const identity = await client.query(
+        `INSERT INTO platform_users (email, password_hash, full_name)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (email) DO UPDATE SET full_name = EXCLUDED.full_name
+         RETURNING id`,
+        [email, passwordHash, name],
+      );
       await client.query(
-        `INSERT INTO users (business_id, role, full_name, email, password_hash)
-         VALUES ($1, 'owner', $2, $3, $4)`,
-        [businessId, name, email, await bcrypt.hash(password, 10)],
+        `INSERT INTO users (business_id, platform_user_id, role, full_name, email, password_hash)
+         VALUES ($1, $2, 'owner', $3, $4, $5)`,
+        [businessId, identity.rows[0].id, name, email, passwordHash],
       );
       console.log(`Created owner ${email} (password from SEED_OWNER_PASSWORD).`);
     }

@@ -1,0 +1,443 @@
+/**
+ * Phase 12 exit criterion: two businesses coexist in one database and neither
+ * can read or write a single row belonging to the other.
+ *
+ * This test is the whole reason the isolation boundary is trustworthy, so it
+ * is deliberately paranoid in two ways:
+ *
+ *  1. It connects as a purpose-created **unprivileged role**, not as the
+ *     database owner. Superusers and BYPASSRLS roles ignore row-level security
+ *     entirely — and the stock docker-compose.yml and the CI service both make
+ *     `pos` a superuser. Run as `pos`, every assertion below would pass
+ *     vacuously while proving nothing at all.
+ *
+ *  2. It asserts coverage over the live schema rather than a hand-written
+ *     list: every table that carries tenant data must have RLS enabled AND
+ *     forced. A future migration that adds a table without a policy fails here
+ *     instead of leaking in production.
+ */
+import { randomUUID } from "node:crypto";
+import { Client } from "pg";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { runMigrations } from "../scripts/migrate";
+import { createAppRole } from "../scripts/create-app-role";
+
+const rootDatabaseUrl = process.env.DATABASE_URL;
+if (!rootDatabaseUrl) {
+  throw new Error("DATABASE_URL is required for database integration tests");
+}
+
+const APP_ROLE = "pos_rls_test_role";
+const APP_PASSWORD = "rls-test-password";
+
+/** Tables that hold no tenant data and are documented as exempt in 0021. */
+const EXEMPT_TABLES = new Set([
+  "schema_migrations",
+  "feature_flags",
+  "platform_admins",
+  "platform_audit_log",
+]);
+
+let databaseName: string;
+let ownerClient: Client;
+let appClient: Client;
+
+const alpha = { businessId: "", locationId: "", categoryId: "", orderId: "" };
+const beta = { businessId: "", locationId: "", categoryId: "", orderId: "" };
+
+function urlFor(database: string, user?: { name: string; password: string }): string {
+  const url = new URL(rootDatabaseUrl!);
+  url.pathname = `/${database}`;
+  if (user) {
+    url.username = user.name;
+    url.password = user.password;
+  }
+  return url.toString();
+}
+
+function maintenanceUrl(): string {
+  const url = new URL(rootDatabaseUrl!);
+  url.pathname = "/postgres";
+  return url.toString();
+}
+
+/** Creates a business with a location, a menu category and an order. */
+async function seedBusiness(name: string, slug: string) {
+  const biz = await ownerClient.query<{ id: string }>(
+    "INSERT INTO businesses (name, slug) VALUES ($1, $2) RETURNING id",
+    [name, slug],
+  );
+  const businessId = biz.rows[0].id;
+
+  const loc = await ownerClient.query<{ id: string }>(
+    "INSERT INTO locations (business_id, name) VALUES ($1, 'Main') RETURNING id",
+    [businessId],
+  );
+  const locationId = loc.rows[0].id;
+
+  const category = await ownerClient.query<{ id: string }>(
+    "INSERT INTO menu_categories (location_id, name) VALUES ($1, $2) RETURNING id",
+    [locationId, `category-${slug}`],
+  );
+
+  const order = await ownerClient.query<{ id: string }>(
+    `INSERT INTO orders (location_id, order_number, type, status, total)
+     VALUES ($1, 1, 'takeaway', 'completed', 50000) RETURNING id`,
+    [locationId],
+  );
+
+  return { businessId, locationId, categoryId: category.rows[0].id, orderId: order.rows[0].id };
+}
+
+/** Runs `fn` with the app connection scoped to `businessId`. */
+async function asBusiness<T>(businessId: string, fn: () => Promise<T>): Promise<T> {
+  await appClient.query("SELECT set_config('app.business_id', $1, false)", [businessId]);
+  await appClient.query("SELECT set_config('app.rls_bypass', '', false)");
+  return fn();
+}
+
+async function countIn(table: string): Promise<number> {
+  const { rows } = await appClient.query<{ n: string }>(`SELECT count(*) AS n FROM ${table}`);
+  return Number(rows[0].n);
+}
+
+beforeAll(async () => {
+  databaseName = `pos_rls_${randomUUID().replaceAll("-", "")}`;
+
+  const maintenance = new Client({ connectionString: maintenanceUrl() });
+  await maintenance.connect();
+  try {
+    await maintenance.query(`CREATE DATABASE "${databaseName}"`);
+  } finally {
+    await maintenance.end();
+  }
+
+  const ownerUrl = urlFor(databaseName);
+  await runMigrations({ databaseUrl: ownerUrl, quiet: true });
+  await createAppRole({
+    databaseUrl: ownerUrl,
+    roleName: APP_ROLE,
+    password: APP_PASSWORD,
+    quiet: true,
+  });
+
+  ownerClient = new Client({ connectionString: ownerUrl });
+  await ownerClient.connect();
+
+  Object.assign(alpha, await seedBusiness("Alpha Cafe", "alpha"));
+  Object.assign(beta, await seedBusiness("Beta Cafe", "beta"));
+
+  appClient = new Client({
+    connectionString: urlFor(databaseName, { name: APP_ROLE, password: APP_PASSWORD }),
+  });
+  await appClient.connect();
+}, 120_000);
+
+afterAll(async () => {
+  await appClient?.end();
+  await ownerClient?.end();
+
+  const maintenance = new Client({ connectionString: maintenanceUrl() });
+  await maintenance.connect();
+  try {
+    await maintenance.query(`DROP DATABASE IF EXISTS "${databaseName}" WITH (FORCE)`);
+    await maintenance.query(`DROP ROLE IF EXISTS ${APP_ROLE}`);
+  } finally {
+    await maintenance.end();
+  }
+});
+
+describe("the test is actually testing something", () => {
+  it("connects as a role that row-level security applies to", async () => {
+    // If this fails, every other assertion in this file is vacuous.
+    const { rows } = await appClient.query<{ privileged: boolean }>(
+      "SELECT (rolsuper OR rolbypassrls) AS privileged FROM pg_roles WHERE rolname = current_user",
+    );
+    expect(rows[0].privileged).toBe(false);
+  });
+
+  it("seeded both businesses", async () => {
+    const { rows } = await ownerClient.query<{ n: string }>("SELECT count(*) AS n FROM businesses");
+    expect(Number(rows[0].n)).toBe(2);
+  });
+});
+
+describe("every tenant table is protected", () => {
+  it("has RLS enabled and forced, with a policy", async () => {
+    const { rows } = await ownerClient.query<{
+      relname: string;
+      relrowsecurity: boolean;
+      relforcerowsecurity: boolean;
+      policies: string;
+    }>(
+      `SELECT c.relname, c.relrowsecurity, c.relforcerowsecurity,
+              (SELECT count(*) FROM pg_policy p WHERE p.polrelid = c.oid) AS policies
+         FROM pg_class c
+         JOIN pg_namespace n ON n.oid = c.relnamespace AND n.nspname = 'public'
+        WHERE c.relkind = 'r'
+        ORDER BY c.relname`,
+    );
+
+    const unprotected = rows
+      .filter((r) => !EXEMPT_TABLES.has(r.relname))
+      .filter((r) => !r.relrowsecurity || !r.relforcerowsecurity || Number(r.policies) === 0)
+      .map((r) => r.relname);
+
+    expect(unprotected, `tables missing tenant isolation: ${unprotected.join(", ")}`).toEqual([]);
+    // Guards against the exempt list quietly swallowing the whole schema.
+    expect(rows.length).toBeGreaterThan(50);
+  });
+
+  it("exempts only infrastructure and the platform realm", async () => {
+    // Two different justifications, and the distinction matters:
+    //   - infrastructure/catalogue tables hold no tenant column at all;
+    //   - platform_* tables are the super-user realm, which spans tenants by
+    //     definition (platform_audit_log records *which* business an admin
+    //     acted on, so it does carry business_id) and is only ever reached
+    //     through a platform session.
+    for (const table of EXEMPT_TABLES) {
+      if (table.startsWith("platform_")) continue;
+
+      const { rows } = await ownerClient.query<{ has_business: boolean }>(
+        `SELECT EXISTS (
+           SELECT 1 FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = $1
+              AND column_name IN ('business_id', 'location_id')
+         ) AS has_business`,
+        [table],
+      );
+      expect(rows[0].has_business, `${table} is exempt but carries a tenant column`).toBe(false);
+    }
+
+    // The platform realm must stay unreachable from a tenant-scoped session,
+    // which is only true while no route hands it a tenant connection. Assert
+    // it at least isn't in the tenant-table set by accident.
+    expect([...EXEMPT_TABLES].filter((t) => t.startsWith("platform_")).sort()).toEqual([
+      "platform_admins",
+      "platform_audit_log",
+    ]);
+  });
+
+  it("makes reporting views follow the caller rather than their owner", async () => {
+    // A view without security_invoker runs with its owner's rights and would
+    // re-open every boundary the policies close.
+    const { rows } = await ownerClient.query<{ viewname: string; options: string[] | null }>(
+      `SELECT c.relname AS viewname, c.reloptions AS options
+         FROM pg_class c
+         JOIN pg_namespace n ON n.oid = c.relnamespace AND n.nspname = 'public'
+        WHERE c.relkind = 'v' AND c.relname LIKE 'v\\_%'`,
+    );
+    expect(rows.length).toBeGreaterThan(5);
+    for (const view of rows) {
+      expect(
+        (view.options ?? []).some((o) => o.replace(/\s/g, "").toLowerCase() === "security_invoker=on"),
+        `view ${view.viewname} does not set security_invoker`,
+      ).toBe(true);
+    }
+  });
+});
+
+describe("reads are confined to the current business", () => {
+  it("sees only its own business, location and menu", async () => {
+    await asBusiness(alpha.businessId, async () => {
+      expect(await countIn("businesses")).toBe(1);
+      expect(await countIn("locations")).toBe(1);
+      expect(await countIn("menu_categories")).toBe(1);
+
+      const { rows } = await appClient.query<{ name: string }>("SELECT name FROM menu_categories");
+      expect(rows[0].name).toBe("category-alpha");
+    });
+
+    await asBusiness(beta.businessId, async () => {
+      const { rows } = await appClient.query<{ name: string }>("SELECT name FROM menu_categories");
+      expect(rows[0].name).toBe("category-beta");
+    });
+  });
+
+  it("cannot reach another business's rows even by naming their primary key", async () => {
+    await asBusiness(alpha.businessId, async () => {
+      const category = await appClient.query("SELECT * FROM menu_categories WHERE id = $1", [
+        beta.categoryId,
+      ]);
+      expect(category.rowCount).toBe(0);
+
+      const order = await appClient.query("SELECT * FROM orders WHERE id = $1", [beta.orderId]);
+      expect(order.rowCount).toBe(0);
+
+      const business = await appClient.query("SELECT * FROM businesses WHERE id = $1", [
+        beta.businessId,
+      ]);
+      expect(business.rowCount).toBe(0);
+    });
+  });
+
+  it("reads nothing at all with no tenant context — fail closed, not fail open", async () => {
+    await appClient.query("SELECT set_config('app.business_id', '', false)");
+    await appClient.query("SELECT set_config('app.rls_bypass', '', false)");
+
+    expect(await countIn("businesses")).toBe(0);
+    expect(await countIn("locations")).toBe(0);
+    expect(await countIn("menu_categories")).toBe(0);
+    expect(await countIn("orders")).toBe(0);
+    expect(await countIn("users")).toBe(0);
+  });
+
+  it("ignores a malformed tenant setting instead of erroring open", async () => {
+    await appClient.query("SELECT set_config('app.business_id', 'not-a-uuid', false)");
+    await expect(countIn("menu_categories")).rejects.toThrow();
+  });
+});
+
+describe("writes are confined to the current business", () => {
+  it("refuses an insert that would land in another business", async () => {
+    await asBusiness(alpha.businessId, async () => {
+      await expect(
+        appClient.query("INSERT INTO menu_categories (location_id, name) VALUES ($1, 'sneaky')", [
+          beta.locationId,
+        ]),
+      ).rejects.toThrow(/row-level security/i);
+    });
+  });
+
+  it("refuses to move one of its own rows into another business", async () => {
+    await asBusiness(alpha.businessId, async () => {
+      await expect(
+        appClient.query("UPDATE menu_categories SET location_id = $1 WHERE id = $2", [
+          beta.locationId,
+          alpha.categoryId,
+        ]),
+      ).rejects.toThrow(/row-level security/i);
+    });
+  });
+
+  it("silently affects nothing when updating or deleting another business's rows", async () => {
+    await asBusiness(alpha.businessId, async () => {
+      const updated = await appClient.query("UPDATE menu_categories SET name = 'hacked' WHERE id = $1", [
+        beta.categoryId,
+      ]);
+      expect(updated.rowCount).toBe(0);
+
+      const deleted = await appClient.query("DELETE FROM menu_categories WHERE id = $1", [
+        beta.categoryId,
+      ]);
+      expect(deleted.rowCount).toBe(0);
+    });
+
+    // And Beta's row is still intact, checked from outside the boundary.
+    const { rows } = await ownerClient.query<{ name: string }>(
+      "SELECT name FROM menu_categories WHERE id = $1",
+      [beta.categoryId],
+    );
+    expect(rows[0].name).toBe("category-beta");
+  });
+
+  it("protects child rows reachable only through a parent", async () => {
+    // journal_lines carries no tenant column at all — it is reachable only via
+    // journal_entries, which is the shape most likely to be missed.
+    const entry = await ownerClient.query<{ id: string }>(
+      `INSERT INTO journal_entries (business_id, entry_date, memo)
+       VALUES ($1, current_date, 'beta only') RETURNING id`,
+      [beta.businessId],
+    );
+    const account = await ownerClient.query<{ id: string }>(
+      `INSERT INTO accounts (business_id, code, name, type)
+       VALUES ($1, '1100', 'Cash', 'asset') RETURNING id`,
+      [beta.businessId],
+    );
+    await ownerClient.query(
+      "INSERT INTO journal_lines (entry_id, account_id, debit, credit) VALUES ($1, $2, 1000, 0)",
+      [entry.rows[0].id, account.rows[0].id],
+    );
+
+    await asBusiness(alpha.businessId, async () => {
+      expect(await countIn("journal_lines")).toBe(0);
+      expect(await countIn("journal_entries")).toBe(0);
+
+      await expect(
+        appClient.query(
+          "INSERT INTO journal_lines (entry_id, account_id, debit, credit) VALUES ($1, $2, 500, 0)",
+          [entry.rows[0].id, account.rows[0].id],
+        ),
+      ).rejects.toThrow(/row-level security/i);
+    });
+
+    await asBusiness(beta.businessId, async () => {
+      expect(await countIn("journal_lines")).toBe(1);
+    });
+  });
+
+  it("cannot switch off its own isolation", async () => {
+    await asBusiness(alpha.businessId, async () => {
+      // The app role owns no tables, so it cannot drop a policy or disable RLS.
+      await expect(
+        appClient.query("ALTER TABLE menu_categories DISABLE ROW LEVEL SECURITY"),
+      ).rejects.toThrow();
+      await expect(
+        appClient.query("DROP POLICY tenant_isolation ON menu_categories"),
+      ).rejects.toThrow();
+    });
+  });
+});
+
+describe("the documented bypass", () => {
+  it("sees every business, which is why its use is confined to login and platform code", async () => {
+    await appClient.query("SELECT set_config('app.business_id', '', false)");
+    await appClient.query("SELECT set_config('app.rls_bypass', 'on', false)");
+    expect(await countIn("businesses")).toBe(2);
+
+    await appClient.query("SELECT set_config('app.rls_bypass', '', false)");
+    expect(await countIn("businesses")).toBe(0);
+  });
+});
+
+describe("cross-business identity", () => {
+  it("lets one person hold a membership in two businesses", async () => {
+    const identity = await ownerClient.query<{ id: string }>(
+      `INSERT INTO platform_users (email, password_hash, full_name)
+       VALUES ('group.owner@example.com', 'x', 'Group Owner') RETURNING id`,
+    );
+    const platformUserId = identity.rows[0].id;
+
+    for (const [business, role] of [
+      [alpha, "owner"],
+      [beta, "manager"],
+    ] as const) {
+      await ownerClient.query(
+        `INSERT INTO users (business_id, platform_user_id, role, full_name, email)
+         VALUES ($1, $2, $3, 'Group Owner', 'group.owner@example.com')`,
+        [business.businessId, platformUserId, role],
+      );
+    }
+
+    // The same email now exists twice, which the old global UNIQUE forbade.
+    // Ordered by role::text — `role` is an enum, so a bare ORDER BY sorts it
+    // in declaration order (owner before manager), not alphabetically.
+    const { rows } = await ownerClient.query<{ role: string; business_id: string }>(
+      "SELECT role, business_id FROM users WHERE platform_user_id = $1 ORDER BY role::text",
+      [platformUserId],
+    );
+    expect(rows.map((r) => r.role)).toEqual(["manager", "owner"]);
+
+    // …and each business sees only its own membership row.
+    await asBusiness(alpha.businessId, async () => {
+      const { rows: alphaRows } = await appClient.query<{ role: string }>(
+        "SELECT role FROM users WHERE platform_user_id = $1",
+        [platformUserId],
+      );
+      expect(alphaRows).toHaveLength(1);
+      expect(alphaRows[0].role).toBe("owner");
+    });
+  });
+
+  it("stops a business from enumerating platform identities that aren't its members", async () => {
+    await ownerClient.query(
+      `INSERT INTO platform_users (email, password_hash, full_name)
+       VALUES ('stranger@example.com', 'x', 'Stranger')`,
+    );
+
+    await asBusiness(alpha.businessId, async () => {
+      const { rows } = await appClient.query<{ email: string }>("SELECT email FROM platform_users");
+      expect(rows.map((r) => r.email)).not.toContain("stranger@example.com");
+    });
+  });
+});

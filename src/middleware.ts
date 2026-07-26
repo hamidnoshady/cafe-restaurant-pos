@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { SESSION_COOKIE, verifySession } from "@/lib/auth";
+// Imported from auth-edge, not auth: middleware runs in the Edge runtime,
+// where the tenant context (node:async_hooks) and the pg pool that @/lib/auth
+// now pulls in cannot load.
+import { SESSION_COOKIE, verifySession } from "@/lib/auth-edge";
 
 const PUBLIC_PATHS = [
   "/login",
@@ -10,6 +13,10 @@ const PUBLIC_PATHS = [
   "/welcome",
   "/api/setup/bootstrap",
   "/api/setup/state",
+  // Phase 12: self-service business registration creates the tenant a session
+  // would otherwise be scoped to, so it cannot require one. Refuses with 403
+  // unless ALLOW_PUBLIC_SIGNUP is set.
+  "/api/setup/signup",
   // Phase 9: the caller is another location's server, not a browser — the
   // route authenticates it with a per-location bearer token, not a session.
   "/api/rollup/ingest",

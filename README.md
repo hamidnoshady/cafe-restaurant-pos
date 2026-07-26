@@ -103,6 +103,8 @@ kitchen": its items land on the KDS as `sent` immediately.
 | `npm start` | Custom production server (`server.ts`) — same as `dev`, without hot reload |
 | `npm test` | Unit tests (Jalali, digits, money, order totals, kitchen ticket status, …) |
 | `npm run db:migrate` | Apply pending SQL migrations from `migrations/` |
+| `npm run db:app-role` | Provision the unprivileged DB role the app should connect as (Phase 12 — see Multi-business below) |
+| `npm run test:db` | Database integration tests (`integration/`), against a real Postgres |
 | `npm run db:seed` | Seed business, location, owner, sample cashier (idempotent) |
 | `npm run db:restore` | Restore a backup artifact — dry-runs into a scratch DB first (Phase 10, see [docs/backup-restore.md](docs/backup-restore.md)) |
 | `npx tsx scripts/ws-load-test.ts` | WebSocket load test against a running, seeded server (Phase 9 — see the script header for env knobs) |
@@ -153,7 +155,45 @@ plan/region, so it is editable in the UI.
 - **Dates** are stored as ISO/Gregorian `timestamptz` everywhere. Jalali conversion happens only at display time (`src/lib/jalali.ts`).
 - **Digits** are stored as Latin numerals; Persian digits are display-only (`src/lib/digits.ts`).
 - **Multi-location:** every tenant-scoped table carries `location_id` (business-scoped tables like `users`, `accounts`, `customers` carry `business_id` and a nullable `location_id`), even though v1 may run a single location.
+- **Multi-business:** `businesses` is the tenant, and isolation between tenants is enforced by Postgres row-level security — see below.
 - Migrations are forward-only numbered SQL files in `migrations/`, applied by `scripts/migrate.ts` (tracked in `schema_migrations`).
+
+## Multi-business tenancy (Phase 12)
+
+One deployment can host many businesses. Two things are worth knowing before working on
+anything that touches the database:
+
+**Isolation is enforced by the database, not by query authors.** Every tenant-scoped table
+has a row-level security policy keyed on the `app.business_id` session setting
+(`migrations/0021_row_level_security.sql`). `src/lib/db.ts` applies that setting on every
+connection checkout from the tenant context (`src/lib/tenant-context.ts`), which
+`getSession()` establishes once per request. So a handler that forgets a `WHERE business_id
+= …` gets *fewer* rows, never another tenant's. With no context at all, tenant tables read
+as empty — it fails closed.
+
+Two operations legitimately cross tenants and go through `withoutTenantScope()`: resolving
+a login email to its memberships, and platform administration. Grep for it to audit them.
+
+**The app's database role must not be a superuser.** Superusers and `BYPASSRLS` roles ignore
+row-level security entirely, which would make every policy a silent no-op. The `pos` role
+that `docker-compose.yml` creates *is* a superuser — fine for local single-business work,
+not for a hosted deployment:
+
+```bash
+APP_DB_PASSWORD=$(openssl rand -hex 32) npm run db:app-role
+# then point DATABASE_URL at postgres://pos_app:<that password>@…
+```
+
+Migrations keep running as the owner. `server.ts` refuses to start in production when the
+configured role can bypass RLS, and warns in development.
+`integration/tenant-isolation.integration.test.ts` provisions its own unprivileged role, so
+the policies are proven in CI regardless of how the local database is set up.
+
+**Identity vs membership.** `platform_users` is the login identity (globally unique email);
+a row in `users` is that person's *membership* of one business, carrying their role, PIN,
+permission overrides and default branch. One person can hold several memberships and switch
+between them (`/api/auth/switch-business`). PIN-only staff have no platform identity and
+belong to exactly one business.
 
 ## Decisions on Phase 0 open questions
 

@@ -35,6 +35,9 @@ const PUBLIC_ROUTES: Record<string, string> = {
   "auth/pin-login": "credential exchange — necessarily runs without a session",
   "auth/logout": "only clears the caller's own session cookie",
   "setup/bootstrap": "first-run only — refuses with 409 as soon as any user exists",
+  "setup/signup":
+    "self-service business registration — creates the tenant a session would otherwise be scoped to; " +
+    "refuses with 403 unless ALLOW_PUBLIC_SIGNUP is explicitly enabled",
   "rollup/ingest": "server-to-server — authenticated by a per-location bearer token, not a session",
   "server-sync/pull": "server-to-server — authenticated by REMOTE_SYNC_TOKEN bearer token, not a session",
   "server-sync/push": "server-to-server — authenticated by REMOTE_SYNC_TOKEN bearer token, not a session",
@@ -44,6 +47,10 @@ const PUBLIC_ROUTES: Record<string, string> = {
 const SELF_GUARDING_ROUTES: Record<string, string> = {
   "auth/me": "returns the caller's own session (or null) — nothing else",
   "setup/state": "public only for needsBootstrap; full state requires owner/manager",
+  "auth/businesses": "lists the caller's own memberships — any authenticated member may ask",
+  "auth/switch-business":
+    "re-issues the caller's own session against another of their memberships; the membership " +
+    "lookup is the authorization, so no role is applicable",
 };
 
 /** All requireRole(...) argument lists found in a file, as role-name arrays. */
