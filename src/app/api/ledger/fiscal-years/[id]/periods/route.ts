@@ -8,7 +8,7 @@ interface Ctx {
 
 /** A fiscal year's twelve periods, in calendar order. */
 export const GET = withTenantScope(async (_request: NextRequest, ctx: Ctx) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requireRole("owner", "manager", "accountant");
   if (error) return error;
 
   const { id } = await ctx.params;

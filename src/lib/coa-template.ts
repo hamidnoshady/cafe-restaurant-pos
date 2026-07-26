@@ -34,6 +34,7 @@ export const WELL_KNOWN_CODES = {
   vatPayable: "2200",
   openingEquity: "3900",
   historicalInventoryReconciliationEquity: "3950",
+  retainedEarnings: "3800",
   salesRevenue: "4300",
   salesReturns: "4400",
   cogs: "5100",
@@ -63,6 +64,7 @@ export const FNB_COA_TEMPLATE: TemplateAccount[] = [
 
   { code: "3000", name: "حقوق صاحبان سرمایه", type: "equity" },
   { code: "3100", name: "سرمایه", type: "equity", parentCode: "3000" },
+  { code: "3800", name: "سود (زیان) انباشته", type: "equity", parentCode: "3000" },
   { code: "3900", name: "تراز افتتاحیه", type: "equity", parentCode: "3000" },
   { code: "3950", name: "حقوق تطبیق تاریخی موجودی", type: "equity", parentCode: "3000" },
 

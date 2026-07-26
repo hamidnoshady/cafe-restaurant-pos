@@ -3,9 +3,9 @@ import { requirePermission, requireRole, withTenantScope } from "@/lib/auth";
 import { PERMISSIONS } from "@/lib/permissions";
 import { createFiscalYear, FiscalPeriodError, listFiscalYears } from "@/lib/fiscal-periods-service";
 
-/** Every fiscal year defined for this business. Any owner/manager may read; only owner/accountant may define one (see POST). */
+/** Every fiscal year defined for this business. Owner/manager/accountant may read; only owner/accountant may define one (see POST). */
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requireRole("owner", "manager", "accountant");
   if (error) return error;
   return NextResponse.json({ fiscalYears: await listFiscalYears(session.businessId) });
 });
