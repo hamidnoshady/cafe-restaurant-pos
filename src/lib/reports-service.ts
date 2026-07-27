@@ -312,6 +312,87 @@ export async function getCashFlow(
 }
 
 // ---------------------------------------------------------------------------
+// VAT / tax reporting — output vs input VAT and the net payable position
+// ---------------------------------------------------------------------------
+
+async function vatAccountTotals(
+  businessId: string,
+  codes: string[],
+  dateFrom?: string,
+  dateTo?: string,
+): Promise<Map<string, { debit: number; credit: number }>> {
+  const params: unknown[] = [businessId, codes];
+  const where = ["je.business_id = $1", "a.code = ANY($2::text[])"];
+  if (dateFrom) {
+    params.push(dateFrom);
+    where.push(`je.entry_date >= $${params.length}`);
+  }
+  if (dateTo) {
+    params.push(dateTo);
+    where.push(`je.entry_date <= $${params.length}`);
+  }
+  const { rows } = await query<{ code: string; debit: string; credit: string }>(
+    `SELECT a.code, SUM(jl.debit) AS debit, SUM(jl.credit) AS credit
+       FROM journal_lines jl
+       JOIN journal_entries je ON je.id = jl.entry_id
+       JOIN accounts a ON a.id = jl.account_id
+      WHERE ${where.join(" AND ")}
+      GROUP BY a.code`,
+    params,
+  );
+  return new Map(rows.map((r) => [r.code, { debit: Number(r.debit), credit: Number(r.credit) }]));
+}
+
+export interface VatReport {
+  periodFrom: string | null;
+  periodTo: string | null;
+  /** Net movement on vatPayable in the period — VAT collected on sales, net of any credited back (e.g. sales returns). */
+  outputVat: number;
+  /** Net movement on vatReceivable in the period — VAT paid on purchases, recorded via a manual journal entry against it. */
+  inputVat: number;
+  /** outputVat - inputVat: positive is owed to the tax authority for the period, negative is a refundable position. */
+  netPayable: number;
+  /** All-time balance of vatPayable as of periodTo (or today, if not given) — not reset by reporting a period. */
+  vatPayableBalance: number;
+  /** All-time balance of vatReceivable as of periodTo. */
+  vatReceivableBalance: number;
+}
+
+/**
+ * Output VAT has posted to vatPayable since Phase 7 (every order payment
+ * credits it). Input VAT has no automatic posting — it's recorded as its own
+ * manual journal entry (Debit vatReceivable / Credit Accounts Payable or
+ * Cash) alongside entering a supplier bill, deliberately kept separate from
+ * purchase receiving itself (see the phase doc's decision on this). This
+ * report just reads both control accounts' movements over a period and nets
+ * them — a return-shaped summary, not a new posting path.
+ */
+export async function getVatReport(businessId: string, filters: DateRangeFilters = {}): Promise<VatReport> {
+  const codes = [WELL_KNOWN_CODES.vatPayable, WELL_KNOWN_CODES.vatReceivable];
+  const [period, cumulative] = await Promise.all([
+    vatAccountTotals(businessId, codes, filters.dateFrom, filters.dateTo),
+    vatAccountTotals(businessId, codes, undefined, filters.dateTo),
+  ]);
+  const payablePeriod = period.get(WELL_KNOWN_CODES.vatPayable) ?? { debit: 0, credit: 0 };
+  const receivablePeriod = period.get(WELL_KNOWN_CODES.vatReceivable) ?? { debit: 0, credit: 0 };
+  const payableCumulative = cumulative.get(WELL_KNOWN_CODES.vatPayable) ?? { debit: 0, credit: 0 };
+  const receivableCumulative = cumulative.get(WELL_KNOWN_CODES.vatReceivable) ?? { debit: 0, credit: 0 };
+
+  const outputVat = payablePeriod.credit - payablePeriod.debit;
+  const inputVat = receivablePeriod.debit - receivablePeriod.credit;
+
+  return {
+    periodFrom: filters.dateFrom ?? null,
+    periodTo: filters.dateTo ?? null,
+    outputVat,
+    inputVat,
+    netPayable: outputVat - inputVat,
+    vatPayableBalance: payableCumulative.credit - payableCumulative.debit,
+    vatReceivableBalance: receivableCumulative.debit - receivableCumulative.credit,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Period comparison — "vs previous period", same shape as the statement itself
 // ---------------------------------------------------------------------------
 
