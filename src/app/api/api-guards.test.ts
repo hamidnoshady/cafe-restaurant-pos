@@ -137,6 +137,9 @@ describe("back-office/financial surfaces exclude floor roles", () => {
   // requirePermission(PERMISSIONS.ledgerClosePeriod), which is owner+accountant by role
   // preset (see permissions.ts) — no floor role ever holds it. ledger/entries/drafts/[id]/approve
   // and ledger/entries/[id]/reverse use requirePermission(PERMISSIONS.ledgerApprove), same shape.
+  // ledger/accounts/[id] (rename/reparent/archive/delete) uses requirePermission(PERMISSIONS.accountsEdit) —
+  // ledger/accounts itself isn't listed here since its GET still guards with requireRole and that's
+  // what this sweep checks; only its POST is permission-only.
   const PERMISSION_GUARDED = [
     "team",
     "branches",
@@ -144,6 +147,7 @@ describe("back-office/financial surfaces exclude floor roles", () => {
     "ledger/fiscal-years/[id]/close",
     "ledger/entries/drafts/[id]/approve",
     "ledger/entries/[id]/reverse",
+    "ledger/accounts/[id]",
   ];
   const FLOOR_ROLES = ["cashier", "waiter", "kitchen"];
 
