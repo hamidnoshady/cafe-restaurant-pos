@@ -86,13 +86,28 @@ export function tenantDataToSql(tables: TenantExportTable[]): string {
     "-- Per-tenant data export (Phase 17). Restore into an already-migrated,",
     "-- otherwise-empty database — this carries data only, no schema.",
     "BEGIN;",
+    // Business-rule triggers (e.g. "an order's items can't change once it's
+    // no longer open") police live mutations — every row here already passed
+    // through them once, in whatever order produced this exact final state,
+    // before export. Replaying that state can hit them anyway (a completed
+    // order's items, restored after the order itself, momentarily look like
+    // an edit to a closed order). `session_replication_role = replica` is the
+    // standard mechanism logical replication itself uses to skip ordinary
+    // triggers during a data load; SET LOCAL keeps it scoped to this
+    // transaction, reverting automatically on COMMIT or ROLLBACK.
+    "SET LOCAL session_replication_role = replica;",
   ];
   for (const table of tables) {
     const safeName = assertSafeIdentifier(table.name);
     const columnList = table.columns.map((c) => `"${assertSafeIdentifier(c)}"`).join(", ");
     for (const row of table.rows) {
       const values = table.columns.map((c) => sqlLiteral(row[c])).join(", ");
-      lines.push(`INSERT INTO "${safeName}" (${columnList}) VALUES (${values});`);
+      // OVERRIDING SYSTEM VALUE: several tables (stock_movements, journal_lines,
+      // audit_log, ...) use `bigint GENERATED ALWAYS AS IDENTITY`, which refuses
+      // an explicit id without this clause. Harmless (a no-op) on every other
+      // table, so it's simplest to always include it rather than special-case
+      // which tables need it.
+      lines.push(`INSERT INTO "${safeName}" (${columnList}) OVERRIDING SYSTEM VALUE VALUES (${values});`);
     }
   }
   lines.push("COMMIT;");
