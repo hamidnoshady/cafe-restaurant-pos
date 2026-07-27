@@ -18,7 +18,7 @@ function parseInput(body: Record<string, unknown>, fallback: StoredPrinter) {
   const name = typeof nameValue === "string" ? nameValue.trim() : "";
   const kindValue = body.kind ?? fallback.kind;
   const kind = kindValue === "kitchen" ? "kitchen" : kindValue === "receipt" ? "receipt" : null;
-  const connection = fallback.connection && typeof fallback.connection === "object" ? fallback.connection : {};
+  const connection: PrinterConnection = fallback.connection ?? {};
   const ipValue = body.ip ?? connection.ip;
   const ip = typeof ipValue === "string" ? ipValue.trim() : "";
   const port = Number(body.port ?? connection.port ?? 9100);
