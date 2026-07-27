@@ -151,6 +151,11 @@ export function PosScreen() {
     setSearchActiveIndex((index) => Math.min(index, Math.max(visibleProducts.length - 1, 0)));
   }, [visibleProducts.length]);
 
+  useEffect(() => {
+    const activeResult = visibleProducts[searchActiveIndex];
+    document.getElementById(activeResult ? `pos-product-${activeResult.item.id}` : "")?.scrollIntoView({ block: "nearest" });
+  }, [searchActiveIndex, visibleProducts]);
+
   const hasOpenOverlay = Boolean(pickerItem || reviewOpen || cartSheetOpen);
   useEffect(() => {
     function handleGlobalShortcut(event: KeyboardEvent) {
@@ -259,7 +264,7 @@ export function PosScreen() {
   const totals = computeOrderTotals(cartLines, discount, feeNum);
 
   async function submit() {
-    if (busy || submissionInFlight.current) return;
+    if (busy || submissionInFlight.current) return false;
     setError("");
     if (cart.length === 0) return setError("سبد خرید خالی است.");
     if (orderType === "dine_in" && !tableId) return setError("انتخاب میز الزامی است.");
@@ -320,7 +325,9 @@ export function PosScreen() {
     setDeliveryPhone("");
     setDeliveryFee("");
     setDeliveryCourierId("");
+    setCartSheetOpen(false);
     load();
+    return true;
   }
 
   if (!menu) return <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>;
@@ -342,13 +349,13 @@ export function PosScreen() {
           </>
         )}
         <p className="mb-6 text-lg">{formatToman(result.total)}</p>
-        <PrimaryButton onClick={() => setResult(null)}>سفارش جدید</PrimaryButton>
+        <PrimaryButton onClick={() => { setCartSheetOpen(false); setResult(null); }}>سفارش جدید</PrimaryButton>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col gap-2 lg:h-[calc(100vh-3rem)] lg:flex-row">
+    <div className="flex flex-col gap-2 md:h-[calc(100vh-3rem)] md:flex-row">
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm">
         <div className="border-b border-border p-2">
           <label className="sr-only" htmlFor="pos-product-search">جستجوی محصول</label>
@@ -362,7 +369,7 @@ export function PosScreen() {
               setSearchActiveIndex(0);
             }}
             onKeyDown={(event) => {
-              if (visibleProducts.length === 0) return;
+              if (visibleProducts.length === 0 || event.nativeEvent.isComposing) return;
               if (event.key === "ArrowDown" || event.key === "ArrowUp") {
                 event.preventDefault();
                 const offset = event.key === "ArrowDown" ? 1 : -1;
@@ -395,7 +402,7 @@ export function PosScreen() {
                     ? "bg-primary text-primary-foreground shadow-sm"
                     : "bg-muted text-muted-foreground hover:text-foreground"
                 }`}
-                aria-keyshortcuts={`Alt+${index + 1}`}
+                aria-keyshortcuts={index < 9 ? `Alt+${index + 1}` : undefined}
               >
                 {category.name}
               </button>
@@ -424,7 +431,7 @@ export function PosScreen() {
         </div>
       </div>
       {/* Cart */}
-      <div className="hidden max-h-[46dvh] w-full shrink-0 flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm lg:flex lg:max-h-none lg:w-[22rem]">
+      <div className="hidden max-h-[46dvh] w-full shrink-0 flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm md:flex md:max-h-none md:w-[22rem]">
         <div className="border-b border-border p-4">
           <ErrorBox>{error}</ErrorBox>
           <div className="mb-3 grid grid-cols-3 gap-2 text-sm font-medium">
@@ -601,12 +608,12 @@ export function PosScreen() {
         </div>
       </div>
 
-      <div className="sticky bottom-2 z-20 lg:hidden">
+      <div className="sticky bottom-2 z-20 md:hidden">
         <button
           type="button"
           onClick={() => setCartSheetOpen(true)}
           className="flex min-h-12 w-full items-center justify-between rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          aria-label="باز کردن سبد خرید"
+          aria-label={`باز کردن سبد خرید؛ ${toPersianDigits(cart.length)} قلم، ${formatToman(totals.total)}`}
         >
           <span>{toPersianDigits(cart.reduce((count, line) => count + line.quantity, 0))} قلم در سبد</span>
           <span>{formatToman(totals.total)}</span>
@@ -614,7 +621,7 @@ export function PosScreen() {
       </div>
 
       <Sheet open={cartSheetOpen} onOpenChange={setCartSheetOpen}>
-        <SheetContent side="bottom" className="max-h-[88dvh] gap-0 rounded-t-2xl p-0 lg:hidden">
+        <SheetContent side="bottom" className="max-h-[88dvh] gap-0 rounded-t-2xl p-0 md:hidden">
           <div className="border-b border-border p-4">
             <SheetTitle>سبد خرید</SheetTitle>
             <ErrorBox>{error}</ErrorBox>
@@ -650,8 +657,12 @@ export function PosScreen() {
                 <textarea className={`${inputClass} h-auto`} rows={2} value={deliveryAddress} onChange={(event) => setDeliveryAddress(event.target.value)} placeholder="آدرس تحویل *" />
                 <div className="grid grid-cols-2 gap-2">
                   <input className={inputClass} dir="ltr" inputMode="tel" value={deliveryPhone} onChange={(event) => setDeliveryPhone(event.target.value)} placeholder="تلفن مشتری" />
-                  <input className={inputClass} dir="ltr" inputMode="numeric" value={deliveryFee} onChange={(event) => setDeliveryFee(event.target.value)} placeholder="هزینه ارسال" />
+                  <input className={inputClass} dir="ltr" inputMode="numeric" value={deliveryFee} onChange={(event) => setDeliveryFee(event.target.value)} placeholder="هزینه ارسال (تومان)" />
                 </div>
+                <select className={inputClass} value={deliveryCourierId} onChange={(event) => setDeliveryCourierId(event.target.value)} aria-label="پیک سفارش">
+                  <option value="">تخصیص پیک بعداً</option>
+                  {couriers.map((courier) => <option key={courier.id} value={courier.id}>{courier.name}</option>)}
+                </select>
               </div>
             ) : null}
           </div>
@@ -689,17 +700,18 @@ export function PosScreen() {
           <DialogHeader>
             <DialogTitle>بررسی سفارش</DialogTitle>
             <DialogDescription>پیش از ثبت، جزئیات سفارش را بررسی کنید.</DialogDescription>
+            <ErrorBox>{error}</ErrorBox>
           </DialogHeader>
           <dl className="space-y-2 text-sm">
             <Row label="نوع سفارش" value={orderType === "dine_in" ? "حضوری" : orderType === "takeaway" ? "بیرون‌بر" : "ارسالی"} />
             {orderType === "dine_in" ? <Row label="میز" value={tables.find((table) => table.id === tableId)?.name ?? "انتخاب نشده"} /> : null}
             {orderType === "delivery" ? <Row label="آدرس" value={deliveryAddress.trim() || "ثبت نشده"} /> : null}
-            <Row label="تعداد اقلام" value={toPersianDigits(cart.reduce((count, line) => count + line.quantity, 0))} />
+            <Row label="تعداد اقلام" value={toPersianDigits(cart.length)} />
             <Row label="جمع کل" value={formatToman(totals.total)} bold />
           </dl>
           <DialogFooter>
             <button type="button" onClick={() => setReviewOpen(false)} className="min-h-11 rounded-lg border border-input px-4 text-sm font-medium">بازگشت</button>
-            <button type="button" disabled={busy || cart.length === 0} onClick={() => { setReviewOpen(false); void submit(); }} className="min-h-11 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50">
+            <button type="button" disabled={busy || cart.length === 0} onClick={() => { void submit().then((submitted) => { if (submitted) setReviewOpen(false); }); }} className="min-h-11 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50">
               {busy ? "در حال ثبت…" : "تأیید و ثبت"}
             </button>
           </DialogFooter>
