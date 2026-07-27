@@ -33,6 +33,8 @@ const SOURCE_LABELS: Record<string, string> = {
   opening: "تراز افتتاحیه",
   manual: "سند دستی",
   expense: "هزینه",
+  payroll_accrual: "تعهد حقوق",
+  payroll_payment: "پرداخت حقوق",
 };
 
 export function EntriesSection({ refreshKey, busy, run }: { refreshKey: number; busy: boolean; run: Runner }) {

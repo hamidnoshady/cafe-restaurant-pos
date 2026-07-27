@@ -15,7 +15,7 @@ export default async function LedgerPage() {
           تراز آزمایشی، دفتر روزنامه (سندهای خودکار و دستی)، و ثبت سند دستی.
         </p>
       </header>
-      <LedgerManager />
+      <LedgerManager role={session.role} />
     </div>
   );
 }

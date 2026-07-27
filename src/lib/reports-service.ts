@@ -211,6 +211,8 @@ const SOURCE_TYPE_LABELS: Record<string, string> = {
   customer_return: "بازپرداخت به مشتری",
   manual: "اسناد دستی",
   expense: "هزینه‌های عملیاتی",
+  payroll_accrual: "تعهد حقوق و دستمزد",
+  payroll_payment: "پرداخت حقوق و دستمزد",
 };
 
 export interface CashFlowLine {

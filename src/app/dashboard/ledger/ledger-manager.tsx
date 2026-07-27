@@ -11,6 +11,7 @@ import { ApSection } from "./ap-section";
 import { ReconciliationSection } from "./reconciliation-section";
 import { ChartOfAccountsSection } from "./chart-of-accounts-section";
 import { ExpenseSection } from "./expense-section";
+import { PayrollSection } from "./payroll-section";
 
 export interface AccountRow {
   id: string;
@@ -30,15 +31,20 @@ const TABS = [
   { key: "ap", label: "حساب‌های پرداختنی" },
   { key: "reconciliation", label: "تطبیق بانکی" },
   { key: "chart-of-accounts", label: "سرفصل حساب‌ها" },
+  { key: "payroll", label: "حقوق و دستمزد" },
 ] as const;
 type TabKey = (typeof TABS)[number]["key"];
 
-export function LedgerManager() {
+export function LedgerManager({ role }: { role: string }) {
   const [accounts, setAccounts] = useState<AccountRow[] | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState<TabKey>("trial-balance");
   const [refreshKey, setRefreshKey] = useState(0);
+
+  // Wages are compensation data — restricted to owner + accountant, unlike
+  // every other tab here (owner/manager/accountant).
+  const tabs = TABS.filter((t) => t.key !== "payroll" || role === "owner" || role === "accountant");
 
   const loadAccounts = useCallback(() => {
     api<{ accounts: AccountRow[] }>("/api/ledger/accounts").then(({ ok, data }) => {
@@ -67,7 +73,7 @@ export function LedgerManager() {
       <ErrorBox>{error}</ErrorBox>
 
       <div className="flex flex-wrap gap-2 border-b border-border pb-2">
-        {TABS.map((t) => (
+        {tabs.map((t) => (
           <button
             key={t.key}
             type="button"
@@ -90,6 +96,7 @@ export function LedgerManager() {
       {tab === "ap" ? <ApSection busy={busy} run={run} /> : null}
       {tab === "reconciliation" ? <ReconciliationSection busy={busy} run={run} /> : null}
       {tab === "chart-of-accounts" ? <ChartOfAccountsSection busy={busy} run={run} /> : null}
+      {tab === "payroll" ? <PayrollSection busy={busy} run={run} refreshKey={refreshKey} /> : null}
     </div>
   );
 }
@@ -138,6 +145,12 @@ function errorMessage(code: string | undefined): string {
     invalid_expense_account: "دسته هزینه انتخاب‌شده یک حساب هزینه معتبر نیست.",
     invalid_payment_account: "حساب پرداخت انتخاب‌شده معتبر نیست.",
     same_account: "دسته هزینه و حساب پرداخت نمی‌توانند یکسان باشند.",
+    // Phase 16 — payroll entries
+    user_not_found: "عضو موردنظر پیدا نشد.",
+    no_wages_set: "هیچ عضو فعالی حقوق تعیین‌شده ندارد.",
+    period_label_required: "عنوان دوره الزامی است.",
+    run_not_found: "تعهد حقوق پیدا نشد.",
+    already_paid: "این تعهد قبلاً پرداخت شده است.",
   };
   return map[code ?? ""] ?? "خطای غیرمنتظره. دوباره تلاش کنید.";
 }
