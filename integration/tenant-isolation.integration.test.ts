@@ -188,6 +188,54 @@ describe("every tenant table is protected", () => {
     expect(rows.length).toBeGreaterThan(50);
   });
 
+  it("every policy's actual expression scopes by business, not just exists", async () => {
+    // Phase 17 — the previous test proves every table HAS a policy; this
+    // proves each policy's own USING/WITH CHECK boolean actually references
+    // the tenant boundary rather than, say, `USING (true)` or a copy-paste
+    // that checks the wrong column. Generated straight from pg_policy, so it
+    // covers every shape (direct business_id, location_id-via-locations,
+    // and every EXISTS-based child-table traversal) in one pass — no
+    // per-table synthetic data required, unlike a live read/write attempt.
+    const { rows } = await ownerClient.query<{
+      relname: string;
+      using_expr: string | null;
+      check_expr: string | null;
+    }>(
+      `SELECT c.relname,
+              pg_get_expr(p.polqual, p.polrelid) AS using_expr,
+              pg_get_expr(p.polwithcheck, p.polrelid) AS check_expr
+         FROM pg_policy p
+         JOIN pg_class c ON c.oid = p.polrelid
+         JOIN pg_namespace n ON n.oid = c.relnamespace AND n.nspname = 'public'
+        WHERE p.polname = 'tenant_isolation'
+        ORDER BY c.relname`,
+    );
+    expect(rows.length).toBeGreaterThan(50);
+
+    // platform_users' WITH CHECK is deliberately bypass-only: a fresh row is
+    // created before any business exists to link it to (signup), and its
+    // USING clause (checked here like every other table's) is what actually
+    // confines a *read* to members of the caller's own business.
+    const SKIP_CHECK_CLAUSE = new Set(["platform_users"]);
+
+    const BYPASS = /app_rls_bypass\(\)/;
+    const SCOPED = /app_current_business\(\)|app_owns_location\(/;
+
+    const bad: string[] = [];
+    for (const r of rows) {
+      const clauses: [string, string | null][] = [
+        ["using", r.using_expr],
+        ...(SKIP_CHECK_CLAUSE.has(r.relname) ? [] : ([["check", r.check_expr]] as [string, string | null][])),
+      ];
+      for (const [label, expr] of clauses) {
+        if (!expr || !BYPASS.test(expr) || !SCOPED.test(expr)) {
+          bad.push(`${r.relname} (${label})`);
+        }
+      }
+    }
+    expect(bad, `policies not following the safe template: ${bad.join(", ")}`).toEqual([]);
+  });
+
   it("exempts only infrastructure and the platform realm", async () => {
     // Two different justifications, and the distinction matters:
     //   - infrastructure/catalogue tables hold no tenant column at all;
@@ -363,6 +411,44 @@ describe("writes are confined to the current business", () => {
 
     await asBusiness(beta.businessId, async () => {
       expect(await countIn("journal_lines")).toBe(1);
+    });
+  });
+
+  it("protects a direct business_id table (business_features) from cross-tenant read and write", async () => {
+    // Shape 1 — carries business_id itself, no parent traversal needed. Also
+    // the exact table Phase 17's feature-gating enforcement reads per
+    // request, so proving its isolation here is directly load-bearing.
+    const override = await ownerClient.query<{ business_id: string; flag_key: string }>(
+      `INSERT INTO business_features (business_id, flag_key, enabled)
+       VALUES ($1, 'inventory', false) RETURNING business_id, flag_key`,
+      [beta.businessId],
+    );
+
+    await asBusiness(alpha.businessId, async () => {
+      expect(await countIn("business_features")).toBe(0);
+
+      const { rows } = await appClient.query(
+        "SELECT * FROM business_features WHERE business_id = $1 AND flag_key = $2",
+        [override.rows[0].business_id, override.rows[0].flag_key],
+      );
+      expect(rows).toHaveLength(0);
+
+      await expect(
+        appClient.query(
+          "INSERT INTO business_features (business_id, flag_key, enabled) VALUES ($1, 'ledger', false)",
+          [beta.businessId],
+        ),
+      ).rejects.toThrow(/row-level security/i);
+
+      const deleted = await appClient.query(
+        "DELETE FROM business_features WHERE business_id = $1 AND flag_key = $2",
+        [override.rows[0].business_id, override.rows[0].flag_key],
+      );
+      expect(deleted.rowCount).toBe(0);
+    });
+
+    await asBusiness(beta.businessId, async () => {
+      expect(await countIn("business_features")).toBe(1);
     });
   });
 
