@@ -12,7 +12,28 @@ import {
 import { query } from "./db";
 import { featureForApiPath, isFeatureEnabled } from "./features";
 import { hasPermission, parseOverrides, type Permission } from "./permissions";
+import { activeGrant } from "./platform-service";
+import { platformAudit } from "./platform-auth";
 import { businessScope, enterTenantScope, NO_SCOPE, runInTenantScope } from "./tenant-context";
+
+const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+/**
+ * Phase 17 security review — `imp.grantId`'s own doc comment (auth-edge.ts)
+ * says it is "re-checked live on the server, never trusted alone," but
+ * nothing ever actually called `activeGrant` outside its own definition:
+ * ending or revoking an impersonation window stamped the grant row but the
+ * already-minted tenant token kept working, completely unaffected, until its
+ * own SESSION_HOURS expiry. This is what makes the revoke "kill switch"
+ * (Phase 15's exit criterion) actually kill something — a session whose
+ * grant is no longer live is treated exactly like an invalid token.
+ */
+async function checkImpersonation(session: SessionPayload | null): Promise<SessionPayload | null> {
+  if (!session?.imp) return session;
+  const grant = await activeGrant(session.imp.adminId, session.businessId);
+  if (!grant || grant.id !== session.imp.grantId) return null;
+  return session;
+}
 
 // Re-exported so the ~93 route handlers that import these from "@/lib/auth"
 // keep working; the definitions live in auth-edge.ts because src/middleware.ts
@@ -42,7 +63,7 @@ export {
 export async function getSession(): Promise<SessionPayload | null> {
   const store = await cookies();
   const token = store.get(SESSION_COOKIE)?.value;
-  const session = token ? await verifySession(token) : null;
+  const session = await checkImpersonation(token ? await verifySession(token) : null);
 
   enterTenantScope(
     session ? businessScope(session.businessId, session.locationId, session.sub) : NO_SCOPE,
@@ -87,16 +108,35 @@ export function withTenantScope<Args extends unknown[]>(
       ? businessScope(session.businessId, session.locationId, session.sub)
       : NO_SCOPE;
     return runInTenantScope(scope, async () => {
+      const request = args[0] as NextRequest | undefined;
+
       // Phase 17 — feature-flag enforcement. Only checked once a session
       // exists: an unauthenticated request still gets its ordinary 401 from
       // the handler's own requireRole/requirePermission call, unchanged.
       if (session) {
-        const request = args[0] as NextRequest | undefined;
         const flag = request ? featureForApiPath(request.nextUrl.pathname) : null;
         if (flag && !(await isFeatureEnabled(session.businessId, flag))) {
           return NextResponse.json({ error: "feature_disabled", flag }, { status: 403 });
         }
       }
+
+      // Phase 17 security review — "every impersonated action tagged in
+      // platform_audit_log" (Phase 15's stated goal) previously only covered
+      // the start/end/revoke of a grant, not what was actually done with it.
+      // read_only mode never reaches here for a mutating method (middleware
+      // 403s it first), so this fires only for the higher-trust `full` mode —
+      // exactly the case that can change a customer's data.
+      if (session?.imp && request && MUTATING_METHODS.has(request.method)) {
+        await platformAudit({
+          adminId: session.imp.adminId,
+          businessId: session.businessId,
+          action: "impersonation.request",
+          entity: null,
+          entityId: null,
+          payload: { method: request.method, path: request.nextUrl.pathname },
+        });
+      }
+
       return handler(...args);
     });
   };

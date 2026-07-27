@@ -22,6 +22,7 @@
  * Config is stored in the settings table under SETTING_KEYS.serverSyncConfig.
  * State (high-water marks) is stored under SETTING_KEYS.serverSyncState.
  */
+import { createHash, timingSafeEqual } from "node:crypto";
 import { query, withTenant, withoutTenantScope } from "./db";
 import { getSetting, setSetting, SETTING_KEYS } from "./settings";
 import { applySyncEvent, type SyncEventInput, type SyncEventType } from "./sync-events";
@@ -72,8 +73,57 @@ export async function getServerSyncConfig(businessId: string): Promise<ServerSyn
   return getSetting<ServerSyncConfig>(businessId, SETTING_KEYS.serverSyncConfig);
 }
 
+function hashSyncToken(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+/**
+ * Alongside the existing settings-stored config, keeps `server_sync_tokens`
+ * (migration 0033) in lockstep — an indexed hash the *receiving* side's
+ * push/pull routes look up to resolve which business an incoming request is
+ * for, rather than trusting one shared REMOTE_SYNC_TOKEN for the whole
+ * server. Called from within a normal tenant-scoped request (the owner's
+ * own config PUT), so this insert needs no bypass — RLS's own WITH CHECK
+ * already confines it to the caller's business.
+ */
 export async function setServerSyncConfig(businessId: string, config: ServerSyncConfig): Promise<void> {
   await setSetting(businessId, SETTING_KEYS.serverSyncConfig, config);
+  if (config.token) {
+    await query(
+      `INSERT INTO server_sync_tokens (business_id, token_hash, updated_at)
+       VALUES ($1, $2, now())
+       ON CONFLICT (business_id) DO UPDATE SET token_hash = EXCLUDED.token_hash, updated_at = now()`,
+      [businessId, hashSyncToken(config.token)],
+    );
+  } else {
+    await query(`DELETE FROM server_sync_tokens WHERE business_id = $1`, [businessId]);
+  }
+}
+
+/**
+ * Resolves an incoming server-sync bearer token to the business it belongs
+ * to, or null if it matches no configured token. Runs before any tenant is
+ * chosen — the token *is* how a business gets identified here — the same
+ * bypass category as resolving a login email across businesses.
+ */
+export async function resolveBusinessBySyncToken(token: string): Promise<string | null> {
+  const { rows } = await withoutTenantScope("server-sync-auth", () =>
+    query<{ business_id: string }>(`SELECT business_id FROM server_sync_tokens WHERE token_hash = $1`, [
+      hashSyncToken(token),
+    ]),
+  );
+  return rows[0]?.business_id ?? null;
+}
+
+/**
+ * Constant-time comparison for the legacy single-secret REMOTE_SYNC_TOKEN
+ * path (kept for deployments that haven't configured a per-business token
+ * yet — see the two receiving routes). Hashing both sides first means the
+ * comparison is always between two fixed-length digests, so a length
+ * mismatch can't itself leak anything and `timingSafeEqual` never throws.
+ */
+export function tokensMatch(a: string, b: string): boolean {
+  return timingSafeEqual(Buffer.from(hashSyncToken(a)), Buffer.from(hashSyncToken(b)));
 }
 
 export async function getServerSyncState(businessId: string): Promise<ServerSyncState> {
