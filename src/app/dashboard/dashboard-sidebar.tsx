@@ -159,7 +159,7 @@ function SidebarBrand() {
         </div>
         <div className="flex shrink-0 items-center gap-1">
           <span className="group-data-[state=collapsed]/sidebar:hidden"><ThemeToggle /></span>
-          <SidebarTrigger />
+          <SidebarTrigger className="hidden md:inline-flex" />
         </div>
       </div>
     </SidebarHeader>
@@ -186,7 +186,7 @@ function SidebarNavigation({ navItems, role, pathname }: Omit<SidebarProps, "ful
 
 export function DashboardSidebar({ navItems, role, fullName }: SidebarProps) {
   const pathname = usePathname();
-  const [preference, setPreference] = useState<DashboardSidebarPreference>("expanded");
+  const [preference, setPreference] = useState<DashboardSidebarPreference>("collapsed");
   const [preferenceLoaded, setPreferenceLoaded] = useState(false);
   const mode = resolveSidebarMode(pathname, preference);
 
@@ -204,8 +204,6 @@ export function DashboardSidebar({ navItems, role, fullName }: SidebarProps) {
   }, []);
 
   useEffect(() => {
-    if (mode === "offcanvas") return;
-
     const onKeyDown = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "b") {
         event.preventDefault();
@@ -216,8 +214,6 @@ export function DashboardSidebar({ navItems, role, fullName }: SidebarProps) {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [mode]);
-
-  if (mode === "offcanvas") return null;
 
   return (
     <SidebarProvider open={mode === "expanded"} onOpenChange={setExpanded}>
