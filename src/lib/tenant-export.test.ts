@@ -65,7 +65,7 @@ describe("tenantDataToSql", () => {
     const sql = tenantDataToSql(tables);
     expect(sql.startsWith("--")).toBe(true);
     expect(sql).toContain("BEGIN;");
-    expect(sql).toContain(`INSERT INTO "businesses" ("id", "name") VALUES ('1', 'Cafe');`);
+    expect(sql).toContain(`INSERT INTO "businesses" ("id", "name") OVERRIDING SYSTEM VALUE VALUES ('1', 'Cafe');`);
     expect(sql.trim().endsWith("COMMIT;")).toBe(true);
   });
 
@@ -83,8 +83,8 @@ describe("tenantDataToSql", () => {
     const sql = tenantDataToSql(tables);
     const lines = sql.split("\n").filter((l) => l.startsWith("INSERT"));
     expect(lines).toEqual([
-      `INSERT INTO "locations" ("id", "name") VALUES ('a', 'Main');`,
-      `INSERT INTO "locations" ("id", "name") VALUES ('b', 'Branch');`,
+      `INSERT INTO "locations" ("id", "name") OVERRIDING SYSTEM VALUE VALUES ('a', 'Main');`,
+      `INSERT INTO "locations" ("id", "name") OVERRIDING SYSTEM VALUE VALUES ('b', 'Branch');`,
     ]);
   });
 
@@ -98,6 +98,19 @@ describe("tenantDataToSql", () => {
   });
 
   it("produces just the transaction wrapper for no tables", () => {
-    expect(tenantDataToSql([])).toBe(["-- Per-tenant data export (Phase 17). Restore into an already-migrated,", "-- otherwise-empty database — this carries data only, no schema.", "BEGIN;", "COMMIT;"].join("\n"));
+    expect(tenantDataToSql([])).toBe(
+      [
+        "-- Per-tenant data export (Phase 17). Restore into an already-migrated,",
+        "-- otherwise-empty database — this carries data only, no schema.",
+        "BEGIN;",
+        "SET LOCAL session_replication_role = replica;",
+        "COMMIT;",
+      ].join("\n"),
+    );
+  });
+
+  it("skips ordinary triggers for the duration of the restore transaction", () => {
+    const tables: TenantExportTable[] = [{ name: "orders", columns: ["id"], rows: [{ id: "1" }] }];
+    expect(tenantDataToSql(tables)).toContain("SET LOCAL session_replication_role = replica;");
   });
 });

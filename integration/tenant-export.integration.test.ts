@@ -129,6 +129,13 @@ beforeAll(async () => {
       "INSERT INTO order_items (location_id, order_id, name_snapshot, unit_price, quantity, status) VALUES ($1, $2, $3, 10000, 1, 'served')",
       [biz.locationId, order.rows[0].id, `Item ${tag}`],
     );
+    // A trigger refuses inserting order_items once an order is no longer
+    // 'open' — so the order has to close *after* seeding its items, same as
+    // real usage. Exported (and later restored) in its final, closed state:
+    // a DB restore must be able to replay this order+items pair even though
+    // a live INSERT of the same order_items against an already-closed order
+    // would be refused (see restore-tenant.ts's session_replication_role use).
+    await source.query("UPDATE orders SET status = 'completed', closed_at = now() WHERE id = $1", [order.rows[0].id]);
   }
 
   // A self-referencing accounts pair for bizX only — the row-ordering edge case.
@@ -139,6 +146,19 @@ beforeAll(async () => {
   await source.query(
     "INSERT INTO accounts (business_id, parent_id, code, name, type) VALUES ($1, $2, '1010', 'Cash', 'asset')",
     [bizX.id, parentAccount.rows[0].id],
+  );
+
+  // stock_movements uses `bigint GENERATED ALWAYS AS IDENTITY` — restoring an
+  // explicit id into that column needs OVERRIDING SYSTEM VALUE, which a fixture
+  // touching only uuid-keyed tables would never have caught (see restore-tenant
+  // decision in the phase doc for the bug this exact row exposed).
+  const invItem = await source.query<{ id: string }>(
+    "INSERT INTO inventory_items (location_id, name, unit) VALUES ($1, 'Beans', 'kg') RETURNING id",
+    [bizX.locationId],
+  );
+  await source.query(
+    "INSERT INTO stock_movements (location_id, inventory_item_id, type, quantity) VALUES ($1, $2, 'purchase', 5)",
+    [bizX.locationId, invItem.rows[0].id],
   );
 }, 120_000);
 
@@ -217,6 +237,14 @@ describe("tenantDataToSql round-trip", () => {
 
     const { rows: menuItems } = await target.query<{ name: string }>("SELECT name FROM menu_items");
     expect(menuItems.map((r) => r.name)).toEqual(["Item x"]);
+
+    // Regression check: stock_movements.id is `GENERATED ALWAYS AS IDENTITY`,
+    // which rejects an explicit id without OVERRIDING SYSTEM VALUE.
+    const { rows: movements } = await target.query<{ quantity: string }>(
+      "SELECT quantity FROM stock_movements",
+    );
+    expect(movements).toHaveLength(1);
+    expect(Number(movements[0].quantity)).toBe(5);
 
     // bizY never existed in the export, so it can't exist in the restore target either.
     const { rows: locationCount } = await target.query<{ count: string }>(

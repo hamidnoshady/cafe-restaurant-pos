@@ -18,6 +18,7 @@
     "db:platform-admin": "tsx scripts/seed-platform-admin.ts",
 
     "db:restore": "tsx scripts/restore.ts",
+    "db:restore-tenant": "tsx scripts/restore-tenant.ts",
     "db:reconcile-opening": "tsx scripts/reconcile-opening-inventory.ts",
     "inventory:cutover": "tsx scripts/inventory-cutover.ts",
     "print-agent": "tsx print-agent/server.ts"

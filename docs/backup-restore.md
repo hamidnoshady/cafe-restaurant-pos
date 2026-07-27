@@ -123,3 +123,50 @@ needed.
   PITR flagged as a future enhancement).
 - Version rule: run `pg_restore` of the **same or newer** major version as
   the PostgreSQL server that produced the dump (both are 16 here).
+
+## Per-tenant export & restore (Phase 17)
+
+Everything above is a whole-database artifact — every business hosted on
+that install. A single business's *own* data is a separate, smaller thing:
+an Owner can download it from `/dashboard/backup` (**«خروجی اطلاعات
+کسب‌وکار»**), either as a restorable SQL file or a per-table Excel workbook.
+`scripts/restore-tenant.ts` (`npm run db:restore-tenant`) is the SQL file's
+restore tool.
+
+Unlike the whole-database restore, this is plain SQL (`INSERT` statements,
+no schema) meant for **an already-migrated, otherwise-empty database** — the
+literal Phase 17 exit criterion is restoring "into a clean database without
+carrying any other tenant's rows." It is not a merge/upsert tool: restoring
+into a database that already has this business (or one of its rows) fails
+with a clear error rather than silently overwriting or duplicating anything.
+
+```bash
+# 1. Get the export from an Owner's /dashboard/backup, or directly:
+curl -b <session-cookie> "https://your-install/api/backup/export?format=sql" -o business.sql
+
+# 2. Migrate the target database first (schema only, no data):
+DATABASE_URL=postgres://…/new_db npm run db:migrate
+
+# 3. Dry run — every INSERT actually runs, then rolls back; the target is
+#    NOT changed. Any conflict (this business already exists there) surfaces
+#    here, before anything is committed:
+npm run db:restore-tenant -- business.sql --database-url postgres://…/new_db
+
+# 4. Apply for real:
+npm run db:restore-tenant -- business.sql --database-url postgres://…/new_db --apply --yes
+```
+
+Notes:
+
+- No scratch database is needed for the dry run — since this is ordinary
+  `INSERT` statements rather than a physical `pg_restore`, the tool wraps
+  them in a transaction and rolls back instead of committing, which proves
+  the same thing (every constraint the real restore would hit) without a
+  second database.
+- The export SQL itself sets `session_replication_role = replica` for the
+  duration of its transaction, so restoring doesn't re-trigger business-rule
+  triggers meant for live mutations (e.g. "an order's items can't change once
+  it's no longer open") against historical rows that already passed through
+  them once, before export.
+- This restores exactly the rows that were exported — it does not, by
+  itself, migrate a schema. Always `npm run db:migrate` the target first.

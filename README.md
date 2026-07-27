@@ -107,6 +107,7 @@ kitchen": its items land on the KDS as `sent` immediately.
 | `npm run test:db` | Database integration tests (`integration/`), against a real Postgres |
 | `npm run db:seed` | Seed business, location, owner, sample cashier (idempotent) |
 | `npm run db:restore` | Restore a backup artifact — dry-runs into a scratch DB first (Phase 10, see [docs/backup-restore.md](docs/backup-restore.md)) |
+| `npm run db:restore-tenant` | Restore a per-tenant export SQL file into a clean, migrated database — dry-runs by default (Phase 17, see [docs/backup-restore.md](docs/backup-restore.md)) |
 | `npx tsx scripts/ws-load-test.ts` | WebSocket load test against a running, seeded server (Phase 9 — see the script header for env knobs) |
 | `npx tsx scripts/order-perf-benchmark.ts` | Order-creation and payment/inventory-consumption latency against a running, seeded server (Phase 17 — see the script header for env knobs) |
 
@@ -121,10 +122,13 @@ Failed/overdue backups raise a red banner on the Owner dashboard. Restore
 [docs/backup-restore.md](docs/backup-restore.md). The host needs
 `postgresql-client` ≥ 16 (`pg_dump`/`pg_restore`).
 
-**Per-tenant export (Phase 17)** — the backup above is the whole physical
-database; a single business's own data (Owner-only, same page) is a separate
-download: `GET /api/backup/export?format=sql|xlsx`, restorable SQL or a
-per-table Excel workbook, filtered by ordinary RLS (`src/lib/tenant-export.ts`).
+**Per-tenant export & restore (Phase 17)** — the backup above is the whole
+physical database; a single business's own data (Owner-only, same page) is a
+separate download: `GET /api/backup/export?format=sql|xlsx`, restorable SQL
+or a per-table Excel workbook, filtered by ordinary RLS
+(`src/lib/tenant-export.ts`). Restore the SQL file into a clean, migrated
+database with `npm run db:restore-tenant` — full runbook, including why it
+doesn't need a scratch database, in [docs/backup-restore.md](docs/backup-restore.md).
 
 ### AI assistant (دستیار هوشمند)
 
