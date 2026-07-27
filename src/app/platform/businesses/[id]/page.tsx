@@ -60,6 +60,14 @@ interface Usage {
   lastActivity: string | null;
 }
 
+interface Plan {
+  key: string;
+  name: string;
+  branchLimit: number | null;
+  memberLimit: number | null;
+  monthlyOrderLimit: number | null;
+}
+
 interface Grant {
   id: string;
   platformAdminId: string;
@@ -218,13 +226,26 @@ function Meta({ label, value, ltr }: { label: string; value: string; ltr?: boole
   );
 }
 
+/** Persian-digit limit, or "نامحدود" (unlimited) for a null ceiling. */
+function limitLabel(n: number | null): string {
+  return n === null ? "نامحدود" : formatPersianNumber(n);
+}
+
 function PlanPanel({ business, onChanged }: { business: Business; onChanged: () => void }) {
   const can = useCan();
+  const [plans, setPlans] = useState<Plan[]>([]);
   const [plan, setPlan] = useState(business.plan);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
   const editable = can("features.write");
+
+  useEffect(() => {
+    (async () => {
+      const { ok, data } = await api<{ plans: Plan[] }>("/api/platform/plans");
+      if (ok) setPlans(data.plans);
+    })();
+  }, []);
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
@@ -233,7 +254,7 @@ function PlanPanel({ business, onChanged }: { business: Business; onChanged: () 
     setSaved(false);
     const { ok, data } = await api<{ error?: string }>(`/api/platform/businesses/${business.id}`, {
       method: "PATCH",
-      body: JSON.stringify({ plan: plan.trim() }),
+      body: JSON.stringify({ plan }),
     });
     setBusy(false);
     if (ok) {
@@ -244,24 +265,43 @@ function PlanPanel({ business, onChanged }: { business: Business; onChanged: () 
     }
   }
 
+  const current = plans.find((p) => p.key === plan);
+
   return (
     <Card title="پلن">
       <ErrorBox>{error}</ErrorBox>
       {saved ? <InfoBox>پلن ذخیره شد.</InfoBox> : null}
       <form onSubmit={save} className="flex items-end gap-3">
         <div className="flex-1">
-          <Field label="نام پلن">
-            <input
+          <Field label="پلن">
+            <select
               value={plan}
               onChange={(e) => setPlan(e.target.value)}
-              disabled={!editable}
+              disabled={!editable || plans.length === 0}
               className={inputClass}
-            />
+            >
+              {/* The business's current plan key always appears, even if it somehow isn't in the fetched catalogue yet. */}
+              {!plans.some((p) => p.key === business.plan) ? (
+                <option value={business.plan}>{business.plan}</option>
+              ) : null}
+              {plans.map((p) => (
+                <option key={p.key} value={p.key}>
+                  {p.name} (شعبه: {limitLabel(p.branchLimit)}، عضو: {limitLabel(p.memberLimit)}، سفارش ماهانه:{" "}
+                  {limitLabel(p.monthlyOrderLimit)})
+                </option>
+              ))}
+            </select>
           </Field>
+          {current ? (
+            <p className="mt-1 text-xs text-white/40">
+              سقف فعلی: {limitLabel(current.branchLimit)} شعبه، {limitLabel(current.memberLimit)} عضو،{" "}
+              {limitLabel(current.monthlyOrderLimit)} سفارش در ماه.
+            </p>
+          ) : null}
         </div>
         {editable ? (
           <div className="mb-4">
-            <Button type="submit" disabled={busy || plan.trim() === business.plan}>
+            <Button type="submit" disabled={busy || plan === business.plan}>
               {busy ? "…" : "ذخیره"}
             </Button>
           </div>

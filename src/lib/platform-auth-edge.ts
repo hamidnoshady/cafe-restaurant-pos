@@ -33,6 +33,8 @@ export interface PlatformSessionPayload {
   email: string;
 }
 
+let warnedInsecureSecret = false;
+
 function getSecret(): Uint8Array {
   // Reuse JWT_SECRET: one deployment, one signing key. The realms are kept
   // apart by cookie name and claim shape, not by a second secret to manage.
@@ -40,6 +42,14 @@ function getSecret(): Uint8Array {
   if (!secret || secret === "change-me-in-production") {
     if (process.env.NODE_ENV === "production") {
       throw new Error("JWT_SECRET must be set to a real secret in production");
+    }
+    if (!warnedInsecureSecret) {
+      warnedInsecureSecret = true;
+      console.error(
+        "SECURITY WARNING: JWT_SECRET is not set (or is the placeholder) — signing platform sessions " +
+          "with a hardcoded, publicly-known development secret. Set a real JWT_SECRET before this is " +
+          "reachable by anyone but you.",
+      );
     }
     return new TextEncoder().encode("dev-only-insecure-secret");
   }
@@ -68,7 +78,7 @@ export async function verifyPlatformSession(
   token: string,
 ): Promise<PlatformSessionPayload | null> {
   try {
-    const { payload } = await jwtVerify(token, getSecret());
+    const { payload } = await jwtVerify(token, getSecret(), { algorithms: ["HS256"] });
     // A tenant token verifies against the same secret, so the realm claim is
     // what actually keeps the two apart. Reject anything not minted here.
     if ((payload as { realm?: string }).realm !== "platform") return null;

@@ -6,6 +6,7 @@ import {
   scopeSettings,
   type TenantScope,
 } from "./tenant-context";
+import { poolMax } from "./pool-config";
 
 // Reuse the pool across Next.js dev-server hot reloads.
 const globalForPg = globalThis as unknown as { pgPool?: Pool };
@@ -79,8 +80,10 @@ export function getPool(): Pool {
       throw new Error("DATABASE_URL is not set");
     }
     // Tenant-scoped work pins a connection for the length of a transaction, so
-    // the pool needs a little more headroom than it did single-tenant.
-    globalForPg.pgPool = installTenantScoping(new Pool({ connectionString, max: 20 }));
+    // the pool needs a little more headroom than it did single-tenant. See
+    // pool-config.ts: DB_POOL_MAX overrides the default of 20, which is
+    // preserved for anyone who doesn't set it.
+    globalForPg.pgPool = installTenantScoping(new Pool({ connectionString, max: poolMax() }));
   }
   return globalForPg.pgPool;
 }
@@ -115,12 +118,21 @@ export async function withTenant<T>(
 /**
  * Run `fn` with tenant isolation deliberately stood down.
  *
- * There are exactly two legitimate reasons, and `reason` records which:
+ * Every legitimate reason shares one shape — resolving *which* tenant a
+ * request is for, before that tenant can be known any other way — and
+ * `reason` records which:
  *
  *   - **login** — resolving an email to the businesses it belongs to
  *     necessarily happens before a business has been chosen;
  *   - **platform** — the super-user realm administers every tenant by
- *     definition (Phase 15), as does the migration runner.
+ *     definition (Phase 15), as does the migration runner;
+ *   - **server-sync-auth** — resolving a server-sync bearer token to the
+ *     business it belongs to (Phase 17) is the same "identify the tenant
+ *     first" problem as login, just keyed on a token instead of an email;
+ *   - **identity** — a narrow write to the global identity table
+ *     (`platform_users`, which carries no `business_id` to scope by) on
+ *     behalf of a membership already verified to belong to the caller's own
+ *     business, e.g. team-service.ts's credential reset.
  *
  * Every call is a hole in the isolation boundary, so keep them few, keep them
  * short, and never let one wrap a request body that also handles tenant data.

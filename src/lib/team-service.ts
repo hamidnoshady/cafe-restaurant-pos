@@ -14,6 +14,7 @@ import type { PoolClient } from "pg";
 import { getPool, query, withoutTenantScope } from "./db";
 import type { Role } from "./auth-edge";
 import { effectivePermissions, parseOverrides, type PermissionOverrides } from "./permissions";
+import { activeMemberCount, planLimitsFor } from "./plan-limits";
 import {
   checkLastOwner,
   generateInvitationToken,
@@ -192,6 +193,11 @@ export async function createMembership(input: CreateMembershipInput): Promise<{ 
 
   if (isPasswordRole(input.role) && !email) throw new TeamError("email_required");
   if (isPinRole(input.role) && !input.pin) throw new TeamError("pin_required");
+
+  const limits = await planLimitsFor(input.businessId);
+  if (limits.memberLimit !== null && (await activeMemberCount(input.businessId)) >= limits.memberLimit) {
+    throw new TeamError("member_limit_exceeded", 403);
+  }
 
   const client = await getPool().connect();
   try {
@@ -523,7 +529,11 @@ export async function setPassword(
   if (!platformUserId) throw new TeamError("no_login", 409);
 
   const hash = await bcrypt.hash(newPassword, 10);
-  await withoutTenantScope("platform", async () => {
+  // Not "platform" administration — an owner acting inside their own business
+  // triggered this. The bypass is narrow and already justified by the lookup
+  // above: platformUserId was only ever reached via a users row this business
+  // owns, and platform_users itself carries no business_id to scope by.
+  await withoutTenantScope("identity", async () => {
     await query("UPDATE platform_users SET password_hash = $2, updated_at = now() WHERE id = $1", [
       platformUserId,
       hash,
@@ -838,6 +848,19 @@ export async function acceptInvitation(
     if (dup.length > 0) {
       await client.query("ROLLBACK");
       throw new TeamError("already_a_member", 409);
+    }
+
+    // This route has no session — `client` has app.rls_bypass/app.business_id
+    // set by hand above, so the check must run on this same connection (see
+    // plan-limits.ts's module comment for why a fresh pool connection would
+    // silently under-count here).
+    const invitationLimits = await planLimitsFor(invitation.business_id, client);
+    if (
+      invitationLimits.memberLimit !== null &&
+      (await activeMemberCount(invitation.business_id, client)) >= invitationLimits.memberLimit
+    ) {
+      await client.query("ROLLBACK");
+      throw new TeamError("member_limit_exceeded", 403);
     }
 
     const defaultLocationId = invitation.location_ids[0] ?? null;

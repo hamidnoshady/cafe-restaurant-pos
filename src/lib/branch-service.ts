@@ -10,6 +10,7 @@
  * access rules it composes with live in location-access.ts.
  */
 import { getPool, query } from "./db";
+import { activeBranchCount, planLimitsFor } from "./plan-limits";
 
 export class BranchError extends Error {
   status: number;
@@ -208,6 +209,11 @@ async function copyMenuStructure(
 export async function createBranch(input: CreateBranchInput): Promise<{ locationId: string }> {
   const name = input.name.trim();
   if (!name) throw new BranchError("missing_fields");
+
+  const limits = await planLimitsFor(input.businessId);
+  if (limits.branchLimit !== null && (await activeBranchCount(input.businessId)) >= limits.branchLimit) {
+    throw new BranchError("branch_limit_exceeded", 403);
+  }
 
   const client = await getPool().connect();
   try {

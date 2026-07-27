@@ -108,6 +108,7 @@ kitchen": its items land on the KDS as `sent` immediately.
 | `npm run db:seed` | Seed business, location, owner, sample cashier (idempotent) |
 | `npm run db:restore` | Restore a backup artifact — dry-runs into a scratch DB first (Phase 10, see [docs/backup-restore.md](docs/backup-restore.md)) |
 | `npx tsx scripts/ws-load-test.ts` | WebSocket load test against a running, seeded server (Phase 9 — see the script header for env knobs) |
+| `npx tsx scripts/order-perf-benchmark.ts` | Order-creation and payment/inventory-consumption latency against a running, seeded server (Phase 17 — see the script header for env knobs) |
 
 ### Backups (Phase 10)
 
@@ -188,6 +189,12 @@ Migrations keep running as the owner. `server.ts` refuses to start in production
 configured role can bypass RLS, and warns in development.
 `integration/tenant-isolation.integration.test.ts` provisions its own unprivileged role, so
 the policies are proven in CI regardless of how the local database is set up.
+
+**Connection pool size** (`DB_POOL_MAX`, default 20). A transaction (order creation, payment
++ inventory consumption) pins one connection for its full lifetime, so the right ceiling
+scales with how many businesses' concurrent write transactions one deployment expects to
+serve — several busy cafés sharing one host need more headroom than a single one. See
+`src/lib/pool-config.ts`.
 
 **Docker deployments (`docker-entrypoint.sh`) do this for you.** Every shipped compose file
 (`docker-compose.komodo.yml`, `docker-compose.local.yml`, `docker-compose.srv1.yml`) hands the
