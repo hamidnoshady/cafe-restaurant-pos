@@ -117,6 +117,16 @@ export function errorMessage(code: string | undefined): string {
     customer_not_found: "مشتری انتخاب‌شده معتبر نیست.",
     invalid_amount: "مبلغ معتبر نیست.",
     invalid_method: "روش دریافت معتبر نیست.",
+    supplier_required: "انتخاب تأمین‌کننده الزامی است.",
+    supplier_not_found: "تأمین‌کننده انتخاب‌شده معتبر نیست.",
+    // Phase 16 — bank & cash reconciliation
+    invalid_account: "حساب انتخاب‌شده معتبر نیست.",
+    statement_date_required: "تاریخ صورتحساب الزامی است.",
+    reconciliation_in_progress: "یک تطبیق ناتمام برای این حساب وجود دارد؛ ابتدا آن را تکمیل کنید.",
+    reconciliation_not_found: "تطبیق پیدا نشد.",
+    reconciliation_completed: "این تطبیق قبلاً قفل شده و قابل تغییر نیست.",
+    journal_line_not_found: "سند انتخاب‌شده معتبر نیست.",
+    balance_mismatch: "مانده محاسبه‌شده با مانده صورتحساب برابر نیست.",
   };
   return map[code ?? ""] ?? "خطای غیرمنتظره. دوباره تلاش کنید.";
 }
