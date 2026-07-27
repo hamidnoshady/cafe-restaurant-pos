@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSession, type Role } from "@/lib/auth";
-import { query } from "@/lib/db";
+import { query, withTenant } from "@/lib/db";
 import { effectiveFeatures } from "@/lib/features";
 import { effectivePermissions, parseOverrides, PERMISSIONS, type Permission } from "@/lib/permissions";
 import { AiAssistant } from "@/components/ai/ai-assistant";
@@ -42,13 +42,25 @@ export default async function DashboardLayout({
   const session = await getSession();
   if (!session) redirect("/login");
 
-  const [{ rows }, features] = await Promise.all([
-    query<{ role: Role; permissions: unknown; is_active: boolean }>(
-      "SELECT role, permissions, is_active FROM users WHERE id = $1 AND business_id = $2",
-      [session.sub, session.businessId],
-    ),
-    effectiveFeatures(session.businessId),
-  ]);
+  // withTenant() rather than the ambient scope getSession() already set: that
+  // scope was applied with enterWith(), which does not survive a concurrent
+  // withTenant()/withoutTenantScope() run() call elsewhere in the process (a
+  // background tick, another in-flight request) — see the withTenantScope
+  // doc comment in src/lib/auth.ts. Without this, the query below can come
+  // back empty non-deterministically and, since it gates access, incorrectly
+  // sign an active member out.
+  const [{ rows }, features] = await withTenant(
+    session.businessId,
+    () =>
+      Promise.all([
+        query<{ role: Role; permissions: unknown; is_active: boolean }>(
+          "SELECT role, permissions, is_active FROM users WHERE id = $1 AND business_id = $2",
+          [session.sub, session.businessId],
+        ),
+        effectiveFeatures(session.businessId),
+      ]),
+    { locationId: session.locationId, userId: session.sub },
+  );
   const member = rows[0];
   if (!member?.is_active) redirect("/login");
   const permissions = effectivePermissions(member.role, parseOverrides(member.permissions));
