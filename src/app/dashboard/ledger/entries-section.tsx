@@ -32,6 +32,7 @@ const SOURCE_LABELS: Record<string, string> = {
   waste: "ضایعات",
   opening: "تراز افتتاحیه",
   manual: "سند دستی",
+  expense: "هزینه",
 };
 
 export function EntriesSection({ refreshKey, busy, run }: { refreshKey: number; busy: boolean; run: Runner }) {

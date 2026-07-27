@@ -210,6 +210,7 @@ const SOURCE_TYPE_LABELS: Record<string, string> = {
   stock_count: "تعدیل شمارش موجودی",
   customer_return: "بازپرداخت به مشتری",
   manual: "اسناد دستی",
+  expense: "هزینه‌های عملیاتی",
 };
 
 export interface CashFlowLine {

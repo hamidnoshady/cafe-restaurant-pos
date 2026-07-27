@@ -10,6 +10,7 @@ import { ArSection } from "./ar-section";
 import { ApSection } from "./ap-section";
 import { ReconciliationSection } from "./reconciliation-section";
 import { ChartOfAccountsSection } from "./chart-of-accounts-section";
+import { ExpenseSection } from "./expense-section";
 
 export interface AccountRow {
   id: string;
@@ -23,6 +24,7 @@ const TABS = [
   { key: "trial-balance", label: "تراز آزمایشی" },
   { key: "entries", label: "دفتر روزنامه" },
   { key: "manual", label: "ثبت سند دستی" },
+  { key: "expenses", label: "هزینه‌ها" },
   { key: "fiscal-periods", label: "دوره‌های مالی" },
   { key: "ar", label: "حساب‌های دریافتنی" },
   { key: "ap", label: "حساب‌های پرداختنی" },
@@ -82,6 +84,7 @@ export function LedgerManager() {
       {tab === "trial-balance" ? <TrialBalanceSection refreshKey={refreshKey} /> : null}
       {tab === "entries" ? <EntriesSection refreshKey={refreshKey} busy={busy} run={run} /> : null}
       {tab === "manual" ? <ManualEntrySection accounts={accounts} busy={busy} run={run} refreshKey={refreshKey} /> : null}
+      {tab === "expenses" ? <ExpenseSection accounts={accounts} busy={busy} run={run} refreshKey={refreshKey} /> : null}
       {tab === "fiscal-periods" ? <FiscalPeriodsSection busy={busy} run={run} /> : null}
       {tab === "ar" ? <ArSection busy={busy} run={run} /> : null}
       {tab === "ap" ? <ApSection busy={busy} run={run} /> : null}
@@ -131,6 +134,10 @@ function errorMessage(code: string | undefined): string {
     // Phase 16 — chart of accounts customisation
     well_known_account: "این حساب برای عملکرد سیستم لازم است و قابل غیرفعال یا حذف نیست.",
     account_not_found: "حساب پیدا نشد.",
+    // Phase 16 — expense management
+    invalid_expense_account: "دسته هزینه انتخاب‌شده یک حساب هزینه معتبر نیست.",
+    invalid_payment_account: "حساب پرداخت انتخاب‌شده معتبر نیست.",
+    same_account: "دسته هزینه و حساب پرداخت نمی‌توانند یکسان باشند.",
   };
   return map[code ?? ""] ?? "خطای غیرمنتظره. دوباره تلاش کنید.";
 }
