@@ -11,6 +11,8 @@ export interface PrinterConnection {
   port?: number | null;
   /** 58mm or 80mm thermal paper; defaults to 80mm if unset. */
   paperWidthMm?: 58 | 80;
+  /** Selected printer for its kind within a branch. */
+  isDefault?: boolean;
 }
 
 export function isValidPrinterConnection(conn: unknown): conn is PrinterConnection {
