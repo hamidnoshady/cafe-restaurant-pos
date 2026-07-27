@@ -25,6 +25,15 @@ const PUBLIC_PATHS = [
   // Phase 9: the caller is another location's server, not a browser — the
   // route authenticates it with a per-location bearer token, not a session.
   "/api/rollup/ingest",
+  // Phase 11: same shape — the caller is a peer server (café laptop <-> VPS),
+  // authenticated by a bearer token (server-sync.ts's per-business hashed
+  // token, or the legacy REMOTE_SYNC_TOKEN fallback), never a session. These
+  // were missing from this list entirely, which meant this generic "no
+  // session -> 401" branch below rejected every real call before it ever
+  // reached the route handler's own token check — server-sync has been
+  // completely unreachable regardless of a valid token until this fix.
+  "/api/server-sync/push",
+  "/api/server-sync/pull",
 ];
 
 /**
