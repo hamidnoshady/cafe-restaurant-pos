@@ -121,6 +121,11 @@ Failed/overdue backups raise a red banner on the Owner dashboard. Restore
 [docs/backup-restore.md](docs/backup-restore.md). The host needs
 `postgresql-client` ≥ 16 (`pg_dump`/`pg_restore`).
 
+**Per-tenant export (Phase 17)** — the backup above is the whole physical
+database; a single business's own data (Owner-only, same page) is a separate
+download: `GET /api/backup/export?format=sql|xlsx`, restorable SQL or a
+per-table Excel workbook, filtered by ordinary RLS (`src/lib/tenant-export.ts`).
+
 ### AI assistant (دستیار هوشمند)
 
 A floating assistant (bottom-left launcher) built with the shadcn UI kit, in two

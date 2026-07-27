@@ -188,13 +188,17 @@ describe("back-office/financial surfaces exclude floor roles", () => {
     }
   });
 
-  it("backup config is Owner-only; run/status allow Owner/Manager (Phase 10 access decision)", () => {
+  it("backup config and export are Owner-only; run/status allow Owner/Manager (Phase 10/17 access decisions)", () => {
+    // export (Phase 17) hands the browser literally all of a business's data —
+    // a materially higher bar than "backup now", so it joins config as Owner-only
+    // rather than Owner/Manager.
+    const OWNER_ONLY = new Set(["backup/config", "backup/export"]);
     for (const [key, src] of sources) {
       if (!key.startsWith("backup")) continue;
       const calls = requireRoleCalls(src);
       expect(calls.length, `src/app/api/${key}/route.ts has no requireRole`).toBeGreaterThan(0);
       for (const roles of calls) {
-        if (key === "backup/config") {
+        if (OWNER_ONLY.has(key)) {
           expect(roles, `src/app/api/${key}/route.ts`).toEqual(["owner"]);
         } else {
           expect(roles.sort(), `src/app/api/${key}/route.ts`).toEqual(["manager", "owner"]);
