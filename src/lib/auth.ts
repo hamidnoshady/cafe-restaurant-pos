@@ -1,5 +1,5 @@
 import { cookies } from "next/headers";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import {
   SESSION_COOKIE,
   sessionCookieOptions,
@@ -10,6 +10,7 @@ import {
   type SessionPayload,
 } from "./auth-edge";
 import { query } from "./db";
+import { featureForApiPath, isFeatureEnabled } from "./features";
 import { hasPermission, parseOverrides, type Permission } from "./permissions";
 import { businessScope, enterTenantScope, NO_SCOPE, runInTenantScope } from "./tenant-context";
 
@@ -85,7 +86,19 @@ export function withTenantScope<Args extends unknown[]>(
     const scope = session
       ? businessScope(session.businessId, session.locationId, session.sub)
       : NO_SCOPE;
-    return runInTenantScope(scope, () => handler(...args));
+    return runInTenantScope(scope, async () => {
+      // Phase 17 — feature-flag enforcement. Only checked once a session
+      // exists: an unauthenticated request still gets its ordinary 401 from
+      // the handler's own requireRole/requirePermission call, unchanged.
+      if (session) {
+        const request = args[0] as NextRequest | undefined;
+        const flag = request ? featureForApiPath(request.nextUrl.pathname) : null;
+        if (flag && !(await isFeatureEnabled(session.businessId, flag))) {
+          return NextResponse.json({ error: "feature_disabled", flag }, { status: 403 });
+        }
+      }
+      return handler(...args);
+    });
   };
 }
 

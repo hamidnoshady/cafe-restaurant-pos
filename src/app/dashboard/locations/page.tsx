@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
+import { requireFeatureForPage } from "@/lib/features";
 import { LocationsManager } from "./locations-manager";
 
 /**
@@ -13,6 +14,7 @@ export default async function LocationsPage() {
   const session = await getSession();
   if (!session) redirect("/login");
   if (session.role !== "owner") redirect("/dashboard");
+  await requireFeatureForPage(session.businessId, "offline_mode");
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
