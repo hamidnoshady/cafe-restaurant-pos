@@ -14,6 +14,7 @@
  * That mutual unusability is one of the phase's exit criteria.
  */
 import { SignJWT, jwtVerify } from "jose";
+import { getJwtSecret } from "./jwt-secret";
 
 /** Distinct from the tenant `pos_session` cookie — the realms never share one. */
 export const PLATFORM_SESSION_COOKIE = "pos_platform_session";
@@ -33,27 +34,10 @@ export interface PlatformSessionPayload {
   email: string;
 }
 
-let warnedInsecureSecret = false;
-
 function getSecret(): Uint8Array {
   // Reuse JWT_SECRET: one deployment, one signing key. The realms are kept
   // apart by cookie name and claim shape, not by a second secret to manage.
-  const secret = process.env.JWT_SECRET;
-  if (!secret || secret === "change-me-in-production") {
-    if (process.env.NODE_ENV === "production") {
-      throw new Error("JWT_SECRET must be set to a real secret in production");
-    }
-    if (!warnedInsecureSecret) {
-      warnedInsecureSecret = true;
-      console.error(
-        "SECURITY WARNING: JWT_SECRET is not set (or is the placeholder) — signing platform sessions " +
-          "with a hardcoded, publicly-known development secret. Set a real JWT_SECRET before this is " +
-          "reachable by anyone but you.",
-      );
-    }
-    return new TextEncoder().encode("dev-only-insecure-secret");
-  }
-  return new TextEncoder().encode(secret);
+  return getJwtSecret("platform sessions");
 }
 
 /**
