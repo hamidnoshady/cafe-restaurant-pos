@@ -7,6 +7,8 @@ import { query } from "./db";
 export const SETTING_KEYS = {
   /** { name, currencyDisplay: 'toman'|'rial', language: 'fa', calendar: 'jalali' } */
   businessPrefs: "business.prefs",
+  /** { legalName, taxId, email, website, receiptFooter } — operational business profile */
+  businessProfile: "business.profile",
   /** { method: 'fifo'|'weighted_average', lockedAt: string|null } */
   costing: "inventory.costing",
   /** { defaultRate: number } — percent, applied to new menu categories */

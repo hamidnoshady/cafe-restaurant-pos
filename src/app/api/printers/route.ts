@@ -19,7 +19,8 @@ export const GET = withTenantScope(async () => {
 
   const { rows: printers } = await query(
     `SELECT id, name, kind, connection FROM printers
-      WHERE location_id = $1 AND is_active ORDER BY name`,
+      WHERE location_id = $1 AND is_active
+      ORDER BY kind, COALESCE((connection->>'isDefault')::boolean, false) DESC, name`,
     [location.id],
   );
   return NextResponse.json({ printers });
