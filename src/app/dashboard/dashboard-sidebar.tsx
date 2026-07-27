@@ -159,7 +159,7 @@ function SidebarBrand() {
         </div>
         <div className="flex shrink-0 items-center gap-1">
           <span className="group-data-[state=collapsed]/sidebar:hidden"><ThemeToggle /></span>
-          <SidebarTrigger />
+          <SidebarTrigger className="hidden md:inline-flex" />
         </div>
       </div>
     </SidebarHeader>
