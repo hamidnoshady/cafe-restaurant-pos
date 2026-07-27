@@ -158,7 +158,7 @@ function SidebarBrand() {
           <p className="text-xs text-muted-foreground">نسخهٔ آزمایشی</p>
         </div>
         <div className="flex shrink-0 items-center gap-1">
-          <span className="group-data-[state=collapsed]/sidebar:hidden"><ThemeToggle /></span>
+          <span className="hidden md:block group-data-[state=collapsed]/sidebar:hidden"><ThemeToggle /></span>
           <SidebarTrigger className="hidden md:inline-flex" />
         </div>
       </div>
