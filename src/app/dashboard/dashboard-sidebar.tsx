@@ -24,6 +24,8 @@ export interface NavItem {
   label: string;
   href?: string;
   roles?: string[];
+  /** Set when this page is gated by a Phase 17 feature flag; already filtered out of navItems if disabled. */
+  flag?: string;
 }
 
 interface SidebarProps {

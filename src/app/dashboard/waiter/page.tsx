@@ -1,11 +1,13 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
+import { requireFeatureForPage } from "@/lib/features";
 import { WaiterBoard } from "./waiter-board";
 
 export default async function WaiterPage() {
   const session = await getSession();
   if (!session) redirect("/login");
   if (!["owner", "manager", "waiter"].includes(session.role)) redirect("/dashboard");
+  await requireFeatureForPage(session.businessId, "reservations");
 
   return (
     <div>

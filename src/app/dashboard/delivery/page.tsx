@@ -1,11 +1,13 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
+import { requireFeatureForPage } from "@/lib/features";
 import { DeliveryBoard } from "./delivery-board";
 
 export default async function DeliveryPage() {
   const session = await getSession();
   if (!session) redirect("/login");
   if (!["owner", "manager", "cashier"].includes(session.role)) redirect("/dashboard");
+  await requireFeatureForPage(session.businessId, "delivery");
 
   const canManageCouriers = session.role === "owner" || session.role === "manager";
 

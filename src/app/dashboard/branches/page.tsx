@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
+import { requireFeatureForPage } from "@/lib/features";
 import { BranchesManager } from "./branches-manager";
 
 /**
@@ -14,6 +15,7 @@ export default async function BranchesPage() {
   const session = await getSession();
   if (!session) redirect("/login");
   if (session.role !== "owner") redirect("/dashboard");
+  await requireFeatureForPage(session.businessId, "multi_location");
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
