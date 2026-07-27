@@ -155,8 +155,9 @@ export const POST = withTenantScope(async (request: NextRequest) => {
           "INSERT INTO modifier_groups (location_id, name, min_select, max_select) VALUES ($1, $2, $3, $4) RETURNING id",
           [location.id, item.modifierGroup, minSelect, maxSelect],
         );
-        groupId = rows[0].id;
-        groupIdByName.set(item.modifierGroup, groupId);
+        const createdGroupId = rows[0].id as string;
+        groupId = createdGroupId;
+        groupIdByName.set(item.modifierGroup, createdGroupId);
         createdGroups++;
       }
       const itemId = itemIdByIndex.get(index)!;
