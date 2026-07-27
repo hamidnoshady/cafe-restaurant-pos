@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { StepNav } from "./step-nav";
 import { SetupAssistant } from "./setup-assistant";
+import { isSetupComplete } from "@/lib/setup-state";
 
 export default async function SetupLayout({
   children,
@@ -9,6 +10,7 @@ export default async function SetupLayout({
   const session = await getSession();
   if (!session) redirect("/login");
   if (session.role !== "owner" && session.role !== "manager") redirect("/dashboard");
+  if (await isSetupComplete(session.businessId)) redirect("/dashboard/settings");
 
   return (
     <div className="mx-auto flex min-h-screen max-w-5xl gap-6 p-4 sm:p-6">
