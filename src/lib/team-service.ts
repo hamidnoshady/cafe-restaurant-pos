@@ -523,7 +523,11 @@ export async function setPassword(
   if (!platformUserId) throw new TeamError("no_login", 409);
 
   const hash = await bcrypt.hash(newPassword, 10);
-  await withoutTenantScope("platform", async () => {
+  // Not "platform" administration — an owner acting inside their own business
+  // triggered this. The bypass is narrow and already justified by the lookup
+  // above: platformUserId was only ever reached via a users row this business
+  // owns, and platform_users itself carries no business_id to scope by.
+  await withoutTenantScope("identity", async () => {
     await query("UPDATE platform_users SET password_hash = $2, updated_at = now() WHERE id = $1", [
       platformUserId,
       hash,

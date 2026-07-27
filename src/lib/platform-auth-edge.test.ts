@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { platformSessionCookieOptions } from "./platform-auth-edge";
+import { platformSessionCookieOptions, signPlatformSession, verifyPlatformSession } from "./platform-auth-edge";
+import { signSession } from "./auth-edge";
 
 describe("platformSessionCookieOptions", () => {
   it("scopes the cookie to the whole app, not just /platform", () => {
@@ -21,5 +22,29 @@ describe("platformSessionCookieOptions", () => {
     const options = platformSessionCookieOptions();
     expect(options.httpOnly).toBe(true);
     expect(options.sameSite).toBe("lax");
+  });
+});
+
+describe("signPlatformSession / verifyPlatformSession", () => {
+  it("round-trips a platform session", async () => {
+    const token = await signPlatformSession({
+      padmin: "admin-1",
+      role: "engineer",
+      fullName: "Engineer",
+      email: "engineer@example.com",
+    });
+    const verified = await verifyPlatformSession(token);
+    expect(verified).toMatchObject({ padmin: "admin-1", role: "engineer" });
+  });
+
+  it("rejects a tenant session token — the two realms share a secret but not a claim", async () => {
+    const tenantToken = await signSession({
+      sub: "user-1",
+      role: "owner",
+      businessId: "biz-1",
+      locationId: null,
+      fullName: "Owner",
+    });
+    expect(await verifyPlatformSession(tenantToken)).toBeNull();
   });
 });

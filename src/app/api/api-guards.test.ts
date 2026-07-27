@@ -42,8 +42,12 @@ const PUBLIC_ROUTES: Record<string, string> = {
     "invitation exchange — the invitee has no session and no membership of the inviting " +
     "business yet; the single-use token is the credential",
   "rollup/ingest": "server-to-server — authenticated by a per-location bearer token, not a session",
-  "server-sync/pull": "server-to-server — authenticated by REMOTE_SYNC_TOKEN bearer token, not a session",
-  "server-sync/push": "server-to-server — authenticated by REMOTE_SYNC_TOKEN bearer token, not a session",
+  "server-sync/pull":
+    "server-to-server — authenticated by a per-business bearer token (server_sync_tokens), " +
+    "falling back to the legacy global REMOTE_SYNC_TOKEN; not a session",
+  "server-sync/push":
+    "server-to-server — authenticated by a per-business bearer token (server_sync_tokens), " +
+    "falling back to the legacy global REMOTE_SYNC_TOKEN; not a session",
   // Phase 15 — the super-admin realm's own credential exchange. Authenticates
   // against platform_admins and mints the platform cookie; necessarily runs
   // without a platform session, exactly like the tenant auth/login.

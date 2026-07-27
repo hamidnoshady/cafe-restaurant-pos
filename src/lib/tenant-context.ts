@@ -37,10 +37,14 @@ export interface BusinessScope {
 }
 
 /**
- * Isolation deliberately stood down. Only two things legitimately need this:
- * resolving a login email to its memberships (which happens before a business
- * is chosen) and platform administration. Grep for `withoutTenantScope` to
- * audit every one of them.
+ * Isolation deliberately stood down. Legitimate reasons all share the same
+ * shape — resolving *which* tenant a request is for, before that tenant can
+ * be known: resolving a login email to its memberships, platform
+ * administration, resolving a server-sync bearer token to the business it
+ * belongs to ("server-sync-auth"), and writing to the global identity table
+ * on behalf of a membership already verified to belong to the caller's own
+ * business ("identity", e.g. team-service.ts's credential reset). Grep for
+ * `withoutTenantScope` to audit every one of them.
  */
 export interface BypassScope {
   kind: "bypass";

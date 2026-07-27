@@ -15,6 +15,18 @@ import { SignJWT, jwtVerify } from "jose";
 export const SESSION_COOKIE = "pos_session";
 
 /**
+ * Phase 17 security review — the tenant and platform-admin realms share one
+ * JWT_SECRET (platform-auth-edge.ts reads the same env var). That file
+ * already stamps a `realm: "platform"` claim and rejects any token missing
+ * or mismatching it, so a tenant token was already refused there — but this
+ * side never checked the reverse: a platform token verifies fine against
+ * `verifySession` today, since nothing here looks at `realm` at all. Stamping
+ * and requiring `realm: "tenant"` (below) closes that direction too, the
+ * same way, rather than inventing a second convention.
+ */
+const REALM = "tenant";
+
+/**
  * A membership's role within one business.
  *
  * `accountant` arrived with Phase 12 for the accounting suite in Phase 16: it
@@ -65,11 +77,26 @@ export interface SessionPayload {
 }
 
 
+let warnedInsecureSecret = false;
+
 function getSecret(): Uint8Array {
   const secret = process.env.JWT_SECRET;
   if (!secret || secret === "change-me-in-production") {
     if (process.env.NODE_ENV === "production") {
       throw new Error("JWT_SECRET must be set to a real secret in production");
+    }
+    // NODE_ENV alone is a fragile guard — plenty of real deployments never
+    // set it to exactly "production". Make the fallback loud (once) rather
+    // than silent, so a misconfigured non-dev deployment at least shows up in
+    // logs instead of quietly signing every session with a secret checked
+    // into this repo's source.
+    if (!warnedInsecureSecret) {
+      warnedInsecureSecret = true;
+      console.error(
+        "SECURITY WARNING: JWT_SECRET is not set (or is the placeholder) — signing sessions with a " +
+          "hardcoded, publicly-known development secret. Set a real JWT_SECRET before this is reachable " +
+          "by anyone but you.",
+      );
     }
     return new TextEncoder().encode("dev-only-insecure-secret");
   }
@@ -82,7 +109,7 @@ export function sessionHours(): number {
 }
 
 export async function signSession(payload: SessionPayload): Promise<string> {
-  return new SignJWT({ ...payload })
+  return new SignJWT({ ...payload, realm: REALM })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime(`${sessionHours()}h`)
@@ -91,7 +118,11 @@ export async function signSession(payload: SessionPayload): Promise<string> {
 
 export async function verifySession(token: string): Promise<SessionPayload | null> {
   try {
-    const { payload } = await jwtVerify(token, getSecret());
+    const { payload } = await jwtVerify(token, getSecret(), { algorithms: ["HS256"] });
+    // A platform-admin token verifies against the same secret, so the realm
+    // claim is what actually keeps the two apart. Reject anything not
+    // minted here — including a token from before this claim existed.
+    if ((payload as { realm?: string }).realm !== REALM) return null;
     return payload as unknown as SessionPayload;
   } catch {
     return null;
