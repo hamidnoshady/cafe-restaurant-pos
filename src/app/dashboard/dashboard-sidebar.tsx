@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { MenuIcon } from "lucide-react";
+import { MenuIcon, PanelRightCloseIcon, PanelRightOpenIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -114,6 +114,7 @@ function SidebarFooter({ role, fullName }: { role: string; fullName: string }) {
 export function DashboardSidebar({ navItems, role, fullName }: SidebarProps) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
 
   return (
     <>
@@ -145,7 +146,15 @@ export function DashboardSidebar({ navItems, role, fullName }: SidebarProps) {
       </header>
 
       {/* Desktop rail — hidden below md */}
-      <aside className="hidden w-56 shrink-0 flex-col border-e bg-card md:flex">
+      <aside className={`relative hidden shrink-0 flex-col overflow-hidden border-e bg-card transition-[width] duration-200 md:flex ${collapsed ? "w-14" : "w-56"}`}>
+        <button
+          type="button"
+          onClick={() => setCollapsed((value) => !value)}
+          aria-label={collapsed ? "??? ???? ???" : "???? ???"}
+          className="absolute -start-3 top-4 z-20 flex size-6 items-center justify-center rounded-full border border-border bg-card text-muted-foreground shadow-sm hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          {collapsed ? <PanelRightOpenIcon className="size-3.5" /> : <PanelRightCloseIcon className="size-3.5" />}
+        </button>
         <SidebarBrand />
         <NavLinks navItems={navItems} role={role} pathname={pathname} />
         <SidebarFooter role={role} fullName={fullName} />

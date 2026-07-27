@@ -289,8 +289,8 @@ export function OrderDetail({ orderId, canEdit }: { orderId: string; canEdit: bo
   const activeItems = menu?.items.filter((i) => i.is_active) ?? [];
 
   return (
-    <div className="mx-auto max-w-2xl">
-      <header className="mb-6 flex items-center justify-between">
+    <div className="mx-auto w-full max-w-4xl">
+      <header className="mb-3 flex items-center justify-between rounded-xl border border-border/80 bg-card p-3 shadow-[0_1px_3px_rgb(15_23_42/0.04)]">
         <div>
           <h1 className="text-2xl font-bold">{toPersianDigits(formatQueueLabel(order.type, order.order_number))}</h1>
           <p className="text-sm text-muted-foreground">
@@ -308,13 +308,13 @@ export function OrderDetail({ orderId, canEdit }: { orderId: string; canEdit: bo
       <ErrorBox>{error}</ErrorBox>
       {info ? <InfoBox>{info}</InfoBox> : null}
 
-      <section className="mb-6 rounded-2xl bg-card p-5 shadow-sm">
-        <ul className="divide-y divide-border">
+      <section className="mb-3 rounded-xl border border-border/80 bg-card p-3 shadow-[0_1px_3px_rgb(15_23_42/0.04)]">
+        <ul className="divide-y divide-border/80">
           {items.map((it) => {
             const mods = modifiers.filter((m) => m.order_item_id === it.id);
             const voided = it.status === "voided";
             return (
-              <li key={it.id} className="py-3 text-sm">
+              <li key={it.id} className="py-4 text-sm first:pt-0 last:pb-0">
                 <div className="flex items-start justify-between">
                   <div>
                     <p className={voided ? "text-muted-foreground line-through" : "font-medium"}>{it.name_snapshot}</p>
@@ -328,12 +328,12 @@ export function OrderDetail({ orderId, canEdit }: { orderId: string; canEdit: bo
                   </p>
                 </div>
                 {editable && !voided ? (
-                  <div className="mt-1 flex items-center gap-2">
+                  <div className="mt-3 flex items-center gap-2">
                     <button
                       type="button"
                       onClick={() => setItemQty(it.id, it.quantity - 1)}
                       disabled={busy || it.quantity <= 1}
-                      className="size-6 rounded bg-muted text-muted-foreground transition-colors hover:bg-muted-foreground/20 hover:text-foreground disabled:opacity-40"
+                      className="size-7 rounded-lg border border-border bg-muted text-muted-foreground transition-colors hover:bg-muted-foreground/20 hover:text-foreground disabled:opacity-40"
                     >
                       −
                     </button>
@@ -342,7 +342,7 @@ export function OrderDetail({ orderId, canEdit }: { orderId: string; canEdit: bo
                       type="button"
                       onClick={() => setItemQty(it.id, it.quantity + 1)}
                       disabled={busy}
-                      className="size-6 rounded bg-muted text-muted-foreground transition-colors hover:bg-muted-foreground/20 hover:text-foreground"
+                      className="size-7 rounded-lg border border-border bg-muted text-muted-foreground transition-colors hover:bg-muted-foreground/20 hover:text-foreground"
                     >
                       +
                     </button>
@@ -360,7 +360,7 @@ export function OrderDetail({ orderId, canEdit }: { orderId: string; canEdit: bo
       </section>
 
       {editable ? (
-        <section className="mb-6 rounded-2xl bg-card p-5 shadow-sm">
+        <section className="mb-3 rounded-xl border border-border/80 bg-card p-3 shadow-[0_1px_3px_rgb(15_23_42/0.04)]">
           <h2 className="mb-3 font-semibold">افزودن قلم</h2>
           <div className="flex flex-wrap gap-2">
             <select className={inputClass} value={addItemId} onChange={(e) => setAddItemId(e.target.value)}>
@@ -385,7 +385,7 @@ export function OrderDetail({ orderId, canEdit }: { orderId: string; canEdit: bo
         </section>
       ) : null}
 
-      <section className="rounded-2xl bg-card p-5 shadow-sm">
+      <section className="rounded-xl border border-border/80 bg-card p-3 shadow-[0_1px_3px_rgb(15_23_42/0.04)]">
         {editable ? (
           <div className="mb-4 flex flex-wrap items-end gap-2 border-b border-border pb-4">
             <select className={inputClass} value={discountType} onChange={(e) => setDiscountType(e.target.value as "" | "percent" | "amount")}>
@@ -409,7 +409,7 @@ export function OrderDetail({ orderId, canEdit }: { orderId: string; canEdit: bo
           </div>
         ) : null}
 
-        <dl className="space-y-1 text-sm">
+        <dl className="space-y-1 rounded-lg bg-muted/45 p-2.5 text-sm">
           <Row label="جمع جزء" value={formatToman(Number(order.subtotal))} />
           {Number(order.discount) > 0 ? <Row label="تخفیف" value={`- ${formatToman(Number(order.discount))}`} /> : null}
           {Number(order.tax) > 0 ? <Row label="مالیات" value={formatToman(Number(order.tax))} /> : null}
@@ -417,9 +417,9 @@ export function OrderDetail({ orderId, canEdit }: { orderId: string; canEdit: bo
         </dl>
 
         {editable ? (
-          <div className="mt-4 border-t border-border pt-4">
+          <div className="mt-5 border-t border-border/80 pt-5">
             <h2 className="mb-3 font-semibold">دریافت وجه و تکمیل سفارش</h2>
-            <div className="mb-3 flex gap-2">
+            <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
               {PAYMENT_METHODS.map((m) => (
                 <button
                   key={m.value}
@@ -431,7 +431,7 @@ export function OrderDetail({ orderId, canEdit }: { orderId: string; canEdit: bo
                       setCustomerQuery("");
                     }
                   }}
-                  className={`rounded-lg px-4 py-2 text-sm ${payMethod === m.value ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground transition-colors hover:bg-muted-foreground/20 hover:text-foreground"}`}
+                  className={`rounded-lg border px-3 py-2.5 text-sm font-medium ${payMethod === m.value ? "border-primary bg-primary text-primary-foreground shadow-sm" : "border-border bg-muted text-muted-foreground transition-colors hover:bg-muted-foreground/20 hover:text-foreground"}`}
                 >
                   {m.label}
                 </button>

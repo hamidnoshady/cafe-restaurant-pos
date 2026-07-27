@@ -24,8 +24,8 @@ export default async function DashboardPage() {
     session && canSetup ? await getBackupHealth(session.businessId).catch(() => null) : null;
 
   return (
-    <div>
-      <header className="mb-6 flex items-baseline justify-between">
+    <div className="mx-auto w-full max-w-5xl pb-3">
+      <header className="mb-5 flex items-baseline justify-between border-b border-border/80 pb-4">
         <h1 className="text-2xl font-bold">داشبورد</h1>
         <p className="text-sm text-muted-foreground">امروز: {today}</p>
       </header>
@@ -33,7 +33,7 @@ export default async function DashboardPage() {
       {canSetup && !setupDone ? (
         <Link
           href="/setup"
-          className="mb-6 flex flex-col items-start gap-2 rounded-xl border border-primary/30 bg-primary/5 px-5 py-4 text-sm text-primary transition hover:bg-primary/10 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
+          className="mb-4 flex flex-col items-start gap-3 rounded-2xl border border-primary/25 bg-primary/[0.045] px-4 py-3.5 text-sm text-primary shadow-[0_2px_7px_rgb(15_23_42/0.04)] transition-colors hover:bg-primary/[0.075] sm:flex-row sm:items-center sm:justify-between sm:px-5"
         >
           <span>
             <b>راه‌اندازی اولیه کامل نشده است.</b> برای آماده‌شدن جهت ثبت سفارش، جادوگر راه‌اندازی را
@@ -46,7 +46,7 @@ export default async function DashboardPage() {
       {backupHealth?.alert.level === "error" ? (
         <Link
           href="/dashboard/backup"
-          className="mb-6 flex flex-col items-start gap-2 rounded-xl border border-destructive/40 bg-destructive/10 px-5 py-4 text-sm text-destructive transition hover:bg-destructive/15 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
+          className="mb-4 flex flex-col items-start gap-3 rounded-2xl border border-destructive/25 bg-destructive/[0.055] px-4 py-3.5 text-sm text-destructive shadow-[0_2px_7px_rgb(15_23_42/0.04)] transition-colors hover:bg-destructive/[0.09] sm:flex-row sm:items-center sm:justify-between sm:px-5"
         >
           <span>
             <b>هشدار پشتیبان‌گیری:</b>{" "}
@@ -58,7 +58,7 @@ export default async function DashboardPage() {
       {session?.role === "owner" && backupHealth?.alert.reason === "disabled" && setupDone ? (
         <Link
           href="/dashboard/backup"
-          className="mb-6 flex flex-col items-start gap-2 rounded-xl border border-amber-500/40 bg-amber-500/10 px-5 py-4 text-sm text-amber-700 transition hover:bg-amber-500/15 dark:text-amber-400 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
+          className="mb-4 flex flex-col items-start gap-3 rounded-2xl border border-amber-500/25 bg-amber-500/[0.075] px-4 py-3.5 text-sm text-amber-800 shadow-[0_2px_7px_rgb(15_23_42/0.04)] transition-colors hover:bg-amber-500/[0.12] dark:text-amber-300 sm:flex-row sm:items-center sm:justify-between sm:px-5"
         >
           <span>
             <b>پشتیبان‌گیری خودکار هنوز فعال نیست.</b> برای محافظت از داده‌ها، زمان‌بندی پشتیبان‌گیری

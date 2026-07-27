@@ -41,14 +41,14 @@ export function OrdersList() {
   if (orders.length === 0) return <p className="text-sm text-muted-foreground">سفارش بازی وجود ندارد.</p>;
 
   return (
-    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+    <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
       {orders.map((o) => (
         <Link
           key={o.id}
           href={`/dashboard/orders/${o.id}`}
-          className="rounded-2xl bg-card p-4 shadow-sm transition hover:ring-2 hover:ring-ring/40"
+          className="group rounded-xl border border-border/80 bg-card p-3 shadow-[0_1px_3px_rgb(15_23_42/0.04)] transition-all hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-[0_4px_10px_rgb(15_23_42/0.06)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <div className="mb-1 flex items-center justify-between">
+          <div className="mb-2 flex items-center justify-between border-b border-border/70 pb-2">
             <span className="font-bold text-primary">{toPersianDigits(formatQueueLabel(o.type, o.order_number))}</span>
             <span className="text-xs text-muted-foreground">{o.type === "dine_in" ? "حضوری" : "بیرون‌بر"}</span>
           </div>

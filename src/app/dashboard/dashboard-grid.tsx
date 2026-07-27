@@ -159,7 +159,7 @@ export function DashboardGrid({ canEdit }: { canEdit: boolean }) {
           <button
             type="button"
             onClick={() => setEditMode((v) => !v)}
-            className={`rounded-lg px-3 py-1.5 text-sm ${editMode ? "bg-primary/10 font-semibold text-primary" : "text-muted-foreground hover:bg-muted"}`}
+            className={`inline-flex h-9 items-center rounded-lg border px-3 text-xs font-semibold shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${editMode ? "border-primary/30 bg-primary/10 text-primary hover:bg-primary/15" : "border-border bg-card text-foreground hover:bg-muted"}`}
           >
             {editMode ? "پایان ویرایش چیدمان" : "ویرایش چیدمان"}
           </button>
@@ -197,7 +197,7 @@ export function DashboardGrid({ canEdit }: { canEdit: boolean }) {
         {widgets === null ? (
           <p dir="rtl" className="text-sm text-muted-foreground">در حال بارگذاری داشبورد…</p>
         ) : widgets.length === 0 ? (
-          <p dir="rtl" className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
+          <p dir="rtl" className="flex min-h-52 items-center justify-center rounded-2xl border border-dashed border-border bg-card p-6 text-center text-sm text-muted-foreground shadow-[0_2px_7px_rgb(15_23_42/0.04)]">
             {canEdit
               ? "هنوز ابزارکی به داشبورد سنجاق نشده است. از صفحهٔ «گزارش‌ها» یک گزارش را به داشبورد سنجاق کنید."
               : "هنوز ابزارکی برای این نقش تنظیم نشده است."}
@@ -207,7 +207,7 @@ export function DashboardGrid({ canEdit }: { canEdit: boolean }) {
             className="relative"
             width={width}
             layout={layout}
-            gridConfig={{ cols, rowHeight: 90, margin: [12, 12] }}
+            gridConfig={{ cols, rowHeight: 52, margin: [8, 8] }}
             dragConfig={{ enabled: editMode && !stacked }}
             resizeConfig={{ enabled: editMode && !stacked }}
             onDragStop={onLayoutChange}
@@ -215,14 +215,14 @@ export function DashboardGrid({ canEdit }: { canEdit: boolean }) {
             autoSize
           >
             {widgets.map((w) => (
-              <div key={w.id} dir="rtl" className="overflow-hidden rounded-2xl bg-card shadow-sm">
-                <div className="flex items-center justify-between border-b px-3 py-1.5">
+              <div key={w.id} dir="rtl" className="overflow-hidden rounded-xl border border-border/90 bg-card shadow-[0_1px_3px_rgb(15_23_42/0.05)] transition-shadow hover:shadow-[0_3px_9px_rgb(15_23_42/0.06)]">
+                <div className="flex min-h-8 items-center justify-between border-b border-border/80 px-2.5 py-1.5">
                   <p className="truncate text-xs font-semibold text-muted-foreground">{w.title ?? w.report_name}</p>
                   {editMode ? (
                     <button
                       type="button"
                       onClick={() => removeWidget(w.id)}
-                      className="text-muted-foreground hover:text-destructive"
+                      className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       aria-label="حذف ابزارک"
                     >
                       <XIcon className="size-3.5" />

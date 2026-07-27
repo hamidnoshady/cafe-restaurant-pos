@@ -286,16 +286,16 @@ export function PosScreen() {
   const gridItems = menu.items.filter((i) => i.is_active && i.category_id === activeCategory);
 
   return (
-    <div className="flex flex-col gap-4 lg:h-[calc(100vh-3rem)] lg:flex-row">
+    <div className="flex flex-col gap-2 lg:h-[calc(100vh-3rem)] lg:flex-row">
       {/* Item grid */}
-      <div className="flex min-h-[55vh] flex-1 flex-col overflow-hidden rounded-2xl bg-card shadow-sm lg:min-h-0">
-        <div className="flex gap-1.5 overflow-x-auto border-b border-border p-2.5">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+        <div className="flex min-h-14 gap-1.5 overflow-x-auto border-b border-border p-2">
           {activeCategories.map((c) => (
             <button
               key={c.id}
               type="button"
               onClick={() => setActiveCategory(c.id)}
-              className={`shrink-0 rounded-lg px-5 py-3 text-base font-medium transition-colors ${
+              className={`shrink-0 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
                 activeCategory === c.id
                   ? "bg-primary text-primary-foreground shadow-sm"
                   : "bg-muted text-muted-foreground hover:text-foreground"
@@ -305,13 +305,13 @@ export function PosScreen() {
             </button>
           ))}
         </div>
-        <div className="grid flex-1 auto-rows-min grid-cols-3 gap-2.5 overflow-y-auto p-3 sm:grid-cols-4 lg:grid-cols-5">
+        <div className="grid flex-1 auto-rows-min grid-cols-2 gap-2 overflow-y-auto p-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
           {gridItems.map((item) => (
             <button
               key={item.id}
               type="button"
               onClick={() => pickItem(item)}
-              className="flex min-h-20 flex-col items-start justify-between rounded-xl border border-border p-3 text-start transition hover:border-primary/60 hover:bg-primary/5 hover:shadow-sm active:scale-[0.98]"
+              className="flex min-h-24 touch-manipulation flex-col items-start justify-between rounded-xl border border-border p-3 text-start transition hover:border-primary/60 hover:bg-primary/5 hover:shadow-sm active:scale-[0.98]"
             >
               <span className="text-sm font-medium leading-snug">{item.name}</span>
               <span className="mt-1.5 text-sm font-semibold text-primary">{formatToman(Number(item.price))}</span>
@@ -322,7 +322,7 @@ export function PosScreen() {
       </div>
 
       {/* Cart */}
-      <div className="flex w-full shrink-0 flex-col overflow-hidden rounded-2xl bg-card shadow-sm lg:w-96">
+      <div className="flex max-h-[46dvh] w-full shrink-0 flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm lg:max-h-none lg:w-[22rem]">
         <div className="border-b border-border p-4">
           <ErrorBox>{error}</ErrorBox>
           <div className="mb-3 grid grid-cols-3 gap-2 text-sm font-medium">
