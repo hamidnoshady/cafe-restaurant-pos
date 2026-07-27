@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
 import { api, ErrorBox, errorMessage, PrimaryButton } from "../ui";
@@ -14,6 +15,7 @@ interface StateResponse {
 }
 
 export default function FinishPage() {
+  const router = useRouter();
   const [state, setState] = useState<StateResponse | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -40,6 +42,7 @@ export default function FinishPage() {
       return;
     }
     setCompleted(true);
+    router.replace("/dashboard/settings");
   }
 
   const missing = state?.missingForCompletion ?? [];
