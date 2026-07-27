@@ -5,7 +5,7 @@ import { PERMISSIONS } from "@/lib/permissions";
 import type { PrinterConnection } from "@/lib/printer-connection";
 import { resolveActiveLocation } from "@/lib/setup-state";
 
-interface StoredPrinter {
+interface StoredPrinter extends Record<string, unknown> {
   id: string;
   name: string;
   kind: "receipt" | "kitchen";
