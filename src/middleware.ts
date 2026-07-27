@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 // now pulls in cannot load.
 import { SESSION_COOKIE, verifySession } from "@/lib/auth-edge";
 import { PLATFORM_SESSION_COOKIE, verifyPlatformSession } from "@/lib/platform-auth-edge";
+import { checkRateLimit, hashKey, sweepExpired, type RateLimitEntry } from "@/lib/rate-limit";
 
 const PUBLIC_PATHS = [
   "/login",
@@ -53,8 +54,88 @@ const PLATFORM_PUBLIC_PATHS = [
 /** Methods that change state — the ones a read-only impersonation may not use. */
 const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
+/**
+ * Phase 17 — tenant-scoped rate limiting. Three independent fixed-window
+ * counters, keyed so that one business (or one runaway bearer-token client,
+ * or one IP hammering a login form) can only ever exhaust its own bucket:
+ *
+ *  - `businessLimits`: every authenticated tenant API request, keyed by
+ *    `session.businessId` (decoded from the JWT — no DB lookup needed here).
+ *    This is the exit criterion itself: "one business's traffic ... can't
+ *    degrade another's".
+ *  - `syncTokenLimits`: the session-less, bearer-token server-to-server
+ *    routes (`rollup/ingest`, `server-sync/push`, `server-sync/pull`).
+ *    Middleware can't resolve a token to a business without the DB, so this
+ *    keys on the token itself (hashed, so raw tokens never sit in memory as
+ *    map keys) — a runaway or misconfigured sync client can only ever
+ *    saturate its own bucket, not every business sharing this server.
+ *  - `authIpLimits`: credential-exchange endpoints, keyed by IP, ahead of any
+ *    session — the login routes have no other request-volume defence today.
+ *
+ * All three Maps are module-level and unbounded by nothing but `sweepExpired`
+ * (called occasionally, not per-request) — the business map stays small on
+ * its own (one entry per business), but the IP/token maps grow with every
+ * distinct caller ever seen.
+ */
+const businessLimits = new Map<string, RateLimitEntry>();
+const syncTokenLimits = new Map<string, RateLimitEntry>();
+const authIpLimits = new Map<string, RateLimitEntry>();
+
+const BUSINESS_API_LIMIT = 300;
+const BUSINESS_API_WINDOW_MS = 60_000;
+const SYNC_TOKEN_LIMIT = 60;
+const SYNC_TOKEN_WINDOW_MS = 60_000;
+const AUTH_IP_LIMIT = 20;
+const AUTH_IP_WINDOW_MS = 60_000;
+
+const STALE_ENTRY_MS = 5 * 60_000;
+const SWEEP_EVERY_N_REQUESTS = 200;
+let requestsSinceSweep = 0;
+
+function maybeSweep(now: number) {
+  requestsSinceSweep += 1;
+  if (requestsSinceSweep < SWEEP_EVERY_N_REQUESTS) return;
+  requestsSinceSweep = 0;
+  sweepExpired(businessLimits, now, STALE_ENTRY_MS);
+  sweepExpired(syncTokenLimits, now, STALE_ENTRY_MS);
+  sweepExpired(authIpLimits, now, STALE_ENTRY_MS);
+}
+
+function clientIp(request: NextRequest): string {
+  const forwarded = request.headers.get("x-forwarded-for");
+  if (forwarded) return forwarded.split(",")[0].trim();
+  return request.headers.get("x-real-ip") ?? "unknown";
+}
+
+function rateLimited(retryAfterMs: number): NextResponse {
+  return NextResponse.json(
+    { error: "rate_limited" },
+    { status: 429, headers: { "Retry-After": String(Math.ceil(retryAfterMs / 1000)) } },
+  );
+}
+
+/** Credential-exchange endpoints in both auth realms — brute-force targets with no session to key on yet. */
+const AUTH_RATE_LIMITED_PATHS = ["/api/auth/login", "/api/auth/pin-login", "/api/platform/auth/login"];
+
+/** The session-less, bearer-token server-to-server routes (see PUBLIC_PATHS below for why each is public). */
+const SYNC_TOKEN_RATE_LIMITED_PATHS = ["/api/rollup/ingest", "/api/server-sync/push", "/api/server-sync/pull"];
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  const now = Date.now();
+  maybeSweep(now);
+
+  if (AUTH_RATE_LIMITED_PATHS.includes(pathname)) {
+    const result = checkRateLimit(authIpLimits, `ip:${clientIp(request)}`, AUTH_IP_LIMIT, AUTH_IP_WINDOW_MS, now);
+    if (!result.allowed) return rateLimited(result.retryAfterMs);
+  }
+
+  if (SYNC_TOKEN_RATE_LIMITED_PATHS.includes(pathname)) {
+    const authHeader = request.headers.get("authorization");
+    const key = authHeader ? `token:${hashKey(authHeader)}` : `ip:${clientIp(request)}`;
+    const result = checkRateLimit(syncTokenLimits, key, SYNC_TOKEN_LIMIT, SYNC_TOKEN_WINDOW_MS, now);
+    if (!result.allowed) return rateLimited(result.retryAfterMs);
+  }
 
   // ---- Super-admin realm ---------------------------------------------------
   // A separate auth realm with its own cookie. Handled before the tenant path
@@ -95,6 +176,20 @@ export async function middleware(request: NextRequest) {
     }
     const loginUrl = new URL("/login", request.url);
     return NextResponse.redirect(loginUrl);
+  }
+
+  // Phase 17 — every authenticated tenant API request counts against its own
+  // business's bucket, so one business's traffic (or a runaway offline-sync
+  // client belonging to it) can't degrade another's.
+  if (pathname.startsWith("/api/")) {
+    const result = checkRateLimit(
+      businessLimits,
+      `biz:${session.businessId}`,
+      BUSINESS_API_LIMIT,
+      BUSINESS_API_WINDOW_MS,
+      now,
+    );
+    if (!result.allowed) return rateLimited(result.retryAfterMs);
   }
 
   // Phase 15 — read-only impersonation. When the super-admin console entered
