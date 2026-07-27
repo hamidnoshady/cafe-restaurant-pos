@@ -124,8 +124,67 @@ export function BackupManager({ isOwner }: { isOwner: boolean }) {
   return (
     <div className="space-y-6">
       <StatusCard health={health} runs={runs} onChanged={loadStatus} />
+      {isOwner ? <ExportCard /> : null}
       {isOwner ? <SettingsCard onSaved={loadStatus} /> : null}
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Per-tenant export (Phase 17, Owner only)
+// ---------------------------------------------------------------------------
+
+async function downloadExport(format: "sql" | "xlsx"): Promise<string | null> {
+  const res = await fetch(`/api/backup/export?format=${format}`);
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    return data.error ?? "دریافت خروجی ناموفق بود.";
+  }
+  const disposition = res.headers.get("content-disposition") ?? "";
+  const match = /filename="([^"]+)"/.exec(disposition);
+  const filename = match ? match[1] : `business-export.${format}`;
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  return null;
+}
+
+function ExportCard() {
+  const [busy, setBusy] = useState<"sql" | "xlsx" | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function run(format: "sql" | "xlsx") {
+    setBusy(format);
+    setError(null);
+    const err = await downloadExport(format);
+    if (err) setError(err);
+    setBusy(null);
+  }
+
+  return (
+    <section className="rounded-2xl bg-card p-5 shadow-sm">
+      <h2 className="mb-1 font-semibold">خروجی اطلاعات کسب‌وکار</h2>
+      <p className="mb-4 text-sm text-muted-foreground">
+        تمام اطلاعات این کسب‌وکار (سفارش‌ها، انبار، حساب‌ها، اعضا و غیره) را دریافت کنید — جدا از
+        سایر کسب‌وکارهای این سامانه. فایل SQL برای بازگردانی در پایگاه‌دادهٔ دیگر و فایل اکسل برای
+        مشاهده و بایگانی مناسب است.
+      </p>
+      {error ? <ErrorBox>{error}</ErrorBox> : null}
+      <div className="flex flex-wrap gap-3">
+        <PrimaryButton type="button" disabled={busy !== null} onClick={() => run("sql")}>
+          {busy === "sql" ? "در حال آماده‌سازی…" : "دریافت خروجی SQL"}
+        </PrimaryButton>
+        <PrimaryButton type="button" disabled={busy !== null} onClick={() => run("xlsx")}>
+          {busy === "xlsx" ? "در حال آماده‌سازی…" : "دریافت خروجی اکسل"}
+        </PrimaryButton>
+      </div>
+    </section>
   );
 }
 
