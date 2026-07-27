@@ -12,6 +12,7 @@ import { ReconciliationSection } from "./reconciliation-section";
 import { ChartOfAccountsSection } from "./chart-of-accounts-section";
 import { ExpenseSection } from "./expense-section";
 import { PayrollSection } from "./payroll-section";
+import { VatReportSection } from "./vat-report-section";
 
 export interface AccountRow {
   id: string;
@@ -32,6 +33,7 @@ const TABS = [
   { key: "reconciliation", label: "تطبیق بانکی" },
   { key: "chart-of-accounts", label: "سرفصل حساب‌ها" },
   { key: "payroll", label: "حقوق و دستمزد" },
+  { key: "vat", label: "گزارش مالیات" },
 ] as const;
 type TabKey = (typeof TABS)[number]["key"];
 
@@ -97,6 +99,7 @@ export function LedgerManager({ role }: { role: string }) {
       {tab === "reconciliation" ? <ReconciliationSection busy={busy} run={run} /> : null}
       {tab === "chart-of-accounts" ? <ChartOfAccountsSection busy={busy} run={run} /> : null}
       {tab === "payroll" ? <PayrollSection busy={busy} run={run} refreshKey={refreshKey} /> : null}
+      {tab === "vat" ? <VatReportSection refreshKey={refreshKey} /> : null}
     </div>
   );
 }
