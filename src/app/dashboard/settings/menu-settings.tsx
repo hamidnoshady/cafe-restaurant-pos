@@ -59,14 +59,14 @@ export function MenuSettings() {
       <section className="rounded-2xl bg-card p-5 shadow-sm">
         <h2 className="mb-1 font-semibold">ورود گروهی منو</h2>
         <p className="mb-4 text-sm text-muted-foreground">
-          ابتدا پیش‌نمایش را ببینید، سپس ورود را تأیید کنید. فایل‌های CSV، XLSX و XLS پذیرفته می‌شوند و قیمت‌ها به تومان هستند.
+          ابتدا پیش‌نمایش را ببینید، سپس ورود را تأیید کنید. فایل‌های CSV و XLSX پذیرفته می‌شوند و قیمت‌ها به تومان هستند.
         </p>
         <InfoBox>
           ستون‌های پشتیبانی‌شده: دسته، نام، قیمت، توضیحات، کد کالا، مالیات، گروه افزودنی، حداقل انتخاب، حداکثر انتخاب و افزودنی‌ها.
           برای افزودنی‌ها از الگوی «نام:مبلغ | نام:مبلغ» استفاده کنید؛ مبلغ به تومان است.
         </InfoBox>
         <div className="flex flex-wrap items-center gap-3">
-          <input ref={input} type="file" accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" onChange={(event) => { setFile(event.target.files?.[0] ?? null); setPreview(null); setSuccess(""); }} />
+          <input ref={input} type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={(event) => { setFile(event.target.files?.[0] ?? null); setPreview(null); setSuccess(""); }} />
           <a className="text-sm text-primary underline underline-offset-4" href="/api/settings/menu/template">دانلود فایل نمونه</a>
         </div>
         {file ? <p className="mt-3 text-sm text-muted-foreground">فایل انتخاب‌شده: {file.name}</p> : null}
