@@ -56,7 +56,7 @@ function validatedNonZeroLines(lines: DraftLineInput[]): DraftLineInput[] {
 
 async function assertAccountsOwned(businessId: string, accountIds: string[]): Promise<void> {
   const { rows } = await query<{ id: string }>(
-    `SELECT id FROM accounts WHERE business_id = $1 AND id = ANY($2::uuid[])`,
+    `SELECT id FROM accounts WHERE business_id = $1 AND id = ANY($2::uuid[]) AND is_active`,
     [businessId, accountIds],
   );
   if (rows.length !== new Set(accountIds).size) throw new ManualJournalError("unknown_account");

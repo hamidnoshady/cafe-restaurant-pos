@@ -9,6 +9,7 @@ import { FiscalPeriodsSection } from "./fiscal-periods-section";
 import { ArSection } from "./ar-section";
 import { ApSection } from "./ap-section";
 import { ReconciliationSection } from "./reconciliation-section";
+import { ChartOfAccountsSection } from "./chart-of-accounts-section";
 
 export interface AccountRow {
   id: string;
@@ -26,6 +27,7 @@ const TABS = [
   { key: "ar", label: "حساب‌های دریافتنی" },
   { key: "ap", label: "حساب‌های پرداختنی" },
   { key: "reconciliation", label: "تطبیق بانکی" },
+  { key: "chart-of-accounts", label: "سرفصل حساب‌ها" },
 ] as const;
 type TabKey = (typeof TABS)[number]["key"];
 
@@ -84,6 +86,7 @@ export function LedgerManager() {
       {tab === "ar" ? <ArSection busy={busy} run={run} /> : null}
       {tab === "ap" ? <ApSection busy={busy} run={run} /> : null}
       {tab === "reconciliation" ? <ReconciliationSection busy={busy} run={run} /> : null}
+      {tab === "chart-of-accounts" ? <ChartOfAccountsSection busy={busy} run={run} /> : null}
     </div>
   );
 }
@@ -125,6 +128,9 @@ function errorMessage(code: string | undefined): string {
     not_reversible: "فقط اسناد دستی قابل برگشت هستند.",
     cannot_reverse_a_reversal: "سند برگشتی را نمی‌توان دوباره برگشت زد.",
     already_reversed: "این سند قبلاً برگشت خورده است.",
+    // Phase 16 — chart of accounts customisation
+    well_known_account: "این حساب برای عملکرد سیستم لازم است و قابل غیرفعال یا حذف نیست.",
+    account_not_found: "حساب پیدا نشد.",
   };
   return map[code ?? ""] ?? "خطای غیرمنتظره. دوباره تلاش کنید.";
 }
