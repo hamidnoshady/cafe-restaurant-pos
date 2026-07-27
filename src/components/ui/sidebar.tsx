@@ -6,7 +6,7 @@ import { MenuIcon, PanelRightCloseIcon, PanelRightOpenIcon } from "lucide-react"
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 type SidebarState = "expanded" | "collapsed";
 
@@ -68,19 +68,21 @@ function SidebarProvider({
   }, [isMobile, open, setOpen]);
 
   return (
-    <SidebarContext.Provider
-      value={{
-        state: open ? "expanded" : "collapsed",
-        isMobile,
-        openMobile,
-        setOpenMobile,
-        toggleSidebar,
-      }}
-    >
-      <div className={cn("contents", className)} {...props}>
-        {children}
-      </div>
-    </SidebarContext.Provider>
+    <TooltipProvider>
+      <SidebarContext.Provider
+        value={{
+          state: open ? "expanded" : "collapsed",
+          isMobile,
+          openMobile,
+          setOpenMobile,
+          toggleSidebar,
+        }}
+      >
+        <div className={cn("contents", className)} {...props}>
+          {children}
+        </div>
+      </SidebarContext.Provider>
+    </TooltipProvider>
   );
 }
 
