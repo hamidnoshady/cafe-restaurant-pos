@@ -50,6 +50,7 @@ const SOURCE_TYPE_LABELS: Record<string, string> = {
   ap_payment: "پرداخت به تأمین‌کننده",
   manual: "سند دستی",
   expense: "هزینه",
+  payroll_payment: "پرداخت حقوق",
 };
 
 export function ReconciliationSection({ busy, run }: { busy: boolean; run: (fn: () => Promise<{ ok: boolean; data: { error?: string } }>) => Promise<boolean> }) {
