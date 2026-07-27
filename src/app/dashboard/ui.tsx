@@ -127,6 +127,11 @@ export function errorMessage(code: string | undefined): string {
     reconciliation_completed: "این تطبیق قبلاً قفل شده و قابل تغییر نیست.",
     journal_line_not_found: "سند انتخاب‌شده معتبر نیست.",
     balance_mismatch: "مانده محاسبه‌شده با مانده صورتحساب برابر نیست.",
+    // Phase 17 — plan limits
+    branch_limit_exceeded: "به سقف تعداد شعبه در پلن فعلی رسیده‌اید. برای افزودن شعبهٔ بیشتر، پلن را ارتقا دهید.",
+    member_limit_exceeded: "به سقف تعداد اعضای پلن فعلی رسیده‌اید. برای افزودن عضو بیشتر، پلن را ارتقا دهید.",
+    monthly_order_limit_exceeded:
+      "به سقف تعداد سفارش‌های این ماه در پلن فعلی رسیده‌اید. برای ثبت سفارش بیشتر، پلن را ارتقا دهید.",
   };
   return map[code ?? ""] ?? "خطای غیرمنتظره. دوباره تلاش کنید.";
 }

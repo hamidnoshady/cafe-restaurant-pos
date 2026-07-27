@@ -9,6 +9,7 @@ import {
   getBusiness,
   setBusinessStatus,
   setBusinessPlan,
+  listPlans,
   hardDeleteBusiness,
   DeleteNotEligibleError,
   type BusinessStatus,
@@ -89,6 +90,11 @@ export const PATCH = withPlatformScope(async (request: NextRequest, ctx: Ctx) =>
 
     const existing = await getBusiness(id);
     if (!existing) return NextResponse.json({ error: "not_found" }, { status: 404 });
+
+    const plans = await listPlans();
+    if (!plans.some((p) => p.key === plan)) {
+      return NextResponse.json({ error: "invalid_plan" }, { status: 400 });
+    }
 
     await setBusinessPlan(id, plan);
     await platformAudit({

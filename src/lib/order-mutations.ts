@@ -13,6 +13,7 @@ import { computeOrderTotals, type DiscountInput, type OrderTotals } from "./orde
 import { recomputeOrderTotals } from "./order-totals";
 import { lockOpenOrder } from "./order-lock";
 import { ensureSessionForTable } from "./table-session-service";
+import { businessIdForLocation, monthlyOrderCount, planLimitsFor } from "./plan-limits";
 import type { PoolClient } from "pg";
 
 /** Capture the recipe plus modifier deltas as an immutable per-unit snapshot. */
@@ -85,6 +86,14 @@ export interface CreateOrderOutput {
 export async function createOrder(input: CreateOrderInput): Promise<MutationResult<CreateOrderOutput>> {
   const shapeError = validateItemShape(input.items);
   if (shapeError) return { ok: false, error: shapeError, status: 400 };
+
+  const businessId = await businessIdForLocation(input.locationId);
+  if (businessId) {
+    const limits = await planLimitsFor(businessId);
+    if (limits.monthlyOrderLimit !== null && (await monthlyOrderCount(businessId)) >= limits.monthlyOrderLimit) {
+      return { ok: false, error: "monthly_order_limit_exceeded", status: 403 };
+    }
+  }
 
   let tableId: string | null = null;
   if (input.type === "dine_in") {

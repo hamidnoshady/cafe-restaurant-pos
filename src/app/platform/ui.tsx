@@ -48,6 +48,7 @@ export function errorMessage(code: string | undefined): string {
     business_not_found: "کسب‌وکار پیدا نشد.",
     no_owner: "این کسب‌وکار مالک فعالی برای ورود ندارد.",
     impersonation_read_only: "این نشست فقط‌خواندنی است و امکان تغییر ندارد.",
+    invalid_plan: "این پلن در فهرست پلن‌ها وجود ندارد.",
   };
   return map[code ?? ""] ?? "خطای غیرمنتظره. دوباره تلاش کنید.";
 }
