@@ -23,10 +23,13 @@ export interface ReportTable {
 }
 
 /** DB date/timestamp columns (e.g. a date-bucketed dimension) come back as JS Date objects — shown in Jalali, like everywhere else in the app (dates are stored ISO/Gregorian, Jalali is display-only). */
-function cellValue(value: unknown): string | number {
+export function cellValue(value: unknown): string | number {
   if (value === null || value === undefined) return "";
   if (value instanceof Date) return toPersianDigits(formatJalali(value));
   if (typeof value === "number") return value;
+  // jsonb columns and array columns (e.g. permissions, invitations.location_ids) —
+  // otherwise Object/Array would stringify to "[object Object]"/no useful text.
+  if (typeof value === "object") return JSON.stringify(value);
   return String(value);
 }
 
