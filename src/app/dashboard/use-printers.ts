@@ -30,6 +30,7 @@ export interface BusinessInfo {
   name: string;
   address: string | null;
   phone: string | null;
+  receiptFooter?: string | null;
 }
 
 /** Business/location name + contact info for the printed receipt header. */
