@@ -1,11 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { toPersianDigits } from "@/lib/digits";
 import type { KitchenTicketData } from "@/lib/kitchen-ticket-template";
 import { formatToman, tomanToRial } from "@/lib/money";
 import { computeOrderTotals, formatQueueLabel, type CartLine, type DiscountInput } from "@/lib/orders";
 import { printKitchenTicket } from "@/lib/print-agent-client";
+import { isGlobalCashierShortcutEligible, searchPosMenuItems } from "@/lib/pos-selection";
 import { ModifierPicker } from "../modifier-picker";
 import { apiOrQueue } from "../offline-queue";
 import { api, ErrorBox, errorMessage, inputClass, PrimaryButton } from "../ui";
@@ -84,6 +87,8 @@ export function PosScreen() {
   const [openOrders, setOpenOrders] = useState<OpenOrder[]>([]);
   const [couriers, setCouriers] = useState<Courier[]>([]);
   const [activeCategory, setActiveCategory] = useState<string>("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchActiveIndex, setSearchActiveIndex] = useState(0);
   const [cart, setCart] = useState<CartUiLine[]>([]);
   const [orderType, setOrderType] = useState<OrderType>("dine_in");
   const [tableId, setTableId] = useState("");
@@ -95,10 +100,14 @@ export function PosScreen() {
   const [discountType, setDiscountType] = useState<"" | "percent" | "amount">("");
   const [discountValue, setDiscountValue] = useState("");
   const [pickerItem, setPickerItem] = useState<Item | null>(null);
+  const [cartSheetOpen, setCartSheetOpen] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ orderNumber: number | null; type: OrderType; total: number; queued: boolean } | null>(null);
   const printers = usePrinters();
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const submissionInFlight = useRef(false);
 
   const load = useCallback(() => {
     Promise.all([
@@ -122,6 +131,59 @@ export function PosScreen() {
   useEffect(load, [load]);
 
   const occupiedTableIds = useMemo(() => new Set(openOrders.map((o) => o.table_id).filter(Boolean)), [openOrders]);
+  const activeCategories = useMemo(() => menu?.categories.filter((category) => category.is_active) ?? [], [menu]);
+  const visibleProducts = useMemo(() => {
+    if (!menu) return [];
+    const searchResults = searchPosMenuItems({
+      categories: menu.categories,
+      items: menu.items.filter((item): item is Item & { category_id: string } => item.category_id !== null),
+      selectedCategoryId: activeCategory,
+      query: searchQuery,
+    });
+    const itemsById = new Map(menu.items.map((item) => [item.id, item]));
+    return searchResults.flatMap((result) => {
+      const item = itemsById.get(result.id);
+      return item ? [{ item, categoryLabel: result.categoryLabel }] : [];
+    });
+  }, [activeCategory, menu, searchQuery]);
+
+  useEffect(() => {
+    setSearchActiveIndex((index) => Math.min(index, Math.max(visibleProducts.length - 1, 0)));
+  }, [visibleProducts.length]);
+
+  const hasOpenOverlay = Boolean(pickerItem || reviewOpen || cartSheetOpen);
+  useEffect(() => {
+    function handleGlobalShortcut(event: KeyboardEvent) {
+      const eligible = isGlobalCashierShortcutEligible({
+        activeElement: document.activeElement,
+        hasOpenDialog: hasOpenOverlay,
+      });
+      if (!eligible) return;
+
+      if (event.key === "/" && !event.ctrlKey && !event.metaKey && !event.altKey) {
+        event.preventDefault();
+        searchInputRef.current?.focus();
+        return;
+      }
+      if (event.altKey && !event.ctrlKey && !event.metaKey && /^\d$/.test(event.key)) {
+        const category = activeCategories[Number(event.key) - 1];
+        if (category) {
+          event.preventDefault();
+          setActiveCategory(category.id);
+          setSearchQuery("");
+          setSearchActiveIndex(0);
+        }
+        return;
+      }
+      if ((event.ctrlKey || event.metaKey) && event.key === "Enter" && cart.length > 0) {
+        event.preventDefault();
+        setReviewOpen(true);
+      }
+    }
+
+    window.addEventListener("keydown", handleGlobalShortcut);
+    return () => window.removeEventListener("keydown", handleGlobalShortcut);
+  }, [activeCategories, cart.length, hasOpenOverlay]);
 
   const attachedGroups = useCallback(
     (itemId: string): (ModifierGroup & { modifiers: Modifier[] })[] => {
@@ -197,11 +259,13 @@ export function PosScreen() {
   const totals = computeOrderTotals(cartLines, discount, feeNum);
 
   async function submit() {
+    if (busy || submissionInFlight.current) return;
     setError("");
     if (cart.length === 0) return setError("سبد خرید خالی است.");
     if (orderType === "dine_in" && !tableId) return setError("انتخاب میز الزامی است.");
     if (orderType === "delivery" && !deliveryAddress.trim()) return setError("برای سفارش ارسالی آدرس الزامی است.");
 
+    submissionInFlight.current = true;
     setBusy(true);
     const orderBody = {
       type: orderType,
@@ -226,6 +290,7 @@ export function PosScreen() {
       { type: "order.create", payload: orderBody, description: `سفارش ${typeLabel}` },
     );
     setBusy(false);
+    submissionInFlight.current = false;
     if (!ok) return setError(errorMessage(data.error));
 
     setResult({ orderNumber: queued ? null : (data.orderNumber ?? null), type: orderType, total: totals.total, queued });
@@ -282,47 +347,84 @@ export function PosScreen() {
     );
   }
 
-  const activeCategories = menu.categories.filter((c) => c.is_active);
-  const gridItems = menu.items.filter((i) => i.is_active && i.category_id === activeCategory);
-
   return (
     <div className="flex flex-col gap-2 lg:h-[calc(100vh-3rem)] lg:flex-row">
-      {/* Item grid */}
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm">
-        <div className="flex min-h-14 gap-1.5 overflow-x-auto border-b border-border p-2">
-          {activeCategories.map((c) => (
-            <button
-              key={c.id}
-              type="button"
-              onClick={() => setActiveCategory(c.id)}
-              className={`shrink-0 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
-                activeCategory === c.id
-                  ? "bg-primary text-primary-foreground shadow-sm"
-                  : "bg-muted text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {c.name}
-            </button>
-          ))}
+        <div className="border-b border-border p-2">
+          <label className="sr-only" htmlFor="pos-product-search">جستجوی محصول</label>
+          <input
+            ref={searchInputRef}
+            id="pos-product-search"
+            className={inputClass}
+            value={searchQuery}
+            onChange={(event) => {
+              setSearchQuery(event.target.value);
+              setSearchActiveIndex(0);
+            }}
+            onKeyDown={(event) => {
+              if (visibleProducts.length === 0) return;
+              if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                event.preventDefault();
+                const offset = event.key === "ArrowDown" ? 1 : -1;
+                setSearchActiveIndex((index) => (index + offset + visibleProducts.length) % visibleProducts.length);
+              }
+              if (event.key === "Enter") {
+                event.preventDefault();
+                const selected = visibleProducts[searchActiveIndex];
+                if (selected) pickItem(selected.item);
+              }
+            }}
+            placeholder="جستجوی محصول (/)"
+            role="combobox"
+            aria-expanded={visibleProducts.length > 0}
+            aria-controls="pos-product-results"
+            aria-activedescendant={visibleProducts[searchActiveIndex] ? `pos-product-${visibleProducts[searchActiveIndex].item.id}` : undefined}
+          />
+          <div className="mt-2 flex min-h-11 gap-1.5 overflow-x-auto pb-1" aria-label="دسته‌های فعال">
+            {activeCategories.map((category, index) => (
+              <button
+                key={category.id}
+                type="button"
+                onClick={() => {
+                  setActiveCategory(category.id);
+                  setSearchQuery("");
+                  setSearchActiveIndex(0);
+                }}
+                className={`min-h-11 shrink-0 rounded-lg px-4 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                  activeCategory === category.id
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "bg-muted text-muted-foreground hover:text-foreground"
+                }`}
+                aria-keyshortcuts={`Alt+${index + 1}`}
+              >
+                {category.name}
+              </button>
+            ))}
+          </div>
         </div>
-        <div className="grid flex-1 auto-rows-min grid-cols-2 gap-2 overflow-y-auto p-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
-          {gridItems.map((item) => (
+        <div id="pos-product-results" role="listbox" className="grid flex-1 auto-rows-min grid-cols-2 gap-2 overflow-y-auto p-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+          {visibleProducts.map(({ item, categoryLabel }, index) => (
             <button
               key={item.id}
+              id={`pos-product-${item.id}`}
               type="button"
+              role="option"
+              aria-selected={index === searchActiveIndex}
               onClick={() => pickItem(item)}
-              className="flex min-h-24 touch-manipulation flex-col items-start justify-between rounded-xl border border-border p-3 text-start transition hover:border-primary/60 hover:bg-primary/5 hover:shadow-sm active:scale-[0.98]"
+              className={`flex min-h-24 touch-manipulation flex-col items-start justify-between rounded-xl border p-3 text-start transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring hover:border-primary/60 hover:bg-primary/5 hover:shadow-sm active:scale-[0.98] ${
+                index === searchActiveIndex ? "border-primary ring-1 ring-primary/40" : "border-border"
+              }`}
             >
               <span className="text-sm font-medium leading-snug">{item.name}</span>
+              {searchQuery.trim() ? <span className="mt-1 text-xs text-muted-foreground">{categoryLabel}</span> : null}
               <span className="mt-1.5 text-sm font-semibold text-primary">{formatToman(Number(item.price))}</span>
             </button>
           ))}
-          {gridItems.length === 0 ? <p className="col-span-full text-sm text-muted-foreground">آیتمی در این دسته نیست.</p> : null}
+          {visibleProducts.length === 0 ? <p className="col-span-full p-2 text-sm text-muted-foreground">آیتمی یافت نشد.</p> : null}
         </div>
       </div>
-
       {/* Cart */}
-      <div className="flex max-h-[46dvh] w-full shrink-0 flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm lg:max-h-none lg:w-[22rem]">
+      <div className="hidden max-h-[46dvh] w-full shrink-0 flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm lg:flex lg:max-h-none lg:w-[22rem]">
         <div className="border-b border-border p-4">
           <ErrorBox>{error}</ErrorBox>
           <div className="mb-3 grid grid-cols-3 gap-2 text-sm font-medium">
@@ -493,12 +595,116 @@ export function PosScreen() {
             <Row label="جمع کل" value={formatToman(totals.total)} bold />
           </dl>
 
-          <PrimaryButton type="button" onClick={submit} disabled={busy || cart.length === 0}>
+          <PrimaryButton type="button" onClick={() => setReviewOpen(true)} disabled={busy || cart.length === 0}>
             {busy ? "در حال ثبت…" : "ثبت سفارش"}
           </PrimaryButton>
         </div>
       </div>
 
+      <div className="sticky bottom-2 z-20 lg:hidden">
+        <button
+          type="button"
+          onClick={() => setCartSheetOpen(true)}
+          className="flex min-h-12 w-full items-center justify-between rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          aria-label="باز کردن سبد خرید"
+        >
+          <span>{toPersianDigits(cart.reduce((count, line) => count + line.quantity, 0))} قلم در سبد</span>
+          <span>{formatToman(totals.total)}</span>
+        </button>
+      </div>
+
+      <Sheet open={cartSheetOpen} onOpenChange={setCartSheetOpen}>
+        <SheetContent side="bottom" className="max-h-[88dvh] gap-0 rounded-t-2xl p-0 lg:hidden">
+          <div className="border-b border-border p-4">
+            <SheetTitle>سبد خرید</SheetTitle>
+            <ErrorBox>{error}</ErrorBox>
+            <div className="mt-3 grid grid-cols-3 gap-2 text-sm font-medium">
+              {(["dine_in", "takeaway", "delivery"] as const).map((type) => (
+                <button
+                  key={type}
+                  type="button"
+                  onClick={() => {
+                    setOrderType(type);
+                    if (type !== "dine_in") setTableId("");
+                  }}
+                  className={`min-h-11 rounded-lg px-2 ${orderType === type ? "bg-primary text-primary-foreground" : "bg-muted"}`}
+                >
+                  {type === "dine_in" ? "حضوری" : type === "takeaway" ? "بیرون‌بر" : "ارسالی"}
+                </button>
+              ))}
+            </div>
+            {orderType === "dine_in" ? (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {tables.map((table) => {
+                  const occupied = occupiedTableIds.has(table.id);
+                  return (
+                    <button key={table.id} type="button" disabled={occupied} onClick={() => setTableId(table.id)} className={`min-h-11 rounded-lg border px-3 text-sm ${tableId === table.id ? "border-primary bg-primary/10 text-primary" : "border-input"}`}>
+                      {table.name}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
+            {orderType === "delivery" ? (
+              <div className="mt-3 space-y-2">
+                <textarea className={`${inputClass} h-auto`} rows={2} value={deliveryAddress} onChange={(event) => setDeliveryAddress(event.target.value)} placeholder="آدرس تحویل *" />
+                <div className="grid grid-cols-2 gap-2">
+                  <input className={inputClass} dir="ltr" inputMode="tel" value={deliveryPhone} onChange={(event) => setDeliveryPhone(event.target.value)} placeholder="تلفن مشتری" />
+                  <input className={inputClass} dir="ltr" inputMode="numeric" value={deliveryFee} onChange={(event) => setDeliveryFee(event.target.value)} placeholder="هزینه ارسال" />
+                </div>
+              </div>
+            ) : null}
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto p-4">
+            {cart.length === 0 ? <p className="text-sm text-muted-foreground">سبد خرید خالی است.</p> : (
+              <ul className="space-y-3">
+                {cart.map((line) => (
+                  <li key={line.key} className="flex items-center justify-between gap-3">
+                    <div className="min-w-0"><p className="font-medium">{line.name}</p>{line.modifierLabel ? <p className="text-xs text-muted-foreground">{line.modifierLabel}</p> : null}</div>
+                    <div className="flex items-center gap-2">
+                      <button type="button" aria-label="کاهش تعداد" onClick={() => setQty(line.key, line.quantity - 1)} className="flex size-11 items-center justify-center rounded-lg bg-muted">−</button>
+                      <span className="w-5 text-center">{toPersianDigits(line.quantity)}</span>
+                      <button type="button" aria-label="افزایش تعداد" onClick={() => setQty(line.key, line.quantity + 1)} className="flex size-11 items-center justify-center rounded-lg bg-muted">+</button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <div className="border-t border-border p-4">
+            <div className="mb-3 flex gap-2">
+              <select className={inputClass} value={discountType} onChange={(event) => setDiscountType(event.target.value as "" | "percent" | "amount")} aria-label="نوع تخفیف">
+                <option value="">بدون تخفیف</option><option value="percent">درصدی</option><option value="amount">مبلغ ثابت</option>
+              </select>
+              {discountType ? <input className={inputClass} dir="ltr" inputMode="numeric" value={discountValue} onChange={(event) => setDiscountValue(event.target.value)} placeholder={discountType === "percent" ? "درصد" : "تومان"} aria-label="مقدار تخفیف" /> : null}
+            </div>
+            <Row label="جمع کل" value={formatToman(totals.total)} bold />
+            <PrimaryButton type="button" onClick={() => setReviewOpen(true)} disabled={busy || cart.length === 0}>{busy ? "در حال ثبت…" : "ثبت سفارش"}</PrimaryButton>
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      <Dialog open={reviewOpen} onOpenChange={setReviewOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>بررسی سفارش</DialogTitle>
+            <DialogDescription>پیش از ثبت، جزئیات سفارش را بررسی کنید.</DialogDescription>
+          </DialogHeader>
+          <dl className="space-y-2 text-sm">
+            <Row label="نوع سفارش" value={orderType === "dine_in" ? "حضوری" : orderType === "takeaway" ? "بیرون‌بر" : "ارسالی"} />
+            {orderType === "dine_in" ? <Row label="میز" value={tables.find((table) => table.id === tableId)?.name ?? "انتخاب نشده"} /> : null}
+            {orderType === "delivery" ? <Row label="آدرس" value={deliveryAddress.trim() || "ثبت نشده"} /> : null}
+            <Row label="تعداد اقلام" value={toPersianDigits(cart.reduce((count, line) => count + line.quantity, 0))} />
+            <Row label="جمع کل" value={formatToman(totals.total)} bold />
+          </dl>
+          <DialogFooter>
+            <button type="button" onClick={() => setReviewOpen(false)} className="min-h-11 rounded-lg border border-input px-4 text-sm font-medium">بازگشت</button>
+            <button type="button" disabled={busy || cart.length === 0} onClick={() => { setReviewOpen(false); void submit(); }} className="min-h-11 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50">
+              {busy ? "در حال ثبت…" : "تأیید و ثبت"}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       {pickerItem ? (
         <ModifierPicker
           itemName={pickerItem.name}
