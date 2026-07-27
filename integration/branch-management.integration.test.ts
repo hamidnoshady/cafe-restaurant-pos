@@ -103,8 +103,11 @@ function asBusiness<T>(businessId: string, fn: () => Promise<T>): Promise<T> {
 beforeEach(async () => {
   await db.query("DELETE FROM businesses");
 
+  // Phase 17 gave the default 'free' plan a 1-branch cap; this suite is
+  // specifically about having several branches, which is a plan-limit
+  // concern this suite isn't testing, so it runs on the uncapped tier.
   const bizRow = await db.query<{ id: string }>(
-    "INSERT INTO businesses (name, slug) VALUES ('Multi-Branch Co', $1) RETURNING id",
+    "INSERT INTO businesses (name, slug, plan) VALUES ('Multi-Branch Co', $1, 'business') RETURNING id",
     [`mb-${randomUUID().slice(0, 8)}`],
   );
   biz.id = bizRow.rows[0].id;

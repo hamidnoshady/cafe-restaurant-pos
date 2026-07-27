@@ -36,6 +36,10 @@ const EXEMPT_TABLES = new Set([
   "feature_flags",
   "platform_admins",
   "platform_audit_log",
+  // Phase 17 — a global plan catalogue (branch/member/order-count ceilings),
+  // the same shape as feature_flags: every business reads the same few rows,
+  // there is nothing to isolate.
+  "plans",
 ]);
 
 let databaseName: string;

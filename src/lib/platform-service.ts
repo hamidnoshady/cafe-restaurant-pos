@@ -194,6 +194,32 @@ export async function listFeatureFlags(): Promise<FeatureFlag[]> {
   }));
 }
 
+export interface Plan {
+  key: string;
+  name: string;
+  branchLimit: number | null;
+  memberLimit: number | null;
+  monthlyOrderLimit: number | null;
+}
+
+/** The global plan catalogue (plans is not tenant data, same as feature_flags — see migration 0034). */
+export async function listPlans(): Promise<Plan[]> {
+  const { rows } = await query<{
+    key: string;
+    name: string;
+    branch_limit: number | null;
+    member_limit: number | null;
+    monthly_order_limit: number | null;
+  }>(`SELECT key, name, branch_limit, member_limit, monthly_order_limit FROM plans ORDER BY key`);
+  return rows.map((r) => ({
+    key: r.key,
+    name: r.name,
+    branchLimit: r.branch_limit,
+    memberLimit: r.member_limit,
+    monthlyOrderLimit: r.monthly_order_limit,
+  }));
+}
+
 /** Every flag, with this business's override and the effective value resolved. */
 export async function businessFeatures(businessId: string): Promise<BusinessFeature[]> {
   const { rows } = await withoutTenantScope("platform", () =>
@@ -252,7 +278,7 @@ export async function setBusinessFeature(
   });
 }
 
-/** Assign a plan label to a business. Plans are assigned by hand (no billing). */
+/** Assign a plan to a business (must be a key from listPlans()). Plans are assigned by hand (no billing). */
 export async function setBusinessPlan(businessId: string, plan: string): Promise<void> {
   await withoutTenantScope("platform", () =>
     query(`UPDATE businesses SET plan = $2, updated_at = now() WHERE id = $1`, [businessId, plan]),
