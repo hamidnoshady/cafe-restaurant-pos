@@ -6,6 +6,7 @@ import {
   scopeSettings,
   type TenantScope,
 } from "./tenant-context";
+import { poolMax } from "./pool-config";
 
 // Reuse the pool across Next.js dev-server hot reloads.
 const globalForPg = globalThis as unknown as { pgPool?: Pool };
@@ -79,8 +80,10 @@ export function getPool(): Pool {
       throw new Error("DATABASE_URL is not set");
     }
     // Tenant-scoped work pins a connection for the length of a transaction, so
-    // the pool needs a little more headroom than it did single-tenant.
-    globalForPg.pgPool = installTenantScoping(new Pool({ connectionString, max: 20 }));
+    // the pool needs a little more headroom than it did single-tenant. See
+    // pool-config.ts: DB_POOL_MAX overrides the default of 20, which is
+    // preserved for anyone who doesn't set it.
+    globalForPg.pgPool = installTenantScoping(new Pool({ connectionString, max: poolMax() }));
   }
   return globalForPg.pgPool;
 }
