@@ -11,6 +11,7 @@
  * Everything in this file depends only on `jose`, which works in both runtimes.
  */
 import { SignJWT, jwtVerify } from "jose";
+import { getJwtSecret } from "./jwt-secret";
 
 export const SESSION_COOKIE = "pos_session";
 
@@ -77,30 +78,8 @@ export interface SessionPayload {
 }
 
 
-let warnedInsecureSecret = false;
-
 function getSecret(): Uint8Array {
-  const secret = process.env.JWT_SECRET;
-  if (!secret || secret === "change-me-in-production") {
-    if (process.env.NODE_ENV === "production") {
-      throw new Error("JWT_SECRET must be set to a real secret in production");
-    }
-    // NODE_ENV alone is a fragile guard — plenty of real deployments never
-    // set it to exactly "production". Make the fallback loud (once) rather
-    // than silent, so a misconfigured non-dev deployment at least shows up in
-    // logs instead of quietly signing every session with a secret checked
-    // into this repo's source.
-    if (!warnedInsecureSecret) {
-      warnedInsecureSecret = true;
-      console.error(
-        "SECURITY WARNING: JWT_SECRET is not set (or is the placeholder) — signing sessions with a " +
-          "hardcoded, publicly-known development secret. Set a real JWT_SECRET before this is reachable " +
-          "by anyone but you.",
-      );
-    }
-    return new TextEncoder().encode("dev-only-insecure-secret");
-  }
-  return new TextEncoder().encode(secret);
+  return getJwtSecret("sessions");
 }
 
 export function sessionHours(): number {
