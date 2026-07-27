@@ -186,7 +186,7 @@ function SidebarNavigation({ navItems, role, pathname }: Omit<SidebarProps, "ful
 
 export function DashboardSidebar({ navItems, role, fullName }: SidebarProps) {
   const pathname = usePathname();
-  const [preference, setPreference] = useState<DashboardSidebarPreference>("expanded");
+  const [preference, setPreference] = useState<DashboardSidebarPreference>("collapsed");
   const [preferenceLoaded, setPreferenceLoaded] = useState(false);
   const mode = resolveSidebarMode(pathname, preference);
 
@@ -216,8 +216,6 @@ export function DashboardSidebar({ navItems, role, fullName }: SidebarProps) {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [mode]);
-
-  if (mode === "offcanvas") return null;
 
   return (
     <SidebarProvider open={mode === "expanded"} onOpenChange={setExpanded}>
