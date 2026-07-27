@@ -8,6 +8,7 @@ import { ManualEntrySection } from "./manual-entry-section";
 import { FiscalPeriodsSection } from "./fiscal-periods-section";
 import { ArSection } from "./ar-section";
 import { ApSection } from "./ap-section";
+import { ReconciliationSection } from "./reconciliation-section";
 
 export interface AccountRow {
   id: string;
@@ -24,6 +25,7 @@ const TABS = [
   { key: "fiscal-periods", label: "دوره‌های مالی" },
   { key: "ar", label: "حساب‌های دریافتنی" },
   { key: "ap", label: "حساب‌های پرداختنی" },
+  { key: "reconciliation", label: "تطبیق بانکی" },
 ] as const;
 type TabKey = (typeof TABS)[number]["key"];
 
@@ -81,6 +83,7 @@ export function LedgerManager() {
       {tab === "fiscal-periods" ? <FiscalPeriodsSection busy={busy} run={run} /> : null}
       {tab === "ar" ? <ArSection busy={busy} run={run} /> : null}
       {tab === "ap" ? <ApSection busy={busy} run={run} /> : null}
+      {tab === "reconciliation" ? <ReconciliationSection busy={busy} run={run} /> : null}
     </div>
   );
 }
@@ -106,6 +109,14 @@ function errorMessage(code: string | undefined): string {
     // Phase 16 — AP subledger
     supplier_required: "انتخاب تأمین‌کننده الزامی است.",
     supplier_not_found: "تأمین‌کننده انتخاب‌شده معتبر نیست.",
+    // Phase 16 — bank & cash reconciliation
+    invalid_account: "حساب انتخاب‌شده معتبر نیست.",
+    statement_date_required: "تاریخ صورتحساب الزامی است.",
+    reconciliation_in_progress: "یک تطبیق ناتمام برای این حساب وجود دارد؛ ابتدا آن را تکمیل کنید.",
+    reconciliation_not_found: "تطبیق پیدا نشد.",
+    reconciliation_completed: "این تطبیق قبلاً قفل شده و قابل تغییر نیست.",
+    journal_line_not_found: "سند انتخاب‌شده معتبر نیست.",
+    balance_mismatch: "مانده محاسبه‌شده با مانده صورتحساب برابر نیست.",
     fiscal_period_locked: "دوره مالی این تاریخ قفل است و امکان ثبت سند وجود ندارد.",
     fiscal_period_soft_closed: "دوره مالی این تاریخ بسته‌ی موقت است؛ فقط مالک یا حسابدار می‌تواند سند ثبت کند.",
   };
