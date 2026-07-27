@@ -54,7 +54,7 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
   const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
 
-  let body: { status?: string; settlementMethod?: string };
+  let body: { status?: string; settlementMethod?: string; supplierId?: string };
   try {
     body = await request.json();
   } catch {
@@ -69,16 +69,37 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
   const settlementMethod: SettlementMethod = SETTLEMENT_METHODS.includes(body.settlementMethod as SettlementMethod)
     ? (body.settlementMethod as SettlementMethod)
     : "credit";
+  const supplierId = body.supplierId?.trim() || null;
 
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
-    const { rows: locked } = await client.query<{ id:string; status:string; total:string }>(
-      "SELECT id,status,total FROM purchases WHERE id=$1 AND location_id=$2 FOR UPDATE", [id, location.id]);
+    const { rows: locked } = await client.query<{ id:string; status:string; total:string; supplier_id:string|null }>(
+      "SELECT id,status,total,supplier_id FROM purchases WHERE id=$1 AND location_id=$2 FOR UPDATE", [id, location.id]);
     const purchase = locked[0];
     if (!purchase) { await client.query("ROLLBACK"); return NextResponse.json({ error:"not_found" }, { status:404 }); }
     if (!(VALID_TRANSITIONS[purchase.status] ?? []).includes(nextStatus)) {
       await client.query("ROLLBACK"); return NextResponse.json({ error:"invalid_transition" }, { status:409 });
+    }
+    // A credit-settled purchase becomes an Accounts Payable subledger entry,
+    // so it needs a supplier to attribute the balance to. Attribution can
+    // still be supplied here (not only at purchase creation), the same way
+    // the AR subledger accepts a customer at checkout rather than requiring
+    // one when the order was first opened.
+    if (nextStatus === "received" && settlementMethod === "credit" && !purchase.supplier_id && !supplierId) {
+      await client.query("ROLLBACK");
+      return NextResponse.json({ error: "supplier_required" }, { status: 400 });
+    }
+    if (nextStatus === "received" && supplierId && !purchase.supplier_id) {
+      const { rowCount: supplierOwned } = await client.query(
+        `SELECT 1 FROM suppliers WHERE id = $1 AND location_id = $2`,
+        [supplierId, location.id],
+      );
+      if (supplierOwned !== 1) {
+        await client.query("ROLLBACK");
+        return NextResponse.json({ error: "supplier_not_found" }, { status: 404 });
+      }
+      await client.query(`UPDATE purchases SET supplier_id = $1 WHERE id = $2`, [supplierId, id]);
     }
     if (nextStatus !== "received") {
       await client.query(`UPDATE purchases SET status=$2, ordered_at=CASE WHEN $2='ordered' THEN now() ELSE ordered_at END WHERE id=$1`, [id,nextStatus]);

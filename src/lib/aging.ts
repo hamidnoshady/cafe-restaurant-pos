@@ -1,0 +1,84 @@
+/**
+ * Phase 16 — subledger aging, the pure part. Shared by AR (ar-service.ts)
+ * and AP (ap-service.ts): a credit order/purchase posts its full amount to
+ * the control account the instant it's rung up (no partial/unpaid state —
+ * see postExactOrderPaymentEntry/postExactPurchaseEntry in ledger-service.ts),
+ * so there is no per-invoice/per-bill "amount still open" already tracked
+ * anywhere. Aging has to reconstruct it: given a party's open items
+ * (invoices owed to the business, or bills the business owes) and the
+ * payments recorded against their balance, apply the payments FIFO against
+ * the oldest open items first and see what's left of each one as of a date.
+ *
+ * DB orchestration (fetching the lines, resolving customer/supplier names)
+ * lives in ar-service.ts/ap-service.ts and is not unit-tested directly, per
+ * repo convention.
+ */
+
+export interface OpenItem {
+  id: string;
+  date: string; // ISO date
+  amount: number; // Rial, positive
+}
+
+export interface Payment {
+  id: string;
+  date: string; // ISO date
+  amount: number; // Rial, positive
+}
+
+export type AgingBucket = "current" | "d31_60" | "d61_90" | "over90";
+
+export const AGING_BUCKETS: AgingBucket[] = ["current", "d31_60", "d61_90", "over90"];
+
+/** 0-30 days old = current, then 30-day buckets out to 90+. */
+export function bucketForAge(ageDays: number): AgingBucket {
+  if (ageDays <= 30) return "current";
+  if (ageDays <= 60) return "d31_60";
+  if (ageDays <= 90) return "d61_90";
+  return "over90";
+}
+
+export interface AgedItem extends OpenItem {
+  outstanding: number;
+  ageDays: number;
+  bucket: AgingBucket;
+}
+
+/**
+ * Applies the total of `payments` against `items` oldest-first (FIFO),
+ * returning only the items still carrying a balance as of `asOfDate`, each
+ * with its remaining amount and age bucket. Callers should already have
+ * filtered both lists to dates on or before `asOfDate`.
+ *
+ * FIFO against the party's total rather than matching a payment to a
+ * specific item: nothing records which item a payment was "for" (the
+ * product decision was a running balance per party, not per-item
+ * allocation), so oldest-first is the standard, deterministic stand-in.
+ */
+export function ageOpenItems(items: OpenItem[], payments: Payment[], asOfDate: string): AgedItem[] {
+  const sorted = [...items].sort((a, b) => a.date.localeCompare(b.date));
+  let pool = payments.reduce((sum, p) => sum + p.amount, 0);
+  const asOfMs = Date.parse(asOfDate);
+
+  const result: AgedItem[] = [];
+  for (const item of sorted) {
+    const applied = Math.min(pool, item.amount);
+    pool -= applied;
+    const outstanding = item.amount - applied;
+    if (outstanding <= 0) continue;
+    const ageDays = Math.floor((asOfMs - Date.parse(item.date)) / 86_400_000);
+    result.push({ ...item, outstanding, ageDays, bucket: bucketForAge(ageDays) });
+  }
+  return result;
+}
+
+export type AgingSummary = Record<AgingBucket, number> & { total: number };
+
+export function summarizeAging(aged: AgedItem[]): AgingSummary {
+  const sums: AgingSummary = { current: 0, d31_60: 0, d61_90: 0, over90: 0, total: 0 };
+  for (const item of aged) {
+    sums[item.bucket] += item.outstanding;
+    sums.total += item.outstanding;
+  }
+  return sums;
+}

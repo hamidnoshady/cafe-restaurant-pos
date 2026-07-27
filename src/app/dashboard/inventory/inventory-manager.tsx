@@ -189,6 +189,7 @@ function errorMessage(code: string | undefined): string {
     not_found: "پیدا نشد.",
     item_not_found: "قلم انبار پیدا نشد.",
     supplier_not_found: "تأمین‌کننده پیدا نشد.",
+    supplier_required: "برای دریافت نسیه، انتخاب تأمین‌کننده الزامی است.",
     no_items: "حداقل یک قلم لازم است.",
     invalid_item: "یکی از اقلام معتبر نیست.",
     invalid_waste_reason: "دلیل ضایعات را انتخاب کنید.",

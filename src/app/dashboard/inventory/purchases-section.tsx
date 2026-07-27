@@ -50,6 +50,7 @@ export function PurchasesSection({
   const [note, setNote] = useState("");
   const [lines, setLines] = useState<DraftLine[]>([{ inventoryItemId: "", purchaseQty: "", totalCost: "" }]);
   const [settlementByPurchase, setSettlementByPurchase] = useState<Record<string, string>>({});
+  const [supplierByPurchase, setSupplierByPurchase] = useState<Record<string, string>>({});
 
   const loadPurchases = useCallback(() => {
     api<{ purchases: Purchase[] }>("/api/inventory/purchases").then(({ ok, data }) => {
@@ -100,7 +101,10 @@ export function PurchasesSection({
 
   async function transition(id: string, status: string, settlementMethod?: string) {
     const ok = await run(() =>
-      api(`/api/inventory/purchases/${id}`, { method: "PATCH", body: JSON.stringify({ status, settlementMethod }) }),
+      api(`/api/inventory/purchases/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status, settlementMethod, supplierId: supplierByPurchase[id] || undefined }),
+      }),
     );
     if (ok) loadPurchases();
   }
@@ -201,8 +205,22 @@ export function PurchasesSection({
                         </option>
                       ))}
                     </select>
+                    {!p.supplier_name && (settlementByPurchase[p.id] ?? "credit") === "credit" ? (
+                      <select
+                        className={`${inputClass} w-auto py-1`}
+                        value={supplierByPurchase[p.id] ?? ""}
+                        onChange={(e) => setSupplierByPurchase((prev) => ({ ...prev, [p.id]: e.target.value }))}
+                      >
+                        <option value="">تأمین‌کننده…</option>
+                        {suppliers.filter((s) => s.is_active).map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.name}
+                          </option>
+                        ))}
+                      </select>
+                    ) : null}
                     <SecondaryButton
-                      disabled={busy}
+                      disabled={busy || (!p.supplier_name && (settlementByPurchase[p.id] ?? "credit") === "credit" && !supplierByPurchase[p.id])}
                       onClick={() => transition(p.id, "received", settlementByPurchase[p.id] ?? "credit")}
                     >
                       دریافت کالا

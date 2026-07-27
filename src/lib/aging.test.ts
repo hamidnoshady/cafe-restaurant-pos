@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ageInvoices, bucketForAge, summarizeAging } from "./ar";
+import { ageOpenItems, bucketForAge, summarizeAging } from "./aging";
 
 describe("bucketForAge", () => {
   it("buckets in 30-day steps, current through 90+", () => {
@@ -14,9 +14,9 @@ describe("bucketForAge", () => {
   });
 });
 
-describe("ageInvoices", () => {
+describe("ageOpenItems", () => {
   it("returns a fully-unpaid invoice untouched, aged from its own date", () => {
-    const aged = ageInvoices([{ id: "i1", date: "2025-01-01", amount: 100_000 }], [], "2025-02-15");
+    const aged = ageOpenItems([{ id: "i1", date: "2025-01-01", amount: 100_000 }], [], "2025-02-15");
     expect(aged).toHaveLength(1);
     expect(aged[0].outstanding).toBe(100_000);
     expect(aged[0].ageDays).toBe(45);
@@ -24,7 +24,7 @@ describe("ageInvoices", () => {
   });
 
   it("drops an invoice fully paid off by receipts", () => {
-    const aged = ageInvoices(
+    const aged = ageOpenItems(
       [{ id: "i1", date: "2025-01-01", amount: 100_000 }],
       [{ id: "r1", date: "2025-01-10", amount: 100_000 }],
       "2025-02-01",
@@ -38,7 +38,7 @@ describe("ageInvoices", () => {
       { id: "i2", date: "2025-01-15", amount: 100_000 },
     ];
     const receipts = [{ id: "r1", date: "2025-01-20", amount: 150_000 }];
-    const aged = ageInvoices(invoices, receipts, "2025-02-01");
+    const aged = ageOpenItems(invoices, receipts, "2025-02-01");
     // i1 (oldest) fully paid; i2 partially paid, 50,000 left outstanding.
     expect(aged).toHaveLength(1);
     expect(aged[0].id).toBe("i2");
@@ -50,12 +50,12 @@ describe("ageInvoices", () => {
       { id: "i1", date: "2025-01-01", amount: 40_000 },
       { id: "i2", date: "2025-01-15", amount: 60_000 },
     ];
-    const aged = ageInvoices(invoices, [], "2025-01-16");
+    const aged = ageOpenItems(invoices, [], "2025-01-16");
     expect(aged.map((a) => a.outstanding)).toEqual([40_000, 60_000]);
   });
 
   it("ignores unapplied excess receipts beyond total invoiced", () => {
-    const aged = ageInvoices(
+    const aged = ageOpenItems(
       [{ id: "i1", date: "2025-01-01", amount: 50_000 }],
       [{ id: "r1", date: "2025-01-05", amount: 200_000 }],
       "2025-01-10",
