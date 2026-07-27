@@ -49,7 +49,7 @@ export function AccountsSettings() {
       const existing = data.existing ?? [];
       setAccounts(
         existing.length > 0
-          ? normalise(existing.map((account) => ({ ...account, parentCode: account.parent_code ?? undefined })))
+          ? normalise(existing.map(({ code, name, type, parent_code }) => ({ code, name, type, parentCode: parent_code ?? undefined })))
           : normalise(data.template ?? FNB_COA_TEMPLATE),
       );
       setError("");
