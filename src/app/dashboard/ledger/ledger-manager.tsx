@@ -78,8 +78,8 @@ export function LedgerManager() {
       </div>
 
       {tab === "trial-balance" ? <TrialBalanceSection refreshKey={refreshKey} /> : null}
-      {tab === "entries" ? <EntriesSection refreshKey={refreshKey} /> : null}
-      {tab === "manual" ? <ManualEntrySection accounts={accounts} busy={busy} run={run} /> : null}
+      {tab === "entries" ? <EntriesSection refreshKey={refreshKey} busy={busy} run={run} /> : null}
+      {tab === "manual" ? <ManualEntrySection accounts={accounts} busy={busy} run={run} refreshKey={refreshKey} /> : null}
       {tab === "fiscal-periods" ? <FiscalPeriodsSection busy={busy} run={run} /> : null}
       {tab === "ar" ? <ArSection busy={busy} run={run} /> : null}
       {tab === "ap" ? <ApSection busy={busy} run={run} /> : null}
@@ -119,6 +119,12 @@ function errorMessage(code: string | undefined): string {
     balance_mismatch: "مانده محاسبه‌شده با مانده صورتحساب برابر نیست.",
     fiscal_period_locked: "دوره مالی این تاریخ قفل است و امکان ثبت سند وجود ندارد.",
     fiscal_period_soft_closed: "دوره مالی این تاریخ بسته‌ی موقت است؛ فقط مالک یا حسابدار می‌تواند سند ثبت کند.",
+    // Phase 16 — manual journal workflow
+    draft_not_found: "پیش‌نویس پیدا نشد.",
+    entry_not_found: "سند پیدا نشد.",
+    not_reversible: "فقط اسناد دستی قابل برگشت هستند.",
+    cannot_reverse_a_reversal: "سند برگشتی را نمی‌توان دوباره برگشت زد.",
+    already_reversed: "این سند قبلاً برگشت خورده است.",
   };
   return map[code ?? ""] ?? "خطای غیرمنتظره. دوباره تلاش کنید.";
 }
