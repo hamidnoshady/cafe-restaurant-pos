@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
-import { getSession } from "@/lib/auth";
+import { getSession, type Role } from "@/lib/auth";
+import { query } from "@/lib/db";
 import { effectiveFeatures } from "@/lib/features";
+import { effectivePermissions, parseOverrides, PERMISSIONS, type Permission } from "@/lib/permissions";
 import { AiAssistant } from "@/components/ai/ai-assistant";
 import { OfflineBanner } from "./offline-banner";
 import { DashboardSidebar, type NavItem } from "./dashboard-sidebar";
@@ -9,7 +11,6 @@ const NAV_ITEMS: NavItem[] = [
   { label: "داشبورد", href: "/dashboard" },
   { label: "سفارش‌ها", href: "/dashboard/orders", roles: ["owner", "manager", "cashier", "waiter"] },
   { label: "صندوق (فروش)", href: "/dashboard/pos", roles: ["owner", "manager", "cashier"] },
-  { label: "منو", href: "/dashboard/menu", roles: ["owner", "manager"] },
   { label: "میزها", href: "/dashboard/floor", roles: ["owner", "manager", "cashier", "waiter"], flag: "reservations" },
   { label: "میزهای من", href: "/dashboard/waiter", roles: ["owner", "manager", "waiter"], flag: "reservations" },
   { label: "آشپزخانه", href: "/dashboard/kitchen", roles: ["owner", "manager", "kitchen"] },
@@ -18,13 +19,22 @@ const NAV_ITEMS: NavItem[] = [
   { label: "انبار", href: "/dashboard/inventory", roles: ["owner", "manager"], flag: "inventory" },
   { label: "حسابداری", href: "/dashboard/ledger", roles: ["owner", "manager", "accountant"], flag: "ledger" },
   { label: "گزارش‌ها", href: "/dashboard/reports", roles: ["owner", "manager", "accountant"], flag: "reporting" },
-  { label: "اعضای تیم", href: "/dashboard/team", roles: ["owner"] },
   { label: "مدیریت شعب", href: "/dashboard/branches", roles: ["owner"], flag: "multi_location" },
   { label: "همگام‌سازی شعبه‌ها", href: "/dashboard/locations", roles: ["owner"], flag: "offline_mode" },
   { label: "پشتیبان‌گیری", href: "/dashboard/backup", roles: ["owner", "manager"], flag: "backup" },
   { label: "دستیار هوشمند", href: "/dashboard/ai", roles: ["owner", "manager"], flag: "ai_assistant" },
-  { label: "تنظیمات", href: "/setup", roles: ["owner", "manager"] },
+  {
+    label: "تنظیمات",
+    href: "/dashboard/settings",
+    requiredAnyPermission: [PERMISSIONS.settingsManage, PERMISSIONS.accountsEdit, PERMISSIONS.teamManage],
+  },
 ];
+
+function canSee(item: NavItem, role: Role, permissions: Set<Permission>, features: Record<string, boolean>): boolean {
+  if (item.flag && !features[item.flag]) return false;
+  if (item.roles && !item.roles.includes(role)) return false;
+  return !item.requiredAnyPermission || item.requiredAnyPermission.some((permission) => permissions.has(permission));
+}
 
 export default async function DashboardLayout({
   children,
@@ -32,22 +42,26 @@ export default async function DashboardLayout({
   const session = await getSession();
   if (!session) redirect("/login");
 
-  const features = await effectiveFeatures(session.businessId);
-  const navItems = NAV_ITEMS.filter((item) => !item.flag || features[item.flag]);
+  const [{ rows }, features] = await Promise.all([
+    query<{ role: Role; permissions: unknown; is_active: boolean }>(
+      "SELECT role, permissions, is_active FROM users WHERE id = $1 AND business_id = $2",
+      [session.sub, session.businessId],
+    ),
+    effectiveFeatures(session.businessId),
+  ]);
+  const member = rows[0];
+  if (!member?.is_active) redirect("/login");
+  const permissions = effectivePermissions(member.role, parseOverrides(member.permissions));
+  const navItems = NAV_ITEMS.filter((item) => canSee(item, member.role, permissions, features));
 
   return (
     <div className="flex min-h-screen flex-col md:flex-row">
-      {/* Collapsible on mobile (drawer), fixed rail on desktop. Sits inline-start (right in RTL). */}
-      <DashboardSidebar navItems={navItems} role={session.role} fullName={session.fullName} />
-
+      <DashboardSidebar navItems={navItems} role={member.role} fullName={session.fullName} />
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <OfflineBanner />
         <main className="flex-1 overflow-y-auto p-2 md:p-4">{children}</main>
       </div>
-
-      {(session.role === "owner" || session.role === "manager") && features.ai_assistant && (
-        <AiAssistant mode="dashboard" />
-      )}
+      {(member.role === "owner" || member.role === "manager") && features.ai_assistant ? <AiAssistant mode="dashboard" /> : null}
     </div>
   );
 }
