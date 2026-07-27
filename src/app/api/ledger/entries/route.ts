@@ -1,10 +1,16 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
-import { getPool, query } from "@/lib/db";
-import { fiscalPeriodLockErrorCode } from "@/lib/fiscal-periods";
-import { resolveActiveLocation } from "@/lib/setup-state";
+import { query } from "@/lib/db";
 
-/** Recent journal entries (auto-posted + manual), newest first, with their lines. */
+/**
+ * Recent journal entries (auto-posted + manual), newest first, with their
+ * lines. Manual entries are no longer posted directly from this route —
+ * see /api/ledger/entries/drafts for the draft -> review -> post workflow,
+ * and /api/ledger/entries/[id]/reverse for reversing a posted one — but
+ * every entry, however it was posted, still shows up here, including its
+ * reversal linkage (reversesEntryId / reversedAt) so the UI can show both
+ * sides of a reversal.
+ */
 export const GET = withTenantScope(async () => {
   const { session, error } = await requireRole("owner", "manager", "accountant");
   if (error) return error;
@@ -17,6 +23,8 @@ export const GET = withTenantScope(async () => {
     source_id: string | null;
     posted_at: string;
     created_by_name: string | null;
+    reverses_entry_id: string | null;
+    reversed_at: string | null;
   }
   interface LineRow extends Record<string, unknown> {
     entry_id: string;
@@ -29,7 +37,7 @@ export const GET = withTenantScope(async () => {
 
   const { rows: entries } = await query<EntryRow>(
     `SELECT je.id, je.entry_date, je.memo, je.source_type, je.source_id, je.posted_at,
-            u.full_name AS created_by_name
+            u.full_name AS created_by_name, je.reverses_entry_id, je.reversed_at
        FROM journal_entries je LEFT JOIN users u ON u.id = je.created_by
       WHERE je.business_id = $1
       ORDER BY je.posted_at DESC LIMIT 100`,
@@ -53,101 +61,4 @@ export const GET = withTenantScope(async () => {
   return NextResponse.json({
     entries: entries.map((e) => ({ ...e, lines: linesByEntry.get(e.id) ?? [] })),
   });
-});
-
-interface ManualLineInput {
-  accountId?: string;
-  debit?: number;
-  credit?: number;
-}
-
-/**
- * Manual journal entry — "for anything not auto-generated" (Phase 7 scope),
- * e.g. recording an expense (Debit Expense account / Credit Cash or Bank)
- * or settling tax payable (Debit Tax Payable / Credit Cash or Bank). Any
- * balanced set of lines against real accounts is accepted; owner/manager/
- * accountant, matching the rest of the back-office/financial surface.
- */
-export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager", "accountant");
-  if (error) return error;
-
-  let body: { entryDate?: string; memo?: string; lines?: ManualLineInput[] };
-  try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json({ error: "bad_request" }, { status: 400 });
-  }
-
-  const lines = (body.lines ?? []).map((l) => ({
-    accountId: String(l.accountId ?? ""),
-    debit: Number(l.debit) || 0,
-    credit: Number(l.credit) || 0,
-  }));
-
-  if (!body.memo?.trim()) {
-    return NextResponse.json({ error: "memo_required" }, { status: 400 });
-  }
-
-  const nonZero = lines.filter((l) => l.debit !== 0 || l.credit !== 0);
-  if (nonZero.length === 0) {
-    return NextResponse.json({ error: "no_lines" }, { status: 400 });
-  }
-  for (const l of nonZero) {
-    if (
-      !l.accountId ||
-      !Number.isSafeInteger(l.debit) ||
-      l.debit < 0 ||
-      !Number.isSafeInteger(l.credit) ||
-      l.credit < 0 ||
-      (l.debit !== 0 && l.credit !== 0)
-    ) {
-      return NextResponse.json({ error: "invalid_line" }, { status: 400 });
-    }
-  }
-  const totalDebit = nonZero.reduce((a, l) => a + l.debit, 0);
-  const totalCredit = nonZero.reduce((a, l) => a + l.credit, 0);
-  if (totalDebit !== totalCredit) {
-    return NextResponse.json({ error: "not_balanced", totalDebit, totalCredit }, { status: 400 });
-  }
-
-  const accountIds = nonZero.map((l) => l.accountId);
-  const { rows: owned } = await query(
-    "SELECT id FROM accounts WHERE business_id = $1 AND id = ANY($2::uuid[])",
-    [session.businessId, accountIds],
-  );
-  if (owned.length !== new Set(accountIds).size) {
-    return NextResponse.json({ error: "unknown_account" }, { status: 400 });
-  }
-
-  const location = await resolveActiveLocation(session);
-  const entryDate = body.entryDate?.trim() || null;
-
-  const client = await getPool().connect();
-  let entryId: string;
-  try {
-    await client.query("BEGIN");
-    const { rows: entry } = await client.query(
-      `INSERT INTO journal_entries (business_id, location_id, entry_date, memo, source_type, created_by)
-       VALUES ($1, $2, COALESCE($3, CURRENT_DATE), $4, 'manual', $5) RETURNING id`,
-      [session.businessId, location?.id ?? null, entryDate, body.memo!.trim(), session.sub],
-    );
-    entryId = entry[0].id;
-    for (const l of nonZero) {
-      await client.query(
-        "INSERT INTO journal_lines (entry_id, account_id, debit, credit) VALUES ($1, $2, $3, $4)",
-        [entryId, l.accountId, l.debit, l.credit],
-      );
-    }
-    await client.query("COMMIT");
-  } catch (err) {
-    await client.query("ROLLBACK");
-    const lockCode = fiscalPeriodLockErrorCode(err);
-    if (lockCode) return NextResponse.json({ error: lockCode }, { status: 409 });
-    throw err;
-  } finally {
-    client.release();
-  }
-
-  return NextResponse.json({ ok: true, entryId, totalDebit, totalCredit });
 });

@@ -1,0 +1,335 @@
+/**
+ * Phase 16 scope: "manual journals, properly — draft -> review -> post
+ * workflow, reversal rather than deletion, ... an approval permission
+ * distinct from posting." Exit criterion: "Reversing an entry leaves both
+ * the original and the reversal visible and the net effect zero."
+ */
+import { randomUUID } from "node:crypto";
+import { Client } from "pg";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { runMigrations } from "../scripts/migrate";
+
+const rootDatabaseUrl = process.env.DATABASE_URL;
+if (!rootDatabaseUrl) {
+  throw new Error("DATABASE_URL is required for database integration tests");
+}
+
+let databaseName: string;
+let db: Client;
+let dbLib: typeof import("../src/lib/db");
+let manualJournal: typeof import("../src/lib/manual-journal-service");
+let fiscalService: typeof import("../src/lib/fiscal-periods-service");
+
+const biz = { id: "" };
+const acct = { cash: "", expense: "" };
+const user = { id: "" };
+
+function urlFor(database: string): string {
+  const url = new URL(rootDatabaseUrl!);
+  url.pathname = `/${database}`;
+  return url.toString();
+}
+
+function maintenanceUrl(): string {
+  const url = new URL(rootDatabaseUrl!);
+  url.pathname = "/postgres";
+  return url.toString();
+}
+
+beforeAll(async () => {
+  databaseName = `pos_manual_journal_${randomUUID().replaceAll("-", "")}`;
+
+  const maintenance = new Client({ connectionString: maintenanceUrl() });
+  await maintenance.connect();
+  try {
+    await maintenance.query(`CREATE DATABASE "${databaseName}"`);
+  } finally {
+    await maintenance.end();
+  }
+
+  await runMigrations({ databaseUrl: urlFor(databaseName), quiet: true });
+
+  process.env.DATABASE_URL = urlFor(databaseName);
+  dbLib = await import("../src/lib/db");
+  manualJournal = await import("../src/lib/manual-journal-service");
+  fiscalService = await import("../src/lib/fiscal-periods-service");
+
+  db = new Client({ connectionString: urlFor(databaseName) });
+  await db.connect();
+}, 120_000);
+
+afterAll(async () => {
+  await db?.end();
+  await dbLib?.getPool().end().catch(() => {});
+  process.env.DATABASE_URL = rootDatabaseUrl;
+
+  const maintenance = new Client({ connectionString: maintenanceUrl() });
+  await maintenance.connect();
+  try {
+    await maintenance.query(`DROP DATABASE IF EXISTS "${databaseName}" WITH (FORCE)`);
+  } finally {
+    await maintenance.end();
+  }
+});
+
+beforeEach(async () => {
+  await db.query("DELETE FROM journal_entry_draft_lines");
+  await db.query("DELETE FROM journal_entry_drafts");
+  await db.query("DELETE FROM journal_lines");
+  await db.query("DELETE FROM journal_entries");
+  await db.query("DELETE FROM businesses");
+
+  const bizRow = await db.query<{ id: string }>(
+    "INSERT INTO businesses (name, slug) VALUES ('Journal Co', $1) RETURNING id",
+    [`journal-${randomUUID().slice(0, 8)}`],
+  );
+  biz.id = bizRow.rows[0].id;
+
+  const userRow = await db.query<{ id: string }>(
+    `INSERT INTO users (business_id, role, full_name, pin_hash) VALUES ($1, 'owner', 'Owner', 'x') RETURNING id`,
+    [biz.id],
+  );
+  user.id = userRow.rows[0].id;
+
+  const accounts = await db.query<{ id: string; code: string }>(
+    `INSERT INTO accounts (business_id, code, name, type)
+     VALUES ($1, '1100', 'Cash', 'asset'), ($1, '5100', 'Rent expense', 'expense')
+     RETURNING id, code`,
+    [biz.id],
+  );
+  for (const r of accounts.rows) {
+    if (r.code === "1100") acct.cash = r.id;
+    if (r.code === "5100") acct.expense = r.id;
+  }
+});
+
+function balancedLines() {
+  return [
+    { accountId: acct.expense, debit: 100_000, credit: 0 },
+    { accountId: acct.cash, debit: 0, credit: 100_000 },
+  ];
+}
+
+describe("createDraft", () => {
+  it("stores a draft with no journal_entries effect", async () => {
+    const draft = await manualJournal.createDraft({
+      businessId: biz.id,
+      locationId: null,
+      memo: "Rent",
+      lines: balancedLines(),
+      createdBy: user.id,
+    });
+    expect(draft.id).toBeTruthy();
+
+    const { rows } = await db.query("SELECT count(*)::int AS n FROM journal_entries WHERE business_id = $1", [biz.id]);
+    expect(rows[0].n).toBe(0);
+
+    const listed = await manualJournal.listDrafts(biz.id);
+    expect(listed).toHaveLength(1);
+    expect(listed[0].memo).toBe("Rent");
+    expect(listed[0].lines).toHaveLength(2);
+  });
+
+  it("rejects an unbalanced draft", async () => {
+    await expect(
+      manualJournal.createDraft({
+        businessId: biz.id,
+        locationId: null,
+        memo: "Bad",
+        lines: [{ accountId: acct.expense, debit: 100_000, credit: 0 }],
+        createdBy: user.id,
+      }),
+    ).rejects.toThrow("not_balanced");
+  });
+
+  it("rejects an empty memo", async () => {
+    await expect(
+      manualJournal.createDraft({
+        businessId: biz.id,
+        locationId: null,
+        memo: "  ",
+        lines: balancedLines(),
+        createdBy: user.id,
+      }),
+    ).rejects.toThrow("memo_required");
+  });
+});
+
+describe("deleteDraft (reject)", () => {
+  it("removes the draft with no trace in journal_entries", async () => {
+    const draft = await manualJournal.createDraft({
+      businessId: biz.id,
+      locationId: null,
+      memo: "Rent",
+      lines: balancedLines(),
+      createdBy: user.id,
+    });
+    await manualJournal.deleteDraft(biz.id, draft.id);
+    expect(await manualJournal.listDrafts(biz.id)).toHaveLength(0);
+  });
+
+  it("404s deleting an already-gone draft", async () => {
+    await expect(manualJournal.deleteDraft(biz.id, randomUUID())).rejects.toThrow("draft_not_found");
+  });
+});
+
+describe("approveDraft", () => {
+  it("posts a real balanced journal entry and removes the draft", async () => {
+    const draft = await manualJournal.createDraft({
+      businessId: biz.id,
+      locationId: null,
+      entryDate: "2025-04-15",
+      memo: "Rent",
+      lines: balancedLines(),
+      createdBy: user.id,
+    });
+
+    const { entryId } = await manualJournal.approveDraft({
+      businessId: biz.id,
+      locationId: null,
+      draftId: draft.id,
+      actorId: user.id,
+    });
+
+    expect(await manualJournal.listDrafts(biz.id)).toHaveLength(0);
+
+    const { rows: entryRows } = await db.query(
+      "SELECT source_type, memo, entry_date::text AS entry_date FROM journal_entries WHERE id = $1",
+      [entryId],
+    );
+    expect(entryRows[0]).toMatchObject({ source_type: "manual", memo: "Rent", entry_date: "2025-04-15" });
+
+    const { rows: lineRows } = await db.query(
+      "SELECT account_id, debit, credit FROM journal_lines WHERE entry_id = $1 ORDER BY debit DESC",
+      [entryId],
+    );
+    expect(lineRows).toEqual([
+      { account_id: acct.expense, debit: "100000", credit: "0" },
+      { account_id: acct.cash, debit: "0", credit: "100000" },
+    ]);
+  });
+
+  it("404s approving a draft that doesn't exist", async () => {
+    await expect(
+      manualJournal.approveDraft({ businessId: biz.id, locationId: null, draftId: randomUUID(), actorId: user.id }),
+    ).rejects.toThrow("draft_not_found");
+  });
+
+  it("rejects approving into a locked fiscal period", async () => {
+    await fiscalService.createFiscalYear(biz.id, 1404);
+    const [year] = await fiscalService.listFiscalYears(biz.id);
+    const [farvardin] = await fiscalService.listPeriods(biz.id, year.id);
+    await fiscalService.setPeriodStatus(biz.id, farvardin.id, "soft_closed", user.id);
+    await fiscalService.setPeriodStatus(biz.id, farvardin.id, "locked", user.id);
+
+    const draft = await manualJournal.createDraft({
+      businessId: biz.id,
+      locationId: null,
+      entryDate: farvardin.startsOn,
+      memo: "Rent",
+      lines: balancedLines(),
+      createdBy: user.id,
+    });
+
+    await expect(
+      manualJournal.approveDraft({ businessId: biz.id, locationId: null, draftId: draft.id, actorId: user.id }),
+    ).rejects.toThrow("fiscal_period_locked");
+
+    // The rejected approval must not have consumed the draft.
+    expect(await manualJournal.listDrafts(biz.id)).toHaveLength(1);
+  });
+});
+
+describe("reverseEntry", () => {
+  async function approvedEntryId(): Promise<string> {
+    const draft = await manualJournal.createDraft({
+      businessId: biz.id,
+      locationId: null,
+      memo: "Rent",
+      lines: balancedLines(),
+      createdBy: user.id,
+    });
+    const { entryId } = await manualJournal.approveDraft({
+      businessId: biz.id,
+      locationId: null,
+      draftId: draft.id,
+      actorId: user.id,
+    });
+    return entryId;
+  }
+
+  it("posts a swapped-line entry and leaves both the original and the reversal visible with net effect zero", async () => {
+    const entryId = await approvedEntryId();
+
+    const { entryId: reversalId } = await manualJournal.reverseEntry({
+      businessId: biz.id,
+      locationId: null,
+      entryId,
+      actorId: user.id,
+    });
+
+    const { rows: originalRows } = await db.query(
+      "SELECT reversed_at, reverses_entry_id FROM journal_entries WHERE id = $1",
+      [entryId],
+    );
+    expect(originalRows[0].reversed_at).not.toBeNull();
+    expect(originalRows[0].reverses_entry_id).toBeNull();
+
+    const { rows: reversalRows } = await db.query(
+      "SELECT reversed_at, reverses_entry_id, source_type FROM journal_entries WHERE id = $1",
+      [reversalId],
+    );
+    expect(reversalRows[0].reversed_at).toBeNull();
+    expect(reversalRows[0].reverses_entry_id).toBe(entryId);
+    expect(reversalRows[0].source_type).toBe("manual");
+
+    // Net effect across both entries, per account, is zero.
+    const { rows: net } = await db.query(
+      `SELECT account_id, SUM(debit)::bigint AS debit, SUM(credit)::bigint AS credit
+         FROM journal_lines WHERE entry_id = ANY($1::uuid[]) GROUP BY account_id`,
+      [[entryId, reversalId]],
+    );
+    for (const row of net) {
+      expect(Number(row.debit)).toBe(Number(row.credit));
+    }
+  });
+
+  it("404s reversing an entry that doesn't exist", async () => {
+    await expect(
+      manualJournal.reverseEntry({ businessId: biz.id, locationId: null, entryId: randomUUID(), actorId: user.id }),
+    ).rejects.toThrow("entry_not_found");
+  });
+
+  it("refuses to reverse a non-manual entry", async () => {
+    const { rows } = await db.query<{ id: string }>(
+      `INSERT INTO journal_entries (business_id, entry_date, memo, source_type) VALUES ($1, '2025-04-01', 'Order', 'order') RETURNING id`,
+      [biz.id],
+    );
+    await expect(
+      manualJournal.reverseEntry({ businessId: biz.id, locationId: null, entryId: rows[0].id, actorId: user.id }),
+    ).rejects.toThrow("not_reversible");
+  });
+
+  it("refuses to reverse an already-reversed entry", async () => {
+    const entryId = await approvedEntryId();
+    await manualJournal.reverseEntry({ businessId: biz.id, locationId: null, entryId, actorId: user.id });
+
+    await expect(
+      manualJournal.reverseEntry({ businessId: biz.id, locationId: null, entryId, actorId: user.id }),
+    ).rejects.toThrow("already_reversed");
+  });
+
+  it("refuses to reverse a reversal itself", async () => {
+    const entryId = await approvedEntryId();
+    const { entryId: reversalId } = await manualJournal.reverseEntry({
+      businessId: biz.id,
+      locationId: null,
+      entryId,
+      actorId: user.id,
+    });
+
+    await expect(
+      manualJournal.reverseEntry({ businessId: biz.id, locationId: null, entryId: reversalId, actorId: user.id }),
+    ).rejects.toThrow("cannot_reverse_a_reversal");
+  });
+});
