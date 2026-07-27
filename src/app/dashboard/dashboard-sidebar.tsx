@@ -20,8 +20,6 @@ import {
   SettingsIcon,
   ShoppingCartIcon,
   TruckIcon,
-  UsersIcon,
-  UtensilsIcon,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -29,6 +27,7 @@ import {
   toggleDashboardSidebarPreference,
   type DashboardSidebarPreference,
 } from "@/lib/sidebar-state";
+import type { Permission } from "@/lib/permissions";
 import {
   Sidebar,
   SidebarContent,
@@ -60,7 +59,6 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   "/dashboard": LayoutDashboardIcon,
   "/dashboard/orders": ClipboardListIcon,
   "/dashboard/pos": ShoppingCartIcon,
-  "/dashboard/menu": UtensilsIcon,
   "/dashboard/floor": ArmchairIcon,
   "/dashboard/waiter": ArmchairIcon,
   "/dashboard/kitchen": ChefHatIcon,
@@ -69,12 +67,11 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   "/dashboard/inventory": PackageIcon,
   "/dashboard/ledger": CalculatorIcon,
   "/dashboard/reports": BarChart3Icon,
-  "/dashboard/team": UsersIcon,
   "/dashboard/branches": Building2Icon,
   "/dashboard/locations": MapPinIcon,
   "/dashboard/backup": HardDriveIcon,
   "/dashboard/ai": BotIcon,
-  "/setup": SettingsIcon,
+  "/dashboard/settings": SettingsIcon,
 };
 
 export interface NavItem {
@@ -83,6 +80,8 @@ export interface NavItem {
   roles?: string[];
   /** Set when this page is gated by a Phase 17 feature flag; already filtered out of navItems if disabled. */
   flag?: string;
+  /** Server-filtered against the member's effective permission set before reaching the client. */
+  requiredAnyPermission?: Permission[];
 }
 
 interface SidebarProps {
@@ -98,12 +97,10 @@ function isActive(pathname: string, href: string): boolean {
 
 function NavLinks({
   navItems,
-  role,
   pathname,
   onNavigate,
 }: {
   navItems: NavItem[];
-  role: string;
   pathname: string;
   onNavigate: () => void;
 }) {
@@ -112,20 +109,8 @@ function NavLinks({
       <nav aria-label="ناوبری داشبورد">
         <SidebarMenu>
           {navItems.map((item) => {
-            const allowed = !item.roles || item.roles.includes(role);
-            const Icon = item.href ? (NAV_ICONS[item.href] ?? CircleIcon) : CircleIcon;
-
-            if (!item.href || !allowed) {
-              return (
-                <SidebarMenuItem key={item.label}>
-                  <SidebarMenuButton type="button" disabled aria-label={item.label} tooltip={item.label}>
-                    <Icon aria-hidden="true" className="size-5 shrink-0" />
-                    <span className="group-data-[state=collapsed]/sidebar:hidden">{item.label}</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              );
-            }
-
+            if (!item.href) return null;
+            const Icon = NAV_ICONS[item.href] ?? CircleIcon;
             const active = isActive(pathname, item.href);
             return (
               <SidebarMenuItem key={item.label}>
@@ -179,9 +164,9 @@ function DashboardSidebarFooter({ role, fullName }: { role: string; fullName: st
   );
 }
 
-function SidebarNavigation({ navItems, role, pathname }: Omit<SidebarProps, "fullName"> & { pathname: string }) {
+function SidebarNavigation({ navItems, pathname }: Pick<SidebarProps, "navItems"> & { pathname: string }) {
   const { setOpenMobile } = useSidebar();
-  return <NavLinks navItems={navItems} role={role} pathname={pathname} onNavigate={() => setOpenMobile(false)} />;
+  return <NavLinks navItems={navItems} pathname={pathname} onNavigate={() => setOpenMobile(false)} />;
 }
 
 export function DashboardSidebar({ navItems, role, fullName }: SidebarProps) {
@@ -225,7 +210,7 @@ export function DashboardSidebar({ navItems, role, fullName }: SidebarProps) {
 
       <Sidebar side="right">
         <SidebarBrand />
-        <SidebarNavigation navItems={navItems} role={role} pathname={pathname} />
+        <SidebarNavigation navItems={navItems} pathname={pathname} />
         <DashboardSidebarFooter role={role} fullName={fullName} />
       </Sidebar>
     </SidebarProvider>
