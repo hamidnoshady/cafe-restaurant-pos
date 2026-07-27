@@ -2,7 +2,7 @@
 
 Persian-first (RTL, Jalali calendar, Toman display) point-of-sale system for cafes and restaurants. Built with Next.js + PostgreSQL.
 
-Development is phased — see [docs/phases/README.md](docs/phases/README.md) for the phase index. **Current status: Phase 4 (Waiter + Kitchen Apps, Real-Time Sync) implemented.**
+Development is phased — see [docs/phases/README.md](docs/phases/README.md) for the phase index. **Current status: all 17 phases implemented** — a single-business POS (Phases 0–11: menu/POS, tables, waiter/kitchen real-time sync, offline queue, inventory, ledger, reporting, multi-location rollup, backups, delivery) turned into a multi-business platform (Phases 12–17: tenant isolation via RLS, teams & permissions, per-business branches, a super-admin console, a real accounting suite, and entitlement/rate-limit hardening).
 
 ## Stack
 
@@ -253,6 +253,53 @@ The console (dark chrome, deliberately unlike the tenant dashboard's light theme
   (`src/lib/platform-admin.ts`): support = read + read-only impersonation; engineer adds feature
   writes, suspend/reactivate and impersonation revoke; owner adds full impersonation,
   provision/archive/delete and admin management.
+
+## Accounting Suite (Phase 16)
+
+The Phase 7 double-entry ledger (chart of accounts, auto-posting for payments/purchases/COGS/
+waste, trial balance) becomes a suite an accountant can actually close a year on, all under
+`/dashboard/ledger` and `/dashboard/reports` (Owner/Manager + the `accountant` role):
+
+- **Fiscal years & periods** — soft-close and hard-lock a period so nothing posts into it, with
+  a controlled reopen; year-end closing entries roll P&L into retained earnings.
+- **Financial statements** — P&L, balance sheet, and cash flow, each with period comparison and
+  drill-down to the journal entries behind any figure.
+- **AR/AP subledgers** — customer/supplier balances, invoices/bills, receipts/payments, aging
+  buckets, statements.
+- **Bank & cash reconciliation**, **expense management** (categorised, with attachments and
+  recurring expenses), and **payroll entries** (accrual/payment postings, not a payroll engine).
+- **Manual journals** — draft → review → post, reversal rather than deletion, recurring
+  templates, and an approval permission distinct from posting.
+- **Chart-of-accounts customisation** and **VAT/tax reporting** (output vs. input VAT, net
+  payable position).
+
+## Feature Gating & Platform Hardening (Phase 17)
+
+With many businesses on one deployment, this phase is what makes it safe to run for paying
+strangers rather than just isolated by construction:
+
+- **Flag-driven gating** — the feature flags Phase 12 modelled and Phase 15 administers actually
+  gate UI *and* API; a disabled feature is hidden in the nav and refused at the guard, not just
+  hidden client-side.
+- **Plan limits** (`plans` table, `src/lib/plan-limits.ts`) — per-plan ceilings on branches,
+  members and monthly orders, enforced at the point of creation with a clear Persian error
+  rather than a crash. Three tiers ship by default (`free`/`pro`/`business`); exceeding a limit
+  blocks the action, it never degrades existing data.
+- **Per-tenant export & restore** — see [Backups](#backups-phase-10) above.
+- **Tenant-scoped rate limiting** (`src/lib/rate-limit.ts`, enforced in `src/middleware.ts`) —
+  per-business, per-sync-token, and per-IP-on-login limits so one business's traffic (or a
+  runaway offline-sync client) can't degrade another's.
+- **Generated isolation test suite** (`integration/tenant-isolation.integration.test.ts`) — proves,
+  from `pg_policy` itself, that every tenant table's RLS policy both exists *and* actually scopes
+  by business — a future migration that adds a table without one fails CI, not production.
+- **Multi-tenancy performance review** — `integration/query-performance.integration.test.ts`
+  proves the RLS design stays index-backed at realistic scale; `DB_POOL_MAX`
+  (`src/lib/pool-config.ts`) replaces a hardcoded pool size; `scripts/order-perf-benchmark.ts`
+  established the first order/payment latency baseline.
+- **Security review** — impersonation revocation is now actually enforced (not just recorded),
+  the tenant and platform-admin realms reject each other's session tokens, server-sync moved off
+  a single global token onto per-business hashed tokens, and `JWT_SECRET` now has a minimum
+  length requirement in production (`src/lib/jwt-secret.ts`), not just an unset/placeholder check.
 
 ## Decisions on Phase 0 open questions
 
