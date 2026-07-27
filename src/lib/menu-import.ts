@@ -210,10 +210,14 @@ export function rowsToImport(rows: string[][]): ImportResult {
       errors.push(`سطر ${rowNo}: قیمت «${raw.price ?? ""}» معتبر نیست.`);
       continue;
     }
-    const taxRate = raw.taxRate ? parseTaxRate(raw.taxRate) : undefined;
-    if (raw.taxRate && taxRate === null) {
-      errors.push(`سطر ${rowNo}: نرخ مالیات معتبر نیست.`);
-      continue;
+    let taxRate: number | undefined;
+    if (raw.taxRate) {
+      const parsedTaxRate = parseTaxRate(raw.taxRate);
+      if (parsedTaxRate === null) {
+        errors.push(`سطر ${rowNo}: نرخ مالیات معتبر نیست.`);
+        continue;
+      }
+      taxRate = parsedTaxRate;
     }
     if (raw.modifiers && !raw.modifierGroup) {
       errors.push(`سطر ${rowNo}: برای افزودنی‌ها نام گروه افزودنی لازم است.`);
