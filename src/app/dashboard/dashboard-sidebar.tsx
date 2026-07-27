@@ -204,8 +204,6 @@ export function DashboardSidebar({ navItems, role, fullName }: SidebarProps) {
   }, []);
 
   useEffect(() => {
-    if (mode === "offcanvas") return;
-
     const onKeyDown = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "b") {
         event.preventDefault();
