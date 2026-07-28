@@ -215,7 +215,10 @@ export const POST = withPlatformScope(async (request: NextRequest, ctx: Ctx) => 
     if (err instanceof ResetBusinessNotPossibleError) {
       return NextResponse.json({ error: "reset_not_possible" }, { status: 409 });
     }
-    throw err;
+    // resetBusiness is one transaction, so this response also guarantees that
+    // no partial reset was committed. Keep the database detail in server logs.
+    console.error("platform business reset failed", { businessId: id, err });
+    return NextResponse.json({ error: "reset_failed" }, { status: 500 });
   }
 
   await platformAudit({
