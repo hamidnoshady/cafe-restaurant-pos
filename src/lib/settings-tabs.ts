@@ -1,3 +1,4 @@
+import type { Role } from "./auth";
 import { PERMISSIONS, type Permission } from "./permissions";
 
 export const SETTINGS_TAB_KEYS = [
@@ -7,6 +8,8 @@ export const SETTINGS_TAB_KEYS = [
   "team",
   "menu",
   "printers",
+  "branch-sync",
+  "backup",
 ] as const;
 
 export type SettingsTabKey = (typeof SETTINGS_TAB_KEYS)[number];
@@ -15,7 +18,14 @@ export interface SettingsTab {
   key: SettingsTabKey;
   label: string;
   description: string;
-  requiredAnyPermission: Permission[];
+  requiredAnyPermission?: Permission[];
+  allowedRoles?: Role[];
+  feature?: string;
+}
+
+export interface SettingsTabVisibilityOptions {
+  role?: Role;
+  features?: Record<string, boolean>;
 }
 
 export const SETTINGS_TABS: SettingsTab[] = [
@@ -55,11 +65,35 @@ export const SETTINGS_TABS: SettingsTab[] = [
     description: "چاپگرهای شعبه، مسیر چاپ و آزمایش اتصال",
     requiredAnyPermission: [PERMISSIONS.settingsManage],
   },
+  {
+    key: "branch-sync",
+    label: "همگام‌سازی شعبه‌ها",
+    description: "ثبت شعبه‌های محلی و همگام‌سازی با سرور مرکزی",
+    allowedRoles: ["owner"],
+    feature: "offline_mode",
+  },
+  {
+    key: "backup",
+    label: "پشتیبان‌گیری",
+    description: "وضعیت، اجرای دستی و زمان‌بندی پشتیبان‌گیری",
+    allowedRoles: ["owner", "manager"],
+    feature: "backup",
+  },
 ];
 
-export function visibleSettingsTabs(permissions: Iterable<Permission | string>): SettingsTab[] {
+export function visibleSettingsTabs(
+  permissions: Iterable<Permission | string>,
+  options: SettingsTabVisibilityOptions = {},
+): SettingsTab[] {
   const granted = new Set(permissions);
-  return SETTINGS_TABS.filter((tab) => tab.requiredAnyPermission.some((permission) => granted.has(permission)));
+  return SETTINGS_TABS.filter((tab) => {
+    if (tab.requiredAnyPermission && !tab.requiredAnyPermission.some((permission) => granted.has(permission))) {
+      return false;
+    }
+    if (tab.allowedRoles && (!options.role || !tab.allowedRoles.includes(options.role))) return false;
+    if (tab.feature && !options.features?.[tab.feature]) return false;
+    return true;
+  });
 }
 
 export function isSettingsTabKey(value: string | null): value is SettingsTabKey {
