@@ -192,6 +192,106 @@ export class ResetBusinessNotPossibleError extends Error {
 
 const RESET_DEFAULT_LOCATION_NAME = "شعبه مرکزی";
 
+/**
+ * Removes the rows that intentionally use RESTRICT or immutable delete guards
+ * before deleting a business root. The caller has already confirmed the
+ * destructive action and opened a transaction; every statement is scoped to
+ * the one locked business and the transaction rolls back as a unit on error.
+ */
+async function clearBusinessDeleteBlockers(client: PoolClient, businessId: string): Promise<void> {
+  // The migration-only escape hatch is transaction-local. It lets the
+  // explicitly confirmed factory reset pass accounting immutability guards,
+  // while ordinary edits and deletes keep their existing protections.
+  await client.query("SELECT set_config('app.factory_reset', 'true', true)");
+
+  // Child writes take a key-share lock on their location. Lock the current
+  // branch set before collecting/deleting data so a concurrent tenant request
+  // cannot add a row halfway through this reset.
+  await client.query("SELECT id FROM locations WHERE business_id = $1 FOR UPDATE", [businessId]);
+
+  const statements = [
+    // Dependent rows first: their foreign keys are deliberately restrictive
+    // during normal operation to protect accounting provenance.
+    `DELETE FROM inventory_transfer_allocations
+       WHERE transfer_line_id IN (
+         SELECT line.id
+           FROM inventory_transfer_lines line
+           JOIN inventory_transfers transfer_row ON transfer_row.id = line.transfer_id
+          WHERE transfer_row.business_id = $1
+       )`,
+    `DELETE FROM inventory_transfer_lines
+       WHERE transfer_id IN (SELECT id FROM inventory_transfers WHERE business_id = $1)`,
+    `DELETE FROM customer_return_inventory_allocations
+       WHERE customer_return_line_id IN (
+         SELECT line.id
+           FROM customer_return_lines line
+           JOIN customer_returns return_row ON return_row.id = line.customer_return_id
+          WHERE return_row.business_id = $1
+       )`,
+    `DELETE FROM customer_return_lines
+       WHERE customer_return_id IN (SELECT id FROM customer_returns WHERE business_id = $1)`,
+    `DELETE FROM supplier_return_lines
+       WHERE supplier_return_id IN (SELECT id FROM supplier_returns WHERE business_id = $1)`,
+    `DELETE FROM inventory_write_down_lines
+       WHERE write_down_id IN (SELECT id FROM inventory_write_downs WHERE business_id = $1)`,
+    `DELETE FROM inventory_cutover_lines
+       WHERE cutover_id IN (SELECT id FROM inventory_cutovers WHERE business_id = $1)`,
+    `DELETE FROM inventory_history_coverage
+       WHERE cutover_id IN (SELECT id FROM inventory_cutovers WHERE business_id = $1)`,
+    `DELETE FROM purchase_receipt_cost_allocations
+       WHERE inventory_event_id IN (SELECT id FROM inventory_events WHERE business_id = $1)
+          OR purchase_item_id IN (
+            SELECT item.id
+              FROM purchase_items item
+              JOIN purchases purchase_row ON purchase_row.id = item.purchase_id
+             WHERE purchase_row.location_id IN (SELECT id FROM locations WHERE business_id = $1)
+          )`,
+    `DELETE FROM inventory_negative_layer_settlements
+       WHERE inventory_event_id IN (SELECT id FROM inventory_events WHERE business_id = $1)
+          OR purchase_item_id IN (
+            SELECT item.id
+              FROM purchase_items item
+              JOIN purchases purchase_row ON purchase_row.id = item.purchase_id
+             WHERE purchase_row.location_id IN (SELECT id FROM locations WHERE business_id = $1)
+          )`,
+    `DELETE FROM order_item_inventory_snapshots
+       WHERE order_item_id IN (
+         SELECT item.id
+           FROM order_items item
+           JOIN orders order_row ON order_row.id = item.order_id
+           JOIN locations location_row ON location_row.id = order_row.location_id
+          WHERE location_row.business_id = $1
+       )`,
+
+    // Remove records that otherwise restrict customers, suppliers, accounts,
+    // journal lines, inventory items, or the business root itself.
+    "DELETE FROM bank_reconciliations WHERE business_id = $1",
+    "DELETE FROM journal_entry_drafts WHERE business_id = $1",
+    "DELETE FROM ar_receipts WHERE business_id = $1",
+    "DELETE FROM ap_payments WHERE business_id = $1",
+    "DELETE FROM expenses WHERE business_id = $1",
+    "UPDATE inventory_write_downs SET reversal_of = NULL WHERE business_id = $1",
+    "UPDATE inventory_events SET reversal_of = NULL WHERE business_id = $1",
+    "DELETE FROM customer_returns WHERE business_id = $1",
+    "DELETE FROM supplier_returns WHERE business_id = $1",
+    "DELETE FROM inventory_transfers WHERE business_id = $1",
+    "DELETE FROM inventory_write_downs WHERE business_id = $1",
+    "DELETE FROM inventory_cutovers WHERE business_id = $1",
+    "DELETE FROM inventory_negative_layers WHERE business_id = $1",
+    "DELETE FROM orders WHERE location_id IN (SELECT id FROM locations WHERE business_id = $1)",
+    "DELETE FROM purchases WHERE location_id IN (SELECT id FROM locations WHERE business_id = $1)",
+    "DELETE FROM stock_counts WHERE location_id IN (SELECT id FROM locations WHERE business_id = $1)",
+    "DELETE FROM journal_entries WHERE business_id = $1",
+    "DELETE FROM stock_movements WHERE location_id IN (SELECT id FROM locations WHERE business_id = $1)",
+    "DELETE FROM inventory_lots WHERE location_id IN (SELECT id FROM locations WHERE business_id = $1)",
+    "DELETE FROM inventory_events WHERE business_id = $1",
+  ];
+
+  for (const statement of statements) {
+    await client.query(statement, [businessId]);
+  }
+}
+
 export async function resetBusiness(businessId: string): Promise<void> {
   await withoutTenantScope("platform", async () => {
     const client = await getPool().connect();
@@ -236,9 +336,10 @@ export async function resetBusiness(businessId: string): Promise<void> {
       const owner = ownerRows[0];
       if (!owner) throw new ResetBusinessNotPossibleError();
 
-      // Deleting the tenant clears every business-owned table through foreign
-      // keys. platform_audit_log is intentionally ON DELETE SET NULL: it is a
-      // platform accountability record, not tenant data.
+      // Most tenant tables cascade from the business root. A small set of
+      // accounting/inventory records deliberately uses RESTRICT and immutable
+      // delete guards, so clear those reset-only blockers first.
+      await clearBusinessDeleteBlockers(client, business.id);
       await client.query(`DELETE FROM businesses WHERE id = $1`, [businessId]);
 
       await client.query(
@@ -299,13 +400,32 @@ export class DeleteNotEligibleError extends Error {
  * be archived past `deleteGraceDays()`. Never immediate (open question 2).
  */
 export async function hardDeleteBusiness(businessId: string): Promise<void> {
-  const business = await getBusiness(businessId);
-  if (!business || !business.deleteEligible) {
-    throw new DeleteNotEligibleError();
-  }
-  await withoutTenantScope("platform", () =>
-    query(`DELETE FROM businesses WHERE id = $1`, [businessId]),
-  );
+  await withoutTenantScope("platform", async () => {
+    const client = await getPool().connect();
+    try {
+      await client.query("BEGIN");
+      const { rows } = await client.query<{ status: BusinessStatus; archived_at: string | null }>(
+        `SELECT status::text AS status, archived_at
+           FROM businesses
+          WHERE id = $1
+          FOR UPDATE`,
+        [businessId],
+      );
+      const business = rows[0];
+      if (!business || business.status !== "archived" || !isDeleteEligible(business.archived_at)) {
+        throw new DeleteNotEligibleError();
+      }
+
+      await clearBusinessDeleteBlockers(client, businessId);
+      await client.query(`DELETE FROM businesses WHERE id = $1`, [businessId]);
+      await client.query("COMMIT");
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    } finally {
+      client.release();
+    }
+  });
 }
 
 // ---------------------------------------------------------------------------
