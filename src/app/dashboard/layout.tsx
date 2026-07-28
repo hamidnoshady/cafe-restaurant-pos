@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { getSession, type Role } from "@/lib/auth";
 import { query, withTenant } from "@/lib/db";
 import { effectiveFeatures } from "@/lib/features";
-import { effectivePermissions, parseOverrides, PERMISSIONS, type Permission } from "@/lib/permissions";
+import { effectivePermissions, parseOverrides, type Permission } from "@/lib/permissions";
 import { visibleSettingsTabs } from "@/lib/settings-tabs";
 import { AiAssistant } from "@/components/ai/ai-assistant";
 import { OfflineBanner } from "./offline-banner";
