@@ -5,6 +5,7 @@ import { getSession } from "@/lib/auth";
 import { getBackupHealth } from "@/lib/backup-service";
 import { isSetupComplete } from "@/lib/setup-state";
 import { DashboardGrid } from "./dashboard-grid";
+import { OperationsOverview } from "./operations-overview";
 
 const BACKUP_ALERT_LABELS: Record<string, string> = {
   local_failed: "آخرین پشتیبان‌گیری محلی ناموفق بود.",
@@ -12,6 +13,8 @@ const BACKUP_ALERT_LABELS: Record<string, string> = {
   cloud_failed: "آخرین بارگذاری پشتیبان ابری ناموفق بود.",
   cloud_stale: "مدت زیادی از آخرین پشتیبان ابری موفق گذشته است.",
 };
+
+const OPERATIONAL_ROLES = ["owner", "manager", "cashier", "waiter"] as const;
 
 export default async function DashboardPage() {
   const today = toPersianDigits(formatJalali(new Date(), { withMonthName: true }));
@@ -22,13 +25,16 @@ export default async function DashboardPage() {
   // Owner's dashboard, not only on the backup page nobody may be watching.
   const backupHealth =
     session && canSetup ? await getBackupHealth(session.businessId).catch(() => null) : null;
+  const hasOperationalOverview = session ? OPERATIONAL_ROLES.includes(session.role as (typeof OPERATIONAL_ROLES)[number]) : false;
 
   return (
-    <div className="mx-auto w-full max-w-5xl pb-3">
-      <header className="mb-5 flex items-baseline justify-between border-b border-border/80 pb-4">
-        <h1 className="text-2xl font-bold">داشبورد</h1>
-        <p className="text-sm text-muted-foreground">امروز: {today}</p>
-      </header>
+    <div className="mx-auto w-full max-w-[1440px] pb-6">
+      {!hasOperationalOverview ? (
+        <header className="mb-5 flex items-baseline justify-between border-b border-border/80 pb-4">
+          <h1 className="text-2xl font-bold">داشبورد</h1>
+          <p className="text-sm text-muted-foreground">امروز: {today}</p>
+        </header>
+      ) : null}
 
       {canSetup && !setupDone ? (
         <Link
@@ -68,7 +74,17 @@ export default async function DashboardPage() {
         </Link>
       ) : null}
 
-      <DashboardGrid canEdit={canSetup} />
+      {hasOperationalOverview && session ? <OperationsOverview role={session.role as (typeof OPERATIONAL_ROLES)[number]} /> : null}
+
+      <section className="mt-6" aria-labelledby="pinned-reports-heading">
+        <details className="rounded-2xl border border-border/80 bg-card px-4 py-1.5 shadow-[0_1px_2px_rgb(15_23_42/0.03)]">
+          <summary id="pinned-reports-heading" className="min-h-11 cursor-pointer list-none py-2 text-sm font-semibold text-foreground marker:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            گزارش‌های سنجاق‌شده
+            <span className="mr-2 text-xs font-normal text-muted-foreground">چیدمان و گزارش‌های شخصی شما</span>
+          </summary>
+          <div className="border-t border-border/80 py-4"><DashboardGrid canEdit={canSetup} /></div>
+        </details>
+      </section>
     </div>
   );
 }
