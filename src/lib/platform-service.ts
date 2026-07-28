@@ -396,6 +396,12 @@ export class BusinessNotFoundError extends Error {
  * accounting/inventory descendants are cleared in the same transaction first.
  * `platform_audit_log.business_id` is `ON DELETE SET NULL`, so the *record
  * that it happened* survives the business it happened to — which is the point.
+ *
+ * A hard delete is meant to remove *everything*, including the login: any
+ * `platform_users` identity whose only membership was in this business is
+ * purged along with it, so its email is free to sign up again. An identity
+ * still holding a membership in another business is left alone — that's the
+ * cross-business-owner case, not an orphan.
  */
 export async function hardDeleteBusiness(businessId: string): Promise<void> {
   await withoutTenantScope("platform", async () => {
@@ -408,8 +414,24 @@ export async function hardDeleteBusiness(businessId: string): Promise<void> {
       );
       if (!rows[0]) throw new BusinessNotFoundError();
 
+      const { rows: memberIdentities } = await client.query<{ platform_user_id: string }>(
+        `SELECT DISTINCT platform_user_id FROM users
+          WHERE business_id = $1 AND platform_user_id IS NOT NULL`,
+        [businessId],
+      );
+
       await clearBusinessDeleteBlockers(client, businessId);
       await client.query(`DELETE FROM businesses WHERE id = $1`, [businessId]);
+
+      if (memberIdentities.length > 0) {
+        await client.query(
+          `DELETE FROM platform_users
+            WHERE id = ANY($1::uuid[])
+              AND NOT EXISTS (SELECT 1 FROM users WHERE users.platform_user_id = platform_users.id)`,
+          [memberIdentities.map((row) => row.platform_user_id)],
+        );
+      }
+
       await client.query("COMMIT");
     } catch (err) {
       await client.query("ROLLBACK");
