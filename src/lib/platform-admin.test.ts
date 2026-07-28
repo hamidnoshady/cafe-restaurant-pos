@@ -30,6 +30,8 @@ describe("platformCan — role → capability presets", () => {
     expect(platformCan("support", "impersonate.full")).toBe(false);
     expect(platformCan("support", "business.provision")).toBe(false);
     expect(platformCan("support", "business.delete")).toBe(false);
+    expect(platformCan("support", "business.edit")).toBe(false);
+    expect(platformCan("support", "business.reset")).toBe(false);
     expect(platformCan("support", "admins.manage")).toBe(false);
   });
 
@@ -42,6 +44,8 @@ describe("platformCan — role → capability presets", () => {
     expect(platformCan("engineer", "business.provision")).toBe(false);
     expect(platformCan("engineer", "business.archive")).toBe(false);
     expect(platformCan("engineer", "business.delete")).toBe(false);
+    expect(platformCan("engineer", "business.edit")).toBe(false);
+    expect(platformCan("engineer", "business.reset")).toBe(false);
     expect(platformCan("engineer", "admins.manage")).toBe(false);
   });
 
@@ -51,6 +55,8 @@ describe("platformCan — role → capability presets", () => {
     }
     expect(platformCan("owner", "business.provision")).toBe(true);
     expect(platformCan("owner", "business.delete")).toBe(true);
+    expect(platformCan("owner", "business.edit")).toBe(true);
+    expect(platformCan("owner", "business.reset")).toBe(true);
     expect(platformCan("owner", "impersonate.full")).toBe(true);
     expect(platformCan("owner", "admins.manage")).toBe(true);
   });

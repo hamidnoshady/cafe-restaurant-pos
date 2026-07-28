@@ -32,6 +32,8 @@ const ACTION_LABELS: Record<string, string> = {
   "business.archived": "بایگانی",
   "business.delete": "حذف قطعی",
   "business.plan": "تغییر پلن",
+  "business.edit": "ویرایش کسب‌وکار",
+  "business.reset": "ریست کامل کسب‌وکار",
   "feature.override": "بازنویسی پرچم ویژگی",
   "impersonation.start": "شروع دسترسی پشتیبانی",
   "impersonation.end": "پایان دسترسی پشتیبانی",
@@ -65,7 +67,7 @@ export default function AuditPage() {
   }, []);
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <div className="mx-auto w-full max-w-5xl">
       <h1 className="mb-6 text-xl font-bold">رویدادها</h1>
       <ErrorBox>{error}</ErrorBox>
 
@@ -76,45 +78,73 @@ export default function AuditPage() {
           <p className="text-sm text-white/50">رویدادی ثبت نشده است.</p>
         </Card>
       ) : (
-        <div className="overflow-hidden rounded-xl border border-white/10">
-          <table className="w-full text-sm">
-            <thead className="bg-white/3 text-white/50">
-              <tr>
-                <th className="px-4 py-3 text-start font-medium">زمان</th>
-                <th className="px-4 py-3 text-start font-medium">مدیر</th>
-                <th className="px-4 py-3 text-start font-medium">اقدام</th>
-                <th className="px-4 py-3 text-start font-medium">کسب‌وکار</th>
-              </tr>
-            </thead>
-            <tbody>
-              {entries.map((e) => (
-                <tr key={e.id} className="border-t border-white/5">
-                  <td className="whitespace-nowrap px-4 py-3 text-white/50">
-                    {fmtDate(e.createdAt)}
-                  </td>
-                  <td className="px-4 py-3 text-white/80">{e.adminName ?? "—"}</td>
-                  <td className="px-4 py-3">
-                    <span className="text-white/90">
-                      {ACTION_LABELS[e.action] ?? e.action}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    {e.businessId ? (
-                      <Link
-                        href={`/platform/businesses/${e.businessId}`}
-                        className="text-sky-300 hover:underline"
-                      >
-                        {e.businessName ?? e.businessId}
-                      </Link>
-                    ) : (
-                      <span className="text-white/40">{e.businessName ?? "—"}</span>
-                    )}
-                  </td>
+        <>
+          <div className="space-y-3 md:hidden">
+            {entries.map((e) => (
+              <div key={e.id} className="rounded-xl border border-white/10 bg-white/3 p-4">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <p className="font-medium text-white/90">{ACTION_LABELS[e.action] ?? e.action}</p>
+                    <p className="mt-1 text-xs text-white/45">{fmtDate(e.createdAt)}</p>
+                  </div>
+                  <span className="text-xs text-white/55">{e.adminName ?? "—"}</span>
+                </div>
+                <div className="mt-4 border-t border-white/5 pt-3 text-sm">
+                  <p className="text-xs text-white/40">کسب‌وکار</p>
+                  {e.businessId ? (
+                    <Link
+                      href={"/platform/businesses/" + e.businessId}
+                      className="mt-1 inline-block break-all text-sky-300 hover:underline"
+                    >
+                      {e.businessName ?? e.businessId}
+                    </Link>
+                  ) : (
+                    <p className="mt-1 break-all text-white/50">{e.businessName ?? "—"}</p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="hidden overflow-x-auto rounded-xl border border-white/10 md:block">
+            <table className="min-w-[680px] w-full text-sm">
+              <thead className="bg-white/3 text-white/50">
+                <tr>
+                  <th className="px-4 py-3 text-start font-medium">زمان</th>
+                  <th className="px-4 py-3 text-start font-medium">مدیر</th>
+                  <th className="px-4 py-3 text-start font-medium">اقدام</th>
+                  <th className="px-4 py-3 text-start font-medium">کسب‌وکار</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {entries.map((e) => (
+                  <tr key={e.id} className="border-t border-white/5">
+                    <td className="whitespace-nowrap px-4 py-3 text-white/50">
+                      {fmtDate(e.createdAt)}
+                    </td>
+                    <td className="px-4 py-3 text-white/80">{e.adminName ?? "—"}</td>
+                    <td className="px-4 py-3">
+                      <span className="text-white/90">
+                        {ACTION_LABELS[e.action] ?? e.action}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      {e.businessId ? (
+                        <Link
+                          href={"/platform/businesses/" + e.businessId}
+                          className="text-sky-300 hover:underline"
+                        >
+                          {e.businessName ?? e.businessId}
+                        </Link>
+                      ) : (
+                        <span className="text-white/40">{e.businessName ?? "—"}</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </div>
   );

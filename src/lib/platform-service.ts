@@ -132,6 +132,154 @@ export async function setBusinessStatus(
   return rows[0] ? getBusiness(businessId) : null;
 }
 
+/**
+ * Editable business metadata. Slug deliberately stays immutable here: it is the
+ * stable support identifier shown by the platform console, while name and
+ * timezone are ordinary business preferences.
+ */
+export interface BusinessUpdate {
+  name?: string;
+  timezone?: string;
+}
+
+/** Update the editable metadata for one business and return its fresh summary. */
+export async function updateBusiness(
+  businessId: string,
+  values: BusinessUpdate,
+): Promise<BusinessSummary | null> {
+  const assignments: string[] = [];
+  const params: unknown[] = [businessId];
+
+  if (values.name !== undefined) {
+    params.push(values.name);
+    assignments.push(`name = $${params.length}`);
+  }
+  if (values.timezone !== undefined) {
+    params.push(values.timezone);
+    assignments.push(`timezone = $${params.length}`);
+  }
+  if (assignments.length === 0) return getBusiness(businessId);
+
+  assignments.push("updated_at = now()");
+  const { rows } = await withoutTenantScope("platform", () =>
+    query<{ id: string }>(
+      `UPDATE businesses
+          SET ${assignments.join(", ")}
+        WHERE id = $1
+        RETURNING id`,
+      params,
+    ),
+  );
+  return rows[0] ? getBusiness(businessId) : null;
+}
+
+/**
+ * A reset preserves the tenant's stable identity (id, slug, plan and timezone)
+ * plus one active owner identity, but removes every tenant-owned row by
+ * deleting and recreating the business in one transaction. The schema's
+ * business-rooted ON DELETE CASCADE is intentional here: it covers current and
+ * future operational data without maintaining a fragile hand-written table list.
+ *
+ * The recreated tenant begins with exactly one blank primary branch and owner
+ * membership. It has no settings, chart of accounts, users, feature overrides
+ * or operational data, so the owner returns to the initial setup wizard.
+ */
+export class ResetBusinessNotPossibleError extends Error {
+  constructor() {
+    super("reset_not_possible");
+  }
+}
+
+const RESET_DEFAULT_LOCATION_NAME = "شعبه مرکزی";
+
+export async function resetBusiness(businessId: string): Promise<void> {
+  await withoutTenantScope("platform", async () => {
+    const client = await getPool().connect();
+    try {
+      await client.query("BEGIN");
+
+      const { rows: businessRows } = await client.query<{
+        id: string;
+        name: string;
+        slug: string;
+        plan: string;
+        timezone: string;
+      }>(
+        `SELECT id, name, slug::text AS slug, plan, timezone
+           FROM businesses
+          WHERE id = $1
+          FOR UPDATE`,
+        [businessId],
+      );
+      const business = businessRows[0];
+      if (!business) throw new ResetBusinessNotPossibleError();
+
+      // A reset must leave someone who can log in and finish setup. The
+      // platform identity is intentionally retained because it may also hold
+      // memberships in other businesses; all other memberships are deleted.
+      const { rows: ownerRows } = await client.query<{
+        platform_user_id: string;
+        full_name: string;
+        email: string;
+      }>(
+        `SELECT u.platform_user_id, u.full_name, p.email::text AS email
+           FROM users u
+           JOIN platform_users p ON p.id = u.platform_user_id
+          WHERE u.business_id = $1
+            AND u.role = 'owner'
+            AND u.is_active
+            AND p.is_active
+          ORDER BY u.created_at
+          LIMIT 1`,
+        [businessId],
+      );
+      const owner = ownerRows[0];
+      if (!owner) throw new ResetBusinessNotPossibleError();
+
+      // Deleting the tenant clears every business-owned table through foreign
+      // keys. platform_audit_log is intentionally ON DELETE SET NULL: it is a
+      // platform accountability record, not tenant data.
+      await client.query(`DELETE FROM businesses WHERE id = $1`, [businessId]);
+
+      await client.query(
+        `INSERT INTO businesses
+           (id, name, slug, status, plan, timezone, suspended_at, archived_at)
+         VALUES ($1, $2, $3, 'active', $4, $5, NULL, NULL)`,
+        [business.id, business.name, business.slug, business.plan, business.timezone],
+      );
+
+      const { rows: locationRows } = await client.query<{ id: string }>(
+        `INSERT INTO locations (business_id, name, timezone)
+         VALUES ($1, $2, $3)
+         RETURNING id`,
+        [business.id, RESET_DEFAULT_LOCATION_NAME, business.timezone],
+      );
+      const locationId = locationRows[0].id;
+
+      const { rows: ownerMembershipRows } = await client.query<{ id: string }>(
+        `INSERT INTO users
+           (business_id, platform_user_id, role, full_name, email, location_id)
+         VALUES ($1, $2, 'owner', $3, $4, NULL)
+         RETURNING id`,
+        [business.id, owner.platform_user_id, owner.full_name, owner.email],
+      );
+      const ownerId = ownerMembershipRows[0].id;
+
+      await client.query(
+        `INSERT INTO user_locations (user_id, location_id) VALUES ($1, $2)`,
+        [ownerId, locationId],
+      );
+
+      await client.query("COMMIT");
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    } finally {
+      client.release();
+    }
+  });
+}
+
 /** Raised when a hard-delete is attempted before the grace window elapses. */
 export class DeleteNotEligibleError extends Error {
   constructor() {

@@ -34,6 +34,9 @@ export type PlatformCapability =
   // Operational writes
   | "features.write"
   | "business.suspend"
+  // Owner-only business data operations
+  | "business.edit"
+  | "business.reset"
   // Impersonation, split by blast radius
   | "impersonate.readOnly"
   | "impersonate.full"
@@ -70,6 +73,8 @@ const CAPABILITIES: Record<PlatformAdminRole, PlatformCapability[]> = {
     "business.provision",
     "business.archive",
     "business.delete",
+    "business.edit",
+    "business.reset",
     "admins.manage",
   ],
 };
