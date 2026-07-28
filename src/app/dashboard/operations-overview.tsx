@@ -484,10 +484,11 @@ export function OperationsOverview({
 
   return (
     <section className="w-full" aria-labelledby="operations-heading">
+      <h1 id="operations-heading" className="sr-only">نمای کلی عملیات امروز</h1>
       <header className="mb-5 hidden items-start justify-between gap-4 rounded-2xl border border-[#EAE8E2] bg-white px-5 py-4 shadow-[0_1px_2px_rgba(37,37,34,0.03)] md:flex">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-            <h1 id="operations-heading" className="text-2xl font-bold tracking-[-0.03em] text-[#252522]">نمای کلی عملیات امروز</h1>
+            <p className="text-2xl font-bold tracking-[-0.03em] text-[#252522]">نمای کلی عملیات امروز</p>
             <span className="rounded-full bg-[#F7F6F2] px-2.5 py-1 text-xs font-medium text-[#77756F]">{roleLabel}</span>
           </div>
           <p className="mt-2 flex items-center gap-1.5 text-sm text-[#77756F]"><CalendarDaysIcon className="size-4" aria-hidden="true" />{today}</p>
