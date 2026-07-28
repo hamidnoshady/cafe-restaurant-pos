@@ -2,7 +2,8 @@ import { redirect } from "next/navigation";
 import { getSession, type Role } from "@/lib/auth";
 import { query, withTenant } from "@/lib/db";
 import { effectiveFeatures } from "@/lib/features";
-import { effectivePermissions, parseOverrides, PERMISSIONS, type Permission } from "@/lib/permissions";
+import { effectivePermissions, parseOverrides, type Permission } from "@/lib/permissions";
+import { visibleSettingsTabs } from "@/lib/settings-tabs";
 import { AiAssistant } from "@/components/ai/ai-assistant";
 import { OfflineBanner } from "./offline-banner";
 import { DashboardSidebar, type NavItem } from "./dashboard-sidebar";
@@ -20,14 +21,8 @@ const NAV_ITEMS: NavItem[] = [
   { label: "حسابداری", href: "/dashboard/ledger", roles: ["owner", "manager", "accountant"], flag: "ledger" },
   { label: "گزارش‌ها", href: "/dashboard/reports", roles: ["owner", "manager", "accountant"], flag: "reporting" },
   { label: "مدیریت شعب", href: "/dashboard/branches", roles: ["owner"], flag: "multi_location" },
-  { label: "همگام‌سازی شعبه‌ها", href: "/dashboard/locations", roles: ["owner"], flag: "offline_mode" },
-  { label: "پشتیبان‌گیری", href: "/dashboard/backup", roles: ["owner", "manager"], flag: "backup" },
   { label: "دستیار هوشمند", href: "/dashboard/ai", roles: ["owner", "manager"], flag: "ai_assistant" },
-  {
-    label: "تنظیمات",
-    href: "/dashboard/settings",
-    requiredAnyPermission: [PERMISSIONS.settingsManage, PERMISSIONS.accountsEdit, PERMISSIONS.teamManage],
-  },
+  { label: "تنظیمات", href: "/dashboard/settings" },
 ];
 
 function canSee(item: NavItem, role: Role, permissions: Set<Permission>, features: Record<string, boolean>): boolean {
@@ -64,7 +59,10 @@ export default async function DashboardLayout({
   const member = rows[0];
   if (!member?.is_active) redirect("/login");
   const permissions = effectivePermissions(member.role, parseOverrides(member.permissions));
-  const navItems = NAV_ITEMS.filter((item) => canSee(item, member.role, permissions, features));
+  const settingsTabs = visibleSettingsTabs(permissions, { role: member.role, features });
+  const navItems = NAV_ITEMS.filter((item) => canSee(item, member.role, permissions, features)).filter(
+    (item) => item.href !== "/dashboard/settings" || settingsTabs.length > 0,
+  );
 
   return (
     <div className="flex min-h-screen flex-col md:flex-row">

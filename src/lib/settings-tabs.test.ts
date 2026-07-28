@@ -15,4 +15,27 @@ describe("visibleSettingsTabs", () => {
       "printers",
     ]);
   });
+
+  it("preserves the former role and feature gates for operational settings", () => {
+    expect(
+      visibleSettingsTabs([], {
+        role: "manager",
+        features: { backup: true, offline_mode: true },
+      }).map((tab) => tab.key),
+    ).toEqual(["backup"]);
+
+    expect(
+      visibleSettingsTabs([], {
+        role: "owner",
+        features: { backup: true, offline_mode: true },
+      }).map((tab) => tab.key),
+    ).toEqual(["branch-sync", "backup"]);
+
+    expect(
+      visibleSettingsTabs([], {
+        role: "owner",
+        features: { backup: false, offline_mode: false },
+      }),
+    ).toEqual([]);
+  });
 });
