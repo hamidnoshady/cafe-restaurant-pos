@@ -167,3 +167,99 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Scoped motion primitives for the operations overview. */
+@keyframes ops-shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+@keyframes ops-card-enter {
+  from { opacity: 0; transform: scale(0.98); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes ops-data-resolve {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes ops-chart-bar {
+  from { opacity: 0; transform: scaleY(0.03); }
+  to { opacity: 1; transform: scaleY(1); }
+}
+
+@keyframes ops-chart-line {
+  from { opacity: 0; stroke-dashoffset: 1; }
+  to { opacity: 1; stroke-dashoffset: 0; }
+}
+
+@keyframes ops-order-row {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes ops-sync-rotate {
+  to { transform: rotate(-360deg); }
+}
+
+@keyframes ops-sync-pulse {
+  0% { box-shadow: 0 0 0 0 rgb(54 181 106 / 0.3); }
+  70% { box-shadow: 0 0 0 6px rgb(54 181 106 / 0); }
+  100% { box-shadow: 0 0 0 0 rgb(54 181 106 / 0); }
+}
+
+.ops-skeleton {
+  background: linear-gradient(90deg, #e8e8e8 0%, #f4f4f3 48%, #e8e8e8 100%);
+  background-size: 200% 100%;
+  animation: ops-shimmer 1200ms linear infinite;
+}
+
+.ops-card-enter {
+  animation: ops-card-enter 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.ops-data-resolve {
+  animation: ops-data-resolve 180ms ease-out both;
+}
+
+.ops-chart-bar {
+  transform-box: fill-box;
+  transform-origin: center bottom;
+  animation: ops-chart-bar 540ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.ops-chart-line {
+  stroke-dashoffset: 1;
+  animation: ops-chart-line 620ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.ops-order-row {
+  animation: ops-order-row 200ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.ops-sync-rotate {
+  animation: ops-sync-rotate 600ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.ops-sync-pulse {
+  animation: ops-sync-pulse 650ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ops-skeleton {
+    animation: none;
+    background: #e8e8e8;
+  }
+
+  .ops-card-enter,
+  .ops-data-resolve,
+  .ops-chart-bar,
+  .ops-chart-line,
+  .ops-order-row,
+  .ops-sync-rotate,
+  .ops-sync-pulse {
+    animation: none;
+    transform: none;
+  }
+}
