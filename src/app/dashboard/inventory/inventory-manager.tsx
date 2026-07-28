@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { toPersianDigits } from "@/lib/digits";
+import { formatQuantity } from "@/lib/digits";
 import { api, ErrorBox } from "../ui";
 import { useRealtime } from "../use-realtime";
 import { ItemsSection } from "./items-section";
@@ -86,6 +86,10 @@ export function InventoryManager() {
   const [tab, setTab] = useState<TabKey>("items");
   const [lowStock, setLowStock] = useState<LowStockItem[]>([]);
 
+  // An error from one tab shouldn't keep showing once the user has moved on
+  // to look at something else.
+  useEffect(() => setError(""), [tab]);
+
   const load = useCallback(() => {
     api<InventoryData>("/api/inventory").then(({ ok, data }) => {
       if (ok) setData(data);
@@ -134,8 +138,8 @@ export function InventoryManager() {
           <ul className="list-inside list-disc space-y-0.5">
             {lowStock.map((it) => (
               <li key={it.id}>
-                {it.name}: {toPersianDigits(it.stock)} {it.unit} باقی مانده (آستانه سفارش:{" "}
-                {toPersianDigits(it.reorderLevel ?? 0)} {it.unit})
+                {it.name}: {formatQuantity(it.stock)} {it.unit} باقی مانده (آستانه سفارش:{" "}
+                {formatQuantity(it.reorderLevel ?? 0)} {it.unit})
               </li>
             ))}
           </ul>

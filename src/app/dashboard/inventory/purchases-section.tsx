@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { formatQuantity } from "@/lib/digits";
 import { formatTomanText, parseToRialText } from "@/lib/money";
 import { formatJalali } from "@/lib/jalali";
 import { api, inputClass, PrimaryButton, SecondaryButton } from "../ui";
@@ -160,7 +161,9 @@ export function PurchasesSection({
                     placeholder="مبلغ کل (تومان)"
                   />
                   <span className="self-center text-xs text-muted-foreground">
-                    {invItem?.purchase_unit ? `= ${invItem.purchase_unit_factor} ${invItem.unit} به ازای هر واحد خرید` : null}
+                    {invItem?.purchase_unit
+                      ? `= ${formatQuantity(invItem.purchase_unit_factor)} ${invItem.unit} به ازای هر واحد خرید`
+                      : null}
                   </span>
                   <SecondaryButton onClick={() => removeLine(i)} disabled={lines.length === 1}>
                     حذف ردیف

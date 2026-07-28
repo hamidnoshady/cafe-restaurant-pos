@@ -30,27 +30,89 @@ export function SuppliersSection({ suppliers, busy, run }: { suppliers: Supplier
       </form>
       <ul className="divide-y divide-border rounded-lg border border-border">
         {suppliers.map((s) => (
-          <li key={s.id} className="flex items-center justify-between px-4 py-2 text-sm">
-            <span className={s.is_active ? "" : "text-muted-foreground line-through"}>
-              {s.name} {s.phone ? <span className="text-xs text-muted-foreground">({s.phone})</span> : null}
-            </span>
-            <SecondaryButton
-              disabled={busy}
-              onClick={() =>
-                run(() =>
-                  api(`/api/inventory/suppliers/${s.id}`, {
-                    method: "PATCH",
-                    body: JSON.stringify({ isActive: !s.is_active }),
-                  }),
-                )
-              }
-            >
-              {s.is_active ? "غیرفعال" : "فعال"}
-            </SecondaryButton>
-          </li>
+          <SupplierRow key={s.id} supplier={s} busy={busy} run={run} />
         ))}
         {suppliers.length === 0 ? <li className="p-3 text-sm text-muted-foreground">تأمین‌کننده‌ای ثبت نشده است.</li> : null}
       </ul>
     </section>
+  );
+}
+
+function SupplierRow({ supplier: s, busy, run }: { supplier: Supplier; busy: boolean; run: Runner }) {
+  const [editing, setEditing] = useState(false);
+
+  if (editing) {
+    return <EditSupplierRow supplier={s} busy={busy} run={run} onDone={() => setEditing(false)} />;
+  }
+
+  return (
+    <li className="flex flex-wrap items-center justify-between gap-2 px-4 py-2 text-sm">
+      <span className={s.is_active ? "" : "text-muted-foreground line-through"}>
+        {s.name} {s.phone ? <span className="text-xs text-muted-foreground">({s.phone})</span> : null}
+        {s.notes ? <span className="block text-xs text-muted-foreground">{s.notes}</span> : null}
+      </span>
+      <div className="flex flex-wrap items-center gap-2">
+        <SecondaryButton disabled={busy} onClick={() => setEditing(true)}>
+          ویرایش
+        </SecondaryButton>
+        <SecondaryButton
+          disabled={busy}
+          onClick={() =>
+            run(() =>
+              api(`/api/inventory/suppliers/${s.id}`, {
+                method: "PATCH",
+                body: JSON.stringify({ isActive: !s.is_active }),
+              }),
+            )
+          }
+        >
+          {s.is_active ? "غیرفعال" : "فعال"}
+        </SecondaryButton>
+      </div>
+    </li>
+  );
+}
+
+function EditSupplierRow({
+  supplier: s,
+  busy,
+  run,
+  onDone,
+}: {
+  supplier: Supplier;
+  busy: boolean;
+  run: Runner;
+  onDone: () => void;
+}) {
+  const [name, setName] = useState(s.name);
+  const [phone, setPhone] = useState(s.phone ?? "");
+  const [notes, setNotes] = useState(s.notes ?? "");
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    if (!name.trim()) return;
+    const ok = await run(() =>
+      api(`/api/inventory/suppliers/${s.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ name, phone: phone.trim() || null, notes: notes.trim() || null }),
+      }),
+    );
+    if (ok) onDone();
+  }
+
+  return (
+    <li className="px-4 py-3">
+      <form onSubmit={save} className="grid gap-2 sm:grid-cols-4">
+        <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} placeholder="نام تأمین‌کننده" required />
+        <input className={inputClass} dir="ltr" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="تلفن (اختیاری)" />
+        <input className={inputClass} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="یادداشت (اختیاری)" />
+        <div className="flex gap-2">
+          <PrimaryButton disabled={busy}>ذخیره</PrimaryButton>
+          <SecondaryButton disabled={busy} onClick={onDone}>
+            انصراف
+          </SecondaryButton>
+        </div>
+      </form>
+    </li>
   );
 }

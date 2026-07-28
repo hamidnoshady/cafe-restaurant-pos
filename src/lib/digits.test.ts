@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   formatPersianNumber,
+  formatQuantity,
   groupDigits,
   toLatinDigits,
   toPersianDigits,
@@ -31,5 +32,15 @@ describe("digits", () => {
 
   it("formats grouped Persian numbers", () => {
     expect(formatPersianNumber(1250000)).toBe("۱٬۲۵۰٬۰۰۰");
+  });
+
+  it("trims exact-decimal quantities for display", () => {
+    expect(formatQuantity("18.000000000")).toBe("۱۸");
+    expect(formatQuantity("1000.000000000")).toBe("۱۰۰۰");
+    expect(formatQuantity("0.500000000")).toBe("۰.۵");
+    expect(formatQuantity("-2.500000000")).toBe("-۲.۵");
+    expect(formatQuantity(0)).toBe("۰");
+    expect(formatQuantity("12.3456")).toBe("۱۲.۳۴۶"); // rounds beyond maxDecimals
+    expect(formatQuantity("12.3456", 4)).toBe("۱۲.۳۴۵۶");
   });
 });
