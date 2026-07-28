@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <rect width="512" height="512" fill="#0f172a"/>
+  <g fill="none" stroke="#f8fafc" stroke-width="24" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Coffee cup -->
+    <path d="M144 208 h176 v72 a88 88 0 0 1 -88 88 h0 a88 88 0 0 1 -88 -88 z"/>
+    <path d="M320 232 h32 a40 40 0 0 1 0 80 h-16"/>
+    <path d="M336 384 h-208"/>
+    <!-- Steam -->
+    <path d="M196 144 q-16 -20 0 -40" stroke="#94a3b8"/>
+    <path d="M256 144 q-16 -20 0 -40" stroke="#94a3b8"/>
+    <path d="M316 144 q-16 -20 0 -40" stroke="#94a3b8"/>
+  </g>
+</svg>
