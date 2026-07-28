@@ -52,6 +52,7 @@ export function errorMessage(code: string | undefined): string {
     invalid_timezone: "منطقهٔ زمانی معتبر نیست.",
     reset_confirmation_required: "برای ریست، شناسهٔ کسب‌وکار را دقیق وارد کنید.",
     reset_not_possible: "ریست ممکن نیست؛ این کسب‌وکار مالک فعال و قابل ورود ندارد.",
+    reset_failed: "ریست انجام نشد و هیچ داده‌ای تغییر نکرد. دوباره تلاش کنید.",
   };
   return map[code ?? ""] ?? "خطای غیرمنتظره. دوباره تلاش کنید.";
 }
