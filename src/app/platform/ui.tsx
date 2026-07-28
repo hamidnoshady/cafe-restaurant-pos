@@ -49,6 +49,9 @@ export function errorMessage(code: string | undefined): string {
     no_owner: "این کسب‌وکار مالک فعالی برای ورود ندارد.",
     impersonation_read_only: "این نشست فقط‌خواندنی است و امکان تغییر ندارد.",
     invalid_plan: "این پلن در فهرست پلن‌ها وجود ندارد.",
+    invalid_timezone: "منطقهٔ زمانی معتبر نیست.",
+    reset_confirmation_required: "برای ریست، شناسهٔ کسب‌وکار را دقیق وارد کنید.",
+    reset_not_possible: "ریست ممکن نیست؛ این کسب‌وکار مالک فعال و قابل ورود ندارد.",
   };
   return map[code ?? ""] ?? "خطای غیرمنتظره. دوباره تلاش کنید.";
 }
@@ -110,12 +113,14 @@ export function Button({
   type = "button",
   disabled,
   variant = "primary",
+  className,
 }: {
   children: React.ReactNode;
   onClick?: () => void;
   type?: "submit" | "button";
   disabled?: boolean;
   variant?: "primary" | "danger" | "ghost";
+  className?: string;
 }) {
   const styles = {
     primary: "bg-sky-500 text-white hover:bg-sky-400",
@@ -127,7 +132,7 @@ export function Button({
       type={type}
       onClick={onClick}
       disabled={disabled}
-      className={`inline-flex h-9 items-center justify-center rounded-lg px-4 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${styles}`}
+      className={`inline-flex h-9 items-center justify-center rounded-lg px-4 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${styles} ${className ?? ""}`}
     >
       {children}
     </button>
@@ -151,7 +156,7 @@ export function StatusBadge({ status }: { status: string }) {
 
 export function Card({ children, title }: { children: React.ReactNode; title?: string }) {
   return (
-    <div className="rounded-xl border border-white/10 bg-white/3 p-5">
+    <div className="rounded-xl border border-white/10 bg-white/3 p-4 sm:p-5">
       {title ? <h2 className="mb-4 text-sm font-semibold text-white/90">{title}</h2> : null}
       {children}
     </div>
