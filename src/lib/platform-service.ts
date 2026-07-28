@@ -176,9 +176,9 @@ export async function updateBusiness(
 /**
  * A reset preserves the tenant's stable identity (id, slug, plan and timezone)
  * plus one active owner identity, but removes every tenant-owned row by
- * deleting and recreating the business in one transaction. The schema's
- * business-rooted ON DELETE CASCADE is intentional here: it covers current and
- * future operational data without maintaining a fragile hand-written table list.
+ * deleting and recreating the business in one transaction. Cascade handles
+ * ordinary tenant records; the deliberately restrictive accounting and inventory
+ * records are cleared first in one auditable, transaction-scoped helper.
  *
  * The recreated tenant begins with exactly one blank primary branch and owner
  * membership. It has no settings, chart of accounts, users, feature overrides
@@ -391,8 +391,8 @@ export class DeleteNotEligibleError extends Error {
 /**
  * Hard-delete an archived business, past its grace window.
  *
- * The whole schema hangs off `businesses(id)` with `ON DELETE CASCADE`, so a
- * single delete removes every location, order, ledger entry and membership.
+ * Normal tenant records cascade from `businesses(id)`; restrictive
+ * accounting/inventory descendants are cleared in the same transaction first.
  * `platform_audit_log.business_id` is `ON DELETE SET NULL`, so the *record
  * that it happened* survives the business it happened to — which is the point.
  *
