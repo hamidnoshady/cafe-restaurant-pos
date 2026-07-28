@@ -131,6 +131,50 @@ export async function getServerSyncState(businessId: string): Promise<ServerSync
   return s ?? { ...EMPTY_STATE };
 }
 
+export interface ServerSyncDeadLetter {
+  id: number;
+  remoteEventId: number;
+  locationId: string;
+  clientEventId: string;
+  eventType: string;
+  payload: Record<string, unknown>;
+  error: string;
+  createdAt: string;
+}
+
+/** Pulled events that failed to apply and were dropped from the pull's forward progress; see runServerPull. */
+export async function listServerSyncDeadLetters(businessId: string, limit = 50): Promise<ServerSyncDeadLetter[]> {
+  const { rows } = await query<{
+    id: number;
+    remote_event_id: number;
+    location_id: string;
+    client_event_id: string;
+    event_type: string;
+    payload: Record<string, unknown>;
+    error: string;
+    created_at: string;
+  }>(
+    `SELECT id, remote_event_id, location_id, client_event_id, event_type, payload, error, created_at
+       FROM server_sync_dead_letters
+      WHERE business_id = $1
+      ORDER BY created_at DESC
+      LIMIT $2`,
+    [businessId, limit],
+  );
+  return rows.map((r) => ({
+    // bigint columns come back from pg as strings; safe to convert here since
+    // these are small monotonic counters, never anywhere near MAX_SAFE_INTEGER.
+    id: Number(r.id),
+    remoteEventId: Number(r.remote_event_id),
+    locationId: r.location_id,
+    clientEventId: r.client_event_id,
+    eventType: r.event_type,
+    payload: r.payload,
+    error: r.error,
+    createdAt: r.created_at,
+  }));
+}
+
 // ---------------------------------------------------------------------------
 // Row type returned by sync_events queries
 // ---------------------------------------------------------------------------
@@ -357,9 +401,21 @@ export async function runServerPull(businessId: string): Promise<PullResult> {
         input,
         "remote",
       );
-    } catch {
-      // Log but don't abort the batch — a single bad event shouldn't block the rest
-      console.error(`server-sync pull: failed to apply event ${e.clientEventId}`);
+    } catch (err) {
+      // Don't abort the batch — a single bad event shouldn't block the rest —
+      // but the high-water mark below still advances past it, so record it
+      // as a dead letter rather than only logging: otherwise it's dropped
+      // forever with nothing to show it happened.
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`server-sync pull: failed to apply event ${e.clientEventId}: ${message}`);
+      await query(
+        `INSERT INTO server_sync_dead_letters
+           (business_id, remote_event_id, location_id, client_event_id, event_type, payload, error)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [businessId, e.id, e.locationId, e.clientEventId, e.type, JSON.stringify(e.payload), message],
+      ).catch((logErr) => {
+        console.error(`server-sync pull: failed to record dead letter for event ${e.clientEventId}:`, logErr);
+      });
     }
     lastAppliedRemoteId = e.id;
   }

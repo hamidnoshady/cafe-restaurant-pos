@@ -12,7 +12,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { Client } from "pg";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { runMigrations } from "../scripts/migrate";
 import { createAppRole } from "../scripts/create-app-role";
@@ -349,5 +349,98 @@ describe("/api/server-sync/push and /pull — cross-business isolation", () => {
   it("rejects an unknown or missing bearer token", async () => {
     const res = await pushRoute.POST(pushRequest("not-a-real-token", [statusEvent(bizA.locationId, bizA.itemId, "preparing")]));
     expect(res.status).toBe(401);
+  });
+});
+
+describe("runServerPull — dead letters", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("records a poison event as a dead letter, still advances past it, and leaves other events unaffected", async () => {
+    const goodEventId = randomUUID();
+    const poisonEventId = randomUUID();
+    const remoteEvents = [
+      {
+        id: 10,
+        clientEventId: poisonEventId,
+        type: "order_item.status",
+        occurredAt: new Date().toISOString(),
+        payload: { itemId: bizA.itemId, status: "preparing" },
+        // Malformed on purpose: sync_events.location_id is a uuid column, so
+        // applySyncEvent's own INSERT throws before dispatch ever runs —
+        // exactly the "poison event" this dead-letter path exists for.
+        locationId: "not-a-real-location-id",
+        actorUserId: "remote-user",
+        actorRole: "kitchen",
+      },
+      {
+        id: 11,
+        clientEventId: goodEventId,
+        type: "order_item.status",
+        occurredAt: new Date().toISOString(),
+        payload: { itemId: bizA.itemId, status: "preparing" },
+        locationId: bizA.locationId,
+        actorUserId: "remote-user",
+        actorRole: "kitchen",
+      },
+    ];
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ events: remoteEvents }), { status: 200 })),
+    );
+
+    const result = await dbLib.withTenant(bizA.id, () => serverSync.runServerPull(bizA.id));
+    expect(result).toMatchObject({ status: "ok", pulled: 2 });
+
+    // The batch kept going past the poison event and applied the good one.
+    const { rows } = await db.query<{ status: string }>("SELECT status FROM order_items WHERE id = $1", [bizA.itemId]);
+    expect(rows[0].status).toBe("preparing");
+
+    const deadLetters = await dbLib.withTenant(bizA.id, () => serverSync.listServerSyncDeadLetters(bizA.id));
+    expect(deadLetters).toHaveLength(1);
+    expect(deadLetters[0]).toMatchObject({
+      remoteEventId: 10,
+      clientEventId: poisonEventId,
+      locationId: "not-a-real-location-id",
+    });
+
+    // The high-water mark advanced past the poison event too — it's dropped
+    // from future pulls, which is exactly why it needs to be visible here.
+    const state = await dbLib.withTenant(bizA.id, () => serverSync.getServerSyncState(bizA.id));
+    expect(state.lastPulledEventId).toBe(11);
+  });
+
+  it("scopes dead letters to their own business", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            events: [
+              {
+                id: 20,
+                clientEventId: randomUUID(),
+                type: "order_item.status",
+                occurredAt: new Date().toISOString(),
+                payload: { itemId: bizB.itemId, status: "preparing" },
+                locationId: "not-a-real-location-id",
+                actorUserId: "remote-user",
+                actorRole: "kitchen",
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+
+    await dbLib.withTenant(bizB.id, () => serverSync.runServerPull(bizB.id));
+
+    const bDeadLetters = await dbLib.withTenant(bizB.id, () => serverSync.listServerSyncDeadLetters(bizB.id));
+    const aDeadLetters = await dbLib.withTenant(bizA.id, () => serverSync.listServerSyncDeadLetters(bizA.id));
+    expect(bDeadLetters).toHaveLength(1);
+    expect(aDeadLetters).toHaveLength(0);
   });
 });
