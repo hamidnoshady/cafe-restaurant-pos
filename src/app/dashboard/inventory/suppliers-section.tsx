@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { api, inputClass, PrimaryButton, SecondaryButton } from "../ui";
+import { api, Field, inputClass, PrimaryButton, SecondaryButton } from "../ui";
 import type { Runner, Supplier } from "./inventory-manager";
 
 export function SuppliersSection({ suppliers, busy, run }: { suppliers: Supplier[]; busy: boolean; run: Runner }) {
@@ -21,12 +21,18 @@ export function SuppliersSection({ suppliers, busy, run }: { suppliers: Supplier
   }
 
   return (
-    <section className="rounded-2xl bg-card p-5 shadow-sm">
+    <section className="min-w-0 rounded-2xl bg-card p-5 shadow-sm">
       <h2 className="mb-3 font-semibold">تأمین‌کنندگان</h2>
-      <form onSubmit={add} className="mb-4 flex flex-wrap gap-2">
-        <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} placeholder="نام تأمین‌کننده" required />
-        <input className={inputClass} dir="ltr" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="تلفن (اختیاری)" />
-        <PrimaryButton disabled={busy}>افزودن</PrimaryButton>
+      <form onSubmit={add} className="mb-4 grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <Field label="نام تأمین‌کننده">
+          <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} required />
+        </Field>
+        <Field label="تلفن">
+          <input className={inputClass} dir="ltr" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="اختیاری" />
+        </Field>
+        <div className="mb-4 flex items-end">
+          <PrimaryButton disabled={busy}>افزودن</PrimaryButton>
+        </div>
       </form>
       <ul className="divide-y divide-border rounded-lg border border-border">
         {suppliers.map((s) => (
@@ -46,8 +52,8 @@ function SupplierRow({ supplier: s, busy, run }: { supplier: Supplier; busy: boo
   }
 
   return (
-    <li className="flex flex-wrap items-center justify-between gap-2 px-4 py-2 text-sm">
-      <span className={s.is_active ? "" : "text-muted-foreground line-through"}>
+    <li className="flex min-w-0 flex-col gap-3 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+      <span className={`min-w-0 break-words ${s.is_active ? "" : "text-muted-foreground line-through"}`}>
         {s.name} {s.phone ? <span className="text-xs text-muted-foreground">({s.phone})</span> : null}
         {s.notes ? <span className="block text-xs text-muted-foreground">{s.notes}</span> : null}
       </span>
@@ -102,12 +108,20 @@ function EditSupplierRow({
 
   return (
     <li className="px-4 py-3">
-      <form onSubmit={save} className="grid gap-2 sm:grid-cols-4">
-        <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} placeholder="نام تأمین‌کننده" required />
-        <input className={inputClass} dir="ltr" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="تلفن (اختیاری)" />
-        <input className={inputClass} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="یادداشت (اختیاری)" />
-        <div className="flex gap-2">
-          <PrimaryButton disabled={busy}>ذخیره</PrimaryButton>
+      <form onSubmit={save} className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <Field label="نام تأمین‌کننده">
+          <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} required />
+        </Field>
+        <Field label="تلفن">
+          <input className={inputClass} dir="ltr" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="اختیاری" />
+        </Field>
+        <Field label="یادداشت">
+          <input className={inputClass} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="اختیاری" />
+        </Field>
+        <div className="flex flex-col gap-2 sm:col-span-2 xl:col-span-3 sm:flex-row">
+          <div className="w-full sm:w-40">
+            <PrimaryButton disabled={busy}>ذخیره</PrimaryButton>
+          </div>
           <SecondaryButton disabled={busy} onClick={onDone}>
             انصراف
           </SecondaryButton>

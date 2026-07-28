@@ -168,3 +168,46 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
   }
   return NextResponse.json({ ok: true });
 });
+
+/**
+ * Remove an unreceived purchase and its draft lines. A received purchase has
+ * already changed stock and posted accounting entries, so it must be reversed
+ * through an inventory return rather than deleted.
+ */
+export const DELETE = withTenantScope(async (_request: NextRequest, context: { params: Promise<{ id: string }> }) => {
+  const { session, error } = await requireRole("owner", "manager");
+  if (error) return error;
+  const { id } = await context.params;
+
+  const location = await resolveActiveLocation(session);
+  if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
+
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const { rows } = await client.query<{ status: string }>(
+      "SELECT status FROM purchases WHERE id = $1 AND location_id = $2 FOR UPDATE",
+      [id, location.id],
+    );
+    const purchase = rows[0];
+    if (!purchase) {
+      await client.query("ROLLBACK");
+      return NextResponse.json({ error: "not_found" }, { status: 404 });
+    }
+    if (purchase.status === "received") {
+      await client.query("ROLLBACK");
+      return NextResponse.json({ error: "purchase_received_cannot_delete" }, { status: 409 });
+    }
+
+    // purchase_items has ON DELETE CASCADE. Restrict this to the locked,
+    // active-location purchase so a stale id can never delete another branch.
+    await client.query("DELETE FROM purchases WHERE id = $1 AND location_id = $2", [id, location.id]);
+    await client.query("COMMIT");
+  } catch (cause) {
+    await client.query("ROLLBACK");
+    throw cause;
+  } finally {
+    client.release();
+  }
+  return NextResponse.json({ ok: true });
+});

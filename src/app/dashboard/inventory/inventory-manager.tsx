@@ -198,6 +198,7 @@ function errorMessage(code: string | undefined): string {
     invalid_item: "یکی از اقلام معتبر نیست.",
     invalid_waste_reason: "دلیل ضایعات را انتخاب کنید.",
     invalid_transition: "این تغییر وضعیت خرید مجاز نیست.",
+    purchase_received_cannot_delete: "خرید دریافت‌شده برای حفظ موجودی و اسناد حسابداری قابل حذف نیست.",
     no_location: "شعبه‌ای ثبت نشده است.",
     unauthorized: "وارد نشده‌اید.",
     forbidden: "دسترسی مجاز نیست.",

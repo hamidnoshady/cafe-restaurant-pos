@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { formatQuantity } from "@/lib/digits";
 import { formatTomanText, parseToRialText } from "@/lib/money";
 import { formatJalali } from "@/lib/jalali";
-import { api, inputClass, PrimaryButton, SecondaryButton } from "../ui";
+import { api, Field, inputClass, PrimaryButton, SecondaryButton } from "../ui";
 import type { InventoryItem, Runner, Supplier } from "./inventory-manager";
 
 interface Purchase {
@@ -110,85 +110,103 @@ export function PurchasesSection({
     if (ok) loadPurchases();
   }
 
+  async function removePurchase(id: string) {
+    if (!window.confirm("این خرید حذف شود؟ خرید دریافت‌شده برای حفظ موجودی و اسناد حسابداری قابل حذف نیست.")) return;
+    const ok = await run(() => api(`/api/inventory/purchases/${id}`, { method: "DELETE" }));
+    if (ok) loadPurchases();
+  }
+
   return (
     <div className="space-y-6">
-      <section className="rounded-2xl bg-card p-5 shadow-sm">
+      <section className="min-w-0 rounded-2xl bg-card p-5 shadow-sm">
         <h2 className="mb-3 font-semibold">ثبت خرید (رسید ورود کالا)</h2>
         <form onSubmit={submit} className="space-y-3">
-          <div className="flex flex-wrap gap-2">
-            <select className={inputClass} value={supplierId} onChange={(e) => setSupplierId(e.target.value)}>
-              <option value="">بدون تأمین‌کننده</option>
-              {suppliers.filter((s) => s.is_active).map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
-            <input className={inputClass} value={note} onChange={(e) => setNote(e.target.value)} placeholder="یادداشت (اختیاری)" />
+          <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+            <Field label="تأمین‌کننده">
+              <select className={inputClass} value={supplierId} onChange={(e) => setSupplierId(e.target.value)}>
+                <option value="">بدون تأمین‌کننده</option>
+                {suppliers.filter((s) => s.is_active).map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="یادداشت">
+              <input className={inputClass} value={note} onChange={(e) => setNote(e.target.value)} placeholder="اختیاری" />
+            </Field>
           </div>
 
           <div className="space-y-2">
             {lines.map((line, i) => {
               const invItem = items.find((it) => it.id === line.inventoryItemId);
               return (
-                <div key={i} className="grid gap-2 sm:grid-cols-5">
-                  <select
-                    className={inputClass}
-                    value={line.inventoryItemId}
-                    onChange={(e) => updateLine(i, { inventoryItemId: e.target.value })}
-                  >
-                    <option value="">قلم انبار…</option>
-                    {activeItems.map((it) => (
-                      <option key={it.id} value={it.id}>
-                        {it.name}
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    className={inputClass}
-                    dir="ltr"
-                    inputMode="decimal"
-                    value={line.purchaseQty}
-                    onChange={(e) => updateLine(i, { purchaseQty: e.target.value })}
-                    placeholder={`مقدار (${invItem?.purchase_unit || invItem?.unit || "واحد"})`}
-                  />
-                  <input
-                    className={inputClass}
-                    dir="ltr"
-                    inputMode="numeric"
-                    value={line.totalCost}
-                    onChange={(e) => updateLine(i, { totalCost: e.target.value })}
-                    placeholder="مبلغ کل (تومان)"
-                  />
-                  <span className="self-center text-xs text-muted-foreground">
+                <div key={i} className="grid min-w-0 gap-3 rounded-xl border border-border p-3 sm:grid-cols-2 xl:grid-cols-5">
+                  <Field label="قلم انبار">
+                    <select
+                      className={inputClass}
+                      value={line.inventoryItemId}
+                      onChange={(e) => updateLine(i, { inventoryItemId: e.target.value })}
+                    >
+                      <option value="">قلم انبار را انتخاب کنید…</option>
+                      {activeItems.map((it) => (
+                        <option key={it.id} value={it.id}>
+                          {it.name}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label={`مقدار خرید (${invItem?.purchase_unit || invItem?.unit || "واحد"})`}>
+                    <input
+                      className={inputClass}
+                      dir="ltr"
+                      inputMode="decimal"
+                      value={line.purchaseQty}
+                      onChange={(e) => updateLine(i, { purchaseQty: e.target.value })}
+                    />
+                  </Field>
+                  <Field label="مبلغ کل (تومان)">
+                    <input
+                      className={inputClass}
+                      dir="ltr"
+                      inputMode="numeric"
+                      value={line.totalCost}
+                      onChange={(e) => updateLine(i, { totalCost: e.target.value })}
+                    />
+                  </Field>
+                  <span className="mb-4 self-end break-words text-xs text-muted-foreground">
                     {invItem?.purchase_unit
                       ? `= ${formatQuantity(invItem.purchase_unit_factor)} ${invItem.unit} به ازای هر واحد خرید`
-                      : null}
+                      : "واحد خرید انتخاب‌شده را مشخص کنید."}
                   </span>
-                  <SecondaryButton onClick={() => removeLine(i)} disabled={lines.length === 1}>
-                    حذف ردیف
-                  </SecondaryButton>
+                  <div className="mb-4 flex items-end">
+                    <SecondaryButton onClick={() => removeLine(i)} disabled={lines.length === 1}>
+                      حذف ردیف
+                    </SecondaryButton>
+                  </div>
                 </div>
               );
             })}
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-col gap-2 sm:flex-row">
             <SecondaryButton onClick={addLine}>افزودن ردیف</SecondaryButton>
-            <PrimaryButton disabled={busy}>ثبت پیش‌نویس خرید</PrimaryButton>
+            <div className="w-full sm:w-52">
+              <PrimaryButton disabled={busy}>ثبت پیش‌نویس خرید</PrimaryButton>
+            </div>
           </div>
         </form>
       </section>
 
-      <section className="rounded-2xl bg-card p-5 shadow-sm">
+      <section className="min-w-0 rounded-2xl bg-card p-5 shadow-sm">
         <h2 className="mb-3 font-semibold">خریدهای اخیر</h2>
         <ul className="divide-y divide-border rounded-lg border border-border">
           {(purchases ?? []).map((p) => (
-            <li key={p.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2 text-sm">
-              <span>
+            <li key={p.id} className="flex min-w-0 flex-col gap-3 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+              <span className="min-w-0 break-words">
                 {p.supplier_name ?? "بدون تأمین‌کننده"} — {formatTomanText(String(p.total))} —{" "}
                 <span className="text-xs text-muted-foreground">{formatJalali(p.created_at)}</span>
               </span>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-end gap-2">
                 <span className="text-xs">{STATUS_LABELS[p.status]}</span>
                 {p.status === "draft" || p.status === "ordered" ? (
                   <>
@@ -197,30 +215,36 @@ export function PurchasesSection({
                         ثبت سفارش
                       </SecondaryButton>
                     ) : null}
-                    <select
-                      className={`${inputClass} w-auto py-1`}
-                      value={settlementByPurchase[p.id] ?? "credit"}
-                      onChange={(e) => setSettlementByPurchase((prev) => ({ ...prev, [p.id]: e.target.value }))}
-                    >
-                      {Object.entries(SETTLEMENT_LABELS).map(([key, label]) => (
-                        <option key={key} value={key}>
-                          {label}
-                        </option>
-                      ))}
-                    </select>
-                    {!p.supplier_name && (settlementByPurchase[p.id] ?? "credit") === "credit" ? (
+                    <label className="grid min-w-36 max-w-full gap-1 text-xs font-medium">
+                      <span>روش تسویه</span>
                       <select
-                        className={`${inputClass} w-auto py-1`}
-                        value={supplierByPurchase[p.id] ?? ""}
-                        onChange={(e) => setSupplierByPurchase((prev) => ({ ...prev, [p.id]: e.target.value }))}
+                        className={inputClass}
+                        value={settlementByPurchase[p.id] ?? "credit"}
+                        onChange={(e) => setSettlementByPurchase((prev) => ({ ...prev, [p.id]: e.target.value }))}
                       >
-                        <option value="">تأمین‌کننده…</option>
-                        {suppliers.filter((s) => s.is_active).map((s) => (
-                          <option key={s.id} value={s.id}>
-                            {s.name}
+                        {Object.entries(SETTLEMENT_LABELS).map(([key, label]) => (
+                          <option key={key} value={key}>
+                            {label}
                           </option>
                         ))}
                       </select>
+                    </label>
+                    {!p.supplier_name && (settlementByPurchase[p.id] ?? "credit") === "credit" ? (
+                      <label className="grid min-w-36 max-w-full gap-1 text-xs font-medium">
+                        <span>تأمین‌کنندهٔ خرید نسیه</span>
+                        <select
+                          className={inputClass}
+                          value={supplierByPurchase[p.id] ?? ""}
+                          onChange={(e) => setSupplierByPurchase((prev) => ({ ...prev, [p.id]: e.target.value }))}
+                        >
+                          <option value="">تأمین‌کننده را انتخاب کنید…</option>
+                          {suppliers.filter((s) => s.is_active).map((s) => (
+                            <option key={s.id} value={s.id}>
+                              {s.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
                     ) : null}
                     <SecondaryButton
                       disabled={busy || (!p.supplier_name && (settlementByPurchase[p.id] ?? "credit") === "credit" && !supplierByPurchase[p.id])}
@@ -232,6 +256,11 @@ export function PurchasesSection({
                       لغو
                     </SecondaryButton>
                   </>
+                ) : null}
+                {p.status !== "received" ? (
+                  <SecondaryButton disabled={busy} onClick={() => void removePurchase(p.id)}>
+                    حذف
+                  </SecondaryButton>
                 ) : null}
               </div>
             </li>
