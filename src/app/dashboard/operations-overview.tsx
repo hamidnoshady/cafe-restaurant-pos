@@ -344,7 +344,7 @@ function OrdersSkeleton() {
 
 function OrdersTable({ orders, timeZone }: { orders: OverviewData["activeOrders"]; timeZone: string }) {
   if (orders.length === 0) {
-    return <p className="rounded-xl border border-dashed border-[#EAE8E2] bg-[#FCFCFA] px-4 py-8 text-center text-sm text-[#77756F]">در حال حاضر سفارش بازی وجود ندارد.</p>;
+    return <p className="flex min-h-[320px] items-center justify-center rounded-xl border border-dashed border-[#EAE8E2] bg-[#FCFCFA] px-4 py-8 text-center text-sm text-[#77756F] md:min-h-[330px]">در حال حاضر سفارش بازی وجود ندارد.</p>;
   }
 
   return (
