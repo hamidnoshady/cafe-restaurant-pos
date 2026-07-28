@@ -30,7 +30,7 @@
 ## Open questions → decisions
 
 1. **Impersonation consent** — a grant is opened with an explicit reason and a time window; every impersonated request is tagged and audited. Support is workable without blocking on synchronous owner consent, but the trail is complete and reviewable.
-2. **Hard-delete retention** — never immediate. A delete request opens a grace window (`PLATFORM_DELETE_GRACE_DAYS`, default 30) with an export; the business is only eligible for hard-delete once that window has elapsed (`deleteEligible`).
+2. **Hard-delete retention** — revised: immediate, no archive step or grace window. (Originally decided as "never immediate", with an archive-then-30-day-wait requirement; reversed by the business owner as impractical, since a Persian business name also made the original per-business slug confirmation tedious to retype exactly.) The only safety net left is the owner-only `business.delete` capability plus typing a fixed confirmation phrase (`delete-me`, `DESTRUCTIVE_CONFIRMATION_PHRASE` in `src/lib/platform-admin.ts`) — the same phrase factory-reset (`business.reset`) uses.
 3. **Differentiated platform roles** — yes: `support` / `engineer` / `owner`, gated by capabilities (`src/lib/platform-admin.ts`). Support is read + read-only impersonation; engineer adds feature writes, suspend/reactivate and impersonation revoke; owner adds full impersonation, provision/archive/delete and admin management.
 4. **Raw SQL / data repair** — out. The console exposes only modelled operations; there is no raw-SQL surface.
 
@@ -49,7 +49,7 @@ confuse realms) — `src/app/platform/`:
 - `login/page.tsx` — platform login
 - `layout.tsx` — console shell, capability-filtered nav, bootstraps from `/api/platform/auth/me`
 - `page.tsx` — businesses list + inline provisioning form
-- `businesses/[id]/page.tsx` — lifecycle (suspend/reactivate/archive/hard-delete), plan, usage, feature overrides, impersonation
+- `businesses/[id]/page.tsx` — lifecycle (suspend/reactivate/archive), immediate reset/hard-delete (each gated on the fixed `delete-me` confirmation phrase), plan, usage, feature overrides, impersonation
 - `audit/page.tsx` — `platform_audit_log` view
 - `system/page.tsx` — migration status, RLS effectiveness, pool health, per-business backups
 - `admins/page.tsx` — platform admin roster (owner-only)

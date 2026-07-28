@@ -43,16 +43,17 @@ export function errorMessage(code: string | undefined): string {
     invalid_status: "وضعیت نامعتبر است.",
     not_found: "پیدا نشد.",
     nothing_to_change: "تغییری برای ذخیره وجود ندارد.",
-    delete_not_eligible: "این کسب‌وکار هنوز در بازهٔ مهلت حذف است و قابل حذف قطعی نیست.",
     business_archived: "کسب‌وکار بایگانی‌شده قابل ورود نیست.",
     business_not_found: "کسب‌وکار پیدا نشد.",
     no_owner: "این کسب‌وکار مالک فعالی برای ورود ندارد.",
     impersonation_read_only: "این نشست فقط‌خواندنی است و امکان تغییر ندارد.",
     invalid_plan: "این پلن در فهرست پلن‌ها وجود ندارد.",
     invalid_timezone: "منطقهٔ زمانی معتبر نیست.",
-    reset_confirmation_required: "برای ریست، شناسهٔ کسب‌وکار را دقیق وارد کنید.",
+    reset_confirmation_required: "برای ریست، عبارت تأیید را دقیق وارد کنید.",
     reset_not_possible: "ریست ممکن نیست؛ این کسب‌وکار مالک فعال و قابل ورود ندارد.",
     reset_failed: "ریست انجام نشد و هیچ داده‌ای تغییر نکرد. دوباره تلاش کنید.",
+    delete_confirmation_required: "برای حذف، عبارت تأیید را دقیق وارد کنید.",
+    delete_failed: "حذف انجام نشد و هیچ داده‌ای تغییر نکرد. دوباره تلاش کنید.",
   };
   return map[code ?? ""] ?? "خطای غیرمنتظره. دوباره تلاش کنید.";
 }

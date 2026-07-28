@@ -9,13 +9,13 @@
  * operator is not a member of.
  *
  * DB-touching, so no direct unit test per repo convention; the pure decisions
- * they lean on (capability presets, grace-window/impersonation clamping) live
- * in `platform-admin.ts` and are tested there, and the guard/isolation
- * behaviour is exercised by the platform integration test.
+ * they lean on (capability presets, impersonation clamping) live in
+ * `platform-admin.ts` and are tested there, and the guard/isolation behaviour
+ * is exercised by the platform integration test.
  */
 import { getPool, query, withoutTenantScope } from "./db";
 import type { PoolClient } from "pg";
-import { clampImpersonationMinutes, isDeleteEligible } from "./platform-admin";
+import { clampImpersonationMinutes } from "./platform-admin";
 
 // ---------------------------------------------------------------------------
 // Business lifecycle
@@ -35,7 +35,6 @@ export interface BusinessSummary {
   archivedAt: string | null;
   locationCount: number;
   memberCount: number;
-  deleteEligible: boolean;
 }
 
 interface BusinessRow extends Record<string, unknown> {
@@ -65,7 +64,6 @@ function toSummary(row: BusinessRow): BusinessSummary {
     archivedAt: row.archived_at,
     locationCount: Number(row.location_count),
     memberCount: Number(row.member_count),
-    deleteEligible: row.status === "archived" && isDeleteEligible(row.archived_at),
   };
 }
 
@@ -381,40 +379,34 @@ export async function resetBusiness(businessId: string): Promise<void> {
   });
 }
 
-/** Raised when a hard-delete is attempted before the grace window elapses. */
-export class DeleteNotEligibleError extends Error {
+/** Raised when the target business no longer exists (already deleted, or a bad id). */
+export class BusinessNotFoundError extends Error {
   constructor() {
-    super("delete_not_eligible");
+    super("not_found");
   }
 }
 
 /**
- * Hard-delete an archived business, past its grace window.
+ * Hard-delete a business, immediately — no archive step, no grace window.
+ * The caller must hold `business.delete` (owner-only) and the route requires
+ * a fixed confirmation phrase; that pairing is the only safety net left once
+ * this is immediate, so both are enforced before this is ever called.
  *
  * Normal tenant records cascade from `businesses(id)`; restrictive
  * accounting/inventory descendants are cleared in the same transaction first.
  * `platform_audit_log.business_id` is `ON DELETE SET NULL`, so the *record
  * that it happened* survives the business it happened to — which is the point.
- *
- * Guarded twice: the caller must hold `business.delete`, and the business must
- * be archived past `deleteGraceDays()`. Never immediate (open question 2).
  */
 export async function hardDeleteBusiness(businessId: string): Promise<void> {
   await withoutTenantScope("platform", async () => {
     const client = await getPool().connect();
     try {
       await client.query("BEGIN");
-      const { rows } = await client.query<{ status: BusinessStatus; archived_at: string | null }>(
-        `SELECT status::text AS status, archived_at
-           FROM businesses
-          WHERE id = $1
-          FOR UPDATE`,
+      const { rows } = await client.query<{ id: string }>(
+        `SELECT id FROM businesses WHERE id = $1 FOR UPDATE`,
         [businessId],
       );
-      const business = rows[0];
-      if (!business || business.status !== "archived" || !isDeleteEligible(business.archived_at)) {
-        throw new DeleteNotEligibleError();
-      }
+      if (!rows[0]) throw new BusinessNotFoundError();
 
       await clearBusinessDeleteBlockers(client, businessId);
       await client.query(`DELETE FROM businesses WHERE id = $1`, [businessId]);

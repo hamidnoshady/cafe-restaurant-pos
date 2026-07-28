@@ -38,7 +38,6 @@ interface Business {
   archivedAt: string | null;
   locationCount: number;
   memberCount: number;
-  deleteEligible: boolean;
 }
 
 interface Feature {
@@ -130,19 +129,6 @@ export default function BusinessDetailPage() {
     }
   }
 
-  async function hardDelete() {
-    if (!confirm(`حذف قطعی «${business?.name}»؟ این عمل بازگشت‌ناپذیر است.`)) return;
-    setError(null);
-    const { ok, data } = await api<{ error?: string }>(`/api/platform/businesses/${id}`, {
-      method: "DELETE",
-    });
-    if (ok) {
-      window.location.href = "/platform";
-    } else {
-      setError(errorMessage(data.error));
-    }
-  }
-
   if (!business) {
     return (
       <div className="mx-auto max-w-4xl">
@@ -195,17 +181,7 @@ export default function BusinessDetailPage() {
           {business.status === "archived" && can("business.suspend") ? (
             <Button onClick={() => changeStatus("active", "فعال")}>بازگردانی از بایگانی</Button>
           ) : null}
-          {business.status === "archived" && can("business.delete") ? (
-            <Button variant="danger" onClick={hardDelete} disabled={!business.deleteEligible}>
-              حذف قطعی
-            </Button>
-          ) : null}
         </div>
-        {business.status === "archived" && !business.deleteEligible ? (
-          <p className="mt-2 text-xs text-white/40">
-            این کسب‌وکار هنوز در بازهٔ مهلت حذف است و قابل حذف قطعی نیست.
-          </p>
-        ) : null}
       </Card>
 
       <BusinessDetailsPanel business={business} onChanged={loadBusiness} />
@@ -221,6 +197,7 @@ export default function BusinessDetailPage() {
           void loadBusiness();
         }}
       />
+      <RemovePanel business={business} />
     </div>
   );
 }
@@ -308,6 +285,15 @@ function BusinessDetailsPanel({
   );
 }
 
+/**
+ * Both reset and remove are immediate and irreversible with no other safety
+ * net (no archive step, no grace window), so both are confirmed by typing
+ * this same fixed phrase rather than the business's own (often Persian, so
+ * tedious to retype exactly) slug. Must match `DESTRUCTIVE_CONFIRMATION_PHRASE`
+ * in src/lib/platform-admin.ts, which the server actually enforces.
+ */
+const CONFIRMATION_PHRASE = "delete-me";
+
 function ResetPanel({ business, onChanged }: { business: Business; onChanged: () => void }) {
   const can = useCan();
   const [confirmation, setConfirmation] = useState("");
@@ -350,23 +336,85 @@ function ResetPanel({ business, onChanged }: { business: Business; onChanged: ()
         </p>
       </div>
       <div className="mt-4">
-        <Field label={`برای تأیید، شناسهٔ زیر را دقیق وارد کنید: ${business.slug}`}>
+        <Field label={`برای تأیید، عبارت زیر را دقیق وارد کنید: ${CONFIRMATION_PHRASE}`}>
           <input
             dir="ltr"
             value={confirmation}
             onChange={(e) => setConfirmation(e.target.value)}
             className={inputClass}
-            placeholder={business.slug}
+            placeholder={CONFIRMATION_PHRASE}
             autoComplete="off"
           />
         </Field>
         <Button
           variant="danger"
           onClick={reset}
-          disabled={busy || confirmation.trim() !== business.slug}
+          disabled={busy || confirmation.trim() !== CONFIRMATION_PHRASE}
           className="w-full sm:w-auto"
         >
           {busy ? "در حال ریست…" : "حذف داده‌ها و شروع مجدد"}
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
+function RemovePanel({ business }: { business: Business }) {
+  const can = useCan();
+  const [confirmation, setConfirmation] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  if (!can("business.delete")) return null;
+
+  async function remove() {
+    if (
+      !confirm(`«${business.name}» برای همیشه حذف شود؟ این عمل قطعی و بازگشت‌ناپذیر است.`)
+    ) {
+      return;
+    }
+
+    setBusy(true);
+    setError(null);
+    const { ok, data } = await api<{ error?: string }>(`/api/platform/businesses/${business.id}`, {
+      method: "DELETE",
+      body: JSON.stringify({ confirmation }),
+    });
+    if (ok) {
+      window.location.href = "/platform";
+      return;
+    }
+    setBusy(false);
+    setError(errorMessage(data.error));
+  }
+
+  return (
+    <Card title="حذف کسب‌وکار">
+      <ErrorBox>{error}</ErrorBox>
+      <div className="rounded-lg border border-red-500/25 bg-red-500/8 p-3 text-sm text-red-100">
+        <p className="font-semibold">این کسب‌وکار برای همیشه حذف می‌شود.</p>
+        <p className="mt-1 text-red-100/70">
+          فوری و قطعی است — بدون بایگانی و بدون مهلت. همهٔ داده‌ها، کاربران، شعبه‌ها و اطلاعات کسب‌وکار از بین می‌روند.
+        </p>
+      </div>
+      <div className="mt-4">
+        <Field label={`برای تأیید، عبارت زیر را دقیق وارد کنید: ${CONFIRMATION_PHRASE}`}>
+          <input
+            dir="ltr"
+            value={confirmation}
+            onChange={(e) => setConfirmation(e.target.value)}
+            className={inputClass}
+            placeholder={CONFIRMATION_PHRASE}
+            autoComplete="off"
+          />
+        </Field>
+        <Button
+          variant="danger"
+          onClick={remove}
+          disabled={busy || confirmation.trim() !== CONFIRMATION_PHRASE}
+          className="w-full sm:w-auto"
+        >
+          {busy ? "در حال حذف…" : "حذف قطعی کسب‌وکار"}
         </Button>
       </div>
     </Card>

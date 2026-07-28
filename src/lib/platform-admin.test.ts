@@ -2,16 +2,14 @@
  * Phase 15 — the pure decisions behind the super-admin console.
  *
  * These are the parts a reviewer most wants pinned: which role may do what,
- * how long an impersonation window may last, and when an archived business
- * becomes eligible for hard-delete. Everything DB-touching leans on these and
- * is left to the integration test.
+ * and how long an impersonation window may last. Everything DB-touching leans
+ * on these and is left to the integration test.
  */
 import { describe, expect, it } from "vitest";
 import {
   platformCan,
   CAPABILITIES_FOR,
   clampImpersonationMinutes,
-  isDeleteEligible,
   MAX_IMPERSONATION_MINUTES,
   DEFAULT_IMPERSONATION_MINUTES,
   PLATFORM_ADMIN_ROLES,
@@ -92,34 +90,5 @@ describe("clampImpersonationMinutes — short, bounded windows", () => {
   it("caps at the maximum", () => {
     expect(clampImpersonationMinutes(1000)).toBe(MAX_IMPERSONATION_MINUTES);
     expect(clampImpersonationMinutes(MAX_IMPERSONATION_MINUTES + 1)).toBe(MAX_IMPERSONATION_MINUTES);
-  });
-});
-
-describe("isDeleteEligible — the hard-delete grace window", () => {
-  const grace = 30;
-  const now = new Date("2025-02-01T00:00:00Z");
-
-  it("a business that isn't archived is never eligible", () => {
-    expect(isDeleteEligible(null, now, grace)).toBe(false);
-  });
-
-  it("within the grace window it is not yet eligible", () => {
-    const archived = new Date("2025-01-20T00:00:00Z"); // 12 days ago
-    expect(isDeleteEligible(archived, now, grace)).toBe(false);
-  });
-
-  it("exactly at the boundary it becomes eligible", () => {
-    const archived = new Date("2025-01-02T00:00:00Z"); // exactly 30 days ago
-    expect(isDeleteEligible(archived, now, grace)).toBe(true);
-  });
-
-  it("well past the window it is eligible", () => {
-    const archived = new Date("2024-12-01T00:00:00Z");
-    expect(isDeleteEligible(archived, now, grace)).toBe(true);
-  });
-
-  it("accepts an ISO string and rejects an unparseable one", () => {
-    expect(isDeleteEligible("2024-12-01T00:00:00Z", now, grace)).toBe(true);
-    expect(isDeleteEligible("not-a-date", now, grace)).toBe(false);
   });
 });
