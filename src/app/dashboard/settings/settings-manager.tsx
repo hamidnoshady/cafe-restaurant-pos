@@ -4,19 +4,22 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import type { SettingsTab, SettingsTabKey } from "@/lib/settings-tabs";
 import { isSettingsTabKey } from "@/lib/settings-tabs";
+import { BackupManager } from "../backup/backup-manager";
+import { LocationsManager } from "../locations/locations-manager";
+import { TeamManager } from "../team/team-manager";
 import { AccountsSettings } from "./accounts-settings";
 import { BusinessSettings } from "./business-settings";
 import { MenuSettings } from "./menu-settings";
 import { PrinterSettings } from "./printer-settings";
 import { TaxSettings } from "./tax-settings";
-import { TeamManager } from "../team/team-manager";
 
 interface SettingsManagerProps {
   tabs: SettingsTab[];
   currentUserId: string;
+  isOwner: boolean;
 }
 
-export function SettingsManager({ tabs, currentUserId }: SettingsManagerProps) {
+export function SettingsManager({ tabs, currentUserId, isOwner }: SettingsManagerProps) {
   const searchParams = useSearchParams();
   const requestedTab = searchParams.get("tab");
   const firstTab = tabs[0]?.key;
@@ -58,6 +61,8 @@ export function SettingsManager({ tabs, currentUserId }: SettingsManagerProps) {
       {activeTab === "team" ? <TeamManager currentUserId={currentUserId} /> : null}
       {activeTab === "menu" ? <MenuSettings /> : null}
       {activeTab === "printers" ? <PrinterSettings /> : null}
+      {activeTab === "branch-sync" ? <LocationsManager /> : null}
+      {activeTab === "backup" ? <BackupManager isOwner={isOwner} /> : null}
     </div>
   );
 }
