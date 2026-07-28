@@ -120,15 +120,46 @@ async function seedBusiness(name: string, slug: string): Promise<SeededBusiness>
     `INSERT INTO menu_categories (location_id, name) VALUES ($1, 'Drinks') RETURNING id`,
     [locationId],
   );
-  await db.query(
+  const menuItem = await db.query<{ id: string }>(
     `INSERT INTO menu_items (location_id, category_id, name, price)
-     VALUES ($1, $2, 'Latte', 100000)`,
+     VALUES ($1, $2, 'Latte', 100000)
+     RETURNING id`,
     [locationId, category.rows[0].id],
   );
-  await db.query(
-    `INSERT INTO orders (location_id, order_number, type, status, total)
-     VALUES ($1, 1, 'takeaway', 'completed', 100000)`,
+  const inventoryItem = await db.query<{ id: string }>(
+    `INSERT INTO inventory_items (location_id, name, unit)
+     VALUES ($1, 'Coffee beans', 'g')
+     RETURNING id`,
     [locationId],
+  );
+  const order = await db.query<{ id: string }>(
+    `INSERT INTO orders (location_id, order_number, type, status, total)
+     VALUES ($1, 1, 'takeaway', 'open', 100000)
+     RETURNING id`,
+    [locationId],
+  );
+  const orderItem = await db.query<{ id: string }>(
+    `INSERT INTO order_items (location_id, order_id, menu_item_id, name_snapshot, unit_price, quantity)
+     VALUES ($1, $2, $3, 'Latte', 100000, 1)
+     RETURNING id`,
+    [locationId, order.rows[0].id, menuItem.rows[0].id],
+  );
+  await db.query(
+    `INSERT INTO order_item_inventory_snapshots (order_item_id, inventory_item_id, required_quantity)
+     VALUES ($1, $2, 18)`,
+    [orderItem.rows[0].id, inventoryItem.rows[0].id],
+  );
+  await db.query(`UPDATE orders SET status = 'completed' WHERE id = $1`, [order.rows[0].id]);
+  await db.query(
+    `INSERT INTO inventory_events (business_id, location_id, event_type, source_type, posting_status)
+     VALUES ($1, $2, 'opening', 'factory_reset_test', 'posted')`,
+    [businessId, locationId],
+  );
+  await db.query(
+    `INSERT INTO inventory_cutovers
+       (business_id, location_id, effective_at, approved_by, backup_confirmation, evidence_sha256, manifest_sha256, status)
+     VALUES ($1, $2, now(), $3, 'factory-reset', repeat('a', 64), repeat('b', 64), 'applied')`,
+    [businessId, locationId, ownerId],
   );
   await db.query(
     `INSERT INTO accounts (business_id, code, name, type)
@@ -155,7 +186,7 @@ async function seedBusiness(name: string, slug: string): Promise<SeededBusiness>
 }
 
 beforeEach(async () => {
-  await db.query("DELETE FROM businesses");
+  await db.query("TRUNCATE TABLE businesses CASCADE");
   await db.query("DELETE FROM platform_users");
 });
 
@@ -267,6 +298,30 @@ describe("resetBusiness", () => {
     expect(state.progress.completedAt).toBeNull();
     expect(state.counts).toMatchObject({ accounts: 0, users: 1, categories: 0, items: 0 });
 
+    const { rows: resetBlockers } = await db.query<{
+      inventory_events: string;
+      inventory_cutovers: string;
+      inventory_snapshots: string;
+    }>(
+      `SELECT
+         (SELECT count(*) FROM inventory_events WHERE business_id = $1)::text AS inventory_events,
+         (SELECT count(*) FROM inventory_cutovers WHERE business_id = $1)::text AS inventory_cutovers,
+         (
+           SELECT count(*)
+             FROM order_item_inventory_snapshots snapshot
+             JOIN order_items item ON item.id = snapshot.order_item_id
+             JOIN orders order_row ON order_row.id = item.order_id
+             JOIN locations location_row ON location_row.id = order_row.location_id
+            WHERE location_row.business_id = $1
+         )::text AS inventory_snapshots`,
+      [target.id],
+    );
+    expect(resetBlockers[0]).toEqual({
+      inventory_events: "0",
+      inventory_cutovers: "0",
+      inventory_snapshots: "0",
+    });
+
     const neighbourData = await db.query<{ menu_items: string; orders: string; users: string }>(
       `SELECT
          (SELECT count(*) FROM menu_items WHERE location_id = $1)::text AS menu_items,
@@ -275,5 +330,29 @@ describe("resetBusiness", () => {
       [neighbour.locationId, neighbour.id],
     );
     expect(neighbourData.rows[0]).toEqual({ menu_items: "1", orders: "1", users: "2" });
+
+    const { rows: neighbourBlockers } = await db.query<{
+      inventory_events: string;
+      inventory_cutovers: string;
+      inventory_snapshots: string;
+    }>(
+      `SELECT
+         (SELECT count(*) FROM inventory_events WHERE business_id = $1)::text AS inventory_events,
+         (SELECT count(*) FROM inventory_cutovers WHERE business_id = $1)::text AS inventory_cutovers,
+         (
+           SELECT count(*)
+             FROM order_item_inventory_snapshots snapshot
+             JOIN order_items item ON item.id = snapshot.order_item_id
+             JOIN orders order_row ON order_row.id = item.order_id
+             JOIN locations location_row ON location_row.id = order_row.location_id
+            WHERE location_row.business_id = $1
+         )::text AS inventory_snapshots`,
+      [neighbour.id],
+    );
+    expect(neighbourBlockers[0]).toEqual({
+      inventory_events: "1",
+      inventory_cutovers: "1",
+      inventory_snapshots: "1",
+    });
   });
 });
