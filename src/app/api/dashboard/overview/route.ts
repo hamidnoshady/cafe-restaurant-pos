@@ -5,24 +5,24 @@ import { resolveActiveLocation } from "@/lib/setup-state";
 
 type KitchenStatus = "new" | "preparing" | "ready";
 
-interface LocationContextRow {
+interface LocationContextRow extends Record<string, unknown> {
   business_name: string;
   location_name: string;
   timezone: string;
 }
 
-interface SalesRow {
+interface SalesRow extends Record<string, unknown> {
   sales: string;
   order_count: string;
   average_order_value: string;
 }
 
-interface HourlyRow {
+interface HourlyRow extends Record<string, unknown> {
   hour: number;
   revenue: string;
 }
 
-interface ActiveOrderRow {
+interface ActiveOrderRow extends Record<string, unknown> {
   id: string;
   order_number: string;
   type: "dine_in" | "takeaway" | "delivery";
