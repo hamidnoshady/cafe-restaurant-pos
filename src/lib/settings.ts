@@ -27,6 +27,8 @@ export const SETTING_KEYS = {
   backupConfig: "backup.config",
   /** AiConfig (src/lib/ai.ts) — provider/model/baseUrl/apiKey for the AI assistant */
   aiConfig: "ai.config",
+  /** { defaultMarginPercent: number | null } — cost-plus pricing default, overridable per menu item */
+  pricing: "pricing.config",
 } as const;
 
 export async function getSetting<T>(businessId: string, key: string): Promise<T | null> {

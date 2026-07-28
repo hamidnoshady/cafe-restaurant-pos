@@ -31,6 +31,7 @@ export function errorMessage(code: string | undefined): string {
     missing_fields: "فیلدهای الزامی را پر کنید.",
     no_location: "شعبه‌ای ثبت نشده است.",
     invalid_rate: "نرخ مالیات باید بین ۰ و ۱۰۰ باشد.",
+    invalid_margin: "درصد حاشیه سود باید بین ۰ و ۱۰۰ باشد.",
     invalid_category_rate: "نرخ یکی از دسته‌ها معتبر نیست.",
     invalid_accounts: "ساختار سرفصل حساب‌ها معتبر نیست.",
     accounts_in_use: "به‌دلیل وجود اسناد حسابداری، جایگزین‌کردن سرفصل‌ها ممکن نیست.",

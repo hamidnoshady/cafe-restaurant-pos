@@ -7,6 +7,7 @@ import { isSettingsTabKey } from "@/lib/settings-tabs";
 import { AccountsSettings } from "./accounts-settings";
 import { BusinessSettings } from "./business-settings";
 import { MenuSettings } from "./menu-settings";
+import { PricingSettings } from "./pricing-settings";
 import { PrinterSettings } from "./printer-settings";
 import { TaxSettings } from "./tax-settings";
 import { TeamManager } from "../team/team-manager";
@@ -54,6 +55,7 @@ export function SettingsManager({ tabs, currentUserId }: SettingsManagerProps) {
 
       {activeTab === "business" ? <BusinessSettings /> : null}
       {activeTab === "tax" ? <TaxSettings /> : null}
+      {activeTab === "pricing" ? <PricingSettings /> : null}
       {activeTab === "accounts" ? <AccountsSettings /> : null}
       {activeTab === "team" ? <TeamManager currentUserId={currentUserId} /> : null}
       {activeTab === "menu" ? <MenuSettings /> : null}

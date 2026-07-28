@@ -3,6 +3,7 @@ import { PERMISSIONS, type Permission } from "./permissions";
 export const SETTINGS_TAB_KEYS = [
   "business",
   "tax",
+  "pricing",
   "accounts",
   "team",
   "menu",
@@ -29,6 +30,12 @@ export const SETTINGS_TABS: SettingsTab[] = [
     key: "tax",
     label: "مالیات",
     description: "نرخ پیش‌فرض و نرخ هر دسته از منو",
+    requiredAnyPermission: [PERMISSIONS.settingsManage],
+  },
+  {
+    key: "pricing",
+    label: "قیمت‌گذاری",
+    description: "هدف حاشیه سود پیش‌فرض برای پیشنهاد قیمت آیتم‌های منو",
     requiredAnyPermission: [PERMISSIONS.settingsManage],
   },
   {

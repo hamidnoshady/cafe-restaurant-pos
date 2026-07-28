@@ -11,6 +11,7 @@ describe("visibleSettingsTabs", () => {
     expect(visibleSettingsTabs([PERMISSIONS.settingsManage]).map((tab) => tab.key)).toEqual([
       "business",
       "tax",
+      "pricing",
       "menu",
       "printers",
     ]);

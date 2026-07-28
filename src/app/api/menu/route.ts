@@ -25,7 +25,7 @@ export const GET = withTenantScope(async () => {
         [location.id],
       ),
       query(
-        `SELECT id, category_id, name, description, sku, price, image_url, sort_order, is_active
+        `SELECT id, category_id, name, description, sku, price, image_url, sort_order, is_active, target_margin_percent
            FROM menu_items WHERE location_id = $1 ORDER BY sort_order, name`,
         [location.id],
       ),
