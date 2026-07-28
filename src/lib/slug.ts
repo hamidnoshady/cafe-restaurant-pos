@@ -19,6 +19,25 @@ export const SLUG_FALLBACK = "biz";
 export const MAX_SLUG_LENGTH = 48;
 
 /**
+ * Top-level segments the app itself routes on. A business slug prefixes the
+ * dashboard URL (`/{slug}/dashboard/...`, see src/middleware.ts), so a slug
+ * that collided with one of these would be ambiguous with a real route.
+ * Treated as already "taken" in `uniqueSlug` so a business named e.g. "API"
+ * gets "api-2" instead of colliding with `/api`.
+ */
+export const RESERVED_SLUGS = [
+  "dashboard",
+  "api",
+  "login",
+  "welcome",
+  "invite",
+  "platform",
+  "setup",
+  "_next",
+  "favicon.ico",
+];
+
+/**
  * A slug candidate for a business name.
  *
  * Returns "" when the name yields nothing usable, so the caller can decide
@@ -50,7 +69,7 @@ export function slugifyBusinessName(name: string): string {
  * case-insensitively to match the `citext` column it lands in.
  */
 export function uniqueSlug(base: string, taken: Iterable<string>): string {
-  const used = new Set([...taken].map((s) => s.toLowerCase()));
+  const used = new Set([...taken, ...RESERVED_SLUGS].map((s) => s.toLowerCase()));
   const stem = (base || SLUG_FALLBACK).slice(0, MAX_SLUG_LENGTH - 4).replace(/-$/, "");
 
   if (!used.has(stem)) return stem;

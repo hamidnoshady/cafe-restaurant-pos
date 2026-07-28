@@ -86,9 +86,21 @@ interface SidebarProps {
   fullName: string;
 }
 
-function isActive(pathname: string, href: string): boolean {
-  if (href === "/dashboard") return pathname === "/dashboard";
-  return pathname === href || pathname.startsWith(`${href}/`);
+/**
+ * The browser URL is `/{slug}/dashboard/**` (see src/middleware.ts), but every
+ * `NavItem.href` is the canonical, unprefixed `/dashboard/**` path — this
+ * splits the two apart so lookups against `NAV_ICONS`/`isActive` keep working
+ * unchanged, and hands back the prefix to rebuild real hrefs with it (so a nav
+ * click lands on the slugged URL directly, without a middleware redirect hop).
+ */
+function splitDashboardPrefix(pathname: string): { prefix: string; path: string } {
+  const match = pathname.match(/^\/([^/]+)(\/dashboard(?:\/.*)?)$/);
+  return match ? { prefix: `/${match[1]}`, path: match[2] } : { prefix: "", path: pathname };
+}
+
+function isActive(path: string, href: string): boolean {
+  if (href === "/dashboard") return path === "/dashboard";
+  return path === href || path.startsWith(`${href}/`);
 }
 
 function NavLinks({
@@ -100,6 +112,7 @@ function NavLinks({
   pathname: string;
   onNavigate: () => void;
 }) {
+  const { prefix, path } = splitDashboardPrefix(pathname);
   return (
     <SidebarContent>
       <nav aria-label="ناوبری داشبورد">
@@ -107,12 +120,12 @@ function NavLinks({
           {navItems.map((item) => {
             if (!item.href) return null;
             const Icon = NAV_ICONS[item.href] ?? CircleIcon;
-            const active = isActive(pathname, item.href);
+            const active = isActive(path, item.href);
             return (
               <SidebarMenuItem key={item.label}>
                 <SidebarMenuButton asChild isActive={active} tooltip={item.label}>
                   <Link
-                    href={item.href}
+                    href={`${prefix}${item.href}`}
                     onClick={onNavigate}
                     aria-current={active ? "page" : undefined}
                     aria-label={item.label}

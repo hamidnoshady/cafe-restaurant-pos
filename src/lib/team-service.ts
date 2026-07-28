@@ -760,6 +760,7 @@ export async function previewInvitation(token: string): Promise<InvitationPrevie
 
 export interface AcceptInvitationResult {
   businessId: string;
+  businessSlug: string;
   userId: string;
   platformUserId: string;
   role: Role;
@@ -789,6 +790,7 @@ export async function acceptInvitation(
     const { rows } = await client.query<{
       id: string;
       business_id: string;
+      business_slug: string;
       email: string;
       role: Role;
       full_name: string;
@@ -798,9 +800,12 @@ export async function acceptInvitation(
       accepted_at: Date | null;
       revoked_at: Date | null;
     }>(
-      `SELECT id, business_id, email::text AS email, role, full_name, permissions,
-              location_ids, expires_at, accepted_at, revoked_at
-         FROM invitations WHERE token_hash = $1 FOR UPDATE`,
+      `SELECT i.id, i.business_id, b.slug::text AS business_slug, i.email::text AS email,
+              i.role, i.full_name, i.permissions, i.location_ids, i.expires_at,
+              i.accepted_at, i.revoked_at
+         FROM invitations i
+         JOIN businesses b ON b.id = i.business_id
+        WHERE i.token_hash = $1 FOR UPDATE OF i`,
       [hashInvitationToken(token)],
     );
 
@@ -908,6 +913,7 @@ export async function acceptInvitation(
     await client.query("COMMIT");
     return {
       businessId: invitation.business_id,
+      businessSlug: invitation.business_slug,
       userId,
       platformUserId,
       role: invitation.role,

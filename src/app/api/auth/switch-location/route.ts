@@ -57,6 +57,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
     sub: session.sub,
     role: session.role,
     businessId: session.businessId,
+    businessSlug: session.businessSlug,
     locationId: session.locationId,
     activeLocationId: body.locationId,
     fullName: session.fullName,

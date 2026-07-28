@@ -21,6 +21,18 @@ describe("signSession / verifySession", () => {
     expect(await verifySession("not-a-real-token")).toBeNull();
   });
 
+  it("carries the business slug when the token was minted with one", async () => {
+    const token = await signSession({ ...BASE, businessSlug: "alpha-cafe" });
+    const verified = await verifySession(token);
+    expect(verified?.businessSlug).toBe("alpha-cafe");
+  });
+
+  it("verifies a token minted before businessSlug existed, with the field simply absent", async () => {
+    const token = await signSession(BASE);
+    const verified = await verifySession(token);
+    expect(verified?.businessSlug).toBeUndefined();
+  });
+
   it("rejects a platform-admin session token — the two realms share a secret but not a claim", async () => {
     // Phase 17 security review: before the `realm` claim existed here,
     // a platform token verified fine against verifySession since nothing

@@ -178,6 +178,44 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
+  // ---- Dashboard URL: business slug prefix ---------------------------------
+  // The browser-visible dashboard URL carries the business's slug — its
+  // stable, human-readable "english name" (`/{slug}/dashboard/...`) — while
+  // every page still lives at `/dashboard/**`, unprefixed. This is a pure
+  // presentation concern handled entirely here, so nothing else in the app
+  // (page files, `<Link>`s, redirects) needs to know the segment exists:
+  //
+  //   - `/{slug}/dashboard/**` with the caller's own slug is rewritten to
+  //     `/dashboard/**`, so the existing route files serve it unchanged;
+  //   - any other slug there (stale bookmark, or the business was switched)
+  //     redirects to the session's actual slug;
+  //   - the bare `/dashboard/**` (every existing internal link) redirects to
+  //     the slugged form, so the address bar always ends up correct.
+  //
+  // `session.businessSlug` is minted onto the token at login/switch/impersonate
+  // time (see auth-edge.ts) specifically so this runs here, in the Edge
+  // runtime, without a database lookup. A token from before that field existed
+  // has none — the dashboard is simply served unprefixed until the holder's
+  // next login or business switch re-mints one.
+  if (!pathname.startsWith("/api/") && session.businessSlug) {
+    const prefixed = pathname.match(/^\/([^/]+)\/dashboard(\/.*)?$/);
+    if (prefixed) {
+      const [, slug, rest] = prefixed;
+      const url = request.nextUrl.clone();
+      if (slug !== session.businessSlug) {
+        url.pathname = `/${session.businessSlug}/dashboard${rest ?? ""}`;
+        return NextResponse.redirect(url);
+      }
+      url.pathname = `/dashboard${rest ?? ""}`;
+      return NextResponse.rewrite(url);
+    }
+    if (pathname === "/dashboard" || pathname.startsWith("/dashboard/")) {
+      const url = request.nextUrl.clone();
+      url.pathname = `/${session.businessSlug}${pathname}`;
+      return NextResponse.redirect(url);
+    }
+  }
+
   // Phase 17 — every authenticated tenant API request counts against its own
   // business's bucket, so one business's traffic (or a runaway offline-sync
   // client belonging to it) can't degrade another's.
