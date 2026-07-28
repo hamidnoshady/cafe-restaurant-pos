@@ -49,7 +49,7 @@ export default function SystemPage() {
 
   if (!status) {
     return (
-      <div className="mx-auto max-w-4xl">
+      <div className="mx-auto w-full max-w-4xl">
         <h1 className="mb-6 text-xl font-bold">سیستم</h1>
         <ErrorBox>{error}</ErrorBox>
         {!error ? <p className="text-sm text-white/50">در حال بارگذاری…</p> : null}
@@ -58,10 +58,10 @@ export default function SystemPage() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6">
+    <div className="mx-auto w-full max-w-4xl space-y-4 sm:space-y-6">
       <h1 className="text-xl font-bold">سیستم</h1>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <Stat label="کسب‌وکارها" value={formatPersianNumber(status.counts.businesses)} />
         <Stat label="هویت‌های سکو" value={formatPersianNumber(status.counts.platformUsers)} />
         <Stat label="مدیران سکو" value={formatPersianNumber(status.counts.platformAdmins)} />
@@ -97,9 +97,9 @@ export default function SystemPage() {
             {status.migrations.map((m) => (
               <li
                 key={m.filename}
-                className="flex items-center justify-between border-b border-white/5 py-1.5 last:border-0"
+                className="flex flex-col gap-1 border-b border-white/5 py-2 last:border-0 sm:flex-row sm:items-center sm:justify-between"
               >
-                <span className="text-white/80" dir="ltr">
+                <span className="break-all text-white/80" dir="ltr">
                   {m.filename}
                 </span>
                 <span className="text-xs text-white/40">{fmtDate(m.appliedAt)}</span>
@@ -117,10 +117,10 @@ export default function SystemPage() {
             {status.backups.map((b) => (
               <li
                 key={b.businessId}
-                className="flex items-center justify-between border-b border-white/5 py-1.5 last:border-0"
+                className="flex flex-col gap-2 border-b border-white/5 py-2 last:border-0 sm:flex-row sm:items-center sm:justify-between"
               >
                 <span className="text-white/80">{b.businessName}</span>
-                <span className="flex items-center gap-3">
+                <span className="flex flex-wrap items-center gap-2 sm:gap-3">
                   <span
                     className={
                       b.status === "success"
@@ -154,7 +154,7 @@ function Stat({ label, value }: { label: string; value: string }) {
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between border-b border-white/5 pb-2">
+    <div className="flex flex-col gap-1 border-b border-white/5 pb-2 sm:flex-row sm:items-center sm:justify-between">
       <dt className="text-white/50">{label}</dt>
       <dd className="font-medium">{children}</dd>
     </div>
