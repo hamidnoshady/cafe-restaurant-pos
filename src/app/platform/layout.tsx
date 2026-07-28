@@ -131,29 +131,29 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
         </aside>
 
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="flex items-center justify-between gap-2 border-b border-white/10 px-4 py-3 md:hidden">
-            <p className="font-bold">کنسول سکو</p>
+          <header className="flex min-w-0 items-center justify-between gap-2 border-b border-white/10 px-3 py-3 sm:px-4 md:hidden">
+            <p className="min-w-0 truncate font-bold">کنسول سکو</p>
             <Button variant="ghost" onClick={logout}>
               خروج
             </Button>
           </header>
           {/* Mobile nav strip */}
-          <nav className="flex gap-1 overflow-x-auto border-b border-white/10 px-2 py-2 md:hidden">
+          <nav className="flex min-w-0 gap-1 overflow-x-auto border-b border-white/10 px-2 py-2 md:hidden">
             {NAV.filter((n) => !n.cap || caps.includes(n.cap)).map((n) => (
               <Link
                 key={n.href}
                 href={n.href}
                 className={
                   active(n)
-                    ? "whitespace-nowrap rounded-lg bg-sky-500/15 px-3 py-1.5 text-sm font-medium text-sky-300"
-                    : "whitespace-nowrap rounded-lg px-3 py-1.5 text-sm text-white/60"
+                    ? "shrink-0 whitespace-nowrap rounded-lg bg-sky-500/15 px-3 py-1.5 text-sm font-medium text-sky-300"
+                    : "shrink-0 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm text-white/60"
                 }
               >
                 {n.label}
               </Link>
             ))}
           </nav>
-          <main className="flex-1 overflow-y-auto p-4 md:p-8">{children}</main>
+          <main className="flex-1 overflow-y-auto p-3 sm:p-4 md:p-8">{children}</main>
         </div>
       </div>
     </CapabilityContext.Provider>
