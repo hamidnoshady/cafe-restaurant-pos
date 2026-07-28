@@ -26,24 +26,13 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { query, withTenant, withoutTenantScope } from "./db";
 import { getSetting, setSetting, SETTING_KEYS } from "./settings";
 import { applySyncEvent, type SyncEventInput, type SyncEventType } from "./sync-events";
+import type { ServerSyncConfig } from "./server-sync-config";
+
+export type { ServerSyncConfig } from "./server-sync-config";
 
 // ---------------------------------------------------------------------------
 // Config & state types
 // ---------------------------------------------------------------------------
-
-export interface ServerSyncConfig {
-  /** Full URL of the remote server, e.g. https://pos.eshobe.com */
-  remoteUrl: string;
-  /**
-   * Bearer token issued by the remote server for this local instance.
-   * Generate with: openssl rand -hex 32
-   * Store the same value in REMOTE_SYNC_TOKEN on the remote server.
-   */
-  token: string;
-  enabled: boolean;
-  /** How many events to push/pull per batch (default 100) */
-  batchSize?: number;
-}
 
 export interface ServerSyncState {
   /** sync_events.id of the last row we successfully pushed to remote */

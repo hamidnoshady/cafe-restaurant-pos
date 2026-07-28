@@ -29,7 +29,7 @@ describe("visibleSettingsTabs", () => {
         role: "owner",
         features: { backup: true, offline_mode: true },
       }).map((tab) => tab.key),
-    ).toEqual(["branch-sync", "backup"]);
+    ).toEqual(["branch-sync", "server-sync", "backup"]);
 
     expect(
       visibleSettingsTabs([], {

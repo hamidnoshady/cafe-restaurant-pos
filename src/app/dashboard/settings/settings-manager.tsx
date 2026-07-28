@@ -11,6 +11,7 @@ import { AccountsSettings } from "./accounts-settings";
 import { BusinessSettings } from "./business-settings";
 import { MenuSettings } from "./menu-settings";
 import { PrinterSettings } from "./printer-settings";
+import { ServerSyncSettings } from "./server-sync-settings";
 import { TaxSettings } from "./tax-settings";
 
 interface SettingsManagerProps {
@@ -62,6 +63,7 @@ export function SettingsManager({ tabs, currentUserId, isOwner }: SettingsManage
       {activeTab === "menu" ? <MenuSettings /> : null}
       {activeTab === "printers" ? <PrinterSettings /> : null}
       {activeTab === "branch-sync" ? <LocationsManager /> : null}
+      {activeTab === "server-sync" ? <ServerSyncSettings /> : null}
       {activeTab === "backup" ? <BackupManager isOwner={isOwner} /> : null}
     </div>
   );

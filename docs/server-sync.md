@@ -92,7 +92,7 @@ Redeploy the VPS stack so the new env var takes effect.
 ### Step 4 — Configure sync in the Owner dashboard
 
 1. Open `http://<laptop-lan-ip>:3000` and log in as Owner.
-2. Go to **Settings → Server Sync** (or call `PUT /api/server-sync/config`).
+2. Go to **Settings → همگام‌سازی با سرور راه دور** (or call `PUT /api/server-sync/config`).
 3. Set:
    - **Remote URL:** `https://pos.eshobe.com`
    - **Token:** the same token from Step 1
@@ -140,10 +140,12 @@ uses is valid for the laptop too — no self-signed cert needed.
 
 ## Monitoring sync status
 
-The Owner dashboard's **Settings → Server Sync** page shows:
+The Owner dashboard's **Settings → همگام‌سازی با سرور راه دور** page shows:
 - Last push/pull attempt and success timestamps
 - Last error (if any)
-- High-water marks (last synced event IDs)
+- Recent dead letters — pulled events that failed to apply (see
+  `server_sync_dead_letters`); the pull still advances past them so they
+  don't block later events, so this list is the only place they're visible
 
 You can also query the API directly:
 ```bash
