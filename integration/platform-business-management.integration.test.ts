@@ -382,12 +382,14 @@ describe("hardDeleteBusiness", () => {
     ]);
     expect(orphanUsers).toHaveLength(0);
 
-    // The platform identity survives — only the business's own membership row
-    // (and everything else scoped to the business) is gone.
+    // A hard delete removes *everything*, including the login: the owner's
+    // platform identity had no membership left anywhere, so it's purged too
+    // — otherwise the email would stay "already registered" forever and block
+    // recreating the business.
     const ownerIdentity = await db.query(`SELECT 1 FROM platform_users WHERE id = $1`, [
       target.platformUserId,
     ]);
-    expect(ownerIdentity.rowCount).toBe(1);
+    expect(ownerIdentity.rowCount).toBe(0);
 
     const neighbourData = await db.query<{ menu_items: string; orders: string }>(
       `SELECT
@@ -396,6 +398,29 @@ describe("hardDeleteBusiness", () => {
       [neighbour.locationId],
     );
     expect(neighbourData.rows[0]).toEqual({ menu_items: "1", orders: "1" });
+  });
+
+  it("keeps the platform identity when it still owns another business", async () => {
+    const target = await seedBusiness("Doomed Cafe 2", `doomed2-${randomUUID().slice(0, 8)}`);
+
+    // Same person also owns a second business — give its membership the
+    // first business's platform identity instead of a fresh one.
+    const other = await seedBusiness("Other Cafe", `other-${randomUUID().slice(0, 8)}`);
+    await db.query(`UPDATE users SET platform_user_id = $1 WHERE id = $2`, [
+      target.platformUserId,
+      other.ownerId,
+    ]);
+    await db.query(`DELETE FROM platform_users WHERE id = $1`, [other.platformUserId]);
+
+    await platformService.hardDeleteBusiness(target.id);
+
+    const identity = await db.query(`SELECT 1 FROM platform_users WHERE id = $1`, [
+      target.platformUserId,
+    ]);
+    expect(identity.rowCount).toBe(1);
+
+    const stillMember = await db.query(`SELECT 1 FROM users WHERE id = $1`, [other.ownerId]);
+    expect(stillMember.rowCount).toBe(1);
   });
 
   it("raises BusinessNotFoundError for a business that doesn't exist", async () => {
