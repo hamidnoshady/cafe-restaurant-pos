@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { formatQuantity } from "@/lib/digits";
 import { formatToman } from "@/lib/money";
 import { formatJalali } from "@/lib/jalali";
-import { api, inputClass, PrimaryButton } from "../ui";
+import { api, Field, inputClass, PrimaryButton } from "../ui";
 import type { InventoryItem, Runner } from "./inventory-manager";
 
 interface WasteEntry {
@@ -64,47 +64,56 @@ export function WasteSection({ items, busy, run }: { items: InventoryItem[]; bus
 
   return (
     <div className="space-y-6">
-      <section className="rounded-2xl bg-card p-5 shadow-sm">
+      <section className="min-w-0 rounded-2xl bg-card p-5 shadow-sm">
         <h2 className="mb-3 font-semibold">ثبت ضایعات</h2>
         <p className="mb-3 text-xs text-muted-foreground">
           ضایعات مستقل از فروش است و تنها موجودی را کاهش می‌دهد؛ در ارقام فروش اثری ندارد.
         </p>
-        <form onSubmit={submit} className="grid gap-2 sm:grid-cols-5">
-          <select className={inputClass} value={inventoryItemId} onChange={(e) => setInventoryItemId(e.target.value)} required>
-            <option value="">قلم انبار…</option>
-            {activeItems.map((i) => (
-              <option key={i.id} value={i.id}>
-                {i.name} ({i.unit})
-              </option>
-            ))}
-          </select>
-          <input
-            className={inputClass}
-            dir="ltr"
-            inputMode="decimal"
-            value={quantity}
-            onChange={(e) => setQuantity(e.target.value)}
-            placeholder="مقدار"
-            required
-          />
-          <select className={inputClass} value={reason} onChange={(e) => setReason(e.target.value)}>
-            {Object.entries(REASON_LABELS).map(([key, label]) => (
-              <option key={key} value={key}>
-                {label}
-              </option>
-            ))}
-          </select>
-          <input className={inputClass} value={note} onChange={(e) => setNote(e.target.value)} placeholder="یادداشت (اختیاری)" />
-          <PrimaryButton disabled={busy}>ثبت ضایعات</PrimaryButton>
+        <form onSubmit={submit} className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <Field label="قلم انبار">
+            <select className={inputClass} value={inventoryItemId} onChange={(e) => setInventoryItemId(e.target.value)} required>
+              <option value="">قلم انبار را انتخاب کنید…</option>
+              {activeItems.map((i) => (
+                <option key={i.id} value={i.id}>
+                  {i.name} ({i.unit})
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="مقدار">
+            <input
+              className={inputClass}
+              dir="ltr"
+              inputMode="decimal"
+              value={quantity}
+              onChange={(e) => setQuantity(e.target.value)}
+              required
+            />
+          </Field>
+          <Field label="دلیل ضایعات">
+            <select className={inputClass} value={reason} onChange={(e) => setReason(e.target.value)}>
+              {Object.entries(REASON_LABELS).map(([key, label]) => (
+                <option key={key} value={key}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="یادداشت">
+            <input className={inputClass} value={note} onChange={(e) => setNote(e.target.value)} placeholder="اختیاری" />
+          </Field>
+          <div className="mb-4 flex items-end">
+            <PrimaryButton disabled={busy}>ثبت ضایعات</PrimaryButton>
+          </div>
         </form>
       </section>
 
-      <section className="rounded-2xl bg-card p-5 shadow-sm">
+      <section className="min-w-0 rounded-2xl bg-card p-5 shadow-sm">
         <h2 className="mb-3 font-semibold">ضایعات اخیر</h2>
         <ul className="divide-y divide-border rounded-lg border border-border">
           {(entries ?? []).map((e) => (
-            <li key={e.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2 text-sm">
-              <span>
+            <li key={e.id} className="flex min-w-0 flex-col gap-2 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+              <span className="min-w-0 break-words">
                 {e.inventory_item_name} — {formatQuantity(e.quantity)} {e.unit} ({REASON_LABELS[e.waste_reason] ?? e.waste_reason})
               </span>
               <span className="text-xs text-muted-foreground">
