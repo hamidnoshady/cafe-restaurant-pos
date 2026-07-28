@@ -4,8 +4,8 @@ import { formatJalali } from "@/lib/jalali";
 import { getSession } from "@/lib/auth";
 import { getBackupHealth } from "@/lib/backup-service";
 import { isSetupComplete } from "@/lib/setup-state";
-import { DashboardGrid } from "./dashboard-grid";
 import { OperationsOverview } from "./operations-overview";
+import { PinnedReports } from "./pinned-reports";
 
 const BACKUP_ALERT_LABELS: Record<string, string> = {
   local_failed: "آخرین پشتیبان‌گیری محلی ناموفق بود.",
@@ -76,15 +76,7 @@ export default async function DashboardPage() {
 
       {hasOperationalOverview && session ? <OperationsOverview role={session.role as (typeof OPERATIONAL_ROLES)[number]} /> : null}
 
-      <section className="mt-6" aria-labelledby="pinned-reports-heading">
-        <details className="rounded-2xl border border-border/80 bg-card px-4 py-1.5 shadow-[0_1px_2px_rgb(15_23_42/0.03)]">
-          <summary id="pinned-reports-heading" className="min-h-11 cursor-pointer list-none py-2 text-sm font-semibold text-foreground marker:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-            گزارش‌های سنجاق‌شده
-            <span className="mr-2 text-xs font-normal text-muted-foreground">چیدمان و گزارش‌های شخصی شما</span>
-          </summary>
-          <div className="border-t border-border/80 py-4"><DashboardGrid canEdit={canSetup} /></div>
-        </details>
-      </section>
+      <PinnedReports canEdit={canSetup} />
     </div>
   );
 }
