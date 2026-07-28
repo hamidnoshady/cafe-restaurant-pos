@@ -4,7 +4,8 @@ import { formatJalali } from "@/lib/jalali";
 import { getSession } from "@/lib/auth";
 import { getBackupHealth } from "@/lib/backup-service";
 import { isSetupComplete } from "@/lib/setup-state";
-import { DashboardGrid } from "./dashboard-grid";
+import { OperationsOverview } from "./operations-overview";
+import { PinnedReports } from "./pinned-reports";
 
 const BACKUP_ALERT_LABELS: Record<string, string> = {
   local_failed: "آخرین پشتیبان‌گیری محلی ناموفق بود.",
@@ -12,6 +13,8 @@ const BACKUP_ALERT_LABELS: Record<string, string> = {
   cloud_failed: "آخرین بارگذاری پشتیبان ابری ناموفق بود.",
   cloud_stale: "مدت زیادی از آخرین پشتیبان ابری موفق گذشته است.",
 };
+
+const OPERATIONAL_ROLES = ["owner", "manager", "cashier", "waiter"] as const;
 
 export default async function DashboardPage() {
   const today = toPersianDigits(formatJalali(new Date(), { withMonthName: true }));
@@ -22,13 +25,16 @@ export default async function DashboardPage() {
   // Owner's dashboard, not only on the backup page nobody may be watching.
   const backupHealth =
     session && canSetup ? await getBackupHealth(session.businessId).catch(() => null) : null;
+  const hasOperationalOverview = session ? OPERATIONAL_ROLES.includes(session.role as (typeof OPERATIONAL_ROLES)[number]) : false;
 
   return (
-    <div className="mx-auto w-full max-w-5xl pb-3">
-      <header className="mb-5 flex items-baseline justify-between border-b border-border/80 pb-4">
-        <h1 className="text-2xl font-bold">داشبورد</h1>
-        <p className="text-sm text-muted-foreground">امروز: {today}</p>
-      </header>
+    <div className="mx-auto w-full max-w-[1440px] pb-6">
+      {!hasOperationalOverview ? (
+        <header className="mb-5 flex items-baseline justify-between border-b border-border/80 pb-4">
+          <h1 className="text-2xl font-bold">داشبورد</h1>
+          <p className="text-sm text-muted-foreground">امروز: {today}</p>
+        </header>
+      ) : null}
 
       {canSetup && !setupDone ? (
         <Link
@@ -68,7 +74,9 @@ export default async function DashboardPage() {
         </Link>
       ) : null}
 
-      <DashboardGrid canEdit={canSetup} />
+      {hasOperationalOverview && session ? <OperationsOverview role={session.role as (typeof OPERATIONAL_ROLES)[number]} /> : null}
+
+      <PinnedReports canEdit={canSetup} />
     </div>
   );
 }

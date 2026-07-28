@@ -69,7 +69,7 @@ export default async function DashboardLayout({
       <DashboardSidebar navItems={navItems} role={member.role} fullName={session.fullName} />
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <OfflineBanner />
-        <main className="flex-1 overflow-y-auto p-2 md:p-4">{children}</main>
+        <main className="flex-1 overflow-y-auto p-2 pb-24 md:p-4">{children}</main>
       </div>
       {(member.role === "owner" || member.role === "manager") && features.ai_assistant ? <AiAssistant mode="dashboard" /> : null}
     </div>
