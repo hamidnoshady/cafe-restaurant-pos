@@ -16,6 +16,11 @@ export interface ProfitAndLoss {
   totalRevenue: number;
   totalExpenses: number;
   netIncome: number;
+  costOfSales: number;
+  grossProfit: number;
+  laborCost: number;
+  primeCost: number;
+  operatingExpenses: number;
 }
 
 export interface BalanceSheet {
@@ -129,6 +134,18 @@ function Section({
   );
 }
 
+function SummaryStat({ label, value, previous }: { label: string; value: number; previous?: number | null }) {
+  return (
+    <div className="rounded-xl bg-muted px-4 py-3">
+      <div className="text-sm text-muted-foreground">{label}</div>
+      <div className={`font-semibold tabular-nums ${value < 0 ? "text-destructive" : ""}`}>{formatToman(value)}</div>
+      {previous != null ? (
+        <div className="text-xs text-muted-foreground">دورهٔ قبل: {formatToman(previous)}</div>
+      ) : null}
+    </div>
+  );
+}
+
 /** Owns the drill-down panel's open/close state, so every statement view opens the same overlay the same way. */
 function useDrillDown(dateFrom?: string, dateTo?: string): { drill: DrillContext; panel: ReactNode } {
   const [target, setTarget] = useState<DrillDownTarget | null>(null);
@@ -174,6 +191,21 @@ export function ProfitAndLossView({
         totalLabel="جمع هزینه‌ها"
         drill={drill}
       />
+      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <SummaryStat
+          label="بهای تمام‌شده کالای فروش‌رفته (COGS)"
+          value={current.costOfSales}
+          previous={previous?.costOfSales}
+        />
+        <SummaryStat label="سود ناخالص" value={current.grossProfit} previous={previous?.grossProfit} />
+        <SummaryStat label="هزینه نیروی انسانی" value={current.laborCost} previous={previous?.laborCost} />
+        <SummaryStat label="بهای اولیه (Prime Cost)" value={current.primeCost} previous={previous?.primeCost} />
+        <SummaryStat
+          label="سایر هزینه‌های عملیاتی"
+          value={current.operatingExpenses}
+          previous={previous?.operatingExpenses}
+        />
+      </div>
       <div className="mt-4 flex items-center justify-between rounded-xl bg-muted px-4 py-3 font-bold">
         <span>سود (زیان) خالص</span>
         <div className="flex items-center gap-3">

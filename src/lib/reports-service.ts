@@ -13,7 +13,7 @@ import {
   type ChartType,
 } from "./reports";
 import { addDays } from "./rollup";
-import { WELL_KNOWN_CODES } from "./coa-template";
+import { COST_OF_SALES_CODES, WELL_KNOWN_CODES } from "./coa-template";
 import type { Role } from "./auth";
 
 export interface ReportRow extends Record<string, unknown> {
@@ -110,7 +110,19 @@ export interface ProfitAndLoss {
   totalRevenue: number;
   totalExpenses: number;
   netIncome: number;
+  /** Material cost + inventory shrinkage (COGS, waste, count/write-down losses) — cost of sales, not overhead. */
+  costOfSales: number;
+  /** totalRevenue - costOfSales. */
+  grossProfit: number;
+  /** Staff wages (salariesExpense), tracked apart from other overhead. */
+  laborCost: number;
+  /** costOfSales + laborCost — the standard F&B "prime cost" metric. */
+  primeCost: number;
+  /** totalExpenses - costOfSales - laborCost: rent, utilities, marketing, and everything else. */
+  operatingExpenses: number;
 }
+
+const COST_OF_SALES_CODE_SET = new Set(COST_OF_SALES_CODES);
 
 /** P&L for a date range, traced directly from the Phase 7 ledger (v_ledger_by_account, revenue/expense accounts only). */
 export async function getProfitAndLoss(
@@ -131,7 +143,24 @@ export async function getProfitAndLoss(
   }
   const totalRevenue = revenue.reduce((s, l) => s + l.amount, 0);
   const totalExpenses = expenses.reduce((s, l) => s + l.amount, 0);
-  return { revenue, expenses, totalRevenue, totalExpenses, netIncome: totalRevenue - totalExpenses };
+  const costOfSales = expenses
+    .filter((l) => COST_OF_SALES_CODE_SET.has(l.accountCode))
+    .reduce((s, l) => s + l.amount, 0);
+  const laborCost = expenses
+    .filter((l) => l.accountCode === WELL_KNOWN_CODES.salariesExpense)
+    .reduce((s, l) => s + l.amount, 0);
+  return {
+    revenue,
+    expenses,
+    totalRevenue,
+    totalExpenses,
+    netIncome: totalRevenue - totalExpenses,
+    costOfSales,
+    grossProfit: totalRevenue - costOfSales,
+    laborCost,
+    primeCost: costOfSales + laborCost,
+    operatingExpenses: totalExpenses - costOfSales - laborCost,
+  };
 }
 
 export interface BalanceSheet {

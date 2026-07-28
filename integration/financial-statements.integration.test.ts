@@ -22,7 +22,7 @@ let dbLib: typeof import("../src/lib/db");
 let reportsService: typeof import("../src/lib/reports-service");
 
 const biz = { id: "" };
-const acct = { cash: "", bankClearing: "", revenue: "", expense: "" };
+const acct = { cash: "", bankClearing: "", revenue: "", expense: "", cogs: "", salaries: "" };
 
 function urlFor(database: string): string {
   const url = new URL(rootDatabaseUrl!);
@@ -89,7 +89,8 @@ beforeEach(async () => {
   const accounts = await db.query<{ id: string; code: string }>(
     `INSERT INTO accounts (business_id, code, name, type)
      VALUES ($1, '1100', 'Cash', 'asset'), ($1, '1120', 'Card clearing', 'asset'),
-            ($1, '4300', 'Sales', 'revenue'), ($1, '5900', 'Other expense', 'expense')
+            ($1, '4300', 'Sales', 'revenue'), ($1, '5900', 'Other expense', 'expense'),
+            ($1, '5100', 'COGS', 'expense'), ($1, '5200', 'Salaries', 'expense')
      RETURNING id, code`,
     [biz.id],
   );
@@ -98,6 +99,8 @@ beforeEach(async () => {
     if (r.code === "1120") acct.bankClearing = r.id;
     if (r.code === "4300") acct.revenue = r.id;
     if (r.code === "5900") acct.expense = r.id;
+    if (r.code === "5100") acct.cogs = r.id;
+    if (r.code === "5200") acct.salaries = r.id;
   }
 });
 
@@ -139,6 +142,26 @@ describe("getCashFlow", () => {
     await postEntry("2025-04-01", "order", "card sale", acct.bankClearing, acct.revenue, 150_000);
     const cf = await reportsService.getCashFlow(biz.id, { dateFrom: "2025-04-01", dateTo: "2025-04-30" });
     expect(cf.closingCash).toBe(150_000);
+  });
+});
+
+describe("getProfitAndLoss", () => {
+  it("splits cost of sales and labor out of expenses for gross profit and prime cost", async () => {
+    await postEntry("2025-04-01", "order", "sale", acct.cash, acct.revenue, 1_000_000);
+    await postEntry("2025-04-02", "order", "cogs", acct.cogs, acct.cash, 300_000);
+    await postEntry("2025-04-03", "manual", "payroll", acct.salaries, acct.cash, 200_000);
+    await postEntry("2025-04-04", "manual", "rent", acct.expense, acct.cash, 100_000);
+
+    const pnl = await reportsService.getProfitAndLoss(biz.id, { dateFrom: "2025-04-01", dateTo: "2025-04-30" });
+
+    expect(pnl.totalRevenue).toBe(1_000_000);
+    expect(pnl.costOfSales).toBe(300_000);
+    expect(pnl.grossProfit).toBe(700_000);
+    expect(pnl.laborCost).toBe(200_000);
+    expect(pnl.primeCost).toBe(500_000);
+    expect(pnl.operatingExpenses).toBe(100_000);
+    expect(pnl.totalExpenses).toBe(600_000);
+    expect(pnl.netIncome).toBe(400_000);
   });
 });
 
