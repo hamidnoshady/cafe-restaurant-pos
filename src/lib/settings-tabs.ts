@@ -10,6 +10,7 @@ export const SETTINGS_TAB_KEYS = [
   "menu",
   "printers",
   "branch-sync",
+  "server-sync",
   "backup",
 ] as const;
 
@@ -76,6 +77,13 @@ export const SETTINGS_TABS: SettingsTab[] = [
     key: "branch-sync",
     label: "همگام‌سازی شعبه‌ها",
     description: "ثبت شعبه‌های محلی و همگام‌سازی با سرور مرکزی",
+    allowedRoles: ["owner"],
+    feature: "offline_mode",
+  },
+  {
+    key: "server-sync",
+    label: "همگام‌سازی با سرور راه دور",
+    description: "اتصال دوطرفه با سرور مرکزی (VPS)، وضعیت و رویدادهای ناموفق",
     allowedRoles: ["owner"],
     feature: "offline_mode",
   },

@@ -63,10 +63,8 @@ Options:
 - `-NoAutoLaunch` — create the icons but do **not** auto-start at login.
 - `-Uninstall` — remove all three shortcuts (the app and its data stay).
 
-> Icon note: the shortcut uses a nice coffee-cup icon if you have ImageMagick
-> installed (so the setup can turn the `.svg` into a `.ico`). Without it, the
-> shortcut still works, it just shows a generic script icon. To get the icon,
-> install ImageMagick and re-run the installer.
+> Icon note: the shortcut uses the coffee-cup icon (`windows/cafe-pos.ico`,
+> checked into the repo) automatically — no extra tools needed.
 
 ---
 
@@ -111,6 +109,19 @@ opens already looks and behaves the same for staff, so this is optional.
 > (for example in the few seconds right after boot before Docker is fully up).
 > It never caches orders, logins, or sync data — those always go to the live
 > server so nothing is ever stale.
+
+> If "Install" ever produces a window that still shows an address bar, the
+> browser has fallen back to creating a plain shortcut instead of a true
+> standalone install — this usually means it didn't consider the app
+> installable. The manifest ships a full PNG icon set specifically so this
+> check passes; the other common cause is a non-secure origin (see below).
+
+> **Note:** true PWA install (and the service worker) requires a "secure
+> context" — `https://` or `localhost`. `http://localhost:3000` on the café
+> laptop itself qualifies, but other LAN devices reaching it at
+> `http://<laptop-lan-ip>:3000` do not, so they'll always see a normal browser
+> tab with an address bar and can't install the app, regardless of the
+> manifest/icons. That's a browser security restriction, not a bug here.
 
 ---
 

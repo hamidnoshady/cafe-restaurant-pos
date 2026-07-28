@@ -26,24 +26,13 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { query, withTenant, withoutTenantScope } from "./db";
 import { getSetting, setSetting, SETTING_KEYS } from "./settings";
 import { applySyncEvent, type SyncEventInput, type SyncEventType } from "./sync-events";
+import type { ServerSyncConfig } from "./server-sync-config";
+
+export type { ServerSyncConfig } from "./server-sync-config";
 
 // ---------------------------------------------------------------------------
 // Config & state types
 // ---------------------------------------------------------------------------
-
-export interface ServerSyncConfig {
-  /** Full URL of the remote server, e.g. https://pos.eshobe.com */
-  remoteUrl: string;
-  /**
-   * Bearer token issued by the remote server for this local instance.
-   * Generate with: openssl rand -hex 32
-   * Store the same value in REMOTE_SYNC_TOKEN on the remote server.
-   */
-  token: string;
-  enabled: boolean;
-  /** How many events to push/pull per batch (default 100) */
-  batchSize?: number;
-}
 
 export interface ServerSyncState {
   /** sync_events.id of the last row we successfully pushed to remote */
@@ -56,6 +45,12 @@ export interface ServerSyncState {
   lastPullSuccessAt: string | null;
   lastPushError: string | null;
   lastPullError: string | null;
+  /**
+   * Last time this business's incoming push/pull authenticated via the
+   * shared REMOTE_SYNC_TOKEN fallback instead of its own per-business token —
+   * see recordLegacyTokenUsage(). Null if it has never happened.
+   */
+  legacyTokenLastUsedAt: string | null;
 }
 
 const EMPTY_STATE: ServerSyncState = {
@@ -67,6 +62,7 @@ const EMPTY_STATE: ServerSyncState = {
   lastPullSuccessAt: null,
   lastPushError: null,
   lastPullError: null,
+  legacyTokenLastUsedAt: null,
 };
 
 export async function getServerSyncConfig(businessId: string): Promise<ServerSyncConfig | null> {
@@ -128,7 +124,68 @@ export function tokensMatch(a: string, b: string): boolean {
 
 export async function getServerSyncState(businessId: string): Promise<ServerSyncState> {
   const s = await getSetting<ServerSyncState>(businessId, SETTING_KEYS.serverSyncState);
-  return s ?? { ...EMPTY_STATE };
+  return s ? { ...EMPTY_STATE, ...s } : { ...EMPTY_STATE };
+}
+
+/**
+ * Called by the push/pull routes whenever an incoming request authenticates
+ * via the shared REMOTE_SYNC_TOKEN fallback rather than this business's own
+ * per-business token — the weaker of the two paths (see tokensMatch's doc
+ * comment). Otherwise a deployment can stay on it indefinitely with no way
+ * for the owner to notice, since the fallback works identically from the
+ * caller's point of view. Runs within the caller's own withTenant() scope.
+ */
+export async function recordLegacyTokenUsage(businessId: string): Promise<void> {
+  console.warn(`server-sync: business ${businessId} authenticated via the legacy REMOTE_SYNC_TOKEN fallback`);
+  const state = await getServerSyncState(businessId);
+  await setSetting(businessId, SETTING_KEYS.serverSyncState, {
+    ...state,
+    legacyTokenLastUsedAt: new Date().toISOString(),
+  } satisfies ServerSyncState);
+}
+
+export interface ServerSyncDeadLetter {
+  id: number;
+  remoteEventId: number;
+  locationId: string;
+  clientEventId: string;
+  eventType: string;
+  payload: Record<string, unknown>;
+  error: string;
+  createdAt: string;
+}
+
+/** Pulled events that failed to apply and were dropped from the pull's forward progress; see runServerPull. */
+export async function listServerSyncDeadLetters(businessId: string, limit = 50): Promise<ServerSyncDeadLetter[]> {
+  const { rows } = await query<{
+    id: number;
+    remote_event_id: number;
+    location_id: string;
+    client_event_id: string;
+    event_type: string;
+    payload: Record<string, unknown>;
+    error: string;
+    created_at: string;
+  }>(
+    `SELECT id, remote_event_id, location_id, client_event_id, event_type, payload, error, created_at
+       FROM server_sync_dead_letters
+      WHERE business_id = $1
+      ORDER BY created_at DESC
+      LIMIT $2`,
+    [businessId, limit],
+  );
+  return rows.map((r) => ({
+    // bigint columns come back from pg as strings; safe to convert here since
+    // these are small monotonic counters, never anywhere near MAX_SAFE_INTEGER.
+    id: Number(r.id),
+    remoteEventId: Number(r.remote_event_id),
+    locationId: r.location_id,
+    clientEventId: r.client_event_id,
+    eventType: r.event_type,
+    payload: r.payload,
+    error: r.error,
+    createdAt: r.created_at,
+  }));
 }
 
 // ---------------------------------------------------------------------------
@@ -357,9 +414,21 @@ export async function runServerPull(businessId: string): Promise<PullResult> {
         input,
         "remote",
       );
-    } catch {
-      // Log but don't abort the batch — a single bad event shouldn't block the rest
-      console.error(`server-sync pull: failed to apply event ${e.clientEventId}`);
+    } catch (err) {
+      // Don't abort the batch — a single bad event shouldn't block the rest —
+      // but the high-water mark below still advances past it, so record it
+      // as a dead letter rather than only logging: otherwise it's dropped
+      // forever with nothing to show it happened.
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`server-sync pull: failed to apply event ${e.clientEventId}: ${message}`);
+      await query(
+        `INSERT INTO server_sync_dead_letters
+           (business_id, remote_event_id, location_id, client_event_id, event_type, payload, error)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [businessId, e.id, e.locationId, e.clientEventId, e.type, JSON.stringify(e.payload), message],
+      ).catch((logErr) => {
+        console.error(`server-sync pull: failed to record dead letter for event ${e.clientEventId}:`, logErr);
+      });
     }
     lastAppliedRemoteId = e.id;
   }

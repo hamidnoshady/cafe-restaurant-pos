@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { applySyncEvent, type SyncEventInput, type SyncEventType } from "@/lib/sync-events";
 import { query, withTenant, withoutTenantScope } from "@/lib/db";
-import { resolveBusinessBySyncToken, tokensMatch } from "@/lib/server-sync";
+import { recordLegacyTokenUsage, resolveBusinessBySyncToken, tokensMatch } from "@/lib/server-sync";
 import type { Role } from "@/lib/auth";
 
 /**
@@ -42,11 +42,13 @@ export async function POST(request: NextRequest) {
   if (!bearer) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   let tokenBusinessId = await resolveBusinessBySyncToken(bearer);
+  let usedLegacyToken = false;
   if (!tokenBusinessId) {
     const legacy = legacyToken();
     if (!legacy || !tokensMatch(bearer, legacy)) {
       return NextResponse.json({ error: "unauthorized" }, { status: 401 });
     }
+    usedLegacyToken = true;
   }
 
   let body: { events?: IncomingEvent[] };
@@ -105,6 +107,7 @@ export async function POST(request: NextRequest) {
   const businessId = tokenBusinessId ?? eventsBusinessId;
 
   const results = await withTenant(businessId, async () => {
+    if (usedLegacyToken) await recordLegacyTokenUsage(businessId);
     const out = [];
     for (const e of events) {
       const input: SyncEventInput = {

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query, withTenant, withoutTenantScope } from "@/lib/db";
-import { resolveBusinessBySyncToken, tokensMatch } from "@/lib/server-sync";
+import { recordLegacyTokenUsage, resolveBusinessBySyncToken, tokensMatch } from "@/lib/server-sync";
 
 /**
  * Server-to-server pull endpoint (Phase 11).
@@ -40,11 +40,13 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
 
   let businessId = await resolveBusinessBySyncToken(bearer);
+  let usedLegacyToken = false;
   if (!businessId) {
     const legacy = legacyToken();
     if (!legacy || !tokensMatch(bearer, legacy)) {
       return NextResponse.json({ error: "unauthorized" }, { status: 401 });
     }
+    usedLegacyToken = true;
     // Legacy mode has no per-business token to resolve identity from, so the
     // caller must say which business it's pulling for; a per-business token
     // (the non-legacy path above) doesn't need this.
@@ -64,8 +66,9 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
 
-  const rows = await withTenant(businessId, () =>
-    query<SyncEventRow>(
+  const rows = await withTenant(businessId, async () => {
+    if (usedLegacyToken) await recordLegacyTokenUsage(businessId!);
+    const result = await query<SyncEventRow>(
       `SELECT se.id, se.location_id, se.client_event_id, se.event_type,
               se.payload, se.occurred_at, se.actor_user_id, se.actor_role
          FROM sync_events se
@@ -76,8 +79,9 @@ export async function GET(request: NextRequest) {
         ORDER BY se.id
         LIMIT $2`,
       [after, limit],
-    ),
-  ).then((r) => r.rows);
+    );
+    return result.rows;
+  });
 
   const events = rows.map((r) => ({
     id: r.id,

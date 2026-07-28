@@ -19,8 +19,14 @@ export const metadata: Metadata = {
   // icon + iOS/standalone hints so the installed app looks and launches native.
   applicationName: "Café POS",
   icons: {
-    icon: "/icon.svg",
-    apple: "/icon.svg",
+    icon: [
+      { url: "/icon.svg", type: "image/svg+xml" },
+      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
+    ],
+    // iOS ignores manifest icons entirely and only reads this link tag; it also
+    // applies its own corner rounding, so this points at the non-rounded source.
+    apple: "/apple-touch-icon.png",
   },
   appleWebApp: {
     capable: true,

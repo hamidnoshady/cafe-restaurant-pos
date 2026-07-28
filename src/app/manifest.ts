@@ -16,6 +16,9 @@ export default function manifest(): MetadataRoute.Manifest {
     description: "Cafe/Restaurant POS — point of sale, kitchen, and management",
     // Standalone = its own window, no browser tabs/address bar (looks native).
     display: "standalone",
+    // Fixes the installed app's identity so it isn't treated as a new/duplicate
+    // install if start_url ever gains query params.
+    id: "/",
     // Where the app opens. Relative so it works on localhost, LAN IP, or domain.
     start_url: "/",
     scope: "/",
@@ -24,18 +27,20 @@ export default function manifest(): MetadataRoute.Manifest {
     orientation: "any",
     background_color: "#0f172a",
     theme_color: "#0f172a",
+    // A real PNG set matters here, not just the SVG: Chrome/Edge's installability
+    // check has historically required a raster icon, and without one "Install app"
+    // silently falls back to a browser "shortcut" (which keeps the address bar)
+    // instead of a true standalone install. Maskable uses icon-square.svg's
+    // full-bleed art (see scripts/generate-icons.ts) so the OS can crop it into
+    // any shape without exposing transparent corners.
     icons: [
+      { src: "/icon.svg", sizes: "any", type: "image/svg+xml", purpose: "any" },
+      { src: "/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+      { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
       {
-        // A single SVG covers all sizes; Chrome/Edge accept sizes:"any" for install.
-        src: "/icon.svg",
-        sizes: "any",
-        type: "image/svg+xml",
-        purpose: "any",
-      },
-      {
-        src: "/icon.svg",
-        sizes: "any",
-        type: "image/svg+xml",
+        src: "/icon-maskable-512.png",
+        sizes: "512x512",
+        type: "image/png",
         purpose: "maskable",
       },
     ],
