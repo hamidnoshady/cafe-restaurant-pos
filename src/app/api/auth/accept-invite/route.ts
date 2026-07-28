@@ -53,6 +53,7 @@ export async function POST(request: NextRequest) {
       sub: result.userId,
       role: result.role,
       businessId: result.businessId,
+      businessSlug: result.businessSlug,
       locationId: result.locationId,
       fullName: result.fullName,
       platformUserId: result.platformUserId,

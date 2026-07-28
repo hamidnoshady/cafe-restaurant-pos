@@ -15,5 +15,8 @@ export default async function Home() {
   ) {
     redirect("/setup");
   }
-  redirect("/dashboard");
+  // The bare form works too — middleware redirects it to the slugged URL —
+  // but going there directly when the token already carries a slug skips
+  // that extra hop.
+  redirect(session.businessSlug ? `/${session.businessSlug}/dashboard` : "/dashboard");
 }

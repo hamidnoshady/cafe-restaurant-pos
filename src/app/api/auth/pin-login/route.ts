@@ -7,6 +7,7 @@ import { toLatinDigits } from "@/lib/digits";
 interface UserRow extends Record<string, unknown> {
   id: string;
   business_id: string;
+  business_slug: string;
   location_id: string | null;
   role: Role;
   full_name: string;
@@ -99,17 +100,19 @@ export async function POST(request: NextRequest) {
     let locationFilter = "";
     if (body.locationId) {
       params.push(body.locationId);
-      locationFilter = "AND location_id = $1";
+      locationFilter = "AND u.location_id = $1";
     }
 
     // RLS confines this to `businessId`, which is why there is no business_id
     // predicate here — the tenant scope is the boundary being relied on.
     const { rows } = await query<UserRow>(
-      `SELECT id, business_id, location_id, role, full_name, pin_hash
-         FROM users
-        WHERE is_active
-          AND role IN ('cashier', 'waiter', 'kitchen')
-          AND pin_hash IS NOT NULL
+      `SELECT u.id, u.business_id, b.slug::text AS business_slug, u.location_id,
+              u.role, u.full_name, u.pin_hash
+         FROM users u
+         JOIN businesses b ON b.id = u.business_id
+        WHERE u.is_active
+          AND u.role IN ('cashier', 'waiter', 'kitchen')
+          AND u.pin_hash IS NOT NULL
           ${locationFilter}`,
       params,
     );
@@ -130,6 +133,7 @@ export async function POST(request: NextRequest) {
       sub: user.id,
       role: user.role,
       businessId: user.business_id,
+      businessSlug: user.business_slug,
       locationId: user.location_id,
       fullName: user.full_name,
       platformUserId: null,

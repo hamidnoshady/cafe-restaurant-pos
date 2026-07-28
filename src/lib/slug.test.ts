@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MAX_SLUG_LENGTH, slugifyBusinessName, uniqueSlug } from "./slug";
+import { MAX_SLUG_LENGTH, RESERVED_SLUGS, slugifyBusinessName, uniqueSlug } from "./slug";
 
 describe("slugifyBusinessName", () => {
   it("slugifies Latin names", () => {
@@ -64,5 +64,11 @@ describe("uniqueSlug", () => {
     const result = uniqueSlug(long, [long.slice(0, MAX_SLUG_LENGTH - 4)]);
     expect(result.length).toBeLessThanOrEqual(MAX_SLUG_LENGTH);
     expect(result.endsWith("-2")).toBe(true);
+  });
+
+  it("never hands out a slug that collides with a top-level app route", () => {
+    for (const reserved of RESERVED_SLUGS) {
+      expect(uniqueSlug(reserved, [])).toBe(`${reserved}-2`);
+    }
   });
 });

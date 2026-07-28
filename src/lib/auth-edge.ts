@@ -41,6 +41,15 @@ export interface SessionPayload {
   role: Role;
   /** The tenant every query in this request will be scoped to. */
   businessId: string;
+  /**
+   * The business's stable slug — its "english name" for URLs. Carried on the
+   * token so `src/middleware.ts` can prefix the dashboard URL with it
+   * (`/{slug}/dashboard/...`) without a database lookup in the Edge runtime.
+   * Optional so a token minted before this field existed still verifies; the
+   * dashboard is simply served unprefixed until the holder's next login or
+   * business switch re-mints one.
+   */
+  businessSlug?: string;
   /** This membership's default/home branch; null = roaming (owner or unassigned manager). */
   locationId: string | null;
   /**

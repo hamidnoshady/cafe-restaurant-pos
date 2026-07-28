@@ -3,6 +3,7 @@ import { requirePlatformCapability, platformAudit, withPlatformScope } from "@/l
 import { SESSION_COOKIE, sessionCookieOptions, signSession } from "@/lib/auth";
 import {
   startImpersonation,
+  getBusiness,
   BusinessNotImpersonableError,
   type ImpersonationMode,
 } from "@/lib/platform-service";
@@ -57,11 +58,14 @@ export const POST = withPlatformScope(async (request: NextRequest, ctx: Ctx) => 
 
     // Mint the tenant session for the owner membership, tagged as impersonation.
     // locationId null: an owner roams every branch, and so does the operator
-    // standing in for them.
+    // standing in for them. The business was just confirmed to exist by
+    // startImpersonation, so this second read is only for its slug.
+    const business = await getBusiness(id);
     const token = await signSession({
       sub: userId,
       role: "owner",
       businessId: id,
+      businessSlug: business?.slug,
       locationId: null,
       fullName,
       imp: { grantId: grant.id, adminId: session.padmin, mode },

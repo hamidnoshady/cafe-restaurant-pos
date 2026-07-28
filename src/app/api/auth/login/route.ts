@@ -23,6 +23,7 @@ function sessionFor(membership: Membership, platformUserId: string) {
     sub: membership.userId,
     role: membership.role,
     businessId: membership.businessId,
+    businessSlug: membership.businessSlug,
     locationId: membership.locationId,
     fullName: membership.fullName,
     platformUserId,

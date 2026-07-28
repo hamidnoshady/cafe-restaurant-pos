@@ -222,6 +222,19 @@ permission overrides and default branch. One person can hold several memberships
 between them (`/api/auth/switch-business`). PIN-only staff have no platform identity and
 belong to exactly one business.
 
+**Dashboard URL carries the business's slug.** The browser sees `/{slug}/dashboard/...` —
+the business's slug (its stable, human-readable "english name", set at signup/provisioning
+and immutable after) — while every page still lives at `/dashboard/...` underneath.
+`src/middleware.ts` handles the whole thing: the bare form redirects to the slugged one (so
+every existing internal link still works), and the slugged form is rewritten back to the real
+route, validating the slug against the caller's own session and redirecting to the correct one
+otherwise. The slug rides on the session JWT (`businessSlug`, minted at
+login/switch/impersonate — see `src/lib/auth-edge.ts`) specifically so this needs no database
+lookup in the Edge runtime; a token from before that field existed just serves the dashboard
+unprefixed until the next login re-mints one. `RESERVED_SLUGS` in `src/lib/slug.ts` keeps a
+business from ever being assigned a slug that collides with a top-level route (`dashboard`,
+`api`, `login`, …).
+
 ## Super-Admin Console (Phase 15)
 
 A platform operator administers every business on the deployment from a **separate console at
