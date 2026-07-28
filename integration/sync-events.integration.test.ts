@@ -444,3 +444,45 @@ describe("runServerPull — dead letters", () => {
     expect(aDeadLetters).toHaveLength(0);
   });
 });
+
+describe("legacy REMOTE_SYNC_TOKEN fallback — usage is flagged", () => {
+  const LEGACY_TOKEN = "legacy-shared-secret-0123456789";
+  const originalEnv = process.env.REMOTE_SYNC_TOKEN;
+
+  beforeEach(async () => {
+    process.env.REMOTE_SYNC_TOKEN = LEGACY_TOKEN;
+    // This test is specifically about the business that has NOT configured
+    // its own per-business token yet, so remove the one seeded by the outer
+    // beforeEach.
+    await db.query("DELETE FROM server_sync_tokens WHERE business_id = $1", [bizB.id]);
+  });
+
+  afterEach(() => {
+    process.env.REMOTE_SYNC_TOKEN = originalEnv;
+  });
+
+  it("records legacyTokenLastUsedAt when push authenticates via the legacy token", async () => {
+    const before = await dbLib.withTenant(bizB.id, () => serverSync.getServerSyncState(bizB.id));
+    expect(before.legacyTokenLastUsedAt).toBeNull();
+
+    const res = await pushRoute.POST(pushRequest(LEGACY_TOKEN, [statusEvent(bizB.locationId, bizB.itemId, "preparing")]));
+    expect(res.status).toBe(200);
+
+    const after = await dbLib.withTenant(bizB.id, () => serverSync.getServerSyncState(bizB.id));
+    expect(after.legacyTokenLastUsedAt).not.toBeNull();
+  });
+
+  it("records legacyTokenLastUsedAt when pull authenticates via the legacy token", async () => {
+    const res = await pullRoute.GET(pullRequest(LEGACY_TOKEN, `?businessId=${bizB.id}`));
+    expect(res.status).toBe(200);
+
+    const after = await dbLib.withTenant(bizB.id, () => serverSync.getServerSyncState(bizB.id));
+    expect(after.legacyTokenLastUsedAt).not.toBeNull();
+  });
+
+  it("does not flag legacy usage for a business still using its own per-business token", async () => {
+    await pushRoute.POST(pushRequest(bizA.token, [statusEvent(bizA.locationId, bizA.itemId, "preparing")]));
+    const state = await dbLib.withTenant(bizA.id, () => serverSync.getServerSyncState(bizA.id));
+    expect(state.legacyTokenLastUsedAt).toBeNull();
+  });
+});

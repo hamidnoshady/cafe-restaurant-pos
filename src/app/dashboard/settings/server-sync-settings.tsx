@@ -29,6 +29,7 @@ interface StateView {
   lastPullSuccessAt: string | null;
   lastPushError: string | null;
   lastPullError: string | null;
+  legacyTokenLastUsedAt: string | null;
 }
 
 interface DeadLetter {
@@ -189,6 +190,13 @@ export function ServerSyncSettings() {
       {syncState ? (
         <section className="rounded-2xl bg-card p-5 shadow-sm">
           <h2 className="mb-3 font-semibold">وضعیت همگام‌سازی</h2>
+          {syncState.legacyTokenLastUsedAt ? (
+            <InfoBox>
+              درخواست‌های ورودی هنوز با توکن مشترک قدیمی (REMOTE_SYNC_TOKEN) تأیید می‌شوند، نه توکن اختصاصی این
+              کسب‌وکار — آخرین بار: {formatTime(syncState.legacyTokenLastUsedAt)}. برای امنیت بیشتر، توکن اختصاصی
+              بالا را تنظیم و به‌جای متغیر محیطی مشترک از آن استفاده کنید.
+            </InfoBox>
+          ) : null}
           <div className="grid gap-x-8 sm:grid-cols-2">
             <div>
               <h3 className="mb-1 text-sm font-medium text-muted-foreground">ارسال (Push)</h3>

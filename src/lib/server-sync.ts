@@ -45,6 +45,12 @@ export interface ServerSyncState {
   lastPullSuccessAt: string | null;
   lastPushError: string | null;
   lastPullError: string | null;
+  /**
+   * Last time this business's incoming push/pull authenticated via the
+   * shared REMOTE_SYNC_TOKEN fallback instead of its own per-business token —
+   * see recordLegacyTokenUsage(). Null if it has never happened.
+   */
+  legacyTokenLastUsedAt: string | null;
 }
 
 const EMPTY_STATE: ServerSyncState = {
@@ -56,6 +62,7 @@ const EMPTY_STATE: ServerSyncState = {
   lastPullSuccessAt: null,
   lastPushError: null,
   lastPullError: null,
+  legacyTokenLastUsedAt: null,
 };
 
 export async function getServerSyncConfig(businessId: string): Promise<ServerSyncConfig | null> {
@@ -117,7 +124,24 @@ export function tokensMatch(a: string, b: string): boolean {
 
 export async function getServerSyncState(businessId: string): Promise<ServerSyncState> {
   const s = await getSetting<ServerSyncState>(businessId, SETTING_KEYS.serverSyncState);
-  return s ?? { ...EMPTY_STATE };
+  return s ? { ...EMPTY_STATE, ...s } : { ...EMPTY_STATE };
+}
+
+/**
+ * Called by the push/pull routes whenever an incoming request authenticates
+ * via the shared REMOTE_SYNC_TOKEN fallback rather than this business's own
+ * per-business token — the weaker of the two paths (see tokensMatch's doc
+ * comment). Otherwise a deployment can stay on it indefinitely with no way
+ * for the owner to notice, since the fallback works identically from the
+ * caller's point of view. Runs within the caller's own withTenant() scope.
+ */
+export async function recordLegacyTokenUsage(businessId: string): Promise<void> {
+  console.warn(`server-sync: business ${businessId} authenticated via the legacy REMOTE_SYNC_TOKEN fallback`);
+  const state = await getServerSyncState(businessId);
+  await setSetting(businessId, SETTING_KEYS.serverSyncState, {
+    ...state,
+    legacyTokenLastUsedAt: new Date().toISOString(),
+  } satisfies ServerSyncState);
 }
 
 export interface ServerSyncDeadLetter {

@@ -146,6 +146,10 @@ The Owner dashboard's **Settings → همگام‌سازی با سرور راه 
 - Recent dead letters — pulled events that failed to apply (see
   `server_sync_dead_letters`); the pull still advances past them so they
   don't block later events, so this list is the only place they're visible
+- A notice if incoming requests are still authenticating via the shared
+  `REMOTE_SYNC_TOKEN` fallback instead of this business's own per-business
+  token, with the last time it happened — otherwise a deployment could stay
+  on the weaker shared-secret path indefinitely with nothing to notice
 
 You can also query the API directly:
 ```bash
