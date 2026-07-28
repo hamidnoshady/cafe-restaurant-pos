@@ -10,6 +10,7 @@ import { TeamManager } from "../team/team-manager";
 import { AccountsSettings } from "./accounts-settings";
 import { BusinessSettings } from "./business-settings";
 import { MenuSettings } from "./menu-settings";
+import { PricingSettings } from "./pricing-settings";
 import { PrinterSettings } from "./printer-settings";
 import { TaxSettings } from "./tax-settings";
 
@@ -57,6 +58,7 @@ export function SettingsManager({ tabs, currentUserId, isOwner }: SettingsManage
 
       {activeTab === "business" ? <BusinessSettings /> : null}
       {activeTab === "tax" ? <TaxSettings /> : null}
+      {activeTab === "pricing" ? <PricingSettings /> : null}
       {activeTab === "accounts" ? <AccountsSettings /> : null}
       {activeTab === "team" ? <TeamManager currentUserId={currentUserId} /> : null}
       {activeTab === "menu" ? <MenuSettings /> : null}

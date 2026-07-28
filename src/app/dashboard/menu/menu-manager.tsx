@@ -19,6 +19,18 @@ interface Item {
   sku: string | null;
   price: string | number;
   is_active: boolean;
+  target_margin_percent: string | number | null;
+}
+interface SuggestedPrice {
+  materialCost: number;
+  hasRecipe: boolean;
+  overheadRatePercent: number | null;
+  overheadSource: "ledger" | "fallback" | "none";
+  loadedCost: number;
+  marginPercent: number | null;
+  marginSource: "item" | "default" | "none";
+  suggestedPrice: number | null;
+  currentPrice: number;
 }
 interface ModifierGroup {
   id: string;
@@ -221,6 +233,7 @@ function ItemRow({
   run: Runner;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [pricingOpen, setPricingOpen] = useState(false);
   const attached = new Set(links.filter((l) => l.menu_item_id === item.id).map((l) => l.modifier_group_id));
 
   return (
@@ -230,6 +243,7 @@ function ItemRow({
         <div className="flex items-center gap-2">
           <span className="text-muted-foreground">{formatToman(Number(item.price))}</span>
           <SecondaryButton onClick={() => setExpanded((v) => !v)}>افزودنی‌ها</SecondaryButton>
+          <SecondaryButton onClick={() => setPricingOpen((v) => !v)}>قیمت پیشنهادی</SecondaryButton>
           <SecondaryButton
             disabled={busy}
             onClick={() =>
@@ -245,6 +259,7 @@ function ItemRow({
           </SecondaryButton>
         </div>
       </div>
+      {pricingOpen ? <PricingPanel item={item} busy={busy} run={run} /> : null}
       {expanded ? (
         <div className="mt-2 flex flex-wrap gap-2 border-t border-border pt-2">
           {groups.length === 0 ? (
@@ -282,6 +297,113 @@ function ItemRow({
         </div>
       ) : null}
     </li>
+  );
+}
+
+/** Cost-plus pricing advisory: material cost (from the recipe) + ledger-derived overhead, target margin -> a suggested price the owner can apply or ignore. */
+function PricingPanel({ item, busy, run }: { item: Item; busy: boolean; run: Runner }) {
+  const [suggestion, setSuggestion] = useState<SuggestedPrice | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [marginInput, setMarginInput] = useState(
+    item.target_margin_percent != null ? String(item.target_margin_percent) : "",
+  );
+
+  const load = useCallback(() => {
+    setLoading(true);
+    api<{ suggestion: SuggestedPrice }>(`/api/menu/items/${item.id}/suggested-price`).then(({ ok, data }) => {
+      setSuggestion(ok ? data.suggestion : null);
+      setLoading(false);
+    });
+  }, [item.id]);
+
+  useEffect(() => {
+    load();
+  }, [load, item.price, item.target_margin_percent]);
+
+  async function saveMargin() {
+    const trimmed = marginInput.trim();
+    const value = trimmed === "" ? null : Number(trimmed);
+    if (value !== null && (!Number.isFinite(value) || value < 0 || value >= 100)) return;
+    await run(() =>
+      api(`/api/menu/items/${item.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ targetMarginPercent: value }),
+      }),
+    );
+  }
+
+  async function applySuggestedPrice() {
+    if (suggestion?.suggestedPrice == null) return;
+    await run(() =>
+      api(`/api/menu/items/${item.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ price: suggestion.suggestedPrice }),
+      }),
+    );
+  }
+
+  return (
+    <div className="mt-2 space-y-2 rounded-lg border border-border bg-muted/40 p-3 text-xs">
+      {loading ? (
+        <p className="text-muted-foreground">در حال محاسبه…</p>
+      ) : !suggestion ? (
+        <p className="text-muted-foreground">محاسبه ممکن نشد.</p>
+      ) : (
+        <>
+          {!suggestion.hasRecipe ? (
+            <p className="text-muted-foreground">دستورالعمل مصرف (رسپی) این آیتم ثبت نشده؛ بهای مواد قابل محاسبه نیست.</p>
+          ) : (
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1 sm:grid-cols-4">
+              <span className="text-muted-foreground">بهای مواد: {formatToman(suggestion.materialCost)}</span>
+              <span className="text-muted-foreground">
+                سربار:{" "}
+                {suggestion.overheadRatePercent != null
+                  ? `${toPersianDigits(Math.round(suggestion.overheadRatePercent))}٪ (${
+                      suggestion.overheadSource === "ledger" ? "بر اساس دفتر" : "برآورد دستی"
+                    })`
+                  : "بدون داده"}
+              </span>
+              <span className="text-muted-foreground">بهای تمام‌شده: {formatToman(suggestion.loadedCost)}</span>
+              <span className="text-muted-foreground">
+                حاشیه سود:{" "}
+                {suggestion.marginPercent != null
+                  ? `${toPersianDigits(suggestion.marginPercent)}٪ (${
+                      suggestion.marginSource === "item" ? "اختصاصی" : "پیش‌فرض"
+                    })`
+                  : "تعیین‌نشده"}
+              </span>
+            </div>
+          )}
+          {suggestion.hasRecipe && suggestion.suggestedPrice != null ? (
+            <div className="flex items-center justify-between rounded-md bg-card px-2 py-1.5">
+              <span className="font-medium">قیمت پیشنهادی: {formatToman(suggestion.suggestedPrice)}</span>
+              <SecondaryButton disabled={busy} onClick={applySuggestedPrice}>
+                اعمال قیمت
+              </SecondaryButton>
+            </div>
+          ) : suggestion.hasRecipe ? (
+            <p className="text-muted-foreground">
+              برای پیشنهاد قیمت، ابتدا هدف حاشیه سود را (در تنظیمات یا برای همین آیتم) مشخص کنید.
+            </p>
+          ) : null}
+        </>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2 border-t border-border pt-2">
+        <span className="text-muted-foreground">حاشیه سود اختصاصی این آیتم:</span>
+        <input
+          className={`${inputClass} w-24`}
+          dir="ltr"
+          inputMode="decimal"
+          value={marginInput}
+          onChange={(e) => setMarginInput(e.target.value)}
+          placeholder="پیش‌فرض"
+        />
+        <SecondaryButton disabled={busy} onClick={saveMargin}>
+          ذخیره
+        </SecondaryButton>
+      </div>
+    </div>
   );
 }
 

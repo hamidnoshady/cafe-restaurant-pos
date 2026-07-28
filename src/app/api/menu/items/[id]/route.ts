@@ -30,6 +30,7 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
     imageUrl?: string | null;
     sortOrder?: number;
     isActive?: boolean;
+    targetMarginPercent?: number | null;
   };
   try {
     body = await request.json();
@@ -71,6 +72,17 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
   if (body.imageUrl !== undefined) set("image_url", body.imageUrl?.trim() || null);
   if (body.sortOrder !== undefined) set("sort_order", Number(body.sortOrder) || 0);
   if (body.isActive !== undefined) set("is_active", Boolean(body.isActive));
+  if (body.targetMarginPercent !== undefined) {
+    if (body.targetMarginPercent === null) {
+      set("target_margin_percent", null);
+    } else {
+      const margin = Number(body.targetMarginPercent);
+      if (!Number.isFinite(margin) || margin < 0 || margin >= 100) {
+        return NextResponse.json({ error: "invalid_margin" }, { status: 400 });
+      }
+      set("target_margin_percent", margin);
+    }
+  }
   if (fields.length === 0) return NextResponse.json({ error: "bad_request" }, { status: 400 });
 
   set("updated_at", new Date());

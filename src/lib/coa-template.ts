@@ -47,6 +47,20 @@ export const WELL_KNOWN_CODES = {
   inventoryCountGain: "4910",
 } as const;
 
+/**
+ * Well-known expense codes that are cost of sales (material cost + inventory
+ * shrinkage), not overhead — the "by function" split (COGS vs. SG&A) a
+ * multi-step income statement needs for gross profit. Labor (`salariesExpense`)
+ * is tracked separately since COGS + labor = "prime cost", the standard F&B
+ * management metric; everything else in `type='expense'` is operating expense.
+ */
+export const COST_OF_SALES_CODES: readonly string[] = [
+  WELL_KNOWN_CODES.cogs,
+  WELL_KNOWN_CODES.wasteExpense,
+  WELL_KNOWN_CODES.inventoryCountExpense,
+  WELL_KNOWN_CODES.inventoryWriteDownExpense,
+];
+
 export const FNB_COA_TEMPLATE: TemplateAccount[] = [
   { code: "1000", name: "دارایی‌ها", type: "asset" },
   { code: "1100", name: "صندوق", type: "asset", parentCode: "1000" },
