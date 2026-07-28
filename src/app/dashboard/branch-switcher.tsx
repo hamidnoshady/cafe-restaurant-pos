@@ -23,7 +23,7 @@ interface ActiveResponse {
   canSwitch: boolean;
 }
 
-export function BranchSwitcher() {
+export function BranchSwitcher({ compact = false }: { compact?: boolean }) {
   const router = useRouter();
   const [state, setState] = useState<ActiveResponse | null>(null);
   const [busy, setBusy] = useState(false);
@@ -59,13 +59,14 @@ export function BranchSwitcher() {
   }
 
   return (
-    <div className="mb-3">
-      <label className="mb-1 block text-xs text-muted-foreground">شعبهٔ فعال</label>
+    <div className={compact ? "" : "mb-3"}>
+      {!compact ? <label className="mb-1 block text-xs text-muted-foreground">شعبهٔ فعال</label> : null}
       <select
-        className="w-full rounded-md border bg-background px-2 py-1.5 text-sm"
+        className={compact ? "min-h-11 max-w-40 rounded-xl border border-[#EAE8E2] bg-white px-3 text-sm text-[#252522] outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45" : "w-full rounded-md border bg-background px-2 py-1.5 text-sm"}
         value={state.active.id}
         disabled={busy}
         onChange={(e) => void switchTo(e.target.value)}
+        aria-label="انتخاب شعبهٔ فعال"
       >
         {state.locations.map((location) => (
           <option key={location.id} value={location.id}>
