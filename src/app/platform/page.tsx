@@ -64,8 +64,8 @@ export default function BusinessesPage() {
   }, [load]);
 
   return (
-    <div className="mx-auto max-w-5xl">
-      <div className="mb-6 flex items-center justify-between">
+    <div className="mx-auto w-full max-w-5xl">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold">کسب‌وکارها</h1>
           <p className="mt-1 text-sm text-white/40">
@@ -73,7 +73,7 @@ export default function BusinessesPage() {
           </p>
         </div>
         {can("business.provision") ? (
-          <Button onClick={() => setShowForm((v) => !v)}>
+          <Button onClick={() => setShowForm((v) => !v)} className="w-full sm:w-auto">
             {showForm ? "بستن" : "ایجاد کسب‌وکار"}
           </Button>
         ) : null}
@@ -99,51 +99,95 @@ export default function BusinessesPage() {
           <p className="text-sm text-white/50">هنوز کسب‌وکاری ثبت نشده است.</p>
         </Card>
       ) : (
-        <div className="overflow-hidden rounded-xl border border-white/10">
-          <table className="w-full text-sm">
-            <thead className="bg-white/3 text-white/50">
-              <tr>
-                <th className="px-4 py-3 text-start font-medium">نام</th>
-                <th className="px-4 py-3 text-start font-medium">وضعیت</th>
-                <th className="px-4 py-3 text-start font-medium">پلن</th>
-                <th className="px-4 py-3 text-start font-medium">شعبه</th>
-                <th className="px-4 py-3 text-start font-medium">اعضا</th>
-                <th className="px-4 py-3 text-start font-medium">ایجاد</th>
-              </tr>
-            </thead>
-            <tbody>
-              {businesses.map((b) => (
-                <tr
-                  key={b.id}
-                  className="border-t border-white/5 transition-colors hover:bg-white/3"
-                >
-                  <td className="px-4 py-3">
-                    <Link
-                      href={`/platform/businesses/${b.id}`}
-                      className="font-medium text-sky-300 hover:underline"
-                    >
-                      {b.name}
-                    </Link>
-                    <span className="mt-0.5 block text-xs text-white/30" dir="ltr">
-                      {b.slug}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <StatusBadge status={b.status} />
-                  </td>
-                  <td className="px-4 py-3 text-white/70">{b.plan}</td>
-                  <td className="px-4 py-3 text-white/70">
-                    {formatPersianNumber(b.locationCount)}
-                  </td>
-                  <td className="px-4 py-3 text-white/70">{formatPersianNumber(b.memberCount)}</td>
-                  <td className="px-4 py-3 text-white/50">{formatDate(b.createdAt)}</td>
+        <>
+          <div className="space-y-3 md:hidden">
+            {businesses.map((b) => (
+              <BusinessListCard key={b.id} business={b} />
+            ))}
+          </div>
+          <div className="hidden overflow-x-auto rounded-xl border border-white/10 md:block">
+            <table className="min-w-[680px] w-full text-sm">
+              <thead className="bg-white/3 text-white/50">
+                <tr>
+                  <th className="px-4 py-3 text-start font-medium">نام</th>
+                  <th className="px-4 py-3 text-start font-medium">وضعیت</th>
+                  <th className="px-4 py-3 text-start font-medium">پلن</th>
+                  <th className="px-4 py-3 text-start font-medium">شعبه</th>
+                  <th className="px-4 py-3 text-start font-medium">اعضا</th>
+                  <th className="px-4 py-3 text-start font-medium">ایجاد</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {businesses.map((b) => (
+                  <tr
+                    key={b.id}
+                    className="border-t border-white/5 transition-colors hover:bg-white/3"
+                  >
+                    <td className="px-4 py-3">
+                      <Link
+                        href={"/platform/businesses/" + b.id}
+                        className="font-medium text-sky-300 hover:underline"
+                      >
+                        {b.name}
+                      </Link>
+                      <span className="mt-0.5 block text-xs text-white/30" dir="ltr">
+                        {b.slug}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <StatusBadge status={b.status} />
+                    </td>
+                    <td className="px-4 py-3 text-white/70">{b.plan}</td>
+                    <td className="px-4 py-3 text-white/70">
+                      {formatPersianNumber(b.locationCount)}
+                    </td>
+                    <td className="px-4 py-3 text-white/70">{formatPersianNumber(b.memberCount)}</td>
+                    <td className="px-4 py-3 text-white/50">{formatDate(b.createdAt)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </div>
+  );
+}
+
+function BusinessListCard({ business }: { business: Business }) {
+  return (
+    <Link
+      href={"/platform/businesses/" + business.id}
+      className="block rounded-xl border border-white/10 bg-white/3 p-4 transition-colors hover:bg-white/5"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate font-semibold text-sky-300">{business.name}</p>
+          <p className="mt-1 break-all text-xs text-white/35" dir="ltr">
+            {business.slug}
+          </p>
+        </div>
+        <StatusBadge status={business.status} />
+      </div>
+      <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
+        <div>
+          <dt className="text-xs text-white/40">پلن</dt>
+          <dd className="mt-1 text-white/80">{business.plan}</dd>
+        </div>
+        <div>
+          <dt className="text-xs text-white/40">شعبه</dt>
+          <dd className="mt-1 text-white/80">{formatPersianNumber(business.locationCount)}</dd>
+        </div>
+        <div>
+          <dt className="text-xs text-white/40">اعضا</dt>
+          <dd className="mt-1 text-white/80">{formatPersianNumber(business.memberCount)}</dd>
+        </div>
+        <div>
+          <dt className="text-xs text-white/40">ایجاد</dt>
+          <dd className="mt-1 text-white/60">{formatDate(business.createdAt)}</dd>
+        </div>
+      </dl>
+    </Link>
   );
 }
 
