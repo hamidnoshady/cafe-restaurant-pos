@@ -11,27 +11,33 @@ export const GET = withTenantScope(async () => {
   return NextResponse.json({ pricing: await getPricingConfig(session.businessId) });
 });
 
+function parsePercent(value: unknown, max: number): { ok: true; value: number | null } | { ok: false } {
+  if (value === null || value === undefined) return { ok: true, value: null };
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0 || n >= max) return { ok: false };
+  return { ok: true, value: n };
+}
+
 export const PUT = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requirePermission(PERMISSIONS.settingsManage);
   if (error) return error;
 
-  let body: { defaultMarginPercent?: unknown };
+  let body: { defaultMarginPercent?: unknown; fallbackOverheadPercent?: unknown };
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
 
-  if (body.defaultMarginPercent === null) {
-    await setPricingConfig(session.businessId, { defaultMarginPercent: null });
-    return NextResponse.json({ ok: true });
-  }
+  // Margin must stay below 100 (it divides the price), overhead has no such ceiling — just a sanity cap.
+  const defaultMarginPercent = parsePercent(body.defaultMarginPercent, 100);
+  if (!defaultMarginPercent.ok) return NextResponse.json({ error: "invalid_margin" }, { status: 400 });
+  const fallbackOverheadPercent = parsePercent(body.fallbackOverheadPercent, 1000);
+  if (!fallbackOverheadPercent.ok) return NextResponse.json({ error: "invalid_overhead" }, { status: 400 });
 
-  const defaultMarginPercent = Number(body.defaultMarginPercent);
-  if (!Number.isFinite(defaultMarginPercent) || defaultMarginPercent < 0 || defaultMarginPercent >= 100) {
-    return NextResponse.json({ error: "invalid_margin" }, { status: 400 });
-  }
-
-  await setPricingConfig(session.businessId, { defaultMarginPercent });
+  await setPricingConfig(session.businessId, {
+    defaultMarginPercent: defaultMarginPercent.value,
+    fallbackOverheadPercent: fallbackOverheadPercent.value,
+  });
   return NextResponse.json({ ok: true });
 });

@@ -164,6 +164,7 @@ describe("getSuggestedPrice", () => {
     expect(result?.marginSource).toBe("none");
     expect(result?.marginPercent).toBeNull();
     expect(result?.overheadRatePercent).toBeNull(); // no revenue posted at all
+    expect(result?.overheadSource).toBe("none");
     expect(result?.loadedCost).toBe(9_000); // overhead treated as 0 when unknown
     expect(result?.suggestedPrice).toBeNull();
   });
@@ -173,7 +174,7 @@ describe("getSuggestedPrice", () => {
       "INSERT INTO menu_item_ingredients (menu_item_id, inventory_item_id, quantity) VALUES ($1, $2, 18)",
       [item.menuItemId, item.inventoryItemId],
     );
-    await pricingService.setPricingConfig(biz.id, { defaultMarginPercent: 30 });
+    await pricingService.setPricingConfig(biz.id, { defaultMarginPercent: 30, fallbackOverheadPercent: null });
 
     const result = await pricingService.getSuggestedPrice(biz.id, item.menuItemId);
     expect(result?.marginSource).toBe("default");
@@ -186,7 +187,7 @@ describe("getSuggestedPrice", () => {
       "INSERT INTO menu_item_ingredients (menu_item_id, inventory_item_id, quantity) VALUES ($1, $2, 18)",
       [item.menuItemId, item.inventoryItemId],
     );
-    await pricingService.setPricingConfig(biz.id, { defaultMarginPercent: 30 });
+    await pricingService.setPricingConfig(biz.id, { defaultMarginPercent: 30, fallbackOverheadPercent: null });
     await db.query("UPDATE menu_items SET target_margin_percent = 45 WHERE id = $1", [item.menuItemId]);
 
     const result = await pricingService.getSuggestedPrice(biz.id, item.menuItemId);
@@ -208,6 +209,39 @@ describe("getSuggestedPrice", () => {
     const result = await pricingService.getSuggestedPrice(biz.id, item.menuItemId);
     // overhead rate = (300,000 + 100,000) / 1,000,000 = 40%
     expect(result?.overheadRatePercent).toBe(40);
+    expect(result?.overheadSource).toBe("ledger");
     expect(result?.loadedCost).toBe(Math.round(9_000 * 1.4));
+  });
+
+  it("uses the manual fallback overhead when a new business has no revenue history yet", async () => {
+    await db.query(
+      "INSERT INTO menu_item_ingredients (menu_item_id, inventory_item_id, quantity) VALUES ($1, $2, 18)",
+      [item.menuItemId, item.inventoryItemId],
+    );
+    // Rent posted before the business's first sale — a real scenario, not just an empty ledger.
+    await postEntry(today(), acct.rent, acct.cash, 300_000);
+    await pricingService.setPricingConfig(biz.id, { defaultMarginPercent: null, fallbackOverheadPercent: 25 });
+
+    const result = await pricingService.getSuggestedPrice(biz.id, item.menuItemId);
+    expect(result?.overheadRatePercent).toBe(25);
+    expect(result?.overheadSource).toBe("fallback");
+    expect(result?.loadedCost).toBe(Math.round(9_000 * 1.25));
+  });
+
+  it("ignores the manual fallback the moment the ledger has a real rate to compute", async () => {
+    await db.query(
+      "INSERT INTO menu_item_ingredients (menu_item_id, inventory_item_id, quantity) VALUES ($1, $2, 18)",
+      [item.menuItemId, item.inventoryItemId],
+    );
+    await pricingService.setPricingConfig(biz.id, { defaultMarginPercent: null, fallbackOverheadPercent: 25 });
+    const day = today();
+    await postEntry(day, acct.cash, acct.revenue, 1_000_000);
+    await postEntry(day, acct.rent, acct.cash, 300_000);
+    await postEntry(day, acct.salaries, acct.cash, 100_000);
+
+    const result = await pricingService.getSuggestedPrice(biz.id, item.menuItemId);
+    // ledger-derived 40% wins over the 25% manual fallback
+    expect(result?.overheadRatePercent).toBe(40);
+    expect(result?.overheadSource).toBe("ledger");
   });
 });

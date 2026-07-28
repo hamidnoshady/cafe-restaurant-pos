@@ -19,11 +19,22 @@ const OVERHEAD_LOOKBACK_DAYS = 30;
 export interface PricingConfig {
   /** Business-wide target gross margin (%), applied to any item without its own override. Null until an owner sets one. */
   defaultMarginPercent: number | null;
+  /**
+   * Manually estimated overhead (%), used only until the ledger has 30 days
+   * of real revenue to derive a rate from — a new business (or one that's
+   * posted rent/setup expenses before its first sale) would otherwise get
+   * suggestions with zero overhead baked in, since there's nothing to divide
+   * by yet. Ignored the moment the ledger-derived rate becomes available.
+   */
+  fallbackOverheadPercent: number | null;
 }
 
 export async function getPricingConfig(businessId: string): Promise<PricingConfig> {
   const stored = await getSetting<PricingConfig>(businessId, SETTING_KEYS.pricing);
-  return { defaultMarginPercent: stored?.defaultMarginPercent ?? null };
+  return {
+    defaultMarginPercent: stored?.defaultMarginPercent ?? null,
+    fallbackOverheadPercent: stored?.fallbackOverheadPercent ?? null,
+  };
 }
 
 export async function setPricingConfig(businessId: string, config: PricingConfig): Promise<void> {
@@ -33,8 +44,9 @@ export async function setPricingConfig(businessId: string, config: PricingConfig
 export interface SuggestedPriceBreakdown {
   materialCost: Rial;
   hasRecipe: boolean;
-  /** Percent of material cost recovered as overhead, from the trailing 30 days' (operatingExpenses + laborCost) / totalRevenue; null with no revenue in that window. */
+  /** Percent of material cost recovered as overhead — from the ledger when there's revenue to derive a rate from, else the manual fallback, else null. */
   overheadRatePercent: number | null;
+  overheadSource: "ledger" | "fallback" | "none";
   loadedCost: Rial;
   marginPercent: number | null;
   marginSource: "item" | "default" | "none";
@@ -64,7 +76,11 @@ export async function getSuggestedPrice(businessId: string, menuItemId: string):
   const config = await getPricingConfig(businessId);
   const dateTo = new Date().toISOString().slice(0, 10);
   const pnl = await getProfitAndLoss(businessId, { dateFrom: addDays(dateTo, -OVERHEAD_LOOKBACK_DAYS), dateTo });
-  const overheadRatePercent = pnl.totalRevenue > 0 ? ((pnl.operatingExpenses + pnl.laborCost) / pnl.totalRevenue) * 100 : null;
+  const ledgerOverheadRatePercent =
+    pnl.totalRevenue > 0 ? ((pnl.operatingExpenses + pnl.laborCost) / pnl.totalRevenue) * 100 : null;
+  const overheadRatePercent = ledgerOverheadRatePercent ?? config.fallbackOverheadPercent;
+  const overheadSource: SuggestedPriceBreakdown["overheadSource"] =
+    ledgerOverheadRatePercent != null ? "ledger" : config.fallbackOverheadPercent != null ? "fallback" : "none";
 
   const itemMargin = item.target_margin_percent != null ? Number(item.target_margin_percent) : null;
   const marginPercent = itemMargin ?? config.defaultMarginPercent;
@@ -77,6 +93,7 @@ export async function getSuggestedPrice(businessId: string, menuItemId: string):
     materialCost,
     hasRecipe,
     overheadRatePercent,
+    overheadSource,
     loadedCost,
     marginPercent,
     marginSource,

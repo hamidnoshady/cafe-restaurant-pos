@@ -25,6 +25,7 @@ interface SuggestedPrice {
   materialCost: number;
   hasRecipe: boolean;
   overheadRatePercent: number | null;
+  overheadSource: "ledger" | "fallback" | "none";
   loadedCost: number;
   marginPercent: number | null;
   marginSource: "item" | "default" | "none";
@@ -355,7 +356,12 @@ function PricingPanel({ item, busy, run }: { item: Item; busy: boolean; run: Run
             <div className="grid grid-cols-2 gap-x-4 gap-y-1 sm:grid-cols-4">
               <span className="text-muted-foreground">بهای مواد: {formatToman(suggestion.materialCost)}</span>
               <span className="text-muted-foreground">
-                سربار: {suggestion.overheadRatePercent != null ? `${toPersianDigits(Math.round(suggestion.overheadRatePercent))}٪` : "بدون داده"}
+                سربار:{" "}
+                {suggestion.overheadRatePercent != null
+                  ? `${toPersianDigits(Math.round(suggestion.overheadRatePercent))}٪ (${
+                      suggestion.overheadSource === "ledger" ? "بر اساس دفتر" : "برآورد دستی"
+                    })`
+                  : "بدون داده"}
               </span>
               <span className="text-muted-foreground">بهای تمام‌شده: {formatToman(suggestion.loadedCost)}</span>
               <span className="text-muted-foreground">

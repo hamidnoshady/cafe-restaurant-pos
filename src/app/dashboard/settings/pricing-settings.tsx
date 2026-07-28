@@ -5,13 +5,23 @@ import { toLatinDigits } from "@/lib/digits";
 import { ErrorBox, Field, InfoBox, PrimaryButton, api, errorMessage, inputClass } from "../ui";
 
 interface PricingResponse {
-  pricing: { defaultMarginPercent: number | null };
+  pricing: { defaultMarginPercent: number | null; fallbackOverheadPercent: number | null };
   error?: string;
 }
 
-/** Business-wide default target gross margin for cost-plus pricing suggestions on menu items. */
+/** Parses a percent input; empty string means "clear it" (null), anything else must be a finite number below `max`. */
+function parsePercentInput(raw: string, max: number): { ok: true; value: number | null } | { ok: false } {
+  const trimmed = toLatinDigits(raw).trim();
+  if (trimmed === "") return { ok: true, value: null };
+  const n = Number(trimmed);
+  if (!Number.isFinite(n) || n < 0 || n >= max) return { ok: false };
+  return { ok: true, value: n };
+}
+
+/** Business-wide default target gross margin and fallback overhead % for cost-plus pricing suggestions on menu items. */
 export function PricingSettings() {
   const [defaultMarginPercent, setDefaultMarginPercent] = useState("");
+  const [fallbackOverheadPercent, setFallbackOverheadPercent] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -22,6 +32,9 @@ export function PricingSettings() {
     const { ok, data } = await api<PricingResponse>("/api/settings/pricing");
     if (ok) {
       setDefaultMarginPercent(data.pricing.defaultMarginPercent != null ? String(data.pricing.defaultMarginPercent) : "");
+      setFallbackOverheadPercent(
+        data.pricing.fallbackOverheadPercent != null ? String(data.pricing.fallbackOverheadPercent) : "",
+      );
       setError("");
     } else {
       setError(errorMessage(data.error));
@@ -35,23 +48,22 @@ export function PricingSettings() {
 
   async function save(event: React.FormEvent) {
     event.preventDefault();
-    const trimmed = toLatinDigits(defaultMarginPercent).trim();
-    let value: number | null;
-    if (trimmed === "") {
-      value = null;
-    } else {
-      value = Number(trimmed);
-      if (!Number.isFinite(value) || value < 0 || value >= 100) {
-        setError("درصد حاشیه سود باید عددی بین ۰ تا ۱۰۰ باشد.");
-        return;
-      }
+    const margin = parsePercentInput(defaultMarginPercent, 100);
+    if (!margin.ok) {
+      setError("درصد حاشیه سود باید عددی بین ۰ تا ۱۰۰ باشد.");
+      return;
+    }
+    const overhead = parsePercentInput(fallbackOverheadPercent, 1000);
+    if (!overhead.ok) {
+      setError("درصد سربار برآوردی باید عددی بین ۰ تا ۱۰۰۰ باشد.");
+      return;
     }
     setSaving(true);
     setError("");
     setSaved(false);
     const { ok, data } = await api<{ error?: string }>("/api/settings/pricing", {
       method: "PUT",
-      body: JSON.stringify({ defaultMarginPercent: value }),
+      body: JSON.stringify({ defaultMarginPercent: margin.value, fallbackOverheadPercent: overhead.value }),
     });
     setSaving(false);
     if (!ok) {
@@ -88,6 +100,33 @@ export function PricingSettings() {
                   setDefaultMarginPercent(e.target.value);
                 }}
                 placeholder="مثلاً ۳۰"
+              />
+              <span className="pointer-events-none absolute inset-y-0 end-3 flex items-center text-sm text-muted-foreground">٪</span>
+            </div>
+          </Field>
+        </div>
+      </section>
+
+      <section className="rounded-2xl bg-card p-5 shadow-sm">
+        <h2 className="mb-1 font-semibold">سربار برآوردی برای کسب‌وکار تازه</h2>
+        <p className="mb-4 text-sm text-muted-foreground">
+          سربار (اجاره، آب و برق، حقوق) در حالت عادی خودکار و از روی ۳۰ روز اخیر دفتر حسابداری محاسبه می‌شود. تا وقتی
+          فروش کافی برای این محاسبه ثبت نشده — مثلاً در روزهای اول کسب‌وکار — این عدد به‌جای آن استفاده می‌شود. به‌محض
+          آنکه محاسبهٔ خودکار ممکن شود، این مقدار نادیده گرفته می‌شود.
+        </p>
+        <div className="max-w-xs">
+          <Field label="درصد سربار برآوردی">
+            <div className="relative">
+              <input
+                className={inputClass}
+                dir="ltr"
+                inputMode="decimal"
+                value={fallbackOverheadPercent}
+                onChange={(e) => {
+                  setSaved(false);
+                  setFallbackOverheadPercent(e.target.value);
+                }}
+                placeholder="مثلاً ۳۵"
               />
               <span className="pointer-events-none absolute inset-y-0 end-3 flex items-center text-sm text-muted-foreground">٪</span>
             </div>
