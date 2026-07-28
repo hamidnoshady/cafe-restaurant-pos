@@ -356,3 +356,51 @@ describe("resetBusiness", () => {
     });
   });
 });
+
+describe("hardDeleteBusiness", () => {
+  it("deletes an active business immediately, with no archive step, and leaves another tenant untouched", async () => {
+    const target = await seedBusiness("Doomed Cafe", `doomed-${randomUUID().slice(0, 8)}`);
+    const neighbour = await seedBusiness("Neighbour Cafe 2", `neighbour2-${randomUUID().slice(0, 8)}`);
+
+    // Still "active" — no archive, no grace window. Confirms deletion isn't
+    // gated on business status.
+    const { rows: statusRows } = await db.query<{ status: string }>(
+      `SELECT status::text AS status FROM businesses WHERE id = $1`,
+      [target.id],
+    );
+    expect(statusRows[0].status).toBe("active");
+
+    await platformService.hardDeleteBusiness(target.id);
+
+    const { rows: remaining } = await db.query(`SELECT 1 FROM businesses WHERE id = $1`, [
+      target.id,
+    ]);
+    expect(remaining).toHaveLength(0);
+
+    const { rows: orphanUsers } = await db.query(`SELECT 1 FROM users WHERE business_id = $1`, [
+      target.id,
+    ]);
+    expect(orphanUsers).toHaveLength(0);
+
+    // The platform identity survives — only the business's own membership row
+    // (and everything else scoped to the business) is gone.
+    const ownerIdentity = await db.query(`SELECT 1 FROM platform_users WHERE id = $1`, [
+      target.platformUserId,
+    ]);
+    expect(ownerIdentity.rowCount).toBe(1);
+
+    const neighbourData = await db.query<{ menu_items: string; orders: string }>(
+      `SELECT
+         (SELECT count(*) FROM menu_items WHERE location_id = $1)::text AS menu_items,
+         (SELECT count(*) FROM orders WHERE location_id = $1)::text AS orders`,
+      [neighbour.locationId],
+    );
+    expect(neighbourData.rows[0]).toEqual({ menu_items: "1", orders: "1" });
+  });
+
+  it("raises BusinessNotFoundError for a business that doesn't exist", async () => {
+    await expect(platformService.hardDeleteBusiness(randomUUID())).rejects.toBeInstanceOf(
+      platformService.BusinessNotFoundError,
+    );
+  });
+});

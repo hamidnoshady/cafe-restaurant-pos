@@ -253,9 +253,11 @@ npm run db:platform-admin
 The console (dark chrome, deliberately unlike the tenant dashboard's light theme) covers:
 
 - **Businesses** — provision a working business end-to-end (owner + chart of accounts + first
-  branch, the owner logs straight in), then suspend / reactivate / archive / hard-delete. Suspending
-  blocks members at login and at the API guard without deleting anything. Hard-delete is never
-  immediate — it opens a grace window with an export (`PLATFORM_DELETE_GRACE_DAYS`, default 30).
+  branch, the owner logs straight in), then suspend / reactivate / archive / reset / hard-delete.
+  Suspending blocks members at login and at the API guard without deleting anything. Reset and
+  hard-delete are both immediate and irreversible, with no archive step or grace window — the only
+  safety net is the owner-only capability plus typing the fixed confirmation phrase (`delete-me`,
+  `DESTRUCTIVE_CONFIRMATION_PHRASE` in `src/lib/platform-admin.ts`) into the console.
 - **Plans & feature flags** — assign a plan or override a single `business_features` flag per
   business.
 - **Support / impersonation** — enter a business read-only or full-access; impossible without an

@@ -13,10 +13,11 @@ import {
   resetBusiness,
   listPlans,
   hardDeleteBusiness,
-  DeleteNotEligibleError,
+  BusinessNotFoundError,
   ResetBusinessNotPossibleError,
   type BusinessStatus,
 } from "@/lib/platform-service";
+import { DESTRUCTIVE_CONFIRMATION_PHRASE } from "@/lib/platform-admin";
 
 interface Ctx {
   params: Promise<{ id: string }>;
@@ -183,9 +184,9 @@ export const PATCH = withPlatformScope(async (request: NextRequest, ctx: Ctx) =>
 });
 
 /**
- * Factory-reset one business after an explicit slug confirmation. The shared
- * owner identity and subscription plan survive, but all tenant data is deleted
- * and the owner returns to the first-run setup wizard.
+ * Factory-reset one business after typing the fixed confirmation phrase. The
+ * shared owner identity and subscription plan survive, but all tenant data is
+ * deleted and the owner returns to the first-run setup wizard.
  */
 export const POST = withPlatformScope(async (request: NextRequest, ctx: Ctx) => {
   const { session, error } = await requirePlatformCapability("business.reset");
@@ -205,7 +206,7 @@ export const POST = withPlatformScope(async (request: NextRequest, ctx: Ctx) => 
   }
 
   const confirmation = typeof body.confirmation === "string" ? body.confirmation.trim() : "";
-  if (confirmation !== business.slug) {
+  if (confirmation !== DESTRUCTIVE_CONFIRMATION_PHRASE) {
     return NextResponse.json({ error: "reset_confirmation_required" }, { status: 400 });
   }
 
@@ -233,13 +234,15 @@ export const POST = withPlatformScope(async (request: NextRequest, ctx: Ctx) => 
 });
 
 /**
- * Hard-delete a business — irreversible, and only once it has been archived
- * past the grace window (open question 2: never immediate). Owner-only
- * (`business.delete`). The audit row survives the delete because
- * `platform_audit_log.business_id` is ON DELETE SET NULL, so the record that
- * it happened outlives the thing it happened to.
+ * Hard-delete a business — immediately, irreversibly, no archive step and no
+ * grace window. Owner-only (`business.delete`) and gated on the same fixed
+ * confirmation phrase as reset — with the grace window gone, that pairing
+ * (owner capability + typed phrase) is the only safety net left. The audit
+ * row survives the delete because `platform_audit_log.business_id` is
+ * ON DELETE SET NULL, so the record that it happened outlives the thing it
+ * happened to.
  */
-export const DELETE = withPlatformScope(async (_request: NextRequest, ctx: Ctx) => {
+export const DELETE = withPlatformScope(async (request: NextRequest, ctx: Ctx) => {
   const { session, error } = await requirePlatformCapability("business.delete");
   if (error) return error;
 
@@ -247,23 +250,41 @@ export const DELETE = withPlatformScope(async (_request: NextRequest, ctx: Ctx) 
   const business = await getBusiness(id);
   if (!business) return NextResponse.json({ error: "not_found" }, { status: 404 });
 
+  let body: Record<string, unknown>;
   try {
-    // Audit first: the record must exist even if the delete then fails, and it
-    // must capture the business's identity before the row disappears.
-    await platformAudit({
-      adminId: session.padmin,
-      businessId: id,
-      action: "business.delete",
-      entity: "business",
-      entityId: id,
-      payload: { name: business.name, slug: business.slug },
-    });
-    await hardDeleteBusiness(id);
-    return NextResponse.json({ ok: true });
-  } catch (err) {
-    if (err instanceof DeleteNotEligibleError) {
-      return NextResponse.json({ error: "delete_not_eligible" }, { status: 409 });
-    }
-    throw err;
+    const raw: unknown = await request.json();
+    if (!isObject(raw)) throw new Error("invalid_body");
+    body = raw;
+  } catch {
+    return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
+
+  const confirmation = typeof body.confirmation === "string" ? body.confirmation.trim() : "";
+  if (confirmation !== DESTRUCTIVE_CONFIRMATION_PHRASE) {
+    return NextResponse.json({ error: "delete_confirmation_required" }, { status: 400 });
+  }
+
+  // Audit first: the record must exist even if the delete then fails, and it
+  // must capture the business's identity before the row disappears.
+  await platformAudit({
+    adminId: session.padmin,
+    businessId: id,
+    action: "business.delete",
+    entity: "business",
+    entityId: id,
+    payload: { name: business.name, slug: business.slug },
+  });
+
+  try {
+    await hardDeleteBusiness(id);
+  } catch (err) {
+    if (err instanceof BusinessNotFoundError) {
+      return NextResponse.json({ error: "not_found" }, { status: 404 });
+    }
+    // hardDeleteBusiness is one transaction, so this response also guarantees
+    // no partial delete was committed. Keep the database detail in server logs.
+    console.error("platform business delete failed", { businessId: id, err });
+    return NextResponse.json({ error: "delete_failed" }, { status: 500 });
+  }
+  return NextResponse.json({ ok: true });
 });

@@ -116,28 +116,10 @@ export function clampImpersonationMinutes(requested: number | undefined): number
 }
 
 /**
- * Days an archived business must wait before it becomes eligible for
- * hard-delete (open question 2: grace window + export, never immediate).
- * Overridable per deployment.
+ * The fixed phrase an operator must type to reset or hard-delete a business.
+ * Both are immediate and irreversible with no other safety net (no archive
+ * step, no grace window) — a single memorable phrase rather than the
+ * business's own slug, which a Persian business name makes tedious to
+ * retype exactly.
  */
-export function deleteGraceDays(): number {
-  const d = Number(process.env.PLATFORM_DELETE_GRACE_DAYS);
-  return Number.isFinite(d) && d >= 0 ? Math.floor(d) : 30;
-}
-
-/**
- * Whether a business archived at `archivedAt` is past its grace window as of
- * `now`, and therefore eligible for hard-delete. Pure so it can be tested
- * without touching the clock or the database.
- */
-export function isDeleteEligible(
-  archivedAt: Date | string | null,
-  now: Date = new Date(),
-  graceDays: number = deleteGraceDays(),
-): boolean {
-  if (!archivedAt) return false;
-  const archived = archivedAt instanceof Date ? archivedAt : new Date(archivedAt);
-  if (Number.isNaN(archived.getTime())) return false;
-  const eligibleAt = archived.getTime() + graceDays * 24 * 60 * 60 * 1000;
-  return now.getTime() >= eligibleAt;
-}
+export const DESTRUCTIVE_CONFIRMATION_PHRASE = "delete-me";

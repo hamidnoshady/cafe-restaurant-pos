@@ -8,11 +8,13 @@ describe("slugifyBusinessName", () => {
     expect(slugifyBusinessName("Cafe_Noir")).toBe("cafe-noir");
   });
 
-  it("keeps Persian names instead of stripping them to nothing", () => {
-    // The whole point: an ASCII-only slugifier would return "" for every
-    // business in the product's actual market.
-    expect(slugifyBusinessName("کافه نادری")).toBe("کافه-نادری");
-    expect(slugifyBusinessName("رستوران شاندیز")).toBe("رستوران-شاندیز");
+  it("transliterates Persian names to a Latin slug instead of stripping them to nothing", () => {
+    // The whole point: an ASCII-only slugifier with no transliteration would
+    // return "" for every business in the product's actual market, and a slug
+    // that just keeps the Persian text with hyphens isn't an "english name".
+    expect(slugifyBusinessName("کافه نادری")).toBe("kafh-nadry");
+    expect(slugifyBusinessName("رستوران شاندیز")).toBe("rstvran-shandyz");
+    expect(slugifyBusinessName("چایخانه تی تی")).toBe("chaykhanh-ty-ty");
   });
 
   it("normalises Persian digits and interchangeable Arabic letters", () => {

@@ -1,17 +1,64 @@
 /**
- * Business slugs — the short, URL-safe, human-quotable handle for a tenant.
+ * Business slugs — the short, URL-safe, human-quotable handle for a tenant,
+ * and its "english name" in the dashboard URL (`/{slug}/dashboard/...`, see
+ * src/middleware.ts). Business names in this product are overwhelmingly
+ * Persian, so this transliterates Persian/Arabic letters to Latin rather than
+ * keeping them as-is — a slug is meant to be a plain, ASCII, easy-to-type
+ * identifier, not the business's display name with hyphens.
  *
- * Business names in this product are overwhelmingly Persian, which strips to
- * nothing under an ASCII-only slugifier. Rather than transliterate (lossy, and
- * a whole dependency), Persian and Arabic letters are kept as-is: Postgres,
- * URLs and the `citext` column all handle them fine, and a business that wants
- * a Latin handle can be given one explicitly.
+ * The mapping is an approximation: ordinary Persian writing omits short
+ * vowels, so this can't reconstruct pronunciation exactly. It only needs to
+ * be deterministic, which it is.
  *
  * Framework-free and pure — covered by slug.test.ts.
  */
 
-/** Characters allowed in a slug: ASCII alphanumerics, Persian/Arabic letters, and hyphens. */
-const ALLOWED = /[^a-z0-9؀-ۿ‌-]/g;
+/** Persian/Arabic letter → Latin, applied before the final ASCII-only filter. */
+const TRANSLITERATION: Record<string, string> = {
+  "آ": "a",
+  "ا": "a",
+  "ب": "b",
+  "پ": "p",
+  "ت": "t",
+  "ث": "s",
+  "ج": "j",
+  "چ": "ch",
+  "ح": "h",
+  "خ": "kh",
+  "د": "d",
+  "ذ": "z",
+  "ر": "r",
+  "ز": "z",
+  "ژ": "zh",
+  "س": "s",
+  "ش": "sh",
+  "ص": "s",
+  "ض": "z",
+  "ط": "t",
+  "ظ": "z",
+  "ع": "",
+  "غ": "gh",
+  "ف": "f",
+  "ق": "q",
+  "ک": "k",
+  "گ": "g",
+  "ل": "l",
+  "م": "m",
+  "ن": "n",
+  "و": "v",
+  "ه": "h",
+  "ی": "y",
+  "ئ": "y",
+  "ء": "",
+  "ة": "h",
+};
+
+function transliterate(text: string): string {
+  return [...text].map((ch) => TRANSLITERATION[ch] ?? ch).join("");
+}
+
+/** Characters allowed in a slug: ASCII alphanumerics and hyphens. */
+const ALLOWED = /[^a-z0-9-]/g;
 
 /** Fallback stem when a name reduces to nothing usable. */
 export const SLUG_FALLBACK = "biz";
@@ -44,7 +91,7 @@ export const RESERVED_SLUGS = [
  * between a fallback and an error rather than being handed a silent default.
  */
 export function slugifyBusinessName(name: string): string {
-  const slug = name
+  const normalized = name
     .trim()
     .toLowerCase()
     // Arabic-Indic and Persian digits → ASCII, so "کافه۱" and "کافه1" agree.
@@ -52,8 +99,11 @@ export function slugifyBusinessName(name: string): string {
     .replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - 0x06f0))
     // Arabic letter variants Persian keyboards produce interchangeably.
     .replace(/[يى]/g, "ی")
-    .replace(/ك/g, "ک")
-    .replace(/[\s_]+/g, "-")
+    .replace(/ك/g, "ک");
+
+  const slug = transliterate(normalized)
+    // Zero-width non-joiner (U+200C, "می‌کنم"-style half-space) is a word separator.
+    .replace(/[\s_\u200c]+/g, "-")
     .replace(ALLOWED, "")
     .replace(/-+/g, "-")
     .replace(/^-|-$/g, "");
