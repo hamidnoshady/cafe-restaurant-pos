@@ -9,14 +9,30 @@ import {
   getBusiness,
   setBusinessStatus,
   setBusinessPlan,
+  updateBusiness,
+  resetBusiness,
   listPlans,
   hardDeleteBusiness,
   DeleteNotEligibleError,
+  ResetBusinessNotPossibleError,
   type BusinessStatus,
 } from "@/lib/platform-service";
 
 interface Ctx {
   params: Promise<{ id: string }>;
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isValidTimezone(value: string): boolean {
+  try {
+    Intl.DateTimeFormat(undefined, { timeZone: value });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** One business's summary — any admin reads. */
@@ -53,36 +69,52 @@ export const PATCH = withPlatformScope(async (request: NextRequest, ctx: Ctx) =>
   if (auth.error) return auth.error;
 
   const { id } = await ctx.params;
-  let body: { status?: BusinessStatus; plan?: string };
+  let body: Record<string, unknown>;
   try {
-    body = await request.json();
+    const raw: unknown = await request.json();
+    if (!isObject(raw)) throw new Error("invalid_body");
+    body = raw;
   } catch {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
 
-  if (body.status !== undefined) {
-    if (!["active", "suspended", "archived"].includes(body.status)) {
+  const hasStatus = body.status !== undefined;
+  const hasPlan = body.plan !== undefined;
+  const hasMetadata = body.name !== undefined || body.timezone !== undefined;
+  if (Number(hasStatus) + Number(hasPlan) + Number(hasMetadata) !== 1) {
+    return NextResponse.json({ error: "bad_request" }, { status: 400 });
+  }
+
+  if (hasStatus) {
+    if (
+      typeof body.status !== "string" ||
+      !["active", "suspended", "archived"].includes(body.status)
+    ) {
       return NextResponse.json({ error: "invalid_status" }, { status: 400 });
     }
-    const cap = STATUS_CAPABILITY[body.status];
+    const status = body.status as BusinessStatus;
+    const cap = STATUS_CAPABILITY[status];
     const guard = await requirePlatformCapability(cap);
     if (guard.error) return guard.error;
 
-    const updated = await setBusinessStatus(id, body.status);
+    const updated = await setBusinessStatus(id, status);
     if (!updated) return NextResponse.json({ error: "not_found" }, { status: 404 });
 
     await platformAudit({
       adminId: guard.session.padmin,
       businessId: id,
-      action: `business.${body.status}`,
+      action: "business." + status,
       entity: "business",
       entityId: id,
-      payload: { status: body.status },
+      payload: { status },
     });
     return NextResponse.json({ business: updated });
   }
 
-  if (body.plan !== undefined) {
+  if (hasPlan) {
+    if (typeof body.plan !== "string") {
+      return NextResponse.json({ error: "bad_request" }, { status: 400 });
+    }
     const plan = body.plan.trim();
     if (!plan) return NextResponse.json({ error: "missing_fields" }, { status: 400 });
     const guard = await requirePlatformCapability("features.write");
@@ -108,7 +140,93 @@ export const PATCH = withPlatformScope(async (request: NextRequest, ctx: Ctx) =>
     return NextResponse.json({ business: await getBusiness(id) });
   }
 
-  return NextResponse.json({ error: "nothing_to_change" }, { status: 400 });
+  const name =
+    body.name === undefined
+      ? undefined
+      : typeof body.name === "string"
+        ? body.name.trim()
+        : null;
+  const timezone =
+    body.timezone === undefined
+      ? undefined
+      : typeof body.timezone === "string"
+        ? body.timezone.trim()
+        : null;
+  if (name === null || timezone === null) {
+    return NextResponse.json({ error: "bad_request" }, { status: 400 });
+  }
+  if (name !== undefined && !name) {
+    return NextResponse.json({ error: "missing_fields" }, { status: 400 });
+  }
+  if (timezone !== undefined && (!timezone || !isValidTimezone(timezone))) {
+    return NextResponse.json({ error: "invalid_timezone" }, { status: 400 });
+  }
+
+  const guard = await requirePlatformCapability("business.edit");
+  if (guard.error) return guard.error;
+
+  const updated = await updateBusiness(id, { name, timezone });
+  if (!updated) return NextResponse.json({ error: "not_found" }, { status: 404 });
+
+  const payload: Record<string, string> = {};
+  if (name !== undefined) payload.name = name;
+  if (timezone !== undefined) payload.timezone = timezone;
+  await platformAudit({
+    adminId: guard.session.padmin,
+    businessId: id,
+    action: "business.edit",
+    entity: "business",
+    entityId: id,
+    payload,
+  });
+  return NextResponse.json({ business: updated });
+});
+
+/**
+ * Factory-reset one business after an explicit slug confirmation. The shared
+ * owner identity and subscription plan survive, but all tenant data is deleted
+ * and the owner returns to the first-run setup wizard.
+ */
+export const POST = withPlatformScope(async (request: NextRequest, ctx: Ctx) => {
+  const { session, error } = await requirePlatformCapability("business.reset");
+  if (error) return error;
+
+  const { id } = await ctx.params;
+  const business = await getBusiness(id);
+  if (!business) return NextResponse.json({ error: "not_found" }, { status: 404 });
+
+  let body: Record<string, unknown>;
+  try {
+    const raw: unknown = await request.json();
+    if (!isObject(raw)) throw new Error("invalid_body");
+    body = raw;
+  } catch {
+    return NextResponse.json({ error: "bad_request" }, { status: 400 });
+  }
+
+  const confirmation = typeof body.confirmation === "string" ? body.confirmation.trim() : "";
+  if (confirmation !== business.slug) {
+    return NextResponse.json({ error: "reset_confirmation_required" }, { status: 400 });
+  }
+
+  try {
+    await resetBusiness(id);
+  } catch (err) {
+    if (err instanceof ResetBusinessNotPossibleError) {
+      return NextResponse.json({ error: "reset_not_possible" }, { status: 409 });
+    }
+    throw err;
+  }
+
+  await platformAudit({
+    adminId: session.padmin,
+    businessId: id,
+    action: "business.reset",
+    entity: "business",
+    entityId: id,
+    payload: { name: business.name, slug: business.slug, plan: business.plan },
+  });
+  return NextResponse.json({ ok: true });
 });
 
 /**
