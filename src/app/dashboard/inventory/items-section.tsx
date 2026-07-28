@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { formatQuantity } from "@/lib/digits";
 import { formatToman } from "@/lib/money";
-import { api, inputClass, PrimaryButton, SecondaryButton } from "../ui";
+import { api, Field, inputClass, PrimaryButton, SecondaryButton } from "../ui";
 import type { InventoryItem, Runner } from "./inventory-manager";
 
 export function ItemsSection({ items, busy, run }: { items: InventoryItem[]; busy: boolean; run: Runner }) {
@@ -38,34 +38,46 @@ export function ItemsSection({ items, busy, run }: { items: InventoryItem[]; bus
   }
 
   return (
-    <section className="rounded-2xl bg-card p-5 shadow-sm">
+    <section className="min-w-0 rounded-2xl bg-card p-5 shadow-sm">
       <h2 className="mb-3 font-semibold">اقلام انبار (مواد اولیه)</h2>
-      <form onSubmit={add} className="mb-4 grid gap-2 sm:grid-cols-6">
-        <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} placeholder="نام (مثلاً قهوه)" required />
-        <input className={inputClass} value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="واحد پایه (g، ml، عدد…)" required />
-        <input
-          className={inputClass}
-          dir="ltr"
-          inputMode="decimal"
-          value={reorderLevel}
-          onChange={(e) => setReorderLevel(e.target.value)}
-          placeholder="آستانه سفارش مجدد"
-        />
-        <input
-          className={inputClass}
-          value={purchaseUnit}
-          onChange={(e) => setPurchaseUnit(e.target.value)}
-          placeholder="واحد خرید (اختیاری، مثلاً kg)"
-        />
-        <input
-          className={inputClass}
-          dir="ltr"
-          inputMode="decimal"
-          value={purchaseFactor}
-          onChange={(e) => setPurchaseFactor(e.target.value)}
-          placeholder="۱ واحد خرید = چند واحد پایه"
-        />
-        <PrimaryButton disabled={busy}>افزودن</PrimaryButton>
+      <form onSubmit={add} className="mb-4 grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-6">
+        <Field label="نام قلم">
+          <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} placeholder="مثلاً قهوه" required />
+        </Field>
+        <Field label="واحد پایه">
+          <input className={inputClass} value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="g، ml، عدد…" required />
+        </Field>
+        <Field label="آستانهٔ سفارش مجدد">
+          <input
+            className={inputClass}
+            dir="ltr"
+            inputMode="decimal"
+            value={reorderLevel}
+            onChange={(e) => setReorderLevel(e.target.value)}
+            placeholder="اختیاری"
+          />
+        </Field>
+        <Field label="واحد خرید">
+          <input
+            className={inputClass}
+            value={purchaseUnit}
+            onChange={(e) => setPurchaseUnit(e.target.value)}
+            placeholder="اختیاری؛ مثلاً kg"
+          />
+        </Field>
+        <Field label="ضریب تبدیل واحد خرید">
+          <input
+            className={inputClass}
+            dir="ltr"
+            inputMode="decimal"
+            value={purchaseFactor}
+            onChange={(e) => setPurchaseFactor(e.target.value)}
+            placeholder="مثلاً ۱۰۰۰"
+          />
+        </Field>
+        <div className="mb-4 flex items-end">
+          <PrimaryButton disabled={busy}>افزودن</PrimaryButton>
+        </div>
       </form>
 
       <ul className="divide-y divide-border rounded-lg border border-border">
@@ -88,12 +100,12 @@ function ItemRow({ item, busy, run }: { item: InventoryItem; busy: boolean; run:
   }
 
   return (
-    <li className="flex flex-wrap items-center justify-between gap-2 px-4 py-2 text-sm">
-      <span className={item.is_active ? "" : "text-muted-foreground line-through"}>
+    <li className="flex min-w-0 flex-col items-stretch gap-3 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+      <span className={`min-w-0 break-words ${item.is_active ? "" : "text-muted-foreground line-through"}`}>
         {item.name}
         {item.sku ? <span className="text-xs text-muted-foreground"> ({item.sku})</span> : null}
       </span>
-      <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
         <span className={isLow ? "font-semibold text-primary" : ""}>
           موجودی: {formatQuantity(item.stock)} {item.unit}
         </span>
@@ -118,6 +130,15 @@ function ItemRow({ item, busy, run }: { item: InventoryItem; busy: boolean; run:
           }
         >
           {item.is_active ? "غیرفعال" : "فعال"}
+        </SecondaryButton>
+        <SecondaryButton
+          disabled={busy}
+          onClick={() => {
+            if (!window.confirm(`قلم «${item.name}» حذف شود؟ قلمی که سابقهٔ مصرف یا خرید دارد غیرفعال می‌شود.`)) return;
+            void run(() => api(`/api/inventory/items/${item.id}`, { method: "DELETE" }));
+          }}
+        >
+          حذف
         </SecondaryButton>
       </div>
     </li>
@@ -163,39 +184,44 @@ function EditItemRow({
 
   return (
     <li className="px-4 py-3">
-      <form onSubmit={save} className="grid gap-2 sm:grid-cols-6">
-        <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} placeholder="نام" required />
-        <input
-          className={inputClass}
-          value={unit}
-          onChange={(e) => setUnit(e.target.value)}
-          placeholder="واحد پایه (g، ml، عدد…)"
-          required
-        />
-        <input
-          className={inputClass}
-          dir="ltr"
-          inputMode="decimal"
-          value={reorderLevel}
-          onChange={(e) => setReorderLevel(e.target.value)}
-          placeholder="آستانه سفارش مجدد"
-        />
-        <input
-          className={inputClass}
-          value={purchaseUnit}
-          onChange={(e) => setPurchaseUnit(e.target.value)}
-          placeholder="واحد خرید (اختیاری، مثلاً kg)"
-        />
-        <input
-          className={inputClass}
-          dir="ltr"
-          inputMode="decimal"
-          value={purchaseFactor}
-          onChange={(e) => setPurchaseFactor(e.target.value)}
-          placeholder="۱ واحد خرید = چند واحد پایه"
-        />
-        <div className="flex gap-2 sm:col-span-6">
-          <PrimaryButton disabled={busy}>ذخیره</PrimaryButton>
+      <form onSubmit={save} className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-6">
+        <Field label="نام قلم">
+          <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} required />
+        </Field>
+        <Field label="واحد پایه">
+          <input className={inputClass} value={unit} onChange={(e) => setUnit(e.target.value)} required />
+        </Field>
+        <Field label="آستانهٔ سفارش مجدد">
+          <input
+            className={inputClass}
+            dir="ltr"
+            inputMode="decimal"
+            value={reorderLevel}
+            onChange={(e) => setReorderLevel(e.target.value)}
+            placeholder="اختیاری"
+          />
+        </Field>
+        <Field label="واحد خرید">
+          <input
+            className={inputClass}
+            value={purchaseUnit}
+            onChange={(e) => setPurchaseUnit(e.target.value)}
+            placeholder="اختیاری؛ مثلاً kg"
+          />
+        </Field>
+        <Field label="ضریب تبدیل واحد خرید">
+          <input
+            className={inputClass}
+            dir="ltr"
+            inputMode="decimal"
+            value={purchaseFactor}
+            onChange={(e) => setPurchaseFactor(e.target.value)}
+          />
+        </Field>
+        <div className="flex flex-col gap-2 sm:col-span-2 xl:col-span-6 sm:flex-row">
+          <div className="w-full sm:w-40">
+            <PrimaryButton disabled={busy}>ذخیره</PrimaryButton>
+          </div>
           <SecondaryButton disabled={busy} onClick={onDone}>
             انصراف
           </SecondaryButton>
