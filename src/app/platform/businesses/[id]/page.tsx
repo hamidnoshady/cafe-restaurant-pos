@@ -100,6 +100,7 @@ export default function BusinessDetailPage() {
   const [business, setBusiness] = useState<Business | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [resetKey, setResetKey] = useState(0);
 
   const loadBusiness = useCallback(async () => {
     const { ok, data } = await api<{ business: Business; error?: string }>(
@@ -152,7 +153,7 @@ export default function BusinessDetailPage() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6">
+    <div className="mx-auto w-full max-w-4xl space-y-4 sm:space-y-6">
       <div>
         <Link href="/platform" className="text-sm text-sky-300 hover:underline">
           ← بازگشت به فهرست
@@ -207,11 +208,168 @@ export default function BusinessDetailPage() {
         ) : null}
       </Card>
 
-      <PlanPanel business={business} onChanged={loadBusiness} />
-      <UsagePanel id={id} />
-      <FeaturesPanel id={id} />
-      <ImpersonationPanel id={id} businessName={business.name} />
+      <BusinessDetailsPanel business={business} onChanged={loadBusiness} />
+      <PlanPanel key={`plan-${resetKey}`} business={business} onChanged={loadBusiness} />
+      <UsagePanel key={`usage-${resetKey}`} id={id} />
+      <FeaturesPanel key={`features-${resetKey}`} id={id} />
+      <ImpersonationPanel key={`impersonation-${resetKey}`} id={id} businessName={business.name} />
+      <ResetPanel
+        business={business}
+        onChanged={() => {
+          setNotice("داده‌های کسب‌وکار پاک شد. مالک باید دوباره وارد شود و راه‌اندازی اولیه را انجام دهد.");
+          setResetKey((value) => value + 1);
+          void loadBusiness();
+        }}
+      />
     </div>
+  );
+}
+
+function BusinessDetailsPanel({
+  business,
+  onChanged,
+}: {
+  business: Business;
+  onChanged: () => void;
+}) {
+  const can = useCan();
+  const editable = can("business.edit");
+  const [name, setName] = useState(business.name);
+  const [timezone, setTimezone] = useState(business.timezone);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    setName(business.name);
+    setTimezone(business.timezone);
+  }, [business.id, business.name, business.timezone]);
+
+  const changed = name.trim() !== business.name || timezone.trim() !== business.timezone;
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    setSaved(false);
+    const { ok, data } = await api<{ error?: string }>(`/api/platform/businesses/${business.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ name: name.trim(), timezone: timezone.trim() }),
+    });
+    setBusy(false);
+    if (ok) {
+      setSaved(true);
+      onChanged();
+    } else {
+      setError(errorMessage(data.error));
+    }
+  }
+
+  return (
+    <Card title="ویرایش کسب‌وکار">
+      <ErrorBox>{error}</ErrorBox>
+      {saved ? <InfoBox>اطلاعات کسب‌وکار ذخیره شد.</InfoBox> : null}
+      <form onSubmit={save} className="grid gap-x-4 sm:grid-cols-2">
+        <Field label="نام کسب‌وکار">
+          <input
+            required
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            disabled={!editable}
+            className={inputClass}
+          />
+        </Field>
+        <Field label="منطقهٔ زمانی" hint="مانند Asia/Tehran">
+          <input
+            required
+            dir="ltr"
+            value={timezone}
+            onChange={(e) => setTimezone(e.target.value)}
+            disabled={!editable}
+            className={inputClass}
+          />
+        </Field>
+        <div className="mb-4 min-w-0">
+          <p className="mb-1 text-sm font-medium text-white/80">شناسهٔ کسب‌وکار</p>
+          <p className="break-all rounded-lg border border-white/10 bg-white/2 px-3 py-2 text-sm text-white/50" dir="ltr">
+            {business.slug}
+          </p>
+          <p className="mt-1 text-xs text-white/40">این شناسه برای پایداری ارجاع‌ها تغییر نمی‌کند.</p>
+        </div>
+        {editable ? (
+          <div className="mb-4 flex items-end sm:justify-end">
+            <Button type="submit" disabled={busy || !changed} className="w-full sm:w-auto">
+              {busy ? "در حال ذخیره…" : "ذخیرهٔ تغییرات"}
+            </Button>
+          </div>
+        ) : null}
+      </form>
+    </Card>
+  );
+}
+
+function ResetPanel({ business, onChanged }: { business: Business; onChanged: () => void }) {
+  const can = useCan();
+  const [confirmation, setConfirmation] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  if (!can("business.reset")) return null;
+
+  async function reset() {
+    if (
+      !confirm(
+        `همهٔ داده‌های «${business.name}» حذف شود و کسب‌وکار از ابتدا راه‌اندازی شود؟ این عمل برگشت‌ناپذیر است.`,
+      )
+    ) {
+      return;
+    }
+
+    setBusy(true);
+    setError(null);
+    const { ok, data } = await api<{ error?: string }>(`/api/platform/businesses/${business.id}`, {
+      method: "POST",
+      body: JSON.stringify({ confirmation }),
+    });
+    setBusy(false);
+    if (ok) {
+      setConfirmation("");
+      onChanged();
+    } else {
+      setError(errorMessage(data.error));
+    }
+  }
+
+  return (
+    <Card title="ریست کامل داده‌ها">
+      <ErrorBox>{error}</ErrorBox>
+      <div className="rounded-lg border border-red-500/25 bg-red-500/8 p-3 text-sm text-red-100">
+        <p className="font-semibold">همهٔ داده‌های این کسب‌وکار حذف می‌شوند.</p>
+        <p className="mt-1 text-red-100/70">
+          سفارش‌ها، انبار، حسابداری، تنظیمات، شعبه‌ها، کاربران و دسترسی‌های ویژگی پاک می‌شوند. تنها هویت سراسری مالک و پلن کسب‌وکار باقی می‌ماند تا راه‌اندازی از ابتدا انجام شود.
+        </p>
+      </div>
+      <div className="mt-4">
+        <Field label={`برای تأیید، شناسهٔ زیر را دقیق وارد کنید: ${business.slug}`}>
+          <input
+            dir="ltr"
+            value={confirmation}
+            onChange={(e) => setConfirmation(e.target.value)}
+            className={inputClass}
+            placeholder={business.slug}
+            autoComplete="off"
+          />
+        </Field>
+        <Button
+          variant="danger"
+          onClick={reset}
+          disabled={busy || confirmation.trim() !== business.slug}
+          className="w-full sm:w-auto"
+        >
+          {busy ? "در حال ریست…" : "حذف داده‌ها و شروع مجدد"}
+        </Button>
+      </div>
+    </Card>
   );
 }
 
@@ -271,8 +429,8 @@ function PlanPanel({ business, onChanged }: { business: Business; onChanged: () 
     <Card title="پلن">
       <ErrorBox>{error}</ErrorBox>
       {saved ? <InfoBox>پلن ذخیره شد.</InfoBox> : null}
-      <form onSubmit={save} className="flex items-end gap-3">
-        <div className="flex-1">
+      <form onSubmit={save} className="flex flex-col gap-3 sm:flex-row sm:items-end">
+        <div className="min-w-0 flex-1">
           <Field label="پلن">
             <select
               value={plan}
@@ -300,8 +458,8 @@ function PlanPanel({ business, onChanged }: { business: Business; onChanged: () 
           ) : null}
         </div>
         {editable ? (
-          <div className="mb-4">
-            <Button type="submit" disabled={busy || plan === business.plan}>
+          <div className="mb-4 w-full sm:w-auto">
+            <Button type="submit" disabled={busy || plan === business.plan} className="w-full sm:w-auto">
               {busy ? "…" : "ذخیره"}
             </Button>
           </div>
@@ -409,7 +567,7 @@ function FeaturesPanel({ id }: { id: string }) {
                   {f.key}
                 </p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:flex-nowrap">
                 <span
                   className={
                     f.effective
@@ -425,7 +583,7 @@ function FeaturesPanel({ id }: { id: string }) {
                     : "بازنویسی‌شده"}
                 </span>
                 {editable ? (
-                  <div className="flex gap-1">
+                  <div className="flex flex-wrap gap-1">
                     <button
                       type="button"
                       disabled={pending === f.key}
@@ -534,7 +692,7 @@ function ImpersonationPanel({ id, businessName }: { id: string; businessName: st
               placeholder="مثلاً: بررسی مشکل چاپ رسید"
             />
           </Field>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             {canReadOnly ? (
               <Button variant="ghost" onClick={() => enter("read_only")} disabled={busy}>
                 ورود فقط‌خواندنی
