@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { toPersianDigits } from "@/lib/digits";
+import { formatQuantity } from "@/lib/digits";
 import { formatToman } from "@/lib/money";
 import { formatJalali } from "@/lib/jalali";
 import { api, inputClass, PrimaryButton } from "../ui";
@@ -105,7 +105,7 @@ export function WasteSection({ items, busy, run }: { items: InventoryItem[]; bus
           {(entries ?? []).map((e) => (
             <li key={e.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2 text-sm">
               <span>
-                {e.inventory_item_name} — {toPersianDigits(e.quantity)} {e.unit} ({REASON_LABELS[e.waste_reason] ?? e.waste_reason})
+                {e.inventory_item_name} — {formatQuantity(e.quantity)} {e.unit} ({REASON_LABELS[e.waste_reason] ?? e.waste_reason})
               </span>
               <span className="text-xs text-muted-foreground">
                 {formatToman(Number(e.quantity) * Number(e.unit_cost))} — {formatJalali(e.occurred_at)}

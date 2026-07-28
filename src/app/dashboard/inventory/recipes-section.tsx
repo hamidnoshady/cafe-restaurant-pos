@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { toPersianDigits } from "@/lib/digits";
+import { formatQuantity } from "@/lib/digits";
 import { api, inputClass, PrimaryButton, SecondaryButton } from "../ui";
 import type {
   InventoryItem,
@@ -92,7 +92,7 @@ function MenuItemRecipeCard({
               return (
                 <li key={l.inventory_item_id} className="flex items-center justify-between px-3 py-2 text-sm">
                   <span>
-                    {invItem?.name ?? "?"} — {toPersianDigits(l.quantity)} {invItem?.unit}
+                    {invItem?.name ?? "?"} — {formatQuantity(l.quantity)} {invItem?.unit}
                   </span>
                   <SecondaryButton
                     disabled={busy}
@@ -198,7 +198,7 @@ function ModifierRecipeCard({
                 <li key={l.inventory_item_id} className="flex items-center justify-between px-3 py-2 text-sm">
                   <span>
                     {invItem?.name ?? "?"} — {value > 0 ? "+" : ""}
-                    {toPersianDigits(value)} {invItem?.unit}
+                    {formatQuantity(value)} {invItem?.unit}
                   </span>
                   <SecondaryButton
                     disabled={busy}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { toPersianDigits } from "@/lib/digits";
+import { formatQuantity, toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import { api, inputClass, PrimaryButton } from "../ui";
 import type { InventoryItem, Runner } from "./inventory-manager";
@@ -59,7 +59,7 @@ export function StockCountsSection({ items, busy, run }: { items: InventoryItem[
             {activeItems.map((i) => (
               <li key={i.id} className="flex items-center justify-between gap-2 px-3 py-2 text-sm">
                 <span>
-                  {i.name} <span className="text-xs text-muted-foreground">(موجودی سیستم: {toPersianDigits(i.stock)} {i.unit})</span>
+                  {i.name} <span className="text-xs text-muted-foreground">(موجودی سیستم: {formatQuantity(i.stock)} {i.unit})</span>
                 </span>
                 <input
                   className={`${inputClass} w-32`}
