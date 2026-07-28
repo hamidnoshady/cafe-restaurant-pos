@@ -13,9 +13,7 @@ import {
   ChefHatIcon,
   CircleIcon,
   ClipboardListIcon,
-  HardDriveIcon,
   LayoutDashboardIcon,
-  MapPinIcon,
   PackageIcon,
   SettingsIcon,
   ShoppingCartIcon,
@@ -68,8 +66,6 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   "/dashboard/ledger": CalculatorIcon,
   "/dashboard/reports": BarChart3Icon,
   "/dashboard/branches": Building2Icon,
-  "/dashboard/locations": MapPinIcon,
-  "/dashboard/backup": HardDriveIcon,
   "/dashboard/ai": BotIcon,
   "/dashboard/settings": SettingsIcon,
 };
