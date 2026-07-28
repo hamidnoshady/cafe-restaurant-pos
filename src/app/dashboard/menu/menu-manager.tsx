@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
-import { formatToman, parseToRial } from "@/lib/money";
-import { api, ErrorBox, errorMessage, inputClass, PrimaryButton, SecondaryButton } from "../ui";
+import { formatToman, parseToRial, rialToToman } from "@/lib/money";
+import { api, ErrorBox, errorMessage, Field, inputClass, PrimaryButton, SecondaryButton } from "../ui";
 
 interface Category {
   id: string;
@@ -109,21 +109,31 @@ function CategorySection({ data, busy, run }: { data: MenuData; busy: boolean; r
   return (
     <section className="rounded-2xl bg-card p-5 shadow-sm">
       <h2 className="mb-3 font-semibold">دسته‌ها</h2>
-      <div className="mb-4 flex gap-2">
-        <input
-          className={inputClass}
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="نام دستهٔ جدید"
-        />
-        <SecondaryButton onClick={add} disabled={busy}>
-          افزودن
-        </SecondaryButton>
-      </div>
+      <form
+        className="mb-4 grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_auto]"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void add();
+        }}
+      >
+        <Field label="نام دسته">
+          <input
+            className={inputClass}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="مثلاً نوشیدنی گرم"
+          />
+        </Field>
+        <div className="mb-4 flex items-end">
+          <SecondaryButton onClick={add} disabled={busy}>
+            افزودن
+          </SecondaryButton>
+        </div>
+      </form>
       <ul className="divide-y divide-border">
         {data.categories.map((c) => (
-          <li key={c.id} className="flex items-center justify-between py-2 text-sm">
-            <span className={c.is_active ? "" : "text-muted-foreground line-through"}>
+          <li key={c.id} className="flex min-w-0 flex-col gap-2 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+            <span className={`min-w-0 break-words ${c.is_active ? "" : "text-muted-foreground line-through"}`}>
               {c.name} <span className="text-xs text-muted-foreground">(مالیات {toPersianDigits(c.tax_rate)}%)</span>
             </span>
             <SecondaryButton
@@ -177,26 +187,33 @@ function ItemSection({ data, busy, run }: { data: MenuData; busy: boolean; run: 
   return (
     <section className="rounded-2xl bg-card p-5 shadow-sm">
       <h2 className="mb-3 font-semibold">آیتم‌ها</h2>
-      <form onSubmit={add} className="mb-4 grid gap-2 sm:grid-cols-4">
-        <select className={inputClass} value={categoryId} onChange={(e) => setCategoryId(e.target.value)} required>
-          <option value="">دسته…</option>
-          {activeCategories.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
-        <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} placeholder="نام آیتم" required />
-        <input
-          className={inputClass}
-          dir="ltr"
-          inputMode="numeric"
-          value={price}
-          onChange={(e) => setPrice(e.target.value)}
-          placeholder="قیمت (تومان)"
-          required
-        />
-        <PrimaryButton disabled={busy || activeCategories.length === 0}>افزودن آیتم</PrimaryButton>
+      <form onSubmit={add} className="mb-4 grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <Field label="دسته">
+          <select className={inputClass} value={categoryId} onChange={(e) => setCategoryId(e.target.value)} required>
+            <option value="">دسته را انتخاب کنید…</option>
+            {activeCategories.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="نام آیتم">
+          <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} required />
+        </Field>
+        <Field label="قیمت (تومان)">
+          <input
+            className={inputClass}
+            dir="ltr"
+            inputMode="numeric"
+            value={price}
+            onChange={(e) => setPrice(e.target.value)}
+            required
+          />
+        </Field>
+        <div className="mb-4 flex items-end">
+          <PrimaryButton disabled={busy || activeCategories.length === 0}>افزودن آیتم</PrimaryButton>
+        </div>
       </form>
 
       <div className="space-y-4">
@@ -208,7 +225,15 @@ function ItemSection({ data, busy, run }: { data: MenuData; busy: boolean; run: 
               <p className="mb-1 text-sm font-medium text-foreground">{c.name}</p>
               <ul className="divide-y divide-border rounded-lg border border-border">
                 {items.map((i) => (
-                  <ItemRow key={i.id} item={i} groups={data.modifierGroups} links={data.itemModifierGroups} busy={busy} run={run} />
+                  <ItemRow
+                    key={i.id}
+                    item={i}
+                    categories={data.categories}
+                    groups={data.modifierGroups}
+                    links={data.itemModifierGroups}
+                    busy={busy}
+                    run={run}
+                  />
                 ))}
               </ul>
             </div>
@@ -221,12 +246,14 @@ function ItemSection({ data, busy, run }: { data: MenuData; busy: boolean; run: 
 
 function ItemRow({
   item,
+  categories,
   groups,
   links,
   busy,
   run,
 }: {
   item: Item;
+  categories: Category[];
   groups: ModifierGroup[];
   links: ItemGroupLink[];
   busy: boolean;
@@ -234,14 +261,20 @@ function ItemRow({
 }) {
   const [expanded, setExpanded] = useState(false);
   const [pricingOpen, setPricingOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
   const attached = new Set(links.filter((l) => l.menu_item_id === item.id).map((l) => l.modifier_group_id));
 
+  if (editing) {
+    return <EditItemRow item={item} categories={categories} busy={busy} run={run} onDone={() => setEditing(false)} />;
+  }
+
   return (
-    <li className="px-4 py-2 text-sm">
-      <div className="flex items-center justify-between">
-        <span className={item.is_active ? "" : "text-muted-foreground line-through"}>{item.name}</span>
-        <div className="flex items-center gap-2">
+    <li className="min-w-0 px-4 py-3 text-sm">
+      <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <span className={`min-w-0 break-words ${item.is_active ? "" : "text-muted-foreground line-through"}`}>{item.name}</span>
+        <div className="flex flex-wrap items-center gap-2">
           <span className="text-muted-foreground">{formatToman(Number(item.price))}</span>
+          <SecondaryButton disabled={busy} onClick={() => setEditing(true)}>ویرایش</SecondaryButton>
           <SecondaryButton onClick={() => setExpanded((v) => !v)}>افزودنی‌ها</SecondaryButton>
           <SecondaryButton onClick={() => setPricingOpen((v) => !v)}>قیمت پیشنهادی</SecondaryButton>
           <SecondaryButton
@@ -256,6 +289,15 @@ function ItemRow({
             }
           >
             {item.is_active ? "غیرفعال" : "فعال"}
+          </SecondaryButton>
+          <SecondaryButton
+            disabled={busy}
+            onClick={() => {
+              if (!window.confirm(`آیتم منوی «${item.name}» حذف شود؟ آیتمی که در سفارش استفاده شده باشد غیرفعال می‌شود.`)) return;
+              void run(() => api(`/api/menu/items/${item.id}`, { method: "DELETE" }));
+            }}
+          >
+            حذف
           </SecondaryButton>
         </div>
       </div>
@@ -296,6 +338,81 @@ function ItemRow({
           )}
         </div>
       ) : null}
+    </li>
+  );
+}
+
+function EditItemRow({
+  item,
+  categories,
+  busy,
+  run,
+  onDone,
+}: {
+  item: Item;
+  categories: Category[];
+  busy: boolean;
+  run: Runner;
+  onDone: () => void;
+}) {
+  const [categoryId, setCategoryId] = useState(item.category_id ?? "");
+  const [name, setName] = useState(item.name);
+  const [price, setPrice] = useState(String(rialToToman(Number(item.price))));
+  const selectableCategories = categories.filter((category) => category.is_active || category.id === item.category_id);
+
+  async function save(event: React.FormEvent) {
+    event.preventDefault();
+    let priceRial: number;
+    try {
+      priceRial = parseToRial(price, "toman");
+    } catch {
+      return;
+    }
+    if (!categoryId || !name.trim()) return;
+    const ok = await run(() =>
+      api(`/api/menu/items/${item.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ categoryId, name, price: priceRial }),
+      }),
+    );
+    if (ok) onDone();
+  }
+
+  return (
+    <li className="px-4 py-3">
+      <form onSubmit={save} className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <Field label="دسته">
+          <select className={inputClass} value={categoryId} onChange={(event) => setCategoryId(event.target.value)} required>
+            <option value="">دسته را انتخاب کنید…</option>
+            {selectableCategories.map((category) => (
+              <option key={category.id} value={category.id}>
+                {category.name}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="نام آیتم">
+          <input className={inputClass} value={name} onChange={(event) => setName(event.target.value)} required />
+        </Field>
+        <Field label="قیمت (تومان)">
+          <input
+            className={inputClass}
+            dir="ltr"
+            inputMode="numeric"
+            value={price}
+            onChange={(event) => setPrice(event.target.value)}
+            required
+          />
+        </Field>
+        <div className="flex flex-col gap-2 sm:col-span-2 xl:col-span-3 sm:flex-row">
+          <div className="w-full sm:w-40">
+            <PrimaryButton disabled={busy}>ذخیره</PrimaryButton>
+          </div>
+          <SecondaryButton disabled={busy} onClick={onDone}>
+            انصراف
+          </SecondaryButton>
+        </div>
+      </form>
     </li>
   );
 }
@@ -375,7 +492,7 @@ function PricingPanel({ item, busy, run }: { item: Item; busy: boolean; run: Run
             </div>
           )}
           {suggestion.hasRecipe && suggestion.suggestedPrice != null ? (
-            <div className="flex items-center justify-between rounded-md bg-card px-2 py-1.5">
+            <div className="flex flex-col gap-2 rounded-md bg-card px-2 py-1.5 sm:flex-row sm:items-center sm:justify-between">
               <span className="font-medium">قیمت پیشنهادی: {formatToman(suggestion.suggestedPrice)}</span>
               <SecondaryButton disabled={busy} onClick={applySuggestedPrice}>
                 اعمال قیمت
@@ -389,19 +506,22 @@ function PricingPanel({ item, busy, run }: { item: Item; busy: boolean; run: Run
         </>
       )}
 
-      <div className="flex flex-wrap items-center gap-2 border-t border-border pt-2">
-        <span className="text-muted-foreground">حاشیه سود اختصاصی این آیتم:</span>
-        <input
-          className={`${inputClass} w-24`}
-          dir="ltr"
-          inputMode="decimal"
-          value={marginInput}
-          onChange={(e) => setMarginInput(e.target.value)}
-          placeholder="پیش‌فرض"
-        />
-        <SecondaryButton disabled={busy} onClick={saveMargin}>
-          ذخیره
-        </SecondaryButton>
+      <div className="grid min-w-0 gap-2 border-t border-border pt-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+        <Field label="حاشیه سود اختصاصی این آیتم (درصد)">
+          <input
+            className={inputClass}
+            dir="ltr"
+            inputMode="decimal"
+            value={marginInput}
+            onChange={(e) => setMarginInput(e.target.value)}
+            placeholder="پیش‌فرض"
+          />
+        </Field>
+        <div className="mb-4 flex items-end">
+          <SecondaryButton disabled={busy} onClick={saveMargin}>
+            ذخیره
+          </SecondaryButton>
+        </div>
       </div>
     </div>
   );
@@ -428,16 +548,30 @@ function ModifierSection({ data, busy, run }: { data: MenuData; busy: boolean; r
   }
 
   return (
-    <section className="rounded-2xl bg-card p-5 shadow-sm">
+    <section className="min-w-0 rounded-2xl bg-card p-5 shadow-sm">
       <h2 className="mb-3 font-semibold">گروه‌های افزودنی</h2>
-      <div className="mb-4 grid gap-2 sm:grid-cols-4">
-        <input className={inputClass} value={groupName} onChange={(e) => setGroupName(e.target.value)} placeholder="نام گروه (مثلاً «نوع شیر»)" />
-        <input className={inputClass} dir="ltr" inputMode="numeric" value={minSelect} onChange={(e) => setMinSelect(e.target.value)} placeholder="حداقل انتخاب" />
-        <input className={inputClass} dir="ltr" inputMode="numeric" value={maxSelect} onChange={(e) => setMaxSelect(e.target.value)} placeholder="حداکثر انتخاب" />
-        <SecondaryButton onClick={addGroup} disabled={busy}>
-          افزودن گروه
-        </SecondaryButton>
-      </div>
+      <form
+        className="mb-4 grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void addGroup();
+        }}
+      >
+        <Field label="نام گروه">
+          <input className={inputClass} value={groupName} onChange={(e) => setGroupName(e.target.value)} placeholder="مثلاً نوع شیر" />
+        </Field>
+        <Field label="حداقل انتخاب">
+          <input className={inputClass} dir="ltr" inputMode="numeric" value={minSelect} onChange={(e) => setMinSelect(e.target.value)} />
+        </Field>
+        <Field label="حداکثر انتخاب">
+          <input className={inputClass} dir="ltr" inputMode="numeric" value={maxSelect} onChange={(e) => setMaxSelect(e.target.value)} />
+        </Field>
+        <div className="mb-4 flex items-end">
+          <SecondaryButton onClick={addGroup} disabled={busy}>
+            افزودن گروه
+          </SecondaryButton>
+        </div>
+      </form>
 
       <div className="space-y-4">
         {data.modifierGroups.map((g) => (
@@ -484,7 +618,7 @@ function ModifierGroupRow({
   }
 
   return (
-    <div className="rounded-lg border border-border p-3">
+    <div className="min-w-0 rounded-lg border border-border p-3">
       <p className="mb-2 text-sm font-medium">
         {group.name}{" "}
         <span className="text-xs text-muted-foreground">
@@ -493,9 +627,9 @@ function ModifierGroupRow({
       </p>
       <ul className="mb-2 divide-y divide-border">
         {modifiers.map((m) => (
-          <li key={m.id} className="flex items-center justify-between py-1.5 text-sm">
-            <span className={m.is_active ? "" : "text-muted-foreground line-through"}>{m.name}</span>
-            <div className="flex items-center gap-2">
+          <li key={m.id} className="flex min-w-0 flex-col gap-2 py-2 text-sm sm:flex-row sm:items-center sm:justify-between">
+            <span className={`min-w-0 break-words ${m.is_active ? "" : "text-muted-foreground line-through"}`}>{m.name}</span>
+            <div className="flex flex-wrap items-center gap-2">
               <span className="text-muted-foreground">{formatToman(Number(m.price_delta))}</span>
               <SecondaryButton
                 disabled={busy}
@@ -515,13 +649,25 @@ function ModifierGroupRow({
         ))}
         {modifiers.length === 0 ? <p className="py-1 text-xs text-muted-foreground">افزودنی‌ای ثبت نشده است.</p> : null}
       </ul>
-      <div className="flex gap-2">
-        <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} placeholder="نام افزودنی" />
-        <input className={inputClass} dir="ltr" inputMode="numeric" value={delta} onChange={(e) => setDelta(e.target.value)} placeholder="مبلغ اضافه (تومان)" />
-        <SecondaryButton onClick={addModifier} disabled={busy}>
-          افزودن
-        </SecondaryButton>
-      </div>
+      <form
+        className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-3"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void addModifier();
+        }}
+      >
+        <Field label="نام افزودنی">
+          <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} />
+        </Field>
+        <Field label="مبلغ اضافه (تومان)">
+          <input className={inputClass} dir="ltr" inputMode="numeric" value={delta} onChange={(e) => setDelta(e.target.value)} />
+        </Field>
+        <div className="mb-4 flex items-end">
+          <SecondaryButton onClick={addModifier} disabled={busy}>
+            افزودن
+          </SecondaryButton>
+        </div>
+      </form>
     </div>
   );
 }
