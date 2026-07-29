@@ -45,7 +45,9 @@ export type PlatformCapability =
   | "business.provision"
   | "business.archive"
   | "business.delete"
-  | "admins.manage";
+  | "admins.manage"
+  // Owner-only — holds a real S3 secret used to distribute the desktop installer
+  | "updates.manage";
 
 const READ: PlatformCapability[] = ["businesses.read", "audit.read", "system.read", "usage.read"];
 
@@ -76,6 +78,7 @@ const CAPABILITIES: Record<PlatformAdminRole, PlatformCapability[]> = {
     "business.edit",
     "business.reset",
     "admins.manage",
+    "updates.manage",
   ],
 };
 

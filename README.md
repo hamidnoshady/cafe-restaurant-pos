@@ -304,6 +304,12 @@ The console (dark chrome, deliberately unlike the tenant dashboard's light theme
   audit record naming the admin, the business and the time window. Every impersonated action is
   tagged in `platform_audit_log`, viewable in the console's **Audit** tab.
 - **System** — migration status, RLS effectiveness, pool health, per-business backups.
+- **Updates** — the S3-compatible bucket the standalone desktop installer's self-update checks
+  (owner-only to configure — it holds a real secret key), plus which businesses' on-site
+  installs are currently up to date vs behind (any admin can view). See
+  [docs/standalone-desktop-app.md](docs/standalone-desktop-app.md). This is the general pattern
+  for cross-business client supervision: it belongs in this console, not a per-business
+  dashboard — see `CLAUDE.md`.
 - **Admins** — the platform admin roster (owner-only). Capabilities are gated by role
   (`src/lib/platform-admin.ts`): support = read + read-only impersonation; engineer adds feature
   writes, suspend/reactivate and impersonation revoke; owner adds full impersonation,

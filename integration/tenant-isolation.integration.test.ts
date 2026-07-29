@@ -40,6 +40,10 @@ const EXEMPT_TABLES = new Set([
   // the same shape as feature_flags: every business reads the same few rows,
   // there is nothing to isolate.
   "plans",
+  // Platform-wide singleton config for the desktop installer's update
+  // distribution (migration 0038) — carries no business_id/location_id,
+  // nothing to scope by, same shape as feature_flags/plans.
+  "platform_update_config",
 ]);
 
 let databaseName: string;
@@ -267,6 +271,7 @@ describe("every tenant table is protected", () => {
     expect([...EXEMPT_TABLES].filter((t) => t.startsWith("platform_")).sort()).toEqual([
       "platform_admins",
       "platform_audit_log",
+      "platform_update_config",
     ]);
   });
 

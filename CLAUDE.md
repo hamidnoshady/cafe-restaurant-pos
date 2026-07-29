@@ -94,6 +94,15 @@ and left:
   since Phase 14 a business may have several branches; this always returns the one the
   caller is currently scoped to, validated against their branch assignment.
 - `src/app/dashboard/**` — authenticated UI (role-gated per page/route in the sidebar nav).
+- `src/app/platform/**` (Phase 15) — the super-admin console, a separate auth realm from the
+  tenant dashboard. **Any functionality that supervises or administers clients across
+  businesses — not just one business's own data — belongs here, not in a per-business
+  dashboard.** Update management (which businesses are on the latest app version, the S3
+  config that distributes desktop-installer updates — `/platform/updates`) is the concrete
+  example so far; the same rule applies to anything shaped like it in the future. Route
+  handlers guard with `requirePlatformAdmin()`/`requirePlatformCapability(...)` from
+  `src/lib/platform-auth.ts`, not `requireRole`/`requirePermission` — see
+  `src/lib/platform-admin.ts` for the role→capability mapping.
 - `src/lib/*.ts` — framework-free logic (money, dates, digits, order totals, …); these are
   what `*.test.ts` files cover. `src/lib/db.ts` and files that call `query()`/`getPool()`
   are the DB-touching exception and aren't unit-tested directly.
