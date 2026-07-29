@@ -7,7 +7,7 @@
  * concurrent assistant turns cannot spend the same credits.
  */
 import { randomUUID } from "node:crypto";
-import { getPool, query, withTenant, withoutTenantScope } from "./db";
+import { getPool, query, withTenant, withoutTenantScope, type PoolClient } from "./db";
 import {
   calculateAiUsageCostRial,
   type AiTokenUsage,
@@ -548,7 +548,7 @@ export async function cancelAiTurnReservation(input: {
 }
 
 async function grantCreditInTransaction(
-  client: Awaited<ReturnType<ReturnType<typeof getPool>["connect"]>>,
+  client: PoolClient,
   input: {
     businessId: string;
     amountRial: number;
