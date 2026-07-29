@@ -10,15 +10,5 @@ export default async function FloorPage() {
 
   const canEdit = session.role === "owner" || session.role === "manager";
 
-  return (
-    <div>
-      <header className="mb-6">
-        <h1 className="text-2xl font-bold">میزها و پلان سالن</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          نقشهٔ سالن، وضعیت میزها، نشاندن مهمان و مدیریت نشست‌ها.
-        </p>
-      </header>
-      <FloorPlan canEdit={canEdit} />
-    </div>
-  );
+  return <FloorPlan canEdit={canEdit} />;
 }
