@@ -221,7 +221,12 @@ function MobileDashboardHeader({ navItems, pathname }: Pick<SidebarProps, "navIt
 function MobileBottomNavigation({ navItems, pathname }: Pick<SidebarProps, "navItems"> & { pathname: string }) {
   const { prefix, path } = splitDashboardPrefix(pathname);
   const { setOpenMobile } = useSidebar();
-  const primaryItems = ["/dashboard", "/dashboard/orders", "/dashboard/reports"]
+  // Keep the established bottom-navigation set on other screens. On POS, replace
+  // reports with the cashier tab so the active sales workflow is always visible.
+  const primaryHrefs = isActive(path, "/dashboard/pos")
+    ? ["/dashboard", "/dashboard/pos", "/dashboard/orders"]
+    : ["/dashboard", "/dashboard/orders", "/dashboard/reports"];
+  const primaryItems = primaryHrefs
     .map((href) => navItems.find((item) => item.href === href))
     .filter((item): item is NavItem & { href: string } => Boolean(item?.href));
 
