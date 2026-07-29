@@ -22,12 +22,16 @@ Each phase is a self-contained file with its own scope, exit criteria, and open 
 | 15 | Phase-15-Super-Admin-Console.md | Implemented |
 | 16 | Phase-16-Accounting-Suite.md | Implemented |
 | 17 | Phase-17-Feature-Gating-Hardening.md | Implemented |
+| 18 | Phase-18-AI-Platform-Administration-Credit-Billing.md | Planned |
 
 Phases 0–11 built a single-business POS. Phases 12–17 turn it into a multi-business platform:
 many businesses isolated in one deployment, teams with real permissions, several branches per
 business, a super-user console, an accounting suite, and — as of Phase 17 — entitlements,
 rate limits, and a continuously-proven tenant boundary that make it safe to run for paying
 strangers. Phase 12 is the load-bearing one — everything after it depends on the tenancy
-boundary being right.
+boundary being right. Phase 18 turns the AI assistant (built earlier, without its own phase
+doc) from a per-business bring-your-own-key toggle into a platform-run, metered service:
+one operator-owned provider connection, and per-business credits/subscriptions billed against
+a priced catalogue.
 
 For overall architecture, full schema, and product summary, see the master spec doc (POS-Spec.md).
