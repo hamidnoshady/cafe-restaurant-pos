@@ -102,5 +102,9 @@ and left:
   role provisioning, perf benchmarks, …) rather than through a route handler; some run inside
   the running container itself (e.g. `check-app-update.ts`, invoked via `docker compose exec`
   by the on-site launcher — see the README's "On-site deployment" section).
+- `electron/` — the standalone (no-Docker) desktop installer. `main.js` bundles a real
+  PostgreSQL 16 (`embedded-postgres`) and runs `server.ts`/`scripts/migrate.ts` unmodified as
+  child processes — see `docs/standalone-desktop-app.md`. Separate `package.json` from the
+  root app (own dependencies: `electron`, `electron-builder`, `embedded-postgres`).
 - `docs/phases/*.md` — one file per phase: scope, exit criteria, open questions, and (once
   built) the decisions made and where each exit criterion is satisfied in code.

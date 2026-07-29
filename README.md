@@ -162,7 +162,23 @@ plan/region, so it is editable in the UI.
 ## On-site deployment (café laptop / mini PC)
 
 A café can run the POS entirely on its own LAN — no internet dependency for
-day-to-day operation — instead of only on the shared VPS:
+day-to-day operation — instead of only on the shared VPS. Two installers
+exist; pick whichever fits:
+
+### Standalone installer (no Docker)
+
+The simplest possible install: one `.exe`, no Docker Desktop, no `docker
+login`, no manual database setup at all. It bundles Electron (app window +
+Node runtime) and a real PostgreSQL 16 (`embedded-postgres` — the actual
+Postgres binary, run as a plain background process, not a container) around
+the app's own unmodified `server.ts` and migrations. See
+[docs/standalone-desktop-app.md](docs/standalone-desktop-app.md) — including
+its current limitations (no self-update yet, not yet validated on a real
+Windows machine).
+
+### Docker-based installer (mature, self-updating)
+
+More one-time setup, but proven in production:
 
 - **`docker-compose.local.yml`** runs a prebuilt image pulled from GHCR (not
   built on the laptop) plus its own Postgres, published on the LAN so waiter

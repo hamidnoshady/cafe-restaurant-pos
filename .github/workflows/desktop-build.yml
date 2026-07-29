@@ -1,0 +1,56 @@
+name: Build desktop installer
+
+# Builds the standalone Windows installer (electron/ — no Docker, no
+# Docker Desktop, a bundled real PostgreSQL 16 via embedded-postgres). See
+# docs/standalone-desktop-app.md.
+#
+# Runs on windows-latest specifically so electron-builder produces a native
+# Windows build (including the correct @embedded-postgres/windows-x64
+# binary) without needing cross-compilation or a personal Windows machine.
+#
+# Manual (workflow_dispatch) or on a release tag — unlike deploy.yml this
+# doesn't need to run on every push to main: the installer is only worth
+# rebuilding when you actually intend to hand out a new one.
+
+on:
+  workflow_dispatch: {}
+  push:
+    tags: ["v*"]
+
+jobs:
+  build-windows-installer:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install app dependencies
+        run: npm ci
+
+      - name: Build the Next.js app
+        run: npm run build
+        env:
+          # Same placeholder the Dockerfile uses: only needs to be *set* to
+          # satisfy the prod env check, never used at runtime (the desktop
+          # app generates and persists its own real secret on first launch —
+          # see electron/main.js).
+          JWT_SECRET: build-time-placeholder-not-used-at-runtime
+
+      - name: Install desktop app dependencies
+        working-directory: electron
+        run: npm install
+
+      - name: Build the Windows installer
+        working-directory: electron
+        run: npm run dist
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cafe-pos-windows-installer
+          path: electron/dist/*.exe
+          if-no-files-found: error
