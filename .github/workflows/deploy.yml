@@ -81,12 +81,14 @@ jobs:
         run: |
           # Always publish an immutable sha tag for rollbacks. Publish :latest
           # for both main and release tags, since the server tracks :latest.
-          sha_tag="sha-$(git rev-parse --short HEAD)"
+          short_sha="$(git rev-parse --short HEAD)"
+          sha_tag="sha-${short_sha}"
           tags="${IMAGE}:${sha_tag},${IMAGE}:latest"
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             tags="${tags},${IMAGE}:${GITHUB_REF_NAME}"
           fi
           echo "tags=${tags}" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${short_sha}" >> "$GITHUB_OUTPUT"
           echo "Publishing: ${tags}"
 
       - uses: docker/build-push-action@v6
@@ -94,6 +96,11 @@ jobs:
           context: .
           push: true
           tags: ${{ steps.meta.outputs.tags }}
+          # Baked into the image as APP_IMAGE_SHA — must match the "sha-"
+          # tag above so a paired café laptop's self-update check
+          # (src/lib/app-update.ts) can build the matching ghcr.io ref.
+          build-args: |
+            GIT_SHA=${{ steps.meta.outputs.short_sha }}
           # Layer cache in GHA storage keeps npm ci off the critical path.
           cache-from: type=gha
           cache-to: type=gha,mode=max

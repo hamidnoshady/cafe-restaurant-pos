@@ -29,6 +29,8 @@ export const SETTING_KEYS = {
   aiConfig: "ai.config",
   /** { defaultMarginPercent: number | null } — cost-plus pricing default, overridable per menu item */
   pricing: "pricing.config",
+  /** AppUpdateStatus (src/lib/app-update.ts) — last self-update check result, no credentials in it */
+  appUpdateStatus: "app_update.status",
 } as const;
 
 export async function getSetting<T>(businessId: string, key: string): Promise<T | null> {

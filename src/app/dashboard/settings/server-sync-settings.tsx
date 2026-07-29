@@ -42,6 +42,14 @@ interface DeadLetter {
   createdAt: string;
 }
 
+interface AppUpdateStatusView {
+  checkedAt: string;
+  currentVersion: string;
+  latestVersion: string | null;
+  updateAvailable: boolean;
+  error: string | null;
+}
+
 function formatTime(iso: string | null): string {
   if (!iso) return "هرگز";
   const time = new Intl.DateTimeFormat("en-US", {
@@ -66,6 +74,7 @@ export function ServerSyncSettings() {
   const [config, setConfig] = useState<ConfigView | null>(null);
   const [syncState, setSyncState] = useState<StateView | null>(null);
   const [deadLetters, setDeadLetters] = useState<DeadLetter[]>([]);
+  const [appUpdateStatus, setAppUpdateStatus] = useState<AppUpdateStatusView | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -82,12 +91,14 @@ export function ServerSyncSettings() {
       config: ConfigView | null;
       syncState: StateView;
       deadLetters: DeadLetter[];
+      appUpdateStatus: AppUpdateStatusView | null;
       error?: string;
     }>("/api/server-sync/config");
     if (ok) {
       setConfig(data.config);
       setSyncState(data.syncState);
       setDeadLetters(data.deadLetters ?? []);
+      setAppUpdateStatus(data.appUpdateStatus ?? null);
       setRemoteUrl(data.config?.remoteUrl ?? "");
       setEnabled(data.config?.enabled ?? false);
       setBatchSize(String(data.config?.batchSize ?? 100));
@@ -219,6 +230,25 @@ export function ServerSyncSettings() {
               />
             </div>
           </div>
+        </section>
+      ) : null}
+
+      {appUpdateStatus && appUpdateStatus.error !== "sync_not_configured" ? (
+        <section className="rounded-2xl bg-card p-5 shadow-sm">
+          <h2 className="mb-1 font-semibold">به‌روزرسانی نرم‌افزار</h2>
+          <p className="mb-4 text-sm text-muted-foreground">
+            نسخهٔ نصب‌شده روی این دستگاه در برابر نسخهٔ در حال اجرا روی سرور مرکزی. دریافت نسخهٔ جدید هنگام روشن‌شدن
+            سیستم انجام می‌شود، نه به‌صورت خودکار در طول کار.
+          </p>
+          {appUpdateStatus.updateAvailable ? (
+            <InfoBox>
+              نسخهٔ جدیدی در دسترس است ({appUpdateStatus.latestVersion}). دفعهٔ بعد که سیستم روشن شود دریافت می‌شود.
+            </InfoBox>
+          ) : null}
+          <StatusRow label="نسخهٔ فعلی" value={appUpdateStatus.currentVersion || "—"} />
+          <StatusRow label="آخرین نسخهٔ منتشرشده" value={appUpdateStatus.latestVersion ?? "—"} />
+          <StatusRow label="آخرین بررسی" value={formatTime(appUpdateStatus.checkedAt)} />
+          {appUpdateStatus.error ? <StatusRow label="خطا" value={appUpdateStatus.error} tone="error" /> : null}
         </section>
       ) : null}
 

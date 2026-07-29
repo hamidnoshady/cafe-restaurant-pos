@@ -138,6 +138,104 @@ If you control the router's DNS, add an entry so `pos.eshobe.com` resolves to
 the laptop's LAN IP inside the café. Then the same Let's Encrypt cert the VPS
 uses is valid for the laptop too — no self-signed cert needed.
 
+## Self-update
+
+The café laptop keeps itself up to date using the *same* authenticated
+pairing as ordinary sync — no separate credential ever lives on the laptop,
+and no manual login is ever needed after the very first install.
+
+### Why this exists
+
+`docker-compose.local.yml` runs a **prebuilt image from GHCR**, not a local
+build — a café laptop shouldn't need the source tree or a build toolchain,
+just Docker. That image is **private** (this is a closed-source product, not
+something to publish for anyone to download), which means pulling it needs a
+credential. The options for where that credential lives, and why this one was
+chosen over the alternatives:
+
+- **Baked into the installer/laptop as a static secret** — rejected. A
+  credential distributed to every café is not actually private: anyone who
+  receives the installer can extract and reuse it, and a leak means rotating
+  it across every laptop that ever ran it.
+- **A shared, long-lived token every laptop uses to pull directly** — same
+  problem, just centralized: one leak compromises every deployment at once,
+  with no way to tell which laptop leaked it.
+- **What's implemented instead**: the only long-lived secret (a GitHub App
+  private key) stays on the VPS, which you administer and never hand to a
+  café. Each laptop already has its own per-business sync token (set up once,
+  by the Owner, in the dashboard). That token is reused to ask the VPS for a
+  **short-lived (~1h), read-only-scoped pull credential**, minted fresh on
+  every request and never stored anywhere. A leaked one expires within the
+  hour on its own; it was never durable enough to be worth stealing.
+
+### Architecture
+
+```
+Laptop (café)                              VPS (pos.eshobe.com)
+─────────────                              ────────────────────
+GET /api/server-sync/update-check  ──────► reports its own running version
+  (per-business sync token)                (no GitHub API call — cheap,
+                                             polled every 30s for dashboard
+                                             visibility only)
+
+GET /api/server-sync/update-token  ──────► mints a fresh ~1h GHCR pull token
+  (same token, only called right           via a GitHub App installation
+   before an actual pull)                  token, scoped to read-only
+                                             packages (src/lib/github-app-
+                                             token.ts) — never cached
+```
+
+- `src/lib/app-update.ts` — both sides of this: `buildUpdateCheckResponse` /
+  `buildUpdateTokenResponse` (remote), `refreshAppUpdateStatus` /
+  `fetchUpdatePullCredential` (local).
+- `scripts/check-app-update.ts` — run inside the container via
+  `docker compose exec` by the Windows launcher, right before deciding
+  whether to pull. Never runs over the network — `docker exec` only needs
+  Docker control on the box already running it, so there's no new endpoint
+  exposed on the café LAN (which `docker-compose.local.yml` otherwise
+  publishes to every device in the building).
+- `windows/Start-CafePOS.bat` — after the current container answers ready,
+  runs the check, and if an update is available, `docker login` with the
+  short-lived token (piped via stdin, never written to disk), pulls, and
+  restarts before opening the app window. Any failure here is non-fatal —
+  the laptop just keeps running its current version.
+
+### One-time setup on the VPS (a human does this once, in GitHub's UI)
+
+There is no API for registering a GitHub App, so this step can't be
+automated:
+
+1. GitHub → Settings → Developer settings → GitHub Apps → **New GitHub App**.
+2. Repository permissions → **Packages: Read-only**. No other permissions.
+3. Install the app on this repository only.
+4. Generate a private key (downloads a `.pem`) and note the **App ID** and
+   the **installation ID** (visible in the installed-app's URL).
+5. Set on the VPS (Komodo Stack Environment, or `.env`), never on any laptop:
+   - `GHCR_APP_ID`
+   - `GHCR_APP_INSTALLATION_ID`
+   - `GHCR_APP_PRIVATE_KEY` — the `.pem` contents (literal `\n` line breaks
+     are fine; they're normalized back to real newlines)
+
+If these aren't set, `update-check` still works (laptops see their current
+version, no error), but `update-token` returns `not_configured` — self-update
+is simply unavailable until this is done, it doesn't break anything else.
+
+### First-time bootstrap (still manual — this is the one unavoidable step)
+
+Self-update needs an already-running container to check *from* (the CLI
+script above runs via `docker exec`, which needs a container to exec into).
+So the very first install on a new laptop still needs one manual,
+authenticated pull:
+
+```powershell
+docker login ghcr.io -u <your-username> -p <a-token-that-can-read-this-package>
+docker compose -f docker-compose.local.yml pull
+docker compose -f docker-compose.local.yml up -d
+```
+
+After that, every subsequent update is fully automatic on boot — no login,
+no token, no manual step, ever again.
+
 ## Monitoring sync status
 
 The Owner dashboard's **Settings → همگام‌سازی با سرور راه دور** page shows:

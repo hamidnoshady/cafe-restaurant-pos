@@ -48,6 +48,12 @@ const PUBLIC_ROUTES: Record<string, string> = {
   "server-sync/push":
     "server-to-server — authenticated by a per-business bearer token (server_sync_tokens), " +
     "falling back to the legacy global REMOTE_SYNC_TOKEN; not a session",
+  "server-sync/update-check":
+    "server-to-server — authenticated by a per-business bearer token (server_sync_tokens) only, " +
+    "deliberately no legacy REMOTE_SYNC_TOKEN fallback; not a session",
+  "server-sync/update-token":
+    "server-to-server — authenticated by a per-business bearer token (server_sync_tokens) only, " +
+    "deliberately no legacy REMOTE_SYNC_TOKEN fallback; not a session",
   // Phase 15 — the super-admin realm's own credential exchange. Authenticates
   // against platform_admins and mints the platform cookie; necessarily runs
   // without a platform session, exactly like the tenant auth/login.

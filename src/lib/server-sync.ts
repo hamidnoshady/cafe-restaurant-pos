@@ -27,6 +27,7 @@ import { query, withTenant, withoutTenantScope } from "./db";
 import { getSetting, setSetting, SETTING_KEYS } from "./settings";
 import { applySyncEvent, type SyncEventInput, type SyncEventType } from "./sync-events";
 import type { ServerSyncConfig } from "./server-sync-config";
+import { refreshAppUpdateStatus } from "./app-update";
 
 export type { ServerSyncConfig } from "./server-sync-config";
 
@@ -472,6 +473,15 @@ export async function runServerSyncTick(): Promise<void> {
       await withTenant(row.business_id, () => runServerPull(row.business_id));
     } catch (err) {
       console.error(`server-sync pull failed for business ${row.business_id}:`, err);
+    }
+    try {
+      // Dashboard visibility only — no credential involved. See app-update.ts.
+      await withTenant(row.business_id, async () => {
+        const config = await getServerSyncConfig(row.business_id);
+        await refreshAppUpdateStatus(row.business_id, config);
+      });
+    } catch (err) {
+      console.error(`app-update check failed for business ${row.business_id}:`, err);
     }
   }
 }

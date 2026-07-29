@@ -6,7 +6,10 @@ REM  The ONE thing the café staff double-clicks each day. It:
 REM    1. Makes sure Docker Desktop is running (starts it if not).
 REM    2. Brings the POS stack up (app + Postgres) via docker compose.
 REM    3. Waits until the app answers on http://localhost:3000.
-REM    4. Opens the POS in its own app window (Edge/Chrome --app), so it
+REM    4. Checks whether a newer version is available (self-update, see
+REM       docs/server-sync.md "Self-update") and if so, pulls and restarts
+REM       with it — never blocks a normal boot if this fails or is skipped.
+REM    5. Opens the POS in its own app window (Edge/Chrome --app), so it
 REM       looks and behaves like native software, no address bar, no tabs.
 REM
 REM  Normally launched HIDDEN through Start-CafePOS.vbs (no console flashes).
@@ -75,6 +78,59 @@ timeout /t 2 /nobreak >nul
 goto waitapp
 :appready
 echo [Cafe POS] App is up.
+
+REM --- 3.5. Self-update: check for a newer version, pull and restart if so --
+REM Never fatal — any failure here just falls through to opening the current
+REM version. See scripts/check-app-update.ts and docs/server-sync.md
+REM "Self-update" for what this is actually checking and why it's safe.
+echo [Cafe POS] Checking for an update...
+set "UPDATE_TMP=%TEMP%\cafepos-update-check.txt"
+docker compose -f "%COMPOSE_FILE%" exec -T app npx tsx scripts/check-app-update.ts > "%UPDATE_TMP%" 2>nul
+
+set "UPDATE_LINE1="
+set "UPDATE_LINE2="
+set "UPDATE_LINE3="
+set /a _line=0
+if exist "%UPDATE_TMP%" (
+    for /f "usebackq delims=" %%L in ("%UPDATE_TMP%") do (
+        set /a _line+=1
+        if !_line! EQU 1 set "UPDATE_LINE1=%%L"
+        if !_line! EQU 2 set "UPDATE_LINE2=%%L"
+        if !_line! EQU 3 set "UPDATE_LINE3=%%L"
+    )
+    del "%UPDATE_TMP%" >nul 2>&1
+)
+
+if "!UPDATE_LINE1!"=="UPDATE" (
+    echo [Cafe POS] Update available: !UPDATE_LINE2!
+    REM The token is short-lived (~1h, minted fresh for this one login) and
+    REM never touches disk — piped straight into docker login's stdin.
+    echo !UPDATE_LINE3! | docker login ghcr.io -u x-access-token --password-stdin >nul 2>&1
+    if errorlevel 1 (
+        echo [Cafe POS] Registry login failed; continuing with the current version.
+    ) else (
+        echo [Cafe POS] Pulling the new version...
+        docker compose -f "%COMPOSE_FILE%" pull app
+        if errorlevel 1 (
+            echo [Cafe POS] Pull failed; continuing with the current version.
+        ) else (
+            docker compose -f "%COMPOSE_FILE%" up -d
+            echo [Cafe POS] Updated. Waiting for the app to come back up...
+            set /a _tries=0
+            :waitapp2
+            curl -s -o nul "%APP_URL%" >nul 2>&1
+            if not errorlevel 1 goto appready2
+            set /a _tries+=1
+            if !_tries! geq 60 goto appready2
+            timeout /t 2 /nobreak >nul
+            goto waitapp2
+            :appready2
+            echo [Cafe POS] Update complete.
+        )
+    )
+) else (
+    echo [Cafe POS] Already on the latest version.
+)
 
 REM --- 4. Open the POS in its own app window --------------------------------
 :openapp

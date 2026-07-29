@@ -33,10 +33,14 @@ ready.
    - `JWT_SECRET` — a long random secret (e.g. run `openssl rand -hex 32`).
    - `REMOTE_SYNC_TOKEN` — only if you're syncing with the VPS (see
      `docs/server-sync.md`).
-3. Build the app once (this can take a few minutes):
+3. Log in once to pull the app image (it's a private prebuilt image, not
+   something built on the laptop — see `docs/server-sync.md` "Self-update"
+   for why, and for how updates after this point need no login at all):
 
    ```powershell
-   docker compose -f docker-compose.local.yml up -d --build
+   docker login ghcr.io -u <your-username> -p <a-token-that-can-read-this-package>
+   docker compose -f docker-compose.local.yml pull
+   docker compose -f docker-compose.local.yml up -d
    ```
 
    When it finishes, the POS is reachable at <http://localhost:3000>.
@@ -80,6 +84,13 @@ The launcher quietly makes sure Docker is running, starts the POS, waits for
 it to be ready, and opens it in its own clean window (no browser tabs or
 address bar). The first launch after a reboot takes a little longer because
 Docker has to wake up; later launches are quick.
+
+It also checks for a newer version every time it starts (see
+`docs/server-sync.md` "Self-update") — if one is available, it's pulled and
+applied automatically before the window opens, with no login or manual step
+ever needed. This only works once server-sync is configured (`docs/server-
+sync.md`), since that's the paired connection the update check uses; without
+it, the POS just keeps running whatever version is already installed.
 
 To fully stop the POS (rarely needed), run `windows\Stop-CafePOS.bat`. Your
 data is safe in Docker volumes; starting again restores everything. Normally

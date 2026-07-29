@@ -12,9 +12,22 @@
 # Setup:
 #   1. Give this machine a fixed LAN IP (router DHCP reservation or static).
 #   2. Copy .env.local.example → .env and fill JWT_SECRET, POSTGRES_PASSWORD.
-#   3. docker compose -f docker-compose.local.yml up -d --build
+#   3. One-time only: `docker login ghcr.io` with a token that can read this
+#      repo's (private) package, then `docker compose -f docker-compose.local.yml
+#      pull && up -d`. After this, the app updates itself on future boots — see
+#      docs/server-sync.md "Self-update" for why a plain `docker pull` can't
+#      bootstrap the very first install, and windows/Start-CafePOS.bat for how
+#      later updates work with no manual login ever again.
 #   4. In the Owner dashboard, configure server-sync to point at the VPS URL
-#      + shared token (see docs/server-sync.md).
+#      + shared token (see docs/server-sync.md) — this is also what lets the
+#      self-update check find a newer version.
+#
+# The app service below runs the prebuilt image CI already publishes
+# (.github/workflows/deploy.yml), not a local build: a café laptop shouldn't
+# need the source tree, npm, or a build toolchain, just Docker. Pin
+# POS_IMAGE_TAG to a release (e.g. v1.4.2) rather than the default :latest
+# once you're past initial setup, so this laptop only moves versions when you
+# choose to, not on every merge to main.
 #
 # NOTE on HTTPS: LAN devices reach this over plain http://<ip>:3000. The
 # session cookie's Secure flag is only set when NODE_ENV=production, so this
@@ -40,9 +53,7 @@ services:
       retries: 10
 
   app:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ${POS_IMAGE:-ghcr.io/hamidnoshady/cafe-restaurant-pos}:${POS_IMAGE_TAG:-latest}
     restart: unless-stopped
     depends_on:
       db:
