@@ -6,13 +6,18 @@ import { WaiterBoard } from "./waiter-board";
 export default async function WaiterPage() {
   const session = await getSession();
   if (!session) redirect("/login");
-  if (!["owner", "manager", "waiter"].includes(session.role)) redirect("/dashboard");
+  if (!["cashier", "waiter"].includes(session.role)) redirect("/dashboard");
   await requireFeatureForPage(session.businessId, "reservations");
 
   return (
-    <div>
-      <header className="mb-6">
-        <h1 className="text-2xl font-bold">میزهای من</h1>
+    <div className="mx-auto max-w-[1600px]">
+      <header className="mb-4 sm:mb-5">
+        <h1 className="text-2xl font-bold tracking-tight text-[#252522]">
+          میزهای من
+        </h1>
+        <p className="mt-1 text-sm text-[#77756F]">
+          میزهای تخصیص‌داده‌شده به شما
+        </p>
       </header>
       <WaiterBoard />
     </div>
