@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { requireFeatureForPage } from "@/lib/features";
-import { AiSettings } from "./ai-settings";
+import { AiBillingDashboard } from "./ai-billing";
 
 export default async function AiSettingsPage() {
   const session = await getSession();
@@ -14,11 +14,10 @@ export default async function AiSettingsPage() {
       <header className="mb-6">
         <h1 className="text-xl font-bold">دستیار هوشمند</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          سرویس هوش مصنوعی را برای دستیار چت و کمک‌کار راه‌اندازی تنظیم کنید. کلید شما فقط روی سرور
-          ذخیره می‌شود و در مرورگر نمایش داده نمی‌شود.
+          ماندهٔ اعتبار، اشتراک، تاریخچهٔ مصرف و درخواست شارژ دستیار هوشمند را مدیریت کنید. اتصال و کلید سرویس فقط توسط مدیر پلتفرم مدیریت می‌شود.
         </p>
       </header>
-      <AiSettings />
+      <AiBillingDashboard />
     </div>
   );
 }
