@@ -7,6 +7,7 @@ import {
   cancelAiTurnReservation,
   reserveAiTurn,
   settleAiTurn,
+  type AiTurnReservation,
 } from "@/lib/ai-billing-service";
 import { AiError, runAgentTurn, type InboundMessage } from "@/lib/ai-service";
 import { requireManager } from "@/lib/setup-state";
@@ -59,7 +60,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
     );
   }
 
-  let reservation;
+  let reservation: AiTurnReservation;
   try {
     reservation = await reserveAiTurn({
       businessId: session.businessId,
