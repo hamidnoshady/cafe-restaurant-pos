@@ -13,7 +13,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "سفارش‌ها", href: "/dashboard/orders", roles: ["owner", "manager", "cashier", "waiter"] },
   { label: "صندوق (فروش)", href: "/dashboard/pos", roles: ["owner", "manager", "cashier"] },
   { label: "میزها", href: "/dashboard/floor", roles: ["owner", "manager", "cashier", "waiter"], flag: "reservations" },
-  { label: "میزهای من", href: "/dashboard/waiter", roles: ["owner", "manager", "waiter"], flag: "reservations" },
+  { label: "میزهای من", href: "/dashboard/waiter", roles: ["cashier", "waiter"], flag: "reservations" },
   { label: "آشپزخانه", href: "/dashboard/kitchen", roles: ["owner", "manager", "kitchen"] },
   { label: "رزروها", href: "/dashboard/reservations", roles: ["owner", "manager", "cashier", "waiter"], flag: "reservations" },
   { label: "ارسال و پیک", href: "/dashboard/delivery", roles: ["owner", "manager", "cashier"], flag: "delivery" },
