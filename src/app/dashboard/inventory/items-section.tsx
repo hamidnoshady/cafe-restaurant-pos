@@ -1,12 +1,25 @@
 "use client";
 
 import { useState } from "react";
+import { Button } from "@/components/ui/button";
 import { formatQuantity } from "@/lib/digits";
 import { formatToman } from "@/lib/money";
-import { api, Field, inputClass, PrimaryButton, SecondaryButton } from "../ui";
+import { api, Field, inputClass } from "../ui";
 import type { InventoryItem, Runner } from "./inventory-manager";
 
-export function ItemsSection({ items, busy, run }: { items: InventoryItem[]; busy: boolean; run: Runner }) {
+const inventoryInputClass = `${inputClass} min-h-[52px] !border-stone-200 !bg-white shadow-none placeholder:text-stone-400 focus-visible:border-amber-500 focus-visible:ring-amber-400/30`;
+const secondaryActionClass =
+  "min-h-[52px] border-stone-200 bg-white px-4 text-stone-700 hover:border-amber-300 hover:bg-amber-50 hover:text-stone-950 focus-visible:border-amber-500 focus-visible:ring-amber-400/30";
+
+export function ItemsSection({
+  items,
+  busy,
+  run,
+}: {
+  items: InventoryItem[];
+  busy: boolean;
+  run: Runner;
+}) {
   const [name, setName] = useState("");
   const [unit, setUnit] = useState("");
   const [reorderLevel, setReorderLevel] = useState("");
@@ -24,7 +37,9 @@ export function ItemsSection({ items, busy, run }: { items: InventoryItem[]; bus
           unit,
           reorderLevel: reorderLevel.trim() ? Number(reorderLevel) : null,
           purchaseUnit: purchaseUnit.trim() || null,
-          purchaseUnitFactor: purchaseFactor.trim() ? Number(purchaseFactor) : 1,
+          purchaseUnitFactor: purchaseFactor.trim()
+            ? Number(purchaseFactor)
+            : 1,
         }),
       }),
     );
@@ -38,90 +53,184 @@ export function ItemsSection({ items, busy, run }: { items: InventoryItem[]; bus
   }
 
   return (
-    <section className="min-w-0 rounded-2xl bg-card p-5 shadow-sm">
-      <h2 className="mb-3 font-semibold">اقلام انبار (مواد اولیه)</h2>
-      <form onSubmit={add} className="mb-4 grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-6">
-        <Field label="نام قلم">
-          <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} placeholder="مثلاً قهوه" required />
-        </Field>
-        <Field label="واحد پایه">
-          <input className={inputClass} value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="g، ml، عدد…" required />
-        </Field>
-        <Field label="آستانهٔ سفارش مجدد">
-          <input
-            className={inputClass}
-            dir="ltr"
-            inputMode="decimal"
-            value={reorderLevel}
-            onChange={(e) => setReorderLevel(e.target.value)}
-            placeholder="اختیاری"
-          />
-        </Field>
-        <Field label="واحد خرید">
-          <input
-            className={inputClass}
-            value={purchaseUnit}
-            onChange={(e) => setPurchaseUnit(e.target.value)}
-            placeholder="اختیاری؛ مثلاً kg"
-          />
-        </Field>
-        <Field label="ضریب تبدیل واحد خرید">
-          <input
-            className={inputClass}
-            dir="ltr"
-            inputMode="decimal"
-            value={purchaseFactor}
-            onChange={(e) => setPurchaseFactor(e.target.value)}
-            placeholder="مثلاً ۱۰۰۰"
-          />
-        </Field>
-        <div className="mb-4 flex items-end">
-          <PrimaryButton disabled={busy}>افزودن</PrimaryButton>
+    <div className="grid min-w-0 gap-4 md:grid-cols-[minmax(0,1fr)_18rem] lg:gap-5 lg:grid-cols-[minmax(0,1fr)_21rem] xl:grid-cols-[minmax(0,1fr)_24rem]">
+      <section
+        aria-labelledby="inventory-items-heading"
+        className="order-2 min-w-0 overflow-hidden rounded-2xl bg-card md:order-1"
+      >
+        <div className="border-b border-stone-200/80 px-4 py-4 sm:px-5">
+          <h2
+            id="inventory-items-heading"
+            className="font-semibold text-stone-950"
+          >
+            اقلام انبار (مواد اولیه)
+          </h2>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">
+            فهرست مواد اولیه و تنظیمات واحدهای خرید آن‌ها.
+          </p>
         </div>
-      </form>
 
-      <ul className="divide-y divide-border rounded-lg border border-border">
-        {items.map((it) => (
-          <ItemRow key={it.id} item={it} busy={busy} run={run} />
-        ))}
-        {items.length === 0 ? <li className="p-3 text-sm text-muted-foreground">قلمی ثبت نشده است.</li> : null}
-      </ul>
-    </section>
+        <ul className="divide-y divide-stone-200/80">
+          {items.map((it) => (
+            <ItemRow key={it.id} item={it} busy={busy} run={run} />
+          ))}
+          {items.length === 0 ? (
+            <li className="px-4 py-5 text-sm text-muted-foreground sm:px-5">
+              قلمی ثبت نشده است.
+            </li>
+          ) : null}
+        </ul>
+      </section>
+
+      <aside className="order-1 min-w-0 md:order-2">
+        <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-[0_1px_2px_rgb(41_37_36/0.035)] md:sticky md:top-4 sm:p-5">
+          <h2 className="font-semibold text-stone-950">افزودن قلم انبار</h2>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">
+            اطلاعات پایهٔ قلم را وارد کنید؛ آستانه سفارش مجدد اختیاری است.
+          </p>
+
+          <form onSubmit={add} className="mt-4">
+            <Field label="نام قلم">
+              <input
+                className={inventoryInputClass}
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="مثلاً قهوه"
+                required
+              />
+            </Field>
+            <Field label="واحد پایه">
+              <input
+                className={inventoryInputClass}
+                value={unit}
+                onChange={(e) => setUnit(e.target.value)}
+                placeholder="g، ml، عدد…"
+                required
+              />
+            </Field>
+            <Field label="آستانه سفارش مجدد">
+              <input
+                className={inventoryInputClass}
+                dir="ltr"
+                inputMode="decimal"
+                value={reorderLevel}
+                onChange={(e) => setReorderLevel(e.target.value)}
+                placeholder="اختیاری"
+              />
+            </Field>
+            <Field label="واحد خرید">
+              <input
+                className={inventoryInputClass}
+                value={purchaseUnit}
+                onChange={(e) => setPurchaseUnit(e.target.value)}
+                placeholder="اختیاری؛ مثلاً kg"
+              />
+            </Field>
+            <Field label="ضریب تبدیل واحد خرید">
+              <input
+                className={inventoryInputClass}
+                dir="ltr"
+                inputMode="decimal"
+                value={purchaseFactor}
+                onChange={(e) => setPurchaseFactor(e.target.value)}
+                placeholder="مثلاً ۱۰۰۰"
+              />
+            </Field>
+            <Button
+              type="submit"
+              disabled={busy}
+              size="lg"
+              className="min-h-[52px] w-full border border-amber-300 px-5 font-semibold focus-visible:ring-amber-400/30"
+            >
+              افزودن
+            </Button>
+          </form>
+        </div>
+      </aside>
+    </div>
   );
 }
 
-function ItemRow({ item, busy, run }: { item: InventoryItem; busy: boolean; run: Runner }) {
+function ItemRow({
+  item,
+  busy,
+  run,
+}: {
+  item: InventoryItem;
+  busy: boolean;
+  run: Runner;
+}) {
   const [editing, setEditing] = useState(false);
-  const reorderLevel = item.reorder_level === null ? null : Number(item.reorder_level);
-  const isLow = reorderLevel !== null && item.stock <= reorderLevel;
+  const reorderLevel =
+    item.reorder_level === null ? null : Number(item.reorder_level);
 
   if (editing) {
-    return <EditItemRow item={item} busy={busy} run={run} onDone={() => setEditing(false)} />;
+    return (
+      <EditItemRow
+        item={item}
+        busy={busy}
+        run={run}
+        onDone={() => setEditing(false)}
+      />
+    );
   }
 
   return (
-    <li className="flex min-w-0 flex-col items-stretch gap-3 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
-      <span className={`min-w-0 break-words ${item.is_active ? "" : "text-muted-foreground line-through"}`}>
-        {item.name}
-        {item.sku ? <span className="text-xs text-muted-foreground"> ({item.sku})</span> : null}
-      </span>
-      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-        <span className={isLow ? "font-semibold text-primary" : ""}>
-          موجودی: {formatQuantity(item.stock)} {item.unit}
-        </span>
-        <span>میانگین بها: {formatToman(Number(item.avg_cost))}</span>
-        {item.purchase_unit ? (
-          <span>
-            خرید: {item.purchase_unit} = {formatQuantity(item.purchase_unit_factor)} {item.unit}
-          </span>
-        ) : null}
-        <SecondaryButton disabled={busy} onClick={() => setEditing(true)}>
+    <li className="flex min-w-0 flex-col gap-4 px-4 py-4 sm:px-5 lg:flex-row lg:items-start lg:justify-between">
+      <div className="min-w-0">
+        <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+          <h3
+            className={`min-w-0 break-words font-semibold text-stone-950 ${item.is_active ? "" : "text-muted-foreground line-through"}`}
+          >
+            {item.name}
+          </h3>
+          {item.sku ? (
+            <span className="text-xs text-muted-foreground">({item.sku})</span>
+          ) : null}
+          {!item.is_active ? <span className="sr-only">غیرفعال</span> : null}
+        </div>
+
+        <dl className="mt-3 grid min-w-0 gap-x-5 gap-y-2 text-xs text-stone-600 sm:grid-cols-2 xl:grid-cols-3">
+          <MetaItem label="واحد پایه">{item.unit}</MetaItem>
+          {reorderLevel !== null ? (
+            <MetaItem label="آستانه سفارش مجدد">
+              {formatQuantity(reorderLevel)} {item.unit}
+            </MetaItem>
+          ) : null}
+          {item.purchase_unit ? (
+            <MetaItem label="واحد خرید">
+              {item.purchase_unit} = {formatQuantity(item.purchase_unit_factor)}{" "}
+              {item.unit}
+            </MetaItem>
+          ) : null}
+          <MetaItem label="موجودی فعلی">
+            {formatQuantity(item.stock)} {item.unit}
+          </MetaItem>
+          <MetaItem label="میانگین بها">
+            {formatToman(Number(item.avg_cost))}
+          </MetaItem>
+        </dl>
+      </div>
+
+      <div className="grid shrink-0 grid-cols-1 gap-2 sm:flex sm:flex-wrap lg:justify-end">
+        <Button
+          type="button"
+          variant="outline"
+          size="lg"
+          className={secondaryActionClass}
+          disabled={busy}
+          onClick={() => setEditing(true)}
+        >
           ویرایش
-        </SecondaryButton>
-        <SecondaryButton
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="lg"
+          className={secondaryActionClass}
           disabled={busy}
           onClick={() =>
-            run(() =>
+            void run(() =>
               api(`/api/inventory/items/${item.id}`, {
                 method: "PATCH",
                 body: JSON.stringify({ isActive: !item.is_active }),
@@ -130,18 +239,46 @@ function ItemRow({ item, busy, run }: { item: InventoryItem; busy: boolean; run:
           }
         >
           {item.is_active ? "غیرفعال" : "فعال"}
-        </SecondaryButton>
-        <SecondaryButton
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="lg"
+          className="min-h-[52px] border-destructive/25 bg-white px-4 text-destructive hover:border-destructive/40 hover:bg-destructive/5 focus-visible:border-destructive/40 focus-visible:ring-destructive/20"
           disabled={busy}
           onClick={() => {
-            if (!window.confirm(`قلم «${item.name}» حذف شود؟ قلمی که سابقهٔ مصرف یا خرید دارد غیرفعال می‌شود.`)) return;
-            void run(() => api(`/api/inventory/items/${item.id}`, { method: "DELETE" }));
+            if (
+              !window.confirm(
+                `قلم «${item.name}» حذف شود؟ قلمی که سابقهٔ مصرف یا خرید دارد غیرفعال می‌شود.`,
+              )
+            )
+              return;
+            void run(() =>
+              api(`/api/inventory/items/${item.id}`, { method: "DELETE" }),
+            );
           }}
         >
           حذف
-        </SecondaryButton>
+        </Button>
       </div>
     </li>
+  );
+}
+
+function MetaItem({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-stone-500">{label}</dt>
+      <dd className="mt-0.5 break-words font-medium text-stone-700">
+        {children}
+      </dd>
+    </div>
   );
 }
 
@@ -162,7 +299,9 @@ function EditItemRow({
     item.reorder_level === null ? "" : String(Number(item.reorder_level)),
   );
   const [purchaseUnit, setPurchaseUnit] = useState(item.purchase_unit ?? "");
-  const [purchaseFactor, setPurchaseFactor] = useState(String(Number(item.purchase_unit_factor)));
+  const [purchaseFactor, setPurchaseFactor] = useState(
+    String(Number(item.purchase_unit_factor)),
+  );
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
@@ -175,7 +314,9 @@ function EditItemRow({
           unit,
           reorderLevel: reorderLevel.trim() ? Number(reorderLevel) : null,
           purchaseUnit: purchaseUnit.trim() || null,
-          purchaseUnitFactor: purchaseFactor.trim() ? Number(purchaseFactor) : 1,
+          purchaseUnitFactor: purchaseFactor.trim()
+            ? Number(purchaseFactor)
+            : 1,
         }),
       }),
     );
@@ -183,17 +324,30 @@ function EditItemRow({
   }
 
   return (
-    <li className="px-4 py-3">
-      <form onSubmit={save} className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-6">
+    <li className="bg-amber-50/50 px-4 py-4 sm:px-5">
+      <form
+        onSubmit={save}
+        className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-5"
+      >
         <Field label="نام قلم">
-          <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} required />
+          <input
+            className={inventoryInputClass}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
+          />
         </Field>
         <Field label="واحد پایه">
-          <input className={inputClass} value={unit} onChange={(e) => setUnit(e.target.value)} required />
-        </Field>
-        <Field label="آستانهٔ سفارش مجدد">
           <input
-            className={inputClass}
+            className={inventoryInputClass}
+            value={unit}
+            onChange={(e) => setUnit(e.target.value)}
+            required
+          />
+        </Field>
+        <Field label="آستانه سفارش مجدد">
+          <input
+            className={inventoryInputClass}
             dir="ltr"
             inputMode="decimal"
             value={reorderLevel}
@@ -203,7 +357,7 @@ function EditItemRow({
         </Field>
         <Field label="واحد خرید">
           <input
-            className={inputClass}
+            className={inventoryInputClass}
             value={purchaseUnit}
             onChange={(e) => setPurchaseUnit(e.target.value)}
             placeholder="اختیاری؛ مثلاً kg"
@@ -211,20 +365,32 @@ function EditItemRow({
         </Field>
         <Field label="ضریب تبدیل واحد خرید">
           <input
-            className={inputClass}
+            className={inventoryInputClass}
             dir="ltr"
             inputMode="decimal"
             value={purchaseFactor}
             onChange={(e) => setPurchaseFactor(e.target.value)}
           />
         </Field>
-        <div className="flex flex-col gap-2 sm:col-span-2 xl:col-span-6 sm:flex-row">
-          <div className="w-full sm:w-40">
-            <PrimaryButton disabled={busy}>ذخیره</PrimaryButton>
-          </div>
-          <SecondaryButton disabled={busy} onClick={onDone}>
+        <div className="flex flex-col gap-2 sm:col-span-2 sm:flex-row xl:col-span-5">
+          <Button
+            type="submit"
+            disabled={busy}
+            size="lg"
+            className="min-h-[52px] w-full border border-amber-300 px-5 font-semibold focus-visible:ring-amber-400/30 sm:w-40"
+          >
+            ذخیره
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="lg"
+            className={secondaryActionClass}
+            disabled={busy}
+            onClick={onDone}
+          >
             انصراف
-          </SecondaryButton>
+          </Button>
         </div>
       </form>
     </li>
