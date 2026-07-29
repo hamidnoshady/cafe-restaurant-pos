@@ -520,13 +520,12 @@ export async function cancelAiTurnReservation(input: {
     const { rows } = await client.query<{ id: string }>(
       `UPDATE ai_credit_ledger
           SET kind = 'usage_cancelled',
-              metadata = metadata || $4::jsonb
+              metadata = metadata || $3::jsonb
         WHERE business_id = $1 AND request_id = $2 AND kind = 'usage'
         RETURNING id`,
       [
         input.businessId,
         input.reservation.requestId,
-        input.reservation.reservedRial,
         JSON.stringify({ phase: "cancelled", reason: input.reason }),
       ],
     );
