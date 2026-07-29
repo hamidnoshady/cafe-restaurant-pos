@@ -50,6 +50,7 @@ app.prepare().then(async () => {
   const { BACKUP_TICK_INTERVAL_MS } = await import("./src/lib/backup");
   const { runServerSyncTick, SERVER_SYNC_INTERVAL_MS } = await import("./src/lib/server-sync");
   const { assertRlsEffective } = await import("./src/lib/db");
+  const { runAiSubscriptionRenewalTick, AI_SUBSCRIPTION_TICK_INTERVAL_MS } = await import("./src/lib/ai-billing-service");
 
   // Phase 12: tenant isolation is enforced by Postgres row-level security,
   // which superusers and BYPASSRLS roles ignore outright — silently, with no
@@ -84,6 +85,14 @@ app.prepare().then(async () => {
     runServerSyncTick().catch((err) => console.error("server-sync tick failed:", err));
   setInterval(serverSyncTick, SERVER_SYNC_INTERVAL_MS).unref();
   setTimeout(serverSyncTick, 20_000).unref();
+
+  // Phase 18: subscriptions grant their monthly credits in a tenant-scoped
+  // transaction. The service discovers due businesses under the documented
+  // platform bypass, then re-enters each one with withTenant before writing.
+  const aiSubscriptionTick = () =>
+    runAiSubscriptionRenewalTick().catch((err) => console.error("AI subscription renewal tick failed:", err));
+  setInterval(aiSubscriptionTick, AI_SUBSCRIPTION_TICK_INTERVAL_MS).unref();
+  setTimeout(aiSubscriptionTick, 60_000).unref();
 
   const server = createServer((req, res) => {
     handle(req, res, parse(req.url ?? "/", true));
