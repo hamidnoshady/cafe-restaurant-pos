@@ -200,11 +200,11 @@ function OrderDetailsPanel({
         </span>
       </div>
 
-      {isLoading ? (
+      {isLoading && !selectedDetail ? (
         <div className="pt-4">
           <DetailSkeleton />
         </div>
-      ) : error ? (
+      ) : error && !selectedDetail ? (
         <div
           className="mt-4 rounded-xl border border-[#E9A11B]/25 bg-[#FFF9EE] p-3"
           role="status"
@@ -223,6 +223,21 @@ function OrderDetailsPanel({
         </div>
       ) : (
         <>
+          {error ? (
+            <div
+              className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-[#E9A11B]/25 bg-[#FFF9EE] p-3"
+              role="status"
+            >
+              <p className="text-xs leading-5 text-[#5E5B55]">{error}</p>
+              <button
+                type="button"
+                onClick={onRetry}
+                className="min-h-11 shrink-0 rounded-lg px-2 text-xs font-bold text-[#9B6700] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45"
+              >
+                تلاش دوباره
+              </button>
+            </div>
+          ) : null}
           <dl className="grid grid-cols-2 gap-2 py-4">
             <div className="rounded-xl bg-[#FCFCFA] p-3">
               <dt className="text-[11px] text-[#77756F]">نوع سفارش</dt>
@@ -455,7 +470,9 @@ export function OrdersList() {
     }
 
     let cancelled = false;
-    setDetail(null);
+    setDetail((current) =>
+      current?.order.id === selectedOrderId ? current : null,
+    );
     setDetailError("");
     setDetailLoading(true);
     api<OrderDetailsResponse & { error?: string }>(
