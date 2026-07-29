@@ -13,6 +13,9 @@ import {
   type AiTokenUsage,
 } from "./ai-billing";
 
+/** Hourly is sufficient for monthly renewals and avoids a noisy idle tick. */
+export const AI_SUBSCRIPTION_TICK_INTERVAL_MS = 60 * 60 * 1000;
+
 type LedgerKind =
   | "manual_grant"
   | "top_up"
