@@ -326,7 +326,10 @@ waste, trial balance) becomes a suite an accountant can actually close a year on
 - **Financial statements** — P&L, balance sheet, and cash flow, each with period comparison and
   drill-down to the journal entries behind any figure.
 - **AR/AP subledgers** — customer/supplier balances, invoices/bills, receipts/payments, aging
-  buckets, statements.
+  buckets, statements. The customer *directory* itself — create, edit, archive/delete, address
+  and notes — is a standalone page at `/dashboard/customers` (Owner/Manager/Cashier/Accountant,
+  gated by the `customers.view`/`customers.manage` permissions), independent of the `ledger`
+  feature flag; it links into each customer's AR statement for whoever can also see the ledger.
 - **Bank & cash reconciliation**, **expense management** (categorised, with attachments and
   recurring expenses), and **payroll entries** (accrual/payment postings, not a payroll engine).
 - **Manual journals** — draft → review → post, reversal rather than deletion, recurring

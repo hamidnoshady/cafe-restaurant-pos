@@ -19,6 +19,7 @@ import {
   ShoppingCartIcon,
   TruckIcon,
   UserRoundIcon,
+  UsersIcon,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -60,6 +61,7 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   "/dashboard": LayoutDashboardIcon,
   "/dashboard/orders": ClipboardListIcon,
   "/dashboard/pos": ShoppingCartIcon,
+  "/dashboard/customers": UsersIcon,
   "/dashboard/floor": ArmchairIcon,
   "/dashboard/waiter": ArmchairIcon,
   "/dashboard/kitchen": ChefHatIcon,

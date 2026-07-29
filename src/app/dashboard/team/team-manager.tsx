@@ -41,6 +41,8 @@ const PERMISSION_LABELS: Record<string, string> = {
   "inventory.view": "مشاهدهٔ انبار",
   "inventory.adjust": "اصلاح موجودی",
   "purchases.manage": "مدیریت خرید",
+  "customers.view": "مشاهدهٔ مشتریان",
+  "customers.manage": "مدیریت مشتریان",
   "ledger.view": "مشاهدهٔ دفتر",
   "ledger.post": "ثبت سند",
   "ledger.approve": "تأیید سند",

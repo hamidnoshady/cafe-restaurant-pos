@@ -30,12 +30,21 @@ describe("role presets", () => {
     expect(cashier.has(PERMISSIONS.accountsEdit)).toBe(false);
   });
 
+  it("lets managers and cashiers manage the customer directory, but keeps the accountant view-only", () => {
+    expect(new Set(roleBasePermissions("manager")).has(PERMISSIONS.customersManage)).toBe(true);
+    expect(new Set(roleBasePermissions("cashier")).has(PERMISSIONS.customersManage)).toBe(true);
+    const accountant = new Set(roleBasePermissions("accountant"));
+    expect(accountant.has(PERMISSIONS.customersView)).toBe(true);
+    expect(accountant.has(PERMISSIONS.customersManage)).toBe(false);
+  });
+
   it("restricts kitchen and waiter to their own surfaces", () => {
     expect(hasPermission("kitchen", null, PERMISSIONS.kitchenView)).toBe(true);
     expect(hasPermission("kitchen", null, PERMISSIONS.paymentsTake)).toBe(false);
     expect(hasPermission("waiter", null, PERMISSIONS.ordersCreate)).toBe(true);
     expect(hasPermission("waiter", null, PERMISSIONS.ordersVoid)).toBe(false);
     expect(hasPermission("waiter", null, PERMISSIONS.reportsView)).toBe(false);
+    expect(hasPermission("waiter", null, PERMISSIONS.customersManage)).toBe(false);
   });
 
   it("does not let any non-owner role manage the team by default", () => {
