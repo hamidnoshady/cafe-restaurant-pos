@@ -311,7 +311,25 @@ export default function PlatformAiPage() {
               {packages.length === 0 ? <li className="text-sm text-white/40">هنوز بسته‌ای تعریف نشده است.</li> : packages.map((pkg) => (
                 <li key={pkg.id} className="flex items-center justify-between rounded-lg border border-white/10 bg-white/2 p-3 text-sm">
                   <span>{pkg.name} {pkg.isActive ? null : <span className="text-white/40">— غیرفعال</span>}</span>
-                  <span className="text-white/60">{formatToman(pkg.priceRial)} ← {formatToman(pkg.creditAmountRial)} اعتبار</span>
+                  <div className="flex items-center gap-3">
+                    <span className="text-white/60">{formatToman(pkg.priceRial)} ← {formatToman(pkg.creditAmountRial)} اعتبار</span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={() => void write({
+                        action: "credit_package",
+                        id: pkg.id,
+                        name: pkg.name,
+                        priceRial: pkg.priceRial,
+                        creditAmountRial: pkg.creditAmountRial,
+                        isActive: !pkg.isActive,
+                        sortOrder: pkg.sortOrder,
+                      }, "package-" + pkg.id)}
+                      disabled={Boolean(busy)}
+                    >
+                      {pkg.isActive ? "غیرفعال‌کردن" : "فعال‌کردن"}
+                    </Button>
+                  </div>
                 </li>
               ))}
             </ul>
@@ -329,7 +347,25 @@ export default function PlatformAiPage() {
               {subscriptions.length === 0 ? <li className="text-sm text-white/40">هنوز اشتراکی تعریف نشده است.</li> : subscriptions.map((plan) => (
                 <li key={plan.id} className="flex items-center justify-between rounded-lg border border-white/10 bg-white/2 p-3 text-sm">
                   <span>{plan.name} {plan.isActive ? null : <span className="text-white/40">— غیرفعال</span>}</span>
-                  <span className="text-white/60">{formatToman(plan.priceRial)} / {formatToman(plan.monthlyCreditRial)} اعتبار ماهانه</span>
+                  <div className="flex items-center gap-3">
+                    <span className="text-white/60">{formatToman(plan.priceRial)} / {formatToman(plan.monthlyCreditRial)} اعتبار ماهانه</span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={() => void write({
+                        action: "subscription_plan",
+                        id: plan.id,
+                        name: plan.name,
+                        priceRial: plan.priceRial,
+                        monthlyCreditRial: plan.monthlyCreditRial,
+                        isActive: !plan.isActive,
+                        sortOrder: plan.sortOrder,
+                      }, "plan-" + plan.id)}
+                      disabled={Boolean(busy)}
+                    >
+                      {plan.isActive ? "غیرفعال‌کردن" : "فعال‌کردن"}
+                    </Button>
+                  </div>
                 </li>
               ))}
             </ul>
