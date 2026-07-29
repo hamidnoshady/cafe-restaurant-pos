@@ -42,6 +42,10 @@ export const PERMISSIONS = {
   inventoryAdjust: "inventory.adjust",
   purchasesManage: "purchases.manage",
 
+  // Customers
+  customersView: "customers.view",
+  customersManage: "customers.manage",
+
   // Accounting
   ledgerView: "ledger.view",
   ledgerPost: "ledger.post",
@@ -69,6 +73,7 @@ const {
   tablesManage, reservationsManage, kitchenView, deliveryManage,
   menuView, menuEdit,
   inventoryView, inventoryAdjust, purchasesManage,
+  customersView, customersManage,
   ledgerView, ledgerPost, ledgerApprove, ledgerClosePeriod, accountsEdit,
   reportsView, reportsExport,
   teamManage, settingsManage, locationsManage, backupManage,
@@ -87,13 +92,17 @@ const ROLE_PRESETS: Record<Exclude<Role, "owner">, Permission[]> = {
     tablesManage, reservationsManage, kitchenView, deliveryManage,
     menuView, menuEdit,
     inventoryView, inventoryAdjust, purchasesManage,
+    customersView, customersManage,
     ledgerView, reportsView, reportsExport,
     settingsManage, backupManage,
   ],
-  // Phase 16's role: the books, and only the books. No till, no floor.
+  // Phase 16's role: the books, and only the books. No till, no floor. Sees
+  // the customer directory (it's where AR balances are attributed) but does
+  // not manage customer records — that's a front-of-house task.
   accountant: [
     menuView,
     inventoryView,
+    customersView,
     ledgerView, ledgerPost, ledgerApprove, ledgerClosePeriod, accountsEdit,
     reportsView, reportsExport,
   ],
@@ -102,6 +111,7 @@ const ROLE_PRESETS: Record<Exclude<Role, "owner">, Permission[]> = {
     tablesManage, reservationsManage,
     menuView, deliveryManage,
     inventoryView,
+    customersView, customersManage,
   ],
   waiter: [
     ordersCreate,
