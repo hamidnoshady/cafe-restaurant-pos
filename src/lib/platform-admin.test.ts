@@ -31,6 +31,7 @@ describe("platformCan — role → capability presets", () => {
     expect(platformCan("support", "business.edit")).toBe(false);
     expect(platformCan("support", "business.reset")).toBe(false);
     expect(platformCan("support", "admins.manage")).toBe(false);
+    expect(platformCan("support", "updates.manage")).toBe(false);
   });
 
   it("engineer adds operational writes but not the owner-only powers", () => {
@@ -45,6 +46,7 @@ describe("platformCan — role → capability presets", () => {
     expect(platformCan("engineer", "business.edit")).toBe(false);
     expect(platformCan("engineer", "business.reset")).toBe(false);
     expect(platformCan("engineer", "admins.manage")).toBe(false);
+    expect(platformCan("engineer", "updates.manage")).toBe(false);
   });
 
   it("owner holds every capability", () => {
@@ -57,6 +59,7 @@ describe("platformCan — role → capability presets", () => {
     expect(platformCan("owner", "business.reset")).toBe(true);
     expect(platformCan("owner", "impersonate.full")).toBe(true);
     expect(platformCan("owner", "admins.manage")).toBe(true);
+    expect(platformCan("owner", "updates.manage")).toBe(true);
   });
 
   it("higher roles are supersets of lower ones", () => {
