@@ -14,12 +14,14 @@ import {
   type PromptContext,
 } from "./ai";
 import { runReadTool, READ_TOOL_NAMES } from "./ai-tools";
+import { estimateTokens, type AiTokenUsage } from "./ai-billing";
 
 export type { ProposedAction };
 
 export interface AgentReply {
   content: string;
   proposedAction: ProposedAction | null;
+  usage: AiTokenUsage;
 }
 
 interface ProviderToolCall {
@@ -60,7 +62,7 @@ async function callProvider(
   config: AiConfig,
   messages: ProviderMessage[],
   tools: ReturnType<typeof toolDefinitions>,
-): Promise<ProviderMessage> {
+): Promise<{ message: ProviderMessage; usage: AiTokenUsage }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   let res: Response;
@@ -74,6 +76,7 @@ async function callProvider(
         tools,
         tool_choice: "auto",
         temperature: config.temperature,
+        max_tokens: config.maxOutputTokens,
         stream: false,
       }),
       signal: controller.signal,
@@ -97,10 +100,28 @@ async function callProvider(
 
   const json = (await res.json()) as {
     choices?: { message?: ProviderMessage }[];
+    usage?: { prompt_tokens?: number; completion_tokens?: number };
   };
   const message = json.choices?.[0]?.message;
   if (!message) throw new AiError("ai_provider", "پاسخ سرویس هوش مصنوعی نامفهوم بود.");
-  return message;
+
+  const promptTokens = Number(json.usage?.prompt_tokens);
+  const completionTokens = Number(json.usage?.completion_tokens);
+  const usage: AiTokenUsage =
+    Number.isFinite(promptTokens) && Number.isFinite(completionTokens)
+      ? {
+          inputTokens: Math.max(0, Math.floor(promptTokens)),
+          outputTokens: Math.max(0, Math.floor(completionTokens)),
+        }
+      : {
+          // Some compatible gateways omit usage. Charge a documented
+          // conservative fallback rather than letting metered calls bypass the
+          // ledger altogether.
+          inputTokens: estimateTokens(JSON.stringify(messages)),
+          outputTokens: estimateTokens(message.content ?? ""),
+        };
+
+  return { message, usage };
 }
 
 export class AiError extends Error {
@@ -152,6 +173,7 @@ export async function runAgentTurn(opts: {
 }): Promise<AgentReply> {
   const { config, mode, businessId, promptContext, messages } = opts;
   const tools = toolDefinitions(mode);
+  const usage: AiTokenUsage = { inputTokens: 0, outputTokens: 0 };
 
   const convo: ProviderMessage[] = [
     { role: "system", content: buildSystemPrompt(promptContext) },
@@ -159,11 +181,18 @@ export async function runAgentTurn(opts: {
   ];
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-    const message = await callProvider(config, convo, tools);
+    const result = await callProvider(config, convo, tools);
+    usage.inputTokens += result.usage.inputTokens;
+    usage.outputTokens += result.usage.outputTokens;
+    const message = result.message;
     const toolCalls = message.tool_calls ?? [];
 
     if (toolCalls.length === 0) {
-      return { content: message.content?.trim() || "متوجه نشدم؛ لطفاً دوباره بپرسید.", proposedAction: null };
+      return {
+        content: message.content?.trim() || "متوجه نشدم؛ لطفاً دوباره بپرسید.",
+        proposedAction: null,
+        usage,
+      };
     }
 
     // A proposed action ends the turn immediately — we never auto-execute it.
@@ -172,7 +201,7 @@ export async function runAgentTurn(opts: {
       const action = toProposedAction(parseArgs(proposal.function.arguments));
       const text =
         message.content?.trim() || (action ? action.summary : "پیشنهاد آماده است.");
-      return { content: text, proposedAction: action };
+      return { content: text, proposedAction: action, usage };
     }
 
     // Otherwise every call must be a read tool — run them and feed results back.
@@ -192,5 +221,6 @@ export async function runAgentTurn(opts: {
   return {
     content: "برای پاسخ به این درخواست به مراحل زیادی نیاز بود. لطفاً سؤال را ساده‌تر بپرسید.",
     proposedAction: null,
+    usage,
   };
 }

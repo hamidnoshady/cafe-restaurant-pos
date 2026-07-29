@@ -54,6 +54,8 @@ export interface AiConfig {
   apiKey: string;
   /** 0..2, defaults 0.3 for a grounded assistant. */
   temperature: number;
+  /** Platform cap sent to the provider for one completion. */
+  maxOutputTokens?: number;
 }
 
 /** Config safe to send to the browser — the key is never exposed, only a hint. */
@@ -77,6 +79,7 @@ export function defaultConfig(provider: AiProvider = "openrouter"): AiConfig {
     baseUrl: meta.defaultBaseUrl,
     apiKey: "",
     temperature: 0.3,
+    maxOutputTokens: 1000,
   };
 }
 

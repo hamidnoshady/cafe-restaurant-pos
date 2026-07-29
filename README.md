@@ -2,7 +2,7 @@
 
 Persian-first (RTL, Jalali calendar, Toman display) point-of-sale system for cafes and restaurants. Built with Next.js + PostgreSQL.
 
-Development is phased — see [docs/phases/README.md](docs/phases/README.md) for the phase index. **Current status: all 17 phases implemented** — a single-business POS (Phases 0–11: menu/POS, tables, waiter/kitchen real-time sync, offline queue, inventory, ledger, reporting, multi-location rollup, backups, delivery) turned into a multi-business platform (Phases 12–17: tenant isolation via RLS, teams & permissions, per-business branches, a super-admin console, a real accounting suite, and entitlement/rate-limit hardening).
+Development is phased — see [docs/phases/README.md](docs/phases/README.md) for the phase index. **Current status: all 18 phases implemented** — a single-business POS (Phases 0–11: menu/POS, tables, waiter/kitchen real-time sync, offline queue, inventory, ledger, reporting, multi-location rollup, backups, delivery) turned into a multi-business platform (Phases 12–17: tenant isolation via RLS, teams & permissions, per-business branches, a super-admin console, a real accounting suite, and entitlement/rate-limit hardening), then added platform-owned, metered AI credits and subscriptions (Phase 18).
 
 ## Stack
 
@@ -151,13 +151,16 @@ The agent's mutations are restricted to a fixed allowlist (`ACTION_CATALOG` in
 endpoint, so it can never call an arbitrary URL. Read tools run server-side and
 never mutate data.
 
-**Providers.** Two OpenAI-compatible providers are supported — **OpenRouter** and
-**ArvanCloud AI** — via one provider-agnostic client. Configure provider, model,
-base URL and API key at `/dashboard/ai` (Owner/Manager); values are stored
-business-wide in the `settings` table (the key never leaves the server), with
-`.env` fallbacks (`AI_PROVIDER`, `AI_MODEL`, `AI_BASE_URL`, `OPENROUTER_API_KEY`,
-`ARVAN_AI_API_KEY` — see `.env.example`). ArvanCloud's base URL can vary by
-plan/region, so it is editable in the UI.
+**Platform-owned providers and billing.** Two OpenAI-compatible providers are supported — **OpenRouter** and
+**ArvanCloud AI** — through one platform-owned connection configured only at
+`/platform/ai`. Businesses never enter or receive a provider key: `/dashboard/ai`
+shows their balance, subscription, usage history, and package-based top-up request
+flow. Each assistant turn atomically reserves a configured maximum, settles its
+actual provider token usage, and refunds unused credit; a business with insufficient
+credit is blocked before a provider request. The platform console also owns package
+pricing, subscription grants, pending request approval, feature overrides and
+cross-business usage. Deployment-level env variables remain bootstrap fallbacks;
+see `.env.example`.
 
 ## On-site deployment (café laptop / mini PC)
 

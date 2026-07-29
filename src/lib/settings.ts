@@ -25,8 +25,6 @@ export const SETTING_KEYS = {
   serverSyncState: "server_sync.state",
   /** BackupConfig (src/lib/backup.ts) — schedule/retention/cloud settings (Phase 10) */
   backupConfig: "backup.config",
-  /** AiConfig (src/lib/ai.ts) — provider/model/baseUrl/apiKey for the AI assistant */
-  aiConfig: "ai.config",
   /** { defaultMarginPercent: number | null } — cost-plus pricing default, overridable per menu item */
   pricing: "pricing.config",
   /** AppUpdateStatus (src/lib/app-update.ts) — last self-update check result, no credentials in it */
