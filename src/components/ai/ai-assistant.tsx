@@ -232,7 +232,7 @@ export function AiAssistant({ mode, currentStep }: Props) {
             <p className="mt-1 px-1 text-[10px] text-muted-foreground">
               دستیار ممکن است اشتباه کند؛ تغییرها فقط با تأیید شما ثبت می‌شوند.{" "}
               <Link href="/dashboard/ai" className="underline underline-offset-2 hover:text-foreground">
-                تنظیمات
+                اعتبار و اشتراک
               </Link>
             </p>
           </div>
