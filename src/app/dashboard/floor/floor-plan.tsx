@@ -4,9 +4,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   BanIcon,
   CircleCheckIcon,
+  RefreshCwIcon,
   ReceiptIcon,
   SparklesIcon,
   UsersIcon,
+  XIcon,
   type LucideIcon,
 } from "lucide-react";
 import { toPersianDigits } from "@/lib/digits";
@@ -14,7 +16,14 @@ import { formatJalali } from "@/lib/jalali";
 import { formatToman } from "@/lib/money";
 import { TABLE_STATUS_LABELS, type TableStatus } from "@/lib/table-sessions";
 import { useRealtime } from "../use-realtime";
-import { api, ErrorBox, errorMessage, inputClass, PrimaryButton, SecondaryButton } from "../ui";
+import {
+  api,
+  ErrorBox,
+  errorMessage,
+  inputClass,
+  PrimaryButton,
+  SecondaryButton,
+} from "../ui";
 import { SessionPanel } from "./session-panel";
 
 export interface FloorSection {
@@ -59,12 +68,11 @@ interface Waiter {
 }
 
 const STATUS_STYLE: Record<TableStatus, string> = {
-  free: "border-emerald-400 bg-emerald-50 text-emerald-900 dark:border-emerald-600 dark:bg-emerald-950 dark:text-emerald-200",
-  seated: "border-primary bg-primary/10 text-primary",
-  bill_requested:
-    "border-purple-500 bg-purple-100 text-purple-900 dark:border-purple-500 dark:bg-purple-950 dark:text-purple-200",
-  cleaning: "border-muted-foreground/40 bg-muted text-muted-foreground",
-  out_of_service: "border-destructive/40 bg-destructive/5 text-destructive/80",
+  free: "border-[#B7DFC6] bg-[#F1FBF3] text-[#267044]",
+  seated: "border-[#E9C16B] bg-[#FFF1D8] text-[#8A5B00]",
+  bill_requested: "border-[#D9C5ED] bg-[#F7F2FC] text-[#72518E]",
+  cleaning: "border-[#D8D5CE] bg-[#F6F5F1] text-[#67645E]",
+  out_of_service: "border-[#E9C5C0] bg-[#FFF3F1] text-[#A2473E]",
 };
 /* Status is never color-only: each state also carries an icon (and label in the legend). */
 const STATUS_ICON: Record<TableStatus, LucideIcon> = {
@@ -74,9 +82,19 @@ const STATUS_ICON: Record<TableStatus, LucideIcon> = {
   cleaning: SparklesIcon,
   out_of_service: BanIcon,
 };
-const LEGEND: TableStatus[] = ["free", "seated", "bill_requested", "cleaning", "out_of_service"];
+const LEGEND: TableStatus[] = [
+  "free",
+  "seated",
+  "bill_requested",
+  "cleaning",
+  "out_of_service",
+];
 const GRID = 10;
 const snap = (n: number) => Math.max(0, Math.round(n / GRID) * GRID);
+const SURFACE =
+  "rounded-2xl border border-[#EAE8E2] bg-white shadow-[0_1px_3px_rgba(37,37,34,0.03)]";
+const CONTROL =
+  "min-h-12 rounded-xl border px-3 text-sm font-bold transition duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 active:scale-[0.98] motion-reduce:transition-none";
 
 export function FloorPlan({ canEdit }: { canEdit: boolean }) {
   const [sections, setSections] = useState<FloorSection[]>([]);
@@ -85,113 +103,338 @@ export function FloorPlan({ canEdit }: { canEdit: boolean }) {
   const [mode, setMode] = useState<"view" | "edit">("view");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [error, setError] = useState("");
-  const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState("");
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const load = useCallback(async () => {
-    const res = await api<{ sections: FloorSection[]; tables: FloorTable[] }>("/api/floor");
-    if (res.ok) {
-      setSections(res.data.sections);
-      setTables(res.data.tables);
+    setIsRefreshing(true);
+    try {
+      const res = await api<{ sections: FloorSection[]; tables: FloorTable[] }>(
+        "/api/floor",
+      );
+      if (res.ok) {
+        setSections(res.data.sections);
+        setTables(res.data.tables);
+        setLoadError("");
+      } else {
+        setLoadError(
+          "به‌روزرسانی پلان سالن ناموفق بود. داده‌های موجود حفظ شده‌اند.",
+        );
+      }
+    } catch {
+      setLoadError(
+        "ارتباط با پلان سالن برقرار نشد. داده‌های موجود حفظ شده‌اند.",
+      );
+    } finally {
+      setInitialLoading(false);
+      setIsRefreshing(false);
     }
-    setLoaded(true);
   }, []);
   useEffect(() => {
-    load();
+    void load();
   }, [load]);
   useRealtime(
     useCallback(
       (event) => {
-        if (["table.status", "table_session.updated", "order.created", "order.updated"].includes(event.type)) load();
+        if (
+          [
+            "table.status",
+            "table_session.updated",
+            "order.created",
+            "order.updated",
+          ].includes(event.type)
+        )
+          void load();
       },
       [load],
     ),
   );
   useEffect(() => {
-    if (canEdit) api<{ waiters: Waiter[] }>("/api/staff").then((r) => r.ok && setWaiters(r.data.waiters));
+    if (canEdit)
+      api<{ waiters: Waiter[] }>("/api/staff").then(
+        (r) => r.ok && setWaiters(r.data.waiters),
+      );
   }, [canEdit]);
 
   const selected = tables.find((t) => t.id === selectedId) ?? null;
 
-  if (!loaded) return <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>;
+  function setWorkspaceMode(nextMode: "view" | "edit") {
+    setMode(nextMode);
+    setSelectedId(null);
+    setError("");
+  }
+
+  function scrollToEditor(id: string) {
+    const target = document.getElementById(id);
+    if (!target) return;
+    const reduceMotion = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+    target.scrollIntoView({
+      behavior: reduceMotion ? "auto" : "smooth",
+      block: "start",
+    });
+  }
 
   return (
-    <div>
-      <ErrorBox>{error}</ErrorBox>
-      <div className="mb-4 flex flex-wrap items-center gap-3">
-        {canEdit ? (
-          <div className="flex gap-1 rounded-lg bg-muted p-1 text-sm">
+    <div className="mx-auto w-full max-w-[1600px]" dir="rtl">
+      <header className={`mb-3 ${SURFACE} overflow-hidden`}>
+        <div className="flex flex-col gap-3 p-3 sm:p-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex min-w-0 items-center gap-3">
+            <span
+              className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-[#FFF1D8] text-[#9B6700]"
+              aria-hidden="true"
+            >
+              <UsersIcon className="size-5" />
+            </span>
+            <div className="min-w-0">
+              <h1 className="truncate text-lg font-bold text-[#252522]">
+                میزها و پلان سالن
+              </h1>
+              <p className="mt-0.5 truncate text-xs text-[#77756F]">
+                نمای عملیاتی سالن، نشست مهمان و چیدمان میزها
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center justify-between gap-2 lg:justify-end">
+            <span
+              className="text-xs text-[#77756F]"
+              role="status"
+              aria-live="polite"
+            >
+              {isRefreshing
+                ? "در حال به‌روزرسانی…"
+                : `${toPersianDigits(tables.length)} میز فعال`}
+            </span>
             <button
               type="button"
-              onClick={() => {
-                setMode("view");
-                setSelectedId(null);
-              }}
-              className={`rounded-md px-3 py-1.5 ${mode === "view" ? "bg-card shadow-sm" : "text-muted-foreground"}`}
+              onClick={() => void load()}
+              disabled={isRefreshing}
+              className={`${CONTROL} flex shrink-0 items-center gap-2 border-[#EAE8E2] bg-white text-[#5E5B55] hover:bg-[#FCFCFA] disabled:opacity-60`}
+              aria-label={
+                isRefreshing
+                  ? "در حال به‌روزرسانی پلان سالن"
+                  : "به‌روزرسانی پلان سالن"
+              }
             >
-              نمای سالن
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setMode("edit");
-                setSelectedId(null);
-              }}
-              className={`rounded-md px-3 py-1.5 ${mode === "edit" ? "bg-card shadow-sm" : "text-muted-foreground"}`}
-            >
-              ویرایش پلان
+              <RefreshCwIcon
+                className={`size-4 ${isRefreshing ? "ops-sync-rotate" : ""}`}
+                aria-hidden="true"
+              />
+              <span>به‌روزرسانی</span>
             </button>
           </div>
-        ) : null}
-        <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
-          {LEGEND.map((s) => {
-            const Icon = STATUS_ICON[s];
-            return (
-              <span key={s} className="flex items-center gap-1.5">
-                <span
-                  className={`inline-flex size-4 items-center justify-center rounded-full border ${STATUS_STYLE[s]}`}
-                >
-                  <Icon className="size-2.5" />
-                </span>
-                {TABLE_STATUS_LABELS[s]}
-              </span>
-            );
-          })}
         </div>
-      </div>
 
-      <div className="flex flex-col gap-4 lg:flex-row">
-        <Canvas
-          tables={tables}
-          sections={sections}
-          mode={mode}
-          selectedId={selectedId}
-          onSelect={setSelectedId}
-          onMove={(id, x, y) => setTables((prev) => prev.map((t) => (t.id === id ? { ...t, pos_x: x, pos_y: y } : t)))}
-          onPersistMove={async (id, x, y) => {
-            const res = await api(`/api/tables/${id}`, { method: "PATCH", body: JSON.stringify({ posX: x, posY: y }) });
-            if (!res.ok) setError(errorMessage((res.data as { error?: string }).error));
-          }}
-        />
+        <div className="border-t border-[#EAE8E2] px-3 py-3 sm:px-4">
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+            {canEdit ? (
+              <div
+                className="inline-flex min-h-12 self-start rounded-xl border border-[#EAE8E2] bg-[#FCFCFA] p-1"
+                role="tablist"
+                aria-label="حالت نمایش پلان سالن"
+              >
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={mode === "view"}
+                  onClick={() => setWorkspaceMode("view")}
+                  className={`min-h-10 rounded-lg px-3 text-sm font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 motion-reduce:transition-none ${
+                    mode === "view"
+                      ? "bg-[#FFF1D8] text-[#9B6700] shadow-[0_1px_2px_rgba(37,37,34,0.05)]"
+                      : "text-[#77756F] hover:bg-white"
+                  }`}
+                >
+                  نمای سالن
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={mode === "edit"}
+                  onClick={() => setWorkspaceMode("edit")}
+                  className={`min-h-10 rounded-lg px-3 text-sm font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 motion-reduce:transition-none ${
+                    mode === "edit"
+                      ? "bg-[#FFF1D8] text-[#9B6700] shadow-[0_1px_2px_rgba(37,37,34,0.05)]"
+                      : "text-[#77756F] hover:bg-white"
+                  }`}
+                >
+                  ویرایش پلان
+                </button>
+              </div>
+            ) : (
+              <span className="inline-flex min-h-12 items-center rounded-xl bg-[#FFF9EE] px-3 text-sm font-bold text-[#9B6700]">
+                نمای سالن
+              </span>
+            )}
 
-        <aside className="w-full shrink-0 lg:w-96">
-          {mode === "edit" ? (
-            <EditorPanel
-              sections={sections}
-              tables={tables}
-              waiters={waiters}
-              selected={selected}
-              onChange={load}
-              setError={setError}
+            {mode === "edit" && canEdit ? (
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => scrollToEditor("floor-sections-editor")}
+                  className={`${CONTROL} border-[#EAE8E2] bg-white text-[#5E5B55] hover:bg-[#FCFCFA]`}
+                >
+                  بخش‌ها و گارسون‌ها
+                </button>
+                <button
+                  type="button"
+                  onClick={() => scrollToEditor("floor-add-table")}
+                  className={`${CONTROL} border-[#F2D097] bg-[#FFF1D8] text-[#9B6700] hover:bg-[#FFEDCB]`}
+                >
+                  افزودن میز
+                </button>
+              </div>
+            ) : null}
+          </div>
+
+          <div
+            className="mt-3 flex min-h-11 gap-2 overflow-x-auto pb-1"
+            aria-label="راهنمای وضعیت میزها"
+          >
+            {LEGEND.map((status) => {
+              const Icon = STATUS_ICON[status];
+              return (
+                <span
+                  key={status}
+                  className={`inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-xl border px-2.5 text-xs font-bold ${STATUS_STYLE[status]}`}
+                >
+                  <Icon className="size-3.5" aria-hidden="true" />
+                  {TABLE_STATUS_LABELS[status]}
+                </span>
+              );
+            })}
+          </div>
+        </div>
+      </header>
+
+      <ErrorBox>{error}</ErrorBox>
+      {loadError ? (
+        <div
+          className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-[#E9A11B]/25 bg-[#FFF9EE] px-3 py-2 text-xs text-[#5E5B55]"
+          role="status"
+        >
+          <span>{loadError}</span>
+          <button
+            type="button"
+            onClick={() => void load()}
+            className="min-h-11 shrink-0 px-2 font-bold text-[#9B6700] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45"
+          >
+            تلاش دوباره
+          </button>
+        </div>
+      ) : null}
+
+      {initialLoading ? (
+        <FloorPlanSkeleton />
+      ) : (
+        <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_18rem] xl:grid-cols-[minmax(0,1fr)_22rem]">
+          <Canvas
+            tables={tables}
+            sections={sections}
+            mode={mode}
+            selectedId={selectedId}
+            loadError={tables.length === 0 ? loadError : ""}
+            onRetry={() => void load()}
+            onSelect={setSelectedId}
+            onMove={(id, x, y) =>
+              setTables((prev) =>
+                prev.map((t) =>
+                  t.id === id ? { ...t, pos_x: x, pos_y: y } : t,
+                ),
+              )
+            }
+            onPersistMove={async (id, x, y) => {
+              const res = await api(`/api/tables/${id}`, {
+                method: "PATCH",
+                body: JSON.stringify({ posX: x, posY: y }),
+              });
+              if (!res.ok)
+                setError(errorMessage((res.data as { error?: string }).error));
+            }}
+          />
+
+          <aside className="min-w-0 md:sticky md:top-4 md:max-h-[calc(100vh-2rem)] md:overflow-y-auto md:pb-1">
+            {mode === "edit" ? (
+              <EditorPanel
+                sections={sections}
+                tables={tables}
+                waiters={waiters}
+                selected={selected}
+                onChange={load}
+                setError={setError}
+              />
+            ) : selected ? (
+              <ViewPanel
+                table={selected}
+                onChange={load}
+                setError={setError}
+                onClose={() => setSelectedId(null)}
+              />
+            ) : (
+              <NoSelectionPanel />
+            )}
+          </aside>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FloorPlanSkeleton() {
+  return (
+    <div
+      className="grid gap-3 md:grid-cols-[minmax(0,1fr)_18rem] xl:grid-cols-[minmax(0,1fr)_22rem]"
+      aria-busy="true"
+      aria-label="در حال بارگذاری پلان سالن"
+    >
+      <section className={`${SURFACE} min-h-[500px] overflow-hidden`}>
+        <div className="flex items-center justify-between border-b border-[#EAE8E2] px-4 py-3">
+          <span className="h-4 w-28 animate-pulse rounded bg-[#F2F0EB] motion-reduce:animate-none" />
+          <span className="h-4 w-20 animate-pulse rounded bg-[#F2F0EB] motion-reduce:animate-none" />
+        </div>
+        <div className="relative min-h-[448px] bg-[#FCFCFA]">
+          {[
+            ["top-16", "end-12"],
+            ["top-36", "end-1/3"],
+            ["top-64", "end-20"],
+            ["top-24", "start-16"],
+            ["bottom-14", "start-1/3"],
+          ].map(([vertical, horizontal], index) => (
+            <span
+              key={index}
+              className={`absolute ${vertical} ${horizontal} size-20 animate-pulse rounded-2xl border border-[#EAE8E2] bg-white motion-reduce:animate-none`}
             />
-          ) : selected ? (
-            <ViewPanel table={selected} onChange={load} setError={setError} onClose={() => setSelectedId(null)} />
-          ) : (
-            <div className="rounded-2xl bg-card p-6 text-sm text-muted-foreground shadow-sm">
-              میزی را برای مشاهده یا نشاندن مهمان انتخاب کنید.
-            </div>
-          )}
-        </aside>
-      </div>
+          ))}
+        </div>
+      </section>
+      <aside className={`${SURFACE} min-h-56 p-4`}>
+        <span className="block h-5 w-32 animate-pulse rounded bg-[#F2F0EB] motion-reduce:animate-none" />
+        <span className="mt-4 block h-12 w-full animate-pulse rounded-xl bg-[#F7F6F2] motion-reduce:animate-none" />
+        <span className="mt-3 block h-12 w-full animate-pulse rounded-xl bg-[#F7F6F2] motion-reduce:animate-none" />
+      </aside>
+    </div>
+  );
+}
+
+function NoSelectionPanel() {
+  return (
+    <div
+      className={`${SURFACE} flex min-h-56 flex-col justify-center p-5 text-center`}
+    >
+      <span
+        className="mx-auto flex size-11 items-center justify-center rounded-xl bg-[#FFF1D8] text-[#9B6700]"
+        aria-hidden="true"
+      >
+        <UsersIcon className="size-5" />
+      </span>
+      <h2 className="mt-3 text-sm font-bold text-[#252522]">
+        یک میز را انتخاب کنید
+      </h2>
+      <p className="mt-2 text-xs leading-6 text-[#77756F]">
+        برای مشاهدهٔ وضعیت و انجام عملیات مجازِ همان میز، آن را از روی پلان لمس
+        یا انتخاب کنید.
+      </p>
     </div>
   );
 }
@@ -203,6 +446,8 @@ function Canvas({
   sections,
   mode,
   selectedId,
+  loadError,
+  onRetry,
   onSelect,
   onMove,
   onPersistMove,
@@ -211,13 +456,21 @@ function Canvas({
   sections: FloorSection[];
   mode: "view" | "edit";
   selectedId: string | null;
+  loadError: string;
+  onRetry: () => void;
   onSelect: (id: string) => void;
   onMove: (id: string, x: number, y: number) => void;
   onPersistMove: (id: string, x: number, y: number) => void;
 }) {
   const canvasRef = useRef<HTMLDivElement>(null);
-  const drag = useRef<{ id: string; dx: number; dy: number; moved: boolean } | null>(null);
-  const sectionName = (id: string | null) => sections.find((s) => s.id === id)?.name;
+  const drag = useRef<{
+    id: string;
+    dx: number;
+    dy: number;
+    moved: boolean;
+  } | null>(null);
+  const sectionName = (id: string | null) =>
+    sections.find((s) => s.id === id)?.name;
 
   /* pos_x is the inline-start offset, so in RTL it is measured from the right edge —
      mirror the pointer's x accordingly so dragging tracks the cursor in both directions. */
@@ -228,7 +481,10 @@ function Canvas({
     return rtl ? rect.right - clientX : clientX - rect.left;
   }
 
-  function onPointerDown(e: React.PointerEvent, t: FloorTable) {
+  function onPointerDown(
+    e: React.PointerEvent<HTMLButtonElement>,
+    t: FloorTable,
+  ) {
     if (mode !== "edit") {
       onSelect(t.id);
       return;
@@ -241,7 +497,7 @@ function Canvas({
       moved: false,
     };
     onSelect(t.id);
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    e.currentTarget.setPointerCapture(e.pointerId);
   }
   function onPointerMove(e: React.PointerEvent) {
     if (!drag.current) return;
@@ -260,66 +516,128 @@ function Canvas({
     }
   }
 
+  function onPointerCancel() {
+    drag.current = null;
+  }
+
   return (
-    <div
-      ref={canvasRef}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      className="relative min-h-[520px] flex-1 overflow-hidden rounded-2xl border border-border bg-card shadow-sm"
-      style={{
-        backgroundImage:
-          mode === "edit"
-            ? "linear-gradient(to right,var(--border) 1px,transparent 1px),linear-gradient(to bottom,var(--border) 1px,transparent 1px)"
-            : undefined,
-        backgroundSize: `${GRID * 2}px ${GRID * 2}px`,
-      }}
+    <section
+      className={`${SURFACE} min-w-0 overflow-hidden`}
+      aria-label="پلان سالن"
     >
-      {tables.length === 0 ? (
-        <p className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">
-          هنوز میزی روی پلان نیست.
-        </p>
-      ) : null}
-      {tables.map((t) => {
-        const total = Number(t.session_total);
-        const reserved = t.upcoming_reservation;
-        return (
-          <button
-            key={t.id}
-            type="button"
-            onPointerDown={(e) => onPointerDown(e, t)}
-            className={`absolute flex flex-col items-center justify-center border-2 p-1 text-center text-xs shadow-sm transition-[color,background-color,border-color,box-shadow,transform] duration-300 hover:shadow-md active:scale-[0.98] ${STATUS_STYLE[t.status]} ${
-              selectedId === t.id ? "ring-2 ring-ring ring-offset-1 ring-offset-background" : ""
-            } ${mode === "edit" ? "cursor-move" : "cursor-pointer"}`}
-            style={{
-              insetInlineStart: t.pos_x,
-              top: t.pos_y,
-              width: t.width,
-              height: t.height,
-              borderRadius: t.shape === "circle" ? "9999px" : "0.5rem",
-            }}
-          >
-            <span className="flex items-center gap-1 font-bold leading-tight">
-              {(() => {
-                const Icon = STATUS_ICON[t.status];
-                return <Icon className="size-3" />;
-              })()}
-              {t.name}
+      <div className="flex min-h-14 items-center justify-between gap-3 border-b border-[#EAE8E2] px-4 py-3">
+        <div className="min-w-0">
+          <h2 className="text-sm font-bold text-[#252522]">پلان سالن</h2>
+          <p className="mt-0.5 truncate text-xs text-[#77756F]">
+            {mode === "edit"
+              ? "برای جابه‌جایی، میز را بکشید؛ تغییر مکان با همان سازوکار فعلی ذخیره می‌شود."
+              : "برای مشاهدهٔ وضعیت یا عملیات مجاز، یک میز را انتخاب کنید."}
+          </p>
+        </div>
+        <span className="shrink-0 text-xs text-[#77756F]">
+          {toPersianDigits(tables.length)} میز
+        </span>
+      </div>
+      <div
+        ref={canvasRef}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerCancel}
+        className="relative min-h-[480px] overflow-hidden bg-[#FCFCFA] sm:min-h-[540px] xl:min-h-[620px]"
+        style={{
+          backgroundImage:
+            mode === "edit"
+              ? "linear-gradient(to right,#ECE9E2 1px,transparent 1px),linear-gradient(to bottom,#ECE9E2 1px,transparent 1px)"
+              : undefined,
+          backgroundSize: `${GRID * 2}px ${GRID * 2}px`,
+        }}
+      >
+        {tables.length === 0 ? (
+          <div className="absolute inset-0 flex flex-col items-center justify-center px-6 text-center">
+            <span
+              className="flex size-11 items-center justify-center rounded-xl bg-[#FFF1D8] text-[#9B6700]"
+              aria-hidden="true"
+            >
+              <UsersIcon className="size-5" />
             </span>
-            <span className="text-[10px] opacity-70">
-              {toPersianDigits(t.capacity)} نفره{sectionName(t.section_id) ? ` · ${sectionName(t.section_id)}` : ""}
-            </span>
-            {t.session_id ? (
-              <span className="mt-0.5 text-[10px] font-semibold">{formatToman(total)}</span>
+            <h3 className="mt-3 text-sm font-bold text-[#252522]">
+              {loadError
+                ? "پلان سالن در دسترس نیست"
+                : "هنوز میزی روی پلان نیست"}
+            </h3>
+            <p className="mt-2 max-w-80 text-xs leading-6 text-[#77756F]">
+              {loadError ||
+                (mode === "edit"
+                  ? "از بخش «افزودن میز» برای ساخت اولین میز استفاده کنید."
+                  : "پس از افزودن میز، وضعیت آن‌ها در اینجا دیده می‌شود.")}
+            </p>
+            {loadError ? (
+              <button
+                type="button"
+                onClick={onRetry}
+                className="mt-4 min-h-12 rounded-xl bg-[#FFF1D8] px-4 text-sm font-bold text-[#9B6700] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45"
+              >
+                تلاش دوباره
+              </button>
             ) : null}
-            {reserved && t.status === "free" ? (
-              <span className="mt-0.5 rounded bg-sky-700 px-1 text-[9px] text-white dark:bg-sky-600">
-                رزرو {toPersianDigits(formatJalali(reserved.reserved_at).slice(5))}
+          </div>
+        ) : null}
+        {tables.map((t) => {
+          const Icon = STATUS_ICON[t.status];
+          const total = Number(t.session_total);
+          const reserved = t.upcoming_reservation;
+          const section = sectionName(t.section_id);
+          const compact = t.width < 100 || t.height < 100;
+          return (
+            <button
+              key={t.id}
+              type="button"
+              onPointerDown={(event) => onPointerDown(event, t)}
+              onClick={() => onSelect(t.id)}
+              aria-pressed={selectedId === t.id}
+              aria-label={`میز ${t.name}، ${TABLE_STATUS_LABELS[t.status]}، ${toPersianDigits(t.capacity)} نفره${section ? `، بخش ${section}` : ""}`}
+              className={`absolute flex min-h-16 min-w-16 flex-col items-center justify-center border-2 p-1.5 text-center text-xs shadow-[0_1px_2px_rgba(37,37,34,0.08)] transition-[color,background-color,border-color,box-shadow,transform] duration-200 focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B] focus-visible:ring-offset-2 active:scale-[0.98] motion-reduce:transition-none ${STATUS_STYLE[t.status]} ${
+                selectedId === t.id
+                  ? "z-10 ring-2 ring-[#E9A11B] ring-offset-2 ring-offset-[#FCFCFA]"
+                  : ""
+              } ${mode === "edit" ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"}`}
+              style={{
+                insetInlineStart: t.pos_x,
+                top: t.pos_y,
+                width: Math.max(t.width, 64),
+                height: Math.max(t.height, 64),
+                borderRadius: t.shape === "circle" ? "9999px" : "0.875rem",
+              }}
+            >
+              <span className="flex max-w-full items-center gap-1 truncate font-bold leading-tight">
+                <Icon className="size-3 shrink-0" aria-hidden="true" />
+                <span className="truncate">{t.name}</span>
               </span>
-            ) : null}
-          </button>
-        );
-      })}
-    </div>
+              <span className="mt-0.5 max-w-full truncate rounded-md bg-white/65 px-1 text-[9px] font-bold leading-4">
+                {TABLE_STATUS_LABELS[t.status]}
+              </span>
+              {!compact ? (
+                <span className="mt-0.5 max-w-full truncate text-[10px] opacity-75">
+                  {toPersianDigits(t.capacity)} نفره
+                  {section ? ` · ${section}` : ""}
+                </span>
+              ) : null}
+              {!compact && t.session_id ? (
+                <span className="mt-0.5 max-w-full truncate text-[10px] font-bold">
+                  {formatToman(total)}
+                </span>
+              ) : null}
+              {!compact && reserved && t.status === "free" ? (
+                <span className="mt-0.5 max-w-full truncate rounded-md bg-[#4B7D9B] px-1 text-[9px] font-bold text-white">
+                  رزرو{" "}
+                  {toPersianDigits(formatJalali(reserved.reserved_at).slice(5))}
+                </span>
+              ) : null}
+            </button>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
@@ -344,7 +662,10 @@ function ViewPanel({
   async function act(body: object, url = `/api/tables/${table.id}`) {
     setBusy(true);
     setError("");
-    const res = await api<{ error?: string }>(url, { method: "PATCH", body: JSON.stringify(body) });
+    const res = await api<{ error?: string }>(url, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    });
     setBusy(false);
     if (!res.ok) return setError(errorMessage(res.data.error));
     onChange();
@@ -370,53 +691,98 @@ function ViewPanel({
   }
 
   return (
-    <div className="rounded-2xl bg-card p-5 shadow-sm">
-      <div className="mb-3 flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-bold">میز {table.name}</h2>
-          <p className="text-xs text-muted-foreground">
-            {toPersianDigits(table.capacity)} نفره · {TABLE_STATUS_LABELS[table.status]}
+    <div className={`${SURFACE} p-4 sm:p-5`}>
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-base font-bold text-[#252522]">
+              میز {table.name}
+            </h2>
+            <span
+              className={`inline-flex min-h-7 items-center rounded-lg border px-2 text-[11px] font-bold ${STATUS_STYLE[table.status]}`}
+            >
+              {TABLE_STATUS_LABELS[table.status]}
+            </span>
+          </div>
+          <p className="mt-1 text-xs text-[#77756F]">
+            {toPersianDigits(table.capacity)} نفره
           </p>
         </div>
-        <button type="button" onClick={onClose} className="text-sm text-muted-foreground hover:text-foreground">
-          ✕
+        <button
+          type="button"
+          onClick={onClose}
+          className="flex size-11 shrink-0 items-center justify-center rounded-xl text-[#77756F] transition hover:bg-[#F7F6F2] hover:text-[#252522] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 active:scale-[0.98] motion-reduce:transition-none"
+          aria-label="بستن جزئیات میز"
+        >
+          <XIcon className="size-4" aria-hidden="true" />
         </button>
       </div>
 
       {table.upcoming_reservation ? (
-        <div className="mb-3 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800 dark:border-sky-900 dark:bg-sky-950 dark:text-sky-200">
+        <div className="mb-4 rounded-xl border border-[#C7DCE8] bg-[#F1F8FC] px-3 py-2.5 text-xs leading-6 text-[#35647D]">
           رزرو پیش‌رو: {table.upcoming_reservation.customer_name} ·{" "}
-          {toPersianDigits(formatJalali(table.upcoming_reservation.reserved_at, { withMonthName: true }))} ·{" "}
-          {toPersianDigits(new Date(table.upcoming_reservation.reserved_at).toLocaleTimeString("en-GB", {
-            hour: "2-digit",
-            minute: "2-digit",
-            timeZone: "Asia/Tehran",
-          }))}
+          {toPersianDigits(
+            formatJalali(table.upcoming_reservation.reserved_at, {
+              withMonthName: true,
+            }),
+          )}{" "}
+          ·{" "}
+          {toPersianDigits(
+            new Date(table.upcoming_reservation.reserved_at).toLocaleTimeString(
+              "en-GB",
+              {
+                hour: "2-digit",
+                minute: "2-digit",
+                timeZone: "Asia/Tehran",
+              },
+            ),
+          )}
         </div>
       ) : null}
 
       {table.status === "free" ? (
         seating ? (
           <div className="space-y-3">
-            <input
-              className={inputClass}
-              inputMode="numeric"
-              dir="ltr"
-              value={partySize}
-              onChange={(e) => setPartySize(e.target.value)}
-              placeholder="تعداد نفرات"
-            />
-            <input
-              className={inputClass}
-              value={guestName}
-              onChange={(e) => setGuestName(e.target.value)}
-              placeholder="نام مهمان (اختیاری)"
-            />
-            <div className="flex gap-2">
+            <div className="rounded-xl border border-[#EAE8E2] bg-[#FCFCFA] p-3">
+              <h3 className="text-sm font-bold text-[#252522]">نشاندن مهمان</h3>
+              <p className="mt-1 text-xs leading-5 text-[#77756F]">
+                اطلاعات نشست فقط با همین جریان فعلی ثبت می‌شود.
+              </p>
+              <label className="mt-3 block">
+                <span className="mb-1.5 block text-xs font-bold text-[#5E5B55]">
+                  تعداد نفرات
+                </span>
+                <input
+                  className={`${inputClass} min-h-12 border-[#EAE8E2] bg-white`}
+                  inputMode="numeric"
+                  dir="ltr"
+                  value={partySize}
+                  onChange={(e) => setPartySize(e.target.value)}
+                  placeholder="اختیاری"
+                  aria-label="تعداد نفرات مهمان"
+                />
+              </label>
+              <label className="mt-3 block">
+                <span className="mb-1.5 block text-xs font-bold text-[#5E5B55]">
+                  نام مهمان{" "}
+                  <span className="font-normal text-[#77756F]">(اختیاری)</span>
+                </span>
+                <input
+                  className={`${inputClass} min-h-12 border-[#EAE8E2] bg-white`}
+                  value={guestName}
+                  onChange={(e) => setGuestName(e.target.value)}
+                  placeholder="نام مهمان"
+                  aria-label="نام مهمان"
+                />
+              </label>
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row">
               <PrimaryButton type="button" onClick={seat} disabled={busy}>
                 نشاندن مهمان
               </PrimaryButton>
-              <SecondaryButton onClick={() => setSeating(false)}>انصراف</SecondaryButton>
+              <SecondaryButton onClick={() => setSeating(false)}>
+                انصراف
+              </SecondaryButton>
             </div>
           </div>
         ) : (
@@ -427,13 +793,21 @@ function ViewPanel({
       ) : null}
 
       {table.status === "cleaning" ? (
-        <PrimaryButton type="button" onClick={() => act({ status: "free" })} disabled={busy}>
+        <PrimaryButton
+          type="button"
+          onClick={() => act({ status: "free" })}
+          disabled={busy}
+        >
           میز تمیز شد
         </PrimaryButton>
       ) : null}
 
       {table.status === "out_of_service" ? (
-        <PrimaryButton type="button" onClick={() => act({ status: "free" })} disabled={busy}>
+        <PrimaryButton
+          type="button"
+          onClick={() => act({ status: "free" })}
+          disabled={busy}
+        >
           بازگرداندن به سرویس
         </PrimaryButton>
       ) : null}
@@ -442,14 +816,18 @@ function ViewPanel({
         <button
           type="button"
           onClick={() => act({ status: "out_of_service" })}
-          className="mt-3 block text-xs text-muted-foreground hover:text-destructive"
+          className="mt-3 min-h-11 px-1 text-xs font-bold text-[#77756F] transition hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45"
         >
           خارج کردن از سرویس
         </button>
       ) : null}
 
       {table.session_id ? (
-        <SessionPanel sessionId={table.session_id} onChange={onChange} setError={setError} />
+        <SessionPanel
+          sessionId={table.session_id}
+          onChange={onChange}
+          setError={setError}
+        />
       ) : null}
     </div>
   );
@@ -473,17 +851,30 @@ function EditorPanel({
   setError: (s: string) => void;
 }) {
   return (
-    <div className="space-y-4">
-      <SectionEditor sections={sections} waiters={waiters} onChange={onChange} setError={setError} />
+    <div className="space-y-3">
+      <SectionEditor
+        sections={sections}
+        waiters={waiters}
+        onChange={onChange}
+        setError={setError}
+      />
       <AddTable sections={sections} onChange={onChange} setError={setError} />
       {selected ? (
-        <TableEditor table={selected} sections={sections} onChange={onChange} setError={setError} />
+        <TableEditor
+          table={selected}
+          sections={sections}
+          onChange={onChange}
+          setError={setError}
+        />
       ) : (
-        <div className="rounded-2xl bg-card p-4 text-xs text-muted-foreground shadow-sm">
-          برای ویرایش یک میز، آن را روی پلان انتخاب کنید. برای جابه‌جایی، میز را بکشید.
+        <div className={`${SURFACE} p-4 text-xs leading-6 text-[#77756F]`}>
+          برای ویرایش یک میز، آن را روی پلان انتخاب کنید. برای جابه‌جایی، میز را
+          بکشید.
         </div>
       )}
-      <p className="text-xs text-muted-foreground">تعداد میزها: {toPersianDigits(tables.length)}</p>
+      <p className="px-1 text-xs text-[#77756F]">
+        تعداد میزهای فعال: {toPersianDigits(tables.length)}
+      </p>
     </div>
   );
 }
@@ -523,44 +914,102 @@ function SectionEditor({
     onChange();
   }
   async function removeSection(id: string) {
-    const res = await api<{ error?: string }>(`/api/floor/sections/${id}`, { method: "DELETE" });
+    const res = await api<{ error?: string }>(`/api/floor/sections/${id}`, {
+      method: "DELETE",
+    });
     if (!res.ok) return setError(errorMessage(res.data.error));
     onChange();
   }
 
   return (
-    <div className="rounded-2xl bg-card p-4 shadow-sm">
-      <h3 className="mb-3 font-bold">بخش‌ها و گارسون‌ها</h3>
-      <div className="mb-3 flex gap-2">
-        <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} placeholder="نام بخش جدید" />
-        <SecondaryButton onClick={addSection} disabled={busy}>
-          افزودن
-        </SecondaryButton>
+    <section
+      id="floor-sections-editor"
+      className={`${SURFACE} scroll-mt-4 p-4`}
+      aria-labelledby="floor-sections-title"
+    >
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div>
+          <h3
+            id="floor-sections-title"
+            className="text-sm font-bold text-[#252522]"
+          >
+            بخش‌ها و گارسون‌ها
+          </h3>
+          <p className="mt-1 text-xs text-[#77756F]">
+            مدیریت بخش‌های موجود و گارسون هر بخش
+          </p>
+        </div>
+        <span className="shrink-0 text-xs text-[#77756F]">
+          {toPersianDigits(sections.length)} بخش
+        </span>
       </div>
-      <ul className="space-y-2 text-sm">
+      <div className="mb-4 rounded-xl border border-[#EAE8E2] bg-[#FCFCFA] p-3">
+        <label className="block">
+          <span className="mb-1.5 block text-xs font-bold text-[#5E5B55]">
+            نام بخش جدید
+          </span>
+          <input
+            className={`${inputClass} min-h-12 border-[#EAE8E2] bg-white`}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="مثلاً سالن اصلی"
+            aria-label="نام بخش جدید"
+          />
+        </label>
+        <button
+          type="button"
+          onClick={addSection}
+          disabled={busy}
+          className={`mt-3 w-full ${CONTROL} border-[#EAE8E2] bg-white text-[#5E5B55] hover:bg-[#F7F6F2] disabled:opacity-60`}
+        >
+          افزودن بخش
+        </button>
+      </div>
+      <ul className="space-y-2">
         {sections.map((s) => (
-          <li key={s.id} className="flex items-center gap-2">
-            <span className="w-24 shrink-0 truncate">{s.name}</span>
-            <select
-              className={`${inputClass} py-1 text-xs`}
-              value={s.assigned_waiter_id ?? ""}
-              onChange={(e) => assignWaiter(s.id, e.target.value)}
-            >
-              <option value="">بدون گارسون</option>
-              {waiters.map((w) => (
-                <option key={w.id} value={w.id}>
-                  {w.full_name}
-                </option>
-              ))}
-            </select>
-            <button type="button" onClick={() => removeSection(s.id)} className="text-xs text-destructive hover:underline">
-              حذف
-            </button>
+          <li
+            key={s.id}
+            className="rounded-xl border border-[#EAE8E2] bg-white p-3"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="min-w-0 truncate text-sm font-bold text-[#252522]">
+                {s.name}
+              </span>
+              <button
+                type="button"
+                onClick={() => removeSection(s.id)}
+                className="min-h-10 shrink-0 px-1 text-xs font-bold text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45"
+              >
+                حذف
+              </button>
+            </div>
+            <label className="mt-2 block">
+              <span className="mb-1 block text-[11px] font-bold text-[#77756F]">
+                گارسون بخش
+              </span>
+              <select
+                className={`${inputClass} min-h-11 border-[#EAE8E2] bg-[#FCFCFA] py-1 text-xs`}
+                value={s.assigned_waiter_id ?? ""}
+                onChange={(e) => assignWaiter(s.id, e.target.value)}
+                aria-label={`گارسون بخش ${s.name}`}
+              >
+                <option value="">بدون گارسون</option>
+                {waiters.map((w) => (
+                  <option key={w.id} value={w.id}>
+                    {w.full_name}
+                  </option>
+                ))}
+              </select>
+            </label>
           </li>
         ))}
-        {sections.length === 0 ? <li className="text-xs text-muted-foreground">هنوز بخشی تعریف نشده است.</li> : null}
+        {sections.length === 0 ? (
+          <li className="rounded-xl border border-dashed border-[#D8D5CE] bg-[#FCFCFA] p-3 text-xs leading-6 text-[#77756F]">
+            هنوز بخشی تعریف نشده است.
+          </li>
+        ) : null}
       </ul>
-    </div>
+    </section>
   );
 }
 
@@ -598,37 +1047,91 @@ function AddTable({
   }
 
   return (
-    <div className="rounded-2xl bg-card p-4 shadow-sm">
-      <h3 className="mb-3 font-bold">افزودن میز</h3>
-      <div className="grid grid-cols-2 gap-2">
-        <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} placeholder="نام/شماره میز" />
-        <input
-          className={inputClass}
-          inputMode="numeric"
-          dir="ltr"
-          value={capacity}
-          onChange={(e) => setCapacity(e.target.value)}
-          placeholder="ظرفیت"
-        />
-        <select className={inputClass} value={sectionId} onChange={(e) => setSectionId(e.target.value)}>
-          <option value="">بدون بخش</option>
-          {sections.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name}
-            </option>
-          ))}
-        </select>
-        <select className={inputClass} value={shape} onChange={(e) => setShape(e.target.value as "rect" | "circle")}>
-          <option value="rect">مربع/مستطیل</option>
-          <option value="circle">گرد</option>
-        </select>
-      </div>
-      <div className="mt-3">
-        <SecondaryButton onClick={add} disabled={busy}>
+    <section
+      id="floor-add-table"
+      className={`${SURFACE} scroll-mt-4 p-4`}
+      aria-labelledby="floor-add-table-title"
+    >
+      <div className="mb-3">
+        <h3
+          id="floor-add-table-title"
+          className="text-sm font-bold text-[#252522]"
+        >
           افزودن میز
-        </SecondaryButton>
+        </h3>
+        <p className="mt-1 text-xs text-[#77756F]">
+          نام، ظرفیت، شکل و بخش با همان اعتبارسنجی فعلی ثبت می‌شوند.
+        </p>
       </div>
-    </div>
+      <div className="space-y-3">
+        <label className="block">
+          <span className="mb-1.5 block text-xs font-bold text-[#5E5B55]">
+            نام یا شمارهٔ میز
+          </span>
+          <input
+            className={`${inputClass} min-h-12 border-[#EAE8E2] bg-[#FCFCFA]`}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="مثلاً ۱۲"
+            aria-label="نام یا شمارهٔ میز"
+          />
+        </label>
+        <label className="block">
+          <span className="mb-1.5 block text-xs font-bold text-[#5E5B55]">
+            ظرفیت
+          </span>
+          <input
+            className={`${inputClass} min-h-12 border-[#EAE8E2] bg-[#FCFCFA]`}
+            inputMode="numeric"
+            dir="ltr"
+            value={capacity}
+            onChange={(e) => setCapacity(e.target.value)}
+            placeholder="۴"
+            aria-label="ظرفیت میز"
+          />
+        </label>
+        <label className="block">
+          <span className="mb-1.5 block text-xs font-bold text-[#5E5B55]">
+            بخش
+          </span>
+          <select
+            className={`${inputClass} min-h-12 border-[#EAE8E2] bg-[#FCFCFA]`}
+            value={sectionId}
+            onChange={(e) => setSectionId(e.target.value)}
+            aria-label="بخش میز"
+          >
+            <option value="">بدون بخش</option>
+            {sections.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block">
+          <span className="mb-1.5 block text-xs font-bold text-[#5E5B55]">
+            شکل میز
+          </span>
+          <select
+            className={`${inputClass} min-h-12 border-[#EAE8E2] bg-[#FCFCFA]`}
+            value={shape}
+            onChange={(e) => setShape(e.target.value as "rect" | "circle")}
+            aria-label="شکل میز"
+          >
+            <option value="rect">مربع/مستطیل</option>
+            <option value="circle">گرد</option>
+          </select>
+        </label>
+      </div>
+      <button
+        type="button"
+        onClick={add}
+        disabled={busy}
+        className={`mt-4 w-full ${CONTROL} border-[#F2D097] bg-[#FFF1D8] text-[#9B6700] hover:bg-[#FFEDCB] disabled:opacity-60`}
+      >
+        افزودن میز
+      </button>
+    </section>
   );
 }
 
@@ -680,62 +1183,133 @@ function TableEditor({
   }
   async function remove() {
     setBusy(true);
-    const res = await api<{ error?: string }>(`/api/tables/${table.id}`, { method: "DELETE" });
+    const res = await api<{ error?: string }>(`/api/tables/${table.id}`, {
+      method: "DELETE",
+    });
     setBusy(false);
     if (!res.ok) return setError(errorMessage(res.data.error));
     onChange();
   }
 
   return (
-    <div className="rounded-2xl bg-card p-4 shadow-sm">
-      <h3 className="mb-3 font-bold">ویرایش میز {table.name}</h3>
-      <div className="grid grid-cols-2 gap-2">
-        <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} placeholder="نام" />
-        <input
-          className={inputClass}
-          inputMode="numeric"
-          dir="ltr"
-          value={capacity}
-          onChange={(e) => setCapacity(e.target.value)}
-          placeholder="ظرفیت"
-        />
-        <select className={inputClass} value={sectionId} onChange={(e) => setSectionId(e.target.value)}>
-          <option value="">بدون بخش</option>
-          {sections.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name}
-            </option>
-          ))}
-        </select>
-        <select className={inputClass} value={shape} onChange={(e) => setShape(e.target.value as "rect" | "circle")}>
-          <option value="rect">مربع/مستطیل</option>
-          <option value="circle">گرد</option>
-        </select>
-        <input
-          className={inputClass}
-          inputMode="numeric"
-          dir="ltr"
-          value={width}
-          onChange={(e) => setWidth(e.target.value)}
-          placeholder="عرض"
-        />
-        <input
-          className={inputClass}
-          inputMode="numeric"
-          dir="ltr"
-          value={height}
-          onChange={(e) => setHeight(e.target.value)}
-          placeholder="ارتفاع"
-        />
+    <section
+      className={`${SURFACE} p-4`}
+      aria-labelledby="floor-table-editor-title"
+    >
+      <div className="mb-3">
+        <h3
+          id="floor-table-editor-title"
+          className="text-sm font-bold text-[#252522]"
+        >
+          ویرایش میز {table.name}
+        </h3>
+        <p className="mt-1 text-xs text-[#77756F]">
+          مشخصات و ابعاد با همان مدل ذخیره‌سازی پلان به‌روزرسانی می‌شوند.
+        </p>
       </div>
-      <div className="mt-3 flex gap-2">
+      <div className="space-y-3">
+        <label className="block">
+          <span className="mb-1.5 block text-xs font-bold text-[#5E5B55]">
+            نام میز
+          </span>
+          <input
+            className={`${inputClass} min-h-12 border-[#EAE8E2] bg-[#FCFCFA]`}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="نام میز"
+            aria-label="نام میز"
+          />
+        </label>
+        <label className="block">
+          <span className="mb-1.5 block text-xs font-bold text-[#5E5B55]">
+            ظرفیت
+          </span>
+          <input
+            className={`${inputClass} min-h-12 border-[#EAE8E2] bg-[#FCFCFA]`}
+            inputMode="numeric"
+            dir="ltr"
+            value={capacity}
+            onChange={(e) => setCapacity(e.target.value)}
+            placeholder="ظرفیت"
+            aria-label="ظرفیت میز"
+          />
+        </label>
+        <label className="block">
+          <span className="mb-1.5 block text-xs font-bold text-[#5E5B55]">
+            بخش
+          </span>
+          <select
+            className={`${inputClass} min-h-12 border-[#EAE8E2] bg-[#FCFCFA]`}
+            value={sectionId}
+            onChange={(e) => setSectionId(e.target.value)}
+            aria-label="بخش میز"
+          >
+            <option value="">بدون بخش</option>
+            {sections.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block">
+          <span className="mb-1.5 block text-xs font-bold text-[#5E5B55]">
+            شکل میز
+          </span>
+          <select
+            className={`${inputClass} min-h-12 border-[#EAE8E2] bg-[#FCFCFA]`}
+            value={shape}
+            onChange={(e) => setShape(e.target.value as "rect" | "circle")}
+            aria-label="شکل میز"
+          >
+            <option value="rect">مربع/مستطیل</option>
+            <option value="circle">گرد</option>
+          </select>
+        </label>
+        <div className="grid grid-cols-2 gap-2">
+          <label className="block">
+            <span className="mb-1.5 block text-xs font-bold text-[#5E5B55]">
+              عرض
+            </span>
+            <input
+              className={`${inputClass} min-h-12 border-[#EAE8E2] bg-[#FCFCFA]`}
+              inputMode="numeric"
+              dir="ltr"
+              value={width}
+              onChange={(e) => setWidth(e.target.value)}
+              placeholder="عرض"
+              aria-label="عرض میز"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1.5 block text-xs font-bold text-[#5E5B55]">
+              ارتفاع
+            </span>
+            <input
+              className={`${inputClass} min-h-12 border-[#EAE8E2] bg-[#FCFCFA]`}
+              inputMode="numeric"
+              dir="ltr"
+              value={height}
+              onChange={(e) => setHeight(e.target.value)}
+              placeholder="ارتفاع"
+              aria-label="ارتفاع میز"
+            />
+          </label>
+        </div>
+      </div>
+      <div className="mt-4 flex flex-col gap-2">
         <PrimaryButton type="button" onClick={save} disabled={busy}>
-          ذخیره
+          ذخیرهٔ تغییرات
         </PrimaryButton>
-        <button type="button" onClick={remove} className="text-xs text-destructive hover:underline">
+        <button
+          type="button"
+          onClick={remove}
+          disabled={busy}
+          className="min-h-11 self-start px-1 text-xs font-bold text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 disabled:opacity-60"
+        >
           حذف میز
         </button>
       </div>
-    </div>
+    </section>
   );
 }
