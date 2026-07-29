@@ -23,6 +23,7 @@ Each phase is a self-contained file with its own scope, exit criteria, and open 
 | 16 | Phase-16-Accounting-Suite.md | Implemented |
 | 17 | Phase-17-Feature-Gating-Hardening.md | Implemented |
 | 18 | Phase-18-AI-Platform-Administration-Credit-Billing.md | Implemented |
+| 19 | Phase-19-Public-API-Webhooks.md | Planned — implementation deferred until Phase 18 ships |
 
 Phases 0–11 built a single-business POS. Phases 12–17 turn it into a multi-business platform:
 many businesses isolated in one deployment, teams with real permissions, several branches per
@@ -32,6 +33,10 @@ strangers. Phase 12 is the load-bearing one — everything after it depends on t
 boundary being right. Phase 18 turns the AI assistant (built earlier, without its own phase
 doc) from a per-business bring-your-own-key toggle into a platform-run, metered service:
 one operator-owned provider connection, and per-business credits/subscriptions billed against
-a priced catalogue.
+a priced catalogue. Phase 19 opens the platform to external, third-party integrations for the
+first time — scoped API keys and outbound webhooks so a business can build (or commission) a
+"sub app" against its own data — planned out of strict numeric order (it shares no code or
+subject matter with Phase 18) but its implementation is deliberately held until Phase 18 is
+actually built, per explicit product direction.
 
 For overall architecture, full schema, and product summary, see the master spec doc (POS-Spec.md).
