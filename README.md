@@ -159,6 +159,30 @@ business-wide in the `settings` table (the key never leaves the server), with
 `ARVAN_AI_API_KEY` — see `.env.example`). ArvanCloud's base URL can vary by
 plan/region, so it is editable in the UI.
 
+## On-site deployment (café laptop / mini PC)
+
+A café can run the POS entirely on its own LAN — no internet dependency for
+day-to-day operation — instead of only on the shared VPS:
+
+- **`docker-compose.local.yml`** runs a prebuilt image pulled from GHCR (not
+  built on the laptop) plus its own Postgres, published on the LAN so waiter
+  phones, the kitchen display and the cashier can all reach it at
+  `http://<laptop-lan-ip>:3000`.
+- **`windows/Install-CafePOS.ps1`** turns it into ordinary software for
+  non-technical staff — a desktop icon, Start-menu entry, and auto-launch at
+  login, with no Docker or terminal exposure afterwards. See
+  [docs/windows-desktop-app.md](docs/windows-desktop-app.md).
+- **Bidirectional server-sync** ([docs/server-sync.md](docs/server-sync.md))
+  keeps the laptop and the VPS in sync, so the café keeps working through an
+  internet outage and catches up automatically on reconnect.
+- **Self-update** ([docs/server-sync.md](docs/server-sync.md) "Self-update") —
+  the laptop checks for a newer version on every boot, over that same
+  authenticated sync pairing, and updates itself automatically. No registry
+  credential is ever distributed to a laptop: the VPS mints a short-lived
+  (~1h), read-only GHCR pull token per request via a GitHub App, and only for
+  a business that's already paired — a leaked one expires on its own within
+  the hour.
+
 ## Conventions (important)
 
 - **Money** is stored as `BIGINT` **Rial** (smallest unit) everywhere — DB, API, calculations. Formatting as Toman with Persian digits happens only at display time (`src/lib/money.ts`).
