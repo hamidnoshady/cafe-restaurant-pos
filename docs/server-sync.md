@@ -75,7 +75,9 @@ Redeploy the VPS stack so the new env var takes effect.
 1. Install Docker on the laptop.
 2. Give the laptop a **fixed LAN IP** (set a DHCP reservation in the router,
    or configure a static IP in the OS).
-3. Clone the repo and copy the env file:
+3. Get `docker-compose.local.yml`, `.env.local.example`, and the `windows/`
+   folder onto the laptop (a full clone works, but only these are needed —
+   the stack runs a prebuilt image, not a local build) and copy the env file:
    ```bash
    cp .env.local.example .env
    ```
@@ -83,9 +85,12 @@ Redeploy the VPS stack so the new env var takes effect.
    - `POSTGRES_PASSWORD` — a strong password
    - `JWT_SECRET` — `openssl rand -hex 32`
    - `REMOTE_SYNC_TOKEN` — the same token from Step 1
-5. Start the stack:
+5. One-time login and pull (the image is private — see "Self-update" below
+   for why, and for why this is the only time this is needed):
    ```bash
-   docker compose -f docker-compose.local.yml up -d --build
+   docker login ghcr.io -u <your-username> -p <a-token-that-can-read-this-package>
+   docker compose -f docker-compose.local.yml pull
+   docker compose -f docker-compose.local.yml up -d
    ```
 6. On first boot the entrypoint runs all migrations automatically.
 
