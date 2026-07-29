@@ -276,8 +276,8 @@ describe("every tenant table is protected", () => {
     // it at least isn't in the tenant-table set by accident.
     expect([...EXEMPT_TABLES].filter((t) => t.startsWith("platform_")).sort()).toEqual([
       "platform_admins",
-      "platform_audit_log",
       "platform_ai_config",
+      "platform_audit_log",
       "platform_update_config",
     ]);
   });
