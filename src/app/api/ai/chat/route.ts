@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import type { AgentMode, PromptContext } from "@/lib/ai";
-import { getAiConfig } from "@/lib/ai-config";
+import { getPlatformAiConfig, isPlatformAiConfigured } from "@/lib/ai-config";
+import {
+  AiInsufficientCreditError,
+  cancelAiTurnReservation,
+  reserveAiTurn,
+  settleAiTurn,
+} from "@/lib/ai-billing-service";
 import { AiError, runAgentTurn, type InboundMessage } from "@/lib/ai-service";
 import { requireManager } from "@/lib/setup-state";
 import { withTenantScope } from "@/lib/auth";
@@ -24,8 +30,9 @@ function sanitizeMessages(raw: unknown): InboundMessage[] {
 }
 
 /**
- * The assistant turn. Owner/Manager only. Read tools run server-side; a mutation
- * comes back as `proposedAction` for the browser to confirm and apply.
+ * Metered assistant turn. The existing feature flag still runs first in
+ * withTenantScope; after that, a row-locked maximum reservation prevents two
+ * parallel requests from spending the same business balance.
  */
 export const POST = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireManager();
@@ -44,9 +51,29 @@ export const POST = withTenantScope(async (request: NextRequest) => {
     return NextResponse.json({ error: "empty_messages" }, { status: 400 });
   }
 
-  const config = await getAiConfig(session.businessId);
-  if (!config.enabled || !config.apiKey) {
-    return NextResponse.json({ error: "ai_disabled" }, { status: 409 });
+  const config = await getPlatformAiConfig();
+  if (!isPlatformAiConfigured(config)) {
+    return NextResponse.json(
+      { error: "ai_unavailable", message: "سرویس هوش مصنوعی هنوز توسط مدیر پلتفرم آماده نشده است." },
+      { status: 503 },
+    );
+  }
+
+  let reservation;
+  try {
+    reservation = await reserveAiTurn({
+      businessId: session.businessId,
+      reservedRial: config.maxTurnRial,
+      userId: session.sub,
+    });
+  } catch (err) {
+    if (err instanceof AiInsufficientCreditError) {
+      return NextResponse.json(
+        { error: "ai_credit_required", message: "اعتبار هوش مصنوعی شما برای یک پاسخ جدید کافی نیست." },
+        { status: 402 },
+      );
+    }
+    throw err;
   }
 
   const { rows } = await query<{ name: string }>("SELECT name FROM businesses WHERE id = $1", [
@@ -69,8 +96,21 @@ export const POST = withTenantScope(async (request: NextRequest) => {
       promptContext,
       messages,
     });
-    return NextResponse.json(reply);
+    await settleAiTurn({
+      businessId: session.businessId,
+      reservation,
+      usage: reply.usage,
+      inputTokenRialPerMillion: config.inputTokenRialPerMillion,
+      outputTokenRialPerMillion: config.outputTokenRialPerMillion,
+    });
+    return NextResponse.json({ content: reply.content, proposedAction: reply.proposedAction });
   } catch (err) {
+    await cancelAiTurnReservation({
+      businessId: session.businessId,
+      reservation,
+      reason: err instanceof Error ? err.message : "unknown_error",
+    }).catch((cancelError) => console.error("AI credit reservation refund failed", cancelError));
+
     if (err instanceof AiError) {
       const status = err.code === "ai_auth" ? 502 : err.code === "ai_timeout" ? 504 : 502;
       return NextResponse.json({ error: err.code, message: err.message }, { status });
