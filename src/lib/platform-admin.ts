@@ -31,9 +31,11 @@ export type PlatformCapability =
   | "audit.read"
   | "system.read"
   | "usage.read"
+  | "ai.read"
   // Operational writes
   | "features.write"
   | "business.suspend"
+  | "ai.credits.manage"
   // Owner-only business data operations
   | "business.edit"
   | "business.reset"
@@ -46,10 +48,11 @@ export type PlatformCapability =
   | "business.archive"
   | "business.delete"
   | "admins.manage"
-  // Owner-only — holds a real S3 secret used to distribute the desktop installer
-  | "updates.manage";
+  // Owner-only — holds real platform secrets and price policy.
+  | "updates.manage"
+  | "ai.config.manage";
 
-const READ: PlatformCapability[] = ["businesses.read", "audit.read", "system.read", "usage.read"];
+const READ: PlatformCapability[] = ["businesses.read", "audit.read", "system.read", "usage.read", "ai.read"];
 
 /**
  * The capabilities each role holds. Higher roles are supersets of lower ones,
@@ -63,6 +66,7 @@ const CAPABILITIES: Record<PlatformAdminRole, PlatformCapability[]> = {
     "impersonate.readOnly",
     "features.write",
     "business.suspend",
+    "ai.credits.manage",
     "impersonate.revoke",
   ],
   owner: [
@@ -70,6 +74,7 @@ const CAPABILITIES: Record<PlatformAdminRole, PlatformCapability[]> = {
     "impersonate.readOnly",
     "features.write",
     "business.suspend",
+    "ai.credits.manage",
     "impersonate.revoke",
     "impersonate.full",
     "business.provision",
@@ -79,6 +84,7 @@ const CAPABILITIES: Record<PlatformAdminRole, PlatformCapability[]> = {
     "business.reset",
     "admins.manage",
     "updates.manage",
+    "ai.config.manage",
   ],
 };
 
