@@ -132,29 +132,24 @@ plan assignment stays hand-assigned, unchanged.
    (`monthly_credits`, `price_toman`) and a renewal-date column on the business's billing row that a
    scheduled job grants against on its date, same balance either way.
 
-## Open questions
+## Resolved implementation decisions
 
-1. Which payment gateway (if any) backs top-up once V1's manual approval flow is outgrown — Zarinpal,
-   IDPay, or a direct bank-transfer reference number workflow? Needs the product owner's input; not
-   guessed at here (see Decision 5).
-2. Should an over-limit business's *in-flight* conversation be allowed to finish its current turn even
-   if that turn's actual usage pushes the balance negative, or must the pre-call estimate be
-   conservative enough to never allow a negative balance? Proposed: allow the one in-flight turn to
-   finish (never abort a call mid-flight) and simply block the *next* turn once balance ≤ 0 — matches
-   Phase 17's "block the action, never touch existing usage/data" philosophy, but needs sign-off since
-   it means balance can go slightly negative.
-3. Actual credit-package prices and the AI subscription tier(s)' monthly credit amounts — no pricing
-   was supplied. Proposed defaults, mirroring how Phase 17's plan tiers were seeded absent real numbers:
-   three packages (small/medium/large) and one optional "AI Pro" monthly subscription tier, exact
-   Toman amounts to be filled in by the product owner before this ships, not invented here.
-4. Does a suspended business (Phase 15's business-lifecycle suspend, unrelated to AI specifically) also
-   freeze its AI balance from draining further, or is that already implied by suspension blocking all
-   API access? Likely already covered by the existing suspend gate — flagged to confirm, not a new
-   mechanism to build.
+1. **V1 top-up remains request-then-approve.** No payment gateway was guessed or added. A business chooses a platform-priced package and may include a transfer/reference note; an engineer or owner approves or rejects it in /platform/ai. Approval posts the credit through the same immutable ledger path as a manual grant.
 
-## Status: planned — not yet implemented
+2. **No sample price is seeded.** The platform owner creates the real priced packages and subscriptions in /platform/ai before offering them. This avoids treating guessed Iranian pricing as production financial data while still delivering a complete catalogue, request, approval and ledger workflow.
 
-Nothing in this phase has been built. The scope, decisions and exit criteria above are the spec to
-build against; per this repo's phase discipline, implementation shouldn't start until the open
-questions above have real answers (pricing in particular — Decision 2/Open question 3 is the one
-that blocks writing the credit-packages migration with real seed data).
+3. **Balances never go negative.** Each assistant turn atomically reserves the platform-configured maximum before any provider call. Provider usage is settled to its actual input/output-token cost and unused reservation is refunded. A business unable to cover the reservation is blocked before a provider request.
+
+4. **Suspended businesses cannot drain AI credit.** The existing requireManager/tenant guard blocks suspended memberships before /api/ai/chat reaches the billing reservation. No parallel suspension switch was introduced.
+
+## Implementation map
+
+- migrations/0039_ai_platform_billing.sql creates the singleton provider config, global catalogues, tenant-scoped billing/ledger/top-up tables, forced RLS policies, and removes obsolete settings.ai.config rows.
+- src/lib/ai-config.ts, src/lib/ai-billing.ts, src/lib/ai-billing-service.ts, and src/lib/ai-service.ts provide the global connection, actual-usage settlement, atomic reservation/refund, top-up approval, and monthly subscription renewal.
+- /platform/ai and /api/platform/ai are the capability-gated platform console/API. ai.read covers analytics, ai.credits.manage covers grants/subscriptions/reviews, and ai.config.manage is owner-only for secrets and pricing.
+- /dashboard/ai and /api/ai/billing are business-facing credits surfaces only. Provider/model/key inputs are removed; no business API response includes them.
+- server.ts runs the idempotent monthly-credit renewal tick, and the RLS/exempt-table tests cover the new schema classes.
+
+## Status: implemented
+
+The Phase 18 code is complete pending the standard migration, unit, integration, type-check, and production-build verification. Before enabling the service in production, the platform owner must enter the real provider connection/rates and create the intended credit packages/subscription plans in /platform/ai.
