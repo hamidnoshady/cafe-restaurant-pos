@@ -10,6 +10,7 @@ import { SuppliersSection } from "./suppliers-section";
 import { PurchasesSection } from "./purchases-section";
 import { WasteSection } from "./waste-section";
 import { StockCountsSection } from "./stock-counts-section";
+import styles from "./inventory-workspace.module.css";
 
 export interface InventoryItem {
   id: string;
@@ -98,9 +99,11 @@ export function InventoryManager() {
   useEffect(load, [load]);
 
   const loadLowStock = useCallback(() => {
-    api<{ items: LowStockItem[] }>("/api/inventory/low-stock").then(({ ok, data }) => {
-      if (ok) setLowStock(data.items);
-    });
+    api<{ items: LowStockItem[] }>("/api/inventory/low-stock").then(
+      ({ ok, data }) => {
+        if (ok) setLowStock(data.items);
+      },
+    );
   }, []);
   useEffect(loadLowStock, [loadLowStock]);
 
@@ -113,7 +116,9 @@ export function InventoryManager() {
     ),
   );
 
-  async function run(fn: () => Promise<{ ok: boolean; data: { error?: string } }>) {
+  async function run(
+    fn: () => Promise<{ ok: boolean; data: { error?: string } }>,
+  ) {
     setBusy(true);
     setError("");
     const { ok, data } = await fn();
@@ -127,69 +132,107 @@ export function InventoryManager() {
     return true;
   }
 
-  if (!data) return <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>;
+  if (!data)
+    return <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>;
 
   return (
-    <div className="space-y-6">
+    <div className={`${styles.workspace} min-w-0 space-y-4 sm:space-y-5`}>
       <ErrorBox>{error}</ErrorBox>
+
       {lowStock.length > 0 ? (
-        <div className="rounded-lg border border-primary/40 bg-primary/5 px-4 py-3 text-sm text-primary">
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
           <p className="mb-1 font-semibold">هشدار کمبود موجودی</p>
-          <ul className="list-inside list-disc space-y-0.5">
+          <ul className="list-inside list-disc space-y-0.5 leading-6">
             {lowStock.map((it) => (
               <li key={it.id}>
-                {it.name}: {formatQuantity(it.stock)} {it.unit} باقی مانده (آستانه سفارش:{" "}
-                {formatQuantity(it.reorderLevel ?? 0)} {it.unit})
+                {it.name}: {formatQuantity(it.stock)} {it.unit} باقی مانده
+                (آستانه سفارش: {formatQuantity(it.reorderLevel ?? 0)} {it.unit})
               </li>
             ))}
           </ul>
         </div>
       ) : null}
 
-      <div className="flex flex-wrap gap-2 border-b border-border pb-2">
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            onClick={() => setTab(t.key)}
-            className={`rounded-lg px-3 py-1.5 text-sm ${
-              tab === t.key ? "bg-primary/10 font-semibold text-primary" : "text-muted-foreground hover:bg-muted"
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <nav
+        aria-label="بخش‌های انبار"
+        className="rounded-2xl border border-stone-200/80 bg-white p-2 shadow-[0_1px_2px_rgb(41_37_36/0.03)]"
+      >
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+          {TABS.map((t) => {
+            const isActive = tab === t.key;
+            return (
+              <button
+                key={t.key}
+                id={`inventory-tab-${t.key}`}
+                type="button"
+                aria-pressed={isActive}
+                aria-controls="inventory-tabpanel"
+                onClick={() => setTab(t.key)}
+                className={`min-h-[52px] rounded-xl border px-3 text-center text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-amber-400/40 sm:px-4 ${
+                  isActive
+                    ? "border-amber-200 bg-amber-100 text-amber-950 shadow-[0_1px_2px_rgb(120_53_15/0.08)]"
+                    : "border-transparent bg-transparent text-stone-600 hover:border-stone-200 hover:bg-stone-50 hover:text-stone-950"
+                }`}
+              >
+                {t.label}
+              </button>
+            );
+          })}
+        </div>
+      </nav>
 
-      {tab === "items" ? <ItemsSection items={data.items} busy={busy} run={run} /> : null}
-      {tab === "recipes" ? (
-        <RecipesSection
-          items={data.items}
-          menuItems={data.menuItems}
-          modifiers={data.modifiers}
-          recipes={data.recipes}
-          modifierRecipes={data.modifierRecipes}
-          busy={busy}
-          run={run}
-        />
-      ) : null}
-      {tab === "suppliers" ? <SuppliersSection suppliers={data.suppliers} busy={busy} run={run} /> : null}
-      {tab === "purchases" ? (
-        <PurchasesSection items={data.items} suppliers={data.suppliers} busy={busy} run={run} />
-      ) : null}
-      {tab === "waste" ? <WasteSection items={data.items} busy={busy} run={run} /> : null}
-      {tab === "counts" ? <StockCountsSection items={data.items} busy={busy} run={run} /> : null}
+      <div
+        id="inventory-tabpanel"
+        role="region"
+        aria-labelledby={`inventory-tab-${tab}`}
+        className="min-w-0"
+      >
+        {tab === "items" ? (
+          <ItemsSection items={data.items} busy={busy} run={run} />
+        ) : null}
+        {tab === "recipes" ? (
+          <RecipesSection
+            items={data.items}
+            menuItems={data.menuItems}
+            modifiers={data.modifiers}
+            recipes={data.recipes}
+            modifierRecipes={data.modifierRecipes}
+            busy={busy}
+            run={run}
+          />
+        ) : null}
+        {tab === "suppliers" ? (
+          <SuppliersSection suppliers={data.suppliers} busy={busy} run={run} />
+        ) : null}
+        {tab === "purchases" ? (
+          <PurchasesSection
+            items={data.items}
+            suppliers={data.suppliers}
+            busy={busy}
+            run={run}
+          />
+        ) : null}
+        {tab === "waste" ? (
+          <WasteSection items={data.items} busy={busy} run={run} />
+        ) : null}
+        {tab === "counts" ? (
+          <StockCountsSection items={data.items} busy={busy} run={run} />
+        ) : null}
+      </div>
     </div>
   );
 }
 
-export type Runner = (fn: () => Promise<{ ok: boolean; data: { error?: string } }>) => Promise<boolean>;
+export type Runner = (
+  fn: () => Promise<{ ok: boolean; data: { error?: string } }>,
+) => Promise<boolean>;
 
 function errorMessage(code: string | undefined): string {
   const map: Record<string, string> = {
     missing_fields: "فیلدهای الزامی را پر کنید.",
     invalid_reorder_level: "آستانه سفارش مجدد معتبر نیست.",
-    invalid_purchase_unit_factor: "ضریب تبدیل واحد خرید باید بزرگ‌تر از صفر باشد.",
+    invalid_purchase_unit_factor:
+      "ضریب تبدیل واحد خرید باید بزرگ‌تر از صفر باشد.",
     not_found: "پیدا نشد.",
     item_not_found: "قلم انبار پیدا نشد.",
     supplier_not_found: "تأمین‌کننده پیدا نشد.",
@@ -198,12 +241,14 @@ function errorMessage(code: string | undefined): string {
     invalid_item: "یکی از اقلام معتبر نیست.",
     invalid_waste_reason: "دلیل ضایعات را انتخاب کنید.",
     invalid_transition: "این تغییر وضعیت خرید مجاز نیست.",
-    purchase_received_cannot_delete: "خرید دریافت‌شده برای حفظ موجودی و اسناد حسابداری قابل حذف نیست.",
+    purchase_received_cannot_delete:
+      "خرید دریافت‌شده برای حفظ موجودی و اسناد حسابداری قابل حذف نیست.",
     no_location: "شعبه‌ای ثبت نشده است.",
     unauthorized: "وارد نشده‌اید.",
     forbidden: "دسترسی مجاز نیست.",
     bad_request: "درخواست نامعتبر بود.",
-    ledger_account_missing: "یکی از حساب‌های مورد نیاز سیستم در سرفصل حساب‌ها یافت نشد. سرفصل حساب‌ها را بررسی کنید.",
+    ledger_account_missing:
+      "یکی از حساب‌های مورد نیاز سیستم در سرفصل حساب‌ها یافت نشد. سرفصل حساب‌ها را بررسی کنید.",
   };
   return map[code ?? ""] ?? "خطای غیرمنتظره. دوباره تلاش کنید.";
 }
