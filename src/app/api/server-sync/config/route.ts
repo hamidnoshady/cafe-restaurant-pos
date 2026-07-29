@@ -7,6 +7,7 @@ import {
   setServerSyncConfig,
 } from "@/lib/server-sync";
 import { resolveConfigUpdate, type ServerSyncConfigUpdateInput } from "@/lib/server-sync-config";
+import { getAppUpdateStatus } from "@/lib/app-update";
 
 /**
  * Owner-only: configure the bidirectional server-to-server sync target
@@ -20,16 +21,17 @@ export const GET = withTenantScope(async () => {
   const { session, error } = await requireRole("owner");
   if (error) return error;
 
-  const [config, syncState, deadLetters] = await Promise.all([
+  const [config, syncState, deadLetters, appUpdateStatus] = await Promise.all([
     getServerSyncConfig(session.businessId),
     getServerSyncState(session.businessId),
     listServerSyncDeadLetters(session.businessId),
+    getAppUpdateStatus(session.businessId),
   ]);
   // Never leak the token back to the client in full — mask it.
   const masked = config
     ? { ...config, token: config.token ? `${config.token.slice(0, 4)}…${config.token.slice(-4)}` : "" }
     : null;
-  return NextResponse.json({ config: masked, syncState, deadLetters });
+  return NextResponse.json({ config: masked, syncState, deadLetters, appUpdateStatus });
 });
 
 export const PUT = withTenantScope(async (request: NextRequest) => {

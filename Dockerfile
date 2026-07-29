@@ -38,6 +38,15 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
 
+# Which "sha-<short-hash>" tag this image was published as (see
+# .github/workflows/deploy.yml), baked in at build time so the running
+# process can report its own version — the self-update check (app-update.ts)
+# compares this against what a paired café laptop is running. Defaults to
+# "unknown" for a local `docker build` with no --build-arg, which the update
+# check treats as "nothing to compare, never offer an update".
+ARG GIT_SHA=unknown
+ENV APP_IMAGE_SHA=$GIT_SHA
+
 # postgresql-client gives pg_isready / pg_dump / pg_restore. The app's backup
 # system (Phase 10) shells out to pg_dump/pg_restore, and the entrypoint uses
 # pg_isready to wait for the DB before migrating.
