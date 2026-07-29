@@ -319,7 +319,7 @@ function OrderDetailsPanel({
             )}
           </section>
 
-          <div className="pt-4">
+          <div className="pt-4 md:sticky md:bottom-0 md:-mx-4 md:-mb-4 md:border-t md:border-[#EAE8E2] md:bg-white md:px-4 md:pb-4">
             <p className="mb-3 text-xs text-[#77756F]">
               {elapsed
                 ? `از زمان ثبت: ${elapsed}`
@@ -327,7 +327,7 @@ function OrderDetailsPanel({
             </p>
             <Link
               href={`/dashboard/orders/${order.id}`}
-              className="flex min-h-12 w-full items-center justify-center rounded-xl bg-[#E9A11B] px-4 text-sm font-bold text-[#252522] transition duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 active:scale-[0.98] motion-reduce:transition-none"
+              className="flex min-h-12 w-full items-center justify-center rounded-xl bg-[#E9A11B] px-4 text-sm font-bold text-[#252522] transition duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 active:scale-[0.98] xl:min-h-[52px] motion-reduce:transition-none"
             >
               جزئیات و پیگیری سفارش
             </Link>
@@ -549,7 +549,7 @@ export function OrdersList() {
             type="button"
             onClick={() => void load()}
             disabled={isRefreshing}
-            className="flex min-h-12 items-center gap-2 rounded-xl border border-[#EAE8E2] bg-white px-3 text-xs font-bold text-[#5E5B55] transition duration-200 hover:bg-[#FCFCFA] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 active:scale-[0.98] disabled:opacity-60 motion-reduce:transition-none"
+            className="flex min-h-12 items-center gap-2 rounded-xl border border-[#EAE8E2] bg-white px-3 text-xs font-bold text-[#5E5B55] transition duration-200 hover:bg-[#FCFCFA] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 active:scale-[0.98] disabled:opacity-60 xl:min-h-[52px] motion-reduce:transition-none"
             aria-label={
               isRefreshing
                 ? "در حال به‌روزرسانی سفارش‌ها"
@@ -609,7 +609,7 @@ export function OrdersList() {
           <button
             type="button"
             onClick={() => setStatusFilter("all")}
-            className={`min-h-12 shrink-0 rounded-xl border px-3.5 text-sm font-bold transition duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 active:scale-[0.98] motion-reduce:transition-none ${
+            className={`min-h-12 shrink-0 rounded-xl border px-3.5 text-sm font-bold transition duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 active:scale-[0.98] xl:min-h-[52px] motion-reduce:transition-none ${
               statusFilter === "all"
                 ? "border-[#F2D097] bg-[#FFF1D8] text-[#9B6700]"
                 : "border-[#EAE8E2] bg-white text-[#5E5B55] hover:bg-[#FCFCFA]"
@@ -622,7 +622,7 @@ export function OrdersList() {
               key={status}
               type="button"
               onClick={() => setStatusFilter(status)}
-              className={`min-h-12 shrink-0 rounded-xl border px-3.5 text-sm font-bold transition duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 active:scale-[0.98] motion-reduce:transition-none ${
+              className={`min-h-12 shrink-0 rounded-xl border px-3.5 text-sm font-bold transition duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 active:scale-[0.98] xl:min-h-[52px] motion-reduce:transition-none ${
                 statusFilter === status
                   ? "border-[#F2D097] bg-[#FFF1D8] text-[#9B6700]"
                   : "border-[#EAE8E2] bg-white text-[#5E5B55] hover:bg-[#FCFCFA]"
@@ -638,7 +638,7 @@ export function OrdersList() {
               onClick={() =>
                 setTypeFilter((current) => (current === type ? "all" : type))
               }
-              className={`min-h-12 shrink-0 rounded-xl border px-3.5 text-sm font-bold transition duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 active:scale-[0.98] motion-reduce:transition-none ${
+              className={`min-h-12 shrink-0 rounded-xl border px-3.5 text-sm font-bold transition duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 active:scale-[0.98] xl:min-h-[52px] motion-reduce:transition-none ${
                 typeFilter === type
                   ? "border-[#F2D097] bg-[#FFF1D8] text-[#9B6700]"
                   : "border-[#EAE8E2] bg-white text-[#5E5B55] hover:bg-[#FCFCFA]"
@@ -650,7 +650,7 @@ export function OrdersList() {
         </div>
 
         <div className="mt-2 flex flex-col gap-2 sm:flex-row">
-          <label className="flex min-h-12 min-w-0 flex-1 items-center gap-2 rounded-xl border border-[#EAE8E2] bg-white px-3 text-xs text-[#77756F]">
+          <label className="flex min-h-12 min-w-0 flex-1 items-center gap-2 rounded-xl border border-[#EAE8E2] bg-white px-3 text-xs text-[#77756F] xl:min-h-[52px]">
             <span className="shrink-0">میز</span>
             <select
               value={tableFilter}
@@ -666,7 +666,7 @@ export function OrdersList() {
               ))}
             </select>
           </label>
-          <label className="flex min-h-12 min-w-0 flex-1 items-center gap-2 rounded-xl border border-[#EAE8E2] bg-white px-3 text-xs text-[#77756F]">
+          <label className="flex min-h-12 min-w-0 flex-1 items-center gap-2 rounded-xl border border-[#EAE8E2] bg-white px-3 text-xs text-[#77756F] xl:min-h-[52px]">
             <span className="shrink-0">تاریخ</span>
             <input
               type="date"
@@ -681,7 +681,7 @@ export function OrdersList() {
             <button
               type="button"
               onClick={clearFilters}
-              className="min-h-12 rounded-xl px-3 text-sm font-bold text-[#9B6700] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45"
+              className="min-h-12 rounded-xl px-3 text-sm font-bold text-[#9B6700] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 xl:min-h-[52px]"
             >
               پاک‌کردن فیلترها
             </button>
