@@ -44,6 +44,12 @@ const EXEMPT_TABLES = new Set([
   // distribution (migration 0038) — carries no business_id/location_id,
   // nothing to scope by, same shape as feature_flags/plans.
   "platform_update_config",
+  // Phase 18 — singleton platform provider config plus globally shared priced
+  // catalogues. They hold no business/location column; the three billing
+  // tables that do carry business data are deliberately not in this list.
+  "platform_ai_config",
+  "ai_credit_packages",
+  "ai_subscription_plans",
 ]);
 
 let databaseName: string;
@@ -270,6 +276,7 @@ describe("every tenant table is protected", () => {
     // it at least isn't in the tenant-table set by accident.
     expect([...EXEMPT_TABLES].filter((t) => t.startsWith("platform_")).sort()).toEqual([
       "platform_admins",
+      "platform_ai_config",
       "platform_audit_log",
       "platform_update_config",
     ]);

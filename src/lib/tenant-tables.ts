@@ -14,6 +14,10 @@ export const EXEMPT_TABLES = new Set([
   "platform_admins",
   "platform_audit_log",
   "plans",
+  "platform_update_config",
+  "platform_ai_config",
+  "ai_credit_packages",
+  "ai_subscription_plans",
 ]);
 
 export interface ForeignKeyEdge {

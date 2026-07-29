@@ -21,10 +21,12 @@ describe("platformCan — role → capability presets", () => {
     expect(platformCan("support", "audit.read")).toBe(true);
     expect(platformCan("support", "system.read")).toBe(true);
     expect(platformCan("support", "usage.read")).toBe(true);
+    expect(platformCan("support", "ai.read")).toBe(true);
     expect(platformCan("support", "impersonate.readOnly")).toBe(true);
     // …but changes nothing.
     expect(platformCan("support", "features.write")).toBe(false);
     expect(platformCan("support", "business.suspend")).toBe(false);
+    expect(platformCan("support", "ai.credits.manage")).toBe(false);
     expect(platformCan("support", "impersonate.full")).toBe(false);
     expect(platformCan("support", "business.provision")).toBe(false);
     expect(platformCan("support", "business.delete")).toBe(false);
@@ -32,11 +34,13 @@ describe("platformCan — role → capability presets", () => {
     expect(platformCan("support", "business.reset")).toBe(false);
     expect(platformCan("support", "admins.manage")).toBe(false);
     expect(platformCan("support", "updates.manage")).toBe(false);
+    expect(platformCan("support", "ai.config.manage")).toBe(false);
   });
 
   it("engineer adds operational writes but not the owner-only powers", () => {
     expect(platformCan("engineer", "features.write")).toBe(true);
     expect(platformCan("engineer", "business.suspend")).toBe(true);
+    expect(platformCan("engineer", "ai.credits.manage")).toBe(true);
     expect(platformCan("engineer", "impersonate.revoke")).toBe(true);
     // Still not full-access impersonation, provisioning, archive/delete, or admin mgmt.
     expect(platformCan("engineer", "impersonate.full")).toBe(false);
@@ -47,6 +51,7 @@ describe("platformCan — role → capability presets", () => {
     expect(platformCan("engineer", "business.reset")).toBe(false);
     expect(platformCan("engineer", "admins.manage")).toBe(false);
     expect(platformCan("engineer", "updates.manage")).toBe(false);
+    expect(platformCan("engineer", "ai.config.manage")).toBe(false);
   });
 
   it("owner holds every capability", () => {
@@ -60,6 +65,7 @@ describe("platformCan — role → capability presets", () => {
     expect(platformCan("owner", "impersonate.full")).toBe(true);
     expect(platformCan("owner", "admins.manage")).toBe(true);
     expect(platformCan("owner", "updates.manage")).toBe(true);
+    expect(platformCan("owner", "ai.config.manage")).toBe(true);
   });
 
   it("higher roles are supersets of lower ones", () => {

@@ -1,51 +1,26 @@
-import { NextRequest, NextResponse } from "next/server";
-import { PROVIDERS, toPublicConfig, validateConfigInput, type AiProvider } from "@/lib/ai";
-import { getAiConfig, saveAiConfig } from "@/lib/ai-config";
-import { requireManager } from "@/lib/setup-state";
+import { NextResponse } from "next/server";
 import { withTenantScope } from "@/lib/auth";
+import { requireManager } from "@/lib/setup-state";
 
-/** Current AI assistant config (key redacted) plus provider defaults for the UI. */
+/**
+ * Kept as a safe compatibility endpoint after Phase 18 removed the
+ * per-business provider/key form. It intentionally never returns or accepts
+ * provider credentials; businesses use /api/ai/billing instead.
+ */
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requireManager();
+  const { error } = await requireManager();
   if (error) return error;
-
-  const config = await getAiConfig(session.businessId);
-  return NextResponse.json({
-    config: toPublicConfig(config),
-    providers: Object.values(PROVIDERS).map((p) => ({
-      id: p.id,
-      label: p.label,
-      defaultBaseUrl: p.defaultBaseUrl,
-      defaultModel: p.defaultModel,
-    })),
-  });
+  return NextResponse.json(
+    { error: "ai_configuration_platform_managed" },
+    { status: 410 },
+  );
 });
 
-/** Save AI assistant config. A blank apiKey keeps the previously stored key. */
-export const PUT = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireManager();
+export const PUT = withTenantScope(async () => {
+  const { error } = await requireManager();
   if (error) return error;
-
-  let body: Record<string, unknown>;
-  try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json({ error: "bad_request" }, { status: 400 });
-  }
-
-  const errors = validateConfigInput(body);
-  if (errors.length > 0) {
-    return NextResponse.json({ error: errors[0], errors }, { status: 400 });
-  }
-
-  const saved = await saveAiConfig(session.businessId, {
-    enabled: Boolean(body.enabled),
-    provider: body.provider as AiProvider,
-    model: String(body.model),
-    baseUrl: String(body.baseUrl),
-    apiKey: typeof body.apiKey === "string" ? body.apiKey : undefined,
-    temperature: Number(body.temperature ?? 0.3),
-  });
-
-  return NextResponse.json({ ok: true, config: toPublicConfig(saved) });
+  return NextResponse.json(
+    { error: "ai_configuration_platform_managed" },
+    { status: 410 },
+  );
 });
