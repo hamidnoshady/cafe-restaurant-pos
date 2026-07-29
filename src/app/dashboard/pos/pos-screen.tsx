@@ -459,7 +459,7 @@ export function PosScreen() {
     <div className="flex flex-col gap-3 md:h-[calc(100dvh-2rem)] md:flex-row">
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-[#EAE8E2] bg-white shadow-[0_1px_3px_rgba(37,37,34,0.03)]">
         <div className="border-b border-[#EAE8E2] p-3 md:p-4">
-          <div className="mb-3 flex flex-wrap items-center gap-2">
+          <div className="mb-3 hidden flex-wrap items-center gap-2 md:flex">
             <div className="flex min-w-0 flex-1 items-center gap-2">
               <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[#FFF1D8] text-[#9B6700]"><ShoppingBagIcon className="size-5" aria-hidden="true" /></span>
               <div className="min-w-0">
@@ -693,7 +693,7 @@ export function PosScreen() {
 
         <div className="border-t border-border p-4">
           <div className="mb-3 flex gap-2">
-            <select className={inputClass} value={discountType} onChange={(e) => setDiscountType(e.target.value as "" | "percent" | "amount")}>
+            <select aria-label="نوع تخفیف" className={inputClass} value={discountType} onChange={(e) => setDiscountType(e.target.value as "" | "percent" | "amount")}>
               <option value="">بدون تخفیف</option>
               <option value="percent">درصدی</option>
               <option value="amount">مبلغ ثابت</option>
@@ -701,6 +701,7 @@ export function PosScreen() {
             {discountType ? (
               <input
                 className={inputClass}
+                aria-label="مقدار تخفیف"
                 dir="ltr"
                 inputMode="numeric"
                 value={discountValue}
@@ -730,7 +731,7 @@ export function PosScreen() {
         </div>
       </div>
 
-      <div className="sticky bottom-2 z-20 md:hidden">
+      <div className="sticky bottom-20 z-20 md:hidden">
         <button
           type="button"
           onClick={() => setCartSheetOpen(true)}
