@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { SecondaryButton } from "../ui";
+import { Button } from "@/components/ui/button";
 import type { ChartType } from "./report-ui";
 
 interface ExistingWidget {
@@ -25,40 +25,58 @@ export function PinToDashboardButton({
   chartType: ChartType;
   title: string;
 }) {
-  const [state, setState] = useState<"idle" | "busy" | "done" | "error">("idle");
+  const [state, setState] = useState<"idle" | "busy" | "done" | "error">(
+    "idle",
+  );
 
   async function pin() {
     setState("busy");
     try {
-      const current = await fetch("/api/dashboard/widgets").then((r) => r.json());
+      const current = await fetch("/api/dashboard/widgets").then((response) =>
+        response.json(),
+      );
       const existing: ExistingWidget[] = current.widgets ?? [];
-      const nextY = existing.reduce((max, w) => Math.max(max, w.y + w.h), 0);
+      const nextY = existing.reduce(
+        (maximum, widget) => Math.max(maximum, widget.y + widget.h),
+        0,
+      );
       const widgets = [
-        ...existing.map((w) => ({
-          savedReportId: w.saved_report_id,
-          chartType: w.chart_type,
-          title: w.title,
-          x: w.x,
-          y: w.y,
-          w: w.w,
-          h: w.h,
+        ...existing.map((widget) => ({
+          savedReportId: widget.saved_report_id,
+          chartType: widget.chart_type,
+          title: widget.title,
+          x: widget.x,
+          y: widget.y,
+          w: widget.w,
+          h: widget.h,
         })),
         { savedReportId, chartType, title, x: 0, y: nextY, w: 4, h: 3 },
       ];
-      const res = await fetch("/api/dashboard/widgets", {
+      const response = await fetch("/api/dashboard/widgets", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ scope: "personal", widgets }),
       });
-      setState(res.ok ? "done" : "error");
+      setState(response.ok ? "done" : "error");
     } catch {
       setState("error");
     }
   }
 
   return (
-    <SecondaryButton onClick={pin} disabled={state === "busy"}>
-      {state === "done" ? "سنجاق شد ✓" : state === "busy" ? "در حال سنجاق…" : "سنجاق به داشبورد"}
-    </SecondaryButton>
+    <Button
+      type="button"
+      variant="outline"
+      size="lg"
+      onClick={pin}
+      disabled={state === "busy"}
+      className="min-h-[52px] border-[#DEDAD2] bg-white px-4 text-[#252522] hover:bg-[#FCFBF8]"
+    >
+      {state === "done"
+        ? "سنجاق شد ✓"
+        : state === "busy"
+          ? "در حال سنجاق…"
+          : "سنجاق به داشبورد"}
+    </Button>
   );
 }
