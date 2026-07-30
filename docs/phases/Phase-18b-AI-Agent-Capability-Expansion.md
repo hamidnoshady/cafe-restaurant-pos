@@ -155,9 +155,43 @@ and lets the credit-pricing assumptions get validated against real usage before 
 4. Timing for Wave 5's real channel integrations (WhatsApp/Telegram/voice) — a fast-follow phase right
    after this one, or deferred indefinitely until there's demand? Not decided here.
 
-## Status: planned — not yet implemented
+## Status: Wave 1 implemented (partial) — Waves 2–5 still planned
 
-Nothing in this phase has been built. Per this repo's phase discipline and Phase 18's own precedent,
-implementation should start with Wave 1 only once Phase 18's metering is actually in place — shipping
-new billable tools before there's a billing system to meter them defeats the point of sequencing these
-two phases the way they're numbered.
+Phase 18's metering is in place, so Wave 1 (read-only tools) has shipped, per this phase's own
+sequencing decision. 16 of the 20 tools listed under Wave 1 are implemented as `runReadTool` cases
+in `src/lib/ai-tools.ts`, each backed by an existing reporting view or service function (never a new
+mutation path), exposed via `toolDefinitions("dashboard")` in `src/lib/ai.ts`, and named in
+`buildSystemPrompt`'s dashboard-mode block so the model knows they exist:
+
+`get_menu_performance`, `get_void_pattern`, `get_stock_valuation`, `get_supplier_performance`,
+`get_reservation_conflicts`, `get_table_turnover_rate`, `get_courier_performance`,
+`get_customer_profile`, `get_at_risk_customers`, `get_ar_aging`, `get_ap_upcoming`,
+`get_unreconciled_bank_lines`, `get_payroll_summary`, `get_vat_liability`, `get_branch_comparison`,
+`forecast_demand`.
+
+Four tools from the original Wave 1 list are **not** implemented — not a wiring gap, but a genuine
+data-model gap discovered while implementing the rest:
+
+- **`get_expiring_batches`** — no expiry/shelf-life column exists anywhere in the inventory schema
+  (`inventory_lots` tracks `received_at`, never an expiry date).
+- **`get_delivery_zone_heatmap`** — `deliveries.address` is free text; there's no zone/geo data model
+  to bucket by.
+- **`get_shift_coverage_gaps`** and **`get_overtime_summary`** — there's no staff shift/clock-in
+  entity in the schema at all. Phase 8's own doc already noted this (`v_shift_reconciliation` is
+  explicitly a proxy: "the set of orders one cashier closed on one business day," not a real shift).
+  Wave 2's `staff.shift.create` action implies this phase eventually needs to *build* a shifts entity
+  — at which point these two read tools become straightforward. Building that entity as a byproduct
+  of a read-only tool wasn't judged in scope here.
+
+Two implemented tools made a documented approximation rather than inventing new schema:
+
+- **`get_void_pattern`** attributes voids to the order's opener (`orders.opened_by`), not a per-line
+  "who voided this" column (doesn't exist) — the tool's own returned data carries a `note` field
+  saying so, not just the system prompt (same "don't rely on the model to hedge" principle as
+  Decision 6 below).
+- **`get_ap_upcoming`** has no due-date to sort by (`purchases` never gained a due date/payment-terms
+  column), so it returns open bills oldest-first as a payment-priority proxy, with the same kind of
+  `note` field explaining why.
+
+Waves 2–5 (the `propose_action` catalogue expansion, role-scoped variants, background jobs, and UX
+layer) remain planned, not started.

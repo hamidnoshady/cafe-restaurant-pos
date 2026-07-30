@@ -131,4 +131,42 @@ describe("prompts and tools", () => {
     expect(wiz).toContain("get_setup_state");
     expect(wiz).not.toContain("run_report");
   });
+
+  it("dashboard exposes every Phase 18b Wave 1 read tool, none of them in wizard mode", () => {
+    const wave1Tools = [
+      "get_menu_performance",
+      "get_void_pattern",
+      "get_stock_valuation",
+      "get_supplier_performance",
+      "get_reservation_conflicts",
+      "get_table_turnover_rate",
+      "get_courier_performance",
+      "get_customer_profile",
+      "get_at_risk_customers",
+      "get_ar_aging",
+      "get_ap_upcoming",
+      "get_unreconciled_bank_lines",
+      "get_payroll_summary",
+      "get_vat_liability",
+      "get_branch_comparison",
+      "forecast_demand",
+    ];
+    const dash = toolDefinitions("dashboard").map((t) => t.function.name);
+    const wiz = toolDefinitions("wizard").map((t) => t.function.name);
+    for (const name of wave1Tools) {
+      expect(dash).toContain(name);
+      expect(wiz).not.toContain(name);
+    }
+    // every tool has a non-empty Persian description
+    for (const tool of toolDefinitions("dashboard")) {
+      expect(tool.function.description.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("dashboard prompt names every Wave 1 tool group so the model knows they exist", () => {
+    const prompt = buildSystemPrompt({ mode: "dashboard" });
+    expect(prompt).toContain("get_menu_performance");
+    expect(prompt).toContain("get_vat_liability");
+    expect(prompt).toContain("forecast_demand");
+  });
 });
