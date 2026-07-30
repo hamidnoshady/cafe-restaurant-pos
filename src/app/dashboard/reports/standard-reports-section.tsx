@@ -35,7 +35,10 @@ interface SavedReportRow {
 }
 
 const LEDGER_KEYS = new Set(["profit_and_loss", "balance_sheet", "cash_flow"]);
-const CONTROL_CLASS = [inputClass, "min-h-[52px] border-[#DEDAD2] bg-white text-[#252522]"].join(" ");
+const CONTROL_CLASS = [
+  inputClass,
+  "min-h-[52px] border-[#DEDAD2] bg-white text-[#252522]",
+].join(" ");
 
 type LedgerReportData =
   | ProfitAndLoss
@@ -55,21 +58,31 @@ export function StandardReportsSection() {
   const [dateTo, setDateTo] = useState("");
   const [compare, setCompare] = useState(false);
   const [rows, setRows] = useState<ReportRow[] | null>(null);
-  const [ledgerReport, setLedgerReport] = useState<LedgerReportData | null>(null);
+  const [ledgerReport, setLedgerReport] = useState<LedgerReportData | null>(
+    null,
+  );
 
   useEffect(() => {
-    fetch("/api/reports/standard").then((response) => response.json()).then((data) => setReports(data.reports ?? []));
-    fetch("/api/reports/views").then((response) => response.json()).then((data) => setViews(data.views ?? []));
-    fetch("/api/reports/saved").then((response) => response.json()).then((data) => {
-      const map = new Map<string, string>();
-      for (const report of (data.reports ?? []) as SavedReportRow[]) {
-        if (report.standard_key) map.set(report.standard_key, report.id);
-      }
-      setSavedIds(map);
-    });
+    fetch("/api/reports/standard")
+      .then((response) => response.json())
+      .then((data) => setReports(data.reports ?? []));
+    fetch("/api/reports/views")
+      .then((response) => response.json())
+      .then((data) => setViews(data.views ?? []));
+    fetch("/api/reports/saved")
+      .then((response) => response.json())
+      .then((data) => {
+        const map = new Map<string, string>();
+        for (const report of (data.reports ?? []) as SavedReportRow[]) {
+          if (report.standard_key) map.set(report.standard_key, report.id);
+        }
+        setSavedIds(map);
+      });
   }, []);
 
-  const hasDateColumn = selected?.config ? views.find((view) => view.key === selected.config!.view)?.hasDateColumn : false;
+  const hasDateColumn = selected?.config
+    ? views.find((view) => view.key === selected.config!.view)?.hasDateColumn
+    : false;
 
   const load = useCallback(async () => {
     if (!selected) return;
@@ -78,13 +91,18 @@ export function StandardReportsSection() {
       if (dateFrom) params.set("dateFrom", dateFrom);
       if (dateTo) params.set("dateTo", dateTo);
       if (compare) params.set("compare", "1");
-      const response = await fetch("/api/reports/standard/" + selected.key + "?" + params);
+      const response = await fetch(
+        "/api/reports/standard/" + selected.key + "?" + params,
+      );
       const data = await response.json();
       setLedgerReport(data.report ?? data.comparison ?? null);
       setRows(null);
       return;
     }
-    const config = { ...selected.config, filters: { dateFrom: dateFrom || undefined, dateTo: dateTo || undefined } };
+    const config = {
+      ...selected.config,
+      filters: { dateFrom: dateFrom || undefined, dateTo: dateTo || undefined },
+    };
     const response = await fetch("/api/reports/query", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -129,11 +147,21 @@ export function StandardReportsSection() {
         className="min-w-0 rounded-2xl border border-[#EAE8E2] bg-white p-3 shadow-[0_1px_2px_rgb(41_37_36/0.03)] md:sticky md:top-5"
       >
         <div className="border-b border-[#F0EEE9] px-2 pb-3">
-          <p className="text-xs font-semibold text-[#9B6700]">کتابخانهٔ گزارش</p>
-          <h2 id="prepared-reports-heading" className="mt-1 font-bold text-[#252522]">گزارش‌های آماده</h2>
+          <p className="text-xs font-semibold text-[#9B6700]">
+            کتابخانهٔ گزارش
+          </p>
+          <h2
+            id="prepared-reports-heading"
+            className="mt-1 font-bold text-[#252522]"
+          >
+            گزارش‌های آماده
+          </h2>
         </div>
 
-        <nav aria-label="فهرست گزارش‌های آماده" className="mt-3 overflow-x-auto pb-1 md:max-h-[calc(100vh-15rem)] md:overflow-y-auto">
+        <nav
+          aria-label="فهرست گزارش‌های آماده"
+          className="mt-3 overflow-x-auto pb-1 md:max-h-[calc(100vh-15rem)] md:overflow-y-auto"
+        >
           <div className="flex min-w-max gap-2 md:min-w-0 md:flex-col md:gap-1">
             {reports.map((report) => {
               const isSelected = selected?.key === report.key;
@@ -170,17 +198,26 @@ export function StandardReportsSection() {
         ) : (
           <div className="space-y-5">
             <header className="border-b border-[#F0EEE9] pb-5">
-              <p className="text-xs font-semibold text-[#9B6700]">پیش‌نمایش گزارش</p>
-              <h2 id="prepared-report-preview-heading" className="mt-1 text-lg font-bold text-[#252522]">
+              <p className="text-xs font-semibold text-[#9B6700]">
+                پیش‌نمایش گزارش
+              </p>
+              <h2
+                id="prepared-report-preview-heading"
+                className="mt-1 text-lg font-bold text-[#252522]"
+              >
                 {selected.label}
               </h2>
 
-              {(hasDateColumn || LEDGER_KEYS.has(selected.key) || selected.chartType) ? (
+              {hasDateColumn ||
+              LEDGER_KEYS.has(selected.key) ||
+              selected.chartType ? (
                 <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                   {hasDateColumn || LEDGER_KEYS.has(selected.key) ? (
                     <>
                       <label className="block">
-                        <span className="mb-1.5 block text-xs font-medium text-[#77756F]">از تاریخ</span>
+                        <span className="mb-1.5 block text-xs font-medium text-[#77756F]">
+                          از تاریخ
+                        </span>
                         <JalaliDatePicker
                           value={dateFrom}
                           onChange={setDateFrom}
@@ -189,7 +226,9 @@ export function StandardReportsSection() {
                         />
                       </label>
                       <label className="block">
-                        <span className="mb-1.5 block text-xs font-medium text-[#77756F]">تا تاریخ</span>
+                        <span className="mb-1.5 block text-xs font-medium text-[#77756F]">
+                          تا تاریخ
+                        </span>
                         <JalaliDatePicker
                           value={dateTo}
                           onChange={setDateTo}
@@ -202,11 +241,15 @@ export function StandardReportsSection() {
 
                   {selected.chartType ? (
                     <label className="block">
-                      <span className="mb-1.5 block text-xs font-medium text-[#77756F]">نوع نمایش</span>
+                      <span className="mb-1.5 block text-xs font-medium text-[#77756F]">
+                        نوع نمایش
+                      </span>
                       <select
                         className={CONTROL_CLASS}
                         value={chartType}
-                        onChange={(event) => setChartType(event.target.value as ChartType)}
+                        onChange={(event) =>
+                          setChartType(event.target.value as ChartType)
+                        }
                       >
                         <option value="bar">میله‌ای</option>
                         <option value="line">خطی</option>
@@ -235,31 +278,50 @@ export function StandardReportsSection() {
               ledgerReport ? (
                 selected.key === "profit_and_loss" ? (
                   <ProfitAndLossView
-                    report={ledgerReport as ProfitAndLoss | Comparison<ProfitAndLoss>}
+                    report={
+                      ledgerReport as ProfitAndLoss | Comparison<ProfitAndLoss>
+                    }
                     dateFrom={dateFrom || undefined}
                     dateTo={dateTo || undefined}
                   />
                 ) : selected.key === "balance_sheet" ? (
                   <BalanceSheetView
-                    report={ledgerReport as BalanceSheet | Comparison<BalanceSheet>}
+                    report={
+                      ledgerReport as BalanceSheet | Comparison<BalanceSheet>
+                    }
                     dateTo={dateTo || undefined}
                   />
                 ) : (
-                  <CashFlowView report={ledgerReport as CashFlow | Comparison<CashFlow>} />
+                  <CashFlowView
+                    report={ledgerReport as CashFlow | Comparison<CashFlow>}
+                  />
                 )
               ) : (
-                <p role="status" className="rounded-xl bg-[#FCFBF8] px-4 py-8 text-center text-sm text-[#77756F]">
+                <p
+                  role="status"
+                  className="rounded-xl bg-[#FCFBF8] px-4 py-8 text-center text-sm text-[#77756F]"
+                >
                   در حال بارگذاری…
                 </p>
               )
             ) : rows === null ? (
-              <p role="status" className="rounded-xl bg-[#FCFBF8] px-4 py-8 text-center text-sm text-[#77756F]">
+              <p
+                role="status"
+                className="rounded-xl bg-[#FCFBF8] px-4 py-8 text-center text-sm text-[#77756F]"
+              >
                 در حال بارگذاری…
               </p>
             ) : (
               <div className="space-y-5">
-                <ChartPreview chartType={chartType} data={rowsToChartData(rows)} label={selected.label} />
-                <DataTable columns={["بُعد", "مقدار"]} data={rowsToChartData(rows)} />
+                <ChartPreview
+                  chartType={chartType}
+                  data={rowsToChartData(rows)}
+                  label={selected.label}
+                />
+                <DataTable
+                  columns={["بُعد", "مقدار"]}
+                  data={rowsToChartData(rows)}
+                />
               </div>
             )}
 
@@ -281,12 +343,22 @@ export function StandardReportsSection() {
                     : {
                         title: selected.label,
                         kind: "chart",
-                        config: { ...selected.config, filters: { dateFrom: dateFrom || undefined, dateTo: dateTo || undefined } },
+                        config: {
+                          ...selected.config,
+                          filters: {
+                            dateFrom: dateFrom || undefined,
+                            dateTo: dateTo || undefined,
+                          },
+                        },
                       }
                 }
               />
               {selected.chartType && savedIds.has(selected.key) ? (
-                <PinToDashboardButton savedReportId={savedIds.get(selected.key)!} chartType={chartType} title={selected.label} />
+                <PinToDashboardButton
+                  savedReportId={savedIds.get(selected.key)!}
+                  chartType={chartType}
+                  title={selected.label}
+                />
               ) : null}
             </footer>
           </div>
