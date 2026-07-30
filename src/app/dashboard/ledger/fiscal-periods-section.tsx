@@ -139,134 +139,140 @@ export function FiscalPeriodsSection({
     <section className="space-y-4">
       <ErrorBox>{error}</ErrorBox>
 
-      <div className="rounded-2xl bg-card p-5 shadow-sm">
-        <h2 className="mb-4 font-semibold">سال‌های مالی</h2>
-        <div className="mb-4 flex flex-wrap items-end gap-3">
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-muted-foreground">سال شمسی جدید</span>
+      <div className="rounded-2xl bg-card p-4 shadow-sm sm:p-5">
+        <p className="text-xs font-semibold text-[#9B6700]">تقویم مالی</p>
+        <h2 className="mt-1">سال‌های مالی</h2>
+        <p className="mt-2 text-sm text-muted-foreground">سال مالی و دوره‌های آن را با همان محدودیت‌های ثبت و قفل موجود مدیریت کنید.</p>
+
+        <div className="mt-5 grid gap-3 sm:grid-cols-[minmax(0,13rem)_auto] sm:items-end">
+          <label className="block">
+            <span className="mb-1.5 block text-sm font-medium">سال شمسی جدید</span>
             <input
               type="number"
               value={newYear}
               onChange={(e) => setNewYear(e.target.value)}
-              className="w-32 rounded-lg border border-input bg-background px-3 py-1.5"
+              className="w-full rounded-lg border border-input bg-background px-3 py-1.5"
             />
           </label>
           <button
             type="button"
             disabled={busy}
             onClick={createYear}
-            className="rounded-lg bg-primary px-4 py-1.5 text-sm font-semibold text-primary-foreground disabled:opacity-50"
+            className="min-h-12 rounded-xl bg-primary px-5 text-sm font-semibold text-primary-foreground disabled:opacity-50"
           >
             تعریف سال مالی
           </button>
         </div>
 
         {years.length === 0 ? (
-          <p className="text-sm text-muted-foreground">هنوز سال مالی‌ای تعریف نشده است.</p>
+          <p className="mt-5 rounded-xl border border-dashed border-[#DEDAD2] bg-[#FCFBF8] px-4 py-7 text-center text-sm text-muted-foreground">
+            هنوز سال مالی‌ای تعریف نشده است.
+          </p>
         ) : (
-          <div className="flex flex-wrap gap-2">
-            {years.map((y) => (
-              <button
-                key={y.id}
-                type="button"
-                onClick={() => setSelectedYearId(y.id)}
-                className={`rounded-lg px-3 py-1.5 text-sm ${
-                  selectedYearId === y.id
-                    ? "bg-primary/10 font-semibold text-primary"
-                    : "text-muted-foreground hover:bg-muted"
-                }`}
-              >
-                {toPersianDigits(y.label)}
-                {y.closedAt ? " (بسته‌شده)" : ""}
-              </button>
-            ))}
+          <div className="mt-5">
+            <p className="mb-2 text-sm font-medium">سال انتخاب‌شده</p>
+            <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+              {years.map((y) => (
+                <button
+                  key={y.id}
+                  type="button"
+                  aria-pressed={selectedYearId === y.id}
+                  onClick={() => setSelectedYearId(y.id)}
+                  className={`min-h-12 rounded-xl border px-4 text-sm ${
+                    selectedYearId === y.id
+                      ? "border-[#F0D7A8] bg-[#FFF1D8] font-semibold text-[#9B6700]"
+                      : "border-transparent text-muted-foreground hover:border-[#EAE8E2] hover:bg-[#FCFBF8]"
+                  }`}
+                >
+                  {toPersianDigits(y.label)}
+                  {y.closedAt ? " (بسته‌شده)" : ""}
+                </button>
+              ))}
+            </div>
           </div>
         )}
       </div>
 
       {periods ? (
-        <div className="rounded-2xl bg-card p-5 shadow-sm">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <h2 className="font-semibold">دوره‌های سال مالی</h2>
+        <div className="rounded-2xl bg-card p-4 shadow-sm sm:p-5">
+          <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold text-[#9B6700]">کنترل دوره</p>
+              <h2 className="mt-1">دوره‌های سال مالی</h2>
+            </div>
             {selectedYear && !selectedYear.closedAt ? (
               <button
                 type="button"
                 disabled={closing || !allPeriodsSoftClosed}
                 onClick={closeYear}
-                title={
-                  allPeriodsSoftClosed
-                    ? undefined
-                    : "برای بستن سال مالی، ابتدا همه‌ی دوره‌ها را به‌صورت موقت ببندید."
-                }
-                className="rounded-lg bg-destructive/10 px-4 py-1.5 text-sm font-semibold text-destructive hover:bg-destructive/20 disabled:opacity-50"
+                title={allPeriodsSoftClosed ? undefined : "برای بستن سال مالی، ابتدا همه‌ی دوره‌ها را به‌صورت موقت ببندید."}
+                className="min-h-12 rounded-xl bg-destructive/10 px-4 text-sm font-semibold text-destructive hover:bg-destructive/20 disabled:opacity-50"
               >
                 بستن سال مالی
               </button>
             ) : null}
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border text-muted-foreground">
-                  <th className="py-2 pe-3 text-start">دوره</th>
-                  <th className="py-2 pe-3 text-start">وضعیت</th>
-                  <th className="py-2 text-start">اقدام</th>
-                </tr>
-              </thead>
-              <tbody>
+
+          {periods.length === 0 ? (
+            <p className="rounded-xl border border-dashed border-[#DEDAD2] bg-[#FCFBF8] px-4 py-7 text-center text-sm text-muted-foreground">
+              دوره‌ای برای سال انتخاب‌شده وجود ندارد.
+            </p>
+          ) : (
+            <>
+              <div className="hidden overflow-x-auto lg:block">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border">
+                      <th className="py-3 pe-3 text-start">دوره</th>
+                      <th className="py-3 pe-3 text-start">وضعیت</th>
+                      <th className="py-3 text-start">اقدام</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {periods.map((p) => (
+                      <tr key={p.id} className="border-b border-border">
+                        <td className="py-3 pe-3 font-medium">{toPersianDigits(p.name)}</td>
+                        <td className="py-3 pe-3"><span className={`rounded-full px-3 py-1 text-xs font-semibold ${STATUS_STYLES[p.status]}`}>{STATUS_LABELS[p.status]}</span></td>
+                        <td className="py-3">
+                          <div className="flex flex-wrap gap-2">
+                            {p.status === "open" ? <button type="button" onClick={() => setStatus(p.id, "soft_closed")} className="rounded-lg px-3 text-xs font-semibold text-[#9B6700] hover:bg-[#FFF1D8]">بستن موقت</button> : null}
+                            {p.status === "soft_closed" ? (
+                              <>
+                                <button type="button" onClick={() => setStatus(p.id, "locked")} className="rounded-lg px-3 text-xs font-semibold text-destructive hover:bg-destructive/10">قفل کردن</button>
+                                <button type="button" onClick={() => setStatus(p.id, "open")} className="rounded-lg px-3 text-xs font-semibold text-muted-foreground hover:bg-muted">بازگشایی</button>
+                              </>
+                            ) : null}
+                            {p.status === "locked" ? <button type="button" onClick={() => setStatus(p.id, "open")} className="rounded-lg px-3 text-xs font-semibold text-muted-foreground hover:bg-muted">بازگشایی</button> : null}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="space-y-3 lg:hidden">
                 {periods.map((p) => (
-                  <tr key={p.id} className="border-b border-border">
-                    <td className="py-2 pe-3">{toPersianDigits(p.name)}</td>
-                    <td className="py-2 pe-3">
-                      <span className={`rounded-full px-3 py-1 text-xs font-semibold ${STATUS_STYLES[p.status]}`}>
-                        {STATUS_LABELS[p.status]}
-                      </span>
-                    </td>
-                    <td className="py-2">
-                      <div className="flex gap-2">
-                        {p.status === "open" ? (
-                          <button
-                            type="button"
-                            onClick={() => setStatus(p.id, "soft_closed")}
-                            className="rounded-lg px-2 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-100 dark:text-amber-400 dark:hover:bg-amber-950"
-                          >
-                            بستن موقت
-                          </button>
-                        ) : null}
-                        {p.status === "soft_closed" ? (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => setStatus(p.id, "locked")}
-                              className="rounded-lg px-2 py-1 text-xs font-semibold text-destructive hover:bg-destructive/10"
-                            >
-                              قفل کردن
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setStatus(p.id, "open")}
-                              className="rounded-lg px-2 py-1 text-xs font-semibold text-muted-foreground hover:bg-muted"
-                            >
-                              بازگشایی
-                            </button>
-                          </>
-                        ) : null}
-                        {p.status === "locked" ? (
-                          <button
-                            type="button"
-                            onClick={() => setStatus(p.id, "open")}
-                            className="rounded-lg px-2 py-1 text-xs font-semibold text-muted-foreground hover:bg-muted"
-                          >
-                            بازگشایی
-                          </button>
-                        ) : null}
-                      </div>
-                    </td>
-                  </tr>
+                  <article key={p.id} className="rounded-xl border border-[#EEECE7] bg-[#FCFBF8] p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <h3>{toPersianDigits(p.name)}</h3>
+                      <span className={`rounded-full px-3 py-1 text-xs font-semibold ${STATUS_STYLES[p.status]}`}>{STATUS_LABELS[p.status]}</span>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2 border-t border-[#F0EEE9] pt-3">
+                      {p.status === "open" ? <button type="button" onClick={() => setStatus(p.id, "soft_closed")} className="rounded-lg px-3 text-sm font-semibold text-[#9B6700] hover:bg-[#FFF1D8]">بستن موقت</button> : null}
+                      {p.status === "soft_closed" ? (
+                        <>
+                          <button type="button" onClick={() => setStatus(p.id, "locked")} className="rounded-lg px-3 text-sm font-semibold text-destructive hover:bg-destructive/10">قفل کردن</button>
+                          <button type="button" onClick={() => setStatus(p.id, "open")} className="rounded-lg px-3 text-sm font-semibold text-muted-foreground hover:bg-muted">بازگشایی</button>
+                        </>
+                      ) : null}
+                      {p.status === "locked" ? <button type="button" onClick={() => setStatus(p.id, "open")} className="rounded-lg px-3 text-sm font-semibold text-muted-foreground hover:bg-muted">بازگشایی</button> : null}
+                    </div>
+                  </article>
                 ))}
-              </tbody>
-            </table>
-          </div>
+              </div>
+            </>
+          )}
         </div>
       ) : null}
     </section>
