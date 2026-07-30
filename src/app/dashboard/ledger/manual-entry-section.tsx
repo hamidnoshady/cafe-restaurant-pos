@@ -128,105 +128,145 @@ export function ManualEntrySection({
   }
 
   return (
-    <div className="space-y-6">
-      <section className="rounded-2xl bg-card p-5 shadow-sm">
-        <h2 className="mb-3 font-semibold">ثبت سند دستی (پیش‌نویس)</h2>
-        <p className="mb-3 text-xs text-muted-foreground">
-          برای مثال ثبت هزینه (بدهکار حساب هزینه، بستانکار صندوق/بانک) یا تسویه مالیات بر ارزش افزوده پرداختنی (بدهکار مالیات
-          پرداختنی، بستانکار صندوق/بانک). سند به‌صورت پیش‌نویس ذخیره می‌شود و تا زمانی که در فهرست زیر تأیید نشود، اثری در
-          دفاتر ندارد.
+    <div className="space-y-4">
+      <section className="rounded-2xl bg-card p-4 shadow-sm sm:p-5">
+        <p className="text-xs font-semibold text-[#9B6700]">سند دستی</p>
+        <h2 className="mt-1">ثبت سند دستی (پیش‌نویس)</h2>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
+          سند ابتدا به‌صورت پیش‌نویس ذخیره می‌شود و تا تأیید در فهرست پایین، اثری در دفاتر ندارد.
         </p>
-        <form onSubmit={submit} className="space-y-3">
-          <div className="flex flex-wrap gap-2">
-            <input className={inputClass} value={memo} onChange={(e) => setMemo(e.target.value)} placeholder="شرح سند" required />
-            <div className="w-44">
+
+        <form onSubmit={submit} className="mt-5 space-y-4">
+          <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_11rem]">
+            <label className="block">
+              <span className="mb-1.5 block text-sm font-medium">شرح سند</span>
+              <input className={inputClass} value={memo} onChange={(e) => setMemo(e.target.value)} placeholder="شرح سند" required />
+            </label>
+            <label className="block">
+              <span className="mb-1.5 block text-sm font-medium">تاریخ سند</span>
               <JalaliDatePicker value={entryDate} onChange={setEntryDate} placeholder="تاریخ سند" />
-            </div>
+            </label>
           </div>
 
-          <div className="space-y-2">
+          <div className="space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-sm">ردیف‌های سند</h3>
+              <span className="text-xs text-muted-foreground">حداقل دو ردیف لازم است</span>
+            </div>
             {lines.map((line, i) => (
-              <div key={i} className="grid gap-2 sm:grid-cols-5">
-                <select
-                  className={`${inputClass} sm:col-span-2`}
-                  value={line.accountId}
-                  onChange={(e) => updateLine(i, { accountId: e.target.value })}
-                >
-                  <option value="">حساب…</option>
-                  {accounts.map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.code} — {a.name}
-                    </option>
-                  ))}
-                </select>
-                <select className={inputClass} value={line.side} onChange={(e) => updateLine(i, { side: e.target.value as "debit" | "credit" })}>
-                  <option value="debit">بدهکار</option>
-                  <option value="credit">بستانکار</option>
-                </select>
-                <input
-                  className={inputClass}
-                  dir="ltr"
-                  inputMode="numeric"
-                  value={line.amount}
-                  onChange={(e) => updateLine(i, { amount: e.target.value })}
-                  placeholder="مبلغ (تومان)"
-                />
-                <SecondaryButton onClick={() => removeLine(i)} disabled={lines.length <= 2}>
-                  حذف ردیف
-                </SecondaryButton>
-              </div>
+              <fieldset key={i} className="rounded-xl border border-[#EEECE7] bg-[#FCFBF8] p-3">
+                <legend className="px-1 text-xs font-semibold text-[#77756F]">ردیف {toPersianDigits(String(i + 1))}</legend>
+                <div className="grid gap-3 md:grid-cols-[minmax(0,2fr)_9rem_minmax(0,1fr)_auto] md:items-end">
+                  <label className="block">
+                    <span className="mb-1.5 block text-sm font-medium">حساب</span>
+                    <select
+                      className={inputClass}
+                      value={line.accountId}
+                      onChange={(e) => updateLine(i, { accountId: e.target.value })}
+                    >
+                      <option value="">انتخاب حساب</option>
+                      {accounts.map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.code} — {a.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="mb-1.5 block text-sm font-medium">طرف</span>
+                    <select className={inputClass} value={line.side} onChange={(e) => updateLine(i, { side: e.target.value as "debit" | "credit" })}>
+                      <option value="debit">بدهکار</option>
+                      <option value="credit">بستانکار</option>
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="mb-1.5 block text-sm font-medium">مبلغ (تومان)</span>
+                    <input
+                      className={inputClass}
+                      dir="ltr"
+                      inputMode="numeric"
+                      value={line.amount}
+                      onChange={(e) => updateLine(i, { amount: e.target.value })}
+                      placeholder="۰"
+                    />
+                  </label>
+                  <SecondaryButton onClick={() => removeLine(i)} disabled={lines.length <= 2}>
+                    حذف
+                  </SecondaryButton>
+                </div>
+              </fieldset>
             ))}
+          </div>
+
+          <div className="rounded-xl border border-[#EAE8E2] bg-[#FFFEFC] p-4">
+            <dl className="grid gap-3 text-sm sm:grid-cols-3">
+              <div>
+                <dt className="text-muted-foreground">جمع بدهکار</dt>
+                <dd className="mt-1 font-bold">{totalDebit.toLocaleString("en-US")} ریال</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">جمع بستانکار</dt>
+                <dd className="mt-1 font-bold">{totalCredit.toLocaleString("en-US")} ریال</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">وضعیت سند</dt>
+                <dd className={`mt-1 font-bold ${balanced ? "text-emerald-700" : "text-muted-foreground"}`}>
+                  {balanced ? "متوازن" : "در انتظار توازن"}
+                </dd>
+              </div>
+            </dl>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
             <SecondaryButton onClick={addLine}>افزودن ردیف</SecondaryButton>
-            <PrimaryButton disabled={busy || !balanced || !memo.trim()}>ثبت پیش‌نویس</PrimaryButton>
-            <span className={`text-xs ${balanced ? "text-emerald-700 dark:text-emerald-400" : "text-muted-foreground"}`}>
-              بدهکار: {totalDebit.toLocaleString("en-US")} ریال — بستانکار: {totalCredit.toLocaleString("en-US")} ریال
-              {balanced ? " (متوازن)" : ""}
-            </span>
+            <div className="min-w-[12rem] flex-1 sm:max-w-xs">
+              <PrimaryButton disabled={busy || !balanced || !memo.trim()}>ثبت پیش‌نویس</PrimaryButton>
+            </div>
           </div>
         </form>
       </section>
 
-      <section className="rounded-2xl bg-card p-5 shadow-sm">
-        <h2 className="mb-3 font-semibold">پیش‌نویس‌های در انتظار بررسی</h2>
+      <section className="rounded-2xl bg-card p-4 shadow-sm sm:p-5">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <p className="text-xs font-semibold text-[#9B6700]">کنترل و تأیید</p>
+            <h2 className="mt-1">پیش‌نویس‌های در انتظار بررسی</h2>
+          </div>
+        </div>
         {localError ? <p className="mb-3 text-sm text-destructive">{localError}</p> : null}
         {!drafts ? (
           <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>
         ) : drafts.length === 0 ? (
-          <p className="text-sm text-muted-foreground">پیش‌نویسی در انتظار بررسی وجود ندارد.</p>
+          <p className="rounded-xl border border-dashed border-[#DEDAD2] bg-[#FCFBF8] px-4 py-8 text-center text-sm text-muted-foreground">
+            پیش‌نویسی در انتظار بررسی وجود ندارد.
+          </p>
         ) : (
           <ul className="space-y-3">
             {drafts.map((d) => (
-              <li key={d.id} className="rounded-lg border border-border p-3 text-sm">
-                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                  <span className="font-semibold">{d.memo}</span>
-                  <span className="text-xs text-muted-foreground">
-                    {d.entryDate ? toPersianDigits(formatJalali(d.entryDate)) : "بدون تاریخ (امروز)"}
-                    {d.createdByName ? ` — ${d.createdByName}` : ""}
-                  </span>
+              <li key={d.id} className="rounded-xl border border-[#EEECE7] bg-[#FFFEFC] p-4">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <h3>{d.memo}</h3>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {d.entryDate ? toPersianDigits(formatJalali(d.entryDate)) : "بدون تاریخ (امروز)"}
+                      {d.createdByName ? ` — ${d.createdByName}` : ""}
+                    </p>
+                  </div>
                 </div>
-                <table className="w-full">
-                  <tbody>
-                    {d.lines.map((l, i) => (
-                      <tr key={i} className="border-t border-border">
-                        <td className="py-1 pe-3 text-muted-foreground">
-                          {l.accountCode} {l.accountName}
-                        </td>
-                        <td className="w-32 py-1 pe-3">{l.debit ? formatToman(l.debit) : ""}</td>
-                        <td className="w-32 py-1">{l.credit ? formatToman(l.credit) : ""}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                <div className="mt-2 flex gap-2">
-                  <PrimaryButton onClick={() => approve(d.id)} disabled={busy}>
-                    تأیید و ثبت
-                  </PrimaryButton>
-                  <SecondaryButton onClick={() => reject(d.id)} disabled={busy}>
-                    رد کردن
-                  </SecondaryButton>
+                <div className="mt-3 space-y-2">
+                  {d.lines.map((l, i) => (
+                    <div key={i} className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-3 border-t border-[#F0EEE9] pt-2 text-sm">
+                      <span className="min-w-0 text-muted-foreground">{l.accountCode} {l.accountName}</span>
+                      <span className="whitespace-nowrap">{l.debit ? formatToman(l.debit) : "—"}</span>
+                      <span className="whitespace-nowrap">{l.credit ? formatToman(l.credit) : "—"}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <div className="min-w-40 flex-1 sm:max-w-xs">
+                    <PrimaryButton onClick={() => approve(d.id)} disabled={busy}>تأیید و ثبت</PrimaryButton>
+                  </div>
+                  <SecondaryButton onClick={() => reject(d.id)} disabled={busy}>رد کردن</SecondaryButton>
                 </div>
               </li>
             ))}
