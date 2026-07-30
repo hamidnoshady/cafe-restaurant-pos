@@ -82,9 +82,14 @@ allows:
 
 `.github/workflows/desktop-build.yml` builds it on a `windows-latest`
 GitHub Actions runner — so producing the installer never requires owning a
-Windows PC. Trigger it either automatically (push a `v*` tag) or manually
-from the Actions tab (`workflow_dispatch`), then download the
-`cafe-pos-windows-installer` artifact.
+Windows PC.
+
+- Pushing a `v*` tag builds it and attaches the `.exe` to the matching
+  GitHub Release — the durable distribution path (release assets don't
+  count against the repo's Actions/Packages storage quota).
+- A manual run from the Actions tab (`workflow_dispatch`) instead uploads it
+  as the `cafe-pos-windows-installer` Actions artifact, kept for 3 days —
+  handy for a one-off build without cutting a release.
 
 ### Option B — locally, on an actual Windows machine
 

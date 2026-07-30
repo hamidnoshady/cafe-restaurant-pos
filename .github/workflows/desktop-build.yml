@@ -20,6 +20,8 @@ on:
 jobs:
   build-windows-installer:
     runs-on: windows-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -40,6 +42,19 @@ jobs:
           # see electron/main.js).
           JWT_SECRET: build-time-placeholder-not-used-at-runtime
 
+      # The desktop bundle copies the app's whole node_modules (electron/main.js
+      # runs server.ts/scripts via the bundled tsx, which needs the runtime
+      # dependency tree present) — but build-only tooling that's never
+      # require()'d at runtime (server.ts only calls into "next" and "tsx";
+      # see server.ts and electron/main.js) doesn't need to ride along. Removing
+      # it shrinks the installer, which is what actions/upload-artifact stores
+      # against the repo's Actions/Packages storage quota.
+      - name: Prune build-only tooling before packaging
+        shell: bash
+        run: |
+          rm -rf node_modules/typescript node_modules/vitest node_modules/tailwindcss \
+                 node_modules/@tailwindcss node_modules/@types
+
       - name: Install desktop app dependencies
         working-directory: electron
         run: npm install
@@ -54,3 +69,18 @@ jobs:
           name: cafe-pos-windows-installer
           path: electron/dist/*.exe
           if-no-files-found: error
+          # Short-lived: this is a convenience download for manual
+          # (workflow_dispatch) builds. Actions-artifact storage shares the
+          # same quota as GHCR image storage, so don't let it linger for the
+          # 90-day default. Tagged releases get a permanent copy below.
+          retention-days: 3
+
+      - name: Publish installer to the GitHub Release
+        # Only tag pushes (v*) represent an actual release; workflow_dispatch
+        # runs are ad-hoc builds and only get the artifact above. Release
+        # assets don't count against the Actions/Packages storage quota, so
+        # this is the durable distribution path (see docs/standalone-desktop-app.md).
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: electron/dist/*.exe

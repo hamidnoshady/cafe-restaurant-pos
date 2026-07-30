@@ -118,6 +118,18 @@ jobs:
           delete-only-untagged-versions: true
         continue-on-error: true
 
+      # Untagged pruning above doesn't touch the sha-<hash> tag every push
+      # creates, so those accumulate forever and eat the same 500 MB quota.
+      # Keep the most recent 10 and never touch "latest" or release tags.
+      - name: Prune old tagged image versions
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: cafe-restaurant-pos
+          package-type: container
+          min-versions-to-keep: 10
+          ignore-versions: "^(latest|v\\d+.*)$"
+        continue-on-error: true
+
   deploy:
     if: github.event_name == 'push'
     needs: build-and-push
