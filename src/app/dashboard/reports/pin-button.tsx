@@ -63,7 +63,7 @@ export function PinToDashboardButton({
       size="lg"
       onClick={pin}
       disabled={state === "busy"}
-      className="min-h-12 border-[#DEDAD2] bg-white px-4 text-[#252522] hover:bg-[#FCFBF8]"
+      className="min-h-[52px] border-[#DEDAD2] bg-white px-4 text-[#252522] hover:bg-[#FCFBF8]"
     >
       {state === "done" ? "سنجاق شد ✓" : state === "busy" ? "در حال سنجاق…" : "سنجاق به داشبورد"}
     </Button>
