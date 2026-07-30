@@ -59,139 +59,95 @@ export function ApSection({ busy, run }: { busy: boolean; run: (fn: () => Promis
     });
   }, [view, refreshKey]);
 
-  if (!suppliers) return <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>;
+  if (!suppliers) {
+    return <section aria-live="polite" className="rounded-2xl bg-card p-5 text-sm text-muted-foreground shadow-sm">در حال بارگذاری…</section>;
+  }
 
   return (
     <section className="space-y-4">
       <ErrorBox>{error}</ErrorBox>
 
-      <div className="rounded-2xl bg-card p-5 shadow-sm">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <h2 className="font-semibold">حساب‌های پرداختنی</h2>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => setView("balances")}
-              className={`rounded-lg px-3 py-1.5 text-sm ${view === "balances" ? "bg-primary/10 font-semibold text-primary" : "text-muted-foreground hover:bg-muted"}`}
-            >
-              مانده حساب‌ها
-            </button>
-            <button
-              type="button"
-              onClick={() => setView("aging")}
-              className={`rounded-lg px-3 py-1.5 text-sm ${view === "aging" ? "bg-primary/10 font-semibold text-primary" : "text-muted-foreground hover:bg-muted"}`}
-            >
-              نمای سنی بدهی‌ها
-            </button>
+      <div className="rounded-2xl bg-card p-4 shadow-sm sm:p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold text-[#9B6700]">تعهدات تأمین‌کنندگان</p>
+            <h2 className="mt-1">حساب‌های پرداختنی</h2>
+            <p className="mt-1 text-sm text-muted-foreground">مانده حساب‌ها و نمای سنی بدهی تأمین‌کنندگان، بر پایه ثبت‌های فعلی.</p>
+          </div>
+          <div className="grid min-w-full grid-cols-2 gap-2 sm:min-w-0">
+            <button type="button" aria-pressed={view === "balances"} onClick={() => setView("balances")} className={`min-h-12 rounded-xl border px-3 text-sm ${view === "balances" ? "border-[#F0D7A8] bg-[#FFF1D8] font-semibold text-[#9B6700]" : "border-transparent text-muted-foreground hover:border-[#EAE8E2] hover:bg-[#FCFBF8]"}`}>مانده حساب‌ها</button>
+            <button type="button" aria-pressed={view === "aging"} onClick={() => setView("aging")} className={`min-h-12 rounded-xl border px-3 text-sm ${view === "aging" ? "border-[#F0D7A8] bg-[#FFF1D8] font-semibold text-[#9B6700]" : "border-transparent text-muted-foreground hover:border-[#EAE8E2] hover:bg-[#FCFBF8]"}`}>نمای سنی بدهی‌ها</button>
           </div>
         </div>
 
         {view === "balances" ? (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border text-muted-foreground">
-                  <th className="py-2 pe-3 text-start">تأمین‌کننده</th>
-                  <th className="py-2 pe-3 text-start">تلفن</th>
-                  <th className="py-2 pe-3 text-start">مانده</th>
-                  <th className="py-2 text-start">اقدام</th>
-                </tr>
-              </thead>
-              <tbody>
-                {suppliers.map((s) => (
-                  <tr key={s.supplierId} className="border-b border-border">
-                    <td className="py-2 pe-3">
-                      <button
-                        type="button"
-                        onClick={() => setStatementTarget({ id: s.supplierId, name: s.supplierName })}
-                        className="hover:underline"
-                      >
-                        {s.supplierName}
-                      </button>
-                    </td>
-                    <td className="py-2 pe-3 text-muted-foreground">{s.supplierPhone ? toPersianDigits(s.supplierPhone) : "—"}</td>
-                    <td className="py-2 pe-3 tabular-nums font-semibold">{formatToman(s.balance)}</td>
-                    <td className="py-2">
-                      {s.supplierId !== "unknown" ? (
-                        <button
-                          type="button"
-                          onClick={() => setPayTarget(s)}
-                          className="rounded-lg px-2 py-1 text-xs font-semibold text-primary hover:bg-primary/10"
-                        >
-                          پرداخت
-                        </button>
-                      ) : null}
-                    </td>
-                  </tr>
-                ))}
-                {suppliers.length === 0 ? (
-                  <tr>
-                    <td colSpan={4} className="py-4 text-center text-muted-foreground">
-                      هیچ حساب پرداختنی بازی وجود ندارد.
-                    </td>
-                  </tr>
-                ) : null}
-              </tbody>
-            </table>
+          <div className="mt-5">
+            {suppliers.length === 0 ? (
+              <p className="rounded-xl border border-dashed border-[#DEDAD2] bg-[#FCFBF8] px-4 py-8 text-center text-sm text-muted-foreground">هیچ حساب پرداختنی بازی وجود ندارد.</p>
+            ) : (
+              <>
+                <div className="hidden overflow-x-auto lg:block">
+                  <table className="w-full text-sm">
+                    <thead><tr className="border-b border-border"><th className="py-3 pe-3 text-start">تأمین‌کننده</th><th className="py-3 pe-3 text-start">تلفن</th><th className="py-3 pe-3 text-start">مانده</th><th className="py-3 text-start">اقدام</th></tr></thead>
+                    <tbody>
+                      {suppliers.map((s) => (
+                        <tr key={s.supplierId} className="border-b border-border">
+                          <td className="py-3 pe-3"><button type="button" onClick={() => setStatementTarget({ id: s.supplierId, name: s.supplierName })} className="font-semibold hover:text-[#9B6700] hover:underline">{s.supplierName}</button></td>
+                          <td className="py-3 pe-3 text-muted-foreground">{s.supplierPhone ? toPersianDigits(s.supplierPhone) : "—"}</td>
+                          <td className="whitespace-nowrap py-3 pe-3 font-bold">{formatToman(s.balance)}</td>
+                          <td className="py-3">{s.supplierId !== "unknown" ? <button type="button" onClick={() => setPayTarget(s)} className="rounded-lg px-3 text-xs font-semibold text-[#9B6700] hover:bg-[#FFF1D8]">پرداخت</button> : null}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="space-y-3 lg:hidden">
+                  {suppliers.map((s) => (
+                    <article key={s.supplierId} className="rounded-xl border border-[#EEECE7] bg-[#FCFBF8] p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0"><button type="button" onClick={() => setStatementTarget({ id: s.supplierId, name: s.supplierName })} className="truncate text-right font-bold hover:text-[#9B6700]">{s.supplierName}</button><p className="mt-1 text-xs text-muted-foreground">{s.supplierPhone ? toPersianDigits(s.supplierPhone) : "شماره‌ای ثبت نشده"}</p></div>
+                        <span className="whitespace-nowrap font-bold">{formatToman(s.balance)}</span>
+                      </div>
+                      {s.supplierId !== "unknown" ? <button type="button" onClick={() => setPayTarget(s)} className="mt-3 rounded-lg bg-[#FFF1D8] px-4 text-sm font-semibold text-[#9B6700]">ثبت پرداخت</button> : null}
+                    </article>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="mt-5">
             {!aging ? (
               <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>
+            ) : aging.rows.length === 0 ? (
+              <p className="rounded-xl border border-dashed border-[#DEDAD2] bg-[#FCFBF8] px-4 py-8 text-center text-sm text-muted-foreground">هیچ حساب پرداختنی بازی وجود ندارد.</p>
             ) : (
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border text-muted-foreground">
-                    <th className="py-2 pe-3 text-start">تأمین‌کننده</th>
-                    {AGING_COLUMNS.map((col) => (
-                      <th key={col.key} className="py-2 pe-3 text-start">
-                        {col.label}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
+              <>
+                <div className="hidden overflow-x-auto lg:block">
+                  <table className="w-full text-sm">
+                    <thead><tr className="border-b border-border"><th className="py-3 pe-3 text-start">تأمین‌کننده</th>{AGING_COLUMNS.map((col) => <th key={col.key} className="py-3 pe-3 text-start">{col.label}</th>)}</tr></thead>
+                    <tbody>{aging.rows.map((r) => <tr key={r.supplierId} className="border-b border-border"><td className="py-3 pe-3 font-medium">{r.supplierName}</td>{AGING_COLUMNS.map((col) => <td key={col.key} className={`whitespace-nowrap py-3 pe-3 ${col.key === "total" ? "font-bold" : ""}`}>{r[col.key] ? formatToman(r[col.key]) : "—"}</td>)}</tr>)}</tbody>
+                    <tfoot><tr className="border-t-2 border-input font-bold"><td className="py-3 pe-3">جمع کل</td>{AGING_COLUMNS.map((col) => <td key={col.key} className="whitespace-nowrap py-3 pe-3">{formatToman(aging.totals[col.key])}</td>)}</tr></tfoot>
+                  </table>
+                </div>
+                <div className="space-y-3 lg:hidden">
                   {aging.rows.map((r) => (
-                    <tr key={r.supplierId} className="border-b border-border">
-                      <td className="py-2 pe-3">{r.supplierName}</td>
-                      {AGING_COLUMNS.map((col) => (
-                        <td key={col.key} className={`py-2 pe-3 tabular-nums ${col.key === "total" ? "font-semibold" : ""}`}>
-                          {r[col.key] ? formatToman(r[col.key]) : "—"}
-                        </td>
-                      ))}
-                    </tr>
+                    <article key={r.supplierId} className="rounded-xl border border-[#EEECE7] bg-[#FCFBF8] p-4">
+                      <div className="flex justify-between gap-3"><h3>{r.supplierName}</h3><span className="whitespace-nowrap font-bold">{formatToman(r.total)}</span></div>
+                      <dl className="mt-3 grid grid-cols-2 gap-2 border-t border-[#F0EEE9] pt-3 text-sm">
+                        {AGING_COLUMNS.filter((col) => col.key !== "total").map((col) => <div key={col.key}><dt className="text-xs text-muted-foreground">{col.label}</dt><dd className="mt-1 font-semibold">{r[col.key] ? formatToman(r[col.key]) : "—"}</dd></div>)}
+                      </dl>
+                    </article>
                   ))}
-                  {aging.rows.length === 0 ? (
-                    <tr>
-                      <td colSpan={AGING_COLUMNS.length + 1} className="py-4 text-center text-muted-foreground">
-                        هیچ حساب پرداختنی بازی وجود ندارد.
-                      </td>
-                    </tr>
-                  ) : null}
-                </tbody>
-                <tfoot>
-                  <tr className="border-t-2 border-input font-semibold">
-                    <td className="py-2 pe-3">جمع کل</td>
-                    {AGING_COLUMNS.map((col) => (
-                      <td key={col.key} className="py-2 pe-3 tabular-nums">
-                        {formatToman(aging.totals[col.key])}
-                      </td>
-                    ))}
-                  </tr>
-                </tfoot>
-              </table>
+                  <dl className="rounded-xl border border-[#DEDAD2] bg-[#FFFEFC] p-4"><dt className="text-sm text-muted-foreground">جمع کل حساب‌های پرداختنی</dt><dd className="mt-1 text-lg font-bold">{formatToman(aging.totals.total)}</dd></dl>
+                </div>
+              </>
             )}
           </div>
         )}
       </div>
 
-      {statementTarget ? (
-        <ApStatementPanel
-          supplierId={statementTarget.id}
-          supplierName={statementTarget.name}
-          onClose={() => setStatementTarget(null)}
-        />
-      ) : null}
+      {statementTarget ? <ApStatementPanel supplierId={statementTarget.id} supplierName={statementTarget.name} onClose={() => setStatementTarget(null)} /> : null}
 
       {payTarget ? (
         <PayBillDialog
@@ -246,28 +202,37 @@ function PayBillDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className="w-full max-w-sm rounded-2xl bg-card p-5 shadow-lg" onClick={(e) => e.stopPropagation()}>
-        <h3 className="mb-4 font-semibold">پرداخت به {supplier.supplierName}</h3>
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-3 sm:items-center sm:p-4" onClick={onClose}>
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="pay-bill-heading"
+        className="w-full max-w-md rounded-2xl bg-card p-4 shadow-lg sm:p-5"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <header className="mb-4 border-b border-border pb-4">
+          <p className="text-xs font-semibold text-[#9B6700]">ثبت پرداخت</p>
+          <h3 id="pay-bill-heading" className="mt-1 text-lg font-bold">پرداخت به {supplier.supplierName}</h3>
+        </header>
         <ErrorBox>{localError}</ErrorBox>
-        <div className="space-y-3">
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-muted-foreground">مبلغ (تومان)</span>
+        <div className="space-y-4">
+          <label className="flex flex-col gap-1.5 text-sm">
+            <span className="font-medium text-muted-foreground">مبلغ (تومان)</span>
             <input className={inputClass} dir="ltr" inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value)} />
           </label>
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-muted-foreground">روش پرداخت</span>
+          <label className="flex flex-col gap-1.5 text-sm">
+            <span className="font-medium text-muted-foreground">روش پرداخت</span>
             <select className={inputClass} value={method} onChange={(e) => setMethod(e.target.value as "cash" | "bank")}>
               <option value="cash">نقدی</option>
               <option value="bank">بانکی</option>
             </select>
           </label>
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-muted-foreground">شرح (اختیاری)</span>
+          <label className="flex flex-col gap-1.5 text-sm">
+            <span className="font-medium text-muted-foreground">شرح (اختیاری)</span>
             <input className={inputClass} value={memo} onChange={(e) => setMemo(e.target.value)} />
           </label>
         </div>
-        <div className="mt-4 flex justify-end gap-2">
+        <div className="mt-5 grid grid-cols-2 gap-3">
           <SecondaryButton onClick={onClose} disabled={busy}>
             انصراف
           </SecondaryButton>
@@ -275,7 +240,7 @@ function PayBillDialog({
             ثبت پرداخت
           </PrimaryButton>
         </div>
-      </div>
+      </section>
     </div>
   );
 }

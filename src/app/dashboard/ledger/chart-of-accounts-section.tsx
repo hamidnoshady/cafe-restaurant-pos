@@ -96,93 +96,81 @@ export function ChartOfAccountsSection({ busy, run }: { busy: boolean; run: Runn
     refresh();
   }
 
-  if (!accounts) return <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>;
+  if (!accounts) {
+    return <section aria-live="polite" className="rounded-2xl bg-card p-5 text-sm text-muted-foreground shadow-sm">در حال بارگذاری…</section>;
+  }
 
   const parentOptions = accounts.filter((a) => a.isActive);
 
   return (
-    <div className="space-y-6">
-      <section className="rounded-2xl bg-card p-5 shadow-sm">
-        <h2 className="mb-3 font-semibold">افزودن حساب</h2>
-        {localError ? <p className="mb-3 text-sm text-destructive">{localError}</p> : null}
-        <form onSubmit={submit} className="grid gap-2 sm:grid-cols-5">
-          <input className={inputClass} value={code} onChange={(e) => setCode(e.target.value)} placeholder="کد" required />
-          <input
-            className={`${inputClass} sm:col-span-2`}
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="نام حساب"
-            required
-          />
-          <select className={inputClass} value={type} onChange={(e) => setType(e.target.value as AccountType)}>
-            {(Object.keys(TYPE_LABELS) as AccountType[]).map((t) => (
-              <option key={t} value={t}>
-                {TYPE_LABELS[t]}
-              </option>
-            ))}
-          </select>
-          <select className={inputClass} value={parentId} onChange={(e) => setParentId(e.target.value)}>
-            <option value="">بدون والد</option>
-            {parentOptions.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.code} — {a.name}
-              </option>
-            ))}
-          </select>
-          <div className="sm:col-span-5">
-            <PrimaryButton disabled={busy}>افزودن حساب</PrimaryButton>
+    <div className="space-y-4">
+      <section className="rounded-2xl bg-card p-4 shadow-sm sm:p-5">
+        <p className="text-xs font-semibold text-[#9B6700]">ساختار مالی</p>
+        <h2 className="mt-1">افزودن حساب</h2>
+        <p className="mt-2 text-sm text-muted-foreground">فقط حساب‌های مجاز جدید را اضافه کنید؛ حساب‌های سیستمی و دارای سند همچنان با قوانین فعلی محافظت می‌شوند.</p>
+        {localError ? <p className="mt-4 rounded-xl border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">{localError}</p> : null}
+        <form onSubmit={submit} className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <label className="block">
+            <span className="mb-1.5 block text-sm font-medium">کد حساب</span>
+            <input className={inputClass} value={code} onChange={(e) => setCode(e.target.value)} placeholder="مثلاً ۶۱۰۰" required />
+          </label>
+          <label className="block">
+            <span className="mb-1.5 block text-sm font-medium">نام حساب</span>
+            <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} placeholder="نام حساب" required />
+          </label>
+          <label className="block">
+            <span className="mb-1.5 block text-sm font-medium">نوع حساب</span>
+            <select className={inputClass} value={type} onChange={(e) => setType(e.target.value as AccountType)}>
+              {(Object.keys(TYPE_LABELS) as AccountType[]).map((t) => <option key={t} value={t}>{TYPE_LABELS[t]}</option>)}
+            </select>
+          </label>
+          <label className="block">
+            <span className="mb-1.5 block text-sm font-medium">حساب والد</span>
+            <select className={inputClass} value={parentId} onChange={(e) => setParentId(e.target.value)}>
+              <option value="">بدون والد</option>
+              {parentOptions.map((a) => <option key={a.id} value={a.id}>{a.code} — {a.name}</option>)}
+            </select>
+          </label>
+          <div className="md:col-span-2 xl:col-span-4">
+            <div className="max-w-xs"><PrimaryButton disabled={busy}>افزودن حساب</PrimaryButton></div>
           </div>
         </form>
       </section>
 
-      <section className="rounded-2xl bg-card p-5 shadow-sm">
-        <h2 className="mb-3 font-semibold">سرفصل حساب‌ها</h2>
-        <div className="overflow-x-auto">
+      <section className="rounded-2xl bg-card p-4 shadow-sm sm:p-5">
+        <div className="mb-4">
+          <p className="text-xs font-semibold text-[#9B6700]">فهرست ساختار</p>
+          <h2 className="mt-1">سرفصل حساب‌ها</h2>
+        </div>
+        <div className="hidden overflow-x-auto lg:block">
           <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border text-start text-muted-foreground">
-                <th className="py-2 pe-3 text-start">کد</th>
-                <th className="py-2 pe-3 text-start">حساب</th>
-                <th className="py-2 pe-3 text-start">نوع</th>
-                <th className="py-2 pe-3 text-start">والد</th>
-                <th className="py-2 pe-3 text-start">وضعیت</th>
-                <th className="py-2 text-start">عملیات</th>
-              </tr>
-            </thead>
+            <thead><tr className="border-b border-border"><th className="py-3 pe-3 text-start">کد</th><th className="py-3 pe-3 text-start">حساب</th><th className="py-3 pe-3 text-start">نوع</th><th className="py-3 pe-3 text-start">والد</th><th className="py-3 pe-3 text-start">وضعیت</th><th className="py-3 text-start">عملیات</th></tr></thead>
             <tbody>
               {accounts.map((a) => (
                 <tr key={a.id} className="border-b border-border">
-                  <td className="py-2 pe-3 text-muted-foreground">{a.code}</td>
-                  <td className="py-2 pe-3">{a.name}</td>
-                  <td className="py-2 pe-3 text-muted-foreground">{TYPE_LABELS[a.type]}</td>
-                  <td className="py-2 pe-3 text-muted-foreground">{a.parentCode ?? "—"}</td>
-                  <td className="py-2 pe-3">
-                    {a.isActive ? (
-                      <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
-                        فعال
-                      </span>
-                    ) : (
-                      <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-semibold text-muted-foreground">
-                        غیرفعال
-                      </span>
-                    )}
-                  </td>
-                  <td className="py-2">
-                    <div className="flex flex-wrap gap-2">
-                      <SecondaryButton onClick={() => toggleActive(a)} disabled={busy}>
-                        {a.isActive ? "غیرفعال کردن" : "فعال کردن"}
-                      </SecondaryButton>
-                      {!a.hasPostings && !a.hasChildren ? (
-                        <SecondaryButton onClick={() => remove(a)} disabled={busy}>
-                          حذف
-                        </SecondaryButton>
-                      ) : null}
-                    </div>
-                  </td>
+                  <td className="py-3 pe-3 text-muted-foreground">{a.code}</td>
+                  <td className="py-3 pe-3 font-semibold">{a.name}</td>
+                  <td className="py-3 pe-3 text-muted-foreground">{TYPE_LABELS[a.type]}</td>
+                  <td className="py-3 pe-3 text-muted-foreground">{a.parentCode ?? "—"}</td>
+                  <td className="py-3 pe-3"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${a.isActive ? "bg-emerald-100 text-emerald-800" : "bg-muted text-muted-foreground"}`}>{a.isActive ? "فعال" : "غیرفعال"}</span></td>
+                  <td className="py-3"><div className="flex flex-wrap gap-2"><SecondaryButton onClick={() => toggleActive(a)} disabled={busy}>{a.isActive ? "غیرفعال کردن" : "فعال کردن"}</SecondaryButton>{!a.hasPostings && !a.hasChildren ? <SecondaryButton onClick={() => remove(a)} disabled={busy}>حذف</SecondaryButton> : null}</div></td>
                 </tr>
               ))}
             </tbody>
           </table>
+        </div>
+
+        <div className="space-y-3 lg:hidden">
+          {accounts.map((a) => (
+            <article key={a.id} className="rounded-xl border border-[#EEECE7] bg-[#FCFBF8] p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0"><p className="text-xs text-muted-foreground">{a.code}</p><h3 className="mt-1 truncate">{a.name}</h3></div>
+                <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${a.isActive ? "bg-emerald-100 text-emerald-800" : "bg-muted text-muted-foreground"}`}>{a.isActive ? "فعال" : "غیرفعال"}</span>
+              </div>
+              <dl className="mt-3 grid grid-cols-2 gap-2 border-t border-[#F0EEE9] pt-3 text-sm"><div><dt className="text-xs text-muted-foreground">نوع</dt><dd className="mt-1">{TYPE_LABELS[a.type]}</dd></div><div><dt className="text-xs text-muted-foreground">والد</dt><dd className="mt-1">{a.parentCode ?? "—"}</dd></div></dl>
+              <div className="mt-3 flex flex-wrap gap-2"><SecondaryButton onClick={() => toggleActive(a)} disabled={busy}>{a.isActive ? "غیرفعال کردن" : "فعال کردن"}</SecondaryButton>{!a.hasPostings && !a.hasChildren ? <SecondaryButton onClick={() => remove(a)} disabled={busy}>حذف</SecondaryButton> : null}</div>
+            </article>
+          ))}
         </div>
       </section>
     </div>

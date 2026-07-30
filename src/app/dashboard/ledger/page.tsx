@@ -10,11 +10,12 @@ export default async function LedgerPage() {
   await requireFeatureForPage(session.businessId, "ledger");
 
   return (
-    <div>
-      <header className="mb-6">
-        <h1 className="text-2xl font-bold">حسابداری</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          تراز آزمایشی، دفتر روزنامه (سندهای خودکار و دستی)، و ثبت سند دستی.
+    <div className="mx-auto max-w-[1680px]">
+      <header className="mb-4 rounded-2xl border border-[#EAE8E2] bg-[#FFFEFC] px-4 py-5 shadow-[0_1px_2px_rgb(41_37_36/0.03)] sm:mb-5 sm:px-6">
+        <p className="mb-2 text-xs font-semibold tracking-wide text-[#9B6700]">مدیریت مالی</p>
+        <h1 className="text-2xl font-bold tracking-tight text-[#252522] sm:text-3xl">حسابداری</h1>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-[#77756F]">
+          تراز آزمایشی، دفتر روزنامه، اسناد دستی و عملیات مالی کسب‌وکار.
         </p>
       </header>
       <LedgerManager role={session.role} />

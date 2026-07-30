@@ -50,59 +50,88 @@ export function EntriesSection({ refreshKey, busy, run }: { refreshKey: number; 
     await run(() => api(`/api/ledger/entries/${id}/reverse`, { method: "POST", body: JSON.stringify({}) }));
   }
 
-  if (!entries) return <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>;
+  if (!entries) {
+    return (
+      <section aria-live="polite" className="rounded-2xl bg-card p-5 text-sm text-muted-foreground shadow-sm">
+        در حال بارگذاری…
+      </section>
+    );
+  }
 
   return (
-    <section className="space-y-3">
-      {entries.map((e) => {
-        const isReversal = !!e.reverses_entry_id;
-        const isReversed = !!e.reversed_at;
-        const canReverse = e.source_type === "manual" && !isReversal && !isReversed;
-        return (
-          <div key={e.id} className="rounded-2xl bg-card p-4 shadow-sm">
-            <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-sm">
-              <span className="flex flex-wrap items-center gap-2 font-semibold">
-                {e.memo || "—"}
-                {isReversal ? (
-                  <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-normal text-amber-700 dark:text-amber-400">
-                    سند برگشتی
-                  </span>
-                ) : null}
-                {isReversed ? (
-                  <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-normal text-muted-foreground">
-                    برگشت‌خورده
-                  </span>
-                ) : null}
-              </span>
-              <span className="text-xs text-muted-foreground">
-                {SOURCE_LABELS[e.source_type ?? ""] ?? e.source_type} — {formatJalali(e.entry_date)}
-                {e.created_by_name ? ` — ${e.created_by_name}` : ""}
-              </span>
-            </div>
-            <table className="w-full text-sm">
-              <tbody>
-                {e.lines.map((l, i) => (
-                  <tr key={i} className="border-t border-border">
-                    <td className="py-1 pe-3 text-muted-foreground">
-                      {l.account_code} {l.account_name}
-                    </td>
-                    <td className="py-1 pe-3 w-32">{Number(l.debit) !== 0 ? formatToman(Number(l.debit)) : ""}</td>
-                    <td className="py-1 w-32">{Number(l.credit) !== 0 ? formatToman(Number(l.credit)) : ""}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {canReverse ? (
-              <div className="mt-2">
-                <SecondaryButton onClick={() => reverse(e.id)} disabled={busy}>
-                  برگشت سند
-                </SecondaryButton>
-              </div>
-            ) : null}
-          </div>
-        );
-      })}
-      {entries.length === 0 ? <p className="p-3 text-sm text-muted-foreground">هنوز سندی ثبت نشده است.</p> : null}
+    <section className="space-y-4">
+      <header className="rounded-2xl bg-card p-5 shadow-sm">
+        <p className="text-xs font-semibold text-[#9B6700]">دفاتر مالی</p>
+        <h2 className="mt-1">دفتر روزنامه</h2>
+        <p className="mt-1 text-sm text-muted-foreground">اسناد خودکار و دستیِ ثبت‌شده، با امکان برگشت فقط برای اسناد دستی مجاز.</p>
+      </header>
+
+      {entries.length === 0 ? (
+        <p className="rounded-2xl bg-card p-8 text-center text-sm text-muted-foreground shadow-sm">هنوز سندی ثبت نشده است.</p>
+      ) : (
+        <div className="space-y-3">
+          {entries.map((e) => {
+            const isReversal = !!e.reverses_entry_id;
+            const isReversed = !!e.reversed_at;
+            const canReverse = e.source_type === "manual" && !isReversal && !isReversed;
+            return (
+              <article key={e.id} className="rounded-2xl bg-card p-4 shadow-sm sm:p-5">
+                <div className="mb-4 flex flex-wrap items-start justify-between gap-3 border-b border-[#F0EEE9] pb-3">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="truncate text-base">{e.memo || "—"}</h3>
+                      {isReversal ? <span className="rounded-full bg-[#FFF1D8] px-2.5 py-1 text-xs font-semibold text-[#9B6700]">سند برگشتی</span> : null}
+                      {isReversed ? <span className="rounded-full bg-[#F5F3EE] px-2.5 py-1 text-xs font-semibold text-[#5E5B55]">برگشت‌خورده</span> : null}
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {SOURCE_LABELS[e.source_type ?? ""] ?? e.source_type} — {formatJalali(e.entry_date)}
+                      {e.created_by_name ? ` — ${e.created_by_name}` : ""}
+                    </p>
+                  </div>
+                  {canReverse ? (
+                    <SecondaryButton onClick={() => reverse(e.id)} disabled={busy}>
+                      برگشت سند
+                    </SecondaryButton>
+                  ) : null}
+                </div>
+
+                <div className="hidden overflow-x-auto lg:block">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-border">
+                        <th className="py-2 pe-3 text-start">حساب</th>
+                        <th className="py-2 pe-3 text-start">بدهکار</th>
+                        <th className="py-2 text-start">بستانکار</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {e.lines.map((l, i) => (
+                        <tr key={i} className="border-b border-border last:border-b-0">
+                          <td className="py-3 pe-3 text-muted-foreground">{l.account_code} {l.account_name}</td>
+                          <td className="whitespace-nowrap py-3 pe-3">{Number(l.debit) !== 0 ? formatToman(Number(l.debit)) : "—"}</td>
+                          <td className="whitespace-nowrap py-3">{Number(l.credit) !== 0 ? formatToman(Number(l.credit)) : "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="space-y-2 lg:hidden">
+                  {e.lines.map((l, i) => (
+                    <div key={i} className="rounded-xl border border-[#EEECE7] bg-[#FCFBF8] p-3">
+                      <p className="text-sm font-semibold">{l.account_code} {l.account_name}</p>
+                      <dl className="mt-2 grid grid-cols-2 gap-2 text-sm">
+                        <div><dt className="text-xs text-muted-foreground">بدهکار</dt><dd className="mt-1 font-semibold">{Number(l.debit) !== 0 ? formatToman(Number(l.debit)) : "—"}</dd></div>
+                        <div><dt className="text-xs text-muted-foreground">بستانکار</dt><dd className="mt-1 font-semibold">{Number(l.credit) !== 0 ? formatToman(Number(l.credit)) : "—"}</dd></div>
+                      </dl>
+                    </div>
+                  ))}
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      )}
     </section>
   );
 }

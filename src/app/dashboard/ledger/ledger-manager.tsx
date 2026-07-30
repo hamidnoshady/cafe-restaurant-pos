@@ -1,6 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import {
+  CalendarDaysIcon,
+  CalculatorIcon,
+  CircleIcon,
+  ClipboardListIcon,
+  UsersIcon,
+} from "lucide-react";
 import { api, ErrorBox } from "../ui";
 import { TrialBalanceSection } from "./trial-balance-section";
 import { EntriesSection } from "./entries-section";
@@ -13,6 +20,7 @@ import { ChartOfAccountsSection } from "./chart-of-accounts-section";
 import { ExpenseSection } from "./expense-section";
 import { PayrollSection } from "./payroll-section";
 import { VatReportSection } from "./vat-report-section";
+import styles from "./ledger-workspace.module.css";
 
 export interface AccountRow {
   id: string;
@@ -23,17 +31,17 @@ export interface AccountRow {
 }
 
 const TABS = [
-  { key: "trial-balance", label: "تراز آزمایشی" },
-  { key: "entries", label: "دفتر روزنامه" },
-  { key: "manual", label: "ثبت سند دستی" },
-  { key: "expenses", label: "هزینه‌ها" },
-  { key: "fiscal-periods", label: "دوره‌های مالی" },
-  { key: "ar", label: "حساب‌های دریافتنی" },
-  { key: "ap", label: "حساب‌های پرداختنی" },
-  { key: "reconciliation", label: "تطبیق بانکی" },
-  { key: "chart-of-accounts", label: "سرفصل حساب‌ها" },
-  { key: "payroll", label: "حقوق و دستمزد" },
-  { key: "vat", label: "گزارش مالیات" },
+  { key: "trial-balance", label: "تراز آزمایشی", icon: CalculatorIcon },
+  { key: "entries", label: "دفتر روزنامه", icon: ClipboardListIcon },
+  { key: "manual", label: "ثبت سند دستی", icon: ClipboardListIcon },
+  { key: "expenses", label: "هزینه‌ها", icon: CircleIcon },
+  { key: "fiscal-periods", label: "دوره‌های مالی", icon: CalendarDaysIcon },
+  { key: "ar", label: "حساب‌های دریافتنی", icon: UsersIcon },
+  { key: "ap", label: "حساب‌های پرداختنی", icon: UsersIcon },
+  { key: "reconciliation", label: "تطبیق بانکی", icon: CircleIcon },
+  { key: "chart-of-accounts", label: "سرفصل حساب‌ها", icon: CalculatorIcon },
+  { key: "payroll", label: "حقوق و دستمزد", icon: UsersIcon },
+  { key: "vat", label: "گزارش مالیات", icon: CircleIcon },
 ] as const;
 type TabKey = (typeof TABS)[number]["key"];
 
@@ -68,38 +76,81 @@ export function LedgerManager({ role }: { role: string }) {
     return true;
   }
 
-  if (!accounts) return <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>;
+  if (!accounts) {
+    return (
+      <div
+        aria-live="polite"
+        className="rounded-2xl border border-[#EAE8E2] bg-white px-5 py-6 text-sm text-[#77756F] shadow-[0_1px_2px_rgb(41_37_36/0.03)]"
+      >
+        در حال بارگذاری…
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-4 sm:space-y-5">
       <ErrorBox>{error}</ErrorBox>
 
-      <div className="flex flex-wrap gap-2 border-b border-border pb-2">
-        {tabs.map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            onClick={() => setTab(t.key)}
-            className={`rounded-lg px-3 py-1.5 text-sm ${
-              tab === t.key ? "bg-primary/10 font-semibold text-primary" : "text-muted-foreground hover:bg-muted"
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <div
+        dir="ltr"
+        className="grid min-w-0 gap-4 md:grid-cols-[minmax(0,1fr)_13.5rem] xl:grid-cols-[minmax(0,1fr)_17.5rem] xl:gap-5"
+      >
+        <div
+          id="ledger-tabpanel"
+          dir="rtl"
+          role="region"
+          aria-labelledby={`ledger-tab-${tab}`}
+          className={`${styles.content} min-w-0`}
+        >
+          {tab === "trial-balance" ? <TrialBalanceSection refreshKey={refreshKey} /> : null}
+          {tab === "entries" ? <EntriesSection refreshKey={refreshKey} busy={busy} run={run} /> : null}
+          {tab === "manual" ? <ManualEntrySection accounts={accounts} busy={busy} run={run} refreshKey={refreshKey} /> : null}
+          {tab === "expenses" ? <ExpenseSection accounts={accounts} busy={busy} run={run} refreshKey={refreshKey} /> : null}
+          {tab === "fiscal-periods" ? <FiscalPeriodsSection busy={busy} run={run} /> : null}
+          {tab === "ar" ? <ArSection busy={busy} run={run} /> : null}
+          {tab === "ap" ? <ApSection busy={busy} run={run} /> : null}
+          {tab === "reconciliation" ? <ReconciliationSection busy={busy} run={run} /> : null}
+          {tab === "chart-of-accounts" ? <ChartOfAccountsSection busy={busy} run={run} /> : null}
+          {tab === "payroll" ? <PayrollSection busy={busy} run={run} refreshKey={refreshKey} /> : null}
+          {tab === "vat" ? <VatReportSection refreshKey={refreshKey} /> : null}
+        </div>
 
-      {tab === "trial-balance" ? <TrialBalanceSection refreshKey={refreshKey} /> : null}
-      {tab === "entries" ? <EntriesSection refreshKey={refreshKey} busy={busy} run={run} /> : null}
-      {tab === "manual" ? <ManualEntrySection accounts={accounts} busy={busy} run={run} refreshKey={refreshKey} /> : null}
-      {tab === "expenses" ? <ExpenseSection accounts={accounts} busy={busy} run={run} refreshKey={refreshKey} /> : null}
-      {tab === "fiscal-periods" ? <FiscalPeriodsSection busy={busy} run={run} /> : null}
-      {tab === "ar" ? <ArSection busy={busy} run={run} /> : null}
-      {tab === "ap" ? <ApSection busy={busy} run={run} /> : null}
-      {tab === "reconciliation" ? <ReconciliationSection busy={busy} run={run} /> : null}
-      {tab === "chart-of-accounts" ? <ChartOfAccountsSection busy={busy} run={run} /> : null}
-      {tab === "payroll" ? <PayrollSection busy={busy} run={run} refreshKey={refreshKey} /> : null}
-      {tab === "vat" ? <VatReportSection refreshKey={refreshKey} /> : null}
+        <nav
+          dir="rtl"
+          aria-label="بخش‌های حسابداری"
+          className="order-first rounded-2xl border border-[#EAE8E2] bg-white p-2 shadow-[0_1px_2px_rgb(41_37_36/0.03)] md:order-none md:sticky md:top-4"
+        >
+          <div className="border-b border-[#F0EEE9] px-3 pb-3 pt-2">
+            <p className="text-sm font-bold text-[#252522]">فضای کار حسابداری</p>
+            <p className="mt-1 text-xs leading-5 text-[#77756F]">ثبت، بررسی و گزارش‌های مالی</p>
+          </div>
+          <div className="grid grid-cols-2 gap-2 pt-2 sm:grid-cols-3 md:grid-cols-1">
+            {tabs.map((t) => {
+              const isActive = tab === t.key;
+              const Icon = t.icon;
+              return (
+                <button
+                  key={t.key}
+                  id={`ledger-tab-${t.key}`}
+                  type="button"
+                  aria-controls="ledger-tabpanel"
+                  aria-current={isActive ? "page" : undefined}
+                  aria-pressed={isActive}
+                  onClick={() => setTab(t.key)}
+                  className={`flex min-h-[52px] items-center gap-2.5 rounded-xl border px-3 py-2 text-right text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-[#E9A11B]/40 ${
+                    isActive
+                      ? "border-[#F0D7A8] bg-[#FFF1D8] text-[#9B6700] shadow-[0_1px_2px_rgb(120_83_22/0.08)]"
+                      : "border-transparent bg-transparent text-[#5E5B55] hover:border-[#EAE8E2] hover:bg-[#FCFBF8] hover:text-[#252522]"
+                  }`}
+                >
+                  <Icon aria-hidden="true" className="size-4.5 shrink-0" />
+                  <span className="min-w-0 leading-5">{t.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </nav>
+      </div>
     </div>
   );
 }
