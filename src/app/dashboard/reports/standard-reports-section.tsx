@@ -35,7 +35,7 @@ interface SavedReportRow {
 }
 
 const LEDGER_KEYS = new Set(["profit_and_loss", "balance_sheet", "cash_flow"]);
-const CONTROL_CLASS = [inputClass, "min-h-12 border-[#DEDAD2] bg-white text-[#252522]"].join(" ");
+const CONTROL_CLASS = [inputClass, "min-h-[52px] border-[#DEDAD2] bg-white text-[#252522]"].join(" ");
 
 type LedgerReportData =
   | ProfitAndLoss
@@ -144,7 +144,7 @@ export function StandardReportsSection() {
                   aria-pressed={isSelected}
                   onClick={() => select(report)}
                   className={[
-                    "min-h-12 shrink-0 rounded-xl border px-3 text-start text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 md:w-full",
+                    "min-h-[52px] shrink-0 rounded-xl border px-3 text-start text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 md:w-full",
                     isSelected
                       ? "border-[#F0D7A8] bg-[#FFF1D8] font-bold text-[#8A5C00]"
                       : "border-transparent text-[#5E5B55] hover:border-[#EAE8E2] hover:bg-[#FCFBF8] hover:text-[#252522]",
@@ -219,7 +219,7 @@ export function StandardReportsSection() {
               ) : null}
 
               {LEDGER_KEYS.has(selected.key) ? (
-                <label className="mt-3 flex min-h-12 cursor-pointer items-center gap-3 rounded-xl border border-[#EEECE7] bg-[#FCFBF8] px-3 text-sm text-[#5E5B55] sm:w-fit">
+                <label className="mt-3 flex min-h-[52px] cursor-pointer items-center gap-3 rounded-xl border border-[#EEECE7] bg-[#FCFBF8] px-3 text-sm text-[#5E5B55] sm:w-fit">
                   <input
                     type="checkbox"
                     checked={compare}
