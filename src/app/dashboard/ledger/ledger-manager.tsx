@@ -20,6 +20,7 @@ import { ChartOfAccountsSection } from "./chart-of-accounts-section";
 import { ExpenseSection } from "./expense-section";
 import { PayrollSection } from "./payroll-section";
 import { VatReportSection } from "./vat-report-section";
+import styles from "./ledger-workspace.module.css";
 
 export interface AccountRow {
   id: string;
@@ -99,7 +100,7 @@ export function LedgerManager({ role }: { role: string }) {
           dir="rtl"
           role="region"
           aria-labelledby={`ledger-tab-${tab}`}
-          className="min-w-0"
+          className={`${styles.content} min-w-0`}
         >
           {tab === "trial-balance" ? <TrialBalanceSection refreshKey={refreshKey} /> : null}
           {tab === "entries" ? <EntriesSection refreshKey={refreshKey} busy={busy} run={run} /> : null}
