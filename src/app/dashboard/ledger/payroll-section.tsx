@@ -97,89 +97,132 @@ export function PayrollSection({ busy, run, refreshKey }: { busy: boolean; run: 
   }
 
   async function pay(runId: string) {
-    await run(() => api(`/api/ledger/payroll/runs/${runId}/pay`, { method: "POST", body: JSON.stringify({ method: "cash" }) }));
+    await run(() => api("/api/ledger/payroll/runs/" + runId + "/pay", { method: "POST", body: JSON.stringify({ method: "cash" }) }));
   }
 
-  if (!staff || !runs) return <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>;
+  if (!staff || !runs) {
+    return (
+      <section aria-live="polite" className="rounded-2xl bg-card px-5 py-6 text-sm text-muted-foreground shadow-sm">
+        در حال بارگذاری…
+      </section>
+    );
+  }
 
   return (
-    <div className="space-y-6">
-      <section className="rounded-2xl bg-card p-5 shadow-sm">
-        <h2 className="mb-3 font-semibold">حقوق ماهانه کارکنان</h2>
-        {localError ? <p className="mb-3 text-sm text-destructive">{localError}</p> : null}
-        <div className="space-y-2">
-          {staff.map((s) => (
-            <div key={s.id} className="flex flex-wrap items-center gap-2">
-              <span className="w-40 truncate text-sm">{s.fullName}</span>
-              <input
-                className={`${inputClass} w-40`}
-                dir="ltr"
-                inputMode="numeric"
-                value={wageInputs[s.id] ?? ""}
-                onChange={(e) => setWageInputs((prev) => ({ ...prev, [s.id]: e.target.value }))}
-                placeholder="حقوق ماهانه (تومان)"
-              />
-              <SecondaryButton onClick={() => saveWage(s.id)} disabled={busy}>
-                ذخیره
-              </SecondaryButton>
-            </div>
-          ))}
-          {staff.length === 0 ? <p className="text-sm text-muted-foreground">عضو فعالی یافت نشد.</p> : null}
-        </div>
+    <div className="space-y-5">
+      <section aria-labelledby="payroll-wages-heading" className="rounded-2xl bg-card p-4 shadow-sm sm:p-5">
+        <header className="mb-5 border-b border-border pb-4">
+          <p className="text-xs font-semibold text-[#9B6700]">تنظیمات حقوق</p>
+          <h2 id="payroll-wages-heading" className="mt-1 text-lg font-bold">حقوق ماهانه کارکنان</h2>
+          <p className="mt-1 text-sm text-muted-foreground">مبلغ حقوق هر کارمند را به تومان وارد و ذخیره کنید.</p>
+        </header>
+
+        {localError ? (
+          <p role="alert" className="mb-4 rounded-xl border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+            {localError}
+          </p>
+        ) : null}
+
+        {staff.length === 0 ? (
+          <p className="rounded-xl border border-dashed border-border bg-[#FCFBF8] px-4 py-8 text-center text-sm text-muted-foreground">
+            عضو فعالی یافت نشد.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            {staff.map((s) => (
+              <div key={s.id} className="grid gap-3 rounded-xl border border-border bg-[#FFFEFC] p-4 md:grid-cols-[minmax(10rem,1fr)_minmax(12rem,15rem)_auto] md:items-end">
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground">کارمند</p>
+                  <p className="mt-1 font-semibold">{s.fullName}</p>
+                </div>
+                <label className="block text-sm font-medium">
+                  <span className="mb-1.5 block text-xs text-muted-foreground">حقوق ماهانه (تومان)</span>
+                  <input
+                    className={${inputClass} w-full}
+                    dir="ltr"
+                    inputMode="numeric"
+                    value={wageInputs[s.id] ?? ""}
+                    onChange={(e) => setWageInputs((prev) => ({ ...prev, [s.id]: e.target.value }))}
+                    placeholder="حقوق ماهانه (تومان)"
+                    aria-label={"حقوق ماهانه " + s.fullName}
+                  />
+                </label>
+                <div className="min-w-32">
+                  <SecondaryButton onClick={() => saveWage(s.id)} disabled={busy}>
+                    ذخیره
+                  </SecondaryButton>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
-      <section className="rounded-2xl bg-card p-5 shadow-sm">
-        <h2 className="mb-3 font-semibold">تعهد حقوق و دستمزد جدید</h2>
-        <form onSubmit={accrue} className="flex flex-wrap items-center gap-2">
-          <input
-            className={inputClass}
-            value={periodLabel}
-            onChange={(e) => setPeriodLabel(e.target.value)}
-            placeholder="دوره (مثلاً مرداد ۱۴۰۴)"
-            required
-          />
-          <div className="w-44">
-            <JalaliDatePicker value={accrualDate} onChange={setAccrualDate} placeholder="تاریخ (امروز)" />
+      <section aria-labelledby="payroll-accrual-heading" className="rounded-2xl bg-card p-4 shadow-sm sm:p-5">
+        <header className="mb-5 border-b border-border pb-4">
+          <p className="text-xs font-semibold text-[#9B6700]">ثبت دوره</p>
+          <h2 id="payroll-accrual-heading" className="mt-1 text-lg font-bold">تعهد حقوق و دستمزد جدید</h2>
+          <p className="mt-1 text-sm text-muted-foreground">ثبت تعهد، همان گردش سندداری موجود را اجرا می‌کند.</p>
+        </header>
+        <form onSubmit={accrue} className="grid gap-4 md:grid-cols-[minmax(14rem,1fr)_12rem_auto] md:items-end">
+          <label className="block text-sm font-medium">
+            <span className="mb-1.5 block text-xs text-muted-foreground">دوره</span>
+            <input
+              className={inputClass}
+              value={periodLabel}
+              onChange={(e) => setPeriodLabel(e.target.value)}
+              placeholder="مثلاً مرداد ۱۴۰۴"
+              required
+            />
+          </label>
+          <label className="block text-sm font-medium">
+            <span className="mb-1.5 block text-xs text-muted-foreground">تاریخ تعهد</span>
+            <JalaliDatePicker value={accrualDate} onChange={setAccrualDate} placeholder="امروز" />
+          </label>
+          <div className="min-w-40">
+            <PrimaryButton disabled={busy || !periodLabel.trim()}>ثبت تعهد</PrimaryButton>
           </div>
-          <PrimaryButton disabled={busy || !periodLabel.trim()}>ثبت تعهد</PrimaryButton>
         </form>
       </section>
 
-      <section className="rounded-2xl bg-card p-5 shadow-sm">
-        <h2 className="mb-3 font-semibold">تاریخچه حقوق و دستمزد</h2>
+      <section aria-labelledby="payroll-history-heading" className="rounded-2xl bg-card p-4 shadow-sm sm:p-5">
+        <header className="mb-5 border-b border-border pb-4">
+          <p className="text-xs font-semibold text-[#9B6700]">سوابق</p>
+          <h2 id="payroll-history-heading" className="mt-1 text-lg font-bold">تاریخچه حقوق و دستمزد</h2>
+        </header>
+
         {runs.length === 0 ? (
-          <p className="text-sm text-muted-foreground">هنوز تعهدی ثبت نشده است.</p>
+          <p className="rounded-xl border border-dashed border-border bg-[#FCFBF8] px-4 py-8 text-center text-sm text-muted-foreground">
+            هنوز تعهدی ثبت نشده است.
+          </p>
         ) : (
           <ul className="space-y-3">
             {runs.map((r) => (
-              <li key={r.id} className="rounded-lg border border-border p-3 text-sm">
-                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                  <span className="font-semibold">{r.periodLabel}</span>
-                  <span className="flex items-center gap-2 text-xs text-muted-foreground">
-                    {toPersianDigits(formatJalali(r.accrualDate))} — {formatToman(r.totalAmount)}
-                    {r.status === "paid" ? (
-                      <span className="rounded-full bg-emerald-100 px-2 py-0.5 font-semibold text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
-                        پرداخت‌شده
-                      </span>
-                    ) : (
-                      <span className="rounded-full bg-amber-500/10 px-2 py-0.5 font-semibold text-amber-700 dark:text-amber-400">
-                        تعهدشده
-                      </span>
-                    )}
-                  </span>
+              <li key={r.id} className="rounded-xl border border-border bg-[#FFFEFC] p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border pb-3">
+                  <div>
+                    <h3 className="font-semibold">{r.periodLabel}</h3>
+                    <p className="mt-1 text-xs text-muted-foreground">{toPersianDigits(formatJalali(r.accrualDate))}</p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-bold tabular-nums">{formatToman(r.totalAmount)}</span>
+                    <span className={"rounded-full px-2.5 py-1 text-xs font-semibold " + (r.status === "paid" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800")}>
+                      {r.status === "paid" ? "پرداخت‌شده" : "تعهدشده"}
+                    </span>
+                  </div>
                 </div>
-                <table className="w-full">
-                  <tbody>
-                    {r.lines.map((l, i) => (
-                      <tr key={i} className="border-t border-border">
-                        <td className="py-1 pe-3 text-muted-foreground">{l.fullName ?? "—"}</td>
-                        <td className="py-1">{formatToman(l.amount)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  {r.lines.map((l, i) => (
+                    <div key={i} className="flex items-center justify-between gap-3 rounded-lg bg-[#FCFBF8] px-3 py-2.5 text-sm">
+                      <span className="min-w-0 truncate text-muted-foreground">{l.fullName ?? "—"}</span>
+                      <span className="shrink-0 font-semibold tabular-nums">{formatToman(l.amount)}</span>
+                    </div>
+                  ))}
+                </div>
+
                 {r.status === "accrued" ? (
-                  <div className="mt-2">
+                  <div className="mt-4 max-w-xs">
                     <SecondaryButton onClick={() => pay(r.id)} disabled={busy}>
                       پرداخت (از صندوق)
                     </SecondaryButton>
