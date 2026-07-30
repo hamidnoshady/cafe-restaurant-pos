@@ -64,6 +64,11 @@ jobs:
         run: npm run dist
 
       - name: Upload installer artifact
+        # continue-on-error: a storage-quota rejection here (transient — GitHub
+        # only recalculates freed quota every 6-12 hours after a cleanup) must
+        # not skip the release-publish step below, since that step doesn't
+        # touch the same quota and would otherwise succeed anyway.
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: cafe-pos-windows-installer
@@ -79,8 +84,9 @@ jobs:
         # Only tag pushes (v*) represent an actual release; workflow_dispatch
         # runs are ad-hoc builds and only get the artifact above. Release
         # assets don't count against the Actions/Packages storage quota, so
-        # this is the durable distribution path (see docs/standalone-desktop-app.md).
-        if: startsWith(github.ref, 'refs/tags/v')
+        # this is the durable distribution path (see docs/standalone-desktop-app.md),
+        # and it must run even if the artifact upload above was quota-rejected.
+        if: always() && startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           files: electron/dist/*.exe
