@@ -25,14 +25,21 @@ export function PinToDashboardButton({
   chartType: ChartType;
   title: string;
 }) {
-  const [state, setState] = useState<"idle" | "busy" | "done" | "error">("idle");
+  const [state, setState] = useState<"idle" | "busy" | "done" | "error">(
+    "idle",
+  );
 
   async function pin() {
     setState("busy");
     try {
-      const current = await fetch("/api/dashboard/widgets").then((response) => response.json());
+      const current = await fetch("/api/dashboard/widgets").then((response) =>
+        response.json(),
+      );
       const existing: ExistingWidget[] = current.widgets ?? [];
-      const nextY = existing.reduce((maximum, widget) => Math.max(maximum, widget.y + widget.h), 0);
+      const nextY = existing.reduce(
+        (maximum, widget) => Math.max(maximum, widget.y + widget.h),
+        0,
+      );
       const widgets = [
         ...existing.map((widget) => ({
           savedReportId: widget.saved_report_id,
@@ -65,7 +72,11 @@ export function PinToDashboardButton({
       disabled={state === "busy"}
       className="min-h-[52px] border-[#DEDAD2] bg-white px-4 text-[#252522] hover:bg-[#FCFBF8]"
     >
-      {state === "done" ? "سنجاق شد ✓" : state === "busy" ? "در حال سنجاق…" : "سنجاق به داشبورد"}
+      {state === "done"
+        ? "سنجاق شد ✓"
+        : state === "busy"
+          ? "در حال سنجاق…"
+          : "سنجاق به داشبورد"}
     </Button>
   );
 }
