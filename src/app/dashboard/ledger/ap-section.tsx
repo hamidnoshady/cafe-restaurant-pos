@@ -202,28 +202,37 @@ function PayBillDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className="w-full max-w-sm rounded-2xl bg-card p-5 shadow-lg" onClick={(e) => e.stopPropagation()}>
-        <h3 className="mb-4 font-semibold">پرداخت به {supplier.supplierName}</h3>
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-3 sm:items-center sm:p-4" onClick={onClose}>
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="pay-bill-heading"
+        className="w-full max-w-md rounded-2xl bg-card p-4 shadow-lg sm:p-5"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <header className="mb-4 border-b border-border pb-4">
+          <p className="text-xs font-semibold text-[#9B6700]">ثبت پرداخت</p>
+          <h3 id="pay-bill-heading" className="mt-1 text-lg font-bold">پرداخت به {supplier.supplierName}</h3>
+        </header>
         <ErrorBox>{localError}</ErrorBox>
-        <div className="space-y-3">
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-muted-foreground">مبلغ (تومان)</span>
+        <div className="space-y-4">
+          <label className="flex flex-col gap-1.5 text-sm">
+            <span className="font-medium text-muted-foreground">مبلغ (تومان)</span>
             <input className={inputClass} dir="ltr" inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value)} />
           </label>
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-muted-foreground">روش پرداخت</span>
+          <label className="flex flex-col gap-1.5 text-sm">
+            <span className="font-medium text-muted-foreground">روش پرداخت</span>
             <select className={inputClass} value={method} onChange={(e) => setMethod(e.target.value as "cash" | "bank")}>
               <option value="cash">نقدی</option>
               <option value="bank">بانکی</option>
             </select>
           </label>
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-muted-foreground">شرح (اختیاری)</span>
+          <label className="flex flex-col gap-1.5 text-sm">
+            <span className="font-medium text-muted-foreground">شرح (اختیاری)</span>
             <input className={inputClass} value={memo} onChange={(e) => setMemo(e.target.value)} />
           </label>
         </div>
-        <div className="mt-4 flex justify-end gap-2">
+        <div className="mt-5 grid grid-cols-2 gap-3">
           <SecondaryButton onClick={onClose} disabled={busy}>
             انصراف
           </SecondaryButton>
@@ -231,7 +240,7 @@ function PayBillDialog({
             ثبت پرداخت
           </PrimaryButton>
         </div>
-      </div>
+      </section>
     </div>
   );
 }
