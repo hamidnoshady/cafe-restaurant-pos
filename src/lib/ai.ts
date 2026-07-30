@@ -141,12 +141,35 @@ export type ActionType =
   | "setup.costing"
   | "setup.tax"
   | "setup.menu.category"
-  | "setup.menu.item";
+  | "setup.menu.item"
+  // Phase 18b Wave 2 — dashboard-mode mutation catalogue, each mapping to an
+  // already role-guarded existing endpoint (see ai.test.ts + the phase doc's
+  // Wave 2 status section for the six actions NOT here — genuine schema gaps,
+  // not a wiring omission).
+  | "menu.item.priceUpdate"
+  | "menu.item.disable"
+  | "order.discount.apply"
+  | "inventory.reorder.draftPO"
+  | "inventory.adjustment.propose"
+  | "reservation.create"
+  | "reservation.reschedule"
+  | "table.merge"
+  | "table.split"
+  | "courier.assign"
+  | "customer.note.add"
+  | "journal.manual.propose"
+  | "expense.categorize";
 
 export interface ActionMeta {
   type: ActionType;
+  /**
+   * The endpoint path. May contain `{paramName}` placeholders (e.g.
+   * `/api/orders/{orderId}`) for actions on an existing resource — the model
+   * must include that field in `payload`; see `resolveActionEndpoint`, which
+   * substitutes it before the client's "Apply" button fetches it.
+   */
   endpoint: string;
-  method: "POST";
+  method: "POST" | "PATCH" | "PUT";
   /** Persian label shown on the confirm card. */
   label: string;
   /** Which wizard step this completes, if any (drives "advance" after apply). */
@@ -207,6 +230,108 @@ export const ACTION_CATALOG: Record<ActionType, ActionMeta> = {
     payloadHint:
       "{ addItem: { categoryId: string, name: string, price: number /* integer Rial */, description?: string, sku?: string } }",
   },
+
+  // -- Phase 18b Wave 2 -------------------------------------------------------
+  "menu.item.priceUpdate": {
+    type: "menu.item.priceUpdate",
+    endpoint: "/api/menu/items/{menuItemId}",
+    method: "PATCH",
+    label: "تغییر قیمت آیتم منو",
+    payloadHint: "{ menuItemId: string, price: number /* integer Rial */ }",
+  },
+  "menu.item.disable": {
+    type: "menu.item.disable",
+    endpoint: "/api/menu/items/{menuItemId}",
+    method: "PATCH",
+    label: "غیرفعال کردن آیتم منو",
+    payloadHint: "{ menuItemId: string, isActive: false }",
+  },
+  "order.discount.apply": {
+    type: "order.discount.apply",
+    endpoint: "/api/orders/{orderId}",
+    method: "PATCH",
+    label: "اعمال تخفیف روی سفارش باز",
+    payloadHint:
+      '{ orderId: string, discount: { type: "percent"|"amount", value: number } } — فقط روی سفارش باز (status=open) اجرا می‌شود',
+  },
+  "inventory.reorder.draftPO": {
+    type: "inventory.reorder.draftPO",
+    endpoint: "/api/inventory/purchases",
+    method: "POST",
+    label: "ثبت پیش‌نویس سفارش خرید",
+    payloadHint:
+      '{ supplierId?: string, note?: string, items: Array<{ inventoryItemId: string, purchaseQty: string /* در واحد خرید کالا */, totalCost: string /* مبلغ کل ریال به‌صورت رشته */ }> }',
+  },
+  "inventory.adjustment.propose": {
+    type: "inventory.adjustment.propose",
+    endpoint: "/api/inventory/stock-counts",
+    method: "POST",
+    label: "ثبت شمارش و تعدیل موجودی",
+    payloadHint:
+      "{ note?: string, lines: Array<{ inventoryItemId: string, countedQty: number|string /* مقدار شمارش‌شدهٔ واقعی */ }> }",
+  },
+  "reservation.create": {
+    type: "reservation.create",
+    endpoint: "/api/reservations",
+    method: "POST",
+    label: "ثبت رزرو جدید",
+    payloadHint:
+      '{ tableId?: string, customerName: string, customerPhone?: string, partySize: number, reservedAt: string /* ISO */, durationMinutes?: number, note?: string, allowConflict?: boolean }',
+  },
+  "reservation.reschedule": {
+    type: "reservation.reschedule",
+    endpoint: "/api/reservations/{reservationId}",
+    method: "PATCH",
+    label: "تغییر زمان یا میز رزرو",
+    payloadHint:
+      "{ reservationId: string, reservedAt?: string, durationMinutes?: number, tableId?: string|null, allowConflict?: boolean }",
+  },
+  "table.merge": {
+    type: "table.merge",
+    endpoint: "/api/table-sessions/{tableSessionId}",
+    method: "PATCH",
+    label: "ادغام میز به یک نشست باز",
+    payloadHint: '{ tableSessionId: string, action: "merge", tableId: string }',
+  },
+  "table.split": {
+    type: "table.split",
+    endpoint: "/api/table-sessions/{tableSessionId}/split",
+    method: "POST",
+    label: "تقسیم صورت‌حساب میز",
+    payloadHint:
+      '{ tableSessionId: string, mode: "even"|"itemized", guests: number, assignments?: Record<string, number> /* itemized فقط: orderItemId → شمارهٔ مهمان */ }',
+  },
+  "courier.assign": {
+    type: "courier.assign",
+    endpoint: "/api/deliveries/{deliveryId}",
+    method: "PATCH",
+    label: "تخصیص پیک به سفارش تحویل",
+    payloadHint: '{ deliveryId: string, action: "assign", courierId: string|null }',
+  },
+  "customer.note.add": {
+    type: "customer.note.add",
+    endpoint: "/api/customers/{customerId}",
+    method: "PUT",
+    label: "افزودن یادداشت به پروفایل مشتری",
+    payloadHint:
+      "{ customerId: string, notes: string /* این فیلد کل یادداشت‌ها را جایگزین می‌کند — متن قبلی (از get_customer_profile) را با یادداشت جدید ترکیب کن */ }",
+  },
+  "journal.manual.propose": {
+    type: "journal.manual.propose",
+    endpoint: "/api/ledger/entries/drafts",
+    method: "POST",
+    label: "پیش‌نویس سند حسابداری دستی",
+    payloadHint:
+      "{ entryDate?: string, memo: string, lines: Array<{ accountId: string, debit?: number, credit?: number }> } — مجموع بدهکار باید با مجموع بستانکار برابر باشد؛ فقط به‌صورت پیش‌نویس ثبت می‌شود و برای اعمال روی دفتر نیاز به تأیید جداگانه دارد",
+  },
+  "expense.categorize": {
+    type: "expense.categorize",
+    endpoint: "/api/ledger/expenses",
+    method: "POST",
+    label: "ثبت و دسته‌بندی هزینه",
+    payloadHint:
+      "{ accountId: string /* حساب هزینه، کد ۵۲۰۰-۵۹۰۰ */, paymentAccountId: string /* حساب پرداخت: صندوق یا بانک */, amount: number, expenseDate?: string, vendor?: string, memo: string }",
+  },
 };
 
 /** A single mutation the agent wants to run, pending the user's "Apply". */
@@ -219,6 +344,25 @@ export interface ProposedAction {
 
 export function isKnownAction(type: unknown): type is ActionType {
   return typeof type === "string" && Object.prototype.hasOwnProperty.call(ACTION_CATALOG, type);
+}
+
+/**
+ * Substitutes `{paramName}` placeholders in an action's endpoint from its own
+ * proposed payload (e.g. `orderId` for `/api/orders/{orderId}`). Returns null
+ * if a placeholder's value is missing, so the caller can refuse to fetch a
+ * URL like `/api/orders/undefined` instead of hitting a confusing 404.
+ */
+export function resolveActionEndpoint(meta: ActionMeta, payload: Record<string, unknown>): string | null {
+  let missing = false;
+  const resolved = meta.endpoint.replace(/\{(\w+)\}/g, (_match, key: string) => {
+    const value = payload[key];
+    if (typeof value !== "string" && typeof value !== "number") {
+      missing = true;
+      return "";
+    }
+    return encodeURIComponent(String(value));
+  });
+  return missing ? null : resolved;
 }
 
 export const ACTION_TYPES = Object.keys(ACTION_CATALOG) as ActionType[];

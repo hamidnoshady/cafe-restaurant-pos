@@ -155,7 +155,7 @@ and lets the credit-pricing assumptions get validated against real usage before 
 4. Timing for Wave 5's real channel integrations (WhatsApp/Telegram/voice) — a fast-follow phase right
    after this one, or deferred indefinitely until there's demand? Not decided here.
 
-## Status: Wave 1 implemented (partial) — Waves 2–5 still planned
+## Status: Waves 1–2 implemented (both partial) — Waves 3–5 still planned
 
 Phase 18's metering is in place, so Wave 1 (read-only tools) has shipped, per this phase's own
 sequencing decision. 16 of the 20 tools listed under Wave 1 are implemented as `runReadTool` cases
@@ -193,5 +193,46 @@ Two implemented tools made a documented approximation rather than inventing new 
   column), so it returns open bills oldest-first as a payment-priority proxy, with the same kind of
   `note` field explaining why.
 
-Waves 2–5 (the `propose_action` catalogue expansion, role-scoped variants, background jobs, and UX
-layer) remain planned, not started.
+Wave 2 (the `propose_action` catalogue expansion) has since shipped, per the same pattern: 13 of
+the 19 actions listed under Wave 2 are new `ACTION_CATALOG` entries in `src/lib/ai.ts`, each mapping
+to an already role-guarded, real endpoint — no new mutation architecture, exactly like the six
+setup-wizard actions before them:
+
+`menu.item.priceUpdate`, `menu.item.disable` (both → `PATCH /api/menu/items/{id}`),
+`order.discount.apply` (→ `PATCH /api/orders/{id}`), `inventory.reorder.draftPO`
+(→ `POST /api/inventory/purchases`, status `draft`), `inventory.adjustment.propose`
+(→ `POST /api/inventory/stock-counts`), `reservation.create` (→ `POST /api/reservations`),
+`reservation.reschedule` (→ `PATCH /api/reservations/{id}`), `table.merge` (→
+`PATCH /api/table-sessions/{id}`, `action: "merge"`), `table.split` (→
+`POST /api/table-sessions/{id}/split`), `courier.assign` (→ `PATCH /api/deliveries/{id}`,
+`action: "assign"`), `customer.note.add` (→ `PUT /api/customers/{id}`), `journal.manual.propose`
+(→ `POST /api/ledger/entries/drafts`, feeding Phase 16's existing approval queue, never posting
+directly), and `expense.categorize` (→ `POST /api/ledger/expenses`).
+
+Some of these endpoints only accept `PATCH`/`PUT`, not `POST` like every setup-wizard action — so
+`ActionMeta.method` widened to `"POST" | "PATCH" | "PUT"` (still exactly one already-guarded
+endpoint per action, just not exclusively POST anymore). And several act on one specific existing
+resource (a menu item, an order, a reservation, …), which the setup-wizard actions never needed to
+address — so `ActionMeta.endpoint` may now contain a `{paramName}` placeholder (e.g.
+`/api/orders/{orderId}`), resolved from the model's own proposed payload by the new
+`resolveActionEndpoint` (pure, unit-tested in `ai.test.ts`) before the client's "Apply" button
+fetches it; a missing placeholder value refuses the fetch instead of hitting a confusing 404.
+
+Six actions from the original Wave 2 list are **not** implemented — again a genuine data-model gap
+discovered while wiring the rest, not a wiring omission, matching Wave 1's own precedent for
+`get_expiring_batches`/`get_delivery_zone_heatmap`/shift tools:
+
+- **`delivery.eta.adjust`** — `deliveries` has no ETA/estimated-time column at all (only
+  `dispatched_at`/`delivered_at`, set once each actually happens).
+- **`customer.creditLimit.propose`** — `customers` has no credit-limit column; AR exposure is only
+  ever computed from unpaid invoices (`get_ar_aging`), never capped against a stored limit.
+- **`staff.shift.create`** and **`staff.shift.swap.propose`** — same gap Wave 1 already found: no
+  staff shift/clock-in entity exists in the schema at all.
+- **`discount.create`** and **`promo.create`** — there's no reusable named-discount or promo-code
+  entity; the only discount mechanism today is the per-order `discount` field
+  `order.discount.apply` already covers.
+
+Building any of these six needs a schema decision first (a new column or a new entity), which
+wasn't judged in scope for widening an existing catalogue.
+
+Waves 3–5 (role-scoped variants, background jobs, and the UX layer) remain planned, not started.

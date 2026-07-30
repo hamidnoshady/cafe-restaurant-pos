@@ -8,6 +8,7 @@ import {
   isKnownAction,
   isProvider,
   PROVIDERS,
+  resolveActionEndpoint,
   toolDefinitions,
   toPublicConfig,
   validateConfigInput,
@@ -95,14 +96,84 @@ describe("action allowlist", () => {
     expect(isKnownAction(42)).toBe(false);
   });
 
-  it("every catalog entry maps to a POST endpoint and matches its key", () => {
+  it("every catalog entry maps to a real endpoint and matches its key", () => {
     for (const type of ACTION_TYPES) {
       const meta = ACTION_CATALOG[type];
       expect(meta.type).toBe(type);
-      expect(meta.method).toBe("POST");
+      expect(["POST", "PATCH", "PUT"]).toContain(meta.method);
       expect(meta.endpoint.startsWith("/api/")).toBe(true);
       expect(meta.label.length).toBeGreaterThan(0);
+      expect(meta.payloadHint.length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe("Phase 18b Wave 2 — propose_action catalogue expansion", () => {
+  const wave2Types = [
+    "menu.item.priceUpdate",
+    "menu.item.disable",
+    "order.discount.apply",
+    "inventory.reorder.draftPO",
+    "inventory.adjustment.propose",
+    "reservation.create",
+    "reservation.reschedule",
+    "table.merge",
+    "table.split",
+    "courier.assign",
+    "customer.note.add",
+    "journal.manual.propose",
+    "expense.categorize",
+  ] as const;
+
+  it("recognises every Wave 2 action", () => {
+    for (const type of wave2Types) {
+      expect(isKnownAction(type)).toBe(true);
+      expect(ACTION_TYPES).toContain(type);
+    }
+  });
+
+  it("the six documented schema-gap actions are deliberately absent, not just forgotten", () => {
+    for (const type of [
+      "delivery.eta.adjust",
+      "customer.creditLimit.propose",
+      "staff.shift.create",
+      "staff.shift.swap.propose",
+      "discount.create",
+      "promo.create",
+    ]) {
+      expect(isKnownAction(type)).toBe(false);
+    }
+  });
+
+  it("dashboard prompt's catalog dump names every Wave 2 action", () => {
+    const prompt = buildSystemPrompt({ mode: "dashboard" });
+    for (const type of wave2Types) {
+      expect(prompt).toContain(type);
+    }
+  });
+});
+
+describe("resolveActionEndpoint", () => {
+  it("substitutes a single placeholder from the payload", () => {
+    const meta = ACTION_CATALOG["menu.item.priceUpdate"];
+    expect(resolveActionEndpoint(meta, { menuItemId: "abc-123", price: 50000 })).toBe(
+      "/api/menu/items/abc-123",
+    );
+  });
+
+  it("URL-encodes the substituted value", () => {
+    const meta = ACTION_CATALOG["order.discount.apply"];
+    expect(resolveActionEndpoint(meta, { orderId: "a/b c" })).toBe("/api/orders/a%2Fb%20c");
+  });
+
+  it("returns null when a required placeholder is missing from the payload", () => {
+    const meta = ACTION_CATALOG["reservation.reschedule"];
+    expect(resolveActionEndpoint(meta, { reservedAt: "2026-01-01T10:00:00Z" })).toBeNull();
+  });
+
+  it("passes through endpoints with no placeholder untouched", () => {
+    const meta = ACTION_CATALOG["reservation.create"];
+    expect(resolveActionEndpoint(meta, {})).toBe("/api/reservations");
   });
 });
 

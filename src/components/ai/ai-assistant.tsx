@@ -12,7 +12,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
 import { BotIcon, CheckIcon, Loader2Icon, SendIcon, SparklesIcon, XIcon } from "lucide-react";
-import { ACTION_CATALOG, type ProposedAction } from "@/lib/ai";
+import { ACTION_CATALOG, resolveActionEndpoint, type ProposedAction } from "@/lib/ai";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -111,9 +111,14 @@ export function AiAssistant({ mode, currentStep }: Props) {
     if (!proposal) return;
     const meta = ACTION_CATALOG[proposal.type];
     if (!meta) return;
+    const endpoint = resolveActionEndpoint(meta, proposal.payload);
+    if (!endpoint) {
+      toast.error("شناسهٔ لازم برای اجرای این پیشنهاد در آن موجود نیست.");
+      return;
+    }
     setApplyingId(msg.id);
     try {
-      const res = await fetch(meta.endpoint, {
+      const res = await fetch(endpoint, {
         method: meta.method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(proposal.payload),
