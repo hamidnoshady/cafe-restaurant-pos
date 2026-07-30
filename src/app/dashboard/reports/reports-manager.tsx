@@ -39,7 +39,7 @@ export function ReportsManager({ role }: { role: string }) {
                 aria-controls={panelId}
                 onClick={() => setTab(item.key)}
                 className={[
-                  "min-h-12 shrink-0 rounded-lg px-4 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45",
+                  "min-h-[52px] shrink-0 rounded-lg px-4 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45",
                   selected
                     ? "bg-[#FFF1D8] font-bold text-[#8A5C00] shadow-[0_1px_1px_rgb(66_47_14/0.06)]"
                     : "text-[#77756F] hover:bg-white hover:text-[#252522]",
