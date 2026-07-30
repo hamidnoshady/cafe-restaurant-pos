@@ -3,10 +3,10 @@
 /**
  * Phase 14 — consolidated numbers across a business's own branches.
  *
- * Not the Phase 9 cross-server comparison (`/dashboard/locations`): this
- * reads `/api/reports/business-overview`, which queries the same reporting
- * views every per-branch report already reads, so these numbers can never
- * disagree with a branch's own reports.
+ * Not the Phase 9 cross-server comparison (dashboard/locations): this reads
+ * /api/reports/business-overview, which queries the same reporting views every
+ * per-branch report already reads, so these numbers can never disagree with a
+ * branch's own reports.
  */
 import { useEffect, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
@@ -31,8 +31,35 @@ interface Overview {
   consolidated: Omit<BranchRow, "locationId" | "locationName" | "isActive">;
 }
 
-function money(n: number): string {
-  return toPersianDigits(formatToman(n));
+function money(value: number): string {
+  return toPersianDigits(formatToman(value));
+}
+
+function BranchMetrics({ branch }: { branch: BranchRow }) {
+  return (
+    <dl className="grid grid-cols-2 gap-3">
+      <div>
+        <dt className="text-xs text-[#77756F]">تعداد سفارش</dt>
+        <dd className="mt-1 font-bold tabular-nums text-[#252522]">{toPersianDigits(String(branch.orderCount))}</dd>
+      </div>
+      <div>
+        <dt className="text-xs text-[#77756F]">فروش ناخالص</dt>
+        <dd className="mt-1 font-bold tabular-nums text-[#252522]">{money(branch.subtotal)}</dd>
+      </div>
+      <div>
+        <dt className="text-xs text-[#77756F]">بهای تمام‌شده</dt>
+        <dd className="mt-1 font-bold tabular-nums text-[#252522]">{money(branch.cogs)}</dd>
+      </div>
+      <div>
+        <dt className="text-xs text-[#77756F]">ضایعات</dt>
+        <dd className="mt-1 font-bold tabular-nums text-[#252522]">{money(branch.wasteCost)}</dd>
+      </div>
+      <div className="col-span-2 border-t border-[#F0EEE9] pt-3">
+        <dt className="text-xs text-[#77756F]">فروش خالص</dt>
+        <dd className="mt-1 text-base font-bold tabular-nums text-[#252522]">{money(branch.total)}</dd>
+      </div>
+    </dl>
+  );
 }
 
 export function BranchOverviewSection() {
@@ -42,66 +69,125 @@ export function BranchOverviewSection() {
 
   useEffect(() => {
     void (async () => {
-      const res = await api<Overview & { error?: string }>("/api/reports/business-overview");
-      if (res.ok) setData(res.data);
-      else setError(errorMessage(res.data.error));
+      const result = await api<Overview & { error?: string }>("/api/reports/business-overview");
+      if (result.ok) setData(result.data);
+      else setError(errorMessage(result.data.error));
       setLoading(false);
     })();
   }, []);
 
-  if (loading) return <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>;
+  if (loading) {
+    return (
+      <section
+        role="status"
+        aria-live="polite"
+        aria-label="در حال بارگذاری مقایسه شعب"
+        className="rounded-2xl border border-[#EAE8E2] bg-white px-5 py-8 text-sm text-[#77756F] shadow-[0_1px_2px_rgb(41_37_36/0.03)]"
+      >
+        در حال بارگذاری…
+      </section>
+    );
+  }
+
   if (error) return <ErrorBox>{error}</ErrorBox>;
   if (!data) return null;
 
   if (data.branches.length <= 1) {
     return (
-      <p className="text-sm text-muted-foreground">
-        این کسب‌وکار بیش از یک شعبه ندارد؛ مقایسه وقتی شعبهٔ دوم اضافه شود در دسترس خواهد بود.
-      </p>
+      <section className="rounded-2xl border border-dashed border-[#DEDAD2] bg-[#FCFBF8] p-5 sm:p-6">
+        <p className="text-xs font-semibold text-[#9B6700]">مقایسهٔ شعب</p>
+        <p className="mt-2 text-sm leading-6 text-[#77756F]">
+          این کسب‌وکار بیش از یک شعبه ندارد؛ مقایسه وقتی شعبهٔ دوم اضافه شود در دسترس خواهد بود.
+        </p>
+      </section>
     );
   }
 
   return (
-    <div className="overflow-x-auto rounded-lg border">
-      <table className="w-full text-sm">
-        <thead className="bg-muted/50">
-          <tr>
-            <th className="p-2 text-start">شعبه</th>
-            <th className="p-2 text-start">تعداد سفارش</th>
-            <th className="p-2 text-start">فروش ناخالص</th>
-            <th className="p-2 text-start">بهای تمام‌شده</th>
-            <th className="p-2 text-start">ضایعات</th>
-            <th className="p-2 text-start">فروش خالص</th>
-          </tr>
-        </thead>
-        <tbody>
-          {data.branches.map((branch) => (
-            <tr key={branch.locationId} className="border-t">
-              <td className="p-2">
-                {branch.locationName}
-                {!branch.isActive && (
-                  <span className="ms-2 rounded bg-muted px-1.5 py-0.5 text-xs">غیرفعال</span>
-                )}
-              </td>
-              <td className="p-2">{toPersianDigits(String(branch.orderCount))}</td>
-              <td className="p-2">{money(branch.subtotal)}</td>
-              <td className="p-2">{money(branch.cogs)}</td>
-              <td className="p-2">{money(branch.wasteCost)}</td>
-              <td className="p-2">{money(branch.total)}</td>
+    <section
+      aria-labelledby="branch-overview-heading"
+      className="overflow-hidden rounded-2xl border border-[#EAE8E2] bg-white shadow-[0_1px_2px_rgb(41_37_36/0.03)]"
+    >
+      <header className="border-b border-[#F0EEE9] px-4 py-4 sm:px-5">
+        <p className="text-xs font-semibold text-[#9B6700]">نمای یکپارچه</p>
+        <h2 id="branch-overview-heading" className="mt-1 text-lg font-bold text-[#252522]">
+          مقایسهٔ شعب
+        </h2>
+        <p className="mt-1 text-sm text-[#77756F]">اعداد تجمیعی بر پایهٔ گزارش‌های فعلی هر شعبه.</p>
+      </header>
+
+      <div className="hidden overflow-x-auto md:block">
+        <table className="min-w-[760px] w-full text-sm">
+          <caption className="sr-only">مقایسه عملکرد شعب</caption>
+          <thead className="bg-[#FCFBF8] text-[#77756F]">
+            <tr className="border-b border-[#EEECE7]">
+              <th scope="col" className="px-4 py-3.5 text-start text-xs font-semibold">شعبه</th>
+              <th scope="col" className="px-4 py-3.5 text-start text-xs font-semibold">تعداد سفارش</th>
+              <th scope="col" className="px-4 py-3.5 text-start text-xs font-semibold">فروش ناخالص</th>
+              <th scope="col" className="px-4 py-3.5 text-start text-xs font-semibold">بهای تمام‌شده</th>
+              <th scope="col" className="px-4 py-3.5 text-start text-xs font-semibold">ضایعات</th>
+              <th scope="col" className="px-4 py-3.5 text-start text-xs font-semibold">فروش خالص</th>
             </tr>
-          ))}
-        </tbody>
-        <tfoot>
-          <tr className="border-t bg-muted/30 font-semibold">
-            <td className="p-2">مجموع کسب‌وکار</td>
-            <td className="p-2">{toPersianDigits(String(data.consolidated.orderCount))}</td>
-            <td className="p-2">{money(data.consolidated.subtotal)}</td>
-            <td className="p-2">{money(data.consolidated.cogs)}</td>
-            <td className="p-2">{money(data.consolidated.wasteCost)}</td>
-            <td className="p-2">{money(data.consolidated.total)}</td>
-          </tr>
-        </tfoot>
-      </table>
-    </div>
+          </thead>
+          <tbody>
+            {data.branches.map((branch) => (
+              <tr key={branch.locationId} className="border-b border-[#F0EEE9] last:border-b-0">
+                <td className="px-4 py-4 font-semibold text-[#252522]">
+                  <span>{branch.locationName}</span>
+                  {!branch.isActive ? (
+                    <span className="ms-2 rounded-full bg-[#F5F3EE] px-2 py-1 text-xs font-medium text-[#5E5B55]">
+                      غیرفعال
+                    </span>
+                  ) : null}
+                </td>
+                <td className="px-4 py-4 tabular-nums text-[#252522]">{toPersianDigits(String(branch.orderCount))}</td>
+                <td className="px-4 py-4 tabular-nums text-[#252522]">{money(branch.subtotal)}</td>
+                <td className="px-4 py-4 tabular-nums text-[#252522]">{money(branch.cogs)}</td>
+                <td className="px-4 py-4 tabular-nums text-[#252522]">{money(branch.wasteCost)}</td>
+                <td className="px-4 py-4 font-bold tabular-nums text-[#252522]">{money(branch.total)}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot className="bg-[#FCFBF8]">
+            <tr className="border-t-2 border-[#DEDAD2] font-bold text-[#252522]">
+              <th scope="row" className="px-4 py-4 text-start">مجموع کسب‌وکار</th>
+              <td className="px-4 py-4 tabular-nums">{toPersianDigits(String(data.consolidated.orderCount))}</td>
+              <td className="px-4 py-4 tabular-nums">{money(data.consolidated.subtotal)}</td>
+              <td className="px-4 py-4 tabular-nums">{money(data.consolidated.cogs)}</td>
+              <td className="px-4 py-4 tabular-nums">{money(data.consolidated.wasteCost)}</td>
+              <td className="px-4 py-4 tabular-nums">{money(data.consolidated.total)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      <div className="space-y-3 p-4 md:hidden">
+        {data.branches.map((branch) => (
+          <article key={branch.locationId} className="rounded-xl border border-[#EEECE7] bg-[#FFFEFC] p-4">
+            <div className="mb-4 flex items-start justify-between gap-3 border-b border-[#F0EEE9] pb-3">
+              <h3 className="font-bold text-[#252522]">{branch.locationName}</h3>
+              {!branch.isActive ? (
+                <span className="shrink-0 rounded-full bg-[#F5F3EE] px-2 py-1 text-xs font-medium text-[#5E5B55]">
+                  غیرفعال
+                </span>
+              ) : null}
+            </div>
+            <BranchMetrics branch={branch} />
+          </article>
+        ))}
+
+        <article className="rounded-xl border border-[#DEDAD2] bg-[#FCFBF8] p-4">
+          <h3 className="mb-4 text-sm font-bold text-[#252522]">مجموع کسب‌وکار</h3>
+          <BranchMetrics
+            branch={{
+              locationId: "consolidated",
+              locationName: "مجموع کسب‌وکار",
+              isActive: true,
+              ...data.consolidated,
+            }}
+          />
+        </article>
+      </div>
+    </section>
   );
 }
