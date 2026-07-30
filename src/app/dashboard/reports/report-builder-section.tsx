@@ -31,7 +31,7 @@ interface SavedReportRow {
 }
 
 const AGG_LABELS: Record<Aggregation, string> = { sum: "جمع", avg: "میانگین", count: "تعداد" };
-const CONTROL_CLASS = [inputClass, "min-h-12 border-[#DEDAD2] bg-white text-[#252522]"].join(" ");
+const CONTROL_CLASS = [inputClass, "min-h-[52px] border-[#DEDAD2] bg-white text-[#252522]"].join(" ");
 
 export function ReportBuilderSection() {
   const [views, setViews] = useState<ViewMeta[] | null>(null);
@@ -240,7 +240,7 @@ export function ReportBuilderSection() {
               size="lg"
               onClick={preview}
               disabled={busy}
-              className="min-h-12 bg-[#E9A11B] px-5 font-bold text-[#3A290B] hover:bg-[#D9910E] focus-visible:ring-[#E9A11B]/45"
+              className="min-h-[52px] bg-[#E9A11B] px-5 font-bold text-[#3A290B] hover:bg-[#D9910E] focus-visible:ring-[#E9A11B]/45"
             >
               پیش‌نمایش
             </Button>
@@ -276,7 +276,7 @@ export function ReportBuilderSection() {
                 size="lg"
                 onClick={save}
                 disabled={busy}
-                className="min-h-12 border-[#DEDAD2] bg-white px-4 font-semibold text-[#252522] hover:bg-[#FCFBF8]"
+                className="min-h-[52px] border-[#DEDAD2] bg-white px-4 font-semibold text-[#252522] hover:bg-[#FCFBF8]"
               >
                 {editingId ? "به‌روزرسانی گزارش" : "ذخیرهٔ گزارش"}
               </Button>
@@ -289,7 +289,7 @@ export function ReportBuilderSection() {
                     setEditingId(null);
                     setName("");
                   }}
-                  className="min-h-12 px-4 text-[#5E5B55] hover:bg-[#FCFBF8]"
+                  className="min-h-[52px] px-4 text-[#5E5B55] hover:bg-[#FCFBF8]"
                 >
                   انصراف از ویرایش
                 </Button>
@@ -332,7 +332,7 @@ export function ReportBuilderSection() {
                   variant="outline"
                   size="lg"
                   onClick={() => loadIntoBuilder(report)}
-                  className="min-h-12 border-[#DEDAD2] bg-white px-4 text-[#252522] hover:bg-[#FCFBF8]"
+                  className="min-h-[52px] border-[#DEDAD2] bg-white px-4 text-[#252522] hover:bg-[#FCFBF8]"
                 >
                   ویرایش
                 </Button>
@@ -342,7 +342,7 @@ export function ReportBuilderSection() {
                   variant="outline"
                   size="lg"
                   onClick={() => remove(report.id)}
-                  className="min-h-12 border-[#EBC4C1] bg-white px-4 text-[#B42318] hover:bg-[#FDECEC]"
+                  className="min-h-[52px] border-[#EBC4C1] bg-white px-4 text-[#B42318] hover:bg-[#FDECEC]"
                 >
                   حذف
                 </Button>
