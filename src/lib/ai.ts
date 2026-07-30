@@ -283,6 +283,7 @@ export function buildSystemPrompt(ctx: PromptContext): string {
     lines.push(
       "در این حالت به کاربر (مالک/مدیر) کمک می‌کنی: نمایش و تحلیل گزارش‌ها (فروش، منو، موجودی، حسابداری)، پاسخ به سؤال دربارهٔ وضعیت راه‌اندازی، و انجام کارهای مجاز از طریق پیشنهادِ قابل‌تأیید.",
       "برای گزارش‌ها اول list_reports را صدا بزن تا کلیدهای معتبر را بدانی، سپس run_report را با key و در صورت نیاز بازهٔ تاریخ اجرا کن و خلاصهٔ خوانا بده.",
+      "علاوه بر گزارش‌های استاندارد، ابزارهای تخصصی هم داری: عملکرد منو و آیتم‌های باطل‌شده (get_menu_performance، get_void_pattern)، موجودی و تأمین‌کنندگان (get_stock_valuation، get_supplier_performance)، رزرو و میز (get_reservation_conflicts، get_table_turnover_rate)، پیک تحویل (get_courier_performance)، مشتریان (get_customer_profile، get_at_risk_customers)، حسابداری (get_ar_aging، get_ap_upcoming، get_unreconciled_bank_lines، get_payroll_summary، get_vat_liability)، مقایسهٔ شعبه‌ها (get_branch_comparison) و تخمین تقاضا (forecast_demand). هر کدام مناسب سؤال بود همان را صدا بزن؛ برای forecast_demand همیشه در پاسخ صریح بگو که یک تخمین است.",
     );
   }
 
@@ -300,6 +301,33 @@ export interface OpenAiTool {
     name: string;
     description: string;
     parameters: Record<string, unknown>;
+  };
+}
+
+/** A date-range tool with only optional dateFrom/dateTo params. */
+function dateRangeTool(name: string, description: string, extraProps: Record<string, unknown> = {}): OpenAiTool {
+  return {
+    type: "function",
+    function: {
+      name,
+      description,
+      parameters: {
+        type: "object",
+        properties: {
+          dateFrom: { type: "string", description: "از تاریخ (ISO)، اختیاری" },
+          dateTo: { type: "string", description: "تا تاریخ (ISO)، اختیاری" },
+          ...extraProps,
+        },
+        additionalProperties: false,
+      },
+    },
+  };
+}
+
+function noArgsTool(name: string, description: string): OpenAiTool {
+  return {
+    type: "function",
+    function: { name, description, parameters: { type: "object", properties: {}, additionalProperties: false } },
   };
 }
 
@@ -337,6 +365,97 @@ export function toolDefinitions(mode: AgentMode): OpenAiTool[] {
             dateTo: { type: "string", description: "تا تاریخ (ISO)، اختیاری" },
           },
           required: ["key"],
+          additionalProperties: false,
+        },
+      },
+    },
+    // Phase 18b Wave 1 — read-only tools across every module. Dashboard mode only
+    // (the wizard agent stays scoped to setup state), see READ_TOOL_NAMES in ai-tools.ts.
+    dateRangeTool(
+      "get_menu_performance",
+      "بهترین و بدترین اقلام منو از نظر فروش، و اقلامی که هرگز سفارش داده نشده‌اند (بازه پیش‌فرض: ۳۰ روز اخیر).",
+    ),
+    dateRangeTool(
+      "get_void_pattern",
+      "الگوی آیتم‌های باطل‌شده: بر اساس نوع آیتم، کارمند بازکننده سفارش، و ساعت روز (بازه پیش‌فرض: ۳۰ روز اخیر).",
+    ),
+    noArgsTool("get_stock_valuation", "ارزش‌گذاری فعلی موجودی انبار برای هر کالا و مجموع کل."),
+    dateRangeTool(
+      "get_supplier_performance",
+      "عملکرد تأمین‌کنندگان: تعداد خرید، مجموع مبلغ، و میانگین زمان تحویل (بازه پیش‌فرض: ۹۰ روز اخیر).",
+    ),
+    noArgsTool("get_reservation_conflicts", "رزروهای فعال آینده که روی یک میز با هم تداخل زمانی دارند."),
+    dateRangeTool(
+      "get_table_turnover_rate",
+      "میانگین مدت اشغال و درآمد هر میز بر اساس نشست‌های بسته‌شده (بازه پیش‌فرض: ۳۰ روز اخیر).",
+    ),
+    dateRangeTool(
+      "get_courier_performance",
+      "عملکرد پیک‌ها: تعداد تحویل، درآمد، هزینه پیک، و میانگین زمان تحویل (بازه پیش‌فرض: ۳۰ روز اخیر).",
+    ),
+    {
+      type: "function",
+      function: {
+        name: "get_customer_profile",
+        description: "پروفایل یک مشتری مشخص: اطلاعات تماس، تعداد و مجموع سفارش‌ها، اولین/آخرین خرید.",
+        parameters: {
+          type: "object",
+          properties: { customerId: { type: "string", description: "شناسه مشتری" } },
+          required: ["customerId"],
+          additionalProperties: false,
+        },
+      },
+    },
+    {
+      type: "function",
+      function: {
+        name: "get_at_risk_customers",
+        description: "مشتریان وفادار (حداقل چند سفارش) که مدتی است خرید نکرده‌اند.",
+        parameters: {
+          type: "object",
+          properties: {
+            minOrders: { type: "number", description: "حداقل تعداد سفارش تاریخی، پیش‌فرض ۳" },
+            lapsedDays: { type: "number", description: "چند روز از آخرین خرید گذشته باشد، پیش‌فرض ۳۰" },
+          },
+          additionalProperties: false,
+        },
+      },
+    },
+    {
+      type: "function",
+      function: {
+        name: "get_ar_aging",
+        description: "سنی حساب‌های دریافتنی (طلب از مشتریان) به تفکیک مشتری، در بازه‌های جاری/۳۰/۶۰/۹۰+ روز.",
+        parameters: {
+          type: "object",
+          properties: { asOfDate: { type: "string", description: "تاریخ مبنا (ISO)، پیش‌فرض امروز" } },
+          additionalProperties: false,
+        },
+      },
+    },
+    noArgsTool(
+      "get_ap_upcoming",
+      "فاکتورهای باز به تأمین‌کنندگان (بدون تاریخ سررسید ثبت‌شده)، مرتب‌شده بر اساس قدمت برای اولویت پرداخت.",
+    ),
+    noArgsTool("get_unreconciled_bank_lines", "ردیف‌های دفتر (نقد و بانک در جریان) که هنوز در هیچ مغایرت‌گیری تطبیق نشده‌اند."),
+    noArgsTool("get_payroll_summary", "خلاصه اجراهای اخیر حقوق و دستمزد و مجموع حقوق ماهانه کارکنان فعال."),
+    dateRangeTool("get_vat_liability", "مالیات بر ارزش افزوده فروش در برابر خرید و وضعیت بدهی خالص برای یک بازه."),
+    dateRangeTool(
+      "get_branch_comparison",
+      "مقایسه شعبه‌های همین کسب‌وکار: تعداد سفارش، درآمد، و برآورد هزینه نیروی انسانی (بازه پیش‌فرض: ۳۰ روز اخیر).",
+    ),
+    {
+      type: "function",
+      function: {
+        name: "forecast_demand",
+        description:
+          "تخمین ساده فروش/تقاضای آینده بر اساس میانگین ۲۸ روز گذشته — همیشه یک برآورد است، نه پیش‌بینی قطعی.",
+        parameters: {
+          type: "object",
+          properties: {
+            menuItemId: { type: "string", description: "برای تخمین یک آیتم منو مشخص، اختیاری" },
+            horizonDays: { type: "number", description: "تعداد روزهای آینده، پیش‌فرض ۷، حداکثر ۳۰" },
+          },
           additionalProperties: false,
         },
       },
