@@ -7,7 +7,6 @@ import {
   ArmchairIcon,
   BarChart3Icon,
   BotIcon,
-  Building2Icon,
   CalendarDaysIcon,
   CalculatorIcon,
   ChefHatIcon,
@@ -70,7 +69,6 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   "/dashboard/inventory": PackageIcon,
   "/dashboard/ledger": CalculatorIcon,
   "/dashboard/reports": BarChart3Icon,
-  "/dashboard/branches": Building2Icon,
   "/dashboard/ai": BotIcon,
   "/dashboard/settings": SettingsIcon,
 };
