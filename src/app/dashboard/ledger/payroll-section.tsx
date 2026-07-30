@@ -138,7 +138,7 @@ export function PayrollSection({ busy, run, refreshKey }: { busy: boolean; run: 
                 <label className="block text-sm font-medium">
                   <span className="mb-1.5 block text-xs text-muted-foreground">حقوق ماهانه (تومان)</span>
                   <input
-                    className={${inputClass} w-full}
+                    className={inputClass + " w-full"}
                     dir="ltr"
                     inputMode="numeric"
                     value={wageInputs[s.id] ?? ""}
