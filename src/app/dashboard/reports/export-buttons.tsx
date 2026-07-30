@@ -4,7 +4,11 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { triggerExport, type ExportRequest } from "./report-ui";
 
-export function ExportButtons({ request }: { request: Omit<ExportRequest, "format"> }) {
+export function ExportButtons({
+  request,
+}: {
+  request: Omit<ExportRequest, "format">;
+}) {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState("");
 
@@ -17,7 +21,10 @@ export function ExportButtons({ request }: { request: Omit<ExportRequest, "forma
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-2" aria-busy={busy !== null}>
+    <div
+      className="flex flex-wrap items-center gap-2"
+      aria-busy={busy !== null}
+    >
       <Button
         type="button"
         variant="outline"
@@ -48,7 +55,11 @@ export function ExportButtons({ request }: { request: Omit<ExportRequest, "forma
       >
         {busy === "pdf" ? "در حال آماده‌سازی…" : "خروجی PDF"}
       </Button>
-      {error ? <span role="alert" className="text-xs text-destructive">{error}</span> : null}
+      {error ? (
+        <span role="alert" className="text-xs text-destructive">
+          {error}
+        </span>
+      ) : null}
     </div>
   );
 }
