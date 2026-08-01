@@ -117,7 +117,7 @@ describe("every API route is guarded", () => {
   for (const [key, src] of sources) {
     it(`${key} is guarded or explicitly public`, () => {
       if (key === "v1" || key.startsWith("v1/")) {
-        expect(src, `src/app/api/${key}/route.ts must authenticate a scoped API key`).toSatisfy(isApiKeyGuarded);
+        expect(isApiKeyGuarded(src), `src/app/api/${key}/route.ts must authenticate a scoped API key`).toBe(true);
         return;
       }
       if (PUBLIC_ROUTES[key]) return; // documented public route
