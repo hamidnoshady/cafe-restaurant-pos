@@ -73,18 +73,24 @@ async function callProvider(
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   let res: Response;
   try {
+    // Some OpenAI-compatible providers reject an explicit empty tools array.
+    // Proactive Wave 4 digests deliberately have no tools, because their
+    // tenant-scoped facts are collected before the provider is called.
+    const body: Record<string, unknown> = {
+      model: config.model,
+      messages,
+      temperature: config.temperature,
+      max_tokens: config.maxOutputTokens,
+      stream: false,
+    };
+    if (tools.length > 0) {
+      body.tools = tools;
+      body.tool_choice = "auto";
+    }
     res = await fetch(chatCompletionsUrl(config.baseUrl), {
       method: "POST",
       headers: providerHeaders(config),
-      body: JSON.stringify({
-        model: config.model,
-        messages,
-        tools,
-        tool_choice: "auto",
-        temperature: config.temperature,
-        max_tokens: config.maxOutputTokens,
-        stream: false,
-      }),
+      body: JSON.stringify(body),
       signal: controller.signal,
     });
   } catch (err) {
