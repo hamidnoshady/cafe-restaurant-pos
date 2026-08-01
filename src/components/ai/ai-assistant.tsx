@@ -1,32 +1,55 @@
 "use client";
 
 /**
- * Floating AI assistant: a bottom-left launcher that opens a chat panel. Works in
- * three modes — "wizard" (helps fill the setup steps), "dashboard" (reports +
- * confirmed jobs), and "floor" (cashier/waiter read-only help). Every mutation
- * the manager agent proposes is shown as a confirm card; floor mode never
- * receives or renders a proposal.
+ * Floating AI assistant. Wave 5 adds a deliberate cost preview, suggested
+ * prompts, provider-streamed text and a tenant-scoped audit outcome for every
+ * confirmed proposal; it does not widen the existing action allowlist.
  */
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
-import { BotIcon, CheckIcon, Loader2Icon, SendIcon, SparklesIcon, XIcon } from "lucide-react";
+import {
+  BotIcon,
+  CheckIcon,
+  Loader2Icon,
+  SendIcon,
+  SparklesIcon,
+  XIcon,
+} from "lucide-react";
 import { ACTION_CATALOG, resolveActionEndpoint, type ProposedAction } from "@/lib/ai";
+import { formatToman } from "@/lib/money";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+
+type AssistantMode = "wizard" | "dashboard" | "floor";
 
 interface Msg {
   id: string;
   role: "user" | "assistant";
   content: string;
   proposal?: ProposedAction | null;
+  auditId?: string | null;
   applied?: boolean;
 }
 
 interface Props {
-  mode: "wizard" | "dashboard" | "floor";
+  mode: AssistantMode;
   currentStep?: string | null;
+}
+
+interface TurnEstimate {
+  estimatedCostRial: number;
+  maximumReservationRial: number;
+  estimatedInputTokens: number;
+  estimatedOutputTokens: number;
+  assumedToolRounds: number;
+  hasTools: boolean;
+}
+
+interface PendingTurn {
+  text: string;
+  estimate: TurnEstimate;
 }
 
 const uid = () => Math.random().toString(36).slice(2);
@@ -42,7 +65,25 @@ const CHAT_ERROR: Record<string, string> = {
   empty_messages: "پیامی برای ارسال نیست.",
 };
 
-function greeting(mode: "wizard" | "dashboard" | "floor"): string {
+const SUGGESTED_PROMPTS: Record<AssistantMode, string[]> = {
+  wizard: [
+    "برای تکمیل این مرحله چه اطلاعاتی لازم است؟",
+    "یک منوی اولیهٔ ساده برای کافه پیشنهاد بده.",
+    "تنظیمات مالیات و روش قیمت‌گذاری را بررسی کن.",
+  ],
+  dashboard: [
+    "فروش هفتهٔ اخیر را خلاصه و با هفتهٔ قبل مقایسه کن.",
+    "کدام آیتم‌های منو عملکرد ضعیف‌تری دارند؟",
+    "موجودی کم و پیشنهادهای خرید را بررسی کن.",
+  ],
+  floor: [
+    "مواد اولیهٔ ثبت‌شدهٔ یک آیتم منو را بگو.",
+    "صورت‌حساب میز ۳ را برای ۴ نفر تقسیم کن.",
+    "برای سؤال حساسیت غذایی چه داده‌ای ثبت شده است؟",
+  ],
+};
+
+function greeting(mode: AssistantMode): string {
   if (mode === "wizard") {
     return "سلام! من دستیار راه‌اندازی هستم. بگویید کافه یا رستوران‌تان چه ویژگی‌هایی دارد تا با هم فیلدهای هر مرحله را کامل کنیم. هر تغییری قبل از ثبت، تأیید شما را لازم دارد.";
   }
@@ -52,6 +93,21 @@ function greeting(mode: "wizard" | "dashboard" | "floor"): string {
   return "سلام! می‌توانم گزارش‌های فروش، منو، موجودی و حسابداری را نشان دهم، وضعیت راه‌اندازی را بررسی کنم و کارهای مجاز را با تأیید شما انجام دهم. چه کمکی از من برمی‌آید؟";
 }
 
+function errorMessage(data: Record<string, unknown>): string {
+  return CHAT_ERROR[String(data.error ?? "")] ??
+    (typeof data.message === "string" ? data.message : "خطا در ارتباط با دستیار.");
+}
+
+function isEstimate(value: unknown): value is TurnEstimate {
+  if (!value || typeof value !== "object") return false;
+  const item = value as Record<string, unknown>;
+  return (
+    typeof item.estimatedCostRial === "number" &&
+    typeof item.maximumReservationRial === "number" &&
+    typeof item.assumedToolRounds === "number"
+  );
+}
+
 export function AiAssistant({ mode, currentStep }: Props) {
   const router = useRouter();
   const canPropose = mode === "wizard" || mode === "dashboard";
@@ -59,6 +115,8 @@ export function AiAssistant({ mode, currentStep }: Props) {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [estimating, setEstimating] = useState(false);
+  const [pending, setPending] = useState<PendingTurn | null>(null);
   const [applyingId, setApplyingId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -70,55 +128,159 @@ export function AiAssistant({ mode, currentStep }: Props) {
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages, busy]);
+  }, [messages, busy, pending]);
 
-  async function send() {
-    const text = input.trim();
-    if (!text || busy) return;
-    const userMsg: Msg = { id: uid(), role: "user", content: text };
-    const history = [...messages, userMsg];
-    setMessages(history);
-    setInput("");
-    setBusy(true);
+  useEffect(() => {
+    function prefill(event: Event) {
+      const detail = (event as CustomEvent<{ prompt?: unknown }>).detail;
+      const prompt = typeof detail?.prompt === "string" ? detail.prompt.trim().slice(0, 8_000) : "";
+      if (!prompt) return;
+      setOpen(true);
+      setPending(null);
+      setInput(prompt);
+    }
+    window.addEventListener("ai:prefill", prefill);
+    return () => window.removeEventListener("ai:prefill", prefill);
+  }, []);
 
+  async function prepareSend(textOverride?: string) {
+    const text = (textOverride ?? input).trim();
+    if (!text || busy || estimating || pending) return;
+
+    const candidateHistory = [...messages, { id: uid(), role: "user" as const, content: text }];
+    setEstimating(true);
     try {
-      const res = await fetch("/api/ai/chat", {
+      const response = await fetch("/api/ai/estimate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           mode,
           currentStep: currentStep ?? null,
-          messages: history.map((m) => ({ role: m.role, content: m.content })),
+          messages: candidateHistory.map((message) => ({ role: message.role, content: message.content })),
         }),
       });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        const msg = CHAT_ERROR[data.error as string] ?? data.message ?? "خطا در ارتباط با دستیار.";
-        setMessages((prev) => [...prev, { id: uid(), role: "assistant", content: `⚠️ ${msg}` }]);
-        return;
+      const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+      if (!response.ok || !isEstimate(data)) throw new Error(errorMessage(data));
+      setInput("");
+      setPending({ text, estimate: data });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "محاسبهٔ برآورد هزینه ممکن نشد.");
+    } finally {
+      setEstimating(false);
+    }
+  }
+
+  async function startStream(text: string) {
+    if (busy) return;
+    const userMsg: Msg = { id: uid(), role: "user", content: text };
+    const replyId = uid();
+    const history = [...messages, userMsg];
+    setMessages([...history, { id: replyId, role: "assistant", content: "" }]);
+    setPending(null);
+    setBusy(true);
+
+    function setReply(update: (current: Msg) => Msg) {
+      setMessages((current) => current.map((message) => (message.id === replyId ? update(message) : message)));
+    }
+
+    function receiveEvent(block: string): boolean {
+      let event = "message";
+      let data = "";
+      for (const line of block.split(/\r?\n/)) {
+        if (line.startsWith("event:")) event = line.slice(6).trim();
+        if (line.startsWith("data:")) data += line.slice(5).trim();
       }
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: uid(),
-          role: "assistant",
-          content: data.content ?? "",
-          proposal: canPropose ? data.proposedAction ?? null : null,
-        },
-      ]);
-    } catch {
-      setMessages((prev) => [
-        ...prev,
-        { id: uid(), role: "assistant", content: "⚠️ اتصال برقرار نشد. دوباره تلاش کنید." },
-      ]);
+      if (!data) return false;
+      let payload: Record<string, unknown>;
+      try {
+        payload = JSON.parse(data) as Record<string, unknown>;
+      } catch {
+        return false;
+      }
+
+      if (event === "delta" && typeof payload.content === "string") {
+        setReply((current) => ({ ...current, content: current.content + payload.content }));
+        return false;
+      }
+      if (event === "reset") {
+        setReply((current) => ({ ...current, content: "" }));
+        return false;
+      }
+      if (event === "done") {
+        setReply((current) => ({
+          ...current,
+          content: typeof payload.content === "string" ? payload.content : current.content,
+          proposal: canPropose ? (payload.proposedAction as ProposedAction | null | undefined) ?? null : null,
+          auditId: typeof payload.auditId === "string" ? payload.auditId : null,
+        }));
+        return true;
+      }
+      if (event === "error") {
+        setReply((current) => ({ ...current, content: "⚠️ " + errorMessage(payload) }));
+        return true;
+      }
+      return false;
+    }
+
+    try {
+      const response = await fetch("/api/ai/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+        body: JSON.stringify({
+          mode,
+          currentStep: currentStep ?? null,
+          messages: history.map((message) => ({ role: message.role, content: message.content })),
+        }),
+      });
+      if (!response.ok) {
+        const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+        throw new Error(errorMessage(data));
+      }
+      if (!response.body) throw new Error("پاسخ جریانی دستیار در دسترس نیست.");
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let complete = false;
+      try {
+        while (!complete) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const events = buffer.split(/\r?\n\r?\n/);
+          buffer = events.pop() ?? "";
+          for (const event of events) {
+            if (receiveEvent(event)) {
+              complete = true;
+              break;
+            }
+          }
+        }
+        buffer += decoder.decode();
+        if (!complete && buffer) complete = receiveEvent(buffer);
+      } finally {
+        reader.releaseLock();
+      }
+      if (!complete) {
+        setReply((current) => ({
+          ...current,
+          content: current.content || "⚠️ پاسخ دستیار کامل نشد. دوباره تلاش کنید.",
+        }));
+      }
+    } catch (error) {
+      setReply(() => ({
+        id: replyId,
+        role: "assistant",
+        content: "⚠️ " + (error instanceof Error ? error.message : "اتصال برقرار نشد. دوباره تلاش کنید."),
+      }));
     } finally {
       setBusy(false);
     }
   }
 
-  async function applyProposal(msg: Msg) {
+  async function applyProposal(message: Msg) {
     if (!canPropose) return;
-    const proposal = msg.proposal;
+    const proposal = message.proposal;
     if (!proposal) return;
     const meta = ACTION_CATALOG[proposal.type];
     if (!meta) return;
@@ -127,23 +289,42 @@ export function AiAssistant({ mode, currentStep }: Props) {
       toast.error("شناسهٔ لازم برای اجرای این پیشنهاد در آن موجود نیست.");
       return;
     }
-    setApplyingId(msg.id);
+    setApplyingId(message.id);
     try {
-      const res = await fetch(endpoint, {
+      const response = await fetch(endpoint, {
         method: meta.method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(proposal.payload),
       });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        const detail = Array.isArray(data.messages) ? data.messages.join(" ") : (data.error ?? "");
+      const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+      if (!response.ok) {
+        const detail = Array.isArray(data.messages)
+          ? data.messages.join(" ")
+          : typeof data.error === "string"
+            ? data.error
+            : "";
+        if (message.auditId) {
+          void finishAudit(message.auditId, "failed", { endpoint, method: meta.method, detail });
+        }
         toast.error(`ثبت انجام نشد. ${detail}`.trim());
         return;
       }
-      setMessages((prev) => prev.map((m) => (m.id === msg.id ? { ...m, applied: true } : m)));
-      toast.success(`${meta.label} انجام شد.`);
+
+      let auditUpdated = true;
+      if (message.auditId) {
+        try {
+          await finishAudit(message.auditId, "applied", { endpoint, method: meta.method, status: response.status });
+        } catch {
+          auditUpdated = false;
+        }
+      }
+      setMessages((current) => current.map((item) => (item.id === message.id ? { ...item, applied: true } : item)));
+      toast.success(
+        auditUpdated
+          ? `${meta.label} انجام شد.`
+          : `${meta.label} انجام شد؛ اما ثبت نتیجه در گزارش ممیزی ممکن نشد.`,
+      );
       router.refresh();
-      // In the wizard, jump to the next incomplete step so progress keeps flowing.
       if (mode === "wizard" && meta.wizardStep) {
         setTimeout(() => router.push("/setup"), 400);
       }
@@ -154,13 +335,39 @@ export function AiAssistant({ mode, currentStep }: Props) {
     }
   }
 
-  function dismissProposal(id: string) {
-    setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, proposal: null } : m)));
+  async function finishAudit(
+    id: string,
+    status: "applied" | "failed" | "dismissed",
+    result?: Record<string, unknown>,
+  ) {
+    const response = await fetch("/api/ai/action-audit", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, status, result }),
+    });
+    if (!response.ok) throw new Error("audit_update_failed");
   }
+
+  function dismissProposal(message: Msg) {
+    if (message.auditId) {
+      void finishAudit(message.auditId, "dismissed").catch(() => {
+        toast.error("پیشنهاد رد شد، اما ثبت آن در گزارش ممیزی ممکن نشد.");
+      });
+    }
+    setMessages((current) =>
+      current.map((item) => (item.id === message.id ? { ...item, proposal: null } : item)),
+    );
+  }
+
+  const showSuggestions =
+    messages.length === 1 &&
+    messages[0]?.role === "assistant" &&
+    !busy &&
+    !estimating &&
+    !pending;
 
   return (
     <>
-      {/* Launcher — bottom-left (physical left, per request) */}
       {!open && (
         <button
           type="button"
@@ -173,7 +380,7 @@ export function AiAssistant({ mode, currentStep }: Props) {
       )}
 
       {open && (
-        <div className="fixed bottom-5 left-5 z-50 flex h-[min(70vh,560px)] w-[min(92vw,380px)] flex-col overflow-hidden rounded-2xl border bg-card shadow-2xl ring-1 ring-foreground/10">
+        <div className="fixed bottom-5 left-5 z-50 flex h-[min(74vh,610px)] w-[min(92vw,410px)] flex-col overflow-hidden rounded-2xl border bg-card shadow-2xl ring-1 ring-foreground/10">
           <header className="flex items-center justify-between border-b bg-primary/5 px-4 py-3">
             <div className="flex items-center gap-2">
               <span className="flex size-8 items-center justify-center rounded-full bg-primary/15 text-primary">
@@ -196,57 +403,108 @@ export function AiAssistant({ mode, currentStep }: Props) {
           </header>
 
           <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-3 py-3">
-            {messages.map((m) => (
-              <div key={m.id} className={cn("flex", m.role === "user" ? "justify-start" : "justify-end")}>
+            {messages.map((message) => (
+              <div key={message.id} className={cn("flex", message.role === "user" ? "justify-start" : "justify-end")}>
                 <div className="max-w-[85%] space-y-2">
                   <div
                     className={cn(
                       "whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm leading-relaxed",
-                      m.role === "user"
+                      message.role === "user"
                         ? "bg-primary text-primary-foreground"
                         : "bg-muted text-foreground",
                     )}
                   >
-                    {m.content}
+                    {message.content || (busy ? <span className="text-muted-foreground">در حال دریافت پاسخ…</span> : null)}
                   </div>
-                  {canPropose && m.proposal && (
+                  {canPropose && message.proposal ? (
                     <ProposalCard
-                      proposal={m.proposal}
-                      applied={m.applied}
-                      applying={applyingId === m.id}
-                      onApply={() => applyProposal(m)}
-                      onDismiss={() => dismissProposal(m.id)}
+                      proposal={message.proposal}
+                      applied={message.applied}
+                      applying={applyingId === message.id}
+                      onApply={() => void applyProposal(message)}
+                      onDismiss={() => dismissProposal(message)}
                     />
-                  )}
+                  ) : null}
                 </div>
               </div>
             ))}
-            {busy && (
-              <div className="flex justify-end">
-                <div className="flex items-center gap-2 rounded-2xl bg-muted px-3 py-2 text-sm text-muted-foreground">
-                  <Loader2Icon className="size-4 animate-spin" /> در حال فکر کردن…
+
+            {showSuggestions ? (
+              <div className="rounded-xl border border-dashed bg-muted/30 p-2.5">
+                <p className="mb-2 text-xs font-medium text-muted-foreground">برای شروع، یکی را انتخاب کنید:</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {SUGGESTED_PROMPTS[mode].map((suggestion) => (
+                    <button
+                      key={suggestion}
+                      type="button"
+                      onClick={() => void prepareSend(suggestion)}
+                      className="rounded-full border bg-background px-2.5 py-1.5 text-right text-[11px] leading-4 transition-colors hover:border-primary/40 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      {suggestion}
+                    </button>
+                  ))}
                 </div>
               </div>
-            )}
+            ) : null}
+
+            {busy ? (
+              <div className="flex justify-end">
+                <div className="flex items-center gap-2 rounded-2xl bg-muted px-3 py-2 text-sm text-muted-foreground">
+                  <Loader2Icon className="size-4 animate-spin" /> پاسخ به‌صورت زنده در حال دریافت است…
+                </div>
+              </div>
+            ) : null}
           </div>
 
           <div className="border-t p-2">
+            {pending ? (
+              <div className="mb-2 rounded-xl border border-primary/25 bg-primary/5 p-2.5 text-xs">
+                <p className="font-semibold text-foreground">
+                  برآورد هزینه: {formatToman(pending.estimate.estimatedCostRial)}
+                </p>
+                <p className="mt-1 leading-5 text-muted-foreground">
+                  بر پایهٔ {pending.estimate.assumedToolRounds} نوبت پاسخ/ابزار محاسبه شده است. حداکثر رزرو این درخواست: {formatToman(pending.estimate.maximumReservationRial)}؛ مبلغ نهایی بر اساس مصرف واقعی تسویه می‌شود.
+                </p>
+                <div className="mt-2 flex gap-2">
+                  <Button size="sm" onClick={() => void startStream(pending.text)} disabled={busy}>
+                    <SendIcon className="rtl:-scale-x-100" /> شروع پاسخ
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setInput(pending.text);
+                      setPending(null);
+                    }}
+                    disabled={busy}
+                  >
+                    ویرایش
+                  </Button>
+                </div>
+              </div>
+            ) : null}
             <div className="flex items-end gap-2">
               <textarea
                 value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    void send();
+                onChange={(event) => setInput(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && !event.shiftKey) {
+                    event.preventDefault();
+                    void prepareSend();
                   }
                 }}
                 rows={1}
-                placeholder="پیام خود را بنویسید…"
-                className="max-h-28 min-h-9 flex-1 resize-none rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
+                disabled={busy || estimating || Boolean(pending)}
+                placeholder={estimating ? "در حال محاسبهٔ برآورد…" : "پیام خود را بنویسید…"}
+                className="max-h-28 min-h-9 flex-1 resize-none rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-input/30"
               />
-              <Button size="icon" onClick={() => void send()} disabled={busy || !input.trim()} aria-label="ارسال">
-                <SendIcon className="rtl:-scale-x-100" />
+              <Button
+                size="icon"
+                onClick={() => void prepareSend()}
+                disabled={busy || estimating || Boolean(pending) || !input.trim()}
+                aria-label="نمایش برآورد هزینه"
+              >
+                {estimating ? <Loader2Icon className="animate-spin" /> : <SendIcon className="rtl:-scale-x-100" />}
               </Button>
             </div>
             {mode === "floor" ? (
@@ -255,9 +513,9 @@ export function AiAssistant({ mode, currentStep }: Props) {
               </p>
             ) : (
               <p className="mt-1 px-1 text-[10px] text-muted-foreground">
-                دستیار ممکن است اشتباه کند؛ تغییرها فقط با تأیید شما ثبت می‌شوند.{" "}
+                هزینهٔ تخمینی پیش از ارسال نشان داده می‌شود؛ تغییرها فقط با تأیید شما ثبت می‌شوند.{" "}
                 <Link href="/dashboard/ai" className="underline underline-offset-2 hover:text-foreground">
-                  اعتبار و اشتراک
+                  اعتبار، اشتراک و گزارش ممیزی
                 </Link>
               </p>
             )}
@@ -288,7 +546,7 @@ function ProposalCard({
         <SparklesIcon className="size-4" />
         {proposal.title || meta?.label}
       </div>
-      {proposal.summary && <p className="mb-2 text-foreground/90">{proposal.summary}</p>}
+      {proposal.summary ? <p className="mb-2 text-foreground/90">{proposal.summary}</p> : null}
       <pre
         dir="ltr"
         className="mb-2 max-h-40 overflow-auto rounded-lg bg-background/70 p-2 text-left text-[11px] text-muted-foreground"
