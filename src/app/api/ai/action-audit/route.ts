@@ -38,8 +38,12 @@ export const PATCH = withTenantScope(async (request: NextRequest) => {
   }
 
   const id = typeof body.id === "string" ? body.id.trim() : "";
-  const status = body.status;
-  if (!id || id.length > 100 || !TERMINAL_STATUSES.includes(status as AiActionAuditStatus)) {
+  const status =
+    typeof body.status === "string" &&
+    TERMINAL_STATUSES.includes(body.status as Exclude<AiActionAuditStatus, "proposed">)
+      ? (body.status as Exclude<AiActionAuditStatus, "proposed">)
+      : null;
+  if (!id || id.length > 100 || !status) {
     return NextResponse.json({ error: "invalid_audit_update" }, { status: 400 });
   }
   const result =
@@ -50,7 +54,7 @@ export const PATCH = withTenantScope(async (request: NextRequest) => {
   const updated = await finishAiActionAudit({
     businessId: guard.session.businessId,
     id,
-    status: status as Exclude<AiActionAuditStatus, "proposed">,
+    status,
     result,
   });
   if (!updated) return NextResponse.json({ error: "not_found" }, { status: 404 });
