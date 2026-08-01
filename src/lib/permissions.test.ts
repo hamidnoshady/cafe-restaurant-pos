@@ -127,3 +127,23 @@ describe("parseOverrides", () => {
     });
   });
 });
+
+
+describe("owner-only permissions", () => {
+  it("does not let overrides delegate API credential management", () => {
+    expect(hasPermission("owner", null, PERMISSIONS.apiManage)).toBe(true);
+    for (const role of ["manager", "accountant", "cashier", "waiter", "kitchen"] as const) {
+      expect(hasPermission(role, null, PERMISSIONS.apiManage)).toBe(false);
+      expect(
+        hasPermission(role, { granted: [PERMISSIONS.apiManage] }, PERMISSIONS.apiManage),
+      ).toBe(false);
+    }
+  });
+
+  it("drops a legacy owner-only override instead of preserving a delegation", () => {
+    expect(parseOverrides({ granted: [PERMISSIONS.apiManage], revoked: [PERMISSIONS.apiManage] })).toEqual({
+      granted: [],
+      revoked: [],
+    });
+  });
+});
