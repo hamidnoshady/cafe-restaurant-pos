@@ -59,11 +59,12 @@ Three rules follow:
   `integration/tenant-isolation.integration.test.ts` fails if one is missing — that failure
   is a real bug, not a test to update.
 - **Don't add `withoutTenantScope()` calls casually.** Each one is a hole in the isolation
-  boundary. Four reasons are justified today (see `src/lib/db.ts`'s doc comment on
+  boundary. Five reasons are justified today (see `src/lib/db.ts`'s doc comment on
   `withoutTenantScope` for the authoritative list): resolving a login email to its memberships
   before a business is chosen; platform administration; resolving a server-sync bearer token to
-  its business before any tenant is chosen (the same shape as login); and a narrow write to the
-  global `platform_users` table on behalf of an already-verified in-business membership (e.g.
+  its business before any tenant is chosen (the same shape as login); resolving a public API bearer
+  key to its business/location before a tenant has been selected; and a narrow write to the global
+  `platform_users` table on behalf of an already-verified in-business membership (e.g.
   a password reset). Anything else is a new hole — think hard before adding one.
 - **Background work must scope itself.** Anything running outside a request — the ticks in
   `server.ts`, scripts — has no session to derive a tenant from, so it enumerates businesses
