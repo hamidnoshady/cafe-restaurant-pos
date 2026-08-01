@@ -7,7 +7,12 @@
  *  3. Add staff — PIN-based cashier/waiter/kitchen, who have no email.
  */
 import { useCallback, useEffect, useState } from "react";
-import { ALL_PERMISSIONS, roleBasePermissions, type Permission } from "@/lib/permissions";
+import {
+  ALL_PERMISSIONS,
+  isOwnerOnlyPermission,
+  roleBasePermissions,
+  type Permission,
+} from "@/lib/permissions";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import { ErrorBox, Field, InfoBox, PrimaryButton, SecondaryButton, api, errorMessage, inputClass } from "../ui";
@@ -54,6 +59,7 @@ const PERMISSION_LABELS: Record<string, string> = {
   "settings.manage": "تنظیمات",
   "locations.manage": "مدیریت شعبه",
   "backup.manage": "پشتیبان‌گیری",
+  "api.manage": "مدیریت کلیدهای API",
 };
 
 interface Member {
@@ -249,7 +255,7 @@ function PermissionEditor({
         <InfoBox>مالک به همهٔ بخش‌ها دسترسی دارد و دسترسی‌هایش قابل محدود کردن نیست.</InfoBox>
       ) : (
         <div className="grid grid-cols-2 gap-1 sm:grid-cols-3">
-          {ALL_PERMISSIONS.map((permission: Permission) => (
+          {ALL_PERMISSIONS.filter((permission) => !isOwnerOnlyPermission(permission)).map((permission: Permission) => (
             <label key={permission} className="flex items-center gap-2 text-sm">
               <input
                 type="checkbox"
