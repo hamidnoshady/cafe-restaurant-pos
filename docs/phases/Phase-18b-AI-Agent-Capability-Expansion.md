@@ -60,8 +60,9 @@ and lets the credit-pricing assumptions get validated against real usage before 
   against menu/order/table data; deliberately ships with **no** `propose_action` tool at all — too
   much blast radius for that role.
 - **Kitchen "next tickets" ranking** — not a chat surface; a ranked queue fed by the same tool layer.
-  Whether this needs an LLM call at all versus a deterministic scoring function (promised time, item
-  prep time) is an open question below, not decided here.
+  It ships as a deterministic score (overdue first, then unstarted, then in-progress, then ready),
+  because the current schema has neither promised time nor per-item prep duration; it makes no LLM call
+  and consumes no AI credit.
 - **Platform-side support agent** — scoped to the platform team via `requirePlatformCapability`, a
   fully separate realm from tenant `propose_action` (per this repo's existing rule: anything
   supervising across businesses belongs under `/platform`, not a per-business dashboard). Answers
@@ -125,9 +126,11 @@ and lets the credit-pricing assumptions get validated against real usage before 
    agent.** The cashier/waiter variant in particular ships with zero mutation tools by design — read
    access to menu/order data is useful on the floor, but a `propose_action` surface for that role is a
    bigger trust decision this phase doesn't make unilaterally.
-4. **The kitchen "next tickets" feature may not need an LLM call at all** — a deterministic scoring
-   function (promised time, prep time, item dependencies) could serve the same UX more cheaply and more
-   predictably than a chat-style round-trip. Left open below rather than assumed.
+4. **The kitchen "next tickets" feature is deterministic in this wave.** The current schema records
+   status and `sent_to_kitchen_at`, but no promised-ready time or prep-duration data. The shared scorer
+   therefore ranks overdue tickets first, then `sent`, `preparing`, and `ready`, with oldest-first ties;
+   it makes no provider call and consumes no AI credits. Future schedule/prep metadata can extend this
+   transparent score without retroactively changing the access boundary.
 5. **The platform support agent is a fully separate agent, not an extra mode on the tenant one.**
    Separate prompt, separate tool list, separate capability gate (`requirePlatformCapability`) — it
    never has access to `propose_action` or any single business's confirm-and-apply flow, matching how
@@ -146,16 +149,14 @@ and lets the credit-pricing assumptions get validated against real usage before 
 1. Are Wave 4's proactive/background jobs opt-in per business, or on by default once `ai_assistant` is
    enabled? These run without a human explicitly starting them, so they consume Phase 18 credits
    unattended — needs a product-owner call, not assumed here.
-2. Does the kitchen "next tickets" ranking (Wave 3) need the LLM at all, or is a deterministic scoring
-   function sufficient (Decision 4)? If deterministic, it may not belong in this phase's scope at all,
-   since it wouldn't touch the assistant/credit system.
-3. Does the platform support agent (Wave 3) run against Phase 18's same metered provider config, or a
-   separate, unbilled internal one, since its cost isn't attributable to any one business? Proposed:
-   separate and unmetered, but not decided here.
+2. If a future schema gains promised-ready times, prep durations, or item dependencies, which of those
+   inputs should refine the deterministic kitchen score without making it opaque?
+3. The platform support agent is unmetered and uses the existing platform-owned provider connection.
+   Does operations need a separate platform cost budget or rate limit before its volume grows?
 4. Timing for Wave 5's real channel integrations (WhatsApp/Telegram/voice) — a fast-follow phase right
    after this one, or deferred indefinitely until there's demand? Not decided here.
 
-## Status: Waves 1–2 implemented (both partial) — Waves 3–5 still planned
+## Status: Wave 1 implemented (partial); Wave 2 complete; Wave 3 implemented — Waves 4–5 planned
 
 Phase 18's metering is in place, so Wave 1 (read-only tools) has shipped, per this phase's own
 sequencing decision. 16 of the 20 tools listed under Wave 1 are implemented as `runReadTool` cases
@@ -193,8 +194,8 @@ Two implemented tools made a documented approximation rather than inventing new 
   column), so it returns open bills oldest-first as a payment-priority proxy, with the same kind of
   `note` field explaining why.
 
-Wave 2 (the `propose_action` catalogue expansion) has since shipped, per the same pattern: 13 of
-the 19 actions listed under Wave 2 are new `ACTION_CATALOG` entries in `src/lib/ai.ts`, each mapping
+Wave 2 (the `propose_action` catalogue expansion) is **complete for its documented existing-endpoint
+scope**: all 13 actions backed by a real, already role-guarded endpoint are `ACTION_CATALOG` entries in `src/lib/ai.ts`, each mapping
 to an already role-guarded, real endpoint — no new mutation architecture, exactly like the six
 setup-wizard actions before them:
 
@@ -218,8 +219,8 @@ address — so `ActionMeta.endpoint` may now contain a `{paramName}` placeholder
 `resolveActionEndpoint` (pure, unit-tested in `ai.test.ts`) before the client's "Apply" button
 fetches it; a missing placeholder value refuses the fetch instead of hitting a confusing 404.
 
-Six actions from the original Wave 2 list are **not** implemented — again a genuine data-model gap
-discovered while wiring the rest, not a wiring omission, matching Wave 1's own precedent for
+The six original Wave 2 ideas below are explicitly deferred schema work, not missing Wave 2 wiring;
+none has an existing endpoint or data model to map safely, matching Wave 1's own precedent for
 `get_expiring_batches`/`get_delivery_zone_heatmap`/shift tools:
 
 - **`delivery.eta.adjust`** — `deliveries` has no ETA/estimated-time column at all (only
@@ -235,4 +236,28 @@ discovered while wiring the rest, not a wiring omission, matching Wave 1's own p
 Building any of these six needs a schema decision first (a new column or a new entity), which
 wasn't judged in scope for widening an existing catalogue.
 
-Waves 3–5 (role-scoped variants, background jobs, and the UX layer) remain planned, not started.
+### Wave 3 implementation
+
+- **Cashier/waiter assistant:** `/api/ai/chat` now accepts the narrow `floor` mode only after
+  `requireFloorAssistant()` verifies a live cashier/waiter membership and `menu.view` permission.
+  It receives an active-location scope and only exposes `get_menu_item_details` and
+  `get_bill_split_preview`. Ingredient responses return recorded recipe ingredients and explicitly
+  state that structured allergen data is absent; bill splitting is an equal-share preview only. This
+  mode has no `propose_action` definition, and the agent loop rejects even a hand-crafted action
+  tool call instead of treating it as executable.
+
+- **Kitchen next-ticket ranking:** `src/lib/kitchen-priority.ts` is a pure, shared deterministic
+  scorer used by the kitchen queue route and KDS. It ranks overdue tickets first, then unstarted
+  (`sent`), in-progress (`preparing`), and ready tickets, with oldest-first ties. The KDS exposes
+  the next ticket and visible priority labels. No LLM/provider call is involved, so this slice does
+  not debit a business's AI credits.
+
+- **Platform support agent:** `POST /api/platform/ai/support` is wrapped in
+  `withPlatformScope` and requires `requirePlatformCapability("ai.read")`. It has a separate
+  `platform` mode, prompt, and tool executor: only client-version compliance and backup-health
+  summaries are returned. It cannot use tenant read tools or `propose_action`, and its unmetered
+  calls are recorded in the platform audit log. The platform AI page exposes this health-only chat to
+  operators who hold that read capability.
+
+Wave 3's pure priority and agent-isolation tests cover its ordering policy, floor-mode action rejection,
+and platform tool isolation. Waves 4–5 (background jobs and the broader UX layer) remain planned.
