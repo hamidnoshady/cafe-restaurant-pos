@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { resolveActiveLocation } from "@/lib/setup-state";
+import { rankKitchenQueue, type KitchenQueueEntry } from "@/lib/kitchen-priority";
 
 /**
  * Live kitchen ticket queue: every non-voided, non-served order item across
@@ -16,7 +17,7 @@ export const GET = withTenantScope(async () => {
   const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ items: [] });
 
-  const { rows: items } = await query(
+  const { rows: rawItems } = await query<KitchenQueueEntry & Record<string, unknown>>(
     `SELECT oi.id, oi.order_id, oi.name_snapshot, oi.quantity, oi.status, oi.note,
             oi.sent_to_kitchen_at, oi.ready_at,
             o.type AS order_type, o.order_number, o.table_session_id, o.table_id,
@@ -29,6 +30,10 @@ export const GET = withTenantScope(async () => {
       ORDER BY oi.sent_to_kitchen_at ASC NULLS LAST`,
     [location.id],
   );
+
+  // No provider call: Wave 3 ranks the same queue deterministically from the
+  // recorded status and kitchen-send time. The shared helper is also used by the KDS.
+  const items = rankKitchenQueue(rawItems);
 
   const { rows: modifiers } = await query(
     `SELECT oim.order_item_id, oim.name_snapshot
