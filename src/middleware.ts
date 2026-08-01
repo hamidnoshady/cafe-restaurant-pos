@@ -59,7 +59,7 @@ const PLATFORM_PUBLIC_PATHS = [
 const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 /**
- * Phase 17 — tenant-scoped rate limiting. Three independent fixed-window
+ * Phase 17 — tenant-scoped rate limiting. Four independent fixed-window
  * counters, keyed so that one business (or one runaway bearer-token client,
  * or one IP hammering a login form) can only ever exhaust its own bucket:
  *
@@ -79,7 +79,7 @@ const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
  *  - `authIpLimits`: credential-exchange endpoints, keyed by IP, ahead of any
  *    session — the login routes have no other request-volume defence today.
  *
- * All three Maps are module-level and unbounded by nothing but `sweepExpired`
+ * All four Maps are module-level and unbounded by nothing but `sweepExpired`
  * (called occasionally, not per-request) — the business map stays small on
  * its own (one entry per business), but the IP/token maps grow with every
  * distinct caller ever seen.
