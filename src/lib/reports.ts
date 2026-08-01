@@ -365,7 +365,7 @@ export function buildReportQuery(
   const where = ["business_id = $1"];
   if (locationId) {
     params.push(locationId);
-    where.push(`location_id = ${params.length}`);
+    where.push(`location_id = $${params.length}`);
   }
   if (view.dateColumn && config.filters?.dateFrom) {
     params.push(config.filters.dateFrom);
