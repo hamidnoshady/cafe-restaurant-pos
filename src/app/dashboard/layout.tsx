@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { getSession, type Role } from "@/lib/auth";
 import { query, withTenant } from "@/lib/db";
 import { effectiveFeatures } from "@/lib/features";
-import { effectivePermissions, parseOverrides, type Permission } from "@/lib/permissions";
+import { effectivePermissions, parseOverrides, PERMISSIONS, type Permission } from "@/lib/permissions";
 import { visibleSettingsTabs } from "@/lib/settings-tabs";
 import { AiAssistant } from "@/components/ai/ai-assistant";
 import { OfflineBanner } from "./offline-banner";
@@ -64,6 +64,15 @@ export default async function DashboardLayout({
   const navItems = NAV_ITEMS.filter((item) => canSee(item, member.role, permissions, features)).filter(
     (item) => item.href !== "/dashboard/settings" || settingsTabs.length > 0,
   );
+  const assistantMode =
+    member.role === "cashier" || member.role === "waiter"
+      ? "floor"
+      : member.role === "owner" || member.role === "manager"
+        ? "dashboard"
+        : null;
+  const canUseAssistant =
+    assistantMode === "dashboard" ||
+    (assistantMode === "floor" && permissions.has(PERMISSIONS.menuView));
 
   return (
     <div className="flex min-h-screen flex-col md:flex-row">
@@ -72,7 +81,7 @@ export default async function DashboardLayout({
         <OfflineBanner />
         <main className="flex-1 overflow-y-auto p-2 pb-24 md:p-4">{children}</main>
       </div>
-      {(member.role === "owner" || member.role === "manager") && features.ai_assistant ? <AiAssistant mode="dashboard" /> : null}
+      {assistantMode && canUseAssistant && features.ai_assistant ? <AiAssistant mode={assistantMode} /> : null}
     </div>
   );
 }
