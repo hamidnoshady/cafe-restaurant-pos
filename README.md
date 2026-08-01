@@ -2,7 +2,7 @@
 
 Persian-first (RTL, Jalali calendar, Toman display) point-of-sale system for cafes and restaurants. Built with Next.js + PostgreSQL.
 
-Development is phased — see [docs/phases/README.md](docs/phases/README.md) for the phase index. **Current status: all 18 numbered phases implemented; Phase 18b is in progress** — a single-business POS (Phases 0–11: menu/POS, tables, waiter/kitchen real-time sync, offline queue, inventory, ledger, reporting, multi-location rollup, backups, delivery) turned into a multi-business platform (Phases 12–17: tenant isolation via RLS, teams & permissions, per-business branches, a super-admin console, a real accounting suite, and entitlement/rate-limit hardening), then added platform-owned, metered AI credits and subscriptions (Phase 18). Phase 18b has Wave 1 implemented (partial), Wave 2 complete, and Wave 3 implemented.
+Development is phased — see [docs/phases/README.md](docs/phases/README.md) for the phase index. **Current status: all 18 numbered phases implemented; Phase 18b is complete for its documented scope** — a single-business POS (Phases 0–11: menu/POS, tables, waiter/kitchen real-time sync, offline queue, inventory, ledger, reporting, multi-location rollup, backups, delivery) turned into a multi-business platform (Phases 12–17: tenant isolation via RLS, teams & permissions, per-business branches, a super-admin console, a real accounting suite, and entitlement/rate-limit hardening), then added platform-owned, metered AI credits and subscriptions (Phase 18). Phase 18b has Wave 1 implemented (partial), Wave 2 complete, and Waves 3–5 implemented.
 
 ## Stack
 
@@ -151,6 +151,17 @@ The agent's mutations are restricted to a fixed allowlist (`ACTION_CATALOG` in
 `src/lib/ai.ts`) that maps each proposed action to an already role-guarded
 endpoint, so it can never call an arbitrary URL. Read tools run server-side and
 never mutate data.
+
+**Wave 5 interaction safeguards.** Before an assistant request reaches a provider,
+the chat panel asks for confirmation against a conservative, visible credit-cost
+estimate (including the existing maximum reservation). Provider text is relayed
+incrementally to the panel; tool rounds and action confirmation remain server-side.
+Suggested prompt chips appear on open, and **«توضیح این عدد»** on eligible report
+previews/pinned widgets opens the assistant with the visible report context
+pre-filled. Every proposed action is recorded in a tenant-scoped audit trail with
+the prompting user, proposed payload summary, and applied/failed/dismissed outcome,
+available to Owner/Manager at `/dashboard/ai`. No real WhatsApp, Telegram, voice,
+SMS, or automatic customer-message channel is introduced.
 
 **Platform-owned providers and billing.** Two OpenAI-compatible providers are supported — **OpenRouter** and
 **ArvanCloud AI** — through one platform-owned connection configured only at
