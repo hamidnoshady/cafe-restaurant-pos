@@ -19,6 +19,19 @@ function providerReply(message: Record<string, unknown>) {
   );
 }
 
+function streamingProviderReply(events: string[]) {
+  const encoder = new TextEncoder();
+  return new Response(
+    new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (const event of events) controller.enqueue(encoder.encode(event));
+        controller.close();
+      },
+    }),
+    { status: 200, headers: { "Content-Type": "text/event-stream" } },
+  );
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
@@ -122,5 +135,39 @@ describe("Phase 18b Wave 4 proactive isolation", () => {
     const payload = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
     expect(payload).not.toHaveProperty("tools");
     expect(payload).not.toHaveProperty("tool_choice");
+  });
+});
+
+
+describe("Phase 18b Wave 5 streaming", () => {
+  it("forwards provider text deltas while preserving the settled final reply", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      streamingProviderReply([
+        'data: {"choices":[{"delta":{"content":"سلام "}}]}\n\n',
+        'data: {"choices":[{"delta":{"content":"دوست من"}}]}\n\n',
+        'data: {"choices":[],"usage":{"prompt_tokens":14,"completion_tokens":3}}\n\n',
+        "data: [DONE]\n\n",
+      ]),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const deltas: string[] = [];
+
+    const reply = await runAgentTurn({
+      config,
+      mode: "dashboard",
+      promptContext: { mode: "dashboard", role: "manager" },
+      messages: [{ role: "user", content: "سلام" }],
+      stream: { onDelta: (content) => deltas.push(content) },
+    });
+
+    expect(deltas.join("")).toBe("سلام دوست من");
+    expect(reply).toMatchObject({
+      content: "سلام دوست من",
+      proposedAction: null,
+      usage: { inputTokens: 14, outputTokens: 3 },
+    });
+    const payload = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+    expect(payload.stream).toBe(true);
+    expect(payload.stream_options).toEqual({ include_usage: true });
   });
 });
