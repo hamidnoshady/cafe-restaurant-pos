@@ -41,7 +41,8 @@ export interface BusinessScope {
  * shape — resolving *which* tenant a request is for, before that tenant can
  * be known: resolving a login email to its memberships, platform
  * administration, resolving a server-sync bearer token to the business it
- * belongs to ("server-sync-auth"), and writing to the global identity table
+ * belongs to ("server-sync-auth"), resolving a public API key to the
+ * business it belongs to ("api-key-auth"), and writing to the global identity table
  * on behalf of a membership already verified to belong to the caller's own
  * business ("identity", e.g. team-service.ts's credential reset). Grep for
  * `withoutTenantScope` to audit every one of them.
