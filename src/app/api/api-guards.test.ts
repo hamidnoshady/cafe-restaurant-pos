@@ -86,6 +86,11 @@ function isPlatformGuarded(src: string): boolean {
   return /requirePlatformAdmin\(/.test(src) || /requirePlatformCapability\(/.test(src);
 }
 
+/** Public API routes are session-less only because api-auth.ts authenticates a scoped key. */
+function isApiKeyGuarded(src: string): boolean {
+  return /withApiKeyScope\(/.test(src) && /requireApiScope\(/.test(src);
+}
+
 
 /** All requireRole(...) argument lists found in a file, as role-name arrays. */
 function requireRoleCalls(src: string): string[][] {
@@ -111,6 +116,10 @@ describe("every API route is guarded", () => {
 
   for (const [key, src] of sources) {
     it(`${key} is guarded or explicitly public`, () => {
+      if (key === "v1" || key.startsWith("v1/")) {
+        expect(src, `src/app/api/${key}/route.ts must authenticate a scoped API key`).toSatisfy(isApiKeyGuarded);
+        return;
+      }
       if (PUBLIC_ROUTES[key]) return; // documented public route
       if (SELF_GUARDING_ROUTES[key]) {
         // Tenant self-guarding routes read getSession(); the platform console's
