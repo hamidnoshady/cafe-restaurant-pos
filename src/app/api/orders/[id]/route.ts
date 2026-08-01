@@ -1,21 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
-import { getPool, query } from "@/lib/db";
+import { getPool } from "@/lib/db";
 import { recomputeOrderTotals } from "@/lib/order-totals";
+import { getOrderDetail } from "@/lib/order-read-service";
 import type { DiscountInput } from "@/lib/orders";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { broadcast } from "@/lib/realtime";
 import { lockOpenOrder } from "@/lib/order-lock";
-
-async function loadOrder(locationId: string, id: string) {
-  const { rows } = await query(
-    `SELECT o.*, dt.name AS table_name FROM orders o
-      LEFT JOIN dining_tables dt ON dt.id = o.table_id
-     WHERE o.id = $1 AND o.location_id = $2`,
-    [id, locationId],
-  );
-  return rows[0] ?? null;
-}
 
 export const GET = withTenantScope(async (_request: NextRequest, context: { params: Promise<{ id: string }> }) => {
   const { session, error } = await requireRole("owner", "manager", "cashier", "waiter");
@@ -25,22 +16,9 @@ export const GET = withTenantScope(async (_request: NextRequest, context: { para
   const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
 
-  const order = await loadOrder(location.id, id);
-  if (!order) return NextResponse.json({ error: "order_not_found" }, { status: 404 });
-
-  const { rows: items } = await query(
-    `SELECT id, menu_item_id, name_snapshot, unit_price, quantity, status, note, void_reason, created_at
-       FROM order_items WHERE order_id = $1 ORDER BY created_at`,
-    [id],
-  );
-  const { rows: modifiers } = await query(
-    `SELECT oim.id, oim.order_item_id, oim.name_snapshot, oim.price_delta
-       FROM order_item_modifiers oim JOIN order_items oi ON oi.id = oim.order_item_id
-      WHERE oi.order_id = $1`,
-    [id],
-  );
-
-  return NextResponse.json({ order, items, modifiers });
+  const detail = await getOrderDetail(location.id, id);
+  if (!detail) return NextResponse.json({ error: "order_not_found" }, { status: 404 });
+  return NextResponse.json(detail);
 });
 
 interface PatchBody {
