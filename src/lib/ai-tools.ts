@@ -28,10 +28,23 @@ import { getApAging } from "./ap-service";
 import { listPayrollRuns, listStaffWages } from "./payroll-service";
 import { listBranches } from "./branch-service";
 import { getCustomer } from "./customers-service";
+import { computeSessionBill } from "./table-session-service";
+import { evenSplit } from "./table-sessions";
 
 export interface ToolResult {
   ok: boolean;
   data: unknown;
+}
+
+/**
+ * The floor assistant has a deliberately narrower scope than dashboard mode:
+ * one active location, and—when the caller is a waiter—only the tables in
+ * sections assigned to that member.
+ */
+export interface FloorReadScope {
+  locationId: string;
+  userId: string;
+  role: "cashier" | "waiter";
 }
 
 /** Cap rows/size so a big report can't blow the model's context window. */
@@ -566,11 +579,170 @@ async function forecastDemand(businessId: string, args: Record<string, unknown>)
 }
 
 // ---------------------------------------------------------------------------
+// Wave 3 — cashier/waiter assistant (read-only, active location only)
+// ---------------------------------------------------------------------------
+
+function needsFloorScope(scope: FloorReadScope | undefined): scope is FloorReadScope {
+  return Boolean(scope && (scope.role === "cashier" || scope.role === "waiter"));
+}
+
+type FloorMenuItemRow = {
+  id: string;
+  name: string;
+  description: string | null;
+  price: string;
+  category_name: string | null;
+  ingredients: unknown;
+};
+
+/**
+ * Returns only ingredients explicitly recorded in the recipe. The data model
+ * has no structured allergen field; that absence is deliberately surfaced to
+ * the model instead of guessing from ingredient names.
+ */
+async function floorMenuItemDetails(scope: FloorReadScope, args: Record<string, unknown>) {
+  const menuItemId = typeof args.menuItemId === "string" ? args.menuItemId.trim() : "";
+  const search = typeof args.query === "string" ? args.query.trim().slice(0, 120) : "";
+  if (!menuItemId && !search) {
+    return { error: "برای جست‌وجوی منو، نام یا شناسهٔ آیتم لازم است." };
+  }
+
+  const itemCondition = menuItemId
+    ? "mi.id = $2"
+    : "mi.name ILIKE ('%' || $2 || '%')";
+  const selector = menuItemId || search;
+  const { rows } = await query<FloorMenuItemRow>(
+    `SELECT mi.id, mi.name, mi.description, mi.price::text, mc.name AS category_name,
+            COALESCE(
+              jsonb_agg(
+                jsonb_build_object(
+                  'inventoryItemId', ii.id,
+                  'name', ii.name,
+                  'unit', ii.unit,
+                  'quantity', mii.quantity::text
+                )
+                ORDER BY ii.name
+              ) FILTER (WHERE ii.id IS NOT NULL),
+              '[]'::jsonb
+            ) AS ingredients
+       FROM menu_items mi
+       LEFT JOIN menu_categories mc ON mc.id = mi.category_id
+       LEFT JOIN menu_item_ingredients mii ON mii.menu_item_id = mi.id
+       LEFT JOIN inventory_items ii ON ii.id = mii.inventory_item_id
+      WHERE mi.location_id = $1 AND mi.is_active AND ${itemCondition}
+      GROUP BY mi.id, mi.name, mi.description, mi.price, mc.name
+      ORDER BY mi.name
+      LIMIT 8`,
+    [scope.locationId, selector],
+  );
+
+  return {
+    locationId: scope.locationId,
+    items: rows.map((row) => {
+      const ingredients = Array.isArray(row.ingredients) ? row.ingredients : [];
+      return {
+        menuItemId: row.id,
+        name: row.name,
+        category: row.category_name,
+        description: row.description,
+        price: Number(row.price),
+        ingredients,
+        recipeAvailable: ingredients.length > 0,
+        allergenData: {
+          status: "not_recorded" as const,
+          warning:
+            "برای این آیتم فیلد آلرژن ساخت‌یافته ثبت نشده است. مواد اولیهٔ نمایش‌داده‌شده فقط دستور ثبت‌شده‌اند و ایمن‌بودن غذا را تأیید نمی‌کنند.",
+        },
+      };
+    }),
+  };
+}
+
+async function floorBillSplitPreview(scope: FloorReadScope, args: Record<string, unknown>) {
+  const tableSessionId = typeof args.tableSessionId === "string" ? args.tableSessionId.trim() : "";
+  const tableName = typeof args.tableName === "string" ? args.tableName.trim().slice(0, 120) : "";
+  const guests = Math.trunc(Number(args.guests));
+  if (!tableSessionId && !tableName) {
+    return { error: "برای پیش‌نمایش تقسیم، نام میز یا شناسهٔ نشست میز لازم است." };
+  }
+  if (!Number.isFinite(guests) || guests < 1 || guests > 50) {
+    return { error: "تعداد مهمان باید عددی بین ۱ تا ۵۰ باشد." };
+  }
+
+  const selectorSql = tableSessionId
+    ? "ts.id = $2"
+    : `EXISTS (
+        SELECT 1
+          FROM table_session_tables selector_link
+          JOIN dining_tables selector_table ON selector_table.id = selector_link.table_id
+         WHERE selector_link.session_id = ts.id
+           AND selector_link.released_at IS NULL
+           AND lower(selector_table.name) = lower($2)
+      )`;
+
+  const { rows } = await query<{ id: string; table_name: string | null }>(
+    `SELECT ts.id,
+            (
+              SELECT dt.name
+                FROM table_session_tables tst
+                JOIN dining_tables dt ON dt.id = tst.table_id
+               WHERE tst.session_id = ts.id AND tst.released_at IS NULL
+               ORDER BY dt.sort_order, dt.name
+               LIMIT 1
+            ) AS table_name
+       FROM table_sessions ts
+      WHERE ts.location_id = $1
+        AND ts.status = 'open'
+        AND ${selectorSql}
+        AND (
+          $4::boolean
+          OR EXISTS (
+            SELECT 1
+              FROM table_session_tables allowed_link
+              JOIN dining_tables allowed_table ON allowed_table.id = allowed_link.table_id
+              JOIN floor_sections allowed_section ON allowed_section.id = allowed_table.section_id
+             WHERE allowed_link.session_id = ts.id
+               AND allowed_link.released_at IS NULL
+               AND allowed_section.assigned_waiter_id = $3
+          )
+        )
+      LIMIT 2`,
+    [scope.locationId, tableSessionId || tableName, scope.userId, scope.role === "cashier"],
+  );
+  const session = rows[0];
+  if (!session) {
+    return { error: "نشست بازِ قابل‌دسترسی برای این میز پیدا نشد." };
+  }
+  if (rows.length > 1) {
+    return { error: "بیش از یک نشست باز پیدا شد؛ شناسهٔ نشست میز را مشخص کنید." };
+  }
+
+  const bill = await computeSessionBill(session.id);
+  return {
+    tableSessionId: session.id,
+    tableName: session.table_name,
+    guests,
+    total: bill.total,
+    equalShares: evenSplit(bill.total, guests),
+    lines: cap(
+      bill.lines.map((line) => ({
+        name: line.name,
+        amount: line.amount,
+      })),
+      50,
+    ),
+    notice:
+      "این فقط پیش‌نمایش تقسیم برابر است و هیچ پرداخت یا تقسیم صورت‌حسابی ثبت نشده است؛ اجرای نهایی فقط از جریان عادی POS انجام می‌شود.",
+  };
+}
+
+// ---------------------------------------------------------------------------
 
 export async function runReadTool(
   name: string,
   args: Record<string, unknown>,
   businessId: string,
+  floorScope?: FloorReadScope,
 ): Promise<ToolResult> {
   switch (name) {
     case "get_setup_state": {
@@ -689,6 +861,16 @@ export async function runReadTool(
     case "forecast_demand":
       return { ok: true, data: await forecastDemand(businessId, args) };
 
+    case "get_menu_item_details":
+      return needsFloorScope(floorScope)
+        ? { ok: true, data: await floorMenuItemDetails(floorScope, args) }
+        : { ok: false, data: { error: "این ابزار فقط برای دستیار صندوق/گارسون مجاز است." } };
+
+    case "get_bill_split_preview":
+      return needsFloorScope(floorScope)
+        ? { ok: true, data: await floorBillSplitPreview(floorScope, args) }
+        : { ok: false, data: { error: "این ابزار فقط برای دستیار صندوق/گارسون مجاز است." } };
+
     default:
       return { ok: false, data: { error: `ابزار ناشناخته: ${name}` } };
   }
@@ -714,4 +896,6 @@ export const READ_TOOL_NAMES = new Set([
   "get_vat_liability",
   "get_branch_comparison",
   "forecast_demand",
+  "get_menu_item_details",
+  "get_bill_split_preview",
 ]);
