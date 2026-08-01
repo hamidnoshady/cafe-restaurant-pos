@@ -391,7 +391,10 @@ export async function createAiTopUpRequest(input: {
 export async function reserveAiTurn(input: {
   businessId: string;
   reservedRial: number;
-  userId: string;
+  /** Null for a tenant-owned background run with no human initiator. */
+  userId?: string | null;
+  /** Stable audit context, e.g. proactive job kind + local period key. */
+  metadata?: Record<string, unknown>;
 }): Promise<AiTurnReservation> {
   if (!positiveInteger(input.reservedRial)) throw new AiInsufficientCreditError();
 
@@ -425,8 +428,8 @@ export async function reserveAiTurn(input: {
         input.businessId,
         -input.reservedRial,
         requestId,
-        input.userId,
-        JSON.stringify({ reservedRial: input.reservedRial, phase: "reserved" }),
+        input.userId ?? null,
+        JSON.stringify({ ...input.metadata, reservedRial: input.reservedRial, phase: "reserved" }),
       ],
     );
     await client.query("COMMIT");
