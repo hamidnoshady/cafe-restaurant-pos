@@ -340,7 +340,7 @@ export async function getCashFlow(
   }
   if (filters.dateTo) {
     params.push(filters.dateTo);
-    where.push(`je.entry_date <= ${params.length}`);
+    where.push(`je.entry_date <= $${params.length}`);
   }
   if (locationId) {
     params.push(locationId);
