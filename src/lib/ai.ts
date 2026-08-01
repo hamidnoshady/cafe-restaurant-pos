@@ -380,7 +380,7 @@ export interface ChatMessage {
   tool_call_id?: string;
 }
 
-export type AgentMode = "wizard" | "dashboard" | "floor" | "platform";
+export type AgentMode = "wizard" | "dashboard" | "floor" | "platform" | "proactive";
 
 export interface PromptContext {
   mode: AgentMode;
@@ -408,7 +408,7 @@ export function buildSystemPrompt(ctx: PromptContext): string {
   const lines: string[] = [
     "تو «دستیار هوشمند» یک نرم‌افزار صندوق فروش (POS) کافه و رستوران فارسی‌زبان هستی.",
     "همیشه به زبان فارسی، کوتاه، دقیق و محترمانه پاسخ بده. مبالغ را به تومان و تاریخ‌ها را شمسی در نظر بگیر (ذخیره‌سازی داخلی ریال و میلادی است).",
-    "هرگز عدد یا آمار از خودت نساز؛ برای هر دادهٔ عملیاتی فقط از ابزارهای خواندنِ مجازِ همین حالت استفاده کن و بر اساس نتیجهٔ واقعی پاسخ بده.",
+    "هرگز عدد یا آمار از خودت نساز؛ در حالت‌های دارای ابزار فقط از ابزارهای خواندنِ مجاز و در حالت گزارش زمان‌بندی‌شده فقط از دادهٔ واقعیِ ورودی استفاده کن.",
   ];
 
   if (ctx.businessName) lines.push(`نام کسب‌وکار: ${ctx.businessName}.`);
@@ -437,6 +437,12 @@ export function buildSystemPrompt(ctx: PromptContext): string {
       "هیچ تغییری ثبت نکن و امکان پیشنهادِ اجرایی نداری. فقط راهنمایی کن؛ اجرای تقسیم صورت‌حساب یا هر عملیات دیگر باید از جریان عادی POS انجام شود.",
       "در پرسش‌های حساسیت/آلرژی، فقط دادهٔ ثبت‌شده را بازگو کن. اگر ابزار گفت دادهٔ ساخت‌یافتهٔ آلرژن موجود نیست، صریح بگو که ایمن‌بودن غذا قابل تأیید نیست و باید با آشپزخانه بررسی شود؛ هرگز از روی نام مواد حدس نزن.",
       "برای صورت‌حساب فقط از get_bill_split_preview استفاده کن و هرگز شمارهٔ تلفن، نام مهمان یا دادهٔ مشتری را بازگو نکن.",
+    );
+  } else if (ctx.mode === "proactive") {
+    lines.push(
+      "این حالت فقط برای گزارش خصوصیِ زمان‌بندی‌شدهٔ همان کسب‌وکار است. داده‌های واقعی در پیام کاربر آمده‌اند و هیچ ابزار، هیچ پیشنهاد اجرایی و هیچ کانال ارسالی نداری.",
+      "فقط بر اساس همان داده‌ها یک متن فارسی کوتاه و عملیاتی بنویس. اگر داده‌ای ناقص است آن را صریح بگو؛ هرگز عدد، موعد قانونی، تغییر ثبت‌شده یا پیامِ ارسال‌شده جعل نکن.",
+      "هرگز پیام مشتری، شماره تماس، دستور API یا propose_action تولید نکن. خروجی صرفاً برای بررسی انسانی داخل نرم‌افزار است.",
     );
   } else {
     lines.push(
@@ -703,5 +709,6 @@ export function toolDefinitions(mode: AgentMode): OpenAiTool[] {
   if (mode === "wizard") return [readTools[0], proposeTool];
   if (mode === "dashboard") return [...readTools, proposeTool];
   if (mode === "floor") return floorReadTools;
+  if (mode === "proactive") return [];
   return platformReadTools;
 }

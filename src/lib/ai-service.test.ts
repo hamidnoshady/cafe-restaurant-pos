@@ -104,3 +104,23 @@ describe("Phase 18b Wave 3 agent isolation", () => {
     ]);
   });
 });
+
+describe("Phase 18b Wave 4 proactive isolation", () => {
+  it("sends scheduled digest facts without exposing tools or an action channel", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(providerReply({ content: "خلاصهٔ روزانه آماده است." }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const reply = await runAgentTurn({
+      config,
+      mode: "proactive",
+      promptContext: { mode: "proactive", businessName: "کافه آزمون" },
+      messages: [{ role: "user", content: "داده‌های زمان‌بندی‌شده: {}" }],
+    });
+
+    expect(reply.proposedAction).toBeNull();
+    expect(reply.content).toBe("خلاصهٔ روزانه آماده است.");
+    const payload = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+    expect(payload).not.toHaveProperty("tools");
+    expect(payload).not.toHaveProperty("tool_choice");
+  });
+});

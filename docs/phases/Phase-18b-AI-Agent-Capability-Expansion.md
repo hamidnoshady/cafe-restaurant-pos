@@ -143,20 +143,21 @@ and lets the credit-pricing assumptions get validated against real usage before 
    internal notes can apply directly to the business's own records like any other confirmed action; a
    debt-follow-up *message* is different — it leaves the business's own systems and reaches a real
    person, so it's drafted for a human to review and send themselves, never auto-dispatched.
+8. **Wave 4 is explicitly opt-in per business.** Proactive provider calls can spend a business's
+   Phase 18 credits without a live chat request, so `ai_proactive_settings.enabled` defaults to false
+   and an owner/manager must turn it on from the AI settings page. Disabling it stops future runs;
+   it does not alter historical run records or drafts.
 
 ## Open questions
 
-1. Are Wave 4's proactive/background jobs opt-in per business, or on by default once `ai_assistant` is
-   enabled? These run without a human explicitly starting them, so they consume Phase 18 credits
-   unattended — needs a product-owner call, not assumed here.
-2. If a future schema gains promised-ready times, prep durations, or item dependencies, which of those
+1. If a future schema gains promised-ready times, prep durations, or item dependencies, which of those
    inputs should refine the deterministic kitchen score without making it opaque?
-3. The platform support agent is unmetered and uses the existing platform-owned provider connection.
+2. The platform support agent is unmetered and uses the existing platform-owned provider connection.
    Does operations need a separate platform cost budget or rate limit before its volume grows?
-4. Timing for Wave 5's real channel integrations (WhatsApp/Telegram/voice) — a fast-follow phase right
+3. Timing for Wave 5's real channel integrations (WhatsApp/Telegram/voice) — a fast-follow phase right
    after this one, or deferred indefinitely until there's demand? Not decided here.
 
-## Status: Wave 1 implemented (partial); Wave 2 complete; Wave 3 implemented — Waves 4–5 planned
+## Status: Wave 1 implemented (partial); Wave 2 complete; Waves 3–4 implemented — Wave 5 planned
 
 Phase 18's metering is in place, so Wave 1 (read-only tools) has shipped, per this phase's own
 sequencing decision. 16 of the 20 tools listed under Wave 1 are implemented as `runReadTool` cases
@@ -260,4 +261,24 @@ wasn't judged in scope for widening an existing catalogue.
   operators who hold that read capability.
 
 Wave 3's pure priority and agent-isolation tests cover its ordering policy, floor-mode action rejection,
-and platform tool isolation. Waves 4–5 (background jobs and the broader UX layer) remain planned.
+and platform tool isolation.
+
+### Wave 4 implementation
+
+- **Opt-in scheduling:** `migrations/0040_ai_proactive_jobs.sql` adds tenant-scoped settings, run
+  records and customer-debt drafts. The setting defaults off; `/dashboard/ai` gives an owner/manager a
+  clear enable/disable control before any unattended provider call can reserve credits.
+- **Tenant isolation:** `server.ts` starts a 15-minute tick. `runAiProactiveTick()` obtains only the
+  business-id list under `withoutTenantScope("platform")`, then runs every business with
+  `withTenant(businessId, ...)`. The tables have forced RLS policies, and the loop test proves that a
+  failed business cannot skip the tenant wrapper or stop subsequent tenants.
+- **Digests and flags:** daily and weekly Persian digests use a zero-tool `proactive` agent mode. Before
+  the provider call, the service reads the current tenant's sales, shift reconciliation, recipe-material
+  negative margins, void/discount comparison, low-stock/reorder rows, VAT, unreconciled bank lines, payroll,
+  branch comparison, delivery-duration warnings and likely no-shows. Facts are bounded before storage
+  and prompt construction. Delivery is flagged only after 60 minutes in `out_for_delivery`; without an
+  ETA column it is a duration warning, not a claim that a promised delivery time was missed.
+- **Metering and communication safety:** every provider digest uses the Phase 18 reservation/settlement
+  ledger with `source: "proactive"`, job kind and local period key in its audit metadata. The debt
+  follow-up job creates local Persian drafts from the tenant's own AR balance only; it sends no customer
+  data to the provider and has no gateway, phone or auto-send path.
