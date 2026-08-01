@@ -154,10 +154,10 @@ and lets the credit-pricing assumptions get validated against real usage before 
    inputs should refine the deterministic kitchen score without making it opaque?
 2. The platform support agent is unmetered and uses the existing platform-owned provider connection.
    Does operations need a separate platform cost budget or rate limit before its volume grows?
-3. Timing for Wave 5's real channel integrations (WhatsApp/Telegram/voice) — a fast-follow phase right
-   after this one, or deferred indefinitely until there's demand? Not decided here.
+3. Timing for a later, separate real channel-integration phase (WhatsApp/Telegram/voice) — deferred until
+   there is product demand and the required vendor, consent, retention and support decisions are made.
 
-## Status: Wave 1 implemented (partial); Wave 2 complete; Waves 3–4 implemented — Wave 5 planned
+## Status: Wave 1 implemented (partial); Wave 2 complete; Waves 3–5 implemented
 
 Phase 18's metering is in place, so Wave 1 (read-only tools) has shipped, per this phase's own
 sequencing decision. 16 of the 20 tools listed under Wave 1 are implemented as `runReadTool` cases
@@ -282,3 +282,23 @@ and platform tool isolation.
   ledger with `source: "proactive"`, job kind and local period key in its audit metadata. The debt
   follow-up job creates local Persian drafts from the tenant's own AR balance only; it sends no customer
   data to the provider and has no gateway, phone or auto-send path.
+
+### Wave 5 implementation
+
+- **Report-to-chat context:** eligible Owner/Manager report previews and pinned dashboard widgets expose
+  **«توضیح این عدد»**. It opens the existing tenant assistant with the visible title, bounded displayed
+  values and selected date context pre-filled; it does not create a new cross-tenant report API or trust
+  client-supplied data as an action payload.
+- **Deliberate, streamed turns:** the assistant shows role-appropriate suggested prompts on open. Before
+  a provider request, `POST /api/ai/estimate` models the active prompt/tool schema and displays a
+  conservative estimate plus the existing maximum credit reservation. `POST /api/ai/chat` relays
+  OpenAI-compatible SSE deltas while retaining the same server-side tool allowlist, maximum six tool
+  rounds, credit settlement and confirm-before-apply gate; a tool call clears any provisional text before
+  the final answer is streamed.
+- **Action accountability:** `migrations/0041_ai_action_audit.sql` adds a forced-RLS,
+  business-scoped audit table. The server writes a proposal record with the prompting authenticated user
+  and bounded payload summary; the UI marks it applied, failed or dismissed only after the pre-existing,
+  role-guarded action flow returns. Owner/Manager can inspect this history at `/dashboard/ai`.
+- **No new communication channel:** WhatsApp, Telegram, voice, SMS and customer auto-send remain
+  explicitly out of scope. Wave 5 only improves the existing in-product web interface and never changes
+  Phase 18 billing policy or the confirmation architecture.
