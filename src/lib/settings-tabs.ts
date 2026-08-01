@@ -9,7 +9,7 @@ export const SETTINGS_TAB_KEYS = [
   "team",
   "menu",
   "printers",
-  "branch-sync",
+  "branch-management",
   "server-sync",
   "backup",
 ] as const;
@@ -23,6 +23,8 @@ export interface SettingsTab {
   requiredAnyPermission?: Permission[];
   allowedRoles?: Role[];
   feature?: string;
+  /** Show when at least one of these feature flags is enabled. */
+  requiredAnyFeature?: string[];
 }
 
 export interface SettingsTabVisibilityOptions {
@@ -74,11 +76,11 @@ export const SETTINGS_TABS: SettingsTab[] = [
     requiredAnyPermission: [PERMISSIONS.settingsManage],
   },
   {
-    key: "branch-sync",
-    label: "همگام‌سازی شعبه‌ها",
-    description: "ثبت شعبه‌های محلی و همگام‌سازی با سرور مرکزی",
+    key: "branch-management",
+    label: "مدیریت شعب",
+    description: "مدیریت شعب کسب‌وکار و همگام‌سازی داده‌های شعب با سرور مرکزی",
     allowedRoles: ["owner"],
-    feature: "offline_mode",
+    requiredAnyFeature: ["multi_location", "offline_mode"],
   },
   {
     key: "server-sync",
@@ -107,6 +109,7 @@ export function visibleSettingsTabs(
     }
     if (tab.allowedRoles && (!options.role || !tab.allowedRoles.includes(options.role))) return false;
     if (tab.feature && !options.features?.[tab.feature]) return false;
+    if (tab.requiredAnyFeature && !tab.requiredAnyFeature.some((feature) => options.features?.[feature])) return false;
     return true;
   });
 }
