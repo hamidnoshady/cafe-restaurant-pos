@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
-import { requireFeatureForPage } from "@/lib/features";
+import { effectiveFeatures, requireFeatureForPage } from "@/lib/features";
 import { ReportsManager } from "./reports-manager";
 
 export default async function ReportsPage() {
@@ -9,6 +9,7 @@ export default async function ReportsPage() {
   if (!["owner", "manager", "accountant"].includes(session.role))
     redirect("/dashboard");
   await requireFeatureForPage(session.businessId, "reporting");
+  const features = await effectiveFeatures(session.businessId);
 
   return (
     <div className="mx-auto max-w-[1600px]">
@@ -22,7 +23,10 @@ export default async function ReportsPage() {
           برای ساخت گزارش سفارشی.
         </p>
       </header>
-      <ReportsManager role={session.role} />
+      <ReportsManager
+        role={session.role}
+        canExplain={(session.role === "owner" || session.role === "manager") && features.ai_assistant}
+      />
     </div>
   );
 }
