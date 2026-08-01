@@ -9,7 +9,7 @@ import type { ProposedAction } from "./ai";
 
 export type AiActionAuditStatus = "proposed" | "applied" | "failed" | "dismissed";
 
-export interface AiActionAuditEntry {
+export interface AiActionAuditEntry extends Record<string, unknown> {
   id: string;
   actorUserId: string;
   actorName: string;
