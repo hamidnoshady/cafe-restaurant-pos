@@ -16,7 +16,6 @@
     "db:app-role": "tsx scripts/create-app-role.ts",
     "db:seed": "tsx scripts/seed.ts",
     "db:platform-admin": "tsx scripts/seed-platform-admin.ts",
-
     "db:restore": "tsx scripts/restore.ts",
     "db:restore-tenant": "tsx scripts/restore-tenant.ts",
     "db:reconcile-opening": "tsx scripts/reconcile-opening-inventory.ts",
@@ -69,5 +68,22 @@
       "postcss": "^8.5.23",
       "sharp": "^0.35.3"
     }
-  }
+  },
+  "description": "Persian-first (RTL, Jalali calendar, Toman display) point-of-sale system for cafes and restaurants. Built with Next.js + PostgreSQL.",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hamidnoshady/cafe-restaurant-pos.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/hamidnoshady/cafe-restaurant-pos/issues"
+  },
+  "homepage": "https://github.com/hamidnoshady/cafe-restaurant-pos#readme"
 }
