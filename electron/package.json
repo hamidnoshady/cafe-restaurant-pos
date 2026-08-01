@@ -21,6 +21,10 @@
     "appId": "com.cafepos.desktop",
     "productName": "Cafe POS",
     "asar": true,
+    "asarUnpack": [
+      "node_modules/embedded-postgres/**",
+      "node_modules/@embedded-postgres/**"
+    ],
     "files": ["main.js", "preload.js", "package.json"],
     "win": {
       "target": "nsis",

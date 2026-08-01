@@ -28,7 +28,25 @@ const fs = require("node:fs");
 const crypto = require("node:crypto");
 const http = require("node:http");
 const { spawn } = require("node:child_process");
-const EmbeddedPostgres = require("embedded-postgres");
+
+/**
+ * `embedded-postgres` is a pure ES module ("type": "module"), and this file is
+ * CommonJS — a plain require() of it throws ERR_REQUIRE_ESM. It has to be
+ * pulled in with a dynamic import() instead, which is why every caller below
+ * awaits this rather than using a module-level binding.
+ *
+ * It also has to load from real disk rather than from inside app.asar: it
+ * locates the bundled Postgres binaries relative to its own import.meta.url
+ * (see @embedded-postgres/windows-x64), and those are .exe files Windows must
+ * be able to execute directly. Hence the asarUnpack entries in package.json.
+ */
+let embeddedPostgresModule = null;
+async function loadEmbeddedPostgres() {
+  if (!embeddedPostgresModule) {
+    embeddedPostgresModule = await import("embedded-postgres");
+  }
+  return embeddedPostgresModule.default;
+}
 
 const PG_PORT = 5544;
 const APP_PORT = 3000;
@@ -145,6 +163,7 @@ async function startBackend() {
   const dataDir = path.join(userDataDir, "pgdata");
   const firstRun = !isDataDirInitialised(dataDir);
 
+  const EmbeddedPostgres = await loadEmbeddedPostgres();
   pgInstance = new EmbeddedPostgres({
     databaseDir: dataDir,
     user: "postgres",
