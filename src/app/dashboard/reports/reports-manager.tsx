@@ -14,7 +14,7 @@ const BRANCH_TAB = { key: "branches", label: "مقایسهٔ شعب" } as const;
 
 type TabKey = (typeof BASE_TABS)[number]["key"] | typeof BRANCH_TAB.key;
 
-export function ReportsManager({ role }: { role: string }) {
+export function ReportsManager({ role, canExplain }: { role: string; canExplain: boolean }) {
   const [tab, setTab] = useState<TabKey>("standard");
   const tabs = role === "owner" ? [...BASE_TABS, BRANCH_TAB] : BASE_TABS;
   const panelId = "reports-workspace-panel";
@@ -58,7 +58,7 @@ export function ReportsManager({ role }: { role: string }) {
         aria-labelledby={"reports-tab-" + tab}
         className="min-w-0"
       >
-        {tab === "standard" ? <StandardReportsSection /> : null}
+        {tab === "standard" ? <StandardReportsSection canExplain={canExplain} /> : null}
         {tab === "builder" ? <ReportBuilderSection /> : null}
         {tab === "branches" ? <BranchOverviewSection /> : null}
       </section>

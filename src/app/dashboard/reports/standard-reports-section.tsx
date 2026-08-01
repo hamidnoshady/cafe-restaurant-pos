@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { SparklesIcon } from "lucide-react";
 import { JalaliDatePicker } from "../jalali-date-picker";
 import { inputClass } from "../ui";
 import { ChartPreview, DataTable } from "./chart-preview";
@@ -48,7 +49,7 @@ type LedgerReportData =
   | Comparison<BalanceSheet>
   | Comparison<CashFlow>;
 
-export function StandardReportsSection() {
+export function StandardReportsSection({ canExplain }: { canExplain: boolean }) {
   const [reports, setReports] = useState<StandardReportDef[] | null>(null);
   const [views, setViews] = useState<ViewMeta[]>([]);
   const [savedIds, setSavedIds] = useState<Map<string, string>>(new Map());
@@ -125,6 +126,29 @@ export function StandardReportsSection() {
     setCompare(false);
     setRows(null);
     setLedgerReport(null);
+  }
+
+  function explainSelectedReport() {
+    if (!selected) return;
+    const facts = rows
+      ? rowsToChartData(rows)
+          .slice(0, 8)
+          .map((row) => `${row.label}: ${row.value.toLocaleString("fa-IR")}`)
+          .join("؛ ")
+      : "";
+    const period =
+      dateFrom || dateTo
+        ? `بازهٔ انتخاب‌شده: ${dateFrom || "ابتدای داده"} تا ${dateTo || "امروز"}.`
+        : "";
+    const prompt = [
+      `گزارش «${selected.label}» را با اتکا به داده‌های واقعی بررسی و توضیح بده.`,
+      period,
+      facts ? `دادهٔ نمایشی فعلی: ${facts}.` : "",
+      "اگر دادهٔ کافی برای نتیجه‌گیری وجود ندارد، صریح بگو چه گزارشی باید بررسی شود؛ عددی را حدس نزن.",
+    ]
+      .filter(Boolean)
+      .join("\n");
+    window.dispatchEvent(new CustomEvent("ai:prefill", { detail: { prompt } }));
   }
 
   if (!reports) {
@@ -353,6 +377,15 @@ export function StandardReportsSection() {
                       }
                 }
               />
+              {canExplain && (rows !== null || ledgerReport !== null) ? (
+                <button
+                  type="button"
+                  onClick={explainSelectedReport}
+                  className="inline-flex min-h-[44px] items-center gap-1.5 rounded-xl border border-[#E6D4AF] bg-[#FFF8EA] px-3 text-sm font-semibold text-[#8A5C00] transition-colors hover:bg-[#FFF1D8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45"
+                >
+                  <SparklesIcon className="size-4" /> توضیح این عدد
+                </button>
+              ) : null}
               {selected.chartType && savedIds.has(selected.key) ? (
                 <PinToDashboardButton
                   savedReportId={savedIds.get(selected.key)!}
