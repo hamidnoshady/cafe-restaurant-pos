@@ -6,15 +6,16 @@ import { BranchesManager } from "../branches/branches-manager";
 import { LocationsManager } from "../locations/locations-manager";
 
 type BranchManagementTabKey = "branches" | "sync";
+type BranchFeatureKey = "multi_location" | "offline_mode";
 
 interface BranchManagementSettingsProps {
-  features: Pick<Record<string, boolean>, "multi_location" | "offline_mode">;
+  features: Record<string, boolean>;
 }
 
 const BRANCH_MANAGEMENT_TABS: Array<{
   key: BranchManagementTabKey;
   label: string;
-  requiredFeature: "multi_location" | "offline_mode";
+  requiredFeature: BranchFeatureKey;
 }> = [
   { key: "branches", label: "مدیریت شعب", requiredFeature: "multi_location" },
   { key: "sync", label: "همگام‌سازی شعب", requiredFeature: "offline_mode" },
