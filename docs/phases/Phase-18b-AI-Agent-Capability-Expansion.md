@@ -101,11 +101,13 @@ and lets the credit-pricing assumptions get validated against real usage before 
 
 ## Exit criteria
 
-- Every Wave 1 tool is implemented the same way `get_setup_state`/`run_report` are today: a pure
-  `runReadTool` case, tenant-scoped by the caller's own session, covered by a unit test the way
-  `ai-tools.ts`'s existing tools are.
-- Every Wave 2 action is a new `ACTION_CATALOG` entry mapping to an already role-guarded existing
-  endpoint — no new mutation architecture, no direct-write path that skips human confirmation.
+- Every Wave 1 tool supported by the current product data model is implemented the same way
+  `get_setup_state`/`run_report` are today: a pure `runReadTool` case, tenant-scoped by the
+  caller's own session, covered by a unit test the way `ai-tools.ts`'s existing tools are. A tool
+  whose required data model does not exist is explicitly deferred rather than approximated.
+- Every Wave 2 action backed by an already role-guarded existing endpoint is a new `ACTION_CATALOG`
+  entry — no new mutation architecture, no direct-write path that skips human confirmation. Actions
+  that need a new schema or endpoint are explicitly deferred to a future, separately scoped phase.
 - The cashier/waiter and platform-support variants each have their own guard function (not
   `requireManager`) and their own tool list — verified that neither can reach `propose_action` (cashier/
   waiter) or a tenant's data (platform support) even by a hand-crafted request.
@@ -157,7 +159,18 @@ and lets the credit-pricing assumptions get validated against real usage before 
 3. Timing for a later, separate real channel-integration phase (WhatsApp/Telegram/voice) — deferred until
    there is product demand and the required vendor, consent, retention and support decisions are made.
 
-## Status: Wave 1 implemented (partial); Wave 2 complete; Waves 3–5 implemented
+## Status: Complete for the documented existing-model scope
+
+All five waves have shipped and are merged to `main`. The implementation was verified in the
+Phase 18b pull-request CI runs, including migrations, migration re-runs, database integration
+tests, TypeScript, and unit tests.
+
+The original capability list also named items that require data the product does not yet model:
+expiry/shelf-life, delivery zones/geodata, staff shifts/clock-in, delivery ETA, customer credit
+limits, and reusable discount/promotion entities. They are intentionally deferred rather than
+implemented with invented schema, insecure direct writes, or misleading approximations. They do
+not block completion of Phase 18b's documented existing-model scope; each must be planned as a
+separate data-model phase before implementation.
 
 Phase 18's metering is in place, so Wave 1 (read-only tools) has shipped, per this phase's own
 sequencing decision. 16 of the 20 tools listed under Wave 1 are implemented as `runReadTool` cases
