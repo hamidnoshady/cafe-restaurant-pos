@@ -23,7 +23,7 @@ Each phase is a self-contained file with its own scope, exit criteria, and open 
 | 16 | Phase-16-Accounting-Suite.md | Implemented |
 | 17 | Phase-17-Feature-Gating-Hardening.md | Implemented |
 | 18 | Phase-18-AI-Platform-Administration-Credit-Billing.md | Implemented |
-| 18b | Phase-18b-AI-Agent-Capability-Expansion.md | Wave 1 implemented (partial); Wave 2 complete; Waves 3–5 implemented |
+| 18b | Phase-18b-AI-Agent-Capability-Expansion.md | Complete for the documented existing-model scope (all five waves shipped; schema-dependent follow-ups deferred) |
 | 19 | Phase-19-Public-API-Webhooks.md | Planned — implementation deferred until Phase 18 ships |
 
 Phases 0–11 built a single-business POS. Phases 12–17 turn it into a multi-business platform:
