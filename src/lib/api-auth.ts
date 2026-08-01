@@ -132,7 +132,7 @@ export function withApiKeyScope<Args extends [NextRequest, ...unknown[]]>(
         businessScope(apiKey.businessId, apiKey.locationId),
         async () => {
           // Public API requests never pass through withTenantScope(), so this
-          // feature check intentionally lives here rather than in features.ts'
+          // feature check intentionally lives here rather than in features.ts
           // session-oriented prefix mapping.
           if (!(await isFeatureEnabled(apiKey.businessId, "api_platform"))) {
             return NextResponse.json({ error: "feature_disabled" }, { status: 403 });
