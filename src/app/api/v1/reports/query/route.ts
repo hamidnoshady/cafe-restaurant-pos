@@ -7,7 +7,7 @@ import { runCustomReportQuery } from "@/lib/reports-service";
 const DEFAULT_LIMIT = 100;
 const MAX_LIMIT = 1000;
 
-function configFromSearchParams(searchParams: URLSearchParams): ReportConfig {
+function configFromSearchParams(searchParams: URLSearchParams): ReportConfig & { limit: number } {
   const equals: Record<string, string> = {};
   for (const [key, value] of searchParams.entries()) {
     if (key.startsWith("filter.")) equals[key.slice("filter.".length)] = value;
