@@ -35,6 +35,10 @@ const PUBLIC_PATHS = [
   // completely unreachable regardless of a valid token until this fix.
   "/api/server-sync/push",
   "/api/server-sync/pull",
+  // Phase 19: third-party integrations authenticate each request with a
+  // bearer API key inside api-auth.ts, not with a tenant session cookie.
+  // Prefix matching keeps every /api/v1/* route reachable pre-session.
+  "/api/v1",
 ];
 
 /**
@@ -69,6 +73,9 @@ const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
  *    keys on the token itself (hashed, so raw tokens never sit in memory as
  *    map keys) — a runaway or misconfigured sync client can only ever
  *    saturate its own bucket, not every business sharing this server.
+ *  - `apiKeyLimits`: the session-less public API route family, keyed by a
+ *    hash of its Authorization header so one integration cannot starve other
+ *    businesses (or retain a raw secret in this process).
  *  - `authIpLimits`: credential-exchange endpoints, keyed by IP, ahead of any
  *    session — the login routes have no other request-volume defence today.
  *
@@ -79,12 +86,15 @@ const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
  */
 const businessLimits = new Map<string, RateLimitEntry>();
 const syncTokenLimits = new Map<string, RateLimitEntry>();
+const apiKeyLimits = new Map<string, RateLimitEntry>();
 const authIpLimits = new Map<string, RateLimitEntry>();
 
 const BUSINESS_API_LIMIT = 300;
 const BUSINESS_API_WINDOW_MS = 60_000;
 const SYNC_TOKEN_LIMIT = 60;
 const SYNC_TOKEN_WINDOW_MS = 60_000;
+const API_KEY_LIMIT = 120;
+const API_KEY_WINDOW_MS = 60_000;
 const AUTH_IP_LIMIT = 20;
 const AUTH_IP_WINDOW_MS = 60_000;
 
@@ -98,6 +108,7 @@ function maybeSweep(now: number) {
   requestsSinceSweep = 0;
   sweepExpired(businessLimits, now, STALE_ENTRY_MS);
   sweepExpired(syncTokenLimits, now, STALE_ENTRY_MS);
+  sweepExpired(apiKeyLimits, now, STALE_ENTRY_MS);
   sweepExpired(authIpLimits, now, STALE_ENTRY_MS);
 }
 
@@ -120,6 +131,11 @@ const AUTH_RATE_LIMITED_PATHS = ["/api/auth/login", "/api/auth/pin-login", "/api
 /** The session-less, bearer-token server-to-server routes (see PUBLIC_PATHS below for why each is public). */
 const SYNC_TOKEN_RATE_LIMITED_PATHS = ["/api/rollup/ingest", "/api/server-sync/push", "/api/server-sync/pull"];
 
+/** All public API routes share one per-key bucket; this must stay prefix-based, not an exact route list. */
+function isPublicApiPath(pathname: string): boolean {
+  return pathname === "/api/v1" || pathname.startsWith("/api/v1/");
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const now = Date.now();
@@ -134,6 +150,13 @@ export async function middleware(request: NextRequest) {
     const authHeader = request.headers.get("authorization");
     const key = authHeader ? `token:${hashKey(authHeader)}` : `ip:${clientIp(request)}`;
     const result = checkRateLimit(syncTokenLimits, key, SYNC_TOKEN_LIMIT, SYNC_TOKEN_WINDOW_MS, now);
+    if (!result.allowed) return rateLimited(result.retryAfterMs);
+  }
+
+  if (isPublicApiPath(pathname)) {
+    const authHeader = request.headers.get("authorization");
+    const key = authHeader ? `api-key:${hashKey(authHeader)}` : `ip:${clientIp(request)}`;
+    const result = checkRateLimit(apiKeyLimits, key, API_KEY_LIMIT, API_KEY_WINDOW_MS, now);
     if (!result.allowed) return rateLimited(result.retryAfterMs);
   }
 
