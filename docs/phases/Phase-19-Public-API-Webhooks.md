@@ -4,8 +4,8 @@
 **Depends on:** Phase 12 (Multi-Business Tenancy), Phase 14 (Multiple Branches Per Business), Phase
 15 (Super-Admin Console — feature-flag override mechanism), Phase 17 (Feature Gating & Platform
 Hardening — `feature_flags`/`business_features`, the server-sync bearer-token model this phase
-generalizes). **Deliberately does not wait on Phase 18** (AI Platform Administration & Credit
-Billing) — see the ordering note below.
+generalizes). **Phase 18 and 18b are complete** — the prerequisite release state needed to begin this
+phase is now satisfied; see the ordering note below.
 **Goal:** Businesses (or developers they hire) can build "sub apps" against their own business's
 data through a first-class, scoped, bearer-token-authenticated public API, instead of the platform
 having no external integration surface at all.
@@ -14,12 +14,11 @@ having no external integration surface at all.
 
 ## Ordering note
 
-Phase 18 is still "planned — not yet implemented" as of this writing. This repo's stated convention
-is not to start a phase until the previous one's exit criteria are met. Phase 19 shares no code,
-schema, or subject matter with Phase 18 (AI billing vs. a public API), so this phase doc is written
-now — but per explicit product direction, **implementation of Phase 19 is deferred until Phase 18 is
-actually built and shipped.** This file is the spec to build against once that happens; nothing in
-this phase has been implemented yet.
+Phase 18 and all five waves of Phase 18b are complete. The prior release gate has therefore
+been met and implementation begins with the foundation described below. Phase 19 still shares no
+code, schema, or subject matter with AI billing; its staged delivery exists to keep the new external
+surface reviewable and to avoid exposing routes before the key, tenancy, feature-gate, and rate-limit
+controls are proven.
 
 ## Context: what exists today
 
@@ -187,9 +186,9 @@ capabilities, not a role.
 This phase is intended to ship as a sequence of separate PRs rather than one large PR, each building
 on the previous one's schema/auth foundation:
 
-1. **Foundation:** migration `0041_platform_api.sql`, `api-scopes.ts`, `api-auth.ts`,
-   `permissions.ts`'s `apiManage`, and the `middleware.ts` changes. Nothing user-facing yet, but the
-   auth/scoping foundation every later PR depends on.
+1. **Wave 1 — Foundation (this PR):** migration `0041_platform_api.sql`, `api-scopes.ts`,
+   `api-auth.ts`, owner-only `apiManage`, and the `/api/v1` middleware/rate-limit boundary. Nothing
+   user-facing yet, but the auth/scoping foundation every later PR depends on.
 2. **Core data API:** the orders/menu/inventory/reports routes.
 3. **Webhooks:** `webhooks.ts`, the webhook routes, and the delivery tick.
 4. **Dashboard UI:** `/dashboard/api` key/webhook management page.
@@ -203,8 +202,13 @@ on the previous one's schema/auth foundation:
    sub-apps remain API-key-only long-term — not decided here, since it depends on whether independent
    developers (vs. each business's own hired developer) turn out to be a real use case.
 
-## Status: planned — not yet implemented
+## Progress
 
-Nothing in this phase has been built. Per explicit product direction, implementation is deferred
-until Phase 18 (AI Platform Administration & Credit Billing) is actually built and ships — this doc
-is the spec to build against once that happens, not a signal to start now.
+- **Wave 1 — public API foundation:** implemented in this branch. It adds the tenant-scoped
+  schema, default-off `api_platform` feature flag, scoped API-key authentication, fail-closed
+  scope parsing, owner-only credential management permission, and a per-key `/api/v1/*` rate
+  limit. No public data route is exposed until Wave 2.
+- **Waves 2–5:** remain staged as documented below; each depends on Wave 1 and will be separately
+  verified before it is opened for review.
+
+## Status: in progress — Wave 1 foundation verified in CI; awaiting PR review

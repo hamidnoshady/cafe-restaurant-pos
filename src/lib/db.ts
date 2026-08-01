@@ -129,6 +129,9 @@ export async function withTenant<T>(
  *   - **server-sync-auth** — resolving a server-sync bearer token to the
  *     business it belongs to (Phase 17) is the same "identify the tenant
  *     first" problem as login, just keyed on a token instead of an email;
+ *   - **api-key-auth** — resolving a public API bearer key to the
+ *     business/location it belongs to (Phase 19) has the same identify-the-
+ *     tenant-first shape as server-sync authentication;
  *   - **identity** — a narrow write to the global identity table
  *     (`platform_users`, which carries no `business_id` to scope by) on
  *     behalf of a membership already verified to belong to the caller's own
