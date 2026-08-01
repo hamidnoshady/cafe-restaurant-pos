@@ -211,4 +211,4 @@ on the previous one's schema/auth foundation:
 - **Waves 2–5:** remain staged as documented below; each depends on Wave 1 and will be separately
   verified before it is opened for review.
 
-## Status: in progress — Wave 1 foundation awaiting verification
+## Status: in progress — Wave 1 foundation verified in CI; awaiting PR review
