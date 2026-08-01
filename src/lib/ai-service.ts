@@ -13,7 +13,7 @@ import {
   type ProposedAction,
   type PromptContext,
 } from "./ai";
-import { runReadTool, READ_TOOL_NAMES } from "./ai-tools";
+import { runReadTool, type FloorReadScope, type ToolResult } from "./ai-tools";
 import { estimateTokens, type AiTokenUsage } from "./ai-billing";
 
 export type { ProposedAction };
@@ -41,6 +41,12 @@ export interface InboundMessage {
   role: "user" | "assistant";
   content: string;
 }
+
+/** Supplies data only for the tool names exposed by the active agent mode. */
+export type ReadToolRunner = (
+  name: string,
+  args: Record<string, unknown>,
+) => Promise<ToolResult>;
 
 const MAX_TOOL_ROUNDS = 6;
 const REQUEST_TIMEOUT_MS = 60_000;
@@ -167,12 +173,29 @@ function toProposedAction(args: Record<string, unknown>): ProposedAction | null 
 export async function runAgentTurn(opts: {
   config: AiConfig;
   mode: AgentMode;
-  businessId: string;
+  /** Tenant turns provide this. Platform support supplies executeReadTool instead. */
+  businessId?: string;
+  /** Present only for the cashier/waiter assistant; it constrains all floor reads. */
+  floorScope?: FloorReadScope;
+  /**
+   * A separate read-tool realm can supply its own executor. It is deliberately
+   * invoked only after the tool name is checked against toolDefinitions(mode).
+   */
+  executeReadTool?: ReadToolRunner;
   promptContext: PromptContext;
   messages: InboundMessage[];
 }): Promise<AgentReply> {
-  const { config, mode, businessId, promptContext, messages } = opts;
+  const { config, mode, businessId, floorScope, promptContext, messages } = opts;
   const tools = toolDefinitions(mode);
+  const canPropose = tools.some((tool) => tool.function.name === "propose_action");
+  const allowedReadToolNames = new Set(
+    tools
+      .map((tool) => tool.function.name)
+      .filter((name) => name !== "propose_action"),
+  );
+  const toolRunner: ReadToolRunner | null =
+    opts.executeReadTool ??
+    (businessId ? (name, args) => runReadTool(name, args, businessId, floorScope) : null);
   const usage: AiTokenUsage = { inputTokens: 0, outputTokens: 0 };
 
   const convo: ProviderMessage[] = [
@@ -196,7 +219,9 @@ export async function runAgentTurn(opts: {
     }
 
     // A proposed action ends the turn immediately — we never auto-execute it.
-    const proposal = toolCalls.find((c) => c.function.name === "propose_action");
+    const proposal = canPropose
+      ? toolCalls.find((c) => c.function.name === "propose_action")
+      : undefined;
     if (proposal) {
       const action = toProposedAction(parseArgs(proposal.function.arguments));
       const text =
@@ -207,9 +232,10 @@ export async function runAgentTurn(opts: {
     // Otherwise every call must be a read tool — run them and feed results back.
     convo.push({ role: "assistant", content: message.content ?? "", tool_calls: toolCalls });
     for (const call of toolCalls) {
-      const result = READ_TOOL_NAMES.has(call.function.name)
-        ? await runReadTool(call.function.name, parseArgs(call.function.arguments), businessId)
-        : { ok: false, data: { error: `ابزار ناشناخته: ${call.function.name}` } };
+      const result =
+        allowedReadToolNames.has(call.function.name) && toolRunner
+          ? await toolRunner(call.function.name, parseArgs(call.function.arguments))
+          : { ok: false, data: { error: `ابزار ناشناخته: ${call.function.name}` } };
       convo.push({
         role: "tool",
         tool_call_id: call.id,
