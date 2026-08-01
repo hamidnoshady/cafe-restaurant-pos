@@ -21,16 +21,17 @@ function configFromSearchParams(searchParams: URLSearchParams): ReportConfig {
       : undefined;
 
   const rawLimit = searchParams.get("limit");
+  const hasSort = searchParams.has("sortBy") || searchParams.has("sortDir");
   return {
     view: searchParams.get("view") ?? "",
     metric: searchParams.get("metric") ?? "",
     aggregation: (searchParams.get("aggregation") ?? "") as ReportConfig["aggregation"],
     dimension: searchParams.get("dimension") ?? "",
     filters,
-    sort: searchParams.has("sortBy") || searchParams.has("sortDir")
+    sort: hasSort
       ? {
-          by: (searchParams.get("sortBy") ?? "") as ReportConfig["sort"]["by"],
-          dir: (searchParams.get("sortDir") ?? "") as ReportConfig["sort"]["dir"],
+          by: searchParams.get("sortBy") === "metric" ? "metric" : "dimension",
+          dir: searchParams.get("sortDir") === "desc" ? "desc" : "asc",
         }
       : undefined,
     limit: rawLimit === null ? DEFAULT_LIMIT : Number(rawLimit),
