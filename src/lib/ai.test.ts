@@ -265,3 +265,14 @@ describe("Phase 18b Wave 3 — role-scoped agent variants", () => {
     expect(prompt).toContain("دادهٔ عملیاتی یا شخصی");
   });
 });
+
+describe("Phase 18b Wave 4 — proactive agent isolation", () => {
+  it("gives scheduled digests no tools and no action path", () => {
+    expect(toolDefinitions("proactive")).toEqual([]);
+    const prompt = buildSystemPrompt({ mode: "proactive", businessName: "کافه آزمون" });
+    expect(prompt).toContain("هیچ ابزار");
+    expect(prompt).toContain("هیچ پیشنهاد اجرایی");
+    expect(prompt).toContain("هرگز پیام مشتری");
+    expect(prompt).not.toContain("انواع عملیات مجاز برای propose_action");
+  });
+});
