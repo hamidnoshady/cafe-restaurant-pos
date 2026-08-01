@@ -10,8 +10,8 @@ import {
   type AiTurnReservation,
 } from "@/lib/ai-billing-service";
 import { AiError, runAgentTurn, type InboundMessage } from "@/lib/ai-service";
-import { requireManager } from "@/lib/setup-state";
-import { withTenantScope } from "@/lib/auth";
+import { requireManager, resolveActiveLocation } from "@/lib/setup-state";
+import { requireFloorAssistant, withTenantScope } from "@/lib/auth";
 
 const MAX_MESSAGES = 24;
 const MAX_CONTENT = 8_000;
@@ -36,9 +36,6 @@ function sanitizeMessages(raw: unknown): InboundMessage[] {
  * parallel requests from spending the same business balance.
  */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireManager();
-  if (error) return error;
-
   let body: { mode?: unknown; messages?: unknown; currentStep?: unknown };
   try {
     body = await request.json();
@@ -46,7 +43,24 @@ export const POST = withTenantScope(async (request: NextRequest) => {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
 
-  const mode: AgentMode = body.mode === "wizard" ? "wizard" : "dashboard";
+  const mode: AgentMode =
+    body.mode === "wizard" ? "wizard" : body.mode === "floor" ? "floor" : "dashboard";
+  const guard = mode === "floor" ? await requireFloorAssistant() : await requireManager();
+  if (guard.error) return guard.error;
+  const session = guard.session;
+
+  const floorLocation = mode === "floor" ? await resolveActiveLocation(session) : null;
+  if (mode === "floor" && !floorLocation) {
+    return NextResponse.json({ error: "no_location" }, { status: 409 });
+  }
+  if (
+    mode === "floor" &&
+    session.role !== "cashier" &&
+    session.role !== "waiter"
+  ) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
+
   const messages = sanitizeMessages(body.messages);
   if (messages.length === 0) {
     return NextResponse.json({ error: "empty_messages" }, { status: 400 });
@@ -94,6 +108,14 @@ export const POST = withTenantScope(async (request: NextRequest) => {
       config,
       mode,
       businessId: session.businessId,
+      floorScope:
+        mode === "floor" && floorLocation && (session.role === "cashier" || session.role === "waiter")
+          ? {
+              locationId: floorLocation.id,
+              userId: session.sub,
+              role: session.role,
+            }
+          : undefined,
       promptContext,
       messages,
     });

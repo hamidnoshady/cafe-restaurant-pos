@@ -2,10 +2,10 @@
 
 /**
  * Floating AI assistant: a bottom-left launcher that opens a chat panel. Works in
- * two modes — "wizard" (helps fill the setup steps) and "dashboard" (reports +
- * confirmed jobs). Every mutation the agent proposes is shown as a confirm card;
- * nothing is written until the user presses "Apply", which POSTs the proposed
- * payload to the mapped, already role-guarded endpoint.
+ * three modes — "wizard" (helps fill the setup steps), "dashboard" (reports +
+ * confirmed jobs), and "floor" (cashier/waiter read-only help). Every mutation
+ * the manager agent proposes is shown as a confirm card; floor mode never
+ * receives or renders a proposal.
  */
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -25,7 +25,7 @@ interface Msg {
 }
 
 interface Props {
-  mode: "wizard" | "dashboard";
+  mode: "wizard" | "dashboard" | "floor";
   currentStep?: string | null;
 }
 
@@ -42,14 +42,19 @@ const CHAT_ERROR: Record<string, string> = {
   empty_messages: "پیامی برای ارسال نیست.",
 };
 
-function greeting(mode: "wizard" | "dashboard"): string {
-  return mode === "wizard"
-    ? "سلام! من دستیار راه‌اندازی هستم. بگویید کافه یا رستوران‌تان چه ویژگی‌هایی دارد تا با هم فیلدهای هر مرحله را کامل کنیم. هر تغییری قبل از ثبت، تأیید شما را لازم دارد."
-    : "سلام! می‌توانم گزارش‌های فروش، منو، موجودی و حسابداری را نشان دهم، وضعیت راه‌اندازی را بررسی کنم و کارهای مجاز را با تأیید شما انجام دهم. چه کمکی از من برمی‌آید؟";
+function greeting(mode: "wizard" | "dashboard" | "floor"): string {
+  if (mode === "wizard") {
+    return "سلام! من دستیار راه‌اندازی هستم. بگویید کافه یا رستوران‌تان چه ویژگی‌هایی دارد تا با هم فیلدهای هر مرحله را کامل کنیم. هر تغییری قبل از ثبت، تأیید شما را لازم دارد.";
+  }
+  if (mode === "floor") {
+    return "سلام! می‌توانم دربارهٔ منوی شعبه، مواد اولیهٔ ثبت‌شده و پیش‌نمایش تقسیم برابر صورت‌حساب کمک کنم. هیچ تغییری ثبت نمی‌کنم؛ برای موارد حساسیت غذایی، دادهٔ ثبت‌نشده را حدس نمی‌زنم.";
+  }
+  return "سلام! می‌توانم گزارش‌های فروش، منو، موجودی و حسابداری را نشان دهم، وضعیت راه‌اندازی را بررسی کنم و کارهای مجاز را با تأیید شما انجام دهم. چه کمکی از من برمی‌آید؟";
 }
 
 export function AiAssistant({ mode, currentStep }: Props) {
   const router = useRouter();
+  const canPropose = mode === "wizard" || mode === "dashboard";
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
@@ -94,7 +99,12 @@ export function AiAssistant({ mode, currentStep }: Props) {
       }
       setMessages((prev) => [
         ...prev,
-        { id: uid(), role: "assistant", content: data.content ?? "", proposal: data.proposedAction ?? null },
+        {
+          id: uid(),
+          role: "assistant",
+          content: data.content ?? "",
+          proposal: canPropose ? data.proposedAction ?? null : null,
+        },
       ]);
     } catch {
       setMessages((prev) => [
@@ -107,6 +117,7 @@ export function AiAssistant({ mode, currentStep }: Props) {
   }
 
   async function applyProposal(msg: Msg) {
+    if (!canPropose) return;
     const proposal = msg.proposal;
     if (!proposal) return;
     const meta = ACTION_CATALOG[proposal.type];
@@ -171,7 +182,11 @@ export function AiAssistant({ mode, currentStep }: Props) {
               <div>
                 <p className="text-sm font-bold leading-tight">دستیار هوشمند</p>
                 <p className="text-[11px] text-muted-foreground">
-                  {mode === "wizard" ? "کمک به راه‌اندازی" : "گزارش‌ها و کارها"}
+                  {mode === "wizard"
+                    ? "کمک به راه‌اندازی"
+                    : mode === "floor"
+                      ? "منو و صورت‌حساب؛ فقط‌خواندنی"
+                      : "گزارش‌ها و کارها"}
                 </p>
               </div>
             </div>
@@ -194,7 +209,7 @@ export function AiAssistant({ mode, currentStep }: Props) {
                   >
                     {m.content}
                   </div>
-                  {m.proposal && (
+                  {canPropose && m.proposal && (
                     <ProposalCard
                       proposal={m.proposal}
                       applied={m.applied}
@@ -234,12 +249,18 @@ export function AiAssistant({ mode, currentStep }: Props) {
                 <SendIcon className="rtl:-scale-x-100" />
               </Button>
             </div>
-            <p className="mt-1 px-1 text-[10px] text-muted-foreground">
-              دستیار ممکن است اشتباه کند؛ تغییرها فقط با تأیید شما ثبت می‌شوند.{" "}
-              <Link href="/dashboard/ai" className="underline underline-offset-2 hover:text-foreground">
-                اعتبار و اشتراک
-              </Link>
-            </p>
+            {mode === "floor" ? (
+              <p className="mt-1 px-1 text-[10px] text-muted-foreground">
+                این دستیار فقط راهنمایی و پیش‌نمایش می‌دهد؛ هیچ پرداخت، تقسیم یا تغییری ثبت نمی‌شود.
+              </p>
+            ) : (
+              <p className="mt-1 px-1 text-[10px] text-muted-foreground">
+                دستیار ممکن است اشتباه کند؛ تغییرها فقط با تأیید شما ثبت می‌شوند.{" "}
+                <Link href="/dashboard/ai" className="underline underline-offset-2 hover:text-foreground">
+                  اعتبار و اشتراک
+                </Link>
+              </p>
+            )}
           </div>
         </div>
       )}

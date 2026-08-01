@@ -2,7 +2,7 @@
 
 Persian-first (RTL, Jalali calendar, Toman display) point-of-sale system for cafes and restaurants. Built with Next.js + PostgreSQL.
 
-Development is phased — see [docs/phases/README.md](docs/phases/README.md) for the phase index. **Current status: all 18 phases implemented** — a single-business POS (Phases 0–11: menu/POS, tables, waiter/kitchen real-time sync, offline queue, inventory, ledger, reporting, multi-location rollup, backups, delivery) turned into a multi-business platform (Phases 12–17: tenant isolation via RLS, teams & permissions, per-business branches, a super-admin console, a real accounting suite, and entitlement/rate-limit hardening), then added platform-owned, metered AI credits and subscriptions (Phase 18).
+Development is phased — see [docs/phases/README.md](docs/phases/README.md) for the phase index. **Current status: all 18 numbered phases implemented; Phase 18b is in progress** — a single-business POS (Phases 0–11: menu/POS, tables, waiter/kitchen real-time sync, offline queue, inventory, ledger, reporting, multi-location rollup, backups, delivery) turned into a multi-business platform (Phases 12–17: tenant isolation via RLS, teams & permissions, per-business branches, a super-admin console, a real accounting suite, and entitlement/rate-limit hardening), then added platform-owned, metered AI credits and subscriptions (Phase 18). Phase 18b has Wave 1 implemented (partial), Wave 2 complete, and Wave 3 implemented.
 
 ## Stack
 
@@ -86,10 +86,11 @@ kitchen": its items land on the KDS as `sent` immediately.
   the floor plan). Tap a seated table to add items to its open order/round, see each
   item's live kitchen status, and mark a `ready` item `served` once it's delivered.
 - **`/dashboard/kitchen`** (Kitchen, + Owner/Manager) — the KDS: one ticket per table
-  (grouping every round on that table's open session) or per takeaway order, oldest
-  first. Tickets outstanding ≥ 10 minutes (`DEFAULT_TICKET_AGING_MINUTES`,
-  `src/lib/order-item-status.ts`) flag red. "Bump" moves an item `sent → preparing →
-  ready`.
+  (grouping every round on that table's open session) or per takeaway order. Its deterministic
+  next-ticket queue places overdue tickets first, then `sent`, `preparing`, and `ready`, with
+  oldest-first ties—no AI call or credit charge. Tickets outstanding ≥ 10 minutes
+  (`DEFAULT_TICKET_AGING_MINUTES`, `src/lib/order-item-status.ts`) flag red. "Bump" moves an
+  item `sent → preparing → ready`.
 - Every open dashboard screen (cashier orders list, floor plan, waiter board, KDS)
   refetches on the relevant WebSocket event, so no two screens ever show conflicting
   order/table state.

@@ -11,7 +11,7 @@ import {
 } from "./auth-edge";
 import { query } from "./db";
 import { featureForApiPath, isFeatureEnabled } from "./features";
-import { hasPermission, parseOverrides, type Permission } from "./permissions";
+import { hasPermission, parseOverrides, PERMISSIONS, type Permission } from "./permissions";
 import { activeGrant } from "./platform-service";
 import { platformAudit } from "./platform-auth";
 import { businessScope, enterTenantScope, NO_SCOPE, runInTenantScope } from "./tenant-context";
@@ -203,4 +203,21 @@ export async function requirePermission(
 
   // The token's role can lag a role change; the database is the authority.
   return { session: { ...session, role: membership.role }, error: null };
+}
+
+
+/**
+ * Wave 3 floor-assistant guard. It is intentionally separate from
+ * requireManager: only current cashier/waiter memberships with menu-view
+ * access may use the narrow, read-only assistant.
+ */
+export async function requireFloorAssistant(): Promise<
+  { session: SessionPayload; error: null } | { session: null; error: NextResponse }
+> {
+  const guard = await requirePermission(PERMISSIONS.menuView);
+  if (guard.error) return guard;
+  if (guard.session.role !== "cashier" && guard.session.role !== "waiter") {
+    return { session: null, error: NextResponse.json({ error: "forbidden" }, { status: 403 }) };
+  }
+  return guard;
 }

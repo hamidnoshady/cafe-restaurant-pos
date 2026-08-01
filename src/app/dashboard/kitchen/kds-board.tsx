@@ -5,6 +5,11 @@ import { CheckCircle2Icon, CircleIcon, FlameIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { toPersianDigits } from "@/lib/digits";
+import {
+  compareKitchenTicketPriority,
+  priorityForKitchenTicket,
+  type KitchenTicketPriority,
+} from "@/lib/kitchen-priority";
 import { formatJalali } from "@/lib/jalali";
 import {
   DEFAULT_TICKET_AGING_MINUTES,
@@ -28,6 +33,7 @@ interface TicketItem {
   table_session_id: string | null;
   table_id: string | null;
   table_name: string | null;
+  priority: KitchenTicketPriority;
 }
 
 interface Modifier {
@@ -51,6 +57,7 @@ interface Ticket {
   orderNumber: number;
   orderType: TicketItem["order_type"];
   tableName: string | null;
+  priority: KitchenTicketPriority;
 }
 
 type TicketStatus = TicketItem["status"];
@@ -118,6 +125,37 @@ function formatUpdatedAt(timestamp: number): string {
       minute: "2-digit",
       hour12: false,
     }).format(timestamp),
+  );
+}
+
+const PRIORITY_META: Record<
+  KitchenTicketPriority["tier"],
+  { label: string; className: string }
+> = {
+  overdue: {
+    label: "فوری",
+    className: "border-[#E9B9AF] bg-[#FFF3F1] text-[#AF3E2E]",
+  },
+  waiting: {
+    label: "بعدی",
+    className: "border-[#F0D39C] bg-[#FFF7E8] text-[#835500]",
+  },
+  preparing: {
+    label: "در جریان",
+    className: "border-[#EDC976] bg-[#FFF1D8] text-[#7B5100]",
+  },
+  ready: {
+    label: "آمادهٔ تحویل",
+    className: "border-[#B9E3C8] bg-[#ECF8F0] text-[#1E7041]",
+  },
+};
+
+function PriorityBadge({ priority }: { priority: KitchenTicketPriority }) {
+  const meta = PRIORITY_META[priority.tier];
+  return (
+    <span className={`rounded-md border px-2 py-1 text-xs font-semibold ${meta.className}`}>
+      {meta.label}
+    </span>
   );
 }
 
@@ -237,7 +275,10 @@ function TicketCard({
               {sourceLabel(ticket)}
             </p>
           </div>
-          <StatusBadge status={status} />
+          <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
+            <PriorityBadge priority={ticket.priority} />
+            <StatusBadge status={status} />
+          </div>
         </div>
         <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
           <span
@@ -284,10 +325,13 @@ function TicketDetails({
             سفارش {toPersianDigits(ticket.orderNumber)}
           </h2>
         </div>
-        <StatusBadge status={status} />
+        <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
+          <PriorityBadge priority={ticket.priority} />
+          <StatusBadge status={status} />
+        </div>
       </div>
 
-      <dl className="mt-5 grid grid-cols-2 gap-3 border-y border-[#F0EFEB] py-4 text-sm">
+      <dl className="mt-5 grid grid-cols-2 gap-3 border-y border-[#F0EFEB] py-4 text-sm md:grid-cols-3">
         <div>
           <dt className="text-xs text-[#77756F]">منبع سفارش</dt>
           <dd className="mt-1 font-semibold text-[#3C3A36]">
@@ -301,6 +345,10 @@ function TicketDetails({
           >
             {formatElapsed(ticket.earliestSentAt, now)}
           </dd>
+        </div>
+        <div>
+          <dt className="text-xs text-[#77756F]">اولویت صف</dt>
+          <dd className="mt-1"><PriorityBadge priority={ticket.priority} /></dd>
         </div>
       </dl>
 
@@ -469,21 +517,29 @@ export function KdsBoard() {
     return [...groups.entries()]
       .map(([key, ticketItems]) => {
         const first = ticketItems[0];
+        const earliestSentAt = Math.min(
+          ...ticketItems.map((item) => new Date(item.sent_to_kitchen_at).getTime()),
+        );
+        const status = ticketItems.some((item) => item.status === "sent")
+          ? "sent"
+          : ticketItems.some((item) => item.status === "preparing")
+            ? "preparing"
+            : "ready";
+        const priority = priorityForKitchenTicket({ status, sentAt: earliestSentAt }, now);
         return {
           key,
-          earliestSentAt: Math.min(
-            ...ticketItems.map((item) =>
-              new Date(item.sent_to_kitchen_at).getTime(),
-            ),
-          ),
+          earliestSentAt: priority.sentAtMs,
           items: ticketItems,
           orderNumber: first.order_number,
           orderType: first.order_type,
           tableName: first.table_name,
+          priority,
         };
       })
-      .sort((a, b) => a.earliestSentAt - b.earliestSentAt);
-  }, [items]);
+      .sort((left, right) =>
+        compareKitchenTicketPriority(left.priority, right.priority),
+      );
+  }, [items, now]);
 
   const visibleTickets = useMemo(
     () =>
@@ -531,6 +587,8 @@ export function KdsBoard() {
     ],
     [tickets],
   );
+
+  const nextTicket = visibleTickets[0] ?? null;
 
   const syncLabel = !isOnline
     ? "اتصال قطع است"
@@ -637,6 +695,23 @@ export function KdsBoard() {
         >
           {mutationMessage}
         </p>
+      ) : null}
+
+      {nextTicket ? (
+        <button
+          type="button"
+          onClick={() => setSelectedKey(nextTicket.key)}
+          className="flex w-full flex-wrap items-center justify-between gap-3 rounded-xl border border-[#F0D39C] bg-[#FFF9EE] px-4 py-3 text-right transition-colors hover:bg-[#FFF3DE] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]"
+          aria-label={`انتخاب سفارش اولویت‌دار ${toPersianDigits(nextTicket.orderNumber)}`}
+        >
+          <span className="text-sm font-bold text-[#5B4214]">
+            نوبت بعدی: سفارش {toPersianDigits(nextTicket.orderNumber)}
+          </span>
+          <span className="flex items-center gap-2 text-sm text-[#7B5100]">
+            <PriorityBadge priority={nextTicket.priority} />
+            <span>{formatElapsed(nextTicket.earliestSentAt, now)}</span>
+          </span>
+        </button>
       ) : null}
 
       <nav

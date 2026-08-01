@@ -13,6 +13,7 @@ import {
   inputClass,
   useCan,
 } from "../ui";
+import { PlatformSupportAssistant } from "./platform-support-assistant";
 
 interface AiConfig {
   enabled: boolean;
@@ -230,6 +231,8 @@ export default function PlatformAiPage() {
 
       <ErrorBox>{error}</ErrorBox>
       {notice ? <InfoBox>{notice}</InfoBox> : null}
+
+      {can("ai.read") ? <PlatformSupportAssistant /> : null}
 
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Card title="کسب‌وکارهای AI">
