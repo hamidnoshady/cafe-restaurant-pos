@@ -50,6 +50,76 @@ export async function getStockLevels(
   return new Map(rows.map((r) => [r.inventory_item_id, Number(r.total)]));
 }
 
+export interface InventoryOverview {
+  items: Record<string, unknown>[];
+  suppliers: Record<string, unknown>[];
+  menuItems: Record<string, unknown>[];
+  modifiers: Record<string, unknown>[];
+  recipes: Record<string, unknown>[];
+  modifierRecipes: Record<string, unknown>[];
+  costingMethod: CostingMethod;
+}
+
+/**
+ * The read-only inventory shape shared by the dashboard and public API. Its
+ * explicit location parameter keeps a branch-bound API key from reaching
+ * stock, suppliers, or recipes belonging to another branch.
+ */
+export async function getInventoryOverview(
+  locationId: string,
+  businessId: string,
+): Promise<InventoryOverview> {
+  const [
+    { rows: items },
+    { rows: suppliers },
+    { rows: menuItems },
+    { rows: modifiers },
+    { rows: recipes },
+    { rows: modifierRecipes },
+    stockLevels,
+    costingMethod,
+  ] = await Promise.all([
+    query(
+      "SELECT id, name, sku, unit, reorder_level, avg_cost, purchase_unit, purchase_unit_factor, is_active FROM inventory_items WHERE location_id = $1 ORDER BY name",
+      [locationId],
+    ),
+    query(
+      "SELECT id, name, phone, notes, is_active FROM suppliers WHERE location_id = $1 ORDER BY name",
+      [locationId],
+    ),
+    query("SELECT id, name FROM menu_items WHERE location_id = $1 AND is_active ORDER BY name", [locationId]),
+    query(
+      "SELECT m.id, m.name, m.group_id, mg.name AS group_name FROM modifiers m JOIN modifier_groups mg ON mg.id = m.group_id WHERE m.location_id = $1 AND m.is_active ORDER BY mg.name, m.name",
+      [locationId],
+    ),
+    query(
+      "SELECT mii.menu_item_id, mii.inventory_item_id, mii.quantity FROM menu_item_ingredients mii JOIN menu_items mi ON mi.id = mii.menu_item_id WHERE mi.location_id = $1",
+      [locationId],
+    ),
+    query(
+      "SELECT modi.modifier_id, modi.inventory_item_id, modi.quantity_delta FROM modifier_ingredients modi JOIN modifiers m ON m.id = modi.modifier_id WHERE m.location_id = $1",
+      [locationId],
+    ),
+    getStockLevels(locationId),
+    getCostingMethod(businessId),
+  ]);
+
+  const itemsWithStock = items.map((item) => ({
+    ...item,
+    stock: stockLevels.get(item.id as string) ?? 0,
+  }));
+
+  return {
+    items: itemsWithStock,
+    suppliers,
+    menuItems,
+    modifiers,
+    recipes,
+    modifierRecipes,
+    costingMethod,
+  };
+}
+
 /**
  * Expands an order's non-voided items + modifiers into per-ingredient
  * requirements and deducts each one. Called once, from the payment/

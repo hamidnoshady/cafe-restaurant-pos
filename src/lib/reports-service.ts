@@ -22,8 +22,12 @@ export interface ReportRow extends Record<string, unknown> {
 }
 
 /** Runs a validated custom (or standard) report config against its view. Throws if invalid — call validateReportConfig first for a user-facing error. */
-export async function runCustomReportQuery(businessId: string, config: ReportConfig): Promise<ReportRow[]> {
-  const { sql, params } = buildReportQuery(config, businessId);
+export async function runCustomReportQuery(
+  businessId: string,
+  config: ReportConfig,
+  locationId?: string,
+): Promise<ReportRow[]> {
+  const { sql, params } = buildReportQuery(config, businessId, locationId);
   const { rows } = await query<ReportRow>(sql, params);
   return rows;
 }
@@ -38,6 +42,7 @@ export async function runStandardReportRows(
   key: string,
   businessId: string,
   filters: DateRangeFilters = {},
+  locationId?: string,
 ): Promise<Record<string, unknown>[]> {
   const def = STANDARD_REPORTS.find((r) => r.key === key);
   if (!def || !def.view) throw new Error(`no_table_view_for_report: ${key}`);
@@ -45,6 +50,10 @@ export async function runStandardReportRows(
 
   const params: unknown[] = [businessId];
   const where = ["business_id = $1"];
+  if (locationId) {
+    params.push(locationId);
+    where.push("location_id = $" + params.length);
+  }
   if (view.dateColumn && filters.dateFrom) {
     params.push(filters.dateFrom);
     where.push(`${view.dateColumn} >= $${params.length}`);
@@ -75,9 +84,14 @@ async function ledgerAccountTotals(
   accountTypes: string[],
   dateTo?: string,
   dateFrom?: string,
+  locationId?: string,
 ): Promise<LedgerAccountTotal[]> {
   const params: unknown[] = [businessId, accountTypes];
   const where = ["business_id = $1", "account_type::text = ANY($2::text[])"];
+  if (locationId) {
+    params.push(locationId);
+    where.push("location_id = $" + params.length);
+  }
   if (dateFrom) {
     params.push(dateFrom);
     where.push(`entry_date >= $${params.length}`);
@@ -128,8 +142,15 @@ const COST_OF_SALES_CODE_SET = new Set(COST_OF_SALES_CODES);
 export async function getProfitAndLoss(
   businessId: string,
   filters: DateRangeFilters = {},
+  locationId?: string,
 ): Promise<ProfitAndLoss> {
-  const rows = await ledgerAccountTotals(businessId, ["revenue", "expense"], filters.dateTo, filters.dateFrom);
+  const rows = await ledgerAccountTotals(
+    businessId,
+    ["revenue", "expense"],
+    filters.dateTo,
+    filters.dateFrom,
+    locationId,
+  );
   const revenue: PnlLine[] = [];
   const expenses: PnlLine[] = [];
   for (const r of rows) {
@@ -185,10 +206,14 @@ export interface BalanceSheet {
  * across ALL accounts sums to zero, i.e. assets - (liabilities + equity +
  * (revenue - expenses)) = 0 identically.
  */
-export async function getBalanceSheet(businessId: string, asOfDate?: string): Promise<BalanceSheet> {
+export async function getBalanceSheet(
+  businessId: string,
+  asOfDate?: string,
+  locationId?: string,
+): Promise<BalanceSheet> {
   const [balanceRows, incomeRows] = await Promise.all([
-    ledgerAccountTotals(businessId, ["asset", "liability", "equity"], asOfDate),
-    ledgerAccountTotals(businessId, ["revenue", "expense"], asOfDate),
+    ledgerAccountTotals(businessId, ["asset", "liability", "equity"], asOfDate, undefined, locationId),
+    ledgerAccountTotals(businessId, ["revenue", "expense"], asOfDate, undefined, locationId),
   ]);
 
   const assets: PnlLine[] = [];
@@ -269,17 +294,22 @@ async function cashBalanceAsOf(
   businessId: string,
   cashAccountIds: string[],
   asOfDate?: string,
+  locationId?: string,
 ): Promise<number> {
   const params: unknown[] = [businessId, cashAccountIds];
-  let dateClause = "";
+  const where = ["je.business_id = $1", "jl.account_id = ANY($2::uuid[])"];
   if (asOfDate) {
     params.push(asOfDate);
-    dateClause = `AND je.entry_date <= $${params.length}`;
+    where.push("je.entry_date <= $" + params.length);
+  }
+  if (locationId) {
+    params.push(locationId);
+    where.push("je.location_id = $" + params.length);
   }
   const { rows } = await query<{ debit: string; credit: string }>(
-    `SELECT COALESCE(SUM(jl.debit), 0) AS debit, COALESCE(SUM(jl.credit), 0) AS credit
-       FROM journal_lines jl JOIN journal_entries je ON je.id = jl.entry_id
-      WHERE je.business_id = $1 AND jl.account_id = ANY($2::uuid[]) ${dateClause}`,
+    "SELECT COALESCE(SUM(jl.debit), 0) AS debit, COALESCE(SUM(jl.credit), 0) AS credit " +
+      "FROM journal_lines jl JOIN journal_entries je ON je.id = jl.entry_id WHERE " +
+      where.join(" AND "),
     params,
   );
   return Number(rows[0].debit) - Number(rows[0].credit);
@@ -295,6 +325,7 @@ async function cashBalanceAsOf(
 export async function getCashFlow(
   businessId: string,
   filters: DateRangeFilters = {},
+  locationId?: string,
 ): Promise<CashFlowStatement> {
   const cashAccountIds = await cashEquivalentAccountIds(businessId);
   if (cashAccountIds.length === 0) {
@@ -311,12 +342,16 @@ export async function getCashFlow(
     params.push(filters.dateTo);
     where.push(`je.entry_date <= $${params.length}`);
   }
+  if (locationId) {
+    params.push(locationId);
+    where.push("je.location_id = $" + params.length);
+  }
 
   const [openingCash, closingCash, lineRows] = await Promise.all([
     filters.dateFrom
-      ? cashBalanceAsOf(businessId, cashAccountIds, addDays(filters.dateFrom, -1))
+      ? cashBalanceAsOf(businessId, cashAccountIds, addDays(filters.dateFrom, -1), locationId)
       : Promise.resolve(0),
-    cashBalanceAsOf(businessId, cashAccountIds, filters.dateTo),
+    cashBalanceAsOf(businessId, cashAccountIds, filters.dateTo, locationId),
     query<{ source_type: string | null; debit: string; credit: string }>(
       `SELECT je.source_type, SUM(jl.debit) AS debit, SUM(jl.credit) AS credit
          FROM journal_lines jl JOIN journal_entries je ON je.id = jl.entry_id
@@ -434,20 +469,30 @@ export interface Comparison<T> {
 export async function getProfitAndLossComparison(
   businessId: string,
   filters: DateRangeFilters,
+  locationId?: string,
 ): Promise<Comparison<ProfitAndLoss>> {
-  const current = await getProfitAndLoss(businessId, filters);
+  const current = await getProfitAndLoss(businessId, filters, locationId);
   if (!filters.dateFrom || !filters.dateTo) return { current, previous: null };
-  const previous = await getProfitAndLoss(businessId, previousPeriodRange(filters.dateFrom, filters.dateTo));
+  const previous = await getProfitAndLoss(
+    businessId,
+    previousPeriodRange(filters.dateFrom, filters.dateTo),
+    locationId,
+  );
   return { current, previous };
 }
 
 export async function getCashFlowComparison(
   businessId: string,
   filters: DateRangeFilters,
+  locationId?: string,
 ): Promise<Comparison<CashFlowStatement>> {
-  const current = await getCashFlow(businessId, filters);
+  const current = await getCashFlow(businessId, filters, locationId);
   if (!filters.dateFrom || !filters.dateTo) return { current, previous: null };
-  const previous = await getCashFlow(businessId, previousPeriodRange(filters.dateFrom, filters.dateTo));
+  const previous = await getCashFlow(
+    businessId,
+    previousPeriodRange(filters.dateFrom, filters.dateTo),
+    locationId,
+  );
   return { current, previous };
 }
 
@@ -460,10 +505,11 @@ export async function getBalanceSheetComparison(
   businessId: string,
   asOfDate: string | undefined,
   previousAsOfDate: string | undefined,
+  locationId?: string,
 ): Promise<Comparison<BalanceSheet>> {
-  const current = await getBalanceSheet(businessId, asOfDate);
+  const current = await getBalanceSheet(businessId, asOfDate, locationId);
   if (!previousAsOfDate) return { current, previous: null };
-  const previous = await getBalanceSheet(businessId, previousAsOfDate);
+  const previous = await getBalanceSheet(businessId, previousAsOfDate, locationId);
   return { current, previous };
 }
 

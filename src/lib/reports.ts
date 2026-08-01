@@ -331,11 +331,13 @@ export function validateReportConfig(config: ReportConfig): string[] {
  * Builds a parameterized SQL query for a validated config. Throws if the
  * config is invalid — callers should run validateReportConfig first (the
  * API route does; this is the last line of defense, not the primary check).
- * $1 is always businessId.
+ * $1 is always businessId. Public API callers additionally bind one
+ * locationId, so a branch-scoped API key can never aggregate sibling data.
  */
 export function buildReportQuery(
   config: ReportConfig,
   businessId: string,
+  locationId?: string,
 ): { sql: string; params: unknown[] } {
   const errors = validateReportConfig(config);
   if (errors.length > 0) {
@@ -361,6 +363,10 @@ export function buildReportQuery(
 
   const params: unknown[] = [businessId];
   const where = ["business_id = $1"];
+  if (locationId) {
+    params.push(locationId);
+    where.push(`location_id = $${params.length}`);
+  }
   if (view.dateColumn && config.filters?.dateFrom) {
     params.push(config.filters.dateFrom);
     where.push(`${view.dateColumn} >= $${params.length}`);

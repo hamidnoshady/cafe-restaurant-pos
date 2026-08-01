@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
-import { query } from "@/lib/db";
 import { type CartItemInput } from "@/lib/order-cart";
 import { createOrder } from "@/lib/order-mutations";
+import { listOrders } from "@/lib/order-read-service";
 import type { DiscountInput } from "@/lib/orders";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { broadcast } from "@/lib/realtime";
@@ -15,15 +15,7 @@ export const GET = withTenantScope(async () => {
   const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ orders: [] });
 
-  const { rows: orders } = await query(
-    `SELECT o.id, o.order_number, o.type, o.status, o.table_id, dt.name AS table_name,
-            o.guest_count, o.subtotal, o.discount, o.tax, o.total, o.note, o.opened_at
-       FROM orders o LEFT JOIN dining_tables dt ON dt.id = o.table_id
-      WHERE o.location_id = $1 AND o.status = 'open'
-      ORDER BY o.opened_at DESC`,
-    [location.id],
-  );
-  return NextResponse.json({ orders });
+  return NextResponse.json({ orders: await listOrders(location.id, { status: "open" }) });
 });
 
 interface CreateOrderBody {
