@@ -135,16 +135,19 @@ export async function getPlatformAiConfig(): Promise<PlatformAiConfig> {
   return rows[0] ? rowToConfig(rows[0]) : defaultPlatformConfig();
 }
 
-/** Whether a global provider can safely make metered requests. */
+/** A provider connection that may serve the platform support agent. */
+export function isPlatformAiProviderReady(config: PlatformAiConfig): boolean {
+  return config.enabled && Boolean(config.apiKey) && config.maxOutputTokens >= 64;
+}
+
+/** Whether a global provider can safely make metered tenant requests. */
 export function isPlatformAiConfigured(config: PlatformAiConfig): boolean {
   return (
-    config.enabled &&
-    Boolean(config.apiKey) &&
+    isPlatformAiProviderReady(config) &&
     config.inputTokenRialPerMillion > 0 &&
     config.outputTokenRialPerMillion > 0 &&
     config.maxTurnRial > 0 &&
-    config.creditUnitRial > 0 &&
-    config.maxOutputTokens >= 64
+    config.creditUnitRial > 0
   );
 }
 
