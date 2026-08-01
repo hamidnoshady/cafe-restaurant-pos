@@ -4,6 +4,7 @@ import {
   apiKeyDisplayPrefix,
   createApiKey,
   hashApiKey,
+  isApiMutation,
   parseApiBearerToken,
 } from "./api-auth";
 
@@ -22,6 +23,15 @@ describe("public API key primitives", () => {
     expect(hashApiKey(key)).toBe(hashApiKey(key));
     expect(hashApiKey(key)).not.toBe(key);
     expect(hashApiKey(key)).not.toBe(hashApiKey("posk_live_another-secret"));
+  });
+
+  it("classifies only mutating HTTP methods for the bounded request audit log", () => {
+    for (const method of ["POST", "PUT", "PATCH", "DELETE"]) {
+      expect(isApiMutation(method)).toBe(true);
+    }
+    for (const method of ["GET", "HEAD", "OPTIONS", "post"]) {
+      expect(isApiMutation(method)).toBe(false);
+    }
   });
 
   it("accepts only a single correctly namespaced bearer token", () => {
