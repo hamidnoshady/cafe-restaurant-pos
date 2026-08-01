@@ -62,10 +62,12 @@ allows:
 - ✅ The core mechanism (embedded Postgres + real migrations + the real
   server booting and answering requests) was proven end-to-end, running as a
   normal non-root/non-admin user account.
-- ⚠️ **Not yet tested as an actual packaged Windows installer on a real
-  Windows machine.** Building and running the final `.exe` needs to happen
-  on Windows (or via the CI workflow below) and be smoke-tested there before
-  handing it to a café.
+- ⚠️ **Built, but not yet smoke-tested as an installed app.** The packaged
+  `.exe` now builds successfully on a real Windows machine (Windows 11, a
+  normal non-elevated account — see the `winCodeSign` workaround below), and
+  the packaged executable carries the right icon and version metadata.
+  Actually *running* the installer on a café PC and walking through the setup
+  wizard still needs to happen before handing it to a café.
 - ⚠️ **No self-update yet.** The GHCR-based self-update built for the Docker
   path (see `docs/server-sync.md` "Self-update") doesn't apply here — a new
   version currently means downloading and running a new installer. Electron
@@ -100,6 +102,38 @@ cd electron
 npm install
 npm run dist            # produces electron/dist/Cafe POS Setup <version>.exe
 ```
+
+#### The `winCodeSign` extraction workaround
+
+`npm run dist` runs `scripts/prepare-wincodesign-cache.js` first (as a
+`predist` step). That script exists to work around a Windows-only
+electron-builder failure that otherwise stops the build before it writes any
+`.exe` at all:
+
+electron-builder always fetches its `winCodeSign` bundle on Windows — not to
+sign anything (with no certificate, signing is correctly skipped), but because
+the same archive carries `rcedit`, which stamps the icon, product name and
+version onto `Cafe POS.exe`. That archive contains two macOS symlinks, and
+creating a symlink on Windows requires a privilege that a normal, non-elevated
+account without Developer Mode doesn't hold, so 7-Zip exits non-zero:
+
+```
+ERROR: Cannot create symbolic link : A required privilege is not held by the
+client. : ...\winCodeSign\...\darwin\10.12\lib\libcrypto.dylib
+```
+
+electron-builder treats that as fatal, retries four times and gives up — you
+get `electron/dist/win-unpacked/` but no installer. The `darwin/` and `linux/`
+trees are only used when signing *from* macOS or Linux, so the script extracts
+the archive itself with those excluded and leaves the result where
+electron-builder looks for it; electron-builder then finds a populated cache
+and skips the download that would have failed.
+
+It's idempotent (a populated cache makes it a silent no-op) and best-effort: if
+anything about it fails it warns and returns successfully, leaving
+electron-builder to attempt its own download as before. Enabling Windows
+Developer Mode, or building from an elevated shell, also avoids the underlying
+problem and makes the script a no-op.
 
 ## Installing on a café PC
 

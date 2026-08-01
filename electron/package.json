@@ -2,10 +2,12 @@
   "name": "cafe-pos-desktop",
   "version": "1.0.0",
   "private": true,
+  "author": "Cafe POS",
   "description": "Standalone Windows installer for the Cafe/Restaurant POS — no Docker, no Docker Desktop, no manual database setup.",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
+    "predist": "node scripts/prepare-wincodesign-cache.js",
     "dist": "electron-builder"
   },
   "dependencies": {
@@ -41,7 +43,20 @@
       { "from": "../next.config.ts", "to": "app/next.config.ts" },
       { "from": "../tsconfig.json", "to": "app/tsconfig.json" },
       { "from": "../package.json", "to": "app/package.json" },
-      { "from": "../node_modules", "to": "app/node_modules" }
+      {
+        "from": "../node_modules",
+        "to": "app/node_modules",
+        "filter": [
+          "**/*",
+          "!**/typescript{,/**}",
+          "!**/vitest{,/**}",
+          "!**/tailwindcss{,/**}",
+          "!**/@tailwindcss{,/**}",
+          "!**/@types{,/**}",
+          "!**/.bin{,/**}",
+          "!**/.cache{,/**}"
+        ]
+      }
     ]
   }
 }
