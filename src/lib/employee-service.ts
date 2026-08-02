@@ -21,8 +21,12 @@ import { isValidPin } from "./team";
 import {
   generateSessionToken,
   isIssuableCredentialType,
+  lockoutStatus,
   sessionExpiry,
+  LOGIN_LOCKOUT_THRESHOLD,
+  LOGIN_LOCKOUT_WINDOW_MINUTES,
   type EmployeeCredentialType,
+  type LockoutStatus,
 } from "./employee";
 import {
   buildAuthenticationOptions,
@@ -736,6 +740,111 @@ export async function auditLoginFailure(
      VALUES ($1, NULL, 'employee.login_failed', 'employee', $2, $3)`,
     [businessId, employeeId, JSON.stringify({ reason })],
   );
+}
+
+// ---------------------------------------------------------------------------
+// Login lockout (Wave 8 — resolves this doc's Wave 7 open question 2: does a
+// pattern of failed attempts trigger anything beyond being visible?)
+// ---------------------------------------------------------------------------
+
+/** Kept in one place so checkLoginLockout and listLockedEmployees read the exact same rows. */
+const LOCKOUT_ACTIONS = ["employee.login_failed", "employee.session_created", "employee.login_unlocked"];
+
+/**
+ * Whether `employeeId` is currently locked out of PIN/biometric login.
+ * Reads the same `audit_log` rows Wave 6/7 already write (LOGIN_LOCKOUT_THRESHOLD
+ * of the most recent ones is always enough to answer this), so no new table —
+ * the same "computed on demand" choice this phase already made for a shift's
+ * cash summary and a session's credential/device label.
+ */
+export async function checkLoginLockout(businessId: string, employeeId: string): Promise<LockoutStatus> {
+  const { rows } = await query<{ action: string; created_at: Date }>(
+    `SELECT action, created_at
+       FROM audit_log
+      WHERE business_id = $1 AND entity = 'employee' AND entity_id = $2 AND action = ANY($3)
+      ORDER BY id DESC
+      LIMIT $4`,
+    [businessId, employeeId, LOCKOUT_ACTIONS, LOGIN_LOCKOUT_THRESHOLD],
+  );
+  return lockoutStatus(rows.map((row) => ({ action: row.action, createdAt: row.created_at })));
+}
+
+export interface LockedEmployeeSummary {
+  employeeId: string;
+  employeeName: string;
+  failedCount: number;
+  lockedUntil: string;
+}
+
+/**
+ * Business-wide "who is currently locked out" for the security center tab —
+ * one window-function query instead of one checkLoginLockout round trip per
+ * employee, the same N+1 Wave 7 already fixed for shift cash variance
+ * (listShifts's LATERAL join). Computes the identical rule lockoutStatus does:
+ * a leading, unbroken run of LOGIN_LOCKOUT_THRESHOLD-or-more `employee.login_failed`
+ * rows, still within LOGIN_LOCKOUT_WINDOW_MINUTES of the most recent one.
+ */
+export async function listLockedEmployees(businessId: string): Promise<LockedEmployeeSummary[]> {
+  const { rows } = await query<{
+    employee_id: string;
+    employee_name: string;
+    failed_count: string;
+    last_failed_at: Date;
+  }>(
+    `WITH ranked AS (
+       SELECT nullif(entity_id, '')::uuid AS employee_id, action, created_at,
+              row_number() OVER (PARTITION BY entity_id ORDER BY id DESC) AS rn
+         FROM audit_log
+        WHERE business_id = $1 AND entity = 'employee' AND entity_id IS NOT NULL AND action = ANY($2)
+     ),
+     windowed AS (
+       SELECT employee_id,
+              count(*) AS failed_count,
+              bool_or(action <> 'employee.login_failed') AS hit_break,
+              max(created_at) AS last_failed_at
+         FROM ranked
+        WHERE rn <= $3
+        GROUP BY employee_id
+     )
+     SELECT w.employee_id, u.full_name AS employee_name, w.failed_count, w.last_failed_at
+       FROM windowed w
+       JOIN users u ON u.id = w.employee_id
+      WHERE w.failed_count >= $3
+        AND NOT w.hit_break
+        AND w.last_failed_at > now() - make_interval(mins => $4::int)
+      ORDER BY w.last_failed_at DESC`,
+    [businessId, LOCKOUT_ACTIONS, LOGIN_LOCKOUT_THRESHOLD, LOGIN_LOCKOUT_WINDOW_MINUTES],
+  );
+  return rows.map((row) => ({
+    employeeId: row.employee_id,
+    employeeName: row.employee_name,
+    failedCount: Number(row.failed_count),
+    lockedUntil: new Date(row.last_failed_at.getTime() + LOGIN_LOCKOUT_WINDOW_MINUTES * 60_000).toISOString(),
+  }));
+}
+
+/**
+ * Admin override — ends a lockout immediately (e.g. the employee confirmed
+ * by phone) rather than waiting out LOGIN_LOCKOUT_WINDOW_MINUTES. Writes the
+ * same `employee.login_unlocked` row that breaks the streak for both
+ * checkLoginLockout and listLockedEmployees above.
+ */
+export async function clearLoginLockout(
+  businessId: string,
+  employeeId: string,
+  actorId: string | null,
+): Promise<void> {
+  const { rows } = await query<{ id: string }>(
+    `SELECT id FROM users WHERE id = $1 AND business_id = $2`,
+    [employeeId, businessId],
+  );
+  if (!rows[0]) throw new EmployeeError("employee_not_found", 404);
+  await auditEmployee(getPool(), {
+    businessId,
+    actorId,
+    action: "employee.login_unlocked",
+    employeeId,
+  });
 }
 
 export async function touchSession(sessionId: string, businessId: string): Promise<void> {

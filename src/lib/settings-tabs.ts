@@ -114,7 +114,8 @@ export const SETTINGS_TABS: SettingsTab[] = [
   {
     key: "security-center",
     label: "مرکز امنیت",
-    description: "نشست‌های فعال کارکنان و تلاش‌های ورود ناموفق، با امکان پایان‌دادن به یک نشست",
+    description:
+      "نشست‌های فعال، تلاش‌های ورود ناموفق و کارمندان قفل‌شده، با امکان پایان‌دادن به نشست یا رفع قفل",
     requiredAnyPermission: [PERMISSIONS.teamManage],
   },
   {

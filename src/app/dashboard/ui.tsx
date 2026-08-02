@@ -45,6 +45,7 @@ export function errorMessage(code: string | undefined): string {
     invalid_printer: "اطلاعات چاپگر معتبر نیست؛ نام، IP، پورت و عرض کاغذ را بررسی کنید.",
     invalid_label: "نام دستگاه باید بین ۱ تا ۸۰ کاراکتر باشد.",
     device_not_found: "دستگاه پیدا نشد یا قبلاً حذف شده است.",
+    employee_not_found: "کارمند پیدا نشد.",
     session_required: "برای شروع شیفت باید دوباره وارد شوید.",
     shift_already_open: "شیفتی از قبل باز است.",
     no_active_shift: "شیفت بازی برای پایان دادن پیدا نشد.",

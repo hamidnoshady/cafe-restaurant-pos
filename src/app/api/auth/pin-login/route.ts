@@ -6,6 +6,7 @@ import { toLatinDigits } from "@/lib/digits";
 import { resolveDeviceId } from "@/lib/device-service";
 import {
   auditLoginFailure,
+  checkLoginLockout,
   createSession,
   ensureEmployeeProfile,
   resolveLoginBusinessId,
@@ -66,6 +67,20 @@ export async function POST(request: NextRequest) {
   }
 
   return withTenant(businessId, async () => {
+    // Phase 20 Wave 8 — a picker-narrowed request already names the employee,
+    // so a lockout is checked before touching the PIN at all; a bare legacy
+    // scan doesn't know who it is yet and gets the same check further below,
+    // once the matching row (if any) is found.
+    if (body.employeeId) {
+      const lockout = await checkLoginLockout(businessId, body.employeeId);
+      if (lockout.locked) {
+        return NextResponse.json(
+          { error: "account_locked", lockedUntil: lockout.lockedUntil },
+          { status: 423 },
+        );
+      }
+    }
+
     const params: unknown[] = [];
     let filter = "";
     if (body.employeeId) {
@@ -104,6 +119,19 @@ export async function POST(request: NextRequest) {
       // the Wave 2 picker narrowed the request, null for a bare legacy scan.
       await auditLoginFailure(businessId, body.employeeId ?? null, "invalid_pin");
       return NextResponse.json({ error: "invalid_credentials" }, { status: 401 });
+    }
+
+    // Phase 20 Wave 8 — the employeeId branch above already checked; only a
+    // bare legacy scan reaches here without having checked yet, since it only
+    // learns who matched by finding the right PIN.
+    if (!body.employeeId) {
+      const lockout = await checkLoginLockout(businessId, user.id);
+      if (lockout.locked) {
+        return NextResponse.json(
+          { error: "account_locked", lockedUntil: lockout.lockedUntil },
+          { status: 423 },
+        );
+      }
     }
 
     await ensureEmployeeProfile(user.id, user.business_id);

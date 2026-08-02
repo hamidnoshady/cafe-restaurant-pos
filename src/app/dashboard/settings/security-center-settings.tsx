@@ -9,6 +9,13 @@
  * question). The full history of every security event — including these
  * same sessions' own creation/revocation — stays the audit log tab's job;
  * this tab is the actionable subset, not a replacement for it.
+ *
+ * Phase 20 Wave 8 — a third section, "کارمندان قفل‌شده": repeated failed
+ * attempts (LOGIN_LOCKOUT_THRESHOLD within LOGIN_LOCKOUT_WINDOW_MINUTES, see
+ * employee.ts's lockoutStatus) now automatically blocks further login
+ * attempts for that employee, not just showing up in the list below — this
+ * section is where an owner/manager sees who's currently locked and can end
+ * it early instead of waiting out the window.
  */
 import { useCallback, useEffect, useState } from "react";
 import { formatJalali } from "@/lib/jalali";
@@ -33,6 +40,13 @@ interface FailedAttempt {
   payload: unknown;
 }
 
+interface LockedEmployee {
+  employeeId: string;
+  employeeName: string;
+  failedCount: number;
+  lockedUntil: string;
+}
+
 function formatTime(iso: string | null): string {
   if (!iso) return "—";
   return toPersianDigits(formatJalali(iso, { withMonthName: true }));
@@ -50,16 +64,18 @@ function failureReason(payload: unknown): string | null {
 export function SecurityCenterSettings() {
   const [sessions, setSessions] = useState<ActiveSession[] | null>(null);
   const [failedAttempts, setFailedAttempts] = useState<FailedAttempt[] | null>(null);
+  const [lockedEmployees, setLockedEmployees] = useState<LockedEmployee[] | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const [sessionsResult, attemptsResult] = await Promise.all([
+    const [sessionsResult, attemptsResult, lockoutsResult] = await Promise.all([
       api<{ sessions: ActiveSession[]; error?: string }>("/api/sessions"),
       api<{ entries: FailedAttempt[]; error?: string }>(
         "/api/audit-log?action=employee.login_failed&limit=20",
       ),
+      api<{ lockouts: LockedEmployee[]; error?: string }>("/api/security/lockouts"),
     ]);
     if (sessionsResult.ok) {
       setSessions(sessionsResult.data.sessions);
@@ -68,6 +84,9 @@ export function SecurityCenterSettings() {
     }
     if (attemptsResult.ok) {
       setFailedAttempts(attemptsResult.data.entries);
+    }
+    if (lockoutsResult.ok) {
+      setLockedEmployees(lockoutsResult.data.lockouts);
     }
   }, []);
 
@@ -89,8 +108,60 @@ export function SecurityCenterSettings() {
     await load();
   }
 
+  async function clearLockout(employeeId: string) {
+    setBusyId(employeeId);
+    setError("");
+    setNotice("");
+    const { ok, data } = await api<{ error?: string }>(`/api/security/lockouts/${employeeId}`, {
+      method: "DELETE",
+    });
+    setBusyId(null);
+    if (!ok) {
+      setError(errorMessage(data.error));
+      return;
+    }
+    setNotice("قفل ورود برداشته شد.");
+    await load();
+  }
+
   return (
     <div className="space-y-6">
+      <section className="rounded-2xl bg-card p-5 shadow-sm">
+        <h2 className="mb-1 font-semibold">کارمندان قفل‌شده</h2>
+        <p className="mb-4 text-sm text-muted-foreground">
+          به‌دلیل تلاش‌های ناموفق مکرر، ورود این کارکنان موقتاً مسدود شده است.
+        </p>
+        {lockedEmployees !== null && lockedEmployees.length === 0 && (
+          <p className="text-sm text-muted-foreground">هیچ کارمندی قفل نیست.</p>
+        )}
+        {lockedEmployees !== null && lockedEmployees.length > 0 && (
+          <div className="space-y-2">
+            {lockedEmployees.map((entry) => (
+              <div
+                key={entry.employeeId}
+                className="flex items-center justify-between rounded-lg border border-input px-3 py-2 text-sm"
+              >
+                <div>
+                  <p className="font-medium">{entry.employeeName}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {toPersianDigits(String(entry.failedCount))} تلاش ناموفق پیاپی · تا{" "}
+                    {formatTime(entry.lockedUntil)}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => clearLockout(entry.employeeId)}
+                  disabled={busyId === entry.employeeId}
+                  className="shrink-0 text-xs text-destructive hover:underline disabled:opacity-50"
+                >
+                  رفع قفل
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
       <section className="rounded-2xl bg-card p-5 shadow-sm">
         <h2 className="mb-1 font-semibold">نشست‌های فعال</h2>
         <p className="mb-4 text-sm text-muted-foreground">

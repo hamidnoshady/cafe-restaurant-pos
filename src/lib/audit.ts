@@ -23,6 +23,7 @@ const ACTION_LABELS: Record<string, string> = {
   "employee.session_created": "ورود به سیستم",
   "employee.session_revoked": "پایان نشست",
   "employee.login_failed": "تلاش ورود ناموفق",
+  "employee.login_unlocked": "رفع قفل ورود",
   "team.member_created": "افزودن عضو تیم",
   "team.member_updated": "ویرایش عضو تیم",
   "team.member_removed": "حذف عضو تیم",
