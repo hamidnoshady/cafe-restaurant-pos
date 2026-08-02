@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { browserSupportsWebAuthn, startAuthentication } from "@simplewebauthn/browser";
 import { PinPad } from "@/components/auth/pin-pad";
+import { toPersianDigits } from "@/lib/digits";
 
 type Mode = "password" | "pin";
 
@@ -159,6 +160,21 @@ function readRecents(): string[] {
   }
 }
 
+/**
+ * Phase 20 Wave 8 — a picker-narrowed PIN or biometric login can now come
+ * back 423 (`account_locked`) after LOGIN_LOCKOUT_THRESHOLD failed attempts
+ * (employee.ts's lockoutStatus); this turns that into a message with a
+ * concrete wait time instead of the generic "wrong PIN" text.
+ */
+function lockoutMessage(lockedUntil: unknown): string {
+  const until = typeof lockedUntil === "string" ? new Date(lockedUntil) : null;
+  if (!until || Number.isNaN(until.getTime())) {
+    return "به‌دلیل تلاش‌های ناموفق مکرر، ورود موقتاً قفل شده است.";
+  }
+  const minutes = Math.max(1, Math.ceil((until.getTime() - Date.now()) / 60_000));
+  return `به‌دلیل تلاش‌های ناموفق مکرر، ورود موقتاً قفل شده است؛ ${toPersianDigits(String(minutes))} دقیقه دیگر دوباره تلاش کنید.`;
+}
+
 function rememberRecent(employeeId: string) {
   try {
     const next = [employeeId, ...readRecents().filter((id) => id !== employeeId)].slice(0, MAX_RECENTS);
@@ -234,9 +250,14 @@ function PinLogin() {
       rememberRecent(selected.id);
       router.push("/dashboard");
       router.refresh();
-    } else {
-      setError("پین نادرست است.");
+      return;
     }
+    if (res.status === 423) {
+      const data = await res.json().catch(() => ({}));
+      setError(lockoutMessage((data as { lockedUntil?: unknown }).lockedUntil));
+      return;
+    }
+    setError("پین نادرست است.");
   }
 
   async function submitBiometric() {
@@ -260,6 +281,11 @@ function PinLogin() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ employeeId: selected.id, response, challengeToken, deviceToken }),
       });
+      if (verifyRes.status === 423) {
+        const data = await verifyRes.json().catch(() => ({}));
+        setError(lockoutMessage((data as { lockedUntil?: unknown }).lockedUntil));
+        return;
+      }
       if (!verifyRes.ok) throw new Error("invalid_credentials");
 
       rememberRecent(selected.id);

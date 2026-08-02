@@ -8,7 +8,7 @@ extends), Phase 14 (multiple branches per business — session/device scoping ne
 bare stateless JWT, a credential model that can grow past PIN into biometric/WebAuthn without a
 schema change, and — starting in a later wave — every sensitive POS action attributable to one
 person with a queryable audit trail. Tracked by GitHub issue #107, staged as eight waves; this
-phase's exit criteria are only met once Wave 8 ships.
+phase's exit criteria are met as of Wave 8 (see that wave's own section below).
 
 ## Ordering note
 
@@ -769,4 +769,146 @@ path.
    paragraph) — Wave 8 should close out whichever of the above the product actually wants, then
    mark the phase complete.
 
-## Status: in progress — Wave 7 (admin security center: sessions & failed logins) submitted for review
+## Scope — Wave 8: Automatic Lockout & Phase Close-out
+
+The issue frames Waves 7–8 together as "the admin security center." Wave 7 built everything an
+owner/manager needs to see and act on; this wave closes out the three open questions Wave 7 left
+above and, with them, the phase itself.
+
+- **Repeated failed logins now lock the account, not just show up in the log.** Resolves open
+  question 2. `lockoutStatus` (`src/lib/employee.ts`) is a pure function over an employee's
+  `employee.login_failed` / `employee.session_created` / `employee.login_unlocked` `audit_log` rows,
+  most recent first: a leading, unbroken run of `LOGIN_LOCKOUT_THRESHOLD` (5) failed attempts — with
+  no success or manual clear in between — locks the employee out of PIN and biometric login alike
+  until `LOGIN_LOCKOUT_WINDOW_MINUTES` (15) after the newest failure in that run. No new table: the
+  same rows Wave 6/7 already write are read back on demand, the same choice this phase already made
+  for a shift's cash summary and a session's credential/device label.
+- **`employee-service.ts` gained three functions around that rule**: `checkLoginLockout` (one
+  employee, the `audit_log` rows fed straight to `lockoutStatus`) — called by
+  `pin-login/route.ts` and `webauthn/login/verify/route.ts` before a credential is even checked
+  when the caller already names an `employeeId` (the Wave 2 picker's normal case), or right after a
+  legacy bare-PIN scan finds its match (the one case where the employee isn't known until then); a
+  locked attempt gets `423 { error: "account_locked", lockedUntil }` instead of the usual 401,
+  and — since nothing was actually attempted against a live credential — writes no additional
+  `employee.login_failed` row. `listLockedEmployees` is the security center's business-wide
+  counterpart, computing the identical rule with one window-function query instead of one
+  `checkLoginLockout` round trip per employee — the same N+1 Wave 7 already fixed for shift cash
+  variance (`listShifts`'s `LATERAL` join). `clearLoginLockout` is the admin override, writing an
+  `employee.login_unlocked` row that breaks the streak for both of the above.
+- **A fourth section on the security center tab, "کارمندان قفل‌شده"** — every currently locked
+  employee, their failed-attempt count, and when the lockout lifts, with a "رفع قفل" button
+  (`DELETE /api/security/lockouts/[employeeId]`, `team.manage`-gated like every other admin action
+  this phase has added) for an owner/manager to end it early rather than wait out the window.
+  `GET /api/security/lockouts` backs the list.
+- **The login page surfaces the lockout with a wait time**, not the generic "wrong PIN" text — both
+  the PIN pad and the biometric button's failure path (`src/app/login/page.tsx`) recognise the 423
+  and show how many minutes remain.
+- **Open question 3 (tab consolidation): decided against, for this phase.** Shifts, the audit log,
+  the security center, and devices stay four separate Settings tabs rather than being folded into
+  one dedicated `/dashboard/security` page. Each already has its own permission gate and was scoped,
+  reviewed, and shipped independently (Waves 4–7); merging them is a UI reorganisation with no
+  behavioural change and no dependency on anything this phase's exit criteria require. Nothing about
+  today's four-tabs shape blocks doing that reorganisation later if the product wants it — see
+  Decisions below.
+- **Open question 1 (per-order shift attribution): still not addressed, and not carried forward
+  again.** No concrete need for it has come up since Wave 5 first noted the gap. It was never part
+  of the security center the issue asked for, and remains exactly what Wave 5 said it would be if
+  the need ever materialises: a separately-scoped change to `order-service.ts`, independent of this
+  phase.
+- **This closes out the phase.** Every wave's exit criteria are now satisfied; see below.
+
+## Out of scope (this wave)
+
+- **No lockout notification (email/SMS/push) to the employee or an admin.** The security center tab
+  (this wave) and the audit log (Wave 6) are the notification surface — an owner has to look, the
+  same as every other security signal this phase has added. A push/email alert is a distinct,
+  bigger feature with its own delivery-channel questions, not required to close the visibility→action
+  gap Wave 7 identified.
+- **No forced device re-pairing.** A lockout blocks the *employee*, not the *terminal* — Wave 4
+  already drew the line that a device token narrows a public UI's choices and is never itself a
+  security boundary; nothing about repeated failed attempts against one employee's credential
+  implicates the device they were attempted from.
+- **The lockout threshold/window (5 attempts / 15 minutes) are constants, not a per-business
+  setting.** No product requirement for a configurable policy has surfaced; every other numeric
+  threshold this phase introduced (`EMPLOYEE_SESSION_TTL_HOURS`, `AUTH_IP_LIMIT`) is a constant for
+  the same reason. Easy to promote to a `businesses` column later if a concrete need appears.
+- **No new migration.** The lockout rule reads only `audit_log` rows this phase already writes;
+  `employee.login_unlocked` is a new *action* string, not a schema change.
+
+## Decisions
+
+- **A read-on-demand rule over `audit_log`, not a `locked_until` column on `users`/`employees`.**
+  Storing a materialized lockout column would need its own write path (set on the Nth failure, clear
+  on success/expiry/manual override) that's just a cache of exactly what `lockoutStatus` already
+  computes from data this phase writes anyway — the same "computed on demand" choice already made
+  three times over in this phase (a shift's cash summary, a session's credential/device label, a
+  failed attempt's `entityName`). A column would only pay for itself if this read path were ever
+  measured as a bottleneck, which login (an already-latency-tolerant, human-paced action) is not.
+- **A picker-narrowed request checks lockout before touching a credential at all; a legacy bare-PIN
+  scan checks it right after finding its match.** The former is the common case since Wave 2 and
+  costs nothing extra to check first; the latter genuinely doesn't know *which* employee until the
+  bcrypt loop finds one, so it's the earliest point that scan can check without restructuring it.
+  Either way, a blocked attempt never reaches `createSession`.
+- **A blocked attempt writes no additional `employee.login_failed` row.** The failures that caused
+  the lockout are already in the log; repeatedly hitting a locked account would just pad the count
+  and push `lockedUntil` without a genuine new credential attempt ever having been checked. This also
+  keeps the rule's own read (`checkLoginLockout`) from being able to extend its own window via
+  blocked attempts.
+- **`listLockedEmployees` is one window-function query, not `checkLoginLockout` called once per
+  employee.** Matches Wave 7's own reasoning for `listShifts`'s `LATERAL` join: a per-row round trip
+  is the kind of N+1 this phase has consistently avoided once a business-wide admin list needs the
+  same rule a single-row check already has. The SQL is written to implement the identical rule
+  `lockoutStatus` does (a leading, unbroken run bounded by `LOGIN_LOCKOUT_THRESHOLD`, still within
+  `LOGIN_LOCKOUT_WINDOW_MINUTES`), rather than being a second, drifting definition of "locked."
+- **`employee.login_unlocked` breaks the streak the same way a successful login does.** Both are, in
+  `lockoutStatus`'s terms, "something that isn't a failed attempt" — no special case was needed
+  beyond adding the action string to the set `checkLoginLockout`/`listLockedEmployees` scan for.
+- **Settings tabs stay four, not one.** See "Out of scope" above. If a later phase does want a
+  unified `/dashboard/security` page, nothing this wave did makes that harder — each tab's data
+  fetch is already an independent, tab-scoped component (`security-center-settings.tsx`,
+  `audit-log-settings.tsx`, `shift-history-settings.tsx`, `device-settings.tsx`); consolidating them
+  would be a presentation-layer change, not a rework of any service function this phase built.
+- **No new `withoutTenantScope` bypass.** Every lockout read/write runs inside the same
+  `withTenant`/tenant-scoped-session boundary `pin-login`, `webauthn/login/verify`, and the other
+  `team.manage` admin routes this phase added already open — `checkLoginLockout` and
+  `clearLoginLockout` take `businessId` explicitly and filter every query by it, matching this
+  phase's existing belt-and-suspenders style on top of RLS.
+
+## Where each exit criterion is satisfied (Wave 8 only)
+
+- Automatic response to repeated failed logins, resolving Wave 7's second open question —
+  `src/lib/employee.ts` (`lockoutStatus`), `src/lib/employee-service.ts` (`checkLoginLockout`,
+  `listLockedEmployees`, `clearLoginLockout`), `src/app/api/auth/pin-login/route.ts`,
+  `src/app/api/auth/webauthn/login/verify/route.ts`.
+- Admin visibility into, and control over, an active lockout —
+  `src/app/api/security/lockouts/route.ts`, `.../[employeeId]/route.ts`,
+  `src/app/dashboard/settings/security-center-settings.tsx`.
+- Wave 7's third open question (tab consolidation) explicitly decided, not left hanging — see
+  Decisions above.
+- Wave 5's second open question (per-order shift attribution) explicitly closed out as
+  not-addressed-by-this-phase, not silently dropped — see Scope above.
+- No damage to the current POS flow — a picker-narrowed PIN/biometric login is unchanged in shape
+  for every caller not currently locked out (the added check is a cheap read before the existing
+  logic); `npx tsc --noEmit`, `npm test` (848 tests, including new `lockoutStatus` coverage in
+  `employee.test.ts` for the threshold boundary, the window expiring, and both kinds of streak break),
+  `npm run test:db` (246 tests, unchanged — no new tenant-scoped table, so
+  `tenant-isolation.integration.test.ts` needed no update), and `npm run build` all pass.
+
+## Verification
+
+`npx tsc --noEmit`, `npm test` (848 tests), `npm run test:db` (246 tests), and `npm run build` all
+pass. Exercised end-to-end against a live dev server and a seeded business: five deliberately wrong
+PINs against the seeded cashier (picker-narrowed, `employeeId` sent each time) each returned `401`
+as before; a sixth attempt — this time with the *correct* PIN — returned `423 { error:
+"account_locked", lockedUntil }` instead of succeeding, confirming the lock blocks a valid credential
+too, not just repeats of an invalid one. As owner: `GET /api/security/lockouts` listed the cashier
+with `failedCount: 5` and the correct `lockedUntil`; the new "کارمندان قفل‌شده" section of the
+"مرکز امنیت" tab rendered the same entry with a "رفع قفل" button in a headless-Chromium screenshot;
+clicking it called `DELETE /api/security/lockouts/[employeeId]`, showed "قفل ورود برداشته شد.", and
+the section correctly emptied to "هیچ کارمندی قفل نیست." on reload. Logging in again with the
+correct PIN immediately after succeeded (confirmed both over `curl` and that the login page's PIN
+pad, driven headlessly, displayed the Persian wait-time message — "…؛ ۱۴ دقیقه دیگر دوباره تلاش
+کنید." — when still locked, before the manual clear). The audit log correctly showed the
+`employee.login_unlocked` row (labelled "رفع قفل ورود") breaking the streak.
+
+## Status: complete — all eight waves shipped; this phase's exit criteria (see opening paragraph) are met

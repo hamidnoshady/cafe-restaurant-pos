@@ -81,3 +81,50 @@ export const ISSUABLE_CREDENTIAL_TYPES: EmployeeCredentialType[] = ["pin"];
 export function isIssuableCredentialType(type: EmployeeCredentialType): boolean {
   return ISSUABLE_CREDENTIAL_TYPES.includes(type);
 }
+
+// ---------------------------------------------------------------------------
+// Login lockout (Wave 8 — resolves Wave 7's second open question)
+// ---------------------------------------------------------------------------
+
+/** A run of this many consecutive failed logins (since the last success or manual clear) locks the employee out. */
+export const LOGIN_LOCKOUT_THRESHOLD = 5;
+
+/** How long a lockout lasts, measured from the most recent failed attempt in the run. */
+export const LOGIN_LOCKOUT_WINDOW_MINUTES = 15;
+
+export interface LoginAttemptEvent {
+  action: string;
+  createdAt: Date | string;
+}
+
+export interface LockoutStatus {
+  locked: boolean;
+  failedCount: number;
+  lockedUntil: string | null;
+}
+
+/**
+ * `events` is an employee's `employee.login_failed` / `employee.session_created` /
+ * `employee.login_unlocked` audit_log rows, most recent first (employee-service.ts's
+ * checkLoginLockout/listLockedEmployees only ever need to fetch LOGIN_LOCKOUT_THRESHOLD
+ * of them). A success or a manual clear breaks the run — anything else that isn't a
+ * failed attempt does the same — so only a leading, unbroken streak of
+ * LOGIN_LOCKOUT_THRESHOLD-or-more `employee.login_failed` rows locks the account, until
+ * LOGIN_LOCKOUT_WINDOW_MINUTES after the newest one of them.
+ */
+export function lockoutStatus(events: LoginAttemptEvent[], now: Date = new Date()): LockoutStatus {
+  let failedCount = 0;
+  for (const event of events) {
+    if (event.action !== "employee.login_failed") break;
+    failedCount += 1;
+  }
+  if (failedCount < LOGIN_LOCKOUT_THRESHOLD) {
+    return { locked: false, failedCount, lockedUntil: null };
+  }
+  const mostRecentFailedAt = new Date(events[0].createdAt);
+  const lockedUntil = new Date(mostRecentFailedAt.getTime() + LOGIN_LOCKOUT_WINDOW_MINUTES * 60_000);
+  if (lockedUntil.getTime() <= now.getTime()) {
+    return { locked: false, failedCount, lockedUntil: null };
+  }
+  return { locked: true, failedCount, lockedUntil: lockedUntil.toISOString() };
+}

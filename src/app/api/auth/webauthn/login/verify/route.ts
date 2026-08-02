@@ -5,6 +5,7 @@ import { SESSION_COOKIE, sessionCookieOptions, signSession, type Role } from "@/
 import { resolveDeviceId } from "@/lib/device-service";
 import {
   auditLoginFailure,
+  checkLoginLockout,
   completeWebauthnAuthentication,
   createSession,
   resolveLoginBusinessId,
@@ -51,6 +52,17 @@ export async function POST(request: NextRequest) {
   }
 
   return withTenant(businessId, async () => {
+    // Phase 20 Wave 8 — employeeId is always known here (the picker chose
+    // them before offering biometric at all), so this can check before
+    // attempting the ceremony at all, same as pin-login's picker-narrowed case.
+    const lockout = await checkLoginLockout(businessId, body.employeeId!);
+    if (lockout.locked) {
+      return NextResponse.json(
+        { error: "account_locked", lockedUntil: lockout.lockedUntil },
+        { status: 423 },
+      );
+    }
+
     const result = await completeWebauthnAuthentication(
       body.employeeId!,
       businessId,

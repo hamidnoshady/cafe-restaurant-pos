@@ -2,12 +2,16 @@ import { describe, expect, it } from "vitest";
 import {
   EMPLOYEE_CREDENTIAL_TYPES,
   EMPLOYEE_SESSION_TTL_HOURS,
+  LOGIN_LOCKOUT_THRESHOLD,
+  LOGIN_LOCKOUT_WINDOW_MINUTES,
   generateSessionToken,
   hashSessionToken,
   isEmployeeCredentialType,
   isIssuableCredentialType,
+  lockoutStatus,
   sessionExpiry,
   sessionStatus,
+  type LoginAttemptEvent,
 } from "./employee";
 
 describe("session tokens", () => {
@@ -80,5 +84,67 @@ describe("credential types", () => {
     expect(isIssuableCredentialType("pin")).toBe(true);
     expect(isIssuableCredentialType("password")).toBe(false);
     expect(isIssuableCredentialType("webauthn")).toBe(false);
+  });
+});
+
+describe("lockoutStatus", () => {
+  const now = new Date("2026-01-01T12:00:00Z");
+
+  function failuresAt(...minutesAgo: number[]): LoginAttemptEvent[] {
+    // Most recent first, matching checkLoginLockout's ORDER BY id DESC.
+    return minutesAgo
+      .map((m) => ({ action: "employee.login_failed", createdAt: new Date(now.getTime() - m * 60_000) }))
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  }
+
+  it("is not locked with fewer than the threshold of failed attempts", () => {
+    const events = failuresAt(...Array.from({ length: LOGIN_LOCKOUT_THRESHOLD - 1 }, (_, i) => i));
+    const status = lockoutStatus(events, now);
+    expect(status.locked).toBe(false);
+    expect(status.failedCount).toBe(LOGIN_LOCKOUT_THRESHOLD - 1);
+    expect(status.lockedUntil).toBeNull();
+  });
+
+  it("locks once the threshold of failed attempts is reached, all within the window", () => {
+    const events = failuresAt(...Array.from({ length: LOGIN_LOCKOUT_THRESHOLD }, (_, i) => i));
+    const status = lockoutStatus(events, now);
+    expect(status.locked).toBe(true);
+    expect(status.failedCount).toBe(LOGIN_LOCKOUT_THRESHOLD);
+    expect(status.lockedUntil).toBe(
+      new Date(now.getTime() + LOGIN_LOCKOUT_WINDOW_MINUTES * 60_000).toISOString(),
+    );
+  });
+
+  it("is no longer locked once the window has passed since the most recent failure", () => {
+    const events = failuresAt(
+      ...Array.from({ length: LOGIN_LOCKOUT_THRESHOLD }, (_, i) => LOGIN_LOCKOUT_WINDOW_MINUTES + 1 + i),
+    );
+    const status = lockoutStatus(events, now);
+    expect(status.locked).toBe(false);
+    expect(status.lockedUntil).toBeNull();
+  });
+
+  it("breaks the streak on a successful login, even with older failures behind it", () => {
+    const events: LoginAttemptEvent[] = [
+      { action: "employee.session_created", createdAt: new Date(now.getTime() - 1 * 60_000) },
+      ...failuresAt(...Array.from({ length: LOGIN_LOCKOUT_THRESHOLD + 2 }, (_, i) => 2 + i)),
+    ];
+    const status = lockoutStatus(events, now);
+    expect(status.locked).toBe(false);
+    expect(status.failedCount).toBe(0);
+  });
+
+  it("breaks the streak on a manual admin clear", () => {
+    const events: LoginAttemptEvent[] = [
+      { action: "employee.login_unlocked", createdAt: new Date(now.getTime() - 1 * 60_000) },
+      ...failuresAt(...Array.from({ length: LOGIN_LOCKOUT_THRESHOLD + 2 }, (_, i) => 2 + i)),
+    ];
+    const status = lockoutStatus(events, now);
+    expect(status.locked).toBe(false);
+    expect(status.failedCount).toBe(0);
+  });
+
+  it("is not locked with no events at all", () => {
+    expect(lockoutStatus([], now)).toEqual({ locked: false, failedCount: 0, lockedUntil: null });
   });
 });
