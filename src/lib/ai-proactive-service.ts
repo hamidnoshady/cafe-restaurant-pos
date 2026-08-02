@@ -34,6 +34,17 @@ import { runReadTool } from "./ai-tools";
 import { listCustomerBalances, UNKNOWN_CUSTOMER_KEY } from "./ar-service";
 import { query, withTenant, withoutTenantScope } from "./db";
 import { isFeatureEnabled } from "./features";
+import {
+  AI_AGENT_KEYS,
+  aiAgentStatus,
+  defaultAiAgentSettings,
+  digestSectionInclusion,
+  hasAnyDigestContent,
+  type AiAgentKey,
+  type AiAgentSettingsMap,
+  type AiAgentStatus,
+  type DigestSectionInclusion,
+} from "./ai-agents";
 
 export const AI_PROACTIVE_TICK_INTERVAL_MS = PROACTIVE_TICK_INTERVAL_MS;
 
@@ -142,6 +153,88 @@ export async function getAiProactiveOverview(businessId: string): Promise<AiProa
   };
 }
 
+/** The related `ai_proactive_runs.kind` whose last-run stats represent this agent on the hub's status cards. */
+const AGENT_RUN_KIND: Record<AiAgentKey, AiProactiveRunKind> = {
+  financial_report_builder: "daily_digest",
+  reconciliation_assistant: "daily_digest",
+  sales_analyzer: "weekly_digest",
+  receivables_follow_up: "customer_debt_drafts",
+};
+
+export async function getAiAgentSettings(businessId: string): Promise<AiAgentSettingsMap> {
+  const settings = defaultAiAgentSettings();
+  const { rows } = await query<{ agent_key: string; enabled: boolean; schedule_hour: number }>(
+    `SELECT agent_key, enabled, schedule_hour FROM ai_agent_settings WHERE business_id = $1`,
+    [businessId],
+  );
+  for (const row of rows) {
+    if ((AI_AGENT_KEYS as readonly string[]).includes(row.agent_key)) {
+      settings[row.agent_key as AiAgentKey] = { enabled: row.enabled, scheduleHour: row.schedule_hour };
+    }
+  }
+  return settings;
+}
+
+export async function setAiAgentEnabled(
+  businessId: string,
+  agentKey: AiAgentKey,
+  enabled: boolean,
+): Promise<AiAgentSettingsMap> {
+  if (typeof enabled !== "boolean") throw new Error("invalid_agent_enabled");
+  const current = await getAiAgentSettings(businessId);
+  const scheduleHour = current[agentKey]?.scheduleHour ?? DEFAULT_AI_PROACTIVE_SETTINGS.dailyDigestHour;
+  await query(
+    `INSERT INTO ai_agent_settings (business_id, agent_key, enabled, schedule_hour)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (business_id, agent_key)
+     DO UPDATE SET enabled = EXCLUDED.enabled, updated_at = now()`,
+    [businessId, agentKey, enabled, scheduleHour],
+  );
+  return getAiAgentSettings(businessId);
+}
+
+export interface AiAgentOverviewEntry {
+  agentKey: AiAgentKey;
+  enabled: boolean;
+  scheduleHour: number;
+  status: AiAgentStatus;
+  lastRunAt: string | null;
+  lastRunStatus: Exclude<RunStatus, "running"> | null;
+}
+
+/** Feeds the hub's "ایجنت‌های فعال" cards: one row per agent, independent of the others. */
+export async function getAiAgentsOverview(businessId: string): Promise<AiAgentOverviewEntry[]> {
+  const [proactive, agentSettings, timezone] = await Promise.all([
+    getAiProactiveSettings(businessId),
+    getAiAgentSettings(businessId),
+    businessTimezone(businessId),
+  ]);
+  const currentHour = localBusinessClock(new Date(), timezone).hour;
+
+  const runKinds = [...new Set(Object.values(AGENT_RUN_KIND))];
+  const { rows: lastRuns } = await query<{ kind: AiProactiveRunKind; finished_at: Date | null; status: RunStatus }>(
+    `SELECT DISTINCT ON (kind) kind, finished_at, status
+       FROM ai_proactive_runs
+      WHERE business_id = $1 AND kind = ANY($2::text[]) AND status <> 'running'
+      ORDER BY kind, finished_at DESC NULLS LAST, started_at DESC`,
+    [businessId, runKinds],
+  );
+  const lastRunByKind = new Map(lastRuns.map((row) => [row.kind, row]));
+
+  return AI_AGENT_KEYS.map((agentKey) => {
+    const agent = agentSettings[agentKey];
+    const lastRun = lastRunByKind.get(AGENT_RUN_KIND[agentKey]);
+    return {
+      agentKey,
+      enabled: agent.enabled,
+      scheduleHour: agent.scheduleHour,
+      status: aiAgentStatus({ masterEnabled: proactive.enabled, agent, currentHour }),
+      lastRunAt: lastRun?.finished_at?.toISOString() ?? null,
+      lastRunStatus: lastRun && lastRun.status !== "running" ? lastRun.status : null,
+    };
+  });
+}
+
 async function claimRun(
   businessId: string,
   kind: AiProactiveRunKind,
@@ -204,7 +297,16 @@ function digestPrompt(kind: "daily_digest" | "weekly_digest", clock: LocalBusine
   ].join("\n\n");
 }
 
-async function collectDigestFacts(businessId: string, clock: LocalBusinessClock, kind: "daily_digest" | "weekly_digest") {
+/** A skipped section's query/tool call is never issued — a disabled agent must not spend DB or provider work either. */
+const NO_TOOL_RESULT = Promise.resolve({ data: null } as { data: unknown });
+const NO_ROWS = Promise.resolve({ rows: [] as unknown[] });
+
+async function collectDigestFacts(
+  businessId: string,
+  clock: LocalBusinessClock,
+  kind: "daily_digest" | "weekly_digest",
+  inclusion: DigestSectionInclusion,
+) {
   const days = kind === "daily_digest" ? 7 : 28;
   const dateFrom = shiftIsoDate(clock.dateKey, -(days - 1));
   const priorFrom = shiftIsoDate(dateFrom, -days);
@@ -227,23 +329,37 @@ async function collectDigestFacts(businessId: string, clock: LocalBusinessClock,
     lateDeliveryRows,
     noShowRows,
   ] = await Promise.all([
-    runReadTool("run_report", { key: "daily_sales_summary", dateFrom, dateTo: clock.dateKey }, businessId),
-    runReadTool("run_report", { key: "shift_reconciliation", dateFrom, dateTo: clock.dateKey }, businessId),
-    runReadTool("get_menu_performance", { dateFrom, dateTo: clock.dateKey }, businessId),
-    runReadTool("get_void_pattern", { dateFrom, dateTo: clock.dateKey }, businessId),
-    runReadTool("get_stock_valuation", {}, businessId),
-    runReadTool("get_unreconciled_bank_lines", {}, businessId),
-    runReadTool("get_vat_liability", { dateFrom, dateTo: clock.dateKey }, businessId),
-    runReadTool("get_payroll_summary", {}, businessId),
-    runReadTool("get_branch_comparison", { dateFrom, dateTo: clock.dateKey }, businessId),
-    runReadTool("get_courier_performance", { dateFrom, dateTo: clock.dateKey }, businessId),
-    query<{
-      current_void_count: string;
-      previous_void_count: string;
-      current_discount_rial: string;
-      previous_discount_rial: string;
-    }>(
-      `SELECT
+    inclusion.financial
+      ? runReadTool("run_report", { key: "daily_sales_summary", dateFrom, dateTo: clock.dateKey }, businessId)
+      : NO_TOOL_RESULT,
+    inclusion.reconciliation
+      ? runReadTool("run_report", { key: "shift_reconciliation", dateFrom, dateTo: clock.dateKey }, businessId)
+      : NO_TOOL_RESULT,
+    inclusion.sales
+      ? runReadTool("get_menu_performance", { dateFrom, dateTo: clock.dateKey }, businessId)
+      : NO_TOOL_RESULT,
+    inclusion.sales ? runReadTool("get_void_pattern", { dateFrom, dateTo: clock.dateKey }, businessId) : NO_TOOL_RESULT,
+    inclusion.financial ? runReadTool("get_stock_valuation", {}, businessId) : NO_TOOL_RESULT,
+    inclusion.reconciliation ? runReadTool("get_unreconciled_bank_lines", {}, businessId) : NO_TOOL_RESULT,
+    inclusion.financial
+      ? runReadTool("get_vat_liability", { dateFrom, dateTo: clock.dateKey }, businessId)
+      : NO_TOOL_RESULT,
+    inclusion.financial ? runReadTool("get_payroll_summary", {}, businessId) : NO_TOOL_RESULT,
+    inclusion.financial
+      ? runReadTool("get_branch_comparison", { dateFrom, dateTo: clock.dateKey }, businessId)
+      : NO_TOOL_RESULT,
+    inclusion.financial
+      ? runReadTool("get_courier_performance", { dateFrom, dateTo: clock.dateKey }, businessId)
+      : NO_TOOL_RESULT,
+    !inclusion.sales
+      ? NO_ROWS
+      : query<{
+          current_void_count: string;
+          previous_void_count: string;
+          current_discount_rial: string;
+          previous_discount_rial: string;
+        }>(
+          `SELECT
           (count(*) FILTER (WHERE o.status = 'voided' AND o.opened_at >= $2::timestamptz))::text AS current_void_count,
           (count(*) FILTER (WHERE o.status = 'voided' AND o.opened_at >= $3::timestamptz AND o.opened_at <= $4::timestamptz))::text AS previous_void_count,
           coalesce(sum(o.discount) FILTER (WHERE o.status = 'completed' AND o.closed_at >= $2::timestamptz), 0)::text AS current_discount_rial,
@@ -251,16 +367,18 @@ async function collectDigestFacts(businessId: string, clock: LocalBusinessClock,
          FROM orders o
          JOIN locations l ON l.id = o.location_id
         WHERE l.business_id = $1`,
-      [businessId, `${dateFrom}T00:00:00.000Z`, `${priorFrom}T00:00:00.000Z`, `${priorTo}T23:59:59.999Z`],
-    ),
-    query<{
-      id: string;
-      name: string;
-      unit: string;
-      stock_qty: string;
-      reorder_level: string;
-    }>(
-      `WITH stock AS (
+          [businessId, `${dateFrom}T00:00:00.000Z`, `${priorFrom}T00:00:00.000Z`, `${priorTo}T23:59:59.999Z`],
+        ),
+    !inclusion.financial
+      ? NO_ROWS
+      : query<{
+          id: string;
+          name: string;
+          unit: string;
+          stock_qty: string;
+          reorder_level: string;
+        }>(
+          `WITH stock AS (
          SELECT i.id, i.name, i.unit, i.reorder_level,
                 coalesce(sum(m.quantity), 0) AS stock_qty
            FROM inventory_items i
@@ -274,16 +392,18 @@ async function collectDigestFacts(businessId: string, clock: LocalBusinessClock,
         WHERE stock_qty <= reorder_level
         ORDER BY stock_qty ASC, name ASC
         LIMIT 30`,
-      [businessId],
-    ),
-    query<{
-      menu_item_id: string;
-      name: string;
-      current_price_rial: string;
-      material_cost_rial: string;
-      gross_margin_rial: string;
-    }>(
-      `SELECT mi.id AS menu_item_id, mi.name,
+          [businessId],
+        ),
+    !inclusion.financial
+      ? NO_ROWS
+      : query<{
+          menu_item_id: string;
+          name: string;
+          current_price_rial: string;
+          material_cost_rial: string;
+          gross_margin_rial: string;
+        }>(
+          `SELECT mi.id AS menu_item_id, mi.name,
               mi.price::text AS current_price_rial,
               round(sum(ingredient.quantity * inventory.avg_cost))::text AS material_cost_rial,
               (mi.price - round(sum(ingredient.quantity * inventory.avg_cost)))::text AS gross_margin_rial
@@ -296,16 +416,18 @@ async function collectDigestFacts(businessId: string, clock: LocalBusinessClock,
        HAVING round(sum(ingredient.quantity * inventory.avg_cost)) > mi.price
         ORDER BY (mi.price - round(sum(ingredient.quantity * inventory.avg_cost))) ASC, mi.name ASC
         LIMIT 30`,
-      [businessId],
-    ),
-    query<{
-      delivery_id: string;
-      order_number: string;
-      courier_name: string | null;
-      dispatched_at: string;
-      minutes_in_transit: string;
-    }>(
-      `SELECT d.id AS delivery_id, o.order_number::text, c.name AS courier_name,
+          [businessId],
+        ),
+    !inclusion.financial
+      ? NO_ROWS
+      : query<{
+          delivery_id: string;
+          order_number: string;
+          courier_name: string | null;
+          dispatched_at: string;
+          minutes_in_transit: string;
+        }>(
+          `SELECT d.id AS delivery_id, o.order_number::text, c.name AS courier_name,
               d.dispatched_at::text,
               floor(extract(epoch FROM (now() - d.dispatched_at)) / 60)::text AS minutes_in_transit
          FROM deliveries d
@@ -317,15 +439,17 @@ async function collectDigestFacts(businessId: string, clock: LocalBusinessClock,
           AND d.dispatched_at <= now() - interval '60 minutes'
         ORDER BY d.dispatched_at
         LIMIT 30`,
-      [businessId],
-    ),
-    query<{
-      reservation_id: string;
-      table_name: string | null;
-      reserved_at: string;
-      minutes_overdue: string;
-    }>(
-      `SELECT r.id AS reservation_id, t.name AS table_name, r.reserved_at::text,
+          [businessId],
+        ),
+    !inclusion.financial
+      ? NO_ROWS
+      : query<{
+          reservation_id: string;
+          table_name: string | null;
+          reserved_at: string;
+          minutes_overdue: string;
+        }>(
+          `SELECT r.id AS reservation_id, t.name AS table_name, r.reserved_at::text,
               floor(extract(epoch FROM (now() - r.reserved_at)) / 60)::text AS minutes_overdue
          FROM reservations r
          JOIN locations l ON l.id = r.location_id
@@ -336,28 +460,34 @@ async function collectDigestFacts(businessId: string, clock: LocalBusinessClock,
           AND r.reserved_at >= now() - interval '24 hours'
         ORDER BY r.reserved_at
         LIMIT 30`,
-      [businessId],
-    ),
+          [businessId],
+        ),
   ]);
 
-  return compactProactiveFacts({
-    period: { kind, dateFrom, dateTo: clock.dateKey, priorFrom, priorTo },
-    sales: sales.data,
-    tillReconciliation: tillReconciliation.data,
-    menuPerformance: menuPerformance.data,
-    voidPattern: voidPattern.data,
-    stockValuation: stockValuation.data,
-    unreconciledBankLines: bankLines.data,
-    vatLiability: vat.data,
-    payroll: payroll.data,
-    branchComparison: branchComparison.data,
-    courierPerformance: courierPerformance.data,
-    voidAndDiscountComparison: anomalyRows.rows[0] ?? null,
-    lowStock: lowStockRows.rows,
-    negativeMarginItems: negativeMarginRows.rows,
-    deliveriesOverSixtyMinutes: lateDeliveryRows.rows,
-    potentialNoShows: noShowRows.rows,
-  });
+  const facts: Record<string, unknown> = { period: { kind, dateFrom, dateTo: clock.dateKey, priorFrom, priorTo } };
+  if (inclusion.financial) {
+    facts.sales = sales.data;
+    facts.stockValuation = stockValuation.data;
+    facts.vatLiability = vat.data;
+    facts.payroll = payroll.data;
+    facts.branchComparison = branchComparison.data;
+    facts.courierPerformance = courierPerformance.data;
+    facts.lowStock = lowStockRows.rows;
+    facts.negativeMarginItems = negativeMarginRows.rows;
+    facts.deliveriesOverSixtyMinutes = lateDeliveryRows.rows;
+    facts.potentialNoShows = noShowRows.rows;
+  }
+  if (inclusion.sales) {
+    facts.menuPerformance = menuPerformance.data;
+    facts.voidPattern = voidPattern.data;
+    facts.voidAndDiscountComparison = anomalyRows.rows[0] ?? null;
+  }
+  if (inclusion.reconciliation) {
+    facts.tillReconciliation = tillReconciliation.data;
+    facts.unreconciledBankLines = bankLines.data;
+  }
+
+  return compactProactiveFacts(facts);
 }
 
 async function runDigest(input: {
@@ -365,6 +495,7 @@ async function runDigest(input: {
   kind: "daily_digest" | "weekly_digest";
   clock: LocalBusinessClock;
   config: PlatformAiConfig;
+  inclusion: DigestSectionInclusion;
 }): Promise<boolean> {
   const claim = await claimRun(input.businessId, input.kind, proactivePeriodKey(input.kind, input.clock));
   if (!claim) return false;
@@ -372,7 +503,7 @@ async function runDigest(input: {
   let reservation: AiTurnReservation | null = null;
   let facts: unknown;
   try {
-    facts = await collectDigestFacts(input.businessId, input.clock, input.kind);
+    facts = await collectDigestFacts(input.businessId, input.clock, input.kind, input.inclusion);
     try {
       reservation = await reserveAiTurn({
         businessId: input.businessId,
@@ -499,16 +630,25 @@ async function runBusinessProactiveJobs(
   const timezone = await businessTimezone(businessId);
   const clock = localBusinessClock(now, timezone);
   const due = dueProactiveRuns(settings, clock);
+  if (due.length === 0) return 0;
+  const agentSettings = await getAiAgentSettings(businessId);
+  const inclusion = digestSectionInclusion(agentSettings);
   let completed = 0;
 
   for (const kind of due) {
     try {
       if (kind === "customer_debt_drafts") {
+        // A disabled agent must not even claim the run — leave the period
+        // key unclaimed so enabling it later the same day can still run.
+        if (!agentSettings.receivables_follow_up.enabled) continue;
         if (await runDebtDrafts(businessId, clock)) completed += 1;
         continue;
       }
       if (!aiConfig) continue;
-      if (await runDigest({ businessId, kind, clock, config: aiConfig })) completed += 1;
+      // Same reasoning: skip claiming daily/weekly digest entirely when no
+      // agent would contribute a section, instead of paying for an empty one.
+      if (!hasAnyDigestContent(inclusion)) continue;
+      if (await runDigest({ businessId, kind, clock, config: aiConfig, inclusion })) completed += 1;
     } catch (error) {
       // A provider or one report may fail independently; it must not prevent
       // this tenant's other scheduled work (or the next tenant) from running.

@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 import { AiProposalCard } from "@/components/ai/ai-proposal-card";
 import { SUGGESTED_PROMPTS, useAiChat } from "@/components/ai/use-ai-chat";
 import { AiActionAudit } from "./ai-action-audit";
+import { AiAgentCards } from "./ai-agent-cards";
 import { AiBillingDashboard } from "./ai-billing";
 import { AiProactiveSettings } from "./ai-proactive-settings";
 import { AiRecentConversations } from "./ai-recent-conversations";
@@ -233,6 +234,7 @@ export function AiChatHub() {
             <Button variant="outline" onClick={startNewConversation} className="justify-start">
               <MessageSquarePlusIcon /> گفتگوی جدید
             </Button>
+            <AiAgentCards />
             <AiRecentConversations
               activeId={conversationId}
               refreshKey={conversationsKey}
