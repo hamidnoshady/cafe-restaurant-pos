@@ -35,6 +35,11 @@
 # desired in a real deployment. See docs/server-sync.md "Local TLS" for the
 # recommended options (self-signed cert on a local reverse proxy, or a local
 # hostname with a trusted cert). For a quick LAN-only trial you can run as-is.
+# Biometric login (Phase 20 Wave 3) additionally needs browsers' WebAuthn
+# "secure context" requirement, which a plain http://<lan-ip> origin never
+# satisfies — staff on this stack will only see the PIN pad until it's
+# fronted with the HTTPS setup above plus WEBAUTHN_RP_ID/WEBAUTHN_ORIGIN
+# (see .env.example) matching that hostname.
 
 services:
   db:

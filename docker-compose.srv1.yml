@@ -57,6 +57,12 @@ services:
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
       SESSION_HOURS: ${SESSION_HOURS:-12}
       BACKUP_DIR: /app/backups
+      # Biometric login (Phase 20 Wave 3). Without these, webauthn.ts falls
+      # back to its "localhost" defaults, which never match this host's real
+      # origin — every registration/login ceremony fails with a generic
+      # error. Must match the public URL exactly (see .env.example).
+      WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID:-pos.eshobe.com}
+      WEBAUTHN_ORIGIN: ${WEBAUTHN_ORIGIN:-https://pos.eshobe.com}
     # Loopback only. This host runs live customer sites on 80/443 via
     # OpenLiteSpeed; binding 0.0.0.0 here would expose the POS directly and
     # bypass the TLS front door. Traefik connects to 127.0.0.1:${POS_HOST_PORT}.

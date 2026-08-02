@@ -55,6 +55,12 @@ services:
       SESSION_HOURS: ${SESSION_HOURS:-12}
       # Scheduled backups (Phase 10) land here; the volume below keeps them.
       BACKUP_DIR: /app/backups
+      # Biometric login (Phase 20 Wave 3). Derived from POS_DOMAIN (Traefik
+      # always terminates this stack over HTTPS — see tls.certresolver
+      # below) so it's never left at webauthn.ts's "localhost" defaults,
+      # which would make every WebAuthn ceremony fail on the real domain.
+      WEBAUTHN_RP_ID: ${POS_DOMAIN:?set POS_DOMAIN}
+      WEBAUTHN_ORIGIN: https://${POS_DOMAIN:?set POS_DOMAIN}
     volumes:
       - pos-backups:/app/backups
     networks:
