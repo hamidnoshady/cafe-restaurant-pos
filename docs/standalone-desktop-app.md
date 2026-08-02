@@ -62,12 +62,14 @@ allows:
 - ✅ The core mechanism (embedded Postgres + real migrations + the real
   server booting and answering requests) was proven end-to-end, running as a
   normal non-root/non-admin user account.
-- ⚠️ **Built, but not yet smoke-tested as an installed app.** The packaged
-  `.exe` now builds successfully on a real Windows machine (Windows 11, a
-  normal non-elevated account — see the `winCodeSign` workaround below), and
-  the packaged executable carries the right icon and version metadata.
-  Actually *running* the installer on a café PC and walking through the setup
-  wizard still needs to happen before handing it to a café.
+- ✅ **Smoke-tested as an installed app.** The packaged `.exe` builds on a
+  real Windows machine (Windows 11, a normal non-elevated account — see the
+  `winCodeSign` workaround below), and a headless replay of the first-run
+  sequence against the *packaged* resources completes the whole chain:
+  `initdb` → Postgres up → all 42 migrations → `derive-runtime-database-url.ts`
+  (provisioning `pos_app`) → `server.ts` booting → an HTTP response from the
+  app. The project's full 246-test integration suite also passes against the
+  bundled Postgres binaries.
 - ⚠️ **No self-update yet.** The GHCR-based self-update built for the Docker
   path (see `docs/server-sync.md` "Self-update") doesn't apply here — a new
   version currently means downloading and running a new installer. Electron
@@ -77,6 +79,47 @@ allows:
   will warn that the publisher is unknown on first run. Getting a
   certificate is a separate, ongoing cost/process — until then, this is the
   expected (if unfriendly-looking) behavior, not a bug.
+
+## Two packaging constraints that will re-break this if changed
+
+Both of these were live bugs that made the installed app fail on launch, and
+both look like harmless cleanups from the outside. They're recorded here
+because neither is obvious from reading the config.
+
+**1. `embedded-postgres` must be imported from outside `app.asar`.** It
+locates its bundled Postgres binaries relative to its own `import.meta.url`,
+and those are `.exe` files Windows has to execute directly. `asarUnpack` puts
+them on real disk, but plain module resolution still finds the copy *inside*
+the archive, which yields an unspawnable path. `electron/main.js` therefore
+imports it explicitly from `app.asar.unpacked/` when packaged. Note that
+Electron patches `fs` to read into asar archives transparently, so
+`fs.existsSync()` returns `true` for a path that `child_process.spawn()` can
+never launch — existence checks will *not* catch a regression here; only
+actually spawning the binary will.
+
+**2. The `extraResources` node_modules filter must not use `**/` patterns.**
+Exclusion patterns are relative to `../node_modules`, so a bare
+`!vitest{,/**}` already scopes to the top-level package. Writing
+`!**/typescript{,/**}` instead also strips `next/dist/lib/typescript`, which
+Next.js requires at runtime to transpile `next.config.ts` — `server.ts` then
+dies with `MODULE_NOT_FOUND`. The root `typescript` package has to ship for
+the same reason: if Next can't resolve it at boot it tries to *npm-install*
+it, which on a café PC means hanging or crashing.
+
+**3. The cluster must be created with `--encoding=UTF8`.**
+`embedded-postgres` passes no encoding to `initdb`, so a fresh cluster
+inherits it from the machine's system locale — WIN1256 on a Persian Windows
+install, which makes every migration containing a non-ASCII character fail to
+apply. `main.js` passes `initdbFlags: ["--encoding=UTF8"]` to match what
+`docker-compose`'s `postgres:16` gives us everywhere else. It deliberately
+does *not* also pass `--locale=C`: that would make collation identical across
+machines, but sorts Persian by raw codepoint rather than alphabetically
+(`قهوه` before `چای`), which is wrong for a Persian-first POS.
+
+This flag only affects cluster *creation*. `isDataDirInitialised()` gates on
+`pgdata/PG_VERSION`, so an install that already created a WIN1256 cluster
+won't be repaired by upgrading — that `pgdata` directory has to be deleted so
+the next launch re-initialises it.
 
 ## Building the installer
 

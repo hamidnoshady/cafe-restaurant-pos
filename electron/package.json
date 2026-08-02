@@ -49,13 +49,9 @@
         "to": "app/node_modules",
         "filter": [
           "**/*",
-          "!**/typescript{,/**}",
-          "!**/vitest{,/**}",
-          "!**/tailwindcss{,/**}",
-          "!**/@tailwindcss{,/**}",
-          "!**/@types{,/**}",
-          "!**/.bin{,/**}",
-          "!**/.cache{,/**}"
+          "!vitest{,/**}",
+          "!@vitest{,/**}",
+          "!.cache{,/**}"
         ]
       }
     ]

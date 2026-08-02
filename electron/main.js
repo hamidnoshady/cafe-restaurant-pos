@@ -185,6 +185,17 @@ async function startBackend() {
     password: config.pgPassword,
     port: PG_PORT,
     persistent: true,
+    // embedded-postgres passes no --encoding to initdb, so a new cluster
+    // inherits its encoding from the machine's system locale. On a Persian
+    // Windows install that's WIN1256, and every migration containing a
+    // non-ASCII character then fails to apply ("character with byte sequence
+    // ... in encoding UTF8 has no equivalent in encoding WIN1256"). Forcing
+    // UTF8 matches what docker-compose's postgres:16 image gives us
+    // everywhere else. Deliberately NOT also passing --locale=C: that would
+    // make collation deterministic across machines, but sorts Persian text by
+    // raw codepoint rather than alphabetically (قهوه before چای), which is
+    // wrong for a Persian-first POS.
+    initdbFlags: ["--encoding=UTF8"],
   });
 
   if (firstRun) await pgInstance.initialise();
