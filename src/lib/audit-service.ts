@@ -24,6 +24,8 @@ export interface AuditEntry {
   credentialType: string | null;
   /** Resolved from the payload's deviceId, for a row whose payload names one. */
   deviceLabel: string | null;
+  /** Resolved from entity_id for an `entity = 'employee'` row (e.g. `employee.login_failed`, Wave 7) — the actor column is null for a pre-authentication failure, so this is the only way to say whose attempt it was. */
+  entityName: string | null;
 }
 
 interface AuditRow extends Record<string, unknown> {
@@ -39,6 +41,7 @@ interface AuditRow extends Record<string, unknown> {
   created_at: Date;
   credential_type: string | null;
   device_label: string | null;
+  entity_name: string | null;
 }
 
 function toEntry(row: AuditRow): AuditEntry {
@@ -55,12 +58,15 @@ function toEntry(row: AuditRow): AuditEntry {
     createdAt: row.created_at.toISOString(),
     credentialType: row.credential_type,
     deviceLabel: row.device_label,
+    entityName: row.entity_name,
   };
 }
 
 export interface AuditLogFilters {
   entity?: string;
   actorId?: string;
+  /** Wave 7 — narrows to one action, e.g. `employee.login_failed` for the security center's failed-attempts list, without the caller needing the broader entity filter's noise. */
+  action?: string;
   /** Rows with id strictly less than this — the same "most recent first" cursor listShifts's LIMIT gets away without, but a security log is expected to grow past 200 rows quickly. */
   before?: number;
   limit?: number;
@@ -78,6 +84,11 @@ const DEFAULT_LIMIT = 50;
  * ids embedded in `payload` (only `employee.session_created` rows carry
  * them) rather than duplicated at write time, so a credential revoked or a
  * device renamed after the fact is reflected here without a backfill.
+ *
+ * `entity_name` (Wave 7) is resolved the same live way, but off `entity_id`
+ * directly rather than a payload field — it's what lets the security
+ * center's failed-login list say *whose* attempt it was even though
+ * `employee.login_failed` rows have no actor (nothing was authenticated yet).
  */
 export async function listAuditLog(
   businessId: string,
@@ -93,6 +104,10 @@ export async function listAuditLog(
     params.push(filters.actorId);
     conditions.push(`a.user_id = $${params.length}`);
   }
+  if (filters.action) {
+    params.push(filters.action);
+    conditions.push(`a.action = $${params.length}`);
+  }
   if (filters.before) {
     params.push(filters.before);
     conditions.push(`a.id < $${params.length}`);
@@ -105,7 +120,8 @@ export async function listAuditLog(
     `SELECT a.id, a.business_id, a.location_id, a.user_id, u.full_name AS actor_name,
             a.action, a.entity, a.entity_id, a.payload, a.created_at,
             ec.credential_type::text AS credential_type,
-            d.label AS device_label
+            d.label AS device_label,
+            eu.full_name AS entity_name
        FROM audit_log a
        LEFT JOIN users u ON u.id = a.user_id
        LEFT JOIN employee_credentials ec
@@ -114,6 +130,9 @@ export async function listAuditLog(
        LEFT JOIN pos_devices d
               ON d.business_id = a.business_id
              AND d.id = nullif(a.payload->>'deviceId', '')::uuid
+       LEFT JOIN users eu
+              ON a.entity = 'employee'
+             AND eu.id = nullif(a.entity_id, '')::uuid
       WHERE ${conditions.join(" AND ")}
       ORDER BY a.id DESC
       LIMIT $${params.length}`,

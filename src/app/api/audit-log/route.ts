@@ -20,6 +20,7 @@ export const GET = withTenantScope(async (request: NextRequest) => {
   const entries = await listAuditLog(session.businessId, {
     entity: searchParams.get("entity") ?? undefined,
     actorId: searchParams.get("actorId") ?? undefined,
+    action: searchParams.get("action") ?? undefined,
     before: before ? Number(before) : undefined,
     limit: searchParams.get("limit") ? Number(searchParams.get("limit")) : undefined,
   });

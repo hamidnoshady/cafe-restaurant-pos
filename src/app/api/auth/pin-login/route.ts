@@ -4,7 +4,12 @@ import { query, withTenant } from "@/lib/db";
 import { SESSION_COOKIE, sessionCookieOptions, signSession, type Role } from "@/lib/auth";
 import { toLatinDigits } from "@/lib/digits";
 import { resolveDeviceId } from "@/lib/device-service";
-import { createSession, ensureEmployeeProfile, resolveLoginBusinessId } from "@/lib/employee-service";
+import {
+  auditLoginFailure,
+  createSession,
+  ensureEmployeeProfile,
+  resolveLoginBusinessId,
+} from "@/lib/employee-service";
 
 interface UserRow extends Record<string, unknown> {
   id: string;
@@ -94,6 +99,10 @@ export async function POST(request: NextRequest) {
     }
 
     if (!user) {
+      // Phase 20 Wave 7 — visible in the new security center even though no
+      // one is authenticated yet; entity_id is the attempted employeeId when
+      // the Wave 2 picker narrowed the request, null for a bare legacy scan.
+      await auditLoginFailure(businessId, body.employeeId ?? null, "invalid_pin");
       return NextResponse.json({ error: "invalid_credentials" }, { status: 401 });
     }
 

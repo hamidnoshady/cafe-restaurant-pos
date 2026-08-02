@@ -655,6 +655,89 @@ export async function listActiveSessions(
   return rows.map(toSession);
 }
 
+export interface ActiveSessionSummary {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  role: string;
+  locationId: string | null;
+  /** The paired device (Wave 4) this session was opened from, or the raw user-agent snippet recorded at login when no device was paired — never both. */
+  deviceLabel: string | null;
+  /** Presence alone says how this session was opened — see audit.ts's `credentialKindFromId` (null means PIN). */
+  credentialId: string | null;
+  issuedAt: string;
+  lastSeenAt: string | null;
+  expiresAt: string;
+}
+
+interface ActiveSessionRow extends Record<string, unknown> {
+  id: string;
+  employee_id: string;
+  employee_name: string;
+  role: string;
+  location_id: string | null;
+  device_label: string | null;
+  credential_id: string | null;
+  issued_at: Date;
+  last_seen_at: Date | null;
+  expires_at: Date;
+}
+
+/**
+ * Business-wide "who is currently signed in, on which device" (Wave 7 —
+ * resolves this doc's Wave 6 open question 4: `listActiveSessions` above has
+ * existed since Wave 1 but was never reachable through any route). Mirrors
+ * `listShifts`/`listAuditLog`'s own business-wide, most-recent-first shape
+ * for the same `team.manage` admin audience.
+ */
+export async function listActiveSessionsForBusiness(businessId: string): Promise<ActiveSessionSummary[]> {
+  const { rows } = await query<ActiveSessionRow>(
+    `SELECT s.id, s.employee_id, u.full_name AS employee_name, u.role::text AS role,
+            s.location_id, coalesce(s.device_label, d.label) AS device_label,
+            s.credential_id, s.issued_at, s.last_seen_at, s.expires_at
+       FROM employee_sessions s
+       JOIN users u ON u.id = s.employee_id
+       LEFT JOIN pos_devices d ON d.id = s.device_id
+      WHERE s.business_id = $1 AND s.revoked_at IS NULL AND s.expires_at > now()
+      ORDER BY s.issued_at DESC`,
+    [businessId],
+  );
+  return rows.map((row) => ({
+    id: row.id,
+    employeeId: row.employee_id,
+    employeeName: row.employee_name,
+    role: row.role,
+    locationId: row.location_id,
+    deviceLabel: row.device_label,
+    credentialId: row.credential_id,
+    issuedAt: row.issued_at.toISOString(),
+    lastSeenAt: row.last_seen_at ? row.last_seen_at.toISOString() : null,
+    expiresAt: row.expires_at.toISOString(),
+  }));
+}
+
+/**
+ * Records a failed PIN or biometric login attempt (Wave 7 — resolves this
+ * doc's Wave 6 open question 3). No actor: nothing was authenticated, so
+ * `user_id` stays null the same way an anonymous request already reads
+ * `audit_log.user_id`; `employeeId` (when the attempt named one — the Wave 2
+ * picker or a webauthn ceremony always does, a bare legacy PIN scan may not)
+ * goes in `entity_id` so audit-service.ts's `listAuditLog` can resolve it
+ * back to a name via its `entityName` join, same pattern as
+ * `credentialType`/`deviceLabel`.
+ */
+export async function auditLoginFailure(
+  businessId: string,
+  employeeId: string | null,
+  reason: string,
+): Promise<void> {
+  await getPool().query(
+    `INSERT INTO audit_log (business_id, user_id, action, entity, entity_id, payload)
+     VALUES ($1, NULL, 'employee.login_failed', 'employee', $2, $3)`,
+    [businessId, employeeId, JSON.stringify({ reason })],
+  );
+}
+
 export async function touchSession(sessionId: string, businessId: string): Promise<void> {
   await query(
     `UPDATE employee_sessions SET last_seen_at = now() WHERE id = $1 AND business_id = $2`,

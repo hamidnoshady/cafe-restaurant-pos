@@ -620,20 +620,153 @@ same event as "با بیومتریک از دستگاه «صندوق ۱»", confi
 list to just the device-pairing event; a cashier's own `GET /api/audit-log` request correctly
 returned `forbidden` (403), matching the same `team.manage` gate shift history already has.
 
-## Open questions for Wave 7
+## Scope — Wave 7: Admin Security Center (sessions & failed logins)
 
-1. Carried over from Wave 5, still unresolved: a cheaper, pre-aggregated way to show every past
-   shift's cash variance at a glance in the shift-history tab, without an N+1 `shiftCashSummary` call
-   per row.
-2. Carried over from Wave 5, still unresolved: `employee_shifts` has no link back to the individual
-   orders it covers; if a real audit/security need for per-order shift attribution ever comes up,
-   that's a separately-scoped change to `order-service.ts`, not an extension of this table.
-3. Failed login attempts (wrong PIN, failed biometric assertion) are still invisible to any audit
-   trail or admin view — only Wave 3's HTTP-layer rate limiter bounds them. An admin security center
-   may want to surface repeated failures per employee/terminal, which needs its own write path (this
-   wave only instrumented the *successful* `createSession` call).
-4. `listActiveSessions` (`employee-service.ts`, Wave 1) is still not reachable through any route —
-   an admin security center listing "who is currently signed in, on which device" is Wave 7 territory
-   this wave didn't touch.
+The issue frames Waves 7–8 together as "the admin security center." This wave builds its core —
+everything an owner/manager needs to see and act on *right now* — by resolving three of Wave 6's
+four open questions; the fourth (per-order shift attribution) was never part of the security
+center and stays carried forward below, unaddressed by design (see that question's own wording).
 
-## Status: in progress — Wave 6 (audit trail) submitted for review
+- **Business-wide active-session review, with revoke.** Resolves open question 4:
+  `listActiveSessions` (`employee-service.ts`, Wave 1) has existed since Wave 1 but was never
+  reachable through any route. `listActiveSessionsForBusiness` (`employee-service.ts`) is its
+  business-wide counterpart — every employee currently signed in, on which device, most recent
+  first — joined the same way `listShifts`/`listAuditLog` already are. `GET /api/sessions` and
+  `DELETE /api/sessions/[id]` expose it, `team.manage`-gated like every other "act on this
+  business's security state" surface this phase has added (shift force-close, audit review,
+  device pairing). The `DELETE` reuses `revokeSession` (Wave 1/2) unchanged — it already revokes
+  by `(sessionId, businessId)` with no owner check, the correct shape for an admin acting on
+  someone else's session, and `employee_sessions` is only ever minted for PIN-role members, so
+  there's no owner/manager session here an admin could accidentally revoke out from under
+  themselves.
+- **Failed login attempts are now audited.** Resolves open question 3: `auditLoginFailure`
+  (`employee-service.ts`) writes an `employee.login_failed` row — no actor (nothing was
+  authenticated), `entity_id` set to the attempted `employeeId` when the caller named one (the
+  Wave 2 picker or a webauthn ceremony always does; a bare legacy PIN scan may not) — called from
+  `pin-login/route.ts`'s `!user` branch and `webauthn/login/verify/route.ts`'s two failure
+  branches (a failed assertion; a verified assertion for an employee who's since gone inactive).
+  Both routes already run inside their own `withTenant(businessId, …)` block, so this needs no new
+  `withoutTenantScope` reason — same as every other write this phase has added.
+- **`listAuditLog` gained two small, general read-side capabilities** rather than one
+  narrow one, since both were nearly free given the existing join shape: an `action` filter (so
+  the security center's failed-attempts list doesn't have to pull the whole `entity = 'employee'`
+  stream and filter client-side), and an `entityName`, resolved live off `entity_id` the same way
+  `credentialType`/`deviceLabel` are already resolved off `payload` — the only way to say *whose*
+  failed attempt one was, since `employee.login_failed` rows carry no actor.
+- **A new Settings tab, "مرکز امنیت"** (`security-center-settings.tsx`, `settings-tabs.ts`,
+  `team.manage`-gated) — active sessions with an "پایان نشست" button, and the twenty most recent
+  failed attempts. Deliberately not a replacement for the "گزارش حسابرسی" tab (Wave 6): that one
+  is the full, filterable history of every security event including these same sessions' own
+  creation/revocation; this one is the actionable subset an owner actually needs to glance at.
+- **Shift cash variance, pre-aggregated.** Resolves open question 1 (carried since Wave 5):
+  `listShifts` (`shift-service.ts`) now computes each row's cash summary via a `LEFT JOIN LATERAL`
+  bounded by that row's own `[started_at, coalesce(ended_at, now())]` window, instead of the
+  settings tab making one `shiftCashSummary` round trip per shift. The aggregate columns
+  themselves are factored into a shared `CASH_SUMMARY_COLUMNS` SQL fragment so `shiftCashSummary`
+  (a single shift's own window, still used by `closeShiftRow` and `/api/shifts/active`) and the
+  new LATERAL join compute the exact same rule from one place rather than two copies drifting
+  apart. `shift-history-settings.tsx` now shows each closed shift's variance inline.
+
+## Out of scope (this wave)
+
+- **Per-order shift attribution (Wave 5's second open question) is still not addressed** — it was
+  never part of "the admin security center" the issue describes; it's a separately-scoped change
+  to `order-service.ts` if a concrete need for it ever comes up, and stays carried forward,
+  unaddressed, below.
+- **No automated response to repeated failed attempts** — no lockout, no rate-limit escalation
+  beyond Wave 3's existing HTTP-layer bucket, no alerting/notification. This wave makes failures
+  *visible*; deciding whether the product wants to *act* on a pattern of them is a Wave 8
+  decision, not assumed here.
+- **The security center is a Settings tab, like every other admin surface this phase has added**,
+  not a dedicated top-level page. Whether Waves 7–8's output should eventually be promoted to its
+  own `/dashboard/security` page combining sessions, failed logins, shift history, and the audit
+  log in one view — rather than four separate Settings tabs — is a product decision for Wave 8,
+  not assumed here.
+- **No new migration.** `employee_sessions`, `pos_devices`, and `audit_log` already carry
+  everything this wave reads or writes; `listShifts`'s LATERAL join reads `orders`/`payments` the
+  same way `shiftCashSummary` always has. Purely additive, the same shape Wave 6 had.
+
+## Decisions
+
+- **`revokeSession` needed no change for admin use.** It already takes `(sessionId, businessId,
+  actorId)` with no ownership check — the correct shape for `logout` (self) and now `/api/sessions/
+  [id]` (admin) alike, since the only thing that would need an ownership guard is a *self-service*
+  revoke a caller could point at someone else's row (the reason `revokeCredential` grew an optional
+  `ownerEmployeeId` in Wave 3). An admin route is trusted with any session in its own tenant by
+  definition.
+- **Failed-attempt visibility, not failed-attempt policy.** Recording `employee.login_failed` was
+  scoped deliberately narrowly to "make this visible to an admin," matching Wave 6's own audit
+  writes — no threshold, no lockout, no notification. Wave 3's rate limiter already bounds the
+  actual risk (brute-force volume); this wave's job was closing the *visibility* gap Wave 6 left
+  open, not building a second defense on top of the first.
+- **`entityName` resolved live, not stored at write time.** Same reasoning Wave 6 gave
+  `credentialType`/`deviceLabel`: a name captured at write time would go stale if the employee were
+  later renamed or removed; resolving it live via a join (itself RLS-scoped, so it can never
+  resolve a name outside the caller's own business regardless of what `entity_id` an attacker-
+  controlled failed-login attempt might have named) costs nothing extra since `listAuditLog` was
+  already joining on other ids.
+- **One shared SQL fragment for the cash-summary columns, not two independent queries.** The
+  alternative — writing the LATERAL join's aggregate columns out by hand — would have been a
+  second, likely-to-drift copy of `shiftCashSummary`'s own SELECT list; `CASH_SUMMARY_COLUMNS`
+  keeps `reconcileCash`'s two callers (a single shift's own window at close time, every shift's own
+  window at list time) computing an identical rule.
+- **No new `withoutTenantScope` bypass.** `auditLoginFailure` runs inside the same
+  `withTenant(businessId, …)` block `pin-login`/`webauthn/login/verify` already open for every
+  other write on the request; `/api/sessions` and `/api/sessions/[id]` are ordinary authenticated
+  dashboard routes, same as `/api/shifts` and `/api/audit-log`.
+
+## Where each exit criterion is satisfied (Wave 7 only)
+
+- Admin visibility into who is currently signed in, with the ability to end a session —
+  `src/lib/employee-service.ts` (`listActiveSessionsForBusiness`), `src/app/api/sessions/route.ts`,
+  `.../[id]/route.ts`, `src/app/dashboard/settings/security-center-settings.tsx`.
+- Failed login attempts are now part of the audit trail — `src/lib/employee-service.ts`
+  (`auditLoginFailure`), `src/app/api/auth/pin-login/route.ts`,
+  `.../webauthn/login/verify/route.ts`.
+- Shift cash variance shown without an N+1 query — `src/lib/shift-service.ts` (`listShifts`'s
+  `CASH_SUMMARY_COLUMNS`/`LATERAL` join), `src/app/dashboard/settings/shift-history-settings.tsx`.
+- No damage to the current POS flow — no schema change; `pin-login`/`webauthn` login routes
+  unchanged in shape for a successful attempt (only the failure branches gained a write);
+  `shiftCashSummary`'s own callers (`closeShiftRow`, `/api/shifts/active`) untouched; `npx tsc
+  --noEmit`, `npm test` (840 tests, including a new `employee.login_failed` label case in
+  `audit.test.ts`), `npm run test:db` (246 tests, unchanged — no new tenant-scoped table, so
+  `tenant-isolation.integration.test.ts` needed no update), and `npm run build` all pass.
+
+## Verification
+
+`npx tsc --noEmit`, `npm test` (840 tests), `npm run test:db` (246 tests), and `npm run build` all
+pass. Exercised end-to-end against a live dev server and a seeded business: a deliberately wrong
+PIN against the seeded cashier produced an `employee.login_failed` row that
+`GET /api/audit-log?action=employee.login_failed` (and the new "مرکز امنیت" tab) correctly
+resolved back to the cashier's name via `entityName`, despite the row carrying no actor; the
+following successful PIN login showed up in "نشست‌های فعال" as "پین · <user-agent> · آخرین
+فعالیت: …"; ending that session as the owner via the tab's "پایان نشست" button (`DELETE
+/api/sessions/[id]`) immediately 401'd the cashier's next `/api/auth/me` call and removed the row
+from the list — confirmed both over `curl` and in a headless-Chromium screenshot of the rendered
+tab. A cashier shift opened with a ۳۰۰,۰۰۰ toman float and closed with a deliberately short
+۲۵۰,۰۰۰ count showed "تطبیق: ۵٬۰۰۰ تومان کسری" in the "شیفت‌ها" tab's list — computed by
+`listShifts`'s own LATERAL join, without a per-row API round trip, and matching the figure
+`closeShiftRow`'s independent `shiftCashSummary` call had already returned for the same shift.
+The webauthn failure-audit branches were verified by type-check and code review against Wave 3/4's
+existing ceremony routes rather than a live authenticator ceremony (unlike Wave 3's own CDP virtual-
+authenticator run) — they follow the exact same shape as `pin-login`'s already-live-tested failure
+path.
+
+## Open questions for Wave 8
+
+1. Carried over from Wave 5, still unresolved and still out of the security center's scope:
+   `employee_shifts` has no link back to the individual orders it covers; if a real audit/security
+   need for per-order shift attribution ever comes up, that's a separately-scoped change to
+   `order-service.ts`, not an extension of this table.
+2. Should a pattern of failed attempts (e.g. N wrong PINs for one employee within a window, or on
+   one device) trigger anything beyond being visible in the security center — a temporary lockout,
+   an admin notification, a forced device re-pairing? Wave 7 deliberately only closed the
+   visibility gap; Wave 8 is where the product decides whether visibility alone is enough.
+3. Should Waves 7–8's several Settings tabs (shifts, audit log, security center, devices) be
+   consolidated into one dedicated security/admin page instead of four separate tabs under
+   Settings, now that the admin security center the issue asked for has more than one surface?
+4. This phase's own exit criteria are only met once Wave 8 ships (per this doc's opening
+   paragraph) — Wave 8 should close out whichever of the above the product actually wants, then
+   mark the phase complete.
+
+## Status: in progress — Wave 7 (admin security center: sessions & failed logins) submitted for review

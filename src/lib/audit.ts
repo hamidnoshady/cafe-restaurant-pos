@@ -22,6 +22,7 @@ const ACTION_LABELS: Record<string, string> = {
   "employee.webauthn_registered": "ثبت ورود بیومتریک",
   "employee.session_created": "ورود به سیستم",
   "employee.session_revoked": "پایان نشست",
+  "employee.login_failed": "تلاش ورود ناموفق",
   "team.member_created": "افزودن عضو تیم",
   "team.member_updated": "ویرایش عضو تیم",
   "team.member_removed": "حذف عضو تیم",

@@ -4,6 +4,7 @@ import { query, withTenant } from "@/lib/db";
 import { SESSION_COOKIE, sessionCookieOptions, signSession, type Role } from "@/lib/auth";
 import { resolveDeviceId } from "@/lib/device-service";
 import {
+  auditLoginFailure,
   completeWebauthnAuthentication,
   createSession,
   resolveLoginBusinessId,
@@ -57,6 +58,10 @@ export async function POST(request: NextRequest) {
       body.challengeToken!,
     );
     if (!result) {
+      // Phase 20 Wave 7 — same visibility pin-login's failure path just
+      // gained; employeeId is always known here (the picker chose them
+      // before offering biometric at all).
+      await auditLoginFailure(businessId, body.employeeId!, "invalid_assertion");
       return NextResponse.json({ error: "invalid_credentials" }, { status: 401 });
     }
 
@@ -69,6 +74,7 @@ export async function POST(request: NextRequest) {
     );
     const user = rows[0];
     if (!user) {
+      await auditLoginFailure(businessId, body.employeeId!, "employee_inactive");
       return NextResponse.json({ error: "invalid_credentials" }, { status: 401 });
     }
 
