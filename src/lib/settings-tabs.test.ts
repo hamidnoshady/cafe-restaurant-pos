@@ -18,6 +18,10 @@ describe("visibleSettingsTabs", () => {
     ]);
   });
 
+  it("shows team management and shift history together, gated on team.manage (Phase 20 Wave 5)", () => {
+    expect(visibleSettingsTabs([PERMISSIONS.teamManage]).map((tab) => tab.key)).toEqual(["team", "shifts"]);
+  });
+
   it("preserves the former role and feature gates for operational settings", () => {
     expect(
       visibleSettingsTabs([], {

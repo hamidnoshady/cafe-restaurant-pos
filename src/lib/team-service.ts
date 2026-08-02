@@ -467,6 +467,15 @@ export async function removeMembership(
         WHERE employee_id = $1 AND business_id = $2 AND revoked_at IS NULL`,
       [userId, businessId],
     );
+    // Phase 20 Wave 5 — a removed member's shift (if left open) would
+    // otherwise stay open forever now that nothing else about their access
+    // is still live.
+    await client.query(
+      `UPDATE employee_shifts
+          SET ended_at = now(), closed_by = $3
+        WHERE employee_id = $1 AND business_id = $2 AND ended_at IS NULL`,
+      [userId, businessId, actorId],
+    );
 
     await auditMembership(client, {
       businessId,

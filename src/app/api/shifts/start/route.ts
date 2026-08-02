@@ -1,0 +1,41 @@
+import { NextRequest, NextResponse } from "next/server";
+import { requireRole, withTenantScope } from "@/lib/auth";
+import { isValidCashFloat } from "@/lib/shift";
+import { ShiftError, openShift } from "@/lib/shift-service";
+
+/**
+ * Self-service clock-in (Phase 20 Wave 5) — the same PIN-role audience as
+ * the lock screen and biometric-settings panel. `openingFloat` is optional
+ * (Rial): a cashier starting a till counts it, a waiter/kitchen shift
+ * usually won't.
+ */
+export const POST = withTenantScope(async (request: NextRequest) => {
+  const { session, error } = await requireRole("cashier", "waiter", "kitchen");
+  if (error) return error;
+
+  let body: { openingFloat?: number };
+  try {
+    body = await request.json();
+  } catch {
+    body = {};
+  }
+
+  if (body.openingFloat !== undefined && !isValidCashFloat(body.openingFloat)) {
+    return NextResponse.json({ error: "invalid_amount" }, { status: 400 });
+  }
+
+  try {
+    const shift = await openShift(
+      session.sub,
+      session.businessId,
+      session.employeeSessionId ?? null,
+      body.openingFloat ?? null,
+    );
+    return NextResponse.json({ shift }, { status: 201 });
+  } catch (err) {
+    if (err instanceof ShiftError) {
+      return NextResponse.json({ error: err.message }, { status: err.status });
+    }
+    throw err;
+  }
+});
