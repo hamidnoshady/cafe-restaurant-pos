@@ -512,19 +512,128 @@ shift with floats and status; force-closing a still-open shift with no float pro
 shift closed it in the same transaction as their credentials/sessions, confirmed against the raw
 `employee_shifts` row.
 
-## Open questions for Wave 6
+## Scope — Wave 6: Audit Trail
 
-1. `employee_sessions.credential_id` now sometimes points at a `'webauthn'` row instead of a
-   `'pin'` one (`createSession`'s `credentialId` input, wired through the login route) — Wave 6/7's
-   audit trail and admin security center should surface *which kind* of credential (and which
-   paired device, since Wave 4) opened a session, not just that one did.
-2. This wave's shift history tab shows floats and timestamps but no per-row cash summary (no
-   `shiftCashSummary` call per list row, to avoid an N+1 query on a potentially long history) — the
-   audit/reporting waves may want a cheaper, pre-aggregated way to show every past shift's variance
-   at a glance rather than only at the moment it's closed.
-3. `employee_shifts` has no link back to the individual orders it covers (deliberately — see this
-   wave's "Out of scope"); if a later wave's audit trail ever needs per-order shift attribution
-   rather than a time-window join, that's a new, separately-scoped change to `order-service.ts`,
-   not an extension of this table.
+- **`audit_log` (Phase 0) finally gets a reader.** Every wave of this phase — and
+  `team-service.ts`/`branch-service.ts` from earlier phases — has been writing to this table since
+  before Phase 20 started; nothing had ever read it back for a human until this wave. No migration
+  is needed: the table and its RLS policy (migration 0021) already exist and already cover every
+  business, so this wave is purely additive — a reader plus one new writer (below).
+- **`employee_sessions` creation is now itself audited.** Every earlier wave only audited
+  *revocation* (`employee.session_revoked`) — a successful login never produced a row at all.
+  `createSession` (`employee-service.ts`) now writes an `employee.session_created` row alongside the
+  session itself, with `{ sessionId, credentialId, deviceId }` in its payload — the same two ids
+  `pin-login`/`webauthn/login/verify` already pass into `createSession`, just carried one step
+  further into the audit trail instead of being dropped.
+- **`src/lib/audit.ts`/`audit-service.ts`** — the same pure/DB-touching split every wave of this
+  phase uses. `audit.ts` owns Persian labels for known `action`/`entity` strings (falling back to
+  the raw value for anything it doesn't recognise — the same tolerant-of-unknowns posture
+  `effectivePermissions` already takes for a permission key a later release removed) and
+  `credentialKindFromId`, unit-tested in `audit.test.ts`. `audit-service.ts` owns `listAuditLog` —
+  business-wide, most recent first, optionally filtered by `entity`/`actorId`/a `before` cursor.
+- **Resolving this doc's own Wave 5 open question 1.** `listAuditLog`'s query joins
+  `employee_credentials`/`pos_devices` live, keyed off the `credentialId`/`deviceId` embedded in an
+  `employee.session_created` row's payload, and returns `credentialType`/`deviceLabel` alongside
+  every entry — resolved at *read* time rather than duplicated into the payload at write time, the
+  same "read back on demand, don't duplicate" choice Wave 5 made for a shift's cash summary. A
+  credential that's since been revoked or a device that's since been renamed is reflected correctly
+  because nothing was ever copied.
+- **`GET /api/audit-log`** — gated on `team.manage`, the same permission Wave 5's shift-history
+  review tab uses, since reviewing every employee/session/device/shift security event is the same
+  kind of "act on this business's security state" concern as force-closing a shift or resetting
+  someone else's PIN. Business-wide across every branch, like `/api/devices` and `/api/shifts`
+  already are.
+- **A new Settings tab, "گزارش حسابرسی"** (`audit-log-settings.tsx`, `settings-tabs.ts`) — lists
+  recent events with an entity filter (employee/team/device/shift/location), the actor's name, a
+  Persian action label, and — for a login event — which credential kind and, if the terminal was
+  paired (Wave 4), which device's label.
 
-## Status: in progress — Wave 5 (shift tracking) submitted for review
+## Out of scope (this wave)
+
+- **Only Wave 5's first open question is resolved.** Open questions 2 (a cheaper per-row cash
+  summary for shift history) and 3 (per-order shift attribution) are unrelated to the audit trail
+  and are carried forward to Wave 7 below, unaddressed.
+- **No failed-login logging.** Only a successful `createSession` call produces an
+  `employee.session_created` row; a wrong PIN or a failed biometric assertion writes nothing. Wave
+  3's rate limiter (`AUTH_RATE_LIMITED_PATHS`) already bounds brute-force attempts at the HTTP
+  layer — surfacing failed attempts *as audit history* (for an admin security center to flag, say, a
+  terminal with repeated failures) is a distinct, bigger feature than "read back what's already
+  written," and is left to Wave 7 if the product needs it.
+- **No pagination UI, only a `before` cursor in the API.** `listAuditLog` accepts one so a later
+  wave's admin security center can page through a long history without changing the read path again;
+  this wave's Settings tab only ever requests the most recent page (default 50, max 200), matching
+  how thin Wave 5's own shift-history tab was kept.
+- **The admin security center itself** (Wave 7) — this wave is a read-only log, not a dashboard;
+  active-session listing (`listActiveSessions` in `employee-service.ts`, written in Wave 1 but still
+  unreachable through any route) and any at-a-glance security summary stay Wave 7's job.
+
+## Decisions
+
+- **A write-side audit call, not a read-side reconstruction.** The alternative to instrumenting
+  `createSession` would have been inferring "a login happened" from `employee_sessions.issued_at`
+  directly rather than adding an `audit_log` row for it — rejected because every other security
+  fact in this phase (credential issuance/revocation, session revocation, device pairing, shift
+  open/close) already goes through `audit_log`, and a login is exactly as security-relevant as a
+  session's *revocation* already was. One table, one query, one place `listAuditLog` has to look.
+- **Credential kind and device label are resolved live, not stored at write time.** See Scope above
+  — storing a denormalized `credentialType`/`deviceLabel` string in the payload at login time would
+  drift the moment that credential was revoked or that device relabeled/repaired, the same staleness
+  risk Wave 5 avoided by reading a shift's cash summary back from `orders`/`payments` on demand
+  instead of stamping it onto the shift row.
+- **`team.manage`, not a new permission.** A dedicated `audit.view` permission was considered and
+  rejected: every action this wave's log surfaces was already produced by a `team.manage`-gated
+  action (PIN reset, force-close, device pairing under `settings.manage`) or by the login path
+  itself, so the audience able to review this history is already exactly the audience Wave 5 already
+  gated shift review to. Introducing a second, overlapping permission for the same reviewers would
+  be configuration surface with no real access-control benefit.
+- **Unknown actions/entities degrade to their raw string, never hidden.** `auditActionLabel`/
+  `auditEntityLabel` fall back to the value itself rather than throwing or omitting the row — a
+  business on an older or newer app version than whoever last touched this file must still see every
+  row, just with a less-polished label, matching `effectivePermissions`'s existing tolerance for an
+  override naming a permission that no longer exists.
+- **No new `withoutTenantScope` bypass.** `audit_log` (and the two tables `listAuditLog` joins
+  against) were already tenant-scoped tables before this wave; every read runs inside the caller's
+  own `withTenantScope`/`requirePermission` session, the same as `/api/shifts` and `/api/devices`.
+
+## Where each exit criterion is satisfied (Wave 6 only)
+
+- Audit trail, readable — `src/lib/audit.ts`, `src/lib/audit-service.ts`,
+  `src/app/api/audit-log/route.ts`, `src/app/dashboard/settings/audit-log-settings.tsx`.
+- Login events are now part of the audit trail, not just revocation — `src/lib/employee-service.ts`
+  (`createSession`).
+- Wave 5's first open question resolved (which credential kind and device opened a session) —
+  `src/lib/audit-service.ts`'s `listAuditLog` join.
+- No damage to the current POS flow — no schema change, `pin-login`/`webauthn` login routes
+  unchanged in shape (`createSession`'s existing inputs are simply also audited now); `npx tsc
+  --noEmit`, `npm test` (838 tests, including new `audit.test.ts` coverage of the action/entity
+  label fallback and `credentialKindFromId`), and `npm run test:db` (246 tests, unchanged — no new
+  tenant-scoped table, so `tenant-isolation.integration.test.ts` needed no update) all pass.
+
+## Verification
+
+`npx tsc --noEmit`, `npm test`, `npm run test:db`, and `npm run build` all pass (see exit-criteria
+counts above). Exercised end-to-end against a live dev server and a seeded business: a cashier's PIN
+login produced an `employee.session_created` row that the new "گزارش حسابرسی" Settings tab showed as
+"با پین" with no device; pairing a device and inserting a webauthn-credentialed session showed the
+same event as "با بیومتریک از دستگاه «صندوق ۱»", confirming the live join resolves both
+`credentialType` and `deviceLabel` correctly; filtering the tab to "دستگاه" correctly narrowed the
+list to just the device-pairing event; a cashier's own `GET /api/audit-log` request correctly
+returned `forbidden` (403), matching the same `team.manage` gate shift history already has.
+
+## Open questions for Wave 7
+
+1. Carried over from Wave 5, still unresolved: a cheaper, pre-aggregated way to show every past
+   shift's cash variance at a glance in the shift-history tab, without an N+1 `shiftCashSummary` call
+   per row.
+2. Carried over from Wave 5, still unresolved: `employee_shifts` has no link back to the individual
+   orders it covers; if a real audit/security need for per-order shift attribution ever comes up,
+   that's a separately-scoped change to `order-service.ts`, not an extension of this table.
+3. Failed login attempts (wrong PIN, failed biometric assertion) are still invisible to any audit
+   trail or admin view — only Wave 3's HTTP-layer rate limiter bounds them. An admin security center
+   may want to surface repeated failures per employee/terminal, which needs its own write path (this
+   wave only instrumented the *successful* `createSession` call).
+4. `listActiveSessions` (`employee-service.ts`, Wave 1) is still not reachable through any route —
+   an admin security center listing "who is currently signed in, on which device" is Wave 7 territory
+   this wave didn't touch.
+
+## Status: in progress — Wave 6 (audit trail) submitted for review
