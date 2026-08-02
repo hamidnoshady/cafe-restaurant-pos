@@ -13,9 +13,9 @@ phase's exit criteria are only met once Wave 8 ships.
 ## Ordering note
 
 CLAUDE.md's phase-sequencing rule ("don't start a phase until the previous one's exit criteria
-are met") is not fully satisfied here: Phase 19 is still in progress (Wave 1 merged, Wave 2 open
-for review as of this wave's start) rather than complete. Issue #107 explicitly requested Phase
-20 work now, and this wave was scoped to avoid any dependency on Phase 19 finishing —
+are met") is not fully satisfied here: Phase 19 is still in progress (Waves 1–2 merged; Waves
+3–5 not started as of this wave's start) rather than complete. Issue #107 explicitly requested
+Phase 20 work now, and this wave was scoped to avoid any dependency on Phase 19 finishing —
 `employees`/`employee_credentials`/`employee_sessions` share no code, schema, route, or subject
 matter with the public-API work, so there is no ordering hazard between the two beyond both
 being open at once. Later Phase 20 waves that do turn out to depend on Phase 19 landing first

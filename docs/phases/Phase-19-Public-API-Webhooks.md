@@ -181,7 +181,7 @@ capabilities, not a role.
     "framework-free, hand-rolled" convention (no swagger/OpenAPI dependency exists in `package.json`
     today).
 
-## Planned delivery sequence (once Phase 18 ships and this phase actually starts)
+## Planned delivery sequence
 
 This phase is intended to ship as a sequence of separate PRs rather than one large PR, each building
 on the previous one's schema/auth foundation:
@@ -204,11 +204,17 @@ on the previous one's schema/auth foundation:
 
 ## Progress
 
-- **Wave 1 — public API foundation:** implemented in this branch. It adds the tenant-scoped
-  schema, default-off `api_platform` feature flag, scoped API-key authentication, fail-closed
-  scope parsing, owner-only credential management permission, and a per-key `/api/v1/*` rate
-  limit. No public data route is exposed until Wave 2.
-- **Waves 2–5:** remain staged as documented below; each depends on Wave 1 and will be separately
-  verified before it is opened for review.
+- **Wave 1 — public API foundation:** merged in PR #108. It provides the tenant-scoped schema,
+  default-off `api_platform` feature flag, fail-closed bearer-key authentication, owner-only
+  credential management, and a per-key `/api/v1/*` rate limit.
+- **Wave 2 — core data API:** implemented on this branch. Scoped keys can now list/create
+  orders, read an individual order, add items through the existing transactional mutation,
+  read/update branch menu data, read inventory, and run read-only standard or whitelist-backed
+  report queries. Each route resolves the branch from the key rather than a request parameter;
+  reports add an explicit `location_id` predicate even though tenant RLS already confines the
+  business. Mutating requests are written to `api_request_log` without allowing a logging
+  failure to turn an already-committed business operation into a retry-inducing 500.
+- **Waves 3–5:** webhooks, owner dashboard, then OpenAPI/public documentation remain staged and
+  will be delivered as separate verified PRs.
 
-## Status: in progress — Wave 1 foundation verified in CI; awaiting PR review
+## Status: in progress — Wave 2 core data API implemented; awaiting CI and PR review
