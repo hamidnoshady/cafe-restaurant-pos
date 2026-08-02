@@ -36,6 +36,12 @@ const PUBLIC_ROUTES: Record<string, string> = {
   "auth/pin-login/roster":
     "the name-then-PIN picker's first step (Phase 20 Wave 2) — lists a business's PIN-role " +
     "employees (name/role/photo only, no PIN) before any credential has been presented",
+  "auth/webauthn/login/options":
+    "credential exchange (Phase 20 Wave 3) — step 1 of a biometric login, necessarily runs " +
+    "without a session, the same as auth/pin-login",
+  "auth/webauthn/login/verify":
+    "credential exchange (Phase 20 Wave 3) — step 2 of a biometric login, necessarily runs " +
+    "without a session, the same as auth/pin-login",
   "auth/logout": "only clears the caller's own session cookie",
   "setup/bootstrap": "first-run only — refuses with 409 as soon as any user exists",
   "setup/signup":

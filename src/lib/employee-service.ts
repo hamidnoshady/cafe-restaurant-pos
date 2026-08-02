@@ -15,6 +15,7 @@
  */
 import bcrypt from "bcryptjs";
 import type { PoolClient } from "pg";
+import type { AuthenticationResponseJSON, AuthenticatorTransportFuture, RegistrationResponseJSON } from "@simplewebauthn/server";
 import { getPool, query, withoutTenantScope } from "./db";
 import { isValidPin } from "./team";
 import {
@@ -23,6 +24,13 @@ import {
   sessionExpiry,
   type EmployeeCredentialType,
 } from "./employee";
+import {
+  buildAuthenticationOptions,
+  buildRegistrationOptions,
+  verifyAuthentication,
+  verifyRegistration,
+  type CredentialDescriptor,
+} from "./webauthn";
 
 export class EmployeeError extends Error {
   status: number;
@@ -287,13 +295,21 @@ export async function revokeCredential(
   credentialId: string,
   businessId: string,
   actorId: string | null,
+  /** Wave 3 — pass the caller's own employee id for a self-service revoke, so a guessed credential id belonging to someone else can't be revoked; omitted for an admin-initiated revoke. */
+  ownerEmployeeId?: string,
 ): Promise<void> {
+  const params = [credentialId, businessId];
+  let ownerFilter = "";
+  if (ownerEmployeeId) {
+    params.push(ownerEmployeeId);
+    ownerFilter = "AND employee_id = $3";
+  }
   const { rows } = await query<{ employee_id: string }>(
     `UPDATE employee_credentials
         SET status = 'revoked', revoked_at = now()
-      WHERE id = $1 AND business_id = $2 AND status = 'active'
+      WHERE id = $1 AND business_id = $2 AND status = 'active' ${ownerFilter}
       RETURNING employee_id`,
-    [credentialId, businessId],
+    params,
   );
   if (!rows[0]) throw new EmployeeError("credential_not_found", 404);
   await auditEmployee(getPool(), {
@@ -329,6 +345,173 @@ export async function verifyCredential(
     }
   }
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// WebAuthn (Wave 3 — biometric authentication)
+// ---------------------------------------------------------------------------
+//
+// A parallel path alongside issueCredential/verifyCredential above, not a
+// caller of them: those two are built around a bcrypt-hashed shared secret,
+// which a public-key credential isn't (see employee.ts's
+// ISSUABLE_CREDENTIAL_TYPES comment). webauthn.ts owns the cryptography;
+// everything here is what employee_credentials needs around it — resolving
+// which rows to exclude/allow in a ceremony, and persisting what a verified
+// one returns.
+
+interface WebauthnCredentialRow extends Record<string, unknown> {
+  id: string;
+  employee_id: string;
+  webauthn_credential_id: string;
+  webauthn_public_key: string;
+  webauthn_sign_count: string;
+  webauthn_transports: string[] | null;
+  display_hint: string | null;
+  created_at: Date;
+  last_used_at: Date | null;
+}
+
+async function activeWebauthnCredentials(
+  employeeId: string,
+  businessId: string,
+): Promise<WebauthnCredentialRow[]> {
+  const { rows } = await query<WebauthnCredentialRow>(
+    `SELECT id, employee_id, webauthn_credential_id, webauthn_public_key, webauthn_sign_count,
+            webauthn_transports, display_hint, created_at, last_used_at
+       FROM employee_credentials
+      WHERE employee_id = $1 AND business_id = $2 AND credential_type = 'webauthn' AND status = 'active'`,
+    [employeeId, businessId],
+  );
+  return rows;
+}
+
+function toDescriptor(row: WebauthnCredentialRow): CredentialDescriptor {
+  return {
+    id: row.webauthn_credential_id,
+    transports: (row.webauthn_transports as AuthenticatorTransportFuture[] | null) ?? null,
+  };
+}
+
+export interface WebauthnCredentialSummary {
+  id: string;
+  label: string | null;
+  createdAt: string;
+  lastUsedAt: string | null;
+}
+
+/** The caller's own registered authenticators — for a self-service "your devices" list, never exposed to another employee. */
+export async function listWebauthnCredentials(
+  employeeId: string,
+  businessId: string,
+): Promise<WebauthnCredentialSummary[]> {
+  const rows = await activeWebauthnCredentials(employeeId, businessId);
+  return rows.map((row) => ({
+    id: row.id,
+    label: row.display_hint,
+    createdAt: row.created_at.toISOString(),
+    lastUsedAt: row.last_used_at ? row.last_used_at.toISOString() : null,
+  }));
+}
+
+/** Step 1 of registering a new authenticator — self-service, called by the already-authenticated employee. */
+export async function beginWebauthnRegistration(
+  employeeId: string,
+  businessId: string,
+  displayName: string,
+) {
+  await ensureEmployeeProfile(employeeId, businessId);
+  const existing = await activeWebauthnCredentials(employeeId, businessId);
+  return buildRegistrationOptions(employeeId, businessId, displayName, existing.map(toDescriptor));
+}
+
+/** Step 2: verifies what the authenticator returned and stores the new credential. */
+export async function completeWebauthnRegistration(
+  employeeId: string,
+  businessId: string,
+  actorId: string | null,
+  response: RegistrationResponseJSON,
+  challengeToken: string,
+  deviceLabel?: string | null,
+): Promise<EmployeeCredentialSummary> {
+  const verified = await verifyRegistration(employeeId, businessId, response, challengeToken);
+  if (!verified) throw new EmployeeError("webauthn_verification_failed");
+
+  await ensureEmployeeProfile(employeeId, businessId);
+  try {
+    const { rows } = await query<CredentialRow>(
+      `INSERT INTO employee_credentials
+         (employee_id, business_id, credential_type, display_hint,
+          webauthn_credential_id, webauthn_public_key, webauthn_sign_count, webauthn_transports)
+       VALUES ($1, $2, 'webauthn', $3, $4, $5, $6, $7)
+       RETURNING id, employee_id, credential_type, status, last_used_at, created_at, revoked_at`,
+      [
+        employeeId,
+        businessId,
+        deviceLabel ?? null,
+        verified.credentialId,
+        verified.publicKey,
+        verified.signCount,
+        verified.transports,
+      ],
+    );
+    await auditEmployee(getPool(), {
+      businessId,
+      actorId,
+      action: "employee.webauthn_registered",
+      employeeId,
+      payload: { credentialId: rows[0].id },
+    });
+    return toCredentialSummary(rows[0]);
+  } catch (err) {
+    if ((err as { code?: string }).code === "23505") {
+      throw new EmployeeError("credential_already_registered");
+    }
+    throw err;
+  }
+}
+
+/**
+ * Step 1 of a biometric login — public, called before any session exists.
+ * `employeeId` is already known (the picker chose them before offering PIN
+ * or biometric, same as pin-login's `employeeId` narrowing); null means this
+ * employee has no active authenticator to offer, so the caller falls back to
+ * the PIN pad instead of showing a biometric prompt with nothing to sign.
+ */
+export async function beginWebauthnAuthentication(employeeId: string, businessId: string) {
+  const existing = await activeWebauthnCredentials(employeeId, businessId);
+  if (existing.length === 0) return null;
+  return buildAuthenticationOptions(employeeId, businessId, existing.map(toDescriptor));
+}
+
+/**
+ * Step 2: verifies the signed assertion against whichever of the employee's
+ * credentials it claims to be (`response.id`), advances that row's signature
+ * counter (replay/clone detection), and returns the credential id used —
+ * `pin-login`-style session/JWT minting happens in the route, same as PIN.
+ */
+export async function completeWebauthnAuthentication(
+  employeeId: string,
+  businessId: string,
+  response: AuthenticationResponseJSON,
+  challengeToken: string,
+): Promise<{ credentialId: string } | null> {
+  const candidates = await activeWebauthnCredentials(employeeId, businessId);
+  const match = candidates.find((row) => row.webauthn_credential_id === response.id);
+  if (!match) return null;
+
+  const result = await verifyAuthentication(employeeId, businessId, response, challengeToken, {
+    credentialId: match.webauthn_credential_id,
+    publicKey: match.webauthn_public_key,
+    signCount: Number(match.webauthn_sign_count),
+    transports: (match.webauthn_transports as AuthenticatorTransportFuture[] | null) ?? null,
+  });
+  if (!result) return null;
+
+  await query(
+    `UPDATE employee_credentials SET webauthn_sign_count = $2, last_used_at = now() WHERE id = $1`,
+    [match.id, result.newSignCount],
+  );
+  return { credentialId: match.id };
 }
 
 // ---------------------------------------------------------------------------
@@ -504,6 +687,8 @@ export interface LoginRosterEntry {
   fullName: string;
   role: string;
   photoUrl: string | null;
+  /** Wave 3 — whether the login screen should offer a biometric prompt for this name before falling back to the PIN pad. */
+  hasWebauthn: boolean;
 }
 
 interface RosterRow extends Record<string, unknown> {
@@ -511,14 +696,16 @@ interface RosterRow extends Record<string, unknown> {
   full_name: string;
   role: string;
   photo_url: string | null;
+  has_webauthn: boolean;
 }
 
 /**
  * The name+photo picker shown before the PIN pad (Wave 2). Deliberately the
  * same eligibility rule pin-login itself checks (`is_active`, a PIN role, a
  * PIN actually set) so a name never appears here that pin-login would then
- * reject — and nothing more sensitive than a name, role, and photo is
- * returned, since this runs before any credential has been presented.
+ * reject — and nothing more sensitive than a name, role, and photo (plus,
+ * since Wave 3, a plain boolean for whether a biometric prompt makes sense)
+ * is returned, since this runs before any credential has been presented.
  */
 export async function loginRoster(
   businessId: string,
@@ -531,7 +718,11 @@ export async function loginRoster(
     locationFilter = "AND u.location_id = $1";
   }
   const { rows } = await query<RosterRow>(
-    `SELECT u.id, u.full_name, u.role::text AS role, e.photo_url
+    `SELECT u.id, u.full_name, u.role::text AS role, e.photo_url,
+            EXISTS (
+              SELECT 1 FROM employee_credentials c
+               WHERE c.employee_id = u.id AND c.credential_type = 'webauthn' AND c.status = 'active'
+            ) AS has_webauthn
        FROM users u
        LEFT JOIN employees e ON e.id = u.id
       WHERE u.is_active
@@ -546,5 +737,6 @@ export async function loginRoster(
     fullName: row.full_name,
     role: row.role,
     photoUrl: row.photo_url,
+    hasWebauthn: row.has_webauthn,
   }));
 }

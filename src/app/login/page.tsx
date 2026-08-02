@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { browserSupportsWebAuthn, startAuthentication } from "@simplewebauthn/browser";
 import { PinPad } from "@/components/auth/pin-pad";
 
 type Mode = "password" | "pin";
@@ -123,6 +124,7 @@ interface RosterEmployee {
   fullName: string;
   role: string;
   photoUrl: string | null;
+  hasWebauthn: boolean;
 }
 
 /** Device-local "who signed in here recently" — never synced, just a UI shortcut. */
@@ -160,6 +162,13 @@ function PinLogin() {
   const [selected, setSelected] = useState<RosterEmployee | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [webauthnSupported, setWebauthnSupported] = useState(false);
+
+  useEffect(() => {
+    // Checked client-side only (guarded, not called during the server render)
+    // so the initial HTML never claims support the browser doesn't have.
+    setWebauthnSupported(browserSupportsWebAuthn());
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -205,6 +214,42 @@ function PinLogin() {
       router.refresh();
     } else {
       setError("پین نادرست است.");
+    }
+  }
+
+  async function submitBiometric() {
+    if (!selected) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const optionsRes = await fetch("/api/auth/webauthn/login/options", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ employeeId: selected.id }),
+      });
+      if (!optionsRes.ok) throw new Error("no_credentials");
+      const { options, challengeToken } = await optionsRes.json();
+
+      const response = await startAuthentication({ optionsJSON: options });
+
+      const verifyRes = await fetch("/api/auth/webauthn/login/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ employeeId: selected.id, response, challengeToken }),
+      });
+      if (!verifyRes.ok) throw new Error("invalid_credentials");
+
+      rememberRecent(selected.id);
+      router.push("/dashboard");
+      router.refresh();
+    } catch {
+      // Covers a failed verification as well as the user cancelling the
+      // browser's own biometric prompt — either way, the PIN pad below is
+      // always right there as a fallback, so this doesn't need to explain
+      // which happened.
+      setError("ورود بیومتریک ناموفق بود؛ از پین استفاده کنید.");
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -262,6 +307,16 @@ function PinLogin() {
           <EmployeeAvatar employee={selected} size="sm" />
         </div>
       </div>
+      {selected.hasWebauthn && webauthnSupported && (
+        <button
+          type="button"
+          onClick={submitBiometric}
+          disabled={busy}
+          className="mb-4 w-full rounded-lg border border-input py-2.5 text-sm font-semibold transition hover:bg-primary/10 disabled:opacity-50"
+        >
+          ورود با اثر انگشت یا چهره
+        </button>
+      )}
       <PinPad onComplete={submit} busy={busy} error={error} resetKey={selected.id} />
     </div>
   );

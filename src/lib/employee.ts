@@ -64,11 +64,17 @@ export function isEmployeeCredentialType(value: string): value is EmployeeCreden
 }
 
 /**
- * Only 'pin' is issuable through employee-service.ts in Wave 1 — password
- * credentials stay on the existing platform_users flow, and webauthn support
- * arrives in a later wave. The enum already carries all three so
- * employee_credentials.credential_type doesn't need another migration when
- * they do.
+ * Only 'pin' is issuable through `issueCredential` — password credentials
+ * stay on the existing platform_users flow. `webauthn` (Wave 3) never joins
+ * this list either, but for a different reason than 'password': it's not
+ * deferred, it just doesn't fit this function's shape.
+ * `issueCredential`/`verifyCredential` are built around a bcrypt-hashed
+ * shared secret (the caller presents the same value back to be checked); a
+ * WebAuthn credential is an asymmetric keypair proven with a signed
+ * challenge, verified by `webauthn.ts`, and stored via
+ * `completeWebauthnRegistration`/`verifyWebauthnLogin` instead. The enum
+ * carrying all three from Wave 1 is still what let this land as new columns
+ * (migration 0043) rather than another migration to add the type.
  */
 export const ISSUABLE_CREDENTIAL_TYPES: EmployeeCredentialType[] = ["pin"];
 
