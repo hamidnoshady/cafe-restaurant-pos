@@ -126,7 +126,15 @@ function rateLimited(retryAfterMs: number): NextResponse {
 }
 
 /** Credential-exchange endpoints in both auth realms — brute-force targets with no session to key on yet. */
-const AUTH_RATE_LIMITED_PATHS = ["/api/auth/login", "/api/auth/pin-login", "/api/platform/auth/login"];
+const AUTH_RATE_LIMITED_PATHS = [
+  "/api/auth/login",
+  "/api/auth/pin-login",
+  // Phase 20 Wave 2 — precedes the PIN itself but still enumerates a
+  // business's staff pre-session, so it shares the login bucket rather than
+  // going unlimited.
+  "/api/auth/pin-login/roster",
+  "/api/platform/auth/login",
+];
 
 /** The session-less, bearer-token server-to-server routes (see PUBLIC_PATHS below for why each is public). */
 const SYNC_TOKEN_RATE_LIMITED_PATHS = ["/api/rollup/ingest", "/api/server-sync/push", "/api/server-sync/pull"];

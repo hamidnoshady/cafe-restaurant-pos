@@ -5,6 +5,7 @@ import { effectiveFeatures } from "@/lib/features";
 import { effectivePermissions, parseOverrides, PERMISSIONS, type Permission } from "@/lib/permissions";
 import { visibleSettingsTabs } from "@/lib/settings-tabs";
 import { AiAssistant } from "@/components/ai/ai-assistant";
+import { LockProvider } from "./lock-screen";
 import { OfflineBanner } from "./offline-banner";
 import { DashboardSidebar, type NavItem } from "./dashboard-sidebar";
 
@@ -74,13 +75,15 @@ export default async function DashboardLayout({
     (assistantMode === "floor" && permissions.has(PERMISSIONS.menuView));
 
   return (
-    <div className="flex min-h-screen flex-col md:flex-row">
-      <DashboardSidebar navItems={navItems} role={member.role} fullName={session.fullName} />
-      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <OfflineBanner />
-        <main className="flex-1 overflow-y-auto p-2 pb-24 md:p-4">{children}</main>
+    <LockProvider fullName={session.fullName}>
+      <div className="flex min-h-screen flex-col md:flex-row">
+        <DashboardSidebar navItems={navItems} role={member.role} fullName={session.fullName} />
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+          <OfflineBanner />
+          <main className="flex-1 overflow-y-auto p-2 pb-24 md:p-4">{children}</main>
+        </div>
+        {assistantMode && canUseAssistant && features.ai_assistant ? <AiAssistant mode={assistantMode} /> : null}
       </div>
-      {assistantMode && canUseAssistant && features.ai_assistant ? <AiAssistant mode={assistantMode} /> : null}
-    </div>
+    </LockProvider>
   );
 }

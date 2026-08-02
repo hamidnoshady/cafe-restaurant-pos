@@ -15,7 +15,7 @@
  */
 import bcrypt from "bcryptjs";
 import type { PoolClient } from "pg";
-import { getPool, query } from "./db";
+import { getPool, query, withoutTenantScope } from "./db";
 import { isValidPin } from "./team";
 import {
   generateSessionToken,
@@ -443,4 +443,108 @@ export async function revokeSession(
     employeeId: rows[0].employee_id,
     payload: { sessionId },
   });
+}
+
+// ---------------------------------------------------------------------------
+// Login (Wave 2 — Login Experience Redesign)
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolves which business a PIN-login-family request (the PIN itself, or the
+ * employee-picker roster that precedes it) is for. Lifted verbatim out of
+ * `pin-login/route.ts` (Wave 1 predates this module having a caller for it)
+ * so `pin-login/roster/route.ts` doesn't duplicate the same business-scoping
+ * rules — see that route's original comment for why each fallback exists.
+ */
+export async function resolveLoginBusinessId(body: {
+  businessId?: string;
+  businessSlug?: string;
+  locationId?: string;
+}): Promise<{ businessId: string | null; error: string | null }> {
+  return withoutTenantScope("login", async () => {
+    if (body.businessId) {
+      const { rows } = await query<{ id: string }>(
+        `SELECT id FROM businesses WHERE id = $1 AND status = 'active'`,
+        [body.businessId],
+      );
+      return { businessId: rows[0]?.id ?? null, error: rows[0] ? null : "unknown_business" };
+    }
+
+    if (body.businessSlug) {
+      const { rows } = await query<{ id: string }>(
+        `SELECT id FROM businesses WHERE slug = $1 AND status = 'active'`,
+        [body.businessSlug],
+      );
+      return { businessId: rows[0]?.id ?? null, error: rows[0] ? null : "unknown_business" };
+    }
+
+    if (body.locationId) {
+      const { rows } = await query<{ business_id: string }>(
+        `SELECT l.business_id FROM locations l
+           JOIN businesses b ON b.id = l.business_id
+          WHERE l.id = $1 AND b.status = 'active'`,
+        [body.locationId],
+      );
+      return {
+        businessId: rows[0]?.business_id ?? null,
+        error: rows[0] ? null : "unknown_location",
+      };
+    }
+
+    const { rows } = await query<{ id: string }>(
+      `SELECT id FROM businesses WHERE status = 'active' LIMIT 2`,
+    );
+    if (rows.length === 1) return { businessId: rows[0].id, error: null };
+    return { businessId: null, error: rows.length === 0 ? "unknown_business" : "business_required" };
+  });
+}
+
+export interface LoginRosterEntry {
+  id: string;
+  fullName: string;
+  role: string;
+  photoUrl: string | null;
+}
+
+interface RosterRow extends Record<string, unknown> {
+  id: string;
+  full_name: string;
+  role: string;
+  photo_url: string | null;
+}
+
+/**
+ * The name+photo picker shown before the PIN pad (Wave 2). Deliberately the
+ * same eligibility rule pin-login itself checks (`is_active`, a PIN role, a
+ * PIN actually set) so a name never appears here that pin-login would then
+ * reject — and nothing more sensitive than a name, role, and photo is
+ * returned, since this runs before any credential has been presented.
+ */
+export async function loginRoster(
+  businessId: string,
+  locationId?: string | null,
+): Promise<LoginRosterEntry[]> {
+  const params: unknown[] = [];
+  let locationFilter = "";
+  if (locationId) {
+    params.push(locationId);
+    locationFilter = "AND u.location_id = $1";
+  }
+  const { rows } = await query<RosterRow>(
+    `SELECT u.id, u.full_name, u.role::text AS role, e.photo_url
+       FROM users u
+       LEFT JOIN employees e ON e.id = u.id
+      WHERE u.is_active
+        AND u.role IN ('cashier', 'waiter', 'kitchen')
+        AND u.pin_hash IS NOT NULL
+        ${locationFilter}
+      ORDER BY u.full_name`,
+    params,
+  );
+  return rows.map((row) => ({
+    id: row.id,
+    fullName: row.full_name,
+    role: row.role,
+    photoUrl: row.photo_url,
+  }));
 }
