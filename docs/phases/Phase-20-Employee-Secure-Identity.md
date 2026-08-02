@@ -291,16 +291,121 @@ ceremony (real challenge, real signature, real server-side verification — not 
 through the seeded cashier — PIN login, registering a biometric credential from the new dashboard
 panel, logging out, and logging back in with only the biometric prompt, no PIN.
 
-## Open questions for Wave 4
+## Scope — Wave 4: Device Binding & Security
 
-1. The employee picker still has no server-side awareness of "this device" beyond the
-   business/location query params — Wave 4 (Device Binding) will presumably want a registered
-   device identity the picker can use to narrow the roster further, rather than showing every
-   PIN-role member's biometric option at every terminal regardless of which terminal actually
-   holds their registered authenticator.
-2. `employee_sessions.credential_id` now sometimes points at a `'webauthn'` row instead of a
-   `'pin'` one (`createSession`'s `credentialId` input, wired through the new login route) — Wave
-   6/7's audit trail and admin security center should surface *which kind* of credential opened a
-   session, not just that one did.
+- **`pos_devices`** (`migrations/0044_pos_devices.sql`) — a registered POS terminal identity,
+  modeled on `employee_sessions`: a bearer token, hash-only storage (`src/lib/device.ts`'s
+  `generateDeviceToken`/`hashDeviceToken`, prefix `posdev_`), revocable. Paired once from an
+  already-authenticated owner/manager dashboard session (`POST /api/devices`,
+  `PERMISSIONS.settingsManage` — the same gate as printers/menu/tax), bound to whichever branch
+  the pairing caller is currently scoped to (`resolveActiveLocation`). The plaintext token is
+  returned exactly once and the client stores it in `localStorage` (`pos:deviceToken`) — same
+  origin as `/login`, so the same browser reads it back there after logging out.
+- **`employee_credentials.device_id` and `employee_sessions.device_id`** (both added by the same
+  migration) — resolves Wave 3's first open question. A webauthn credential registered while a
+  device token is present (`completeWebauthnRegistration`'s new `deviceId` parameter) is bound to
+  that terminal; a session opened while one is present (`createSession`'s new `deviceId`) records
+  which terminal it came from. Both are nullable and default to unbound — see Decisions below for
+  why that's the correct default, not a gap.
+- **`src/lib/device-service.ts`** — `pairDevice`, `listDevices`, `revokeDevice` (see Decisions for
+  what revoking a device does and does not cascade to), and `resolveDeviceId(token, businessId)`,
+  the read path every public route below calls with whatever `deviceToken` the client sent.
+  Deliberately needs no `withoutTenantScope` bypass: pairing always runs inside an authenticated
+  session's own tenant scope, and resolving a token during login runs inside the `withTenant`
+  block `resolveLoginBusinessId` (the existing `"login"` reason) already opened once the business
+  was identified some other way (slug/`businessId`) — the device token itself never has to name
+  its own business.
+- **Narrowing, wired through every place Wave 2/3 offered a biometric option**:
+  `loginRoster`'s `hasWebauthn`, `beginWebauthnAuthentication`'s offered credentials, and
+  `completeWebauthnRegistration`'s stored `device_id` all take an optional `deviceId` resolved by
+  the route from a `deviceToken` the client sent (`pin-login/roster`'s query string;
+  `pin-login`/`webauthn/login/options`/`webauthn/login/verify`/`webauthn/register/verify`'s JSON
+  bodies). The one function deliberately **not** device-filtered is
+  `completeWebauthnAuthentication` — see Decisions.
+- **`src/app/dashboard/settings/device-settings.tsx`** ("دستگاه‌های ثبت‌شده" tab, added to
+  `settings-tabs.ts` next to the other `settingsManage`-gated tabs) — pairs the browser it's
+  opened in and lists/revokes every device paired for the business, across branches.
+- **`src/app/login/page.tsx` and `biometric-settings.tsx`** now read `pos:deviceToken` from
+  `localStorage` (absent on every terminal that was never paired) and pass it along on every
+  roster/login/registration call.
 
-## Status: in progress — Wave 3 (biometric authentication) submitted for review
+## Out of scope (this wave)
+
+- **Pairing is not itself an authentication ceremony.** A device token proves "this browser was
+  shown a `settingsManage`-gated screen once", not an employee's identity — see Decisions on why
+  it deliberately isn't treated as one anywhere in the request path.
+- **No pairing-code / remote-exchange flow.** A terminal is paired by an already-authenticated
+  admin sitting at it, the same trust model the printer/tax/menu settings tabs already use for
+  "configure this branch's hardware" — a QR-code or short-code flow for pairing a terminal
+  someone isn't physically at wasn't needed for this wave's goal and would be a second, riskier
+  mechanism to reach the same `pos_devices` row.
+- **Shift tracking and the audit log UI** (Waves 5–7) — untouched; `employee_sessions.device_id`
+  and `pos_devices` exist for Wave 6/7 to read from, not yet surfaced anywhere but the new
+  Settings tab.
+- **Revoking a device does not revoke the webauthn credentials registered from it** — see
+  Decisions.
+
+## Decisions
+
+- **A device token narrows a public UI's choices; it is never a security boundary.** Every other
+  credential/session in this phase (PIN, webauthn, `employee_sessions`) proves *who* is acting.
+  `pos_devices` proves nothing about a person — it only lets the login picker prefer the roughly
+  right subset of webauthn credentials to *offer*. This is why `completeWebauthnAuthentication`
+  (Wave 3, unchanged) is deliberately not device-filtered: the authenticator's signature over the
+  challenge is the entire security boundary at that step, and second-guessing an already-verified
+  cryptographic proof against a bookkeeping column would be worse than not checking it at all. It
+  is also why a leaked/guessed device token's worst case is "the login picker shows a biometric
+  button that will fail, falling back to the PIN pad" — never an authentication bypass.
+- **Never-widening: an unresolvable or absent device token degrades to Wave 3's behaviour, not an
+  error.** `resolveDeviceId` returns `null` for a missing, unrecognised, or revoked token, and
+  every SQL filter downstream (`$n::uuid IS NULL OR device_id = $n OR device_id IS NULL`) treats
+  `null` as "apply no filter" — so a business that never pairs a single device sees zero change
+  from this wave, and a credential registered before Wave 4 (`device_id IS NULL`) stays visible on
+  every terminal exactly as it always was. Narrowing only ever kicks in for a credential that was
+  *itself* bound to a *specific, still-valid* paired device.
+- **Revoking a device cascades to its sessions, not to its credentials.** A compromised or
+  decommissioned terminal should immediately stop being able to act as anyone who was signed in on
+  it — the same "revocation takes effect immediately" property Wave 2 gave `employee_sessions`
+  itself — so `revokeDevice` also revokes every still-active session with a matching `device_id`.
+  It does not touch `employee_credentials`: losing the device record doesn't leak or weaken the
+  authenticator's private key (never held by the server), so the employee's registered biometric
+  credential is exactly as safe as it was before, and forcing them to re-register on a replacement
+  terminal for no cryptographic reason would just be friction. An admin who genuinely suspects a
+  specific credential is compromised still has `DELETE /api/auth/webauthn/credentials/[id]`
+  (Wave 3) for that.
+- **Pairing is owner/manager-gated (`settingsManage`), not self-service.** Unlike a PIN or a
+  webauthn credential — which belong to the employee using them — a device identity belongs to
+  the *terminal*, a piece of business hardware, matching printers/tax/menu's existing gate rather
+  than the employee-scoped biometric panel's.
+
+## Verification
+
+`npx tsc --noEmit`, `npm test` (815 tests, including new `device.test.ts` coverage of
+`generateDeviceToken`/`hashDeviceToken` mirroring `employee.test.ts`'s session-token tests, and an
+updated `settings-tabs.test.ts` for the new tab), `npm run test:db` (246 tests — `pos_devices`
+picked up automatically by `tenant-isolation.integration.test.ts`'s live-schema RLS scan, no test
+file changes needed), and `npm run build` all pass. Exercised end-to-end against a live dev server
+and a seeded business: paired two devices from Settings → دستگاه‌های ثبت‌شده (one via `curl`
+against the raw API, one through the actual UI in a headless browser, confirming the token lands
+in `localStorage` and the paired/revoked list renders correctly); inserted a webauthn credential
+bound to the first device and confirmed `pin-login/roster`'s `hasWebauthn` and
+`webauthn/login/options` correctly include it when queried with that device's token, exclude it
+when queried with the second device's token, and include it (unnarrowed) when queried with no
+token at all; PIN-logged in with the first device's token and confirmed the resulting
+`employee_sessions` row was stamped with that `device_id`; revoked the device as owner and
+confirmed the session was immediately revoked (`/api/auth/me` returned 401) while the webauthn
+credential stayed active, exactly as designed.
+
+## Open questions for Wave 5
+
+1. `employee_sessions.credential_id` now sometimes points at a `'webauthn'` row instead of a
+   `'pin'` one (`createSession`'s `credentialId` input, wired through the login route) — Wave 6/7's
+   audit trail and admin security center should surface *which kind* of credential (and, since
+   this wave, which paired device) opened a session, not just that one did.
+2. Shift tracking (Wave 5) will presumably want to know which physical terminal a shift's orders
+   were rung in on — `employee_sessions.device_id` already carries that when the terminal was
+   paired; a session with no `device_id` (an unpaired terminal, still fully supported) has nothing
+   more specific than the free-text `device_label` (user-agent string) it already had before this
+   wave.
+
+## Status: in progress — Wave 4 (device binding & security) submitted for review

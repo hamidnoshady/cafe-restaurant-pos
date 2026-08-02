@@ -43,6 +43,8 @@ export function errorMessage(code: string | undefined): string {
     nothing_to_import: "آیتمی برای ورود پیدا نشد.",
     invalid_import: "فایل برای ورود آماده نیست.",
     invalid_printer: "اطلاعات چاپگر معتبر نیست؛ نام، IP، پورت و عرض کاغذ را بررسی کنید.",
+    invalid_label: "نام دستگاه باید بین ۱ تا ۸۰ کاراکتر باشد.",
+    device_not_found: "دستگاه پیدا نشد یا قبلاً حذف شده است.",
     category_exists: "دسته‌ای با این نام وجود دارد.",
     category_not_found: "دسته پیدا نشد.",
     item_not_found: "آیتم پیدا نشد.",

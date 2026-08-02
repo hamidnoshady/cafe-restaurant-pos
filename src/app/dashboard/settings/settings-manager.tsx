@@ -9,6 +9,7 @@ import { BranchManagementSettings } from "./branch-management-settings";
 import { TeamManager } from "../team/team-manager";
 import { AccountsSettings } from "./accounts-settings";
 import { BusinessSettings } from "./business-settings";
+import { DeviceSettings } from "./device-settings";
 import { MenuSettings } from "./menu-settings";
 import { PricingSettings } from "./pricing-settings";
 import { PrinterSettings } from "./printer-settings";
@@ -68,6 +69,7 @@ export function SettingsManager({ tabs, features, currentUserId, isOwner }: Sett
       {activeTab === "printers" ? <PrinterSettings /> : null}
       {activeTab === "branch-management" ? <BranchManagementSettings features={features} /> : null}
       {activeTab === "server-sync" ? <ServerSyncSettings /> : null}
+      {activeTab === "devices" ? <DeviceSettings /> : null}
       {activeTab === "backup" ? <BackupManager isOwner={isOwner} /> : null}
     </div>
   );

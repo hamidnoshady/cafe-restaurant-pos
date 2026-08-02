@@ -11,6 +11,7 @@ export const SETTINGS_TAB_KEYS = [
   "printers",
   "branch-management",
   "server-sync",
+  "devices",
   "backup",
 ] as const;
 
@@ -88,6 +89,12 @@ export const SETTINGS_TABS: SettingsTab[] = [
     description: "اتصال دوطرفه با سرور مرکزی (VPS)، وضعیت و رویدادهای ناموفق",
     allowedRoles: ["owner"],
     feature: "offline_mode",
+  },
+  {
+    key: "devices",
+    label: "دستگاه‌های ثبت‌شده",
+    description: "پایانه‌های متصل و ورود بیومتریک اختصاصی هر دستگاه",
+    requiredAnyPermission: [PERMISSIONS.settingsManage],
   },
   {
     key: "backup",

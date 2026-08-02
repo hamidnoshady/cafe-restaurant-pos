@@ -367,20 +367,35 @@ interface WebauthnCredentialRow extends Record<string, unknown> {
   webauthn_sign_count: string;
   webauthn_transports: string[] | null;
   display_hint: string | null;
+  device_label: string | null;
   created_at: Date;
   last_used_at: Date | null;
 }
 
+/**
+ * `deviceId` narrows to credentials registered on that one paired device
+ * (Wave 4) OR never bound to a device at all (`device_id IS NULL` — every
+ * credential registered before this wave, or from a terminal that was never
+ * paired) — never to *only* device-bound rows, so an unpaired employee or
+ * terminal keeps Wave 3's unnarrowed behaviour. Omitting `deviceId` (or
+ * passing null/undefined) applies no filter at all — used by registration's
+ * exclude-list and by the self-service "your devices" listing, where every
+ * one of the employee's own credentials is the right answer regardless of
+ * which device the caller happens to be browsing from right now.
+ */
 async function activeWebauthnCredentials(
   employeeId: string,
   businessId: string,
+  deviceId?: string | null,
 ): Promise<WebauthnCredentialRow[]> {
   const { rows } = await query<WebauthnCredentialRow>(
-    `SELECT id, employee_id, webauthn_credential_id, webauthn_public_key, webauthn_sign_count,
-            webauthn_transports, display_hint, created_at, last_used_at
-       FROM employee_credentials
-      WHERE employee_id = $1 AND business_id = $2 AND credential_type = 'webauthn' AND status = 'active'`,
-    [employeeId, businessId],
+    `SELECT c.id, c.employee_id, c.webauthn_credential_id, c.webauthn_public_key, c.webauthn_sign_count,
+            c.webauthn_transports, c.display_hint, d.label AS device_label, c.created_at, c.last_used_at
+       FROM employee_credentials c
+       LEFT JOIN pos_devices d ON d.id = c.device_id
+      WHERE c.employee_id = $1 AND c.business_id = $2 AND c.credential_type = 'webauthn' AND c.status = 'active'
+        AND ($3::uuid IS NULL OR c.device_id = $3 OR c.device_id IS NULL)`,
+    [employeeId, businessId, deviceId ?? null],
   );
   return rows;
 }
@@ -395,6 +410,8 @@ function toDescriptor(row: WebauthnCredentialRow): CredentialDescriptor {
 export interface WebauthnCredentialSummary {
   id: string;
   label: string | null;
+  /** The paired device (Wave 4) this credential was registered from, or null if it was registered before pairing existed or from an unpaired terminal — never narrowed, always the true owner's view. */
+  deviceLabel: string | null;
   createdAt: string;
   lastUsedAt: string | null;
 }
@@ -408,6 +425,7 @@ export async function listWebauthnCredentials(
   return rows.map((row) => ({
     id: row.id,
     label: row.display_hint,
+    deviceLabel: row.device_label,
     createdAt: row.created_at.toISOString(),
     lastUsedAt: row.last_used_at ? row.last_used_at.toISOString() : null,
   }));
@@ -424,7 +442,14 @@ export async function beginWebauthnRegistration(
   return buildRegistrationOptions(employeeId, businessId, displayName, existing.map(toDescriptor));
 }
 
-/** Step 2: verifies what the authenticator returned and stores the new credential. */
+/**
+ * Step 2: verifies what the authenticator returned and stores the new
+ * credential. `deviceId` (Wave 4) — resolved by the route from a device
+ * token the caller's browser may be carrying — binds the new credential to
+ * that one paired terminal so the login picker/ceremony only offer it there;
+ * omitted (no token, or an unpaired terminal), the credential stays visible
+ * everywhere, exactly as Wave 3 behaved.
+ */
 export async function completeWebauthnRegistration(
   employeeId: string,
   businessId: string,
@@ -432,6 +457,7 @@ export async function completeWebauthnRegistration(
   response: RegistrationResponseJSON,
   challengeToken: string,
   deviceLabel?: string | null,
+  deviceId?: string | null,
 ): Promise<EmployeeCredentialSummary> {
   const verified = await verifyRegistration(employeeId, businessId, response, challengeToken);
   if (!verified) throw new EmployeeError("webauthn_verification_failed");
@@ -441,8 +467,8 @@ export async function completeWebauthnRegistration(
     const { rows } = await query<CredentialRow>(
       `INSERT INTO employee_credentials
          (employee_id, business_id, credential_type, display_hint,
-          webauthn_credential_id, webauthn_public_key, webauthn_sign_count, webauthn_transports)
-       VALUES ($1, $2, 'webauthn', $3, $4, $5, $6, $7)
+          webauthn_credential_id, webauthn_public_key, webauthn_sign_count, webauthn_transports, device_id)
+       VALUES ($1, $2, 'webauthn', $3, $4, $5, $6, $7, $8)
        RETURNING id, employee_id, credential_type, status, last_used_at, created_at, revoked_at`,
       [
         employeeId,
@@ -452,6 +478,7 @@ export async function completeWebauthnRegistration(
         verified.publicKey,
         verified.signCount,
         verified.transports,
+        deviceId ?? null,
       ],
     );
     await auditEmployee(getPool(), {
@@ -474,11 +501,17 @@ export async function completeWebauthnRegistration(
  * Step 1 of a biometric login — public, called before any session exists.
  * `employeeId` is already known (the picker chose them before offering PIN
  * or biometric, same as pin-login's `employeeId` narrowing); null means this
- * employee has no active authenticator to offer, so the caller falls back to
- * the PIN pad instead of showing a biometric prompt with nothing to sign.
+ * employee has no active authenticator to offer *on this device* (Wave 4's
+ * `deviceId`, resolved by the route from a device token — see
+ * activeWebauthnCredentials), so the caller falls back to the PIN pad
+ * instead of showing a biometric prompt with nothing to sign.
  */
-export async function beginWebauthnAuthentication(employeeId: string, businessId: string) {
-  const existing = await activeWebauthnCredentials(employeeId, businessId);
+export async function beginWebauthnAuthentication(
+  employeeId: string,
+  businessId: string,
+  deviceId?: string | null,
+) {
+  const existing = await activeWebauthnCredentials(employeeId, businessId, deviceId);
   if (existing.length === 0) return null;
   return buildAuthenticationOptions(employeeId, businessId, existing.map(toDescriptor));
 }
@@ -488,6 +521,12 @@ export async function beginWebauthnAuthentication(employeeId: string, businessId
  * credentials it claims to be (`response.id`), advances that row's signature
  * counter (replay/clone detection), and returns the credential id used —
  * `pin-login`-style session/JWT minting happens in the route, same as PIN.
+ *
+ * Deliberately not device-filtered, unlike step 1: `deviceId` only narrows
+ * what step 1 *offers*, it is never part of what proves the assertion — an
+ * authenticator's signature over the challenge is the entire security
+ * boundary, so a device-id mismatch here would just be second-guessing a
+ * cryptographic proof that already succeeded.
  */
 export async function completeWebauthnAuthentication(
   employeeId: string,
@@ -557,6 +596,8 @@ export interface CreateSessionInput {
   locationId?: string | null;
   credentialId?: string | null;
   deviceLabel?: string | null;
+  /** The paired device (Wave 4) this session was opened from, if the login route resolved one — lets revoking that device revoke this session too (see device-service.ts's revokeDevice). */
+  deviceId?: string | null;
 }
 
 /** Issues a new, server-side-revocable session and returns the one-time plaintext token alongside it. */
@@ -569,8 +610,8 @@ export async function createSession(
   const { token, tokenHash } = generateSessionToken();
   const { rows } = await query<SessionRow>(
     `INSERT INTO employee_sessions
-       (employee_id, business_id, location_id, credential_id, token_hash, device_label, expires_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
+       (employee_id, business_id, location_id, credential_id, token_hash, device_label, device_id, expires_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
      RETURNING id, employee_id, business_id, location_id, issued_at, expires_at, last_seen_at, revoked_at`,
     [
       employeeId,
@@ -579,6 +620,7 @@ export async function createSession(
       input.credentialId ?? null,
       tokenHash,
       input.deviceLabel ?? null,
+      input.deviceId ?? null,
       sessionExpiry(),
     ],
   );
@@ -706,22 +748,29 @@ interface RosterRow extends Record<string, unknown> {
  * reject — and nothing more sensitive than a name, role, and photo (plus,
  * since Wave 3, a plain boolean for whether a biometric prompt makes sense)
  * is returned, since this runs before any credential has been presented.
+ *
+ * `deviceId` (Wave 4) — resolved by the route from a device token the
+ * caller's browser may be carrying — narrows `hasWebauthn` to credentials
+ * actually registered on this terminal (or never bound to one); an unpaired
+ * terminal passes no deviceId and sees exactly Wave 3's unnarrowed roster.
  */
 export async function loginRoster(
   businessId: string,
   locationId?: string | null,
+  deviceId?: string | null,
 ): Promise<LoginRosterEntry[]> {
-  const params: unknown[] = [];
+  const params: unknown[] = [deviceId ?? null];
   let locationFilter = "";
   if (locationId) {
     params.push(locationId);
-    locationFilter = "AND u.location_id = $1";
+    locationFilter = "AND u.location_id = $2";
   }
   const { rows } = await query<RosterRow>(
     `SELECT u.id, u.full_name, u.role::text AS role, e.photo_url,
             EXISTS (
               SELECT 1 FROM employee_credentials c
                WHERE c.employee_id = u.id AND c.credential_type = 'webauthn' AND c.status = 'active'
+                 AND ($1::uuid IS NULL OR c.device_id = $1 OR c.device_id IS NULL)
             ) AS has_webauthn
        FROM users u
        LEFT JOIN employees e ON e.id = u.id

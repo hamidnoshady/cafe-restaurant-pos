@@ -8,8 +8,20 @@ import { toPersianDigits } from "@/lib/digits";
 interface Credential {
   id: string;
   label: string | null;
+  deviceLabel: string | null;
   createdAt: string;
   lastUsedAt: string | null;
+}
+
+/** Shared with src/app/login/page.tsx and the Settings → دستگاه‌های ثبت‌شده pairing flow — must stay in sync. */
+const DEVICE_TOKEN_KEY = "pos:deviceToken";
+
+function readDeviceToken(): string | null {
+  try {
+    return window.localStorage.getItem(DEVICE_TOKEN_KEY);
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -75,7 +87,12 @@ function BiometricPanel({ onClose }: { onClose: () => void }) {
       const verifyRes = await fetch("/api/auth/webauthn/register/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ response, challengeToken, deviceLabel: label.trim() || undefined }),
+        body: JSON.stringify({
+          response,
+          challengeToken,
+          deviceLabel: label.trim() || undefined,
+          deviceToken: readDeviceToken(),
+        }),
       });
       if (!verifyRes.ok) throw new Error("verify_failed");
 
@@ -126,6 +143,7 @@ function BiometricPanel({ onClose }: { onClose: () => void }) {
                   <p className="font-medium">{c.label || "دستگاه بدون‌نام"}</p>
                   <p className="text-xs text-muted-foreground">
                     ثبت‌شده در {toPersianDigits(formatJalali(c.createdAt, { withMonthName: true }))}
+                    {c.deviceLabel ? ` · فقط روی «${c.deviceLabel}»` : ""}
                   </p>
                 </div>
                 <button
