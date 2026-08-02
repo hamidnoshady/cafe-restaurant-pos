@@ -10,6 +10,12 @@ const PUBLIC_PATHS = [
   "/login",
   "/api/auth/login",
   "/api/auth/pin-login",
+  // Phase 20 Wave 3 — the biometric-login counterpart of pin-login: no
+  // session exists yet either, by the same definition. Registering a new
+  // authenticator (/api/auth/webauthn/register/*) is deliberately NOT here —
+  // that's self-service for an already-authenticated employee, not a login
+  // path, so it goes through the normal session requirement below.
+  "/api/auth/webauthn/login",
   // First-run flow: /welcome bootstraps an empty install; the state endpoint
   // answers "needsBootstrap" (and nothing more) without a session.
   "/welcome",
@@ -133,6 +139,9 @@ const AUTH_RATE_LIMITED_PATHS = [
   // business's staff pre-session, so it shares the login bucket rather than
   // going unlimited.
   "/api/auth/pin-login/roster",
+  // Phase 20 Wave 3 — the biometric login ceremony's two steps, same reasoning as pin-login/roster above.
+  "/api/auth/webauthn/login/options",
+  "/api/auth/webauthn/login/verify",
   "/api/platform/auth/login",
 ];
 

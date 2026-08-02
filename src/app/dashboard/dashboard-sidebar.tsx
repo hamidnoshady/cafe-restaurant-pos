@@ -42,6 +42,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { BiometricSettingsButton } from "./biometric-settings";
 import { BranchSwitcher } from "./branch-switcher";
 import { LockButton } from "./lock-screen";
 import { LogoutButton } from "./logout-button";
@@ -180,6 +181,7 @@ function DashboardSidebarFooter({ role, fullName }: { role: string; fullName: st
         <p className="font-semibold text-[#252522]">{fullName}</p>
         <p className="mb-3 text-xs text-[#77756F]">{ROLE_LABELS[role] ?? role}</p>
         <div className="mb-3 md:hidden"><ThemeToggle /></div>
+        {PIN_ROLES.includes(role) && <BiometricSettingsButton />}
         {PIN_ROLES.includes(role) && <LockButton />}
         <LogoutButton />
       </div>

@@ -186,14 +186,121 @@ infrastructure without disturbing the live login path is this wave's whole job.
   full picker → PIN → dashboard → lock → unlock flow was exercised in a browser against a seeded
   database.
 
-## Open questions for Wave 3
+## Scope — Wave 3: Biometric Authentication (WebAuthn)
 
-1. Biometric/WebAuthn registration needs a real credential to attach to — does it dual-write into
-   `employee_credentials` alongside `users.pin_hash` (finally giving that table a live PIN row
-   too), or only ever store `'webauthn'` rows there while PIN stays on `users` indefinitely?
-2. The employee picker currently has no server-side awareness of "this device" beyond the
+- **`@simplewebauthn/server` (`src/lib/webauthn.ts`) and `@simplewebauthn/browser`** (login page,
+  the new dashboard biometric panel) — the standard library pair for a WebAuthn relying party;
+  hand-rolling attestation/assertion verification was never in scope. `webauthn.ts` wraps it the
+  same way `team.ts` wraps `bcrypt`: no database access of its own, called into by
+  `employee-service.ts`. It owns three things: RP ID/name/origin resolution (`WEBAUTHN_RP_ID`,
+  `WEBAUTHN_RP_NAME`, `WEBAUTHN_ORIGIN` — one deployment is one domain, so one triple covers every
+  business, the same reasoning `auth-edge.ts` already applies to sharing one `JWT_SECRET`),
+  building registration/authentication options, and verifying what comes back.
+- **Ceremony challenges are a signed token, not a table.** Every other credential/session in this
+  phase gets a server-side row because it needs to be listable and revocable; a WebAuthn
+  challenge is used within seconds and is worthless the moment it's consumed or its 2-minute TTL
+  passes. `signChallenge`/`verifyChallenge` (`webauthn.ts`) sign it into a short-lived JWT (same
+  `JWT_SECRET`, same `jose` machinery as `auth-edge.ts`'s session token, with its own `purpose`
+  claim so a login challenge can't complete a registration or vice versa) that the caller hands
+  back unmodified on the ceremony's second step — no new table, no new tenancy bypass.
+- **`migrations/0043_employee_webauthn_credentials.sql`** adds what Wave 1's `secret_hash` column
+  can't hold — `webauthn_credential_id`, `webauthn_public_key`, `webauthn_sign_count`,
+  `webauthn_transports` — plus a type-shape check constraint (a `'webauthn'` row has no
+  `secret_hash`; every other type still requires one) and narrows Wave 1's "one active credential
+  per (employee, type)" index to exclude `'webauthn'` (see Decisions below).
+- **`employee-service.ts`'s new WebAuthn section** (`beginWebauthnRegistration`/
+  `completeWebauthnRegistration`, `beginWebauthnAuthentication`/`completeWebauthnAuthentication`,
+  `listWebauthnCredentials`) — a parallel path alongside `issueCredential`/`verifyCredential`, not
+  a caller of them (see the Decisions entry below on why). `revokeCredential` gained an optional
+  `ownerEmployeeId` so a self-service revoke can't be pointed at another employee's credential id.
+- **Registration — self-service, authenticated.** `POST /api/auth/webauthn/register/options` and
+  `.../verify`, `GET /api/auth/webauthn/credentials`, `DELETE /api/auth/webauthn/credentials/[id]`
+  — all guarded to the caller's own PIN-role session (`cashier`/`waiter`/`kitchen`, the same
+  audience as the Wave 2 lock screen), always operating on `session.sub`. A new sidebar panel
+  (`src/app/dashboard/biometric-settings.tsx`, "ورود بیومتریک") lists an employee's registered
+  authenticators and lets them add or remove one — deliberately not under `/dashboard/settings`,
+  whose tabs are all owner/manager-permission-gated (`settings-tabs.ts`); this is each employee
+  managing their own credential.
+- **Login — public, mirrors `pin-login`.** `POST /api/auth/webauthn/login/options` and
+  `.../verify` take the same `employeeId` the Wave 2 picker already resolves before offering PIN,
+  so this never needs an unscoped, discoverable-credential ("usernameless") WebAuthn flow. A
+  successful assertion mints an `employee_sessions` row and the same `pos_session` JWT
+  `pin-login` would (`employeeSessionId` included, `checkEmployeeSession` re-checks it exactly as
+  it does for a PIN login) — biometric is a different way to prove identity, not a different kind
+  of session. `loginRoster` now returns a `hasWebauthn` flag per employee so the login page only
+  offers the biometric button where it can succeed; `pin-login/roster`'s "name/role/photo only"
+  boundary now includes this one extra boolean, still nothing about which secret is behind it.
+  Added to `middleware.ts`'s `PUBLIC_PATHS` and `AUTH_RATE_LIMITED_PATHS` the same way
+  `pin-login`/`pin-login/roster` already are.
+
+## Out of scope (this wave)
+
+- **PIN verification is untouched.** `users.pin_hash` stays the credential for PIN login; Wave 3
+  neither dual-writes a PIN into `employee_credentials` nor migrates it there (see Decisions —
+  this resolves Wave 2's first open question).
+- **Device binding** (Wave 4) — the login picker still has no server-side notion of "this
+  terminal"; `hasWebauthn` is per-employee, not per-device, so a terminal without that employee's
+  registered authenticator still offers the biometric button (and the ceremony simply fails,
+  falling back to the PIN pad) rather than hiding it. Narrowing that is still Wave 4's job.
+- **Shift tracking and the audit log UI** (Waves 5–7) — untouched.
+- **Owner/manager/accountant self-service biometric.** Registration and the biometric login
+  button are both scoped to PIN roles only, matching the lock screen's existing boundary — a
+  password-role member's login flow is untouched.
+
+## Decisions
+
+- **A parallel path, not a shared one, alongside `issueCredential`/`verifyCredential`.** Those
+  two are built around a bcrypt-hashed shared secret: the caller presents the same value back,
+  it's compared with `bcrypt.compare`. A WebAuthn credential is an asymmetric keypair — nothing
+  secret is ever presented back, a signed challenge is instead verified against a stored *public*
+  key — so it doesn't fit that shape at all, not even by relaxing `ISSUABLE_CREDENTIAL_TYPES`.
+  Reusing the table (via new nullable columns) while giving WebAuthn its own
+  begin/complete functions was cheaper and clearer than bending the bcrypt-shaped functions to
+  cover a case they were never designed for.
+- **`'webauthn'` rows only; PIN stays on `users.pin_hash` indefinitely — Wave 2's first open
+  question, resolved.** Dual-writing a PIN into `employee_credentials` alongside `users.pin_hash`
+  was the other option Wave 2 left open; it wasn't needed to make biometric login work, and
+  mixing "migrate PIN storage" into this wave's diff would have mixed two different kinds of risk
+  the same way Wave 2 declined to for the identical reason. Revisit only if a concrete later wave
+  actually needs `employee_credentials` to be PIN's system of record.
+- **Multiple concurrent active `'webauthn'` credentials per employee, unlike PIN's "one active at
+  a time."** Wave 1's uniqueness index applied to the whole `credential_type` enum, which is right
+  for a single shared PIN but wrong here: a POS runs on several shared terminals per branch, and
+  an employee who works more than one needs a separate registered authenticator (that terminal's
+  own fingerprint/face reader) per terminal, live at once. Migration 0043 narrows the index to
+  exclude `'webauthn'` rather than carrying the one-PIN-at-a-time constraint over by accident.
+- **A signed challenge token, not a challenge table.** See Scope above — nothing later needs to
+  list or revoke an in-flight ceremony, so giving it a row would have been infrastructure with no
+  caller. The existing `JWT_SECRET`/`jose` machinery already does exactly what's needed (signed,
+  time-limited, tamper-evident) with a `purpose` claim standing in for `auth-edge.ts`'s `realm`
+  claim to keep a login challenge from completing a registration.
+- **No new `withoutTenantScope` bypass.** Both login-ceremony routes resolve the business through
+  `resolveLoginBusinessId` (Wave 2's existing `"login"` reason) before doing anything else, the
+  same as `pin-login` itself — every WebAuthn query then runs inside the resulting `withTenant`,
+  same as `pin-login`'s own DB work. Nothing here reads or writes before a tenant is chosen.
+
+## Verification
+
+`npx tsc --noEmit`, `npm test` (810 tests, including new `webauthn.test.ts` coverage of the
+ceremony-challenge token's sign/verify round trip, purpose/employee/business mismatch rejection,
+and TTL boundary), `npm run test:db` (246 tests, unchanged — no new tenant-scoped table, so
+`tenant-isolation.integration.test.ts` needed no update), and `npm run build` all pass. The full
+flow was exercised against a live dev server and a real (CTAP2) authenticator: Chrome DevTools
+Protocol's virtual-authenticator support drove an actual `navigator.credentials.create`/`.get`
+ceremony (real challenge, real signature, real server-side verification — not a mocked response)
+through the seeded cashier — PIN login, registering a biometric credential from the new dashboard
+panel, logging out, and logging back in with only the biometric prompt, no PIN.
+
+## Open questions for Wave 4
+
+1. The employee picker still has no server-side awareness of "this device" beyond the
    business/location query params — Wave 4 (Device Binding) will presumably want a registered
    device identity the picker can use to narrow the roster further, rather than showing every
-   PIN-role member at every terminal.
+   PIN-role member's biometric option at every terminal regardless of which terminal actually
+   holds their registered authenticator.
+2. `employee_sessions.credential_id` now sometimes points at a `'webauthn'` row instead of a
+   `'pin'` one (`createSession`'s `credentialId` input, wired through the new login route) — Wave
+   6/7's audit trail and admin security center should surface *which kind* of credential opened a
+   session, not just that one did.
 
-## Status: in progress — Wave 2 (login experience redesign) submitted for review
+## Status: in progress — Wave 3 (biometric authentication) submitted for review
