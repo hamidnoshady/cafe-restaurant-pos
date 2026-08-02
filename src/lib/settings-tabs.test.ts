@@ -14,6 +14,7 @@ describe("visibleSettingsTabs", () => {
       "pricing",
       "menu",
       "printers",
+      "devices",
     ]);
   });
 

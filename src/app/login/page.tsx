@@ -131,6 +131,24 @@ interface RosterEmployee {
 const RECENTS_KEY = "pos:lastEmployees";
 const MAX_RECENTS = 5;
 
+/**
+ * Phase 20 Wave 4 — this terminal's paired-device token, if an owner/manager
+ * ever registered it from Settings → دستگاه‌های ثبت‌شده
+ * (src/app/dashboard/settings/device-settings.tsx, same localStorage key).
+ * Absent on every terminal that was never paired — those keep exactly Wave
+ * 3's unnarrowed behaviour, since every call below treats a missing/invalid
+ * token as "no device" rather than an error.
+ */
+const DEVICE_TOKEN_KEY = "pos:deviceToken";
+
+function readDeviceToken(): string | null {
+  try {
+    return window.localStorage.getItem(DEVICE_TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
 function readRecents(): string[] {
   try {
     const raw = window.localStorage.getItem(RECENTS_KEY);
@@ -172,7 +190,11 @@ function PinLogin() {
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/auth/pin-login/roster")
+    const deviceToken = readDeviceToken();
+    const url = deviceToken
+      ? `/api/auth/pin-login/roster?deviceToken=${encodeURIComponent(deviceToken)}`
+      : "/api/auth/pin-login/roster";
+    fetch(url)
       .then((res) => (res.ok ? res.json() : Promise.reject()))
       .then((data: { employees: RosterEmployee[] }) => {
         if (!cancelled) setEmployees(data.employees ?? []);
@@ -205,7 +227,7 @@ function PinLogin() {
     const res = await fetch("/api/auth/pin-login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ pin, employeeId: selected.id }),
+      body: JSON.stringify({ pin, employeeId: selected.id, deviceToken: readDeviceToken() }),
     });
     setBusy(false);
     if (res.ok) {
@@ -222,10 +244,11 @@ function PinLogin() {
     setBusy(true);
     setError(null);
     try {
+      const deviceToken = readDeviceToken();
       const optionsRes = await fetch("/api/auth/webauthn/login/options", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ employeeId: selected.id }),
+        body: JSON.stringify({ employeeId: selected.id, deviceToken }),
       });
       if (!optionsRes.ok) throw new Error("no_credentials");
       const { options, challengeToken } = await optionsRes.json();
@@ -235,7 +258,7 @@ function PinLogin() {
       const verifyRes = await fetch("/api/auth/webauthn/login/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ employeeId: selected.id, response, challengeToken }),
+        body: JSON.stringify({ employeeId: selected.id, response, challengeToken, deviceToken }),
       });
       if (!verifyRes.ok) throw new Error("invalid_credentials");
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withTenant } from "@/lib/db";
+import { resolveDeviceId } from "@/lib/device-service";
 import { loginRoster, resolveLoginBusinessId } from "@/lib/employee-service";
 
 /**
@@ -8,6 +9,11 @@ import { loginRoster, resolveLoginBusinessId } from "@/lib/employee-service";
  * and deliberately thin: only name, role, and photo, the same fields a
  * badge on a POS terminal would show, never a PIN or anything from
  * `employees` beyond its photo.
+ *
+ * Wave 4 — an optional `deviceToken` (this terminal's paired-device token,
+ * if any, carried client-side — see src/app/login/page.tsx) narrows
+ * `hasWebauthn` to credentials actually registered on this terminal; an
+ * unresolvable or absent token behaves exactly as before pairing existed.
  */
 export async function GET(request: NextRequest) {
   const params = request.nextUrl.searchParams;
@@ -21,7 +27,8 @@ export async function GET(request: NextRequest) {
   }
 
   return withTenant(businessId, async () => {
-    const employees = await loginRoster(businessId, params.get("locationId"));
+    const deviceId = await resolveDeviceId(params.get("deviceToken"), businessId);
+    const employees = await loginRoster(businessId, params.get("locationId"), deviceId);
     return NextResponse.json({ employees });
   });
 }

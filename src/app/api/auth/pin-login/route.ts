@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { query, withTenant } from "@/lib/db";
 import { SESSION_COOKIE, sessionCookieOptions, signSession, type Role } from "@/lib/auth";
 import { toLatinDigits } from "@/lib/digits";
+import { resolveDeviceId } from "@/lib/device-service";
 import { createSession, ensureEmployeeProfile, resolveLoginBusinessId } from "@/lib/employee-service";
 
 interface UserRow extends Record<string, unknown> {
@@ -39,6 +40,7 @@ export async function POST(request: NextRequest) {
     locationId?: string;
     businessId?: string;
     businessSlug?: string;
+    deviceToken?: string;
   };
   try {
     body = await request.json();
@@ -97,9 +99,11 @@ export async function POST(request: NextRequest) {
 
     await ensureEmployeeProfile(user.id, user.business_id);
     const deviceLabel = request.headers.get("user-agent")?.slice(0, 120) ?? null;
+    const deviceId = await resolveDeviceId(body.deviceToken, user.business_id);
     const { session: employeeSession } = await createSession(user.id, user.business_id, {
       locationId: user.location_id,
       deviceLabel,
+      deviceId,
     });
 
     const token = await signSession({

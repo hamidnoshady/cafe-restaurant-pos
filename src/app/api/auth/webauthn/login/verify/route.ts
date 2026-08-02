@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import type { AuthenticationResponseJSON } from "@simplewebauthn/server";
 import { query, withTenant } from "@/lib/db";
 import { SESSION_COOKIE, sessionCookieOptions, signSession, type Role } from "@/lib/auth";
+import { resolveDeviceId } from "@/lib/device-service";
 import {
   completeWebauthnAuthentication,
   createSession,
@@ -32,6 +33,7 @@ export async function POST(request: NextRequest) {
     businessId?: string;
     businessSlug?: string;
     locationId?: string;
+    deviceToken?: string;
   };
   try {
     body = await request.json();
@@ -71,10 +73,12 @@ export async function POST(request: NextRequest) {
     }
 
     const deviceLabel = request.headers.get("user-agent")?.slice(0, 120) ?? null;
+    const deviceId = await resolveDeviceId(body.deviceToken, businessId);
     const { session: employeeSession } = await createSession(user.id, user.business_id, {
       locationId: user.location_id,
       credentialId: result.credentialId,
       deviceLabel,
+      deviceId,
     });
 
     const token = await signSession({
