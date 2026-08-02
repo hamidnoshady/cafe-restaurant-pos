@@ -18,11 +18,12 @@ describe("visibleSettingsTabs", () => {
     ]);
   });
 
-  it("shows team management, shift history, and the audit trail together, gated on team.manage (Phase 20 Waves 5-6)", () => {
+  it("shows team management, shift history, the audit trail, and the security center together, gated on team.manage (Phase 20 Waves 5-7)", () => {
     expect(visibleSettingsTabs([PERMISSIONS.teamManage]).map((tab) => tab.key)).toEqual([
       "team",
       "shifts",
       "audit-log",
+      "security-center",
     ]);
   });
 

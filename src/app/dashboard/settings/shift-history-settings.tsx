@@ -22,6 +22,8 @@ interface Shift {
   closingFloat: number | null;
   startedAt: string;
   endedAt: string | null;
+  /** Phase 20 Wave 7 — computed by the server in the same query as the shift list itself; see shift-service.ts's listShifts. */
+  reconciliation: { expectedCash: number; variance: number } | null;
 }
 
 function formatTime(iso: string | null): string {
@@ -31,6 +33,12 @@ function formatTime(iso: string | null): string {
 
 function formatFloat(value: number | null): string {
   return value === null ? "—" : toPersianDigits(formatToman(value));
+}
+
+function formatVariance(variance: number): string {
+  const amount = toPersianDigits(formatToman(Math.abs(variance)));
+  if (variance === 0) return `بدون کسری/اضافه`;
+  return variance > 0 ? `${amount} اضافه` : `${amount} کسری`;
 }
 
 export function ShiftHistorySettings() {
@@ -110,6 +118,7 @@ export function ShiftHistorySettings() {
                       {formatFloat(shift.openingFloat)}
                       {" · موجودی آخر: "}
                       {formatFloat(shift.closingFloat)}
+                      {shift.reconciliation ? ` · تطبیق: ${formatVariance(shift.reconciliation.variance)}` : ""}
                     </p>
                   </div>
                   {!shift.endedAt && closingId !== shift.id && (

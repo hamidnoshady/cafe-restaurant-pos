@@ -53,6 +53,32 @@ interface CashSummaryRow extends Record<string, unknown> {
   credit_total: string;
 }
 
+function toCashSummary(row: CashSummaryRow | undefined): ShiftCashSummary {
+  return {
+    orderCount: Number(row?.order_count ?? 0),
+    grossTotal: Number(row?.gross_total ?? 0),
+    cashTotal: Number(row?.cash_total ?? 0),
+    cardTotal: Number(row?.card_total ?? 0),
+    onlineTotal: Number(row?.online_total ?? 0),
+    creditTotal: Number(row?.credit_total ?? 0),
+  };
+}
+
+/**
+ * The aggregate columns behind a shift's cash summary, factored out so
+ * `shiftCashSummary` (a single shift's own `[from, to]` window) and
+ * `listShifts`'s per-row LATERAL join (Wave 7 — every shift's window at
+ * once) compute the exact same rule instead of two copies drifting apart.
+ */
+const CASH_SUMMARY_COLUMNS = `
+  count(DISTINCT o.id)                                                  AS order_count,
+  coalesce(sum(o.total), 0)                                             AS gross_total,
+  coalesce(sum(p.amount) FILTER (WHERE p.method = 'cash'), 0)           AS cash_total,
+  coalesce(sum(p.amount) FILTER (WHERE p.method IN ('card', 'card_to_card')), 0) AS card_total,
+  coalesce(sum(p.amount) FILTER (WHERE p.method = 'online'), 0)         AS online_total,
+  coalesce(sum(p.amount) FILTER (WHERE p.method = 'credit'), 0)         AS credit_total
+`;
+
 /**
  * Every completed order this employee closed between `from` and `to`,
  * reconciled by payment method — the same shape v_shift_reconciliation
@@ -65,26 +91,13 @@ export async function shiftCashSummary(
   to: Date | string,
 ): Promise<ShiftCashSummary> {
   const { rows } = await query<CashSummaryRow>(
-    `SELECT count(DISTINCT o.id)                                                  AS order_count,
-            coalesce(sum(o.total), 0)                                             AS gross_total,
-            coalesce(sum(p.amount) FILTER (WHERE p.method = 'cash'), 0)           AS cash_total,
-            coalesce(sum(p.amount) FILTER (WHERE p.method IN ('card', 'card_to_card')), 0) AS card_total,
-            coalesce(sum(p.amount) FILTER (WHERE p.method = 'online'), 0)         AS online_total,
-            coalesce(sum(p.amount) FILTER (WHERE p.method = 'credit'), 0)         AS credit_total
+    `SELECT ${CASH_SUMMARY_COLUMNS}
        FROM orders o
        LEFT JOIN payments p ON p.order_id = o.id
       WHERE o.closed_by = $1 AND o.status = 'completed' AND o.closed_at BETWEEN $2 AND $3`,
     [employeeId, from, to],
   );
-  const row = rows[0];
-  return {
-    orderCount: Number(row?.order_count ?? 0),
-    grossTotal: Number(row?.gross_total ?? 0),
-    cashTotal: Number(row?.cash_total ?? 0),
-    cardTotal: Number(row?.card_total ?? 0),
-    onlineTotal: Number(row?.online_total ?? 0),
-    creditTotal: Number(row?.credit_total ?? 0),
-  };
+  return toCashSummary(rows[0]);
 }
 
 export interface EmployeeShift {
@@ -259,13 +272,21 @@ export async function closeShiftById(
 
 export interface ShiftListEntry extends EmployeeShift {
   employeeName: string;
+  cashSummary: ShiftCashSummary;
+  /** Only set when the shift tracked a float on both ends — see shift.ts's reconcileCash. */
+  reconciliation: { expectedCash: number; variance: number } | null;
 }
 
-interface ShiftListRow extends ShiftRow {
+interface ShiftListRow extends ShiftRow, CashSummaryRow {
   employee_name: string;
 }
 
-/** Shift history for the admin review tab, most recent first. */
+/**
+ * Shift history for the admin review tab, most recent first — each row's
+ * cash summary/variance is computed in the same query via a LATERAL join
+ * (Wave 7 — resolves this doc's Wave 5/6 open question 1), instead of the
+ * settings tab making one `shiftCashSummary` round trip per shift.
+ */
 export async function listShifts(
   businessId: string,
   filters: { employeeId?: string; locationId?: string } = {},
@@ -283,13 +304,34 @@ export async function listShifts(
   const { rows } = await query<ShiftListRow>(
     `SELECT s.id, s.employee_id, s.business_id, s.location_id, s.session_id, s.device_id,
             s.opening_float, s.closing_float, s.business_date, s.started_at, s.ended_at, s.closed_by,
-            u.full_name AS employee_name
+            u.full_name AS employee_name,
+            coalesce(cs.order_count, 0) AS order_count,
+            coalesce(cs.gross_total, 0) AS gross_total,
+            coalesce(cs.cash_total, 0) AS cash_total,
+            coalesce(cs.card_total, 0) AS card_total,
+            coalesce(cs.online_total, 0) AS online_total,
+            coalesce(cs.credit_total, 0) AS credit_total
        FROM employee_shifts s
        JOIN users u ON u.id = s.employee_id
+       LEFT JOIN LATERAL (
+         SELECT ${CASH_SUMMARY_COLUMNS}
+           FROM orders o
+           LEFT JOIN payments p ON p.order_id = o.id
+          WHERE o.closed_by = s.employee_id AND o.status = 'completed'
+            AND o.closed_at BETWEEN s.started_at AND coalesce(s.ended_at, now())
+       ) cs ON true
       WHERE ${conditions.join(" AND ")}
       ORDER BY s.started_at DESC
       LIMIT 200`,
     params,
   );
-  return rows.map((row) => ({ ...toShift(row), employeeName: row.employee_name }));
+  return rows.map((row) => {
+    const shift = toShift(row);
+    const cashSummary = toCashSummary(row);
+    const reconciliation =
+      shift.openingFloat !== null && shift.closingFloat !== null
+        ? reconcileCash(shift.openingFloat, shift.closingFloat, cashSummary.cashTotal)
+        : null;
+    return { ...shift, employeeName: row.employee_name, cashSummary, reconciliation };
+  });
 }

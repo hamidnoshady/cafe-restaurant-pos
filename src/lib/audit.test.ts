@@ -5,6 +5,7 @@ describe("auditActionLabel", () => {
   it("labels a known action", () => {
     expect(auditActionLabel("shift.opened")).toBe("شروع شیفت");
     expect(auditActionLabel("employee.session_created")).toBe("ورود به سیستم");
+    expect(auditActionLabel("employee.login_failed")).toBe("تلاش ورود ناموفق");
   });
 
   it("falls back to the raw action for an unrecognised value", () => {

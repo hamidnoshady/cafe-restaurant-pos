@@ -14,6 +14,7 @@ import { DeviceSettings } from "./device-settings";
 import { MenuSettings } from "./menu-settings";
 import { PricingSettings } from "./pricing-settings";
 import { PrinterSettings } from "./printer-settings";
+import { SecurityCenterSettings } from "./security-center-settings";
 import { ServerSyncSettings } from "./server-sync-settings";
 import { ShiftHistorySettings } from "./shift-history-settings";
 import { TaxSettings } from "./tax-settings";
@@ -74,6 +75,7 @@ export function SettingsManager({ tabs, features, currentUserId, isOwner }: Sett
       {activeTab === "devices" ? <DeviceSettings /> : null}
       {activeTab === "shifts" ? <ShiftHistorySettings /> : null}
       {activeTab === "audit-log" ? <AuditLogSettings /> : null}
+      {activeTab === "security-center" ? <SecurityCenterSettings /> : null}
       {activeTab === "backup" ? <BackupManager isOwner={isOwner} /> : null}
     </div>
   );

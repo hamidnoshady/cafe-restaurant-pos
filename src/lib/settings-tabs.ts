@@ -14,6 +14,7 @@ export const SETTINGS_TAB_KEYS = [
   "devices",
   "shifts",
   "audit-log",
+  "security-center",
   "backup",
 ] as const;
 
@@ -108,6 +109,12 @@ export const SETTINGS_TABS: SettingsTab[] = [
     key: "audit-log",
     label: "گزارش حسابرسی",
     description: "رویدادهای امنیتی کسب‌وکار: ورود، تغییر اعتبارنامه، دستگاه و شیفت",
+    requiredAnyPermission: [PERMISSIONS.teamManage],
+  },
+  {
+    key: "security-center",
+    label: "مرکز امنیت",
+    description: "نشست‌های فعال کارکنان و تلاش‌های ورود ناموفق، با امکان پایان‌دادن به یک نشست",
     requiredAnyPermission: [PERMISSIONS.teamManage],
   },
   {
