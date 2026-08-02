@@ -5,7 +5,7 @@
  * pipeline itself stay in ai-proactive-service.ts, the same split as
  * ai-proactive.ts/ai-proactive-service.ts.
  */
-import { DEFAULT_PROACTIVE_HOUR } from "./ai-proactive";
+import { DEFAULT_PROACTIVE_HOUR, type AiProactiveRunKind } from "./ai-proactive";
 
 export const AI_AGENT_KEYS = [
   "financial_report_builder",
@@ -102,4 +102,52 @@ export function digestSectionInclusion(settings: AiAgentSettingsMap): DigestSect
     sales: settings.sales_analyzer.enabled,
     reconciliation: settings.reconciliation_assistant.enabled,
   };
+}
+
+/** The `ai_proactive_runs.kind` each agent's work is recorded under — also used for the hub's last-run stats. */
+export const AGENT_RUN_KIND: Record<AiAgentKey, AiProactiveRunKind> = {
+  financial_report_builder: "daily_digest",
+  reconciliation_assistant: "daily_digest",
+  sales_analyzer: "weekly_digest",
+  receivables_follow_up: "customer_debt_drafts",
+};
+
+export type AiAgentTaskStatus = "done" | "pending";
+
+export interface AiAgentTodayTask {
+  agentKey: AiAgentKey;
+  label: string;
+  scheduledHour: number;
+  status: AiAgentTaskStatus;
+}
+
+/**
+ * Wave 4 (issue #144) hub sidebar: "today's automated tasks" list. Purely
+ * derived from settings + whether a matching `ai_proactive_runs` row already
+ * exists for today — no new schema, no provider call. A weekly-digest agent
+ * (sales_analyzer) only appears on the configured weekly weekday, since it
+ * has no run due on any other day.
+ */
+export function aiAgentsTodayTasks(input: {
+  masterEnabled: boolean;
+  agentSettings: AiAgentSettingsMap;
+  weeklyDigestWeekday: number;
+  currentWeekday: number;
+  hasRunForKind: (runKind: AiProactiveRunKind) => boolean;
+}): AiAgentTodayTask[] {
+  if (!input.masterEnabled) return [];
+  const tasks: AiAgentTodayTask[] = [];
+  for (const definition of AI_AGENT_DEFINITIONS) {
+    const agent = input.agentSettings[definition.key];
+    if (!agent.enabled) continue;
+    const runKind = AGENT_RUN_KIND[definition.key];
+    if (runKind === "weekly_digest" && input.currentWeekday !== input.weeklyDigestWeekday) continue;
+    tasks.push({
+      agentKey: definition.key,
+      label: definition.title,
+      scheduledHour: agent.scheduleHour,
+      status: input.hasRunForKind(runKind) ? "done" : "pending",
+    });
+  }
+  return tasks.sort((a, b) => a.scheduledHour - b.scheduledHour);
 }

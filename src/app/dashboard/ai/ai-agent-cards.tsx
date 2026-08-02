@@ -16,6 +16,13 @@ interface AgentOverviewEntry {
   lastRunStatus: "completed" | "skipped" | "failed" | null;
 }
 
+export interface AgentTodayTask {
+  agentKey: AiAgentKey;
+  label: string;
+  scheduledHour: number;
+  status: "done" | "pending";
+}
+
 const AGENT_ICONS: Record<AiAgentKey, LucideIcon> = {
   financial_report_builder: FileBarChart2Icon,
   sales_analyzer: TrendingUpIcon,
@@ -36,16 +43,21 @@ const STATUS_CLASS: Record<AgentOverviewEntry["status"], string> = {
 };
 
 /** Wave 3 (issue #143) hub sidebar: independent per-agent status cards + toggles, replacing the single ai/proactive switch's all-or-nothing control. */
-export function AiAgentCards() {
+export function AiAgentCards({ onTodayTasksChange }: { onTodayTasksChange?: (tasks: AgentTodayTask[]) => void }) {
   const [agents, setAgents] = useState<AgentOverviewEntry[] | null>(null);
   const [savingKey, setSavingKey] = useState<AiAgentKey | null>(null);
 
   async function load() {
     try {
       const response = await fetch("/api/ai/agents");
-      const body = (await response.json().catch(() => ({}))) as { agents?: AgentOverviewEntry[]; error?: string };
+      const body = (await response.json().catch(() => ({}))) as {
+        agents?: AgentOverviewEntry[];
+        todayTasks?: AgentTodayTask[];
+        error?: string;
+      };
       if (!response.ok || !body.agents) throw new Error(body.error ?? "خواندن ایجنت‌ها ممکن نشد.");
       setAgents(body.agents);
+      onTodayTasksChange?.(body.todayTasks ?? []);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "خواندن ایجنت‌ها ممکن نشد.");
     }
@@ -53,6 +65,7 @@ export function AiAgentCards() {
 
   useEffect(() => {
     void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function toggle(agentKey: AiAgentKey, enabled: boolean) {
@@ -64,9 +77,14 @@ export function AiAgentCards() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ agentKey, enabled }),
       });
-      const body = (await response.json().catch(() => ({}))) as { agents?: AgentOverviewEntry[]; error?: string };
+      const body = (await response.json().catch(() => ({}))) as {
+        agents?: AgentOverviewEntry[];
+        todayTasks?: AgentTodayTask[];
+        error?: string;
+      };
       if (!response.ok || !body.agents) throw new Error(body.error ?? "ذخیرهٔ وضعیت ایجنت ممکن نشد.");
       setAgents(body.agents);
+      onTodayTasksChange?.(body.todayTasks ?? []);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "ذخیرهٔ وضعیت ایجنت ممکن نشد.");
     } finally {

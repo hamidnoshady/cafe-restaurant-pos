@@ -15,10 +15,11 @@ import { cn } from "@/lib/utils";
 import { AiProposalCard } from "@/components/ai/ai-proposal-card";
 import { SUGGESTED_PROMPTS, useAiChat } from "@/components/ai/use-ai-chat";
 import { AiActionAudit } from "./ai-action-audit";
-import { AiAgentCards } from "./ai-agent-cards";
+import { AiAgentCards, type AgentTodayTask } from "./ai-agent-cards";
 import { AiBillingDashboard } from "./ai-billing";
 import { AiProactiveSettings } from "./ai-proactive-settings";
 import { AiRecentConversations } from "./ai-recent-conversations";
+import { AiTodayTasks } from "./ai-today-tasks";
 
 type HubTab = "chat" | "settings";
 
@@ -34,6 +35,7 @@ export function AiChatHub() {
   const searchParams = useSearchParams();
   const [tab, setTab] = useState<HubTab>(searchParams.get("tab") === "settings" ? "settings" : "chat");
   const [conversationsKey, setConversationsKey] = useState(0);
+  const [todayTasks, setTodayTasks] = useState<AgentTodayTask[] | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const initialized = useRef(false);
 
@@ -234,7 +236,8 @@ export function AiChatHub() {
             <Button variant="outline" onClick={startNewConversation} className="justify-start">
               <MessageSquarePlusIcon /> گفتگوی جدید
             </Button>
-            <AiAgentCards />
+            <AiAgentCards onTodayTasksChange={setTodayTasks} />
+            <AiTodayTasks tasks={todayTasks} />
             <AiRecentConversations
               activeId={conversationId}
               refreshKey={conversationsKey}

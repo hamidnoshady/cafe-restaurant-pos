@@ -210,3 +210,49 @@ describe("receivables_follow_up gates customer_debt_drafts", () => {
     expect(betaAgents.receivables_follow_up.enabled).toBe(false);
   });
 });
+
+describe("getAiAgentsTodayTasks (Wave 4, issue #144)", () => {
+  // receivables_follow_up (customer_debt_drafts) needs no AI provider call, unlike the
+  // digest agents, so it is the cheapest agent to actually drive to a completed run here.
+  it("marks a business's own completed run as done without leaking into a sibling with the same agent enabled but no run yet", async () => {
+    // Same agent enabled on both sides is the scenario where a missing business_id
+    // filter (or a broken RLS policy) would leak Alpha's "done" run into Beta's read.
+    await dbLib.withTenant(alpha.businessId, () =>
+      proactive.setAiAgentEnabled(alpha.businessId, "receivables_follow_up", true),
+    );
+    await dbLib.withTenant(beta.businessId, () =>
+      proactive.setAiAgentEnabled(beta.businessId, "receivables_follow_up", true),
+    );
+    // Beta opts out of background work entirely so its tick never claims a run,
+    // leaving its agent enabled but genuinely still pending for today.
+    await db.query(
+      `UPDATE business_features SET enabled = false WHERE business_id = $1 AND flag_key = 'ai_assistant'`,
+      [beta.businessId],
+    );
+
+    await proactive.runAiProactiveTick();
+
+    const alphaTasks = await dbLib.withTenant(alpha.businessId, () =>
+      proactive.getAiAgentsTodayTasks(alpha.businessId),
+    );
+    const alphaTask = alphaTasks.find((t) => t.agentKey === "receivables_follow_up");
+    expect(alphaTask?.status).toBe("done");
+
+    const betaTasks = await dbLib.withTenant(beta.businessId, () => proactive.getAiAgentsTodayTasks(beta.businessId));
+    const betaTask = betaTasks.find((t) => t.agentKey === "receivables_follow_up");
+    expect(betaTask?.status).toBe("pending");
+  });
+
+  it("is empty once a business turns every agent off, even with runs recorded from when they were on", async () => {
+    await dbLib.withTenant(alpha.businessId, () =>
+      proactive.setAiAgentEnabled(alpha.businessId, "receivables_follow_up", true),
+    );
+    await proactive.runAiProactiveTick();
+    await dbLib.withTenant(alpha.businessId, () =>
+      proactive.setAiAgentEnabled(alpha.businessId, "receivables_follow_up", false),
+    );
+
+    const tasks = await dbLib.withTenant(alpha.businessId, () => proactive.getAiAgentsTodayTasks(alpha.businessId));
+    expect(tasks).toEqual([]);
+  });
+});

@@ -35,7 +35,9 @@ import { listCustomerBalances, UNKNOWN_CUSTOMER_KEY } from "./ar-service";
 import { query, withTenant, withoutTenantScope } from "./db";
 import { isFeatureEnabled } from "./features";
 import {
+  AGENT_RUN_KIND,
   AI_AGENT_KEYS,
+  aiAgentsTodayTasks,
   aiAgentStatus,
   defaultAiAgentSettings,
   digestSectionInclusion,
@@ -43,6 +45,7 @@ import {
   type AiAgentKey,
   type AiAgentSettingsMap,
   type AiAgentStatus,
+  type AiAgentTodayTask,
   type DigestSectionInclusion,
 } from "./ai-agents";
 
@@ -153,14 +156,6 @@ export async function getAiProactiveOverview(businessId: string): Promise<AiProa
   };
 }
 
-/** The related `ai_proactive_runs.kind` whose last-run stats represent this agent on the hub's status cards. */
-const AGENT_RUN_KIND: Record<AiAgentKey, AiProactiveRunKind> = {
-  financial_report_builder: "daily_digest",
-  reconciliation_assistant: "daily_digest",
-  sales_analyzer: "weekly_digest",
-  receivables_follow_up: "customer_debt_drafts",
-};
-
 export async function getAiAgentSettings(businessId: string): Promise<AiAgentSettingsMap> {
   const settings = defaultAiAgentSettings();
   const { rows } = await query<{ agent_key: string; enabled: boolean; schedule_hour: number }>(
@@ -232,6 +227,39 @@ export async function getAiAgentsOverview(businessId: string): Promise<AiAgentOv
       lastRunAt: lastRun?.finished_at?.toISOString() ?? null,
       lastRunStatus: lastRun && lastRun.status !== "running" ? lastRun.status : null,
     };
+  });
+}
+
+/**
+ * Feeds the hub's "کارهای خودکار امروز" list (Wave 4, issue #144): purely
+ * read-only, no provider call. `done` means a matching `ai_proactive_runs`
+ * row already exists for today's period key (any terminal or in-progress
+ * status counts — the row only appears once the tick has claimed it).
+ */
+export async function getAiAgentsTodayTasks(businessId: string): Promise<AiAgentTodayTask[]> {
+  const [proactive, agentSettings, timezone] = await Promise.all([
+    getAiProactiveSettings(businessId),
+    getAiAgentSettings(businessId),
+    businessTimezone(businessId),
+  ]);
+  const clock = localBusinessClock(new Date(), timezone);
+
+  const runKinds = [...new Set(Object.values(AGENT_RUN_KIND))];
+  const periodKeys = runKinds.map((kind) => proactivePeriodKey(kind, clock));
+  const { rows } = await query<{ kind: AiProactiveRunKind; period_key: string }>(
+    `SELECT DISTINCT kind, period_key
+       FROM ai_proactive_runs
+      WHERE business_id = $1 AND kind = ANY($2::text[]) AND period_key = ANY($3::text[])`,
+    [businessId, runKinds, periodKeys],
+  );
+  const runsToday = new Set(rows.map((row) => `${row.kind}:${row.period_key}`));
+
+  return aiAgentsTodayTasks({
+    masterEnabled: proactive.enabled,
+    agentSettings,
+    weeklyDigestWeekday: proactive.weeklyDigestWeekday,
+    currentWeekday: clock.weekday,
+    hasRunForKind: (runKind) => runsToday.has(`${runKind}:${proactivePeriodKey(runKind, clock)}`),
   });
 }
 
