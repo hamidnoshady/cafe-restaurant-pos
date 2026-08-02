@@ -1,130 +1,58 @@
 "use client";
 
 /**
- * Floating AI assistant. Wave 5 adds a deliberate cost preview, suggested
- * prompts, provider-streamed text and a tenant-scoped audit outcome for every
- * confirmed proposal; it does not widen the existing action allowlist.
+ * Floating AI launcher. The chat core (streaming, cost preview, propose→
+ * confirm, conversation persistence) lives in `useAiChat` and is shared with
+ * the `/dashboard/ai` hub (Wave 2, issue #142); this component is just the
+ * small popup window plus a link that hands the same conversation off to the
+ * full-page hub.
  */
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { toast } from "sonner";
 import {
   BotIcon,
-  CheckIcon,
+  ExternalLinkIcon,
   Loader2Icon,
   SendIcon,
   SparklesIcon,
   XIcon,
 } from "lucide-react";
-import { ACTION_CATALOG, resolveActionEndpoint, type ProposedAction } from "@/lib/ai";
 import { formatToman } from "@/lib/money";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-
-type AssistantMode = "wizard" | "dashboard" | "floor";
-
-interface Msg {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  proposal?: ProposedAction | null;
-  auditId?: string | null;
-  applied?: boolean;
-}
+import { AiProposalCard } from "./ai-proposal-card";
+import { SUGGESTED_PROMPTS, useAiChat, type AssistantMode } from "./use-ai-chat";
 
 interface Props {
   mode: AssistantMode;
   currentStep?: string | null;
 }
 
-interface TurnEstimate {
-  estimatedCostRial: number;
-  maximumReservationRial: number;
-  estimatedInputTokens: number;
-  estimatedOutputTokens: number;
-  assumedToolRounds: number;
-  hasTools: boolean;
-}
-
-interface PendingTurn {
-  text: string;
-  estimate: TurnEstimate;
-}
-
-const uid = () => Math.random().toString(36).slice(2);
-
-const CHAT_ERROR: Record<string, string> = {
-  ai_credit_required: "اعتبار هوش مصنوعی برای یک پاسخ جدید کافی نیست. از صفحهٔ اعتبار درخواست شارژ ثبت کنید.",
-  ai_unavailable: "سرویس هوش مصنوعی هنوز توسط مدیر پلتفرم آماده نشده است.",
-  feature_disabled: "دستیار هوشمند برای این کسب‌وکار فعال نیست.",
-  ai_auth: "اتصال سراسری سرویس هوش مصنوعی نیاز به بررسی مدیر پلتفرم دارد.",
-  ai_timeout: "پاسخ سرویس دیر رسید. دوباره تلاش کنید.",
-  ai_network: "اتصال به سرویس هوش مصنوعی برقرار نشد.",
-  ai_provider: "سرویس هوش مصنوعی خطا داد. بعداً تلاش کنید.",
-  empty_messages: "پیامی برای ارسال نیست.",
-};
-
-const SUGGESTED_PROMPTS: Record<AssistantMode, string[]> = {
-  wizard: [
-    "برای تکمیل این مرحله چه اطلاعاتی لازم است؟",
-    "یک منوی اولیهٔ ساده برای کافه پیشنهاد بده.",
-    "تنظیمات مالیات و روش قیمت‌گذاری را بررسی کن.",
-  ],
-  dashboard: [
-    "فروش هفتهٔ اخیر را خلاصه و با هفتهٔ قبل مقایسه کن.",
-    "کدام آیتم‌های منو عملکرد ضعیف‌تری دارند؟",
-    "موجودی کم و پیشنهادهای خرید را بررسی کن.",
-  ],
-  floor: [
-    "مواد اولیهٔ ثبت‌شدهٔ یک آیتم منو را بگو.",
-    "صورت‌حساب میز ۳ را برای ۴ نفر تقسیم کن.",
-    "برای سؤال حساسیت غذایی چه داده‌ای ثبت شده است؟",
-  ],
-};
-
-function greeting(mode: AssistantMode): string {
-  if (mode === "wizard") {
-    return "سلام! من دستیار راه‌اندازی هستم. بگویید کافه یا رستوران‌تان چه ویژگی‌هایی دارد تا با هم فیلدهای هر مرحله را کامل کنیم. هر تغییری قبل از ثبت، تأیید شما را لازم دارد.";
-  }
-  if (mode === "floor") {
-    return "سلام! می‌توانم دربارهٔ منوی شعبه، مواد اولیهٔ ثبت‌شده و پیش‌نمایش تقسیم برابر صورت‌حساب کمک کنم. هیچ تغییری ثبت نمی‌کنم؛ برای موارد حساسیت غذایی، دادهٔ ثبت‌نشده را حدس نمی‌زنم.";
-  }
-  return "سلام! می‌توانم گزارش‌های فروش، منو، موجودی و حسابداری را نشان دهم، وضعیت راه‌اندازی را بررسی کنم و کارهای مجاز را با تأیید شما انجام دهم. چه کمکی از من برمی‌آید؟";
-}
-
-function errorMessage(data: Record<string, unknown>): string {
-  return CHAT_ERROR[String(data.error ?? "")] ??
-    (typeof data.message === "string" ? data.message : "خطا در ارتباط با دستیار.");
-}
-
-function isEstimate(value: unknown): value is TurnEstimate {
-  if (!value || typeof value !== "object") return false;
-  const item = value as Record<string, unknown>;
-  return (
-    typeof item.estimatedCostRial === "number" &&
-    typeof item.maximumReservationRial === "number" &&
-    typeof item.assumedToolRounds === "number"
-  );
-}
-
 export function AiAssistant({ mode, currentStep }: Props) {
-  const router = useRouter();
-  const canPropose = mode === "wizard" || mode === "dashboard";
   const [open, setOpen] = useState(false);
-  const [messages, setMessages] = useState<Msg[]>([]);
-  const [input, setInput] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [estimating, setEstimating] = useState(false);
-  const [pending, setPending] = useState<PendingTurn | null>(null);
-  const [applyingId, setApplyingId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const {
+    canPropose,
+    messages,
+    input,
+    setInput,
+    busy,
+    estimating,
+    pending,
+    applyingId,
+    conversationId,
+    ensureGreeting,
+    prepareSend,
+    cancelPending,
+    startStream,
+    applyProposal,
+    dismissProposal,
+  } = useAiChat({ mode, currentStep });
 
   useEffect(() => {
-    if (open && messages.length === 0) {
-      setMessages([{ id: uid(), role: "assistant", content: greeting(mode) }]);
-    }
-  }, [open, mode, messages.length]);
+    if (open) ensureGreeting();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -136,228 +64,11 @@ export function AiAssistant({ mode, currentStep }: Props) {
       const prompt = typeof detail?.prompt === "string" ? detail.prompt.trim().slice(0, 8_000) : "";
       if (!prompt) return;
       setOpen(true);
-      setPending(null);
       setInput(prompt);
     }
     window.addEventListener("ai:prefill", prefill);
     return () => window.removeEventListener("ai:prefill", prefill);
-  }, []);
-
-  async function prepareSend(textOverride?: string) {
-    const text = (textOverride ?? input).trim();
-    if (!text || busy || estimating || pending) return;
-
-    const candidateHistory = [...messages, { id: uid(), role: "user" as const, content: text }];
-    setEstimating(true);
-    try {
-      const response = await fetch("/api/ai/estimate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          mode,
-          currentStep: currentStep ?? null,
-          messages: candidateHistory.map((message) => ({ role: message.role, content: message.content })),
-        }),
-      });
-      const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
-      if (!response.ok || !isEstimate(data)) throw new Error(errorMessage(data));
-      setInput("");
-      setPending({ text, estimate: data });
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "محاسبهٔ برآورد هزینه ممکن نشد.");
-    } finally {
-      setEstimating(false);
-    }
-  }
-
-  async function startStream(text: string) {
-    if (busy) return;
-    const userMsg: Msg = { id: uid(), role: "user", content: text };
-    const replyId = uid();
-    const history = [...messages, userMsg];
-    setMessages([...history, { id: replyId, role: "assistant", content: "" }]);
-    setPending(null);
-    setBusy(true);
-
-    function setReply(update: (current: Msg) => Msg) {
-      setMessages((current) => current.map((message) => (message.id === replyId ? update(message) : message)));
-    }
-
-    function receiveEvent(block: string): boolean {
-      let event = "message";
-      let data = "";
-      for (const line of block.split(/\r?\n/)) {
-        if (line.startsWith("event:")) event = line.slice(6).trim();
-        if (line.startsWith("data:")) data += line.slice(5).trim();
-      }
-      if (!data) return false;
-      let payload: Record<string, unknown>;
-      try {
-        payload = JSON.parse(data) as Record<string, unknown>;
-      } catch {
-        return false;
-      }
-
-      if (event === "delta" && typeof payload.content === "string") {
-        setReply((current) => ({ ...current, content: current.content + payload.content }));
-        return false;
-      }
-      if (event === "reset") {
-        setReply((current) => ({ ...current, content: "" }));
-        return false;
-      }
-      if (event === "done") {
-        setReply((current) => ({
-          ...current,
-          content: typeof payload.content === "string" ? payload.content : current.content,
-          proposal: canPropose ? (payload.proposedAction as ProposedAction | null | undefined) ?? null : null,
-          auditId: typeof payload.auditId === "string" ? payload.auditId : null,
-        }));
-        return true;
-      }
-      if (event === "error") {
-        setReply((current) => ({ ...current, content: "⚠️ " + errorMessage(payload) }));
-        return true;
-      }
-      return false;
-    }
-
-    try {
-      const response = await fetch("/api/ai/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
-        body: JSON.stringify({
-          mode,
-          currentStep: currentStep ?? null,
-          messages: history.map((message) => ({ role: message.role, content: message.content })),
-        }),
-      });
-      if (!response.ok) {
-        const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
-        throw new Error(errorMessage(data));
-      }
-      if (!response.body) throw new Error("پاسخ جریانی دستیار در دسترس نیست.");
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      let complete = false;
-      try {
-        while (!complete) {
-          const { value, done } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          const events = buffer.split(/\r?\n\r?\n/);
-          buffer = events.pop() ?? "";
-          for (const event of events) {
-            if (receiveEvent(event)) {
-              complete = true;
-              break;
-            }
-          }
-        }
-        buffer += decoder.decode();
-        if (!complete && buffer) complete = receiveEvent(buffer);
-      } finally {
-        reader.releaseLock();
-      }
-      if (!complete) {
-        setReply((current) => ({
-          ...current,
-          content: current.content || "⚠️ پاسخ دستیار کامل نشد. دوباره تلاش کنید.",
-        }));
-      }
-    } catch (error) {
-      setReply(() => ({
-        id: replyId,
-        role: "assistant",
-        content: "⚠️ " + (error instanceof Error ? error.message : "اتصال برقرار نشد. دوباره تلاش کنید."),
-      }));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function applyProposal(message: Msg) {
-    if (!canPropose) return;
-    const proposal = message.proposal;
-    if (!proposal) return;
-    const meta = ACTION_CATALOG[proposal.type];
-    if (!meta) return;
-    const endpoint = resolveActionEndpoint(meta, proposal.payload);
-    if (!endpoint) {
-      toast.error("شناسهٔ لازم برای اجرای این پیشنهاد در آن موجود نیست.");
-      return;
-    }
-    setApplyingId(message.id);
-    try {
-      const response = await fetch(endpoint, {
-        method: meta.method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(proposal.payload),
-      });
-      const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
-      if (!response.ok) {
-        const detail = Array.isArray(data.messages)
-          ? data.messages.join(" ")
-          : typeof data.error === "string"
-            ? data.error
-            : "";
-        if (message.auditId) {
-          void finishAudit(message.auditId, "failed", { endpoint, method: meta.method, detail });
-        }
-        toast.error(`ثبت انجام نشد. ${detail}`.trim());
-        return;
-      }
-
-      let auditUpdated = true;
-      if (message.auditId) {
-        try {
-          await finishAudit(message.auditId, "applied", { endpoint, method: meta.method, status: response.status });
-        } catch {
-          auditUpdated = false;
-        }
-      }
-      setMessages((current) => current.map((item) => (item.id === message.id ? { ...item, applied: true } : item)));
-      toast.success(
-        auditUpdated
-          ? `${meta.label} انجام شد.`
-          : `${meta.label} انجام شد؛ اما ثبت نتیجه در گزارش ممیزی ممکن نشد.`,
-      );
-      router.refresh();
-      if (mode === "wizard" && meta.wizardStep) {
-        setTimeout(() => router.push("/setup"), 400);
-      }
-    } catch {
-      toast.error("خطای شبکه هنگام ثبت.");
-    } finally {
-      setApplyingId(null);
-    }
-  }
-
-  async function finishAudit(
-    id: string,
-    status: "applied" | "failed" | "dismissed",
-    result?: Record<string, unknown>,
-  ) {
-    const response = await fetch("/api/ai/action-audit", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, status, result }),
-    });
-    if (!response.ok) throw new Error("audit_update_failed");
-  }
-
-  function dismissProposal(message: Msg) {
-    if (message.auditId) {
-      void finishAudit(message.auditId, "dismissed").catch(() => {
-        toast.error("پیشنهاد رد شد، اما ثبت آن در گزارش ممیزی ممکن نشد.");
-      });
-    }
-    setMessages((current) =>
-      current.map((item) => (item.id === message.id ? { ...item, proposal: null } : item)),
-    );
-  }
+  }, [setInput]);
 
   const showSuggestions =
     messages.length === 1 &&
@@ -365,6 +76,8 @@ export function AiAssistant({ mode, currentStep }: Props) {
     !busy &&
     !estimating &&
     !pending;
+
+  const fullPageHref = conversationId ? `/dashboard/ai?conversation=${conversationId}` : "/dashboard/ai";
 
   return (
     <>
@@ -397,9 +110,18 @@ export function AiAssistant({ mode, currentStep }: Props) {
                 </p>
               </div>
             </div>
-            <Button variant="ghost" size="icon-sm" onClick={() => setOpen(false)} aria-label="بستن">
-              <XIcon />
-            </Button>
+            <div className="flex items-center gap-1">
+              {mode === "dashboard" ? (
+                <Button variant="ghost" size="icon-sm" asChild aria-label="بازکردن در صفحهٔ کامل">
+                  <Link href={fullPageHref}>
+                    <ExternalLinkIcon />
+                  </Link>
+                </Button>
+              ) : null}
+              <Button variant="ghost" size="icon-sm" onClick={() => setOpen(false)} aria-label="بستن">
+                <XIcon />
+              </Button>
+            </div>
           </header>
 
           <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-3 py-3">
@@ -417,7 +139,7 @@ export function AiAssistant({ mode, currentStep }: Props) {
                     {message.content || (busy ? <span className="text-muted-foreground">در حال دریافت پاسخ…</span> : null)}
                   </div>
                   {canPropose && message.proposal ? (
-                    <ProposalCard
+                    <AiProposalCard
                       proposal={message.proposal}
                       applied={message.applied}
                       applying={applyingId === message.id}
@@ -469,15 +191,7 @@ export function AiAssistant({ mode, currentStep }: Props) {
                   <Button size="sm" onClick={() => void startStream(pending.text)} disabled={busy}>
                     <SendIcon className="rtl:-scale-x-100" /> شروع پاسخ
                   </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => {
-                      setInput(pending.text);
-                      setPending(null);
-                    }}
-                    disabled={busy}
-                  >
+                  <Button size="sm" variant="ghost" onClick={cancelPending} disabled={busy}>
                     ویرایش
                   </Button>
                 </div>
@@ -514,7 +228,7 @@ export function AiAssistant({ mode, currentStep }: Props) {
             ) : (
               <p className="mt-1 px-1 text-[10px] text-muted-foreground">
                 هزینهٔ تخمینی پیش از ارسال نشان داده می‌شود؛ تغییرها فقط با تأیید شما ثبت می‌شوند.{" "}
-                <Link href="/dashboard/ai" className="underline underline-offset-2 hover:text-foreground">
+                <Link href="/dashboard/ai?tab=settings" className="underline underline-offset-2 hover:text-foreground">
                   اعتبار، اشتراک و گزارش ممیزی
                 </Link>
               </p>
@@ -523,51 +237,5 @@ export function AiAssistant({ mode, currentStep }: Props) {
         </div>
       )}
     </>
-  );
-}
-
-function ProposalCard({
-  proposal,
-  applied,
-  applying,
-  onApply,
-  onDismiss,
-}: {
-  proposal: ProposedAction;
-  applied?: boolean;
-  applying: boolean;
-  onApply: () => void;
-  onDismiss: () => void;
-}) {
-  const meta = ACTION_CATALOG[proposal.type];
-  return (
-    <div className="rounded-xl border border-primary/30 bg-primary/5 p-3 text-sm">
-      <div className="mb-1 flex items-center gap-1.5 font-semibold text-primary">
-        <SparklesIcon className="size-4" />
-        {proposal.title || meta?.label}
-      </div>
-      {proposal.summary ? <p className="mb-2 text-foreground/90">{proposal.summary}</p> : null}
-      <pre
-        dir="ltr"
-        className="mb-2 max-h-40 overflow-auto rounded-lg bg-background/70 p-2 text-left text-[11px] text-muted-foreground"
-      >
-        {JSON.stringify(proposal.payload, null, 2)}
-      </pre>
-      {applied ? (
-        <p className="flex items-center gap-1 font-medium text-emerald-600 dark:text-emerald-400">
-          <CheckIcon className="size-4" /> ثبت شد
-        </p>
-      ) : (
-        <div className="flex gap-2">
-          <Button size="sm" onClick={onApply} disabled={applying}>
-            {applying ? <Loader2Icon className="animate-spin" /> : <CheckIcon />}
-            تأیید و اجرا
-          </Button>
-          <Button size="sm" variant="ghost" onClick={onDismiss} disabled={applying}>
-            رد
-          </Button>
-        </div>
-      )}
-    </div>
   );
 }
