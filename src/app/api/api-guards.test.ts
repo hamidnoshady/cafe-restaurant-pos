@@ -91,6 +91,11 @@ const SELF_GUARDING_ROUTES: Record<string, string> = {
   // Phase 15 — the super-admin console bootstraps from this: it returns the
   // caller's own platform session (or null) and nothing else.
   "platform/auth/me": "returns the caller's own platform session (or null) — nothing else",
+  // AI Hub Wave 1 (issue #141) — a conversation is visible only to the member
+  // who started it (actor_user_id), not by role, so ai-conversations.ts's own
+  // ownership filter is the authorization, the same shape as auth/businesses.
+  "ai/conversations": "lists/creates only the caller's own conversations — ownership is the authorization",
+  "ai/conversations/[id]": "reads/deletes only the caller's own conversation — ownership is the authorization",
 };
 
 /** True for the super-admin console's own routes, which use the platform guards. */
