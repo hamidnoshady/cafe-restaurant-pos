@@ -10,6 +10,7 @@ import {
   type AiTurnReservation,
 } from "@/lib/ai-billing-service";
 import { createAiActionAudit } from "@/lib/ai-action-audit";
+import { appendMessage, getOrCreateConversation } from "@/lib/ai-conversations";
 import { AiError, runAgentTurn, type InboundMessage } from "@/lib/ai-service";
 import { requireManager, resolveActiveLocation } from "@/lib/setup-state";
 import { requireFloorAssistant, withTenantScope } from "@/lib/auth";
@@ -41,7 +42,7 @@ function sse(event: string, data: unknown): Uint8Array {
  * SSE while the same server-side tool/confirmation boundaries stay intact.
  */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  let body: { mode?: unknown; messages?: unknown; currentStep?: unknown };
+  let body: { mode?: unknown; messages?: unknown; currentStep?: unknown; conversationId?: unknown };
   try {
     body = await request.json();
   } catch {
@@ -108,6 +109,28 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   };
   const latestPrompt = [...messages].reverse().find((message) => message.role === "user")?.content ?? "";
 
+  // Best-effort transcript persistence (Wave 1, issue #141) — sits beside the
+  // metered turn below, not inside it: it never touches billing and a
+  // failure here must not fail an already-reserved turn.
+  const requestedConversationId =
+    typeof body.conversationId === "string" && body.conversationId.trim()
+      ? body.conversationId.trim()
+      : null;
+  let conversationId: string | null = null;
+  try {
+    const conversation = await getOrCreateConversation({
+      businessId: session.businessId,
+      actorUserId: session.sub,
+      mode,
+      conversationId: requestedConversationId,
+      firstMessageContent: latestPrompt,
+    });
+    conversationId = conversation.id;
+    await appendMessage({ conversationId, role: "user", content: latestPrompt });
+  } catch (err) {
+    console.error("ai conversation persistence failed", err);
+  }
+
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
       let settled = false;
@@ -152,10 +175,21 @@ export const POST = withTenantScope(async (request: NextRequest) => {
                 proposal: reply.proposedAction,
               })
             : null;
+
+          if (conversationId) {
+            await appendMessage({
+              conversationId,
+              role: "assistant",
+              content: reply.content,
+              proposal: reply.proposedAction,
+            }).catch((err) => console.error("ai conversation persistence failed", err));
+          }
+
           emit("done", {
             content: reply.content,
             proposedAction: reply.proposedAction,
             auditId,
+            conversationId,
           });
         } catch (err) {
           if (!settled) {
