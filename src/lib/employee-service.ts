@@ -624,7 +624,21 @@ export async function createSession(
       sessionExpiry(),
     ],
   );
-  return { token, session: toSession(rows[0]) };
+  const session = toSession(rows[0]);
+  // Phase 20 Wave 6 — the first audit_log row a login itself ever produces
+  // (earlier waves only audited revocation). credentialId/deviceId are
+  // carried in the payload rather than resolved to a label here so
+  // audit-service.ts's read side can join employee_credentials/pos_devices
+  // live, the same "read back on demand, don't duplicate" choice
+  // shift-service.ts made for a shift's cash summary.
+  await auditEmployee(getPool(), {
+    businessId,
+    actorId: employeeId,
+    action: "employee.session_created",
+    employeeId,
+    payload: { sessionId: session.id, credentialId: input.credentialId ?? null, deviceId: input.deviceId ?? null },
+  });
+  return { token, session };
 }
 
 export async function listActiveSessions(

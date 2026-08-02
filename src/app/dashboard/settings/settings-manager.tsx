@@ -8,6 +8,7 @@ import { BackupManager } from "../backup/backup-manager";
 import { BranchManagementSettings } from "./branch-management-settings";
 import { TeamManager } from "../team/team-manager";
 import { AccountsSettings } from "./accounts-settings";
+import { AuditLogSettings } from "./audit-log-settings";
 import { BusinessSettings } from "./business-settings";
 import { DeviceSettings } from "./device-settings";
 import { MenuSettings } from "./menu-settings";
@@ -72,6 +73,7 @@ export function SettingsManager({ tabs, features, currentUserId, isOwner }: Sett
       {activeTab === "server-sync" ? <ServerSyncSettings /> : null}
       {activeTab === "devices" ? <DeviceSettings /> : null}
       {activeTab === "shifts" ? <ShiftHistorySettings /> : null}
+      {activeTab === "audit-log" ? <AuditLogSettings /> : null}
       {activeTab === "backup" ? <BackupManager isOwner={isOwner} /> : null}
     </div>
   );
