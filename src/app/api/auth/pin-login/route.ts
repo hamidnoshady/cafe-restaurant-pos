@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
-import { query, withTenant, withoutTenantScope } from "@/lib/db";
+import { query, withTenant } from "@/lib/db";
 import { SESSION_COOKIE, sessionCookieOptions, signSession, type Role } from "@/lib/auth";
 import { toLatinDigits } from "@/lib/digits";
+import { createSession, ensureEmployeeProfile, resolveLoginBusinessId } from "@/lib/employee-service";
 
 interface UserRow extends Record<string, unknown> {
   id: string;
@@ -15,68 +16,30 @@ interface UserRow extends Record<string, unknown> {
 }
 
 /**
- * Resolves which business a PIN is being offered to.
- *
- * Before Phase 12 this route compared the PIN against every staff member in
- * the database, which on a multi-business deployment both leaks across tenants
- * and breaks outright the first time two businesses pick the same four digits.
- * A PIN is now only ever checked within one business, identified by (in order)
- * an explicit business, the branch the device belongs to, or — on a
- * single-business install, which is what every on-premise deployment is — the
- * only business there is.
- */
-async function resolveBusinessId(body: {
-  businessId?: string;
-  businessSlug?: string;
-  locationId?: string;
-}): Promise<{ businessId: string | null; error: string | null }> {
-  return withoutTenantScope("login", async () => {
-    if (body.businessId) {
-      const { rows } = await query<{ id: string }>(
-        `SELECT id FROM businesses WHERE id = $1 AND status = 'active'`,
-        [body.businessId],
-      );
-      return { businessId: rows[0]?.id ?? null, error: rows[0] ? null : "unknown_business" };
-    }
-
-    if (body.businessSlug) {
-      const { rows } = await query<{ id: string }>(
-        `SELECT id FROM businesses WHERE slug = $1 AND status = 'active'`,
-        [body.businessSlug],
-      );
-      return { businessId: rows[0]?.id ?? null, error: rows[0] ? null : "unknown_business" };
-    }
-
-    if (body.locationId) {
-      const { rows } = await query<{ business_id: string }>(
-        `SELECT l.business_id FROM locations l
-           JOIN businesses b ON b.id = l.business_id
-          WHERE l.id = $1 AND b.status = 'active'`,
-        [body.locationId],
-      );
-      return {
-        businessId: rows[0]?.business_id ?? null,
-        error: rows[0] ? null : "unknown_location",
-      };
-    }
-
-    const { rows } = await query<{ id: string }>(
-      `SELECT id FROM businesses WHERE status = 'active' LIMIT 2`,
-    );
-    if (rows.length === 1) return { businessId: rows[0].id, error: null };
-    return { businessId: null, error: rows.length === 0 ? "unknown_business" : "business_required" };
-  });
-}
-
-/**
  * PIN quick-login for Cashier/Waiter/Kitchen.
  *
  * PINs are unique per business (migration 0020 moved that uniqueness down from
  * the whole table), so (business, pin) identifies one member; passing a
  * locationId narrows it further on a multi-branch business.
+ *
+ * Phase 20 Wave 2 — the redesigned login picks an employee by name first
+ * (`pin-login/roster`), so `employeeId` narrows the lookup to that one row
+ * instead of scanning every PIN-role member; omitting it keeps the original
+ * bcrypt-scan behaviour for any caller that still only sends a PIN. Either
+ * way, a successful match also mints a server-side `employee_sessions` row
+ * (Wave 1) *alongside* the existing JWT — the JWT stays the bearer credential
+ * in the cookie, the DB row exists so the session can be listed/revoked and
+ * so a revocation takes effect immediately (see checkEmployeeSession in
+ * auth.ts) rather than waiting for the JWT's own expiry.
  */
 export async function POST(request: NextRequest) {
-  let body: { pin?: string; locationId?: string; businessId?: string; businessSlug?: string };
+  let body: {
+    pin?: string;
+    employeeId?: string;
+    locationId?: string;
+    businessId?: string;
+    businessSlug?: string;
+  };
   try {
     body = await request.json();
   } catch {
@@ -88,7 +51,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "invalid_pin" }, { status: 400 });
   }
 
-  const { businessId, error } = await resolveBusinessId(body);
+  const { businessId, error } = await resolveLoginBusinessId(body);
   if (!businessId) {
     // "Which business?" is a configuration problem, not a credential one, so
     // it gets a 400 the device can act on rather than a blanket 401.
@@ -97,10 +60,13 @@ export async function POST(request: NextRequest) {
 
   return withTenant(businessId, async () => {
     const params: unknown[] = [];
-    let locationFilter = "";
-    if (body.locationId) {
+    let filter = "";
+    if (body.employeeId) {
+      params.push(body.employeeId);
+      filter = "AND u.id = $1";
+    } else if (body.locationId) {
       params.push(body.locationId);
-      locationFilter = "AND u.location_id = $1";
+      filter = "AND u.location_id = $1";
     }
 
     // RLS confines this to `businessId`, which is why there is no business_id
@@ -113,7 +79,7 @@ export async function POST(request: NextRequest) {
         WHERE u.is_active
           AND u.role IN ('cashier', 'waiter', 'kitchen')
           AND u.pin_hash IS NOT NULL
-          ${locationFilter}`,
+          ${filter}`,
       params,
     );
 
@@ -129,6 +95,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "invalid_credentials" }, { status: 401 });
     }
 
+    await ensureEmployeeProfile(user.id, user.business_id);
+    const deviceLabel = request.headers.get("user-agent")?.slice(0, 120) ?? null;
+    const { session: employeeSession } = await createSession(user.id, user.business_id, {
+      locationId: user.location_id,
+      deviceLabel,
+    });
+
     const token = await signSession({
       sub: user.id,
       role: user.role,
@@ -137,6 +110,7 @@ export async function POST(request: NextRequest) {
       locationId: user.location_id,
       fullName: user.full_name,
       platformUserId: null,
+      employeeSessionId: employeeSession.id,
     });
 
     const res = NextResponse.json({

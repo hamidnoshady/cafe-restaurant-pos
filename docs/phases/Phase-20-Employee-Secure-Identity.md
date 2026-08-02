@@ -108,17 +108,92 @@ infrastructure without disturbing the live login path is this wave's whole job.
   and `team-service.ts` untouched; `npm test`, `npm run test:db`, and `npx tsc --noEmit` all pass
   with the existing suite plus `employee.test.ts`.
 
-## Open questions for Wave 2
+## Scope — Wave 2: Login Experience Redesign
 
-1. Does the redesigned login mint an `employee_sessions` row *instead of* the JWT, or *alongside*
-   it (JWT stays the bearer credential in the cookie; the DB row exists purely so it can be
-   listed/revoked, checked on each request the way impersonation grants are)? The "alongside"
-   shape is cheaper to land incrementally and matches the impersonation-grant precedent
-   (`checkImpersonation()` in `src/lib/auth.ts`) most closely.
-2. Should `removeMembership` (team-service.ts) revoke `employee_credentials`/`employee_sessions`
-   as part of its existing deactivation transaction ahead of Wave 2, or is it acceptable to land
-   alongside Wave 2's login wiring since nothing consults these tables for authentication until
-   then? Leaning toward landing it with Wave 2, in the same PR that first makes these tables
-   security-relevant.
+- **Name-then-PIN login.** `GET /api/auth/pin-login/roster` (public, business-scoped the same way
+  `pin-login` itself resolves a business) lists the eligible cashier/waiter/kitchen members —
+  name, role, and `employees.photo_url`, nothing else — for a new picker step in
+  `src/app/login/page.tsx`; picking a name narrows the subsequent `POST /api/auth/pin-login` to
+  that one row (`employeeId` in the body) instead of the previous bcrypt scan over every PIN-role
+  member. A `PinPad` component (`src/components/auth/pin-pad.tsx`) is shared between this flow and
+  the new lock screen (below). "Last used on this device" is a `localStorage` list
+  (`pos:lastEmployees`) that only reorders the picker grid — device-local, never synced, not a
+  security control.
+- **`employee_sessions` actually gets minted.** Resolving Wave 1's open question 1: *alongside*,
+  not *instead of*, the JWT. `pin-login/route.ts` now calls `ensureEmployeeProfile` +
+  `createSession` (`employee-service.ts`) on every successful PIN match and carries the new
+  row's id as `employeeSessionId` on the session payload (`auth-edge.ts`). `checkEmployeeSession`
+  (`auth.ts`), structured exactly like `checkImpersonation`, re-checks that row on every request
+  in `getSession()` and invalidates the session the moment it's revoked or expired — the JWT's own
+  12-hour expiry is no longer the only way a PIN login ends. `logout/route.ts` revokes the row
+  (best-effort) alongside clearing the cookie.
+- **A sixth `withoutTenantScope` reason: `employee-session-auth`.** `checkEmployeeSession` runs
+  before `enterTenantScope` in `getSession()`, the same timing constraint `checkImpersonation`'s
+  `activeGrant` lookup already has — documented in `db.ts`, `tenant-context.ts`, and CLAUDE.md per
+  the tenancy rules.
+- **`removeMembership` revokes `employee_credentials`/`employee_sessions`.** Resolving Wave 1's
+  open question 2: landed with Wave 2, in the same transaction that already strips
+  `pin_hash`/`password_hash`. Before this wave the row was inert (nothing consulted it); now that
+  `employee_sessions` is security-relevant, a removed member's still-active session/credential row
+  would otherwise outlive their access.
+- **Lock screen.** `POST /api/auth/verify-pin` (self-guarding, `src/app/api/api-guards.test.ts`)
+  re-checks the *already-authenticated* caller's own PIN; `src/app/dashboard/lock-screen.tsx`
+  (`LockProvider`/`LockButton`) shows a full-screen `PinPad` overlay for PIN-role members,
+  gated by a per-tab `sessionStorage` flag. This is a client-side convenience — the underlying
+  `pos_session` cookie never stops being valid while locked — not a new session boundary; see
+  "Out of scope" below.
 
-## Status: in progress — Wave 1 (employee identity foundation) submitted for review
+## Out of scope (this wave)
+
+- **PIN verification still reads `users.pin_hash` directly**, not `employee_credentials`.
+  Wave 1's credential table exists and is reachable through `employee-service.ts`, but nothing
+  writes a real employee's PIN into it yet — migrating (or dual-writing) PIN storage into
+  `employee_credentials` is deferred; it wasn't needed to make sessions revocable, which was this
+  wave's actual goal, and folding a credential-storage migration into the same diff would have
+  mixed two different kinds of risk.
+- **The lock screen is not a security boundary.** No new session is minted or ended by locking —
+  it only hides the screen behind a PIN prompt. A hard per-terminal timeout, forced re-auth after
+  N minutes idle, or failed-attempt lockout is Waves 4/7 territory (Device Binding & Security,
+  Admin Security Center) if the product ever needs it.
+- **Biometric/WebAuthn** (Wave 3) and **device binding** (Wave 4) — untouched; the picker/PIN pad
+  UI has room for a biometric prompt to slot in later, but nothing here calls WebAuthn.
+
+## Decisions
+
+- **"Alongside", not "instead of."** Cheaper to land incrementally and keeps `pin-login`'s
+  existing JWT contract (and every downstream `getSession()` caller) unchanged in shape — only
+  `employeeSessionId` is new, and it's optional so old tokens keep verifying.
+- **PIN verification stays on `users.pin_hash`.** See "Out of scope" — switching the verification
+  source is a separate, later change, not required for revocable sessions.
+- **The employee picker is public, like `pin-login` itself already was.** It returns strictly
+  name/role/photo — the same information a physical badge or a locker nameplate would show at a
+  shared POS terminal — never a PIN or anything else from `employees`.
+
+## Where each exit criterion is satisfied (Wave 2 only)
+
+- Login experience redesign (name selection, PIN entry, last-used, employee photo, quick login) —
+  `src/app/login/page.tsx`, `src/components/auth/pin-pad.tsx`,
+  `src/app/api/auth/pin-login/roster/route.ts`.
+- Secure lock screen — `src/app/dashboard/lock-screen.tsx`, `src/app/api/auth/verify-pin/route.ts`.
+- Sessions are now genuinely revocable, not just schema — `src/app/api/auth/pin-login/route.ts`,
+  `src/lib/auth.ts` (`checkEmployeeSession`), `src/app/api/auth/logout/route.ts`.
+- Removed members lose employee credentials/sessions immediately — `src/lib/team-service.ts`
+  (`removeMembership`).
+- No damage to the current POS flow — the password-login path (`auth/login`) is untouched;
+  `pin-login` stays backward compatible for any caller that still only sends a `pin` (no
+  `employeeId`); `npm test` (794 tests), `npm run test:db` (246 tests, including
+  `tenant-isolation.integration.test.ts`), `npx tsc --noEmit`, and `npm run build` all pass; the
+  full picker → PIN → dashboard → lock → unlock flow was exercised in a browser against a seeded
+  database.
+
+## Open questions for Wave 3
+
+1. Biometric/WebAuthn registration needs a real credential to attach to — does it dual-write into
+   `employee_credentials` alongside `users.pin_hash` (finally giving that table a live PIN row
+   too), or only ever store `'webauthn'` rows there while PIN stays on `users` indefinitely?
+2. The employee picker currently has no server-side awareness of "this device" beyond the
+   business/location query params — Wave 4 (Device Binding) will presumably want a registered
+   device identity the picker can use to narrow the roster further, rather than showing every
+   PIN-role member at every terminal.
+
+## Status: in progress — Wave 2 (login experience redesign) submitted for review

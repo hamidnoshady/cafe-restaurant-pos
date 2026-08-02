@@ -33,6 +33,9 @@ function routeKey(file: string): string {
 const PUBLIC_ROUTES: Record<string, string> = {
   "auth/login": "credential exchange — necessarily runs without a session",
   "auth/pin-login": "credential exchange — necessarily runs without a session",
+  "auth/pin-login/roster":
+    "the name-then-PIN picker's first step (Phase 20 Wave 2) — lists a business's PIN-role " +
+    "employees (name/role/photo only, no PIN) before any credential has been presented",
   "auth/logout": "only clears the caller's own session cookie",
   "setup/bootstrap": "first-run only — refuses with 409 as soon as any user exists",
   "setup/signup":
@@ -76,6 +79,9 @@ const SELF_GUARDING_ROUTES: Record<string, string> = {
   "locations/active":
     "returns the caller's own active branch and switchable branches — every member has one, " +
     "regardless of role",
+  "auth/verify-pin":
+    "confirms the caller's own PIN to dismiss the client-side lock screen (Phase 20 Wave 2); " +
+    "no new session is minted and no other employee's PIN is ever checked, so no role list applies",
   // Phase 15 — the super-admin console bootstraps from this: it returns the
   // caller's own platform session (or null) and nothing else.
   "platform/auth/me": "returns the caller's own platform session (or null) — nothing else",

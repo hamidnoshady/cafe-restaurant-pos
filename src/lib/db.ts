@@ -135,7 +135,13 @@ export async function withTenant<T>(
  *   - **identity** — a narrow write to the global identity table
  *     (`platform_users`, which carries no `business_id` to scope by) on
  *     behalf of a membership already verified to belong to the caller's own
- *     business, e.g. team-service.ts's credential reset.
+ *     business, e.g. team-service.ts's credential reset;
+ *   - **employee-session-auth** — re-checking an `employee_sessions` row
+ *     (Phase 20 Wave 2) is still active, from `getSession()`, which runs
+ *     this check before `enterTenantScope` has been called for the request —
+ *     the same timing constraint `checkImpersonation`'s `activeGrant` lookup
+ *     already has, just for a PIN login's session record instead of an
+ *     impersonation grant.
  *
  * Every call is a hole in the isolation boundary, so keep them few, keep them
  * short, and never let one wrap a request body that also handles tenant data.
