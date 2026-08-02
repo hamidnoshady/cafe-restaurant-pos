@@ -12,6 +12,7 @@ export const SETTINGS_TAB_KEYS = [
   "branch-management",
   "server-sync",
   "devices",
+  "shifts",
   "backup",
 ] as const;
 
@@ -95,6 +96,12 @@ export const SETTINGS_TABS: SettingsTab[] = [
     label: "دستگاه‌های ثبت‌شده",
     description: "پایانه‌های متصل و ورود بیومتریک اختصاصی هر دستگاه",
     requiredAnyPermission: [PERMISSIONS.settingsManage],
+  },
+  {
+    key: "shifts",
+    label: "شیفت‌ها",
+    description: "تاریخچهٔ ورود/خروج کارکنان و تطبیق صندوق هر شیفت",
+    requiredAnyPermission: [PERMISSIONS.teamManage],
   },
   {
     key: "backup",

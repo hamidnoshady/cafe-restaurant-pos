@@ -396,16 +396,135 @@ token at all; PIN-logged in with the first device's token and confirmed the resu
 confirmed the session was immediately revoked (`/api/auth/me` returned 401) while the webauthn
 credential stayed active, exactly as designed.
 
-## Open questions for Wave 5
+## Scope — Wave 5: Shift Tracking
+
+- **`employee_shifts`** (`migrations/0045_employee_shifts.sql`) — the real till/clock-in entity
+  Phase 8's `v_shift_reconciliation` never had (see that view's own comment: "a proxy... there's no
+  till/clock-in entity in the schema yet"). An employee opens a shift, optionally counting a
+  starting cash float, and closes it later, optionally counting the drawer — the same self-service
+  shape Wave 2 gave sessions and Wave 3 gave biometric credentials. `location_id`/`device_id` are
+  copied from the `employee_sessions` row open at the moment the shift starts (Wave 1's session,
+  carrying Wave 4's device binding since last wave) rather than re-resolved from a device token —
+  resolving this doc's own Wave 4 open question 2 without introducing any new device-token
+  plumbing into the already-authenticated dashboard routes this wave adds. A partial unique index
+  enforces at most one open shift per employee at a time.
+- **`src/lib/shift.ts`/`shift-service.ts`** — the same pure/DB-touching split every earlier wave
+  used. `shift.ts` owns `shiftStatus` (open ⇔ no `ended_at`, the same "timestamp instead of an
+  enum" shape orders/table_sessions already use) and `reconcileCash` (expected cash = opening float
+  + cash sales; variance = counted − expected), unit-tested in `shift.test.ts`.
+  `shift-service.ts` owns `openShift`/`closeOwnShift`/`closeShiftById`/`listShifts` and
+  `shiftCashSummary` — the last one reads a shift's sales back on demand by joining
+  `orders.closed_by`/`closed_at` against the shift's own `[started_at, ended_at]` window, exactly
+  the join `v_shift_reconciliation` already does per business-day, just narrowed to one shift's
+  actual window instead of a whole calendar day. No new column on `orders`, no change to
+  `order-service.ts` — see Decisions below for why that's deliberate.
+- **Self-service clock-in/out** — `POST /api/shifts/start`, `POST /api/shifts/end`,
+  `GET /api/shifts/active`, guarded the same way the lock screen and biometric-settings panel are
+  (`requireRole("cashier", "waiter", "kitchen")`, always acting on `session.sub`). A new sidebar
+  button (`src/app/dashboard/shift-panel.tsx`'s `ShiftButton`, next to the biometric/lock buttons)
+  shows "شروع شیفت"/"پایان شیفت" and a small modal for the optional float.
+- **Admin review** — `GET /api/shifts` (shift history, most recent first) and
+  `POST /api/shifts/[id]/close` (force-closing a shift an employee left open), gated on
+  `team.manage` — the same permission `PUT /api/team/[id]/credentials` already requires to act on
+  someone else's PIN, since reviewing or force-closing a shift is the same kind of "act on this
+  employee's own security state" action. A new Settings tab, **"شیفت‌ها"** (`shift-history-settings.tsx`,
+  `settings-tabs.ts`), lists every shift and lets an owner/manager close a stuck-open one.
+- **`removeMembership` closes an open shift.** Extending the same "strip everything active"
+  transaction Wave 2 gave `employee_credentials`/`employee_sessions`: a removed member's still-open
+  shift would otherwise stay open forever now that nothing else about their access is still live.
+
+## Out of scope (this wave)
+
+- **No new column on `orders`, no change to `order-service.ts`.** A shift's sales are read back on
+  demand (see `shiftCashSummary` above) rather than stamped onto each order as it's created/closed
+  — the single riskiest, most heavily regression-tested surface in the codebase
+  (`order-concurrency.integration.test.ts`) stays untouched by this wave, exactly the isolation
+  Wave 1 kept for `employee_sessions` and Wave 4 kept for `pos_devices`.
+- **`v_shift_reconciliation` (Phase 8) is untouched.** The Phase 8 doc already flagged that this
+  view "will need a real `shift_id` join if [a real shift entity] ever lands, but the report itself
+  doesn't change shape" — true, but rewriting a report view that's been live since Phase 8 is a
+  separate, independently reviewable change from adding the entity itself, not required to make
+  clock-in/out work today. Deferred rather than folded into this diff.
+- **No hard shift-length limit, forced auto-close, or idle timeout.** A shift stays open until the
+  employee ends it or an admin force-closes it — no cron, no expiry. The same territory Wave 2
+  explicitly left to "Waves 4/7... if the product ever needs it" for the lock screen; nothing so far
+  has needed it for shifts either.
+- **Waiter/kitchen shifts track no cash float by design choice, not by restriction.** Any PIN role
+  may open a shift with `openingFloat` omitted — the API and UI never require one — so a shift is
+  as much "I am on the floor right now" as it is a till count; only a cashier who chooses to count
+  in gets a reconciliation at close time.
+- **The audit log and admin security center** (Waves 6/7) — a shift's `shift.opened`/`shift.closed`
+  audit rows exist (this wave writes them, matching every other identity table's pattern) but
+  nothing surfaces them anywhere but the raw `audit_log` table yet.
+
+## Decisions
+
+- **A shift's location/device come from its opening session, not a re-resolved device token.**
+  Every other narrowing in this phase (Wave 3's `hasWebauthn`, Wave 4's credential/session
+  filtering) is a *public, pre-authentication* route reading `pos:deviceToken` from `localStorage`
+  because no session exists yet to ask instead. Clock-in/out routes are the opposite: always
+  already-authenticated, so the session's own `device_id` (stamped at login by Wave 4) is strictly
+  more trustworthy than a token the browser might present again, and needs zero new plumbing.
+- **Cash sales are joined on demand, not stamped onto orders.** See "Out of scope" above — the
+  alternative (an `orders.shift_id` column, populated by `order-service.ts` at order-open/close
+  time) would give a shift its sales "for free" at the cost of touching the codebase's most
+  carefully concurrency-tested module for a wave whose actual goal is clock-in/out, not order
+  attribution. `shiftCashSummary`'s join is read-only and gets the same answer
+  `v_shift_reconciliation` already trusts for its own per-business-day version of this question.
+- **Force-close is `team.manage`, not `settings.manage`.** Device pairing (Wave 4) is
+  `settings.manage` because a device belongs to the business's hardware, not to any one employee.
+  A shift belongs to the employee who opened it — force-closing one is an action *on that
+  employee*, the same shape `PUT /api/team/[id]/credentials`'s force-reset already has, so it gets
+  the same gate.
+- **A shift's own state is `ended_at IS NULL`, not an enum column.** Matches `orders`/
+  `table_sessions`'s existing `opened_at`/`closed_at` shape rather than introducing a `status`
+  column and a second source of truth for the same fact.
+
+## Where each exit criterion is satisfied (Wave 5 only)
+
+- Shift/clock-in tracking, cash float reconciliation — `migrations/0045_employee_shifts.sql`,
+  `src/lib/shift.ts`, `src/lib/shift-service.ts`.
+- Self-service clock-in/out — `src/app/api/shifts/start/route.ts`, `.../end/route.ts`,
+  `.../active/route.ts`, `src/app/dashboard/shift-panel.tsx`.
+- Admin review and force-close — `src/app/api/shifts/route.ts`, `.../[id]/close/route.ts`,
+  `src/app/dashboard/settings/shift-history-settings.tsx`.
+- Removed members lose their open shift immediately, same as their credentials/sessions —
+  `src/lib/team-service.ts` (`removeMembership`).
+- No damage to the current POS flow — `orders`, `order-service.ts`, `payments`, and every existing
+  login/session/credential/device path are untouched; `npx tsc --noEmit`, `npm test` (829 tests,
+  including new `shift.test.ts` coverage of `shiftStatus`/`isValidCashFloat`/`reconcileCash`), and
+  `npm run test:db` (246 tests — `employee_shifts` picked up automatically by
+  `tenant-isolation.integration.test.ts`'s live-schema RLS scan, same as `pos_devices` in Wave 4, no
+  test file changes needed) all pass.
+
+## Verification
+
+`npx tsc --noEmit`, `npm test`, `npm run test:db`, and `npm run build` all pass (see exit-criteria
+counts above). Exercised end-to-end against a live dev server and a seeded business: a cashier
+clocked in with a ۳۰۰,۰۰۰ toman opening float from the new sidebar button; a cash-paid order closed
+during the shift; the running `/api/shifts/active` cash summary reflected it immediately; clocking
+out with a matching closing count produced zero variance, and a deliberately short/long count
+produced the correct positive/negative variance. Starting a second shift while one was already open
+correctly returned `shift_already_open` (409). As owner: the new "شیفت‌ها" settings tab listed every
+shift with floats and status; force-closing a still-open shift with no float produced
+`reconciliation: null` (no baseline to compare against) exactly as designed; a cashier's `GET
+/api/shifts` request correctly returned `forbidden` (403). Removing a member with a still-open
+shift closed it in the same transaction as their credentials/sessions, confirmed against the raw
+`employee_shifts` row.
+
+## Open questions for Wave 6
 
 1. `employee_sessions.credential_id` now sometimes points at a `'webauthn'` row instead of a
    `'pin'` one (`createSession`'s `credentialId` input, wired through the login route) — Wave 6/7's
-   audit trail and admin security center should surface *which kind* of credential (and, since
-   this wave, which paired device) opened a session, not just that one did.
-2. Shift tracking (Wave 5) will presumably want to know which physical terminal a shift's orders
-   were rung in on — `employee_sessions.device_id` already carries that when the terminal was
-   paired; a session with no `device_id` (an unpaired terminal, still fully supported) has nothing
-   more specific than the free-text `device_label` (user-agent string) it already had before this
-   wave.
+   audit trail and admin security center should surface *which kind* of credential (and which
+   paired device, since Wave 4) opened a session, not just that one did.
+2. This wave's shift history tab shows floats and timestamps but no per-row cash summary (no
+   `shiftCashSummary` call per list row, to avoid an N+1 query on a potentially long history) — the
+   audit/reporting waves may want a cheaper, pre-aggregated way to show every past shift's variance
+   at a glance rather than only at the moment it's closed.
+3. `employee_shifts` has no link back to the individual orders it covers (deliberately — see this
+   wave's "Out of scope"); if a later wave's audit trail ever needs per-order shift attribution
+   rather than a time-window join, that's a new, separately-scoped change to `order-service.ts`,
+   not an extension of this table.
 
-## Status: in progress — Wave 4 (device binding & security) submitted for review
+## Status: in progress — Wave 5 (shift tracking) submitted for review

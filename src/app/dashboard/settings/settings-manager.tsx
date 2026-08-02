@@ -14,6 +14,7 @@ import { MenuSettings } from "./menu-settings";
 import { PricingSettings } from "./pricing-settings";
 import { PrinterSettings } from "./printer-settings";
 import { ServerSyncSettings } from "./server-sync-settings";
+import { ShiftHistorySettings } from "./shift-history-settings";
 import { TaxSettings } from "./tax-settings";
 
 interface SettingsManagerProps {
@@ -70,6 +71,7 @@ export function SettingsManager({ tabs, features, currentUserId, isOwner }: Sett
       {activeTab === "branch-management" ? <BranchManagementSettings features={features} /> : null}
       {activeTab === "server-sync" ? <ServerSyncSettings /> : null}
       {activeTab === "devices" ? <DeviceSettings /> : null}
+      {activeTab === "shifts" ? <ShiftHistorySettings /> : null}
       {activeTab === "backup" ? <BackupManager isOwner={isOwner} /> : null}
     </div>
   );
