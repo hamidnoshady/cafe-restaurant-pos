@@ -38,12 +38,27 @@ const { spawn } = require("node:child_process");
  * It also has to load from real disk rather than from inside app.asar: it
  * locates the bundled Postgres binaries relative to its own import.meta.url
  * (see @embedded-postgres/windows-x64), and those are .exe files Windows must
- * be able to execute directly. Hence the asarUnpack entries in package.json.
+ * be able to execute directly. When packaged, the module is unpacked to
+ * app.asar.unpacked/ (via asarUnpack in package.json), and we import it from
+ * there explicitly rather than letting module resolution find it in the asar.
  */
 let embeddedPostgresModule = null;
 async function loadEmbeddedPostgres() {
   if (!embeddedPostgresModule) {
-    embeddedPostgresModule = await import("embedded-postgres");
+    if (app.isPackaged) {
+      const { pathToFileURL } = require("node:url");
+      const unpackedModulePath = path.join(
+        process.resourcesPath,
+        "app.asar.unpacked",
+        "node_modules",
+        "embedded-postgres",
+        "dist",
+        "index.js",
+      );
+      embeddedPostgresModule = await import(pathToFileURL(unpackedModulePath).href);
+    } else {
+      embeddedPostgresModule = await import("embedded-postgres");
+    }
   }
   return embeddedPostgresModule.default;
 }
