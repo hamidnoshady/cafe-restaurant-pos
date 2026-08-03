@@ -68,6 +68,16 @@ const PUBLIC_ROUTES: Record<string, string> = {
   // without a platform session, exactly like the tenant auth/login.
   "platform/auth/login": "platform credential exchange — necessarily runs without a session",
   "platform/auth/logout": "only clears the caller's own platform session cookie",
+  // Desktop first-run pairing. Both halves are session-less by the same
+  // reasoning as auth/accept-invite: a one-time code is the credential, and
+  // the caller has no session in either realm yet.
+  "platform/pairing/redeem":
+    "one-time pairing code exchange — the caller is a freshly-installed desktop app with no " +
+    "session in either realm, and the code is the credential; lives under /api/platform " +
+    "because the issuing side is the console, not because it needs a platform session",
+  "setup/pair":
+    "first-run only — claims an existing online business on an empty install and refuses with " +
+    "409 as soon as any user exists, exactly like setup/bootstrap",
 };
 
 
