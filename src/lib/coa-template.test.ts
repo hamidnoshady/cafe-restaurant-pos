@@ -5,7 +5,14 @@ import { FNB_COA_TEMPLATE, JEWELRY_COA_TEMPLATE, validateAccounts, WELL_KNOWN_CO
 // template (jewelry's gold-specific accounts alongside F&B's), so "every
 // well-known code" is no longer one flat list every template must contain —
 // each template only needs the subset its own industry's posting paths use.
-const JEWELRY_ONLY_KEYS = new Set(["goldInventory", "goldSalesRevenue", "makingChargeRevenue", "goldCogs"]);
+const JEWELRY_ONLY_KEYS = new Set([
+  "goldInventory",
+  "goldSalesRevenue",
+  "makingChargeRevenue",
+  "goldCogs",
+  "consignmentPayable",
+  "consignmentCommissionRevenue",
+]);
 
 describe("FNB_COA_TEMPLATE", () => {
   it("is itself valid", () => {
@@ -39,6 +46,8 @@ describe("JEWELRY_COA_TEMPLATE", () => {
       WELL_KNOWN_CODES.goldSalesRevenue,
       WELL_KNOWN_CODES.makingChargeRevenue,
       WELL_KNOWN_CODES.goldCogs,
+      WELL_KNOWN_CODES.consignmentPayable,
+      WELL_KNOWN_CODES.consignmentCommissionRevenue,
     ]) {
       expect(codes.has(code)).toBe(true);
     }
