@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { ENABLED_INDUSTRIES, INDUSTRIES, INDUSTRY_LABELS, type Industry } from "@/lib/industries";
 
 /**
  * First-run page. On a completely empty database it collects the business +
@@ -16,6 +17,7 @@ export default function WelcomePage() {
   const [ownerName, setOwnerName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [industry, setIndustry] = useState<Industry>("food_service");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -39,7 +41,7 @@ export default function WelcomePage() {
     const res = await fetch("/api/setup/bootstrap", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ businessName, locationName, ownerName, email, password }),
+      body: JSON.stringify({ businessName, locationName, ownerName, email, password, industry }),
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
@@ -52,6 +54,8 @@ export default function WelcomePage() {
         missing_fields: "همهٔ فیلدهای الزامی را پر کنید.",
         invalid_email: "ایمیل معتبر نیست.",
         weak_password: "گذرواژه باید حداقل ۸ کاراکتر باشد.",
+        invalid_industry: "نوع کسب‌وکار نامعتبر است.",
+        industry_not_available: "این نوع کسب‌وکار هنوز در دسترس نیست.",
       };
       setError(map[data.error] ?? "خطا در راه‌اندازی اولیه. دوباره تلاش کنید.");
       return;
@@ -94,6 +98,35 @@ export default function WelcomePage() {
               required
             />
           </label>
+          <div className="block">
+            <span className="mb-1 block text-sm font-medium text-foreground">نوع کسب‌وکار *</span>
+            <div className="grid grid-cols-2 gap-2">
+              {INDUSTRIES.map((option) => {
+                const enabled = ENABLED_INDUSTRIES.includes(option);
+                const selected = industry === option;
+                return (
+                  <button
+                    key={option}
+                    type="button"
+                    disabled={!enabled}
+                    onClick={() => enabled && setIndustry(option)}
+                    className={`relative rounded-lg border px-3 py-2 text-sm transition-colors ${
+                      selected
+                        ? "border-primary bg-primary/10 font-medium text-primary"
+                        : "border-input text-foreground"
+                    } ${enabled ? "hover:border-primary/60" : "cursor-not-allowed opacity-50"}`}
+                  >
+                    {INDUSTRY_LABELS[option]}
+                    {!enabled ? (
+                      <span className="absolute -top-2 -right-2 rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                        به‌زودی
+                      </span>
+                    ) : null}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
           <label className="block">
             <span className="mb-1 block text-sm font-medium text-foreground">نام شعبهٔ اول *</span>
             <input

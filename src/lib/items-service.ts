@@ -1,0 +1,241 @@
+/**
+ * Phase 21 Wave 1 — generic Item/Variant/Serial primitive (DB-touching).
+ *
+ * A shared "sellable thing" model for the industries this phase adds:
+ * a watch is a `tracking: 'serial'` item (one item_serials row per physical
+ * unit), an accessory is a `kind: 'variant_child'` item under a
+ * `variant_parent`, and a weighted gold piece (Wave 2) will attach its own
+ * weight/purity attributes on top of the same `items` row. F&B's own
+ * `menu_items`/`inventory_items`/recipes are deliberately untouched in this
+ * wave — see Phase-21-Multi-Industry-Accounting-Platform.md's progress notes
+ * for why migrating them onto this primitive is its own follow-up slice.
+ *
+ * DB-touching, so per repo convention (see items.ts for the pure rules this
+ * leans on) it has no direct unit test; covered instead by
+ * integration/generic-items.integration.test.ts.
+ */
+import { getPool, query, type PoolClient } from "./db";
+import {
+  validateItemKindParent,
+  validateSerialNumber,
+  validateSerialStatusTransition,
+  validateVariantAttributes,
+  type ItemKind,
+  type ItemTracking,
+  type SerialStatus,
+  type VariantAttributeInput,
+} from "./items";
+
+export interface Item {
+  id: string;
+  locationId: string;
+  parentItemId: string | null;
+  name: string;
+  sku: string | null;
+  kind: ItemKind;
+  tracking: ItemTracking;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ItemSerial {
+  id: string;
+  itemId: string;
+  serialNumber: string;
+  status: SerialStatus;
+  createdAt: string;
+}
+
+export interface VariantAttribute {
+  id: string;
+  itemId: string;
+  name: string;
+  value: string;
+}
+
+interface ItemRow extends Record<string, unknown> {
+  id: string;
+  location_id: string;
+  parent_item_id: string | null;
+  name: string;
+  sku: string | null;
+  kind: ItemKind;
+  tracking: ItemTracking;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+function mapItem(row: ItemRow): Item {
+  return {
+    id: row.id,
+    locationId: row.location_id,
+    parentItemId: row.parent_item_id,
+    name: row.name,
+    sku: row.sku,
+    kind: row.kind,
+    tracking: row.tracking,
+    isActive: row.is_active,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export interface CreateItemInput {
+  locationId: string;
+  name: string;
+  sku?: string | null;
+  kind?: ItemKind;
+  tracking?: ItemTracking;
+  parentItemId?: string | null;
+}
+
+/** Creates a `simple` (default) item, or a bare `variant_parent` with no attributes of its own — use createVariantChild for its children. */
+export async function createItem(input: CreateItemInput): Promise<Item> {
+  const kind = input.kind ?? "simple";
+  const parentItemId = input.parentItemId ?? null;
+  if (kind === "variant_child") {
+    throw new Error("از createVariantChild برای ایجاد کالای تنوع فرزند استفاده کنید.");
+  }
+  const error = validateItemKindParent(kind, parentItemId);
+  if (error) throw new Error(error);
+
+  const { rows } = await query<ItemRow>(
+    `INSERT INTO items (location_id, parent_item_id, name, sku, kind, tracking)
+     VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+    [input.locationId, parentItemId, input.name, input.sku ?? null, kind, input.tracking ?? "none"],
+  );
+  return mapItem(rows[0]);
+}
+
+/** Creates one variant of a `variant_parent` item, with its distinguishing attributes, atomically. */
+export async function createVariantChild(
+  parentItemId: string,
+  locationId: string,
+  name: string,
+  sku: string | null,
+  attributes: VariantAttributeInput[],
+): Promise<Item> {
+  const errors = validateVariantAttributes(attributes);
+  if (errors.length > 0) throw new Error(errors.join("؛ "));
+
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const { rows } = await client.query<ItemRow>(
+      `INSERT INTO items (location_id, parent_item_id, name, sku, kind)
+       VALUES ($1, $2, $3, $4, 'variant_child') RETURNING *`,
+      [locationId, parentItemId, name, sku],
+    );
+    const item = mapItem(rows[0]);
+    for (const a of attributes) {
+      await client.query(
+        `INSERT INTO item_variant_attributes (item_id, name, value) VALUES ($1, $2, $3)`,
+        [item.id, a.name.trim(), a.value.trim()],
+      );
+    }
+    await client.query("COMMIT");
+    return item;
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export async function listItems(locationId: string): Promise<Item[]> {
+  const { rows } = await query<ItemRow>(
+    `SELECT * FROM items WHERE location_id = $1 ORDER BY name`,
+    [locationId],
+  );
+  return rows.map(mapItem);
+}
+
+export async function listVariantChildren(parentItemId: string): Promise<Item[]> {
+  const { rows } = await query<ItemRow>(
+    `SELECT * FROM items WHERE parent_item_id = $1 ORDER BY name`,
+    [parentItemId],
+  );
+  return rows.map(mapItem);
+}
+
+export async function getItem(id: string): Promise<Item | null> {
+  const { rows } = await query<ItemRow>(`SELECT * FROM items WHERE id = $1`, [id]);
+  return rows[0] ? mapItem(rows[0]) : null;
+}
+
+export async function listVariantAttributes(itemId: string): Promise<VariantAttribute[]> {
+  const { rows } = await query<{ id: string; item_id: string; name: string; value: string }>(
+    `SELECT * FROM item_variant_attributes WHERE item_id = $1 ORDER BY name`,
+    [itemId],
+  );
+  return rows.map((r) => ({ id: r.id, itemId: r.item_id, name: r.name, value: r.value }));
+}
+
+interface SerialRow extends Record<string, unknown> {
+  id: string;
+  item_id: string;
+  serial_number: string;
+  status: SerialStatus;
+  created_at: string;
+}
+
+function mapSerial(row: SerialRow): ItemSerial {
+  return {
+    id: row.id,
+    itemId: row.item_id,
+    serialNumber: row.serial_number,
+    status: row.status,
+    createdAt: row.created_at,
+  };
+}
+
+/** Registers one physical unit of a `tracking: 'serial'` item (Wave 5: watches). */
+export async function addSerial(itemId: string, serialNumber: string): Promise<ItemSerial> {
+  const error = validateSerialNumber(serialNumber);
+  if (error) throw new Error(error);
+
+  const item = await getItem(itemId);
+  if (!item) throw new Error("کالا یافت نشد.");
+  if (item.tracking !== "serial") {
+    throw new Error("فقط کالای با ردیابی «سریال» می‌تواند شماره سریال داشته باشد.");
+  }
+
+  const { rows } = await query<SerialRow>(
+    `INSERT INTO item_serials (item_id, serial_number) VALUES ($1, $2) RETURNING *`,
+    [itemId, serialNumber.trim()],
+  );
+  return mapSerial(rows[0]);
+}
+
+export async function listSerials(itemId: string): Promise<ItemSerial[]> {
+  const { rows } = await query<SerialRow>(
+    `SELECT * FROM item_serials WHERE item_id = $1 ORDER BY serial_number`,
+    [itemId],
+  );
+  return rows.map(mapSerial);
+}
+
+export async function setSerialStatus(
+  id: string,
+  status: SerialStatus,
+  client?: PoolClient,
+): Promise<ItemSerial> {
+  const run = <T extends Record<string, unknown>>(text: string, params: unknown[]) =>
+    client ? client.query<T>(text, params as never) : query<T>(text, params);
+
+  const { rows: existing } = await run<SerialRow>(`SELECT * FROM item_serials WHERE id = $1`, [id]);
+  const current = existing[0];
+  if (!current) throw new Error("سریال یافت نشد.");
+
+  const error = validateSerialStatusTransition(current.status, status);
+  if (error) throw new Error(error);
+
+  const { rows } = await run<SerialRow>(
+    `UPDATE item_serials SET status = $1 WHERE id = $2 RETURNING *`,
+    [status, id],
+  );
+  return mapSerial(rows[0]);
+}
