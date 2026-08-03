@@ -45,6 +45,16 @@ export const WELL_KNOWN_CODES = {
   inventoryCountExpense: "5160",
   inventoryWriteDownExpense: "5170",
   inventoryCountGain: "4910",
+  // Phase 21 Wave 3 — jewelry (JEWELRY_COA_TEMPLATE below), not seeded for
+  // an F&B business. goldSalesRevenue and makingChargeRevenue are kept as
+  // two separate accounts (not folded into one "gold sales" line) because
+  // they need to be reported separately for VAT: metal value is VAT-exempt
+  // in Iranian tax practice, making charge + profit is not (see
+  // src/lib/gold-pricing.ts).
+  goldInventory: "1320",
+  goldSalesRevenue: "4500",
+  makingChargeRevenue: "4600",
+  goldCogs: "5110",
 } as const;
 
 /**
@@ -103,6 +113,49 @@ export const FNB_COA_TEMPLATE: TemplateAccount[] = [
   { code: "5300", name: "اجاره", type: "expense", parentCode: "5000" },
   { code: "5400", name: "آب، برق و گاز", type: "expense", parentCode: "5000" },
   { code: "5500", name: "ملزومات مصرفی", type: "expense", parentCode: "5000" },
+  { code: "5600", name: "بازاریابی و تبلیغات", type: "expense", parentCode: "5000" },
+  { code: "5900", name: "سایر هزینه‌ها", type: "expense", parentCode: "5000" },
+];
+
+/**
+ * Phase 21 Wave 3 — jewelry (طلا و جواهر) chart of accounts. Not yet seeded
+ * by any wizard branch (jewelry isn't a selectable industry in `/welcome`
+ * yet — see `ENABLED_INDUSTRIES`, `src/lib/industries.ts`); this exists so
+ * the gold-sale posting rules (`src/lib/gold-posting-rules.ts`) and their
+ * tests have real accounts to post against ahead of that wizard work.
+ * Mirrors FNB_COA_TEMPLATE's structure, reusing every generic account
+ * (cash, bank, AR, AP, VAT payable/receivable) and swapping the
+ * inventory/revenue/COGS accounts for jewelry-appropriate ones.
+ */
+export const JEWELRY_COA_TEMPLATE: TemplateAccount[] = [
+  { code: "1000", name: "دارایی‌ها", type: "asset" },
+  { code: "1100", name: "صندوق", type: "asset", parentCode: "1000" },
+  { code: "1110", name: "بانک", type: "asset", parentCode: "1000" },
+  { code: "1120", name: "کارت‌خوان (در راه)", type: "asset", parentCode: "1000" },
+  { code: "1200", name: "حساب‌های دریافتنی", type: "asset", parentCode: "1000" },
+  { code: "1220", name: "مالیات بر ارزش افزوده خرید (قابل استرداد)", type: "asset", parentCode: "1000" },
+  { code: "1320", name: "موجودی طلا و جواهر", type: "asset", parentCode: "1000" },
+  { code: "1400", name: "پیش‌پرداخت‌ها", type: "asset", parentCode: "1000" },
+  { code: "1500", name: "اثاثه و تجهیزات", type: "asset", parentCode: "1000" },
+
+  { code: "2000", name: "بدهی‌ها", type: "liability" },
+  { code: "2100", name: "حساب‌های پرداختنی", type: "liability", parentCode: "2000" },
+  { code: "2200", name: "مالیات بر ارزش افزوده پرداختنی", type: "liability", parentCode: "2000" },
+
+  { code: "3000", name: "حقوق صاحبان سرمایه", type: "equity" },
+  { code: "3100", name: "سرمایه", type: "equity", parentCode: "3000" },
+  { code: "3800", name: "سود (زیان) انباشته", type: "equity", parentCode: "3000" },
+  { code: "3900", name: "تراز افتتاحیه", type: "equity", parentCode: "3000" },
+
+  { code: "4000", name: "درآمدها", type: "revenue" },
+  { code: "4500", name: "فروش طلا (ارزش فلز)", type: "revenue", parentCode: "4000" },
+  { code: "4600", name: "درآمد اجرت و سود", type: "revenue", parentCode: "4000" },
+  { code: "4900", name: "سایر درآمدها", type: "revenue", parentCode: "4000" },
+
+  { code: "5000", name: "هزینه‌ها", type: "expense" },
+  { code: "5110", name: "بهای تمام‌شده طلای فروخته‌شده", type: "expense", parentCode: "5000" },
+  { code: "5300", name: "اجاره", type: "expense", parentCode: "5000" },
+  { code: "5400", name: "آب، برق و گاز", type: "expense", parentCode: "5000" },
   { code: "5600", name: "بازاریابی و تبلیغات", type: "expense", parentCode: "5000" },
   { code: "5900", name: "سایر هزینه‌ها", type: "expense", parentCode: "5000" },
 ];

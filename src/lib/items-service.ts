@@ -20,10 +20,12 @@ import {
   validateSerialNumber,
   validateSerialStatusTransition,
   validateVariantAttributes,
+  validateWeightItemStatusTransition,
   type ItemKind,
   type ItemTracking,
   type SerialStatus,
   type VariantAttributeInput,
+  type WeightItemStatus,
 } from "./items";
 import { validateWeightAttributes, type Purity } from "./gold";
 
@@ -246,6 +248,8 @@ export interface ItemWeightAttributes {
   purity: Purity;
   grossWeight: string;
   netWeight: string;
+  unitCostPerGram: string | null;
+  status: WeightItemStatus;
 }
 
 interface WeightAttributesRow extends Record<string, unknown> {
@@ -253,6 +257,8 @@ interface WeightAttributesRow extends Record<string, unknown> {
   purity: Purity;
   gross_weight: string;
   net_weight: string;
+  unit_cost_per_gram: string | null;
+  status: WeightItemStatus;
 }
 
 function mapWeightAttributes(row: WeightAttributesRow): ItemWeightAttributes {
@@ -261,13 +267,15 @@ function mapWeightAttributes(row: WeightAttributesRow): ItemWeightAttributes {
     purity: row.purity,
     grossWeight: row.gross_weight,
     netWeight: row.net_weight,
+    unitCostPerGram: row.unit_cost_per_gram,
+    status: row.status,
   };
 }
 
-/** Sets (creates or replaces) the weight/purity attributes of a `tracking: 'weight'` item — Wave 2's gold/jewelry pieces. */
+/** Sets (creates or replaces) the weight/purity/cost attributes of a `tracking: 'weight'` item — Wave 2/3's gold/jewelry pieces. Leaves `status` alone on an update (use setWeightItemStatus for that) and defaults a new row to `in_stock`. */
 export async function setWeightAttributes(
   itemId: string,
-  input: { purity: string; grossWeight: string; netWeight: string },
+  input: { purity: string; grossWeight: string; netWeight: string; unitCostPerGram?: string | null },
 ): Promise<ItemWeightAttributes> {
   const errors = validateWeightAttributes(input);
   if (errors.length > 0) throw new Error(errors.join("؛ "));
@@ -279,13 +287,14 @@ export async function setWeightAttributes(
   }
 
   const { rows } = await query<WeightAttributesRow>(
-    `INSERT INTO item_weight_attributes (item_id, purity, gross_weight, net_weight)
-     VALUES ($1, $2, $3, $4)
+    `INSERT INTO item_weight_attributes (item_id, purity, gross_weight, net_weight, unit_cost_per_gram)
+     VALUES ($1, $2, $3, $4, $5)
      ON CONFLICT (item_id) DO UPDATE
        SET purity = EXCLUDED.purity, gross_weight = EXCLUDED.gross_weight,
-           net_weight = EXCLUDED.net_weight, updated_at = now()
+           net_weight = EXCLUDED.net_weight, unit_cost_per_gram = EXCLUDED.unit_cost_per_gram,
+           updated_at = now()
      RETURNING *`,
-    [itemId, input.purity, input.grossWeight, input.netWeight],
+    [itemId, input.purity, input.grossWeight, input.netWeight, input.unitCostPerGram ?? null],
   );
   return mapWeightAttributes(rows[0]);
 }
@@ -296,4 +305,29 @@ export async function getWeightAttributes(itemId: string): Promise<ItemWeightAtt
     [itemId],
   );
   return rows[0] ? mapWeightAttributes(rows[0]) : null;
+}
+
+export async function setWeightItemStatus(
+  itemId: string,
+  status: WeightItemStatus,
+  client?: PoolClient,
+): Promise<ItemWeightAttributes> {
+  const run = <T extends Record<string, unknown>>(text: string, params: unknown[]) =>
+    client ? client.query<T>(text, params as never) : query<T>(text, params);
+
+  const { rows: existing } = await run<WeightAttributesRow>(
+    `SELECT * FROM item_weight_attributes WHERE item_id = $1`,
+    [itemId],
+  );
+  const current = existing[0];
+  if (!current) throw new Error("ویژگی وزن/عیار برای این کالا ثبت نشده است.");
+
+  const error = validateWeightItemStatusTransition(current.status, status);
+  if (error) throw new Error(error);
+
+  const { rows } = await run<WeightAttributesRow>(
+    `UPDATE item_weight_attributes SET status = $1, updated_at = now() WHERE item_id = $2 RETURNING *`,
+    [status, itemId],
+  );
+  return mapWeightAttributes(rows[0]);
 }

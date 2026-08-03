@@ -22,6 +22,8 @@ export interface WeightAttributesInput {
   purity: string;
   grossWeight: string;
   netWeight: string;
+  /** What the business paid per gram for this specific piece — omit until the cost basis is known (e.g. mid-intake); the sale path refuses to sell an item with none set. */
+  unitCostPerGram?: string | null;
 }
 
 /** Mirrors item_weight_attributes' own CHECK constraints, so a bad request is rejected before it ever reaches the database. */
@@ -54,6 +56,16 @@ export function validateWeightAttributes(input: WeightAttributesInput): string[]
 
   if (gross && net && net.gt(gross)) {
     errors.push("وزن خالص نمی‌تواند از وزن ناخالص بیشتر باشد.");
+  }
+
+  if (input.unitCostPerGram != null) {
+    try {
+      if (new Decimal(input.unitCostPerGram).lte(0)) {
+        errors.push("بهای تمام‌شده هر گرم باید بزرگ‌تر از صفر باشد.");
+      }
+    } catch {
+      errors.push("بهای تمام‌شده هر گرم نامعتبر است.");
+    }
   }
 
   return errors;

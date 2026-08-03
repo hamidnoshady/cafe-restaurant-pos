@@ -4,6 +4,7 @@ import {
   validateSerialNumber,
   validateSerialStatusTransition,
   validateVariantAttributes,
+  validateWeightItemStatusTransition,
 } from "./items";
 
 describe("validateItemKindParent", () => {
@@ -73,5 +74,18 @@ describe("validateSerialStatusTransition", () => {
     expect(validateSerialStatusTransition("in_stock", "reserved")).toBeNull();
     expect(validateSerialStatusTransition("reserved", "sold")).toBeNull();
     expect(validateSerialStatusTransition("in_stock", "in_repair")).toBeNull();
+  });
+});
+
+describe("validateWeightItemStatusTransition", () => {
+  it("refuses to move a sold piece to any other status", () => {
+    expect(validateWeightItemStatusTransition("sold", "in_stock")).not.toBeNull();
+    expect(validateWeightItemStatusTransition("sold", "reserved")).not.toBeNull();
+  });
+
+  it("allows sold -> sold (no-op) and every other transition", () => {
+    expect(validateWeightItemStatusTransition("sold", "sold")).toBeNull();
+    expect(validateWeightItemStatusTransition("in_stock", "reserved")).toBeNull();
+    expect(validateWeightItemStatusTransition("reserved", "sold")).toBeNull();
   });
 });
