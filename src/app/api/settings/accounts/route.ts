@@ -2,7 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { requirePermission, withTenantScope } from "@/lib/auth";
 import { getPool, query } from "@/lib/db";
 import { PERMISSIONS } from "@/lib/permissions";
-import { FNB_COA_TEMPLATE, validateAccounts, type TemplateAccount } from "@/lib/coa-template";
+import {
+  FNB_COA_TEMPLATE,
+  nextAccountLevel,
+  validateAccounts,
+  type AccountLevel,
+  type TemplateAccount,
+} from "@/lib/coa-template";
 
 /** Chart of accounts management after initial setup. */
 export const GET = withTenantScope(async () => {
@@ -33,6 +39,7 @@ export const PUT = withTenantScope(async (request: NextRequest) => {
     name: String(account.name ?? "").trim(),
     type: account.type,
     parentCode: account.parentCode ? String(account.parentCode).trim() : undefined,
+    isContra: Boolean(account.isContra),
   }));
   const messages = validateAccounts(accounts);
   if (messages.length > 0) {
@@ -55,6 +62,7 @@ export const PUT = withTenantScope(async (request: NextRequest) => {
     await client.query("DELETE FROM accounts WHERE business_id = $1", [session.businessId]);
 
     const idByCode = new Map<string, string>();
+    const levelByCode = new Map<string, AccountLevel>();
     const pending = [...accounts];
     while (pending.length > 0) {
       const ready = pending.filter((account) => !account.parentCode || idByCode.has(account.parentCode));
@@ -63,12 +71,30 @@ export const PUT = withTenantScope(async (request: NextRequest) => {
         return NextResponse.json({ error: "invalid_accounts", messages: ["ساختار والد/فرزند حساب‌ها حلقه دارد."] }, { status: 400 });
       }
       for (const account of ready) {
+        const parentLevel = account.parentCode ? (levelByCode.get(account.parentCode) ?? null) : null;
+        const level = nextAccountLevel(parentLevel);
+        if (!level) {
+          await client.query("ROLLBACK");
+          return NextResponse.json(
+            { error: "invalid_accounts", messages: ["ساختار حساب‌ها از سطح «تفصیلی» عمیق‌تر است."] },
+            { status: 400 },
+          );
+        }
         const result = await client.query(
-          `INSERT INTO accounts (business_id, parent_id, code, name, type)
-           VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-          [session.businessId, account.parentCode ? idByCode.get(account.parentCode) : null, account.code, account.name, account.type],
+          `INSERT INTO accounts (business_id, parent_id, code, name, type, level, is_contra)
+           VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+          [
+            session.businessId,
+            account.parentCode ? idByCode.get(account.parentCode) : null,
+            account.code,
+            account.name,
+            account.type,
+            level,
+            account.isContra,
+          ],
         );
         idByCode.set(account.code, result.rows[0].id);
+        levelByCode.set(account.code, level);
         pending.splice(pending.indexOf(account), 1);
       }
     }

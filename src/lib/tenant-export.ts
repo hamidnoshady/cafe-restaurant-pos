@@ -41,6 +41,20 @@ export async function exportTenantData(businessId: string): Promise<TenantExport
   const selfRefs = selfReferencingColumns(edges);
 
   return withTenant(businessId, async () => {
+    // A generated column (e.g. accounts.normal_balance) can't be targeted by
+    // an explicit INSERT — Postgres computes it itself from the row's other
+    // columns — so it's excluded here up front rather than special-cased per
+    // table; any future generated column is handled the same way for free.
+    const { rows: generatedRows } = await query<{ table_name: string; column_name: string }>(
+      `SELECT table_name, column_name FROM information_schema.columns
+        WHERE table_schema = 'public' AND is_generated = 'ALWAYS'`,
+    );
+    const generatedByTable = new Map<string, Set<string>>();
+    for (const r of generatedRows) {
+      if (!generatedByTable.has(r.table_name)) generatedByTable.set(r.table_name, new Set());
+      generatedByTable.get(r.table_name)!.add(r.column_name);
+    }
+
     const out: TenantExportTable[] = [];
     for (const name of order) {
       const safeName = assertSafeIdentifier(name);
@@ -48,7 +62,9 @@ export async function exportTenantData(businessId: string): Promise<TenantExport
       if (rows.length === 0) continue;
       const parentColumn = selfRefs.get(name);
       const orderedRows = parentColumn ? sortRowsByParent(rows, "id", parentColumn) : rows;
-      out.push({ name, columns: fields.map((f) => f.name), rows: orderedRows });
+      const generated = generatedByTable.get(name);
+      const columns = fields.map((f) => f.name).filter((c) => !generated?.has(c));
+      out.push({ name, columns, rows: orderedRows });
     }
     return out;
   });

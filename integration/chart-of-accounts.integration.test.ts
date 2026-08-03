@@ -144,6 +144,126 @@ describe("createAccount", () => {
   });
 });
 
+describe("account levels (گروه/کل/معین/تفصیلی)", () => {
+  it("assigns group to a root account and cascades kol -> moein -> tafsili down a chain", async () => {
+    const { id: groupId } = await accountsService.createAccount({
+      businessId: biz.id,
+      code: "6000",
+      name: "Root",
+      type: "expense",
+    });
+    const { id: kolId } = await accountsService.createAccount({
+      businessId: biz.id,
+      code: "6100",
+      name: "Kol",
+      type: "expense",
+      parentId: groupId,
+    });
+    const { id: moeinId } = await accountsService.createAccount({
+      businessId: biz.id,
+      code: "6110",
+      name: "Moein",
+      type: "expense",
+      parentId: kolId,
+    });
+    const { id: tafsiliId } = await accountsService.createAccount({
+      businessId: biz.id,
+      code: "6111",
+      name: "Tafsili",
+      type: "expense",
+      parentId: moeinId,
+    });
+
+    const list = await accountsService.listAccounts(biz.id);
+    expect(list.find((a) => a.id === groupId)!.level).toBe("group");
+    expect(list.find((a) => a.id === kolId)!.level).toBe("kol");
+    expect(list.find((a) => a.id === moeinId)!.level).toBe("moein");
+    expect(list.find((a) => a.id === tafsiliId)!.level).toBe("tafsili");
+  });
+
+  it("refuses to add a child under a تفصیلی account", async () => {
+    const { id: groupId } = await accountsService.createAccount({ businessId: biz.id, code: "6200", name: "G", type: "expense" });
+    const { id: kolId } = await accountsService.createAccount({ businessId: biz.id, code: "6210", name: "K", type: "expense", parentId: groupId });
+    const { id: moeinId } = await accountsService.createAccount({ businessId: biz.id, code: "6211", name: "M", type: "expense", parentId: kolId });
+    const { id: tafsiliId } = await accountsService.createAccount({ businessId: biz.id, code: "6212", name: "T", type: "expense", parentId: moeinId });
+
+    await expect(
+      accountsService.createAccount({ businessId: biz.id, code: "6213", name: "TooDeep", type: "expense", parentId: tafsiliId }),
+    ).rejects.toThrow("parent_too_deep");
+  });
+
+  it("reparenting cascades the new level down to every descendant", async () => {
+    const { id: groupA } = await accountsService.createAccount({ businessId: biz.id, code: "6300", name: "A", type: "expense" });
+    const { id: groupB } = await accountsService.createAccount({ businessId: biz.id, code: "6400", name: "B", type: "expense" });
+    const { id: kol } = await accountsService.createAccount({ businessId: biz.id, code: "6310", name: "Kol", type: "expense", parentId: groupA });
+    const { id: moein } = await accountsService.createAccount({ businessId: biz.id, code: "6311", name: "Moein", type: "expense", parentId: kol });
+
+    // Move `kol` (and its descendant `moein`) under groupB's own kol level
+    // by first nesting groupB one level deeper, then reparenting `kol` there —
+    // pushing `kol` from kol-level to moein-level, and `moein` to tafsili-level.
+    const { id: kolB } = await accountsService.createAccount({ businessId: biz.id, code: "6410", name: "KolB", type: "expense", parentId: groupB });
+    await accountsService.reparentAccount(biz.id, kol, kolB);
+
+    const list = await accountsService.listAccounts(biz.id);
+    expect(list.find((a) => a.id === kol)!.level).toBe("moein");
+    expect(list.find((a) => a.id === moein)!.level).toBe("tafsili");
+  });
+
+  it("refuses a reparent that would push a descendant past تفصیلی", async () => {
+    const { id: groupA } = await accountsService.createAccount({ businessId: biz.id, code: "6500", name: "A", type: "expense" });
+    const { id: kol } = await accountsService.createAccount({ businessId: biz.id, code: "6510", name: "Kol", type: "expense", parentId: groupA });
+    const { id: moein } = await accountsService.createAccount({ businessId: biz.id, code: "6511", name: "Moein", type: "expense", parentId: kol });
+    await accountsService.createAccount({ businessId: biz.id, code: "6512", name: "Tafsili", type: "expense", parentId: moein });
+
+    const { id: groupB } = await accountsService.createAccount({ businessId: biz.id, code: "6600", name: "B", type: "expense" });
+    const { id: kolB } = await accountsService.createAccount({ businessId: biz.id, code: "6610", name: "KolB", type: "expense", parentId: groupB });
+    const { id: moeinB } = await accountsService.createAccount({ businessId: biz.id, code: "6611", name: "MoeinB", type: "expense", parentId: kolB });
+
+    // `kol`'s subtree is 3 levels deep (kol -> moein -> tafsili); reparenting
+    // it under moeinB (already تفصیلی-next) would push its tafsili-level
+    // grandchild past the deepest tier.
+    await expect(accountsService.reparentAccount(biz.id, kol, moeinB)).rejects.toThrow("hierarchy_too_deep");
+  });
+
+  it("clearing the parent resets an account (and its descendants) back to group/kol", async () => {
+    const { id: groupA } = await accountsService.createAccount({ businessId: biz.id, code: "6700", name: "A", type: "expense" });
+    const { id: kol } = await accountsService.createAccount({ businessId: biz.id, code: "6710", name: "Kol", type: "expense", parentId: groupA });
+    const { id: moein } = await accountsService.createAccount({ businessId: biz.id, code: "6711", name: "Moein", type: "expense", parentId: kol });
+
+    await accountsService.reparentAccount(biz.id, kol, null);
+
+    const list = await accountsService.listAccounts(biz.id);
+    expect(list.find((a) => a.id === kol)!.level).toBe("group");
+    expect(list.find((a) => a.id === moein)!.level).toBe("kol");
+  });
+});
+
+describe("account nature (normal balance & contra)", () => {
+  it("stores debit-normal for asset/expense and credit-normal for liability/equity/revenue", async () => {
+    const asset = await accountsService.createAccount({ businessId: biz.id, code: "6800", name: "Asset", type: "asset" });
+    const liability = await accountsService.createAccount({ businessId: biz.id, code: "6801", name: "Liability", type: "liability" });
+    const equity = await accountsService.createAccount({ businessId: biz.id, code: "6802", name: "Equity", type: "equity" });
+    const revenue = await accountsService.createAccount({ businessId: biz.id, code: "6803", name: "Revenue", type: "revenue" });
+    const expense = await accountsService.createAccount({ businessId: biz.id, code: "6804", name: "Expense", type: "expense" });
+
+    const list = await accountsService.listAccounts(biz.id);
+    expect(list.find((a) => a.id === asset.id)!.normalBalance).toBe("debit");
+    expect(list.find((a) => a.id === liability.id)!.normalBalance).toBe("credit");
+    expect(list.find((a) => a.id === equity.id)!.normalBalance).toBe("credit");
+    expect(list.find((a) => a.id === revenue.id)!.normalBalance).toBe("credit");
+    expect(list.find((a) => a.id === expense.id)!.normalBalance).toBe("debit");
+  });
+
+  it("persists an explicit isContra flag, defaulting to false", async () => {
+    const contra = await accountsService.createAccount({ businessId: biz.id, code: "6900", name: "Returns", type: "revenue", isContra: true });
+    const normal = await accountsService.createAccount({ businessId: biz.id, code: "6901", name: "Sales", type: "revenue" });
+
+    const list = await accountsService.listAccounts(biz.id);
+    expect(list.find((a) => a.id === contra.id)!.isContra).toBe(true);
+    expect(list.find((a) => a.id === normal.id)!.isContra).toBe(false);
+  });
+});
+
 describe("renameAccount", () => {
   it("renames without touching code or type", async () => {
     await accountsService.renameAccount(biz.id, acct.expense, "Rent expense (renamed)");

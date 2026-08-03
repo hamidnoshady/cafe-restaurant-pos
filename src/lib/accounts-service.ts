@@ -14,7 +14,15 @@
  * picker already did).
  */
 import { query, getPool } from "./db";
-import { ACCOUNT_TYPES, WELL_KNOWN_CODES, type AccountType } from "./coa-template";
+import {
+  ACCOUNT_TYPES,
+  WELL_KNOWN_CODES,
+  nextAccountLevel,
+  type AccountLevel,
+  type AccountType,
+  type NormalBalance,
+} from "./coa-template";
+import type { PoolClient } from "pg";
 
 export class AccountsError extends Error {
   status: number;
@@ -36,6 +44,9 @@ export interface AccountRow {
   isActive: boolean;
   hasPostings: boolean;
   hasChildren: boolean;
+  level: AccountLevel;
+  normalBalance: NormalBalance;
+  isContra: boolean;
 }
 
 export async function listAccounts(businessId: string): Promise<AccountRow[]> {
@@ -49,10 +60,14 @@ export async function listAccounts(businessId: string): Promise<AccountRow[]> {
     is_active: boolean;
     has_postings: boolean;
     has_children: boolean;
+    level: AccountLevel;
+    normal_balance: NormalBalance;
+    is_contra: boolean;
   }>(
     `SELECT a.id, a.code, a.name, a.type, a.parent_id, p.code AS parent_code, a.is_active,
             EXISTS (SELECT 1 FROM journal_lines jl WHERE jl.account_id = a.id) AS has_postings,
-            EXISTS (SELECT 1 FROM accounts c WHERE c.parent_id = a.id) AS has_children
+            EXISTS (SELECT 1 FROM accounts c WHERE c.parent_id = a.id) AS has_children,
+            a.level, a.normal_balance, a.is_contra
        FROM accounts a LEFT JOIN accounts p ON p.id = a.parent_id
       WHERE a.business_id = $1
       ORDER BY a.code`,
@@ -68,15 +83,50 @@ export async function listAccounts(businessId: string): Promise<AccountRow[]> {
     isActive: r.is_active,
     hasPostings: r.has_postings,
     hasChildren: r.has_children,
+    level: r.level,
+    normalBalance: r.normal_balance,
+    isContra: r.is_contra,
   }));
 }
 
 async function findAccount(businessId: string, id: string) {
-  const { rows } = await query<{ id: string; code: string; parent_id: string | null }>(
-    `SELECT id, code, parent_id FROM accounts WHERE business_id = $1 AND id = $2`,
+  const { rows } = await query<{ id: string; code: string; parent_id: string | null; level: AccountLevel }>(
+    `SELECT id, code, parent_id, level FROM accounts WHERE business_id = $1 AND id = $2`,
     [businessId, id],
   );
   return rows[0] ?? null;
+}
+
+/**
+ * Walks a subtree top-down, recomputing each descendant's `level` from its
+ * (already-updated) parent's — the cascade a reparent needs whenever the
+ * moved account's own level changes. Throws `hierarchy_too_deep` if any
+ * descendant would need to sit below تفصیلی, the deepest standard tier.
+ */
+async function cascadeDescendantLevels(
+  client: PoolClient,
+  businessId: string,
+  rootId: string,
+  rootLevel: AccountLevel,
+): Promise<void> {
+  let frontier: { id: string; level: AccountLevel }[] = [{ id: rootId, level: rootLevel }];
+  while (frontier.length > 0) {
+    const nextFrontier: { id: string; level: AccountLevel }[] = [];
+    for (const node of frontier) {
+      const { rows: children } = await client.query<{ id: string }>(
+        `SELECT id FROM accounts WHERE business_id = $1 AND parent_id = $2`,
+        [businessId, node.id],
+      );
+      if (children.length === 0) continue;
+      const childLevel = nextAccountLevel(node.level);
+      if (!childLevel) throw new AccountsError("hierarchy_too_deep", 409);
+      for (const c of children) {
+        await client.query(`UPDATE accounts SET level = $1 WHERE id = $2`, [childLevel, c.id]);
+        nextFrontier.push({ id: c.id, level: childLevel });
+      }
+    }
+    frontier = nextFrontier;
+  }
 }
 
 /** Walks the parent chain of `candidateParentId`; throws if it ever reaches `accountId`. */
@@ -98,6 +148,7 @@ export async function createAccount(params: {
   name: string;
   type: string;
   parentId?: string | null;
+  isContra?: boolean;
 }): Promise<{ id: string }> {
   const code = params.code.trim();
   const name = params.name.trim();
@@ -105,9 +156,13 @@ export async function createAccount(params: {
   if (!name) throw new AccountsError("name_required");
   if (!ACCOUNT_TYPES.includes(params.type as AccountType)) throw new AccountsError("invalid_type");
 
+  let level: AccountLevel = "group";
   if (params.parentId) {
     const parent = await findAccount(params.businessId, params.parentId);
     if (!parent) throw new AccountsError("parent_not_found");
+    const computed = nextAccountLevel(parent.level);
+    if (!computed) throw new AccountsError("parent_too_deep", 409);
+    level = computed;
   }
 
   const { rows: existing } = await query(`SELECT 1 FROM accounts WHERE business_id = $1 AND code = $2`, [
@@ -117,8 +172,9 @@ export async function createAccount(params: {
   if (existing.length > 0) throw new AccountsError("code_in_use", 409);
 
   const { rows } = await query<{ id: string }>(
-    `INSERT INTO accounts (business_id, parent_id, code, name, type) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-    [params.businessId, params.parentId ?? null, code, name, params.type],
+    `INSERT INTO accounts (business_id, parent_id, code, name, type, level, is_contra)
+     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+    [params.businessId, params.parentId ?? null, code, name, params.type, level, params.isContra ?? false],
   );
   return { id: rows[0].id };
 }
@@ -138,14 +194,36 @@ export async function reparentAccount(businessId: string, id: string, parentId: 
   const account = await findAccount(businessId, id);
   if (!account) throw new AccountsError("account_not_found", 404);
 
+  let newLevel: AccountLevel;
   if (parentId) {
     if (parentId === id) throw new AccountsError("parent_cycle");
     const parent = await findAccount(businessId, parentId);
     if (!parent) throw new AccountsError("parent_not_found");
     await assertNoCycle(businessId, id, parentId);
+    const computed = nextAccountLevel(parent.level);
+    if (!computed) throw new AccountsError("parent_too_deep", 409);
+    newLevel = computed;
+  } else {
+    newLevel = "group";
   }
 
-  await query(`UPDATE accounts SET parent_id = $1 WHERE business_id = $2 AND id = $3`, [parentId, businessId, id]);
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(`UPDATE accounts SET parent_id = $1, level = $2 WHERE business_id = $3 AND id = $4`, [
+      parentId,
+      newLevel,
+      businessId,
+      id,
+    ]);
+    await cascadeDescendantLevels(client, businessId, id, newLevel);
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 export async function setAccountActive(businessId: string, id: string, isActive: boolean): Promise<void> {

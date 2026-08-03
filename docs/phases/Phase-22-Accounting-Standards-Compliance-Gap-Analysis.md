@@ -1,4 +1,4 @@
-# Phase 22 — Accounting Standards Compliance & Multi-Industry COA (Wave 1: Audit & Gap Analysis)
+# Phase 22 — Accounting Standards Compliance & Multi-Industry COA
 
 **Project:** Cafe/Restaurant POS
 **Depends on:** Phase 7 (double-entry ledger), Phase 16 (accounting suite), Phase 21 (multi-industry
@@ -276,10 +276,80 @@ Each wave still gets its own PR, its own full local test run before that PR, and
 
 1. §7.1's account-level model: is the 4-tier گروه/کل/معین/تفصیلی distinction needed as enforced
    structure (a `tafsili` account literally cannot parent another `tafsili`), or as descriptive
-   metadata only (a label with no new constraint)? Affects how strict Wave 2's migration/validation
-   needs to be.
+   metadata only (a label with no new constraint)? **Answered by Wave 2 (below): enforced structure**
+   — the same discipline every other invariant in this codebase uses (reject at the boundary, don't
+   just describe).
 2. §4's revenue-channel split: should dine-in/takeout/delivery/platform revenue split be per-order
    (requires an order-level channel field, which may already partially exist via Phase 11's delivery
    flag — needs confirming) or is a coarser split acceptable for v1?
 3. §7.5's audit-trail question: is a full change-history table for `accounts` (who renamed/archived/
    reparented, and when) in scope, or is current-state-only sufficient?
+
+## Progress
+
+**Wave 1 — audit & gap analysis — implemented.** This document, as originally written (sections
+0-8 above). No code changes.
+
+**Wave 2 — Core Accounting Engine metadata — implemented**, covering §7.1 (account hierarchy
+levels), §7.2 (debit/credit nature + contra flag), and §7.4 (system-account UI badge):
+
+- **Account levels (گروه/کل/معین/تفصیلی)** — `migrations/0056_account_hierarchy_nature.sql` adds
+  `accounts.level` (a new `account_level` enum), backfilled for every existing account by actual
+  parent-chain depth (a recursive CTE, not a flat "root vs. everything else" guess). `coa-template.ts`
+  gained `AccountLevel`, `nextAccountLevel(parentLevel)` (the pure level-transition rule: `null` →
+  `group`, `group` → `kol` → `moein` → `tafsili`, and `null` past `tafsili` — a تفصیلی account can't
+  have children), and `ACCOUNT_LEVEL_LABELS`. Enforced, not just descriptive (resolving open question
+  1 above): `accounts-service.ts`'s `createAccount`/`reparentAccount` both compute the correct level
+  from the chosen parent and reject with `parent_too_deep` if the parent is already `tafsili`;
+  `reparentAccount` also cascades the new level down every existing descendant
+  (`cascadeDescendantLevels`, a BFS walk in the same transaction) and rejects the whole move with
+  `hierarchy_too_deep` if any descendant would need to sit past `tafsili`. The three chart-of-accounts
+  seeding/replace call sites (`business-provisioning.ts`'s `seedChartOfAccounts`, `/api/setup/accounts`
+  POST, `/api/settings/accounts` PUT) compute each row's level the same way, in the same parent-first
+  topological insertion order they already used.
+- **Debit/credit nature (ماهیت بدهکار/بستانکار)** — `accounts.normal_balance` is a `GENERATED ALWAYS
+  AS (...) STORED` column derived directly from `type` (asset/expense → debit, liability/equity/
+  revenue → credit), not a value any code path sets — this guarantees it's always correct for every
+  insertion path, including the dozens of raw-SQL account fixtures across the existing test suite,
+  with no code changes required anywhere else and no risk of drifting from `type`. `coa-template.ts`
+  gained `normalBalanceForType(type)`, the same mapping the generated column encodes in SQL, exposed
+  for display/reporting code.
+- **Contra accounts (حساب‌های کاهنده)** — `accounts.is_contra` (plain boolean, default `false`).
+  `TemplateAccount` gained an optional `isContra` field; the F&B template's «برگشت از فروش» (4400) and
+  «ذخیره کاهش ارزش موجودی» (1390) are marked `isContra: true` (backfilled onto every existing business
+  by the same migration, matched by code — the same pattern migrations 0025/0032 used). `createAccount`
+  accepts an optional `isContra` param for ad hoc sub-accounts.
+- **System-account badge (§7.4)** — `chart-of-accounts-section.tsx` now shows a level column, a
+  ماهیت column (بدهکار/بستانکار, with a «(کاهنده)» suffix for a contra account), and a «سیستمی» badge
+  next to any account whose code is in `WELL_KNOWN_CODES` — previously this protection only surfaced
+  reactively, as an error message when an archive/delete was rejected. The add-account form gained a
+  «حساب کاهنده» checkbox and shows each candidate parent's level in its picker.
+- **A pre-existing bug this wave's own migration exposed, fixed alongside**: `tenant-export.ts`'s
+  `exportTenantData` built its per-table column list from `SELECT *`, which includes generated
+  columns — Postgres refuses an explicit `INSERT` into one, so the moment `accounts` gained a
+  generated `normal_balance` column, every per-business SQL backup/restore round-trip involving an
+  account broke (`integration/tenant-export.integration.test.ts` caught this immediately). Fixed
+  generically, not with an `accounts`-specific special case: `exportTenantData` now reads
+  `information_schema.columns.is_generated` once per export and excludes any generated column from
+  the table's column list — correct for `accounts.normal_balance` today and for any future generated
+  column on any table, with no per-table maintenance needed.
+- Verified in `src/lib/coa-template.test.ts` (`nextAccountLevel`'s four transitions plus the
+  past-تفصیلی `null` case, `normalBalanceForType`'s full mapping, and that exactly the two intended
+  F&B accounts are marked contra) and extended `integration/chart-of-accounts.integration.test.ts`
+  (a four-level create chain assigns group/kol/moein/tafsili correctly; creating a child under a
+  تفصیلی account is rejected; reparenting cascades the new level through a multi-level subtree;
+  reparenting that would push a descendant past تفصیلی is rejected and rolled back; clearing an
+  account's parent resets it and its descendants back down; normal balance is stored correctly for
+  all five account types; an explicit `isContra` flag persists and defaults to `false`). `npx tsc
+  --noEmit`, `npm test` (964 tests, up from 951), `npm run db:migrate` (twice, confirmed a no-op the
+  second time) + `npm run test:db` (310 tests, `tenant-isolation`'s 19 tests re-confirming RLS
+  unaffected by the new columns), and `npm run build` all pass.
+
+Not yet built (left for a later wave, not blocking Wave 2's own exit): §3/§9's full terminology/UI-UX
+audit (Wave 3 in the recommended sequencing above), §7.3's dedicated دفتر معین/گردش حساب statement
+page, §4's cafe/restaurant COA depth (revenue-channel split, platform-commission/tip accounts,
+food-cost variance report), and §2's fixed-asset/depreciation gap. The setup-wizard step
+(`/setup/accounts`) and the settings-page chart editor (`accounts-settings.tsx`) don't yet expose the
+`isContra` checkbox the way the ledger's ongoing chart-of-accounts management tab does — intentional
+for this slice (those two are one-time/bulk template editors; `isContra` defaults to `false` and stays
+editable afterward through the ledger tab), flagged here in case a future wave decides otherwise.

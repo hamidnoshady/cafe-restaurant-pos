@@ -15,7 +15,7 @@ import bcrypt from "bcryptjs";
 import type { PoolClient } from "pg";
 import { getPool, withoutTenantScope } from "./db";
 import { slugifyBusinessName, uniqueSlug } from "./slug";
-import { FNB_COA_TEMPLATE, JEWELRY_COA_TEMPLATE, type TemplateAccount } from "./coa-template";
+import { FNB_COA_TEMPLATE, JEWELRY_COA_TEMPLATE, nextAccountLevel, type AccountLevel, type TemplateAccount } from "./coa-template";
 import { ENABLED_INDUSTRIES, INDUSTRIES, type Industry } from "./industries";
 
 /** Which seed chart of accounts an industry gets — the same choice /api/setup/accounts's GET makes for the manual wizard path. */
@@ -260,17 +260,22 @@ export async function provisionBusiness(
  */
 async function seedChartOfAccounts(client: PoolClient, businessId: string, industry: Industry): Promise<void> {
   const idByCode = new Map<string, string>();
+  const levelByCode = new Map<string, AccountLevel>();
   const pending = [...coaTemplateFor(industry)];
   while (pending.length > 0) {
     const ready = pending.filter((a) => !a.parentCode || idByCode.has(a.parentCode));
-    // The template is a fixed, cycle-free constant; ready can't be empty.
+    // The template is a fixed, cycle-free constant; ready can't be empty, and
+    // it's never nested past four levels, so nextAccountLevel never returns
+    // null here.
     for (const a of ready) {
+      const level = nextAccountLevel(a.parentCode ? (levelByCode.get(a.parentCode) ?? null) : null)!;
       const { rows } = await client.query<{ id: string }>(
-        `INSERT INTO accounts (business_id, parent_id, code, name, type)
-         VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-        [businessId, a.parentCode ? idByCode.get(a.parentCode) : null, a.code, a.name, a.type],
+        `INSERT INTO accounts (business_id, parent_id, code, name, type, level, is_contra)
+         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+        [businessId, a.parentCode ? idByCode.get(a.parentCode) : null, a.code, a.name, a.type, level, a.isContra ?? false],
       );
       idByCode.set(a.code, rows[0].id);
+      levelByCode.set(a.code, level);
       pending.splice(pending.indexOf(a), 1);
     }
   }
