@@ -9,9 +9,11 @@ import {
   settleAiTurn,
   type AiTurnReservation,
 } from "@/lib/ai-billing-service";
+import { createAiActionAudit } from "@/lib/ai-action-audit";
+import { appendMessage, getOrCreateConversation } from "@/lib/ai-conversations";
 import { AiError, runAgentTurn, type InboundMessage } from "@/lib/ai-service";
-import { requireManager } from "@/lib/setup-state";
-import { withTenantScope } from "@/lib/auth";
+import { requireManager, resolveActiveLocation } from "@/lib/setup-state";
+import { requireFloorAssistant, withTenantScope } from "@/lib/auth";
 
 const MAX_MESSAGES = 24;
 const MAX_CONTENT = 8_000;
@@ -19,10 +21,10 @@ const MAX_CONTENT = 8_000;
 function sanitizeMessages(raw: unknown): InboundMessage[] {
   if (!Array.isArray(raw)) return [];
   const out: InboundMessage[] = [];
-  for (const m of raw.slice(-MAX_MESSAGES)) {
-    if (!m || typeof m !== "object") continue;
-    const role = (m as { role?: unknown }).role;
-    const content = (m as { content?: unknown }).content;
+  for (const message of raw.slice(-MAX_MESSAGES)) {
+    if (!message || typeof message !== "object") continue;
+    const role = (message as { role?: unknown }).role;
+    const content = (message as { content?: unknown }).content;
     if ((role === "user" || role === "assistant") && typeof content === "string" && content.trim()) {
       out.push({ role, content: content.slice(0, MAX_CONTENT) });
     }
@@ -30,23 +32,41 @@ function sanitizeMessages(raw: unknown): InboundMessage[] {
   return out;
 }
 
+function sse(event: string, data: unknown): Uint8Array {
+  return new TextEncoder().encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+}
+
 /**
- * Metered assistant turn. The existing feature flag still runs first in
- * withTenantScope; after that, a row-locked maximum reservation prevents two
- * parallel requests from spending the same business balance.
+ * Metered assistant turn. Validation and the maximum credit reservation happen
+ * before the response starts; then the provider's actual text is relayed as
+ * SSE while the same server-side tool/confirmation boundaries stay intact.
  */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireManager();
-  if (error) return error;
-
-  let body: { mode?: unknown; messages?: unknown; currentStep?: unknown };
+  let body: { mode?: unknown; messages?: unknown; currentStep?: unknown; conversationId?: unknown };
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
 
-  const mode: AgentMode = body.mode === "wizard" ? "wizard" : "dashboard";
+  const mode: AgentMode =
+    body.mode === "wizard" ? "wizard" : body.mode === "floor" ? "floor" : "dashboard";
+  const guard = mode === "floor" ? await requireFloorAssistant() : await requireManager();
+  if (guard.error) return guard.error;
+  const session = guard.session;
+
+  const floorLocation = mode === "floor" ? await resolveActiveLocation(session) : null;
+  if (mode === "floor" && !floorLocation) {
+    return NextResponse.json({ error: "no_location" }, { status: 409 });
+  }
+  if (
+    mode === "floor" &&
+    session.role !== "cashier" &&
+    session.role !== "waiter"
+  ) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
+
   const messages = sanitizeMessages(body.messages);
   if (messages.length === 0) {
     return NextResponse.json({ error: "empty_messages" }, { status: 400 });
@@ -80,7 +100,6 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   const { rows } = await query<{ name: string }>("SELECT name FROM businesses WHERE id = $1", [
     session.businessId,
   ]);
-
   const promptContext: PromptContext = {
     mode,
     businessName: rows[0]?.name ?? null,
@@ -88,35 +107,118 @@ export const POST = withTenantScope(async (request: NextRequest) => {
     userName: session.fullName,
     role: session.role,
   };
+  const latestPrompt = [...messages].reverse().find((message) => message.role === "user")?.content ?? "";
 
+  // Best-effort transcript persistence (Wave 1, issue #141) — sits beside the
+  // metered turn below, not inside it: it never touches billing and a
+  // failure here must not fail an already-reserved turn.
+  const requestedConversationId =
+    typeof body.conversationId === "string" && body.conversationId.trim()
+      ? body.conversationId.trim()
+      : null;
+  let conversationId: string | null = null;
   try {
-    const reply = await runAgentTurn({
-      config,
+    const conversation = await getOrCreateConversation({
+      businessId: session.businessId,
+      actorUserId: session.sub,
       mode,
-      businessId: session.businessId,
-      promptContext,
-      messages,
+      conversationId: requestedConversationId,
+      firstMessageContent: latestPrompt,
     });
-    await settleAiTurn({
-      businessId: session.businessId,
-      reservation,
-      usage: reply.usage,
-      inputTokenRialPerMillion: config.inputTokenRialPerMillion,
-      outputTokenRialPerMillion: config.outputTokenRialPerMillion,
-    });
-    return NextResponse.json({ content: reply.content, proposedAction: reply.proposedAction });
+    conversationId = conversation.id;
+    await appendMessage({ conversationId, role: "user", content: latestPrompt });
   } catch (err) {
-    await cancelAiTurnReservation({
-      businessId: session.businessId,
-      reservation,
-      reason: err instanceof Error ? err.message : "unknown_error",
-    }).catch((cancelError) => console.error("AI credit reservation refund failed", cancelError));
-
-    if (err instanceof AiError) {
-      const status = err.code === "ai_auth" ? 502 : err.code === "ai_timeout" ? 504 : 502;
-      return NextResponse.json({ error: err.code, message: err.message }, { status });
-    }
-    console.error("ai chat error", err);
-    return NextResponse.json({ error: "ai_unknown", message: "خطای غیرمنتظره در دستیار." }, { status: 500 });
+    console.error("ai conversation persistence failed", err);
   }
+
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      let settled = false;
+      const emit = (event: string, data: unknown) => controller.enqueue(sse(event, data));
+
+      void (async () => {
+        try {
+          const reply = await runAgentTurn({
+            config,
+            mode,
+            businessId: session.businessId,
+            floorScope:
+              mode === "floor" && floorLocation && (session.role === "cashier" || session.role === "waiter")
+                ? {
+                    locationId: floorLocation.id,
+                    userId: session.sub,
+                    role: session.role,
+                  }
+                : undefined,
+            promptContext,
+            messages,
+            stream: {
+              onDelta: (content) => emit("delta", { content }),
+              onToolCalls: () => emit("reset", {}),
+            },
+          });
+          await settleAiTurn({
+            businessId: session.businessId,
+            reservation,
+            usage: reply.usage,
+            inputTokenRialPerMillion: config.inputTokenRialPerMillion,
+            outputTokenRialPerMillion: config.outputTokenRialPerMillion,
+          });
+          settled = true;
+
+          const auditId = reply.proposedAction
+            ? await createAiActionAudit({
+                businessId: session.businessId,
+                actorUserId: session.sub,
+                actorName: session.fullName,
+                prompt: latestPrompt,
+                proposal: reply.proposedAction,
+              })
+            : null;
+
+          if (conversationId) {
+            await appendMessage({
+              conversationId,
+              role: "assistant",
+              content: reply.content,
+              proposal: reply.proposedAction,
+            }).catch((err) => console.error("ai conversation persistence failed", err));
+          }
+
+          emit("done", {
+            content: reply.content,
+            proposedAction: reply.proposedAction,
+            auditId,
+            conversationId,
+          });
+        } catch (err) {
+          if (!settled) {
+            await cancelAiTurnReservation({
+              businessId: session.businessId,
+              reservation,
+              reason: err instanceof Error ? err.message : "unknown_error",
+            }).catch((cancelError) => console.error("AI credit reservation refund failed", cancelError));
+          }
+
+          if (err instanceof AiError) {
+            emit("error", { error: err.code, message: err.message });
+          } else {
+            console.error("ai chat error", err);
+            emit("error", { error: "ai_unknown", message: "خطای غیرمنتظره در دستیار." });
+          }
+        } finally {
+          controller.close();
+        }
+      })();
+    },
+  });
+
+  return new NextResponse(stream, {
+    headers: {
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
+    },
+  });
 });

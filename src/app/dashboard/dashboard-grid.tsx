@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { GridLayout, useContainerWidth, type Layout, type LayoutItem } from "react-grid-layout";
-import { XIcon } from "lucide-react";
+import { SparklesIcon, XIcon } from "lucide-react";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import { api, ErrorBox } from "./ui";
@@ -55,17 +55,54 @@ function useWidgetData(config: Record<string, unknown>) {
   return data;
 }
 
-function WidgetBody({ widget }: { widget: WidgetRow }) {
+function requestWidgetExplanation(widget: WidgetRow, data: ChartDatum[]) {
+  const title = widget.title ?? widget.report_name;
+  const facts = data
+    .slice(0, 8)
+    .map((row) => `${row.label}: ${toPersianDigits(Math.round(row.value).toLocaleString("en-US"))}`)
+    .join("؛ ");
+  const prompt = [
+    `عدد یا نمودار «${title}» را با اتکا به داده‌های واقعی گزارش بررسی و توضیح بده.`,
+    facts ? `دادهٔ نمایشی فعلی: ${facts}.` : "",
+    "اگر دادهٔ کافی برای نتیجه‌گیری وجود ندارد، صریح بگو چه گزارشی باید بررسی شود؛ عددی را حدس نزن.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+  window.dispatchEvent(new CustomEvent("ai:prefill", { detail: { prompt } }));
+}
+
+function WidgetBody({ widget, canExplain }: { widget: WidgetRow; canExplain: boolean }) {
   const data = useWidgetData(widget.report_config);
   if (data === null) return <p className="p-2 text-xs text-muted-foreground">در حال بارگذاری…</p>;
 
-  if (widget.chart_type === "number") {
-    const total = data.reduce((s, d) => s + d.value, 0);
-    return <NumberCard label={widget.title ?? widget.report_name} value={toPersianDigits(Math.round(total).toLocaleString("en-US"))} />;
-  }
-  if (widget.chart_type === "line") return <LineChart data={data} />;
-  if (widget.chart_type === "pie") return <PieChart data={data} />;
-  return <BarChart data={data} />;
+  const chart =
+    widget.chart_type === "number" ? (
+      <NumberCard
+        label={widget.title ?? widget.report_name}
+        value={toPersianDigits(Math.round(data.reduce((sum, row) => sum + row.value, 0)).toLocaleString("en-US"))}
+      />
+    ) : widget.chart_type === "line" ? (
+      <LineChart data={data} />
+    ) : widget.chart_type === "pie" ? (
+      <PieChart data={data} />
+    ) : (
+      <BarChart data={data} />
+    );
+
+  return (
+    <div className="flex h-full min-h-0 flex-col gap-2">
+      <div className="min-h-0 flex-1">{chart}</div>
+      {canExplain ? (
+        <button
+          type="button"
+          onClick={() => requestWidgetExplanation(widget, data)}
+          className="inline-flex min-h-8 w-fit items-center gap-1 rounded-md px-1.5 text-xs font-medium text-primary transition-colors hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <SparklesIcon className="size-3.5" /> توضیح این عدد
+        </button>
+      ) : null}
+    </div>
+  );
 }
 
 // Below this container width the 12-column grid is too cramped to be usable —
@@ -73,7 +110,7 @@ function WidgetBody({ widget }: { widget: WidgetRow }) {
 // a single full-width column and stack the tiles in reading order instead.
 const STACK_MAX_WIDTH = 640;
 
-export function DashboardGrid({ canEdit }: { canEdit: boolean }) {
+export function DashboardGrid({ canEdit, canExplain }: { canEdit: boolean; canExplain: boolean }) {
   // measureBeforeMount keeps `mounted` false until the container's real width
   // is measured, so the grid below (gated on `mounted`) never renders at the
   // hook's 1280px default first. Without it, the first paint lays the grid out
@@ -230,7 +267,7 @@ export function DashboardGrid({ canEdit }: { canEdit: boolean }) {
                   ) : null}
                 </div>
                 <div className="h-[calc(100%-2rem)] p-2">
-                  <WidgetBody widget={w} />
+                  <WidgetBody widget={w} canExplain={canExplain} />
                 </div>
               </div>
             ))}

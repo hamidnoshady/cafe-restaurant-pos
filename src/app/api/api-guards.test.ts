@@ -33,6 +33,15 @@ function routeKey(file: string): string {
 const PUBLIC_ROUTES: Record<string, string> = {
   "auth/login": "credential exchange — necessarily runs without a session",
   "auth/pin-login": "credential exchange — necessarily runs without a session",
+  "auth/pin-login/roster":
+    "the name-then-PIN picker's first step (Phase 20 Wave 2) — lists a business's PIN-role " +
+    "employees (name/role/photo only, no PIN) before any credential has been presented",
+  "auth/webauthn/login/options":
+    "credential exchange (Phase 20 Wave 3) — step 1 of a biometric login, necessarily runs " +
+    "without a session, the same as auth/pin-login",
+  "auth/webauthn/login/verify":
+    "credential exchange (Phase 20 Wave 3) — step 2 of a biometric login, necessarily runs " +
+    "without a session, the same as auth/pin-login",
   "auth/logout": "only clears the caller's own session cookie",
   "setup/bootstrap": "first-run only — refuses with 409 as soon as any user exists",
   "setup/signup":
@@ -76,14 +85,27 @@ const SELF_GUARDING_ROUTES: Record<string, string> = {
   "locations/active":
     "returns the caller's own active branch and switchable branches — every member has one, " +
     "regardless of role",
+  "auth/verify-pin":
+    "confirms the caller's own PIN to dismiss the client-side lock screen (Phase 20 Wave 2); " +
+    "no new session is minted and no other employee's PIN is ever checked, so no role list applies",
   // Phase 15 — the super-admin console bootstraps from this: it returns the
   // caller's own platform session (or null) and nothing else.
   "platform/auth/me": "returns the caller's own platform session (or null) — nothing else",
+  // AI Hub Wave 1 (issue #141) — a conversation is visible only to the member
+  // who started it (actor_user_id), not by role, so ai-conversations.ts's own
+  // ownership filter is the authorization, the same shape as auth/businesses.
+  "ai/conversations": "lists/creates only the caller's own conversations — ownership is the authorization",
+  "ai/conversations/[id]": "reads/deletes only the caller's own conversation — ownership is the authorization",
 };
 
 /** True for the super-admin console's own routes, which use the platform guards. */
 function isPlatformGuarded(src: string): boolean {
   return /requirePlatformAdmin\(/.test(src) || /requirePlatformCapability\(/.test(src);
+}
+
+/** Public API routes are session-less only because api-auth.ts authenticates a scoped key. */
+function isApiKeyGuarded(src: string): boolean {
+  return /withApiKeyScope\(/.test(src) && /requireApiScope\(/.test(src);
 }
 
 
@@ -111,6 +133,10 @@ describe("every API route is guarded", () => {
 
   for (const [key, src] of sources) {
     it(`${key} is guarded or explicitly public`, () => {
+      if (key === "v1" || key.startsWith("v1/")) {
+        expect(isApiKeyGuarded(src), `src/app/api/${key}/route.ts must authenticate a scoped API key`).toBe(true);
+        return;
+      }
       if (PUBLIC_ROUTES[key]) return; // documented public route
       if (SELF_GUARDING_ROUTES[key]) {
         // Tenant self-guarding routes read getSession(); the platform console's

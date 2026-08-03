@@ -1,0 +1,190 @@
+/**
+ * AI Hub Wave 1 (Issue #141) — durable, listable AI assistant conversations.
+ *
+ * This sits beside the existing metered turn in `/api/ai/chat`, not inside
+ * it: every turn still resolves its provider/model/pricing from the single
+ * platform-owned `platform_ai_config` (Phase 18, see ai-config.ts) and still
+ * reserves/settles credits exactly as before. These functions only persist
+ * the transcript that flow already produces (prompt, reply, proposal) so it
+ * can be listed and resumed later — they never call the provider and never
+ * touch billing.
+ *
+ * Per the Wave 1 access decision, a conversation is visible only to the
+ * member who started it, not the whole business: every function here takes
+ * an `actorUserId` and filters by it in addition to the RLS-enforced
+ * `businessId`, so ownership holds even though RLS itself only draws the
+ * business boundary.
+ */
+import { query } from "./db";
+import type { AgentMode, ProposedAction } from "./ai";
+
+const TITLE_MAX_LENGTH = 60;
+const DEFAULT_TITLE = "مکالمه جدید";
+
+/** Pure: turns a first user message into a short, single-line conversation title. */
+export function deriveConversationTitle(firstMessageContent: string): string {
+  const collapsed = firstMessageContent.replace(/\s+/g, " ").trim();
+  if (!collapsed) return DEFAULT_TITLE;
+  if (collapsed.length <= TITLE_MAX_LENGTH) return collapsed;
+  return `${collapsed.slice(0, TITLE_MAX_LENGTH).trimEnd()}…`;
+}
+
+export interface AiConversationSummary {
+  id: string;
+  mode: AgentMode;
+  title: string;
+  lastMessageAt: string;
+  createdAt: string;
+}
+
+export interface AiConversationMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  toolCalls: unknown;
+  proposal: ProposedAction | null;
+  createdAt: string;
+}
+
+interface Owner {
+  businessId: string;
+  actorUserId: string;
+}
+
+/**
+ * Resolves the conversation a turn belongs to: the given id if it exists and
+ * is owned by this actor, otherwise a freshly created one. Never throws on an
+ * unknown/foreign id — a stale or tampered client-supplied id just starts a
+ * new conversation instead of failing the (already-reserved, already
+ * mid-flight) turn.
+ */
+export async function getOrCreateConversation(
+  owner: Owner & { mode: AgentMode; conversationId: string | null; firstMessageContent: string },
+): Promise<{ id: string; isNew: boolean }> {
+  if (owner.conversationId) {
+    const { rows } = await query<{ id: string }>(
+      `SELECT id FROM ai_conversations
+        WHERE id = $1 AND business_id = $2 AND actor_user_id = $3 AND mode = $4`,
+      [owner.conversationId, owner.businessId, owner.actorUserId, owner.mode],
+    );
+    if (rows[0]) return { id: rows[0].id, isNew: false };
+  }
+
+  const { rows } = await query<{ id: string }>(
+    `INSERT INTO ai_conversations (business_id, actor_user_id, mode, title)
+     VALUES ($1, $2, $3, $4)
+     RETURNING id`,
+    [owner.businessId, owner.actorUserId, owner.mode, deriveConversationTitle(owner.firstMessageContent)],
+  );
+  return { id: rows[0].id, isNew: true };
+}
+
+export async function appendMessage(input: {
+  conversationId: string;
+  role: "user" | "assistant";
+  content: string;
+  toolCalls?: unknown;
+  proposal?: ProposedAction | null;
+}): Promise<void> {
+  await query(
+    `INSERT INTO ai_messages (conversation_id, role, content, tool_calls, proposal)
+     VALUES ($1, $2, $3, $4::jsonb, $5::jsonb)`,
+    [
+      input.conversationId,
+      input.role,
+      input.content,
+      input.toolCalls === undefined ? null : JSON.stringify(input.toolCalls),
+      input.proposal ? JSON.stringify(input.proposal) : null,
+    ],
+  );
+  await query(`UPDATE ai_conversations SET last_message_at = now() WHERE id = $1`, [input.conversationId]);
+}
+
+export async function listConversations(
+  owner: Owner,
+  options: { limit?: number; before?: string | null } = {},
+): Promise<AiConversationSummary[]> {
+  const limit = Math.max(1, Math.min(100, Math.floor(options.limit ?? 30)));
+  const { rows } = await query<{
+    id: string;
+    mode: AgentMode;
+    title: string;
+    last_message_at: string;
+    created_at: string;
+  }>(
+    `SELECT id, mode, title, last_message_at, created_at
+       FROM ai_conversations
+      WHERE business_id = $1 AND actor_user_id = $2
+        AND ($3::timestamptz IS NULL OR last_message_at < $3::timestamptz)
+      ORDER BY last_message_at DESC
+      LIMIT $4`,
+    [owner.businessId, owner.actorUserId, options.before ?? null, limit],
+  );
+  return rows.map((row) => ({
+    id: row.id,
+    mode: row.mode,
+    title: row.title,
+    lastMessageAt: row.last_message_at,
+    createdAt: row.created_at,
+  }));
+}
+
+export async function getConversationMessages(
+  owner: Owner & { conversationId: string },
+): Promise<{ conversation: AiConversationSummary; messages: AiConversationMessage[] } | null> {
+  const { rows: conversationRows } = await query<{
+    id: string;
+    mode: AgentMode;
+    title: string;
+    last_message_at: string;
+    created_at: string;
+  }>(
+    `SELECT id, mode, title, last_message_at, created_at
+       FROM ai_conversations
+      WHERE id = $1 AND business_id = $2 AND actor_user_id = $3`,
+    [owner.conversationId, owner.businessId, owner.actorUserId],
+  );
+  const conversation = conversationRows[0];
+  if (!conversation) return null;
+
+  const { rows: messageRows } = await query<{
+    id: string;
+    role: "user" | "assistant";
+    content: string;
+    tool_calls: unknown;
+    proposal: ProposedAction | null;
+    created_at: string;
+  }>(
+    `SELECT id, role, content, tool_calls, proposal, created_at
+       FROM ai_messages
+      WHERE conversation_id = $1
+      ORDER BY created_at ASC`,
+    [owner.conversationId],
+  );
+
+  return {
+    conversation: {
+      id: conversation.id,
+      mode: conversation.mode,
+      title: conversation.title,
+      lastMessageAt: conversation.last_message_at,
+      createdAt: conversation.created_at,
+    },
+    messages: messageRows.map((row) => ({
+      id: row.id,
+      role: row.role,
+      content: row.content,
+      toolCalls: row.tool_calls,
+      proposal: row.proposal,
+      createdAt: row.created_at,
+    })),
+  };
+}
+
+export async function deleteConversation(owner: Owner & { conversationId: string }): Promise<boolean> {
+  const { rowCount } = await query(
+    `DELETE FROM ai_conversations WHERE id = $1 AND business_id = $2 AND actor_user_id = $3`,
+    [owner.conversationId, owner.businessId, owner.actorUserId],
+  );
+  return (rowCount ?? 0) > 0;
+}

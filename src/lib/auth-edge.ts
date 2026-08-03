@@ -84,6 +84,17 @@ export interface SessionPayload {
     adminId: string;
     mode: "read_only" | "full";
   };
+  /**
+   * Phase 20 Wave 2 — employee_sessions.id, set only when this token was
+   * minted by pin-login. The JWT stays the bearer credential in the cookie
+   * (this is *not* a session lookup key); the row it names is what makes the
+   * session individually revocable and listable, re-checked live on the
+   * server by checkEmployeeSession in auth.ts the same way impersonation
+   * grants are — never trusted alone, same as `imp.grantId` above. Absent on
+   * password-role logins (owner/manager/accountant never go through
+   * pin-login) and on any token minted before this field existed.
+   */
+  employeeSessionId?: string | null;
 }
 
 

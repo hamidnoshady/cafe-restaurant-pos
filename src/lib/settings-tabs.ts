@@ -9,8 +9,12 @@ export const SETTINGS_TAB_KEYS = [
   "team",
   "menu",
   "printers",
-  "branch-sync",
+  "branch-management",
   "server-sync",
+  "devices",
+  "shifts",
+  "audit-log",
+  "security-center",
   "backup",
 ] as const;
 
@@ -23,6 +27,8 @@ export interface SettingsTab {
   requiredAnyPermission?: Permission[];
   allowedRoles?: Role[];
   feature?: string;
+  /** Show when at least one of these feature flags is enabled. */
+  requiredAnyFeature?: string[];
 }
 
 export interface SettingsTabVisibilityOptions {
@@ -74,11 +80,11 @@ export const SETTINGS_TABS: SettingsTab[] = [
     requiredAnyPermission: [PERMISSIONS.settingsManage],
   },
   {
-    key: "branch-sync",
-    label: "همگام‌سازی شعبه‌ها",
-    description: "ثبت شعبه‌های محلی و همگام‌سازی با سرور مرکزی",
+    key: "branch-management",
+    label: "مدیریت شعب",
+    description: "مدیریت شعب کسب‌وکار و همگام‌سازی داده‌های شعب با سرور مرکزی",
     allowedRoles: ["owner"],
-    feature: "offline_mode",
+    requiredAnyFeature: ["multi_location", "offline_mode"],
   },
   {
     key: "server-sync",
@@ -86,6 +92,31 @@ export const SETTINGS_TABS: SettingsTab[] = [
     description: "اتصال دوطرفه با سرور مرکزی (VPS)، وضعیت و رویدادهای ناموفق",
     allowedRoles: ["owner"],
     feature: "offline_mode",
+  },
+  {
+    key: "devices",
+    label: "دستگاه‌های ثبت‌شده",
+    description: "پایانه‌های متصل و ورود بیومتریک اختصاصی هر دستگاه",
+    requiredAnyPermission: [PERMISSIONS.settingsManage],
+  },
+  {
+    key: "shifts",
+    label: "شیفت‌ها",
+    description: "تاریخچهٔ ورود/خروج کارکنان و تطبیق صندوق هر شیفت",
+    requiredAnyPermission: [PERMISSIONS.teamManage],
+  },
+  {
+    key: "audit-log",
+    label: "گزارش حسابرسی",
+    description: "رویدادهای امنیتی کسب‌وکار: ورود، تغییر اعتبارنامه، دستگاه و شیفت",
+    requiredAnyPermission: [PERMISSIONS.teamManage],
+  },
+  {
+    key: "security-center",
+    label: "مرکز امنیت",
+    description:
+      "نشست‌های فعال، تلاش‌های ورود ناموفق و کارمندان قفل‌شده، با امکان پایان‌دادن به نشست یا رفع قفل",
+    requiredAnyPermission: [PERMISSIONS.teamManage],
   },
   {
     key: "backup",
@@ -107,6 +138,7 @@ export function visibleSettingsTabs(
     }
     if (tab.allowedRoles && (!options.role || !tab.allowedRoles.includes(options.role))) return false;
     if (tab.feature && !options.features?.[tab.feature]) return false;
+    if (tab.requiredAnyFeature && !tab.requiredAnyFeature.some((feature) => options.features?.[feature])) return false;
     return true;
   });
 }

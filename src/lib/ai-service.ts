@@ -13,7 +13,7 @@ import {
   type ProposedAction,
   type PromptContext,
 } from "./ai";
-import { runReadTool, READ_TOOL_NAMES } from "./ai-tools";
+import { runReadTool, type FloorReadScope, type ToolResult } from "./ai-tools";
 import { estimateTokens, type AiTokenUsage } from "./ai-billing";
 
 export type { ProposedAction };
@@ -42,6 +42,12 @@ export interface InboundMessage {
   content: string;
 }
 
+/** Supplies data only for the tool names exposed by the active agent mode. */
+export type ReadToolRunner = (
+  name: string,
+  args: Record<string, unknown>,
+) => Promise<ToolResult>;
+
 const MAX_TOOL_ROUNDS = 6;
 const REQUEST_TIMEOUT_MS = 60_000;
 
@@ -58,29 +64,192 @@ function providerHeaders(config: AiConfig): Record<string, string> {
   return headers;
 }
 
+interface ProviderStreamCallbacks {
+  onDelta?: (content: string) => void;
+  onToolCalls?: () => void;
+}
+
+interface ProviderStreamDelta {
+  content?: string | null;
+  tool_calls?: {
+    index?: number;
+    id?: string;
+    type?: "function";
+    function?: { name?: string; arguments?: string };
+  }[];
+}
+
+interface ProviderStreamChunk {
+  choices?: { delta?: ProviderStreamDelta }[];
+  usage?: { prompt_tokens?: number; completion_tokens?: number };
+}
+
+function fallbackUsage(messages: ProviderMessage[], content: string): AiTokenUsage {
+  return {
+    // Some compatible gateways omit usage. Charge a documented conservative
+    // fallback rather than letting metered calls bypass the ledger altogether.
+    inputTokens: estimateTokens(JSON.stringify(messages)),
+    outputTokens: estimateTokens(content),
+  };
+}
+
+function providerUsage(
+  usage: { prompt_tokens?: number; completion_tokens?: number } | undefined,
+  fallback: AiTokenUsage,
+): AiTokenUsage {
+  const promptTokens = Number(usage?.prompt_tokens);
+  const completionTokens = Number(usage?.completion_tokens);
+  return Number.isFinite(promptTokens) && Number.isFinite(completionTokens)
+    ? {
+        inputTokens: Math.max(0, Math.floor(promptTokens)),
+        outputTokens: Math.max(0, Math.floor(completionTokens)),
+      }
+    : fallback;
+}
+
+/**
+ * Reads one OpenAI-compatible SSE response. Tool-call fragments are reassembled
+ * before the normal agent loop sees them; visible text is forwarded immediately
+ * so the dashboard can render a genuine streamed answer.
+ */
+async function readStreamingProviderResponse(
+  response: Response,
+  messages: ProviderMessage[],
+  callbacks: ProviderStreamCallbacks,
+): Promise<{ message: ProviderMessage; usage: AiTokenUsage }> {
+  if (!response.body) throw new AiError("ai_provider", "پاسخ جریانی سرویس هوش مصنوعی نامعتبر بود.");
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  const toolCalls = new Map<number, ProviderToolCall>();
+  let content = "";
+  let buffer = "";
+  let sawToolCalls = false;
+  let providerReportedUsage: ProviderStreamChunk["usage"];
+
+  function consumeData(raw: string) {
+    if (!raw || raw === "[DONE]") return;
+    let chunk: ProviderStreamChunk;
+    try {
+      chunk = JSON.parse(raw) as ProviderStreamChunk;
+    } catch {
+      return;
+    }
+    if (chunk.usage) providerReportedUsage = chunk.usage;
+    const delta = chunk.choices?.[0]?.delta;
+    if (!delta) return;
+
+    if (typeof delta.content === "string" && delta.content) {
+      content += delta.content;
+      callbacks.onDelta?.(delta.content);
+    }
+
+    if (!delta.tool_calls?.length) return;
+    if (!sawToolCalls) {
+      sawToolCalls = true;
+      // A provider normally emits no natural-language content in a tool turn.
+      // If one does, the client clears the provisional text before the next,
+      // final response begins.
+      callbacks.onToolCalls?.();
+    }
+    for (const part of delta.tool_calls) {
+      const index = Number.isInteger(part.index) ? part.index! : 0;
+      const previous = toolCalls.get(index) ?? {
+        id: part.id ?? `stream-tool-${index}`,
+        type: "function" as const,
+        function: { name: "", arguments: "" },
+      };
+      if (part.id) previous.id = part.id;
+      if (part.function?.name) previous.function.name = part.function.name;
+      if (part.function?.arguments) previous.function.arguments += part.function.arguments;
+      toolCalls.set(index, previous);
+    }
+  }
+
+  function consumeLine(line: string) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("data:")) return;
+    consumeData(trimmed.slice(5).trim());
+  }
+
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split(/\r?\n/);
+      buffer = lines.pop() ?? "";
+      for (const line of lines) consumeLine(line);
+    }
+    buffer += decoder.decode();
+    if (buffer) consumeLine(buffer);
+  } finally {
+    reader.releaseLock();
+  }
+
+  const assembledToolCalls = [...toolCalls.entries()]
+    .sort(([left], [right]) => left - right)
+    .map(([, call]) => call);
+  const message: ProviderMessage = {
+    role: "assistant",
+    content: content || null,
+    ...(assembledToolCalls.length > 0 ? { tool_calls: assembledToolCalls } : {}),
+  };
+  return {
+    message,
+    usage: providerUsage(providerReportedUsage, fallbackUsage(messages, content)),
+  };
+}
+
 async function callProvider(
   config: AiConfig,
   messages: ProviderMessage[],
   tools: ReturnType<typeof toolDefinitions>,
+  stream?: ProviderStreamCallbacks,
 ): Promise<{ message: ProviderMessage; usage: AiTokenUsage }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   let res: Response;
   try {
+    // Some OpenAI-compatible providers reject an explicit empty tools array.
+    // Proactive Wave 4 digests deliberately have no tools, because their
+    // tenant-scoped facts are collected before the provider is called.
+    const body: Record<string, unknown> = {
+      model: config.model,
+      messages,
+      temperature: config.temperature,
+      max_tokens: config.maxOutputTokens,
+      stream: Boolean(stream),
+    };
+    if (stream) {
+      // OpenAI-compatible APIs include final usage in the terminal stream
+      // chunk when this option is supported; a conservative fallback remains
+      // in place for gateways that omit it.
+      body.stream_options = { include_usage: true };
+    }
+    if (tools.length > 0) {
+      body.tools = tools;
+      body.tool_choice = "auto";
+    }
     res = await fetch(chatCompletionsUrl(config.baseUrl), {
       method: "POST",
       headers: providerHeaders(config),
-      body: JSON.stringify({
-        model: config.model,
-        messages,
-        tools,
-        tool_choice: "auto",
-        temperature: config.temperature,
-        max_tokens: config.maxOutputTokens,
-        stream: false,
-      }),
+      body: JSON.stringify(body),
       signal: controller.signal,
     });
+    // Some OpenAI-compatible gateways accept streaming but not the optional
+    // usage trailer. Retry the same non-mutating provider request once without
+    // it; the documented conservative usage fallback still protects billing.
+    if (stream && res.status === 400) {
+      const fallbackBody = { ...body };
+      delete fallbackBody.stream_options;
+      res = await fetch(chatCompletionsUrl(config.baseUrl), {
+        method: "POST",
+        headers: providerHeaders(config),
+        body: JSON.stringify(fallbackBody),
+        signal: controller.signal,
+      });
+    }
   } catch (err) {
     clearTimeout(timer);
     if (err instanceof Error && err.name === "AbortError") {
@@ -98,6 +267,10 @@ async function callProvider(
     throw new AiError("ai_provider", `سرویس هوش مصنوعی خطا داد (${res.status}).`, body);
   }
 
+  if (stream && res.headers.get("content-type")?.includes("text/event-stream")) {
+    return readStreamingProviderResponse(res, messages, stream);
+  }
+
   const json = (await res.json()) as {
     choices?: { message?: ProviderMessage }[];
     usage?: { prompt_tokens?: number; completion_tokens?: number };
@@ -105,23 +278,10 @@ async function callProvider(
   const message = json.choices?.[0]?.message;
   if (!message) throw new AiError("ai_provider", "پاسخ سرویس هوش مصنوعی نامفهوم بود.");
 
-  const promptTokens = Number(json.usage?.prompt_tokens);
-  const completionTokens = Number(json.usage?.completion_tokens);
-  const usage: AiTokenUsage =
-    Number.isFinite(promptTokens) && Number.isFinite(completionTokens)
-      ? {
-          inputTokens: Math.max(0, Math.floor(promptTokens)),
-          outputTokens: Math.max(0, Math.floor(completionTokens)),
-        }
-      : {
-          // Some compatible gateways omit usage. Charge a documented
-          // conservative fallback rather than letting metered calls bypass the
-          // ledger altogether.
-          inputTokens: estimateTokens(JSON.stringify(messages)),
-          outputTokens: estimateTokens(message.content ?? ""),
-        };
-
-  return { message, usage };
+  return {
+    message,
+    usage: providerUsage(json.usage, fallbackUsage(messages, message.content ?? "")),
+  };
 }
 
 export class AiError extends Error {
@@ -167,12 +327,31 @@ function toProposedAction(args: Record<string, unknown>): ProposedAction | null 
 export async function runAgentTurn(opts: {
   config: AiConfig;
   mode: AgentMode;
-  businessId: string;
+  /** Tenant turns provide this. Platform support supplies executeReadTool instead. */
+  businessId?: string;
+  /** Present only for the cashier/waiter assistant; it constrains all floor reads. */
+  floorScope?: FloorReadScope;
+  /**
+   * A separate read-tool realm can supply its own executor. It is deliberately
+   * invoked only after the tool name is checked against toolDefinitions(mode).
+   */
+  executeReadTool?: ReadToolRunner;
+  /** Optional callbacks turn the provider response into a live UI stream. */
+  stream?: ProviderStreamCallbacks;
   promptContext: PromptContext;
   messages: InboundMessage[];
 }): Promise<AgentReply> {
-  const { config, mode, businessId, promptContext, messages } = opts;
+  const { config, mode, businessId, floorScope, promptContext, messages } = opts;
   const tools = toolDefinitions(mode);
+  const canPropose = tools.some((tool) => tool.function.name === "propose_action");
+  const allowedReadToolNames = new Set(
+    tools
+      .map((tool) => tool.function.name)
+      .filter((name) => name !== "propose_action"),
+  );
+  const toolRunner: ReadToolRunner | null =
+    opts.executeReadTool ??
+    (businessId ? (name, args) => runReadTool(name, args, businessId, floorScope) : null);
   const usage: AiTokenUsage = { inputTokens: 0, outputTokens: 0 };
 
   const convo: ProviderMessage[] = [
@@ -181,7 +360,7 @@ export async function runAgentTurn(opts: {
   ];
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-    const result = await callProvider(config, convo, tools);
+    const result = await callProvider(config, convo, tools, opts.stream);
     usage.inputTokens += result.usage.inputTokens;
     usage.outputTokens += result.usage.outputTokens;
     const message = result.message;
@@ -196,7 +375,9 @@ export async function runAgentTurn(opts: {
     }
 
     // A proposed action ends the turn immediately — we never auto-execute it.
-    const proposal = toolCalls.find((c) => c.function.name === "propose_action");
+    const proposal = canPropose
+      ? toolCalls.find((c) => c.function.name === "propose_action")
+      : undefined;
     if (proposal) {
       const action = toProposedAction(parseArgs(proposal.function.arguments));
       const text =
@@ -207,9 +388,10 @@ export async function runAgentTurn(opts: {
     // Otherwise every call must be a read tool — run them and feed results back.
     convo.push({ role: "assistant", content: message.content ?? "", tool_calls: toolCalls });
     for (const call of toolCalls) {
-      const result = READ_TOOL_NAMES.has(call.function.name)
-        ? await runReadTool(call.function.name, parseArgs(call.function.arguments), businessId)
-        : { ok: false, data: { error: `ابزار ناشناخته: ${call.function.name}` } };
+      const result =
+        allowedReadToolNames.has(call.function.name) && toolRunner
+          ? await toolRunner(call.function.name, parseArgs(call.function.arguments))
+          : { ok: false, data: { error: `ابزار ناشناخته: ${call.function.name}` } };
       convo.push({
         role: "tool",
         tool_call_id: call.id,

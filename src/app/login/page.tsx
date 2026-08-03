@@ -1,10 +1,18 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { browserSupportsWebAuthn, startAuthentication } from "@simplewebauthn/browser";
+import { PinPad } from "@/components/auth/pin-pad";
 import { toPersianDigits } from "@/lib/digits";
 
 type Mode = "password" | "pin";
+
+const ROLE_LABELS: Record<string, string> = {
+  cashier: "صندوق‌دار",
+  waiter: "گارسون",
+  kitchen: "آشپزخانه",
+};
 
 export default function LoginPage() {
   const [mode, setMode] = useState<Mode>("password");
@@ -38,7 +46,7 @@ export default function LoginPage() {
           </button>
         </div>
 
-        {mode === "password" ? <PasswordForm /> : <PinPad />}
+        {mode === "password" ? <PasswordForm /> : <PinLogin />}
       </div>
     </main>
   );
@@ -112,83 +120,267 @@ function PasswordForm() {
   );
 }
 
-function PinPad() {
+interface RosterEmployee {
+  id: string;
+  fullName: string;
+  role: string;
+  photoUrl: string | null;
+  hasWebauthn: boolean;
+}
+
+/** Device-local "who signed in here recently" — never synced, just a UI shortcut. */
+const RECENTS_KEY = "pos:lastEmployees";
+const MAX_RECENTS = 5;
+
+/**
+ * Phase 20 Wave 4 — this terminal's paired-device token, if an owner/manager
+ * ever registered it from Settings → دستگاه‌های ثبت‌شده
+ * (src/app/dashboard/settings/device-settings.tsx, same localStorage key).
+ * Absent on every terminal that was never paired — those keep exactly Wave
+ * 3's unnarrowed behaviour, since every call below treats a missing/invalid
+ * token as "no device" rather than an error.
+ */
+const DEVICE_TOKEN_KEY = "pos:deviceToken";
+
+function readDeviceToken(): string | null {
+  try {
+    return window.localStorage.getItem(DEVICE_TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function readRecents(): string[] {
+  try {
+    const raw = window.localStorage.getItem(RECENTS_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.filter((v) => typeof v === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Phase 20 Wave 8 — a picker-narrowed PIN or biometric login can now come
+ * back 423 (`account_locked`) after LOGIN_LOCKOUT_THRESHOLD failed attempts
+ * (employee.ts's lockoutStatus); this turns that into a message with a
+ * concrete wait time instead of the generic "wrong PIN" text.
+ */
+function lockoutMessage(lockedUntil: unknown): string {
+  const until = typeof lockedUntil === "string" ? new Date(lockedUntil) : null;
+  if (!until || Number.isNaN(until.getTime())) {
+    return "به‌دلیل تلاش‌های ناموفق مکرر، ورود موقتاً قفل شده است.";
+  }
+  const minutes = Math.max(1, Math.ceil((until.getTime() - Date.now()) / 60_000));
+  return `به‌دلیل تلاش‌های ناموفق مکرر، ورود موقتاً قفل شده است؛ ${toPersianDigits(String(minutes))} دقیقه دیگر دوباره تلاش کنید.`;
+}
+
+function rememberRecent(employeeId: string) {
+  try {
+    const next = [employeeId, ...readRecents().filter((id) => id !== employeeId)].slice(0, MAX_RECENTS);
+    window.localStorage.setItem(RECENTS_KEY, JSON.stringify(next));
+  } catch {
+    // localStorage can be unavailable (private mode, quota) — the shortcut is a nicety, not a requirement.
+  }
+}
+
+/**
+ * Phase 20 Wave 2 — name-then-PIN. Step 1 shows the eligible staff (photo,
+ * name, role), most-recently-used-on-this-device first; step 2 is the PIN
+ * pad for whichever name was picked.
+ */
+function PinLogin() {
   const router = useRouter();
-  const [pin, setPin] = useState("");
+  const [employees, setEmployees] = useState<RosterEmployee[] | null>(null);
+  const [rosterError, setRosterError] = useState(false);
+  const [selected, setSelected] = useState<RosterEmployee | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [webauthnSupported, setWebauthnSupported] = useState(false);
 
-  async function submit(fullPin: string) {
+  useEffect(() => {
+    // Checked client-side only (guarded, not called during the server render)
+    // so the initial HTML never claims support the browser doesn't have.
+    setWebauthnSupported(browserSupportsWebAuthn());
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const deviceToken = readDeviceToken();
+    const url = deviceToken
+      ? `/api/auth/pin-login/roster?deviceToken=${encodeURIComponent(deviceToken)}`
+      : "/api/auth/pin-login/roster";
+    fetch(url)
+      .then((res) => (res.ok ? res.json() : Promise.reject()))
+      .then((data: { employees: RosterEmployee[] }) => {
+        if (!cancelled) setEmployees(data.employees ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setRosterError(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const ordered = useMemo(() => {
+    if (!employees) return [];
+    const recents = readRecents();
+    return [...employees].sort((a, b) => {
+      const ra = recents.indexOf(a.id);
+      const rb = recents.indexOf(b.id);
+      if (ra === -1 && rb === -1) return a.fullName.localeCompare(b.fullName, "fa");
+      if (ra === -1) return 1;
+      if (rb === -1) return -1;
+      return ra - rb;
+    });
+  }, [employees]);
+
+  async function submit(pin: string) {
+    if (!selected) return;
     setBusy(true);
     setError(null);
     const res = await fetch("/api/auth/pin-login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ pin: fullPin }),
+      body: JSON.stringify({ pin, employeeId: selected.id, deviceToken: readDeviceToken() }),
     });
     setBusy(false);
-    setPin("");
     if (res.ok) {
+      rememberRecent(selected.id);
       router.push("/dashboard");
       router.refresh();
-    } else {
-      setError("پین نادرست است.");
+      return;
+    }
+    if (res.status === 423) {
+      const data = await res.json().catch(() => ({}));
+      setError(lockoutMessage((data as { lockedUntil?: unknown }).lockedUntil));
+      return;
+    }
+    setError("پین نادرست است.");
+  }
+
+  async function submitBiometric() {
+    if (!selected) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const deviceToken = readDeviceToken();
+      const optionsRes = await fetch("/api/auth/webauthn/login/options", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ employeeId: selected.id, deviceToken }),
+      });
+      if (!optionsRes.ok) throw new Error("no_credentials");
+      const { options, challengeToken } = await optionsRes.json();
+
+      const response = await startAuthentication({ optionsJSON: options });
+
+      const verifyRes = await fetch("/api/auth/webauthn/login/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ employeeId: selected.id, response, challengeToken, deviceToken }),
+      });
+      if (verifyRes.status === 423) {
+        const data = await verifyRes.json().catch(() => ({}));
+        setError(lockoutMessage((data as { lockedUntil?: unknown }).lockedUntil));
+        return;
+      }
+      if (!verifyRes.ok) throw new Error("invalid_credentials");
+
+      rememberRecent(selected.id);
+      router.push("/dashboard");
+      router.refresh();
+    } catch {
+      // Covers a failed verification as well as the user cancelling the
+      // browser's own biometric prompt — either way, the PIN pad below is
+      // always right there as a fallback, so this doesn't need to explain
+      // which happened.
+      setError("ورود بیومتریک ناموفق بود؛ از پین استفاده کنید.");
+    } finally {
+      setBusy(false);
     }
   }
 
-  function press(digit: string) {
-    if (busy) return;
-    const next = (pin + digit).slice(0, 4);
-    setPin(next);
-    if (next.length === 4) void submit(next);
+  if (!selected) {
+    return (
+      <div>
+        <p className="mb-3 text-center text-sm text-muted-foreground">نام خود را انتخاب کنید</p>
+        {rosterError && (
+          <p className="text-center text-sm text-destructive">دریافت فهرست کارکنان ممکن نشد.</p>
+        )}
+        {!rosterError && !employees && (
+          <p className="text-center text-sm text-muted-foreground">در حال بارگذاری…</p>
+        )}
+        {!rosterError && employees && employees.length === 0 && (
+          <p className="text-center text-sm text-muted-foreground">کارمندی برای ورود سریع یافت نشد.</p>
+        )}
+        <div className="grid grid-cols-3 gap-2">
+          {ordered.map((employee) => (
+            <button
+              key={employee.id}
+              type="button"
+              onClick={() => {
+                setSelected(employee);
+                setError(null);
+              }}
+              className="flex flex-col items-center gap-1.5 rounded-lg p-2 text-center transition hover:bg-primary/10 active:scale-95"
+            >
+              <EmployeeAvatar employee={employee} />
+              <span className="line-clamp-1 text-xs font-semibold">{employee.fullName}</span>
+              <span className="text-[11px] text-muted-foreground">
+                {ROLE_LABELS[employee.role] ?? employee.role}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+    );
   }
 
   return (
     <div>
-      <div className="mb-4 flex justify-center gap-3" aria-label="پین وارد شده">
-        {[0, 1, 2, 3].map((i) => (
-          <span
-            key={i}
-            className={`size-3.5 rounded-full ${i < pin.length ? "bg-primary" : "bg-muted"}`}
-          />
-        ))}
+      <div className="mb-4 flex items-center justify-between">
+        <button
+          type="button"
+          onClick={() => {
+            setSelected(null);
+            setError(null);
+          }}
+          className="text-sm text-muted-foreground hover:text-foreground"
+        >
+          ← کارمند دیگر
+        </button>
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-semibold">{selected.fullName}</span>
+          <EmployeeAvatar employee={selected} size="sm" />
+        </div>
       </div>
-      <div className="grid grid-cols-3 gap-2">
-        {["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((d) => (
-          <PadButton key={d} label={toPersianDigits(d)} onClick={() => press(d)} />
-        ))}
-        <PadButton label="پاک" onClick={() => setPin("")} muted />
-        <PadButton label={toPersianDigits("0")} onClick={() => press("0")} />
-        <PadButton
-          label="⌫"
-          onClick={() => setPin((p) => p.slice(0, -1))}
-          muted
-        />
-      </div>
-      {error && <p className="mt-3 text-center text-sm text-destructive">{error}</p>}
-      {busy && <p className="mt-3 text-center text-sm text-muted-foreground">در حال ورود…</p>}
+      {selected.hasWebauthn && webauthnSupported && (
+        <button
+          type="button"
+          onClick={submitBiometric}
+          disabled={busy}
+          className="mb-4 w-full rounded-lg border border-input py-2.5 text-sm font-semibold transition hover:bg-primary/10 disabled:opacity-50"
+        >
+          ورود با اثر انگشت یا چهره
+        </button>
+      )}
+      <PinPad onComplete={submit} busy={busy} error={error} resetKey={selected.id} />
     </div>
   );
 }
 
-function PadButton({
-  label,
-  onClick,
-  muted = false,
-}: {
-  label: string;
-  onClick: () => void;
-  muted?: boolean;
-}) {
+function EmployeeAvatar({ employee, size = "md" }: { employee: RosterEmployee; size?: "sm" | "md" }) {
+  const dims = size === "sm" ? "size-8 text-xs" : "size-14 text-lg";
+  if (employee.photoUrl) {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src={employee.photoUrl} alt="" className={`${dims} rounded-full object-cover`} />;
+  }
+  const initials = employee.fullName.trim().slice(0, 1);
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`rounded-lg py-3 text-lg font-semibold transition active:scale-95 ${
-        muted ? "bg-muted text-muted-foreground hover:bg-muted-foreground/20" : "bg-muted hover:bg-primary/10"
-      }`}
-    >
-      {label}
-    </button>
+    <span className={`${dims} flex items-center justify-center rounded-full bg-primary/15 font-bold text-primary`}>
+      {initials}
+    </span>
   );
 }

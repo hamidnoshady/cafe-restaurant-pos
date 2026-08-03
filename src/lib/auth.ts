@@ -9,9 +9,10 @@ import {
   type Role,
   type SessionPayload,
 } from "./auth-edge";
-import { query } from "./db";
+import { query, withoutTenantScope } from "./db";
+import { sessionStatus } from "./employee";
 import { featureForApiPath, isFeatureEnabled } from "./features";
-import { hasPermission, parseOverrides, type Permission } from "./permissions";
+import { hasPermission, parseOverrides, PERMISSIONS, type Permission } from "./permissions";
 import { activeGrant } from "./platform-service";
 import { platformAudit } from "./platform-auth";
 import { businessScope, enterTenantScope, NO_SCOPE, runInTenantScope } from "./tenant-context";
@@ -32,6 +33,40 @@ async function checkImpersonation(session: SessionPayload | null): Promise<Sessi
   if (!session?.imp) return session;
   const grant = await activeGrant(session.imp.adminId, session.businessId);
   if (!grant || grant.id !== session.imp.grantId) return null;
+  return session;
+}
+
+/**
+ * Phase 20 Wave 2 — the counterpart of checkImpersonation for
+ * `employeeSessionId`: a JWT alone is not enough to keep using a PIN login
+ * once its `employee_sessions` row has been revoked or has expired, so that
+ * row is re-checked live on every request rather than trusted for the
+ * token's full 12-hour lifetime. Runs with `withoutTenantScope` for the same
+ * structural reason `checkImpersonation`'s `activeGrant` call does: this is
+ * called from `getSession()` before `enterTenantScope` has run for the
+ * request, so there is no ambient tenant scope yet to run an ordinary query
+ * in — see the "employee-session-auth" entry in db.ts's `withoutTenantScope`
+ * doc comment.
+ */
+async function checkEmployeeSession(session: SessionPayload | null): Promise<SessionPayload | null> {
+  if (!session?.employeeSessionId) return session;
+  const sessionId = session.employeeSessionId;
+
+  const status = await withoutTenantScope("employee-session-auth", async () => {
+    const { rows } = await query<{ expires_at: Date; revoked_at: Date | null }>(
+      `SELECT expires_at, revoked_at FROM employee_sessions WHERE id = $1 AND business_id = $2`,
+      [sessionId, session.businessId],
+    );
+    if (!rows[0]) return null;
+    return sessionStatus({ expiresAt: rows[0].expires_at, revokedAt: rows[0].revoked_at });
+  });
+  if (status !== "active") return null;
+
+  // Best-effort activity marker for the sessions list — never blocks the request.
+  void withoutTenantScope("employee-session-auth", () =>
+    query(`UPDATE employee_sessions SET last_seen_at = now() WHERE id = $1`, [sessionId]),
+  ).catch(() => {});
+
   return session;
 }
 
@@ -63,7 +98,9 @@ export {
 export async function getSession(): Promise<SessionPayload | null> {
   const store = await cookies();
   const token = store.get(SESSION_COOKIE)?.value;
-  const session = await checkImpersonation(token ? await verifySession(token) : null);
+  const session = await checkEmployeeSession(
+    await checkImpersonation(token ? await verifySession(token) : null),
+  );
 
   enterTenantScope(
     session ? businessScope(session.businessId, session.locationId, session.sub) : NO_SCOPE,
@@ -203,4 +240,21 @@ export async function requirePermission(
 
   // The token's role can lag a role change; the database is the authority.
   return { session: { ...session, role: membership.role }, error: null };
+}
+
+
+/**
+ * Wave 3 floor-assistant guard. It is intentionally separate from
+ * requireManager: only current cashier/waiter memberships with menu-view
+ * access may use the narrow, read-only assistant.
+ */
+export async function requireFloorAssistant(): Promise<
+  { session: SessionPayload; error: null } | { session: null; error: NextResponse }
+> {
+  const guard = await requirePermission(PERMISSIONS.menuView);
+  if (guard.error) return guard;
+  if (guard.session.role !== "cashier" && guard.session.role !== "waiter") {
+    return { session: null, error: NextResponse.json({ error: "forbidden" }, { status: 403 }) };
+  }
+  return guard;
 }

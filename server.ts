@@ -51,6 +51,7 @@ app.prepare().then(async () => {
   const { runServerSyncTick, SERVER_SYNC_INTERVAL_MS } = await import("./src/lib/server-sync");
   const { assertRlsEffective } = await import("./src/lib/db");
   const { runAiSubscriptionRenewalTick, AI_SUBSCRIPTION_TICK_INTERVAL_MS } = await import("./src/lib/ai-billing-service");
+  const { runAiProactiveTick, AI_PROACTIVE_TICK_INTERVAL_MS } = await import("./src/lib/ai-proactive-service");
 
   // Phase 12: tenant isolation is enforced by Postgres row-level security,
   // which superusers and BYPASSRLS roles ignore outright — silently, with no
@@ -93,6 +94,14 @@ app.prepare().then(async () => {
     runAiSubscriptionRenewalTick().catch((err) => console.error("AI subscription renewal tick failed:", err));
   setInterval(aiSubscriptionTick, AI_SUBSCRIPTION_TICK_INTERVAL_MS).unref();
   setTimeout(aiSubscriptionTick, 60_000).unref();
+
+  // Phase 18b Wave 4: opt-in proactive AI jobs. The service enumerates
+  // businesses only under the documented platform bypass and then wraps each
+  // tenant's facts, credit reservation and output rows in withTenant.
+  const aiProactiveTick = () =>
+    runAiProactiveTick().catch((err) => console.error("proactive AI tick failed:", err));
+  setInterval(aiProactiveTick, AI_PROACTIVE_TICK_INTERVAL_MS).unref();
+  setTimeout(aiProactiveTick, 75_000).unref();
 
   const server = createServer((req, res) => {
     handle(req, res, parse(req.url ?? "/", true));

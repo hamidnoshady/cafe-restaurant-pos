@@ -4,6 +4,7 @@ import { formatJalali } from "@/lib/jalali";
 import { getSession } from "@/lib/auth";
 import { getBackupHealth } from "@/lib/backup-service";
 import { isSetupComplete } from "@/lib/setup-state";
+import { effectiveFeatures } from "@/lib/features";
 import { OperationsOverview } from "./operations-overview";
 import { PinnedReports } from "./pinned-reports";
 
@@ -20,7 +21,9 @@ export default async function DashboardPage() {
   const today = toPersianDigits(formatJalali(new Date(), { withMonthName: true }));
   const session = await getSession();
   const canSetup = session?.role === "owner" || session?.role === "manager";
-  const setupDone = session ? await isSetupComplete(session.businessId) : true;
+  const [setupDone, features] = session
+    ? await Promise.all([isSetupComplete(session.businessId), effectiveFeatures(session.businessId)])
+    : [true, null];
   // Phase 10 exit criterion: a failed/missed backup surfaces right on the
   // Owner's dashboard, not only on the backup page nobody may be watching.
   const backupHealth =
@@ -76,7 +79,7 @@ export default async function DashboardPage() {
 
       {hasOperationalOverview && session ? <OperationsOverview role={session.role as (typeof OPERATIONAL_ROLES)[number]} /> : null}
 
-      <PinnedReports canEdit={canSetup} />
+      <PinnedReports canEdit={canSetup} canExplain={canSetup && Boolean(features?.ai_assistant)} />
     </div>
   );
 }

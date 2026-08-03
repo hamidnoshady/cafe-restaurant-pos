@@ -168,6 +168,22 @@ describe("buildReportQuery", () => {
     expect(sql).toContain("GROUP BY date_trunc('day', sale_date)::date");
   });
 
+  it("binds a supplied location after business scope for branch-bound callers", () => {
+    const config: ReportConfig = {
+      view: "v_sales_by_day",
+      metric: "total",
+      aggregation: "sum",
+      dimension: "day",
+      filters: { dateFrom: "2026-01-01", dateTo: "2026-01-31" },
+    };
+    const { sql, params } = buildReportQuery(config, BIZ, "location-1");
+    expect(params).toEqual([BIZ, "location-1", "2026-01-01", "2026-01-31"]);
+    expect(sql).toContain("business_id = $1");
+    expect(sql).toContain("location_id = $2");
+    expect(sql).toContain("sale_date >= $3");
+    expect(sql).toContain("sale_date <= $4");
+  });
+
   it("builds an entity-dimension query grouping by id + label columns", () => {
     const config: ReportConfig = {
       view: "v_menu_item_performance",

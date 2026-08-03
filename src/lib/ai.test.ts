@@ -241,3 +241,38 @@ describe("prompts and tools", () => {
     expect(prompt).toContain("forecast_demand");
   });
 });
+
+
+describe("Phase 18b Wave 3 — role-scoped agent variants", () => {
+  it("keeps cashier/waiter tools read-only and out of the action catalogue", () => {
+    const floor = toolDefinitions("floor").map((tool) => tool.function.name);
+    expect(floor).toEqual(["get_menu_item_details", "get_bill_split_preview"]);
+    expect(floor).not.toContain("propose_action");
+
+    const prompt = buildSystemPrompt({ mode: "floor", role: "cashier" });
+    expect(prompt).toContain("get_bill_split_preview");
+    expect(prompt).toContain("هرگز از روی نام مواد حدس نزن");
+  });
+
+  it("keeps the platform-support realm separate and health-only", () => {
+    const platform = toolDefinitions("platform").map((tool) => tool.function.name);
+    expect(platform).toEqual(["get_client_update_status", "get_backup_health"]);
+    expect(platform).not.toContain("propose_action");
+    expect(platform).not.toContain("get_menu_performance");
+
+    const prompt = buildSystemPrompt({ mode: "platform", role: "platform-support" });
+    expect(prompt).toContain("وضعیت نسخهٔ نصب‌های مشتری");
+    expect(prompt).toContain("دادهٔ عملیاتی یا شخصی");
+  });
+});
+
+describe("Phase 18b Wave 4 — proactive agent isolation", () => {
+  it("gives scheduled digests no tools and no action path", () => {
+    expect(toolDefinitions("proactive")).toEqual([]);
+    const prompt = buildSystemPrompt({ mode: "proactive", businessName: "کافه آزمون" });
+    expect(prompt).toContain("هیچ ابزار");
+    expect(prompt).toContain("هیچ پیشنهاد اجرایی");
+    expect(prompt).toContain("هرگز پیام مشتری");
+    expect(prompt).not.toContain("انواع عملیات مجاز برای propose_action");
+  });
+});

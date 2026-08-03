@@ -43,7 +43,7 @@ export default async function SettingsPage() {
           مدیریت اطلاعات کسب‌وکار، امور مالی، دسترسی‌ها، منو و تجهیزات. بخش‌هایی که مجوزشان را ندارید نمایش داده نمی‌شوند.
         </p>
       </header>
-      <SettingsManager tabs={tabs} currentUserId={session.sub} isOwner={member.role === "owner"} />
+      <SettingsManager tabs={tabs} features={features} currentUserId={session.sub} isOwner={member.role === "owner"} />
     </div>
   );
 }

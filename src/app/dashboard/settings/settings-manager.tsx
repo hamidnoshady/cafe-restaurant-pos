@@ -5,34 +5,40 @@ import { useSearchParams } from "next/navigation";
 import type { SettingsTab, SettingsTabKey } from "@/lib/settings-tabs";
 import { isSettingsTabKey } from "@/lib/settings-tabs";
 import { BackupManager } from "../backup/backup-manager";
-import { LocationsManager } from "../locations/locations-manager";
+import { BranchManagementSettings } from "./branch-management-settings";
 import { TeamManager } from "../team/team-manager";
 import { AccountsSettings } from "./accounts-settings";
+import { AuditLogSettings } from "./audit-log-settings";
 import { BusinessSettings } from "./business-settings";
+import { DeviceSettings } from "./device-settings";
 import { MenuSettings } from "./menu-settings";
 import { PricingSettings } from "./pricing-settings";
 import { PrinterSettings } from "./printer-settings";
+import { SecurityCenterSettings } from "./security-center-settings";
 import { ServerSyncSettings } from "./server-sync-settings";
+import { ShiftHistorySettings } from "./shift-history-settings";
 import { TaxSettings } from "./tax-settings";
 
 interface SettingsManagerProps {
   tabs: SettingsTab[];
+  features: Record<string, boolean>;
   currentUserId: string;
   isOwner: boolean;
 }
 
-export function SettingsManager({ tabs, currentUserId, isOwner }: SettingsManagerProps) {
+export function SettingsManager({ tabs, features, currentUserId, isOwner }: SettingsManagerProps) {
   const searchParams = useSearchParams();
   const requestedTab = searchParams.get("tab");
+  const normalizedRequestedTab = requestedTab === "branch-sync" ? "branch-management" : requestedTab;
   const firstTab = tabs[0]?.key;
   const [tab, setTab] = useState<SettingsTabKey>(() => tabs[0]?.key ?? "business");
   const available = useMemo(() => new Set(tabs.map((item) => item.key)), [tabs]);
 
   useEffect(() => {
-    if (isSettingsTabKey(requestedTab) && available.has(requestedTab)) {
-      setTab(requestedTab);
+    if (isSettingsTabKey(normalizedRequestedTab) && available.has(normalizedRequestedTab)) {
+      setTab(normalizedRequestedTab);
     }
-  }, [available, requestedTab]);
+  }, [available, normalizedRequestedTab]);
 
   if (!firstTab) return null;
   const activeTab = available.has(tab) ? tab : firstTab;
@@ -64,8 +70,12 @@ export function SettingsManager({ tabs, currentUserId, isOwner }: SettingsManage
       {activeTab === "team" ? <TeamManager currentUserId={currentUserId} /> : null}
       {activeTab === "menu" ? <MenuSettings /> : null}
       {activeTab === "printers" ? <PrinterSettings /> : null}
-      {activeTab === "branch-sync" ? <LocationsManager /> : null}
+      {activeTab === "branch-management" ? <BranchManagementSettings features={features} /> : null}
       {activeTab === "server-sync" ? <ServerSyncSettings /> : null}
+      {activeTab === "devices" ? <DeviceSettings /> : null}
+      {activeTab === "shifts" ? <ShiftHistorySettings /> : null}
+      {activeTab === "audit-log" ? <AuditLogSettings /> : null}
+      {activeTab === "security-center" ? <SecurityCenterSettings /> : null}
       {activeTab === "backup" ? <BackupManager isOwner={isOwner} /> : null}
     </div>
   );

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { DashboardGrid } from "./dashboard-grid";
 
 /** Keeps the existing personalized report widgets available without competing with the operational overview. */
-export function PinnedReports({ canEdit }: { canEdit: boolean }) {
+export function PinnedReports({ canEdit, canExplain }: { canEdit: boolean; canExplain: boolean }) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -19,7 +19,7 @@ export function PinnedReports({ canEdit }: { canEdit: boolean }) {
         <span id="pinned-reports-heading">گزارش‌های سنجاق‌شده <span className="mr-2 text-xs font-normal text-muted-foreground">چیدمان و گزارش‌های شخصی شما</span></span>
         <span className="shrink-0 text-xs font-medium text-muted-foreground">{open ? "بستن" : "باز کردن"}</span>
       </button>
-      {open ? <div id="pinned-reports-content" className="border-t border-border/80 py-4"><DashboardGrid canEdit={canEdit} /></div> : null}
+      {open ? <div id="pinned-reports-content" className="border-t border-border/80 py-4"><DashboardGrid canEdit={canEdit} canExplain={canExplain} /></div> : null}
     </section>
   );
 }

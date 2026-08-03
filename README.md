@@ -2,7 +2,7 @@
 
 Persian-first (RTL, Jalali calendar, Toman display) point-of-sale system for cafes and restaurants. Built with Next.js + PostgreSQL.
 
-Development is phased — see [docs/phases/README.md](docs/phases/README.md) for the phase index. **Current status: all 18 phases implemented** — a single-business POS (Phases 0–11: menu/POS, tables, waiter/kitchen real-time sync, offline queue, inventory, ledger, reporting, multi-location rollup, backups, delivery) turned into a multi-business platform (Phases 12–17: tenant isolation via RLS, teams & permissions, per-business branches, a super-admin console, a real accounting suite, and entitlement/rate-limit hardening), then added platform-owned, metered AI credits and subscriptions (Phase 18).
+Development is phased — see [docs/phases/README.md](docs/phases/README.md) for the phase index. **Current status: all 18 numbered phases implemented; Phase 18b is complete for its documented existing-model scope, and Phase 19 is in progress with its Waves 1–2 public-API foundation and core data API** — a single-business POS (Phases 0–11: menu/POS, tables, waiter/kitchen real-time sync, offline queue, inventory, ledger, reporting, multi-location rollup, backups, delivery) turned into a multi-business platform (Phases 12–17: tenant isolation via RLS, teams & permissions, per-business branches, a super-admin console, a real accounting suite, and entitlement/rate-limit hardening), then added platform-owned, metered AI credits and subscriptions (Phase 18). All five Phase 18b waves are shipped. Capabilities that require a new expiry, delivery-zone, staff-shift, ETA, credit-limit, or promotion data model remain explicitly deferred in the Phase 18b document rather than being approximated or silently omitted.
 
 ## Stack
 
@@ -86,10 +86,11 @@ kitchen": its items land on the KDS as `sent` immediately.
   the floor plan). Tap a seated table to add items to its open order/round, see each
   item's live kitchen status, and mark a `ready` item `served` once it's delivered.
 - **`/dashboard/kitchen`** (Kitchen, + Owner/Manager) — the KDS: one ticket per table
-  (grouping every round on that table's open session) or per takeaway order, oldest
-  first. Tickets outstanding ≥ 10 minutes (`DEFAULT_TICKET_AGING_MINUTES`,
-  `src/lib/order-item-status.ts`) flag red. "Bump" moves an item `sent → preparing →
-  ready`.
+  (grouping every round on that table's open session) or per takeaway order. Its deterministic
+  next-ticket queue places overdue tickets first, then `sent`, `preparing`, and `ready`, with
+  oldest-first ties—no AI call or credit charge. Tickets outstanding ≥ 10 minutes
+  (`DEFAULT_TICKET_AGING_MINUTES`, `src/lib/order-item-status.ts`) flag red. "Bump" moves an
+  item `sent → preparing → ready`.
 - Every open dashboard screen (cashier orders list, floor plan, waiter board, KDS)
   refetches on the relevant WebSocket event, so no two screens ever show conflicting
   order/table state.
@@ -150,6 +151,17 @@ The agent's mutations are restricted to a fixed allowlist (`ACTION_CATALOG` in
 `src/lib/ai.ts`) that maps each proposed action to an already role-guarded
 endpoint, so it can never call an arbitrary URL. Read tools run server-side and
 never mutate data.
+
+**Wave 5 interaction safeguards.** Before an assistant request reaches a provider,
+the chat panel asks for confirmation against a conservative, visible credit-cost
+estimate (including the existing maximum reservation). Provider text is relayed
+incrementally to the panel; tool rounds and action confirmation remain server-side.
+Suggested prompt chips appear on open, and **«توضیح این عدد»** on eligible report
+previews/pinned widgets opens the assistant with the visible report context
+pre-filled. Every proposed action is recorded in a tenant-scoped audit trail with
+the prompting user, proposed payload summary, and applied/failed/dismissed outcome,
+available to Owner/Manager at `/dashboard/ai`. No real WhatsApp, Telegram, voice,
+SMS, or automatic customer-message channel is introduced.
 
 **Platform-owned providers and billing.** Two OpenAI-compatible providers are supported — **OpenRouter** and
 **ArvanCloud AI** — through one platform-owned connection configured only at

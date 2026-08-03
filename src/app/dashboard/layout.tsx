@@ -2,9 +2,10 @@ import { redirect } from "next/navigation";
 import { getSession, type Role } from "@/lib/auth";
 import { query, withTenant } from "@/lib/db";
 import { effectiveFeatures } from "@/lib/features";
-import { effectivePermissions, parseOverrides, type Permission } from "@/lib/permissions";
+import { effectivePermissions, parseOverrides, PERMISSIONS, type Permission } from "@/lib/permissions";
 import { visibleSettingsTabs } from "@/lib/settings-tabs";
 import { AiAssistant } from "@/components/ai/ai-assistant";
+import { LockProvider } from "./lock-screen";
 import { OfflineBanner } from "./offline-banner";
 import { DashboardSidebar, type NavItem } from "./dashboard-sidebar";
 
@@ -21,7 +22,6 @@ const NAV_ITEMS: NavItem[] = [
   { label: "انبار", href: "/dashboard/inventory", roles: ["owner", "manager"], flag: "inventory" },
   { label: "حسابداری", href: "/dashboard/ledger", roles: ["owner", "manager", "accountant"], flag: "ledger" },
   { label: "گزارش‌ها", href: "/dashboard/reports", roles: ["owner", "manager", "accountant"], flag: "reporting" },
-  { label: "مدیریت شعب", href: "/dashboard/branches", roles: ["owner"], flag: "multi_location" },
   { label: "دستیار هوشمند", href: "/dashboard/ai", roles: ["owner", "manager"], flag: "ai_assistant" },
   { label: "تنظیمات", href: "/dashboard/settings" },
 ];
@@ -64,15 +64,26 @@ export default async function DashboardLayout({
   const navItems = NAV_ITEMS.filter((item) => canSee(item, member.role, permissions, features)).filter(
     (item) => item.href !== "/dashboard/settings" || settingsTabs.length > 0,
   );
+  const assistantMode =
+    member.role === "cashier" || member.role === "waiter"
+      ? "floor"
+      : member.role === "owner" || member.role === "manager"
+        ? "dashboard"
+        : null;
+  const canUseAssistant =
+    assistantMode === "dashboard" ||
+    (assistantMode === "floor" && permissions.has(PERMISSIONS.menuView));
 
   return (
-    <div className="flex min-h-screen flex-col md:flex-row">
-      <DashboardSidebar navItems={navItems} role={member.role} fullName={session.fullName} />
-      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <OfflineBanner />
-        <main className="flex-1 overflow-y-auto p-2 pb-24 md:p-4">{children}</main>
+    <LockProvider fullName={session.fullName}>
+      <div className="flex min-h-screen flex-col md:flex-row">
+        <DashboardSidebar navItems={navItems} role={member.role} fullName={session.fullName} />
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+          <OfflineBanner />
+          <main className="flex-1 overflow-y-auto p-2 pb-24 md:p-4">{children}</main>
+        </div>
+        {assistantMode && canUseAssistant && features.ai_assistant ? <AiAssistant mode={assistantMode} /> : null}
       </div>
-      {(member.role === "owner" || member.role === "manager") && features.ai_assistant ? <AiAssistant mode="dashboard" /> : null}
-    </div>
+    </LockProvider>
   );
 }

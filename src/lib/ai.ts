@@ -380,7 +380,7 @@ export interface ChatMessage {
   tool_call_id?: string;
 }
 
-export type AgentMode = "wizard" | "dashboard";
+export type AgentMode = "wizard" | "dashboard" | "floor" | "platform" | "proactive";
 
 export interface PromptContext {
   mode: AgentMode;
@@ -408,9 +408,7 @@ export function buildSystemPrompt(ctx: PromptContext): string {
   const lines: string[] = [
     "تو «دستیار هوشمند» یک نرم‌افزار صندوق فروش (POS) کافه و رستوران فارسی‌زبان هستی.",
     "همیشه به زبان فارسی، کوتاه، دقیق و محترمانه پاسخ بده. مبالغ را به تومان و تاریخ‌ها را شمسی در نظر بگیر (ذخیره‌سازی داخلی ریال و میلادی است).",
-    "هرگز عدد یا آمار از خودت نساز؛ برای هر داده‌ای اول ابزارهای خواندن (get_setup_state, list_reports, run_report) را صدا بزن و بر اساس نتیجهٔ واقعی پاسخ بده.",
-    "برای هر تغییری در داده‌ها (پر کردن ویزارد، افزودن آیتم منو، تنظیم مالیات و…) هرگز مستقیم اقدام نکن؛ فقط ابزار propose_action را با نوع مجاز و payload کامل صدا بزن. کاربر خودش با دکمهٔ تأیید آن را اجرا می‌کند (human-in-the-loop).",
-    "قبل از پیشنهاد، اطلاعات لازم را با پرسیدن سؤال از کاربر کامل کن؛ فیلدها را با حدس‌های نامطمئن پر نکن.",
+    "هرگز عدد یا آمار از خودت نساز؛ در حالت‌های دارای ابزار فقط از ابزارهای خواندنِ مجاز و در حالت گزارش زمان‌بندی‌شده فقط از دادهٔ واقعیِ ورودی استفاده کن.",
   ];
 
   if (ctx.businessName) lines.push(`نام کسب‌وکار: ${ctx.businessName}.`);
@@ -422,19 +420,43 @@ export function buildSystemPrompt(ctx: PromptContext): string {
       "وظیفهٔ اصلی تو در این حالت: کمک به تکمیل «راه‌اندازی اولیه» گام‌به‌گام. با گفت‌وگو اطلاعات هر مرحله را از کاربر بگیر و سپس یک propose_action برای همان مرحله بساز تا فیلدها کامل ثبت شوند.",
       step ? `کاربر اکنون روی مرحلهٔ «${step}» است؛ روی همین مرحله تمرکز کن اما می‌توانی مراحل بعدی را هم پیشنهاد دهی.` : "",
       "برای مرحلهٔ حساب‌ها، قالب پیش‌فرض سرفصل‌ها معمولاً بهترین انتخاب است؛ آن را دست‌نخورده پیشنهاد بده مگر کاربر تغییری بخواهد.",
+      "برای هر تغییر در داده‌ها هرگز مستقیم اقدام نکن؛ فقط ابزار propose_action را با نوع مجاز و payload کامل صدا بزن. کاربر خودش با دکمهٔ تأیید آن را اجرا می‌کند (human-in-the-loop).",
+      "قبل از پیشنهاد، اطلاعات لازم را با پرسیدن سؤال از کاربر کامل کن؛ فیلدها را با حدس‌های نامطمئن پر نکن.",
     );
-  } else {
+  } else if (ctx.mode === "dashboard") {
     lines.push(
       "در این حالت به کاربر (مالک/مدیر) کمک می‌کنی: نمایش و تحلیل گزارش‌ها (فروش، منو، موجودی، حسابداری)، پاسخ به سؤال دربارهٔ وضعیت راه‌اندازی، و انجام کارهای مجاز از طریق پیشنهادِ قابل‌تأیید.",
       "برای گزارش‌ها اول list_reports را صدا بزن تا کلیدهای معتبر را بدانی، سپس run_report را با key و در صورت نیاز بازهٔ تاریخ اجرا کن و خلاصهٔ خوانا بده.",
       "علاوه بر گزارش‌های استاندارد، ابزارهای تخصصی هم داری: عملکرد منو و آیتم‌های باطل‌شده (get_menu_performance، get_void_pattern)، موجودی و تأمین‌کنندگان (get_stock_valuation، get_supplier_performance)، رزرو و میز (get_reservation_conflicts، get_table_turnover_rate)، پیک تحویل (get_courier_performance)، مشتریان (get_customer_profile، get_at_risk_customers)، حسابداری (get_ar_aging، get_ap_upcoming، get_unreconciled_bank_lines، get_payroll_summary، get_vat_liability)، مقایسهٔ شعبه‌ها (get_branch_comparison) و تخمین تقاضا (forecast_demand). هر کدام مناسب سؤال بود همان را صدا بزن؛ برای forecast_demand همیشه در پاسخ صریح بگو که یک تخمین است.",
+      "برای هر تغییر در داده‌ها هرگز مستقیم اقدام نکن؛ فقط ابزار propose_action را با نوع مجاز و payload کامل صدا بزن. کاربر خودش با دکمهٔ تأیید آن را اجرا می‌کند (human-in-the-loop).",
+      "قبل از پیشنهاد، اطلاعات لازم را با پرسیدن سؤال از کاربر کامل کن؛ فیلدها را با حدس‌های نامطمئن پر نکن.",
+    );
+  } else if (ctx.mode === "floor") {
+    lines.push(
+      "این حالت فقط برای صندوق‌دار و گارسونِ شعبهٔ فعال است. فقط به سؤال‌های منو، مواد اولیهٔ ثبت‌شده و پیش‌نمایش تقسیم صورت‌حساب همان شعبه پاسخ بده.",
+      "هیچ تغییری ثبت نکن و امکان پیشنهادِ اجرایی نداری. فقط راهنمایی کن؛ اجرای تقسیم صورت‌حساب یا هر عملیات دیگر باید از جریان عادی POS انجام شود.",
+      "در پرسش‌های حساسیت/آلرژی، فقط دادهٔ ثبت‌شده را بازگو کن. اگر ابزار گفت دادهٔ ساخت‌یافتهٔ آلرژن موجود نیست، صریح بگو که ایمن‌بودن غذا قابل تأیید نیست و باید با آشپزخانه بررسی شود؛ هرگز از روی نام مواد حدس نزن.",
+      "برای صورت‌حساب فقط از get_bill_split_preview استفاده کن و هرگز شمارهٔ تلفن، نام مهمان یا دادهٔ مشتری را بازگو نکن.",
+    );
+  } else if (ctx.mode === "proactive") {
+    lines.push(
+      "این حالت فقط برای گزارش خصوصیِ زمان‌بندی‌شدهٔ همان کسب‌وکار است. داده‌های واقعی در پیام کاربر آمده‌اند و هیچ ابزار، هیچ پیشنهاد اجرایی و هیچ کانال ارسالی نداری.",
+      "فقط بر اساس همان داده‌ها یک متن فارسی کوتاه و عملیاتی بنویس. اگر داده‌ای ناقص است آن را صریح بگو؛ هرگز عدد، موعد قانونی، تغییر ثبت‌شده یا پیامِ ارسال‌شده جعل نکن.",
+      "هرگز پیام مشتری، شماره تماس، دستور API یا propose_action تولید نکن. خروجی صرفاً برای بررسی انسانی داخل نرم‌افزار است.",
+    );
+  } else {
+    lines.push(
+      "این حالت مخصوص تیم پشتیبانی پلتفرم است، نه یک کسب‌وکار. فقط وضعیت سلامت سراسریِ مجاز را بررسی کن: وضعیت نسخهٔ نصب‌های مشتری و سلامت پشتیبان‌گیری.",
+      "به دادهٔ عملیاتی یا شخصی هیچ کسب‌وکاری دسترسی نداری و امکان پیشنهاد یا ثبت تغییر نداری. اگر سؤال خارج از ابزارهای مجاز بود، شفاف بگو که این دستیار فقط برای سلامت سکو طراحی شده است.",
     );
   }
 
-  const catalog = ACTION_TYPES.map((t) => `- ${t}: ${ACTION_CATALOG[t].label} — payload: ${ACTION_CATALOG[t].payloadHint}`).join(
-    "\n",
-  );
-  lines.push("انواع عملیات مجاز برای propose_action و ساختار payload آن‌ها:\n" + catalog);
+  if (ctx.mode === "wizard" || ctx.mode === "dashboard") {
+    const catalog = ACTION_TYPES.map((t) => `- ${t}: ${ACTION_CATALOG[t].label} — payload: ${ACTION_CATALOG[t].payloadHint}`).join(
+      "\n",
+    );
+    lines.push("انواع عملیات مجاز برای propose_action و ساختار payload آن‌ها:\n" + catalog);
+  }
 
   return lines.filter(Boolean).join("\n");
 }
@@ -626,6 +648,67 @@ export function toolDefinitions(mode: AgentMode): OpenAiTool[] {
     },
   };
 
-  // Read tools are useful in both modes (the wizard agent inspects setup state too).
-  return mode === "wizard" ? [readTools[0], proposeTool] : [...readTools, proposeTool];
+  const floorReadTools: OpenAiTool[] = [
+    {
+      type: "function",
+      function: {
+        name: "get_menu_item_details",
+        description:
+          "جست‌وجوی آیتم منوی شعبهٔ فعال، توضیح و مواد اولیهٔ ثبت‌شدهٔ آن. برای پرسش آلرژی فقط وضعیت دادهٔ ثبت‌شده را برمی‌گرداند و هیچ آلرژنی را حدس نمی‌زند.",
+        parameters: {
+          type: "object",
+          properties: {
+            menuItemId: { type: "string", description: "شناسهٔ آیتم منو، اختیاری اگر نام/عبارت جست‌وجو داده شود" },
+            query: { type: "string", description: "نام یا بخشی از نام آیتم منو" },
+          },
+          additionalProperties: false,
+        },
+      },
+    },
+    {
+      type: "function",
+      function: {
+        name: "get_bill_split_preview",
+        description:
+          "پیش‌نمایش فقط‌خواندنیِ تقسیم برابر صورت‌حساب یک میز باز در شعبهٔ فعال؛ هیچ پرداخت یا تقسیمی ثبت نمی‌کند.",
+        parameters: {
+          type: "object",
+          properties: {
+            tableSessionId: { type: "string", description: "شناسهٔ نشست میز باز، اختیاری اگر نام میز داده شود" },
+            tableName: { type: "string", description: "نام میز، مانند «میز ۳»" },
+            guests: { type: "number", description: "تعداد مهمان‌ها، بین ۱ تا ۵۰" },
+          },
+          required: ["guests"],
+          additionalProperties: false,
+        },
+      },
+    },
+  ];
+
+  const platformReadTools: OpenAiTool[] = [
+    noArgsTool(
+      "get_client_update_status",
+      "وضعیت نسخهٔ نصب‌های متصل: کسب‌وکارهایی که نسخهٔ قدیمی دارند یا گزارش نسخه‌شان خطا دارد.",
+    ),
+    {
+      type: "function",
+      function: {
+        name: "get_backup_health",
+        description: "وضعیت آخرین پشتیبان‌گیری هر کسب‌وکار و اجراهای ناموفق در بازهٔ زمانی مشخص.",
+        parameters: {
+          type: "object",
+          properties: {
+            lookbackHours: { type: "number", description: "بازهٔ بررسی خطا بر حسب ساعت، پیش‌فرض ۲۴ و حداکثر ۱۶۸" },
+          },
+          additionalProperties: false,
+        },
+      },
+    },
+  ];
+
+  if (mode === "wizard") return [readTools[0], proposeTool];
+  if (mode === "dashboard") return [...readTools, proposeTool];
+  if (mode === "floor") return floorReadTools;
+  if (mode === "proactive") return [];
+  return platformReadTools;
 }

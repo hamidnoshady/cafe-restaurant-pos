@@ -62,11 +62,24 @@ export const PERMISSIONS = {
   settingsManage: "settings.manage",
   locationsManage: "locations.manage",
   backupManage: "backup.manage",
+  // Phase 19: long-lived third-party credentials remain owner-only in V1.
+  apiManage: "api.manage",
 } as const;
 
 export type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
 
 export const ALL_PERMISSIONS: Permission[] = Object.values(PERMISSIONS);
+
+/**
+ * Permissions that must never be delegated through member overrides. A leaked
+ * API credential has a larger and more durable blast radius than ordinary
+ * back-office access, so V1 keeps its lifecycle exclusively with the owner.
+ */
+export const OWNER_ONLY_PERMISSIONS: readonly Permission[] = [PERMISSIONS.apiManage];
+
+export function isOwnerOnlyPermission(permission: Permission): boolean {
+  return OWNER_ONLY_PERMISSIONS.includes(permission);
+}
 
 const {
   ordersCreate, ordersVoid, ordersDiscount, paymentsTake, paymentsRefund,
@@ -164,7 +177,7 @@ export function effectivePermissions(
   if (isAbsoluteRole(role) || !overrides) return base;
 
   for (const key of overrides.granted ?? []) {
-    if (isPermission(key)) base.add(key);
+    if (isPermission(key) && !isOwnerOnlyPermission(key)) base.add(key);
   }
   for (const key of overrides.revoked ?? []) {
     if (isPermission(key)) base.delete(key);
@@ -194,5 +207,10 @@ export function parseOverrides(value: unknown): PermissionOverrides {
   const raw = value as Record<string, unknown>;
   const list = (v: unknown): string[] =>
     Array.isArray(v) ? v.filter((item): item is string => typeof item === "string") : [];
-  return { granted: list(raw.granted), revoked: list(raw.revoked) };
+  const removeOwnerOnly = (items: string[]) =>
+    items.filter((item) => !isPermission(item) || !isOwnerOnlyPermission(item));
+  return {
+    granted: removeOwnerOnly(list(raw.granted)),
+    revoked: removeOwnerOnly(list(raw.revoked)),
+  };
 }

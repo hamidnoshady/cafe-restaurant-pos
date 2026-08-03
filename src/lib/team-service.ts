@@ -414,6 +414,15 @@ export async function updateMembership(input: UpdateMembershipInput): Promise<vo
  * opened this order" across the ledger and the audit trail. A removed member
  * is deactivated and stripped of credentials instead — they can no longer sign
  * in by any route, while the history stays readable.
+ *
+ * Phase 20 Wave 2: also revokes any active `employee_credentials`/
+ * `employee_sessions` rows, the same deactivation the `pin_hash`/
+ * `password_hash` strip below already does for the pre-Phase-20 credential
+ * columns. Landing this alongside Wave 2's login wiring (rather than in
+ * Wave 1, which only added the tables) is deliberate — see the phase doc's
+ * "Open questions for Wave 2": before pin-login mints sessions, a removed
+ * member's still-`active` row here was inert, so revoking it earlier would
+ * have bought nothing.
  */
 export async function removeMembership(
   businessId: string,
@@ -446,6 +455,27 @@ export async function removeMembership(
       [userId, businessId],
     );
     await client.query("DELETE FROM user_locations WHERE user_id = $1", [userId]);
+    await client.query(
+      `UPDATE employee_credentials
+          SET status = 'revoked', revoked_at = now()
+        WHERE employee_id = $1 AND business_id = $2 AND status = 'active'`,
+      [userId, businessId],
+    );
+    await client.query(
+      `UPDATE employee_sessions
+          SET revoked_at = now()
+        WHERE employee_id = $1 AND business_id = $2 AND revoked_at IS NULL`,
+      [userId, businessId],
+    );
+    // Phase 20 Wave 5 — a removed member's shift (if left open) would
+    // otherwise stay open forever now that nothing else about their access
+    // is still live.
+    await client.query(
+      `UPDATE employee_shifts
+          SET ended_at = now(), closed_by = $3
+        WHERE employee_id = $1 AND business_id = $2 AND ended_at IS NULL`,
+      [userId, businessId, actorId],
+    );
 
     await auditMembership(client, {
       businessId,
