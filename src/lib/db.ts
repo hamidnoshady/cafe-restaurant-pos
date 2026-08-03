@@ -142,6 +142,13 @@ export async function withTenant<T>(
  *     the same timing constraint `checkImpersonation`'s `activeGrant` lookup
  *     already has, just for a PIN login's session record instead of an
  *     impersonation grant.
+ *   - **pairing-redeem** — resolving a one-time desktop pairing code to the
+ *     business it was issued for (and reading that business's configuration to
+ *     build the snapshot) happens before any tenant has been chosen, the same
+ *     identify-the-tenant-first shape as server-sync-auth. Its counterpart on
+ *     the local install, `applyPairingSnapshot`, runs under **platform** for
+ *     the same reason `provisionBusiness` does: it creates the tenant that
+ *     scoping would otherwise require to already exist.
  *
  * Every call is a hole in the isolation boundary, so keep them few, keep them
  * short, and never let one wrap a request body that also handles tenant data.
