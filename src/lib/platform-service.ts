@@ -304,8 +304,9 @@ export async function resetBusiness(businessId: string): Promise<void> {
         slug: string;
         plan: string;
         timezone: string;
+        industry: string;
       }>(
-        `SELECT id, name, slug::text AS slug, plan, timezone
+        `SELECT id, name, slug::text AS slug, plan, timezone, industry
            FROM businesses
           WHERE id = $1
           FOR UPDATE`,
@@ -344,9 +345,9 @@ export async function resetBusiness(businessId: string): Promise<void> {
 
       await client.query(
         `INSERT INTO businesses
-           (id, name, slug, status, plan, timezone, suspended_at, archived_at)
-         VALUES ($1, $2, $3, 'active', $4, $5, NULL, NULL)`,
-        [business.id, business.name, business.slug, business.plan, business.timezone],
+           (id, name, slug, status, plan, timezone, industry, suspended_at, archived_at)
+         VALUES ($1, $2, $3, 'active', $4, $5, $6, NULL, NULL)`,
+        [business.id, business.name, business.slug, business.plan, business.timezone, business.industry],
       );
 
       const { rows: locationRows } = await client.query<{ id: string }>(

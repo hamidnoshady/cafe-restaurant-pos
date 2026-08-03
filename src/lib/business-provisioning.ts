@@ -16,6 +16,7 @@ import type { PoolClient } from "pg";
 import { getPool, withoutTenantScope } from "./db";
 import { slugifyBusinessName, uniqueSlug } from "./slug";
 import { FNB_COA_TEMPLATE } from "./coa-template";
+import { ENABLED_INDUSTRIES, INDUSTRIES, type Industry } from "./industries";
 
 export interface ProvisionBusinessInput {
   businessName: string;
@@ -26,6 +27,8 @@ export interface ProvisionBusinessInput {
   email: string;
   password: string;
   timezone?: string;
+  /** Defaults to 'food_service' when omitted — every business before Phase 21 is one. */
+  industry?: Industry;
   /**
    * Seed the default F&B chart of accounts as part of provisioning.
    *
@@ -78,6 +81,7 @@ export interface ProvisionRequestBody {
   ownerName?: string;
   email?: string;
   password?: string;
+  industry?: string;
 }
 
 export const MIN_PASSWORD_LENGTH = 8;
@@ -107,6 +111,14 @@ export function validateProvisionBody(
     return { input: null, error: "weak_password" };
   }
 
+  const industry = (body.industry?.trim() || "food_service") as Industry;
+  if (!INDUSTRIES.includes(industry)) {
+    return { input: null, error: "invalid_industry" };
+  }
+  if (!ENABLED_INDUSTRIES.includes(industry)) {
+    return { input: null, error: "industry_not_available" };
+  }
+
   return {
     input: {
       businessName,
@@ -116,6 +128,7 @@ export function validateProvisionBody(
       ownerName,
       email,
       password,
+      industry,
     },
     error: null,
   };
@@ -181,8 +194,8 @@ export async function provisionBusiness(
       }
 
       const { rows: bizRows } = await client.query<{ id: string }>(
-        `INSERT INTO businesses (name, slug, timezone) VALUES ($1, $2, $3) RETURNING id`,
-        [businessName, slug, input.timezone ?? "Asia/Tehran"],
+        `INSERT INTO businesses (name, slug, timezone, industry) VALUES ($1, $2, $3, $4) RETURNING id`,
+        [businessName, slug, input.timezone ?? "Asia/Tehran", input.industry ?? "food_service"],
       );
       const businessId = bizRows[0].id;
 

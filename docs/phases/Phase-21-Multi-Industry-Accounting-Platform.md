@@ -146,6 +146,60 @@ Each wave is still developed, tested, and PR'd independently, per the issue's ow
 
 ## Progress
 
-Not started. This document captures the pre-Wave-1 planning pass (architecture principles pinned
-down, waves resequenced around a shared item/variant/serial core, scope of "generalize F&B" bounded
-to the item + posting layer) before development begins.
+Wave 1, first slice — implemented:
+
+- **`businesses.industry`** (`migrations/0048_business_industry.sql`) — a `CHECK`-constrained text
+  column (`food_service`/`jewelry`/`watch`/`accessories`), defaulted (and backfilled) to
+  `food_service` for every existing business. Set once, at creation, in `provisionBusiness`
+  (`src/lib/business-provisioning.ts`) — no update route exists, so it is immutable by omission
+  rather than needing a separate lock flag the way inventory costing does. `src/lib/industries.ts`
+  is the framework-free shared source of truth (the type, the full list, and which are actually
+  offered) so both the server-side validator and the `/welcome` bootstrap UI import the same
+  constants. Only `food_service` is in `ENABLED_INDUSTRIES` — the other three are selectable in the
+  type system and rejected (`industry_not_available`) at the API if forced, and shown disabled with
+  a "به‌زودی" badge in the UI, until their own wave lands a chart-of-accounts template and wizard
+  steps. `resetBusiness` (`platform-service.ts`) was fixed to preserve `industry` across a
+  platform-console reset — it re-inserts the business row from a pre-delete snapshot, and would
+  otherwise have silently dropped a business back to the `food_service` default. Verified in
+  `business-provisioning.test.ts` (default/accept/reject cases) and manually end-to-end (Playwright
+  against a running dev server: submitted the `/welcome` form, confirmed the industry selector
+  renders with only `food_service` enabled, and confirmed the created row's `industry` column).
+- **Domain-event log + posting-rule engine** (`migrations/0049_domain_events.sql`,
+  `src/lib/posting-engine.ts`) — `domain_events` records a business event generically
+  (`event_type`, a jsonb `payload`, optional `source_type`/`source_id`); `registerPostingRule`
+  lets a module teach the engine how to turn one event type into a balanced journal entry via the
+  existing `postJournalEntry()`, and `emitDomainEvent`/`dispatchDomainEvent` record-then-post in
+  the caller's own transaction, stamping `domain_events.entry_id` on success. An event with no
+  registered rule, or a rule that returns `null`, is recorded but deliberately left unposted — not
+  an error, since not every domain event has a ledger effect. Deliberately **not** wired to any of
+  F&B's existing posting paths yet (`postOrderPaymentEntry` etc. are untouched) — that rewiring is
+  its own follow-up slice, once this engine has shipped and proven out on its own. Verified in
+  `integration/posting-engine.integration.test.ts` (posts and stamps `entry_id`, leaves an
+  unregistered event type unposted, a rule returning `null` posts nothing, an unbalanced rule's
+  lines are rejected exactly like every other posting path, and re-registering an event type
+  replaces the previous rule).
+- **Generic Item/Variant/Serial primitive** (`migrations/0050_generic_item_core.sql`,
+  `src/lib/items.ts` + `src/lib/items-service.ts`) — a new, parallel `items` table
+  (`kind`: simple/variant_parent/variant_child, `tracking`: none/serial/weight),
+  `item_variant_attributes` (one row per distinguishing attribute on a variant child — Wave 6's
+  accessories will build on this), and `item_serials` (one row per physical unit of a
+  `tracking: 'serial'` item — Wave 5's watches). Weight/purity attributes are deliberately **not**
+  part of this table set — that's Wave 2's job, once fractional-weight precision/rounding is
+  actually decided rather than guessed at here. Deliberately **not** linked from
+  `menu_items`/`inventory_items`/`recipes` yet — migrating F&B's own model onto this primitive
+  without changing its observable behavior is its own follow-up slice, not bundled into the
+  primitive's introduction. Verified in `integration/generic-items.integration.test.ts` (simple
+  item creation, variant parent/child creation with attributes — including the all-or-nothing
+  failure case leaving no orphan row — and serial registration/status lifecycle, including that a
+  `sold` unit can never move to another status and a duplicate serial number is rejected) and
+  `src/lib/items.test.ts` (the pure validation rules these lean on).
+- All four new tables (`domain_events`, `items`, `item_variant_attributes`, `item_serials`) are
+  automatically covered by `integration/tenant-isolation.integration.test.ts`'s generated
+  policy-correctness check and `tenant-tables.ts`'s export/restore enumeration — both discover
+  tables from `pg_class` rather than a hand-maintained list, so nothing needed updating there;
+  re-ran both suites to confirm.
+
+Remaining Wave 1 work (tracked as this phase's next slice, not started yet): migrating
+`menu_items`/`inventory_items`/`recipes` onto the generic item primitive with F&B's observable
+behavior proven unchanged, and the industry-specific setup-wizard branches (chart-of-accounts
+template + remaining steps) for `jewelry`/`watch`/`accessories` once their own waves need them.
