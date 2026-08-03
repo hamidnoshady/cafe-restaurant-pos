@@ -74,6 +74,7 @@ afterAll(async () => {
 beforeEach(async () => {
   await db.query("DELETE FROM item_serials");
   await db.query("DELETE FROM item_variant_attributes");
+  await db.query("DELETE FROM item_stones");
   await db.query("DELETE FROM item_weight_attributes");
   await db.query("DELETE FROM items");
   await db.query("DELETE FROM businesses");
@@ -278,5 +279,69 @@ describe("items-service: weighted items (Phase 21 Wave 2)", () => {
         [necklace.id],
       ),
     ).rejects.toThrow();
+  });
+});
+
+describe("items-service: gem/stone add-ons (Phase 21 Wave 4)", () => {
+  it("adds and lists stones on a weight-tracked item", async () => {
+    const ring = await itemsService.createItem({
+      locationId: biz.locationId,
+      name: "انگشتر جواهر",
+      tracking: "weight",
+    });
+    await itemsService.addStone(ring.id, { stoneType: "الماس", carat: "0.5", cost: 20_000_000 });
+    await itemsService.addStone(ring.id, { stoneType: "یاقوت", carat: "0.3", cost: 8_000_000 });
+
+    const stones = await itemsService.listStones(ring.id);
+    expect(stones).toHaveLength(2);
+    expect(stones.map((s) => s.stoneType).sort()).toEqual(["الماس", "یاقوت"].sort());
+  });
+
+  it("refuses a stone on a non-weight-tracked item", async () => {
+    const simple = await itemsService.createItem({ locationId: biz.locationId, name: "زنجیر" });
+    await expect(
+      itemsService.addStone(simple.id, { stoneType: "الماس", carat: "0.5", cost: 20_000_000 }),
+    ).rejects.toThrow();
+  });
+
+  it("sums an item's stone costs, and treats no stones as zero", async () => {
+    const ring = await itemsService.createItem({
+      locationId: biz.locationId,
+      name: "انگشتر",
+      tracking: "weight",
+    });
+    expect(await itemsService.totalStoneCost(ring.id)).toBe(0);
+
+    await itemsService.addStone(ring.id, { stoneType: "الماس", carat: "0.5", cost: 20_000_000 });
+    await itemsService.addStone(ring.id, { stoneType: "یاقوت", carat: "0.3", cost: 8_000_000 });
+    expect(await itemsService.totalStoneCost(ring.id)).toBe(28_000_000);
+  });
+
+  it("removes a stone", async () => {
+    const ring = await itemsService.createItem({
+      locationId: biz.locationId,
+      name: "انگشتر",
+      tracking: "weight",
+    });
+    const stone = await itemsService.addStone(ring.id, {
+      stoneType: "الماس",
+      carat: "0.5",
+      cost: 20_000_000,
+    });
+    await itemsService.removeStone(stone.id);
+    expect(await itemsService.listStones(ring.id)).toHaveLength(0);
+  });
+
+  it("leaving net_weight untouched: adding a stone does not change item_weight_attributes", async () => {
+    const ring = await itemsService.createItem({
+      locationId: biz.locationId,
+      name: "انگشتر",
+      tracking: "weight",
+    });
+    await itemsService.setWeightAttributes(ring.id, { purity: "18", grossWeight: "5", netWeight: "4.5" });
+    await itemsService.addStone(ring.id, { stoneType: "الماس", carat: "0.5", cost: 20_000_000 });
+
+    const attrs = await itemsService.getWeightAttributes(ring.id);
+    expect(attrs?.netWeight).toBe("4.500000000");
   });
 });

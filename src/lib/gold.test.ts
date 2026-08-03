@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isPurity, validateGoldPrice, validateWeightAttributes } from "./gold";
+import { isPurity, validateGoldPrice, validateStone, validateWeightAttributes } from "./gold";
 
 describe("isPurity", () => {
   it("accepts the known purities", () => {
@@ -63,5 +63,30 @@ describe("validateGoldPrice", () => {
     expect(validateGoldPrice("18", 0).length).toBeGreaterThan(0);
     expect(validateGoldPrice("18", -1).length).toBeGreaterThan(0);
     expect(validateGoldPrice("18", 1.5).length).toBeGreaterThan(0);
+  });
+});
+
+describe("validateStone", () => {
+  const valid = { stoneType: "الماس", carat: "0.5", cost: 20_000_000 };
+
+  it("accepts a well-formed stone", () => {
+    expect(validateStone(valid)).toHaveLength(0);
+  });
+
+  it("rejects a blank stone type", () => {
+    expect(validateStone({ ...valid, stoneType: "" }).length).toBeGreaterThan(0);
+    expect(validateStone({ ...valid, stoneType: "   " }).length).toBeGreaterThan(0);
+  });
+
+  it("rejects a zero, negative, or non-numeric carat", () => {
+    expect(validateStone({ ...valid, carat: "0" }).length).toBeGreaterThan(0);
+    expect(validateStone({ ...valid, carat: "-1" }).length).toBeGreaterThan(0);
+    expect(validateStone({ ...valid, carat: "abc" }).length).toBeGreaterThan(0);
+  });
+
+  it("rejects a zero, negative, or fractional cost", () => {
+    expect(validateStone({ ...valid, cost: 0 }).length).toBeGreaterThan(0);
+    expect(validateStone({ ...valid, cost: -1 }).length).toBeGreaterThan(0);
+    expect(validateStone({ ...valid, cost: 1.5 }).length).toBeGreaterThan(0);
   });
 });

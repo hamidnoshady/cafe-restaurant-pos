@@ -13,7 +13,11 @@
  *     gold-pricing engine's own VAT-on-اجرت-و-سود-only rule
  *     (src/lib/gold-pricing.ts).
  *   - `gold.sale_cogs`: Debit `goldCogs` / Credit `goldInventory` for the
- *     sold piece's cost basis (net weight × unit_cost_per_gram).
+ *     sold piece's cost basis (net weight × unit_cost_per_gram, plus the
+ *     sum of any item_stones cost add-ons — Wave 4). Stone costs are read
+ *     live from item_stones rather than passed through the event payload,
+ *     the same "resolve against the current record, not a caller-supplied
+ *     snapshot" instinct accountIdsByCode already uses for account ids.
  */
 import Decimal from "decimal.js";
 import { WELL_KNOWN_CODES } from "./coa-template";
@@ -75,7 +79,15 @@ interface GoldSaleCogsPayload {
 
 registerPostingRule("gold.sale_cogs", async (event, client): Promise<PostingResult | null> => {
   const payload = event.payload as unknown as GoldSaleCogsPayload;
-  const cost = roundRial(new Decimal(payload.netWeight).times(payload.unitCostPerGram));
+  const metalCost = new Decimal(payload.netWeight).times(payload.unitCostPerGram);
+
+  const { rows: stoneRows } = await client.query<{ total: string | null }>(
+    `SELECT SUM(cost)::text AS total FROM item_stones WHERE item_id = $1`,
+    [payload.itemId],
+  );
+  const stoneCost = new Decimal(stoneRows[0]?.total ?? 0);
+
+  const cost = roundRial(metalCost.plus(stoneCost));
   if (rialBigInt(cost) === 0n) return null;
 
   const accounts = await accountIdsByCode(client, event.businessId, [

@@ -80,3 +80,28 @@ export function validateGoldPrice(purity: string, pricePerGram: number): string[
   }
   return errors;
 }
+
+export interface StoneInput {
+  stoneType: string;
+  carat: string;
+  /** What the business paid for this specific stone (Rial, whole number) — adds to the item's COGS at sale time. */
+  cost: number;
+}
+
+/** Mirrors item_stones' own CHECK constraints. stoneType is free text (unlike purity) — gem types vary far more than gold's fixed karat scale, so a controlled list would just get in the way. */
+export function validateStone(input: StoneInput): string[] {
+  const errors: string[] = [];
+  if (!input.stoneType?.trim()) errors.push("نوع سنگ نمی‌تواند خالی باشد.");
+
+  try {
+    if (new Decimal(input.carat).lte(0)) errors.push("وزن سنگ (قیراط) باید بزرگ‌تر از صفر باشد.");
+  } catch {
+    errors.push("وزن سنگ (قیراط) نامعتبر است.");
+  }
+
+  if (!Number.isInteger(input.cost) || input.cost <= 0) {
+    errors.push("بهای سنگ باید یک عدد صحیح مثبت (ریال) باشد.");
+  }
+
+  return errors;
+}
