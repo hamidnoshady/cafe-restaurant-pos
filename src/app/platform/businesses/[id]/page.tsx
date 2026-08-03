@@ -25,6 +25,7 @@ import {
   inputClass,
   useCan,
 } from "../../ui";
+import { PairingPanel } from "./pairing-panel";
 
 interface Business {
   id: string;
@@ -188,6 +189,7 @@ export default function BusinessDetailPage() {
       <PlanPanel key={`plan-${resetKey}`} business={business} onChanged={loadBusiness} />
       <UsagePanel key={`usage-${resetKey}`} id={id} />
       <FeaturesPanel key={`features-${resetKey}`} id={id} />
+      <PairingPanel key={`pairing-${resetKey}`} id={id} />
       <ImpersonationPanel key={`impersonation-${resetKey}`} id={id} businessName={business.name} />
       <ResetPanel
         business={business}

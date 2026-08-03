@@ -54,6 +54,11 @@ export function errorMessage(code: string | undefined): string {
     reset_failed: "ریست انجام نشد و هیچ داده‌ای تغییر نکرد. دوباره تلاش کنید.",
     delete_confirmation_required: "برای حذف، عبارت تأیید را دقیق وارد کنید.",
     delete_failed: "حذف انجام نشد و هیچ داده‌ای تغییر نکرد. دوباره تلاش کنید.",
+    no_location: "این کسب‌وکار هنوز شعبه‌ای ندارد؛ ابتدا یک شعبه بسازید.",
+    code_not_found: "کد اتصال پیدا نشد.",
+    code_expired: "این کد منقضی شده است.",
+    code_already_redeemed: "این کد قبلاً استفاده شده است.",
+    code_revoked: "این کد لغو شده است.",
   };
   return map[code ?? ""] ?? "خطای غیرمنتظره. دوباره تلاش کنید.";
 }
