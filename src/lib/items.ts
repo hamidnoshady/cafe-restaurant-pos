@@ -64,3 +64,18 @@ export function validateSerialStatusTransition(from: SerialStatus, to: SerialSta
   }
   return null;
 }
+
+/** Phase 21 Wave 3 — the same "one physical unit, one lifecycle" shape as SerialStatus, for a tracking:'weight' item (a specific gold piece). */
+export type WeightItemStatus = "in_stock" | "reserved" | "sold";
+export const WEIGHT_ITEM_STATUSES: WeightItemStatus[] = ["in_stock", "reserved", "sold"];
+
+/** `sold` is terminal here too — the same reasoning as a serialized unit: no Wave-3 flow un-sells a specific piece. */
+export function validateWeightItemStatusTransition(
+  from: WeightItemStatus,
+  to: WeightItemStatus,
+): string | null {
+  if (from === "sold" && to !== "sold") {
+    return "کالای فروخته‌شده را نمی‌توان به وضعیت دیگری بازگرداند.";
+  }
+  return null;
+}

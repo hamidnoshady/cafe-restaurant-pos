@@ -338,6 +338,71 @@ Wave 2, first slice — weight/purity attributes and daily gold price entry — 
   test:db` (287 tests), and `npm run build` all pass.
 
 Not yet built (later Wave 2 slices, or Wave 3): weight-based lots/FIFO consumption for bulk gold
-stock, weight-based stock counts, the setup-wizard's jewelry chart-of-accounts template, and the
-actual pricing formula (weight × price/gram + اجرت + profit % + VAT) and POS sales flow — Wave 3's
-job per the phase's own wave breakdown.
+stock, weight-based stock counts, and the setup-wizard's jewelry chart-of-accounts *branch* (the
+template itself now exists — see Wave 3 below — but no wizard step offers `jewelry` as a selectable
+industry yet, so nothing seeds it for a real business).
+
+Wave 3, first slice — the gold pricing engine and a real (though not yet UI-wired) sale flow —
+implemented. Two product decisions were confirmed with the product owner before writing any code,
+since both carry real correctness/compliance stakes rather than being implementation details:
+
+1. **VAT applies only to اجرت (making charge) + سود (profit), never the metal value.** Metal value
+   is VAT-exempt under Iranian tax practice for gold jewelry — this is not a simplification, it's the
+   actual rule, so `computeGoldSalePrice` (`src/lib/gold-pricing.ts`) computes VAT off
+   `makingCharge + profit` only, and the two revenue accounts below exist specifically so the
+   VAT-exempt and VAT-applicable portions of a sale are reportable separately, not commingled in one
+   "gold sales" line.
+2. **A gold piece's cost basis is a simple average cost per piece, recorded at intake
+   (`unit_cost_per_gram`), not FIFO lots.** Bulk-gold FIFO tracking across many fungible pieces stays
+   deferred (same open item as Wave 2's "not yet built" list above) until a business actually needs
+   to pool raw material across pieces — this wave needed *a* real cost basis to post COGS, not the
+   most general one.
+
+What shipped:
+
+- **Jewelry chart of accounts** (`src/lib/coa-template.ts`) — `JEWELRY_COA_TEMPLATE`, mirroring
+  `FNB_COA_TEMPLATE`'s structure, reusing every generic account (cash, bank, AR, AP, VAT
+  receivable/payable) and adding four new well-known codes: `goldInventory` (1320),
+  `goldSalesRevenue` (4500, VAT-exempt metal value), `makingChargeRevenue` (4600, making charge +
+  profit combined — VAT-applicable), `goldCogs` (5110). `WELL_KNOWN_CODES` is now a shared,
+  multi-industry catalog rather than an implicitly-F&B-only one; `coa-template.test.ts` was updated
+  to check each template against only the well-known codes its own industry actually uses, rather
+  than asserting every template contains every code. Not yet seeded by any wizard branch — exists so
+  the posting rules and their tests have real accounts to post against ahead of that UI work.
+- **`item_weight_attributes` gained `unit_cost_per_gram` (nullable) and `status`**
+  (`migrations/0053_item_weight_cost_status.sql`) — `status` (`in_stock`/`reserved`/`sold`) mirrors
+  `item_serials.status` exactly, including `sold` being terminal
+  (`validateWeightItemStatusTransition`, `src/lib/items.ts`); `setWeightItemStatus`
+  (`items-service.ts`) mirrors `setSerialStatus`.
+- **`src/lib/gold-pricing.ts`** — `computeGoldSalePrice`: metal value (net weight × price/gram,
+  rounded), making charge (percent of metal value, or a flat amount), profit (percent of metal value
+  + making charge), VAT (percent of making charge + profit only, per decision 1 above). Every
+  component is rounded to whole Rial *as it's computed*, each stage built on the *previous stage's
+  rounded value* — not one independent rounding of a final total — so a receipt's line items always
+  sum to exactly the displayed total.
+- **`src/lib/gold-posting-rules.ts`** registers two rules against Wave 1's engine — `gold.sale_revenue`
+  (Debit Cash/Bank-Clearing/Accounts-Receivable by payment method; Credit `goldSalesRevenue` for
+  metal value, `makingChargeRevenue` for making charge + profit, `vatPayable` for VAT) and
+  `gold.sale_cogs` (Debit `goldCogs` / Credit `goldInventory` for net weight × `unit_cost_per_gram`)
+  — mirroring Phase 7's "two entries per sale, not one" decision for F&B order payments (revenue
+  recognition and cost of goods sold are conceptually distinct events).
+- **`src/lib/gold-sales-service.ts`**'s `sellWeightedItem` orchestrates a full sale in the caller's
+  transaction: validates the item is `tracking: 'weight'` and `status: 'in_stock'` with a cost basis
+  set, looks up the day's price for its purity (Wave 2's `gold_prices`), computes the breakdown, posts
+  both domain events, and flips the item to `sold` — all atomic, same discipline as every existing
+  ledger posting path.
+- Verified in `src/lib/gold-pricing.test.ts` (the formula itself: standard case hand-computed and
+  checked line by line, VAT excluding metal value even when making charge/profit are zero, fixed vs.
+  percent making charge, rounding, and every validation rejection) and
+  `integration/gold-sales.integration.test.ts` (a full sale posting a balanced revenue entry and a
+  balanced COGS entry with the exact expected amounts, the item flipping to `sold`, refusing to sell
+  the same piece twice, refusing a sale with no cost basis set, and refusing a sale with no price
+  entered for the item's purity). `npx tsc --noEmit`, `npm test` (926 tests), `npm run db:migrate`
+  (twice) + `npm run test:db` (291 tests, `tenant-isolation`'s 19 tests re-confirming RLS), and
+  `npm run build` all pass.
+
+Not yet built: no API route or POS/receipt UI calls `sellWeightedItem` yet (service-layer only, same
+as how Wave 1 and Wave 2 each started); weight-based lots/stock-counts remain deferred; and jewelry
+still isn't a selectable industry in `/welcome` (`ENABLED_INDUSTRIES`), so none of this is reachable
+by an actual business yet — proven by integration test, not by a live business, exactly like Wave 2's
+first slice.
