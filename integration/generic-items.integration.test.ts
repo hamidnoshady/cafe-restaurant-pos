@@ -74,6 +74,7 @@ afterAll(async () => {
 beforeEach(async () => {
   await db.query("DELETE FROM item_serials");
   await db.query("DELETE FROM item_variant_attributes");
+  await db.query("DELETE FROM item_weight_attributes");
   await db.query("DELETE FROM items");
   await db.query("DELETE FROM businesses");
 
@@ -216,5 +217,66 @@ describe("items-service: serialized items", () => {
     });
     await itemsService.addSerial(watch.id, "DUP-1");
     await expect(itemsService.addSerial(watch.id, "DUP-1")).rejects.toThrow();
+  });
+});
+
+describe("items-service: weighted items (Phase 21 Wave 2)", () => {
+  it("sets weight/purity attributes on a tracking:'weight' item", async () => {
+    const bracelet = await itemsService.createItem({
+      locationId: biz.locationId,
+      name: "دستبند طلا",
+      tracking: "weight",
+    });
+    const attrs = await itemsService.setWeightAttributes(bracelet.id, {
+      purity: "18",
+      grossWeight: "12.500",
+      netWeight: "12.500",
+    });
+    expect(attrs.purity).toBe("18");
+    expect(attrs.grossWeight).toBe("12.500000000");
+
+    const fetched = await itemsService.getWeightAttributes(bracelet.id);
+    expect(fetched).toMatchObject({ purity: "18", grossWeight: "12.500000000" });
+  });
+
+  it("refuses weight attributes on a non-weight-tracked item", async () => {
+    const simple = await itemsService.createItem({ locationId: biz.locationId, name: "زنجیر" });
+    await expect(
+      itemsService.setWeightAttributes(simple.id, { purity: "18", grossWeight: "1", netWeight: "1" }),
+    ).rejects.toThrow();
+  });
+
+  it("upserts: setting weight attributes again replaces the previous values", async () => {
+    const ring = await itemsService.createItem({
+      locationId: biz.locationId,
+      name: "انگشتر",
+      tracking: "weight",
+    });
+    await itemsService.setWeightAttributes(ring.id, { purity: "18", grossWeight: "3", netWeight: "3" });
+    const updated = await itemsService.setWeightAttributes(ring.id, {
+      purity: "21",
+      grossWeight: "3.5",
+      netWeight: "3.2",
+    });
+    expect(updated.purity).toBe("21");
+
+    const fetched = await itemsService.getWeightAttributes(ring.id);
+    expect(fetched?.purity).toBe("21");
+    expect(fetched?.netWeight).toBe("3.200000000");
+  });
+
+  it("rejects net weight greater than gross weight at the database, not just the app layer", async () => {
+    const necklace = await itemsService.createItem({
+      locationId: biz.locationId,
+      name: "گردنبند",
+      tracking: "weight",
+    });
+    // Bypass the service validation to prove the CHECK constraint itself holds.
+    await expect(
+      db.query(
+        `INSERT INTO item_weight_attributes (item_id, purity, gross_weight, net_weight) VALUES ($1, '18', 1, 2)`,
+        [necklace.id],
+      ),
+    ).rejects.toThrow();
   });
 });

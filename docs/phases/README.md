@@ -26,7 +26,7 @@ Each phase is a self-contained file with its own scope, exit criteria, and open 
 | 18b | Phase-18b-AI-Agent-Capability-Expansion.md | Complete for the documented existing-model scope (all five waves shipped; schema-dependent follow-ups deferred) |
 | 19 | Phase-19-Public-API-Webhooks.md | In progress — Wave 2 core data API |
 | 20 | Phase-20-Employee-Secure-Identity.md | Complete — all eight waves shipped |
-| 21 | Phase-21-Multi-Industry-Accounting-Platform.md | Wave 1 in progress — core (industry field, posting engine) shipped; item-model scope settled |
+| 21 | Phase-21-Multi-Industry-Accounting-Platform.md | Wave 1 complete; Wave 2 in progress — weight/purity attributes and daily gold price entry shipped |
 
 Phases 0–11 built a single-business POS. Phases 12–17 turn it into a multi-business platform:
 many businesses isolated in one deployment, teams with real permissions, several branches per
