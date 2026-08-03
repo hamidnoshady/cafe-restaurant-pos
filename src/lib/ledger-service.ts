@@ -54,13 +54,21 @@ export async function accountIdsByCode(
   return map;
 }
 
-interface ExactJournalLine {
+export interface ExactJournalLine {
   accountId: string;
   debit: RialText;
   credit: RialText;
 }
 
-async function postExactJournalEntry(
+/**
+ * Exported (Phase 21 Wave 1) so posting-engine.ts's dispatchDomainEvent can
+ * post a registered rule's lines through the same exact-arithmetic path
+ * every inventory-costing-sensitive posting already uses — RialText/BigInt,
+ * not the plain-number postJournalEntry, since Wave 2's weight-based gold
+ * pricing will need the same precision guarantee this already gives
+ * COGS/purchases/waste.
+ */
+export async function postExactJournalEntry(
   client: PoolClient,
   input: Omit<PostJournalEntryInput, "lines"> & { lines: ExactJournalLine[] },
 ): Promise<string | null> {

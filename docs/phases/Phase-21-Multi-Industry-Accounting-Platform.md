@@ -203,3 +203,49 @@ Remaining Wave 1 work (tracked as this phase's next slice, not started yet): mig
 `menu_items`/`inventory_items`/`recipes` onto the generic item primitive with F&B's observable
 behavior proven unchanged, and the industry-specific setup-wizard branches (chart-of-accounts
 template + remaining steps) for `jewelry`/`watch`/`accessories` once their own waves need them.
+
+Wave 1, second slice — the posting engine's first real (non-test) wiring — implemented:
+
+- **The engine now uses exact (RialText/BigInt) arithmetic, not plain-number `Rial`.** Auditing
+  F&B's actual live posting surface (as opposed to the Phase 7 doc's original description) turned
+  up that every inventory-costing-sensitive posting path — order payment, COGS, purchases, waste,
+  stock counts, customer refunds — was already rebuilt at some point onto a private
+  `postExactJournalEntry`/`RialText`/`Decimal`-based path (`ledger-service.ts`), superseding the
+  original plain-`number` `postJournalEntry` for those cases specifically (non-costing postings —
+  manual journals, AR/AP collection, payroll, expenses, closing entries — still correctly use the
+  plain-number path, since they never multiply a fractional quantity by a unit cost). The engine
+  as first shipped only knew about the plain-number path, which would have been the wrong
+  foundation for Wave 2's weight × price/gram gold-pricing math. Fixed by exporting
+  `postExactJournalEntry`/`ExactJournalLine` and switching `dispatchDomainEvent` to post through
+  them; `PostingResult` also gained `postingKind`/`inventoryEventId`, the two report/reconciliation
+  and inventory-traceability fields every existing exact posting path already carries and the
+  engine had no way to pass through before.
+- **`PostingRule` now receives the transaction's `PoolClient`, not just the event.** The original
+  signature (`(event) => ...`) had no way for a rule to call `accountIdsByCode` — real posting
+  logic needs to resolve account codes to ids inside the same transaction, so this was a real gap
+  that only surfaced once a real rule was written against it, not a hypothetical one.
+- **`src/lib/fnb-posting-rules.ts`** registers `inventory.operational_posting` — a generic
+  Debit/Credit-one-amount rule mirroring `postExactOperationalInventoryEntry`'s own parametrised
+  shape exactly. `src/app/api/inventory/waste/route.ts` (the only real caller of
+  `postExactOperationalInventoryEntry`) now emits this event through the engine instead of calling
+  that function directly. `postExactOperationalInventoryEntry` itself is completely unchanged and
+  still directly covered by `integration/exact-operational-consumption.integration.test.ts` — nothing
+  about its own behavior or callers-other-than-the-waste-route changed. The rest of F&B's posting
+  functions (order payment, COGS, purchases, stock counts, AR/AP, payroll, expenses, manual
+  journals, closing) are deliberately **not** migrated in this slice — they're proven and
+  load-bearing, and there is no product need to move them onto this engine until a reason to
+  (e.g. sharing logic with a new industry) actually shows up; forcing all of them through a new
+  abstraction in one slice, with no new industry yet live to justify it, would have been risk
+  without value.
+- Verified in `integration/posting-engine.integration.test.ts` (extended: exact-arithmetic lines,
+  a rule using the injected client to call `accountIdsByCode`, and `postingKind`/`inventoryEventId`
+  stamping through to the posted entry) and a new
+  `integration/fnb-posting-rules.integration.test.ts` (the registered rule reproduces the same
+  balanced entry `postExactOperationalInventoryEntry` would for identical inputs — proving the two
+  paths agree, not just asserting it). The full existing suite (899 unit tests, 273 integration
+  tests including `exact-operational-consumption`) stayed green throughout. Manually verified
+  end-to-end against a running server: seeded a business, gave an inventory item a real cost basis
+  via a purchase, posted a waste entry through `/api/inventory/waste`, and confirmed — same API
+  response shape as before, a `domain_events` row recorded and stamped `entry_id`, and the exact
+  expected journal entry (Debit «ضایعات مواد» 5150 / Credit «موجودی مواد و کالا» 1300, correct
+  amount, `posting_kind = 'waste'`).

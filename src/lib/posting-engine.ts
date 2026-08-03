@@ -1,23 +1,35 @@
 /**
  * Phase 21 Wave 1 — domain-event log + posting-rule engine.
  *
- * Today, every auto-posted journal entry (order payment, purchase receipt,
- * waste, ...) is produced by its own dedicated function hand-written in
+ * Today, most auto-posted journal entries (order payment, purchase receipt,
+ * waste, ...) are produced by their own dedicated function hand-written in
  * ledger-service.ts/inventory-service.ts. That doesn't scale to a second,
  * third, and fourth industry each with their own sale/repair/consignment
  * events. This module is the alternative: a business event is recorded once
  * into `domain_events`, generically, and a *registered* posting rule turns
- * it into a balanced journal entry via the existing `postJournalEntry()` —
- * so a new industry's posting logic is a rule registration, not a new copy
+ * it into a balanced journal entry via the existing `postExactJournalEntry()`
+ * — so a new industry's posting logic is a rule registration, not a new copy
  * of ledger code.
  *
- * Deliberately not wired to F&B's existing posting paths yet — those
- * functions are proven and load-bearing; re-pointing them at this engine is
- * its own reviewable follow-up, not bundled into the engine's introduction.
+ * Uses the exact (RialText/BigInt) posting path, not the plain-number one —
+ * every inventory-costing-sensitive posting already needs that precision,
+ * and Wave 2's weight-based gold pricing (weight × price/gram × purity) will
+ * need it just as much, so there is no reason for a new engine to reintroduce
+ * floating-point-shaped risk. A rule also receives the same transaction's
+ * PoolClient, since real posting logic almost always needs to look up
+ * account ids by code (accountIdsByCode) inside that same transaction.
+ *
+ * `src/lib/fnb-posting-rules.ts` registers the first real (non-test) rule —
+ * the inventory "operational" posting (waste today) — as the concrete proof
+ * this works end-to-end against live, tested code. The rest of F&B's
+ * posting functions (order payment, COGS, purchases, stock counts, AR/AP,
+ * payroll, expenses, manual journals, closing) are deliberately not migrated
+ * in this slice — they're proven and load-bearing, and there's no product
+ * need to rewrite them onto this engine until a reason to (e.g. sharing
+ * logic with a new industry) actually shows up.
  */
 import type { PoolClient } from "pg";
-import { postJournalEntry } from "./ledger-service";
-import type { JournalLine } from "./ledger";
+import { postExactJournalEntry, type ExactJournalLine } from "./ledger-service";
 
 export interface DomainEvent {
   id: string;
@@ -44,13 +56,17 @@ export interface RecordDomainEventInput {
 
 /** What a posting rule hands back for the engine to post; `null` means "record the event, post nothing" (not every domain event has a ledger effect). */
 export interface PostingResult {
-  lines: JournalLine[];
-  /** ISO date (YYYY-MM-DD); defaults to today, same as postJournalEntry. */
+  lines: ExactJournalLine[];
+  /** ISO date (YYYY-MM-DD); defaults to today, same as postExactJournalEntry. */
   entryDate?: string | null;
   memo?: string | null;
+  /** Report/reconciliation category tag — same convention as every existing posting path's postingKind. */
+  postingKind?: string | null;
+  /** Links the posted entry back to the inventory_events row that caused it, when there is one. */
+  inventoryEventId?: string | null;
 }
 
-export type PostingRule = (event: DomainEvent) => Promise<PostingResult | null>;
+export type PostingRule = (event: DomainEvent, client: PoolClient) => Promise<PostingResult | null>;
 
 const rules = new Map<string, PostingRule>();
 
@@ -125,7 +141,7 @@ export async function recordDomainEvent(
 
 /**
  * Looks up the registered rule for this event's type and, if one exists,
- * posts a balanced journal entry for it (via postJournalEntry, so it's
+ * posts a balanced journal entry for it (via postExactJournalEntry, so it's
  * subject to the fiscal-period lock and every other posting-path invariant
  * exactly like every existing auto-posted entry) and stamps
  * `domain_events.entry_id`. No rule registered, or the rule returns `null`
@@ -139,10 +155,10 @@ export async function dispatchDomainEvent(
   const rule = rules.get(event.eventType);
   if (!rule) return null;
 
-  const result = await rule(event);
+  const result = await rule(event, client);
   if (!result || result.lines.length === 0) return null;
 
-  const entryId = await postJournalEntry(client, {
+  const entryId = await postExactJournalEntry(client, {
     businessId: event.businessId,
     locationId: event.locationId,
     entryDate: result.entryDate ?? null,
@@ -151,6 +167,8 @@ export async function dispatchDomainEvent(
     sourceId: event.sourceId,
     lines: result.lines,
     createdBy: event.createdBy,
+    postingKind: result.postingKind ?? null,
+    inventoryEventId: result.inventoryEventId ?? null,
   });
 
   if (entryId) {
