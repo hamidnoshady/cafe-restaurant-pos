@@ -404,3 +404,64 @@ export async function totalStoneCost(itemId: string, client?: PoolClient): Promi
   );
   return Number(rows[0]?.total ?? 0);
 }
+
+export interface WeightItemSummary {
+  id: string;
+  name: string;
+  sku: string | null;
+  isActive: boolean;
+  purity: Purity;
+  grossWeight: string;
+  netWeight: string;
+  unitCostPerGram: string | null;
+  status: WeightItemStatus;
+  stoneCost: number;
+  consignorId: string | null;
+  consignorName: string | null;
+}
+
+interface WeightItemSummaryRow extends Record<string, unknown> {
+  id: string;
+  name: string;
+  sku: string | null;
+  is_active: boolean;
+  purity: Purity;
+  gross_weight: string;
+  net_weight: string;
+  unit_cost_per_gram: string | null;
+  status: WeightItemStatus;
+  stone_cost: string | null;
+  consignor_id: string | null;
+  consignor_name: string | null;
+}
+
+/** The jewelry dashboard's item board: every `tracking: 'weight'` item at this branch, joined with its weight/cost basis, stone-cost add-on, and consignment (if any) in one round trip. */
+export async function listWeightItems(locationId: string): Promise<WeightItemSummary[]> {
+  const { rows } = await query<WeightItemSummaryRow>(
+    `SELECT i.id, i.name, i.sku, i.is_active,
+            w.purity, w.gross_weight, w.net_weight, w.unit_cost_per_gram, w.status,
+            COALESCE((SELECT SUM(cost) FROM item_stones WHERE item_id = i.id), 0)::text AS stone_cost,
+            c.consignor_id, cons.name AS consignor_name
+       FROM items i
+       JOIN item_weight_attributes w ON w.item_id = i.id
+       LEFT JOIN item_consignments c ON c.item_id = i.id
+       LEFT JOIN consignors cons ON cons.id = c.consignor_id
+      WHERE i.location_id = $1 AND i.tracking = 'weight'
+      ORDER BY i.name`,
+    [locationId],
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    sku: r.sku,
+    isActive: r.is_active,
+    purity: r.purity,
+    grossWeight: r.gross_weight,
+    netWeight: r.net_weight,
+    unitCostPerGram: r.unit_cost_per_gram,
+    status: r.status,
+    stoneCost: Number(r.stone_cost ?? 0),
+    consignorId: r.consignor_id,
+    consignorName: r.consignor_name,
+  }));
+}

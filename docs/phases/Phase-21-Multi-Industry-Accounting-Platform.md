@@ -476,3 +476,69 @@ Not yet built: paying out a consignor's `consignmentPayable` balance (see above)
 statements/balances by consignor (Phase 16's AR/AP built these as their own slice too, off the same
 "reconstruct from journal lines, never a shadow copy" discipline); and, as with every wave so far, no
 API route or UI — service-layer only, proven by integration test.
+
+Jewelry UI/routes slice — implemented. Everything Waves 2-4 built (weight/purity/cost basis, gold
+prices, stones, consignors, consignment sales) was service-layer-only until now; this slice is the
+first time a person can actually reach any of it — `/api/jewelry/*` route handlers and a
+`/dashboard/jewelry` page, following the exact conventions `/api/inventory/*` and
+`/dashboard/inventory` already established (`requireRole`/`withTenantScope` guard on every handler,
+`resolveActiveLocation` for the caller's branch, tabbed client manager + section components using the
+shared `api()`/`Field`/`ErrorBox` helpers from `../ui`).
+
+- **`src/lib/industry-guard.ts`** (new) — the industry-gating counterpart of `features.ts`'s
+  `requireFeatureForPage`/`featureForApiPath` pair, keyed on the immutable `businesses.industry`
+  (industries.ts) a session's business chose at creation rather than a togglable flag:
+  `getBusinessIndustry`, `requireIndustryForPage` (redirects a gated dashboard page), and
+  `requireIndustryForApi` (403s a gated route handler). Both the jewelry page and every `/api/jewelry/*`
+  route call one of these — a non-jewelry business gets the same "not for you" treatment a disabled
+  feature flag gets elsewhere.
+- **`items-service.ts` gained `listWeightItems(locationId)`** — the jewelry item board's one round
+  trip: every `tracking: 'weight'` item at a branch, joined with its weight/cost-basis attributes,
+  its live stone-cost sum, and its consignment (if any) and the consignor's name. Everything else the
+  routes needed already existed from Waves 2-4.
+- **Routes**: `GET/POST /api/jewelry/items` (list the board / create a piece — creation validates the
+  weight/purity input via `validateWeightAttributes` *before* inserting the `items` row, since the
+  create-item-then-set-weight-attributes write isn't wrapped in a transaction and validating first is
+  what keeps a bad request from leaving an orphaned item behind), `GET/PATCH /api/jewelry/items/[id]`
+  (detail — item + weight attrs + stones + consignment in one response; PATCH edits the cost basis),
+  `POST /api/jewelry/items/[id]/stones` + `DELETE .../stones/[stoneId]`, `POST
+  /api/jewelry/items/[id]/consign` (wraps `markAsConsigned`), `POST /api/jewelry/items/[id]/sell`
+  (wraps `sellWeightedItem` in the same `BEGIN`/`COMMIT`-around-a-`PoolClient` shape
+  `/api/inventory/waste` uses, so a sale's postings and status change are atomic), and `GET/POST
+  /api/jewelry/prices` + `GET/POST /api/jewelry/consignors`. Every handler is owner/manager only, same
+  as `/api/inventory/*` — there's no established "who sells gold" role split yet, so the sell route
+  isn't opened to cashier the way POS checkout is.
+- **`/dashboard/jewelry`**: a tabbed manager (کالاها / نرخ طلا / امانت‌گذاران) mirroring
+  `inventory-manager.tsx`'s structure exactly. The items tab's real complexity is per-row expandable
+  panels (ویرایش بها / سنگ‌ها / امانی کردن / فروش) rather than a modal — cost-basis edits, stone
+  add/remove, marking consigned, and selling all happen inline against the row they act on, and the
+  sell/consign actions only render for an `in_stock` piece (a `sold` item just shows its final state).
+- **Nav + gating**: `NavItem` (`dashboard-sidebar.tsx`) gained an `industry` field alongside the
+  existing `flag` field; `dashboard/layout.tsx` now also fetches the business's `industry` in its
+  existing `withTenant` `Promise.all` and passes it into `canSee`, so "طلا و جواهر" only ever appears
+  in the sidebar for a jewelry business — the same "filtered out server-side before it reaches the
+  client" property every flag-gated nav item already has. The page itself calls
+  `requireIndustryForPage` the same way `/dashboard/inventory` calls `requireFeatureForPage`.
+- Manually verified end-to-end in a browser (Playwright against a seeded business flipped to
+  `industry = 'jewelry'` with a jewelry chart of accounts inserted): recorded a gold price, created an
+  owned piece with weight/purity/cost basis, added a stone, sold it, and independently created a
+  second piece, marked it consigned to a new consignor, and sold it. Read back `journal_entries`/
+  `journal_lines` afterward and hand-verified both postings balance and split correctly — the owned
+  sale's COGS entry includes the stone's cost on top of metal cost, and the consignment sale posts
+  its three-way split (`consignmentPayable`/`consignmentCommissionRevenue`/`vatPayable`) with **no**
+  `gold.sale_cogs` event at all, confirming Wave 4's "the shop never owned it" design holds through
+  the real UI, not just the integration tests.
+- `npx tsc --noEmit`, `npm test` (938 tests — no new pure-unit coverage needed; every new file is
+  either a route handler or a DB-touching service addition, per repo convention neither gets a direct
+  unit test), `npm run db:migrate` (no new migration this slice — everything needed already existed)
+  + `npm run test:db` (303 tests, `tenant-isolation`'s 19 tests re-confirming RLS unaffected), and
+  `npm run build` all pass.
+
+Not yet built: the jewelry industry still isn't selectable in the setup wizard (Wave 1 deferred this —
+a business reaches `industry = 'jewelry'` only via direct provisioning or an SQL flip today, not
+through `/welcome`'s UI, which still only offers `food_service`); an external gold-price feed (Wave
+2's optional `source: 'external'` hook exists but no provider is wired up — blocked on the product
+owner picking one); paying out a consignor's `consignmentPayable` balance and consignor statements
+(Wave 4's deferred follow-up); and weight-based lots/FIFO costing for bulk gold stock (Wave 2's
+deferred costing subsystem — today's single `unit_cost_per_gram` is an average-cost simplification,
+not FIFO lots).
