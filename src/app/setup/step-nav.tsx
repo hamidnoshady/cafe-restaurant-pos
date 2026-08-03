@@ -4,7 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
-import { STEPS } from "./steps";
+import { stepsFor } from "./steps";
+import { useSetupIndustry } from "./industry-context";
 
 interface StateResponse {
   progress?: { steps: Record<string, string>; completedAt: string | null };
@@ -12,6 +13,8 @@ interface StateResponse {
 
 export function StepNav() {
   const pathname = usePathname();
+  const industry = useSetupIndustry();
+  const steps = stepsFor(industry);
   const [done, setDone] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -29,7 +32,7 @@ export function StepNav() {
 
   return (
     <nav className="space-y-1">
-      {STEPS.map((s, i) => {
+      {steps.map((s, i) => {
         const active = pathname === s.path;
         const isDone = Boolean(done[s.id]);
         return (

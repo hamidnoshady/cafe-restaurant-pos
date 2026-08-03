@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
 import { formatToman, parseToRial } from "@/lib/money";
@@ -14,6 +15,8 @@ import {
   SecondaryButton,
   StepShell,
 } from "../ui";
+import { skipToPath, stepsFor } from "../steps";
+import { useSetupIndustry } from "../industry-context";
 
 interface Category {
   id: string;
@@ -27,10 +30,21 @@ interface Item {
 }
 
 export default function MenuStep() {
+  const router = useRouter();
+  const industry = useSetupIndustry();
+  const steps = stepsFor(industry);
+  // The menu (menu_items/menu_categories) is an F&B-only concept -- a
+  // jewelry business landing here belongs at whatever step actually
+  // follows it in their flow.
+  const available = steps.some((s) => s.id === "menu");
   const [categories, setCategories] = useState<Category[]>([]);
   const [items, setItems] = useState<Item[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!available) router.replace(skipToPath("menu", steps));
+  }, [available]);
 
   // manual entry state
   const [newCategory, setNewCategory] = useState("");
@@ -121,6 +135,8 @@ export default function MenuStep() {
     if (fileRef.current) fileRef.current.value = "";
     load();
   }
+
+  if (!available) return null;
 
   return (
     <StepShell

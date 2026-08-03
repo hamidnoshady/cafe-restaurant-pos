@@ -15,8 +15,13 @@ import bcrypt from "bcryptjs";
 import type { PoolClient } from "pg";
 import { getPool, withoutTenantScope } from "./db";
 import { slugifyBusinessName, uniqueSlug } from "./slug";
-import { FNB_COA_TEMPLATE } from "./coa-template";
+import { FNB_COA_TEMPLATE, JEWELRY_COA_TEMPLATE, type TemplateAccount } from "./coa-template";
 import { ENABLED_INDUSTRIES, INDUSTRIES, type Industry } from "./industries";
+
+/** Which seed chart of accounts an industry gets — the same choice /api/setup/accounts's GET makes for the manual wizard path. */
+function coaTemplateFor(industry: Industry): readonly TemplateAccount[] {
+  return industry === "jewelry" ? JEWELRY_COA_TEMPLATE : FNB_COA_TEMPLATE;
+}
 
 export interface ProvisionBusinessInput {
   businessName: string;
@@ -229,7 +234,7 @@ export async function provisionBusiness(
       );
 
       if (input.seedChartOfAccounts) {
-        await seedChartOfAccounts(client, businessId);
+        await seedChartOfAccounts(client, businessId, input.industry ?? "food_service");
       }
 
       await client.query("COMMIT");
@@ -244,18 +249,18 @@ export async function provisionBusiness(
 }
 
 /**
- * Insert the default F&B chart of accounts for a freshly-created business.
+ * Insert the industry-appropriate default chart of accounts for a freshly-created business.
  *
  * Runs inside the provisioning transaction (so a failure rolls the whole
  * business back) and mirrors the ordering logic of `/api/setup/accounts`:
  * parents before children, so `parent_id` can be resolved from a code→id map
- * built as we go. FNB_COA_TEMPLATE is already topologically sane (roots first),
+ * built as we go. Each template is already topologically sane (roots first),
  * but resolving by code rather than array position keeps it correct even if
- * the template is later reordered.
+ * a template is later reordered.
  */
-async function seedChartOfAccounts(client: PoolClient, businessId: string): Promise<void> {
+async function seedChartOfAccounts(client: PoolClient, businessId: string, industry: Industry): Promise<void> {
   const idByCode = new Map<string, string>();
-  const pending = [...FNB_COA_TEMPLATE];
+  const pending = [...coaTemplateFor(industry)];
   while (pending.length > 0) {
     const ready = pending.filter((a) => !a.parentCode || idByCode.has(a.parentCode));
     // The template is a fixed, cycle-free constant; ready can't be empty.
