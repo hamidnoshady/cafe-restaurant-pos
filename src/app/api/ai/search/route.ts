@@ -1,0 +1,38 @@
+import { NextRequest, NextResponse } from "next/server";
+import { searchConversations } from "@/lib/ai-conversations";
+import { STANDARD_REPORTS } from "@/lib/reports";
+import { requireManager } from "@/lib/setup-state";
+import { withTenantScope } from "@/lib/auth";
+
+const MAX_RESULTS = 8;
+
+/**
+ * AI Hub Wave 5 (issue #145) — the composer's restricted search, replacing a
+ * general web-browsing icon per Phase 18b's own out-of-scope decision: it
+ * only ever searches this business's own standard reports (static labels,
+ * no query execution here) and the caller's own past conversations
+ * (ownership-scoped exactly like GET /api/ai/conversations).
+ */
+export const GET = withTenantScope(async (request: NextRequest) => {
+  const guard = await requireManager();
+  if (guard.error) return guard.error;
+  const session = guard.session;
+
+  const q = (request.nextUrl.searchParams.get("q") ?? "").trim().slice(0, 120);
+  if (!q) return NextResponse.json({ conversations: [], reports: [] });
+
+  const needle = q.toLowerCase();
+  const reports = STANDARD_REPORTS.filter(
+    (report) => report.label.toLowerCase().includes(needle) || report.key.toLowerCase().includes(needle),
+  )
+    .slice(0, MAX_RESULTS)
+    .map((report) => ({ key: report.key, label: report.label }));
+
+  const conversations = await searchConversations(
+    { businessId: session.businessId, actorUserId: session.sub },
+    q,
+    MAX_RESULTS,
+  );
+
+  return NextResponse.json({ conversations, reports });
+});

@@ -139,6 +139,170 @@ describe("Phase 18b Wave 4 proactive isolation", () => {
 });
 
 
+describe("AI Hub Wave 5 (issue #145) — receipt attachment tool", () => {
+  it("runs the isolated extraction call (no tools, multimodal content) and feeds fields back for propose_action", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        providerReply({
+          content: null,
+          tool_calls: [
+            { id: "t1", type: "function", function: { name: "draft_expense_from_receipt", arguments: "{}" } },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(
+        providerReply({
+          content: JSON.stringify({
+            vendor: "سوپرمارکت",
+            amount: 200000,
+            memo: "خرید ملزومات",
+            suggestedAccountCode: "5500",
+          }),
+        }),
+      )
+      .mockResolvedValueOnce(
+        providerReply({
+          content: null,
+          tool_calls: [
+            {
+              id: "t2",
+              type: "function",
+              function: {
+                name: "propose_action",
+                arguments: JSON.stringify({
+                  type: "expense.categorize",
+                  title: "ثبت هزینه",
+                  summary: "خرید ملزومات مصرفی",
+                  payload: { accountId: "acc-1", paymentAccountId: "acc-2", amount: 200000, memo: "خرید ملزومات" },
+                }),
+              },
+            },
+          ],
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const readTool = vi.fn(async () => ({ ok: true, data: {} }));
+
+    const reply = await runAgentTurn({
+      config,
+      mode: "dashboard",
+      businessId: "biz-1",
+      promptContext: { mode: "dashboard", role: "owner" },
+      messages: [{ role: "user", content: "این رسید را دسته‌بندی کن" }],
+      attachment: { dataUrl: "data:image/png;base64,AAAA" },
+      executeReadTool: readTool,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(readTool).not.toHaveBeenCalled();
+    expect(reply.proposedAction?.type).toBe("expense.categorize");
+
+    const firstPayload = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+    expect(firstPayload.tools.map((t: { function: { name: string } }) => t.function.name)).toContain(
+      "draft_expense_from_receipt",
+    );
+
+    const extractionPayload = JSON.parse(String(fetchMock.mock.calls[1][1]?.body));
+    expect(extractionPayload.tools).toBeUndefined();
+    expect(extractionPayload.messages[1].content[1]).toEqual({
+      type: "image_url",
+      image_url: { url: "data:image/png;base64,AAAA" },
+    });
+  });
+
+  it("refuses the tool as a normal tool result when no attachment is present on the turn", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        providerReply({
+          content: null,
+          tool_calls: [
+            { id: "t1", type: "function", function: { name: "draft_expense_from_receipt", arguments: "{}" } },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(providerReply({ content: "بدون تصویر پیوست نمی‌توانم این کار را انجام دهم." }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const reply = await runAgentTurn({
+      config,
+      mode: "dashboard",
+      businessId: "biz-1",
+      promptContext: { mode: "dashboard", role: "owner" },
+      messages: [{ role: "user", content: "این رسید را دسته‌بندی کن" }],
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(reply.proposedAction).toBeNull();
+    const firstPayload = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+    expect(firstPayload.tools.map((t: { function: { name: string } }) => t.function.name)).not.toContain(
+      "draft_expense_from_receipt",
+    );
+  });
+});
+
+describe("AI Hub Wave 5 (issue #145) — allow-action toggle", () => {
+  it("drops propose_action from the tool list without touching read tools", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(providerReply({ content: "فقط راهنمایی کردم." }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const reply = await runAgentTurn({
+      config,
+      mode: "dashboard",
+      businessId: "biz-1",
+      promptContext: { mode: "dashboard", role: "owner" },
+      messages: [{ role: "user", content: "قیمت این آیتم چقدر است؟ فعلاً چیزی تغییر نده" }],
+      allowActions: false,
+    });
+
+    expect(reply.proposedAction).toBeNull();
+    const payload = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+    const toolNames = payload.tools.map((t: { function: { name: string } }) => t.function.name);
+    expect(toolNames).not.toContain("propose_action");
+    expect(toolNames).toContain("run_report");
+  });
+
+  it("treats a crafted propose_action call as an unknown tool when this turn disallows actions", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        providerReply({
+          content: null,
+          tool_calls: [
+            {
+              id: "t1",
+              type: "function",
+              function: {
+                name: "propose_action",
+                arguments: JSON.stringify({
+                  type: "menu.item.disable",
+                  title: "نباید اجرا شود",
+                  summary: "نباید اجرا شود",
+                  payload: { menuItemId: "item-1", isActive: false },
+                }),
+              },
+            },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(providerReply({ content: "این پیام اجازهٔ پیشنهاد ندارد." }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const reply = await runAgentTurn({
+      config,
+      mode: "dashboard",
+      businessId: "biz-1",
+      promptContext: { mode: "dashboard", role: "owner" },
+      messages: [{ role: "user", content: "این آیتم را غیرفعال کن" }],
+      allowActions: false,
+    });
+
+    expect(reply.proposedAction).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe("Phase 18b Wave 5 streaming", () => {
   it("forwards provider text deltas while preserving the settled final reply", async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(

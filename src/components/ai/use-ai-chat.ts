@@ -10,6 +10,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 import { ACTION_CATALOG, resolveActionEndpoint, type ProposedAction } from "@/lib/ai";
+import { MAX_RECEIPT_IMAGE_BYTES, parseReceiptImageDataUrl } from "@/lib/ai-receipt";
 
 export type AssistantMode = "wizard" | "dashboard" | "floor";
 
@@ -34,6 +35,12 @@ export interface TurnEstimate {
 export interface PendingTurn {
   text: string;
   estimate: TurnEstimate;
+}
+
+/** Wave 5 (issue #145) — a receipt/invoice image attached to the next turn only; never persisted. */
+export interface ChatAttachment {
+  dataUrl: string;
+  name: string;
 }
 
 export const uid = (): string => Math.random().toString(36).slice(2);
@@ -117,6 +124,40 @@ export function useAiChat({ mode, currentStep, onConversationIdChange }: UseAiCh
   const [applyingId, setApplyingId] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [loadingConversation, setLoadingConversation] = useState(false);
+  const [attachment, setAttachmentState] = useState<ChatAttachment | null>(null);
+  const [actionsAllowed, setActionsAllowed] = useState(true);
+
+  function clearAttachment() {
+    setAttachmentState(null);
+  }
+
+  /** Reads an image file client-side into a data URL; nothing is ever uploaded to storage. */
+  async function attachReceiptImage(file: File) {
+    if (mode !== "dashboard") return;
+    if (!file.type.startsWith("image/")) {
+      toast.error("فقط فایل تصویری (jpg، png یا webp) پذیرفته می‌شود.");
+      return;
+    }
+    if (file.size > MAX_RECEIPT_IMAGE_BYTES) {
+      toast.error("حجم تصویر بیش از حد مجاز است (حداکثر ۵ مگابایت).");
+      return;
+    }
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(reader.error ?? new Error("read_failed"));
+        reader.readAsDataURL(file);
+      });
+      if (!parseReceiptImageDataUrl(dataUrl)) {
+        toast.error("فرمت تصویر پشتیبانی نمی‌شود.");
+        return;
+      }
+      setAttachmentState({ dataUrl, name: file.name });
+    } catch {
+      toast.error("خواندن تصویر ممکن نشد.");
+    }
+  }
 
   function setConversation(id: string | null) {
     setConversationId(id);
@@ -131,11 +172,13 @@ export function useAiChat({ mode, currentStep, onConversationIdChange }: UseAiCh
     setConversation(null);
     setPending(null);
     setInput("");
+    clearAttachment();
     setMessages([{ id: uid(), role: "assistant", content: greeting(mode) }]);
   }
 
   async function loadConversation(id: string) {
     setLoadingConversation(true);
+    clearAttachment();
     try {
       const response = await fetch(`/api/ai/conversations/${id}`);
       const data = (await response.json().catch(() => ({}))) as {
@@ -174,6 +217,8 @@ export function useAiChat({ mode, currentStep, onConversationIdChange }: UseAiCh
           mode,
           currentStep: currentStep ?? null,
           messages: candidateHistory.map((message) => ({ role: message.role, content: message.content })),
+          attachment: attachment ? { dataUrl: attachment.dataUrl } : undefined,
+          allowActions: actionsAllowed,
         }),
       });
       const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
@@ -255,6 +300,8 @@ export function useAiChat({ mode, currentStep, onConversationIdChange }: UseAiCh
           currentStep: currentStep ?? null,
           conversationId,
           messages: history.map((message) => ({ role: message.role, content: message.content })),
+          attachment: attachment ? { dataUrl: attachment.dataUrl } : undefined,
+          allowActions: actionsAllowed,
         }),
       });
       if (!response.ok) {
@@ -300,6 +347,7 @@ export function useAiChat({ mode, currentStep, onConversationIdChange }: UseAiCh
       }));
     } finally {
       setBusy(false);
+      clearAttachment();
     }
   }
 
@@ -396,6 +444,11 @@ export function useAiChat({ mode, currentStep, onConversationIdChange }: UseAiCh
     applyingId,
     conversationId,
     loadingConversation,
+    attachment,
+    attachReceiptImage,
+    clearAttachment,
+    actionsAllowed,
+    setActionsAllowed,
     ensureGreeting,
     startNewConversation,
     loadConversation,

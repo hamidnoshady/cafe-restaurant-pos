@@ -276,3 +276,30 @@ describe("Phase 18b Wave 4 — proactive agent isolation", () => {
     expect(prompt).not.toContain("انواع عملیات مجاز برای propose_action");
   });
 });
+
+describe("AI Hub Wave 5 (issue #145) — receipt attachment tool", () => {
+  it("only offers draft_expense_from_receipt in dashboard mode when a turn has an attachment", () => {
+    const withoutAttachment = toolDefinitions("dashboard").map((t) => t.function.name);
+    expect(withoutAttachment).not.toContain("draft_expense_from_receipt");
+
+    const withAttachment = toolDefinitions("dashboard", { hasAttachment: true }).map((t) => t.function.name);
+    expect(withAttachment).toContain("draft_expense_from_receipt");
+    expect(withAttachment).toContain("propose_action");
+
+    expect(toolDefinitions("wizard", { hasAttachment: true }).map((t) => t.function.name)).not.toContain(
+      "draft_expense_from_receipt",
+    );
+    expect(toolDefinitions("floor", { hasAttachment: true }).map((t) => t.function.name)).not.toContain(
+      "draft_expense_from_receipt",
+    );
+  });
+
+  it("mentions the tool in the dashboard prompt only when the turn has an attachment", () => {
+    const withAttachment = buildSystemPrompt({ mode: "dashboard", hasAttachment: true });
+    expect(withAttachment).toContain("draft_expense_from_receipt");
+    expect(withAttachment).toContain("expense.categorize");
+
+    const withoutAttachment = buildSystemPrompt({ mode: "dashboard" });
+    expect(withoutAttachment).not.toContain("draft_expense_from_receipt");
+  });
+});

@@ -15,6 +15,12 @@ import {
 } from "./ai";
 import { runReadTool, type FloorReadScope, type ToolResult } from "./ai-tools";
 import { estimateTokens, type AiTokenUsage } from "./ai-billing";
+import {
+  parseReceiptExtractionReply,
+  RECEIPT_EXTRACTION_SYSTEM_PROMPT,
+  RECEIPT_EXTRACTION_USER_PROMPT,
+  type ReceiptDraftFields,
+} from "./ai-receipt";
 
 export type { ProposedAction };
 
@@ -30,9 +36,19 @@ interface ProviderToolCall {
   function: { name: string; arguments: string };
 }
 
+/**
+ * A multimodal user-message content part (Wave 5, issue #145). Only ever used
+ * for the isolated receipt-extraction call below — the main conversation
+ * loop stays plain-text, so an attached image is never resent on every tool
+ * round.
+ */
+type ProviderContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string } };
+
 interface ProviderMessage {
   role: "system" | "user" | "assistant" | "tool";
-  content: string | null;
+  content: string | ProviderContentPart[] | null;
   tool_calls?: ProviderToolCall[];
   tool_call_id?: string;
 }
@@ -280,8 +296,13 @@ async function callProvider(
 
   return {
     message,
-    usage: providerUsage(json.usage, fallbackUsage(messages, message.content ?? "")),
+    usage: providerUsage(json.usage, fallbackUsage(messages, textOf(message.content))),
   };
+}
+
+/** The assistant's own replies are always plain text; only a user turn ever carries multimodal parts. */
+function textOf(content: ProviderMessage["content"]): string {
+  return typeof content === "string" ? content : "";
 }
 
 export class AiError extends Error {
@@ -320,6 +341,47 @@ function toProposedAction(args: Record<string, unknown>): ProposedAction | null 
 }
 
 /**
+ * A receipt/invoice image attached to one turn only (Wave 5, issue #145). The
+ * data URL is never persisted anywhere — not to the conversation transcript,
+ * not to any table or object storage — it is used for exactly one isolated
+ * provider call and then discarded.
+ */
+export interface ChatAttachment {
+  dataUrl: string;
+}
+
+interface ReceiptExtractionResult {
+  fields: ReceiptDraftFields | null;
+  usage: AiTokenUsage;
+}
+
+/**
+ * One isolated, non-streaming, tool-less provider call that asks the same
+ * configured platform provider (both defaults are vision-capable models) to
+ * read a receipt image and return structured JSON. Deliberately its own
+ * request rather than folding the image into the main conversation loop —
+ * that would resend the image bytes on every later tool round.
+ */
+async function extractReceiptDraft(config: AiConfig, dataUrl: string): Promise<ReceiptExtractionResult> {
+  const convo: ProviderMessage[] = [
+    { role: "system", content: RECEIPT_EXTRACTION_SYSTEM_PROMPT },
+    {
+      role: "user",
+      content: [
+        { type: "text", text: RECEIPT_EXTRACTION_USER_PROMPT },
+        { type: "image_url", image_url: { url: dataUrl } },
+      ],
+    },
+  ];
+  try {
+    const result = await callProvider(config, convo, []);
+    return { fields: parseReceiptExtractionReply(textOf(result.message.content)), usage: result.usage };
+  } catch {
+    return { fields: null, usage: { inputTokens: 0, outputTokens: 0 } };
+  }
+}
+
+/**
  * Run one user turn to completion: resolve any read-tool calls server-side, and
  * stop as soon as the model proposes an action (returned for confirmation) or
  * produces a plain text answer.
@@ -340,9 +402,21 @@ export async function runAgentTurn(opts: {
   stream?: ProviderStreamCallbacks;
   promptContext: PromptContext;
   messages: InboundMessage[];
+  /** Wave 5 (issue #145) — a receipt/invoice image attached to this turn only. */
+  attachment?: ChatAttachment;
+  /**
+   * Wave 5 (issue #145) — the composer's "allow action in this message"
+   * toggle. Only drops propose_action from this turn's own tool list; no
+   * change to the confirm-before-apply architecture itself.
+   */
+  allowActions?: boolean;
 }): Promise<AgentReply> {
-  const { config, mode, businessId, floorScope, promptContext, messages } = opts;
-  const tools = toolDefinitions(mode);
+  const { config, mode, businessId, floorScope, promptContext, messages, attachment } = opts;
+  const allowActions = opts.allowActions ?? true;
+  const hasAttachment = Boolean(attachment);
+  const tools = toolDefinitions(mode, { hasAttachment }).filter(
+    (tool) => allowActions || tool.function.name !== "propose_action",
+  );
   const canPropose = tools.some((tool) => tool.function.name === "propose_action");
   const allowedReadToolNames = new Set(
     tools
@@ -355,7 +429,7 @@ export async function runAgentTurn(opts: {
   const usage: AiTokenUsage = { inputTokens: 0, outputTokens: 0 };
 
   const convo: ProviderMessage[] = [
-    { role: "system", content: buildSystemPrompt(promptContext) },
+    { role: "system", content: buildSystemPrompt({ ...promptContext, hasAttachment }) },
     ...messages.map((m) => ({ role: m.role, content: m.content })),
   ];
 
@@ -368,7 +442,7 @@ export async function runAgentTurn(opts: {
 
     if (toolCalls.length === 0) {
       return {
-        content: message.content?.trim() || "متوجه نشدم؛ لطفاً دوباره بپرسید.",
+        content: textOf(message.content).trim() || "متوجه نشدم؛ لطفاً دوباره بپرسید.",
         proposedAction: null,
         usage,
       };
@@ -380,18 +454,36 @@ export async function runAgentTurn(opts: {
       : undefined;
     if (proposal) {
       const action = toProposedAction(parseArgs(proposal.function.arguments));
-      const text =
-        message.content?.trim() || (action ? action.summary : "پیشنهاد آماده است.");
+      const text = textOf(message.content).trim() || (action ? action.summary : "پیشنهاد آماده است.");
       return { content: text, proposedAction: action, usage };
     }
 
     // Otherwise every call must be a read tool — run them and feed results back.
-    convo.push({ role: "assistant", content: message.content ?? "", tool_calls: toolCalls });
+    convo.push({ role: "assistant", content: textOf(message.content), tool_calls: toolCalls });
     for (const call of toolCalls) {
-      const result =
-        allowedReadToolNames.has(call.function.name) && toolRunner
-          ? await toolRunner(call.function.name, parseArgs(call.function.arguments))
-          : { ok: false, data: { error: `ابزار ناشناخته: ${call.function.name}` } };
+      let result: ToolResult;
+      if (call.function.name === "draft_expense_from_receipt" && allowedReadToolNames.has(call.function.name)) {
+        if (!attachment) {
+          result = { ok: false, data: { error: "پیوستی برای این پیام وجود ندارد." } };
+        } else {
+          const extraction = await extractReceiptDraft(config, attachment.dataUrl);
+          usage.inputTokens += extraction.usage.inputTokens;
+          usage.outputTokens += extraction.usage.outputTokens;
+          result = extraction.fields
+            ? {
+                ok: true,
+                data: {
+                  ...extraction.fields,
+                  note: "این یک استخراج خودکار و تخمینی است؛ پیش از تأیید نهایی مقادیر را با کاربر بررسی کن.",
+                },
+              }
+            : { ok: false, data: { error: "استخراج اطلاعات از تصویر پیوست ممکن نشد؛ می‌توانی مقادیر را از کاربر بپرسی." } };
+        }
+      } else if (allowedReadToolNames.has(call.function.name) && toolRunner) {
+        result = await toolRunner(call.function.name, parseArgs(call.function.arguments));
+      } else {
+        result = { ok: false, data: { error: `ابزار ناشناخته: ${call.function.name}` } };
+      }
       convo.push({
         role: "tool",
         tool_call_id: call.id,

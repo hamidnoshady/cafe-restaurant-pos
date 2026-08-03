@@ -190,3 +190,54 @@ describe("conversation ownership within one business", () => {
     expect(resumedFromBeta.id).not.toBe(ownedByAlpha.id);
   });
 });
+
+describe("searchConversations (AI Hub Wave 5, issue #145)", () => {
+  it("matches on title or message content, scoped to the searching user's own conversations", async () => {
+    const ownedByA = await asBusiness(alpha.businessId, () =>
+      ai.getOrCreateConversation({
+        businessId: alpha.businessId,
+        actorUserId: alpha.userA,
+        mode: "dashboard",
+        conversationId: null,
+        firstMessageContent: "موجودی انبار چقدر است؟",
+      }),
+    );
+    await asBusiness(alpha.businessId, () =>
+      ai.appendMessage({ conversationId: ownedByA.id, role: "user", content: "موجودی انبار چقدر است؟" }),
+    );
+    await asBusiness(alpha.businessId, () =>
+      ai.appendMessage({ conversationId: ownedByA.id, role: "assistant", content: "کالای الف رو به اتمام است." }),
+    );
+
+    const ownedByB = await asBusiness(alpha.businessId, () =>
+      ai.getOrCreateConversation({
+        businessId: alpha.businessId,
+        actorUserId: alpha.userB,
+        mode: "dashboard",
+        conversationId: null,
+        firstMessageContent: "موجودی انبار امروز",
+      }),
+    );
+
+    const aByTitle = await asBusiness(alpha.businessId, () =>
+      ai.searchConversations({ businessId: alpha.businessId, actorUserId: alpha.userA }, "انبار"),
+    );
+    expect(aByTitle.map((r) => r.id)).toEqual([ownedByA.id]);
+    expect(aByTitle.map((r) => r.id)).not.toContain(ownedByB.id);
+
+    const aByMessageContent = await asBusiness(alpha.businessId, () =>
+      ai.searchConversations({ businessId: alpha.businessId, actorUserId: alpha.userA }, "کالای الف"),
+    );
+    expect(aByMessageContent.map((r) => r.id)).toEqual([ownedByA.id]);
+
+    const noMatch = await asBusiness(alpha.businessId, () =>
+      ai.searchConversations({ businessId: alpha.businessId, actorUserId: alpha.userA }, "چیزی که وجود ندارد"),
+    );
+    expect(noMatch).toHaveLength(0);
+
+    const emptyQuery = await asBusiness(alpha.businessId, () =>
+      ai.searchConversations({ businessId: alpha.businessId, actorUserId: alpha.userA }, "   "),
+    );
+    expect(emptyQuery).toHaveLength(0);
+  });
+});

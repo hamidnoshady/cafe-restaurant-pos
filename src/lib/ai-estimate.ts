@@ -24,6 +24,9 @@ export interface AiTurnEstimateInput {
   maxOutputTokens: number;
   maxTurnRial: number;
   rates: AiUsageRates;
+  /** Wave 5 (issue #145) — mirrors the same turn's actual tool list. */
+  hasAttachment?: boolean;
+  allowActions?: boolean;
 }
 
 /**
@@ -33,7 +36,10 @@ export interface AiTurnEstimateInput {
  * settled token usage, and the returned maximum is the existing atomic hold.
  */
 export function estimateAiTurn(input: AiTurnEstimateInput): AiTurnEstimate {
-  const tools = toolDefinitions(input.mode);
+  const allowActions = input.allowActions ?? true;
+  const tools = toolDefinitions(input.mode, { hasAttachment: input.hasAttachment }).filter(
+    (tool) => allowActions || tool.function.name !== "propose_action",
+  );
   const hasTools = tools.length > 0;
   const assumedToolRounds = hasTools ? 2 : 1;
   const providerInput = {
