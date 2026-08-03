@@ -26,6 +26,7 @@ Each phase is a self-contained file with its own scope, exit criteria, and open 
 | 18b | Phase-18b-AI-Agent-Capability-Expansion.md | Complete for the documented existing-model scope (all five waves shipped; schema-dependent follow-ups deferred) |
 | 19 | Phase-19-Public-API-Webhooks.md | In progress — Wave 2 core data API |
 | 20 | Phase-20-Employee-Secure-Identity.md | Complete — all eight waves shipped |
+| 21 | Phase-21-Multi-Industry-Accounting-Platform.md | Planning — tracks issue #109; waves not started |
 
 Phases 0–11 built a single-business POS. Phases 12–17 turn it into a multi-business platform:
 many businesses isolated in one deployment, teams with real permissions, several branches per
@@ -41,6 +42,10 @@ shipped in waves after Phase 18's metering exists to bill them. Phase 19 opens t
 external, third-party integrations for the first time — scoped API keys and outbound webhooks
 so a business can build (or commission) a "sub app" against its own data. Phase 18 and
 18b are now complete, so Phase 19 starts with its independently reviewable API-key and
-tenancy foundation before exposing any external data routes.
+tenancy foundation before exposing any external data routes. Phase 21 is a different kind of
+expansion from everything before it: rather than adding a capability to the existing café/
+restaurant business, it turns the platform multi-industry — gold/jewelry, watch, and
+accessories retail alongside the existing F&B shape, sharing one Core Accounting layer via a
+new domain-event posting engine and a generalized item/variant/serial model.
 
 For overall architecture, full schema, and product summary, see the master spec doc (POS-Spec.md).

@@ -1,0 +1,151 @@
+# Phase 21 — Multi-Industry Accounting Platform Expansion (Jewelry, Watch & Accessories)
+
+**Project:** Cafe/Restaurant POS
+**Depends on:** Phase 6 (inventory/costing), Phase 7 (double-entry ledger), Phase 12 (tenancy), Phase 15/17
+(feature flags, plans), Phase 16 (accounting suite — AR/AP/manual-journal patterns this phase reuses)
+**Tracks:** GitHub issue [#109](https://github.com/hamidnoshady/cafe-restaurant-pos/issues/109)
+**Goal:** Turn a single-industry (food & beverage) POS into a multi-industry accounting platform —
+Core Accounting + Industry Modules — starting with gold/jewelry, watch, and accessories (bijoux),
+without changing observable behavior for an existing F&B business.
+
+---
+
+## Why this is its own phase, not a slice of an existing one
+
+Every phase so far has extended one business shape: a café/restaurant that sells menu items made
+from recipes, seats guests at tables, and sends tickets to a kitchen. Nothing in the schema
+discriminates *what kind* of business a tenant is — `businesses` has no type column at all. Gold,
+watch, and accessories retail aren't new features of that shape; they're a different shape:
+items that sell by weight and daily price instead of a fixed menu price, serialized units instead
+of recipe-consumed ingredients, variant matrices instead of modifier groups. Reusing Core
+Accounting (ledger, COA, fiscal periods, AR/AP, manual journals — all built and proven in Phases
+7/16) while adding that different shape is the actual engineering problem this phase solves.
+
+## Architecture principles (from the issue, made concrete)
+
+- **Don't break existing POS/restaurant behavior.** Every existing integration/unit test keeps
+  passing unmodified; F&B behavior is the regression baseline for the whole phase, not just a
+  reminder.
+- **Industry logic is separated from the accounting core** via a real **domain-event log + posting
+  engine** (Wave 1) — replacing today's per-event posting functions (`postOrderPaymentEntry`,
+  `postCogsEntry`, `postPurchaseEntry`, `postWasteEntry`, …, each hand-written in
+  `ledger-service.ts`/`inventory-service.ts`). A new industry's posting rules become a
+  registration against the engine, not a new copy of ledger code.
+- **Capability-based.** `businesses.industry` is the new top-level discriminator; the existing
+  `feature_flags`/`business_features`/`plans` system (Phase 15/17) becomes industry-aware rather
+  than being replaced — see `src/lib/features.ts`'s `API_FEATURE_PREFIXES`/`PAGE_FEATURE_PREFIXES`,
+  which this phase extends, not forks.
+- **Domain events + posting engine**, one central mechanism, per above.
+- **Full tenant isolation.** Every new table gets an RLS policy in the same migration that creates
+  it, per the project-wide rule; `integration/tenant-isolation.integration.test.ts` covers new
+  tables automatically once they exist.
+
+## Scope decision: what "generalize" means here
+
+Brainstormed and decided with the product owner before Wave 1 starts: **generalize the sellable-item
+and posting core, not the dine-in service workflow.** Concretely:
+
+- `menu_items` + `inventory_items` + `recipes`/`menu_item_ingredients` are unified behind one
+  generic item model (item, optional variant axes, optional serial units, optional weight/purity
+  attributes) that F&B, gold/jewelry, watch, and accessories all read through. F&B's own behavior
+  (menu grid, recipe-based deduction, FIFO/weighted-average costing) must come out the other side
+  byte-for-byte identical — this is an internal refactor proven by the existing test suite, not a
+  product change.
+- **Tables, floor plans, waiter app, kitchen display, and reservations stay F&B-specific**,
+  already gated behind the `reservations` feature flag (Phase 17) — nothing in gold/watch/
+  accessories retail has an equivalent concept, and generalizing them would be speculative,
+  not something any of the three target industries need. They're simply not offered to a
+  non-food-service business.
+- The domain-event/posting-engine refactor (Wave 1) is where F&B's existing posting functions
+  get re-expressed as registered rules against the new engine — same resulting journal entries,
+  different internal plumbing.
+
+## Waves
+
+Same seven waves as the issue, resequenced so the genuinely shared primitive (item/variant/serial)
+is built once in Wave 1 instead of separately in Waves 2, 5, and 6:
+
+1. **Wave 1 — Multi-industry core.** `businesses.industry` (immutable after setup, like the
+   costing-method lock); domain-event log (`domain_events`: `business_id`, `event_type`, `payload
+   jsonb`, `source_type`/`source_id`) + posting-rule engine industry modules register against;
+   generic Item/Variant/Serial primitive that `menu_items`/`inventory_items`/`recipes` are migrated
+   onto (F&B behavior unchanged, proven by the existing suite); industry-aware setup wizard
+   (Wizard step 1 picks the industry; each industry gets its own COA seed template and its own
+   remaining wizard steps — F&B's 8-step wizard is one instance of this, not special-cased code).
+2. **Wave 2 — Weighted goods & gold inventory.** Fractional-weight quantities (grams, a new
+   numeric-precision convention alongside integer-Rial money and the existing item primitive),
+   purity/karat attributes, weight-based lots and stock counts, daily gold-price entry
+   (per gram, per purity) — manual entry as the baseline, with an optional per-business external
+   price-feed integration (configurable, not required).
+3. **Wave 3 — Gold pricing engine & specialized sales.** The price formula (weight × purity-
+   adjusted price/gram + اجرت [making charge, % or fixed] + profit % + VAT), a transparent
+   receipt/POS breakdown of each component, and posting through Wave 1's engine.
+4. **Wave 4 — Jewelry, stones & consignment.** Gem/stone attributes as cost add-ons on an item;
+   consignment (امانی) as a subledger mirroring Phase 16's AR/AP pattern — held off the business's
+   own balance sheet until sold, then a commission/settlement posting to the consignor.
+5. **Wave 5 — Watch: serial, warranty, repairs.** Serialized units (one row per physical item,
+   using Wave 1's serial primitive, not lot/weight averaging); warranty terms starting at sale;
+   a repair/service ticket workflow (intake → parts consumed from inventory → labor cost → close).
+6. **Wave 6 — Accessories & variant management.** Mostly UI and accessory-specific configuration
+   on top of Wave 1's variant primitive — deliberately thin because the shared model already
+   exists by this point.
+7. **Wave 7 — Specialized reports & audit controls.** Weight reconciliation (physical scale count
+   vs. system, in grams — the weight-based analogue of Phase 6's stock counts), consignment
+   statements, warranty/repair reports, variant-level sales analysis, and an item-level audit trail
+   for high-value serialized/weighed goods.
+
+Each wave is still developed, tested, and PR'd independently, per the issue's own rule.
+
+## Out of scope (for this phase)
+
+- A business running more than one industry at once (v1: one `industry` per business, chosen once
+  at setup, same lock pattern as inventory costing).
+- Generalizing tables/floor/waiter/kitchen/reservations — not needed by any of the three target
+  industries (see scope decision above).
+- Iranian statutory e-invoicing/گارانتی-registry integrations for watches, or any real-time
+  external gold-price provider selection — the *hook* for an external feed is in scope (Wave 2),
+  picking and contracting a specific provider is not.
+- A generic plugin SDK for third-party industry modules — three named industries, built in-repo,
+  not an extensibility platform for arbitrary future ones (revisit if a fourth industry is ever
+  requested).
+
+## Exit criteria
+
+- An existing F&B business shows zero behavioral change: every current integration/unit test
+  passes unmodified, and a manual pass through setup → POS → kitchen → ledger looks identical.
+- A new business can pick "gold/jewelry", "watch", or "accessories" at setup and get that
+  industry's own item model, pricing/sales flow, and chart of accounts — with no F&B-only nav
+  (menu, tables, waiter, kitchen, reservations) visible.
+- A gold sale's receipt shows the full price breakdown (weight, purity-adjusted price/gram,
+  making charge, profit %, VAT) and posts a balanced journal entry via the posting engine.
+- A consignment item never appears in the business's own inventory valuation until sold, and
+  selling it posts the correct commission/settlement split.
+- A watch's serial number, warranty window, and repair history are all queryable from one item
+  record, and a repair ticket's parts/labor post correctly to the ledger.
+- Every new table has an RLS policy and is covered by the generated tenant-isolation test.
+
+## Open questions
+
+1. **Generic item schema shape** — one wide table with nullable industry-specific columns, or a
+   core `items` table plus one satellite table per capability (weight, serial, variant)? Leaning
+   satellite tables (matches how `menu_item_ingredients`/`modifier_ingredients` already extend
+   `menu_items` today), to be settled at the start of Wave 1.
+2. **Weight precision & rounding** — grams to how many decimal places, and what rounding rule at
+   the point a computed price meets integer-Rial storage? Needs a real decision before Wave 2's
+   migration, the same way Phase 0 fixed integer-Rial for money.
+3. **External gold-price feed** — provider TBD; Wave 2 builds the pluggable hook and ships manual
+   entry, a specific integration is a follow-up once a provider is chosen.
+4. **Consignment settlement accounts** — new well-known accounts (a consignment-liability account
+   distinct from Accounts Payable?) — to be designed alongside Wave 4, following Phase 16's
+   pattern of adding well-known codes plus a backfill migration.
+5. **Repair ticket workflow detail** (statuses, whether it reuses the kitchen-ticket state-machine
+   shape or needs its own) — deferred to Wave 5 design.
+6. **Can an existing F&B business ever switch industry later**, or is the setup-time choice as
+   permanent as the costing-method lock? Leaning permanent for v1 (same reasoning as costing
+   method — changing it retroactively would corrupt historical postings), revisit only if asked.
+
+## Progress
+
+Not started. This document captures the pre-Wave-1 planning pass (architecture principles pinned
+down, waves resequenced around a shared item/variant/serial core, scope of "generalize F&B" bounded
+to the item + posting layer) before development begins.
