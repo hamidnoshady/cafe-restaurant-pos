@@ -55,6 +55,12 @@ export const WELL_KNOWN_CODES = {
   goldSalesRevenue: "4500",
   makingChargeRevenue: "4600",
   goldCogs: "5110",
+  // Phase 21 Wave 4 — consignment (امانی). A consigned sale never touches
+  // goldInventory/goldCogs (the shop never owned the piece) or
+  // goldSalesRevenue/makingChargeRevenue (that money isn't the shop's
+  // revenue, it's owed to the consignor) — it posts to these two instead.
+  consignmentPayable: "2110",
+  consignmentCommissionRevenue: "4700",
 } as const;
 
 /**
@@ -140,6 +146,7 @@ export const JEWELRY_COA_TEMPLATE: TemplateAccount[] = [
 
   { code: "2000", name: "بدهی‌ها", type: "liability" },
   { code: "2100", name: "حساب‌های پرداختنی", type: "liability", parentCode: "2000" },
+  { code: "2110", name: "پرداختنی به امانت‌گذاران", type: "liability", parentCode: "2000" },
   { code: "2200", name: "مالیات بر ارزش افزوده پرداختنی", type: "liability", parentCode: "2000" },
 
   { code: "3000", name: "حقوق صاحبان سرمایه", type: "equity" },
@@ -150,6 +157,7 @@ export const JEWELRY_COA_TEMPLATE: TemplateAccount[] = [
   { code: "4000", name: "درآمدها", type: "revenue" },
   { code: "4500", name: "فروش طلا (ارزش فلز)", type: "revenue", parentCode: "4000" },
   { code: "4600", name: "درآمد اجرت و سود", type: "revenue", parentCode: "4000" },
+  { code: "4700", name: "درآمد کارمزد فروش امانی", type: "revenue", parentCode: "4000" },
   { code: "4900", name: "سایر درآمدها", type: "revenue", parentCode: "4000" },
 
   { code: "5000", name: "هزینه‌ها", type: "expense" },

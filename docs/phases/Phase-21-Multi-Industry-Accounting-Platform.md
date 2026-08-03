@@ -434,8 +434,45 @@ of domain-specific confirmation VAT and cost-basis needed in Wave 3, not yet ask
   db:migrate` (twice) + `npm run test:db` (297 tests, `tenant-isolation`'s 19 tests re-confirming
   RLS), and `npm run build` all pass.
 
-Not yet built: consignment (امانی) — a subledger mirroring Phase 16's AR/AP pattern, held off the
-business's own balance sheet until sold, then a commission/settlement posting to the consignor. Its
-sale pricing/commission mechanics are a real domain decision (does a consigned piece use the same
-اجرت/سود/مالیات formula, or a negotiated price minus a commission?) still to be confirmed before any
-code is written, the same discipline Wave 3's VAT-base and cost-basis decisions followed.
+Wave 4, second slice — consignment (امانی) — implemented. Confirmed with the product owner before
+writing any code: **a consigned piece is priced with the exact same formula as the shop's own
+inventory** (`computeGoldSalePrice`, unchanged) — سود (profit) simply *means* the shop's commission
+here instead of margin on owned stock, rather than consignment needing a different, negotiated-price
+pricing model.
+
+- **`consignors`** (`migrations/0055_consignment.sql`) mirrors `customers` (migration 0001) exactly
+  — same shape, same Shape 1 RLS — and `src/lib/consignment-service.ts` mirrors
+  `customers-service.ts`'s simplicity: no separate pure-validation module, matching how
+  customers/suppliers are already validated inline in this codebase (that split is reserved for real
+  computational logic like costing/pricing math, not "name is required").
+- **`item_consignments`** (1:1 with an item, like `item_weight_attributes`) marks a `tracking:
+  'weight'` item as held for a consignor rather than owned. No pre-agreed commission column — the
+  sale-time making-charge/profit/VAT inputs (already how an owned sale works since Wave 3) are reused
+  as-is; the commission rate is decided at the point of sale, not fixed at intake.
+- **`gold-sales-service.ts`'s `sellWeightedItem` now branches on consignment status**: a consigned
+  item skips the cost-basis requirement entirely (there's no "what the shop paid" for something it
+  never bought) and posts through a new `gold.consignment_sale_revenue` rule instead of
+  `gold.sale_revenue`/`gold.sale_cogs` — Debit the payment account for the total, same as an owned
+  sale; Credit the new `consignmentPayable` liability for metal value + making charge (owed to the
+  consignor, not the shop's revenue); Credit the new `consignmentCommissionRevenue` for profit (the
+  shop's actual earning on the sale); Credit `vatPayable`, unchanged. **No COGS entry is posted at
+  all for a consignment sale** — the shop never owned the piece, so there's nothing to relieve from
+  an inventory asset it never held.
+- Deliberately deferred (its own follow-up slice, mirroring how Phase 16 built AR/AP's invoice-then-
+  collect/pay lifecycle in two stages): actually paying out the consignor their `consignmentPayable`
+  balance. This slice creates the payable; settling it is separate, the same "invoice, then
+  collect/pay" shape Phase 16's AR/AP subledgers already use.
+- Verified in `integration/consignment.integration.test.ts` (consignor CRUD, marking an item
+  consigned and refusing it on a non-weight-tracked item, a full consigned sale posting the correct
+  three-way split with hand-verified amounts and *zero* `gold.sale_cogs` event, confirming the
+  owned-inventory accounts are never touched by a consignment sale, and confirming an *unconsigned*
+  item still requires its cost basis exactly as Wave 3 left it — a regression check, not just a new
+  feature check). `npx tsc --noEmit`, `npm test` (930 tests — no new pure-unit coverage needed, per
+  the customers/suppliers-style validation above), `npm run db:migrate` (twice) + `npm run test:db`
+  (303 tests, `tenant-isolation`'s 19 tests re-confirming RLS on the two new tables), and `npm run
+  build` all pass.
+
+Not yet built: paying out a consignor's `consignmentPayable` balance (see above); consignment
+statements/balances by consignor (Phase 16's AR/AP built these as their own slice too, off the same
+"reconstruct from journal lines, never a shadow copy" discipline); and, as with every wave so far, no
+API route or UI — service-layer only, proven by integration test.

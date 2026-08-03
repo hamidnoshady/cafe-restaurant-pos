@@ -18,10 +18,21 @@
  *     live from item_stones rather than passed through the event payload,
  *     the same "resolve against the current record, not a caller-supplied
  *     snapshot" instinct accountIdsByCode already uses for account ids.
+ *
+ * `gold.consignment_sale_revenue` (Wave 4) is a third, separate rule for a
+ * consigned (امانی) piece — same pricing engine, different posting. The
+ * shop never owned the piece, so there is no `gold.sale_cogs` counterpart
+ * for a consignment sale at all (nothing to relieve from inventory): Debit
+ * the payment account for the total, same as an owned-inventory sale;
+ * Credit `consignmentPayable` for metal value + making charge (owed to the
+ * consignor, not the shop's revenue); Credit `consignmentCommissionRevenue`
+ * for profit (the pricing engine's "profit" input becomes the shop's
+ * commission here, per the product owner's confirmed decision — same
+ * formula, different meaning); Credit `vatPayable` for VAT, unchanged.
  */
 import Decimal from "decimal.js";
 import { WELL_KNOWN_CODES } from "./coa-template";
-import { rialBigInt, roundRial, type RialText } from "./inventory-exact";
+import { rialBigInt, rialText, roundRial, type RialText } from "./inventory-exact";
 import { accountIdsByCode } from "./ledger-service";
 import { registerPostingRule, type PostingResult } from "./posting-engine";
 import type { SettlementMethod } from "./ledger";
@@ -70,6 +81,56 @@ registerPostingRule("gold.sale_revenue", async (event, client): Promise<PostingR
     postingKind: "gold_sale_revenue",
   };
 });
+
+interface GoldConsignmentSaleRevenuePayload {
+  itemId: string;
+  metalValue: RialText;
+  makingCharge: RialText;
+  profit: RialText;
+  vat: RialText;
+  total: RialText;
+  paymentMethod: SettlementMethod;
+}
+
+registerPostingRule(
+  "gold.consignment_sale_revenue",
+  async (event, client): Promise<PostingResult | null> => {
+    const payload = event.payload as unknown as GoldConsignmentSaleRevenuePayload;
+    const paymentCode = PAYMENT_ACCOUNT_CODE[payload.paymentMethod];
+
+    const accounts = await accountIdsByCode(client, event.businessId, [
+      paymentCode,
+      WELL_KNOWN_CODES.consignmentPayable,
+      WELL_KNOWN_CODES.consignmentCommissionRevenue,
+      WELL_KNOWN_CODES.vatPayable,
+    ]);
+    const zero = "0" as RialText;
+    const consignorPortion = rialText(
+      (rialBigInt(payload.metalValue) + rialBigInt(payload.makingCharge)).toString(),
+    );
+
+    const lines = [
+      { accountId: accounts.get(paymentCode)!, debit: payload.total, credit: zero },
+      {
+        accountId: accounts.get(WELL_KNOWN_CODES.consignmentPayable)!,
+        debit: zero,
+        credit: consignorPortion,
+      },
+      {
+        accountId: accounts.get(WELL_KNOWN_CODES.consignmentCommissionRevenue)!,
+        debit: zero,
+        credit: payload.profit,
+      },
+      { accountId: accounts.get(WELL_KNOWN_CODES.vatPayable)!, debit: zero, credit: payload.vat },
+    ];
+
+    return {
+      lines,
+      memo: "فروش امانی طلا",
+      postingKind: "gold_consignment_sale_revenue",
+    };
+  },
+);
 
 interface GoldSaleCogsPayload {
   itemId: string;

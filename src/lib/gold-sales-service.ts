@@ -1,26 +1,33 @@
 /**
- * Phase 21 Wave 3 — selling a specific weighed gold piece.
+ * Phase 21 Wave 3/4 — selling a specific weighed gold piece, whether the
+ * shop owns it or is holding it on consignment (امانی, Wave 4).
  *
  * Orchestrates, in the caller's own transaction (so a sale is always atomic
  * with its postings and status change, same discipline as every ledger
  * posting path): look up the item's weight/cost basis and today's gold
- * price, compute the price breakdown (src/lib/gold-pricing.ts), post both
- * halves of the sale through the domain-event engine
- * (src/lib/gold-posting-rules.ts — importing it here registers the rules),
- * and mark the piece sold.
+ * price, compute the price breakdown (src/lib/gold-pricing.ts — identical
+ * formula either way, per the product owner's confirmed decision), post the
+ * sale through the domain-event engine (src/lib/gold-posting-rules.ts —
+ * importing it here registers the rules), and mark the piece sold.
+ *
+ * A consigned item skips the cost-basis requirement and the COGS posting
+ * entirely — the shop never owned it, so there's nothing to relieve from
+ * inventory, and "profit" becomes the shop's commission instead of margin.
  *
  * DB-touching, so per repo convention (see gold-pricing.ts for the pure
  * formula this leans on) it has no direct unit test; covered instead by
- * integration/gold-sales.integration.test.ts.
+ * integration/gold-sales.integration.test.ts and
+ * integration/consignment.integration.test.ts.
  */
 import type { PoolClient } from "pg";
 import { computeGoldSalePrice, type GoldSalePriceBreakdown, type MakingCharge } from "./gold-pricing";
 import { getGoldPrice } from "./gold-prices-service";
 import { getItem, getWeightAttributes, setWeightItemStatus } from "./items-service";
+import { getConsignment } from "./consignment-service";
 import { emitDomainEvent } from "./posting-engine";
 import type { RialText } from "./inventory-exact";
 import type { SettlementMethod } from "./ledger";
-// Side-effect import: registers "gold.sale_revenue"/"gold.sale_cogs" with the engine.
+// Side-effect import: registers the gold.* posting rules with the engine.
 import "./gold-posting-rules";
 
 export interface SellWeightedItemInput {
@@ -40,6 +47,8 @@ export interface SellWeightedItemResult {
   breakdown: GoldSalePriceBreakdown;
   revenueEntryId: string | null;
   cogsEntryId: string | null;
+  /** Whether this sale posted as a consignment (امانی) settlement rather than an owned-inventory sale. */
+  consigned: boolean;
 }
 
 export async function sellWeightedItem(
@@ -57,7 +66,9 @@ export async function sellWeightedItem(
   if (weightAttrs.status !== "in_stock") {
     throw new Error("این کالا در انبار موجود نیست (رزرو شده یا قبلاً فروخته شده است).");
   }
-  if (!weightAttrs.unitCostPerGram) {
+
+  const consignment = await getConsignment(input.itemId);
+  if (!consignment && !weightAttrs.unitCostPerGram) {
     throw new Error("بهای تمام‌شده این کالا ثبت نشده است؛ ابتدا آن را ثبت کنید.");
   }
 
@@ -72,42 +83,65 @@ export async function sellWeightedItem(
     vatPercent: input.vatPercent,
   });
 
-  const makingChargePlusProfit = (
-    BigInt(breakdown.makingCharge) + BigInt(breakdown.profit)
-  ).toString() as RialText;
+  let revenueEntryId: string | null;
+  let cogsEntryId: string | null = null;
 
-  const { entryId: revenueEntryId } = await emitDomainEvent(client, {
-    businessId: input.businessId,
-    locationId: input.locationId,
-    eventType: "gold.sale_revenue",
-    payload: {
-      itemId: input.itemId,
-      metalValue: breakdown.metalValue,
-      makingChargePlusProfit,
-      vat: breakdown.vat,
-      total: breakdown.total,
-      paymentMethod: input.paymentMethod,
-    },
-    sourceType: "gold_sale",
-    sourceId: input.itemId,
-    createdBy: input.createdBy ?? null,
-  });
+  if (consignment) {
+    ({ entryId: revenueEntryId } = await emitDomainEvent(client, {
+      businessId: input.businessId,
+      locationId: input.locationId,
+      eventType: "gold.consignment_sale_revenue",
+      payload: {
+        itemId: input.itemId,
+        metalValue: breakdown.metalValue,
+        makingCharge: breakdown.makingCharge,
+        profit: breakdown.profit,
+        vat: breakdown.vat,
+        total: breakdown.total,
+        paymentMethod: input.paymentMethod,
+      },
+      sourceType: "gold_consignment_sale",
+      sourceId: input.itemId,
+      createdBy: input.createdBy ?? null,
+    }));
+  } else {
+    const makingChargePlusProfit = (
+      BigInt(breakdown.makingCharge) + BigInt(breakdown.profit)
+    ).toString() as RialText;
 
-  const { entryId: cogsEntryId } = await emitDomainEvent(client, {
-    businessId: input.businessId,
-    locationId: input.locationId,
-    eventType: "gold.sale_cogs",
-    payload: {
-      itemId: input.itemId,
-      netWeight: weightAttrs.netWeight,
-      unitCostPerGram: weightAttrs.unitCostPerGram,
-    },
-    sourceType: "gold_sale",
-    sourceId: input.itemId,
-    createdBy: input.createdBy ?? null,
-  });
+    ({ entryId: revenueEntryId } = await emitDomainEvent(client, {
+      businessId: input.businessId,
+      locationId: input.locationId,
+      eventType: "gold.sale_revenue",
+      payload: {
+        itemId: input.itemId,
+        metalValue: breakdown.metalValue,
+        makingChargePlusProfit,
+        vat: breakdown.vat,
+        total: breakdown.total,
+        paymentMethod: input.paymentMethod,
+      },
+      sourceType: "gold_sale",
+      sourceId: input.itemId,
+      createdBy: input.createdBy ?? null,
+    }));
+
+    ({ entryId: cogsEntryId } = await emitDomainEvent(client, {
+      businessId: input.businessId,
+      locationId: input.locationId,
+      eventType: "gold.sale_cogs",
+      payload: {
+        itemId: input.itemId,
+        netWeight: weightAttrs.netWeight,
+        unitCostPerGram: weightAttrs.unitCostPerGram,
+      },
+      sourceType: "gold_sale",
+      sourceId: input.itemId,
+      createdBy: input.createdBy ?? null,
+    }));
+  }
 
   await setWeightItemStatus(input.itemId, "sold", client);
 
-  return { breakdown, revenueEntryId, cogsEntryId };
+  return { breakdown, revenueEntryId, cogsEntryId, consigned: Boolean(consignment) };
 }
