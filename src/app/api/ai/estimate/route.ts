@@ -3,12 +3,21 @@ import { query } from "@/lib/db";
 import type { AgentMode, PromptContext } from "@/lib/ai";
 import { getPlatformAiConfig, isPlatformAiConfigured } from "@/lib/ai-config";
 import { estimateAiTurn } from "@/lib/ai-estimate";
+import { parseReceiptImageDataUrl } from "@/lib/ai-receipt";
 import type { InboundMessage } from "@/lib/ai-service";
 import { requireManager, resolveActiveLocation } from "@/lib/setup-state";
 import { requireFloorAssistant, withTenantScope } from "@/lib/auth";
 
 const MAX_MESSAGES = 24;
 const MAX_CONTENT = 8_000;
+
+/** Mirrors the chat route's own attachment scope/validation (Wave 5, issue #145). */
+function hasValidAttachment(mode: AgentMode, raw: unknown): { present: boolean; error: boolean } {
+  if (mode !== "dashboard" || !raw || typeof raw !== "object") return { present: false, error: false };
+  const dataUrl = (raw as { dataUrl?: unknown }).dataUrl;
+  if (dataUrl === undefined) return { present: false, error: false };
+  return parseReceiptImageDataUrl(dataUrl) ? { present: true, error: false } : { present: false, error: true };
+}
 
 function sanitizeMessages(raw: unknown): InboundMessage[] {
   if (!Array.isArray(raw)) return [];
@@ -30,7 +39,7 @@ function sanitizeMessages(raw: unknown): InboundMessage[] {
  * and settles actual credit.
  */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  let body: { mode?: unknown; messages?: unknown; currentStep?: unknown };
+  let body: { mode?: unknown; messages?: unknown; currentStep?: unknown; attachment?: unknown; allowActions?: unknown };
   try {
     body = await request.json();
   } catch {
@@ -55,6 +64,15 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   if (messages.length === 0) {
     return NextResponse.json({ error: "empty_messages" }, { status: 400 });
   }
+
+  const attachment = hasValidAttachment(mode, body.attachment);
+  if (attachment.error) {
+    return NextResponse.json(
+      { error: "attachment_invalid", message: "فرمت یا حجم تصویر پیوست پشتیبانی نمی‌شود." },
+      { status: 400 },
+    );
+  }
+  const allowActions = body.allowActions !== false;
 
   const config = await getPlatformAiConfig();
   if (!isPlatformAiConfigured(config)) {
@@ -82,6 +100,8 @@ export const POST = withTenantScope(async (request: NextRequest) => {
       messages,
       maxOutputTokens: config.maxOutputTokens,
       maxTurnRial: config.maxTurnRial,
+      hasAttachment: attachment.present,
+      allowActions,
       rates: {
         inputTokenRialPerMillion: config.inputTokenRialPerMillion,
         outputTokenRialPerMillion: config.outputTokenRialPerMillion,

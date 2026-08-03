@@ -390,6 +390,8 @@ export interface PromptContext {
   currentStep?: string | null;
   userName?: string;
   role?: string;
+  /** Wave 5 (issue #145) — a receipt/invoice image is attached to this turn. */
+  hasAttachment?: boolean;
 }
 
 const WIZARD_STEP_LABELS: Record<string, string> = {
@@ -430,6 +432,9 @@ export function buildSystemPrompt(ctx: PromptContext): string {
       "علاوه بر گزارش‌های استاندارد، ابزارهای تخصصی هم داری: عملکرد منو و آیتم‌های باطل‌شده (get_menu_performance، get_void_pattern)، موجودی و تأمین‌کنندگان (get_stock_valuation، get_supplier_performance)، رزرو و میز (get_reservation_conflicts، get_table_turnover_rate)، پیک تحویل (get_courier_performance)، مشتریان (get_customer_profile، get_at_risk_customers)، حسابداری (get_ar_aging، get_ap_upcoming، get_unreconciled_bank_lines، get_payroll_summary، get_vat_liability)، مقایسهٔ شعبه‌ها (get_branch_comparison) و تخمین تقاضا (forecast_demand). هر کدام مناسب سؤال بود همان را صدا بزن؛ برای forecast_demand همیشه در پاسخ صریح بگو که یک تخمین است.",
       "برای هر تغییر در داده‌ها هرگز مستقیم اقدام نکن؛ فقط ابزار propose_action را با نوع مجاز و payload کامل صدا بزن. کاربر خودش با دکمهٔ تأیید آن را اجرا می‌کند (human-in-the-loop).",
       "قبل از پیشنهاد، اطلاعات لازم را با پرسیدن سؤال از کاربر کامل کن؛ فیلدها را با حدس‌های نامطمئن پر نکن.",
+      ctx.hasAttachment
+        ? "کاربر در همین پیام یک تصویر فاکتور/رسید پیوست کرده است. اول ابزار draft_expense_from_receipt را صدا بزن تا اطلاعات ساختاریافته از تصویر استخراج شود؛ سپس اگر مبلغ و حساب هزینهٔ مناسب مشخص بود، propose_action از نوع expense.categorize را با همان مقادیر بساز، وگرنه از کاربر مقدار ناقص را بپرس."
+        : "",
     );
   } else if (ctx.mode === "floor") {
     lines.push(
@@ -497,8 +502,13 @@ function noArgsTool(name: string, description: string): OpenAiTool {
   };
 }
 
+export interface ToolDefinitionsOptions {
+  /** Wave 5 (issue #145) — only offer draft_expense_from_receipt when a turn actually attached an image. */
+  hasAttachment?: boolean;
+}
+
 /** OpenAI-compatible tool list. Read tools run server-side; propose_action is the confirm gate. */
-export function toolDefinitions(mode: AgentMode): OpenAiTool[] {
+export function toolDefinitions(mode: AgentMode, opts: ToolDefinitionsOptions = {}): OpenAiTool[] {
   const readTools: OpenAiTool[] = [
     {
       type: "function",
@@ -628,6 +638,26 @@ export function toolDefinitions(mode: AgentMode): OpenAiTool[] {
     },
   ];
 
+  // Wave 5 (issue #145) — only meaningful when the client actually attached a
+  // receipt/invoice image to this turn; the extraction itself runs as an
+  // isolated provider call (see extractReceiptDraft in ai-service.ts), never
+  // by resending the image on every later tool round.
+  const receiptTool: OpenAiTool = {
+    type: "function",
+    function: {
+      name: "draft_expense_from_receipt",
+      description:
+        "استخراج اطلاعات ساختاریافته (فروشنده، تاریخ، مبلغ، حساب هزینهٔ پیشنهادی) از تصویر فاکتور/رسیدِ پیوست‌شده در همین پیام. فقط زمانی در دسترس است که کاربر تصویری پیوست کرده باشد. نتیجه فقط یک استخراج خودکار است؛ برای ثبت باید propose_action از نوع expense.categorize با مقادیر بررسی‌شده ساخته شود.",
+      parameters: {
+        type: "object",
+        properties: {
+          note: { type: "string", description: "راهنمایی یا زمینهٔ اضافه دربارهٔ این هزینه، اختیاری" },
+        },
+        additionalProperties: false,
+      },
+    },
+  };
+
   const proposeTool: OpenAiTool = {
     type: "function",
     function: {
@@ -707,7 +737,9 @@ export function toolDefinitions(mode: AgentMode): OpenAiTool[] {
   ];
 
   if (mode === "wizard") return [readTools[0], proposeTool];
-  if (mode === "dashboard") return [...readTools, proposeTool];
+  if (mode === "dashboard") {
+    return opts.hasAttachment ? [...readTools, receiptTool, proposeTool] : [...readTools, proposeTool];
+  }
   if (mode === "floor") return floorReadTools;
   if (mode === "proactive") return [];
   return platformReadTools;

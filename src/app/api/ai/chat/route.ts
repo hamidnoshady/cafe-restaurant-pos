@@ -11,12 +11,27 @@ import {
 } from "@/lib/ai-billing-service";
 import { createAiActionAudit } from "@/lib/ai-action-audit";
 import { appendMessage, getOrCreateConversation } from "@/lib/ai-conversations";
-import { AiError, runAgentTurn, type InboundMessage } from "@/lib/ai-service";
+import { parseReceiptImageDataUrl } from "@/lib/ai-receipt";
+import { AiError, runAgentTurn, type ChatAttachment, type InboundMessage } from "@/lib/ai-service";
 import { requireManager, resolveActiveLocation } from "@/lib/setup-state";
 import { requireFloorAssistant, withTenantScope } from "@/lib/auth";
 
 const MAX_MESSAGES = 24;
 const MAX_CONTENT = 8_000;
+
+/**
+ * Wave 5 (issue #145) — only dashboard mode (owner/manager) may attach a
+ * receipt/invoice image, matching expense.categorize's existing scope. The
+ * image is never persisted; on an invalid data URL the whole request is
+ * refused rather than silently dropping the attachment.
+ */
+function parseAttachment(mode: AgentMode, raw: unknown): { attachment: ChatAttachment | null; error: boolean } {
+  if (mode !== "dashboard" || !raw || typeof raw !== "object") return { attachment: null, error: false };
+  const dataUrl = (raw as { dataUrl?: unknown }).dataUrl;
+  if (dataUrl === undefined) return { attachment: null, error: false };
+  const parsed = parseReceiptImageDataUrl(dataUrl);
+  return parsed ? { attachment: { dataUrl: parsed.dataUrl }, error: false } : { attachment: null, error: true };
+}
 
 function sanitizeMessages(raw: unknown): InboundMessage[] {
   if (!Array.isArray(raw)) return [];
@@ -42,7 +57,14 @@ function sse(event: string, data: unknown): Uint8Array {
  * SSE while the same server-side tool/confirmation boundaries stay intact.
  */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  let body: { mode?: unknown; messages?: unknown; currentStep?: unknown; conversationId?: unknown };
+  let body: {
+    mode?: unknown;
+    messages?: unknown;
+    currentStep?: unknown;
+    conversationId?: unknown;
+    attachment?: unknown;
+    allowActions?: unknown;
+  };
   try {
     body = await request.json();
   } catch {
@@ -71,6 +93,15 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   if (messages.length === 0) {
     return NextResponse.json({ error: "empty_messages" }, { status: 400 });
   }
+
+  const { attachment, error: attachmentError } = parseAttachment(mode, body.attachment);
+  if (attachmentError) {
+    return NextResponse.json(
+      { error: "attachment_invalid", message: "فرمت یا حجم تصویر پیوست پشتیبانی نمی‌شود." },
+      { status: 400 },
+    );
+  }
+  const allowActions = body.allowActions !== false;
 
   const config = await getPlatformAiConfig();
   if (!isPlatformAiConfigured(config)) {
@@ -152,6 +183,8 @@ export const POST = withTenantScope(async (request: NextRequest) => {
                 : undefined,
             promptContext,
             messages,
+            attachment: attachment ?? undefined,
+            allowActions,
             stream: {
               onDelta: (content) => emit("delta", { content }),
               onToolCalls: () => emit("reset", {}),

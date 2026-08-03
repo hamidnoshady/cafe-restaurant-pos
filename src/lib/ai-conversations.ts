@@ -181,6 +181,42 @@ export async function getConversationMessages(
   };
 }
 
+export interface AiConversationSearchResult {
+  id: string;
+  title: string;
+  lastMessageAt: string;
+}
+
+/**
+ * AI Hub Wave 5 (issue #145) — the composer's restricted search ("previous
+ * conversations", replacing a general web-browsing icon per Phase 18b's own
+ * out-of-scope decision). Matches on title or any message's content, scoped
+ * by the same ownership boundary as every other function here — a
+ * conversation only ever surfaces to the member who started it.
+ */
+export async function searchConversations(
+  owner: Owner,
+  queryText: string,
+  limit = 8,
+): Promise<AiConversationSearchResult[]> {
+  const trimmed = queryText.trim();
+  if (!trimmed) return [];
+  const needle = `%${trimmed.replace(/[\\%_]/g, (match) => `\\${match}`)}%`;
+  const { rows } = await query<{ id: string; title: string; last_message_at: string }>(
+    `SELECT c.id, c.title, c.last_message_at
+       FROM ai_conversations c
+      WHERE c.business_id = $1 AND c.actor_user_id = $2
+        AND (
+          c.title ILIKE $3 ESCAPE '\\'
+          OR EXISTS (SELECT 1 FROM ai_messages m WHERE m.conversation_id = c.id AND m.content ILIKE $3 ESCAPE '\\')
+        )
+      ORDER BY c.last_message_at DESC
+      LIMIT $4`,
+    [owner.businessId, owner.actorUserId, needle, Math.max(1, Math.min(50, Math.floor(limit)))],
+  );
+  return rows.map((row) => ({ id: row.id, title: row.title, lastMessageAt: row.last_message_at }));
+}
+
 export async function deleteConversation(owner: Owner & { conversationId: string }): Promise<boolean> {
   const { rowCount } = await query(
     `DELETE FROM ai_conversations WHERE id = $1 AND business_id = $2 AND actor_user_id = $3`,

@@ -20,6 +20,7 @@ import {
 import { formatToman } from "@/lib/money";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { AiAttachmentChip, AiComposerTools } from "./ai-composer-tools";
 import { AiProposalCard } from "./ai-proposal-card";
 import { SUGGESTED_PROMPTS, useAiChat, type AssistantMode } from "./use-ai-chat";
 
@@ -41,7 +42,13 @@ export function AiAssistant({ mode, currentStep }: Props) {
     pending,
     applyingId,
     conversationId,
+    attachment,
+    attachReceiptImage,
+    clearAttachment,
+    actionsAllowed,
+    setActionsAllowed,
     ensureGreeting,
+    loadConversation,
     prepareSend,
     cancelPending,
     startStream,
@@ -197,6 +204,19 @@ export function AiAssistant({ mode, currentStep }: Props) {
                 </div>
               </div>
             ) : null}
+            <AiAttachmentChip attachment={attachment} onClear={clearAttachment} />
+            <div className="mb-1.5">
+              <AiComposerTools
+                mode={mode}
+                canPropose={canPropose}
+                disabled={busy || estimating || Boolean(pending)}
+                onAttach={(file) => void attachReceiptImage(file)}
+                actionsAllowed={actionsAllowed}
+                onActionsAllowedChange={setActionsAllowed}
+                onSelectConversation={(id) => void loadConversation(id)}
+                onSelectReportPrompt={(prompt) => setInput(prompt)}
+              />
+            </div>
             <div className="flex items-end gap-2">
               <textarea
                 value={input}

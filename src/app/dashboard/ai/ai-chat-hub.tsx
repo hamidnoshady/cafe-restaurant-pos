@@ -12,6 +12,7 @@ import { Loader2Icon, MessageSquarePlusIcon, SendIcon, SparklesIcon } from "luci
 import { formatToman } from "@/lib/money";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { AiAttachmentChip, AiComposerTools } from "@/components/ai/ai-composer-tools";
 import { AiProposalCard } from "@/components/ai/ai-proposal-card";
 import { SUGGESTED_PROMPTS, useAiChat } from "@/components/ai/use-ai-chat";
 import { AiActionAudit } from "./ai-action-audit";
@@ -50,6 +51,11 @@ export function AiChatHub() {
     applyingId,
     conversationId,
     loadingConversation,
+    attachment,
+    attachReceiptImage,
+    clearAttachment,
+    actionsAllowed,
+    setActionsAllowed,
     ensureGreeting,
     startNewConversation,
     loadConversation,
@@ -202,6 +208,19 @@ export function AiChatHub() {
                   </div>
                 </div>
               ) : null}
+              <AiAttachmentChip attachment={attachment} onClear={clearAttachment} />
+              <div className="mb-2">
+                <AiComposerTools
+                  mode="dashboard"
+                  canPropose={canPropose}
+                  disabled={busy || estimating || Boolean(pending) || loadingConversation}
+                  onAttach={(file) => void attachReceiptImage(file)}
+                  actionsAllowed={actionsAllowed}
+                  onActionsAllowedChange={setActionsAllowed}
+                  onSelectConversation={(id) => void loadConversation(id)}
+                  onSelectReportPrompt={(prompt) => setInput(prompt)}
+                />
+              </div>
               <div className="flex items-end gap-2">
                 <textarea
                   value={input}

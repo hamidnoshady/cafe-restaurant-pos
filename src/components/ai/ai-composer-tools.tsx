@@ -1,0 +1,233 @@
+"use client";
+
+/**
+ * AI Hub Wave 5 (issue #145) — the composer's three icons, shared by the
+ * floating launcher and the full-page hub so the two never drift: attach a
+ * receipt/invoice image (dashboard mode only), search restricted to this
+ * business's own reports and the caller's own past conversations (replacing
+ * a general "web" icon per Phase 18b's own out-of-scope decision), and a
+ * per-message "allow action" toggle (client/prompt-only, no architecture
+ * change — the confirm-before-apply flow is unaffected either way).
+ */
+import { useEffect, useRef, useState } from "react";
+import {
+  BarChart3Icon,
+  Loader2Icon,
+  MessageSquareIcon,
+  PaperclipIcon,
+  SearchIcon,
+  SettingsIcon,
+  XIcon,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import type { AssistantMode, ChatAttachment } from "./use-ai-chat";
+
+interface SearchResponse {
+  conversations?: { id: string; title: string }[];
+  reports?: { key: string; label: string }[];
+}
+
+export function AiAttachmentChip({
+  attachment,
+  onClear,
+}: {
+  attachment: ChatAttachment | null;
+  onClear: () => void;
+}) {
+  if (!attachment) return null;
+  return (
+    <div className="mb-2 flex items-center gap-2 rounded-lg border bg-muted/40 px-2.5 py-1.5 text-xs">
+      <PaperclipIcon className="size-3.5 shrink-0 text-muted-foreground" />
+      <span className="min-w-0 flex-1 truncate">{attachment.name}</span>
+      <button
+        type="button"
+        onClick={onClear}
+        aria-label="حذف پیوست"
+        className="shrink-0 text-muted-foreground hover:text-foreground"
+      >
+        <XIcon className="size-3.5" />
+      </button>
+    </div>
+  );
+}
+
+export function AiComposerTools({
+  mode,
+  canPropose,
+  disabled,
+  onAttach,
+  actionsAllowed,
+  onActionsAllowedChange,
+  onSelectConversation,
+  onSelectReportPrompt,
+}: {
+  mode: AssistantMode;
+  canPropose: boolean;
+  disabled?: boolean;
+  onAttach: (file: File) => void;
+  actionsAllowed: boolean;
+  onActionsAllowedChange: (allowed: boolean) => void;
+  onSelectConversation: (id: string) => void;
+  onSelectReportPrompt: (prompt: string) => void;
+}) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<SearchResponse | null>(null);
+  const [searching, setSearching] = useState(false);
+
+  useEffect(() => {
+    const q = query.trim();
+    if (!q) {
+      setResults(null);
+      setSearching(false);
+      return;
+    }
+    setSearching(true);
+    const timer = setTimeout(() => {
+      fetch(`/api/ai/search?q=${encodeURIComponent(q)}`)
+        .then((response) => response.json())
+        .then((data: SearchResponse) => setResults(data))
+        .catch(() => setResults({ conversations: [], reports: [] }))
+        .finally(() => setSearching(false));
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [query]);
+
+  if (!canPropose && mode !== "dashboard") return null;
+
+  const noResults =
+    !searching && query.trim() && results && !results.conversations?.length && !results.reports?.length;
+
+  return (
+    <div className="flex items-center gap-1">
+      {mode === "dashboard" ? (
+        <>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            className="hidden"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) onAttach(file);
+              event.target.value = "";
+            }}
+          />
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            disabled={disabled}
+            onClick={() => fileInputRef.current?.click()}
+            aria-label="پیوست تصویر فاکتور/رسید"
+            title="پیوست فاکتور/رسید برای پیش‌نویس هزینه"
+          >
+            <PaperclipIcon />
+          </Button>
+        </>
+      ) : null}
+
+      {canPropose ? (
+        <DropdownMenu
+          onOpenChange={(open) => {
+            if (!open) {
+              setQuery("");
+              setResults(null);
+            }
+          }}
+        >
+          <DropdownMenuTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              disabled={disabled}
+              aria-label="جست‌وجو در گزارش‌ها و گفتگوهای قبلی"
+              title="جست‌وجو در گزارش‌ها و گفتگوهای قبلی همین کسب‌وکار"
+            >
+              <SearchIcon />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-72 p-2">
+            <input
+              autoFocus
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={(event) => event.stopPropagation()}
+              placeholder="جست‌وجو در گزارش‌ها و گفتگوهای قبلی…"
+              className="mb-2 w-full rounded-lg border border-input bg-transparent px-2.5 py-1.5 text-xs outline-none focus-visible:border-ring"
+            />
+            {searching ? (
+              <p className="flex items-center gap-1.5 px-1 py-1 text-[11px] text-muted-foreground">
+                <Loader2Icon className="size-3 animate-spin" /> در حال جست‌وجو…
+              </p>
+            ) : null}
+            {noResults ? <p className="px-1 py-1 text-[11px] text-muted-foreground">نتیجه‌ای یافت نشد.</p> : null}
+            {results?.reports?.length ? (
+              <div className="mb-1.5">
+                <p className="px-1 pb-1 text-[10px] font-medium text-muted-foreground">گزارش‌ها</p>
+                {results.reports.map((report) => (
+                  <button
+                    key={report.key}
+                    type="button"
+                    onClick={() => onSelectReportPrompt(`گزارش «${report.label}» را اجرا و خلاصه کن.`)}
+                    className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-right text-xs hover:bg-muted"
+                  >
+                    <BarChart3Icon className="size-3.5 shrink-0 text-muted-foreground" />
+                    <span className="truncate">{report.label}</span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            {results?.conversations?.length ? (
+              <div>
+                <p className="px-1 pb-1 text-[10px] font-medium text-muted-foreground">گفتگوهای قبلی</p>
+                {results.conversations.map((conversation) => (
+                  <button
+                    key={conversation.id}
+                    type="button"
+                    onClick={() => onSelectConversation(conversation.id)}
+                    className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-right text-xs hover:bg-muted"
+                  >
+                    <MessageSquareIcon className="size-3.5 shrink-0 text-muted-foreground" />
+                    <span className="truncate">{conversation.title}</span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ) : null}
+
+      {canPropose ? (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              disabled={disabled}
+              aria-label="تنظیمات این پیام"
+              title="تنظیمات این پیام"
+            >
+              <SettingsIcon />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-64 p-2.5">
+            <label className="flex items-center justify-between gap-2 text-xs">
+              <span className="leading-5">
+                اجازهٔ اقدام در این پیام
+                <span className="block text-[10px] text-muted-foreground">
+                  خاموش‌کردن یعنی دستیار فقط پاسخ می‌دهد و در این پیام هیچ پیشنهاد تغییری نمی‌سازد.
+                </span>
+              </span>
+              <Switch checked={actionsAllowed} onCheckedChange={onActionsAllowedChange} />
+            </label>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ) : null}
+    </div>
+  );
+}
