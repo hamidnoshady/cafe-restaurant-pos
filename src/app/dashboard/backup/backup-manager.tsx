@@ -54,6 +54,7 @@ interface ConfigForm {
   intervalHours: number;
   anchorTime: string;
   localRetention: number;
+  directory: string;
   cloud: CloudForm;
 }
 
@@ -76,6 +77,8 @@ const CONFIG_ERRORS: Record<string, string> = {
   missing_cloud_bucket: "نام باکت را وارد کنید.",
   missing_cloud_credentials: "کلید دسترسی و کلید محرمانه هر دو لازم‌اند.",
   weak_passphrase: "عبارت عبور رمزنگاری باید دست‌کم ۸ نویسه باشد.",
+  invalid_directory: "مسیر پوشهٔ پشتیبان‌گیری نامعتبر است.",
+  cloud_backup_unavailable_local: "در نصب محلی، پشتیبان‌گیری ابری در دسترس نیست.",
 };
 
 function formatTime(iso: string | null): string {
@@ -327,14 +330,16 @@ const INTERVAL_OPTIONS = [
 
 function SettingsCard({ onSaved }: { onSaved: () => void }) {
   const [config, setConfig] = useState<ConfigForm | null>(null);
+  const [localOnly, setLocalOnly] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     (async () => {
-      const res = await api<{ config?: ConfigForm }>("/api/backup/config");
+      const res = await api<{ config?: ConfigForm; localOnly?: boolean }>("/api/backup/config");
       if (res.ok && res.data.config) setConfig(res.data.config);
+      if (res.ok) setLocalOnly(Boolean(res.data.localOnly));
     })();
   }, []);
 
@@ -372,9 +377,18 @@ function SettingsCard({ onSaved }: { onSaved: () => void }) {
     <section className="rounded-2xl bg-card p-5 shadow-sm">
       <h2 className="mb-1 font-semibold">تنظیمات پشتیبان‌گیری</h2>
       <p className="mb-4 text-sm text-muted-foreground">
-        پشتیبان محلی در پوشهٔ backups سرور (و در صورت تنظیم BACKUP_SECONDARY_DIR، روی حافظهٔ
-        دوم مثل USB/NAS) ذخیره می‌شود. نسخهٔ ابری پیش از بارگذاری با عبارت عبور شما رمزنگاری
-        می‌شود — بدون آن، بازگردانی از نسخهٔ ابری ممکن نیست؛ آن را جای امنی نگه دارید.
+        {localOnly ? (
+          <>
+            پشتیبان محلی در پوشهٔ مقصد زیر (و در صورت تنظیم BACKUP_SECONDARY_DIR، روی حافظهٔ دوم
+            مثل USB/NAS) ذخیره می‌شود.
+          </>
+        ) : (
+          <>
+            پشتیبان محلی در پوشهٔ backups سرور (و در صورت تنظیم BACKUP_SECONDARY_DIR، روی حافظهٔ
+            دوم مثل USB/NAS) ذخیره می‌شود. نسخهٔ ابری پیش از بارگذاری با عبارت عبور شما رمزنگاری
+            می‌شود — بدون آن، بازگردانی از نسخهٔ ابری ممکن نیست؛ آن را جای امنی نگه دارید.
+          </>
+        )}
       </p>
 
       {error ? <ErrorBox>{error}</ErrorBox> : null}
@@ -425,82 +439,106 @@ function SettingsCard({ onSaved }: { onSaved: () => void }) {
             onChange={(e) => setConfig({ ...config, localRetention: Number(e.target.value) })}
           />
         </Field>
-
-        <div className="mb-4 mt-6 border-t pt-4">
-          <label className="flex items-center gap-2 text-sm font-medium">
-            <input
-              type="checkbox"
-              checked={cloud.enabled}
-              onChange={(e) => setCloud({ enabled: e.target.checked })}
-            />
-            پشتیبان ابری (خارج از محل) فعال باشد
-          </label>
-          <p className="mt-1 text-xs text-muted-foreground">
-            هر فضای سازگار با S3 — مثل آروان‌کلاد، Backblaze B2 یا MinIO روی NAS.
-          </p>
-        </div>
-
-        <Field label="نشانی سرویس (Endpoint)" hint="مثلاً https://s3.ir-thr-at1.arvanstorage.ir">
-          <input
-            dir="ltr"
-            className={inputClass}
-            value={cloud.endpoint}
-            onChange={(e) => setCloud({ endpoint: e.target.value })}
-            placeholder="https://…"
-          />
-        </Field>
-        <div className="grid gap-x-4 sm:grid-cols-2">
-          <Field label="باکت (Bucket)">
-            <input dir="ltr" className={inputClass} value={cloud.bucket} onChange={(e) => setCloud({ bucket: e.target.value })} />
-          </Field>
-          <Field label="ناحیه (Region)">
-            <input dir="ltr" className={inputClass} value={cloud.region} onChange={(e) => setCloud({ region: e.target.value })} />
-          </Field>
-          <Field label="کلید دسترسی (Access Key)">
-            <input dir="ltr" className={inputClass} value={cloud.accessKeyId} onChange={(e) => setCloud({ accessKeyId: e.target.value })} />
-          </Field>
-          <Field label="کلید محرمانه (Secret Key)" hint={cloud.hasSecretAccessKey ? "ذخیره شده — برای تغییر، مقدار جدید وارد کنید" : undefined}>
-            <input
-              dir="ltr"
-              type="password"
-              className={inputClass}
-              value={cloud.secretAccessKey}
-              onChange={(e) => setCloud({ secretAccessKey: e.target.value })}
-              placeholder={cloud.hasSecretAccessKey ? "••••••••" : ""}
-            />
-          </Field>
-          <Field label="پیشوند مسیر (Prefix)">
-            <input dir="ltr" className={inputClass} value={cloud.prefix} onChange={(e) => setCloud({ prefix: e.target.value })} />
-          </Field>
-          <Field label="تعداد نسخه‌های ابری نگه‌داشته‌شده">
-            <input
-              type="number"
-              dir="ltr"
-              min={1}
-              max={365}
-              className={inputClass}
-              value={cloud.retention}
-              onChange={(e) => setCloud({ retention: Number(e.target.value) })}
-            />
-          </Field>
-        </div>
         <Field
-          label="عبارت عبور رمزنگاری"
-          hint={
-            cloud.hasPassphrase
-              ? "ذخیره شده — برای تغییر، مقدار جدید وارد کنید. بدون این عبارت، نسخهٔ ابری قابل بازگردانی نیست."
-              : "دست‌کم ۸ نویسه. بدون این عبارت، نسخهٔ ابری قابل بازگردانی نیست — جای امنی نگه دارید."
-          }
+          label="پوشهٔ مقصد"
+          hint="خالی بگذارید تا از مسیر پیش‌فرض سرور استفاده شود. ترجیحاً یک درایو دیگر یا حافظهٔ خارجی."
         >
           <input
             dir="ltr"
-            type="password"
             className={inputClass}
-            value={cloud.passphrase}
-            onChange={(e) => setCloud({ passphrase: e.target.value })}
-            placeholder={cloud.hasPassphrase ? "••••••••" : ""}
+            value={config.directory}
+            onChange={(e) => setConfig({ ...config, directory: e.target.value })}
+            placeholder="D:\pos-backups"
           />
         </Field>
+
+        {/* A local-only install has no cloud half at all — see the note below. */}
+        {!localOnly ? (
+          <>
+            <div className="mb-4 mt-6 border-t pt-4">
+              <label className="flex items-center gap-2 text-sm font-medium">
+                <input
+                  type="checkbox"
+                  checked={cloud.enabled}
+                  onChange={(e) => setCloud({ enabled: e.target.checked })}
+                />
+                پشتیبان ابری (خارج از محل) فعال باشد
+              </label>
+              <p className="mt-1 text-xs text-muted-foreground">
+                هر فضای سازگار با S3 — مثل آروان‌کلاد، Backblaze B2 یا MinIO روی NAS.
+              </p>
+            </div>
+
+            <Field label="نشانی سرویس (Endpoint)" hint="مثلاً https://s3.ir-thr-at1.arvanstorage.ir">
+              <input
+                dir="ltr"
+                className={inputClass}
+                value={cloud.endpoint}
+                onChange={(e) => setCloud({ endpoint: e.target.value })}
+                placeholder="https://…"
+              />
+            </Field>
+            <div className="grid gap-x-4 sm:grid-cols-2">
+              <Field label="باکت (Bucket)">
+                <input dir="ltr" className={inputClass} value={cloud.bucket} onChange={(e) => setCloud({ bucket: e.target.value })} />
+              </Field>
+              <Field label="ناحیه (Region)">
+                <input dir="ltr" className={inputClass} value={cloud.region} onChange={(e) => setCloud({ region: e.target.value })} />
+              </Field>
+              <Field label="کلید دسترسی (Access Key)">
+                <input dir="ltr" className={inputClass} value={cloud.accessKeyId} onChange={(e) => setCloud({ accessKeyId: e.target.value })} />
+              </Field>
+              <Field label="کلید محرمانه (Secret Key)" hint={cloud.hasSecretAccessKey ? "ذخیره شده — برای تغییر، مقدار جدید وارد کنید" : undefined}>
+                <input
+                  dir="ltr"
+                  type="password"
+                  className={inputClass}
+                  value={cloud.secretAccessKey}
+                  onChange={(e) => setCloud({ secretAccessKey: e.target.value })}
+                  placeholder={cloud.hasSecretAccessKey ? "••••••••" : ""}
+                />
+              </Field>
+              <Field label="پیشوند مسیر (Prefix)">
+                <input dir="ltr" className={inputClass} value={cloud.prefix} onChange={(e) => setCloud({ prefix: e.target.value })} />
+              </Field>
+              <Field label="تعداد نسخه‌های ابری نگه‌داشته‌شده">
+                <input
+                  type="number"
+                  dir="ltr"
+                  min={1}
+                  max={365}
+                  className={inputClass}
+                  value={cloud.retention}
+                  onChange={(e) => setCloud({ retention: Number(e.target.value) })}
+                />
+              </Field>
+            </div>
+            <Field
+              label="عبارت عبور رمزنگاری"
+              hint={
+                cloud.hasPassphrase
+                  ? "ذخیره شده — برای تغییر، مقدار جدید وارد کنید. بدون این عبارت، نسخهٔ ابری قابل بازگردانی نیست."
+                  : "دست‌کم ۸ نویسه. بدون این عبارت، نسخهٔ ابری قابل بازگردانی نیست — جای امنی نگه دارید."
+              }
+            >
+              <input
+                dir="ltr"
+                type="password"
+                className={inputClass}
+                value={cloud.passphrase}
+                onChange={(e) => setCloud({ passphrase: e.target.value })}
+                placeholder={cloud.hasPassphrase ? "••••••••" : ""}
+              />
+            </Field>
+          </>
+        ) : null}
+
+        {localOnly ? (
+          <p className="mb-4 rounded-lg border border-input bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
+            این نصب محلی است؛ پشتیبان‌گیری ابری در دسترس نیست. نسخه‌های پشتیبان روی همین دستگاه
+            ساخته و نگهداری می‌شوند.
+          </p>
+        ) : null}
 
         <PrimaryButton disabled={busy}>ذخیره</PrimaryButton>
       </form>

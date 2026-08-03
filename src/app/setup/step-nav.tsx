@@ -8,18 +8,22 @@ import { STEPS } from "./steps";
 
 interface StateResponse {
   progress?: { steps: Record<string, string>; completedAt: string | null };
+  localOnly?: boolean;
 }
 
 export function StepNav() {
   const pathname = usePathname();
   const [done, setDone] = useState<Record<string, string>>({});
+  const [localOnly, setLocalOnly] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     fetch("/api/setup/state")
       .then((r) => r.json())
       .then((s: StateResponse) => {
-        if (!cancelled && s.progress) setDone(s.progress.steps);
+        if (cancelled) return;
+        if (s.progress) setDone(s.progress.steps);
+        setLocalOnly(Boolean(s.localOnly));
       })
       .catch(() => {});
     return () => {
@@ -27,9 +31,14 @@ export function StepNav() {
     };
   }, [pathname]);
 
+  // The backup-destination step only means anything on a standalone install;
+  // on a connected one its page steps aside, so don't offer a link that would
+  // bounce straight to the next step.
+  const steps = STEPS.filter((s) => s.id !== "backup" || localOnly);
+
   return (
     <nav className="space-y-1">
-      {STEPS.map((s, i) => {
+      {steps.map((s, i) => {
         const active = pathname === s.path;
         const isDone = Boolean(done[s.id]);
         return (

@@ -16,6 +16,7 @@ export const STEPS: StepMeta[] = [
   { id: "users", path: "/setup/users", title: "نقش‌ها و کاربران", short: "کاربران", optional: true },
   { id: "menu", path: "/setup/menu", title: "ورود منو", short: "منو" },
   { id: "hardware", path: "/setup/hardware", title: "اتصال سخت‌افزار", short: "سخت‌افزار", optional: true },
+  { id: "backup", path: "/setup/backup", title: "مقصد پشتیبان‌گیری", short: "پشتیبان", optional: true },
   { id: "opening", path: "/setup/opening", title: "مانده‌های افتتاحیه", short: "افتتاحیه", optional: true },
 ];
 

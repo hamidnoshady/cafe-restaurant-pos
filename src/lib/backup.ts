@@ -55,6 +55,13 @@ export interface BackupConfig {
   anchorTime: string;
   /** keep this many newest artifacts in the local backup directory */
   localRetention: number;
+  /**
+   * Where artifacts are written. Empty means "wherever BACKUP_DIR / the
+   * built-in default points" — which is every install that predates the
+   * standalone desktop app, so leaving it empty changes nothing. The desktop
+   * wizard sets it from a real OS folder dialog.
+   */
+  directory: string;
   cloud: BackupCloudConfig;
 }
 
@@ -63,6 +70,7 @@ export const DEFAULT_BACKUP_CONFIG: BackupConfig = {
   intervalHours: 24,
   anchorTime: "03:30",
   localRetention: 14,
+  directory: "",
   cloud: {
     enabled: false,
     endpoint: "",
@@ -99,6 +107,14 @@ export function validateBackupConfig(body: unknown): BackupConfigValidation {
   if (!Number.isInteger(localRetention) || localRetention < 1 || localRetention > MAX_RETENTION) {
     return { ok: false, error: "invalid_local_retention" };
   }
+  // No shape constraint beyond "a string": the destination is an OS path on a
+  // machine we know nothing about (a Windows drive letter, a POSIX mount, a
+  // UNC share), and the filesystem reports a bad one at write time far more
+  // accurately than a regex here could.
+  if (b.directory !== undefined && typeof b.directory !== "string") {
+    return { ok: false, error: "invalid_directory" };
+  }
+  const directory = typeof b.directory === "string" ? b.directory.trim() : "";
 
   const rawCloud = (b.cloud ?? {}) as Record<string, unknown>;
   if (typeof rawCloud !== "object" || rawCloud === null) return { ok: false, error: "invalid_cloud" };
@@ -132,7 +148,10 @@ export function validateBackupConfig(body: unknown): BackupConfigValidation {
     }
   }
 
-  return { ok: true, config: { enabled, intervalHours, anchorTime, localRetention, cloud } };
+  return {
+    ok: true,
+    config: { enabled, intervalHours, anchorTime, localRetention, directory, cloud },
+  };
 }
 
 // ---------------------------------------------------------------------------
