@@ -11,8 +11,11 @@ scratch database before anything destructive.
   (all phases, all tables — orders, ledger, inventory, reservations,
   settings, …). One artifact per run, named
   `pos-backup-YYYYMMDD-HHMMSS.dump` (UTC stamp, sorts chronologically).
-- **Local**: written to `BACKUP_DIR` (default `./backups` next to the app).
-  If `BACKUP_SECONDARY_DIR` is set (mounted USB drive / NAS), each artifact
+- **Local**: written to the destination folder the Owner sets on
+  `/dashboard/backup`, falling back to `BACKUP_DIR` (default `./backups` next
+  to the app) when that is left empty — which it is on every install that
+  predates the standalone desktop app, so nothing moved. If
+  `BACKUP_SECONDARY_DIR` is set (mounted USB drive / NAS), each artifact
   is also copied there — and a failed copy fails the run, so an unplugged
   drive raises the dashboard alert instead of silently degrading.
 - **Cloud**: the same artifact, **encrypted** with the Owner's passphrase
@@ -20,7 +23,10 @@ scratch database before anything destructive.
   `<prefix>pos-backup-….dump.enc` to any S3-compatible storage (ArvanCloud,
   AWS S3, Backblaze B2, a MinIO on a NAS, …). The provider only ever holds
   ciphertext. Uploads that fail (no internet at backup time) are retried
-  automatically until a newer artifact supersedes them.
+  automatically until a newer artifact supersedes them. A standalone desktop
+  install (`deployment.mode = local`) has no cloud half — the dashboard hides
+  the section and the API refuses to enable it, so only the local bullet above
+  applies there.
 - **Schedule/retention** are configured by the Owner on
   `/dashboard/backup`; artifacts beyond the retention count are pruned
   automatically on both sides. Run history is in the `backup_runs` table and

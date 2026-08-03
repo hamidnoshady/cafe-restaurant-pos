@@ -191,9 +191,7 @@ problem and makes the script a no-op.
    little longer (initializing the database); every launch after that is
    fast.
 5. The app opens in its own window at `http://127.0.0.1:3000`, ready for the
-   **[Setup Wizard](../README.md#first-run--the-setup-wizard-phase-1)**
-   (business info, chart of accounts, roles, menu, etc.) exactly like any
-   other fresh install.
+   first-run choice below.
 
 Where things live (all per-user, no admin folder involved):
 
@@ -201,6 +199,48 @@ Where things live (all per-user, no admin folder involved):
 |---|---|
 | Database files | `%APPDATA%\cafe-pos-desktop\pgdata` |
 | Generated secrets (Postgres password, JWT secret) | `%APPDATA%\cafe-pos-desktop\config.json` |
+
+## First run — local setup or pairing
+
+The first time the desktop app opens against an empty database it shows a choice
+rather than a form:
+
+**راه‌اندازی محلی** — a brand-new business that lives only on this machine. It
+runs the same bootstrap the web app has always used, then stamps
+`settings['deployment.mode'] = { mode: 'local', pairedAt: null }` and writes
+`business_features` "off" overrides for `ai_assistant`, `multi_location` and
+`offline_mode` (see `src/lib/deployment-mode.ts`). Everything else — sales,
+menu, inventory, ledger, reporting, local-drive backup — works unchanged, and
+the install continues into the
+**[Setup Wizard](../README.md#first-run--the-setup-wizard-phase-1)** exactly like
+any other. The wizard gains one extra optional step there, «مقصد پشتیبان‌گیری»,
+where the owner picks a backup folder through a real OS dialog
+(`window.desktop.pickFolder`, exposed by `electron/preload.js`); that step is
+hidden on a connected install, where the dashboard's backup page covers both the
+local and cloud halves.
+
+**اتصال به پلتفرم آنلاین** — claim a business that already exists on the online
+platform. An operator issues a one-time pairing code from the super-admin
+console (`/platform` → the business → «کد اتصال نصب دسکتاپ»), hands it to the
+owner out-of-band, and the owner types it here along with the server URL. The
+local server calls `POST <remoteUrl>/api/platform/pairing/redeem`, which marks
+the code redeemed and returns a `PairingSnapshot`: the business, its branch, its
+members (with their bcrypt PIN/password hashes, so staff sign in with the
+credentials they already have), the chart of accounts, the menu, the
+configuration settings, the effective feature flags, and a freshly-minted
+server-sync token. `applyPairingSnapshot` replays it into the empty local
+database in one transaction, **preserving every id verbatim** — the laptop and
+the server share a `business_id`, `location_id` and user ids, which is what
+makes Phase 11's `sync_events` replay correctly in both directions.
+
+A pairing code is valid for 72 hours, is single-use, and only its sha-256 is
+stored — the plaintext appears once in the console and is unrecoverable
+afterwards. Re-issuing revokes whatever code was live; the partial unique index
+`idx_pairing_codes_live_business` enforces at most one.
+
+The mode is chosen once and is not changeable from the UI. Upgrading a local
+install to a connected one means merging two datasets, which is deliberately out
+of scope.
 
 ## Uninstalling
 
