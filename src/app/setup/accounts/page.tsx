@@ -21,7 +21,7 @@ import { INDUSTRY_LABELS } from "@/lib/industries";
 const TYPE_LABELS: Record<AccountType, string> = {
   asset: "دارایی",
   liability: "بدهی",
-  equity: "سرمایه",
+  equity: "حقوق صاحبان سرمایه",
   revenue: "درآمد",
   expense: "هزینه",
 };
