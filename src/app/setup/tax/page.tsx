@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { toLatinDigits, toPersianDigits } from "@/lib/digits";
 import { api, ErrorBox, errorMessage, Field, InfoBox, inputClass, PrimaryButton, StepShell } from "../ui";
 import { nextPath } from "../steps";
+import { useSetupIndustry } from "../industry-context";
 
 interface Category {
   id: string;
@@ -20,6 +21,7 @@ interface TaxResponse {
 
 export default function TaxStep() {
   const router = useRouter();
+  const industry = useSetupIndustry();
   const [defaultRate, setDefaultRate] = useState("10");
   const [categories, setCategories] = useState<{ id: string; name: string; rate: string }[]>([]);
   const [error, setError] = useState("");
@@ -100,12 +102,12 @@ export default function TaxStep() {
               ))}
             </div>
           </div>
-        ) : (
+        ) : industry === "food_service" ? (
           <InfoBox>
             هنوز دسته‌ای در منو ندارید — بعد از مرحلهٔ {toPersianDigits(6)} (ورود منو) می‌توانید به
             این‌جا برگردید و نرخ هر دسته را جدا تنظیم کنید.
           </InfoBox>
-        )}
+        ) : null}
 
         <div className="mt-6">
           <PrimaryButton disabled={busy}>ذخیره و ادامه</PrimaryButton>

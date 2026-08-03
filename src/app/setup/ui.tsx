@@ -6,8 +6,9 @@ import { useState } from "react";
 import { CircleAlertIcon, InfoIcon } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { nextPath, prevPath, stepIndex, STEPS } from "./steps";
-import type { WizardStep } from "@/lib/setup-state";
+import { nextPath, prevPath, stepIndex, stepsFor, STEPS } from "./steps";
+import type { WizardStep } from "@/lib/wizard-steps";
+import { useSetupIndustry } from "./industry-context";
 
 export async function api<T = Record<string, unknown>>(
   url: string,
@@ -157,14 +158,16 @@ export function StepShell({
   showNext?: boolean;
 }) {
   const router = useRouter();
+  const industry = useSetupIndustry();
+  const steps = stepsFor(industry);
   const meta = STEPS[stepIndex(step)];
-  const back = prevPath(step);
+  const back = prevPath(step, steps);
   const [skipping, setSkipping] = useState(false);
 
   async function skip() {
     setSkipping(true);
     await api("/api/setup/progress", { method: "POST", body: JSON.stringify({ step }) });
-    router.push(nextPath(step));
+    router.push(nextPath(step, steps));
   }
 
   return (
@@ -194,7 +197,7 @@ export function StepShell({
             </button>
           ) : null}
           {showNext ? (
-            <PrimaryButton type="button" onClick={() => router.push(nextPath(step))}>
+            <PrimaryButton type="button" onClick={() => router.push(nextPath(step, steps))}>
               مرحلهٔ بعد
             </PrimaryButton>
           ) : null}

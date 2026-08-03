@@ -13,6 +13,7 @@ import {
   SecondaryButton,
   StepShell,
 } from "../ui";
+import { useSetupIndustry } from "../industry-context";
 
 interface Account {
   id: string;
@@ -45,6 +46,14 @@ interface BalanceRow {
 const emptyInvRow: InvRow = { name: "", unit: "kg", quantity: "", unitCost: "" };
 
 export default function OpeningStep() {
+  const industry = useSetupIndustry();
+  // The inventory-count subsection posts to F&B's inventory_items/
+  // stock_movements tables (Phase 6) and requires the costing step's
+  // setting, which non-food_service businesses never set (costing isn't in
+  // their step list) -- so it's hidden rather than left to fail with
+  // "costing_not_set". Jewelry's own stock is entered through
+  // /dashboard/jewelry, not here.
+  const showInventorySection = industry === "food_service";
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [openingEntry, setOpeningEntry] = useState<OpeningResponse["openingEntry"]>(null);
   const [existingInventory, setExistingInventory] = useState<OpeningResponse["inventoryItems"]>([]);
@@ -151,74 +160,78 @@ export default function OpeningStep() {
       <ErrorBox>{error}</ErrorBox>
       {notice ? <InfoBox>{notice}</InfoBox> : null}
 
-      <section className="mb-8 rounded-xl border border-border p-4">
-        <h2 className="mb-1 font-semibold">۱) شمارش اولیهٔ انبار</h2>
-        <p className="mb-3 text-sm text-muted-foreground">
-          هر قلم با مقدار شمارش‌شده و بهای هر واحد (تومان). با اولین ثبت، روش قیمت‌گذاری قفل می‌شود.
-        </p>
-        {existingInventory.length > 0 ? (
-          <p className="mb-3 text-xs text-muted-foreground">
-            اقلام ثبت‌شده: {existingInventory.map((i) => `${i.name} (${toPersianDigits(Number(i.quantity))} ${i.unit})`).join("، ")}
+      {showInventorySection ? (
+        <section className="mb-8 rounded-xl border border-border p-4">
+          <h2 className="mb-1 font-semibold">۱) شمارش اولیهٔ انبار</h2>
+          <p className="mb-3 text-sm text-muted-foreground">
+            هر قلم با مقدار شمارش‌شده و بهای هر واحد (تومان). با اولین ثبت، روش قیمت‌گذاری قفل می‌شود.
           </p>
-        ) : null}
-        <div className="space-y-2">
-          {invRows.map((r, i) => (
-            <div key={i} className="grid grid-cols-2 gap-2 sm:grid-cols-5">
-              <input
-                className={inputClass}
-                placeholder="نام قلم (مثلاً قهوه)"
-                value={r.name}
-                onChange={(e) => setInvRows((rs) => rs.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))}
-              />
-              <select
-                className={inputClass}
-                value={r.unit}
-                onChange={(e) => setInvRows((rs) => rs.map((x, j) => (j === i ? { ...x, unit: e.target.value } : x)))}
-              >
-                <option value="kg">کیلوگرم</option>
-                <option value="g">گرم</option>
-                <option value="l">لیتر</option>
-                <option value="ml">میلی‌لیتر</option>
-                <option value="unit">عدد</option>
-              </select>
-              <input
-                className={inputClass}
-                dir="ltr"
-                inputMode="decimal"
-                placeholder="مقدار"
-                value={r.quantity}
-                onChange={(e) => setInvRows((rs) => rs.map((x, j) => (j === i ? { ...x, quantity: e.target.value } : x)))}
-              />
-              <input
-                className={inputClass}
-                dir="ltr"
-                inputMode="numeric"
-                placeholder="بهای واحد (تومان)"
-                value={r.unitCost}
-                onChange={(e) => setInvRows((rs) => rs.map((x, j) => (j === i ? { ...x, unitCost: e.target.value } : x)))}
-              />
-              <button
-                type="button"
-                className="text-sm text-muted-foreground hover:text-destructive"
-                onClick={() => setInvRows((rs) => rs.filter((_, j) => j !== i))}
-              >
-                حذف
-              </button>
-            </div>
-          ))}
-        </div>
-        <div className="mt-3 flex gap-2">
-          <SecondaryButton onClick={() => setInvRows((rs) => [...rs, { ...emptyInvRow }])}>
-            افزودن قلم
-          </SecondaryButton>
-          <PrimaryButton type="button" onClick={submitInventory} disabled={busy}>
-            ثبت شمارش
-          </PrimaryButton>
-        </div>
-      </section>
+          {existingInventory.length > 0 ? (
+            <p className="mb-3 text-xs text-muted-foreground">
+              اقلام ثبت‌شده: {existingInventory.map((i) => `${i.name} (${toPersianDigits(Number(i.quantity))} ${i.unit})`).join("، ")}
+            </p>
+          ) : null}
+          <div className="space-y-2">
+            {invRows.map((r, i) => (
+              <div key={i} className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+                <input
+                  className={inputClass}
+                  placeholder="نام قلم (مثلاً قهوه)"
+                  value={r.name}
+                  onChange={(e) => setInvRows((rs) => rs.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))}
+                />
+                <select
+                  className={inputClass}
+                  value={r.unit}
+                  onChange={(e) => setInvRows((rs) => rs.map((x, j) => (j === i ? { ...x, unit: e.target.value } : x)))}
+                >
+                  <option value="kg">کیلوگرم</option>
+                  <option value="g">گرم</option>
+                  <option value="l">لیتر</option>
+                  <option value="ml">میلی‌لیتر</option>
+                  <option value="unit">عدد</option>
+                </select>
+                <input
+                  className={inputClass}
+                  dir="ltr"
+                  inputMode="decimal"
+                  placeholder="مقدار"
+                  value={r.quantity}
+                  onChange={(e) => setInvRows((rs) => rs.map((x, j) => (j === i ? { ...x, quantity: e.target.value } : x)))}
+                />
+                <input
+                  className={inputClass}
+                  dir="ltr"
+                  inputMode="numeric"
+                  placeholder="بهای واحد (تومان)"
+                  value={r.unitCost}
+                  onChange={(e) => setInvRows((rs) => rs.map((x, j) => (j === i ? { ...x, unitCost: e.target.value } : x)))}
+                />
+                <button
+                  type="button"
+                  className="text-sm text-muted-foreground hover:text-destructive"
+                  onClick={() => setInvRows((rs) => rs.filter((_, j) => j !== i))}
+                >
+                  حذف
+                </button>
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 flex gap-2">
+            <SecondaryButton onClick={() => setInvRows((rs) => [...rs, { ...emptyInvRow }])}>
+              افزودن قلم
+            </SecondaryButton>
+            <PrimaryButton type="button" onClick={submitInventory} disabled={busy}>
+              ثبت شمارش
+            </PrimaryButton>
+          </div>
+        </section>
+      ) : null}
 
       <section className="rounded-xl border border-border p-4">
-        <h2 className="mb-1 font-semibold">۲) مانده‌های افتتاحیهٔ دفاتر</h2>
+        <h2 className="mb-1 font-semibold">
+          {showInventorySection ? "۲) مانده‌های افتتاحیهٔ دفاتر" : "مانده‌های افتتاحیهٔ دفاتر"}
+        </h2>
         <p className="mb-3 text-sm text-muted-foreground">
           مانده‌ها به تومان. سند فقط وقتی ثبت می‌شود که بدهکار و بستانکار برابر باشند.
         </p>

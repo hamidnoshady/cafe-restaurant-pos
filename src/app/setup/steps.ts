@@ -1,4 +1,5 @@
-import type { WizardStep } from "@/lib/setup-state";
+import type { Industry } from "@/lib/industries";
+import { wizardStepsForIndustry, type WizardStep } from "@/lib/wizard-steps";
 
 export interface StepMeta {
   id: WizardStep;
@@ -8,6 +9,7 @@ export interface StepMeta {
   optional?: boolean;
 }
 
+/** Every step that exists, in wizard order — filter with `stepsFor` for the sequence one business actually walks. */
 export const STEPS: StepMeta[] = [
   { id: "business", path: "/setup/business", title: "اطلاعات کسب‌وکار", short: "کسب‌وکار" },
   { id: "accounts", path: "/setup/accounts", title: "سرفصل حساب‌ها", short: "حساب‌ها" },
@@ -19,16 +21,37 @@ export const STEPS: StepMeta[] = [
   { id: "opening", path: "/setup/opening", title: "مانده‌های افتتاحیه", short: "افتتاحیه", optional: true },
 ];
 
-export function stepIndex(id: string): number {
-  return STEPS.findIndex((s) => s.id === id);
+/** The step sequence for one business, in order — `setup-state.ts`'s `wizardStepsForIndustry` decides which ids, this resolves them back to their metadata. */
+export function stepsFor(industry: Industry): StepMeta[] {
+  const ids = new Set(wizardStepsForIndustry(industry));
+  return STEPS.filter((s) => ids.has(s.id));
 }
 
-export function nextPath(id: string): string {
-  const i = stepIndex(id);
-  return i >= 0 && i < STEPS.length - 1 ? STEPS[i + 1].path : "/setup/finish";
+export function stepIndex(id: string, steps: StepMeta[] = STEPS): number {
+  return steps.findIndex((s) => s.id === id);
 }
 
-export function prevPath(id: string): string | null {
-  const i = stepIndex(id);
-  return i > 0 ? STEPS[i - 1].path : null;
+export function nextPath(id: string, steps: StepMeta[] = STEPS): string {
+  const i = stepIndex(id, steps);
+  return i >= 0 && i < steps.length - 1 ? steps[i + 1].path : "/setup/finish";
+}
+
+export function prevPath(id: string, steps: StepMeta[] = STEPS): string | null {
+  const i = stepIndex(id, steps);
+  return i > 0 ? steps[i - 1].path : null;
+}
+
+/**
+ * Where to send a business that lands (direct link, back button) on a step
+ * its industry doesn't walk (`id` isn't in `steps`): the first step *after*
+ * it, in the full sequence, that the business's filtered `steps` does
+ * include -- e.g. a jewelry business hitting `/setup/costing` lands on
+ * `/setup/tax`, the same place `accounts`'s own "next" already sends it.
+ */
+export function skipToPath(id: WizardStep, steps: StepMeta[]): string {
+  const fullIndex = stepIndex(id, STEPS);
+  for (let i = fullIndex + 1; i < STEPS.length; i++) {
+    if (steps.some((s) => s.id === STEPS[i].id)) return STEPS[i].path;
+  }
+  return "/setup/finish";
 }

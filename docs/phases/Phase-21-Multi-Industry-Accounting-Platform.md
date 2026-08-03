@@ -534,11 +534,79 @@ shared `api()`/`Field`/`ErrorBox` helpers from `../ui`).
   + `npm run test:db` (303 tests, `tenant-isolation`'s 19 tests re-confirming RLS unaffected), and
   `npm run build` all pass.
 
-Not yet built: the jewelry industry still isn't selectable in the setup wizard (Wave 1 deferred this —
-a business reaches `industry = 'jewelry'` only via direct provisioning or an SQL flip today, not
-through `/welcome`'s UI, which still only offers `food_service`); an external gold-price feed (Wave
-2's optional `source: 'external'` hook exists but no provider is wired up — blocked on the product
-owner picking one); paying out a consignor's `consignmentPayable` balance and consignor statements
-(Wave 4's deferred follow-up); and weight-based lots/FIFO costing for bulk gold stock (Wave 2's
-deferred costing subsystem — today's single `unit_cost_per_gram` is an average-cost simplification,
-not FIFO lots).
+Not yet built (at that point): the jewelry industry still wasn't selectable in the setup wizard (Wave
+1 deferred this — a business reached `industry = 'jewelry'` only via direct provisioning or an SQL
+flip, not through `/welcome`'s UI); an external gold-price feed; paying out a consignor's
+`consignmentPayable` balance and consignor statements; and weight-based lots/FIFO costing for bulk
+gold stock.
+
+Setup wizard slice — implemented. `jewelry` is now in `ENABLED_INDUSTRIES` (industries.ts), so
+`/welcome`'s industry selector actually offers it — closing the gap the previous slice's "not yet
+built" left. Getting a jewelry business all the way through the wizard needed the wizard itself to
+stop assuming every business is F&B, which the seven waves before this one never had to confront
+(every prior wave was reachable through `/dashboard`, never through `/setup`).
+
+- **`src/lib/wizard-steps.ts`** (new) — `WIZARD_STEPS`/`OPTIONAL_STEPS`/`WizardStep` moved here from
+  `setup-state.ts` (which now re-exports them, so its existing importers are untouched), because the
+  new `wizardStepsForIndustry(industry)` needed to be callable from a client component
+  (`src/app/setup/steps.ts`) without dragging `setup-state.ts`'s `next/server`/db imports into client
+  code. `costing` (Phase 6's `inventory_items` FIFO/weighted-average choice) and `menu` (Phase 2's
+  `menu_items`/`menu_categories`) are the two steps dropped for any non-`food_service` industry —
+  neither table exists in a jewelry business's data model, per Wave 1's "never migrated" decision.
+  Every other step (including all three optional ones) stays.
+- **`src/app/setup/steps.ts`** gained `stepsFor(industry)` (resolves the filtered id list back to step
+  metadata) and `skipToPath(id, steps)` (where to send a business that lands on a step its industry
+  doesn't walk — a stale link, the back button — computed as "the first step after this one, in the
+  full sequence, that *is* in the business's filtered list", not a hardcoded next-step guess).
+  `nextPath`/`prevPath`/`stepIndex` all gained an optional `steps` parameter (defaulting to the full
+  list, so every existing call site kept compiling) that the industry-aware call sites now pass.
+- **`src/app/setup/industry-context.tsx`** (new) — a small React context resolved once, server-side,
+  in `setup/layout.tsx` (`getBusinessIndustry`, the same helper the jewelry dashboard guard uses) and
+  handed down via `SetupIndustryProvider`, so `StepNav`, `StepShell`, and every step page read the
+  business's industry via `useSetupIndustry()` instead of each re-fetching it.
+- **Guards on the two F&B-only step pages**: `/setup/costing` and `/setup/menu` now redirect a
+  non-food_service business to `skipToPath(...)` on mount (covers a stale link or the back button —
+  the normal forward flow's `nextPath` calls already skip straight past them). `/setup/opening` hides
+  its "شمارش اولیهٔ انبار" (F&B inventory-count) subsection for non-food_service — that flow posts to
+  `inventory_items`/`stock_movements` and requires the `costing` setting, which a jewelry business
+  never sets; jewelry's own stock is entered through `/dashboard/jewelry`, not here. The ledger
+  opening-balances subsection (industry-agnostic) stays for everyone.
+- **`computeSetupState`** (`setup-state.ts`) now resolves the business's industry alongside its other
+  fields and only requires `costing`/`items` (menu items) for completion when `wizardStepsForIndustry`
+  actually includes those steps — a jewelry business finishes the wizard without ever touching either.
+- **`business-provisioning.ts`'s `seedChartOfAccounts`** (used by Phase 15's console, which seeds a
+  chart immediately at provisioning) and **`/api/setup/accounts`'s `GET`** (the manual wizard path,
+  used by `/welcome`'s self-provisioned businesses) both now pick `JEWELRY_COA_TEMPLATE` vs.
+  `FNB_COA_TEMPLATE` by the business's actual industry, instead of the seed path being silently
+  F&B-only now that a jewelry business can reach it.
+- A handful of step pages' copy is industry-aware where it would otherwise say something false for a
+  jewelry business: `/setup/accounts`'s description names the actual industry instead of always
+  saying "کافه و رستوران"; `/setup/tax`'s "you can set a per-category rate once you've entered your
+  menu" hint only shows for `food_service` (a jewelry business has no menu categories, ever);
+  `/setup/finish`'s summary line drops the menu-category/item counts for non-food_service.
+- New unit tests: `src/lib/wizard-steps.test.ts` (food_service walks every step; jewelry skips exactly
+  `costing`/`menu` and keeps everything else in the same relative order; every enabled or reserved
+  industry gets a non-empty, in-order subsequence of `WIZARD_STEPS` that never drops an optional
+  step). Extended `business-provisioning.test.ts`'s industry-validation tests: `jewelry` moved from
+  the "rejected, not yet offered" list to the "accepted" list alongside `food_service`; `watch`/
+  `accessories` stay rejected.
+- Manually verified end-to-end in a browser (Playwright): bootstrapped a fresh jewelry business from
+  `/welcome` all the way through `/setup/finish` — confirmed the sidebar shows exactly the six
+  filtered steps (no قیمت‌گذاری/منو), the accounts step loads `JEWELRY_COA_TEMPLATE` (`موجودی طلا و
+  جواهر` present, no F&B inventory account), `accounts`'s "next" lands on `tax` directly, the opening
+  step hides its inventory-count subsection, the finish checklist/summary are industry-correct, and
+  the wizard completes (missingForCompletion empty) without ever visiting costing or menu — then
+  logged in as that business and confirmed `/dashboard/jewelry` is reachable with "طلا و جواهر" in the
+  nav, composing correctly with the previous slice. Re-ran the same walkthrough for a `food_service`
+  business afterward as a regression check: costing and menu still show in the nav, `accounts`'s
+  "next" still lands on `costing`, and the F&B chart of accounts (`موجودی مواد و کالا`) still loads —
+  confirming the industry filtering is additive, not a behavior change for the existing default path.
+- `npx tsc --noEmit`, `npm test` (943 tests, up from 938), `npm run db:migrate` (no new migration this
+  slice — everything needed already existed) + `npm run test:db` (303 tests, `tenant-isolation`'s 19
+  tests re-confirming RLS unaffected), and `npm run build` all pass.
+
+Not yet built: an external gold-price feed (Wave 2's optional `source: 'external'` hook exists but no
+provider is wired up — blocked on the product owner picking one); paying out a consignor's
+`consignmentPayable` balance and consignor statements (Wave 4's deferred follow-up); and weight-based
+lots/FIFO costing for bulk gold stock (Wave 2's deferred costing subsystem — today's single
+`unit_cost_per_gram` is an average-cost simplification, not FIFO lots).

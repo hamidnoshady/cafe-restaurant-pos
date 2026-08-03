@@ -68,9 +68,9 @@ describe("validateProvisionBody", () => {
   });
 
   it("accepts an explicit, enabled industry", () => {
-    expect(validateProvisionBody({ ...VALID, industry: "food_service" }).input?.industry).toBe(
-      "food_service",
-    );
+    for (const industry of ["food_service", "jewelry"]) {
+      expect(validateProvisionBody({ ...VALID, industry }).input?.industry, industry).toBe(industry);
+    }
   });
 
   it("rejects an unknown industry value", () => {
@@ -78,7 +78,7 @@ describe("validateProvisionBody", () => {
   });
 
   it("rejects a real but not-yet-offered industry", () => {
-    for (const industry of ["jewelry", "watch", "accessories"]) {
+    for (const industry of ["watch", "accessories"]) {
       expect(validateProvisionBody({ ...VALID, industry }).error, industry).toBe(
         "industry_not_available",
       );
