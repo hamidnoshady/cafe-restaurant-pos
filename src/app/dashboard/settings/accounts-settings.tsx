@@ -7,7 +7,7 @@ import { ErrorBox, InfoBox, PrimaryButton, SecondaryButton, api, errorMessage, i
 const TYPE_LABELS: Record<AccountType, string> = {
   asset: "دارایی",
   liability: "بدهی",
-  equity: "حقوق مالکانه",
+  equity: "حقوق صاحبان سرمایه",
   revenue: "درآمد",
   expense: "هزینه",
 };

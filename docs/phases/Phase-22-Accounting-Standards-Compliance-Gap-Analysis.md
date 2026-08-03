@@ -341,7 +341,7 @@ levels), §7.2 (debit/credit nature + contra flag), and §7.4 (system-account UI
   reparenting that would push a descendant past تفصیلی is rejected and rolled back; clearing an
   account's parent resets it and its descendants back down; normal balance is stored correctly for
   all five account types; an explicit `isContra` flag persists and defaults to `false`). `npx tsc
-  --noEmit`, `npm test` (964 tests, up from 951), `npm run db:migrate` (twice, confirmed a no-op the
+  --noEmit`, `npm test` (951 tests, up from 943), `npm run db:migrate` (twice, confirmed a no-op the
   second time) + `npm run test:db` (310 tests, `tenant-isolation`'s 19 tests re-confirming RLS
   unaffected by the new columns), and `npm run build` all pass.
 
@@ -353,3 +353,20 @@ food-cost variance report), and §2's fixed-asset/depreciation gap. The setup-wi
 `isContra` checkbox the way the ledger's ongoing chart-of-accounts management tab does — intentional
 for this slice (those two are one-time/bulk template editors; `isContra` defaults to `false` and stays
 editable afterward through the ledger tab), flagged here in case a future wave decides otherwise.
+
+**Wave 3 — Terminology & UI/UX standards audit — implemented**, closing §3 and the epic's §9
+requirement: a label-by-label pass across every accounting-adjacent dashboard page
+(`/dashboard/ledger` except the already-correct `chart-of-accounts-section.tsx`, `/dashboard/reports`,
+`/dashboard/jewelry`, the costing-adjacent parts of `/dashboard/inventory`, `/setup/accounts`,
+`/setup/tax`, `src/app/dashboard/settings/accounts-settings.tsx`). Result: the vocabulary was already
+correct and consistent almost everywhere (سند/دفتر روزنامه/تراز آزمایشی/تأیید/بدهکار-بستانکار/
+حساب‌های دریافتنی-پرداختنی/صورت گردش وجوه نقد all checked across every file they appear in and found
+consistent) — the one real inconsistency found was the «equity» account-type label: `chart-of-
+accounts-section.tsx` and `trial-balance-section.tsx` already said «حقوق صاحبان سرمایه», but
+`accounts-settings.tsx` said «حقوق مالکانه» and `setup/accounts/page.tsx` said «سرمایه». Both fixed to
+match. New `docs/accounting-terminology.md` records the standard-term reference table and the
+terminology-validation checklist §9 asks every future wave's PR to run before opening.
+No component logic, prop names, function signatures, API contracts, or `coa-template.ts` account
+names/codes were touched — string-literal label changes only. `npx tsc --noEmit`, `npm test` (951
+tests, unchanged — no test-affecting code changed), `npm run test:db` (310 tests), and `npm run
+build` all pass.
