@@ -13,6 +13,44 @@ export interface TemplateAccount {
   type: AccountType;
   /** code of the parent account, if any */
   parentCode?: string;
+  /** A contra/reducing account (moves opposite its type's normal balance) — e.g. sales returns, an NRV allowance. */
+  isContra?: boolean;
+}
+
+/**
+ * The standard Iranian-accounting four-tier chart-of-accounts hierarchy:
+ * گروه (group) → کل (kol) → معین (moein) → تفصیلی (tafsili). Derived from an
+ * account's position in the parent_id chain, never chosen directly — see
+ * `nextAccountLevel`.
+ */
+export type AccountLevel = "group" | "kol" | "moein" | "tafsili";
+
+export const ACCOUNT_LEVELS: AccountLevel[] = ["group", "kol", "moein", "tafsili"];
+
+export const ACCOUNT_LEVEL_LABELS: Record<AccountLevel, string> = {
+  group: "گروه",
+  kol: "کل",
+  moein: "معین",
+  tafsili: "تفصیلی",
+};
+
+/**
+ * The level one step more detailed than `parentLevel` (group → kol → moein →
+ * tafsili), or `null` if `parentLevel` is already the deepest tier — a
+ * تفصیلی account can't have children. A `null` parent (no parent at all) is
+ * always `group`.
+ */
+export function nextAccountLevel(parentLevel: AccountLevel | null): AccountLevel | null {
+  if (parentLevel === null) return "group";
+  const idx = ACCOUNT_LEVELS.indexOf(parentLevel);
+  return idx < ACCOUNT_LEVELS.length - 1 ? ACCOUNT_LEVELS[idx + 1] : null;
+}
+
+export type NormalBalance = "debit" | "credit";
+
+/** Asset/expense accounts carry a debit normal balance; liability/equity/revenue carry credit. */
+export function normalBalanceForType(type: AccountType): NormalBalance {
+  return type === "asset" || type === "expense" ? "debit" : "credit";
 }
 
 /**
@@ -87,7 +125,7 @@ export const FNB_COA_TEMPLATE: TemplateAccount[] = [
   { code: "1220", name: "مالیات بر ارزش افزوده خرید (قابل استرداد)", type: "asset", parentCode: "1000" },
   { code: "1300", name: "موجودی مواد و کالا", type: "asset", parentCode: "1000" },
   { code: "1350", name: "موجودی در راه", type: "asset", parentCode: "1000" },
-  { code: "1390", name: "ذخیره کاهش ارزش موجودی", type: "asset", parentCode: "1000" },
+  { code: "1390", name: "ذخیره کاهش ارزش موجودی", type: "asset", parentCode: "1000", isContra: true },
   { code: "1400", name: "پیش‌پرداخت‌ها", type: "asset", parentCode: "1000" },
   { code: "1500", name: "اثاثه و تجهیزات", type: "asset", parentCode: "1000" },
 
@@ -106,7 +144,7 @@ export const FNB_COA_TEMPLATE: TemplateAccount[] = [
   { code: "4100", name: "فروش غذا", type: "revenue", parentCode: "4000" },
   { code: "4200", name: "فروش نوشیدنی", type: "revenue", parentCode: "4000" },
   { code: "4300", name: "فروش (عمومی)", type: "revenue", parentCode: "4000" },
-  { code: "4400", name: "برگشت از فروش", type: "revenue", parentCode: "4000" },
+  { code: "4400", name: "برگشت از فروش", type: "revenue", parentCode: "4000", isContra: true },
   { code: "4900", name: "سایر درآمدها", type: "revenue", parentCode: "4000" },
   { code: "4910", name: "درآمد اضافه شمارش موجودی", type: "revenue", parentCode: "4000" },
 
