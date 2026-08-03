@@ -21,6 +21,10 @@ const PUBLIC_PATHS = [
   "/welcome",
   "/api/setup/bootstrap",
   "/api/setup/state",
+  // Desktop first-run pairing: like bootstrap, it runs against an empty
+  // database, so there is no session to require. The one-time code in the body
+  // is the credential, and the route refuses once any user exists.
+  "/api/setup/pair",
   // Phase 12: self-service business registration creates the tenant a session
   // would otherwise be scoped to, so it cannot require one. Refuses with 403
   // unless ALLOW_PUBLIC_SIGNUP is set.
