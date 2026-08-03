@@ -170,11 +170,12 @@ Each wave is still developed, tested, and PR'd independently, per the issue's ow
 1. ~~**Generic item schema shape**~~ **Settled:** satellite tables per capability (`item_variant_attributes`,
    `item_serials`), matching how `menu_item_ingredients`/`modifier_ingredients` extend `menu_items`
    today — not a wide table with nullable industry-specific columns. Shipped in migration 0050.
-2. **Weight precision & rounding** — grams to how many decimal places, and what rounding rule at
-   the point a computed price meets integer-Rial storage? Needs a real decision before Wave 2's
-   migration, the same way Phase 0 fixed integer-Rial for money.
-3. **External gold-price feed** — provider TBD; Wave 2 builds the pluggable hook and ships manual
-   entry, a specific integration is a follow-up once a provider is chosen.
+2. ~~**Weight precision & rounding**~~ **Settled:** `numeric(24, 9)`, the same precision
+   `inventory_lots.remaining_qty` already uses — no new convention. Rounding a computed price into
+   integer-Rial reuses the existing `roundRial()`. Shipped in migration 0051.
+3. **External gold-price feed** — provider TBD. The hook exists (`gold_prices.source`, shipped in
+   migration 0052 and `gold-prices-service.ts`'s `source: 'external'`) and manual entry ships as the
+   baseline; a specific integration is still a follow-up once a provider is chosen.
 4. **Consignment settlement accounts** — new well-known accounts (a consignment-liability account
    distinct from Accounts Payable?) — to be designed alongside Wave 4, following Phase 16's
    pattern of adding well-known codes plus a backfill migration.
@@ -298,3 +299,45 @@ remaining steps) for `jewelry`/`watch`/`accessories`, deferred until each of tho
 needs them — there is nothing productive to build here before Wave 2+ defines what a gold/watch/
 accessories business's own onboarding actually looks like. With the item-model question now settled,
 Wave 1's core is otherwise complete.
+
+Wave 2, first slice — weight/purity attributes and daily gold price entry — implemented:
+
+- **Weight precision (open question 2) is settled: no new numeric convention.**
+  `item_weight_attributes` (`migrations/0051_item_weight_attributes.sql`) uses `numeric(24, 9)`,
+  the same precision `inventory_lots.remaining_qty` already uses (migrations 0012/0015) — deliberately
+  generous headroom for a value that in practice never needs more than 3 decimal places, not a new
+  decision to get wrong. Money produced by multiplying a weight by a price/gram (Wave 3's pricing
+  engine) will round through the existing `roundRial()` (`src/lib/inventory-exact.ts`), the same
+  rounding rule every other exact posting already uses.
+- **`item_weight_attributes`** (one row per `tracking: 'weight'` item) carries `purity`,
+  `gross_weight`, and `net_weight` (`net_weight` defaults to `gross_weight`; Wave 4's stone/gem
+  attributes will deduct from it without a schema change). `src/lib/gold.ts` is the pure validation
+  (mirroring the table's own CHECK constraints — positive weights, `net_weight <= gross_weight`,
+  and a controlled `PURITIES` list: `18`/`21`/`24`). Coin ("سکه") purities are deliberately excluded
+  — a coin prices per unit, not per gram, which doesn't fit this table or `gold_prices` below; that's
+  a distinct pricing shape for a later wave, not guessed at here. `setWeightAttributes`/
+  `getWeightAttributes` (`src/lib/items-service.ts`) validate the item is actually `tracking:
+  'weight'` before writing, same pattern `addSerial` already uses for `tracking: 'serial'`.
+- **`gold_prices`** (`migrations/0052_gold_prices.sql`) — one row per (business, purity, day),
+  upserted rather than logged, since "today's price" is a single current fact. Business-wide, not
+  per-location (a business follows one market price across branches, the same reasoning Phase 7 used
+  for one consolidated ledger). `source` defaults to `'manual'` (the decided baseline) with an
+  `'external'` value already modeled for the optional price-feed hook the brainstorm called for — no
+  provider is wired up in this slice. `getGoldPrice`/`listCurrentGoldPrices`
+  (`src/lib/gold-prices-service.ts`) read the latest price on or before a given date, so a business
+  isn't forced to re-enter a price every single day.
+- Both new tables are automatically covered by `integration/tenant-isolation.integration.test.ts`'s
+  generated policy-correctness check (re-ran to confirm, 19 tests, no change needed).
+- Verified in `src/lib/gold.test.ts` (the pure validation rules), extended
+  `integration/generic-items.integration.test.ts` (setting/reading weight attributes, rejecting a
+  non-weight-tracked item, upsert-replaces-not-duplicates, and the CHECK constraint itself rejecting
+  `net_weight > gross_weight` even bypassing the service layer), and new
+  `integration/gold-prices.integration.test.ts` (record/read, same-day replace not duplicate,
+  independent purities, falling back to the most recent earlier price, per-business isolation, and
+  the manual/external `source` distinction). `npx tsc --noEmit`, `npm test` (911 tests), `npm run
+  test:db` (287 tests), and `npm run build` all pass.
+
+Not yet built (later Wave 2 slices, or Wave 3): weight-based lots/FIFO consumption for bulk gold
+stock, weight-based stock counts, the setup-wizard's jewelry chart-of-accounts template, and the
+actual pricing formula (weight × price/gram + اجرت + profit % + VAT) and POS sales flow — Wave 3's
+job per the phase's own wave breakdown.

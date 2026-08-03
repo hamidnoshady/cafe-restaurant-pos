@@ -25,6 +25,7 @@ import {
   type SerialStatus,
   type VariantAttributeInput,
 } from "./items";
+import { validateWeightAttributes, type Purity } from "./gold";
 
 export interface Item {
   id: string;
@@ -238,4 +239,61 @@ export async function setSerialStatus(
     [status, id],
   );
   return mapSerial(rows[0]);
+}
+
+export interface ItemWeightAttributes {
+  itemId: string;
+  purity: Purity;
+  grossWeight: string;
+  netWeight: string;
+}
+
+interface WeightAttributesRow extends Record<string, unknown> {
+  item_id: string;
+  purity: Purity;
+  gross_weight: string;
+  net_weight: string;
+}
+
+function mapWeightAttributes(row: WeightAttributesRow): ItemWeightAttributes {
+  return {
+    itemId: row.item_id,
+    purity: row.purity,
+    grossWeight: row.gross_weight,
+    netWeight: row.net_weight,
+  };
+}
+
+/** Sets (creates or replaces) the weight/purity attributes of a `tracking: 'weight'` item — Wave 2's gold/jewelry pieces. */
+export async function setWeightAttributes(
+  itemId: string,
+  input: { purity: string; grossWeight: string; netWeight: string },
+): Promise<ItemWeightAttributes> {
+  const errors = validateWeightAttributes(input);
+  if (errors.length > 0) throw new Error(errors.join("؛ "));
+
+  const item = await getItem(itemId);
+  if (!item) throw new Error("کالا یافت نشد.");
+  if (item.tracking !== "weight") {
+    throw new Error("فقط کالای با ردیابی «وزنی» می‌تواند ویژگی وزن/عیار داشته باشد.");
+  }
+
+  const { rows } = await query<WeightAttributesRow>(
+    `INSERT INTO item_weight_attributes (item_id, purity, gross_weight, net_weight)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (item_id) DO UPDATE
+       SET purity = EXCLUDED.purity, gross_weight = EXCLUDED.gross_weight,
+           net_weight = EXCLUDED.net_weight, updated_at = now()
+     RETURNING *`,
+    [itemId, input.purity, input.grossWeight, input.netWeight],
+  );
+  return mapWeightAttributes(rows[0]);
+}
+
+export async function getWeightAttributes(itemId: string): Promise<ItemWeightAttributes | null> {
+  const { rows } = await query<WeightAttributesRow>(
+    `SELECT * FROM item_weight_attributes WHERE item_id = $1`,
+    [itemId],
+  );
+  return rows[0] ? mapWeightAttributes(rows[0]) : null;
 }
