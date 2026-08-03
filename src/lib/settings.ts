@@ -29,6 +29,8 @@ export const SETTING_KEYS = {
   pricing: "pricing.config",
   /** AppUpdateStatus (src/lib/app-update.ts) — last self-update check result, no credentials in it */
   appUpdateStatus: "app_update.status",
+  /** DeploymentMode (src/lib/deployment-mode.ts) — { mode: 'local'|'connected', pairedAt } */
+  deploymentMode: "deployment.mode",
 } as const;
 
 export async function getSetting<T>(businessId: string, key: string): Promise<T | null> {
