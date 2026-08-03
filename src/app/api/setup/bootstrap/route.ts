@@ -35,9 +35,15 @@ export async function POST(request: NextRequest) {
   if (!validated.input) return NextResponse.json({ error: validated.error }, { status: 400 });
   const input = validated.input;
 
+  // The first-run wizard's mode choice. Anything other than the literal
+  // 'local' is treated as connected, which is what every non-desktop caller
+  // (public signup, the platform console) already sends by omission.
+  const deploymentMode =
+    (body as { deploymentMode?: unknown }).deploymentMode === "local" ? "local" : "connected";
+
   let created;
   try {
-    created = await provisionBusiness(input);
+    created = await provisionBusiness({ ...input, deploymentMode });
   } catch (err) {
     if (err instanceof EmailPasswordMismatchError) {
       return NextResponse.json({ error: "email_password_mismatch" }, { status: 409 });
