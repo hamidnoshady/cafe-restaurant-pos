@@ -42,15 +42,16 @@ Accounting (ledger, COA, fiscal periods, AR/AP, manual journals — all built an
 
 ## Scope decision: what "generalize" means here
 
-Brainstormed and decided with the product owner before Wave 1 starts: **generalize the sellable-item
-and posting core, not the dine-in service workflow.** Concretely:
+Brainstormed and decided with the product owner before Wave 1 started: generalize the *posting*
+core, not the item/inventory data model. This revises the phase's original brainstorm decision
+(quoted below for the record) once building Wave 1 surfaced why unifying the item model isn't the
+right call — see "Revised: `menu_items`/`inventory_items` are not migrated" just below.
 
-- `menu_items` + `inventory_items` + `recipes`/`menu_item_ingredients` are unified behind one
-  generic item model (item, optional variant axes, optional serial units, optional weight/purity
-  attributes) that F&B, gold/jewelry, watch, and accessories all read through. F&B's own behavior
-  (menu grid, recipe-based deduction, FIFO/weighted-average costing) must come out the other side
-  byte-for-byte identical — this is an internal refactor proven by the existing test suite, not a
-  product change.
+Concretely:
+
+- **The posting core generalizes** via the domain-event log + posting engine (see the architecture
+  principle above) — proven end-to-end by wiring F&B's own waste posting through it. This is the
+  part of "Core Accounting + Industry Modules" that actually needed to be shared, and it is.
 - **Tables, floor plans, waiter app, kitchen display, and reservations stay F&B-specific**,
   already gated behind the `reservations` feature flag (Phase 17) — nothing in gold/watch/
   accessories retail has an equivalent concept, and generalizing them would be speculative,
@@ -58,7 +59,45 @@ and posting core, not the dine-in service workflow.** Concretely:
   non-food-service business.
 - The domain-event/posting-engine refactor (Wave 1) is where F&B's existing posting functions
   get re-expressed as registered rules against the new engine — same resulting journal entries,
-  different internal plumbing.
+  different internal plumbing. (In practice only one path, waste, has actually been re-expressed
+  so far — see the Wave 1 progress notes below for why the rest are deliberately left alone.)
+
+### Revised: `menu_items`/`inventory_items` are not migrated onto the generic item model
+
+The phase's original brainstorm decision (recorded above the line for the historical record) called
+for unifying `menu_items`/`inventory_items`/recipes onto the new generic Item/Variant/Serial
+primitive, with F&B's behavior proven unchanged. Building Wave 1 far enough to actually attempt this
+surfaced a fact the brainstorm didn't have: **`inventory_items` is not a thin catalog table** — it is
+the anchor of five-plus phases (6, 12, 13, 15, 17, 19) of hardened, exact-arithmetic costing
+machinery (FIFO lots, weighted-average, negative-layer shortage tracking, NRV write-downs, transfers,
+cutover, purchase-receipt settlement), all built with `SELECT ... FOR UPDATE` row locking directly
+against its own columns (`avg_cost`, `carrying_value_rial`, `purchase_unit_factor`, …) across roughly
+seven `src/lib/*.ts` files. The new `items` table (migration 0050) deliberately carries none of that —
+correctly so, since a jewelry piece's cost (weight × daily price/gram) has nothing in common with
+FIFO lot consumption, and baking F&B-specific costing columns into a table meant to also serve
+gold/watch/accessories would be exactly the kind of premature, wrong-shaped generalization the
+project avoids elsewhere.
+
+There is a genuinely favorable seam in the costing chain — `order_item_inventory_snapshots
+.inventory_item_id` is the only handle any costing code needs downstream of order capture; nothing
+downstream ever re-reads `menu_items`/`modifiers` — but that seam is about decoupling a sale from its
+recipe at capture time, not about `inventory_items` itself being swappable. Actually migrating it
+onto `items` would mean either bloating the generic model with F&B-only costing columns, or building
+a second, parallel costing engine against a different table — duplicating ~7 already-hardened files'
+worth of exact-arithmetic logic — for no industry that has shipped yet and needs to share it. That is
+risk with no offsetting product value, the same lesson the posting-engine slice already taught at
+smaller scale (see decision below).
+
+**Decision (confirmed with the product owner, reversing the earlier call): `menu_items`,
+`inventory_items`, and every table/service/route/UI surface built on them stay exactly as they are,
+indefinitely — not deferred, not a future migration to revisit.** The generic `items`/
+`item_variant_attributes`/`item_serials` primitive remains a parallel model, used only by the new
+industries; each of those gets its own costing/stock machinery in its own wave (Wave 2's weighted
+gold inventory, Wave 5's serialized watches), designed fresh for what that industry actually needs,
+rather than either retrofitting F&B's engine onto them or theirs onto F&B's. A full map of every
+place `menu_items`/`inventory_items` are touched (migrations, `src/lib/*.ts`, API routes, dashboard
+UI, the sale→recipe→costing chain, `sku` usage, AI tools/reporting/exports) was produced while making
+this call and confirms the two models can stay fully independent with no coupling left dangling.
 
 ## Waves
 
@@ -67,11 +106,13 @@ is built once in Wave 1 instead of separately in Waves 2, 5, and 6:
 
 1. **Wave 1 — Multi-industry core.** `businesses.industry` (immutable after setup, like the
    costing-method lock); domain-event log (`domain_events`: `business_id`, `event_type`, `payload
-   jsonb`, `source_type`/`source_id`) + posting-rule engine industry modules register against;
-   generic Item/Variant/Serial primitive that `menu_items`/`inventory_items`/`recipes` are migrated
-   onto (F&B behavior unchanged, proven by the existing suite); industry-aware setup wizard
-   (Wizard step 1 picks the industry; each industry gets its own COA seed template and its own
-   remaining wizard steps — F&B's 8-step wizard is one instance of this, not special-cased code).
+   jsonb`, `source_type`/`source_id`) + posting-rule engine industry modules register against,
+   proven by wiring F&B's own waste posting through it; generic Item/Variant/Serial primitive as a
+   parallel model the new industries build on — **not** a migration target for `menu_items`/
+   `inventory_items`/`recipes`, which stay exactly as they are (see the revised scope decision
+   above); industry-aware setup wizard (Wizard step 1 picks the industry; each industry gets its
+   own COA seed template and its own remaining wizard steps — F&B's 8-step wizard is one instance
+   of this, not special-cased code).
 2. **Wave 2 — Weighted goods & gold inventory.** Fractional-weight quantities (grams, a new
    numeric-precision convention alongside integer-Rial money and the existing item primitive),
    purity/karat attributes, weight-based lots and stock counts, daily gold-price entry
@@ -126,10 +167,9 @@ Each wave is still developed, tested, and PR'd independently, per the issue's ow
 
 ## Open questions
 
-1. **Generic item schema shape** — one wide table with nullable industry-specific columns, or a
-   core `items` table plus one satellite table per capability (weight, serial, variant)? Leaning
-   satellite tables (matches how `menu_item_ingredients`/`modifier_ingredients` already extend
-   `menu_items` today), to be settled at the start of Wave 1.
+1. ~~**Generic item schema shape**~~ **Settled:** satellite tables per capability (`item_variant_attributes`,
+   `item_serials`), matching how `menu_item_ingredients`/`modifier_ingredients` extend `menu_items`
+   today — not a wide table with nullable industry-specific columns. Shipped in migration 0050.
 2. **Weight precision & rounding** — grams to how many decimal places, and what rounding rule at
    the point a computed price meets integer-Rial storage? Needs a real decision before Wave 2's
    migration, the same way Phase 0 fixed integer-Rial for money.
@@ -185,10 +225,10 @@ Wave 1, first slice — implemented:
   accessories will build on this), and `item_serials` (one row per physical unit of a
   `tracking: 'serial'` item — Wave 5's watches). Weight/purity attributes are deliberately **not**
   part of this table set — that's Wave 2's job, once fractional-weight precision/rounding is
-  actually decided rather than guessed at here. Deliberately **not** linked from
-  `menu_items`/`inventory_items`/`recipes` yet — migrating F&B's own model onto this primitive
-  without changing its observable behavior is its own follow-up slice, not bundled into the
-  primitive's introduction. Verified in `integration/generic-items.integration.test.ts` (simple
+  actually decided rather than guessed at here. Not linked from `menu_items`/`inventory_items`/
+  `recipes`, and per the revised scope decision above, never will be — this primitive is a parallel
+  model for the new industries, not a migration target for F&B's own hardened costing engine.
+  Verified in `integration/generic-items.integration.test.ts` (simple
   item creation, variant parent/child creation with attributes — including the all-or-nothing
   failure case leaving no orphan row — and serial registration/status lifecycle, including that a
   `sold` unit can never move to another status and a duplicate serial number is rejected) and
@@ -198,11 +238,6 @@ Wave 1, first slice — implemented:
   policy-correctness check and `tenant-tables.ts`'s export/restore enumeration — both discover
   tables from `pg_class` rather than a hand-maintained list, so nothing needed updating there;
   re-ran both suites to confirm.
-
-Remaining Wave 1 work (tracked as this phase's next slice, not started yet): migrating
-`menu_items`/`inventory_items`/`recipes` onto the generic item primitive with F&B's observable
-behavior proven unchanged, and the industry-specific setup-wizard branches (chart-of-accounts
-template + remaining steps) for `jewelry`/`watch`/`accessories` once their own waves need them.
 
 Wave 1, second slice — the posting engine's first real (non-test) wiring — implemented:
 
@@ -249,3 +284,17 @@ Wave 1, second slice — the posting engine's first real (non-test) wiring — i
   response shape as before, a `domain_events` row recorded and stamped `entry_id`, and the exact
   expected journal entry (Debit «ضایعات مواد» 5150 / Credit «موجودی مواد و کالا» 1300, correct
   amount, `posting_kind = 'waste'`).
+
+Wave 1, third slice — the item-model scope decision — implemented:
+
+- **`menu_items`/`inventory_items`/recipes will not be migrated onto the generic item model, ever
+  — a deliberate decision, not a deferral.** See "Revised: `menu_items`/`inventory_items` are not
+  migrated" above for the full reasoning (surfaced by a codebase-wide survey of exactly how deep
+  F&B's costing engine is wired into `inventory_items`'s own columns). This closes out what was
+  previously listed as "remaining Wave 1 work" on that front.
+
+Remaining Wave 1 work: the industry-specific setup-wizard branches (chart-of-accounts template +
+remaining steps) for `jewelry`/`watch`/`accessories`, deferred until each of those waves actually
+needs them — there is nothing productive to build here before Wave 2+ defines what a gold/watch/
+accessories business's own onboarding actually looks like. With the item-model question now settled,
+Wave 1's core is otherwise complete.
