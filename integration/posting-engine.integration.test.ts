@@ -2,17 +2,19 @@
  * Phase 21 Wave 1: the domain-event log + posting-rule engine that later
  * waves' industry modules register against, instead of each hand-writing a
  * new ledger-service.ts posting function the way every F&B event does today.
- * Proves the full loop: an event is recorded, a registered rule turns it
- * into a balanced journal entry via the same postJournalEntry() every
- * existing posting path uses, and the event is stamped with the entry it
- * produced -- while an event with no registered rule (or a rule that
- * declines to post) is recorded but left deliberately unposted, not an
- * error.
+ * Proves the full loop: an event is recorded, a registered rule (given the
+ * same transaction's client, so it can look up account ids by code) turns
+ * it into a balanced journal entry via the same exact (RialText/BigInt)
+ * posting path every inventory-costing-sensitive posting already uses, and
+ * the event is stamped with the entry it produced -- while an event with no
+ * registered rule (or a rule that declines to post) is recorded but left
+ * deliberately unposted, not an error.
  */
 import { randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { runMigrations } from "../scripts/migrate";
+import type { RialText } from "../src/lib/inventory-exact";
 
 const rootDatabaseUrl = process.env.DATABASE_URL;
 if (!rootDatabaseUrl) {
@@ -27,6 +29,13 @@ let postingEngine: typeof import("../src/lib/posting-engine");
 
 const biz = { id: "", locationId: "" };
 const acct = { cash: "", revenue: "" };
+
+function zero(): RialText {
+  return "0" as RialText;
+}
+function rial(n: number): RialText {
+  return String(n) as RialText;
+}
 
 function urlFor(database: string): string {
   const url = new URL(rootDatabaseUrl!);
@@ -114,11 +123,11 @@ beforeEach(async () => {
 describe("posting engine", () => {
   it("records and posts an event with a registered rule, stamping entry_id", async () => {
     postingEngine.registerPostingRule("test.sale", async (event) => {
-      const amount = event.payload.amount as number;
+      const amount = rial(event.payload.amount as number);
       return {
         lines: [
-          { accountId: acct.cash, debit: amount, credit: 0 },
-          { accountId: acct.revenue, debit: 0, credit: amount },
+          { accountId: acct.cash, debit: amount, credit: zero() },
+          { accountId: acct.revenue, debit: zero(), credit: amount },
         ],
       };
     });
@@ -160,6 +169,40 @@ describe("posting engine", () => {
       { debit: "150000", credit: "0" },
       { debit: "0", credit: "150000" },
     ]);
+  });
+
+  it("gives the rule the same transaction's client, so it can look up account ids by code", async () => {
+    postingEngine.registerPostingRule("test.by_code", async (event, client) => {
+      const accounts = await ledgerService.accountIdsByCode(client, event.businessId, ["1100", "4300"]);
+      const amount = rial(event.payload.amount as number);
+      return {
+        lines: [
+          { accountId: accounts.get("1100")!, debit: amount, credit: zero() },
+          { accountId: accounts.get("4300")!, debit: zero(), credit: amount },
+        ],
+      };
+    });
+
+    const client = await dbLib.getPool().connect();
+    let entryId: string | null;
+    try {
+      await client.query("BEGIN");
+      ({ entryId } = await postingEngine.emitDomainEvent(client, {
+        businessId: biz.id,
+        eventType: "test.by_code",
+        payload: { amount: 5_000 },
+      }));
+      await client.query("COMMIT");
+    } finally {
+      client.release();
+    }
+
+    expect(entryId).not.toBeNull();
+    const lines = await db.query<{ account_id: string }>(
+      "SELECT account_id FROM journal_lines WHERE entry_id = $1 AND debit = '5000'",
+      [entryId],
+    );
+    expect(lines.rows[0].account_id).toBe(acct.cash);
   });
 
   it("records an event with no registered rule and leaves it unposted", async () => {
@@ -209,7 +252,7 @@ describe("posting engine", () => {
 
   it("an unbalanced rule's lines are rejected, matching every other posting path", async () => {
     postingEngine.registerPostingRule("test.unbalanced", async () => ({
-      lines: [{ accountId: acct.cash, debit: 100, credit: 0 }],
+      lines: [{ accountId: acct.cash, debit: rial(100), credit: zero() }],
     }));
 
     const client = await dbLib.getPool().connect();
@@ -231,8 +274,8 @@ describe("posting engine", () => {
   it("re-registering the same event type replaces the previous rule", async () => {
     postingEngine.registerPostingRule("test.replace", async () => ({
       lines: [
-        { accountId: acct.cash, debit: 1, credit: 0 },
-        { accountId: acct.revenue, debit: 0, credit: 1 },
+        { accountId: acct.cash, debit: rial(1), credit: zero() },
+        { accountId: acct.revenue, debit: zero(), credit: rial(1) },
       ],
     }));
     postingEngine.registerPostingRule("test.replace", async () => null);
@@ -250,5 +293,36 @@ describe("posting engine", () => {
     } finally {
       client.release();
     }
+  });
+
+  it("stamps postingKind and inventoryEventId through to the posted entry, same as every existing exact posting path", async () => {
+    postingEngine.registerPostingRule("test.tagged", async () => ({
+      lines: [
+        { accountId: acct.cash, debit: rial(10), credit: zero() },
+        { accountId: acct.revenue, debit: zero(), credit: rial(10) },
+      ],
+      postingKind: "test_kind",
+      inventoryEventId: null,
+    }));
+
+    const client = await dbLib.getPool().connect();
+    let entryId: string | null;
+    try {
+      await client.query("BEGIN");
+      ({ entryId } = await postingEngine.emitDomainEvent(client, {
+        businessId: biz.id,
+        eventType: "test.tagged",
+        payload: {},
+      }));
+      await client.query("COMMIT");
+    } finally {
+      client.release();
+    }
+
+    const entry = await db.query<{ posting_kind: string | null }>(
+      "SELECT posting_kind FROM journal_entries WHERE id = $1",
+      [entryId],
+    );
+    expect(entry.rows[0].posting_kind).toBe("test_kind");
   });
 });
