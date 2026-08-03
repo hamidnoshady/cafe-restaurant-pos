@@ -1,0 +1,106 @@
+"use client";
+
+import { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { formatToman } from "@/lib/money";
+import { toPersianDigits } from "@/lib/digits";
+import { formatJalali } from "@/lib/jalali";
+import { api, Field, inputClass } from "../ui";
+import { PURITY_LABELS, type GoldPriceRow, type Purity, type Runner } from "./jewelry-manager";
+
+const jewelryInputClass = `${inputClass} min-h-[52px] !border-stone-200 !bg-white shadow-none placeholder:text-stone-400 focus-visible:border-amber-500 focus-visible:ring-amber-400/30`;
+
+export function PricesSection({ prices, busy, run }: { prices: GoldPriceRow[]; busy: boolean; run: Runner }) {
+  const [purity, setPurity] = useState<Purity>("18");
+  const [pricePerGram, setPricePerGram] = useState("");
+
+  async function record(e: React.FormEvent) {
+    e.preventDefault();
+    if (!pricePerGram.trim()) return;
+    const ok = await run(() =>
+      api("/api/jewelry/prices", {
+        method: "POST",
+        body: JSON.stringify({ purity, pricePerGram: Number(pricePerGram) }),
+      }),
+    );
+    if (ok) setPricePerGram("");
+  }
+
+  return (
+    <div className="grid min-w-0 gap-4 md:grid-cols-[minmax(0,1fr)_18rem] lg:gap-5 lg:grid-cols-[minmax(0,1fr)_21rem]">
+      <section
+        aria-labelledby="jewelry-prices-heading"
+        className="order-2 min-w-0 overflow-hidden rounded-2xl bg-card md:order-1"
+      >
+        <div className="border-b border-stone-200/80 px-4 py-4 sm:px-5">
+          <h2 id="jewelry-prices-heading" className="font-semibold text-stone-950">
+            تابلوی نرخ روز طلا
+          </h2>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">
+            آخرین نرخ ثبت‌شده هر عیار؛ لازم نیست هر روز دوباره ثبت شود، تا زمانی که نرخ جدیدی وارد نشده همین نرخ برای فروش استفاده می‌شود.
+          </p>
+        </div>
+
+        <ul className="divide-y divide-stone-200/80">
+          {prices.map((p) => (
+            <li key={p.id} className="flex items-center justify-between gap-4 px-4 py-4 sm:px-5">
+              <div>
+                <h3 className="font-semibold text-stone-950">{PURITY_LABELS[p.purity]}</h3>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {formatJalali(p.priceDate, { withMonthName: true })}
+                  {p.source === "external" ? " · دریافتی از سرویس بیرونی" : " · ثبت دستی"}
+                </p>
+              </div>
+              <p className="font-semibold text-stone-950">{formatToman(p.pricePerGram)} / گرم</p>
+            </li>
+          ))}
+          {prices.length === 0 ? (
+            <li className="px-4 py-5 text-sm text-muted-foreground sm:px-5">نرخی ثبت نشده است.</li>
+          ) : null}
+        </ul>
+      </section>
+
+      <aside className="order-1 min-w-0 md:order-2">
+        <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-[0_1px_2px_rgb(41_37_36/0.035)] md:sticky md:top-4 sm:p-5">
+          <h2 className="font-semibold text-stone-950">ثبت نرخ امروز</h2>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">نرخ هر گرم طلا (ریال) برای هر عیار جداگانه ثبت می‌شود.</p>
+
+          <form onSubmit={record} className="mt-4">
+            <Field label="عیار">
+              <select
+                className={jewelryInputClass}
+                value={purity}
+                onChange={(e) => setPurity(e.target.value as Purity)}
+              >
+                {(Object.keys(PURITY_LABELS) as Purity[]).map((p) => (
+                  <option key={p} value={p}>
+                    {PURITY_LABELS[p]}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="قیمت هر گرم (ریال)">
+              <input
+                className={jewelryInputClass}
+                dir="ltr"
+                inputMode="numeric"
+                value={pricePerGram}
+                onChange={(e) => setPricePerGram(e.target.value)}
+                placeholder={toPersianDigits("مثلاً 45000000")}
+                required
+              />
+            </Field>
+            <Button
+              type="submit"
+              disabled={busy}
+              size="lg"
+              className="min-h-[52px] w-full border border-amber-300 px-5 font-semibold focus-visible:ring-amber-400/30"
+            >
+              ثبت نرخ
+            </Button>
+          </form>
+        </div>
+      </aside>
+    </div>
+  );
+}
