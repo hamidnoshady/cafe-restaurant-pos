@@ -401,8 +401,41 @@ What shipped:
   (twice) + `npm run test:db` (291 tests, `tenant-isolation`'s 19 tests re-confirming RLS), and
   `npm run build` all pass.
 
-Not yet built: no API route or POS/receipt UI calls `sellWeightedItem` yet (service-layer only, same
-as how Wave 1 and Wave 2 each started); weight-based lots/stock-counts remain deferred; and jewelry
-still isn't a selectable industry in `/welcome` (`ENABLED_INDUSTRIES`), so none of this is reachable
-by an actual business yet — proven by integration test, not by a live business, exactly like Wave 2's
-first slice.
+Not yet built (Wave 3 continued): no API route or POS/receipt UI calls `sellWeightedItem` yet
+(service-layer only, same as how Wave 1 and Wave 2 each started); weight-based lots/stock-counts
+remain deferred; and jewelry still isn't a selectable industry in `/welcome` (`ENABLED_INDUSTRIES`),
+so none of this is reachable by an actual business yet — proven by integration test, not by a live
+business, exactly like Wave 2's first slice.
+
+Wave 4, first slice — gem/stone attributes as a cost add-on — implemented (consignment, Wave 4's
+other half, deliberately not started this slice — its sale/commission mechanics need the same kind
+of domain-specific confirmation VAT and cost-basis needed in Wave 3, not yet asked):
+
+- **`item_stones`** (`migrations/0054_item_stones.sql`) — a child table (an item can carry several
+  stones, e.g. a ring with a center diamond plus accent stones): `stone_type` (free text, unlike
+  purity's controlled list — gem types vary far more than gold's fixed karat scale), `carat`, `cost`.
+  Deliberately does **not** touch `item_weight_attributes.net_weight` — a stone's carat weight is not
+  auto-converted to grams and subtracted from `gross_weight`; that conversion (irregular settings,
+  mounting metal) would be a fragile approximation nobody asked for, so `net_weight` stays exactly
+  what it's been since Wave 2: the business's own directly-entered gold-content figure. A stone's
+  `cost` is what actually needs to flow into COGS.
+- **`gold-posting-rules.ts`'s `gold.sale_cogs` rule now sums `item_stones.cost` alongside the metal
+  cost** — read live from `item_stones` at posting time via the same client/transaction, not passed
+  through the domain event's payload, the same "resolve against the current record, not a
+  caller-supplied snapshot" instinct `accountIdsByCode` already uses for account ids.
+- `src/lib/gold.ts` gained `validateStone`; `items-service.ts` gained `addStone`/`listStones`/
+  `removeStone`/`totalStoneCost`, validating the item is `tracking: 'weight'` before allowing a
+  stone, mirroring every other satellite-attribute function's own item-type guard.
+- Verified in `src/lib/gold.test.ts` (stone validation) and extended
+  `integration/generic-items.integration.test.ts` (add/list/remove, summing costs with zero-stones
+  as the empty case, refusing a stone on a non-weight-tracked item, and confirming `net_weight` stays
+  untouched) and `integration/gold-sales.integration.test.ts` (a real sale with a stone posts COGS as
+  metal cost + stone cost, hand-verified). `npx tsc --noEmit`, `npm test` (930 tests), `npm run
+  db:migrate` (twice) + `npm run test:db` (297 tests, `tenant-isolation`'s 19 tests re-confirming
+  RLS), and `npm run build` all pass.
+
+Not yet built: consignment (امانی) — a subledger mirroring Phase 16's AR/AP pattern, held off the
+business's own balance sheet until sold, then a commission/settlement posting to the consignor. Its
+sale pricing/commission mechanics are a real domain decision (does a consigned piece use the same
+اجرت/سود/مالیات formula, or a negotiated price minus a commission?) still to be confirmed before any
+code is written, the same discipline Wave 3's VAT-base and cost-basis decisions followed.

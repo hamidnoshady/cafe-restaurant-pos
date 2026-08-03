@@ -27,7 +27,7 @@ import {
   type VariantAttributeInput,
   type WeightItemStatus,
 } from "./items";
-import { validateWeightAttributes, type Purity } from "./gold";
+import { validateStone, validateWeightAttributes, type Purity, type StoneInput } from "./gold";
 
 export interface Item {
   id: string;
@@ -330,4 +330,77 @@ export async function setWeightItemStatus(
     [status, itemId],
   );
   return mapWeightAttributes(rows[0]);
+}
+
+export interface ItemStone {
+  id: string;
+  itemId: string;
+  stoneType: string;
+  carat: string;
+  cost: number;
+  createdAt: string;
+}
+
+interface StoneRow extends Record<string, unknown> {
+  id: string;
+  item_id: string;
+  stone_type: string;
+  carat: string;
+  // bigint comes back from pg as a string (see gold-prices-service.ts) --
+  // converted to a plain number in mapStone.
+  cost: string;
+  created_at: string;
+}
+
+function mapStone(row: StoneRow): ItemStone {
+  return {
+    id: row.id,
+    itemId: row.item_id,
+    stoneType: row.stone_type,
+    carat: row.carat,
+    cost: Number(row.cost),
+    createdAt: row.created_at,
+  };
+}
+
+/** Adds a gem/stone cost add-on to a `tracking: 'weight'` item — Wave 4's jewelry pieces. An item may carry several. */
+export async function addStone(itemId: string, input: StoneInput): Promise<ItemStone> {
+  const errors = validateStone(input);
+  if (errors.length > 0) throw new Error(errors.join("؛ "));
+
+  const item = await getItem(itemId);
+  if (!item) throw new Error("کالا یافت نشد.");
+  if (item.tracking !== "weight") {
+    throw new Error("فقط کالای با ردیابی «وزنی» می‌تواند سنگ داشته باشد.");
+  }
+
+  const { rows } = await query<StoneRow>(
+    `INSERT INTO item_stones (item_id, stone_type, carat, cost) VALUES ($1, $2, $3, $4) RETURNING *`,
+    [itemId, input.stoneType.trim(), input.carat, input.cost],
+  );
+  return mapStone(rows[0]);
+}
+
+export async function listStones(itemId: string): Promise<ItemStone[]> {
+  const { rows } = await query<StoneRow>(
+    `SELECT * FROM item_stones WHERE item_id = $1 ORDER BY created_at`,
+    [itemId],
+  );
+  return rows.map(mapStone);
+}
+
+export async function removeStone(id: string): Promise<void> {
+  await query(`DELETE FROM item_stones WHERE id = $1`, [id]);
+}
+
+/** Sum of an item's stone costs (0 if it has none) — the add-on to metal cost when computing COGS at sale time. */
+export async function totalStoneCost(itemId: string, client?: PoolClient): Promise<number> {
+  const run = <T extends Record<string, unknown>>(text: string, params: unknown[]) =>
+    client ? client.query<T>(text, params as never) : query<T>(text, params);
+
+  const { rows } = await run<{ total: string | null }>(
+    `SELECT SUM(cost)::text AS total FROM item_stones WHERE item_id = $1`,
+    [itemId],
+  );
+  return Number(rows[0]?.total ?? 0);
 }

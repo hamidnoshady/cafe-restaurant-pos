@@ -80,6 +80,7 @@ beforeEach(async () => {
   await db.query("DELETE FROM domain_events");
   await db.query("DELETE FROM journal_lines");
   await db.query("DELETE FROM journal_entries");
+  await db.query("DELETE FROM item_stones");
   await db.query("DELETE FROM item_weight_attributes");
   await db.query("DELETE FROM items");
   await db.query("DELETE FROM gold_prices");
@@ -194,6 +195,40 @@ describe("sellWeightedItem", () => {
     );
     expect(events.rows).toHaveLength(2);
     expect(events.rows.every((r) => r.entry_id !== null)).toBe(true);
+  });
+
+  it("includes a stone's cost in COGS alongside the metal cost (Phase 21 Wave 4)", async () => {
+    const ring = await makeBraceletWithCost("4000000"); // metal cost: 2.5g * 4,000,000 = 10,000,000
+    await itemsService.addStone(ring.id, { stoneType: "الماس", carat: "0.5", cost: 3_000_000 });
+    await goldPricesService.recordGoldPrice({ businessId: biz.id, purity: "18", pricePerGram: 5_000_000 });
+
+    const client = await dbLib.getPool().connect();
+    let result: Awaited<ReturnType<typeof goldSalesService.sellWeightedItem>>;
+    try {
+      await client.query("BEGIN");
+      result = await goldSalesService.sellWeightedItem(client, {
+        businessId: biz.id,
+        locationId: biz.locationId,
+        itemId: ring.id,
+        makingCharge: { type: "percent", value: 7 },
+        profitPercent: 10,
+        vatPercent: 9,
+        paymentMethod: "cash",
+      });
+      await client.query("COMMIT");
+    } finally {
+      client.release();
+    }
+
+    // COGS = metal (10,000,000) + stone (3,000,000) = 13,000,000
+    const cogsLines = await db.query<{ debit: string; credit: string }>(
+      "SELECT debit, credit FROM journal_lines WHERE entry_id = $1 ORDER BY debit DESC",
+      [result.cogsEntryId],
+    );
+    expect(cogsLines.rows).toEqual([
+      { debit: "13000000", credit: "0" },
+      { debit: "0", credit: "13000000" },
+    ]);
   });
 
   it("refuses to sell the same piece twice", async () => {
