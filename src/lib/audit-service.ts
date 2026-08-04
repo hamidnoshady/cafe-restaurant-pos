@@ -24,8 +24,11 @@ export interface AuditEntry {
   credentialType: string | null;
   /** Resolved from the payload's deviceId, for a row whose payload names one. */
   deviceLabel: string | null;
-  /** Resolved from entity_id for an `entity = 'employee'` row (e.g. `employee.login_failed`, Wave 7) — the actor column is null for a pre-authentication failure, so this is the only way to say whose attempt it was. */
+  /** Resolved from entity_id for an `entity = 'employee'` row (e.g. `employee.login_failed`, Wave 7) — the actor column is null for a pre-authentication failure, so this is the only way to say whose attempt it was. Also resolved for `entity = 'account'` rows (Wave 11), to "code — name" of the account the change was about, live off its *current* code/name (it may have been renamed again since). */
   entityName: string | null;
+  /** Only meaningful when `action === "account.reparented"`: the account's parent immediately before/after the move, resolved live off `payload.beforeParentId`/`afterParentId` — null when that side had no parent (a top-level group account) or for any other row. */
+  accountBeforeParentLabel: string | null;
+  accountAfterParentLabel: string | null;
 }
 
 interface AuditRow extends Record<string, unknown> {
@@ -42,6 +45,8 @@ interface AuditRow extends Record<string, unknown> {
   credential_type: string | null;
   device_label: string | null;
   entity_name: string | null;
+  account_before_parent_label: string | null;
+  account_after_parent_label: string | null;
 }
 
 function toEntry(row: AuditRow): AuditEntry {
@@ -59,11 +64,15 @@ function toEntry(row: AuditRow): AuditEntry {
     credentialType: row.credential_type,
     deviceLabel: row.device_label,
     entityName: row.entity_name,
+    accountBeforeParentLabel: row.account_before_parent_label,
+    accountAfterParentLabel: row.account_after_parent_label,
   };
 }
 
 export interface AuditLogFilters {
   entity?: string;
+  /** Narrows to one entity's own history — e.g. one account's rename/reparent/archive trail (Wave 11). */
+  entityId?: string;
   actorId?: string;
   /** Wave 7 — narrows to one action, e.g. `employee.login_failed` for the security center's failed-attempts list, without the caller needing the broader entity filter's noise. */
   action?: string;
@@ -100,6 +109,10 @@ export async function listAuditLog(
     params.push(filters.entity);
     conditions.push(`a.entity = $${params.length}`);
   }
+  if (filters.entityId) {
+    params.push(filters.entityId);
+    conditions.push(`a.entity_id = $${params.length}`);
+  }
   if (filters.actorId) {
     params.push(filters.actorId);
     conditions.push(`a.user_id = $${params.length}`);
@@ -121,7 +134,9 @@ export async function listAuditLog(
             a.action, a.entity, a.entity_id, a.payload, a.created_at,
             ec.credential_type::text AS credential_type,
             d.label AS device_label,
-            eu.full_name AS entity_name
+            COALESCE(eu.full_name, ea.code || ' — ' || ea.name) AS entity_name,
+            ebp.code || ' — ' || ebp.name AS account_before_parent_label,
+            eap.code || ' — ' || eap.name AS account_after_parent_label
        FROM audit_log a
        LEFT JOIN users u ON u.id = a.user_id
        LEFT JOIN employee_credentials ec
@@ -133,6 +148,18 @@ export async function listAuditLog(
        LEFT JOIN users eu
               ON a.entity = 'employee'
              AND eu.id = nullif(a.entity_id, '')::uuid
+       LEFT JOIN accounts ea
+              ON a.entity = 'account'
+             AND ea.business_id = a.business_id
+             AND ea.id = nullif(a.entity_id, '')::uuid
+       LEFT JOIN accounts ebp
+              ON a.entity = 'account'
+             AND ebp.business_id = a.business_id
+             AND ebp.id = nullif(a.payload->>'beforeParentId', '')::uuid
+       LEFT JOIN accounts eap
+              ON a.entity = 'account'
+             AND eap.business_id = a.business_id
+             AND eap.id = nullif(a.payload->>'afterParentId', '')::uuid
       WHERE ${conditions.join(" AND ")}
       ORDER BY a.id DESC
       LIMIT $${params.length}`,

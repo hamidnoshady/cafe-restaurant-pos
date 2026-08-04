@@ -40,6 +40,10 @@ const ACTION_LABELS: Record<string, string> = {
   "branch.deactivated": "غیرفعال‌سازی شعبه",
   "branch.reactivated": "فعال‌سازی شعبه",
   "impersonation.request": "درخواست ورود جانشینی",
+  "account.renamed": "تغییر نام حساب",
+  "account.reparented": "جابه‌جایی حساب در ساختار",
+  "account.archived": "بایگانی حساب",
+  "account.reactivated": "بازگردانی حساب از بایگانی",
 };
 
 const ENTITY_LABELS: Record<string, string> = {
@@ -48,6 +52,7 @@ const ENTITY_LABELS: Record<string, string> = {
   device: "دستگاه",
   shift: "شیفت",
   location: "شعبه",
+  account: "حساب",
 };
 
 /** A Persian label for a raw `audit_log.action` value, falling back to the raw string when unrecognised. */

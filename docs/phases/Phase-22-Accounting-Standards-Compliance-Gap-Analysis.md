@@ -285,8 +285,9 @@ Each wave still gets its own PR, its own full local test run before that PR, and
    off the existing `orders.type`** — no new field was needed; the "platform" half (a third-party
    marketplace, distinct from in-house delivery) is still open — see Wave 4's own "not yet built" note.
 3. §7.5's audit-trail question: is a full change-history table for `accounts` (who renamed/archived/
-   reparented, and when) in scope, or is current-state-only sufficient? **Still open** — not
-   addressed by any wave so far; revisit if asked.
+   reparented, and when) in scope, or is current-state-only sufficient? **Answered by Wave 11: yes,
+   build it** — not as a dedicated `accounts` history table, though; see Wave 11 below for why the
+   existing `audit_log` table already covers this shape.
 
 ## Progress
 
@@ -569,6 +570,7 @@ new, unconfirmed product decision has shipped:
 | 8 | Tip capture (انعام کارکنان) | Done (see below) |
 | 9 | Food-cost variance report | Done (see below) |
 | 10 | Online ordering platform commission (SnapFood) | Done (see below) |
+| 11 | Account change-history / audit-trail (§7.5) | Done (see below) |
 
 **Wave 8 — tip capture (انعام کارکنان, §4) — implemented.** Picked up as the first of the three
 deliberately-deferred items above, once the product owner confirmed the three open questions Wave 4
@@ -731,15 +733,61 @@ What shipped:
   second run a no-op) + `npm run test:db` (348 tests, up from 342, on a clean database), and
   `npm run build` all pass.
 
+**Wave 11 — account change-history / audit-trail (§7.5) — implemented.** The business owner answered
+Wave 7's open question directly: yes, build it. `accounts` itself stays current-state-only, though —
+no new history table. Every audited entity in this codebase (branches, employees, devices, shifts)
+already logs to the same shared `audit_log` table (Phase 0/20) rather than getting its own dedicated
+history table, and an account's rename/reparent/archive trail fits that exact shape (who, when, what
+changed), so it reuses that infrastructure instead of adding a parallel one.
+
+What shipped:
+
+- **`accounts-service.ts`** — `renameAccount`/`reparentAccount`/`setAccountActive` each now take an
+  optional `actorId` and write an `audit_log` row (`entity: "account"`) on an actual change: `before`/
+  `after` name for a rename, `beforeParentId`/`afterParentId` for a reparent, and a distinct
+  `account.archived`/`account.reactivated` action for the active flag — mirroring
+  `branch-service.ts`'s existing "write inside the mutating function, not the route" placement. A
+  no-op call (renaming to the same name, reparenting to the same parent) writes nothing — there's no
+  real change to log. The one call site (`/api/ledger/accounts/[id]` PATCH) now threads
+  `session.sub` through.
+- **`audit-service.ts`'s `listAuditLog`** gained an `entityId` filter (one entity's own history, not
+  just its type) and two new live-resolved joins: `entityName` now also covers `entity = 'account'`
+  rows (current code — name, even if renamed again since), and `accountBeforeParentLabel`/
+  `accountAfterParentLabel` resolve a reparent's before/after parent the same live way
+  `credentialType`/`deviceLabel` already resolve for other entities — never duplicated at write time,
+  so a parent account renamed after the fact still displays correctly.
+- **`audit.ts`** gained Persian labels for the four new actions and the `account` entity.
+- **A new `accounts.edit`-gated `GET /api/ledger/accounts/[id]/history`** and `AccountHistoryPanel`
+  (`account-history-panel.tsx`), reached via a "تاریخچه" button next to the existing "گردش حساب"
+  (account statement) button on the chart-of-accounts tab — same per-account modal pattern as
+  `AccountStatementPanel`, but reading the audit trail instead of the ledger. Gated on `accounts.edit`
+  specifically (not `team.manage`, which the *general* security audit-log settings tab uses) so an
+  accountant role that can edit the chart but has no HR-flavored `team.manage` permission still sees
+  it; the general audit-log settings tab also gained "حساب" as an entity filter, for whoever does have
+  `team.manage`.
+- Verified in `src/lib/audit.test.ts` (the four new action labels, the `account` entity label) and a
+  new `describe` block in `integration/chart-of-accounts.integration.test.ts` (7 tests: a rename
+  records its before/after name; a same-name rename records nothing; a reparent resolves both
+  before/after parent labels live; reparenting to no parent records a null after-label, not a missing
+  one; a same-parent reparent records nothing; archive and reactivate land as two distinct, ordered
+  actions; a later rename doesn't retroactively change an earlier archive entry's resolved account
+  label). Also manually verified end-to-end in a live running instance: archived an account from the
+  chart-of-accounts tab, opened its "تاریخچه" panel, and confirmed the rendered entry — action
+  «بایگانی حساب», actor «مالک نمونه», a correctly Jalali-formatted timestamp. `npx tsc --noEmit`,
+  `npm test` (1028 tests, up from 1025 — the repo's mechanized API-guard sweep in
+  `api-guards.test.ts` auto-discovered the new route and needed one line added to its
+  permission-guarded allowlist, same shape as the existing `ledger/accounts/[id]` entry),
+  `npm run db:migrate` (twice, second run a no-op — this wave added no migration, reusing
+  `audit_log`), `npm run test:db` (355 tests, up from 348), and `npm run build` all pass.
+
 **Epic #160 status: everything in the original gap analysis is now either shipped or explicitly
 deferred to a real product decision.** What's left, not built here:
 
-- **§7.5's account change-history/audit-trail** — whether it's in scope at all was never answered.
 - **Wave 6 in the gap analysis's revised sequencing (§8) was never meant to be built here** — it's
   Phase 21's own remaining Waves 5-7 (watch, accessories, specialized industry reports), tracked under
   `docs/phases/Phase-21-Multi-Industry-Accounting-Platform.md`, not duplicated under this epic. See §5/
   §6 of this document for the original reasoning.
 
-Either of these is a reasonable next step, but both start with a product/scope conversation, not more
-code — consistent with how every other phase in this codebase (7, 16, 21) resolved its own genuinely
-open questions before building against them, rather than guessing.
+That's a deliberate scope boundary, not unfinished work — consistent with how every other phase in
+this codebase (7, 16, 21) resolved its own genuinely open questions before building against them,
+rather than guessing.

@@ -90,11 +90,33 @@ export async function listAccounts(businessId: string): Promise<AccountRow[]> {
 }
 
 async function findAccount(businessId: string, id: string) {
-  const { rows } = await query<{ id: string; code: string; parent_id: string | null; level: AccountLevel }>(
-    `SELECT id, code, parent_id, level FROM accounts WHERE business_id = $1 AND id = $2`,
+  const { rows } = await query<{ id: string; code: string; name: string; parent_id: string | null; level: AccountLevel }>(
+    `SELECT id, code, name, parent_id, level FROM accounts WHERE business_id = $1 AND id = $2`,
     [businessId, id],
   );
   return rows[0] ?? null;
+}
+
+/**
+ * §7.5's audit-trail question (issue #160, Phase 22 Wave 11) — reuses the
+ * existing `audit_log` table (Phase 0/20) rather than a dedicated history
+ * table: `accounts` itself stays current-state-only, and every
+ * rename/reparent/archive is a row here instead, the same "current state +
+ * an append-only log elsewhere" split every other audited entity
+ * (branches, employees, devices) already uses.
+ */
+async function recordAccountAudit(
+  businessId: string,
+  actorId: string | null,
+  action: "account.renamed" | "account.reparented" | "account.archived" | "account.reactivated",
+  accountId: string,
+  payload?: Record<string, unknown>,
+): Promise<void> {
+  await query(
+    `INSERT INTO audit_log (business_id, user_id, action, entity, entity_id, payload)
+     VALUES ($1, $2, $3, 'account', $4, $5)`,
+    [businessId, actorId, action, accountId, payload ? JSON.stringify(payload) : null],
+  );
 }
 
 /**
@@ -179,18 +201,33 @@ export async function createAccount(params: {
   return { id: rows[0].id };
 }
 
-export async function renameAccount(businessId: string, id: string, name: string): Promise<void> {
+export async function renameAccount(
+  businessId: string,
+  id: string,
+  name: string,
+  actorId: string | null = null,
+): Promise<void> {
   const trimmed = name.trim();
   if (!trimmed) throw new AccountsError("name_required");
+  const before = await findAccount(businessId, id);
+  if (!before) throw new AccountsError("account_not_found", 404);
   const { rowCount } = await query(`UPDATE accounts SET name = $1 WHERE business_id = $2 AND id = $3`, [
     trimmed,
     businessId,
     id,
   ]);
   if (!rowCount) throw new AccountsError("account_not_found", 404);
+  if (before.name !== trimmed) {
+    await recordAccountAudit(businessId, actorId, "account.renamed", id, { before: before.name, after: trimmed });
+  }
 }
 
-export async function reparentAccount(businessId: string, id: string, parentId: string | null): Promise<void> {
+export async function reparentAccount(
+  businessId: string,
+  id: string,
+  parentId: string | null,
+  actorId: string | null = null,
+): Promise<void> {
   const account = await findAccount(businessId, id);
   if (!account) throw new AccountsError("account_not_found", 404);
 
@@ -224,9 +261,20 @@ export async function reparentAccount(businessId: string, id: string, parentId: 
   } finally {
     client.release();
   }
+  if (account.parent_id !== parentId) {
+    await recordAccountAudit(businessId, actorId, "account.reparented", id, {
+      beforeParentId: account.parent_id,
+      afterParentId: parentId,
+    });
+  }
 }
 
-export async function setAccountActive(businessId: string, id: string, isActive: boolean): Promise<void> {
+export async function setAccountActive(
+  businessId: string,
+  id: string,
+  isActive: boolean,
+  actorId: string | null = null,
+): Promise<void> {
   const account = await findAccount(businessId, id);
   if (!account) throw new AccountsError("account_not_found", 404);
   if (!isActive && WELL_KNOWN_CODE_SET.has(account.code)) throw new AccountsError("well_known_account", 409);
@@ -237,6 +285,7 @@ export async function setAccountActive(businessId: string, id: string, isActive:
     id,
   ]);
   if (!rowCount) throw new AccountsError("account_not_found", 404);
+  await recordAccountAudit(businessId, actorId, isActive ? "account.reactivated" : "account.archived", id);
 }
 
 /** Hard delete — only for an account that was never actually posted to. Otherwise, archive it. */

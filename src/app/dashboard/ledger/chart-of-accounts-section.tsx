@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { api, errorMessage, inputClass, PrimaryButton, SecondaryButton } from "../ui";
 import type { Runner } from "./ledger-manager";
 import { ACCOUNT_LEVEL_LABELS, WELL_KNOWN_CODES, type AccountLevel, type NormalBalance } from "@/lib/coa-template";
+import { AccountHistoryPanel } from "./account-history-panel";
 import { AccountStatementPanel } from "./account-statement-panel";
 
 type AccountType = "asset" | "liability" | "equity" | "revenue" | "expense";
@@ -72,6 +73,7 @@ export function ChartOfAccountsSection({ busy, run }: { busy: boolean; run: Runn
   const [isContra, setIsContra] = useState(false);
   const [reload, setReload] = useState(0);
   const [statementAccount, setStatementAccount] = useState<{ id: string; code: string; name: string } | null>(null);
+  const [historyAccount, setHistoryAccount] = useState<{ id: string; code: string; name: string } | null>(null);
 
   useEffect(() => {
     api<{ accounts: AccountRow[] }>("/api/ledger/accounts?all=1").then(({ ok, data }) => {
@@ -182,7 +184,7 @@ export function ChartOfAccountsSection({ busy, run }: { busy: boolean; run: Runn
                   </td>
                   <td className="py-3 pe-3 text-muted-foreground">{a.parentCode ?? "—"}</td>
                   <td className="py-3 pe-3"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${a.isActive ? "bg-emerald-100 text-emerald-800" : "bg-muted text-muted-foreground"}`}>{a.isActive ? "فعال" : "غیرفعال"}</span></td>
-                  <td className="py-3"><div className="flex flex-wrap gap-2"><SecondaryButton onClick={() => setStatementAccount({ id: a.id, code: a.code, name: a.name })}>گردش حساب</SecondaryButton><SecondaryButton onClick={() => toggleActive(a)} disabled={busy}>{a.isActive ? "غیرفعال کردن" : "فعال کردن"}</SecondaryButton>{!a.hasPostings && !a.hasChildren ? <SecondaryButton onClick={() => remove(a)} disabled={busy}>حذف</SecondaryButton> : null}</div></td>
+                  <td className="py-3"><div className="flex flex-wrap gap-2"><SecondaryButton onClick={() => setStatementAccount({ id: a.id, code: a.code, name: a.name })}>گردش حساب</SecondaryButton><SecondaryButton onClick={() => setHistoryAccount({ id: a.id, code: a.code, name: a.name })}>تاریخچه</SecondaryButton><SecondaryButton onClick={() => toggleActive(a)} disabled={busy}>{a.isActive ? "غیرفعال کردن" : "فعال کردن"}</SecondaryButton>{!a.hasPostings && !a.hasChildren ? <SecondaryButton onClick={() => remove(a)} disabled={busy}>حذف</SecondaryButton> : null}</div></td>
                 </tr>
               ))}
             </tbody>
@@ -208,7 +210,7 @@ export function ChartOfAccountsSection({ busy, run }: { busy: boolean; run: Runn
                 <div><dt className="text-xs text-muted-foreground">ماهیت</dt><dd className="mt-1">{NORMAL_BALANCE_LABELS[a.normalBalance]}{a.isContra ? " (کاهنده)" : ""}</dd></div>
                 <div><dt className="text-xs text-muted-foreground">والد</dt><dd className="mt-1">{a.parentCode ?? "—"}</dd></div>
               </dl>
-              <div className="mt-3 flex flex-wrap gap-2"><SecondaryButton onClick={() => setStatementAccount({ id: a.id, code: a.code, name: a.name })}>گردش حساب</SecondaryButton><SecondaryButton onClick={() => toggleActive(a)} disabled={busy}>{a.isActive ? "غیرفعال کردن" : "فعال کردن"}</SecondaryButton>{!a.hasPostings && !a.hasChildren ? <SecondaryButton onClick={() => remove(a)} disabled={busy}>حذف</SecondaryButton> : null}</div>
+              <div className="mt-3 flex flex-wrap gap-2"><SecondaryButton onClick={() => setStatementAccount({ id: a.id, code: a.code, name: a.name })}>گردش حساب</SecondaryButton><SecondaryButton onClick={() => setHistoryAccount({ id: a.id, code: a.code, name: a.name })}>تاریخچه</SecondaryButton><SecondaryButton onClick={() => toggleActive(a)} disabled={busy}>{a.isActive ? "غیرفعال کردن" : "فعال کردن"}</SecondaryButton>{!a.hasPostings && !a.hasChildren ? <SecondaryButton onClick={() => remove(a)} disabled={busy}>حذف</SecondaryButton> : null}</div>
             </article>
           ))}
         </div>
@@ -220,6 +222,15 @@ export function ChartOfAccountsSection({ busy, run }: { busy: boolean; run: Runn
           accountCode={statementAccount.code}
           accountName={statementAccount.name}
           onClose={() => setStatementAccount(null)}
+        />
+      ) : null}
+
+      {historyAccount ? (
+        <AccountHistoryPanel
+          accountId={historyAccount.id}
+          accountCode={historyAccount.code}
+          accountName={historyAccount.name}
+          onClose={() => setHistoryAccount(null)}
         />
       ) : null}
     </div>

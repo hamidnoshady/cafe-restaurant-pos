@@ -32,6 +32,7 @@ const ENTITY_FILTERS: { value: string; label: string }[] = [
   { value: "device", label: "دستگاه" },
   { value: "shift", label: "شیفت" },
   { value: "location", label: "شعبه" },
+  { value: "account", label: "حساب" },
 ];
 
 function formatTime(iso: string): string {
