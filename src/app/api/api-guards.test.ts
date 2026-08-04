@@ -185,7 +185,9 @@ describe("back-office/financial surfaces exclude floor roles", () => {
   // and ledger/entries/[id]/reverse use requirePermission(PERMISSIONS.ledgerApprove), same shape.
   // ledger/accounts/[id] (rename/reparent/archive/delete) uses requirePermission(PERMISSIONS.accountsEdit) —
   // ledger/accounts itself isn't listed here since its GET still guards with requireRole and that's
-  // what this sweep checks; only its POST is permission-only.
+  // what this sweep checks; only its POST is permission-only. ledger/accounts/[id]/history (Phase 22
+  // Wave 11, issue #160 §7.5) reads that same account's change history behind the same
+  // PERMISSIONS.accountsEdit gate — same shape, same reasoning.
   const PERMISSION_GUARDED = [
     "team",
     "branches",
@@ -194,6 +196,7 @@ describe("back-office/financial surfaces exclude floor roles", () => {
     "ledger/entries/drafts/[id]/approve",
     "ledger/entries/[id]/reverse",
     "ledger/accounts/[id]",
+    "ledger/accounts/[id]/history",
   ];
   const FLOOR_ROLES = ["cashier", "waiter", "kitchen"];
 

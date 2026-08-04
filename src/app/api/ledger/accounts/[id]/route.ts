@@ -26,9 +26,9 @@ export const PATCH = withTenantScope(async (request: NextRequest, ctx: Ctx) => {
   }
 
   try {
-    if (typeof body.name === "string") await renameAccount(session.businessId, id, body.name);
-    if ("parentId" in body) await reparentAccount(session.businessId, id, body.parentId ?? null);
-    if (typeof body.isActive === "boolean") await setAccountActive(session.businessId, id, body.isActive);
+    if (typeof body.name === "string") await renameAccount(session.businessId, id, body.name, session.sub);
+    if ("parentId" in body) await reparentAccount(session.businessId, id, body.parentId ?? null, session.sub);
+    if (typeof body.isActive === "boolean") await setAccountActive(session.businessId, id, body.isActive, session.sub);
     return NextResponse.json({ ok: true });
   } catch (err) {
     if (err instanceof AccountsError) return NextResponse.json({ error: err.message }, { status: err.status });

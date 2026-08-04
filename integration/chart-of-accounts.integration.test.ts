@@ -21,6 +21,7 @@ let databaseName: string;
 let db: Client;
 let dbLib: typeof import("../src/lib/db");
 let accountsService: typeof import("../src/lib/accounts-service");
+let auditService: typeof import("../src/lib/audit-service");
 let manualJournal: typeof import("../src/lib/manual-journal-service");
 
 const biz = { id: "" };
@@ -55,6 +56,7 @@ beforeAll(async () => {
   process.env.DATABASE_URL = urlFor(databaseName);
   dbLib = await import("../src/lib/db");
   accountsService = await import("../src/lib/accounts-service");
+  auditService = await import("../src/lib/audit-service");
   manualJournal = await import("../src/lib/manual-journal-service");
 
   db = new Client({ connectionString: urlFor(databaseName) });
@@ -403,5 +405,63 @@ describe("deleteAccount", () => {
 
   it("refuses to delete a well-known account", async () => {
     await expect(accountsService.deleteAccount(biz.id, acct.cash)).rejects.toThrow("well_known_account");
+  });
+});
+
+describe("account audit trail (issue #160 §7.5)", () => {
+  it("records who renamed an account, and its before/after name", async () => {
+    await accountsService.renameAccount(biz.id, acct.expense, "Rent (renamed)", user.id);
+
+    const [entry] = await auditService.listAuditLog(biz.id, { entity: "account", entityId: acct.expense });
+    expect(entry.action).toBe("account.renamed");
+    expect(entry.actorId).toBe(user.id);
+    expect(entry.payload).toEqual({ before: "Rent", after: "Rent (renamed)" });
+  });
+
+  it("records nothing when a rename is a no-op (same name)", async () => {
+    await accountsService.renameAccount(biz.id, acct.expense, "Rent", user.id);
+    const entries = await auditService.listAuditLog(biz.id, { entity: "account", entityId: acct.expense });
+    expect(entries).toEqual([]);
+  });
+
+  it("records a reparent with before/after parent labels resolved live", async () => {
+    await accountsService.reparentAccount(biz.id, acct.expense, acct.cash, user.id);
+
+    const [entry] = await auditService.listAuditLog(biz.id, { entity: "account", entityId: acct.expense });
+    expect(entry.action).toBe("account.reparented");
+    expect(entry.accountBeforeParentLabel).toBe("5000 — Expenses");
+    expect(entry.accountAfterParentLabel).toBe("1100 — Cash");
+  });
+
+  it("records a reparent to no parent (top-level) with a null after-label", async () => {
+    await accountsService.reparentAccount(biz.id, acct.expense, null, user.id);
+
+    const [entry] = await auditService.listAuditLog(biz.id, { entity: "account", entityId: acct.expense });
+    expect(entry.action).toBe("account.reparented");
+    expect(entry.accountBeforeParentLabel).toBe("5000 — Expenses");
+    expect(entry.accountAfterParentLabel).toBeNull();
+  });
+
+  it("records nothing when a reparent is a no-op (same parent)", async () => {
+    await accountsService.reparentAccount(biz.id, acct.expense, acct.expenseParent, user.id);
+    const entries = await auditService.listAuditLog(biz.id, { entity: "account", entityId: acct.expense });
+    expect(entries).toEqual([]);
+  });
+
+  it("records an archive and a later reactivate as two distinct actions", async () => {
+    await accountsService.setAccountActive(biz.id, acct.expense, false, user.id);
+    await accountsService.setAccountActive(biz.id, acct.expense, true, user.id);
+
+    const entries = await auditService.listAuditLog(biz.id, { entity: "account", entityId: acct.expense });
+    expect(entries.map((e) => e.action)).toEqual(["account.reactivated", "account.archived"]);
+  });
+
+  it("the account's own current code/name resolve as entityName, even after a later rename", async () => {
+    await accountsService.setAccountActive(biz.id, acct.expense, false, user.id);
+    await accountsService.renameAccount(biz.id, acct.expense, "Rent v2", user.id);
+
+    const entries = await auditService.listAuditLog(biz.id, { entity: "account", entityId: acct.expense });
+    const archiveEntry = entries.find((e) => e.action === "account.archived")!;
+    expect(archiveEntry.entityName).toBe("5300 — Rent v2");
   });
 });

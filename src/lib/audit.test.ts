@@ -12,6 +12,13 @@ describe("auditActionLabel", () => {
   it("falls back to the raw action for an unrecognised value", () => {
     expect(auditActionLabel("future.thing_happened")).toBe("future.thing_happened");
   });
+
+  it("labels the account change-history actions (issue #160 §7.5)", () => {
+    expect(auditActionLabel("account.renamed")).toBe("تغییر نام حساب");
+    expect(auditActionLabel("account.reparented")).toBe("جابه‌جایی حساب در ساختار");
+    expect(auditActionLabel("account.archived")).toBe("بایگانی حساب");
+    expect(auditActionLabel("account.reactivated")).toBe("بازگردانی حساب از بایگانی");
+  });
 });
 
 describe("auditEntityLabel", () => {
@@ -25,6 +32,10 @@ describe("auditEntityLabel", () => {
 
   it("falls back to the raw entity for an unrecognised value", () => {
     expect(auditEntityLabel("widget")).toBe("widget");
+  });
+
+  it("labels the account entity (issue #160 §7.5)", () => {
+    expect(auditEntityLabel("account")).toBe("حساب");
   });
 });
 
