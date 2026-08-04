@@ -281,9 +281,12 @@ Each wave still gets its own PR, its own full local test run before that PR, and
    just describe).
 2. §4's revenue-channel split: should dine-in/takeout/delivery/platform revenue split be per-order
    (requires an order-level channel field, which may already partially exist via Phase 11's delivery
-   flag — needs confirming) or is a coarser split acceptable for v1?
+   flag — needs confirming) or is a coarser split acceptable for v1? **Answered by Wave 4: per-order,
+   off the existing `orders.type`** — no new field was needed; the "platform" half (a third-party
+   marketplace, distinct from in-house delivery) is still open — see Wave 4's own "not yet built" note.
 3. §7.5's audit-trail question: is a full change-history table for `accounts` (who renamed/archived/
-   reparented, and when) in scope, or is current-state-only sufficient?
+   reparented, and when) in scope, or is current-state-only sufficient? **Still open** — not
+   addressed by any wave so far; revisit if asked.
 
 ## Progress
 
@@ -536,3 +539,53 @@ from the register's current-state view) — none blocked exit criteria for this 
 follow-ups if asked for.
 
 With this, Wave 5 as scoped in the gap analysis (§7.3 + §2) is complete.
+
+**Wave 7 — regression pass & documentation wrap-up — implemented.** §8's own sequencing put this
+last, after Waves 2-5 land: a full re-verification of the whole suite on top of everything those
+waves shipped (not just each wave's own pre-PR check, which only ever proved that wave in isolation
+against main at the time), plus closing out this document's own bookkeeping now that the epic's
+tractable, unambiguous scope is done.
+
+- Re-ran the complete verification suite against `main` with Waves 2-5 already merged: `npx tsc
+  --noEmit`, `npm test` (977 tests), `npm run db:migrate` (a no-op — every migration through 0058 was
+  already applied and stayed applied, confirming no wave's migration silently conflicted with
+  another's), `npm run test:db` (329 tests across all 41 integration files, not just the ones touched
+  by any single wave), and `npm run build` — all clean. No regressions between waves.
+- Updated the "open questions for the product owner" list above with what Wave 4 actually answered
+  (the revenue-channel question) versus what's still genuinely open (§7.5's audit-trail question,
+  untouched by any wave).
+
+**Epic #160 status at this point** — everything in the gap analysis that was answerable without a
+new, unconfirmed product decision has shipped:
+
+| Wave | Scope | Status |
+|---|---|---|
+| 1 | Audit & gap analysis | Done |
+| 2 | Account hierarchy levels, debit/credit nature, contra flag | Done |
+| 3 | Terminology & UI/UX standards audit + standing checklist | Done |
+| 4 | Revenue split by sales channel + platform-commission account | Done (first slice — see below for what's deferred) |
+| 5 | Account statement (دفتر معین/گردش حساب) + fixed-asset register/depreciation | Done |
+| 7 | Regression pass & doc wrap-up | Done (this entry) |
+
+**Deliberately not built — each needs a real product decision this audit isn't positioned to make
+unilaterally, not an oversight:**
+
+- **Tip capture (انعام کارکنان, §4).** No existing schema hook (unlike revenue channel, which reused
+  `orders.type` for free) — adding one means deciding whether a tip is collected on top of
+  `orders.total` or folded into it, and that touches the single most sensitive transaction in the
+  codebase (`/api/orders/[id]/pay`) for a feature with no settled design yet.
+- **Food-cost variance report (actual vs. recipe-standard consumption, §4).** A substantial reporting
+  feature in its own right (comparing exact posted COGS against a recipe-derived theoretical figure
+  per menu item/period), not a small addition to an existing report.
+- **A genuine "online ordering platform" concept (§4)**, distinct from Phase 11's in-house-courier
+  delivery model — which platform, and how its commission is captured at the point of sale, not just
+  where to record the cost once known (`platformCommissionExpense` already gives that place).
+- **§7.5's account change-history/audit-trail** — whether it's in scope at all.
+- **Wave 6 in the gap analysis's revised sequencing (§8) was never meant to be built here** — it's
+  Phase 21's own remaining Waves 5-7 (watch, accessories, specialized industry reports), tracked under
+  `docs/phases/Phase-21-Multi-Industry-Accounting-Platform.md`, not duplicated under this epic. See §5/
+  §6 of this document for the original reasoning.
+
+Any of these is a reasonable next step, but each starts with a product conversation, not more code —
+consistent with how every other phase in this codebase (7, 16, 21) resolved its own genuinely open
+questions before building against them, rather than guessing.
