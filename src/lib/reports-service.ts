@@ -4,11 +4,14 @@
  */
 import { query, getPool } from "./db";
 import {
+  buildFoodCostVariance,
   buildReportQuery,
   previousPeriodRange,
   REPORT_VIEWS,
   STANDARD_REPORTS,
   validateReportConfig,
+  type FoodCostVariance,
+  type FoodCostVarianceItemInput,
   type ReportConfig,
   type ChartType,
 } from "./reports";
@@ -112,6 +115,38 @@ async function ledgerAccountTotals(
   return rows;
 }
 
+/** Debit − credit for a specific set of account codes over a period — used where a report needs one or two named accounts' totals rather than a whole account_type (ledgerAccountTotals above). */
+async function ledgerAccountCodeTotals(
+  businessId: string,
+  codes: string[],
+  dateFrom?: string,
+  dateTo?: string,
+  locationId?: string,
+): Promise<Map<string, number>> {
+  const params: unknown[] = [businessId, codes];
+  const where = ["business_id = $1", "account_code = ANY($2::text[])"];
+  if (locationId) {
+    params.push(locationId);
+    where.push("location_id = $" + params.length);
+  }
+  if (dateFrom) {
+    params.push(dateFrom);
+    where.push(`entry_date >= $${params.length}`);
+  }
+  if (dateTo) {
+    params.push(dateTo);
+    where.push(`entry_date <= $${params.length}`);
+  }
+  const { rows } = await query<{ account_code: string; debit: string; credit: string }>(
+    `SELECT account_code, sum(debit) AS debit, sum(credit) AS credit
+       FROM v_ledger_by_account
+      WHERE ${where.join(" AND ")}
+      GROUP BY account_code`,
+    params,
+  );
+  return new Map(rows.map((r) => [r.account_code, Number(r.debit) - Number(r.credit)]));
+}
+
 export interface PnlLine {
   accountCode: string;
   accountName: string;
@@ -182,6 +217,89 @@ export async function getProfitAndLoss(
     primeCost: costOfSales + laborCost,
     operatingExpenses: totalExpenses - costOfSales - laborCost,
   };
+}
+
+/**
+ * Food-cost variance for a date range (#160 §4, closes the last of Wave 4's
+ * three deliberate deferrals — see buildFoodCostVariance's doc comment in
+ * reports.ts for what "theoretical" vs. "actual" mean here). Per-item
+ * theoretical cost is read straight off order_item_inventory_snapshots — the
+ * same frozen per-unit ingredient requirements deductForOrder itself
+ * consumes from — priced at each ingredient's current avg_cost, so it never
+ * has to re-derive a recipe (and its modifier deltas) from scratch. Actual
+ * COGS/waste come straight from the ledger (v_ledger_by_account), matching
+ * the P&L's own figures exactly.
+ */
+export async function getFoodCostVariance(
+  businessId: string,
+  filters: DateRangeFilters = {},
+  locationId?: string,
+): Promise<FoodCostVariance> {
+  const params: unknown[] = [];
+  const where = ["o.status = 'completed'", "oi.status != 'voided'"];
+  if (locationId) {
+    params.push(locationId);
+    where.push(`oi.location_id = $${params.length}`);
+  }
+  if (filters.dateFrom) {
+    params.push(filters.dateFrom);
+    where.push(`o.closed_at::date >= $${params.length}`);
+  }
+  if (filters.dateTo) {
+    params.push(filters.dateTo);
+    where.push(`o.closed_at::date <= $${params.length}`);
+  }
+
+  const { rows: salesRows } = await query<{
+    menu_item_id: string | null;
+    menu_item_name: string | null;
+    units_sold: string;
+    revenue: string;
+  }>(
+    `SELECT oi.menu_item_id, COALESCE(mi.name, MAX(oi.name_snapshot)) AS menu_item_name,
+            SUM(oi.quantity)::text AS units_sold, SUM(oi.unit_price * oi.quantity)::text AS revenue
+       FROM order_items oi
+       JOIN orders o ON o.id = oi.order_id
+       LEFT JOIN menu_items mi ON mi.id = oi.menu_item_id
+      WHERE ${where.join(" AND ")}
+      GROUP BY oi.menu_item_id, mi.name`,
+    params,
+  );
+
+  const { rows: theoreticalRows } = await query<{ menu_item_id: string | null; theoretical_cost: string }>(
+    `SELECT s.source_menu_item_id AS menu_item_id,
+            ROUND(SUM(s.required_quantity * oi.quantity * ii.avg_cost))::text AS theoretical_cost
+       FROM order_item_inventory_snapshots s
+       JOIN order_items oi ON oi.id = s.order_item_id
+       JOIN orders o ON o.id = oi.order_id
+       JOIN inventory_items ii ON ii.id = s.inventory_item_id
+      WHERE ${where.join(" AND ")}
+      GROUP BY s.source_menu_item_id`,
+    params,
+  );
+  const theoreticalByItem = new Map(theoreticalRows.map((r) => [r.menu_item_id, Number(r.theoretical_cost)]));
+
+  const items: FoodCostVarianceItemInput[] = salesRows.map((r) => ({
+    menuItemId: r.menu_item_id,
+    menuItemName: r.menu_item_name ?? "قلم حذف‌شده",
+    unitsSold: Number(r.units_sold),
+    theoreticalCost: theoreticalByItem.get(r.menu_item_id) ?? 0,
+    revenue: Number(r.revenue),
+  }));
+
+  const codeTotals = await ledgerAccountCodeTotals(
+    businessId,
+    [WELL_KNOWN_CODES.cogs, WELL_KNOWN_CODES.wasteExpense],
+    filters.dateFrom,
+    filters.dateTo,
+    locationId,
+  );
+
+  return buildFoodCostVariance(
+    items,
+    codeTotals.get(WELL_KNOWN_CODES.cogs) ?? 0,
+    codeTotals.get(WELL_KNOWN_CODES.wasteExpense) ?? 0,
+  );
 }
 
 export interface BalanceSheet {

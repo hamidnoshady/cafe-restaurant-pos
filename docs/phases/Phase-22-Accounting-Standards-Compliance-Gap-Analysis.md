@@ -567,6 +567,7 @@ new, unconfirmed product decision has shipped:
 | 5 | Account statement (دفتر معین/گردش حساب) + fixed-asset register/depreciation | Done |
 | 7 | Regression pass & doc wrap-up | Done (this entry) |
 | 8 | Tip capture (انعام کارکنان) | Done (see below) |
+| 9 | Food-cost variance report | Done (see below) |
 
 **Wave 8 — tip capture (انعام کارکنان, §4) — implemented.** Picked up as the first of the three
 deliberately-deferred items above, once the product owner confirmed the three open questions Wave 4
@@ -612,15 +613,66 @@ What shipped:
   tsc --noEmit`, `npm test` (979 tests, up from 977), `npm run db:migrate` (twice, second run a
   no-op) + `npm run test:db` (334 tests, up from 329), and `npm run build` all pass.
 
-Not yet built (the other two deliberate deferrals from Wave 4/7, unchanged): the food-cost variance
-report and a genuine "online ordering platform" concept — see below.
+Not yet built (the other deliberate deferral from Wave 4/7, unchanged): a genuine "online ordering
+platform" concept — see below.
 
-**Deliberately not built — each needs a real product decision this audit isn't positioned to make
+**Wave 9 — food-cost variance report (§4) — implemented.** Unlike tip capture, this deferral didn't
+turn on an open product question — §4 already asked for "actual vs. recipe-standard consumption" —
+it was deferred for being a genuinely separate reporting feature, not a small addition to an existing
+one. Two scoping decisions, made here rather than guessed at in code, because the data model doesn't
+support a more ambitious version without fabricating an allocation:
+
+1. **"Theoretical" is read straight off `order_item_inventory_snapshots`** — the same frozen
+   per-order-item ingredient requirements `deductForOrder` itself consumes from (recipe +
+   modifier deltas already summed, captured at time of sale) — priced at each ingredient's *current*
+   `avg_cost`. That answers "what should this have cost to make, at today's ingredient prices,"
+   per menu item, without re-deriving `menu_item_ingredients`/`modifier_ingredients` combinatorially.
+2. **"Actual" is a period total only, never a per-item figure.** `deductForOrder` posts one COGS
+   consumption per *order* per ingredient, aggregated across every item in that order — the real
+   FIFO/weighted-average lot cost genuinely can't be attributed back to one menu item in a
+   multi-item order without prorating, and this report doesn't fabricate that split. So the actual
+   side is the real posted ledger total for the period (COGS `5100` + waste `5150`, matching the P&L's
+   own figures exactly), compared against the *sum* of the theoretical per-item figures — a period-
+   level variance, not a per-item one. `unexplainedVariance` backs out the *already-tracked* waste
+   account from that gap, isolating the portion price drift/portioning/theft would explain.
+
+What shipped:
+
+- **`buildFoodCostVariance`** (`reports.ts`, pure/unit-tested) takes per-item
+  `{menuItemId, menuItemName, unitsSold, theoreticalCost, revenue}` plus the period's actual COGS and
+  waste totals, and computes each item's food-cost % (`theoreticalCost / revenue`, sorted worst
+  first), the period's `theoreticalCost`/`actualCogs`/`wasteCost`/`actualTotalCost`, and
+  `variance`/`variancePct`/`unexplainedVariance`.
+- **`getFoodCostVariance`** (`reports-service.ts`) — one query sums units sold and revenue per menu
+  item from `order_items` (completed orders, non-voided items, optional date range/location); a
+  second sums `required_quantity × order quantity × current avg_cost` from
+  `order_item_inventory_snapshots`, grouped by `source_menu_item_id`; a small new
+  `ledgerAccountCodeTotals` helper (alongside the existing `ledgerAccountTotals`) gets the COGS/waste
+  ledger totals. An item sold with no snapshot rows (no recipe configured) still shows up with a
+  0 theoretical cost — a visible "this item has no recipe" signal rather than being silently dropped.
+- **`food_cost_variance`** added to `STANDARD_REPORTS` (`view: null`, computed directly — the same
+  treatment as P&L/Balance Sheet/Cash Flow) and wired into
+  `/api/reports/standard/[key]` and a new `FoodCostVarianceView` (`ledger-report-view.tsx`), following
+  the existing ledger-report UI pattern (`standard-reports-section.tsx`'s `LEDGER_KEYS`).
+  Deliberately out of v1 scope, and not silently half-built: period comparison (`?compare=1`) and CSV/
+  Excel/PDF export aren't implemented for this report — the UI gates both off explicitly
+  (`COMPARABLE_LEDGER_KEYS`, the `food_cost_variance` guard around `ExportButtons`) rather than
+  showing controls that would silently no-op.
+- Verified in `src/lib/reports.test.ts` (`buildFoodCostVariance`: per-item %, sort order, null-revenue
+  handling, the actual-vs-theoretical/unexplained-variance arithmetic) and a new
+  `integration/food-cost-variance.integration.test.ts` (theoretical pricing at current `avg_cost`
+  against a real snapshot + ledger fixture; date-range and voided-item exclusion; an item with no
+  recipe still lists at 0 theoretical cost; worst-food-cost-% sort order; an empty period returns
+  zeroed totals). Also manually verified end-to-end in a live running instance — real order/recipe/
+  ledger fixtures seeded directly, browser-driven navigation to the report — confirming the rendered
+  numbers match the fixture exactly (a ۸,۱۰۰ تومان theoretical cost against ۹,۰۰۰ تومان actual COGS +
+  ۵۰۰ تومان waste, ۱,۴۰۰ تومان variance, ۹۰۰ تومان unexplained, ۱۷.۳٪ variance). `npx tsc --noEmit`,
+  `npm test` (983 tests, up from 979), `npm run db:migrate` (twice, second run a no-op — this wave
+  added no migration) + `npm run test:db` (340 tests, up from 334), and `npm run build` all pass.
+
+**Deliberately not built — needs a real product decision this audit isn't positioned to make
 unilaterally, not an oversight:**
 
-- **Food-cost variance report (actual vs. recipe-standard consumption, §4).** A substantial reporting
-  feature in its own right (comparing exact posted COGS against a recipe-derived theoretical figure
-  per menu item/period), not a small addition to an existing report.
 - **A genuine "online ordering platform" concept (§4)**, distinct from Phase 11's in-house-courier
   delivery model — which platform, and how its commission is captured at the point of sale, not just
   where to record the cost once known (`platformCommissionExpense` already gives that place).

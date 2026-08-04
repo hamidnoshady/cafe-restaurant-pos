@@ -2,6 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 import { formatToman } from "@/lib/money";
+import { formatPersianNumber } from "@/lib/digits";
 import { DrillDownPanel, type DrillDownTarget } from "./drill-down-panel";
 
 interface PnlLine {
@@ -45,6 +46,26 @@ export interface CashFlow {
   closingCash: number;
   netChange: number;
   lines: CashFlowLine[];
+}
+
+export interface FoodCostVarianceItemLine {
+  menuItemId: string | null;
+  menuItemName: string;
+  unitsSold: number;
+  theoreticalCost: number;
+  revenue: number;
+  foodCostPct: number | null;
+}
+
+export interface FoodCostVariance {
+  items: FoodCostVarianceItemLine[];
+  theoreticalCost: number;
+  actualCogs: number;
+  wasteCost: number;
+  actualTotalCost: number;
+  variance: number;
+  variancePct: number | null;
+  unexplainedVariance: number;
 }
 
 export interface Comparison<T> {
@@ -302,6 +323,125 @@ function SummaryStat({
           دورهٔ قبل: {formatToman(previous)}
         </p>
       ) : null}
+    </div>
+  );
+}
+
+function formatPct(value: number | null): string {
+  if (value === null) return "—";
+  const digits = (value * 100).toFixed(1);
+  return `${digits.replace(/[0-9]/g, (d) => "۰۱۲۳۴۵۶۷۸۹"[Number(d)])}٪`;
+}
+
+/**
+ * Per-item theoretical (recipe-standard) food cost vs. its revenue, plus a
+ * period-level theoretical-vs-actual total (see buildFoodCostVariance's doc
+ * comment in reports.ts for what each figure means and why there's no
+ * per-item *actual* cost). No previous-period comparison or drill-down —
+ * see the "compare" checkbox gating in standard-reports-section.tsx.
+ */
+export function FoodCostVarianceView({ report }: { report: FoodCostVariance }) {
+  return (
+    <div>
+      <section className="border-b border-[#F0EEE9] pb-5">
+        <h3 className="mb-3 text-base font-bold text-[#252522]">
+          بهای تمام‌شده نظری هر قلم منو
+        </h3>
+
+        <div className="hidden overflow-hidden rounded-xl border border-[#EEECE7] sm:block">
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <caption className="sr-only">بهای تمام‌شده نظری هر قلم منو</caption>
+              <thead className="bg-[#FCFBF8] text-[#77756F]">
+                <tr className="border-b border-[#EEECE7]">
+                  <th scope="col" className="px-4 py-3 text-start text-xs font-semibold">قلم منو</th>
+                  <th scope="col" className="px-4 py-3 text-end text-xs font-semibold">تعداد فروش</th>
+                  <th scope="col" className="px-4 py-3 text-end text-xs font-semibold">درآمد</th>
+                  <th scope="col" className="px-4 py-3 text-end text-xs font-semibold">بهای نظری</th>
+                  <th scope="col" className="px-4 py-3 text-end text-xs font-semibold">درصد بهای غذا</th>
+                </tr>
+              </thead>
+              <tbody>
+                {report.items.map((item) => (
+                  <tr key={item.menuItemId ?? item.menuItemName} className="border-b border-[#F0EEE9] last:border-b-0">
+                    <td className="px-4 py-3.5 font-semibold text-[#252522]">{item.menuItemName}</td>
+                    <td className="px-4 py-3.5 text-end tabular-nums text-[#5E5B55]">
+                      {formatPersianNumber(item.unitsSold)}
+                    </td>
+                    <td className="px-4 py-3.5 text-end tabular-nums text-[#252522]">{formatToman(item.revenue)}</td>
+                    <td className="px-4 py-3.5 text-end tabular-nums text-[#252522]">{formatToman(item.theoreticalCost)}</td>
+                    <td className="px-4 py-3.5 text-end tabular-nums font-medium text-[#252522]">
+                      {formatPct(item.foodCostPct)}
+                    </td>
+                  </tr>
+                ))}
+                {report.items.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="px-4 py-8 text-center text-sm text-[#77756F]">
+                      در این بازه فروشی ثبت نشده
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="space-y-2 sm:hidden">
+          {report.items.map((item) => (
+            <article key={item.menuItemId ?? item.menuItemName} className="rounded-xl border border-[#EEECE7] bg-[#FFFEFC] p-4">
+              <h4 className="font-semibold text-[#252522]">{item.menuItemName}</h4>
+              <dl className="mt-3 grid grid-cols-2 gap-3 border-t border-[#F0EEE9] pt-3">
+                <div>
+                  <dt className="text-xs text-[#77756F]">تعداد فروش</dt>
+                  <dd className="tabular-nums text-[#252522]">{formatPersianNumber(item.unitsSold)}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-[#77756F]">درآمد</dt>
+                  <dd className="tabular-nums text-[#252522]">{formatToman(item.revenue)}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-[#77756F]">بهای نظری</dt>
+                  <dd className="tabular-nums text-[#252522]">{formatToman(item.theoreticalCost)}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-[#77756F]">درصد بهای غذا</dt>
+                  <dd className="tabular-nums font-bold text-[#252522]">{formatPct(item.foodCostPct)}</dd>
+                </div>
+              </dl>
+            </article>
+          ))}
+          {report.items.length === 0 ? (
+            <p className="rounded-xl border border-dashed border-[#DEDAD2] bg-[#FCFBF8] px-4 py-8 text-center text-sm text-[#77756F]">
+              در این بازه فروشی ثبت نشده
+            </p>
+          ) : null}
+        </div>
+      </section>
+
+      <dl className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-3">
+        <SummaryStat label="بهای نظری (بر اساس دستور پخت)" value={report.theoreticalCost} />
+        <SummaryStat label="بهای تمام‌شده واقعی (COGS)" value={report.actualCogs} />
+        <SummaryStat label="ضایعات ثبت‌شده" value={report.wasteCost} />
+        <SummaryStat label="جمع بهای واقعی (COGS + ضایعات)" value={report.actualTotalCost} />
+        <SummaryStat label="مابه‌التفاوت (واریانس)" value={report.variance} />
+        <SummaryStat label="مابه‌التفاوت توضیح‌نیافته (منهای ضایعات)" value={report.unexplainedVariance} />
+      </dl>
+
+      <dl className="mt-5 rounded-xl border border-[#DEDAD2] bg-[#FCFBF8] p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <dt className="font-bold text-[#252522]">درصد واریانس نسبت به بهای نظری</dt>
+          <dd
+            className={
+              report.variance > 0
+                ? "text-lg font-bold tabular-nums text-destructive"
+                : "text-lg font-bold tabular-nums text-[#252522]"
+            }
+          >
+            {formatPct(report.variancePct)}
+          </dd>
+        </div>
+      </dl>
     </div>
   );
 }

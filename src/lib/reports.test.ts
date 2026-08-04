@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildFoodCostVariance,
   buildReportQuery,
   previousPeriodRange,
   REPORT_VIEWS,
@@ -262,9 +263,9 @@ describe("buildReportQuery", () => {
 });
 
 describe("STANDARD_REPORTS", () => {
-  it("has 13 pre-built reports with unique keys", () => {
-    expect(STANDARD_REPORTS).toHaveLength(13);
-    expect(new Set(STANDARD_REPORTS.map((r) => r.key)).size).toBe(13);
+  it("has 14 pre-built reports with unique keys", () => {
+    expect(STANDARD_REPORTS).toHaveLength(14);
+    expect(new Set(STANDARD_REPORTS.map((r) => r.key)).size).toBe(14);
   });
 
   it("every defaultChart config validates cleanly against REPORT_VIEWS", () => {
@@ -274,13 +275,70 @@ describe("STANDARD_REPORTS", () => {
     }
   });
 
-  it("profit_and_loss, balance_sheet and cash_flow have no generic view (computed separately)", () => {
+  it("profit_and_loss, balance_sheet, cash_flow and food_cost_variance have no generic view (computed separately)", () => {
     const pnl = STANDARD_REPORTS.find((r) => r.key === "profit_and_loss");
     const bs = STANDARD_REPORTS.find((r) => r.key === "balance_sheet");
     const cf = STANDARD_REPORTS.find((r) => r.key === "cash_flow");
+    const fcv = STANDARD_REPORTS.find((r) => r.key === "food_cost_variance");
     expect(pnl?.view).toBeNull();
     expect(bs?.view).toBeNull();
     expect(cf?.view).toBeNull();
+    expect(fcv?.view).toBeNull();
+  });
+});
+
+describe("buildFoodCostVariance", () => {
+  it("computes each item's food-cost % and sorts worst (highest %) first", () => {
+    const result = buildFoodCostVariance(
+      [
+        { menuItemId: "a", menuItemName: "اسپرسو", unitsSold: 10, theoreticalCost: 100_000, revenue: 500_000 },
+        { menuItemId: "b", menuItemName: "کیک شکلاتی", unitsSold: 5, theoreticalCost: 200_000, revenue: 400_000 },
+      ],
+      0,
+      0,
+    );
+    expect(result.items.map((i) => i.menuItemId)).toEqual(["b", "a"]);
+    expect(result.items[0].foodCostPct).toBeCloseTo(0.5);
+    expect(result.items[1].foodCostPct).toBeCloseTo(0.2);
+  });
+
+  it("returns a null food-cost % for an item with no revenue, sorted last", () => {
+    const result = buildFoodCostVariance(
+      [
+        { menuItemId: "a", menuItemName: "اسپرسو", unitsSold: 10, theoreticalCost: 100_000, revenue: 500_000 },
+        { menuItemId: "b", menuItemName: "بدون فروش", unitsSold: 0, theoreticalCost: 0, revenue: 0 },
+      ],
+      0,
+      0,
+    );
+    expect(result.items.map((i) => i.menuItemId)).toEqual(["a", "b"]);
+    expect(result.items[1].foodCostPct).toBeNull();
+  });
+
+  it("sums theoretical cost across items and compares it against actual COGS + waste", () => {
+    const result = buildFoodCostVariance(
+      [
+        { menuItemId: "a", menuItemName: "اسپرسو", unitsSold: 10, theoreticalCost: 100_000, revenue: 500_000 },
+        { menuItemId: "b", menuItemName: "کیک شکلاتی", unitsSold: 5, theoreticalCost: 200_000, revenue: 400_000 },
+      ],
+      330_000,
+      20_000,
+    );
+    expect(result.theoreticalCost).toBe(300_000);
+    expect(result.actualCogs).toBe(330_000);
+    expect(result.wasteCost).toBe(20_000);
+    expect(result.actualTotalCost).toBe(350_000);
+    // spent 50,000 more than the recipes predict
+    expect(result.variance).toBe(50_000);
+    expect(result.variancePct).toBeCloseTo(50_000 / 300_000);
+    // of that 50,000, 20,000 is recorded waste — 30,000 is unexplained
+    expect(result.unexplainedVariance).toBe(30_000);
+  });
+
+  it("returns a null variance % when there's no theoretical cost to compare against", () => {
+    const result = buildFoodCostVariance([], 10_000, 0);
+    expect(result.theoreticalCost).toBe(0);
+    expect(result.variancePct).toBeNull();
   });
 });
 

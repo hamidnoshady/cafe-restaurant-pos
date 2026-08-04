@@ -6,19 +6,21 @@ import {
   getBalanceSheetComparison,
   getCashFlow,
   getCashFlowComparison,
+  getFoodCostVariance,
   getProfitAndLoss,
   getProfitAndLossComparison,
   runStandardReportRows,
 } from "@/lib/reports-service";
 
 /**
- * Runs one pre-built report. P&L/Balance Sheet/Cash Flow are structured
- * rollups computed straight from the ledger (see reports-service.ts); every
- * other standard report is a plain row dump of its backing view, optionally
- * bounded by a date range. `?compare=1` returns `{ comparison: {current,
- * previous} }` instead of `{ report }` — the previous period mirrors the
- * given range's length for P&L/Cash Flow, or is the explicit
- * `previousAsOfDate` for Balance Sheet, which has no length to mirror.
+ * Runs one pre-built report. P&L/Balance Sheet/Cash Flow/Food-Cost-Variance
+ * are structured rollups computed straight from the ledger (see
+ * reports-service.ts); every other standard report is a plain row dump of
+ * its backing view, optionally bounded by a date range. `?compare=1` returns
+ * `{ comparison: {current, previous} }` instead of `{ report }` — the
+ * previous period mirrors the given range's length for P&L/Cash Flow, or is
+ * the explicit `previousAsOfDate` for Balance Sheet, which has no length to
+ * mirror (food-cost-variance doesn't support `compare` — see its UI note).
  */
 export const GET = withTenantScope(async (request: NextRequest, context: { params: Promise<{ key: string }> }) => {
   const { session, error } = await requireRole("owner", "manager", "accountant");
@@ -57,6 +59,9 @@ export const GET = withTenantScope(async (request: NextRequest, context: { param
       });
     }
     return NextResponse.json({ report: await getBalanceSheet(session.businessId, dateTo) });
+  }
+  if (key === "food_cost_variance") {
+    return NextResponse.json({ report: await getFoodCostVariance(session.businessId, { dateFrom, dateTo }) });
   }
   const rows = await runStandardReportRows(key, session.businessId, { dateFrom, dateTo });
   return NextResponse.json({ rows });

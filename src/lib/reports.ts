@@ -500,6 +500,7 @@ export const STANDARD_REPORTS: StandardReportDef[] = [
   { key: "profit_and_loss", label: "صورت سود و زیان", view: null, defaultChart: null },
   { key: "balance_sheet", label: "ترازنامه", view: null, defaultChart: null },
   { key: "cash_flow", label: "صورت گردش وجوه نقد", view: null, defaultChart: null },
+  { key: "food_cost_variance", label: "واریانس بهای تمام‌شده غذا", view: null, defaultChart: null },
   {
     key: "staff_performance",
     label: "عملکرد کارکنان",
@@ -564,4 +565,68 @@ export function previousPeriodRange(dateFrom: string, dateTo: string): { dateFro
   const prevTo = addDays(dateFrom, -1);
   const prevFrom = addDays(prevTo, -days);
   return { dateFrom: prevFrom, dateTo: prevTo };
+}
+
+/**
+ * Food-cost variance (#160 §4's "actual vs. recipe-standard consumption"
+ * deferral, picked up once tip capture shipped). One menu item's
+ * *theoretical* cost is its recipe (menu_item_ingredients + modifier
+ * deltas, frozen per sale in order_item_inventory_snapshots) priced at each
+ * ingredient's *current* avg_cost — "what this item should cost to make
+ * right now". `actualCogs`/`wasteCost` are the real posted ledger totals for
+ * the same period (5100/5150), independent of any per-item allocation: the
+ * system can't attribute a shared-ingredient order's real FIFO/weighted-
+ * average cost back to one menu item without guessing, so this only ever
+ * compares *totals*, not a per-item actual figure.
+ */
+export interface FoodCostVarianceItemInput {
+  menuItemId: string | null;
+  menuItemName: string;
+  unitsSold: number;
+  /** Recipe cost of the units sold, at each ingredient's current avg_cost. */
+  theoreticalCost: number;
+  revenue: number;
+}
+
+export interface FoodCostVarianceItemLine extends FoodCostVarianceItemInput {
+  /** theoreticalCost / revenue — the item's "ideal" food-cost ratio; null when revenue is 0. */
+  foodCostPct: number | null;
+}
+
+export interface FoodCostVariance {
+  /** Sorted worst (highest food-cost %) first, items with no revenue last. */
+  items: FoodCostVarianceItemLine[];
+  theoreticalCost: number;
+  actualCogs: number;
+  wasteCost: number;
+  /** actualCogs + wasteCost — everything that actually left inventory value, sale or shrinkage. */
+  actualTotalCost: number;
+  /** actualTotalCost - theoreticalCost. Positive = spent more than the recipes predict. */
+  variance: number;
+  variancePct: number | null;
+  /** variance with recorded waste backed out — the portion price drift/portioning/theft would explain. */
+  unexplainedVariance: number;
+}
+
+export function buildFoodCostVariance(
+  items: FoodCostVarianceItemInput[],
+  actualCogs: number,
+  wasteCost: number,
+): FoodCostVariance {
+  const lines: FoodCostVarianceItemLine[] = items
+    .map((item) => ({ ...item, foodCostPct: item.revenue > 0 ? item.theoreticalCost / item.revenue : null }))
+    .sort((a, b) => (b.foodCostPct ?? -1) - (a.foodCostPct ?? -1));
+  const theoreticalCost = items.reduce((sum, item) => sum + item.theoreticalCost, 0);
+  const actualTotalCost = actualCogs + wasteCost;
+  const variance = actualTotalCost - theoreticalCost;
+  return {
+    items: lines,
+    theoreticalCost,
+    actualCogs,
+    wasteCost,
+    actualTotalCost,
+    variance,
+    variancePct: theoreticalCost > 0 ? variance / theoreticalCost : null,
+    unexplainedVariance: variance - wasteCost,
+  };
 }

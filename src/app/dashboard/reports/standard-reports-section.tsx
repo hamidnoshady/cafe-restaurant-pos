@@ -10,10 +10,12 @@ import { PinToDashboardButton } from "./pin-button";
 import {
   BalanceSheetView,
   CashFlowView,
+  FoodCostVarianceView,
   ProfitAndLossView,
   type BalanceSheet,
   type CashFlow,
   type Comparison,
+  type FoodCostVariance,
   type ProfitAndLoss,
 } from "./ledger-report-view";
 import { rowsToChartData, type ChartType, type ReportRow } from "./report-ui";
@@ -35,7 +37,11 @@ interface SavedReportRow {
   standard_key: string | null;
 }
 
-const LEDGER_KEYS = new Set(["profit_and_loss", "balance_sheet", "cash_flow"]);
+const LEDGER_KEYS = new Set(["profit_and_loss", "balance_sheet", "cash_flow", "food_cost_variance"]);
+// Period comparison (`?compare=1`) isn't implemented for food_cost_variance —
+// it's a period total against the ledger, not a per-account rollup, and the
+// "worst item" ranking doesn't have an obvious side-by-side presentation yet.
+const COMPARABLE_LEDGER_KEYS = new Set(["profit_and_loss", "balance_sheet", "cash_flow"]);
 const CONTROL_CLASS = [
   inputClass,
   "min-h-[52px] border-[#DEDAD2] bg-white text-[#252522]",
@@ -45,6 +51,7 @@ type LedgerReportData =
   | ProfitAndLoss
   | BalanceSheet
   | CashFlow
+  | FoodCostVariance
   | Comparison<ProfitAndLoss>
   | Comparison<BalanceSheet>
   | Comparison<CashFlow>;
@@ -91,7 +98,7 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
       const params = new URLSearchParams();
       if (dateFrom) params.set("dateFrom", dateFrom);
       if (dateTo) params.set("dateTo", dateTo);
-      if (compare) params.set("compare", "1");
+      if (compare && COMPARABLE_LEDGER_KEYS.has(selected.key)) params.set("compare", "1");
       const response = await fetch(
         "/api/reports/standard/" + selected.key + "?" + params,
       );
@@ -285,7 +292,7 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
                 </div>
               ) : null}
 
-              {LEDGER_KEYS.has(selected.key) ? (
+              {COMPARABLE_LEDGER_KEYS.has(selected.key) ? (
                 <label className="mt-3 flex min-h-[52px] cursor-pointer items-center gap-3 rounded-xl border border-[#EEECE7] bg-[#FCFBF8] px-3 text-sm text-[#5E5B55] sm:w-fit">
                   <input
                     type="checkbox"
@@ -315,9 +322,13 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
                     }
                     dateTo={dateTo || undefined}
                   />
-                ) : (
+                ) : selected.key === "cash_flow" ? (
                   <CashFlowView
                     report={ledgerReport as CashFlow | Comparison<CashFlow>}
+                  />
+                ) : (
+                  <FoodCostVarianceView
+                    report={ledgerReport as FoodCostVariance}
                   />
                 )
               ) : (
@@ -350,33 +361,36 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
             )}
 
             <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-[#F0EEE9] pt-4">
-              <ExportButtons
-                request={
-                  LEDGER_KEYS.has(selected.key)
-                    ? {
-                        title: selected.label,
-                        kind:
-                          selected.key === "profit_and_loss"
-                            ? "pnl"
-                            : selected.key === "balance_sheet"
-                              ? "balance_sheet"
-                              : "cash_flow",
-                        dateFrom,
-                        dateTo,
-                      }
-                    : {
-                        title: selected.label,
-                        kind: "chart",
-                        config: {
-                          ...selected.config,
-                          filters: {
-                            dateFrom: dateFrom || undefined,
-                            dateTo: dateTo || undefined,
+              {/* food_cost_variance has no export kind yet (see ExportRequest["kind"]) — a v1 scoping decision, not an oversight. */}
+              {selected.key !== "food_cost_variance" ? (
+                <ExportButtons
+                  request={
+                    COMPARABLE_LEDGER_KEYS.has(selected.key)
+                      ? {
+                          title: selected.label,
+                          kind:
+                            selected.key === "profit_and_loss"
+                              ? "pnl"
+                              : selected.key === "balance_sheet"
+                                ? "balance_sheet"
+                                : "cash_flow",
+                          dateFrom,
+                          dateTo,
+                        }
+                      : {
+                          title: selected.label,
+                          kind: "chart",
+                          config: {
+                            ...selected.config,
+                            filters: {
+                              dateFrom: dateFrom || undefined,
+                              dateTo: dateTo || undefined,
+                            },
                           },
-                        },
-                      }
-                }
-              />
+                        }
+                  }
+                />
+              ) : null}
               {canExplain && (rows !== null || ledgerReport !== null) ? (
                 <button
                   type="button"
