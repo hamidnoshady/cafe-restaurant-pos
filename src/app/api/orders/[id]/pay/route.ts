@@ -9,10 +9,11 @@ import {
   postExactCogsEntry,
   postExactOrderPaymentEntry,
 } from "@/lib/ledger-service";
+import { getOnlinePlatformsConfig } from "@/lib/online-platforms-service";
 import { lockOpenOrder } from "@/lib/order-lock";
 import { rialBigInt, rialText, type RialText } from "@/lib/inventory-exact";
 
-const PAYMENT_METHODS = ["cash", "card", "card_to_card", "online", "credit"] as const;
+const PAYMENT_METHODS = ["cash", "card", "card_to_card", "online", "credit", "snappfood"] as const;
 type PaymentMethod = (typeof PAYMENT_METHODS)[number];
 
 interface PayBody {
@@ -41,12 +42,14 @@ interface PayBody {
  * recording, order completion, and deduction all happen in one transaction.
  *
  * Same transaction also posts two Phase 7 journal entries: the payment
- * itself (Debit Cash/Bank-Clearing/Accounts-Receivable, for the bill *plus*
- * any tip / Credit the order's channel-specific Sales Revenue account, split
- * by orders.type since Phase 22 Wave 4 — + Tax Payable + Tips Payable if a
- * tip was collected, issue #160 §4 — a pass-through liability, never
- * revenue) and the COGS entry from the deduction's total cost (Debit COGS /
- * Credit Inventory Asset).
+ * itself (Debit Cash/Bank-Clearing/Accounts-Receivable — or, for a SnapFood
+ * order (issue #160 §4), Receivable-from-Online-Platforms net of SnapFood's
+ * commission, with the commission itself debited to its own expense account
+ * — for the bill *plus* any tip / Credit the order's channel-specific Sales
+ * Revenue account, split by orders.type since Phase 22 Wave 4 — + Tax
+ * Payable + Tips Payable if a tip was collected, issue #160 §4 — a
+ * pass-through liability, never revenue) and the COGS entry from the
+ * deduction's total cost (Debit COGS / Credit Inventory Asset).
  */
 export const POST = withTenantScope(async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
   const { session, error } = await requireRole("owner", "manager", "cashier");
@@ -121,6 +124,17 @@ export const POST = withTenantScope(async (request: NextRequest, context: { para
       return NextResponse.json({ error: "order_not_open" }, { status: 409 });
     }
     const { totalCost } = await deductForOrder(client, session.businessId, location.id, id, session.sub, inventoryEventId);
+    // The commission % lives in settings (it varies by SnapFood contract,
+    // per issue #160 §4) — resolved here to a Rial amount, same shape as
+    // tipAmount, so the ledger layer never has to know about % or settings.
+    let platformCommission = "0" as RialText;
+    if (method === "snappfood") {
+      const { snappfood } = await getOnlinePlatformsConfig(session.businessId);
+      if (snappfood) {
+        const commissionRial = BigInt(Math.round(Number(rialBigInt(total)) * (snappfood.commissionPercent / 100)));
+        platformCommission = rialText(commissionRial.toString());
+      }
+    }
     await postExactOrderPaymentEntry(client, {
       businessId: session.businessId,
       locationId: location.id,
@@ -132,6 +146,7 @@ export const POST = withTenantScope(async (request: NextRequest, context: { para
       inventoryEventId,
       orderChannel: order.type,
       tip: rialText(String(tipAmount)),
+      platformCommission,
     });
     await postExactCogsEntry(client, {
       businessId: session.businessId,

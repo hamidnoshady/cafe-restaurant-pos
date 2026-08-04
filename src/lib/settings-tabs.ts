@@ -5,6 +5,7 @@ export const SETTINGS_TAB_KEYS = [
   "business",
   "tax",
   "pricing",
+  "online-platforms",
   "accounts",
   "team",
   "menu",
@@ -53,6 +54,12 @@ export const SETTINGS_TABS: SettingsTab[] = [
     key: "pricing",
     label: "قیمت‌گذاری",
     description: "هدف حاشیه سود پیش‌فرض برای پیشنهاد قیمت آیتم‌های منو",
+    requiredAnyPermission: [PERMISSIONS.settingsManage],
+  },
+  {
+    key: "online-platforms",
+    label: "پلتفرم‌های سفارش آنلاین",
+    description: "نرخ کارمزد اسنپ‌فود، برای ثبت خودکار هنگام تسویه سفارش",
     requiredAnyPermission: [PERMISSIONS.settingsManage],
   },
   {

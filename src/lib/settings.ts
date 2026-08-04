@@ -31,6 +31,8 @@ export const SETTING_KEYS = {
   appUpdateStatus: "app_update.status",
   /** DeploymentMode (src/lib/deployment-mode.ts) — { mode: 'local'|'connected', pairedAt } */
   deploymentMode: "deployment.mode",
+  /** OnlinePlatformsConfig (src/lib/online-platforms-service.ts) — per-platform commission %, e.g. SnapFood (issue #160 §4) */
+  onlinePlatforms: "online_platforms.config",
 } as const;
 
 export async function getSetting<T>(businessId: string, key: string): Promise<T | null> {

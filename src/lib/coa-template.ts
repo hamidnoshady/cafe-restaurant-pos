@@ -66,6 +66,10 @@ export const WELL_KNOWN_CODES = {
   accountsReceivable: "1200",
   supplierReceivable: "1210",
   vatReceivable: "1220",
+  // Issue #160 §4 — the last of Wave 4's three deferrals. What SnapFood owes
+  // the business after taking its commission (money hasn't arrived yet —
+  // SnapFood settles on its own schedule). See migrations/0060.
+  platformReceivable: "1230",
   inventory: "1300",
   inventoryInTransit: "1350",
   nrvAllowance: "1390",
@@ -147,6 +151,7 @@ export const FNB_COA_TEMPLATE: TemplateAccount[] = [
   { code: "1200", name: "حساب‌های دریافتنی", type: "asset", parentCode: "1000" },
   { code: "1210", name: "دریافتنی از تأمین‌کننده", type: "asset", parentCode: "1000" },
   { code: "1220", name: "مالیات بر ارزش افزوده خرید (قابل استرداد)", type: "asset", parentCode: "1000" },
+  { code: "1230", name: "مطالبات از پلتفرم‌های سفارش آنلاین", type: "asset", parentCode: "1000" },
   { code: "1300", name: "موجودی مواد و کالا", type: "asset", parentCode: "1000" },
   { code: "1350", name: "موجودی در راه", type: "asset", parentCode: "1000" },
   { code: "1390", name: "ذخیره کاهش ارزش موجودی", type: "asset", parentCode: "1000", isContra: true },

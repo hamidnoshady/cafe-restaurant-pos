@@ -32,6 +32,8 @@ const acct = {
   delivery: "",
   vatPayable: "",
   tipsPayable: "",
+  platformReceivable: "",
+  platformCommissionExpense: "",
 };
 
 function urlFor(database: string): string {
@@ -103,9 +105,11 @@ beforeEach(async () => {
     `INSERT INTO accounts (business_id, code, name, type)
      VALUES ($1, '1100', 'Cash', 'asset'), ($1, '1120', 'Card clearing', 'asset'),
             ($1, '1200', 'Accounts Receivable', 'asset'),
+            ($1, '1230', 'Platform Receivable', 'asset'),
             ($1, '4310', 'Dine-in', 'revenue'),
             ($1, '4320', 'Takeaway', 'revenue'), ($1, '4330', 'Delivery', 'revenue'),
-            ($1, '2200', 'VAT Payable', 'liability'), ($1, '2400', 'Tips Payable', 'liability')
+            ($1, '2200', 'VAT Payable', 'liability'), ($1, '2400', 'Tips Payable', 'liability'),
+            ($1, '5650', 'Platform Commission Expense', 'expense')
      RETURNING id, code`,
     [biz.id],
   );
@@ -113,11 +117,13 @@ beforeEach(async () => {
     if (r.code === "1100") acct.cash = r.id;
     if (r.code === "1120") acct.bankClearing = r.id;
     if (r.code === "1200") acct.accountsReceivable = r.id;
+    if (r.code === "1230") acct.platformReceivable = r.id;
     if (r.code === "4310") acct.dineIn = r.id;
     if (r.code === "4320") acct.takeaway = r.id;
     if (r.code === "4330") acct.delivery = r.id;
     if (r.code === "2200") acct.vatPayable = r.id;
     if (r.code === "2400") acct.tipsPayable = r.id;
+    if (r.code === "5650") acct.platformCommissionExpense = r.id;
   }
 });
 
@@ -376,5 +382,176 @@ describe("postExactOrderPaymentEntry — tip capture (issue #160 §4)", () => {
       await client.query("ROLLBACK").catch(() => {});
       client.release();
     }
+  });
+});
+
+describe("postExactOrderPaymentEntry — online platform commission (issue #160 §4)", () => {
+  it("with no commission configured, debits platformReceivable for the full amount — no commission-expense line", async () => {
+    const inventoryEventId = await newInventoryEventId();
+    const client = await dbLib.getPool().connect();
+    let entryId: string | null;
+    try {
+      await client.query("BEGIN");
+      entryId = await ledgerService.postExactOrderPaymentEntry(client, {
+        businessId: biz.id,
+        locationId: biz.locationId,
+        orderId: randomUUID(),
+        createdBy: null,
+        method: "snappfood",
+        amount: "100000" as RialText,
+        tax: "10000" as RialText,
+        inventoryEventId,
+        orderChannel: "delivery",
+      });
+      await client.query("COMMIT");
+    } finally {
+      client.release();
+    }
+
+    const lines = await db.query<{ account_id: string; debit: string; credit: string }>(
+      "SELECT account_id, debit, credit FROM journal_lines WHERE entry_id = $1 ORDER BY id",
+      [entryId],
+    );
+    expect(lines.rows).toEqual([
+      { account_id: acct.platformReceivable, debit: "100000", credit: "0" },
+      { account_id: acct.delivery, debit: "0", credit: "90000" },
+      { account_id: acct.vatPayable, debit: "0", credit: "10000" },
+    ]);
+  });
+
+  it("with a commission, splits the debit between platformReceivable (net) and the commission expense", async () => {
+    const inventoryEventId = await newInventoryEventId();
+    const client = await dbLib.getPool().connect();
+    let entryId: string | null;
+    try {
+      await client.query("BEGIN");
+      entryId = await ledgerService.postExactOrderPaymentEntry(client, {
+        businessId: biz.id,
+        locationId: biz.locationId,
+        orderId: randomUUID(),
+        createdBy: null,
+        method: "snappfood",
+        amount: "100000" as RialText,
+        tax: "10000" as RialText,
+        inventoryEventId,
+        orderChannel: "delivery",
+        platformCommission: "22500" as RialText,
+      });
+      await client.query("COMMIT");
+    } finally {
+      client.release();
+    }
+
+    const lines = await db.query<{ account_id: string; debit: string; credit: string }>(
+      "SELECT account_id, debit, credit FROM journal_lines WHERE entry_id = $1 ORDER BY id",
+      [entryId],
+    );
+    // Net receivable = 100,000 - 22,500 = 77,500; commission itself is a separate expense line.
+    expect(lines.rows).toEqual([
+      { account_id: acct.platformReceivable, debit: "77500", credit: "0" },
+      { account_id: acct.platformCommissionExpense, debit: "22500", credit: "0" },
+      { account_id: acct.delivery, debit: "0", credit: "90000" },
+      { account_id: acct.vatPayable, debit: "0", credit: "10000" },
+    ]);
+  });
+
+  it("posts a balanced entry with a commission and a tip together", async () => {
+    const inventoryEventId = await newInventoryEventId();
+    const client = await dbLib.getPool().connect();
+    let entryId: string | null;
+    try {
+      await client.query("BEGIN");
+      entryId = await ledgerService.postExactOrderPaymentEntry(client, {
+        businessId: biz.id,
+        locationId: biz.locationId,
+        orderId: randomUUID(),
+        createdBy: null,
+        method: "snappfood",
+        amount: "80000" as RialText,
+        tax: "0" as RialText,
+        inventoryEventId,
+        orderChannel: "takeaway",
+        tip: "5000" as RialText,
+        platformCommission: "16000" as RialText,
+      });
+      await client.query("COMMIT");
+    } finally {
+      client.release();
+    }
+
+    const totals = await db.query<{ debit_sum: string; credit_sum: string }>(
+      "SELECT sum(debit)::text AS debit_sum, sum(credit)::text AS credit_sum FROM journal_lines WHERE entry_id = $1",
+      [entryId],
+    );
+    // debit: (80,000 + 5,000 tip - 16,000 commission) receivable + 16,000 commission = 85,000
+    expect(totals.rows[0].debit_sum).toBe("85000");
+    expect(totals.rows[0].debit_sum).toBe(totals.rows[0].credit_sum);
+  });
+
+  it("rejects a non-zero commission on any method other than snappfood", async () => {
+    const inventoryEventId = await newInventoryEventId();
+    const client = await dbLib.getPool().connect();
+    try {
+      await client.query("BEGIN");
+      await expect(
+        ledgerService.postExactOrderPaymentEntry(client, {
+          businessId: biz.id,
+          locationId: biz.locationId,
+          orderId: randomUUID(),
+          createdBy: null,
+          method: "cash",
+          amount: "50000" as RialText,
+          tax: "0" as RialText,
+          inventoryEventId,
+          orderChannel: "dine_in",
+          platformCommission: "5000" as RialText,
+        }),
+      ).rejects.toThrow("commission_requires_platform_method");
+    } finally {
+      await client.query("ROLLBACK").catch(() => {});
+      client.release();
+    }
+  });
+
+  it("fails with a missing-account error when platformReceivable is missing from the chart", async () => {
+    await db.query("DELETE FROM accounts WHERE business_id = $1 AND code = '1230'", [biz.id]);
+    const inventoryEventId = await newInventoryEventId();
+    const client = await dbLib.getPool().connect();
+    try {
+      await client.query("BEGIN");
+      await expect(
+        ledgerService.postExactOrderPaymentEntry(client, {
+          businessId: biz.id,
+          locationId: biz.locationId,
+          orderId: randomUUID(),
+          createdBy: null,
+          method: "snappfood",
+          amount: "50000" as RialText,
+          tax: "0" as RialText,
+          inventoryEventId,
+          orderChannel: "dine_in",
+        }),
+      ).rejects.toThrow(ledgerService.MissingLedgerAccountError);
+    } finally {
+      await client.query("ROLLBACK").catch(() => {});
+      client.release();
+    }
+  });
+
+  it("'snappfood' is a valid payments.method enum value — the actual column /api/orders/[id]/pay writes to, not just the ledger call", async () => {
+    // A migration adding a new payment method must extend BOTH the ledger
+    // posting logic (tested above) and the payment_method enum itself — this
+    // guards the enum half, which postExactOrderPaymentEntry's own tests
+    // never touch (they don't insert into `payments`).
+    const order = await db.query<{ id: string }>(
+      `INSERT INTO orders (location_id, order_number, status) VALUES ($1, $2, 'open') RETURNING id`,
+      [biz.locationId, Math.floor(Math.random() * 1_000_000)],
+    );
+    await expect(
+      db.query(
+        `INSERT INTO payments (location_id, order_id, method, amount) VALUES ($1, $2, 'snappfood', 50000)`,
+        [biz.locationId, order.rows[0].id],
+      ),
+    ).resolves.toBeTruthy();
   });
 });
