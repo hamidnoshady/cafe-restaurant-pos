@@ -39,9 +39,10 @@ interface PayBody {
  * recording, order completion, and deduction all happen in one transaction.
  *
  * Same transaction also posts two Phase 7 journal entries: the payment
- * itself (Debit Cash/Bank-Clearing/Accounts-Receivable / Credit Sales
- * Revenue + Tax Payable) and the COGS entry from the deduction's total cost
- * (Debit COGS / Credit Inventory Asset).
+ * itself (Debit Cash/Bank-Clearing/Accounts-Receivable / Credit the order's
+ * channel-specific Sales Revenue account, split by orders.type since Phase
+ * 22 Wave 4 — + Tax Payable) and the COGS entry from the deduction's total
+ * cost (Debit COGS / Credit Inventory Asset).
  */
 export const POST = withTenantScope(async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
   const { session, error } = await requireRole("owner", "manager", "cashier");
@@ -121,6 +122,7 @@ export const POST = withTenantScope(async (request: NextRequest, context: { para
       amount: total,
       tax: rialText(order.tax),
       inventoryEventId,
+      orderChannel: order.type,
     });
     await postExactCogsEntry(client, {
       businessId: session.businessId,

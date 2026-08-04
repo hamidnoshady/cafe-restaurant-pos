@@ -76,6 +76,15 @@ export const WELL_KNOWN_CODES = {
   historicalInventoryReconciliationEquity: "3950",
   retainedEarnings: "3800",
   salesRevenue: "4300",
+  // Phase 22 Wave 4 — revenue split by sales channel. Order payment posts to
+  // one of these three instead of the flat salesRevenue above, keyed off
+  // orders.type (dine_in/takeaway/delivery — no new schema needed, that
+  // column has existed since Phase 0). salesRevenue itself stays in the
+  // template for historical entries and manual/other use, but no longer
+  // receives new auto-postings.
+  dineInRevenue: "4310",
+  takeawayRevenue: "4320",
+  deliveryRevenue: "4330",
   salesReturns: "4400",
   cogs: "5100",
   wasteExpense: "5150",
@@ -83,6 +92,12 @@ export const WELL_KNOWN_CODES = {
   inventoryCountExpense: "5160",
   inventoryWriteDownExpense: "5170",
   inventoryCountGain: "4910",
+  // Phase 22 Wave 4 — cost of using a third-party online-ordering platform
+  // (e.g. a delivery marketplace's cut of the sale). Settled via the manual-
+  // journal workflow, the same "new well-known account, not deep posting-path
+  // integration" pattern Phase 16 used for input VAT — there's no "platform"
+  // order-source concept in the schema yet to auto-post against.
+  platformCommissionExpense: "5650",
   // Phase 21 Wave 3 — jewelry (JEWELRY_COA_TEMPLATE below), not seeded for
   // an F&B business. goldSalesRevenue and makingChargeRevenue are kept as
   // two separate accounts (not folded into one "gold sales" line) because
@@ -144,6 +159,9 @@ export const FNB_COA_TEMPLATE: TemplateAccount[] = [
   { code: "4100", name: "فروش غذا", type: "revenue", parentCode: "4000" },
   { code: "4200", name: "فروش نوشیدنی", type: "revenue", parentCode: "4000" },
   { code: "4300", name: "فروش (عمومی)", type: "revenue", parentCode: "4000" },
+  { code: "4310", name: "فروش حضوری (سالن)", type: "revenue", parentCode: "4000" },
+  { code: "4320", name: "فروش بیرون‌بر", type: "revenue", parentCode: "4000" },
+  { code: "4330", name: "فروش ارسالی", type: "revenue", parentCode: "4000" },
   { code: "4400", name: "برگشت از فروش", type: "revenue", parentCode: "4000", isContra: true },
   { code: "4900", name: "سایر درآمدها", type: "revenue", parentCode: "4000" },
   { code: "4910", name: "درآمد اضافه شمارش موجودی", type: "revenue", parentCode: "4000" },
@@ -158,6 +176,7 @@ export const FNB_COA_TEMPLATE: TemplateAccount[] = [
   { code: "5400", name: "آب، برق و گاز", type: "expense", parentCode: "5000" },
   { code: "5500", name: "ملزومات مصرفی", type: "expense", parentCode: "5000" },
   { code: "5600", name: "بازاریابی و تبلیغات", type: "expense", parentCode: "5000" },
+  { code: "5650", name: "کارمزد پلتفرم‌های سفارش آنلاین", type: "expense", parentCode: "5000" },
   { code: "5900", name: "سایر هزینه‌ها", type: "expense", parentCode: "5000" },
 ];
 

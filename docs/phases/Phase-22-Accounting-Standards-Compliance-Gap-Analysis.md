@@ -370,3 +370,65 @@ No component logic, prop names, function signatures, API contracts, or `coa-temp
 names/codes were touched — string-literal label changes only. `npx tsc --noEmit`, `npm test` (951
 tests, unchanged — no test-affecting code changed), `npm run test:db` (310 tests), and `npm run
 build` all pass.
+
+**Wave 4, first slice — revenue split by sales channel + platform-commission expense account —
+implemented**, closing part of §4's gap. Two scoping decisions made before writing any code:
+
+1. **Revenue-channel split reuses `orders.type` (dine_in/takeaway/delivery) — no new schema.** §1's
+   open question ("does an order-level channel field already exist") is answered: it's existed since
+   Phase 0's foundation migration, just never wired into auto-posting (Phase 7 explicitly left this
+   as a documented future step). This made the split additive to the *posting* layer only, not a
+   checkout/order-model change.
+2. **Tips (انعام) and the food-cost variance report are deliberately deferred, not built in this
+   slice.** Both need real product decisions this audit can't make unilaterally: a tip has no
+   existing capture point anywhere in the schema (unlike channel, which `orders.type` already
+   provided) — adding one means deciding whether it's collected on top of `orders.total` or folded
+   into it, which touches the single most sensitive transaction in the codebase (checkout/payment,
+   `/api/orders/[id]/pay`) for a feature with no settled design yet. A food-cost variance report
+   (actual vs. recipe-standard consumption) is a substantial reporting feature in its own right, not
+   a labeling or account-mapping change. Flagging both as their own follow-up slice rather than
+   guessing at checkout-flow behavior changes without a migration plan, per the project's own rule.
+
+What shipped:
+
+- **Three new revenue accounts** (`migrations/0057_channel_revenue_platform_commission.sql`,
+  `coa-template.ts`): `dineInRevenue` (4310, «فروش حضوری (سالن)»), `takeawayRevenue` (4320, «فروش
+  بیرون‌بر»), `deliveryRevenue` (4330, «فروش ارسالی») — siblings of the existing flat `salesRevenue`
+  (4300) under «4000 درآمدها», which stays in the template for historical entries but stops receiving
+  new auto-postings. Backfilled onto every existing `food_service` business only (a jewelry business's
+  chart has no dine-in concept); unlike migrations 0017/0025/0032's precedent of leaving a backfilled
+  well-known account parent-less, this backfill sets `parent_id`/`level` (`'kol'`) correctly — worth
+  doing properly now that Wave 2 made `level` a real, queryable concept. `getProfitAndLoss`
+  (`reports-service.ts`) needed no change: it already lists revenue accounts flatly and sums by
+  `type`, not by hierarchy, so three accounts instead of one just show as three P&L lines with the
+  same correct total.
+- **`platformCommissionExpense`** (5650, «کارمزد پلتفرم‌های سفارش آنلاین») — a new well-known expense
+  account for §4's "کمیسیون پلتفرم‌ها", settled via the existing manual-journal workflow rather than
+  wired into order payment — the same "new account, not deep posting-path integration" pattern Phase
+  16 used for input VAT (decision 19 in that phase's doc), since there's no "platform" order-source
+  concept in the schema to auto-post against yet.
+- **`src/lib/ledger.ts`** gained `revenueAccountCodeForOrderChannel` (pure: `orders.type` → the
+  matching well-known code) and an `OrderChannel` type. **`postExactOrderPaymentEntry`**
+  (`ledger-service.ts`) — the live posting path `/api/orders/[id]/pay` calls — now takes an
+  `orderChannel` param and credits the channel-specific account instead of the flat `salesRevenue`;
+  everything else about the entry (debit account by payment method, VAT line, balance) is unchanged.
+  `src/lib/order-lock.ts`'s `lockOpenOrder` (used by every order-mutation route) now also selects
+  `orders.type`, purely additive for its other two callers. The legacy plain-number
+  `buildOrderPaymentLines`/`postOrderPaymentEntry` path (dead code — no live caller, per a grep
+  confirming this before touching anything) was deliberately left untouched.
+- Verified in `src/lib/ledger.test.ts` (`revenueAccountCodeForOrderChannel`'s three-way mapping) and
+  new `integration/order-payment-channel-revenue.integration.test.ts` (each of the three channels
+  credits its own account with the exact expected amounts, the entry stays balanced regardless of
+  channel, and a business missing the channel's account still gets the standard
+  `MissingLedgerAccountError` → `409` treatment). Also manually verified the migration's backfill
+  logic against a hand-built pre-existing business (correct `parent_id`, `level = 'kol'`,
+  `normal_balance` auto-derived, `is_contra = false`). `npx tsc --noEmit`, `npm test` (952 tests, up
+  from 951), `npm run db:migrate` (twice, second run a no-op) + `npm run test:db` (315 tests, up from
+  310, `tenant-isolation`'s 19 tests re-confirming RLS unaffected), and `npm run build` all pass.
+
+Not yet built (this slice's deliberate deferrals, see above): tip capture (needs a checkout-flow
+product decision), the food-cost variance report, and any actual "online platform" order-source
+concept (§4 asks for "پلتفرم‌های سفارش آنلاین" as its own thing, distinct from in-house delivery —
+Phase 11's `couriers`/`deliveries` model is entirely in-house-courier-based with no third-party
+marketplace concept; `platformCommissionExpense` gives a place to *record* the cost, not a way to
+*capture* which platform or auto-post a commission split at sale time).

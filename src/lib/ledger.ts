@@ -81,6 +81,31 @@ function paymentDebitAccount(accounts: OrderPaymentAccounts, method: string): st
   }
 }
 
+export type OrderChannel = "dine_in" | "takeaway" | "delivery";
+
+export interface ChannelRevenueCodes {
+  dineInRevenue: string;
+  takeawayRevenue: string;
+  deliveryRevenue: string;
+}
+
+/**
+ * Which revenue account an order's channel posts to (Phase 22 Wave 4) — a
+ * dine-in/takeaway/delivery split of what used to be one flat "sales
+ * revenue" account, keyed off orders.type (existed since Phase 0, no new
+ * schema needed).
+ */
+export function revenueAccountCodeForOrderChannel(channel: OrderChannel, codes: ChannelRevenueCodes): string {
+  switch (channel) {
+    case "dine_in":
+      return codes.dineInRevenue;
+    case "takeaway":
+      return codes.takeawayRevenue;
+    case "delivery":
+      return codes.deliveryRevenue;
+  }
+}
+
 /**
  * Order paid → Debit Cash/Bank-Clearing/Accounts-Receivable (by method) /
  * Credit Sales Revenue (amount net of tax) + Tax Payable.
