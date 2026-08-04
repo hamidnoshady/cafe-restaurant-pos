@@ -12,6 +12,7 @@ describe("visibleSettingsTabs", () => {
       "business",
       "tax",
       "pricing",
+      "online-platforms",
       "menu",
       "printers",
       "devices",

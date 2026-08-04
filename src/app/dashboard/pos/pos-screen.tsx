@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BanknoteIcon, CreditCardIcon, ReceiptTextIcon, RefreshCwIcon, SearchIcon, ShoppingBagIcon, WifiIcon, WifiOffIcon } from "lucide-react";
+import { BanknoteIcon, CreditCardIcon, ReceiptTextIcon, RefreshCwIcon, SearchIcon, ShoppingBagIcon, SmartphoneIcon, WifiIcon, WifiOffIcon } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { toPersianDigits } from "@/lib/digits";
@@ -83,7 +83,13 @@ interface CartUiLine {
 }
 
 type OrderType = "dine_in" | "takeaway" | "delivery";
-type PaymentMethod = "cash" | "card";
+type PaymentMethod = "cash" | "card" | "snappfood";
+
+const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
+  cash: "نقدی",
+  card: "کارت‌خوان",
+  snappfood: "اسنپ‌فود",
+};
 type CheckoutIntent = "order" | "payment";
 
 interface CheckoutResult {
@@ -725,15 +731,16 @@ export function PosScreen() {
 
           <div className="mt-4">
             <p className="mb-2 text-xs font-bold text-[#5E5B55]">روش دریافت وجه</p>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-3 gap-2">
               <button type="button" onClick={() => setPaymentMethod("cash")} className={"flex min-h-14 items-center justify-center gap-2 rounded-xl border text-sm font-bold transition duration-200 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 motion-reduce:transition-none " + (paymentMethod === "cash" ? "border-[#F2D097] bg-[#FFF1D8] text-[#9B6700]" : "border-[#EAE8E2] text-[#5E5B55] hover:bg-[#FCFCFA]")}><BanknoteIcon className="size-4" aria-hidden="true" />نقدی</button>
               <button type="button" onClick={() => setPaymentMethod("card")} className={"flex min-h-14 items-center justify-center gap-2 rounded-xl border text-sm font-bold transition duration-200 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 motion-reduce:transition-none " + (paymentMethod === "card" ? "border-[#F2D097] bg-[#FFF1D8] text-[#9B6700]" : "border-[#EAE8E2] text-[#5E5B55] hover:bg-[#FCFCFA]")}><CreditCardIcon className="size-4" aria-hidden="true" />کارت‌خوان</button>
+              <button type="button" onClick={() => setPaymentMethod("snappfood")} className={"flex min-h-14 items-center justify-center gap-2 rounded-xl border text-sm font-bold transition duration-200 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 motion-reduce:transition-none " + (paymentMethod === "snappfood" ? "border-[#F2D097] bg-[#FFF1D8] text-[#9B6700]" : "border-[#EAE8E2] text-[#5E5B55] hover:bg-[#FCFCFA]")}><SmartphoneIcon className="size-4" aria-hidden="true" />اسنپ‌فود</button>
             </div>
             <label htmlFor="pos-tip" className="mt-2 block text-xs font-bold text-[#5E5B55]">
               انعام <span className="font-normal text-[#8B8A85]">(اختیاری، تومان)</span>
             </label>
             <input id="pos-tip" className={inputClass + " mt-1 min-h-11 border-[#EAE8E2] bg-[#FCFCFA]"} dir="ltr" inputMode="numeric" value={tipInput} onChange={(event) => setTipInput(event.target.value)} placeholder="۰" />
-            <button type="button" onClick={() => { setCheckoutIntent("payment"); setReviewOpen(true); }} disabled={busy || cart.length === 0} className="mt-3 flex min-h-14 w-full items-center justify-center gap-2 rounded-xl bg-[#E9A11B] px-4 text-sm font-bold text-[#252522] transition duration-200 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 disabled:opacity-55 motion-reduce:transition-none"><ReceiptTextIcon className="size-5" aria-hidden="true" />دریافت {paymentMethod === "cash" ? "نقدی" : "کارت‌خوان"} و تکمیل</button>
+            <button type="button" onClick={() => { setCheckoutIntent("payment"); setReviewOpen(true); }} disabled={busy || cart.length === 0} className="mt-3 flex min-h-14 w-full items-center justify-center gap-2 rounded-xl bg-[#E9A11B] px-4 text-sm font-bold text-[#252522] transition duration-200 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 disabled:opacity-55 motion-reduce:transition-none"><ReceiptTextIcon className="size-5" aria-hidden="true" />دریافت {PAYMENT_METHOD_LABELS[paymentMethod]} و تکمیل</button>
             <button type="button" onClick={() => { setCheckoutIntent("order"); setReviewOpen(true); }} disabled={busy || cart.length === 0} className="mt-2 min-h-12 w-full rounded-xl border border-[#EAE8E2] bg-white px-4 text-sm font-semibold text-[#5E5B55] transition duration-200 hover:bg-[#FCFCFA] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 disabled:opacity-55 motion-reduce:transition-none">ثبت سفارش باز</button>
           </div>
         </div>
@@ -835,15 +842,16 @@ export function PosScreen() {
             <Row label="جمع کل" value={formatToman(totals.total)} bold />
             <div className="mt-4">
               <p className="mb-2 text-xs font-bold text-[#5E5B55]">روش دریافت وجه</p>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 <button type="button" onClick={() => setPaymentMethod("cash")} className={"flex min-h-14 items-center justify-center gap-2 rounded-xl border text-sm font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 " + (paymentMethod === "cash" ? "border-[#F2D097] bg-[#FFF1D8] text-[#9B6700]" : "border-[#EAE8E2] text-[#5E5B55]")}><BanknoteIcon className="size-4" aria-hidden="true" />نقدی</button>
                 <button type="button" onClick={() => setPaymentMethod("card")} className={"flex min-h-14 items-center justify-center gap-2 rounded-xl border text-sm font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 " + (paymentMethod === "card" ? "border-[#F2D097] bg-[#FFF1D8] text-[#9B6700]" : "border-[#EAE8E2] text-[#5E5B55]")}><CreditCardIcon className="size-4" aria-hidden="true" />کارت‌خوان</button>
+                <button type="button" onClick={() => setPaymentMethod("snappfood")} className={"flex min-h-14 items-center justify-center gap-2 rounded-xl border text-sm font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 " + (paymentMethod === "snappfood" ? "border-[#F2D097] bg-[#FFF1D8] text-[#9B6700]" : "border-[#EAE8E2] text-[#5E5B55]")}><SmartphoneIcon className="size-4" aria-hidden="true" />اسنپ‌فود</button>
               </div>
               <label htmlFor="pos-mobile-tip" className="mt-2 block text-xs font-bold text-[#5E5B55]">
                 انعام <span className="font-normal text-[#8B8A85]">(اختیاری، تومان)</span>
               </label>
               <input id="pos-mobile-tip" className={inputClass + " mt-1 min-h-11 border-[#EAE8E2] bg-[#FCFCFA]"} dir="ltr" inputMode="numeric" value={tipInput} onChange={(event) => setTipInput(event.target.value)} placeholder="۰" />
-              <button type="button" onClick={() => { setCheckoutIntent("payment"); setReviewOpen(true); }} disabled={busy || cart.length === 0} className="mt-3 flex min-h-14 w-full items-center justify-center gap-2 rounded-xl bg-[#E9A11B] px-4 text-sm font-bold text-[#252522] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 disabled:opacity-55"><ReceiptTextIcon className="size-5" aria-hidden="true" />دریافت {paymentMethod === "cash" ? "نقدی" : "کارت‌خوان"} و تکمیل</button>
+              <button type="button" onClick={() => { setCheckoutIntent("payment"); setReviewOpen(true); }} disabled={busy || cart.length === 0} className="mt-3 flex min-h-14 w-full items-center justify-center gap-2 rounded-xl bg-[#E9A11B] px-4 text-sm font-bold text-[#252522] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 disabled:opacity-55"><ReceiptTextIcon className="size-5" aria-hidden="true" />دریافت {PAYMENT_METHOD_LABELS[paymentMethod]} و تکمیل</button>
               <button type="button" onClick={() => { setCheckoutIntent("order"); setReviewOpen(true); }} disabled={busy || cart.length === 0} className="mt-2 min-h-12 w-full rounded-xl border border-[#EAE8E2] bg-white px-4 text-sm font-semibold text-[#5E5B55] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 disabled:opacity-55">ثبت سفارش باز</button>
             </div>
           </div>
@@ -862,7 +870,7 @@ export function PosScreen() {
             {orderType === "dine_in" ? <Row label="میز" value={tables.find((table) => table.id === tableId)?.name ?? "انتخاب نشده"} /> : null}
             {orderType === "delivery" ? <Row label="آدرس" value={deliveryAddress.trim() || "ثبت نشده"} /> : null}
             <Row label="تعداد اقلام" value={toPersianDigits(cart.reduce((count, line) => count + line.quantity, 0))} />
-            {checkoutIntent === "payment" ? <Row label="روش پرداخت" value={paymentMethod === "cash" ? "نقدی" : "کارت‌خوان"} /> : null}
+            {checkoutIntent === "payment" ? <Row label="روش پرداخت" value={PAYMENT_METHOD_LABELS[paymentMethod]} /> : null}
             <Row label="مبلغ قابل پرداخت" value={formatToman(totals.total)} bold />
             {checkoutIntent === "payment" && tipNum > 0 ? (
               <>

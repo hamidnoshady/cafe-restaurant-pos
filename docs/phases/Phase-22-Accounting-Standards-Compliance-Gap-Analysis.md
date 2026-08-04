@@ -568,6 +568,7 @@ new, unconfirmed product decision has shipped:
 | 7 | Regression pass & doc wrap-up | Done (this entry) |
 | 8 | Tip capture (انعام کارکنان) | Done (see below) |
 | 9 | Food-cost variance report | Done (see below) |
+| 10 | Online ordering platform commission (SnapFood) | Done (see below) |
 
 **Wave 8 — tip capture (انعام کارکنان, §4) — implemented.** Picked up as the first of the three
 deliberately-deferred items above, once the product owner confirmed the three open questions Wave 4
@@ -670,18 +671,75 @@ What shipped:
   `npm test` (983 tests, up from 979), `npm run db:migrate` (twice, second run a no-op — this wave
   added no migration) + `npm run test:db` (340 tests, up from 334), and `npm run build` all pass.
 
-**Deliberately not built — needs a real product decision this audit isn't positioned to make
-unilaterally, not an oversight:**
+**Wave 10 — online ordering platform commission, SnapFood (§4) — implemented.** The last item in §4,
+closed once the business owner answered the open questions Wave 9 (and Wave 4 before it) left
+unresolved:
 
-- **A genuine "online ordering platform" concept (§4)**, distinct from Phase 11's in-house-courier
-  delivery model — which platform, and how its commission is captured at the point of sale, not just
-  where to record the cost once known (`platformCommissionExpense` already gives that place).
-- **§7.5's account change-history/audit-trail** — whether it's in scope at all.
+1. **Only SnapFood, for now** — no generic multi-platform abstraction built ahead of a second
+   platform actually existing.
+2. **Commission varies by contract**, so it's a business-configurable setting, not a hardcoded rate.
+3. **No automated order feed.** SnapFood's PartnerFood app has no documented API or local
+   integration surface (checked — nothing publicly indexed, and asking SnapFood directly is the
+   owner's own next step if they want one later). A SnapFood order is entered the same way every
+   other order already is: the cashier picks "اسنپ‌فود" as the payment method at checkout, exactly
+   like cash/card/credit — no new order-intake concept, no fabricated integration.
+4. **Auto-post at time of sale** (not a manual monthly journal entry) — the same posting-time
+   pattern Wave 4/8 already established for revenue-channel splitting and tips, rather than the
+   older "new account, settled manually" pattern Phase 16/Wave 4 used before those existed.
+
+What shipped:
+
+- **New well-known asset account `platformReceivable`** (1230, «مطالبات از پلتفرم‌های سفارش آنلاین»,
+  `migrations/0060_online_platform_commission.sql`), backfilled onto existing `food_service`
+  businesses, same pattern as every other Wave 4/5/8 account addition. The same migration adds
+  `'snappfood'` to the `payment_method` Postgres enum — `payments.method` is a real enum column, not
+  just an app-level string, so the payment-method list needed extending at the schema level too, not
+  only in `ledger-service.ts`'s validation.
+- **`postExactOrderPaymentEntry`** (`ledger-service.ts`) takes an optional `platformCommission`
+  (Rial, resolved by the caller — same shape `tip` already uses). With `method: "snappfood"`, the
+  debit splits: `platformReceivable` for the net amount (bill + tip − commission), and the existing
+  `platformCommissionExpense` (5650, added in Wave 4) for the commission itself — SnapFood never
+  hands over that slice, so it was never really "received." `platformCommission > 0` is rejected for
+  any other method.
+- **`SETTING_KEYS.onlinePlatforms`** + `online-platforms-service.ts` — `{ snappfood: { commissionPercent } | null }`,
+  business-wide, `null` until an owner sets one (a `snappfood` sale with no rate configured still
+  posts fine — the full amount just goes to `platformReceivable` with no commission split). A new
+  "پلتفرم‌های سفارش آنلاین" settings tab (`online-platforms-settings.tsx`, `/api/settings/online-platforms`)
+  edits it, following the same small-percent-field pattern as the existing tax/pricing settings tabs.
+- **`/api/orders/[id]/pay`** accepts `method: "snappfood"`, resolves the configured commission % to a
+  Rial amount, and passes it through to posting — the ledger layer never has to know about %s or
+  settings, same separation of concerns tip capture already established.
+- **Checkout UI** — "اسنپ‌فود" added as a payment-method button alongside cash/card/(credit) in both
+  `order-detail.tsx` and `pos-screen.tsx` (desktop + mobile panels, which gained their first
+  third-payment-method column since they previously only offered cash/card).
+- Verified in a new `describe` block in `integration/order-payment-channel-revenue.integration.test.ts`:
+  no commission configured still posts (full amount to `platformReceivable`); a commission splits the
+  debit correctly; a balanced entry with commission + tip together; a non-`snappfood` method rejects a
+  non-zero commission; a missing `platformReceivable` account fails with the standard
+  `MissingLedgerAccountError` → `409` treatment; and — caught only by manually testing the real
+  checkout flow, since none of the ledger-level tests above ever touch the `payments` table itself —
+  a direct test that `'snappfood'` is actually accepted by the `payment_method` enum column
+  `/api/orders/[id]/pay` writes to (the first version of this migration added the well-known account
+  and the ledger-service handling but forgot the enum itself; `ALTER TYPE payment_method ADD VALUE`
+  fixed it, and this new test exists specifically so a future payment-method addition can't repeat
+  the same gap silently). Also manually verified end-to-end in a live running instance: configured a
+  20% SnapFood commission in settings, checked out an 850,000 Rial order via the SnapFood button, and
+  confirmed the posted entry — debit `platformReceivable` 680,000 + `platformCommissionExpense`
+  170,000, credit `فروش بیرون‌بر` (takeaway revenue) 850,000 — balanced and exactly matching the
+  configured rate. `npx tsc --noEmit`, `npm test` (1025 tests, up from 1024 — one new
+  `settings-tabs.test.ts` assertion updated, not a net-new test file), `npm run db:migrate` (twice,
+  second run a no-op) + `npm run test:db` (348 tests, up from 342, on a clean database), and
+  `npm run build` all pass.
+
+**Epic #160 status: everything in the original gap analysis is now either shipped or explicitly
+deferred to a real product decision.** What's left, not built here:
+
+- **§7.5's account change-history/audit-trail** — whether it's in scope at all was never answered.
 - **Wave 6 in the gap analysis's revised sequencing (§8) was never meant to be built here** — it's
   Phase 21's own remaining Waves 5-7 (watch, accessories, specialized industry reports), tracked under
   `docs/phases/Phase-21-Multi-Industry-Accounting-Platform.md`, not duplicated under this epic. See §5/
   §6 of this document for the original reasoning.
 
-Any of these is a reasonable next step, but each starts with a product conversation, not more code —
-consistent with how every other phase in this codebase (7, 16, 21) resolved its own genuinely open
-questions before building against them, rather than guessing.
+Either of these is a reasonable next step, but both start with a product/scope conversation, not more
+code — consistent with how every other phase in this codebase (7, 16, 21) resolved its own genuinely
+open questions before building against them, rather than guessing.

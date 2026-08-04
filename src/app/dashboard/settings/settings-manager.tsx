@@ -12,6 +12,7 @@ import { AuditLogSettings } from "./audit-log-settings";
 import { BusinessSettings } from "./business-settings";
 import { DeviceSettings } from "./device-settings";
 import { MenuSettings } from "./menu-settings";
+import { OnlinePlatformsSettings } from "./online-platforms-settings";
 import { PricingSettings } from "./pricing-settings";
 import { PrinterSettings } from "./printer-settings";
 import { SecurityCenterSettings } from "./security-center-settings";
@@ -66,6 +67,7 @@ export function SettingsManager({ tabs, features, currentUserId, isOwner }: Sett
       {activeTab === "business" ? <BusinessSettings /> : null}
       {activeTab === "tax" ? <TaxSettings /> : null}
       {activeTab === "pricing" ? <PricingSettings /> : null}
+      {activeTab === "online-platforms" ? <OnlinePlatformsSettings /> : null}
       {activeTab === "accounts" ? <AccountsSettings /> : null}
       {activeTab === "team" ? <TeamManager currentUserId={currentUserId} /> : null}
       {activeTab === "menu" ? <MenuSettings /> : null}

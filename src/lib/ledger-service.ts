@@ -311,10 +311,24 @@ export async function postExactOrderPaymentEntry(
      * and behaving exactly as before.
      */
     tip?: RialText;
+    /**
+     * The commission an online ordering platform (SnapFood, issue #160 §4)
+     * keeps out of `amount + tip` before remitting the rest. Only valid with
+     * `method: "snappfood"` — a business owner resolves the % (it varies by
+     * contract) to a Rial amount before calling this, the same "caller
+     * resolves the setting to an amount" shape `tip` already uses. Optional/
+     * defaults to "0".
+     */
+    platformCommission?: RialText;
   },
 ): Promise<string | null> {
   const tip = rialBigInt(params.tip ?? ("0" as RialText));
   if (tip < 0n) throw new Error("negative_tip");
+  const commission = rialBigInt(params.platformCommission ?? ("0" as RialText));
+  if (commission < 0n) throw new Error("negative_commission");
+  if (commission > 0n && params.method !== "snappfood") {
+    throw new Error("commission_requires_platform_method");
+  }
 
   const codes: string[] = [
     WELL_KNOWN_CODES.cash,
@@ -329,6 +343,8 @@ export async function postExactOrderPaymentEntry(
   // never uses tips (or removed the account while customizing its chart)
   // shouldn't have every ordinary, tip-free sale start failing.
   if (tip > 0n) codes.push(WELL_KNOWN_CODES.tipsPayable);
+  if (params.method === "snappfood") codes.push(WELL_KNOWN_CODES.platformReceivable);
+  if (commission > 0n) codes.push(WELL_KNOWN_CODES.platformCommissionExpense);
   const accounts = await accountIdsByCode(client, params.businessId, codes);
 
   const debitCode =
@@ -336,8 +352,10 @@ export async function postExactOrderPaymentEntry(
       ? WELL_KNOWN_CODES.cash
       : params.method === "credit"
         ? WELL_KNOWN_CODES.accountsReceivable
-        : WELL_KNOWN_CODES.bankClearing;
-  if (!["cash", "card", "card_to_card", "online", "credit"].includes(params.method)) {
+        : params.method === "snappfood"
+          ? WELL_KNOWN_CODES.platformReceivable
+          : WELL_KNOWN_CODES.bankClearing;
+  if (!["cash", "card", "card_to_card", "online", "credit", "snappfood"].includes(params.method)) {
     throw new Error(`unknown_payment_method: ${params.method}`);
   }
   const revenue = rialBigInt(params.amount) - rialBigInt(params.tax);
@@ -348,7 +366,9 @@ export async function postExactOrderPaymentEntry(
     deliveryRevenue: WELL_KNOWN_CODES.deliveryRevenue,
   });
   const zero = "0" as RialText;
-  const totalCollected = (rialBigInt(params.amount) + tip).toString() as RialText;
+  const totalCollected = rialBigInt(params.amount) + tip;
+  // SnapFood never hands over the commission slice — the receivable is net of it.
+  const netReceivable = (totalCollected - commission).toString() as RialText;
   return postExactJournalEntry(client, {
     businessId: params.businessId,
     locationId: params.locationId,
@@ -359,7 +379,10 @@ export async function postExactOrderPaymentEntry(
     postingKind: "revenue",
     inventoryEventId: params.inventoryEventId,
     lines: [
-      { accountId: accounts.get(debitCode)!, debit: totalCollected, credit: zero },
+      { accountId: accounts.get(debitCode)!, debit: netReceivable, credit: zero },
+      ...(commission > 0n
+        ? [{ accountId: accounts.get(WELL_KNOWN_CODES.platformCommissionExpense)!, debit: commission.toString() as RialText, credit: zero }]
+        : []),
       {
         accountId: accounts.get(revenueCode)!,
         debit: zero,

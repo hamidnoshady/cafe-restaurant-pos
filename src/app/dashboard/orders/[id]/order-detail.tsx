@@ -12,11 +12,12 @@ import { apiOrQueue } from "../../offline-queue";
 import { api, ErrorBox, errorMessage, InfoBox, inputClass, PrimaryButton, SecondaryButton } from "../../ui";
 import { firstPrinter, useBusinessInfo, usePrinters } from "../../use-printers";
 
-const PAYMENT_METHODS: { value: "cash" | "card" | "card_to_card" | "credit"; label: string }[] = [
+const PAYMENT_METHODS: { value: "cash" | "card" | "card_to_card" | "credit" | "snappfood"; label: string }[] = [
   { value: "cash", label: "نقدی" },
   { value: "card", label: "کارت‌خوان" },
   { value: "card_to_card", label: "کارت‌به‌کارت" },
   { value: "credit", label: "نسیه" },
+  { value: "snappfood", label: "اسنپ‌فود" },
 ];
 
 interface Customer {
@@ -88,7 +89,7 @@ export function OrderDetail({ orderId, canEdit }: { orderId: string; canEdit: bo
   const [pickerItem, setPickerItem] = useState<MenuItem | null>(null);
   const [discountType, setDiscountType] = useState<"" | "percent" | "amount">("");
   const [discountValue, setDiscountValue] = useState("");
-  const [payMethod, setPayMethod] = useState<"cash" | "card" | "card_to_card" | "credit">("cash");
+  const [payMethod, setPayMethod] = useState<"cash" | "card" | "card_to_card" | "credit" | "snappfood">("cash");
   const [tipInput, setTipInput] = useState("");
   const [paying, setPaying] = useState(false);
   const [customerQuery, setCustomerQuery] = useState("");
