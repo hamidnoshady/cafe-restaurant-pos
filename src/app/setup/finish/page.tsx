@@ -12,13 +12,13 @@ interface StateResponse {
   progress?: { steps: Record<string, string>; completedAt: string | null };
   counts?: { accounts: number; users: number; categories: number; items: number; printers: number };
   missingForCompletion?: string[];
+  localOnly?: boolean;
   error?: string;
 }
 
 export default function FinishPage() {
   const router = useRouter();
   const industry = useSetupIndustry();
-  const steps = stepsFor(industry);
   const [state, setState] = useState<StateResponse | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -49,6 +49,9 @@ export default function FinishPage() {
   }
 
   const missing = state?.missingForCompletion ?? [];
+  // The backup-destination step only exists on a standalone install, so don't
+  // review a row that would always read as incomplete on a connected one.
+  const steps = stepsFor(industry).filter((s) => s.id !== "backup" || state?.localOnly);
 
   return (
     <div>

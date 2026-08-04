@@ -46,8 +46,16 @@ const PG_DUMP_TIMEOUT_MS = 15 * 60 * 1000;
 // Config + paths
 // ---------------------------------------------------------------------------
 
-export function backupDir(): string {
-  return process.env.BACKUP_DIR || path.join(process.cwd(), "backups");
+/**
+ * Where local artifacts go. The Owner-chosen `config.directory` wins when set
+ * (the standalone desktop app writes it from an OS folder dialog — often an
+ * external drive); otherwise this is exactly what it always was, so no
+ * existing deployment moves its backups.
+ */
+export function backupDir(configuredDirectory?: string): string {
+  return (
+    configuredDirectory?.trim() || process.env.BACKUP_DIR || path.join(process.cwd(), "backups")
+  );
 }
 
 export function backupSecondaryDir(): string | null {
@@ -203,7 +211,7 @@ export async function runLocalBackup(businessId: string, trigger: RunTrigger): P
     const artifact = makeArtifactName();
     const runId = await startRun(businessId, "local", trigger, artifact, null);
     try {
-      const dir = backupDir();
+      const dir = backupDir(config.directory);
       await fs.mkdir(dir, { recursive: true });
       const finalPath = path.join(dir, artifact);
       const tmpPath = `${finalPath}.tmp`;
@@ -259,7 +267,7 @@ export async function runCloudUpload(
   const key = cloudKeyFor(config.cloud.prefix, artifact);
   const runId = await startRun(businessId, "cloud", trigger, artifact, key);
   try {
-    const plain = await fs.readFile(path.join(backupDir(), artifact));
+    const plain = await fs.readFile(path.join(backupDir(config.directory), artifact));
     const encrypted = encryptBackup(plain, config.cloud.passphrase);
     const s3 = s3ConfigOf(config);
     await s3Put(s3, key, encrypted);

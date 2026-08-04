@@ -14,12 +14,13 @@ export const WIZARD_STEPS = [
   "users",
   "menu",
   "hardware",
+  "backup",
   "opening",
 ] as const;
 export type WizardStep = (typeof WIZARD_STEPS)[number];
 
 /** Steps that may be skipped and still allow finishing the wizard. */
-export const OPTIONAL_STEPS: WizardStep[] = ["users", "hardware", "opening"];
+export const OPTIONAL_STEPS: WizardStep[] = ["users", "hardware", "backup", "opening"];
 
 /**
  * Steps that only make sense for F&B: `costing` picks a method for

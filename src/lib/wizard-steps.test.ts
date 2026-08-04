@@ -11,7 +11,7 @@ describe("wizardStepsForIndustry", () => {
     const steps = wizardStepsForIndustry("jewelry");
     expect(steps).not.toContain("costing");
     expect(steps).not.toContain("menu");
-    expect(steps).toEqual(["business", "accounts", "tax", "users", "hardware", "opening"]);
+    expect(steps).toEqual(["business", "accounts", "tax", "users", "hardware", "backup", "opening"]);
   });
 
   it("keeps every other step, in the same relative order, for jewelry", () => {

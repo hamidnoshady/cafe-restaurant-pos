@@ -15,6 +15,8 @@ import bcrypt from "bcryptjs";
 import type { PoolClient } from "pg";
 import { getPool, withoutTenantScope } from "./db";
 import { slugifyBusinessName, uniqueSlug } from "./slug";
+import { LOCAL_DISABLED_FEATURES, type DeploymentModeName } from "./deployment-mode";
+import { SETTING_KEYS } from "./settings";
 import { FNB_COA_TEMPLATE, JEWELRY_COA_TEMPLATE, nextAccountLevel, type AccountLevel, type TemplateAccount } from "./coa-template";
 import { ENABLED_INDUSTRIES, INDUSTRIES, type Industry } from "./industries";
 
@@ -44,6 +46,15 @@ export interface ProvisionBusinessInput {
    * without a setup detour. See coa-template.ts for the template itself.
    */
   seedChartOfAccounts?: boolean;
+  /**
+   * How this install relates to the online platform. 'local' stamps the
+   * deployment-mode setting and seeds `business_features` overrides turning
+   * off everything that needs the platform to work (see
+   * LOCAL_DISABLED_FEATURES). Absent means 'connected', which writes nothing
+   * — so every existing caller (the online console, public signup) is
+   * unchanged.
+   */
+  deploymentMode?: DeploymentModeName;
 }
 
 export interface ProvisionedBusiness {
@@ -235,6 +246,26 @@ export async function provisionBusiness(
 
       if (input.seedChartOfAccounts) {
         await seedChartOfAccounts(client, businessId, input.industry ?? "food_service");
+      }
+
+      // Local-only installs record the mode and turn off the platform-dependent
+      // features in the same transaction that creates the business, so there is
+      // never a window where a local install looks like a connected one.
+      if (input.deploymentMode === "local") {
+        await client.query(
+          `INSERT INTO settings (business_id, location_id, key, value)
+           VALUES ($1, NULL, $2, $3)`,
+          [businessId, SETTING_KEYS.deploymentMode, JSON.stringify({ mode: "local", pairedAt: null })],
+        );
+        for (const flagKey of LOCAL_DISABLED_FEATURES) {
+          await client.query(
+            `INSERT INTO business_features (business_id, flag_key, enabled)
+             SELECT $1, $2, false
+              WHERE EXISTS (SELECT 1 FROM feature_flags WHERE key = $2)
+             ON CONFLICT (business_id, flag_key) DO UPDATE SET enabled = false, updated_at = now()`,
+            [businessId, flagKey],
+          );
+        }
       }
 
       await client.query("COMMIT");

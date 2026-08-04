@@ -12,6 +12,7 @@ import {
   defaultAccessibleLocationId,
   type LocationAccessContext,
 } from "./location-access";
+import { isLocalOnly } from "./deployment-mode";
 import { getSetting, getWizardProgress, SETTING_KEYS, type WizardProgress } from "./settings";
 import type { Industry } from "./industries";
 // Re-exported for this module's existing importers (the wizard step list
@@ -58,6 +59,8 @@ async function count(sql: string, params: unknown[]): Promise<number> {
 
 export interface SetupState {
   needsBootstrap: boolean;
+  /** True on a standalone desktop install: no online platform, local-drive backup only. */
+  localOnly: boolean;
   business: { id: string; name: string; industry: Industry } | null;
   location: { id: string; name: string; address: string | null; phone: string | null } | null;
   prefs: BusinessPrefs | null;
@@ -209,11 +212,12 @@ export async function computeSetupState(businessId: string): Promise<SetupState>
   const steps = wizardStepsForIndustry(industry);
   const location = business ? await getPrimaryLocation(businessId) : null;
 
-  const [prefs, costing, tax, progress] = await Promise.all([
+  const [prefs, costing, tax, progress, localOnly] = await Promise.all([
     getSetting<BusinessPrefs>(businessId, SETTING_KEYS.businessPrefs),
     getSetting<CostingSetting>(businessId, SETTING_KEYS.costing),
     getSetting<TaxSetting>(businessId, SETTING_KEYS.tax),
     getWizardProgress(businessId),
+    isLocalOnly(businessId),
   ]);
 
   const [accounts, users, categories, items, printers, inventoryItems, stockMovements, openingEntries] =
@@ -261,6 +265,7 @@ export async function computeSetupState(businessId: string): Promise<SetupState>
 
   return {
     needsBootstrap: false,
+    localOnly,
     business,
     location,
     prefs,

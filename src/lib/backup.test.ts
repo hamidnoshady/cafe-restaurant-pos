@@ -57,6 +57,24 @@ describe("validateBackupConfig", () => {
     });
   });
 
+  it("defaults an absent backup directory to empty and round-trips a supplied one", () => {
+    // Empty means "use BACKUP_DIR / the built-in default", which is what every
+    // install that predates the desktop app stores — so an absent field must
+    // not become undefined or a literal path.
+    const absent = validateBackupConfig(validBody());
+    expect(absent.ok).toBe(true);
+    if (absent.ok) expect(absent.config.directory).toBe("");
+
+    const supplied = validateBackupConfig(validBody({ directory: "  D:\\pos-backups  " }));
+    expect(supplied.ok).toBe(true);
+    if (supplied.ok) expect(supplied.config.directory).toBe("D:\\pos-backups");
+
+    expect(validateBackupConfig(validBody({ directory: 42 }))).toEqual({
+      ok: false,
+      error: "invalid_directory",
+    });
+  });
+
   it("requires endpoint/bucket/credentials/passphrase when cloud is enabled", () => {
     const cloud = {
       enabled: true,

@@ -44,6 +44,11 @@ wizard (`/setup/*`) — no manual DB edits needed:
 7. **Hardware** — printer pairing + test print (stubbed until Phase 5)
 8. **Opening balances** — opening inventory count + balanced opening journal entry
 
+A standalone desktop install gets one extra optional step between hardware and opening —
+**backup destination**, with a real OS folder dialog — and `/welcome` there first asks
+whether to set up locally or pair with an existing online business
+([docs/standalone-desktop-app.md](docs/standalone-desktop-app.md#first-run--local-setup-or-pairing)).
+
 Until the wizard is completed, Owner/Manager logins are routed into it; the dashboard
 shows a "resume setup" banner.
 
@@ -116,9 +121,12 @@ kitchen": its items land on the KDS as `sent` immediately.
 
 `/dashboard/backup` (Owner sets schedule/retention/cloud; Owner+Manager can
 «پشتیبان‌گیری هم‌اکنون» and see run history). Scheduled `pg_dump` of the whole
-local DB to `BACKUP_DIR` (plus an optional `BACKUP_SECONDARY_DIR` — USB/NAS),
-and an AES-256-GCM-encrypted copy uploaded to any S3-compatible storage.
-Failed/overdue backups raise a red banner on the Owner dashboard. Restore
+local DB to the Owner-chosen destination folder — falling back to `BACKUP_DIR`
+when that's left empty, which is every install that predates the desktop app —
+plus an optional `BACKUP_SECONDARY_DIR` (USB/NAS), and an AES-256-GCM-encrypted
+copy uploaded to any S3-compatible storage. A local-only install has no cloud
+half at all (see "Deployment mode" below). Failed/overdue backups raise a red
+banner on the Owner dashboard. Restore
 (always dry-run first): `npm run db:restore` — full runbook in
 [docs/backup-restore.md](docs/backup-restore.md). The host needs
 `postgresql-client` ≥ 16 (`pg_dump`/`pg_restore`).
@@ -236,8 +244,12 @@ connection checkout from the tenant context (`src/lib/tenant-context.ts`), which
 = …` gets *fewer* rows, never another tenant's. With no context at all, tenant tables read
 as empty — it fails closed.
 
-Two operations legitimately cross tenants and go through `withoutTenantScope()`: resolving
-a login email to its memberships, and platform administration. Grep for it to audit them.
+A handful of operations legitimately cross tenants and go through `withoutTenantScope()`,
+each because it has to resolve *which* tenant a request is for before that tenant can be
+known any other way: login, platform administration, server-sync and public-API bearer
+auth, a narrow write to the global identity table, an employee-session re-check, and
+desktop pairing. `src/lib/db.ts`'s doc comment on the function is the authoritative list —
+grep for the function to audit the call sites against it.
 
 **The app's database role must not be a superuser.** Superusers and `BYPASSRLS` roles ignore
 row-level security entirely, which would make every policy a silent no-op. The `pos` role
@@ -276,6 +288,16 @@ a row in `users` is that person's *membership* of one business, carrying their r
 permission overrides and default branch. One person can hold several memberships and switch
 between them (`/api/auth/switch-business`). PIN-only staff have no platform identity and
 belong to exactly one business.
+
+**Deployment mode.** `settings['deployment.mode']` records whether an install is `local`
+(standalone desktop, no online platform) or `connected`. **An absent setting reads as
+`connected`**, so every deployment that predates this feature — every VPS, every
+already-paired laptop — behaves exactly as it did, with no backfill migration.
+`isLocalOnly(businessId)` in `src/lib/deployment-mode.ts` is the one place to ask. A local
+install turns off the three platform-dependent features (`ai_assistant`, `multi_location`,
+`offline_mode`) and has no cloud backup; see
+[docs/standalone-desktop-app.md](docs/standalone-desktop-app.md#first-run--local-setup-or-pairing)
+for the first-run flow and how a desktop install pairs with an existing online business.
 
 **Dashboard URL carries the business's slug.** The browser sees `/{slug}/dashboard/...` —
 the business's slug (its stable, human-readable "english name", set at signup/provisioning

@@ -22,7 +22,7 @@
 // Auto-update is NOT part of this yet — see docs/standalone-desktop-app.md.
 "use strict";
 
-const { app, BrowserWindow } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
 const crypto = require("node:crypto");
@@ -249,6 +249,17 @@ async function createWindow() {
 }
 
 app.whenReady().then(async () => {
+  // The backup-destination wizard step calls this through the preload bridge;
+  // a browser has no way to return a real filesystem path, so the desktop
+  // shell is the only place it can come from.
+  ipcMain.handle("pick-folder", async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+      properties: ["openDirectory", "createDirectory"],
+      title: "پوشهٔ پشتیبان‌گیری",
+    });
+    return canceled ? null : filePaths[0];
+  });
+
   await startBackend();
   await createWindow();
 
