@@ -467,3 +467,72 @@ wave in this project's history.
 
 Not yet built: §2's fixed-asset register and depreciation (Wave 5's other item, deferred to its own
 slice — a new subsystem with its own schema and posting, not a reporting change).
+
+**Wave 5, second slice — fixed-asset register & depreciation — implemented**, closing §2's gap.
+Straight-line only for v1 (the simplest default, matching every other phase's "start simple, revisit
+if asked" pattern) — no declining-balance/units-of-production methods and no disposal/sale-of-asset
+workflow yet.
+
+- **`fixed_assets`** (`migrations/0058_fixed_assets_depreciation.sql`) — name, acquisition date, cost,
+  salvage value, useful life in months. **`fixed_asset_depreciation_entries`** — one row per posted
+  period for one asset, `UNIQUE(fixed_asset_id, period_label)` guarding against posting the same
+  period twice (stricter than `payroll_runs`' free-text label, which has no such guard — a
+  depreciation amount is fully deterministic, so there's no legitimate reason to repeat one). Both
+  RLS-scoped in the same migration, mirroring `consignors`/`payroll_runs`'s exact policy shape.
+  `accumulatedDepreciation`/`bookValue` are never stored on the asset row — always reconstructed from
+  `fixed_asset_depreciation_entries`, the same "never a shadow copy" discipline AR/AP/VAT already use
+  for their control-account balances.
+- **Two new well-known accounts**, backfilled onto every existing `food_service` business (same
+  scoping as Wave 4's channel-revenue accounts — jewelry stays out of scope): `accumulatedDepreciation`
+  (1510, «استهلاک انباشته», contra-asset, a `moein`-level child of `1500 اثاثه و تجهیزات` — the only
+  fixed-asset line the template has today) and `depreciationExpense` (5700, «هزینه استهلاک»).
+- **`src/lib/depreciation.ts`** (pure) — `validateFixedAsset`, `monthlyDepreciation` (depreciable base
+  ÷ useful life, rounded to whole Rial), and `depreciationForPeriod(asset, accumulatedSoFar,
+  periodsPostedSoFar)`. A real rounding bug surfaced and got fixed while writing this: a flat
+  per-period rounded amount (e.g. 100,000 over 3 months → 33,333/month) leaves a few Rial of the
+  depreciable base permanently unposted (33,333 × 3 = 99,999, one short) unless the *last scheduled*
+  period absorbs the remainder instead of applying the regular monthly amount — `periodsPostedSoFar`
+  exists specifically so the function can detect "this is the final period" and sweep up that
+  rounding dust, proven in both the pure unit test and an integration test posting all three periods
+  of a real asset and checking they sum to exactly the depreciable base.
+- **`src/lib/fixed-assets-service.ts`** — `createFixedAsset`/`listFixedAssets`/`deleteFixedAsset`
+  (only for an asset with zero depreciation posted — otherwise archive-equivalent doesn't apply since
+  there's no archive concept here, just "can't delete history") and `postDepreciation` (computes the
+  period's amount from what's already accumulated, inserts the depreciation-entry row, and posts
+  Debit `depreciationExpense` / Credit `accumulatedDepreciation` via the standard `postJournalEntry` +
+  `accountIdsByCode` pair every other well-known-code posting path uses — so it's subject to the
+  fiscal-period lock exactly like everything else). A duplicate `periodLabel` surfaces as the DB's own
+  unique-constraint violation, caught and re-thrown as a clean `period_already_depreciated` error
+  rather than a raw Postgres exception.
+- **`/api/ledger/fixed-assets`** (list/create), **`/api/ledger/fixed-assets/[id]`** (delete),
+  **`/api/ledger/fixed-assets/[id]/depreciate`** (post one period) — owner/manager/accountant, the
+  standard "post immediately" ledger-surface gate (AR receive-payment, AP pay-bill, expenses,
+  reconciliation), not payroll's narrower owner+accountant-only gate, since asset depreciation isn't
+  compensation-sensitive data.
+- **A new «دارایی‌های ثابت» tab** (`fixed-assets-section.tsx`) in the ledger dashboard — register an
+  asset, see its cost/salvage/accumulated-depreciation/book-value, and post a period's depreciation
+  inline per row. Uses its own local error-message map + direct `api()` calls rather than the shared
+  `run()` helper, matching `chart-of-accounts-section.tsx`'s precedent for a multi-action component
+  that needs several distinct, specific error messages (not `expense-section.tsx`'s single-action
+  `run()` pattern).
+- Verified in `src/lib/depreciation.test.ts` (17 tests: validation, the monthly-amount formula,
+  regular-vs-final-period behavior including the rounding-remainder case, zero once fully depreciated)
+  and new `integration/fixed-assets.integration.test.ts` (9 tests: a fresh asset has zero accumulated
+  depreciation and book value = cost; depreciation posts the exact expected balanced entry against the
+  right two accounts; `listFixedAssets` correctly reflects posted depreciation; the same period can't
+  be posted twice, and a rejected attempt leaves no stray journal entry; three periods of a
+  100,000-over-3-months asset sum to exactly 100,000 and a fourth is refused as `fully_depreciated`;
+  posting into a locked fiscal period is refused exactly like every other posting path; delete
+  succeeds only with zero depreciation posted). Also manually re-verified the migration's backfill
+  (correct `parent_id`/`level = 'moein'`/`is_contra = true` for `accumulatedDepreciation`) against a
+  hand-built pre-existing business, same as Wave 4. `npx tsc --noEmit`, `npm test` (977 tests, up from
+  954), `npm run db:migrate` (twice, second run a no-op) + `npm run test:db` (329 tests, up from 320,
+  `tenant-isolation`'s generated policy checks covering both new tables automatically), and `npm run
+  build` all pass.
+
+Not yet built: asset disposal/sale, declining-balance or other depreciation methods, and a
+depreciation-schedule *report* (a forward-looking projection of remaining periods/amounts, distinct
+from the register's current-state view) — none blocked exit criteria for this slice, all reasonable
+follow-ups if asked for.
+
+With this, Wave 5 as scoped in the gap analysis (§7.3 + §2) is complete.
