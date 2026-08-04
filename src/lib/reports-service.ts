@@ -13,7 +13,7 @@ import {
   type ChartType,
 } from "./reports";
 import { addDays } from "./rollup";
-import { COST_OF_SALES_CODES, WELL_KNOWN_CODES } from "./coa-template";
+import { COST_OF_SALES_CODES, WELL_KNOWN_CODES, type AccountType, type NormalBalance } from "./coa-template";
 import type { Role } from "./auth";
 
 export interface ReportRow extends Record<string, unknown> {
@@ -567,6 +567,123 @@ export async function getAccountDrillDown(
     debit: Number(r.debit),
     credit: Number(r.credit),
   }));
+}
+
+// ---------------------------------------------------------------------------
+// Account statement (دفتر معین / گردش حساب) — Phase 22 Wave 5, issue #160 §7.3
+// ---------------------------------------------------------------------------
+
+export interface AccountStatementLine {
+  entryId: string;
+  date: string;
+  memo: string | null;
+  sourceType: string | null;
+  debit: number;
+  credit: number;
+  /** Running balance after this line, signed per the account's own normal balance (see below). */
+  balance: number;
+}
+
+export interface AccountStatement {
+  accountId: string;
+  accountCode: string;
+  accountName: string;
+  accountType: AccountType;
+  normalBalance: NormalBalance;
+  /** Net movement before `dateFrom` (0 if `dateFrom` is omitted — the statement then covers all history). */
+  openingBalance: number;
+  lines: AccountStatementLine[];
+  closingBalance: number;
+}
+
+/**
+ * One account's full ledger for a period — opening balance, every movement
+ * chronologically with a running balance, closing balance — the standard
+ * دفتر معین/گردش حساب presentation `getAccountDrillDown` above doesn't
+ * provide (that's a flat, newest-first list for one report figure; this is
+ * a browsable per-account statement, reached from the chart-of-accounts
+ * tab). `null` if the account doesn't exist or isn't this business's.
+ *
+ * A debit-normal account's balance moves by (debit − credit) each line, a
+ * credit-normal account's by (credit − debit) — the same convention
+ * getProfitAndLoss/getBalanceSheet already use per `account.type`, now read
+ * directly off the stored `normal_balance` column (Wave 2) instead of
+ * re-deriving it from type inline.
+ */
+export async function getAccountStatement(
+  businessId: string,
+  accountId: string,
+  filters: DateRangeFilters = {},
+): Promise<AccountStatement | null> {
+  const { rows: accountRows } = await query<{
+    code: string;
+    name: string;
+    type: AccountType;
+    normal_balance: NormalBalance;
+  }>(`SELECT code, name, type, normal_balance FROM accounts WHERE id = $1 AND business_id = $2`, [
+    accountId,
+    businessId,
+  ]);
+  const account = accountRows[0];
+  if (!account) return null;
+  const sign = account.normal_balance === "debit" ? 1 : -1;
+
+  let openingBalance = 0;
+  if (filters.dateFrom) {
+    const { rows } = await query<{ debit: string; credit: string }>(
+      `SELECT COALESCE(SUM(jl.debit), 0)::text AS debit, COALESCE(SUM(jl.credit), 0)::text AS credit
+         FROM journal_lines jl
+         JOIN journal_entries je ON je.id = jl.entry_id
+        WHERE je.business_id = $1 AND jl.account_id = $2 AND je.entry_date < $3`,
+      [businessId, accountId, filters.dateFrom],
+    );
+    openingBalance = sign * (Number(rows[0].debit) - Number(rows[0].credit));
+  }
+
+  const params: unknown[] = [businessId, accountId];
+  const where = ["je.business_id = $1", "jl.account_id = $2"];
+  if (filters.dateFrom) {
+    params.push(filters.dateFrom);
+    where.push(`je.entry_date >= $${params.length}`);
+  }
+  if (filters.dateTo) {
+    params.push(filters.dateTo);
+    where.push(`je.entry_date <= $${params.length}`);
+  }
+  const { rows } = await query<{
+    entry_id: string;
+    entry_date: string;
+    memo: string | null;
+    source_type: string | null;
+    debit: string;
+    credit: string;
+  }>(
+    `SELECT je.id AS entry_id, je.entry_date::text AS entry_date, je.memo, je.source_type, jl.debit, jl.credit
+       FROM journal_lines jl
+       JOIN journal_entries je ON je.id = jl.entry_id
+      WHERE ${where.join(" AND ")}
+      ORDER BY je.entry_date ASC, je.posted_at ASC`,
+    params,
+  );
+
+  let balance = openingBalance;
+  const lines: AccountStatementLine[] = rows.map((r) => {
+    const debit = Number(r.debit);
+    const credit = Number(r.credit);
+    balance += sign * (debit - credit);
+    return { entryId: r.entry_id, date: r.entry_date, memo: r.memo, sourceType: r.source_type, debit, credit, balance };
+  });
+
+  return {
+    accountId,
+    accountCode: account.code,
+    accountName: account.name,
+    accountType: account.type,
+    normalBalance: account.normal_balance,
+    openingBalance,
+    lines,
+    closingBalance: balance,
+  };
 }
 
 interface SavedReportRow extends Record<string, unknown> {
