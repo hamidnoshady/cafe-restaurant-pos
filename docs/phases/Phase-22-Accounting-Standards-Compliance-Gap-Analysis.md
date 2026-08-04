@@ -432,3 +432,38 @@ concept (§4 asks for "پلتفرم‌های سفارش آنلاین" as its own
 Phase 11's `couriers`/`deliveries` model is entirely in-house-courier-based with no third-party
 marketplace concept; `platformCommissionExpense` gives a place to *record* the cost, not a way to
 *capture* which platform or auto-post a commission split at sale time).
+
+**Wave 5, first slice — دفتر معین/گردش حساب (account statement) — implemented**, closing §7.3.
+Scoped to this one report rather than bundling it with §2's fixed-asset/depreciation gap (the wave's
+other stated item): the two are unrelated (pure reporting on existing data vs. a new asset-register
+subsystem with its own posting), and keeping them as separate slices matches every other multi-part
+wave in this project's history.
+
+- **`getAccountStatement`** (`reports-service.ts`) — one account's full ledger for a period: an
+  opening balance (net movement before `dateFrom`, `0` if `dateFrom` is omitted), every line
+  chronologically (oldest first, unlike `getAccountDrillDown`'s newest-first flat list for one report
+  figure) with a running balance, and a closing balance. The running balance is signed off the
+  account's stored `normal_balance` (Wave 2) — `balance += (debit − credit)` for a debit-normal
+  account, `(credit − debit)` for a credit-normal one — the same convention `getProfitAndLoss`/
+  `getBalanceSheet` already use per `account.type`, now read directly off the column instead of
+  re-derived inline. Returns `null` for an unknown or cross-business account id.
+- **`GET /api/ledger/accounts/[id]/statement`** (`?dateFrom=&dateTo=`) — same read access as the rest
+  of the ledger surface (owner/manager/accountant).
+- **`AccountStatementPanel`** (new, mirroring `ar-statement-panel.tsx`'s modal shape) — opening
+  balance, a running-balance table/card list, closing balance, with `JalaliDatePicker` range inputs
+  (`vat-report-section.tsx`'s pattern). Reached via a new «گردش حساب» button on every row of the
+  chart-of-accounts tab (`chart-of-accounts-section.tsx`), per the gap analysis's own recommendation
+  ("reachable directly from the chart-of-accounts tab, not only by clicking through a report line") —
+  no new tab, no change to the existing drill-down overlay.
+- No schema change — pure reporting on data every posting path already writes.
+- Verified in extended `integration/financial-statements.integration.test.ts` (null for a
+  cross-business account; correct running balance and chronological ordering for a credit-normal
+  revenue account and a debit-normal expense account, including out-of-insertion-order dates;
+  `openingBalance` correctly carrying pre-range movement into a bounded query while only in-range
+  lines appear; and the zero-activity case). `npx tsc --noEmit`, `npm test` (954 tests — no new
+  pure-unit coverage needed, since `reports-service.ts` is DB-touching and covered by integration
+  tests per repo convention), `npm run db:migrate` (no new migration this slice) + `npm run test:db`
+  (320 tests, up from 315), and `npm run build` all pass.
+
+Not yet built: §2's fixed-asset register and depreciation (Wave 5's other item, deferred to its own
+slice — a new subsystem with its own schema and posting, not a reporting change).

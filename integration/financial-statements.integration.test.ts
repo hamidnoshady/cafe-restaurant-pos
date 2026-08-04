@@ -203,3 +203,56 @@ describe("getAccountDrillDown", () => {
     expect(lines.every((l) => l.credit > 0 && l.debit === 0)).toBe(true);
   });
 });
+
+describe("getAccountStatement", () => {
+  it("returns null for an account that doesn't belong to this business", async () => {
+    expect(await reportsService.getAccountStatement(biz.id, randomUUID())).toBeNull();
+  });
+
+  it("computes a running balance for a credit-normal (revenue) account, chronologically", async () => {
+    await postEntry("2025-04-05", "order", "sale one", acct.cash, acct.revenue, 100_000);
+    await postEntry("2025-04-03", "order", "sale two", acct.cash, acct.revenue, 40_000);
+
+    const statement = await reportsService.getAccountStatement(biz.id, acct.revenue);
+    expect(statement).not.toBeNull();
+    expect(statement!.normalBalance).toBe("credit");
+    expect(statement!.openingBalance).toBe(0);
+    // Oldest first, regardless of insertion order.
+    expect(statement!.lines.map((l) => l.date)).toEqual(["2025-04-03", "2025-04-05"]);
+    expect(statement!.lines.map((l) => l.balance)).toEqual([40_000, 140_000]);
+    expect(statement!.closingBalance).toBe(140_000);
+  });
+
+  it("computes a running balance for a debit-normal (expense) account", async () => {
+    await postEntry("2025-04-01", "manual", "rent", acct.expense, acct.cash, 50_000);
+    await postEntry("2025-04-10", "manual", "utilities", acct.expense, acct.cash, 20_000);
+
+    const statement = await reportsService.getAccountStatement(biz.id, acct.expense);
+    expect(statement!.normalBalance).toBe("debit");
+    expect(statement!.lines.map((l) => l.balance)).toEqual([50_000, 70_000]);
+    expect(statement!.closingBalance).toBe(70_000);
+  });
+
+  it("carries movement before dateFrom into openingBalance, and only lists lines within range", async () => {
+    await postEntry("2025-03-01", "order", "before range", acct.cash, acct.revenue, 500_000);
+    const e2 = await postEntry("2025-04-05", "order", "in range", acct.cash, acct.revenue, 100_000);
+    await postEntry("2025-05-01", "order", "after range", acct.cash, acct.revenue, 900_000);
+
+    const statement = await reportsService.getAccountStatement(biz.id, acct.revenue, {
+      dateFrom: "2025-04-01",
+      dateTo: "2025-04-30",
+    });
+    expect(statement!.openingBalance).toBe(500_000);
+    expect(statement!.lines).toHaveLength(1);
+    expect(statement!.lines[0].entryId).toBe(e2);
+    expect(statement!.lines[0].balance).toBe(600_000);
+    expect(statement!.closingBalance).toBe(600_000);
+  });
+
+  it("an account with no postings has a zero opening and closing balance and no lines", async () => {
+    const statement = await reportsService.getAccountStatement(biz.id, acct.salaries);
+    expect(statement!.openingBalance).toBe(0);
+    expect(statement!.lines).toEqual([]);
+    expect(statement!.closingBalance).toBe(0);
+  });
+});
