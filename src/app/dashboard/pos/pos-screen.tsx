@@ -122,6 +122,7 @@ export function PosScreen() {
   const [reviewOpen, setReviewOpen] = useState(false);
   const [checkoutIntent, setCheckoutIntent] = useState<CheckoutIntent>("order");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
+  const [tipInput, setTipInput] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<CheckoutResult | null>(null);
@@ -287,8 +288,9 @@ export function PosScreen() {
     modifierDeltas: l.modifierDeltas,
     taxRatePercent: l.taxRatePercent,
   }));
-  // Fee is entered in Toman (like menu prices) but stored/sent in Rial.
+  // Fee/tip are entered in Toman (like menu prices) but stored/sent in Rial.
   const feeNum = orderType === "delivery" ? tomanToRial(Math.max(0, Math.round(Number(deliveryFee) || 0))) : 0;
+  const tipNum = tomanToRial(Math.max(0, Math.round(Number(tipInput) || 0)));
   const totals = computeOrderTotals(cartLines, discount, feeNum);
 
   async function submit(intent: CheckoutIntent = "order") {
@@ -347,7 +349,7 @@ export function PosScreen() {
         try {
           const payment = await api<{ error?: string }>("/api/orders/" + creation.data.id + "/pay", {
             method: "POST",
-            body: JSON.stringify({ method: paymentMethod }),
+            body: JSON.stringify({ method: paymentMethod, tipAmount: tipNum }),
           });
           if (payment.ok) {
             paid = true;
@@ -394,6 +396,7 @@ export function PosScreen() {
           discount: totals.discount,
           tax: totals.tax,
           total: totals.total,
+          tip: tipNum,
           paymentMethod,
         };
         void printReceipt(receiptPrinter.connection, receipt);
@@ -413,6 +416,7 @@ export function PosScreen() {
     setDeliveryCourierId("");
     setCheckoutIntent("order");
     setPaymentMethod("cash");
+    setTipInput("");
     setCartSheetOpen(false);
     setBusy(false);
     submissionInFlight.current = false;
@@ -725,6 +729,10 @@ export function PosScreen() {
               <button type="button" onClick={() => setPaymentMethod("cash")} className={"flex min-h-14 items-center justify-center gap-2 rounded-xl border text-sm font-bold transition duration-200 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 motion-reduce:transition-none " + (paymentMethod === "cash" ? "border-[#F2D097] bg-[#FFF1D8] text-[#9B6700]" : "border-[#EAE8E2] text-[#5E5B55] hover:bg-[#FCFCFA]")}><BanknoteIcon className="size-4" aria-hidden="true" />نقدی</button>
               <button type="button" onClick={() => setPaymentMethod("card")} className={"flex min-h-14 items-center justify-center gap-2 rounded-xl border text-sm font-bold transition duration-200 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 motion-reduce:transition-none " + (paymentMethod === "card" ? "border-[#F2D097] bg-[#FFF1D8] text-[#9B6700]" : "border-[#EAE8E2] text-[#5E5B55] hover:bg-[#FCFCFA]")}><CreditCardIcon className="size-4" aria-hidden="true" />کارت‌خوان</button>
             </div>
+            <label htmlFor="pos-tip" className="mt-2 block text-xs font-bold text-[#5E5B55]">
+              انعام <span className="font-normal text-[#8B8A85]">(اختیاری، تومان)</span>
+            </label>
+            <input id="pos-tip" className={inputClass + " mt-1 min-h-11 border-[#EAE8E2] bg-[#FCFCFA]"} dir="ltr" inputMode="numeric" value={tipInput} onChange={(event) => setTipInput(event.target.value)} placeholder="۰" />
             <button type="button" onClick={() => { setCheckoutIntent("payment"); setReviewOpen(true); }} disabled={busy || cart.length === 0} className="mt-3 flex min-h-14 w-full items-center justify-center gap-2 rounded-xl bg-[#E9A11B] px-4 text-sm font-bold text-[#252522] transition duration-200 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 disabled:opacity-55 motion-reduce:transition-none"><ReceiptTextIcon className="size-5" aria-hidden="true" />دریافت {paymentMethod === "cash" ? "نقدی" : "کارت‌خوان"} و تکمیل</button>
             <button type="button" onClick={() => { setCheckoutIntent("order"); setReviewOpen(true); }} disabled={busy || cart.length === 0} className="mt-2 min-h-12 w-full rounded-xl border border-[#EAE8E2] bg-white px-4 text-sm font-semibold text-[#5E5B55] transition duration-200 hover:bg-[#FCFCFA] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 disabled:opacity-55 motion-reduce:transition-none">ثبت سفارش باز</button>
           </div>
@@ -831,6 +839,10 @@ export function PosScreen() {
                 <button type="button" onClick={() => setPaymentMethod("cash")} className={"flex min-h-14 items-center justify-center gap-2 rounded-xl border text-sm font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 " + (paymentMethod === "cash" ? "border-[#F2D097] bg-[#FFF1D8] text-[#9B6700]" : "border-[#EAE8E2] text-[#5E5B55]")}><BanknoteIcon className="size-4" aria-hidden="true" />نقدی</button>
                 <button type="button" onClick={() => setPaymentMethod("card")} className={"flex min-h-14 items-center justify-center gap-2 rounded-xl border text-sm font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 " + (paymentMethod === "card" ? "border-[#F2D097] bg-[#FFF1D8] text-[#9B6700]" : "border-[#EAE8E2] text-[#5E5B55]")}><CreditCardIcon className="size-4" aria-hidden="true" />کارت‌خوان</button>
               </div>
+              <label htmlFor="pos-mobile-tip" className="mt-2 block text-xs font-bold text-[#5E5B55]">
+                انعام <span className="font-normal text-[#8B8A85]">(اختیاری، تومان)</span>
+              </label>
+              <input id="pos-mobile-tip" className={inputClass + " mt-1 min-h-11 border-[#EAE8E2] bg-[#FCFCFA]"} dir="ltr" inputMode="numeric" value={tipInput} onChange={(event) => setTipInput(event.target.value)} placeholder="۰" />
               <button type="button" onClick={() => { setCheckoutIntent("payment"); setReviewOpen(true); }} disabled={busy || cart.length === 0} className="mt-3 flex min-h-14 w-full items-center justify-center gap-2 rounded-xl bg-[#E9A11B] px-4 text-sm font-bold text-[#252522] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 disabled:opacity-55"><ReceiptTextIcon className="size-5" aria-hidden="true" />دریافت {paymentMethod === "cash" ? "نقدی" : "کارت‌خوان"} و تکمیل</button>
               <button type="button" onClick={() => { setCheckoutIntent("order"); setReviewOpen(true); }} disabled={busy || cart.length === 0} className="mt-2 min-h-12 w-full rounded-xl border border-[#EAE8E2] bg-white px-4 text-sm font-semibold text-[#5E5B55] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 disabled:opacity-55">ثبت سفارش باز</button>
             </div>
@@ -852,6 +864,12 @@ export function PosScreen() {
             <Row label="تعداد اقلام" value={toPersianDigits(cart.reduce((count, line) => count + line.quantity, 0))} />
             {checkoutIntent === "payment" ? <Row label="روش پرداخت" value={paymentMethod === "cash" ? "نقدی" : "کارت‌خوان"} /> : null}
             <Row label="مبلغ قابل پرداخت" value={formatToman(totals.total)} bold />
+            {checkoutIntent === "payment" && tipNum > 0 ? (
+              <>
+                <Row label="انعام" value={formatToman(tipNum)} />
+                <Row label="مبلغ دریافتی" value={formatToman(totals.total + tipNum)} bold />
+              </>
+            ) : null}
           </dl>
           <DialogFooter>
             <button type="button" onClick={() => setReviewOpen(false)} className="min-h-11 rounded-lg border border-input px-4 text-sm font-medium">بازگشت</button>

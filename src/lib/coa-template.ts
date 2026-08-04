@@ -72,6 +72,10 @@ export const WELL_KNOWN_CODES = {
   accountsPayable: "2100",
   vatPayable: "2200",
   salariesPayable: "2300",
+  // Tip capture (issue #160 §4) — a pass-through liability owed to staff,
+  // not revenue. See migrations/0059_tip_capture.sql for the product
+  // decisions this rests on.
+  tipsPayable: "2400",
   openingEquity: "3900",
   historicalInventoryReconciliationEquity: "3950",
   retainedEarnings: "3800",
@@ -154,6 +158,7 @@ export const FNB_COA_TEMPLATE: TemplateAccount[] = [
   { code: "2100", name: "حساب‌های پرداختنی", type: "liability", parentCode: "2000" },
   { code: "2200", name: "مالیات بر ارزش افزوده پرداختنی", type: "liability", parentCode: "2000" },
   { code: "2300", name: "حقوق پرداختنی", type: "liability", parentCode: "2000" },
+  { code: "2400", name: "انعام پرداختنی", type: "liability", parentCode: "2000" },
 
   { code: "3000", name: "حقوق صاحبان سرمایه", type: "equity" },
   { code: "3100", name: "سرمایه", type: "equity", parentCode: "3000" },

@@ -48,6 +48,8 @@ export interface ReceiptData {
   discount: Rial;
   tax: Rial;
   total: Rial;
+  /** A tip collected alongside the bill (issue #160 §4) — on top of `total`, not part of it. */
+  tip?: Rial;
   paymentMethod?: string | null;
   cashierName?: string | null;
 }
@@ -92,6 +94,14 @@ export function renderReceiptHtml(data: ReceiptData, opts: { paperWidthMm?: Pape
   const paymentRow = data.paymentMethod
     ? `<div class="totals-row"><span>روش پرداخت</span><span>${PAYMENT_METHOD_LABELS[data.paymentMethod] ?? data.paymentMethod}</span></div>`
     : "";
+  const tipRow =
+    data.tip && data.tip > 0
+      ? `<div class="totals-row"><span>انعام</span><span>${formatToman(data.tip, { withUnit: false })}</span></div>`
+      : "";
+  const receivedRow =
+    data.tip && data.tip > 0
+      ? `<div class="grand-total"><span>مبلغ دریافتی</span><span>${formatToman(data.total + data.tip)}</span></div>`
+      : "";
 
   return `<!doctype html>
 <html dir="rtl" lang="fa">
@@ -143,6 +153,8 @@ export function renderReceiptHtml(data: ReceiptData, opts: { paperWidthMm?: Pape
   ${discountRow}
   ${taxRow}
   <div class="grand-total"><span>جمع کل</span><span>${formatToman(data.total)}</span></div>
+  ${tipRow}
+  ${receivedRow}
   ${paymentRow}
 
   <div class="divider"></div>

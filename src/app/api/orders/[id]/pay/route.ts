@@ -19,6 +19,8 @@ interface PayBody {
   method?: string;
   reference?: string;
   customerId?: string;
+  /** A tip collected alongside the bill (issue #160 §4), in whole Rial — added on top of the order total, never part of revenue. */
+  tipAmount?: number;
 }
 
 /**
@@ -39,10 +41,12 @@ interface PayBody {
  * recording, order completion, and deduction all happen in one transaction.
  *
  * Same transaction also posts two Phase 7 journal entries: the payment
- * itself (Debit Cash/Bank-Clearing/Accounts-Receivable / Credit the order's
- * channel-specific Sales Revenue account, split by orders.type since Phase
- * 22 Wave 4 — + Tax Payable) and the COGS entry from the deduction's total
- * cost (Debit COGS / Credit Inventory Asset).
+ * itself (Debit Cash/Bank-Clearing/Accounts-Receivable, for the bill *plus*
+ * any tip / Credit the order's channel-specific Sales Revenue account, split
+ * by orders.type since Phase 22 Wave 4 — + Tax Payable + Tips Payable if a
+ * tip was collected, issue #160 §4 — a pass-through liability, never
+ * revenue) and the COGS entry from the deduction's total cost (Debit COGS /
+ * Credit Inventory Asset).
  */
 export const POST = withTenantScope(async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
   const { session, error } = await requireRole("owner", "manager", "cashier");
@@ -65,6 +69,10 @@ export const POST = withTenantScope(async (request: NextRequest, context: { para
   const customerId = body.customerId?.trim() || null;
   if (method === "credit" && !customerId) {
     return NextResponse.json({ error: "customer_required" }, { status: 400 });
+  }
+  const tipAmount = body.tipAmount ?? 0;
+  if (!Number.isSafeInteger(tipAmount) || tipAmount < 0) {
+    return NextResponse.json({ error: "invalid_tip_amount" }, { status: 400 });
   }
 
   const client = await getPool().connect();
@@ -103,10 +111,10 @@ export const POST = withTenantScope(async (request: NextRequest, context: { para
       );
     }
     const { rowCount: completed } = await client.query(
-      `UPDATE orders SET status = 'completed', closed_by = $2, closed_at = now()
+      `UPDATE orders SET status = 'completed', closed_by = $2, closed_at = now(), tip_amount = $3
         WHERE id = $1 AND status = 'open'
         RETURNING id`,
-      [id, session.sub],
+      [id, session.sub, tipAmount],
     );
     if (completed !== 1) {
       await client.query("ROLLBACK");
@@ -123,6 +131,7 @@ export const POST = withTenantScope(async (request: NextRequest, context: { para
       tax: rialText(order.tax),
       inventoryEventId,
       orderChannel: order.type,
+      tip: rialText(String(tipAmount)),
     });
     await postExactCogsEntry(client, {
       businessId: session.businessId,
@@ -145,5 +154,5 @@ export const POST = withTenantScope(async (request: NextRequest, context: { para
   }
 
   broadcast(location.id, { type: "order.updated", orderId: id });
-  return NextResponse.json({ ok: true, amount: total, method });
+  return NextResponse.json({ ok: true, amount: total, method, tipAmount });
 });

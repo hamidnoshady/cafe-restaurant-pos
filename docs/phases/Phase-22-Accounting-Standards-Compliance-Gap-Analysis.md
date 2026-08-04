@@ -566,14 +566,58 @@ new, unconfirmed product decision has shipped:
 | 4 | Revenue split by sales channel + platform-commission account | Done (first slice — see below for what's deferred) |
 | 5 | Account statement (دفتر معین/گردش حساب) + fixed-asset register/depreciation | Done |
 | 7 | Regression pass & doc wrap-up | Done (this entry) |
+| 8 | Tip capture (انعام کارکنان) | Done (see below) |
+
+**Wave 8 — tip capture (انعام کارکنان, §4) — implemented.** Picked up as the first of the three
+deliberately-deferred items above, once the product owner confirmed the three open questions Wave 4
+flagged:
+
+1. **Collected as a separate field added on top of the bill at checkout** (not folded into
+   `orders.total`) — `orders` gets its own `tip_amount` column rather than the tip riding inside the
+   existing total.
+2. **Treated as a pass-through liability owed to staff, not revenue** — not subject to VAT, and not a
+   business inflow.
+3. **Pooled only for v1** — one amount per order, no per-staff attribution/split.
+
+What shipped:
+
+- **`orders.tip_amount bigint NOT NULL DEFAULT 0 CHECK (tip_amount >= 0)`** and a new well-known
+  liability account (`migrations/0059_tip_capture.sql`, `coa-template.ts`): `tipsPayable` (2400,
+  «انعام پرداختنی»), parented under «2000», `level = 'kol'`. Backfilled onto every existing
+  `food_service` business only, same `ON CONFLICT (business_id, code) DO NOTHING` pattern as every
+  prior well-known-account migration; added to `FNB_COA_TEMPLATE` only, not the jewelry template.
+- **`postExactOrderPaymentEntry`** (`ledger-service.ts`) takes an optional `tip` param. When a tip is
+  present, the debit (cash/bank/AR) line grows by the tip amount and a new credit line posts to
+  `tipsPayable` — the tip never touches a revenue account and isn't part of the VAT base. `tipsPayable`
+  is only requested from `accountIdsByCode` when the tip is non-zero, so a zero-tip payment still works
+  on a business that hasn't been backfilled with the account (e.g. a future non-`food_service`
+  industry).
+- **`/api/orders/[id]/pay`** accepts `tipAmount` (Rial, validated as a non-negative safe integer),
+  stores it on the completing order, and passes it through to the posting call.
+- **Checkout UI** — both `order-detail.tsx` (the standard order page) and `pos-screen.tsx` (the
+  touch-optimized quick-checkout screen, desktop and mobile panels) gained an optional tip input
+  (entered in Toman, like every other money input in these screens) and show the tip and a combined
+  "مبلغ دریافتی" total in their payment-confirmation step.
+- **Receipt** (`receipt-template.ts`) gained an optional `tip` field on `ReceiptData`, rendering an
+  «انعام» row and a «مبلغ دریافتی» (amount received = total + tip) row only when a tip was collected.
+- Verified in `src/lib/receipt-template.test.ts` (tip row present/absent) and a new `describe` block
+  in `integration/order-payment-channel-revenue.integration.test.ts` covering: the no-tip path is
+  unchanged; a tip debits bill+tip and credits `tipsPayable`, not revenue; the entry stays balanced
+  with a tip; a zero-tip payment still works on a business without `tipsPayable` configured; a
+  non-zero tip on such a business fails with the standard `MissingLedgerAccountError` → `409`
+  treatment. Also manually verified end-to-end against a live running instance — both via direct API
+  calls and a real browser-driven checkout — confirming the posted entry for an 850,000 Rial bill with
+  a 30,000 Rial tip: debit صندوق (Cash) 880,000, credit فروش بیرون‌بر (Takeaway Revenue) 850,000,
+  credit انعام پرداختنی (Tips Payable) 30,000 — balanced, tip correctly excluded from revenue. `npx
+  tsc --noEmit`, `npm test` (979 tests, up from 977), `npm run db:migrate` (twice, second run a
+  no-op) + `npm run test:db` (334 tests, up from 329), and `npm run build` all pass.
+
+Not yet built (the other two deliberate deferrals from Wave 4/7, unchanged): the food-cost variance
+report and a genuine "online ordering platform" concept — see below.
 
 **Deliberately not built — each needs a real product decision this audit isn't positioned to make
 unilaterally, not an oversight:**
 
-- **Tip capture (انعام کارکنان, §4).** No existing schema hook (unlike revenue channel, which reused
-  `orders.type` for free) — adding one means deciding whether a tip is collected on top of
-  `orders.total` or folded into it, and that touches the single most sensitive transaction in the
-  codebase (`/api/orders/[id]/pay`) for a feature with no settled design yet.
 - **Food-cost variance report (actual vs. recipe-standard consumption, §4).** A substantial reporting
   feature in its own right (comparing exact posted COGS against a recipe-derived theoretical figure
   per menu item/period), not a small addition to an existing report.

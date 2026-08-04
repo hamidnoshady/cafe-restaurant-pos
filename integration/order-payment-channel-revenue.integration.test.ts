@@ -23,7 +23,16 @@ let dbLib: typeof import("../src/lib/db");
 let ledgerService: typeof import("../src/lib/ledger-service");
 
 const biz = { id: "", locationId: "" };
-const acct = { cash: "", bankClearing: "", accountsReceivable: "", dineIn: "", takeaway: "", delivery: "", vatPayable: "" };
+const acct = {
+  cash: "",
+  bankClearing: "",
+  accountsReceivable: "",
+  dineIn: "",
+  takeaway: "",
+  delivery: "",
+  vatPayable: "",
+  tipsPayable: "",
+};
 
 function urlFor(database: string): string {
   const url = new URL(rootDatabaseUrl!);
@@ -96,7 +105,7 @@ beforeEach(async () => {
             ($1, '1200', 'Accounts Receivable', 'asset'),
             ($1, '4310', 'Dine-in', 'revenue'),
             ($1, '4320', 'Takeaway', 'revenue'), ($1, '4330', 'Delivery', 'revenue'),
-            ($1, '2200', 'VAT Payable', 'liability')
+            ($1, '2200', 'VAT Payable', 'liability'), ($1, '2400', 'Tips Payable', 'liability')
      RETURNING id, code`,
     [biz.id],
   );
@@ -108,6 +117,7 @@ beforeEach(async () => {
     if (r.code === "4320") acct.takeaway = r.id;
     if (r.code === "4330") acct.delivery = r.id;
     if (r.code === "2200") acct.vatPayable = r.id;
+    if (r.code === "2400") acct.tipsPayable = r.id;
   }
 });
 
@@ -205,6 +215,161 @@ describe("postExactOrderPaymentEntry — channel revenue split", () => {
           tax: "0" as RialText,
           inventoryEventId,
           orderChannel: "delivery",
+        }),
+      ).rejects.toThrow(ledgerService.MissingLedgerAccountError);
+    } finally {
+      await client.query("ROLLBACK").catch(() => {});
+      client.release();
+    }
+  });
+});
+
+describe("postExactOrderPaymentEntry — tip capture (issue #160 §4)", () => {
+  it("with no tip, behaves exactly as before: no tipsPayable line, debit = bill only", async () => {
+    const inventoryEventId = await newInventoryEventId();
+    const client = await dbLib.getPool().connect();
+    let entryId: string | null;
+    try {
+      await client.query("BEGIN");
+      entryId = await ledgerService.postExactOrderPaymentEntry(client, {
+        businessId: biz.id,
+        locationId: biz.locationId,
+        orderId: randomUUID(),
+        createdBy: null,
+        method: "cash",
+        amount: "110000" as RialText,
+        tax: "10000" as RialText,
+        inventoryEventId,
+        orderChannel: "dine_in",
+      });
+      await client.query("COMMIT");
+    } finally {
+      client.release();
+    }
+
+    const lines = await db.query<{ account_id: string; debit: string; credit: string }>(
+      "SELECT account_id, debit, credit FROM journal_lines WHERE entry_id = $1 ORDER BY debit DESC",
+      [entryId],
+    );
+    expect(lines.rows).toEqual([
+      { account_id: acct.cash, debit: "110000", credit: "0" },
+      { account_id: acct.dineIn, debit: "0", credit: "100000" },
+      { account_id: acct.vatPayable, debit: "0", credit: "10000" },
+    ]);
+  });
+
+  it("with a tip, debits the bill plus the tip, and credits tipsPayable — not revenue — for the tip", async () => {
+    const inventoryEventId = await newInventoryEventId();
+    const client = await dbLib.getPool().connect();
+    let entryId: string | null;
+    try {
+      await client.query("BEGIN");
+      entryId = await ledgerService.postExactOrderPaymentEntry(client, {
+        businessId: biz.id,
+        locationId: biz.locationId,
+        orderId: randomUUID(),
+        createdBy: null,
+        method: "cash",
+        amount: "110000" as RialText,
+        tax: "10000" as RialText,
+        inventoryEventId,
+        orderChannel: "dine_in",
+        tip: "20000" as RialText,
+      });
+      await client.query("COMMIT");
+    } finally {
+      client.release();
+    }
+
+    // Ordered by id (insertion order), not debit DESC: with three
+    // credit-only lines, "debit DESC" has no deterministic tiebreaker.
+    const lines = await db.query<{ account_id: string; debit: string; credit: string }>(
+      "SELECT account_id, debit, credit FROM journal_lines WHERE entry_id = $1 ORDER BY id",
+      [entryId],
+    );
+    // Debit = bill (110,000) + tip (20,000) = 130,000 — the real cash movement.
+    expect(lines.rows).toEqual([
+      { account_id: acct.cash, debit: "130000", credit: "0" },
+      { account_id: acct.dineIn, debit: "0", credit: "100000" },
+      { account_id: acct.vatPayable, debit: "0", credit: "10000" },
+      { account_id: acct.tipsPayable, debit: "0", credit: "20000" },
+    ]);
+  });
+
+  it("posts a balanced entry when a tip is included", async () => {
+    const inventoryEventId = await newInventoryEventId();
+    const client = await dbLib.getPool().connect();
+    let entryId: string | null;
+    try {
+      await client.query("BEGIN");
+      entryId = await ledgerService.postExactOrderPaymentEntry(client, {
+        businessId: biz.id,
+        locationId: biz.locationId,
+        orderId: randomUUID(),
+        createdBy: null,
+        method: "card",
+        amount: "75000" as RialText,
+        tax: "0" as RialText,
+        inventoryEventId,
+        orderChannel: "takeaway",
+        tip: "15000" as RialText,
+      });
+      await client.query("COMMIT");
+    } finally {
+      client.release();
+    }
+
+    const totals = await db.query<{ debit_sum: string; credit_sum: string }>(
+      "SELECT sum(debit)::text AS debit_sum, sum(credit)::text AS credit_sum FROM journal_lines WHERE entry_id = $1",
+      [entryId],
+    );
+    expect(totals.rows[0].debit_sum).toBe(totals.rows[0].credit_sum);
+    expect(totals.rows[0].debit_sum).toBe("90000");
+  });
+
+  it("a business missing tipsPayable can still complete a zero-tip payment", async () => {
+    await db.query("DELETE FROM accounts WHERE business_id = $1 AND code = '2400'", [biz.id]);
+    const inventoryEventId = await newInventoryEventId();
+    const client = await dbLib.getPool().connect();
+    let entryId: string | null;
+    try {
+      await client.query("BEGIN");
+      entryId = await ledgerService.postExactOrderPaymentEntry(client, {
+        businessId: biz.id,
+        locationId: biz.locationId,
+        orderId: randomUUID(),
+        createdBy: null,
+        method: "cash",
+        amount: "50000" as RialText,
+        tax: "0" as RialText,
+        inventoryEventId,
+        orderChannel: "dine_in",
+      });
+      await client.query("COMMIT");
+    } finally {
+      client.release();
+    }
+    expect(entryId).not.toBeNull();
+  });
+
+  it("fails with a missing-account error when a tip is given but tipsPayable is missing from the chart", async () => {
+    await db.query("DELETE FROM accounts WHERE business_id = $1 AND code = '2400'", [biz.id]);
+    const inventoryEventId = await newInventoryEventId();
+    const client = await dbLib.getPool().connect();
+    try {
+      await client.query("BEGIN");
+      await expect(
+        ledgerService.postExactOrderPaymentEntry(client, {
+          businessId: biz.id,
+          locationId: biz.locationId,
+          orderId: randomUUID(),
+          createdBy: null,
+          method: "cash",
+          amount: "50000" as RialText,
+          tax: "0" as RialText,
+          inventoryEventId,
+          orderChannel: "dine_in",
+          tip: "5000" as RialText,
         }),
       ).rejects.toThrow(ledgerService.MissingLedgerAccountError);
     } finally {
