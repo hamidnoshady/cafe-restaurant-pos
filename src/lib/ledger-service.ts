@@ -302,9 +302,21 @@ export async function postExactOrderPaymentEntry(
     tax: RialText;
     inventoryEventId: string;
     orderChannel: OrderChannel;
+    /**
+     * A tip collected alongside the bill (issue #160 §4) — added on top of
+     * `amount` for the debit side (it's real cash/card movement), but never
+     * part of revenue: it's a pass-through liability owed to staff, credited
+     * to tipsPayable instead. Optional/defaults to "0" so every pre-existing
+     * caller (and the plain-number legacy path, untouched) keeps compiling
+     * and behaving exactly as before.
+     */
+    tip?: RialText;
   },
 ): Promise<string | null> {
-  const accounts = await accountIdsByCode(client, params.businessId, [
+  const tip = rialBigInt(params.tip ?? ("0" as RialText));
+  if (tip < 0n) throw new Error("negative_tip");
+
+  const codes: string[] = [
     WELL_KNOWN_CODES.cash,
     WELL_KNOWN_CODES.bankClearing,
     WELL_KNOWN_CODES.accountsReceivable,
@@ -312,7 +324,13 @@ export async function postExactOrderPaymentEntry(
     WELL_KNOWN_CODES.takeawayRevenue,
     WELL_KNOWN_CODES.deliveryRevenue,
     WELL_KNOWN_CODES.vatPayable,
-  ]);
+  ];
+  // Only required when there's actually a tip to post — a business that
+  // never uses tips (or removed the account while customizing its chart)
+  // shouldn't have every ordinary, tip-free sale start failing.
+  if (tip > 0n) codes.push(WELL_KNOWN_CODES.tipsPayable);
+  const accounts = await accountIdsByCode(client, params.businessId, codes);
+
   const debitCode =
     params.method === "cash"
       ? WELL_KNOWN_CODES.cash
@@ -330,6 +348,7 @@ export async function postExactOrderPaymentEntry(
     deliveryRevenue: WELL_KNOWN_CODES.deliveryRevenue,
   });
   const zero = "0" as RialText;
+  const totalCollected = (rialBigInt(params.amount) + tip).toString() as RialText;
   return postExactJournalEntry(client, {
     businessId: params.businessId,
     locationId: params.locationId,
@@ -340,13 +359,16 @@ export async function postExactOrderPaymentEntry(
     postingKind: "revenue",
     inventoryEventId: params.inventoryEventId,
     lines: [
-      { accountId: accounts.get(debitCode)!, debit: params.amount, credit: zero },
+      { accountId: accounts.get(debitCode)!, debit: totalCollected, credit: zero },
       {
         accountId: accounts.get(revenueCode)!,
         debit: zero,
         credit: revenue.toString() as RialText,
       },
       { accountId: accounts.get(WELL_KNOWN_CODES.vatPayable)!, debit: zero, credit: params.tax },
+      ...(tip > 0n
+        ? [{ accountId: accounts.get(WELL_KNOWN_CODES.tipsPayable)!, debit: zero, credit: tip.toString() as RialText }]
+        : []),
     ],
   });
 }

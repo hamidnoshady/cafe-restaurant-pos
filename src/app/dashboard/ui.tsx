@@ -130,6 +130,8 @@ export function errorMessage(code: string | undefined): string {
     branch_has_open_sessions: "این شعبه نشست میز باز دارد و قابل غیرفعال‌سازی نیست.",
     source_branch_not_found: "شعبهٔ مبدأ برای کپی منو پیدا نشد.",
     missing_location: "شعبه‌ای انتخاب نشده است.",
+    // Phase 22 Wave 4 (tip capture) — issue #160 §4
+    invalid_tip_amount: "مبلغ انعام معتبر نیست.",
     // Phase 16 — AR subledger
     customer_required: "برای پرداخت نسیه انتخاب مشتری الزامی است.",
     customer_not_found: "مشتری انتخاب‌شده معتبر نیست.",

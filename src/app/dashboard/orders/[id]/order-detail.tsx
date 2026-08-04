@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { toPersianDigits } from "@/lib/digits";
-import { formatToman } from "@/lib/money";
+import { formatToman, parseToRial } from "@/lib/money";
 import { formatQueueLabel } from "@/lib/orders";
 import { kickDrawer, printReceipt } from "@/lib/print-agent-client";
 import type { ReceiptData } from "@/lib/receipt-template";
@@ -89,6 +89,7 @@ export function OrderDetail({ orderId, canEdit }: { orderId: string; canEdit: bo
   const [discountType, setDiscountType] = useState<"" | "percent" | "amount">("");
   const [discountValue, setDiscountValue] = useState("");
   const [payMethod, setPayMethod] = useState<"cash" | "card" | "card_to_card" | "credit">("cash");
+  const [tipInput, setTipInput] = useState("");
   const [paying, setPaying] = useState(false);
   const [customerQuery, setCustomerQuery] = useState("");
   const [customerResults, setCustomerResults] = useState<Customer[]>([]);
@@ -241,11 +242,19 @@ export function OrderDetail({ orderId, canEdit }: { orderId: string; canEdit: bo
     if (payMethod === "credit" && !selectedCustomer) {
       return setError(errorMessage("customer_required"));
     }
+    let tipAmount = 0;
+    if (tipInput.trim()) {
+      try {
+        tipAmount = parseToRial(tipInput, "toman");
+      } catch {
+        return setError(errorMessage("invalid_tip_amount"));
+      }
+    }
     setPaying(true);
     setError("");
     const { ok, data } = await api<{ error?: string }>(`/api/orders/${orderId}/pay`, {
       method: "POST",
-      body: JSON.stringify({ method: payMethod, customerId: selectedCustomer?.id }),
+      body: JSON.stringify({ method: payMethod, customerId: selectedCustomer?.id, tipAmount }),
     });
     setPaying(false);
     if (!ok) return setError(errorMessage(data.error));
@@ -275,11 +284,13 @@ export function OrderDetail({ orderId, canEdit }: { orderId: string; canEdit: bo
         discount: Number(order.discount),
         tax: Number(order.tax),
         total: Number(order.total),
+        tip: tipAmount,
         paymentMethod: payMethod,
       };
       void printReceipt(receiptPrinter.connection, receipt);
       if (payMethod === "cash") void kickDrawer(receiptPrinter.connection);
     }
+    setTipInput("");
   }
 
   if (!order) return <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>;
@@ -437,6 +448,18 @@ export function OrderDetail({ orderId, canEdit }: { orderId: string; canEdit: bo
                 </button>
               ))}
             </div>
+
+            <label className="mb-3 block text-sm">
+              <span className="mb-1.5 block font-medium">انعام <span className="font-normal text-muted-foreground">(اختیاری، تومان)</span></span>
+              <input
+                className={inputClass}
+                dir="ltr"
+                inputMode="numeric"
+                value={tipInput}
+                onChange={(e) => setTipInput(e.target.value)}
+                placeholder="۰"
+              />
+            </label>
 
             {payMethod === "credit" ? (
               <div className="mb-3 rounded-lg border border-border p-3">

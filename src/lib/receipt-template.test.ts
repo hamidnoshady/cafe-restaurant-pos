@@ -57,6 +57,22 @@ describe("renderReceiptHtml", () => {
     expect(html).not.toContain(">مالیات<");
   });
 
+  it("omits the tip row when there's no tip", () => {
+    const html = renderReceiptHtml(baseData);
+    expect(html).not.toContain("انعام");
+    expect(html).not.toContain("مبلغ دریافتی");
+  });
+
+  it("shows the tip and a combined amount-received row when a tip was collected", () => {
+    const html = renderReceiptHtml({ ...baseData, tip: 30_000 });
+    expect(html).toContain("انعام");
+    expect(html).toContain("مبلغ دریافتی");
+    // tip 30,000 rial -> 3,000 toman
+    expect(html).toContain("۳٬۰۰۰");
+    // total (345,000) + tip (30,000) = 375,000 rial -> 37,500 toman
+    expect(html).toContain("۳۷٬۵۰۰");
+  });
+
   it("escapes HTML-significant characters in free-text fields", () => {
     const html = renderReceiptHtml({ ...baseData, orderTypeLabel: '<script>alert(1)</script>' });
     expect(html).not.toContain("<script>alert(1)</script>");
