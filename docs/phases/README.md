@@ -27,7 +27,7 @@ Each phase is a self-contained file with its own scope, exit criteria, and open 
 | 19 | Phase-19-Public-API-Webhooks.md | In progress — Wave 2 core data API |
 | 20 | Phase-20-Employee-Secure-Identity.md | Complete — all eight waves shipped |
 | 21 | Phase-21-Multi-Industry-Accounting-Platform.md | Waves 1-4 complete — weight/price infra, jewelry COA, gold pricing/sale posting, stone cost add-ons, and consignment sale posting, reachable through `/api/jewelry/*` routes and the `/dashboard/jewelry` page, and jewelry is now selectable at business creation (`/welcome`) with an industry-aware setup wizard |
-| 22 | Phase-22-Accounting-Standards-Compliance-Gap-Analysis.md | Waves 1-2 complete — audit/gap-analysis against GitHub issue #160, then account hierarchy levels (گروه/کل/معین/تفصیلی), debit/credit nature, and contra-account metadata added to the chart of accounts |
+| 22 | Phase-22-Accounting-Standards-Compliance-Gap-Analysis.md | Waves 1-4 (Wave 4 first slice) complete — audit/gap-analysis, account hierarchy levels/nature/contra metadata, a terminology standards audit, and revenue split by sales channel (dine-in/takeaway/delivery) + a platform-commission expense account, against GitHub issue #160 |
 
 Phases 0–11 built a single-business POS. Phases 12–17 turn it into a multi-business platform:
 many businesses isolated in one deployment, teams with real permissions, several branches per

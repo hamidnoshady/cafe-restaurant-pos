@@ -5,6 +5,7 @@ import {
   buildPurchaseLines,
   buildWasteLines,
   checkBalance,
+  revenueAccountCodeForOrderChannel,
   validateJournalLines,
   type JournalLine,
 } from "./ledger";
@@ -114,6 +115,16 @@ describe("buildOrderPaymentLines", () => {
 
   it("returns nothing for a zero-amount order", () => {
     expect(buildOrderPaymentLines(ORDER_ACCOUNTS, { method: "cash", amount: 0, tax: 0 })).toEqual([]);
+  });
+});
+
+describe("revenueAccountCodeForOrderChannel", () => {
+  const CHANNEL_CODES = { dineInRevenue: "4310", takeawayRevenue: "4320", deliveryRevenue: "4330" };
+
+  it("maps each channel to its own revenue account", () => {
+    expect(revenueAccountCodeForOrderChannel("dine_in", CHANNEL_CODES)).toBe("4310");
+    expect(revenueAccountCodeForOrderChannel("takeaway", CHANNEL_CODES)).toBe("4320");
+    expect(revenueAccountCodeForOrderChannel("delivery", CHANNEL_CODES)).toBe("4330");
   });
 });
 
