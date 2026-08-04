@@ -11,6 +11,7 @@ interface StateResponse {
   progress?: { steps: Record<string, string>; completedAt: string | null };
   counts?: { accounts: number; users: number; categories: number; items: number; printers: number };
   missingForCompletion?: string[];
+  localOnly?: boolean;
   error?: string;
 }
 
@@ -46,6 +47,9 @@ export default function FinishPage() {
   }
 
   const missing = state?.missingForCompletion ?? [];
+  // The backup-destination step only exists on a standalone install, so don't
+  // review a row that would always read as incomplete on a connected one.
+  const steps = STEPS.filter((s) => s.id !== "backup" || state?.localOnly);
 
   return (
     <div>
@@ -75,7 +79,7 @@ export default function FinishPage() {
       ) : (
         <>
           <ul className="mb-6 divide-y divide-border rounded-xl border border-border">
-            {STEPS.map((s) => {
+            {steps.map((s) => {
               const done = Boolean(state?.progress?.steps[s.id]);
               return (
                 <li key={s.id} className="flex items-center justify-between px-4 py-3 text-sm">
