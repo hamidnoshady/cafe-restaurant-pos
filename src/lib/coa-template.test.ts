@@ -104,9 +104,9 @@ describe("normalBalanceForType", () => {
 });
 
 describe("contra accounts in the F&B template", () => {
-  it("marks sales returns and the NRV allowance as contra, and nothing else", () => {
+  it("marks sales returns, the NRV allowance, and accumulated depreciation as contra, and nothing else", () => {
     const contraCodes = FNB_COA_TEMPLATE.filter((a) => a.isContra).map((a) => a.code);
-    expect(contraCodes.sort()).toEqual(["1390", "4400"]);
+    expect(contraCodes.sort()).toEqual(["1390", "1510", "4400"]);
   });
 });
 

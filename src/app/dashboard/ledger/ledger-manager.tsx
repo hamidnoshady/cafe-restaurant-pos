@@ -20,6 +20,7 @@ import { ChartOfAccountsSection } from "./chart-of-accounts-section";
 import { ExpenseSection } from "./expense-section";
 import { PayrollSection } from "./payroll-section";
 import { VatReportSection } from "./vat-report-section";
+import { FixedAssetsSection } from "./fixed-assets-section";
 import styles from "./ledger-workspace.module.css";
 
 export interface AccountRow {
@@ -42,6 +43,7 @@ const TABS = [
   { key: "chart-of-accounts", label: "سرفصل حساب‌ها", icon: CalculatorIcon },
   { key: "payroll", label: "حقوق و دستمزد", icon: UsersIcon },
   { key: "vat", label: "گزارش مالیات", icon: CircleIcon },
+  { key: "fixed-assets", label: "دارایی‌های ثابت", icon: CircleIcon },
 ] as const;
 type TabKey = (typeof TABS)[number]["key"];
 
@@ -113,6 +115,7 @@ export function LedgerManager({ role }: { role: string }) {
           {tab === "chart-of-accounts" ? <ChartOfAccountsSection busy={busy} run={run} /> : null}
           {tab === "payroll" ? <PayrollSection busy={busy} run={run} refreshKey={refreshKey} /> : null}
           {tab === "vat" ? <VatReportSection refreshKey={refreshKey} /> : null}
+          {tab === "fixed-assets" ? <FixedAssetsSection busy={busy} refreshKey={refreshKey} /> : null}
         </div>
 
         <nav

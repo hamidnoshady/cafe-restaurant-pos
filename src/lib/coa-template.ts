@@ -98,6 +98,11 @@ export const WELL_KNOWN_CODES = {
   // integration" pattern Phase 16 used for input VAT — there's no "platform"
   // order-source concept in the schema yet to auto-post against.
   platformCommissionExpense: "5650",
+  // Phase 22 Wave 5 — fixed-asset depreciation. accumulatedDepreciation is a
+  // contra-asset (see coa-template.ts's isContra flag below), reducing the
+  // fixed-asset line it's parented under.
+  accumulatedDepreciation: "1510",
+  depreciationExpense: "5700",
   // Phase 21 Wave 3 — jewelry (JEWELRY_COA_TEMPLATE below), not seeded for
   // an F&B business. goldSalesRevenue and makingChargeRevenue are kept as
   // two separate accounts (not folded into one "gold sales" line) because
@@ -143,6 +148,7 @@ export const FNB_COA_TEMPLATE: TemplateAccount[] = [
   { code: "1390", name: "ذخیره کاهش ارزش موجودی", type: "asset", parentCode: "1000", isContra: true },
   { code: "1400", name: "پیش‌پرداخت‌ها", type: "asset", parentCode: "1000" },
   { code: "1500", name: "اثاثه و تجهیزات", type: "asset", parentCode: "1000" },
+  { code: "1510", name: "استهلاک انباشته", type: "asset", parentCode: "1500", isContra: true },
 
   { code: "2000", name: "بدهی‌ها", type: "liability" },
   { code: "2100", name: "حساب‌های پرداختنی", type: "liability", parentCode: "2000" },
@@ -177,6 +183,7 @@ export const FNB_COA_TEMPLATE: TemplateAccount[] = [
   { code: "5500", name: "ملزومات مصرفی", type: "expense", parentCode: "5000" },
   { code: "5600", name: "بازاریابی و تبلیغات", type: "expense", parentCode: "5000" },
   { code: "5650", name: "کارمزد پلتفرم‌های سفارش آنلاین", type: "expense", parentCode: "5000" },
+  { code: "5700", name: "هزینه استهلاک", type: "expense", parentCode: "5000" },
   { code: "5900", name: "سایر هزینه‌ها", type: "expense", parentCode: "5000" },
 ];
 
