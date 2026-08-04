@@ -4,7 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
-import { STEPS } from "./steps";
+import { stepsFor } from "./steps";
+import { useSetupIndustry } from "./industry-context";
 
 interface StateResponse {
   progress?: { steps: Record<string, string>; completedAt: string | null };
@@ -13,6 +14,7 @@ interface StateResponse {
 
 export function StepNav() {
   const pathname = usePathname();
+  const industry = useSetupIndustry();
   const [done, setDone] = useState<Record<string, string>>({});
   const [localOnly, setLocalOnly] = useState(false);
 
@@ -34,7 +36,7 @@ export function StepNav() {
   // The backup-destination step only means anything on a standalone install;
   // on a connected one its page steps aside, so don't offer a link that would
   // bounce straight to the next step.
-  const steps = STEPS.filter((s) => s.id !== "backup" || localOnly);
+  const steps = stepsFor(industry).filter((s) => s.id !== "backup" || localOnly);
 
   return (
     <nav className="space-y-1">

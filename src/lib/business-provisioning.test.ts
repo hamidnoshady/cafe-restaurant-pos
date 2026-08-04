@@ -62,4 +62,26 @@ describe("validateProvisionBody", () => {
     const password = "  spaced  ";
     expect(validateProvisionBody({ ...VALID, password }).input?.password).toBe(password);
   });
+
+  it("defaults industry to food_service when omitted", () => {
+    expect(validateProvisionBody(VALID).input?.industry).toBe("food_service");
+  });
+
+  it("accepts an explicit, enabled industry", () => {
+    for (const industry of ["food_service", "jewelry"]) {
+      expect(validateProvisionBody({ ...VALID, industry }).input?.industry, industry).toBe(industry);
+    }
+  });
+
+  it("rejects an unknown industry value", () => {
+    expect(validateProvisionBody({ ...VALID, industry: "bakery" }).error).toBe("invalid_industry");
+  });
+
+  it("rejects a real but not-yet-offered industry", () => {
+    for (const industry of ["watch", "accessories"]) {
+      expect(validateProvisionBody({ ...VALID, industry }).error, industry).toBe(
+        "industry_not_available",
+      );
+    }
+  });
 });

@@ -14,22 +14,13 @@ import {
 } from "./location-access";
 import { isLocalOnly } from "./deployment-mode";
 import { getSetting, getWizardProgress, SETTING_KEYS, type WizardProgress } from "./settings";
-
-export const WIZARD_STEPS = [
-  "business",
-  "accounts",
-  "costing",
-  "tax",
-  "users",
-  "menu",
-  "hardware",
-  "backup",
-  "opening",
-] as const;
-export type WizardStep = (typeof WIZARD_STEPS)[number];
-
-/** Steps that may be skipped and still allow finishing the wizard. */
-export const OPTIONAL_STEPS: WizardStep[] = ["users", "hardware", "backup", "opening"];
+import type { Industry } from "./industries";
+// Re-exported for this module's existing importers (the wizard step list
+// used to live here) -- moved to wizard-steps.ts because it's also imported
+// from client components (src/app/setup/steps.ts), which can't pull in this
+// file's next/server and db imports.
+export { OPTIONAL_STEPS, WIZARD_STEPS, wizardStepsForIndustry, type WizardStep } from "./wizard-steps";
+import { wizardStepsForIndustry } from "./wizard-steps";
 
 export interface BusinessPrefs {
   currencyDisplay: "toman" | "rial";
@@ -70,7 +61,7 @@ export interface SetupState {
   needsBootstrap: boolean;
   /** True on a standalone desktop install: no online platform, local-drive backup only. */
   localOnly: boolean;
-  business: { id: string; name: string } | null;
+  business: { id: string; name: string; industry: Industry } | null;
   location: { id: string; name: string; address: string | null; phone: string | null } | null;
   prefs: BusinessPrefs | null;
   costing: (CostingSetting & { locked: boolean }) | null;
@@ -212,11 +203,13 @@ export async function costingLocked(businessId: string): Promise<boolean> {
 }
 
 export async function computeSetupState(businessId: string): Promise<SetupState> {
-  const { rows: bizRows } = await query<{ id: string; name: string }>(
-    "SELECT id, name FROM businesses WHERE id = $1",
+  const { rows: bizRows } = await query<{ id: string; name: string; industry: Industry }>(
+    "SELECT id, name, industry FROM businesses WHERE id = $1",
     [businessId],
   );
   const business = bizRows[0] ?? null;
+  const industry = business?.industry ?? "food_service";
+  const steps = wizardStepsForIndustry(industry);
   const location = business ? await getPrimaryLocation(businessId) : null;
 
   const [prefs, costing, tax, progress, localOnly] = await Promise.all([
@@ -266,9 +259,9 @@ export async function computeSetupState(businessId: string): Promise<SetupState>
   const missingForCompletion: string[] = [];
   if (!progress.steps.business) missingForCompletion.push("اطلاعات کسب‌وکار ثبت نشده است.");
   if (accounts === 0) missingForCompletion.push("سرفصل حساب‌ها ایجاد نشده است.");
-  if (!costing) missingForCompletion.push("روش قیمت‌گذاری موجودی انتخاب نشده است.");
+  if (steps.includes("costing") && !costing) missingForCompletion.push("روش قیمت‌گذاری موجودی انتخاب نشده است.");
   if (!tax) missingForCompletion.push("نرخ مالیات تنظیم نشده است.");
-  if (items === 0) missingForCompletion.push("هیچ آیتمی در منو ثبت نشده است.");
+  if (steps.includes("menu") && items === 0) missingForCompletion.push("هیچ آیتمی در منو ثبت نشده است.");
 
   return {
     needsBootstrap: false,

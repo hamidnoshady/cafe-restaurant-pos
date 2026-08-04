@@ -17,7 +17,13 @@ import { getPool, withoutTenantScope } from "./db";
 import { slugifyBusinessName, uniqueSlug } from "./slug";
 import { LOCAL_DISABLED_FEATURES, type DeploymentModeName } from "./deployment-mode";
 import { SETTING_KEYS } from "./settings";
-import { FNB_COA_TEMPLATE } from "./coa-template";
+import { FNB_COA_TEMPLATE, JEWELRY_COA_TEMPLATE, nextAccountLevel, type AccountLevel, type TemplateAccount } from "./coa-template";
+import { ENABLED_INDUSTRIES, INDUSTRIES, type Industry } from "./industries";
+
+/** Which seed chart of accounts an industry gets — the same choice /api/setup/accounts's GET makes for the manual wizard path. */
+function coaTemplateFor(industry: Industry): readonly TemplateAccount[] {
+  return industry === "jewelry" ? JEWELRY_COA_TEMPLATE : FNB_COA_TEMPLATE;
+}
 
 export interface ProvisionBusinessInput {
   businessName: string;
@@ -28,6 +34,8 @@ export interface ProvisionBusinessInput {
   email: string;
   password: string;
   timezone?: string;
+  /** Defaults to 'food_service' when omitted — every business before Phase 21 is one. */
+  industry?: Industry;
   /**
    * Seed the default F&B chart of accounts as part of provisioning.
    *
@@ -89,6 +97,7 @@ export interface ProvisionRequestBody {
   ownerName?: string;
   email?: string;
   password?: string;
+  industry?: string;
 }
 
 export const MIN_PASSWORD_LENGTH = 8;
@@ -118,6 +127,14 @@ export function validateProvisionBody(
     return { input: null, error: "weak_password" };
   }
 
+  const industry = (body.industry?.trim() || "food_service") as Industry;
+  if (!INDUSTRIES.includes(industry)) {
+    return { input: null, error: "invalid_industry" };
+  }
+  if (!ENABLED_INDUSTRIES.includes(industry)) {
+    return { input: null, error: "industry_not_available" };
+  }
+
   return {
     input: {
       businessName,
@@ -127,6 +144,7 @@ export function validateProvisionBody(
       ownerName,
       email,
       password,
+      industry,
     },
     error: null,
   };
@@ -192,8 +210,8 @@ export async function provisionBusiness(
       }
 
       const { rows: bizRows } = await client.query<{ id: string }>(
-        `INSERT INTO businesses (name, slug, timezone) VALUES ($1, $2, $3) RETURNING id`,
-        [businessName, slug, input.timezone ?? "Asia/Tehran"],
+        `INSERT INTO businesses (name, slug, timezone, industry) VALUES ($1, $2, $3, $4) RETURNING id`,
+        [businessName, slug, input.timezone ?? "Asia/Tehran", input.industry ?? "food_service"],
       );
       const businessId = bizRows[0].id;
 
@@ -227,7 +245,7 @@ export async function provisionBusiness(
       );
 
       if (input.seedChartOfAccounts) {
-        await seedChartOfAccounts(client, businessId);
+        await seedChartOfAccounts(client, businessId, input.industry ?? "food_service");
       }
 
       // Local-only installs record the mode and turn off the platform-dependent
@@ -262,28 +280,33 @@ export async function provisionBusiness(
 }
 
 /**
- * Insert the default F&B chart of accounts for a freshly-created business.
+ * Insert the industry-appropriate default chart of accounts for a freshly-created business.
  *
  * Runs inside the provisioning transaction (so a failure rolls the whole
  * business back) and mirrors the ordering logic of `/api/setup/accounts`:
  * parents before children, so `parent_id` can be resolved from a code→id map
- * built as we go. FNB_COA_TEMPLATE is already topologically sane (roots first),
+ * built as we go. Each template is already topologically sane (roots first),
  * but resolving by code rather than array position keeps it correct even if
- * the template is later reordered.
+ * a template is later reordered.
  */
-async function seedChartOfAccounts(client: PoolClient, businessId: string): Promise<void> {
+async function seedChartOfAccounts(client: PoolClient, businessId: string, industry: Industry): Promise<void> {
   const idByCode = new Map<string, string>();
-  const pending = [...FNB_COA_TEMPLATE];
+  const levelByCode = new Map<string, AccountLevel>();
+  const pending = [...coaTemplateFor(industry)];
   while (pending.length > 0) {
     const ready = pending.filter((a) => !a.parentCode || idByCode.has(a.parentCode));
-    // The template is a fixed, cycle-free constant; ready can't be empty.
+    // The template is a fixed, cycle-free constant; ready can't be empty, and
+    // it's never nested past four levels, so nextAccountLevel never returns
+    // null here.
     for (const a of ready) {
+      const level = nextAccountLevel(a.parentCode ? (levelByCode.get(a.parentCode) ?? null) : null)!;
       const { rows } = await client.query<{ id: string }>(
-        `INSERT INTO accounts (business_id, parent_id, code, name, type)
-         VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-        [businessId, a.parentCode ? idByCode.get(a.parentCode) : null, a.code, a.name, a.type],
+        `INSERT INTO accounts (business_id, parent_id, code, name, type, level, is_contra)
+         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+        [businessId, a.parentCode ? idByCode.get(a.parentCode) : null, a.code, a.name, a.type, level, a.isContra ?? false],
       );
       idByCode.set(a.code, rows[0].id);
+      levelByCode.set(a.code, level);
       pending.splice(pending.indexOf(a), 1);
     }
   }

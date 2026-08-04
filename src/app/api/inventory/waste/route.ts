@@ -2,10 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
 import { getPool, query } from "@/lib/db";
 import { consumeInventoryExact } from "@/lib/inventory-consumption-exact";
-import { MissingLedgerAccountError, postExactOperationalInventoryEntry } from "@/lib/ledger-service";
+import { MissingLedgerAccountError } from "@/lib/ledger-service";
 import { WELL_KNOWN_CODES } from "@/lib/coa-template";
 import { positiveQuantityText } from "@/lib/inventory-exact";
 import { resolveActiveLocation } from "@/lib/setup-state";
+import { emitDomainEvent } from "@/lib/posting-engine";
+// Side-effect import: registers "inventory.operational_posting" with the engine.
+import "@/lib/fnb-posting-rules";
 
 const WASTE_REASONS = ["spoilage", "prep_error", "customer_return", "staff_meal", "other"] as const;
 
@@ -86,18 +89,21 @@ export const POST = withTenantScope(async (request: NextRequest) => {
       createdBy: session.sub,
       inventoryEventId: eventId,
     });
-    await postExactOperationalInventoryEntry(client, {
+    await emitDomainEvent(client, {
       businessId: session.businessId,
       locationId: location.id,
+      eventType: "inventory.operational_posting",
+      payload: {
+        debitCode: WELL_KNOWN_CODES.wasteExpense,
+        creditCode: WELL_KNOWN_CODES.inventory,
+        amount: result.postedCost,
+        memo: "ضایعات",
+        postingKind: "waste",
+        inventoryEventId: eventId,
+      },
       sourceType: "waste",
       sourceId: eventId,
-      postingKind: "waste",
-      memo: "ضایعات",
       createdBy: session.sub,
-      inventoryEventId: eventId,
-      debitCode: WELL_KNOWN_CODES.wasteExpense,
-      creditCode: WELL_KNOWN_CODES.inventory,
-      amount: result.postedCost,
     });
     await client.query("UPDATE inventory_events SET posting_status='posted' WHERE id=$1",[eventId]);
     await client.query("COMMIT");

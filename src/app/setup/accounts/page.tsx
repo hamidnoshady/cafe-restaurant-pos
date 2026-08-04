@@ -14,12 +14,14 @@ import {
   SecondaryButton,
   StepShell,
 } from "../ui";
-import { nextPath } from "../steps";
+import { nextPath, stepsFor } from "../steps";
+import { useSetupIndustry } from "../industry-context";
+import { INDUSTRY_LABELS } from "@/lib/industries";
 
 const TYPE_LABELS: Record<AccountType, string> = {
   asset: "دارایی",
   liability: "بدهی",
-  equity: "سرمایه",
+  equity: "حقوق صاحبان سرمایه",
   revenue: "درآمد",
   expense: "هزینه",
 };
@@ -32,6 +34,8 @@ interface AccountsResponse {
 
 export default function AccountsStep() {
   const router = useRouter();
+  const industry = useSetupIndustry();
+  const steps = stepsFor(industry);
   const [rows, setRows] = useState<TemplateAccount[]>([]);
   const [existingCount, setExistingCount] = useState(0);
   const [error, setError] = useState("");
@@ -80,13 +84,13 @@ export default function AccountsStep() {
       setError(errorMessage(data.error, data.messages));
       return;
     }
-    router.push(nextPath("accounts"));
+    router.push(nextPath("accounts", steps));
   }
 
   return (
     <StepShell
       step="accounts"
-      description="سرفصل پیشنهادی مخصوص کافه و رستوران آماده است؛ می‌توانید همین را ثبت کنید یا سطرها را ویرایش کنید."
+      description={`سرفصل پیشنهادی مخصوص «${INDUSTRY_LABELS[industry]}» آماده است؛ می‌توانید همین را ثبت کنید یا سطرها را ویرایش کنید.`}
     >
       {existingCount > 0 ? (
         <InfoBox>

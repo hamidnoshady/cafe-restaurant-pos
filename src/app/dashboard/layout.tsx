@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getSession, type Role } from "@/lib/auth";
 import { query, withTenant } from "@/lib/db";
 import { effectiveFeatures } from "@/lib/features";
+import type { Industry } from "@/lib/industries";
 import { effectivePermissions, parseOverrides, PERMISSIONS, type Permission } from "@/lib/permissions";
 import { visibleSettingsTabs } from "@/lib/settings-tabs";
 import { AiAssistant } from "@/components/ai/ai-assistant";
@@ -20,14 +21,22 @@ const NAV_ITEMS: NavItem[] = [
   { label: "رزروها", href: "/dashboard/reservations", roles: ["owner", "manager", "cashier", "waiter"], flag: "reservations" },
   { label: "ارسال و پیک", href: "/dashboard/delivery", roles: ["owner", "manager", "cashier"], flag: "delivery" },
   { label: "انبار", href: "/dashboard/inventory", roles: ["owner", "manager"], flag: "inventory" },
+  { label: "طلا و جواهر", href: "/dashboard/jewelry", roles: ["owner", "manager"], industry: "jewelry" },
   { label: "حسابداری", href: "/dashboard/ledger", roles: ["owner", "manager", "accountant"], flag: "ledger" },
   { label: "گزارش‌ها", href: "/dashboard/reports", roles: ["owner", "manager", "accountant"], flag: "reporting" },
   { label: "دستیار هوشمند", href: "/dashboard/ai", roles: ["owner", "manager"], flag: "ai_assistant" },
   { label: "تنظیمات", href: "/dashboard/settings" },
 ];
 
-function canSee(item: NavItem, role: Role, permissions: Set<Permission>, features: Record<string, boolean>): boolean {
+function canSee(
+  item: NavItem,
+  role: Role,
+  permissions: Set<Permission>,
+  features: Record<string, boolean>,
+  industry: Industry,
+): boolean {
   if (item.flag && !features[item.flag]) return false;
+  if (item.industry && item.industry !== industry) return false;
   if (item.roles && !item.roles.includes(role)) return false;
   return !item.requiredAnyPermission || item.requiredAnyPermission.some((permission) => permissions.has(permission));
 }
@@ -45,7 +54,7 @@ export default async function DashboardLayout({
   // doc comment in src/lib/auth.ts. Without this, the query below can come
   // back empty non-deterministically and, since it gates access, incorrectly
   // sign an active member out.
-  const [{ rows }, features] = await withTenant(
+  const [{ rows }, features, { rows: bizRows }] = await withTenant(
     session.businessId,
     () =>
       Promise.all([
@@ -54,14 +63,16 @@ export default async function DashboardLayout({
           [session.sub, session.businessId],
         ),
         effectiveFeatures(session.businessId),
+        query<{ industry: Industry }>("SELECT industry FROM businesses WHERE id = $1", [session.businessId]),
       ]),
     { locationId: session.locationId, userId: session.sub },
   );
   const member = rows[0];
   if (!member?.is_active) redirect("/login");
+  const industry = bizRows[0]?.industry ?? "food_service";
   const permissions = effectivePermissions(member.role, parseOverrides(member.permissions));
   const settingsTabs = visibleSettingsTabs(permissions, { role: member.role, features });
-  const navItems = NAV_ITEMS.filter((item) => canSee(item, member.role, permissions, features)).filter(
+  const navItems = NAV_ITEMS.filter((item) => canSee(item, member.role, permissions, features, industry)).filter(
     (item) => item.href !== "/dashboard/settings" || settingsTabs.length > 0,
   );
   const assistantMode =

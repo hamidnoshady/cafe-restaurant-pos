@@ -4,23 +4,31 @@ import { markStepDone } from "@/lib/settings";
 import { requireManager } from "@/lib/setup-state";
 import {
   FNB_COA_TEMPLATE,
+  JEWELRY_COA_TEMPLATE,
+  nextAccountLevel,
   validateAccounts,
+  type AccountLevel,
   type TemplateAccount,
 } from "@/lib/coa-template";
 import { withTenantScope } from "@/lib/auth";
+import { getBusinessIndustry } from "@/lib/industry-guard";
 
-/** Step 2 — chart of accounts. GET returns the template + what already exists. */
+/** Step 2 — chart of accounts. GET returns the industry-appropriate template + what already exists. */
 export const GET = withTenantScope(async () => {
   const { session, error } = await requireManager();
   if (error) return error;
 
-  const { rows: existing } = await query(
-    `SELECT a.id, a.code, a.name, a.type, p.code AS parent_code
-       FROM accounts a LEFT JOIN accounts p ON p.id = a.parent_id
-      WHERE a.business_id = $1 ORDER BY a.code`,
-    [session.businessId],
-  );
-  return NextResponse.json({ template: FNB_COA_TEMPLATE, existing });
+  const [industry, { rows: existing }] = await Promise.all([
+    getBusinessIndustry(session.businessId),
+    query(
+      `SELECT a.id, a.code, a.name, a.type, p.code AS parent_code
+         FROM accounts a LEFT JOIN accounts p ON p.id = a.parent_id
+        WHERE a.business_id = $1 ORDER BY a.code`,
+      [session.businessId],
+    ),
+  ]);
+  const template = industry === "jewelry" ? JEWELRY_COA_TEMPLATE : FNB_COA_TEMPLATE;
+  return NextResponse.json({ template, existing });
 });
 
 /**
@@ -43,6 +51,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
     name: String(a.name ?? "").trim(),
     type: a.type,
     parentCode: a.parentCode ? String(a.parentCode).trim() : undefined,
+    isContra: Boolean(a.isContra),
   }));
 
   const errors = validateAccounts(accounts);
@@ -69,6 +78,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
 
     // Insert parents before children: roots first, then rows whose parent exists.
     const idByCode = new Map<string, string>();
+    const levelByCode = new Map<string, AccountLevel>();
     const pending = [...accounts];
     while (pending.length > 0) {
       const ready = pending.filter((a) => !a.parentCode || idByCode.has(a.parentCode));
@@ -81,12 +91,22 @@ export const POST = withTenantScope(async (request: NextRequest) => {
         );
       }
       for (const a of ready) {
+        const parentLevel = a.parentCode ? (levelByCode.get(a.parentCode) ?? null) : null;
+        const level = nextAccountLevel(parentLevel);
+        if (!level) {
+          await client.query("ROLLBACK");
+          return NextResponse.json(
+            { error: "invalid_accounts", messages: ["ساختار حساب‌ها از سطح «تفصیلی» عمیق‌تر است."] },
+            { status: 400 },
+          );
+        }
         const res = await client.query(
-          `INSERT INTO accounts (business_id, parent_id, code, name, type)
-           VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-          [session.businessId, a.parentCode ? idByCode.get(a.parentCode) : null, a.code, a.name, a.type],
+          `INSERT INTO accounts (business_id, parent_id, code, name, type, level, is_contra)
+           VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+          [session.businessId, a.parentCode ? idByCode.get(a.parentCode) : null, a.code, a.name, a.type, level, a.isContra],
         );
         idByCode.set(a.code, res.rows[0].id);
+        levelByCode.set(a.code, level);
         pending.splice(pending.indexOf(a), 1);
       }
     }

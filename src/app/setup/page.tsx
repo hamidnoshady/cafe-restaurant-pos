@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { computeSetupState, isSetupComplete } from "@/lib/setup-state";
-import { STEPS } from "./steps";
+import { stepsFor } from "./steps";
 
 /** /setup → jump to the first incomplete step (or the finish page). */
 export default async function SetupIndex() {
@@ -11,6 +11,7 @@ export default async function SetupIndex() {
   if (await isSetupComplete(session.businessId)) redirect("/dashboard/settings");
 
   const state = await computeSetupState(session.businessId);
-  const firstIncomplete = STEPS.find((s) => !state.progress.steps[s.id]);
+  const industry = state.business?.industry ?? "food_service";
+  const firstIncomplete = stepsFor(industry).find((s) => !state.progress.steps[s.id]);
   redirect(firstIncomplete ? firstIncomplete.path : "/setup/finish");
 }

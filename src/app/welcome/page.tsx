@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ModeChoice } from "./mode-choice";
 import { PairForm } from "./pair-form";
+import { ENABLED_INDUSTRIES, INDUSTRIES, INDUSTRY_LABELS, type Industry } from "@/lib/industries";
 
 type Stage = "choosing" | "local" | "connecting";
 
@@ -58,6 +59,7 @@ function LocalBootstrapForm({ onBack }: { onBack: () => void }) {
   const [ownerName, setOwnerName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [industry, setIndustry] = useState<Industry>("food_service");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -74,6 +76,7 @@ function LocalBootstrapForm({ onBack }: { onBack: () => void }) {
         ownerName,
         email,
         password,
+        industry,
         deploymentMode: "local",
       }),
     });
@@ -89,6 +92,8 @@ function LocalBootstrapForm({ onBack }: { onBack: () => void }) {
         invalid_email: "ایمیل معتبر نیست.",
         weak_password: "گذرواژه باید حداقل ۸ کاراکتر باشد.",
         email_password_mismatch: "این ایمیل قبلاً ثبت شده و گذرواژه با آن هم‌خوانی ندارد.",
+        invalid_industry: "نوع کسب‌وکار نامعتبر است.",
+        industry_not_available: "این نوع کسب‌وکار هنوز در دسترس نیست.",
       };
       setError(map[data.error] ?? "خطا در راه‌اندازی اولیه. دوباره تلاش کنید.");
       return;
@@ -129,6 +134,35 @@ function LocalBootstrapForm({ onBack }: { onBack: () => void }) {
             required
           />
         </label>
+        <div className="block">
+          <span className="mb-1 block text-sm font-medium text-foreground">نوع کسب‌وکار *</span>
+          <div className="grid grid-cols-2 gap-2">
+            {INDUSTRIES.map((option) => {
+              const enabled = ENABLED_INDUSTRIES.includes(option);
+              const selected = industry === option;
+              return (
+                <button
+                  key={option}
+                  type="button"
+                  disabled={!enabled}
+                  onClick={() => enabled && setIndustry(option)}
+                  className={`relative rounded-lg border px-3 py-2 text-sm transition-colors ${
+                    selected
+                      ? "border-primary bg-primary/10 font-medium text-primary"
+                      : "border-input text-foreground"
+                  } ${enabled ? "hover:border-primary/60" : "cursor-not-allowed opacity-50"}`}
+                >
+                  {INDUSTRY_LABELS[option]}
+                  {!enabled ? (
+                    <span className="absolute -top-2 -right-2 rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                      به‌زودی
+                    </span>
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
+        </div>
         <label className="block">
           <span className="mb-1 block text-sm font-medium text-foreground">نام شعبهٔ اول *</span>
           <input

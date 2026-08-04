@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
 import { api, ErrorBox, errorMessage, PrimaryButton } from "../ui";
-import { STEPS } from "../steps";
+import { stepsFor } from "../steps";
+import { useSetupIndustry } from "../industry-context";
 
 interface StateResponse {
   progress?: { steps: Record<string, string>; completedAt: string | null };
@@ -17,6 +18,7 @@ interface StateResponse {
 
 export default function FinishPage() {
   const router = useRouter();
+  const industry = useSetupIndustry();
   const [state, setState] = useState<StateResponse | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -49,7 +51,7 @@ export default function FinishPage() {
   const missing = state?.missingForCompletion ?? [];
   // The backup-destination step only exists on a standalone install, so don't
   // review a row that would always read as incomplete on a connected one.
-  const steps = STEPS.filter((s) => s.id !== "backup" || state?.localOnly);
+  const steps = stepsFor(industry).filter((s) => s.id !== "backup" || state?.localOnly);
 
   return (
     <div>
@@ -104,9 +106,13 @@ export default function FinishPage() {
 
           {state?.counts ? (
             <p className="mb-6 text-sm text-muted-foreground">
-              {toPersianDigits(state.counts.accounts)} حساب، {toPersianDigits(state.counts.users)} کاربر،{" "}
-              {toPersianDigits(state.counts.categories)} دستهٔ منو، {toPersianDigits(state.counts.items)} آیتم،{" "}
-              {toPersianDigits(state.counts.printers)} چاپگر ثبت شده است.
+              {toPersianDigits(state.counts.accounts)} حساب، {toPersianDigits(state.counts.users)} کاربر
+              {industry === "food_service" ? (
+                <>
+                  ، {toPersianDigits(state.counts.categories)} دستهٔ منو، {toPersianDigits(state.counts.items)} آیتم
+                </>
+              ) : null}
+              ، {toPersianDigits(state.counts.printers)} چاپگر ثبت شده است.
             </p>
           ) : null}
 

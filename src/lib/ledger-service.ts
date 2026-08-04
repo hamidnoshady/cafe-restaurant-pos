@@ -15,8 +15,10 @@ import {
   buildPurchaseLines,
   buildWasteLines,
   checkBalance,
+  revenueAccountCodeForOrderChannel,
   validateJournalLines,
   type JournalLine,
+  type OrderChannel,
   type SettlementMethod,
 } from "./ledger";
 import type { Rial } from "./money";
@@ -54,13 +56,21 @@ export async function accountIdsByCode(
   return map;
 }
 
-interface ExactJournalLine {
+export interface ExactJournalLine {
   accountId: string;
   debit: RialText;
   credit: RialText;
 }
 
-async function postExactJournalEntry(
+/**
+ * Exported (Phase 21 Wave 1) so posting-engine.ts's dispatchDomainEvent can
+ * post a registered rule's lines through the same exact-arithmetic path
+ * every inventory-costing-sensitive posting already uses — RialText/BigInt,
+ * not the plain-number postJournalEntry, since Wave 2's weight-based gold
+ * pricing will need the same precision guarantee this already gives
+ * COGS/purchases/waste.
+ */
+export async function postExactJournalEntry(
   client: PoolClient,
   input: Omit<PostJournalEntryInput, "lines"> & { lines: ExactJournalLine[] },
 ): Promise<string | null> {
@@ -291,13 +301,16 @@ export async function postExactOrderPaymentEntry(
     amount: RialText;
     tax: RialText;
     inventoryEventId: string;
+    orderChannel: OrderChannel;
   },
 ): Promise<string | null> {
   const accounts = await accountIdsByCode(client, params.businessId, [
     WELL_KNOWN_CODES.cash,
     WELL_KNOWN_CODES.bankClearing,
     WELL_KNOWN_CODES.accountsReceivable,
-    WELL_KNOWN_CODES.salesRevenue,
+    WELL_KNOWN_CODES.dineInRevenue,
+    WELL_KNOWN_CODES.takeawayRevenue,
+    WELL_KNOWN_CODES.deliveryRevenue,
     WELL_KNOWN_CODES.vatPayable,
   ]);
   const debitCode =
@@ -311,6 +324,11 @@ export async function postExactOrderPaymentEntry(
   }
   const revenue = rialBigInt(params.amount) - rialBigInt(params.tax);
   if (revenue < 0n) throw new Error("tax_exceeds_payment");
+  const revenueCode = revenueAccountCodeForOrderChannel(params.orderChannel, {
+    dineInRevenue: WELL_KNOWN_CODES.dineInRevenue,
+    takeawayRevenue: WELL_KNOWN_CODES.takeawayRevenue,
+    deliveryRevenue: WELL_KNOWN_CODES.deliveryRevenue,
+  });
   const zero = "0" as RialText;
   return postExactJournalEntry(client, {
     businessId: params.businessId,
@@ -324,7 +342,7 @@ export async function postExactOrderPaymentEntry(
     lines: [
       { accountId: accounts.get(debitCode)!, debit: params.amount, credit: zero },
       {
-        accountId: accounts.get(WELL_KNOWN_CODES.salesRevenue)!,
+        accountId: accounts.get(revenueCode)!,
         debit: zero,
         credit: revenue.toString() as RialText,
       },

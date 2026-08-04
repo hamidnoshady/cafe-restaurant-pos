@@ -3,7 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { api, ErrorBox, errorMessage, InfoBox, PrimaryButton, StepShell } from "../ui";
-import { nextPath } from "../steps";
+import { nextPath, skipToPath, stepsFor } from "../steps";
+import { useSetupIndustry } from "../industry-context";
 
 type Method = "fifo" | "weighted_average";
 
@@ -30,17 +31,29 @@ const OPTIONS: { value: Method; title: string; example: string }[] = [
 
 export default function CostingStep() {
   const router = useRouter();
+  const industry = useSetupIndustry();
+  const steps = stepsFor(industry);
+  // Costing (FIFO/weighted-average for inventory_items) is an F&B-only
+  // concept -- a jewelry business landing here (a stale link, the back
+  // button) belongs at whatever step actually follows it in their flow.
+  const available = steps.some((s) => s.id === "costing");
   const [method, setMethod] = useState<Method>("weighted_average");
   const [locked, setLocked] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
+    if (!available) {
+      router.replace(skipToPath("costing", steps));
+      return;
+    }
     api<CostingResponse>("/api/setup/costing").then(({ data }) => {
       if (data.costing?.method) setMethod(data.costing.method);
       setLocked(Boolean(data.locked));
     });
-  }, []);
+  }, [available]);
+
+  if (!available) return null;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();

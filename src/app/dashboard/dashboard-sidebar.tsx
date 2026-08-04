@@ -12,6 +12,7 @@ import {
   ChefHatIcon,
   CircleIcon,
   ClipboardListIcon,
+  GemIcon,
   LayoutDashboardIcon,
   PackageIcon,
   SettingsIcon,
@@ -73,6 +74,7 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   "/dashboard/reservations": CalendarDaysIcon,
   "/dashboard/delivery": TruckIcon,
   "/dashboard/inventory": PackageIcon,
+  "/dashboard/jewelry": GemIcon,
   "/dashboard/ledger": CalculatorIcon,
   "/dashboard/reports": BarChart3Icon,
   "/dashboard/ai": BotIcon,
@@ -85,6 +87,8 @@ export interface NavItem {
   roles?: string[];
   /** Set when this page is gated by a Phase 17 feature flag; already filtered out of navItems if disabled. */
   flag?: string;
+  /** Set when this page is gated by Phase 21's `businesses.industry`; already filtered out of navItems for any other industry. */
+  industry?: string;
   /** Server-filtered against the member's effective permission set before reaching the client. */
   requiredAnyPermission?: Permission[];
 }

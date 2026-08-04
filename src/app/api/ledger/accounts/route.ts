@@ -34,7 +34,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requirePermission(PERMISSIONS.accountsEdit);
   if (error) return error;
 
-  let body: { code?: string; name?: string; type?: string; parentId?: string | null };
+  let body: { code?: string; name?: string; type?: string; parentId?: string | null; isContra?: boolean };
   try {
     body = await request.json();
   } catch {
@@ -48,6 +48,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
       name: String(body.name ?? ""),
       type: String(body.type ?? ""),
       parentId: body.parentId ?? null,
+      isContra: Boolean(body.isContra),
     });
     return NextResponse.json(result, { status: 201 });
   } catch (err) {
