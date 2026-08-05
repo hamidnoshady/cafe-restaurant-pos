@@ -150,6 +150,13 @@ export async function withTenant<T>(
  *     the same reason `provisionBusiness` does: it creates the tenant that
  *     scoping would otherwise require to already exist.
  *
+ *   - **first-run** — `hasAnyUser()`: whether this install has been claimed by
+ *     anyone at all. Install-wide by definition and asked before a tenant
+ *     exists (it is what decides whether one should be created), so there is no
+ *     scope that could express it — and left unscoped, RLS would answer 0
+ *     forever, which is the failure mode this reason exists to prevent rather
+ *     than a convenience. Returns a boolean about the install, never a row.
+ *
  * Every call is a hole in the isolation boundary, so keep them few, keep them
  * short, and never let one wrap a request body that also handles tenant data.
  */

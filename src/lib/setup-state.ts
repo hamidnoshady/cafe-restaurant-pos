@@ -4,7 +4,7 @@
  */
 import { NextResponse } from "next/server";
 import { getSession, type Role, type SessionPayload } from "./auth";
-import { query } from "./db";
+import { query, withoutTenantScope } from "./db";
 import {
   accessibleLocationIds,
   canAccessLocation,
@@ -81,8 +81,24 @@ export interface SetupState {
   missingForCompletion: string[];
 }
 
+/**
+ * Whether this install has been claimed by anyone at all.
+ *
+ * Deliberately install-wide, not per-business: every caller is a first-run
+ * guard asked before a tenant exists — the root page choosing between /login
+ * and the wizard, and the two routes (`/api/setup/bootstrap`, `/api/setup/pair`)
+ * that must refuse to run a second time. Scoping it is therefore impossible,
+ * and leaving it unscoped is not enough either: under row-level security an
+ * unscoped count matches no policy and reads 0 however many users exist, which
+ * silently reopened bootstrap as an unauthenticated "create another business"
+ * endpoint and pinned the root page to the wizard forever. Hence the bypass —
+ * it returns one boolean about the install and never a row.
+ */
 export async function hasAnyUser(): Promise<boolean> {
-  return (await count("SELECT count(*) AS n FROM users", [])) > 0;
+  return withoutTenantScope(
+    "first-run",
+    async () => (await count("SELECT count(*) AS n FROM users", [])) > 0,
+  );
 }
 
 /** True once the wizard has been formally completed for this business. */
