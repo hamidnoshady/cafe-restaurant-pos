@@ -9,8 +9,15 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
-import { ACTION_CATALOG, resolveActionEndpoint, type ProposedAction } from "@/lib/ai";
-import { MAX_RECEIPT_IMAGE_BYTES, parseReceiptImageDataUrl } from "@/lib/ai-receipt";
+import {
+  ACTION_CATALOG,
+  resolveActionEndpoint,
+  type ProposedAction,
+} from "@/lib/ai";
+import {
+  MAX_RECEIPT_IMAGE_BYTES,
+  parseReceiptImageDataUrl,
+} from "@/lib/ai-receipt";
 
 export type AssistantMode = "wizard" | "dashboard" | "floor";
 
@@ -43,10 +50,11 @@ export interface ChatAttachment {
   name: string;
 }
 
-export const uid = (): string => Math.random().toString(36).slice(2);
+export const uid = (): string => crypto.randomUUID();
 
 export const CHAT_ERROR: Record<string, string> = {
-  ai_credit_required: "اعتبار هوش مصنوعی برای یک پاسخ جدید کافی نیست. از صفحهٔ اعتبار درخواست شارژ ثبت کنید.",
+  ai_credit_required:
+    "اعتبار هوش مصنوعی برای یک پاسخ جدید کافی نیست. از صفحهٔ اعتبار درخواست شارژ ثبت کنید.",
   ai_unavailable: "سرویس هوش مصنوعی هنوز توسط مدیر پلتفرم آماده نشده است.",
   feature_disabled: "دستیار هوشمند برای این کسب‌وکار فعال نیست.",
   ai_auth: "اتصال سراسری سرویس هوش مصنوعی نیاز به بررسی مدیر پلتفرم دارد.",
@@ -85,8 +93,12 @@ export function greeting(mode: AssistantMode): string {
 }
 
 export function errorMessage(data: Record<string, unknown>): string {
-  return CHAT_ERROR[String(data.error ?? "")] ??
-    (typeof data.message === "string" ? data.message : "خطا در ارتباط با دستیار.");
+  return (
+    CHAT_ERROR[String(data.error ?? "")] ??
+    (typeof data.message === "string"
+      ? data.message
+      : "خطا در ارتباط با دستیار.")
+  );
 }
 
 function isEstimate(value: unknown): value is TurnEstimate {
@@ -113,7 +125,11 @@ export interface UseAiChatOptions {
   onConversationIdChange?: (id: string | null) => void;
 }
 
-export function useAiChat({ mode, currentStep, onConversationIdChange }: UseAiChatOptions) {
+export function useAiChat({
+  mode,
+  currentStep,
+  onConversationIdChange,
+}: UseAiChatOptions) {
   const router = useRouter();
   const canPropose = mode === "wizard" || mode === "dashboard";
   const [messages, setMessages] = useState<AiChatMessage[]>([]);
@@ -124,7 +140,9 @@ export function useAiChat({ mode, currentStep, onConversationIdChange }: UseAiCh
   const [applyingId, setApplyingId] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [loadingConversation, setLoadingConversation] = useState(false);
-  const [attachment, setAttachmentState] = useState<ChatAttachment | null>(null);
+  const [attachment, setAttachmentState] = useState<ChatAttachment | null>(
+    null,
+  );
   const [actionsAllowed, setActionsAllowed] = useState(true);
 
   function clearAttachment() {
@@ -165,7 +183,11 @@ export function useAiChat({ mode, currentStep, onConversationIdChange }: UseAiCh
   }
 
   function ensureGreeting() {
-    setMessages((current) => (current.length === 0 ? [{ id: uid(), role: "assistant", content: greeting(mode) }] : current));
+    setMessages((current) =>
+      current.length === 0
+        ? [{ id: uid(), role: "assistant", content: greeting(mode) }]
+        : current,
+    );
   }
 
   function startNewConversation() {
@@ -185,7 +207,8 @@ export function useAiChat({ mode, currentStep, onConversationIdChange }: UseAiCh
         messages?: ConversationMessagePayload[];
         error?: string;
       };
-      if (!response.ok || !data.messages) throw new Error(data.error ?? "not_found");
+      if (!response.ok || !data.messages)
+        throw new Error(data.error ?? "not_found");
       setMessages(
         data.messages.map((message) => ({
           id: message.id,
@@ -207,7 +230,10 @@ export function useAiChat({ mode, currentStep, onConversationIdChange }: UseAiCh
     const text = (textOverride ?? input).trim();
     if (!text || busy || estimating || pending) return;
 
-    const candidateHistory = [...messages, { id: uid(), role: "user" as const, content: text }];
+    const candidateHistory = [
+      ...messages,
+      { id: uid(), role: "user" as const, content: text },
+    ];
     setEstimating(true);
     try {
       const response = await fetch("/api/ai/estimate", {
@@ -216,17 +242,28 @@ export function useAiChat({ mode, currentStep, onConversationIdChange }: UseAiCh
         body: JSON.stringify({
           mode,
           currentStep: currentStep ?? null,
-          messages: candidateHistory.map((message) => ({ role: message.role, content: message.content })),
+          messages: candidateHistory.map((message) => ({
+            role: message.role,
+            content: message.content,
+          })),
           attachment: attachment ? { dataUrl: attachment.dataUrl } : undefined,
           allowActions: actionsAllowed,
         }),
       });
-      const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
-      if (!response.ok || !isEstimate(data)) throw new Error(errorMessage(data));
+      const data = (await response.json().catch(() => ({}))) as Record<
+        string,
+        unknown
+      >;
+      if (!response.ok || !isEstimate(data))
+        throw new Error(errorMessage(data));
       setInput("");
       setPending({ text, estimate: data });
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "محاسبهٔ برآورد هزینه ممکن نشد.");
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "محاسبهٔ برآورد هزینه ممکن نشد.",
+      );
     } finally {
       setEstimating(false);
     }
@@ -248,7 +285,11 @@ export function useAiChat({ mode, currentStep, onConversationIdChange }: UseAiCh
     setBusy(true);
 
     function setReply(update: (current: AiChatMessage) => AiChatMessage) {
-      setMessages((current) => current.map((message) => (message.id === replyId ? update(message) : message)));
+      setMessages((current) =>
+        current.map((message) =>
+          message.id === replyId ? update(message) : message,
+        ),
+      );
     }
 
     function receiveEvent(block: string): boolean {
@@ -267,7 +308,10 @@ export function useAiChat({ mode, currentStep, onConversationIdChange }: UseAiCh
       }
 
       if (event === "delta" && typeof payload.content === "string") {
-        setReply((current) => ({ ...current, content: current.content + payload.content }));
+        setReply((current) => ({
+          ...current,
+          content: current.content + payload.content,
+        }));
         return false;
       }
       if (event === "reset") {
@@ -277,15 +321,25 @@ export function useAiChat({ mode, currentStep, onConversationIdChange }: UseAiCh
       if (event === "done") {
         setReply((current) => ({
           ...current,
-          content: typeof payload.content === "string" ? payload.content : current.content,
-          proposal: canPropose ? (payload.proposedAction as ProposedAction | null | undefined) ?? null : null,
+          content:
+            typeof payload.content === "string"
+              ? payload.content
+              : current.content,
+          proposal: canPropose
+            ? ((payload.proposedAction as ProposedAction | null | undefined) ??
+              null)
+            : null,
           auditId: typeof payload.auditId === "string" ? payload.auditId : null,
         }));
-        if (typeof payload.conversationId === "string") setConversation(payload.conversationId);
+        if (typeof payload.conversationId === "string")
+          setConversation(payload.conversationId);
         return true;
       }
       if (event === "error") {
-        setReply((current) => ({ ...current, content: "⚠️ " + errorMessage(payload) }));
+        setReply((current) => ({
+          ...current,
+          content: "⚠️ " + errorMessage(payload),
+        }));
         return true;
       }
       return false;
@@ -294,18 +348,27 @@ export function useAiChat({ mode, currentStep, onConversationIdChange }: UseAiCh
     try {
       const response = await fetch("/api/ai/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "text/event-stream",
+        },
         body: JSON.stringify({
           mode,
           currentStep: currentStep ?? null,
           conversationId,
-          messages: history.map((message) => ({ role: message.role, content: message.content })),
+          messages: history.map((message) => ({
+            role: message.role,
+            content: message.content,
+          })),
           attachment: attachment ? { dataUrl: attachment.dataUrl } : undefined,
           allowActions: actionsAllowed,
         }),
       });
       if (!response.ok) {
-        const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+        const data = (await response.json().catch(() => ({}))) as Record<
+          string,
+          unknown
+        >;
         throw new Error(errorMessage(data));
       }
       if (!response.body) throw new Error("پاسخ جریانی دستیار در دسترس نیست.");
@@ -336,14 +399,19 @@ export function useAiChat({ mode, currentStep, onConversationIdChange }: UseAiCh
       if (!complete) {
         setReply((current) => ({
           ...current,
-          content: current.content || "⚠️ پاسخ دستیار کامل نشد. دوباره تلاش کنید.",
+          content:
+            current.content || "⚠️ پاسخ دستیار کامل نشد. دوباره تلاش کنید.",
         }));
       }
     } catch (error) {
       setReply(() => ({
         id: replyId,
         role: "assistant",
-        content: "⚠️ " + (error instanceof Error ? error.message : "اتصال برقرار نشد. دوباره تلاش کنید."),
+        content:
+          "⚠️ " +
+          (error instanceof Error
+            ? error.message
+            : "اتصال برقرار نشد. دوباره تلاش کنید."),
       }));
     } finally {
       setBusy(false);
@@ -382,7 +450,10 @@ export function useAiChat({ mode, currentStep, onConversationIdChange }: UseAiCh
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(proposal.payload),
       });
-      const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+      const data = (await response.json().catch(() => ({}))) as Record<
+        string,
+        unknown
+      >;
       if (!response.ok) {
         const detail = Array.isArray(data.messages)
           ? data.messages.join(" ")
@@ -390,7 +461,11 @@ export function useAiChat({ mode, currentStep, onConversationIdChange }: UseAiCh
             ? data.error
             : "";
         if (message.auditId) {
-          void finishAudit(message.auditId, "failed", { endpoint, method: meta.method, detail });
+          void finishAudit(message.auditId, "failed", {
+            endpoint,
+            method: meta.method,
+            detail,
+          });
         }
         toast.error(`ثبت انجام نشد. ${detail}`.trim());
         return;
@@ -399,12 +474,20 @@ export function useAiChat({ mode, currentStep, onConversationIdChange }: UseAiCh
       let auditUpdated = true;
       if (message.auditId) {
         try {
-          await finishAudit(message.auditId, "applied", { endpoint, method: meta.method, status: response.status });
+          await finishAudit(message.auditId, "applied", {
+            endpoint,
+            method: meta.method,
+            status: response.status,
+          });
         } catch {
           auditUpdated = false;
         }
       }
-      setMessages((current) => current.map((item) => (item.id === message.id ? { ...item, applied: true } : item)));
+      setMessages((current) =>
+        current.map((item) =>
+          item.id === message.id ? { ...item, applied: true } : item,
+        ),
+      );
       toast.success(
         auditUpdated
           ? `${meta.label} انجام شد.`
@@ -428,7 +511,9 @@ export function useAiChat({ mode, currentStep, onConversationIdChange }: UseAiCh
       });
     }
     setMessages((current) =>
-      current.map((item) => (item.id === message.id ? { ...item, proposal: null } : item)),
+      current.map((item) =>
+        item.id === message.id ? { ...item, proposal: null } : item,
+      ),
     );
   }
 
