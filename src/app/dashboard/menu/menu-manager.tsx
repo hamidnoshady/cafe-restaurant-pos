@@ -627,25 +627,7 @@ function ModifierGroupRow({
       </p>
       <ul className="mb-2 divide-y divide-border">
         {modifiers.map((m) => (
-          <li key={m.id} className="flex min-w-0 flex-col gap-2 py-2 text-sm sm:flex-row sm:items-center sm:justify-between">
-            <span className={`min-w-0 break-words ${m.is_active ? "" : "text-muted-foreground line-through"}`}>{m.name}</span>
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-muted-foreground">{formatToman(Number(m.price_delta))}</span>
-              <SecondaryButton
-                disabled={busy}
-                onClick={() =>
-                  run(() =>
-                    api(`/api/menu/modifiers/${m.id}`, {
-                      method: "PATCH",
-                      body: JSON.stringify({ isActive: !m.is_active }),
-                    }),
-                  )
-                }
-              >
-                {m.is_active ? "غیرفعال" : "فعال"}
-              </SecondaryButton>
-            </div>
-          </li>
+          <ModifierRow key={m.id} modifier={m} busy={busy} run={run} />
         ))}
         {modifiers.length === 0 ? <p className="py-1 text-xs text-muted-foreground">افزودنی‌ای ثبت نشده است.</p> : null}
       </ul>
@@ -669,5 +651,105 @@ function ModifierGroupRow({
         </div>
       </form>
     </div>
+  );
+}
+
+
+function ModifierRow({ modifier, busy, run }: { modifier: Modifier; busy: boolean; run: Runner }) {
+  const [editing, setEditing] = useState(false);
+
+  if (editing) {
+    return <EditModifierRow modifier={modifier} busy={busy} run={run} onDone={() => setEditing(false)} />;
+  }
+
+  return (
+    <li className="flex min-w-0 flex-col gap-2 py-2 text-sm sm:flex-row sm:items-center sm:justify-between">
+      <span className={`min-w-0 break-words ${modifier.is_active ? "" : "text-muted-foreground line-through"}`}>{modifier.name}</span>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-muted-foreground">{formatToman(Number(modifier.price_delta))}</span>
+        <SecondaryButton disabled={busy} onClick={() => setEditing(true)}>ویرایش</SecondaryButton>
+        <SecondaryButton
+          disabled={busy}
+          onClick={() =>
+            run(() =>
+              api(`/api/menu/modifiers/${modifier.id}`, {
+                method: "PATCH",
+                body: JSON.stringify({ isActive: !modifier.is_active }),
+              }),
+            )
+          }
+        >
+          {modifier.is_active ? "غیرفعال" : "فعال"}
+        </SecondaryButton>
+        <SecondaryButton
+          disabled={busy}
+          onClick={() => {
+            if (!window.confirm(`افزودنی «${modifier.name}» حذف شود؟ افزودنی که در سفارش استفاده شده باشد غیرفعال می‌شود.`)) return;
+            void run(() => api(`/api/menu/modifiers/${modifier.id}`, { method: "DELETE" }));
+          }}
+        >
+          حذف
+        </SecondaryButton>
+      </div>
+    </li>
+  );
+}
+
+function EditModifierRow({
+  modifier,
+  busy,
+  run,
+  onDone,
+}: {
+  modifier: Modifier;
+  busy: boolean;
+  run: Runner;
+  onDone: () => void;
+}) {
+  const [name, setName] = useState(modifier.name);
+  const [delta, setDelta] = useState(String(rialToToman(Number(modifier.price_delta))));
+
+  async function save(event: React.FormEvent) {
+    event.preventDefault();
+    let deltaRial: number;
+    try {
+      deltaRial = parseToRial(delta, "toman");
+    } catch {
+      return;
+    }
+    if (!name.trim()) return;
+    const ok = await run(() =>
+      api(`/api/menu/modifiers/${modifier.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ name, priceDelta: deltaRial }),
+      }),
+    );
+    if (ok) onDone();
+  }
+
+  return (
+    <li className="py-2">
+      <form onSubmit={save} className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <Field label="نام افزودنی">
+          <input className={inputClass} value={name} onChange={(event) => setName(event.target.value)} required />
+        </Field>
+        <Field label="مبلغ اضافه (تومان)">
+          <input
+            className={inputClass}
+            dir="ltr"
+            inputMode="numeric"
+            value={delta}
+            onChange={(event) => setDelta(event.target.value)}
+            required
+          />
+        </Field>
+        <div className="flex items-end gap-2">
+          <PrimaryButton disabled={busy}>ذخیره</PrimaryButton>
+          <SecondaryButton onClick={onDone} disabled={busy}>
+            انصراف
+          </SecondaryButton>
+        </div>
+      </form>
+    </li>
   );
 }
