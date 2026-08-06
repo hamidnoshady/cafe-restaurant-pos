@@ -5,12 +5,22 @@ import { toast } from "sonner";
 import { toPersianDigits } from "@/lib/digits";
 import type { KitchenTicketData } from "@/lib/kitchen-ticket-template";
 import { formatToman } from "@/lib/money";
-import { ORDER_ITEM_STATUS_LABELS, type OrderItemStatus } from "@/lib/order-item-status";
+import {
+  ORDER_ITEM_STATUS_LABELS,
+  type OrderItemStatus,
+} from "@/lib/order-item-status";
 import { printKitchenTicket } from "@/lib/print-agent-client";
 import { ModifierPicker } from "../modifier-picker";
 import { apiOrQueue } from "../offline-queue";
 import { useRealtime } from "../use-realtime";
-import { api, ErrorBox, errorMessage, InfoBox, PrimaryButton, SecondaryButton } from "../ui";
+import {
+  api,
+  ErrorBox,
+  errorMessage,
+  InfoBox,
+  PrimaryButton,
+  SecondaryButton,
+} from "../ui";
 import { firstPrinter, usePrinters } from "../use-printers";
 
 interface Category {
@@ -85,7 +95,8 @@ const STATUS_BADGE: Record<OrderItemStatus, string> = {
   pending: "bg-muted text-muted-foreground",
   sent: "bg-muted text-muted-foreground",
   preparing: "bg-primary/10 text-primary",
-  ready: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300",
+  ready:
+    "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300",
   served: "bg-muted text-muted-foreground",
   voided: "bg-destructive/10 text-destructive",
 };
@@ -125,7 +136,9 @@ export function TableOrderPanel({
       setOrderModifiers([]);
       return;
     }
-    api<{ items: OrderItem[]; modifiers: OrderModifier[] }>(`/api/orders/${table.order_id}`).then(({ ok, data }) => {
+    api<{ items: OrderItem[]; modifiers: OrderModifier[] }>(
+      `/api/orders/${table.order_id}`,
+    ).then(({ ok, data }) => {
       if (ok) {
         setOrderItems(data.items);
         setOrderModifiers(data.modifiers);
@@ -137,8 +150,13 @@ export function TableOrderPanel({
   useRealtime(
     useCallback(
       (event) => {
-        if (event.type === "order.updated" && event.orderId === table.order_id) loadOrder();
-        if (event.type === "order.item_status" && event.orderId === table.order_id) loadOrder();
+        if (event.type === "order.updated" && event.orderId === table.order_id)
+          loadOrder();
+        if (
+          event.type === "order.item_status" &&
+          event.orderId === table.order_id
+        )
+          loadOrder();
         if (event.type === "order.created") {
           loadOrder();
           onChanged();
@@ -160,20 +178,29 @@ export function TableOrderPanel({
   const attachedGroups = useCallback(
     (itemId: string) => {
       if (!menu) return [];
-      const groupIds = menu.itemModifierGroups.filter((l) => l.menu_item_id === itemId).map((l) => l.modifier_group_id);
+      const groupIds = menu.itemModifierGroups
+        .filter((l) => l.menu_item_id === itemId)
+        .map((l) => l.modifier_group_id);
       return menu.modifierGroups
         .filter((g) => groupIds.includes(g.id))
-        .map((g) => ({ ...g, modifiers: menu.modifiers.filter((m) => m.group_id === g.id && m.is_active) }));
+        .map((g) => ({
+          ...g,
+          modifiers: menu.modifiers.filter(
+            (m) => m.group_id === g.id && m.is_active,
+          ),
+        }));
     },
     [menu],
   );
 
   function addToCart(item: Item, selectedModifierIds: string[], note: string) {
-    const modifiers = selectedModifierIds.map((id) => menu!.modifiers.find((m) => m.id === id)!);
+    const modifiers = selectedModifierIds.map(
+      (id) => menu!.modifiers.find((m) => m.id === id)!,
+    );
     setCart((prev) => [
       ...prev,
       {
-        key: `${item.id}-${Date.now()}-${Math.random()}`,
+        key: `${item.id}-${crypto.randomUUID()}`,
         menuItemId: item.id,
         name: item.name,
         unitPrice: Number(item.price),
@@ -192,7 +219,11 @@ export function TableOrderPanel({
   }
 
   function setQty(key: string, quantity: number) {
-    setCart((prev) => (quantity <= 0 ? prev.filter((l) => l.key !== key) : prev.map((l) => (l.key === key ? { ...l, quantity } : l))));
+    setCart((prev) =>
+      quantity <= 0
+        ? prev.filter((l) => l.key !== key)
+        : prev.map((l) => (l.key === key ? { ...l, quantity } : l)),
+    );
   }
 
   async function sendToKitchen() {
@@ -200,23 +231,42 @@ export function TableOrderPanel({
     setInfo("");
     if (cart.length === 0) return;
     setBusy(true);
-    const items = cart.map((l) => ({ menuItemId: l.menuItemId, quantity: l.quantity, modifierIds: l.modifierIds, note: l.note || undefined }));
+    const items = cart.map((l) => ({
+      menuItemId: l.menuItemId,
+      quantity: l.quantity,
+      modifierIds: l.modifierIds,
+      note: l.note || undefined,
+    }));
     const res = table.order_id
       ? await apiOrQueue(
           `/api/orders/${table.order_id}/items`,
           { method: "POST", body: { items } },
-          { type: "order.add_items", payload: { orderId: table.order_id, items }, description: `افزودن قلم — ${table.name}` },
+          {
+            type: "order.add_items",
+            payload: { orderId: table.order_id, items },
+            description: `افزودن قلم — ${table.name}`,
+          },
         )
       : await apiOrQueue(
           "/api/orders",
-          { method: "POST", body: { type: "dine_in", tableId: table.id, items } },
-          { type: "order.create", payload: { type: "dine_in", tableId: table.id, items }, description: `سفارش حضوری — ${table.name}` },
+          {
+            method: "POST",
+            body: { type: "dine_in", tableId: table.id, items },
+          },
+          {
+            type: "order.create",
+            payload: { type: "dine_in", tableId: table.id, items },
+            description: `سفارش حضوری — ${table.name}`,
+          },
         );
     setBusy(false);
-    if (!res.ok) return setError(errorMessage((res.data as { error?: string }).error));
+    if (!res.ok)
+      return setError(errorMessage((res.data as { error?: string }).error));
 
     if (res.queued) {
-      setInfo("اتصال قطع است — این ارسال ذخیره شد و پس از اتصال مجدد به آشپزخانه ارسال می‌شود.");
+      setInfo(
+        "اتصال قطع است — این ارسال ذخیره شد و پس از اتصال مجدد به آشپزخانه ارسال می‌شود.",
+      );
     } else {
       toast.success("سفارش به آشپزخانه ارسال شد");
       const kitchenPrinter = firstPrinter(printers, "kitchen");
@@ -225,7 +275,12 @@ export function TableOrderPanel({
           label: table.name,
           orderTypeLabel: "حضوری",
           sentAt: new Date().toISOString(),
-          lines: cart.map((l) => ({ name: l.name, quantity: l.quantity, modifiersLabel: l.modifierLabel || null, note: l.note || null })),
+          lines: cart.map((l) => ({
+            name: l.name,
+            quantity: l.quantity,
+            modifiersLabel: l.modifierLabel || null,
+            note: l.note || null,
+          })),
         };
         void printKitchenTicket(kitchenPrinter.connection, ticket);
       }
@@ -239,7 +294,11 @@ export function TableOrderPanel({
     const res = await apiOrQueue(
       `/api/kitchen/items/${itemId}`,
       { method: "PATCH", body: { status: "served" } },
-      { type: "order_item.status", payload: { itemId, status: "served" }, description: "تحویل قلم" },
+      {
+        type: "order_item.status",
+        payload: { itemId, status: "served" },
+        description: "تحویل قلم",
+      },
     );
     if (res.ok && !res.queued) loadOrder();
   }
@@ -249,17 +308,27 @@ export function TableOrderPanel({
       <div className="mb-4 flex items-center gap-3">
         <SecondaryButton onClick={onBack}>بازگشت</SecondaryButton>
         <h2 className="text-lg font-bold">{table.name}</h2>
-        {table.guest_name ? <span className="text-sm text-muted-foreground">{table.guest_name}</span> : null}
+        {table.guest_name ? (
+          <span className="text-sm text-muted-foreground">
+            {table.guest_name}
+          </span>
+        ) : null}
       </div>
 
       {!table.session_id ? (
-        <p className="text-sm text-muted-foreground">این میز آزاد است. برای نشاندن مهمان از پلان سالن استفاده کنید.</p>
+        <p className="text-sm text-muted-foreground">
+          این میز آزاد است. برای نشاندن مهمان از پلان سالن استفاده کنید.
+        </p>
       ) : (
         <div className="flex flex-col gap-4 lg:flex-row">
           <div className="w-full lg:w-64">
-            <h3 className="mb-2 text-sm font-semibold text-muted-foreground">سفارش فعلی</h3>
+            <h3 className="mb-2 text-sm font-semibold text-muted-foreground">
+              سفارش فعلی
+            </h3>
             {orderItems.length === 0 ? (
-              <p className="text-sm text-muted-foreground">هنوز آیتمی ثبت نشده.</p>
+              <p className="text-sm text-muted-foreground">
+                هنوز آیتمی ثبت نشده.
+              </p>
             ) : (
               <ul className="space-y-2">
                 {orderItems.map((it) => (
@@ -270,10 +339,14 @@ export function TableOrderPanel({
                           {toPersianDigits(it.quantity)}× {it.name_snapshot}
                         </p>
                         {(modsByItem.get(it.id) ?? []).length > 0 ? (
-                          <p className="text-xs text-muted-foreground">{(modsByItem.get(it.id) ?? []).join("، ")}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {(modsByItem.get(it.id) ?? []).join("، ")}
+                          </p>
                         ) : null}
                       </div>
-                      <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${STATUS_BADGE[it.status]}`}>
+                      <span
+                        className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${STATUS_BADGE[it.status]}`}
+                      >
                         {ORDER_ITEM_STATUS_LABELS[it.status]}
                       </span>
                     </div>
@@ -296,7 +369,9 @@ export function TableOrderPanel({
             <ErrorBox>{error}</ErrorBox>
             {info ? <InfoBox>{info}</InfoBox> : null}
             {!menu ? (
-              <p className="text-sm text-muted-foreground">در حال بارگذاری منو…</p>
+              <p className="text-sm text-muted-foreground">
+                در حال بارگذاری منو…
+              </p>
             ) : (
               <>
                 <div className="mb-3 flex gap-1 overflow-x-auto border-b border-border pb-3">
@@ -308,7 +383,9 @@ export function TableOrderPanel({
                         type="button"
                         onClick={() => setActiveCategory(c.id)}
                         className={`shrink-0 rounded-lg px-4 py-2 text-sm ${
-                          activeCategory === c.id ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground transition-colors hover:bg-muted-foreground/20 hover:text-foreground"
+                          activeCategory === c.id
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-muted text-muted-foreground transition-colors hover:bg-muted-foreground/20 hover:text-foreground"
                         }`}
                       >
                         {c.name}
@@ -317,7 +394,9 @@ export function TableOrderPanel({
                 </div>
                 <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
                   {menu.items
-                    .filter((i) => i.is_active && i.category_id === activeCategory)
+                    .filter(
+                      (i) => i.is_active && i.category_id === activeCategory,
+                    )
                     .map((item) => (
                       <button
                         key={item.id}
@@ -326,7 +405,9 @@ export function TableOrderPanel({
                         className="flex flex-col items-start rounded-xl border border-border p-3 text-start hover:border-primary/60 hover:bg-primary/5"
                       >
                         <span className="text-sm font-medium">{item.name}</span>
-                        <span className="mt-1 text-xs text-muted-foreground">{formatToman(Number(item.price))}</span>
+                        <span className="mt-1 text-xs text-muted-foreground">
+                          {formatToman(Number(item.price))}
+                        </span>
                       </button>
                     ))}
                 </div>
@@ -335,24 +416,46 @@ export function TableOrderPanel({
                   <div className="border-t border-border pt-3 min-h-0 overflow-y-auto">
                     <ul className="mb-3 space-y-2">
                       {cart.map((l) => (
-                        <li key={l.key} className="flex items-center justify-between text-sm">
+                        <li
+                          key={l.key}
+                          className="flex items-center justify-between text-sm"
+                        >
                           <span>
                             {l.name}
-                            {l.modifierLabel ? <span className="text-xs text-muted-foreground"> ({l.modifierLabel})</span> : null}
+                            {l.modifierLabel ? (
+                              <span className="text-xs text-muted-foreground">
+                                {" "}
+                                ({l.modifierLabel})
+                              </span>
+                            ) : null}
                           </span>
                           <span className="flex items-center gap-2">
-                            <button type="button" onClick={() => setQty(l.key, l.quantity - 1)} className="size-6 rounded bg-muted">
+                            <button
+                              type="button"
+                              onClick={() => setQty(l.key, l.quantity - 1)}
+                              className="size-6 rounded bg-muted"
+                            >
                               −
                             </button>
-                            <span className="w-4 text-center">{toPersianDigits(l.quantity)}</span>
-                            <button type="button" onClick={() => setQty(l.key, l.quantity + 1)} className="size-6 rounded bg-muted">
+                            <span className="w-4 text-center">
+                              {toPersianDigits(l.quantity)}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setQty(l.key, l.quantity + 1)}
+                              className="size-6 rounded bg-muted"
+                            >
                               +
                             </button>
                           </span>
                         </li>
                       ))}
                     </ul>
-                    <PrimaryButton type="button" onClick={sendToKitchen} disabled={busy}>
+                    <PrimaryButton
+                      type="button"
+                      onClick={sendToKitchen}
+                      disabled={busy}
+                    >
                       {busy ? "در حال ارسال…" : "ارسال به آشپزخانه"}
                     </PrimaryButton>
                   </div>
