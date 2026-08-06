@@ -29,6 +29,36 @@ describe("calculateAiUsageCostRial", () => {
       ),
     ).toBe(0);
   });
+
+  it("forces negative values to 0 using wholeNonNegative", () => {
+    expect(
+      calculateAiUsageCostRial(
+        { inputTokens: -100, outputTokens: 500_000 },
+        { inputTokenRialPerMillion: 40_000, outputTokenRialPerMillion: 80_000 },
+      ),
+    ).toBe(40_000);
+
+    expect(
+      calculateAiUsageCostRial(
+        { inputTokens: 250_000, outputTokens: -500 },
+        { inputTokenRialPerMillion: 40_000, outputTokenRialPerMillion: 80_000 },
+      ),
+    ).toBe(10_000);
+
+    expect(
+      calculateAiUsageCostRial(
+        { inputTokens: 250_000, outputTokens: 500_000 },
+        { inputTokenRialPerMillion: -40_000, outputTokenRialPerMillion: 80_000 },
+      ),
+    ).toBe(40_000);
+
+    expect(
+      calculateAiUsageCostRial(
+        { inputTokens: 250_000, outputTokens: 500_000 },
+        { inputTokenRialPerMillion: 40_000, outputTokenRialPerMillion: -80_000 },
+      ),
+    ).toBe(10_000);
+  });
 });
 
 describe("credit display helpers", () => {
