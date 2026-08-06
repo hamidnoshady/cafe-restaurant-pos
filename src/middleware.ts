@@ -7,6 +7,14 @@ import { PLATFORM_SESSION_COOKIE, verifyPlatformSession } from "@/lib/platform-a
 import { checkRateLimit, hashKey, sweepExpired, type RateLimitEntry } from "@/lib/rate-limit";
 
 const PUBLIC_PATHS = [
+  // The root path decides, in src/app/page.tsx, between the login page and the
+  // first-run wizard — and that decision needs to happen there, because only a
+  // Node-runtime page can ask the database whether the install has any users
+  // yet. Gating `/` here pre-empted it with an unconditional redirect to
+  // /login, which made the wizard unreachable on a fresh desktop install (the
+  // Electron window opens exactly `/`). The page itself sends an authenticated
+  // caller on to the dashboard, so nothing is exposed by letting it run.
+  "/",
   "/login",
   "/api/auth/login",
   "/api/auth/pin-login",
@@ -68,6 +76,18 @@ const PLATFORM_PUBLIC_PATHS = [
   // same shape as accept-invite. The handler resolves it or refuses.
   "/api/platform/pairing/redeem",
 ];
+
+/**
+ * Whether a path is served without a tenant session.
+ *
+ * A declared path matches itself and its subtree, never a path that merely
+ * shares its text (`/logindecoy` is not `/login`). `"/"` is exact-only by the
+ * same rule — its subtree form is `"//"`, which no real path starts with — so
+ * listing it opens the root page alone, not the whole app.
+ */
+export function isPublicPath(pathname: string): boolean {
+  return PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+}
 
 /** Methods that change state — the ones a read-only impersonation may not use. */
 const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
@@ -216,7 +236,7 @@ export async function middleware(request: NextRequest) {
   }
 
   // ---- Tenant realm --------------------------------------------------------
-  if (PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
+  if (isPublicPath(pathname)) {
     return NextResponse.next();
   }
 
