@@ -332,7 +332,7 @@ export function TableOrderPanel({
                 </div>
 
                 {cart.length > 0 ? (
-                  <div className="border-t border-border pt-3">
+                  <div className="border-t border-border pt-3 min-h-0 overflow-y-auto">
                     <ul className="mb-3 space-y-2">
                       {cart.map((l) => (
                         <li key={l.key} className="flex items-center justify-between text-sm">
