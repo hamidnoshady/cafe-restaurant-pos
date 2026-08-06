@@ -31,12 +31,40 @@ describe("calculateAiUsageCostRial", () => {
   });
 });
 
-describe("credit display helpers", () => {
+describe("estimateTokens", () => {
   it("uses a conservative character fallback when provider usage is absent", () => {
     expect(estimateTokens("")).toBe(0);
     expect(estimateTokens("سلام")).toBe(2);
   });
 
+  it("handles strings with only whitespace", () => {
+    expect(estimateTokens("   ")).toBe(0);
+    expect(estimateTokens("\t\n")).toBe(0);
+  });
+
+  it("trims surrounding whitespace before estimating", () => {
+    expect(estimateTokens("  سلام  ")).toBe(2);
+  });
+
+  it("handles complex UTF-8 characters and emojis", () => {
+    // Array.from("👨‍👩‍👧‍👦").length is 7, Math.ceil(7 / 2) = 4
+    expect(estimateTokens("👨‍👩‍👧‍👦")).toBe(4);
+    // Array.from("🚀").length is 1, Math.ceil(1 / 2) = 1
+    expect(estimateTokens("🚀")).toBe(1);
+    // Array.from("🚀 سلام").length is 6, Math.ceil(6 / 2) = 3
+    expect(estimateTokens("🚀 سلام")).toBe(3);
+  });
+
+  it("handles very large strings", () => {
+    const largeString = "a".repeat(10000);
+    expect(estimateTokens(largeString)).toBe(5000);
+
+    const largePersianString = "س".repeat(10001);
+    expect(estimateTokens(largePersianString)).toBe(5001);
+  });
+});
+
+describe("credit display helpers", () => {
   it("never renders a negative or undefined credit balance", () => {
     expect(creditUnitsForRial(25_000, 10_000)).toBe(2);
     expect(creditUnitsForRial(-1, 10_000)).toBe(0);
