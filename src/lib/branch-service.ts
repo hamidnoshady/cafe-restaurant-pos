@@ -99,13 +99,22 @@ async function copyMenuStructure(
     [fromLocationId],
   );
   const categoryIdMap = new Map<string, string>();
-  for (const category of categories) {
+  if (categories.length > 0) {
     const { rows } = await client.query<{ id: string }>(
       `INSERT INTO menu_categories (location_id, name, sort_order, is_active)
-       VALUES ($1, $2, $3, $4) RETURNING id`,
-      [toLocationId, category.name, category.sort_order, category.is_active],
+       SELECT $1, name, sort_order, is_active
+       FROM unnest($2::text[], $3::int[], $4::boolean[]) AS t(name, sort_order, is_active)
+       RETURNING id`,
+      [
+        toLocationId,
+        categories.map((c) => c.name),
+        categories.map((c) => c.sort_order),
+        categories.map((c) => c.is_active),
+      ],
     );
-    categoryIdMap.set(category.id, rows[0].id);
+    for (let i = 0; i < categories.length; i++) {
+      categoryIdMap.set(categories[i].id, rows[i].id);
+    }
   }
 
   const { rows: groups } = await client.query<{
@@ -113,17 +122,27 @@ async function copyMenuStructure(
     name: string;
     min_select: number;
     max_select: number;
-  }>("SELECT id, name, min_select, max_select FROM modifier_groups WHERE location_id = $1", [
-    fromLocationId,
-  ]);
+  }>(
+    "SELECT id, name, min_select, max_select FROM modifier_groups WHERE location_id = $1",
+    [fromLocationId],
+  );
   const groupIdMap = new Map<string, string>();
-  for (const group of groups) {
+  if (groups.length > 0) {
     const { rows } = await client.query<{ id: string }>(
       `INSERT INTO modifier_groups (location_id, name, min_select, max_select)
-       VALUES ($1, $2, $3, $4) RETURNING id`,
-      [toLocationId, group.name, group.min_select, group.max_select],
+       SELECT $1, name, min_select, max_select
+       FROM unnest($2::text[], $3::int[], $4::int[]) AS t(name, min_select, max_select)
+       RETURNING id`,
+      [
+        toLocationId,
+        groups.map((g) => g.name),
+        groups.map((g) => g.min_select),
+        groups.map((g) => g.max_select),
+      ],
     );
-    groupIdMap.set(group.id, rows[0].id);
+    for (let i = 0; i < groups.length; i++) {
+      groupIdMap.set(groups[i].id, rows[i].id);
+    }
   }
 
   const { rows: modifiers } = await client.query<{
@@ -139,15 +158,29 @@ async function copyMenuStructure(
     [fromLocationId],
   );
   const modifierIdMap = new Map<string, string>();
-  for (const modifier of modifiers) {
-    const newGroupId = groupIdMap.get(modifier.group_id);
-    if (!newGroupId) continue;
+  const validModifiers = modifiers
+    .map((m) => ({ ...m, newGroupId: groupIdMap.get(m.group_id) }))
+    .filter((m) => m.newGroupId);
+
+  if (validModifiers.length > 0) {
     const { rows } = await client.query<{ id: string }>(
       `INSERT INTO modifiers (location_id, group_id, name, price_delta, is_active, sort_order)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-      [toLocationId, newGroupId, modifier.name, modifier.price_delta, modifier.is_active, modifier.sort_order],
+       SELECT $1, group_id::uuid, name, price_delta::numeric, is_active, sort_order
+       FROM unnest($2::text[], $3::text[], $4::text[], $5::boolean[], $6::int[])
+         AS t(group_id, name, price_delta, is_active, sort_order)
+       RETURNING id`,
+      [
+        toLocationId,
+        validModifiers.map((m) => m.newGroupId!),
+        validModifiers.map((m) => m.name),
+        validModifiers.map((m) => m.price_delta),
+        validModifiers.map((m) => m.is_active),
+        validModifiers.map((m) => m.sort_order),
+      ],
     );
-    modifierIdMap.set(modifier.id, rows[0].id);
+    for (let i = 0; i < validModifiers.length; i++) {
+      modifierIdMap.set(validModifiers[i].id, rows[i].id);
+    }
   }
 
   const { rows: items } = await client.query<{
@@ -165,39 +198,70 @@ async function copyMenuStructure(
        FROM menu_items WHERE location_id = $1`,
     [fromLocationId],
   );
-  for (const item of items) {
-    const newCategoryId = item.category_id ? categoryIdMap.get(item.category_id) ?? null : null;
+
+  const validItems = items.map((item) => ({
+    ...item,
+    newCategoryId: item.category_id
+      ? (categoryIdMap.get(item.category_id) ?? null)
+      : null,
+  }));
+  const itemIdMap = new Map<string, string>();
+
+  if (validItems.length > 0) {
     const { rows: inserted } = await client.query<{ id: string }>(
       `INSERT INTO menu_items
          (location_id, category_id, name, description, sku, price, image_url, is_active, sort_order)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+       SELECT $1, category_id::uuid, name, description, sku, price::numeric, image_url, is_active, sort_order
+       FROM unnest($2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[], $8::boolean[], $9::int[])
+         AS t(category_id, name, description, sku, price, image_url, is_active, sort_order)
+       RETURNING id`,
       [
         toLocationId,
-        newCategoryId,
-        item.name,
-        item.description,
-        item.sku,
-        item.price,
-        item.image_url,
-        item.is_active,
-        item.sort_order,
+        validItems.map((i) => i.newCategoryId),
+        validItems.map((i) => i.name),
+        validItems.map((i) => i.description),
+        validItems.map((i) => i.sku),
+        validItems.map((i) => i.price),
+        validItems.map((i) => i.image_url),
+        validItems.map((i) => i.is_active),
+        validItems.map((i) => i.sort_order),
       ],
     );
-    const newItemId = inserted[0].id;
 
-    const { rows: links } = await client.query<{ modifier_group_id: string }>(
-      "SELECT modifier_group_id FROM menu_item_modifier_groups WHERE menu_item_id = $1",
-      [item.id],
-    );
-    for (const link of links) {
-      const newGroupId = groupIdMap.get(link.modifier_group_id);
-      if (!newGroupId) continue;
-      await client.query(
-        `INSERT INTO menu_item_modifier_groups (menu_item_id, modifier_group_id)
-         VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-        [newItemId, newGroupId],
-      );
+    for (let i = 0; i < validItems.length; i++) {
+      itemIdMap.set(validItems[i].id, inserted[i].id);
     }
+  }
+
+  const { rows: allLinks } = await client.query<{
+    menu_item_id: string;
+    modifier_group_id: string;
+  }>(
+    `SELECT mg.menu_item_id, mg.modifier_group_id
+     FROM menu_item_modifier_groups mg
+     JOIN menu_items mi ON mi.id = mg.menu_item_id
+     WHERE mi.location_id = $1`,
+    [fromLocationId],
+  );
+
+  const validLinks = allLinks
+    .map((link) => ({
+      newItemId: itemIdMap.get(link.menu_item_id),
+      newGroupId: groupIdMap.get(link.modifier_group_id),
+    }))
+    .filter((link) => link.newItemId && link.newGroupId);
+
+  if (validLinks.length > 0) {
+    await client.query(
+      `INSERT INTO menu_item_modifier_groups (menu_item_id, modifier_group_id)
+       SELECT menu_item_id::uuid, modifier_group_id::uuid
+       FROM unnest($1::text[], $2::text[]) AS t(menu_item_id, modifier_group_id)
+       ON CONFLICT DO NOTHING`,
+      [
+        validLinks.map((l) => l.newItemId!),
+        validLinks.map((l) => l.newGroupId!),
+      ],
+    );
   }
   // modifierIdMap is retained for symmetry with the other maps and potential
   // future use (e.g. copying modifier_ingredients); nothing reads it today
@@ -206,12 +270,17 @@ async function copyMenuStructure(
 }
 
 /** Creates a branch, optionally seeded with another branch's menu structure. */
-export async function createBranch(input: CreateBranchInput): Promise<{ locationId: string }> {
+export async function createBranch(
+  input: CreateBranchInput,
+): Promise<{ locationId: string }> {
   const name = input.name.trim();
   if (!name) throw new BranchError("missing_fields");
 
   const limits = await planLimitsFor(input.businessId);
-  if (limits.branchLimit !== null && (await activeBranchCount(input.businessId)) >= limits.branchLimit) {
+  if (
+    limits.branchLimit !== null &&
+    (await activeBranchCount(input.businessId)) >= limits.branchLimit
+  ) {
     throw new BranchError("branch_limit_exceeded", 403);
   }
 
@@ -257,7 +326,10 @@ export async function createBranch(input: CreateBranchInput): Promise<{ location
         // Separate parameter from location_id above: entity_id is text and
         // location_id is uuid, so Postgres can't type one shared placeholder.
         locationId,
-        JSON.stringify({ name, copiedMenuFrom: input.copyMenuFromLocationId ?? null }),
+        JSON.stringify({
+          name,
+          copiedMenuFrom: input.copyMenuFromLocationId ?? null,
+        }),
       ],
     );
 
@@ -336,13 +408,15 @@ export async function deactivateBranch(
     "SELECT 1 FROM orders WHERE location_id = $1 AND status IN ('open', 'held') LIMIT 1",
     [locationId],
   );
-  if (openOrders.length > 0) throw new BranchError("branch_has_open_orders", 409);
+  if (openOrders.length > 0)
+    throw new BranchError("branch_has_open_orders", 409);
 
   const { rows: openSessions } = await query(
     "SELECT 1 FROM table_sessions WHERE location_id = $1 AND closed_at IS NULL LIMIT 1",
     [locationId],
   );
-  if (openSessions.length > 0) throw new BranchError("branch_has_open_sessions", 409);
+  if (openSessions.length > 0)
+    throw new BranchError("branch_has_open_sessions", 409);
 
   const { rows } = await query(
     "UPDATE locations SET is_active = false WHERE id = $1 AND business_id = $2 RETURNING id",
