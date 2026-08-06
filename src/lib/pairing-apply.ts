@@ -93,7 +93,11 @@ export async function applyPairingSnapshot(
 async function insertUsers(
   client: PoolClient,
   snapshot: PairingSnapshot,
-): Promise<{ ownerUserId: string; ownerName: string; ownerPlatformUserId: string | null }> {
+): Promise<{
+  ownerUserId: string;
+  ownerName: string;
+  ownerPlatformUserId: string | null;
+}> {
   let ownerUserId = "";
   let ownerName = "";
   let ownerPlatformUserId: string | null = null;
@@ -155,13 +159,18 @@ async function insertUsers(
 }
 
 /** Parents before children, resolving parent_id from a code→id map built as we go. */
-async function insertAccounts(client: PoolClient, snapshot: PairingSnapshot): Promise<void> {
+async function insertAccounts(
+  client: PoolClient,
+  snapshot: PairingSnapshot,
+): Promise<void> {
   const idByCode = new Map<string, string>();
   const pending = [...snapshot.accounts];
   let guard = pending.length + 1;
   while (pending.length > 0 && guard > 0) {
     guard -= 1;
-    const ready = pending.filter((a) => !a.parentCode || idByCode.has(a.parentCode));
+    const ready = pending.filter(
+      (a) => !a.parentCode || idByCode.has(a.parentCode),
+    );
     // A snapshot whose parent chain can't be resolved (a cycle, or a parent
     // that was inactive and so never travelled) would loop forever; treat the
     // remaining rows as roots rather than hanging the pairing.
@@ -173,7 +182,9 @@ async function insertAccounts(client: PoolClient, snapshot: PairingSnapshot): Pr
         [
           account.id,
           snapshot.business.id,
-          account.parentCode ? (idByCode.get(account.parentCode) ?? null) : null,
+          account.parentCode
+            ? (idByCode.get(account.parentCode) ?? null)
+            : null,
           account.code,
           account.name,
           account.type,
@@ -185,20 +196,37 @@ async function insertAccounts(client: PoolClient, snapshot: PairingSnapshot): Pr
   }
 }
 
-async function insertMenu(client: PoolClient, snapshot: PairingSnapshot): Promise<void> {
+async function insertMenu(
+  client: PoolClient,
+  snapshot: PairingSnapshot,
+): Promise<void> {
   for (const category of snapshot.menu.categories) {
     await client.query(
       `INSERT INTO menu_categories (id, location_id, name, sort_order, is_active)
        VALUES ($1, $2, $3, $4, $5)`,
-      [category.id, snapshot.location.id, category.name, category.sortOrder, category.isActive],
+      [
+        category.id,
+        snapshot.location.id,
+        category.name,
+        category.sortOrder,
+        category.isActive,
+      ],
     );
   }
-  for (const item of snapshot.menu.items) {
-    await client.query(
-      `INSERT INTO menu_items
-         (id, location_id, category_id, name, description, sku, price, image_url, is_active, sort_order)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-      [
+  const batchSize = 100;
+  for (let i = 0; i < snapshot.menu.items.length; i += batchSize) {
+    const chunk = snapshot.menu.items.slice(i, i + batchSize);
+    if (chunk.length === 0) break;
+
+    const valueStrings: string[] = [];
+    const params: unknown[] = [];
+    let paramIndex = 1;
+
+    for (const item of chunk) {
+      valueStrings.push(
+        `(${paramIndex++}, ${paramIndex++}, ${paramIndex++}, ${paramIndex++}, ${paramIndex++}, ${paramIndex++}, ${paramIndex++}, ${paramIndex++}, ${paramIndex++}, ${paramIndex++})`,
+      );
+      params.push(
         item.id,
         snapshot.location.id,
         item.categoryId,
@@ -209,7 +237,14 @@ async function insertMenu(client: PoolClient, snapshot: PairingSnapshot): Promis
         item.imageUrl,
         item.isActive,
         item.sortOrder,
-      ],
+      );
+    }
+
+    await client.query(
+      `INSERT INTO menu_items
+         (id, location_id, category_id, name, description, sku, price, image_url, is_active, sort_order)
+       VALUES ${valueStrings.join(", ")}`,
+      params,
     );
   }
 }
@@ -246,7 +281,10 @@ async function insertSettings(
       SETTING_KEYS.serverSyncConfig,
       { remoteUrl, token: snapshot.syncToken, enabled: false, batchSize: 100 },
     ],
-    [SETTING_KEYS.wizardProgress, { steps: { paired: pairedAt }, completedAt: pairedAt }],
+    [
+      SETTING_KEYS.wizardProgress,
+      { steps: { paired: pairedAt }, completedAt: pairedAt },
+    ],
   ];
   for (const [key, value] of owned) {
     await client.query(
@@ -264,7 +302,10 @@ async function insertSettings(
     `INSERT INTO server_sync_tokens (business_id, token_hash, updated_at)
      VALUES ($1, $2, now())
      ON CONFLICT (business_id) DO UPDATE SET token_hash = EXCLUDED.token_hash, updated_at = now()`,
-    [snapshot.business.id, createHash("sha256").update(snapshot.syncToken).digest("hex")],
+    [
+      snapshot.business.id,
+      createHash("sha256").update(snapshot.syncToken).digest("hex"),
+    ],
   );
 }
 
@@ -274,7 +315,10 @@ async function insertSettings(
  * defaults, because the two sides' catalogue defaults could diverge across
  * versions.
  */
-async function insertFeatures(client: PoolClient, snapshot: PairingSnapshot): Promise<void> {
+async function insertFeatures(
+  client: PoolClient,
+  snapshot: PairingSnapshot,
+): Promise<void> {
   for (const [flagKey, enabled] of Object.entries(snapshot.features)) {
     await client.query(
       `INSERT INTO business_features (business_id, flag_key, enabled)
