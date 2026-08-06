@@ -200,11 +200,19 @@ export async function createOrder(input: CreateOrderInput): Promise<MutationResu
         [input.locationId, orderId, item.menuItemId, item.name, item.unitPrice, item.quantity, item.note],
       );
       const orderItemId = itemRows[0].id;
-      for (const mod of item.modifiers) {
+      if (item.modifiers.length > 0) {
+        const values: string[] = [];
+        const params: any[] = [];
+        for (let i = 0; i < item.modifiers.length; i++) {
+          const mod = item.modifiers[i];
+          const offset = i * 4;
+          values.push(`($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4})`);
+          params.push(orderItemId, mod.id, mod.name, mod.priceDelta);
+        }
         await client.query(
           `INSERT INTO order_item_modifiers (order_item_id, modifier_id, name_snapshot, price_delta)
-           VALUES ($1, $2, $3, $4)`,
-          [orderItemId, mod.id, mod.name, mod.priceDelta],
+           VALUES ${values.join(", ")}`,
+          params,
         );
       }
       await captureInventorySnapshot(client, orderItemId, item.menuItemId, item.modifiers.map((m) => m.id));
@@ -256,11 +264,19 @@ export async function addItemsToOrder(input: AddItemsInput): Promise<MutationRes
         [input.locationId, input.orderId, item.menuItemId, item.name, item.unitPrice, item.quantity, item.note],
       );
       const orderItemId = itemRows[0].id;
-      for (const mod of item.modifiers) {
+      if (item.modifiers.length > 0) {
+        const values: string[] = [];
+        const params: any[] = [];
+        for (let i = 0; i < item.modifiers.length; i++) {
+          const mod = item.modifiers[i];
+          const offset = i * 4;
+          values.push(`($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4})`);
+          params.push(orderItemId, mod.id, mod.name, mod.priceDelta);
+        }
         await client.query(
           `INSERT INTO order_item_modifiers (order_item_id, modifier_id, name_snapshot, price_delta)
-           VALUES ($1, $2, $3, $4)`,
-          [orderItemId, mod.id, mod.name, mod.priceDelta],
+           VALUES ${values.join(", ")}`,
+          params,
         );
       }
       await captureInventorySnapshot(client, orderItemId, item.menuItemId, item.modifiers.map((m) => m.id));
