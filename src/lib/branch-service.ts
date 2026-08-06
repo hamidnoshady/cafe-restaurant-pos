@@ -9,6 +9,7 @@
  * DB-touching, so not unit-tested directly per repo convention; the pure
  * access rules it composes with live in location-access.ts.
  */
+import { randomUUID } from "node:crypto";
 import { getPool, query } from "./db";
 import { activeBranchCount, planLimitsFor } from "./plan-limits";
 
@@ -113,9 +114,10 @@ async function copyMenuStructure(
     name: string;
     min_select: number;
     max_select: number;
-  }>("SELECT id, name, min_select, max_select FROM modifier_groups WHERE location_id = $1", [
-    fromLocationId,
-  ]);
+  }>(
+    "SELECT id, name, min_select, max_select FROM modifier_groups WHERE location_id = $1",
+    [fromLocationId],
+  );
   const groupIdMap = new Map<string, string>();
   for (const group of groups) {
     const { rows } = await client.query<{ id: string }>(
@@ -145,7 +147,14 @@ async function copyMenuStructure(
     const { rows } = await client.query<{ id: string }>(
       `INSERT INTO modifiers (location_id, group_id, name, price_delta, is_active, sort_order)
        VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-      [toLocationId, newGroupId, modifier.name, modifier.price_delta, modifier.is_active, modifier.sort_order],
+      [
+        toLocationId,
+        newGroupId,
+        modifier.name,
+        modifier.price_delta,
+        modifier.is_active,
+        modifier.sort_order,
+      ],
     );
     modifierIdMap.set(modifier.id, rows[0].id);
   }
@@ -165,37 +174,86 @@ async function copyMenuStructure(
        FROM menu_items WHERE location_id = $1`,
     [fromLocationId],
   );
-  for (const item of items) {
-    const newCategoryId = item.category_id ? categoryIdMap.get(item.category_id) ?? null : null;
-    const { rows: inserted } = await client.query<{ id: string }>(
+
+  const { rows: allLinks } = await client.query<{
+    menu_item_id: string;
+    modifier_group_id: string;
+  }>(
+    `SELECT mg.menu_item_id, mg.modifier_group_id
+       FROM menu_item_modifier_groups mg
+       JOIN menu_items mi ON mg.menu_item_id = mi.id
+      WHERE mi.location_id = $1`,
+    [fromLocationId],
+  );
+
+  if (items.length > 0) {
+    const itemIds: string[] = [];
+    const locationIds: string[] = [];
+    const categoryIds: (string | null)[] = [];
+    const names: string[] = [];
+    const descriptions: (string | null)[] = [];
+    const skus: (string | null)[] = [];
+    const prices: string[] = [];
+    const imageUrls: (string | null)[] = [];
+    const isActives: boolean[] = [];
+    const sortOrders: number[] = [];
+
+    const itemIdMap = new Map<string, string>();
+
+    for (const item of items) {
+      const newId = randomUUID();
+      itemIdMap.set(item.id, newId);
+
+      itemIds.push(newId);
+      locationIds.push(toLocationId);
+      categoryIds.push(
+        item.category_id ? (categoryIdMap.get(item.category_id) ?? null) : null,
+      );
+      names.push(item.name);
+      descriptions.push(item.description);
+      skus.push(item.sku);
+      prices.push(item.price);
+      imageUrls.push(item.image_url);
+      isActives.push(item.is_active);
+      sortOrders.push(item.sort_order);
+    }
+
+    await client.query(
       `INSERT INTO menu_items
-         (location_id, category_id, name, description, sku, price, image_url, is_active, sort_order)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+         (id, location_id, category_id, name, description, sku, price, image_url, is_active, sort_order)
+       SELECT * FROM UNNEST($1::uuid[], $2::uuid[], $3::uuid[], $4::text[], $5::text[], $6::text[], $7::numeric[], $8::text[], $9::boolean[], $10::int[])`,
       [
-        toLocationId,
-        newCategoryId,
-        item.name,
-        item.description,
-        item.sku,
-        item.price,
-        item.image_url,
-        item.is_active,
-        item.sort_order,
+        itemIds,
+        locationIds,
+        categoryIds,
+        names,
+        descriptions,
+        skus,
+        prices,
+        imageUrls,
+        isActives,
+        sortOrders,
       ],
     );
-    const newItemId = inserted[0].id;
 
-    const { rows: links } = await client.query<{ modifier_group_id: string }>(
-      "SELECT modifier_group_id FROM menu_item_modifier_groups WHERE menu_item_id = $1",
-      [item.id],
-    );
-    for (const link of links) {
+    const linkItemIds: string[] = [];
+    const linkGroupIds: string[] = [];
+
+    for (const link of allLinks) {
+      const newItemId = itemIdMap.get(link.menu_item_id);
       const newGroupId = groupIdMap.get(link.modifier_group_id);
-      if (!newGroupId) continue;
+      if (!newItemId || !newGroupId) continue;
+
+      linkItemIds.push(newItemId);
+      linkGroupIds.push(newGroupId);
+    }
+
+    if (linkItemIds.length > 0) {
       await client.query(
         `INSERT INTO menu_item_modifier_groups (menu_item_id, modifier_group_id)
-         VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-        [newItemId, newGroupId],
+         SELECT * FROM UNNEST($1::uuid[], $2::uuid[])
+         ON CONFLICT DO NOTHING`,
+        [linkItemIds, linkGroupIds],
       );
     }
   }
@@ -206,12 +264,17 @@ async function copyMenuStructure(
 }
 
 /** Creates a branch, optionally seeded with another branch's menu structure. */
-export async function createBranch(input: CreateBranchInput): Promise<{ locationId: string }> {
+export async function createBranch(
+  input: CreateBranchInput,
+): Promise<{ locationId: string }> {
   const name = input.name.trim();
   if (!name) throw new BranchError("missing_fields");
 
   const limits = await planLimitsFor(input.businessId);
-  if (limits.branchLimit !== null && (await activeBranchCount(input.businessId)) >= limits.branchLimit) {
+  if (
+    limits.branchLimit !== null &&
+    (await activeBranchCount(input.businessId)) >= limits.branchLimit
+  ) {
     throw new BranchError("branch_limit_exceeded", 403);
   }
 
@@ -257,7 +320,10 @@ export async function createBranch(input: CreateBranchInput): Promise<{ location
         // Separate parameter from location_id above: entity_id is text and
         // location_id is uuid, so Postgres can't type one shared placeholder.
         locationId,
-        JSON.stringify({ name, copiedMenuFrom: input.copyMenuFromLocationId ?? null }),
+        JSON.stringify({
+          name,
+          copiedMenuFrom: input.copyMenuFromLocationId ?? null,
+        }),
       ],
     );
 
@@ -336,13 +402,15 @@ export async function deactivateBranch(
     "SELECT 1 FROM orders WHERE location_id = $1 AND status IN ('open', 'held') LIMIT 1",
     [locationId],
   );
-  if (openOrders.length > 0) throw new BranchError("branch_has_open_orders", 409);
+  if (openOrders.length > 0)
+    throw new BranchError("branch_has_open_orders", 409);
 
   const { rows: openSessions } = await query(
     "SELECT 1 FROM table_sessions WHERE location_id = $1 AND closed_at IS NULL LIMIT 1",
     [locationId],
   );
-  if (openSessions.length > 0) throw new BranchError("branch_has_open_sessions", 409);
+  if (openSessions.length > 0)
+    throw new BranchError("branch_has_open_sessions", 409);
 
   const { rows } = await query(
     "UPDATE locations SET is_active = false WHERE id = $1 AND business_id = $2 RETURNING id",
