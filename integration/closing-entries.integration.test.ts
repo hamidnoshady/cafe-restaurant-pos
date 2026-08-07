@@ -8,7 +8,15 @@
  */
 import { randomUUID } from "node:crypto";
 import { Client } from "pg";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import { runMigrations } from "../scripts/migrate";
 
 const rootDatabaseUrl = process.env.DATABASE_URL;
@@ -62,13 +70,18 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await db?.end();
-  await dbLib?.getPool().end().catch(() => {});
+  await dbLib
+    ?.getPool()
+    .end()
+    .catch(() => {});
   process.env.DATABASE_URL = rootDatabaseUrl;
 
   const maintenance = new Client({ connectionString: maintenanceUrl() });
   await maintenance.connect();
   try {
-    await maintenance.query(`DROP DATABASE IF EXISTS "${databaseName}" WITH (FORCE)`);
+    await maintenance.query(
+      `DROP DATABASE IF EXISTS "${databaseName}" WITH (FORCE)`,
+    );
   } finally {
     await maintenance.end();
   }
@@ -111,7 +124,13 @@ beforeEach(async () => {
 });
 
 /** Posts a balanced two-line entry directly, mirroring what postJournalEntry does. */
-async function postEntry(entryDate: string, debitAcct: string, creditAcct: string, amount: number, createdBy: string) {
+async function postEntry(
+  entryDate: string,
+  debitAcct: string,
+  creditAcct: string,
+  amount: number,
+  createdBy: string,
+) {
   const { rows } = await db.query<{ id: string }>(
     `INSERT INTO journal_entries (business_id, entry_date, memo, source_type, created_by)
      VALUES ($1, $2, 'test', 'manual', $3) RETURNING id`,
@@ -137,7 +156,12 @@ async function accountBalance(accountId: string): Promise<number> {
 async function softCloseAllPeriods(fiscalYearId: string) {
   const periods = await fiscalService.listPeriods(biz.id, fiscalYearId);
   for (const p of periods) {
-    await fiscalService.setPeriodStatus(biz.id, p.id, "soft_closed", users.owner);
+    await fiscalService.setPeriodStatus(
+      biz.id,
+      p.id,
+      "soft_closed",
+      users.owner,
+    );
   }
   return periods;
 }
@@ -147,12 +171,28 @@ describe("closeFiscalYear", () => {
     await fiscalService.createFiscalYear(biz.id, 1404);
     const [year] = await fiscalService.listFiscalYears(biz.id);
 
-    await postEntry("2025-04-05", acct.cash, acct.revenue, 1_000_000, users.owner);
-    await postEntry("2025-05-05", acct.expense, acct.cash, 400_000, users.owner);
+    await postEntry(
+      "2025-04-05",
+      acct.cash,
+      acct.revenue,
+      1_000_000,
+      users.owner,
+    );
+    await postEntry(
+      "2025-05-05",
+      acct.expense,
+      acct.cash,
+      400_000,
+      users.owner,
+    );
 
     await softCloseAllPeriods(year.id);
 
-    const result = await closingService.closeFiscalYear(biz.id, year.id, users.owner);
+    const result = await closingService.closeFiscalYear(
+      biz.id,
+      year.id,
+      users.owner,
+    );
     expect(result.closingEntryId).not.toBeNull();
     expect(result.netIncome).toBe(600_000);
 
@@ -174,11 +214,27 @@ describe("closeFiscalYear", () => {
     await fiscalService.createFiscalYear(biz.id, 1404);
     const [year] = await fiscalService.listFiscalYears(biz.id);
 
-    await postEntry("2025-04-05", acct.cash, acct.revenue, 200_000, users.owner);
-    await postEntry("2025-05-05", acct.expense, acct.cash, 900_000, users.owner);
+    await postEntry(
+      "2025-04-05",
+      acct.cash,
+      acct.revenue,
+      200_000,
+      users.owner,
+    );
+    await postEntry(
+      "2025-05-05",
+      acct.expense,
+      acct.cash,
+      900_000,
+      users.owner,
+    );
 
     await softCloseAllPeriods(year.id);
-    const result = await closingService.closeFiscalYear(biz.id, year.id, users.owner);
+    const result = await closingService.closeFiscalYear(
+      biz.id,
+      year.id,
+      users.owner,
+    );
 
     expect(result.netIncome).toBe(-700_000);
     // A loss debits retained earnings, so its debit-credit balance is positive.
@@ -190,7 +246,11 @@ describe("closeFiscalYear", () => {
     const [year] = await fiscalService.listFiscalYears(biz.id);
 
     await softCloseAllPeriods(year.id);
-    const result = await closingService.closeFiscalYear(biz.id, year.id, users.owner);
+    const result = await closingService.closeFiscalYear(
+      biz.id,
+      year.id,
+      users.owner,
+    );
 
     expect(result.closingEntryId).toBeNull();
     expect(result.netIncome).toBe(0);
@@ -203,11 +263,16 @@ describe("closeFiscalYear", () => {
     const [year] = await fiscalService.listFiscalYears(biz.id);
     const periods = await fiscalService.listPeriods(biz.id, year.id);
     // Soft-close only the first period; the other eleven stay open.
-    await fiscalService.setPeriodStatus(biz.id, periods[0].id, "soft_closed", users.owner);
-
-    await expect(closingService.closeFiscalYear(biz.id, year.id, users.owner)).rejects.toThrow(
-      "periods_not_ready",
+    await fiscalService.setPeriodStatus(
+      biz.id,
+      periods[0].id,
+      "soft_closed",
+      users.owner,
     );
+
+    await expect(
+      closingService.closeFiscalYear(biz.id, year.id, users.owner),
+    ).rejects.toThrow("periods_not_ready");
   });
 
   it("rejects closing an already-closed year", async () => {
@@ -216,15 +281,49 @@ describe("closeFiscalYear", () => {
     await softCloseAllPeriods(year.id);
     await closingService.closeFiscalYear(biz.id, year.id, users.owner);
 
-    await expect(closingService.closeFiscalYear(biz.id, year.id, users.owner)).rejects.toThrow(
-      "fiscal_year_already_closed",
-    );
+    await expect(
+      closingService.closeFiscalYear(biz.id, year.id, users.owner),
+    ).rejects.toThrow("fiscal_year_already_closed");
   });
 
   it("rejects closing a fiscal year that doesn't exist", async () => {
-    await expect(closingService.closeFiscalYear(biz.id, randomUUID(), users.owner)).rejects.toThrow(
-      "fiscal_year_not_found",
-    );
+    await expect(
+      closingService.closeFiscalYear(biz.id, randomUUID(), users.owner),
+    ).rejects.toThrow("fiscal_year_not_found");
+  });
+
+  describe("postJournalEntry failure handling", () => {
+    it("throws period_locked_for_closing if postJournalEntry throws a fiscal period lock error", async () => {
+      await fiscalService.createFiscalYear(biz.id, 1404);
+      const [year] = await fiscalService.listFiscalYears(biz.id);
+      await softCloseAllPeriods(year.id);
+
+      const ledgerService = await import("../src/lib/ledger-service");
+      const spy = vi
+        .spyOn(ledgerService, "postJournalEntry")
+        .mockRejectedValue(new Error("fiscal_period_locked"));
+
+      await expect(
+        closingService.closeFiscalYear(biz.id, year.id, users.owner),
+      ).rejects.toThrow("period_locked_for_closing");
+      spy.mockRestore();
+    });
+
+    it("rethrows if postJournalEntry throws an unrelated error", async () => {
+      await fiscalService.createFiscalYear(biz.id, 1404);
+      const [year] = await fiscalService.listFiscalYears(biz.id);
+      await softCloseAllPeriods(year.id);
+
+      const ledgerService = await import("../src/lib/ledger-service");
+      const spy = vi
+        .spyOn(ledgerService, "postJournalEntry")
+        .mockRejectedValue(new Error("some_other_error"));
+
+      await expect(
+        closingService.closeFiscalYear(biz.id, year.id, users.owner),
+      ).rejects.toThrow("some_other_error");
+      spy.mockRestore();
+    });
   });
 });
 
