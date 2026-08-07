@@ -17,8 +17,6 @@
 const PLACEHOLDER = "change-me-in-production";
 const MIN_SECRET_LENGTH = 32;
 
-let warned = false;
-
 /** `context` names what's being signed, only for the one-time dev-fallback warning's wording (e.g. "sessions", "platform sessions"). */
 export function getJwtSecret(context: string): Uint8Array {
   const secret = process.env.JWT_SECRET;
@@ -34,21 +32,7 @@ export function getJwtSecret(context: string): Uint8Array {
     return new TextEncoder().encode(secret);
   }
 
-  if (isProduction) {
-    throw new Error("JWT_SECRET must be set to a real secret in production");
-  }
-  // NODE_ENV alone is a fragile guard — plenty of real deployments never set
-  // it to exactly "production". Make the fallback loud (once, across both
-  // realms) rather than silent, so a misconfigured non-dev deployment at
-  // least shows up in logs instead of quietly signing every session with a
-  // secret checked into this repo's source.
-  if (!warned) {
-    warned = true;
-    console.error(
-      `SECURITY WARNING: JWT_SECRET is not set (or is the placeholder) — signing ${context} with a ` +
-        "hardcoded, publicly-known development secret. Set a real JWT_SECRET before this is reachable " +
-        "by anyone but you.",
-    );
-  }
-  return new TextEncoder().encode("dev-only-insecure-secret");
+  throw new Error(
+    "JWT_SECRET must be set to a real secret."
+  );
 }

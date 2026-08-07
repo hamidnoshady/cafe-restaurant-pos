@@ -93,7 +93,11 @@ export async function applyPairingSnapshot(
 async function insertUsers(
   client: PoolClient,
   snapshot: PairingSnapshot,
-): Promise<{ ownerUserId: string; ownerName: string; ownerPlatformUserId: string | null }> {
+): Promise<{
+  ownerUserId: string;
+  ownerName: string;
+  ownerPlatformUserId: string | null;
+}> {
   let ownerUserId = "";
   let ownerName = "";
   let ownerPlatformUserId: string | null = null;
@@ -155,13 +159,18 @@ async function insertUsers(
 }
 
 /** Parents before children, resolving parent_id from a code→id map built as we go. */
-async function insertAccounts(client: PoolClient, snapshot: PairingSnapshot): Promise<void> {
+async function insertAccounts(
+  client: PoolClient,
+  snapshot: PairingSnapshot,
+): Promise<void> {
   const idByCode = new Map<string, string>();
   const pending = [...snapshot.accounts];
   let guard = pending.length + 1;
   while (pending.length > 0 && guard > 0) {
     guard -= 1;
-    const ready = pending.filter((a) => !a.parentCode || idByCode.has(a.parentCode));
+    const ready = pending.filter(
+      (a) => !a.parentCode || idByCode.has(a.parentCode),
+    );
     // A snapshot whose parent chain can't be resolved (a cycle, or a parent
     // that was inactive and so never travelled) would loop forever; treat the
     // remaining rows as roots rather than hanging the pairing.
@@ -173,7 +182,9 @@ async function insertAccounts(client: PoolClient, snapshot: PairingSnapshot): Pr
         [
           account.id,
           snapshot.business.id,
-          account.parentCode ? (idByCode.get(account.parentCode) ?? null) : null,
+          account.parentCode
+            ? (idByCode.get(account.parentCode) ?? null)
+            : null,
           account.code,
           account.name,
           account.type,
@@ -239,11 +250,16 @@ async function insertSettings(
 ): Promise<void> {
   const pairedAt = new Date().toISOString();
 
-  for (const setting of snapshot.settings) {
+  if (snapshot.settings.length > 0) {
+    const keys = snapshot.settings.map((s) => s.key);
+    const values = snapshot.settings.map((s) => JSON.stringify(s.value));
+
     await client.query(
-      `INSERT INTO settings (business_id, location_id, key, value) VALUES ($1, NULL, $2, $3)
+      `INSERT INTO settings (business_id, location_id, key, value)
+       SELECT $1, NULL, k, v::jsonb
+       FROM unnest($2::text[], $3::text[]) AS t(k, v)
        ON CONFLICT (business_id, location_id, key) DO UPDATE SET value = EXCLUDED.value`,
-      [snapshot.business.id, setting.key, JSON.stringify(setting.value)],
+      [snapshot.business.id, keys, values],
     );
   }
 
@@ -253,13 +269,22 @@ async function insertSettings(
       SETTING_KEYS.serverSyncConfig,
       { remoteUrl, token: snapshot.syncToken, enabled: false, batchSize: 100 },
     ],
-    [SETTING_KEYS.wizardProgress, { steps: { paired: pairedAt }, completedAt: pairedAt }],
+    [
+      SETTING_KEYS.wizardProgress,
+      { steps: { paired: pairedAt }, completedAt: pairedAt },
+    ],
   ];
-  for (const [key, value] of owned) {
+
+  if (owned.length > 0) {
+    const keys = owned.map(([k]) => k);
+    const values = owned.map(([_, v]) => JSON.stringify(v));
+
     await client.query(
-      `INSERT INTO settings (business_id, location_id, key, value) VALUES ($1, NULL, $2, $3)
+      `INSERT INTO settings (business_id, location_id, key, value)
+       SELECT $1, NULL, k, v::jsonb
+       FROM unnest($2::text[], $3::text[]) AS t(k, v)
        ON CONFLICT (business_id, location_id, key) DO UPDATE SET value = EXCLUDED.value`,
-      [snapshot.business.id, key, JSON.stringify(value)],
+      [snapshot.business.id, keys, values],
     );
   }
 
@@ -271,7 +296,10 @@ async function insertSettings(
     `INSERT INTO server_sync_tokens (business_id, token_hash, updated_at)
      VALUES ($1, $2, now())
      ON CONFLICT (business_id) DO UPDATE SET token_hash = EXCLUDED.token_hash, updated_at = now()`,
-    [snapshot.business.id, createHash("sha256").update(snapshot.syncToken).digest("hex")],
+    [
+      snapshot.business.id,
+      createHash("sha256").update(snapshot.syncToken).digest("hex"),
+    ],
   );
 }
 
@@ -281,7 +309,10 @@ async function insertSettings(
  * defaults, because the two sides' catalogue defaults could diverge across
  * versions.
  */
-async function insertFeatures(client: PoolClient, snapshot: PairingSnapshot): Promise<void> {
+async function insertFeatures(
+  client: PoolClient,
+  snapshot: PairingSnapshot,
+): Promise<void> {
   for (const [flagKey, enabled] of Object.entries(snapshot.features)) {
     await client.query(
       `INSERT INTO business_features (business_id, flag_key, enabled)
