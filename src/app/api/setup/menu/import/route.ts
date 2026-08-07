@@ -1,8 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPool } from "@/lib/db";
 import { getSetting, markStepDone, SETTING_KEYS } from "@/lib/settings";
-import { resolveActiveLocation, requireManager, type TaxSetting } from "@/lib/setup-state";
-import { parseMenuCsv, rowsToImport, type ImportResult } from "@/lib/menu-import";
+import {
+  resolveActiveLocation,
+  requireManager,
+  type TaxSetting,
+} from "@/lib/setup-state";
+import {
+  parseMenuCsv,
+  rowsToImport,
+  type ImportResult,
+} from "@/lib/menu-import";
 import { xlsxToRows } from "@/lib/xlsx-import";
 import { withTenantScope } from "@/lib/auth";
 
@@ -19,7 +27,8 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   if (error) return error;
 
   const location = await resolveActiveLocation(session);
-  if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
+  if (!location)
+    return NextResponse.json({ error: "no_location" }, { status: 409 });
 
   let file: File | null = null;
   try {
@@ -29,7 +38,8 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   } catch {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
-  if (!file) return NextResponse.json({ error: "missing_file" }, { status: 400 });
+  if (!file)
+    return NextResponse.json({ error: "missing_file" }, { status: 400 });
   if (file.size > MAX_FILE_BYTES) {
     return NextResponse.json({ error: "file_too_large" }, { status: 413 });
   }
@@ -39,10 +49,17 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   try {
     if (name.endsWith(".xlsx")) {
       result = rowsToImport(await xlsxToRows(await file.arrayBuffer()));
-    } else if (name.endsWith(".csv") || name.endsWith(".txt") || name.endsWith(".tsv")) {
+    } else if (
+      name.endsWith(".csv") ||
+      name.endsWith(".txt") ||
+      name.endsWith(".tsv")
+    ) {
       result = parseMenuCsv(await file.text());
     } else {
-      return NextResponse.json({ error: "unsupported_format" }, { status: 400 });
+      return NextResponse.json(
+        { error: "unsupported_format" },
+        { status: 400 },
+      );
     }
   } catch {
     return NextResponse.json({ error: "parse_failed" }, { status: 400 });
@@ -55,7 +72,10 @@ export const POST = withTenantScope(async (request: NextRequest) => {
     );
   }
 
-  const tax = await getSetting<TaxSetting>(session.businessId, SETTING_KEYS.tax);
+  const tax = await getSetting<TaxSetting>(
+    session.businessId,
+    SETTING_KEYS.tax,
+  );
   const defaultTaxRate = tax?.defaultRate ?? 0;
 
   let createdCategories = 0;
@@ -87,29 +107,74 @@ export const POST = withTenantScope(async (request: NextRequest) => {
       }
     }
 
-    for (const item of result.items) {
-      const categoryId = categoryIdByName.get(item.category)!;
-      const { rows: existing } = await client.query(
-        "SELECT id FROM menu_items WHERE location_id = $1 AND category_id = $2 AND name = $3",
-        [location.id, categoryId, item.name],
+    if (result.items.length > 0) {
+      const itemCategoryIds = result.items.map(
+        (i) => categoryIdByName.get(i.category)!,
       );
-      if (existing.length > 0) {
+      const itemNames = result.items.map((i) => i.name);
+
+      const { rows: existingRows } = await client.query(
+        `SELECT m.id, m.category_id, m.name
+         FROM menu_items m
+         JOIN unnest($1::uuid[], $2::text[]) AS i(category_id, name)
+           ON m.category_id = i.category_id AND m.name = i.name
+         WHERE m.location_id = $3`,
+        [itemCategoryIds, itemNames, location.id],
+      );
+
+      const existingMap = new Map<string, string>();
+      for (const row of existingRows) {
+        existingMap.set(`${row.category_id}-${row.name}`, row.id);
+      }
+
+      const updates = [];
+      const inserts = [];
+
+      for (const item of result.items) {
+        const categoryId = categoryIdByName.get(item.category)!;
+        const existingId = existingMap.get(`${categoryId}-${item.name}`);
+        if (existingId) {
+          updates.push({ ...item, id: existingId });
+        } else {
+          inserts.push({ ...item, categoryId });
+        }
+      }
+
+      if (updates.length > 0) {
         await client.query(
           `UPDATE menu_items
-              SET price = $1, description = COALESCE($2, description),
-                  sku = COALESCE($3, sku), updated_at = now()
-            WHERE id = $4`,
-          [item.price, item.description ?? null, item.sku ?? null, existing[0].id],
+           SET price = i.price,
+               description = COALESCE(i.description, menu_items.description),
+               sku = COALESCE(i.sku, menu_items.sku),
+               updated_at = now()
+           FROM unnest($1::uuid[], $2::bigint[], $3::text[], $4::text[]) AS i(id, price, description, sku)
+           WHERE menu_items.id = i.id`,
+          [
+            updates.map((u) => u.id),
+            updates.map((u) => u.price),
+            updates.map((u) => u.description ?? null),
+            updates.map((u) => u.sku ?? null),
+          ],
         );
-        updatedItems++;
-      } else {
+        updatedItems += updates.length;
+      }
+
+      if (inserts.length > 0) {
         await client.query(
           `INSERT INTO menu_items (location_id, category_id, name, price, description, sku, sort_order)
-           SELECT $1, $2, $3, $4, $5, $6, COALESCE(MAX(sort_order) + 1, 0)
-             FROM menu_items WHERE location_id = $1 AND category_id = $2`,
-          [location.id, categoryId, item.name, item.price, item.description ?? null, item.sku ?? null],
+           SELECT $1, i.category_id, i.name, i.price, i.description, i.sku,
+                  COALESCE((SELECT MAX(sort_order) FROM menu_items WHERE location_id = $1 AND category_id = i.category_id), -1) + row_number() over (partition by i.category_id)
+           FROM unnest($2::uuid[], $3::text[], $4::bigint[], $5::text[], $6::text[]) AS i(category_id, name, price, description, sku)`,
+          [
+            location.id,
+            inserts.map((i) => i.categoryId),
+            inserts.map((i) => i.name),
+            inserts.map((i) => i.price),
+            inserts.map((i) => i.description ?? null),
+            inserts.map((i) => i.sku ?? null),
+          ],
         );
-        createdItems++;
+        createdItems += inserts.length;
       }
     }
 
