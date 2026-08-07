@@ -224,11 +224,11 @@ export const POST = withTenantScope(async (request: NextRequest) => {
              description = COALESCE(u.description, m.description),
              sku = COALESCE(u.sku, m.sku),
              updated_at = now()
-         FROM (SELECT unnest($1::uuid[]) as id,
+         FROM (SELECT unnest($1::text[]) as id,
                       unnest($2::numeric[]) as price,
                       unnest($3::text[]) as description,
                       unnest($4::text[]) as sku) as u
-         WHERE m.id = u.id`,
+         WHERE m.id = u.id::uuid`,
         [ids, prices, descriptions, skus],
       );
 
@@ -277,9 +277,9 @@ export const POST = withTenantScope(async (request: NextRequest) => {
 
       const { rows: inserted } = await client.query(
         `INSERT INTO menu_items (location_id, category_id, name, price, description, sku, sort_order)
-         SELECT $1, u.category_id, u.name, u.price, u.description, u.sku,
-                COALESCE((SELECT MAX(sort_order) FROM menu_items WHERE location_id = $1 AND category_id = u.category_id), 0) + row_number() over()
-         FROM (SELECT unnest($2::uuid[]) as category_id,
+         SELECT $1, u.category_id::uuid, u.name, u.price, u.description, u.sku,
+                COALESCE((SELECT MAX(sort_order) FROM menu_items WHERE location_id = $1 AND category_id = u.category_id::uuid), 0) + row_number() over()
+         FROM (SELECT unnest($2::text[]) as category_id,
                       unnest($3::text[]) as name,
                       unnest($4::numeric[]) as price,
                       unnest($5::text[]) as description,
