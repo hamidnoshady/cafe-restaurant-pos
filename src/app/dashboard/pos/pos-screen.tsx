@@ -256,7 +256,7 @@ export function PosScreen() {
         return prev.map((l) => (l.key === existing.key ? { ...l, quantity: l.quantity + 1 } : l));
       }
       const line: CartUiLine = {
-        key: `${item.id}-${Date.now()}-${Math.random()}`,
+        key: `${item.id}-${crypto.randomUUID()}`,
         menuItemId: item.id,
         name: item.name,
         unitPrice: Number(item.price),
