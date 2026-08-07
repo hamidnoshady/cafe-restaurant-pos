@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useDeferredValue } from "react";
 import { RefreshCwIcon, SearchIcon, ShoppingBagIcon } from "lucide-react";
 import { toPersianDigits } from "@/lib/digits";
 import { formatToman } from "@/lib/money";
@@ -411,8 +411,11 @@ export function OrdersList() {
       ).sort((a, b) => a.localeCompare(b, "fa")),
     [orderRows],
   );
+  const deferredSearchQuery = useDeferredValue(searchQuery);
+
+  // ⚡ Bolt: Use deferred search query to prevent UI blocking on slow text inputs
   const filteredOrders = useMemo(() => {
-    const normalizedSearch = searchQuery.trim().toLocaleLowerCase("fa");
+    const normalizedSearch = deferredSearchQuery.trim().toLocaleLowerCase("fa");
     return orderRows.filter((order) => {
       const matchesStatus =
         statusFilter === "all" || order.status === statusFilter;
@@ -439,7 +442,7 @@ export function OrdersList() {
   }, [
     dateFilter,
     orderRows,
-    searchQuery,
+    deferredSearchQuery,
     statusFilter,
     tableFilter,
     typeFilter,
