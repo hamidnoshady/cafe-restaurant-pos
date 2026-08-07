@@ -8,12 +8,24 @@
  */
 import { getPool, query } from "./db";
 import { createDeliveryForOrder } from "./delivery-service";
-import { resolveCartItems, validateItemShape, type CartItemInput } from "./order-cart";
-import { computeOrderTotals, type DiscountInput, type OrderTotals } from "./orders";
+import {
+  resolveCartItems,
+  validateItemShape,
+  type CartItemInput,
+} from "./order-cart";
+import {
+  computeOrderTotals,
+  type DiscountInput,
+  type OrderTotals,
+} from "./orders";
 import { recomputeOrderTotals } from "./order-totals";
 import { lockOpenOrder } from "./order-lock";
 import { ensureSessionForTable } from "./table-session-service";
-import { businessIdForLocation, monthlyOrderCount, planLimitsFor } from "./plan-limits";
+import {
+  businessIdForLocation,
+  monthlyOrderCount,
+  planLimitsFor,
+} from "./plan-limits";
 import type { PoolClient } from "pg";
 
 /** Capture the recipe plus modifier deltas as an immutable per-unit snapshot. */
@@ -23,7 +35,10 @@ async function captureInventorySnapshot(
   menuItemId: string,
   modifierIds: string[],
 ): Promise<void> {
-  const { rows } = await client.query<{ inventory_item_id: string; required_quantity: string }>(
+  const { rows } = await client.query<{
+    inventory_item_id: string;
+    required_quantity: string;
+  }>(
     `WITH requirements AS (
        SELECT inventory_item_id, quantity::numeric AS qty
        FROM menu_item_ingredients WHERE menu_item_id=$1
@@ -36,18 +51,28 @@ async function captureInventorySnapshot(
     [menuItemId, modifierIds],
   );
   for (const row of rows) {
-    if (Number(row.required_quantity) < 0) throw new Error("negative_ingredient_requirement");
-    if (row.required_quantity === "0" || Number(row.required_quantity) === 0) continue;
+    if (Number(row.required_quantity) < 0)
+      throw new Error("negative_ingredient_requirement");
+    if (row.required_quantity === "0" || Number(row.required_quantity) === 0)
+      continue;
     await client.query(
       `INSERT INTO order_item_inventory_snapshots
        (order_item_id,inventory_item_id,required_quantity,source_menu_item_id,source_modifier_ids)
        VALUES($1,$2,$3,$4,$5)`,
-      [orderItemId,row.inventory_item_id,row.required_quantity,menuItemId,modifierIds],
+      [
+        orderItemId,
+        row.inventory_item_id,
+        row.required_quantity,
+        menuItemId,
+        modifierIds,
+      ],
     );
   }
 }
 
-export type MutationResult<T> = { ok: true; data: T } | { ok: false; error: string; status: number };
+export type MutationResult<T> =
+  | { ok: true; data: T }
+  | { ok: false; error: string; status: number };
 
 export type OrderType = "dine_in" | "takeaway" | "delivery";
 
@@ -83,14 +108,19 @@ export interface CreateOrderOutput {
 }
 
 /** Same validation + transaction as POST /api/orders. */
-export async function createOrder(input: CreateOrderInput): Promise<MutationResult<CreateOrderOutput>> {
+export async function createOrder(
+  input: CreateOrderInput,
+): Promise<MutationResult<CreateOrderOutput>> {
   const shapeError = validateItemShape(input.items);
   if (shapeError) return { ok: false, error: shapeError, status: 400 };
 
   const businessId = await businessIdForLocation(input.locationId);
   if (businessId) {
     const limits = await planLimitsFor(businessId);
-    if (limits.monthlyOrderLimit !== null && (await monthlyOrderCount(businessId)) >= limits.monthlyOrderLimit) {
+    if (
+      limits.monthlyOrderLimit !== null &&
+      (await monthlyOrderCount(businessId)) >= limits.monthlyOrderLimit
+    ) {
       return { ok: false, error: "monthly_order_limit_exceeded", status: 403 };
     }
   }
@@ -103,8 +133,12 @@ export async function createOrder(input: CreateOrderInput): Promise<MutationResu
       "SELECT id, status FROM dining_tables WHERE id = $1 AND location_id = $2 AND is_active",
       [tableId, input.locationId],
     );
-    if (table.length === 0) return { ok: false, error: "table_not_found", status: 404 };
-    if (table[0].status === "cleaning" || table[0].status === "out_of_service") {
+    if (table.length === 0)
+      return { ok: false, error: "table_not_found", status: 404 };
+    if (
+      table[0].status === "cleaning" ||
+      table[0].status === "out_of_service"
+    ) {
       return { ok: false, error: "table_unavailable", status: 409 };
     }
   }
@@ -117,9 +151,11 @@ export async function createOrder(input: CreateOrderInput): Promise<MutationResu
   let deliveryCourierId: string | null = null;
   if (input.type === "delivery") {
     deliveryAddress = input.delivery?.address?.trim() || null;
-    if (!deliveryAddress) return { ok: false, error: "address_required", status: 400 };
+    if (!deliveryAddress)
+      return { ok: false, error: "address_required", status: 400 };
     const fee = Number(input.delivery?.fee ?? 0);
-    if (!Number.isFinite(fee) || fee < 0) return { ok: false, error: "invalid_delivery_fee", status: 400 };
+    if (!Number.isFinite(fee) || fee < 0)
+      return { ok: false, error: "invalid_delivery_fee", status: 400 };
     deliveryFee = Math.round(fee);
     deliveryCourierId = input.delivery?.courierId ?? null;
     if (deliveryCourierId) {
@@ -127,12 +163,14 @@ export async function createOrder(input: CreateOrderInput): Promise<MutationResu
         "SELECT id FROM couriers WHERE id = $1 AND location_id = $2 AND is_active",
         [deliveryCourierId, input.locationId],
       );
-      if (courier.length === 0) return { ok: false, error: "courier_not_found", status: 404 };
+      if (courier.length === 0)
+        return { ok: false, error: "courier_not_found", status: 404 };
     }
   }
 
   const resolved = await resolveCartItems(input.locationId, input.items);
-  if (!resolved.ok) return { ok: false, error: resolved.error, status: resolved.status };
+  if (!resolved.ok)
+    return { ok: false, error: resolved.error, status: resolved.status };
   const { cartLines, preparedItems } = resolved;
   const totals = computeOrderTotals(cartLines, input.discount, deliveryFee);
 
@@ -150,7 +188,13 @@ export async function createOrder(input: CreateOrderInput): Promise<MutationResu
 
     let tableSessionId: string | null = null;
     if (input.type === "dine_in" && tableId) {
-      tableSessionId = await ensureSessionForTable(client, input.locationId, tableId, input.openedBy, input.guestCount ?? null);
+      tableSessionId = await ensureSessionForTable(
+        client,
+        input.locationId,
+        tableId,
+        input.openedBy,
+        input.guestCount ?? null,
+      );
     }
 
     const discountType = input.discount.type;
@@ -197,21 +241,42 @@ export async function createOrder(input: CreateOrderInput): Promise<MutationResu
       const { rows: itemRows } = await client.query<{ id: string }>(
         `INSERT INTO order_items (location_id, order_id, menu_item_id, name_snapshot, unit_price, quantity, note, status, sent_to_kitchen_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, 'sent', now()) RETURNING id`,
-        [input.locationId, orderId, item.menuItemId, item.name, item.unitPrice, item.quantity, item.note],
+        [
+          input.locationId,
+          orderId,
+          item.menuItemId,
+          item.name,
+          item.unitPrice,
+          item.quantity,
+          item.note,
+        ],
       );
       const orderItemId = itemRows[0].id;
-      for (const mod of item.modifiers) {
+      if (item.modifiers.length > 0) {
         await client.query(
           `INSERT INTO order_item_modifiers (order_item_id, modifier_id, name_snapshot, price_delta)
-           VALUES ($1, $2, $3, $4)`,
-          [orderItemId, mod.id, mod.name, mod.priceDelta],
+           SELECT $1, * FROM UNNEST($2::uuid[], $3::text[], $4::bigint[])`,
+          [
+            orderItemId,
+            item.modifiers.map((m) => m.id),
+            item.modifiers.map((m) => m.name),
+            item.modifiers.map((m) => m.priceDelta),
+          ],
         );
       }
-      await captureInventorySnapshot(client, orderItemId, item.menuItemId, item.modifiers.map((m) => m.id));
+      await captureInventorySnapshot(
+        client,
+        orderItemId,
+        item.menuItemId,
+        item.modifiers.map((m) => m.id),
+      );
     }
 
     await client.query("COMMIT");
-    return { ok: true, data: { id: orderId, orderNumber, type: input.type, totals } };
+    return {
+      ok: true,
+      data: { id: orderId, orderNumber, type: input.type, totals },
+    };
   } catch (err) {
     await client.query("ROLLBACK");
     throw err;
@@ -227,7 +292,9 @@ export interface AddItemsInput {
 }
 
 /** Same validation + transaction as POST /api/orders/[id]/items. */
-export async function addItemsToOrder(input: AddItemsInput): Promise<MutationResult<{ totals: OrderTotals }>> {
+export async function addItemsToOrder(
+  input: AddItemsInput,
+): Promise<MutationResult<{ totals: OrderTotals }>> {
   const shapeError = validateItemShape(input.items);
   if (shapeError) return { ok: false, error: shapeError, status: 400 };
 
@@ -239,31 +306,56 @@ export async function addItemsToOrder(input: AddItemsInput): Promise<MutationRes
       await client.query("ROLLBACK");
       return locked;
     }
-    const resolved = await resolveCartItems(input.locationId, input.items, client);
+    const resolved = await resolveCartItems(
+      input.locationId,
+      input.items,
+      client,
+    );
     if (!resolved.ok) {
       await client.query("ROLLBACK");
       return { ok: false, error: resolved.error, status: resolved.status };
     }
     const { preparedItems } = resolved;
     const discount: DiscountInput = locked.order.discount_type
-      ? { type: locked.order.discount_type, value: Number(locked.order.discount_value ?? 0) }
+      ? {
+          type: locked.order.discount_type,
+          value: Number(locked.order.discount_value ?? 0),
+        }
       : { type: null };
 
     for (const item of preparedItems) {
       const { rows: itemRows } = await client.query<{ id: string }>(
         `INSERT INTO order_items (location_id, order_id, menu_item_id, name_snapshot, unit_price, quantity, note, status, sent_to_kitchen_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, 'sent', now()) RETURNING id`,
-        [input.locationId, input.orderId, item.menuItemId, item.name, item.unitPrice, item.quantity, item.note],
+        [
+          input.locationId,
+          input.orderId,
+          item.menuItemId,
+          item.name,
+          item.unitPrice,
+          item.quantity,
+          item.note,
+        ],
       );
       const orderItemId = itemRows[0].id;
-      for (const mod of item.modifiers) {
+      if (item.modifiers.length > 0) {
         await client.query(
           `INSERT INTO order_item_modifiers (order_item_id, modifier_id, name_snapshot, price_delta)
-           VALUES ($1, $2, $3, $4)`,
-          [orderItemId, mod.id, mod.name, mod.priceDelta],
+           SELECT $1, * FROM UNNEST($2::uuid[], $3::text[], $4::bigint[])`,
+          [
+            orderItemId,
+            item.modifiers.map((m) => m.id),
+            item.modifiers.map((m) => m.name),
+            item.modifiers.map((m) => m.priceDelta),
+          ],
         );
       }
-      await captureInventorySnapshot(client, orderItemId, item.menuItemId, item.modifiers.map((m) => m.id));
+      await captureInventorySnapshot(
+        client,
+        orderItemId,
+        item.menuItemId,
+        item.modifiers.map((m) => m.id),
+      );
     }
     const totals = await recomputeOrderTotals(client, input.orderId, discount);
     await client.query("COMMIT");

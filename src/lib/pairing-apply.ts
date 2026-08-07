@@ -252,11 +252,16 @@ async function insertSettings(
 ): Promise<void> {
   const pairedAt = new Date().toISOString();
 
-  for (const setting of snapshot.settings) {
+  if (snapshot.settings.length > 0) {
+    const keys = snapshot.settings.map((s) => s.key);
+    const values = snapshot.settings.map((s) => JSON.stringify(s.value));
+
     await client.query(
-      `INSERT INTO settings (business_id, location_id, key, value) VALUES ($1, NULL, $2, $3)
+      `INSERT INTO settings (business_id, location_id, key, value)
+       SELECT $1, NULL, k, v::jsonb
+       FROM unnest($2::text[], $3::text[]) AS t(k, v)
        ON CONFLICT (business_id, location_id, key) DO UPDATE SET value = EXCLUDED.value`,
-      [snapshot.business.id, setting.key, JSON.stringify(setting.value)],
+      [snapshot.business.id, keys, values],
     );
   }
 
@@ -271,11 +276,17 @@ async function insertSettings(
       { steps: { paired: pairedAt }, completedAt: pairedAt },
     ],
   ];
-  for (const [key, value] of owned) {
+
+  if (owned.length > 0) {
+    const keys = owned.map(([k]) => k);
+    const values = owned.map(([_, v]) => JSON.stringify(v));
+
     await client.query(
-      `INSERT INTO settings (business_id, location_id, key, value) VALUES ($1, NULL, $2, $3)
+      `INSERT INTO settings (business_id, location_id, key, value)
+       SELECT $1, NULL, k, v::jsonb
+       FROM unnest($2::text[], $3::text[]) AS t(k, v)
        ON CONFLICT (business_id, location_id, key) DO UPDATE SET value = EXCLUDED.value`,
-      [snapshot.business.id, key, JSON.stringify(value)],
+      [snapshot.business.id, keys, values],
     );
   }
 
