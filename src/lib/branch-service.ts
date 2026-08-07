@@ -141,22 +141,26 @@ async function copyMenuStructure(
     [fromLocationId],
   );
   const modifierIdMap = new Map<string, string>();
-  for (const modifier of modifiers) {
-    const newGroupId = groupIdMap.get(modifier.group_id);
-    if (!newGroupId) continue;
+  const validModifiers = modifiers.filter((m) => groupIdMap.has(m.group_id));
+
+  if (validModifiers.length > 0) {
+    const oldIds = validModifiers.map((m) => m.id);
+    const groupIds = validModifiers.map((m) => groupIdMap.get(m.group_id));
+    const names = validModifiers.map((m) => m.name);
+    const priceDeltas = validModifiers.map((m) => m.price_delta);
+    const isActives = validModifiers.map((m) => m.is_active);
+    const sortOrders = validModifiers.map((m) => m.sort_order);
+
     const { rows } = await client.query<{ id: string }>(
       `INSERT INTO modifiers (location_id, group_id, name, price_delta, is_active, sort_order)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-      [
-        toLocationId,
-        newGroupId,
-        modifier.name,
-        modifier.price_delta,
-        modifier.is_active,
-        modifier.sort_order,
-      ],
+       SELECT $1, unnest($2::uuid[]), unnest($3::text[]), unnest($4::numeric[]), unnest($5::boolean[]), unnest($6::integer[])
+       RETURNING id`,
+      [toLocationId, groupIds, names, priceDeltas, isActives, sortOrders],
     );
-    modifierIdMap.set(modifier.id, rows[0].id);
+
+    for (let i = 0; i < oldIds.length; i++) {
+      modifierIdMap.set(oldIds[i], rows[i].id);
+    }
   }
 
   const { rows: items } = await client.query<{
@@ -174,7 +178,6 @@ async function copyMenuStructure(
        FROM menu_items WHERE location_id = $1`,
     [fromLocationId],
   );
-
   const { rows: allLinks } = await client.query<{
     menu_item_id: string;
     modifier_group_id: string;
