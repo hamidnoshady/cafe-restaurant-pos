@@ -9,6 +9,7 @@
  * DB-touching, so not unit-tested directly per repo convention; the pure
  * access rules it composes with live in location-access.ts.
  */
+import { randomUUID } from "node:crypto";
 import { getPool, query } from "./db";
 import { activeBranchCount, planLimitsFor } from "./plan-limits";
 
@@ -177,39 +178,85 @@ async function copyMenuStructure(
        FROM menu_items WHERE location_id = $1`,
     [fromLocationId],
   );
-  for (const item of items) {
-    const newCategoryId = item.category_id
-      ? (categoryIdMap.get(item.category_id) ?? null)
-      : null;
-    const { rows: inserted } = await client.query<{ id: string }>(
+  const { rows: allLinks } = await client.query<{
+    menu_item_id: string;
+    modifier_group_id: string;
+  }>(
+    `SELECT mg.menu_item_id, mg.modifier_group_id
+       FROM menu_item_modifier_groups mg
+       JOIN menu_items mi ON mg.menu_item_id = mi.id
+      WHERE mi.location_id = $1`,
+    [fromLocationId],
+  );
+
+  if (items.length > 0) {
+    const itemIds: string[] = [];
+    const locationIds: string[] = [];
+    const categoryIds: (string | null)[] = [];
+    const names: string[] = [];
+    const descriptions: (string | null)[] = [];
+    const skus: (string | null)[] = [];
+    const prices: string[] = [];
+    const imageUrls: (string | null)[] = [];
+    const isActives: boolean[] = [];
+    const sortOrders: number[] = [];
+
+    const itemIdMap = new Map<string, string>();
+
+    for (const item of items) {
+      const newId = randomUUID();
+      itemIdMap.set(item.id, newId);
+
+      itemIds.push(newId);
+      locationIds.push(toLocationId);
+      categoryIds.push(
+        item.category_id ? (categoryIdMap.get(item.category_id) ?? null) : null,
+      );
+      names.push(item.name);
+      descriptions.push(item.description);
+      skus.push(item.sku);
+      prices.push(item.price);
+      imageUrls.push(item.image_url);
+      isActives.push(item.is_active);
+      sortOrders.push(item.sort_order);
+    }
+
+    await client.query(
       `INSERT INTO menu_items
-         (location_id, category_id, name, description, sku, price, image_url, is_active, sort_order)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+         (id, location_id, category_id, name, description, sku, price, image_url, is_active, sort_order)
+       SELECT * FROM UNNEST($1::uuid[], $2::uuid[], $3::uuid[], $4::text[], $5::text[], $6::text[], $7::numeric[], $8::text[], $9::boolean[], $10::int[])`,
       [
-        toLocationId,
-        newCategoryId,
-        item.name,
-        item.description,
-        item.sku,
-        item.price,
-        item.image_url,
-        item.is_active,
-        item.sort_order,
+        itemIds,
+        locationIds,
+        categoryIds,
+        names,
+        descriptions,
+        skus,
+        prices,
+        imageUrls,
+        isActives,
+        sortOrders,
       ],
     );
-    const newItemId = inserted[0].id;
 
-    const { rows: links } = await client.query<{ modifier_group_id: string }>(
-      "SELECT modifier_group_id FROM menu_item_modifier_groups WHERE menu_item_id = $1",
-      [item.id],
-    );
-    for (const link of links) {
+    const linkItemIds: string[] = [];
+    const linkGroupIds: string[] = [];
+
+    for (const link of allLinks) {
+      const newItemId = itemIdMap.get(link.menu_item_id);
       const newGroupId = groupIdMap.get(link.modifier_group_id);
-      if (!newGroupId) continue;
+      if (!newItemId || !newGroupId) continue;
+
+      linkItemIds.push(newItemId);
+      linkGroupIds.push(newGroupId);
+    }
+
+    if (linkItemIds.length > 0) {
       await client.query(
         `INSERT INTO menu_item_modifier_groups (menu_item_id, modifier_group_id)
-         VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-        [newItemId, newGroupId],
+         SELECT * FROM UNNEST($1::uuid[], $2::uuid[])
+         ON CONFLICT DO NOTHING`,
+        [linkItemIds, linkGroupIds],
       );
     }
   }
