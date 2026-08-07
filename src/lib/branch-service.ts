@@ -198,7 +198,6 @@ async function copyMenuStructure(
        FROM menu_items WHERE location_id = $1`,
     [fromLocationId],
   );
-
   const validItems = items.map((item) => ({
     ...item,
     newCategoryId: item.category_id
