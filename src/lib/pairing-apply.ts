@@ -315,13 +315,18 @@ async function insertFeatures(
   client: PoolClient,
   snapshot: PairingSnapshot,
 ): Promise<void> {
-  for (const [flagKey, enabled] of Object.entries(snapshot.features)) {
-    await client.query(
-      `INSERT INTO business_features (business_id, flag_key, enabled)
-       SELECT $1, $2, $3
-        WHERE EXISTS (SELECT 1 FROM feature_flags WHERE key = $2)
-       ON CONFLICT (business_id, flag_key) DO UPDATE SET enabled = EXCLUDED.enabled, updated_at = now()`,
-      [snapshot.business.id, flagKey, enabled],
-    );
-  }
+  const entries = Object.entries(snapshot.features);
+  if (entries.length === 0) return;
+
+  const keys = entries.map(([k]) => k);
+  const vals = entries.map(([, v]) => v);
+
+  await client.query(
+    `INSERT INTO business_features (business_id, flag_key, enabled)
+     SELECT $1, input.key, input.enabled
+     FROM (SELECT unnest($2::text[]) AS key, unnest($3::boolean[]) AS enabled) AS input
+     WHERE EXISTS (SELECT 1 FROM feature_flags WHERE key = input.key)
+     ON CONFLICT (business_id, flag_key) DO UPDATE SET enabled = EXCLUDED.enabled, updated_at = now()`,
+    [snapshot.business.id, keys, vals],
+  );
 }
