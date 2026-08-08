@@ -327,13 +327,14 @@ export async function computeSetupState(
   const missingForCompletion: string[] = [];
   if (!progress.steps.business)
     missingForCompletion.push("اطلاعات کسب‌وکار ثبت نشده است.");
-  if (accounts === 0)
+  if (!progress.steps.accounts)
     missingForCompletion.push("سرفصل حساب‌ها ایجاد نشده است.");
-  if (steps.includes("costing") && !costing)
+  if (steps.includes("costing") && !progress.steps.costing)
     missingForCompletion.push("روش قیمت‌گذاری موجودی انتخاب نشده است.");
-  if (!tax) missingForCompletion.push("نرخ مالیات تنظیم نشده است.");
-  if (steps.includes("menu") && items === 0)
-    missingForCompletion.push("هیچ آیتمی در منو ثبت نشده است.");
+  if (!progress.steps.tax)
+    missingForCompletion.push("نرخ مالیات تنظیم نشده است.");
+  if (steps.includes("menu") && !progress.steps.menu)
+    missingForCompletion.push("تنظیمات منو تکمیل نشده است.");
 
   return {
     needsBootstrap: false,
