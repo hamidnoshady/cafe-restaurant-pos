@@ -196,40 +196,38 @@ async function insertAccounts(
   }
 }
 
-async function insertMenu(
-  client: PoolClient,
-  snapshot: PairingSnapshot,
-): Promise<void> {
-  for (const category of snapshot.menu.categories) {
+async function insertMenu(client: PoolClient, snapshot: PairingSnapshot): Promise<void> {
+  if (snapshot.menu.categories.length > 0) {
     await client.query(
       `INSERT INTO menu_categories (id, location_id, name, sort_order, is_active)
-       VALUES ($1, $2, $3, $4, $5)`,
+       SELECT * FROM UNNEST($1::uuid[], $2::uuid[], $3::text[], $4::integer[], $5::boolean[])`,
       [
-        category.id,
-        snapshot.location.id,
-        category.name,
-        category.sortOrder,
-        category.isActive,
-      ],
+        snapshot.menu.categories.map((c) => c.id),
+        snapshot.menu.categories.map(() => snapshot.location.id),
+        snapshot.menu.categories.map((c) => c.name),
+        snapshot.menu.categories.map((c) => c.sortOrder),
+        snapshot.menu.categories.map((c) => c.isActive),
+      ]
     );
   }
-  for (const item of snapshot.menu.items) {
+
+  if (snapshot.menu.items.length > 0) {
     await client.query(
       `INSERT INTO menu_items
          (id, location_id, category_id, name, description, sku, price, image_url, is_active, sort_order)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+       SELECT * FROM UNNEST($1::uuid[], $2::uuid[], $3::uuid[], $4::text[], $5::text[], $6::text[], $7::numeric[], $8::text[], $9::boolean[], $10::integer[])`,
       [
-        item.id,
-        snapshot.location.id,
-        item.categoryId,
-        item.name,
-        item.description,
-        item.sku,
-        item.price,
-        item.imageUrl,
-        item.isActive,
-        item.sortOrder,
-      ],
+        snapshot.menu.items.map((i) => i.id),
+        snapshot.menu.items.map(() => snapshot.location.id),
+        snapshot.menu.items.map((i) => i.categoryId),
+        snapshot.menu.items.map((i) => i.name),
+        snapshot.menu.items.map((i) => i.description),
+        snapshot.menu.items.map((i) => i.sku),
+        snapshot.menu.items.map((i) => i.price),
+        snapshot.menu.items.map((i) => i.imageUrl),
+        snapshot.menu.items.map((i) => i.isActive),
+        snapshot.menu.items.map((i) => i.sortOrder),
+      ]
     );
   }
 }
@@ -315,13 +313,18 @@ async function insertFeatures(
   client: PoolClient,
   snapshot: PairingSnapshot,
 ): Promise<void> {
-  for (const [flagKey, enabled] of Object.entries(snapshot.features)) {
-    await client.query(
-      `INSERT INTO business_features (business_id, flag_key, enabled)
-       SELECT $1, $2, $3
-        WHERE EXISTS (SELECT 1 FROM feature_flags WHERE key = $2)
-       ON CONFLICT (business_id, flag_key) DO UPDATE SET enabled = EXCLUDED.enabled, updated_at = now()`,
-      [snapshot.business.id, flagKey, enabled],
-    );
-  }
+  const entries = Object.entries(snapshot.features);
+  if (entries.length === 0) return;
+
+  const keys = entries.map(([k]) => k);
+  const vals = entries.map(([, v]) => v);
+
+  await client.query(
+    `INSERT INTO business_features (business_id, flag_key, enabled)
+     SELECT $1, input.key, input.enabled
+     FROM (SELECT unnest($2::text[]) AS key, unnest($3::boolean[]) AS enabled) AS input
+     WHERE EXISTS (SELECT 1 FROM feature_flags WHERE key = input.key)
+     ON CONFLICT (business_id, flag_key) DO UPDATE SET enabled = EXCLUDED.enabled, updated_at = now()`,
+    [snapshot.business.id, keys, vals],
+  );
 }
