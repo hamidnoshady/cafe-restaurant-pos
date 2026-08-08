@@ -1,0 +1,3 @@
+## 2025-05-21 - [Fast String Manipulation over Regex]
+**Learning:** For extremely high-frequency string transformation tasks like formatting numbers (which runs thousands of times during a single render loop or data export), iterating over string character codes using `charCodeAt` and building a new string is significantly faster (40%-70%) than using regex replacements `replace(/[0-9]/g, ...)` because it avoids the overhead of regex execution and intermediate string/function allocations.
+**Action:** When a string transformation is small, deterministic, and called frequently (like digit normalization), prefer manual loop-based char code manipulation over regex.

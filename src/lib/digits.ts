@@ -3,19 +3,46 @@
  * Data is always stored with Latin (ASCII) digits.
  */
 
-const PERSIAN_DIGITS = "۰۱۲۳۴۵۶۷۸۹";
-const ARABIC_DIGITS = "٠١٢٣٤٥٦٧٨٩";
-
-/** Convert ASCII digits in a string (or a number) to Persian digits. */
+/**
+ * Convert ASCII digits in a string (or a number) to Persian digits.
+ * ⚡ Bolt: Optimized using char code manipulation instead of regex replacement
+ * to significantly reduce string creation overhead.
+ */
 export function toPersianDigits(value: string | number | bigint): string {
-  return String(value).replace(/[0-9]/g, (d) => PERSIAN_DIGITS[Number(d)]);
+  const str = String(value);
+  let res = "";
+  for (let i = 0; i < str.length; i++) {
+    const code = str.charCodeAt(i);
+    if (code >= 48 && code <= 57) {
+      res += String.fromCharCode(code + 1728); // 1776 (۰) - 48 (0)
+    } else {
+      res += str[i];
+    }
+  }
+  return res;
 }
 
-/** Convert Persian and Arabic-Indic digits back to ASCII. */
+/**
+ * Convert Persian and Arabic-Indic digits back to ASCII.
+ * ⚡ Bolt: Optimized using char code manipulation instead of regex replacement
+ * to significantly reduce string creation overhead.
+ */
 export function toLatinDigits(value: string): string {
-  return value
-    .replace(/[۰-۹]/g, (d) => String(PERSIAN_DIGITS.indexOf(d)))
-    .replace(/[٠-٩]/g, (d) => String(ARABIC_DIGITS.indexOf(d)));
+  const str = String(value);
+  let res = "";
+  for (let i = 0; i < str.length; i++) {
+    const code = str.charCodeAt(i);
+    if (code >= 1776 && code <= 1785) {
+      // Persian digits (۰-۹)
+      res += String.fromCharCode(code - 1728);
+    } else if (code >= 1632 && code <= 1641) {
+      // Arabic-Indic digits (٠-٩)
+      res += String.fromCharCode(code - 1584);
+    } else {
+      res += str[i];
+    }
+  }
+  return res;
 }
 
 /** Group an integer with thousands separators (Persian comma «٬»). */
