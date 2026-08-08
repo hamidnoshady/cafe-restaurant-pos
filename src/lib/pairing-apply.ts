@@ -196,55 +196,38 @@ async function insertAccounts(
   }
 }
 
-async function insertMenu(
-  client: PoolClient,
-  snapshot: PairingSnapshot,
-): Promise<void> {
-  for (const category of snapshot.menu.categories) {
+async function insertMenu(client: PoolClient, snapshot: PairingSnapshot): Promise<void> {
+  if (snapshot.menu.categories.length > 0) {
     await client.query(
       `INSERT INTO menu_categories (id, location_id, name, sort_order, is_active)
-       VALUES ($1, $2, $3, $4, $5)`,
+       SELECT * FROM UNNEST($1::uuid[], $2::uuid[], $3::text[], $4::integer[], $5::boolean[])`,
       [
-        category.id,
-        snapshot.location.id,
-        category.name,
-        category.sortOrder,
-        category.isActive,
-      ],
+        snapshot.menu.categories.map((c) => c.id),
+        snapshot.menu.categories.map(() => snapshot.location.id),
+        snapshot.menu.categories.map((c) => c.name),
+        snapshot.menu.categories.map((c) => c.sortOrder),
+        snapshot.menu.categories.map((c) => c.isActive),
+      ]
     );
   }
-  const batchSize = 100;
-  for (let i = 0; i < snapshot.menu.items.length; i += batchSize) {
-    const chunk = snapshot.menu.items.slice(i, i + batchSize);
-    if (chunk.length === 0) break;
 
-    const valueStrings: string[] = [];
-    const params: unknown[] = [];
-    let paramIndex = 1;
-
-    for (const item of chunk) {
-      valueStrings.push(
-        `(${paramIndex++}, ${paramIndex++}, ${paramIndex++}, ${paramIndex++}, ${paramIndex++}, ${paramIndex++}, ${paramIndex++}, ${paramIndex++}, ${paramIndex++}, ${paramIndex++})`,
-      );
-      params.push(
-        item.id,
-        snapshot.location.id,
-        item.categoryId,
-        item.name,
-        item.description,
-        item.sku,
-        item.price,
-        item.imageUrl,
-        item.isActive,
-        item.sortOrder,
-      );
-    }
-
+  if (snapshot.menu.items.length > 0) {
     await client.query(
       `INSERT INTO menu_items
          (id, location_id, category_id, name, description, sku, price, image_url, is_active, sort_order)
-       VALUES ${valueStrings.join(", ")}`,
-      params,
+       SELECT * FROM UNNEST($1::uuid[], $2::uuid[], $3::uuid[], $4::text[], $5::text[], $6::text[], $7::numeric[], $8::text[], $9::boolean[], $10::integer[])`,
+      [
+        snapshot.menu.items.map((i) => i.id),
+        snapshot.menu.items.map(() => snapshot.location.id),
+        snapshot.menu.items.map((i) => i.categoryId),
+        snapshot.menu.items.map((i) => i.name),
+        snapshot.menu.items.map((i) => i.description),
+        snapshot.menu.items.map((i) => i.sku),
+        snapshot.menu.items.map((i) => i.price),
+        snapshot.menu.items.map((i) => i.imageUrl),
+        snapshot.menu.items.map((i) => i.isActive),
+        snapshot.menu.items.map((i) => i.sortOrder),
+      ]
     );
   }
 }
@@ -267,11 +250,16 @@ async function insertSettings(
 ): Promise<void> {
   const pairedAt = new Date().toISOString();
 
-  for (const setting of snapshot.settings) {
+  if (snapshot.settings.length > 0) {
+    const keys = snapshot.settings.map((s) => s.key);
+    const values = snapshot.settings.map((s) => JSON.stringify(s.value));
+
     await client.query(
-      `INSERT INTO settings (business_id, location_id, key, value) VALUES ($1, NULL, $2, $3)
+      `INSERT INTO settings (business_id, location_id, key, value)
+       SELECT $1, NULL, k, v::jsonb
+       FROM unnest($2::text[], $3::text[]) AS t(k, v)
        ON CONFLICT (business_id, location_id, key) DO UPDATE SET value = EXCLUDED.value`,
-      [snapshot.business.id, setting.key, JSON.stringify(setting.value)],
+      [snapshot.business.id, keys, values],
     );
   }
 
@@ -286,11 +274,17 @@ async function insertSettings(
       { steps: { paired: pairedAt }, completedAt: pairedAt },
     ],
   ];
-  for (const [key, value] of owned) {
+
+  if (owned.length > 0) {
+    const keys = owned.map(([k]) => k);
+    const values = owned.map(([_, v]) => JSON.stringify(v));
+
     await client.query(
-      `INSERT INTO settings (business_id, location_id, key, value) VALUES ($1, NULL, $2, $3)
+      `INSERT INTO settings (business_id, location_id, key, value)
+       SELECT $1, NULL, k, v::jsonb
+       FROM unnest($2::text[], $3::text[]) AS t(k, v)
        ON CONFLICT (business_id, location_id, key) DO UPDATE SET value = EXCLUDED.value`,
-      [snapshot.business.id, key, JSON.stringify(value)],
+      [snapshot.business.id, keys, values],
     );
   }
 
@@ -319,13 +313,18 @@ async function insertFeatures(
   client: PoolClient,
   snapshot: PairingSnapshot,
 ): Promise<void> {
-  for (const [flagKey, enabled] of Object.entries(snapshot.features)) {
-    await client.query(
-      `INSERT INTO business_features (business_id, flag_key, enabled)
-       SELECT $1, $2, $3
-        WHERE EXISTS (SELECT 1 FROM feature_flags WHERE key = $2)
-       ON CONFLICT (business_id, flag_key) DO UPDATE SET enabled = EXCLUDED.enabled, updated_at = now()`,
-      [snapshot.business.id, flagKey, enabled],
-    );
-  }
+  const entries = Object.entries(snapshot.features);
+  if (entries.length === 0) return;
+
+  const keys = entries.map(([k]) => k);
+  const vals = entries.map(([, v]) => v);
+
+  await client.query(
+    `INSERT INTO business_features (business_id, flag_key, enabled)
+     SELECT $1, input.key, input.enabled
+     FROM (SELECT unnest($2::text[]) AS key, unnest($3::boolean[]) AS enabled) AS input
+     WHERE EXISTS (SELECT 1 FROM feature_flags WHERE key = input.key)
+     ON CONFLICT (business_id, flag_key) DO UPDATE SET enabled = EXCLUDED.enabled, updated_at = now()`,
+    [snapshot.business.id, keys, vals],
+  );
 }
