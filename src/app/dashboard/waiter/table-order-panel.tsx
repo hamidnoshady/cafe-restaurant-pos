@@ -173,7 +173,7 @@ export function TableOrderPanel({
     setCart((prev) => [
       ...prev,
       {
-        key: `${item.id}-${Date.now()}-${Math.random()}`,
+        key: crypto.randomUUID(),
         menuItemId: item.id,
         name: item.name,
         unitPrice: Number(item.price),
