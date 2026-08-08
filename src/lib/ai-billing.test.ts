@@ -72,4 +72,8 @@ describe("credit display helpers", () => {
     expect(creditUnitsForRial(-1, 10_000)).toBe(0);
     expect(creditUnitsForRial(25_000, 0)).toBe(0);
   });
+
+  it("returns 0 when unit cost is 0 to avoid division by zero", () => {
+    expect(creditUnitsForRial(100, 0)).toBe(0);
+  });
 });
