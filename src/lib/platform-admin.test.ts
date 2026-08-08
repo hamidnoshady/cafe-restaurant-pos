@@ -85,10 +85,14 @@ describe("platformCan — role → capability presets", () => {
 
 describe("clampImpersonationMinutes — short, bounded windows", () => {
   it("defaults when unset, zero, negative, or non-finite", () => {
-    expect(clampImpersonationMinutes(undefined)).toBe(DEFAULT_IMPERSONATION_MINUTES);
+    expect(clampImpersonationMinutes(undefined)).toBe(
+      DEFAULT_IMPERSONATION_MINUTES,
+    );
     expect(clampImpersonationMinutes(0)).toBe(DEFAULT_IMPERSONATION_MINUTES);
     expect(clampImpersonationMinutes(-5)).toBe(DEFAULT_IMPERSONATION_MINUTES);
-    expect(clampImpersonationMinutes(Number.NaN)).toBe(DEFAULT_IMPERSONATION_MINUTES);
+    expect(clampImpersonationMinutes(Number.NaN)).toBe(
+      DEFAULT_IMPERSONATION_MINUTES,
+    );
   });
 
   it("passes a sane request through, flooring fractions", () => {
@@ -98,6 +102,15 @@ describe("clampImpersonationMinutes — short, bounded windows", () => {
 
   it("caps at the maximum", () => {
     expect(clampImpersonationMinutes(1000)).toBe(MAX_IMPERSONATION_MINUTES);
-    expect(clampImpersonationMinutes(MAX_IMPERSONATION_MINUTES + 1)).toBe(MAX_IMPERSONATION_MINUTES);
+    expect(clampImpersonationMinutes(MAX_IMPERSONATION_MINUTES + 1)).toBe(
+      MAX_IMPERSONATION_MINUTES,
+    );
+  });
+
+  it("handles exact boundary values correctly", () => {
+    expect(clampImpersonationMinutes(1)).toBe(1);
+    expect(clampImpersonationMinutes(MAX_IMPERSONATION_MINUTES)).toBe(
+      MAX_IMPERSONATION_MINUTES,
+    );
   });
 });
