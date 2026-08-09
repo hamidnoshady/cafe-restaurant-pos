@@ -9,7 +9,7 @@ interface Message {
   content: string;
 }
 
-const uid = () => Math.random().toString(36).slice(2);
+const uid = () => crypto.randomUUID();
 
 const INITIAL_MESSAGE: Message = {
   id: "platform-support-greeting",
