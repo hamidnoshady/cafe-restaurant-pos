@@ -175,11 +175,15 @@ async function insertAccounts(
     // that was inactive and so never travelled) would loop forever; treat the
     // remaining rows as roots rather than hanging the pairing.
     const batch = ready.length > 0 ? ready : [...pending];
-    for (const account of batch) {
-      await client.query(
-        `INSERT INTO accounts (id, business_id, parent_id, code, name, type)
-         VALUES ($1, $2, $3, $4, $5, $6::account_type)`,
-        [
+    const CHUNK_SIZE = 1000;
+    for (let i = 0; i < batch.length; i += CHUNK_SIZE) {
+      const chunk = batch.slice(i, i + CHUNK_SIZE);
+      const values: string[] = [];
+      const args: any[] = [];
+      let offset = 1;
+      for (const account of chunk) {
+        values.push(`($${offset}, $${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}::account_type)`);
+        args.push(
           account.id,
           snapshot.business.id,
           account.parentCode
@@ -188,10 +192,19 @@ async function insertAccounts(
           account.code,
           account.name,
           account.type,
-        ],
-      );
-      idByCode.set(account.code, account.id);
-      pending.splice(pending.indexOf(account), 1);
+        );
+        offset += 6;
+      }
+      if (values.length > 0) {
+        await client.query(
+          `INSERT INTO accounts (id, business_id, parent_id, code, name, type) VALUES ${values.join(", ")}`,
+          args,
+        );
+      }
+      for (const account of chunk) {
+        idByCode.set(account.code, account.id);
+        pending.splice(pending.indexOf(account), 1);
+      }
     }
   }
 }
