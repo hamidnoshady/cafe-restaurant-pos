@@ -3,8 +3,16 @@ import { NextRequest, NextResponse } from "next/server";
 // where the tenant context (node:async_hooks) and the pg pool that @/lib/auth
 // now pulls in cannot load.
 import { SESSION_COOKIE, verifySession } from "@/lib/auth-edge";
-import { PLATFORM_SESSION_COOKIE, verifyPlatformSession } from "@/lib/platform-auth-edge";
-import { checkRateLimit, hashKey, sweepExpired, type RateLimitEntry } from "@/lib/rate-limit";
+import {
+  PLATFORM_SESSION_COOKIE,
+  verifyPlatformSession,
+} from "@/lib/platform-auth-edge";
+import {
+  checkRateLimit,
+  hashKey,
+  sweepExpired,
+  type RateLimitEntry,
+} from "@/lib/rate-limit";
 
 const PUBLIC_PATHS = [
   // The root path decides, in src/app/page.tsx, between the login page and the
@@ -86,7 +94,9 @@ const PLATFORM_PUBLIC_PATHS = [
  * listing it opens the root page alone, not the whole app.
  */
 export function isPublicPath(pathname: string): boolean {
-  return PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+  return PUBLIC_PATHS.some(
+    (p) => pathname === p || pathname.startsWith(`${p}/`),
+  );
 }
 
 /** Methods that change state — the ones a read-only impersonation may not use. */
@@ -155,7 +165,10 @@ function clientIp(request: NextRequest): string {
 function rateLimited(retryAfterMs: number): NextResponse {
   return NextResponse.json(
     { error: "rate_limited" },
-    { status: 429, headers: { "Retry-After": String(Math.ceil(retryAfterMs / 1000)) } },
+    {
+      status: 429,
+      headers: { "Retry-After": String(Math.ceil(retryAfterMs / 1000)) },
+    },
   );
 }
 
@@ -179,11 +192,136 @@ const AUTH_RATE_LIMITED_PATHS = [
 ];
 
 /** The session-less, bearer-token server-to-server routes (see PUBLIC_PATHS below for why each is public). */
-const SYNC_TOKEN_RATE_LIMITED_PATHS = ["/api/rollup/ingest", "/api/server-sync/push", "/api/server-sync/pull"];
+const SYNC_TOKEN_RATE_LIMITED_PATHS = [
+  "/api/rollup/ingest",
+  "/api/server-sync/push",
+  "/api/server-sync/pull",
+];
 
 /** All public API routes share one per-key bucket; this must stay prefix-based, not an exact route list. */
 function isPublicApiPath(pathname: string): boolean {
   return pathname === "/api/v1" || pathname.startsWith("/api/v1/");
+}
+
+function handleRateLimits(
+  request: NextRequest,
+  pathname: string,
+  now: number,
+): NextResponse | null {
+  if (AUTH_RATE_LIMITED_PATHS.includes(pathname)) {
+    const result = checkRateLimit(
+      authIpLimits,
+      `ip:${clientIp(request)}`,
+      AUTH_IP_LIMIT,
+      AUTH_IP_WINDOW_MS,
+      now,
+    );
+    if (!result.allowed) return rateLimited(result.retryAfterMs);
+  }
+
+  if (SYNC_TOKEN_RATE_LIMITED_PATHS.includes(pathname)) {
+    const authHeader = request.headers.get("authorization");
+    const key = authHeader
+      ? `token:${hashKey(authHeader)}`
+      : `ip:${clientIp(request)}`;
+    const result = checkRateLimit(
+      syncTokenLimits,
+      key,
+      SYNC_TOKEN_LIMIT,
+      SYNC_TOKEN_WINDOW_MS,
+      now,
+    );
+    if (!result.allowed) return rateLimited(result.retryAfterMs);
+  }
+
+  if (isPublicApiPath(pathname)) {
+    const authHeader = request.headers.get("authorization");
+    const key = authHeader
+      ? `api-key:${hashKey(authHeader)}`
+      : `ip:${clientIp(request)}`;
+    const result = checkRateLimit(
+      apiKeyLimits,
+      key,
+      API_KEY_LIMIT,
+      API_KEY_WINDOW_MS,
+      now,
+    );
+    if (!result.allowed) return rateLimited(result.retryAfterMs);
+  }
+
+  return null;
+}
+
+async function handlePlatformAdmin(
+  request: NextRequest,
+  pathname: string,
+): Promise<NextResponse | null> {
+  if (
+    pathname === "/platform" ||
+    pathname.startsWith("/platform/") ||
+    pathname.startsWith("/api/platform")
+  ) {
+    if (PLATFORM_PUBLIC_PATHS.some((p) => pathname === p)) {
+      return NextResponse.next();
+    }
+
+    if (pathname.startsWith("/api/platform")) {
+      return NextResponse.next();
+    }
+
+    const platformToken = request.cookies.get(PLATFORM_SESSION_COOKIE)?.value;
+    const platformSession = platformToken
+      ? await verifyPlatformSession(platformToken)
+      : null;
+    if (!platformSession) {
+      return NextResponse.redirect(new URL("/platform/login", request.url));
+    }
+    return NextResponse.next();
+  }
+  return null;
+}
+
+async function handleTenantAuth(request: NextRequest, pathname: string) {
+  const token = request.cookies.get(SESSION_COOKIE)?.value;
+  const session = token ? await verifySession(token) : null;
+
+  if (!session) {
+    if (pathname.startsWith("/api/")) {
+      return {
+        response: NextResponse.json({ error: "unauthorized" }, { status: 401 }),
+      };
+    }
+    const loginUrl = new URL("/login", request.url);
+    return { response: NextResponse.redirect(loginUrl) };
+  }
+  return { session };
+}
+
+function handleDashboardUrlRewrite(
+  request: NextRequest,
+  pathname: string,
+  businessSlug: string,
+): NextResponse | null {
+  if (pathname.startsWith("/api/") || !businessSlug) return null;
+
+  const prefixed = pathname.match(/^\/([^/]+)\/dashboard(\/.*)?$/);
+  if (prefixed) {
+    const [, slug, rest] = prefixed;
+    const url = request.nextUrl.clone();
+    if (slug !== businessSlug) {
+      url.pathname = `/${businessSlug}/dashboard${rest ?? ""}`;
+      return NextResponse.redirect(url);
+    }
+    url.pathname = `/dashboard${rest ?? ""}`;
+    return NextResponse.rewrite(url);
+  }
+  if (pathname === "/dashboard" || pathname.startsWith("/dashboard/")) {
+    const url = request.nextUrl.clone();
+    url.pathname = `/${businessSlug}${pathname}`;
+    return NextResponse.redirect(url);
+  }
+
+  return null;
 }
 
 export async function middleware(request: NextRequest) {
@@ -191,107 +329,33 @@ export async function middleware(request: NextRequest) {
   const now = Date.now();
   maybeSweep(now);
 
-  if (AUTH_RATE_LIMITED_PATHS.includes(pathname)) {
-    const result = checkRateLimit(authIpLimits, `ip:${clientIp(request)}`, AUTH_IP_LIMIT, AUTH_IP_WINDOW_MS, now);
-    if (!result.allowed) return rateLimited(result.retryAfterMs);
-  }
-
-  if (SYNC_TOKEN_RATE_LIMITED_PATHS.includes(pathname)) {
-    const authHeader = request.headers.get("authorization");
-    const key = authHeader ? `token:${hashKey(authHeader)}` : `ip:${clientIp(request)}`;
-    const result = checkRateLimit(syncTokenLimits, key, SYNC_TOKEN_LIMIT, SYNC_TOKEN_WINDOW_MS, now);
-    if (!result.allowed) return rateLimited(result.retryAfterMs);
-  }
-
-  if (isPublicApiPath(pathname)) {
-    const authHeader = request.headers.get("authorization");
-    const key = authHeader ? `api-key:${hashKey(authHeader)}` : `ip:${clientIp(request)}`;
-    const result = checkRateLimit(apiKeyLimits, key, API_KEY_LIMIT, API_KEY_WINDOW_MS, now);
-    if (!result.allowed) return rateLimited(result.retryAfterMs);
-  }
+  const rateLimitResponse = handleRateLimits(request, pathname, now);
+  if (rateLimitResponse) return rateLimitResponse;
 
   // ---- Super-admin realm ---------------------------------------------------
-  // A separate auth realm with its own cookie. Handled before the tenant path
-  // so a platform request is never subjected to the tenant session check (and
-  // vice versa) — the two realms share no session (exit criterion 4).
-  if (pathname === "/platform" || pathname.startsWith("/platform/") || pathname.startsWith("/api/platform")) {
-    if (PLATFORM_PUBLIC_PATHS.some((p) => pathname === p)) {
-      return NextResponse.next();
-    }
-
-    // The API routes under /api/platform self-guard (requirePlatformAdmin /
-    // requirePlatformCapability), so let them through and let the handler
-    // return the right 401/403. The console *pages*, being browser
-    // navigations, are gated here: no platform session → the login page.
-    if (pathname.startsWith("/api/platform")) {
-      return NextResponse.next();
-    }
-
-    const platformToken = request.cookies.get(PLATFORM_SESSION_COOKIE)?.value;
-    const platformSession = platformToken ? await verifyPlatformSession(platformToken) : null;
-    if (!platformSession) {
-      return NextResponse.redirect(new URL("/platform/login", request.url));
-    }
-    return NextResponse.next();
-  }
+  const platformResponse = await handlePlatformAdmin(request, pathname);
+  if (platformResponse) return platformResponse;
 
   // ---- Tenant realm --------------------------------------------------------
   if (isPublicPath(pathname)) {
     return NextResponse.next();
   }
 
-  const token = request.cookies.get(SESSION_COOKIE)?.value;
-  const session = token ? await verifySession(token) : null;
-
-  if (!session) {
-    if (pathname.startsWith("/api/")) {
-      return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-    }
-    const loginUrl = new URL("/login", request.url);
-    return NextResponse.redirect(loginUrl);
-  }
+  const authResult = await handleTenantAuth(request, pathname);
+  if ("response" in authResult) return authResult.response;
+  const session = authResult.session;
 
   // ---- Dashboard URL: business slug prefix ---------------------------------
-  // The browser-visible dashboard URL carries the business's slug — its
-  // stable, human-readable "english name" (`/{slug}/dashboard/...`) — while
-  // every page still lives at `/dashboard/**`, unprefixed. This is a pure
-  // presentation concern handled entirely here, so nothing else in the app
-  // (page files, `<Link>`s, redirects) needs to know the segment exists:
-  //
-  //   - `/{slug}/dashboard/**` with the caller's own slug is rewritten to
-  //     `/dashboard/**`, so the existing route files serve it unchanged;
-  //   - any other slug there (stale bookmark, or the business was switched)
-  //     redirects to the session's actual slug;
-  //   - the bare `/dashboard/**` (every existing internal link) redirects to
-  //     the slugged form, so the address bar always ends up correct.
-  //
-  // `session.businessSlug` is minted onto the token at login/switch/impersonate
-  // time (see auth-edge.ts) specifically so this runs here, in the Edge
-  // runtime, without a database lookup. A token from before that field existed
-  // has none — the dashboard is simply served unprefixed until the holder's
-  // next login or business switch re-mints one.
-  if (!pathname.startsWith("/api/") && session.businessSlug) {
-    const prefixed = pathname.match(/^\/([^/]+)\/dashboard(\/.*)?$/);
-    if (prefixed) {
-      const [, slug, rest] = prefixed;
-      const url = request.nextUrl.clone();
-      if (slug !== session.businessSlug) {
-        url.pathname = `/${session.businessSlug}/dashboard${rest ?? ""}`;
-        return NextResponse.redirect(url);
-      }
-      url.pathname = `/dashboard${rest ?? ""}`;
-      return NextResponse.rewrite(url);
-    }
-    if (pathname === "/dashboard" || pathname.startsWith("/dashboard/")) {
-      const url = request.nextUrl.clone();
-      url.pathname = `/${session.businessSlug}${pathname}`;
-      return NextResponse.redirect(url);
-    }
+  if (session.businessSlug) {
+    const dashboardResponse = handleDashboardUrlRewrite(
+      request,
+      pathname,
+      session.businessSlug,
+    );
+    if (dashboardResponse) return dashboardResponse;
   }
 
   // Phase 17 — every authenticated tenant API request counts against its own
-  // business's bucket, so one business's traffic (or a runaway offline-sync
-  // client belonging to it) can't degrade another's.
   if (pathname.startsWith("/api/")) {
     const result = checkRateLimit(
       businessLimits,
@@ -303,24 +367,23 @@ export async function middleware(request: NextRequest) {
     if (!result.allowed) return rateLimited(result.retryAfterMs);
   }
 
-  // Phase 15 — read-only impersonation. When the super-admin console entered
-  // this business read-only, the tenant token carries `imp.mode === 'read_only'`.
-  // Reads are allowed so the operator can see what the customer sees; any
-  // state-changing request is refused at the edge, before it reaches a handler.
-  // The tenant guards re-check the grant is still live; this is the cheap first
-  // line that makes read-only actually mean read-only across every route.
+  // Phase 15 — read-only impersonation.
   if (
     session.imp?.mode === "read_only" &&
     pathname.startsWith("/api/") &&
     MUTATING_METHODS.has(request.method)
   ) {
-    return NextResponse.json({ error: "impersonation_read_only" }, { status: 403 });
+    return NextResponse.json(
+      { error: "impersonation_read_only" },
+      { status: 403 },
+    );
   }
 
   return NextResponse.next();
 }
-
 export const config = {
   // Everything except Next internals and static assets
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:woff2|png|svg|ico)).*)"],
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:woff2|png|svg|ico)).*)",
+  ],
 };
