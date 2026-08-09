@@ -43,7 +43,8 @@ export interface ChatAttachment {
   name: string;
 }
 
-export const uid = (): string => Math.random().toString(36).slice(2);
+// 🛡️ Sentinel: Use crypto.randomUUID for cryptographically secure, unpredictable unique IDs.
+export const uid = (): string => crypto.randomUUID();
 
 export const CHAT_ERROR: Record<string, string> = {
   ai_credit_required: "اعتبار هوش مصنوعی برای یک پاسخ جدید کافی نیست. از صفحهٔ اعتبار درخواست شارژ ثبت کنید.",

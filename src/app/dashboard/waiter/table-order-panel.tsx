@@ -173,7 +173,8 @@ export function TableOrderPanel({
     setCart((prev) => [
       ...prev,
       {
-        key: `${item.id}-${Date.now()}-${Math.random()}`,
+        // 🛡️ Sentinel: Use crypto.randomUUID for cryptographically secure, unpredictable unique IDs.
+        key: crypto.randomUUID(),
         menuItemId: item.id,
         name: item.name,
         unitPrice: Number(item.price),
