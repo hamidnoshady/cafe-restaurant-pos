@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api, errorMessage, inputClass, PrimaryButton, SecondaryButton } from "../ui";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import type { Runner } from "./ledger-manager";
 import { ACCOUNT_LEVEL_LABELS, WELL_KNOWN_CODES, type AccountLevel, type NormalBalance } from "@/lib/coa-template";
 import { AccountHistoryPanel } from "./account-history-panel";
@@ -145,10 +146,14 @@ export function ChartOfAccountsSection({ busy, run }: { busy: boolean; run: Runn
           </label>
           <label className="block">
             <span className="mb-1.5 block text-sm font-medium">حساب والد</span>
-            <select className={inputClass} value={parentId} onChange={(e) => setParentId(e.target.value)}>
-              <option value="">بدون والد (سطح گروه)</option>
-              {parentOptions.map((a) => <option key={a.id} value={a.id}>{a.code} — {a.name} ({ACCOUNT_LEVEL_LABELS[a.level]})</option>)}
-            </select>
+            <SearchableSelect
+              value={parentId}
+              onChange={setParentId}
+              options={[
+                { value: "", label: "بدون والد (سطح گروه)" },
+                ...parentOptions.map((a) => ({ value: a.id, label: `${a.code} — ${a.name} (${ACCOUNT_LEVEL_LABELS[a.level]})` })),
+              ]}
+            />
           </label>
           <label className="flex items-end gap-2 pb-2.5">
             <input type="checkbox" checked={isContra} onChange={(e) => setIsContra(e.target.checked)} />

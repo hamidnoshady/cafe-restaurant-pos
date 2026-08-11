@@ -10,6 +10,7 @@ import type { ReceiptData } from "@/lib/receipt-template";
 import { ModifierPicker, type ModifierGroupWithModifiers } from "../../modifier-picker";
 import { apiOrQueue } from "../../offline-queue";
 import { api, ErrorBox, errorMessage, InfoBox, inputClass, PrimaryButton, SecondaryButton } from "../../ui";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { firstPrinter, useBusinessInfo, usePrinters } from "../../use-printers";
 
 const PAYMENT_METHODS: { value: "cash" | "card" | "card_to_card" | "credit" | "snappfood"; label: string }[] = [
@@ -375,14 +376,16 @@ export function OrderDetail({ orderId, canEdit }: { orderId: string; canEdit: bo
         <section className="mb-3 rounded-xl border border-border/80 bg-card p-3 shadow-[0_1px_3px_rgb(15_23_42/0.04)]">
           <h2 className="mb-3 font-semibold">افزودن قلم</h2>
           <div className="flex flex-wrap gap-2">
-            <select className={inputClass} value={addItemId} onChange={(e) => setAddItemId(e.target.value)}>
-              <option value="">آیتم…</option>
-              {activeItems.map((i) => (
-                <option key={i.id} value={i.id}>
-                  {i.name}
-                </option>
-              ))}
-            </select>
+            <div className="w-56">
+              <SearchableSelect
+                value={addItemId}
+                onChange={setAddItemId}
+                options={[
+                  { value: "", label: "آیتم…" },
+                  ...activeItems.map((i) => ({ value: i.id, label: i.name })),
+                ]}
+              />
+            </div>
             <input
               className={`${inputClass} w-20`}
               dir="ltr"
