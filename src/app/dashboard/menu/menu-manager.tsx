@@ -420,14 +420,14 @@ function EditItemRow({
     <li className="px-4 py-3">
       <form onSubmit={save} className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-3">
         <Field label="دسته">
-          <select className={inputClass} value={categoryId} onChange={(event) => setCategoryId(event.target.value)} required>
-            <option value="">دسته را انتخاب کنید…</option>
-            {selectableCategories.map((category) => (
-              <option key={category.id} value={category.id}>
-                {category.name}
-              </option>
-            ))}
-          </select>
+          <SearchableSelect
+            value={categoryId}
+            onChange={setCategoryId}
+            options={[
+              { value: "", label: "دسته را انتخاب کنید…" },
+              ...selectableCategories.map((category) => ({ value: category.id, label: category.name })),
+            ]}
+          />
         </Field>
         <Field label="نام آیتم">
           <input className={inputClass} value={name} onChange={(event) => setName(event.target.value)} required />
@@ -632,37 +632,114 @@ function ModifierGroupRow({
   busy: boolean;
   run: Runner;
 }) {
-  const [name, setName] = useState("");
-  const [delta, setDelta] = useState("0");
+  const [modifierName, setModifierName] = useState("");
+  const [modifierDelta, setModifierDelta] = useState("0");
+  const [editing, setEditing] = useState(false);
+  const [editName, setEditName] = useState(group.name);
+  const [editMin, setEditMin] = useState(String(group.min_select));
+  const [editMax, setEditMax] = useState(String(group.max_select));
 
   async function addModifier() {
-    if (!name.trim()) return;
+    if (!modifierName.trim()) return;
     let deltaRial: number;
     try {
-      deltaRial = parseToRial(delta || "0", "toman");
+      deltaRial = parseToRial(modifierDelta || "0", "toman");
     } catch {
       return;
     }
     const ok = await run(() =>
       api("/api/menu/modifiers", {
         method: "POST",
-        body: JSON.stringify({ groupId: group.id, name, priceDelta: deltaRial }),
+        body: JSON.stringify({ groupId: group.id, name: modifierName, priceDelta: deltaRial }),
       }),
     );
     if (ok) {
-      setName("");
-      setDelta("0");
+      setModifierName("");
+      setModifierDelta("0");
     }
+  }
+
+  async function save(event: React.FormEvent) {
+    event.preventDefault();
+    const min = Number(editMin);
+    const max = Number(editMax);
+    if (!editName.trim() || !Number.isInteger(min) || !Number.isInteger(max) || min < 0 || max < 1 || min > max) {
+      return;
+    }
+    const ok = await run(() =>
+      api(`/api/menu/modifier-groups/${group.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ name: editName.trim(), minSelect: min, maxSelect: max }),
+      }),
+    );
+    if (ok) setEditing(false);
+  }
+
+  function removeGroup() {
+    if (!window.confirm(`گروه افزودنی «${group.name}» و همهٔ افزودنی‌هایش حذف شود؟`)) return;
+    void run(() => api(`/api/menu/modifier-groups/${group.id}`, { method: "DELETE" }));
   }
 
   return (
     <div className="min-w-0 rounded-lg border border-border p-3">
-      <p className="mb-2 text-sm font-medium">
-        {group.name}{" "}
-        <span className="text-xs text-muted-foreground">
-          (انتخاب {toPersianDigits(group.min_select)} تا {toPersianDigits(group.max_select)})
-        </span>
-      </p>
+      {editing ? (
+        <form className="mb-2 grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-3" onSubmit={save}>
+          <Field label="نام گروه">
+            <input className={inputClass} value={editName} onChange={(e) => setEditName(e.target.value)} required />
+          </Field>
+          <Field label="حداقل انتخاب">
+            <input
+              className={inputClass}
+              dir="ltr"
+              inputMode="numeric"
+              value={editMin}
+              onChange={(e) => setEditMin(e.target.value)}
+              required
+            />
+          </Field>
+          <Field label="حداکثر انتخاب">
+            <input
+              className={inputClass}
+              dir="ltr"
+              inputMode="numeric"
+              value={editMax}
+              onChange={(e) => setEditMax(e.target.value)}
+              required
+            />
+          </Field>
+          <div className="flex items-end gap-2">
+            <PrimaryButton disabled={busy}>ذخیره</PrimaryButton>
+            <SecondaryButton disabled={busy} onClick={() => setEditing(false)}>
+              انصراف
+            </SecondaryButton>
+          </div>
+        </form>
+      ) : (
+        <div className="mb-2 flex min-w-0 flex-wrap items-center justify-between gap-2">
+          <p className="text-sm font-medium">
+            {group.name}{" "}
+            <span className="text-xs text-muted-foreground">
+              (انتخاب {toPersianDigits(group.min_select)} تا {toPersianDigits(group.max_select)})
+            </span>
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <SecondaryButton
+              disabled={busy}
+              onClick={() => {
+                setEditName(group.name);
+                setEditMin(String(group.min_select));
+                setEditMax(String(group.max_select));
+                setEditing(true);
+              }}
+            >
+              ویرایش
+            </SecondaryButton>
+            <SecondaryButton disabled={busy} onClick={removeGroup}>
+              حذف
+            </SecondaryButton>
+          </div>
+        </div>
+      )}
       <ul className="mb-2 divide-y divide-border">
         {modifiers.map((m) => (
           <ModifierRow key={m.id} modifier={m} busy={busy} run={run} />
@@ -677,10 +754,16 @@ function ModifierGroupRow({
         }}
       >
         <Field label="نام افزودنی">
-          <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} />
+          <input className={inputClass} value={modifierName} onChange={(e) => setModifierName(e.target.value)} />
         </Field>
         <Field label="مبلغ اضافه (تومان)">
-          <input className={inputClass} dir="ltr" inputMode="numeric" value={delta} onChange={(e) => setDelta(e.target.value)} />
+          <input
+            className={inputClass}
+            dir="ltr"
+            inputMode="numeric"
+            value={modifierDelta}
+            onChange={(e) => setModifierDelta(e.target.value)}
+          />
         </Field>
         <div className="mb-4 flex items-end">
           <SecondaryButton onClick={addModifier} disabled={busy}>

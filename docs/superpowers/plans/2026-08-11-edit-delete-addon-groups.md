@@ -13,7 +13,7 @@
 - UI copy is Persian, RTL; numbers shown with `toPersianDigits`.
 - Money in integer Rial; inputs of the max-select/min-select are plain integers, not money.
 - Every mutation goes through the existing `run()` helper in `MenuManager` — never a raw `fetch` in this component.
-- Validation mirrors the existing create form: name non-empty; min ≥ 0, max ≥ 1, min ≤ max (the PATCH route re-validates and returns `missing_fields`/400 otherwise).
+- Validation mirrors the existing create form: name non-empty; min ≥ 0, max ≥ 1, min ≤ max. These must be checked **client-side in `save`** — unlike the `POST` route, the `PATCH` route does *not* re-validate them (it does `Number(x) || default` with no `min ≤ max` check).
 - Follow the existing patterns in this file: `SecondaryButton` for secondary actions, `window.confirm` before delete (same phrasing style as `ItemRow`'s delete), `disabled={busy}` on all action buttons.
 - No new dependencies. No schema change, no new migration.
 

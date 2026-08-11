@@ -40,8 +40,17 @@ so the list reflects edits/deletes immediately.
 
 ## Validation
 
-Name non-empty. min ≥ 0, max ≥ 1, min ≤ max — the same rules as the create form and the
-PATCH route already enforce server-side.
+Name non-empty. min ≥ 0, max ≥ 1, min ≤ max — the same rules as the create form.
+
+Enforced **client-side in the edit form**, because the `PATCH` route does not re-validate:
+it does `Number(body.minSelect) || 0` / `Number(body.maxSelect) || 1` with no `min ≤ max`
+check, so it would accept `max < min`. (The `POST`/create route *does* enforce all three,
+which is why the create form can rely on the server.) Saving `min > max` would make every
+order containing an item in that group fail `invalid_modifier_selection` in
+`src/lib/order-cart.ts`, so the guard is load-bearing.
+
+Follow-up (out of scope here, frontend-only change): harden the `PATCH` route to mirror
+`POST`'s `Number.isFinite` + range checks.
 
 ## Testing
 
