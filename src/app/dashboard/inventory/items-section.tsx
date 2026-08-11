@@ -1,8 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useDeferredValue, useMemo, useState } from "react";
+import { SearchIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatQuantity } from "@/lib/digits";
+import { searchInventoryItems } from "@/lib/inventory-search";
 import { formatToman } from "@/lib/money";
 import { api, Field, inputClass } from "../ui";
 import type { InventoryItem, Runner } from "./inventory-manager";
@@ -25,6 +27,12 @@ export function ItemsSection({
   const [reorderLevel, setReorderLevel] = useState("");
   const [purchaseUnit, setPurchaseUnit] = useState("");
   const [purchaseFactor, setPurchaseFactor] = useState("1");
+  const [query, setQuery] = useState("");
+  const deferredQuery = useDeferredValue(query);
+  const visibleItems = useMemo(
+    () => searchInventoryItems(items, deferredQuery),
+    [items, deferredQuery],
+  );
 
   async function add(e: React.FormEvent) {
     e.preventDefault();
@@ -68,15 +76,29 @@ export function ItemsSection({
           <p className="mt-1 text-xs leading-5 text-muted-foreground">
             فهرست مواد اولیه و تنظیمات واحدهای خرید آن‌ها.
           </p>
+          <div className="relative mt-3">
+            <SearchIcon className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              className={`${inventoryInputClass} ps-9`}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="جستجوی قلم (نام، کد، واحد)…"
+              aria-label="جستجوی قلم انبار"
+            />
+          </div>
         </div>
 
         <ul className="divide-y divide-stone-200/80">
-          {items.map((it) => (
+          {visibleItems.map((it) => (
             <ItemRow key={it.id} item={it} busy={busy} run={run} />
           ))}
           {items.length === 0 ? (
             <li className="px-4 py-5 text-sm text-muted-foreground sm:px-5">
               قلمی ثبت نشده است.
+            </li>
+          ) : visibleItems.length === 0 ? (
+            <li className="px-4 py-5 text-sm text-muted-foreground sm:px-5">
+              موردی یافت نشد.
             </li>
           ) : null}
         </ul>
