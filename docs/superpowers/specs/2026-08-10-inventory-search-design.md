@@ -5,86 +5,68 @@ Status: Approved (design)
 
 ## Problem
 
-The inventory item list (اقلام انبار) renders every item in a long `<ul>` with no way
-to find one quickly, and the item pickers in the purchases, waste, and recipes forms are
-plain native `<select>` elements over all active items. As a business adds hundreds of
-items, both become painful to use. The stock-counts form also carries a half-finished
-search (dead `searchQuery` state + unused `useDeferredValue`/`useMemo`/`SearchIcon`
-imports) that was never wired up.
+The inventory item list (اقلام انبار) and the physical stock counts list render all items with no search capability, making them painful to use as the catalog grows. The form pickers (waste, recipes, purchases) use a `SearchableSelect` combobox that only searches on the item name (`label`), leaving users unable to find items by SKU or unit.
 
 ## Decision
 
-Client-side search, reusing the existing Persian-aware normalization
-(`normalizePosSearchText` in `src/lib/pos-selection.ts`) and the existing
-`useDeferredValue` + `useMemo` filter pattern from
-`src/app/dashboard/orders/orders-list.tsx`. No API, schema, or migration changes — the
-full item list is already delivered to the client by `/api/inventory`.
+Client-side search, upgrading the existing `normalizePosSearchText` and `SearchableSelect` components. No API or schema changes.
 
-Search matches **name, SKU, or unit**, all normalized. Rejected alternatives:
-
-- **Server-side search** (`?q=` on the API) — items already ship in full; client-side
-  filtering is instant at this scale. YAGNI until item counts reach thousands+.
-- **Custom combobox** — nicer typeahead, but the UI kit has no `Command`/`Popover`;
-  building keyboard nav, outside-click, and a11y from scratch for 5 pickers is
-  disproportionate for an internal POS tool.
+Search matches **name, SKU, or unit**, all normalized.
 
 ## Components
 
-###1. `src/lib/inventory-search.ts` (new)
+### 1. `SearchableSelect` Upgrade — `src/components/ui/searchable-select.tsx`
 
+- Add an optional `searchString` property to the `SelectOption` interface.
+- Update its internal filter: if `option.searchString` is provided, filter against `normalizePosSearchText(option.searchString)`; otherwise fallback to `normalizePosSearchText(option.label)`.
+- Replace its duplicated internal `normalize` function with the shared `normalizePosSearchText` from `@/lib/pos-selection`.
+- Update the item pickers in `waste-section.tsx`, `recipes-section.tsx`, and `purchases-section.tsx` to provide `searchString: [i.name, i.sku, i.unit].filter(Boolean).join(" ")` in their options map.
+
+### 2. Shared Filter Function — `src/lib/inventory-search.ts` (new)
+
+A new shared helper for filtering the `InventoryItem[]` lists in the items and stock-counts sections.
 ```ts
-export function searchInventoryItems<T extends { name: string; sku: string | null; unit: string }>(
-  items: T[],
-  query: string,
-): T[]
+// src/lib/inventory-search.ts
+import { normalizePosSearchText } from "@/lib/pos-selection";
+import type { InventoryItem } from "@/app/dashboard/inventory/inventory-manager";
+
+export function searchInventoryItems(items: InventoryItem[], query: string): InventoryItem[] {
+  const normalizedQuery = normalizePosSearchText(query);
+  if (!normalizedQuery) return items;
+
+  return items.filter((item) => {
+    const searchable = [item.name, item.sku, item.unit].filter(Boolean).join(" ");
+    return normalizePosSearchText(searchable).includes(normalizedQuery);
+  });
+}
 ```
+- A corresponding `inventory-search.test.ts` will verify matching on name, SKU, and unit, including Persian character variants.
 
-- Empty (normalized) query → returns `items` unchanged (fast path).
-- Otherwise returns items where `name`, `sku`, or `unit` (normalized) contains the
-  normalized query.
-- Per-item normalization on each keystroke is acceptable at this scale (hundreds of
-  items); `useDeferredValue` smooths it. Pre-caching normalized names is a noted
-  optimization, not required now.
+### 3. Items list — `src/app/dashboard/inventory/items-section.tsx`
 
-Test (`inventory-search.test.ts`): match by name, match by SKU, match by unit, ي/ك and
-Arabic/Persian digit variants, empty-query passthrough, no-match → empty.
+- Add a search `<input>` in the section header above the list.
+- Use `useDeferredValue` + `useMemo` to filter the items via `searchInventoryItems`.
+- Searches all items (active and inactive).
+- Add a distinct empty-result message: «موردی یافت نشد.»
 
-###2. Items list — `src/app/dashboard/inventory/items-section.tsx`
+### 4. Stock-counts — `src/app/dashboard/inventory/stock-counts-section.tsx`
 
-- Search `<input>` in the section header above the list.
-- `useDeferredValue` + `useMemo` filter via `searchInventoryItems`.
-- Searches all items (active and inactive are both shown today).
-- Distinct empty-result message: «موردی یافت نشد.» vs the existing «قلمی ثبت نشده است.».
-
-###3. Searchable picker — `src/app/dashboard/inventory/inventory-item-picker.tsx` (new)
-
-`InventoryItemPicker({ items, value, onChange, placeholder })` — a filter `<input>`
-above the existing native `<select>`; the `<select>` options are filtered via
-`searchInventoryItems(items, deferredQuery)`. Callers pass active items only, preserving
-today's active-only behavior in the pickers.
-
-Swapped into the 5 existing item selects:
-- `waste-section.tsx` (1)
-- `recipes-section.tsx` (2 — menu-item recipe line + modifier recipe line)
-- `purchases-section.tsx` (shared `lineRows` editor, used by create and edit)
-
-###4. Stock-counts — `src/app/dashboard/inventory/stock-counts-section.tsx`
-
-- Complete the abandoned search: search input filters the counted-items list.
-- Remove the dead `searchQuery` state and unused `useDeferredValue`/`useMemo`/`SearchIcon` imports.
+- Wire up the half-finished search using the new `searchInventoryItems` helper.
+- Use the same `useDeferredValue` + `useMemo` filter as the items list.
 
 ## Files
 
-- New: `src/lib/inventory-search.ts`, `src/lib/inventory-search.test.ts`,
-  `src/app/dashboard/inventory/inventory-item-picker.tsx`
-- Modified: `src/app/dashboard/inventory/items-section.tsx`,
-  `src/app/dashboard/inventory/waste-section.tsx`,
-  `src/app/dashboard/inventory/recipes-section.tsx`,
-  `src/app/dashboard/inventory/purchases-section.tsx`,
-  `src/app/dashboard/inventory/stock-counts-section.tsx`
+- New: `src/lib/inventory-search.ts`
+- New: `src/lib/inventory-search.test.ts`
+- Modified: `src/components/ui/searchable-select.tsx`
+- Modified: `src/app/dashboard/inventory/items-section.tsx`
+- Modified: `src/app/dashboard/inventory/stock-counts-section.tsx`
+- Modified: `src/app/dashboard/inventory/waste-section.tsx`
+- Modified: `src/app/dashboard/inventory/recipes-section.tsx`
+- Modified: `src/app/dashboard/inventory/purchases-section.tsx`
 
 ## Verification
 
 - `npx tsc --noEmit`
-- `npm test` (covers the new `inventory-search.test.ts`)
+- `npm test`
 - `npm run build`
