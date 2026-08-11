@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
 import { formatToman, parseToRial, rialToToman } from "@/lib/money";
 import { api, ErrorBox, errorMessage, Field, inputClass, PrimaryButton, SecondaryButton } from "../ui";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+import { ChevronDown } from "lucide-react";
 
 interface Category {
   id: string;
@@ -161,6 +163,17 @@ function ItemSection({ data, busy, run }: { data: MenuData; busy: boolean; run: 
   const [categoryId, setCategoryId] = useState("");
   const [name, setName] = useState("");
   const [price, setPrice] = useState("");
+  const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(() => new Set());
+
+  function toggleCategory(id: string) {
+    setCollapsedCategories((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+  const [query, setQuery] = useState("");
 
   async function add(e: React.FormEvent) {
     e.preventDefault();
@@ -184,19 +197,22 @@ function ItemSection({ data, busy, run }: { data: MenuData; busy: boolean; run: 
 
   const activeCategories = data.categories.filter((c) => c.is_active);
 
+  const q = query.trim().toLowerCase();
+  const matches = (i: Item) => !q || i.name.toLowerCase().includes(q) || (i.sku ? i.sku.toLowerCase().includes(q) : false);
+
   return (
     <section className="rounded-2xl bg-card p-5 shadow-sm">
       <h2 className="mb-3 font-semibold">آیتم‌ها</h2>
       <form onSubmit={add} className="mb-4 grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Field label="دسته">
-          <select className={inputClass} value={categoryId} onChange={(e) => setCategoryId(e.target.value)} required>
-            <option value="">دسته را انتخاب کنید…</option>
-            {activeCategories.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
+          <SearchableSelect
+            value={categoryId}
+            onChange={setCategoryId}
+            options={[
+              { value: "", label: "دسته را انتخاب کنید…" },
+              ...activeCategories.map((c) => ({ value: c.id, label: c.name })),
+            ]}
+          />
         </Field>
         <Field label="نام آیتم">
           <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} required />
@@ -216,26 +232,48 @@ function ItemSection({ data, busy, run }: { data: MenuData; busy: boolean; run: 
         </div>
       </form>
 
+      <input
+        className={inputClass}
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="جستجوی آیتم…"
+        aria-label="جستجوی آیتم"
+      />
       <div className="space-y-4">
         {data.categories.map((c) => {
-          const items = data.items.filter((i) => i.category_id === c.id);
+          const items = data.items.filter((i) => i.category_id === c.id && matches(i));
           if (items.length === 0) return null;
+          const isCollapsed = collapsedCategories.has(c.id);
           return (
             <div key={c.id}>
-              <p className="mb-1 text-sm font-medium text-foreground">{c.name}</p>
-              <ul className="divide-y divide-border rounded-lg border border-border">
-                {items.map((i) => (
-                  <ItemRow
-                    key={i.id}
-                    item={i}
-                    categories={data.categories}
-                    groups={data.modifierGroups}
-                    links={data.itemModifierGroups}
-                    busy={busy}
-                    run={run}
-                  />
-                ))}
-              </ul>
+              <button
+                type="button"
+                onClick={() => toggleCategory(c.id)}
+                className="mb-1 flex items-center gap-1.5 text-sm font-medium text-foreground"
+                aria-expanded={!isCollapsed}
+              >
+                <ChevronDown
+                  className={`size-4 text-muted-foreground transition-transform ${isCollapsed ? "-rotate-90" : ""}`}
+                  aria-hidden="true"
+                />
+                {c.name}
+                <span className="text-xs font-normal text-muted-foreground">({toPersianDigits(items.length)})</span>
+              </button>
+              {isCollapsed ? null : (
+                <ul className="divide-y divide-border rounded-lg border border-border">
+                  {items.map((i) => (
+                    <ItemRow
+                      key={i.id}
+                      item={i}
+                      categories={data.categories}
+                      groups={data.modifierGroups}
+                      links={data.itemModifierGroups}
+                      busy={busy}
+                      run={run}
+                    />
+                  ))}
+                </ul>
+              )}
             </div>
           );
         })}

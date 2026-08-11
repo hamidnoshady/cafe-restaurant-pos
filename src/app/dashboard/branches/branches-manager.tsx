@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import { ErrorBox, Field, PrimaryButton, SecondaryButton, api, errorMessage, inputClass } from "../ui";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 
 interface Branch {
   id: string;
@@ -157,14 +158,14 @@ export function BranchesManager() {
             />
           </Field>
           <Field label="کپی منو از شعبهٔ دیگر (اختیاری)">
-            <select className={inputClass} value={copyFrom} onChange={(e) => setCopyFrom(e.target.value)}>
-              <option value="">بدون کپی — منوی خالی</option>
-              {activeBranches.map((branch) => (
-                <option key={branch.id} value={branch.id}>
-                  {branch.name}
-                </option>
-              ))}
-            </select>
+            <SearchableSelect
+              value={copyFrom}
+              onChange={setCopyFrom}
+              options={[
+                { value: "", label: "بدون کپی — منوی خالی" },
+                ...activeBranches.map((branch) => ({ value: branch.id, label: branch.name })),
+              ]}
+            />
           </Field>
         </div>
         <p className="mt-2 text-xs text-muted-foreground">

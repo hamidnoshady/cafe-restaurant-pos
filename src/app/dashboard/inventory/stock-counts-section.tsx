@@ -1,8 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useState } from "react";
+import { SearchIcon } from "lucide-react";
 import { formatQuantity, toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
+import { searchInventoryItems } from "@/lib/inventory-search";
 import { api, Field, inputClass, PrimaryButton } from "../ui";
 import type { InventoryItem, Runner } from "./inventory-manager";
 
@@ -18,6 +20,7 @@ export function StockCountsSection({ items, busy, run }: { items: InventoryItem[
   const [counts, setCounts] = useState<StockCount[] | null>(null);
   const [note, setNote] = useState("");
   const [countedQty, setCountedQty] = useState<Record<string, string>>({});
+  const [searchQuery, setSearchQuery] = useState("");
 
   const loadCounts = useCallback(() => {
     api<{ counts: StockCount[] }>("/api/inventory/stock-counts").then(({ ok, data }) => {
@@ -26,7 +29,12 @@ export function StockCountsSection({ items, busy, run }: { items: InventoryItem[
   }, []);
   useEffect(loadCounts, [loadCounts]);
 
-  const activeItems = items.filter((i) => i.is_active);
+  const activeItems = useMemo(() => items.filter((i) => i.is_active), [items]);
+  const deferredSearchQuery = useDeferredValue(searchQuery);
+  const visibleItems = useMemo(
+    () => searchInventoryItems(activeItems, deferredSearchQuery),
+    [activeItems, deferredSearchQuery],
+  );
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -57,8 +65,22 @@ export function StockCountsSection({ items, busy, run }: { items: InventoryItem[
           <Field label="یادداشت">
             <input className={inputClass} value={note} onChange={(e) => setNote(e.target.value)} placeholder="اختیاری" />
           </Field>
+          <Field label="جستجو">
+            <div className="relative">
+              <SearchIcon
+                className="pointer-events-none absolute inset-y-0 start-3 my-auto size-4 text-muted-foreground"
+                aria-hidden="true"
+              />
+              <input
+                className={`${inputClass} ps-9`}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="نام یا کد قلم…"
+              />
+            </div>
+          </Field>
           <ul className="divide-y divide-border rounded-lg border border-border">
-            {activeItems.map((i) => (
+            {visibleItems.map((i) => (
               <li key={i.id} className="flex min-w-0 flex-col gap-2 px-3 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
                 <span className="min-w-0 break-words">
                   {i.name} <span className="text-xs text-muted-foreground">(موجودی سیستم: {formatQuantity(i.stock)} {i.unit})</span>
@@ -76,6 +98,13 @@ export function StockCountsSection({ items, busy, run }: { items: InventoryItem[
               </li>
             ))}
           </ul>
+          {visibleItems.length === 0 ? (
+            <p className="px-3 py-4 text-sm text-muted-foreground">
+              {searchQuery.trim()
+                ? "قلمی با این جستجو یافت نشد."
+                : "قلم فعالی برای شمارش موجود نیست."}
+            </p>
+          ) : null}
           <PrimaryButton disabled={busy}>ثبت شمارش</PrimaryButton>
         </form>
       </section>

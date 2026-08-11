@@ -6,6 +6,7 @@ import { formatJalali } from "@/lib/jalali";
 import { formatToman, parseToRial } from "@/lib/money";
 import { JalaliDatePicker } from "../jalali-date-picker";
 import { api, inputClass, PrimaryButton } from "../ui";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import type { AccountRow, Runner } from "./ledger-manager";
 
 interface ExpenseRow {
@@ -101,21 +102,25 @@ export function ExpenseSection({
         <form onSubmit={submit} className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           <label className="block">
             <span className="mb-1.5 block text-sm font-medium">دسته هزینه</span>
-            <select className={inputClass} value={accountId} onChange={(e) => setAccountId(e.target.value)}>
-              <option value="">انتخاب دسته هزینه</option>
-              {expenseAccounts.map((a) => (
-                <option key={a.id} value={a.id}>{a.code} — {a.name}</option>
-              ))}
-            </select>
+            <SearchableSelect
+              value={accountId}
+              onChange={setAccountId}
+              options={[
+                { value: "", label: "انتخاب دسته هزینه" },
+                ...expenseAccounts.map((a) => ({ value: a.id, label: `${a.code} — ${a.name}` })),
+              ]}
+            />
           </label>
           <label className="block">
             <span className="mb-1.5 block text-sm font-medium">پرداخت از</span>
-            <select className={inputClass} value={paymentAccountId} onChange={(e) => setPaymentAccountId(e.target.value)}>
-              <option value="">انتخاب حساب پرداخت</option>
-              {paymentAccounts.map((a) => (
-                <option key={a.id} value={a.id}>{a.code} — {a.name}</option>
-              ))}
-            </select>
+            <SearchableSelect
+              value={paymentAccountId}
+              onChange={setPaymentAccountId}
+              options={[
+                { value: "", label: "انتخاب حساب پرداخت" },
+                ...paymentAccounts.map((a) => ({ value: a.id, label: `${a.code} — ${a.name}` })),
+              ]}
+            />
           </label>
           <label className="block">
             <span className="mb-1.5 block text-sm font-medium">مبلغ (تومان)</span>
