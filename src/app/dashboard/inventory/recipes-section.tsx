@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { formatQuantity } from "@/lib/digits";
 import { api, Field, inputClass, PrimaryButton, SecondaryButton } from "../ui";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import type {
   InventoryItem,
   MenuItemRef,
@@ -74,14 +75,14 @@ function MenuItemRecipeCard({
     <section className="min-w-0 rounded-2xl bg-card p-5 shadow-sm">
       <h2 className="mb-3 font-semibold">دستورالعمل مصرف آیتم منو (رسپی)</h2>
       <Field label="آیتم منو">
-        <select className={inputClass} value={menuItemId} onChange={(e) => setMenuItemId(e.target.value)}>
-          <option value="">آیتم منو را انتخاب کنید…</option>
-          {menuItems.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.name}
-            </option>
-          ))}
-        </select>
+        <SearchableSelect
+          value={menuItemId}
+          onChange={setMenuItemId}
+          options={[
+            { value: "", label: "آیتم منو را انتخاب کنید…" },
+            ...menuItems.map((m) => ({ value: m.id, label: m.name })),
+          ]}
+        />
       </Field>
 
       {menuItemId ? (
@@ -115,14 +116,18 @@ function MenuItemRecipeCard({
           </ul>
           <form onSubmit={add} className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-3">
             <Field label="قلم انبار">
-              <select className={inputClass} value={inventoryItemId} onChange={(e) => setInventoryItemId(e.target.value)} required>
-                <option value="">قلم انبار را انتخاب کنید…</option>
-                {activeItems.map((i) => (
-                  <option key={i.id} value={i.id}>
-                    {i.name} ({i.unit})
-                  </option>
-                ))}
-              </select>
+              <SearchableSelect
+                value={inventoryItemId}
+                onChange={setInventoryItemId}
+                options={[
+                  { value: "", label: "قلم انبار را انتخاب کنید…" },
+                  ...activeItems.map((i) => ({
+                    value: i.id,
+                    label: `${i.name} (${i.unit})`,
+                    searchString: [i.name, i.sku, i.unit].filter(Boolean).join(" "),
+                  })),
+                ]}
+              />
             </Field>
             <Field label="مقدار مصرف برای یک واحد">
               <input
@@ -185,14 +190,14 @@ function ModifierRecipeCard({
         عدد مثبت یعنی مصرف اضافه (مثلاً «شات اضافه»)، عدد منفی یعنی کاهش/جایگزینی مادهٔ پایه (مثلاً «شیر بادام» جایگزین شیر معمولی).
       </p>
       <Field label="افزودنی">
-        <select className={inputClass} value={modifierId} onChange={(e) => setModifierId(e.target.value)}>
-          <option value="">افزودنی را انتخاب کنید…</option>
-          {modifiers.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.group_name} — {m.name}
-            </option>
-          ))}
-        </select>
+        <SearchableSelect
+          value={modifierId}
+          onChange={setModifierId}
+          options={[
+            { value: "", label: "افزودنی را انتخاب کنید…" },
+            ...modifiers.map((m) => ({ value: m.id, label: `${m.group_name} — ${m.name}` })),
+          ]}
+        />
       </Field>
 
       {modifierId ? (
@@ -228,14 +233,18 @@ function ModifierRecipeCard({
           </ul>
           <form onSubmit={add} className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-3">
             <Field label="قلم انبار">
-              <select className={inputClass} value={inventoryItemId} onChange={(e) => setInventoryItemId(e.target.value)} required>
-                <option value="">قلم انبار را انتخاب کنید…</option>
-                {activeItems.map((i) => (
-                  <option key={i.id} value={i.id}>
-                    {i.name} ({i.unit})
-                  </option>
-                ))}
-              </select>
+              <SearchableSelect
+                value={inventoryItemId}
+                onChange={setInventoryItemId}
+                options={[
+                  { value: "", label: "قلم انبار را انتخاب کنید…" },
+                  ...activeItems.map((i) => ({
+                    value: i.id,
+                    label: `${i.name} (${i.unit})`,
+                    searchString: [i.name, i.sku, i.unit].filter(Boolean).join(" "),
+                  })),
+                ]}
+              />
             </Field>
             <Field label="تغییر مقدار مصرف">
               <input

@@ -5,6 +5,7 @@ import { formatQuantity } from "@/lib/digits";
 import { formatToman } from "@/lib/money";
 import { formatJalali } from "@/lib/jalali";
 import { api, Field, inputClass, PrimaryButton } from "../ui";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import type { InventoryItem, Runner } from "./inventory-manager";
 
 interface WasteEntry {
@@ -71,14 +72,18 @@ export function WasteSection({ items, busy, run }: { items: InventoryItem[]; bus
         </p>
         <form onSubmit={submit} className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-5">
           <Field label="قلم انبار">
-            <select className={inputClass} value={inventoryItemId} onChange={(e) => setInventoryItemId(e.target.value)} required>
-              <option value="">قلم انبار را انتخاب کنید…</option>
-              {activeItems.map((i) => (
-                <option key={i.id} value={i.id}>
-                  {i.name} ({i.unit})
-                </option>
-              ))}
-            </select>
+            <SearchableSelect
+              value={inventoryItemId}
+              onChange={setInventoryItemId}
+              options={[
+                { value: "", label: "قلم انبار را انتخاب کنید…" },
+                ...activeItems.map((i) => ({
+                  value: i.id,
+                  label: `${i.name} (${i.unit})`,
+                  searchString: [i.name, i.sku, i.unit].filter(Boolean).join(" "),
+                })),
+              ]}
+            />
           </Field>
           <Field label="مقدار">
             <input
