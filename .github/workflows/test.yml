@@ -1,0 +1,74 @@
+# Tests every push to main and every PR against it. Deliberately test-only:
+# no image build, no registry push, no deploy — this gate exists to keep main
+# green, and mirrors the local checklist in CLAUDE.md step for step, so a
+# change that passes locally passes here.
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# A new push to the same branch/PR makes the previous run pointless.
+concurrency:
+  group: test-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: type check, unit tests, integration tests, build
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        # Same major version as production and docker-compose. The integration
+        # tests each create their own scratch database and migrate it, so this
+        # role has to be able to CREATE DATABASE — the image's POSTGRES_USER is.
+        image: postgres:16
+        env:
+          POSTGRES_USER: pos
+          POSTGRES_PASSWORD: pos
+          POSTGRES_DB: pos
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgres://pos:pos@localhost:5432/pos
+      # Session signing is not what's under test here, but the auth/webauthn
+      # suites do need a real (non-placeholder) secret, and vitest doesn't read
+      # .env. Throwaway value, CI-only, never used to sign anything real.
+      JWT_SECRET: ci-only-throwaway-secret-0123456789abcdef0123456789abcdef
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Apply migrations
+        run: npm run db:migrate
+
+      - name: Re-apply migrations (must be a no-op)
+        run: npm run db:migrate
+
+      - name: Integration tests (real database)
+        run: npm run test:db
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Production build
+        run: npm run build
