@@ -66,7 +66,7 @@ export const SLUG_FALLBACK = "biz";
 export const MAX_SLUG_LENGTH = 48;
 
 /**
- * Top-level segments the app itself routes on, plus (since Phase 21) the host
+ * Top-level segments the app itself routes on, plus (since Phase 23) the host
  * labels the deployment itself answers on.
  *
  * The path-level entries are the original reason this list exists: a business
@@ -95,7 +95,7 @@ export const RESERVED_SLUGS = [
   "setup",
   "_next",
   "favicon.ico",
-  // Host-level (Phase 21): labels the deployment answers on itself.
+  // Host-level (Phase 23): labels the deployment answers on itself.
   "admin",
   "www",
   "app",

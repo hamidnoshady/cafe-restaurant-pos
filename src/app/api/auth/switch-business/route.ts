@@ -15,7 +15,7 @@ import { membershipBlockedReason, membershipForBusiness } from "@/lib/membership
  *
  * A PIN-only member has no platform identity and so has nothing to switch to.
  *
- * **Being retired (Phase 21).** Once each business has its own origin this
+ * **Being retired (Phase 23).** Once each business has its own origin this
  * endpoint is exactly the thing the wave removes: it mints, on business A's
  * host, a cookie valid for business B. Under `SUBDOMAIN_ROUTING=on` it refuses
  * — a person with several memberships signs in on each business's own host,

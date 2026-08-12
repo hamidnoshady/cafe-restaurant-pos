@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * The apex host's "which business?" router (Phase 21 Wave 3).
+ * The apex host's "which business?" router (Phase 23 Wave 3).
  *
  * Under subdomain routing each business is served from its own origin, so the
  * bare `pos.eshobe.com` no longer has a tenant to show. It becomes a

@@ -7,7 +7,7 @@ import { hasAnyUser, isSetupComplete } from "@/lib/setup-state";
 import { BusinessDirectory } from "./business-directory";
 
 export default async function Home() {
-  // Phase 21 — this page is the only place that can do host resolution for a
+  // Phase 23 — this page is the only place that can do host resolution for a
   // browser landing on `/`: middleware runs on Edge and cannot reach Postgres,
   // so "which business is this host, and is it an old name?" has to be
   // answered here.

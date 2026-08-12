@@ -19,7 +19,7 @@ export interface Membership {
   businessId: string;
   businessName: string;
   businessSlug: string;
-  /** Phase 21 — the origin this membership's session is valid on. */
+  /** Phase 23 — the origin this membership's session is valid on. */
   businessSubdomain: string;
   businessStatus: "active" | "suspended" | "archived";
   role: Role;

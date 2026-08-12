@@ -53,7 +53,7 @@ services:
       # MUST be a real secret. Generate with: openssl rand -hex 32
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
       SESSION_HOURS: ${SESSION_HOURS:-12}
-      # Phase 21: this stack IS the central server — sites sync to it and it
+      # Phase 23: this stack IS the central server — sites sync to it and it
       # syncs to nothing, so the Server Sync tab drops the connection form and
       # PUT /api/server-sync/config refuses. Declared rather than left to the
       # POS_DOMAIN inference so the answer doesn't change if that moves.
@@ -66,7 +66,7 @@ services:
       # which would make every WebAuthn ceremony fail on the real domain.
       WEBAUTHN_RP_ID: ${POS_DOMAIN:?set POS_DOMAIN}
       WEBAUTHN_ORIGIN: https://${POS_DOMAIN:?set POS_DOMAIN}
-      # Phase 21 — per-business origins. ROOT_DOMAIN is the zone every business
+      # Phase 23 — per-business origins. ROOT_DOMAIN is the zone every business
       # subdomain hangs off; SUBDOMAIN_ROUTING is the switch, left off until the
       # wildcard certificate is confirmed issuing (see .env.komodo.example).
       ROOT_DOMAIN: ${ROOT_DOMAIN:?set ROOT_DOMAIN}
@@ -81,7 +81,7 @@ services:
       traefik.enable: "true"
       # Which Docker network Traefik should use to reach this service.
       traefik.docker.network: ${TRAEFIK_NETWORK:-traefik}
-      # Phase 21 — three routers, ONE container. Every business is served from
+      # Phase 23 — three routers, ONE container. Every business is served from
       # its own origin ({subdomain}.${ROOT_DOMAIN}), but a new business must
       # not require a new deployment: the wildcard router below matches any
       # single label, and the app resolves which business it is from the Host

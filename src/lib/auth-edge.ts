@@ -51,7 +51,7 @@ export interface SessionPayload {
    */
   businessSlug?: string;
   /**
-   * Phase 21 — the business's public DNS label, and the origin this session is
+   * Phase 23 — the business's public DNS label, and the origin this session is
    * valid on. Carried on the token for the same reason `businessSlug` is:
    * middleware runs on Edge and cannot query Postgres, so comparing the host's
    * label against this claim is the only tenant check available there — and it
@@ -147,7 +147,7 @@ export async function verifySession(token: string): Promise<SessionPayload | nul
  *
  * Without one the cookie is host-scoped: the browser sends it only back to the
  * exact host that set it, so a session minted on `acme.pos.eshobe.com` is
- * never sent to `beta.pos.eshobe.com`. That is the entire point of Phase 21's
+ * never sent to `beta.pos.eshobe.com`. That is the entire point of Phase 23's
  * move to per-business origins. Setting `domain=.pos.eshobe.com` would make
  * one cookie valid across every tenant subdomain and silently undo the whole
  * wave, while everything would appear to keep working.

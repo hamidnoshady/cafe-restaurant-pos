@@ -43,7 +43,7 @@ const PUBLIC_ROUTES: Record<string, string> = {
     "credential exchange (Phase 20 Wave 3) — step 2 of a biometric login, necessarily runs " +
     "without a session, the same as auth/pin-login",
   "auth/logout": "only clears the caller's own session cookie",
-  // Phase 21 Wave 3 — the apex host's "which business?" router. It verifies a
+  // Phase 23 Wave 3 — the apex host's "which business?" router. It verifies a
   // password (deliberately: email-only would make it an open account-
   // enumeration oracle) but mints no session and sets no cookie, which is the
   // whole point — a session only ever exists on a business's own origin.
@@ -283,7 +283,7 @@ describe("back-office/financial surfaces exclude floor roles", () => {
     assertPermissionGuarded("branches", "locationsManage");
   });
 
-  it("server-sync config refuses writes on a central server (Phase 21 Wave 2)", () => {
+  it("server-sync config refuses writes on a central server (Phase 23 Wave 2)", () => {
     // A central server is what sites sync *to*; it has no peer of its own, so
     // pointing it at one would aim it at one of its own tenants. The UI hides
     // the form, but the route is the boundary — and the refusal has to come

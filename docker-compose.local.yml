@@ -74,7 +74,7 @@ services:
       # MUST be a real secret. Generate with: openssl rand -hex 32
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
       SESSION_HOURS: ${SESSION_HOURS:-12}
-      # Phase 21: this is a site, not the central server — it syncs *to* one.
+      # Phase 23: this is a site, not the central server — it syncs *to* one.
       # Declared explicitly because REMOTE_SYNC_TOKEN (which a laptop accepting
       # inbound sync also sets) would otherwise make the inference guess
       # "central".

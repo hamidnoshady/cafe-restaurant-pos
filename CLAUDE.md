@@ -53,7 +53,16 @@ Since Phase 12 this is a multi-business platform, and isolation between business
 enforced by Postgres row-level security rather than by query authors (see the "Multi-business
 tenancy" section of [README.md](README.md) and
 [docs/phases/Phase-12-Multi-Business-Tenancy.md](docs/phases/Phase-12-Multi-Business-Tenancy.md)).
-Three rules follow:
+
+Since Phase 23 there is a **second boundary in the browser**: each business is served from its
+own origin (`{subdomain}.$ROOT_DOMAIN`), the session cookie is host-scoped, and middleware
+compares the host's label against the session's `businessSubdomain` claim and fails closed
+(see [docs/phases/Phase-23-Subdomain-Tenancy.md](docs/phases/Phase-23-Subdomain-Tenancy.md)).
+RLS protects the rows; the origin protects the cookie jar, `localStorage`, service worker, and
+CSP/CORS boundary that RLS says nothing about. Never add a `domain` attribute to the session
+cookie — that one change would collapse the second boundary while everything appeared to work.
+
+Three rules follow for the database side:
 
 - **A new tenant-scoped table needs an RLS policy** in the same migration that creates it.
   `integration/tenant-isolation.integration.test.ts` fails if one is missing — that failure
@@ -98,7 +107,8 @@ and left:
   caller is currently scoped to, validated against their branch assignment.
 - `src/app/dashboard/**` — authenticated UI (role-gated per page/route in the sidebar nav).
 - `src/app/platform/**` (Phase 15) — the super-admin console, a separate auth realm from the
-  tenant dashboard. **Any functionality that supervises or administers clients across
+  tenant dashboard, and since Phase 23 served from its **own host** (`admin.$ROOT_DOMAIN`)
+  rather than from a tenant's origin — middleware redirects `/platform` reached anywhere else. **Any functionality that supervises or administers clients across
   businesses — not just one business's own data — belongs here, not in a per-business
   dashboard.** Update management (which businesses are on the latest app version, the S3
   config that distributes desktop-installer updates — `/platform/updates`) is the concrete

@@ -76,7 +76,7 @@ export interface PairingSnapshot {
     name: string;
     slug: string;
     /**
-     * Phase 21. Optional so a snapshot minted by an older central server
+     * Phase 23. Optional so a snapshot minted by an older central server
      * still validates — the desktop side falls back to the slug, which is
      * what the column was backfilled from anyway (migration 0066).
      */

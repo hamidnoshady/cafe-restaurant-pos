@@ -1,4 +1,4 @@
--- Phase 21 Wave 3 — a business's public name becomes a DNS label.
+-- Phase 23 Wave 3 — a business's public name becomes a DNS label.
 --
 -- Until now a tenant's identity lived in a URL *path*: middleware rewrote
 -- /{slug}/dashboard/** to /dashboard/**, so every business was served from one

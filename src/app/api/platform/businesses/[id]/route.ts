@@ -93,7 +93,7 @@ export const PATCH = withPlatformScope(async (request: NextRequest, ctx: Ctx) =>
   const hasStatus = body.status !== undefined;
   const hasPlan = body.plan !== undefined;
   const hasMetadata = body.name !== undefined || body.timezone !== undefined;
-  // Phase 21: renaming the public host is its own action, not another
+  // Phase 23: renaming the public host is its own action, not another
   // metadata field — it writes an alias and invalidates live sessions, so it
   // must not ride along with an unrelated edit in the same request.
   const hasSubdomain = body.subdomain !== undefined;

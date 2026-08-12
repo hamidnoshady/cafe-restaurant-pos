@@ -14,7 +14,7 @@ interface PlatformUserRow extends Record<string, unknown> {
 const DUMMY_HASH = "$2b$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy";
 
 /**
- * The apex host's "which business?" router (Phase 21 Wave 3).
+ * The apex host's "which business?" router (Phase 23 Wave 3).
  *
  * Under subdomain routing every business has its own origin, so a person with
  * memberships in several needs somewhere to find out which host to go to. The

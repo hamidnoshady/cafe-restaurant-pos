@@ -133,7 +133,7 @@ app.prepare().then(async () => {
 
   server.listen(port, () => {
     console.log(`> Ready on http://localhost:${port} (WebSocket sync on /ws)`);
-    // Phase 21 Wave 2: DEPLOYMENT_ROLE defaults by inference when unset, so
+    // Phase 23 Wave 2: DEPLOYMENT_ROLE defaults by inference when unset, so
     // say out loud what the app decided — an operator otherwise has no way to
     // tell a central server from a site until the sync tab renders the wrong
     // form.

@@ -4,7 +4,7 @@ import { generateSyncToken, normalizeSyncToken } from "./sync-token";
 
 const TOKEN = generateSyncToken();
 const ROTATED = generateSyncToken();
-/** What every install paired before Phase 21 Wave 1 holds. */
+/** What every install paired before Phase 23 Wave 1 holds. */
 const LEGACY_HEX = "a".repeat(64);
 
 const EXISTING = { remoteUrl: "https://pos.eshobe.com", token: TOKEN, enabled: true, batchSize: 100 };

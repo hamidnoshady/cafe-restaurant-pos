@@ -227,7 +227,7 @@ export default function BusinessDetailPage() {
 }
 
 /**
- * Phase 21 — the business's public host.
+ * Phase 23 — the business's public host.
  *
  * Separate from BusinessDetailsPanel, and deliberately: renaming an origin is
  * not an ordinary metadata edit. It writes the old name into

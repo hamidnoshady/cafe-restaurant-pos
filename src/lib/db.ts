@@ -151,7 +151,7 @@ export async function withTenant<T>(
  *     scoping would otherwise require to already exist.
  *
  *   - **host-resolution** — resolving a request's hostname to the business it
- *     addresses (Phase 21). The host *is* how a tenant gets identified once
+ *     addresses (Phase 23). The host *is* how a tenant gets identified once
  *     each business has its own origin, so this is the same identify-the-
  *     tenant-first shape as login and server-sync-auth, keyed on a DNS label.
  *     One read-only lookup against `businesses` and

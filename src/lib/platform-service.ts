@@ -29,7 +29,7 @@ export interface BusinessSummary {
   id: string;
   name: string;
   slug: string;
-  /** Phase 21 — the public host label; mutable, unlike slug. */
+  /** Phase 23 — the public host label; mutable, unlike slug. */
   subdomain: string;
   status: BusinessStatus;
   plan: string;

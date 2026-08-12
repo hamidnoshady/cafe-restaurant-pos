@@ -59,7 +59,7 @@ export function errorMessage(code: string | undefined): string {
     code_expired: "این کد منقضی شده است.",
     code_already_redeemed: "این کد قبلاً استفاده شده است.",
     code_revoked: "این کد لغو شده است.",
-    // Phase 21 Wave 3 — per-business subdomains
+    // Phase 23 Wave 3 — per-business subdomains
     invalid_subdomain:
       "زیردامنه باید بین ۳ تا ۶۳ نویسه و فقط شامل حروف انگلیسی کوچک، رقم و خط تیره باشد؛ " +
       "نباید با خط تیره شروع یا تمام شود.",

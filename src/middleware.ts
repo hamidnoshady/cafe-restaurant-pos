@@ -66,11 +66,11 @@ const PUBLIC_PATHS = [
   // bearer API key inside api-auth.ts, not with a tenant session cookie.
   // Prefix matching keeps every /api/v1/* route reachable pre-session.
   "/api/v1",
-  // Phase 21: the apex host's "which business?" router. It verifies a password
+  // Phase 23: the apex host's "which business?" router. It verifies a password
   // but mints nothing — the whole point is that no session exists on the apex —
   // so like every other credential exchange it cannot require one.
   "/api/auth/directory",
-  // Phase 21: "what business is this hostname?". Answers the question the Edge
+  // Phase 23: "what business is this hostname?". Answers the question the Edge
   // runtime cannot (it needs Postgres), for callers that have no session yet by
   // definition: the apex router, and an old host redirecting to its new one.
   "/api/host/resolve",
@@ -193,7 +193,7 @@ const AUTH_RATE_LIMITED_PATHS = [
   "/api/auth/webauthn/login/options",
   "/api/auth/webauthn/login/verify",
   "/api/platform/auth/login",
-  // Phase 21 — the apex directory checks a password from an unauthenticated
+  // Phase 23 — the apex directory checks a password from an unauthenticated
   // public origin, so it is a brute-force target on exactly the same terms as
   // the login routes above and shares their per-IP bucket.
   "/api/auth/directory",
@@ -276,7 +276,7 @@ async function handlePlatformAdmin(
     pathname.startsWith("/platform/") ||
     pathname.startsWith("/api/platform")
   ) {
-    // Phase 21: the console lives on admin.{root} and nowhere else. Serving it
+    // Phase 23: the console lives on admin.{root} and nowhere else. Serving it
     // from a tenant's origin would put the super-admin realm inside that
     // tenant's browser origin — the exact sharing this wave removes — so the
     // request is moved to the console's own host rather than answered here.
@@ -319,7 +319,7 @@ async function handleTenantAuth(request: NextRequest, pathname: string) {
 }
 
 /**
- * Phase 21 — the tenant isolation boundary, and the reason this wave exists.
+ * Phase 23 — the tenant isolation boundary, and the reason this wave exists.
  *
  * Before subdomain routing, every business was served from one origin and the
  * only thing separating them was a path prefix the app itself applied. One
@@ -334,7 +334,7 @@ async function handleTenantAuth(request: NextRequest, pathname: string) {
  * the database. A mismatch means the session is not valid on this origin.
  *
  * It fails closed in every direction: an unknown host, a session with no
- * subdomain claim (minted before Phase 21), and a label that simply differs
+ * subdomain claim (minted before Phase 23), and a label that simply differs
  * all land on this host's login with the cookie cleared. Anything softer would
  * make the boundary advisory.
  */

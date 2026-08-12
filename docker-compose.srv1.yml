@@ -56,7 +56,7 @@ services:
       # MUST be a real secret. Generate with: openssl rand -hex 32
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
       SESSION_HOURS: ${SESSION_HOURS:-12}
-      # Phase 21: this stack IS the central server — sites sync to it and it
+      # Phase 23: this stack IS the central server — sites sync to it and it
       # syncs to nothing, so the Server Sync tab drops the connection form and
       # PUT /api/server-sync/config refuses. Declared rather than left to the
       # POS_DOMAIN inference so the answer doesn't change if that moves.
@@ -68,7 +68,7 @@ services:
       # error. Must match the public URL exactly (see .env.example).
       WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID:-pos.eshobe.com}
       WEBAUTHN_ORIGIN: ${WEBAUTHN_ORIGIN:-https://pos.eshobe.com}
-      # Phase 21 — per-business origins. This host has no container labels for
+      # Phase 23 — per-business origins. This host has no container labels for
       # Traefik to read (it runs network_mode: host with the file provider
       # only), so the wildcard router lives in Traefik's dynamic.yml, not here:
       #

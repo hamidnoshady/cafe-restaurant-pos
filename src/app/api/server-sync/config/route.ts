@@ -23,7 +23,7 @@ import { getPairedSite } from "@/lib/server-sync";
  * same token must be set as REMOTE_SYNC_TOKEN in the VPS's environment so its
  * /api/server-sync/push and /pull endpoints accept the laptop's requests.
  *
- * Since Phase 21 Wave 2 the response also carries the install's deployment
+ * Since Phase 23 Wave 2 the response also carries the install's deployment
  * role, because the two roles need different screens: a central server has
  * nothing to connect *to*, and a site should not be asked to type an address
  * that pairing already knows. `resolvedRemoteUrl` is that derived address.

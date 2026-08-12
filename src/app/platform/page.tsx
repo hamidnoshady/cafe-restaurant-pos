@@ -38,7 +38,7 @@ interface Business {
 }
 
 /**
- * Phase 21 — a business still on the `biz-xxxxxxxx` host that migration 0066
+ * Phase 23 — a business still on the `biz-xxxxxxxx` host that migration 0066
  * backfilled from its slug. It works, but it is not a name anyone would print
  * on a receipt, so the console flags it for the admin to rename.
  */
@@ -226,7 +226,7 @@ function ProvisionForm({ onDone, rootDomain }: { onDone: () => void; rootDomain:
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [locationName, setLocationName] = useState("");
-  // Phase 21 — prefilled from the business name but editable, and left
+  // Phase 23 — prefilled from the business name but editable, and left
   // untouched by later name edits once the admin has typed their own.
   const [subdomain, setSubdomain] = useState("");
   const [subdomainEdited, setSubdomainEdited] = useState(false);

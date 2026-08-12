@@ -62,7 +62,7 @@ export interface ProvisionBusinessInput {
    */
   deploymentMode?: DeploymentModeName;
   /**
-   * Phase 21 — the public host label, when the caller has one in mind (the
+   * Phase 23 — the public host label, when the caller has one in mind (the
    * console's add form offers it, prefilled and editable). Omitted, it is
    * derived from the business name the same way the slug is. Either way it is
    * made unique before it is written.
@@ -73,7 +73,7 @@ export interface ProvisionBusinessInput {
 export interface ProvisionedBusiness {
   businessId: string;
   businessSlug: string;
-  /** Phase 21 — the origin the new business is served from. */
+  /** Phase 23 — the origin the new business is served from. */
   businessSubdomain: string;
   locationId: string;
   /** users.id — the owner's membership in the new business. */
@@ -113,7 +113,7 @@ export interface ProvisionRequestBody {
   email?: string;
   password?: string;
   industry?: string;
-  /** Phase 21 — the public host label. Derived from the name when omitted. */
+  /** Phase 23 — the public host label. Derived from the name when omitted. */
   subdomain?: string;
 }
 
@@ -152,7 +152,7 @@ export function validateProvisionBody(
     return { input: null, error: "industry_not_available" };
   }
 
-  // Phase 21 — an explicitly requested subdomain is validated as a DNS label
+  // Phase 23 — an explicitly requested subdomain is validated as a DNS label
   // here rather than silently normalised, because the admin typed it and is
   // going to hand the resulting URL to a customer. Omitted, it is derived from
   // the business name inside provisionBusiness.
@@ -216,7 +216,7 @@ export async function provisionBusiness(
         slugRows.map((r) => r.slug),
       );
 
-      // Phase 21: the public host, allocated in the same advisory-locked
+      // Phase 23: the public host, allocated in the same advisory-locked
       // transaction as the slug so two concurrent signups can't claim one
       // origin. `taken` is the subdomain column, not the slug column — the two
       // are independent namespaces the moment anyone renames a subdomain, and
