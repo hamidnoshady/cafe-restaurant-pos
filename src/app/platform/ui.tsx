@@ -59,6 +59,13 @@ export function errorMessage(code: string | undefined): string {
     code_expired: "این کد منقضی شده است.",
     code_already_redeemed: "این کد قبلاً استفاده شده است.",
     code_revoked: "این کد لغو شده است.",
+    // Phase 23 Wave 3 — per-business subdomains
+    invalid_subdomain:
+      "زیردامنه باید بین ۳ تا ۶۳ نویسه و فقط شامل حروف انگلیسی کوچک، رقم و خط تیره باشد؛ " +
+      "نباید با خط تیره شروع یا تمام شود.",
+    reserved_subdomain: "این زیردامنه رزرو شده است و قابل استفاده نیست.",
+    subdomain_taken: "این زیردامنه قبلاً به کسب‌وکار دیگری اختصاص یافته است.",
+    unchanged: "زیردامنه تغییری نکرده است.",
   };
   return map[code ?? ""] ?? "خطای غیرمنتظره. دوباره تلاش کنید.";
 }

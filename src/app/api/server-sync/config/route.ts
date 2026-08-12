@@ -6,8 +6,14 @@ import {
   listServerSyncDeadLetters,
   setServerSyncConfig,
 } from "@/lib/server-sync";
-import { resolveConfigUpdate, type ServerSyncConfigUpdateInput } from "@/lib/server-sync-config";
+import {
+  resolveConfigUpdate,
+  syncTokenFormat,
+  type ServerSyncConfigUpdateInput,
+} from "@/lib/server-sync-config";
 import { getAppUpdateStatus } from "@/lib/app-update";
+import { deploymentRole, platformBaseUrl } from "@/lib/deployment-role";
+import { getPairedSite } from "@/lib/server-sync";
 
 /**
  * Owner-only: configure the bidirectional server-to-server sync target
@@ -16,27 +22,62 @@ import { getAppUpdateStatus } from "@/lib/app-update";
  * On the café laptop this points at the VPS (https://pos.eshobe.com); the
  * same token must be set as REMOTE_SYNC_TOKEN in the VPS's environment so its
  * /api/server-sync/push and /pull endpoints accept the laptop's requests.
+ *
+ * Since Phase 23 Wave 2 the response also carries the install's deployment
+ * role, because the two roles need different screens: a central server has
+ * nothing to connect *to*, and a site should not be asked to type an address
+ * that pairing already knows. `resolvedRemoteUrl` is that derived address.
  */
 export const GET = withTenantScope(async () => {
   const { session, error } = await requireRole("owner");
   if (error) return error;
 
-  const [config, syncState, deadLetters, appUpdateStatus] = await Promise.all([
+  const role = deploymentRole();
+  const [config, syncState, deadLetters, appUpdateStatus, pairedSite] = await Promise.all([
     getServerSyncConfig(session.businessId),
     getServerSyncState(session.businessId),
     listServerSyncDeadLetters(session.businessId),
     getAppUpdateStatus(session.businessId),
+    role === "central" ? getPairedSite(session.businessId) : Promise.resolve(null),
   ]);
-  // Never leak the token back to the client in full — mask it.
+
+  // Sources in order. Pairing writes the URL the laptop was paired with
+  // straight into the config (pairing-apply.ts's insertSettings), so the
+  // "paired platform URL" and "current config value" are one lookup here —
+  // and config-first is what preserves a deliberate override.
+  const resolvedRemoteUrl = config?.remoteUrl?.trim() || platformBaseUrl() || "";
+  // Never leak the token back to the client in full — mask it. `tokenFormat`
+  // carries the one fact the UI needs about the real value: whether it is a
+  // pre-format hex secret the owner should rotate when convenient.
   const masked = config
-    ? { ...config, token: config.token ? `${config.token.slice(0, 4)}…${config.token.slice(-4)}` : "" }
+    ? {
+        ...config,
+        token: config.token ? `${config.token.slice(0, 4)}…${config.token.slice(-4)}` : "",
+        tokenFormat: syncTokenFormat(config.token),
+      }
     : null;
-  return NextResponse.json({ config: masked, syncState, deadLetters, appUpdateStatus });
+  return NextResponse.json({
+    config: masked,
+    role,
+    resolvedRemoteUrl,
+    pairedSite,
+    syncState,
+    deadLetters,
+    appUpdateStatus,
+  });
 });
 
 export const PUT = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireRole("owner");
   if (error) return error;
+
+  // A central server is what sites sync *to*; it has no peer of its own, and
+  // writing a remote URL here would point it at one of its own tenants. The
+  // UI doesn't offer the form, but the route is the boundary, so it refuses
+  // regardless of what the client sends.
+  if (deploymentRole() === "central") {
+    return NextResponse.json({ error: "central_server" }, { status: 409 });
+  }
 
   let body: ServerSyncConfigUpdateInput;
   try {

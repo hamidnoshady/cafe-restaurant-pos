@@ -29,6 +29,8 @@ export interface BusinessSummary {
   id: string;
   name: string;
   slug: string;
+  /** Phase 23 — the public host label; mutable, unlike slug. */
+  subdomain: string;
   status: BusinessStatus;
   plan: string;
   timezone: string;
@@ -43,6 +45,7 @@ interface BusinessRow extends Record<string, unknown> {
   id: string;
   name: string;
   slug: string;
+  subdomain: string;
   status: BusinessStatus;
   plan: string;
   timezone: string;
@@ -58,6 +61,7 @@ function toSummary(row: BusinessRow): BusinessSummary {
     id: row.id,
     name: row.name,
     slug: row.slug,
+    subdomain: row.subdomain,
     status: row.status,
     plan: row.plan,
     timezone: row.timezone,
@@ -73,7 +77,8 @@ function toSummary(row: BusinessRow): BusinessSummary {
 export async function listBusinesses(): Promise<BusinessSummary[]> {
   return withoutTenantScope("platform", async () => {
     const { rows } = await query<BusinessRow>(
-      `SELECT b.id, b.name, b.slug::text AS slug, b.status::text AS status, b.plan,
+      `SELECT b.id, b.name, b.slug::text AS slug, b.subdomain::text AS subdomain,
+              b.status::text AS status, b.plan,
               b.timezone, b.created_at, b.suspended_at, b.archived_at,
               (SELECT count(*) FROM locations l WHERE l.business_id = b.id) AS location_count,
               (SELECT count(*) FROM users u WHERE u.business_id = b.id AND u.is_active) AS member_count
@@ -88,7 +93,8 @@ export async function listBusinesses(): Promise<BusinessSummary[]> {
 export async function getBusiness(businessId: string): Promise<BusinessSummary | null> {
   return withoutTenantScope("platform", async () => {
     const { rows } = await query<BusinessRow>(
-      `SELECT b.id, b.name, b.slug::text AS slug, b.status::text AS status, b.plan,
+      `SELECT b.id, b.name, b.slug::text AS slug, b.subdomain::text AS subdomain,
+              b.status::text AS status, b.plan,
               b.timezone, b.created_at, b.suspended_at, b.archived_at,
               (SELECT count(*) FROM locations l WHERE l.business_id = b.id) AS location_count,
               (SELECT count(*) FROM users u WHERE u.business_id = b.id AND u.is_active) AS member_count
@@ -135,11 +141,97 @@ export async function setBusinessStatus(
 /**
  * Editable business metadata. Slug deliberately stays immutable here: it is the
  * stable support identifier shown by the platform console, while name and
- * timezone are ordinary business preferences.
+ * timezone are ordinary business preferences. The *subdomain* is mutable but
+ * not through this function — renaming an origin has consequences (an alias to
+ * write, sessions to invalidate) that a generic field setter would hide, so it
+ * has its own operation below.
  */
 export interface BusinessUpdate {
   name?: string;
   timezone?: string;
+}
+
+export type RenameSubdomainResult =
+  | { ok: true; business: BusinessSummary; previous: string }
+  | { ok: false; error: "not_found" | "subdomain_taken" | "unchanged" };
+
+/**
+ * Move a business to a new public host, keeping the old one working.
+ *
+ * Three things have to happen together or not at all, which is why this is one
+ * transaction rather than a column update:
+ *
+ *  1. the new subdomain is claimed (the unique index is what makes the race
+ *     safe — two admins renaming onto the same label cannot both win);
+ *  2. the old subdomain becomes an alias, so bookmarks and printed URLs
+ *     pointing at it still resolve — `src/app/page.tsx` redirects them to the
+ *     current host;
+ *  3. any alias equal to the *new* name is dropped, because a label cannot be
+ *     both a live subdomain and an alias — the resolver checks businesses
+ *     first, so a leftover row would simply be dead weight, and the unique
+ *     index would block a future rename back.
+ *
+ * Existing sessions on the old host are not migrated and cannot be: the JWT
+ * carries the old `businessSubdomain`, so middleware sees a mismatch and sends
+ * those browsers back to log in. That is the correct outcome — it is the same
+ * check that keeps one tenant's cookie off another tenant's origin — and the
+ * console warns about it before the rename.
+ */
+export async function renameBusinessSubdomain(
+  businessId: string,
+  subdomain: string,
+): Promise<RenameSubdomainResult> {
+  return withoutTenantScope("platform", async () => {
+    const client = await getPool().connect();
+    try {
+      await client.query("BEGIN");
+
+      const { rows } = await client.query<{ subdomain: string }>(
+        `SELECT subdomain::text AS subdomain FROM businesses WHERE id = $1 FOR UPDATE`,
+        [businessId],
+      );
+      const previous = rows[0]?.subdomain;
+      if (!previous) {
+        await client.query("ROLLBACK");
+        return { ok: false, error: "not_found" as const };
+      }
+      if (previous.toLowerCase() === subdomain.toLowerCase()) {
+        await client.query("ROLLBACK");
+        return { ok: false, error: "unchanged" as const };
+      }
+
+      const taken = await client.query(
+        `SELECT 1 FROM businesses WHERE subdomain = $1 AND id <> $2
+          UNION ALL
+         SELECT 1 FROM business_subdomain_aliases WHERE alias = $1 AND business_id <> $2`,
+        [subdomain, businessId],
+      );
+      if (taken.rowCount) {
+        await client.query("ROLLBACK");
+        return { ok: false, error: "subdomain_taken" as const };
+      }
+
+      await client.query(`DELETE FROM business_subdomain_aliases WHERE alias = $1`, [subdomain]);
+      await client.query(
+        `UPDATE businesses SET subdomain = $2, updated_at = now() WHERE id = $1`,
+        [businessId, subdomain],
+      );
+      await client.query(
+        `INSERT INTO business_subdomain_aliases (business_id, alias) VALUES ($1, $2)
+         ON CONFLICT (alias) DO NOTHING`,
+        [businessId, previous],
+      );
+
+      await client.query("COMMIT");
+      const business = await getBusiness(businessId);
+      return business ? { ok: true as const, business, previous } : { ok: false as const, error: "not_found" as const };
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    } finally {
+      client.release();
+    }
+  });
 }
 
 /** Update the editable metadata for one business and return its fresh summary. */

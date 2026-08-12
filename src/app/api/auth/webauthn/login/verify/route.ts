@@ -15,6 +15,7 @@ interface UserRow extends Record<string, unknown> {
   id: string;
   business_id: string;
   business_slug: string;
+  business_subdomain: string;
   location_id: string | null;
   role: Role;
   full_name: string;
@@ -78,7 +79,8 @@ export async function POST(request: NextRequest) {
     }
 
     const { rows } = await query<UserRow>(
-      `SELECT u.id, u.business_id, b.slug::text AS business_slug, u.location_id, u.role, u.full_name
+      `SELECT u.id, u.business_id, b.slug::text AS business_slug,
+              b.subdomain::text AS business_subdomain, u.location_id, u.role, u.full_name
          FROM users u
          JOIN businesses b ON b.id = u.business_id
         WHERE u.id = $1 AND u.is_active AND u.role IN ('cashier', 'waiter', 'kitchen')`,
@@ -104,6 +106,7 @@ export async function POST(request: NextRequest) {
       role: user.role,
       businessId: user.business_id,
       businessSlug: user.business_slug,
+      businessSubdomain: user.business_subdomain,
       locationId: user.location_id,
       fullName: user.full_name,
       platformUserId: null,

@@ -89,6 +89,10 @@ export function platformSessionCookieOptions() {
     // claim check in verifyPlatformSession that keep the two apart, and
     // neither of those is weakened by widening this.
     path: "/",
+    // No `domain`, for the same load-bearing reason as sessionCookieOptions()
+    // in auth-edge.ts: host-scoped means this cookie lives on `admin.` alone
+    // and is never sent to a tenant's subdomain. Adding a domain attribute
+    // would put the super-admin's credential in every tenant's cookie jar.
     maxAge: platformSessionHours() * 60 * 60,
   };
 }

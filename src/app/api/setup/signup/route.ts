@@ -51,6 +51,7 @@ export async function POST(request: NextRequest) {
     role: "owner",
     businessId: created.businessId,
     businessSlug: created.businessSlug,
+    businessSubdomain: created.businessSubdomain,
     locationId: null,
     fullName: input.ownerName,
     platformUserId: created.platformUserId,

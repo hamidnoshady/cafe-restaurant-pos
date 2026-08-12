@@ -10,14 +10,34 @@
 import { useCallback, useEffect, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
-import { ErrorBox, Field, InfoBox, PrimaryButton, api, errorMessage, inputClass } from "../ui";
+import { isLegacySyncToken, parseSyncToken } from "@/lib/sync-token";
+import {
+  ErrorBox,
+  Field,
+  InfoBox,
+  PrimaryButton,
+  SecondaryButton,
+  api,
+  errorMessage,
+  inputClass,
+} from "../ui";
 
 interface ConfigView {
   remoteUrl: string;
   /** masked preview, e.g. "a3f8…9d21" — never the real secret */
   token: string;
+  /** null when no token is configured; "legacy" flags a pre-POS1 hex secret. */
+  tokenFormat: "current" | "legacy" | null;
   enabled: boolean;
   batchSize?: number;
+}
+
+type DeploymentRole = "central" | "site";
+
+interface PairedSiteView {
+  tokenSetAt: string;
+  lastSeenAt: string | null;
+  lastSeenStatus: "ok" | "error" | "skipped" | null;
 }
 
 interface StateView {
@@ -61,6 +81,12 @@ function formatTime(iso: string | null): string {
   return `${toPersianDigits(formatJalali(iso))} ${toPersianDigits(time)}`;
 }
 
+const SYNC_STATUS_LABELS: Record<string, string> = {
+  ok: "موفق",
+  error: "ناموفق",
+  skipped: "رد شده",
+};
+
 function StatusRow({ label, value, tone }: { label: string; value: string; tone?: "error" }) {
   return (
     <div className="flex items-center justify-between border-b border-border/60 py-2 text-sm last:border-b-0">
@@ -72,6 +98,9 @@ function StatusRow({ label, value, tone }: { label: string; value: string; tone?
 
 export function ServerSyncSettings() {
   const [config, setConfig] = useState<ConfigView | null>(null);
+  const [role, setRole] = useState<DeploymentRole>("site");
+  const [resolvedRemoteUrl, setResolvedRemoteUrl] = useState("");
+  const [pairedSite, setPairedSite] = useState<PairedSiteView | null>(null);
   const [syncState, setSyncState] = useState<StateView | null>(null);
   const [deadLetters, setDeadLetters] = useState<DeadLetter[]>([]);
   const [appUpdateStatus, setAppUpdateStatus] = useState<AppUpdateStatusView | null>(null);
@@ -84,11 +113,19 @@ export function ServerSyncSettings() {
   const [token, setToken] = useState("");
   const [enabled, setEnabled] = useState(false);
   const [batchSize, setBatchSize] = useState("100");
+  /** A freshly generated token, shown in full exactly once so it can be copied. */
+  const [generated, setGenerated] = useState("");
+  const [copied, setCopied] = useState(false);
+  /** The genuinely-moved-VPS case: the derived address is wrong and must be typed. */
+  const [overriding, setOverriding] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     const { ok, data } = await api<{
       config: ConfigView | null;
+      role: DeploymentRole;
+      resolvedRemoteUrl: string;
+      pairedSite: PairedSiteView | null;
       syncState: StateView;
       deadLetters: DeadLetter[];
       appUpdateStatus: AppUpdateStatusView | null;
@@ -96,14 +133,19 @@ export function ServerSyncSettings() {
     }>("/api/server-sync/config");
     if (ok) {
       setConfig(data.config);
+      setRole(data.role ?? "site");
+      setResolvedRemoteUrl(data.resolvedRemoteUrl ?? "");
+      setPairedSite(data.pairedSite ?? null);
       setSyncState(data.syncState);
       setDeadLetters(data.deadLetters ?? []);
       setAppUpdateStatus(data.appUpdateStatus ?? null);
       setRemoteUrl(data.config?.remoteUrl ?? "");
+      setOverriding(false);
       setEnabled(data.config?.enabled ?? false);
       setBatchSize(String(data.config?.batchSize ?? 100));
       setToken("");
       setError("");
+      setCopied(false);
     } else {
       setError(errorMessage(data.error));
     }
@@ -114,13 +156,57 @@ export function ServerSyncSettings() {
     void load();
   }, [load]);
 
+  /**
+   * The same check the server runs, run here first: catching a mistyped token
+   * at the input is the entire reason the format has a checksum. Legacy hex
+   * secrets bypass it exactly as they do server-side.
+   */
+  const tokenParse = token && !isLegacySyncToken(token) ? parseSyncToken(token) : null;
+  const tokenInvalid = tokenParse !== null && !tokenParse.ok;
+
+  async function generateToken() {
+    setBusy(true);
+    setError("");
+    setNotice("");
+    const { ok, data } = await api<{ token?: string; error?: string }>(
+      "/api/server-sync/config/generate-token",
+      { method: "POST" },
+    );
+    setBusy(false);
+    if (!ok || !data.token) {
+      setError(errorMessage(data.error));
+      return;
+    }
+    // Prefilled into the field as well as shown in full: the owner still has
+    // to press save, so generating never rotates the live token by itself.
+    setGenerated(data.token);
+    setToken(data.token);
+    setCopied(false);
+  }
+
+  async function copyGenerated() {
+    try {
+      await navigator.clipboard.writeText(generated);
+      setCopied(true);
+    } catch {
+      setError("کپی خودکار ممکن نشد؛ توکن را دستی انتخاب و کپی کنید.");
+    }
+  }
+
   async function save(event: React.FormEvent) {
     event.preventDefault();
+    if (tokenParse && !tokenParse.ok) {
+      setError(errorMessage(tokenParse.error));
+      return;
+    }
     setBusy(true);
     setError("");
     setNotice("");
     const body: Record<string, unknown> = {
-      remoteUrl,
+      // Send the derived address unless the owner opened the override: an
+      // install whose URL came from PLATFORM_BASE_URL rather than from
+      // pairing has nothing stored yet, and saving is what persists it.
+      remoteUrl: overriding ? remoteUrl : resolvedRemoteUrl,
       enabled,
       batchSize: Number(batchSize),
     };
@@ -145,39 +231,133 @@ export function ServerSyncSettings() {
     return <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>;
   }
 
+  // A central server is the thing sites sync *to* — it has no peer of its own
+  // and PUT refuses to give it one, so the connection form is replaced by what
+  // it can actually say: which site is paired to this business.
+  if (role === "central") {
+    return (
+      <div className="space-y-6">
+        <section className="rounded-2xl bg-card p-5 shadow-sm">
+          <h2 className="mb-1 font-semibold">این سرور، سرور مرکزی است</h2>
+          <p className="mb-4 text-sm text-muted-foreground">
+            نصب‌های محلی (مثلاً لپ‌تاپ کافه) به این سرور همگام می‌شوند؛ خودِ این سرور به جایی همگام نمی‌شود، بنابراین
+            آدرس و توکن اتصال اینجا تنظیم نمی‌شود. توکن هر نصب هنگام «جفت‌سازی» در کنسول مدیریت ساخته می‌شود.
+          </p>
+          <ErrorBox>{error}</ErrorBox>
+          {pairedSite ? (
+            <>
+              <StatusRow label="توکن جفت‌سازی ثبت‌شده در" value={formatTime(pairedSite.tokenSetAt)} />
+              <StatusRow label="آخرین ارتباط از نصب محلی" value={formatTime(pairedSite.lastSeenAt)} />
+              <StatusRow
+                label="وضعیت آخرین ارتباط"
+                value={SYNC_STATUS_LABELS[pairedSite.lastSeenStatus ?? ""] ?? "—"}
+                tone={pairedSite.lastSeenStatus === "error" ? "error" : undefined}
+              />
+            </>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              هنوز نصب محلی‌ای به این کسب‌وکار جفت نشده است.
+            </p>
+          )}
+        </section>
+
+        <SyncStatusPanels syncState={syncState} appUpdateStatus={appUpdateStatus} deadLetters={deadLetters} />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <section className="rounded-2xl bg-card p-5 shadow-sm">
-        <h2 className="mb-1 font-semibold">اتصال به سرور راه دور</h2>
+        <h2 className="mb-1 font-semibold">اتصال به سرور مرکزی</h2>
         <p className="mb-4 text-sm text-muted-foreground">
-          این سرور (مثلاً لپ‌تاپ کافه) با یک سرور مرکزی (VPS) به‌صورت دوطرفه همگام می‌شود. توکن مشترک باید در هر دو
-          سمت یکسان باشد.
+          این نصب (مثلاً لپ‌تاپ کافه) با سرور مرکزی به‌صورت دوطرفه همگام می‌شود. توکن مشترک باید در هر دو سمت یکسان
+          باشد.
         </p>
         <ErrorBox>{error}</ErrorBox>
         {notice ? <InfoBox>{notice}</InfoBox> : null}
         <form onSubmit={save}>
-          <Field label="آدرس سرور مرکزی" hint="مثلاً https://pos.eshobe.com">
-            <input
-              className={inputClass}
-              value={remoteUrl}
-              onChange={(e) => setRemoteUrl(e.target.value)}
-              placeholder="https://pos.eshobe.com"
-              dir="ltr"
-            />
-          </Field>
+          {overriding ? (
+            <Field
+              label="آدرس سرور مرکزی"
+              hint="فقط در صورتی تغییر دهید که سرور مرکزی واقعاً جابه‌جا شده باشد."
+            >
+              <input
+                className={inputClass}
+                value={remoteUrl}
+                onChange={(e) => setRemoteUrl(e.target.value)}
+                placeholder="https://pos.eshobe.com"
+                dir="ltr"
+              />
+            </Field>
+          ) : (
+            <Field label="آدرس سرور مرکزی" hint="این آدرس هنگام جفت‌سازی ثبت شده و نیازی به وارد کردن ندارد.">
+              <div className="flex items-center gap-2">
+                <code
+                  className="flex h-10 flex-1 items-center rounded-lg border border-input bg-muted/40 px-3 text-sm"
+                  dir="ltr"
+                >
+                  {resolvedRemoteUrl || "—"}
+                </code>
+                <SecondaryButton
+                  onClick={() => {
+                    setRemoteUrl(resolvedRemoteUrl);
+                    setOverriding(true);
+                  }}
+                >
+                  تغییر آدرس
+                </SecondaryButton>
+              </div>
+            </Field>
+          )}
+          {config?.tokenFormat === "legacy" ? (
+            <InfoBox>
+              توکن فعلی با قالب قدیمی ساخته شده و همچنان کار می‌کند، اما قابل بازخوانی و تایپ نیست. در فرصت مناسب یک
+              توکن جدید بسازید و همان را در سمت دیگر هم ثبت کنید.
+            </InfoBox>
+          ) : null}
+          {generated ? (
+            <InfoBox>
+              <div className="space-y-2">
+                <p>
+                  این توکن فقط همین یک بار نمایش داده می‌شود. آن را کپی کنید، در سمت دیگر ثبت کنید، سپس این فرم را
+                  ذخیره کنید.
+                </p>
+                <code className="block rounded-lg bg-background/70 px-3 py-2 font-mono text-sm" dir="ltr">
+                  {generated}
+                </code>
+                <SecondaryButton onClick={copyGenerated}>{copied ? "کپی شد" : "کپی توکن"}</SecondaryButton>
+              </div>
+            </InfoBox>
+          ) : null}
           <Field
             label="توکن مشترک"
-            hint={config?.token ? `توکن فعلی: ${config.token} — برای تغییر، توکن جدید وارد کنید` : "با openssl rand -hex 32 بسازید"}
+            hint={
+              tokenInvalid
+                ? undefined
+                : config?.token
+                  ? `توکن فعلی: ${config.token} — برای تغییر، توکن جدید وارد کنید`
+                  : "دکمهٔ «ساخت توکن» یک توکن معتبر می‌سازد؛ همان مقدار باید در سمت دیگر هم ثبت شود."
+            }
           >
-            <input
-              className={inputClass}
-              value={token}
-              onChange={(e) => setToken(e.target.value)}
-              placeholder={config?.token ? "برای حفظ توکن فعلی خالی بگذارید" : ""}
-              dir="ltr"
-              type="password"
-              autoComplete="off"
-            />
+            <div className="flex items-center gap-2">
+              <input
+                className={inputClass}
+                value={token}
+                onChange={(e) => setToken(e.target.value)}
+                placeholder={config?.token ? "برای حفظ توکن فعلی خالی بگذارید" : "POS1-…"}
+                dir="ltr"
+                type="text"
+                autoComplete="off"
+                spellCheck={false}
+              />
+              <SecondaryButton onClick={generateToken} disabled={busy}>
+                ساخت توکن
+              </SecondaryButton>
+            </div>
+            {tokenInvalid && tokenParse && !tokenParse.ok ? (
+              <span className="mt-1 block text-xs text-destructive">{errorMessage(tokenParse.error)}</span>
+            ) : null}
           </Field>
           <Field label="تعداد رویداد در هر دسته">
             <input
@@ -194,10 +374,31 @@ export function ServerSyncSettings() {
             <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
             همگام‌سازی فعال باشد
           </label>
-          <PrimaryButton disabled={busy}>{busy ? "در حال ذخیره…" : "ذخیره تنظیمات"}</PrimaryButton>
+          <PrimaryButton disabled={busy || tokenInvalid}>{busy ? "در حال ذخیره…" : "ذخیره تنظیمات"}</PrimaryButton>
         </form>
       </section>
 
+      <SyncStatusPanels syncState={syncState} appUpdateStatus={appUpdateStatus} deadLetters={deadLetters} />
+    </div>
+  );
+}
+
+/**
+ * Everything below the connection section, which both roles show: a central
+ * server still pushes and pulls, still runs update checks, and still
+ * dead-letters events it cannot apply.
+ */
+function SyncStatusPanels({
+  syncState,
+  appUpdateStatus,
+  deadLetters,
+}: {
+  syncState: StateView | null;
+  appUpdateStatus: AppUpdateStatusView | null;
+  deadLetters: DeadLetter[];
+}) {
+  return (
+    <>
       {syncState ? (
         <section className="rounded-2xl bg-card p-5 shadow-sm">
           <h2 className="mb-3 font-semibold">وضعیت همگام‌سازی</h2>
@@ -205,7 +406,7 @@ export function ServerSyncSettings() {
             <InfoBox>
               درخواست‌های ورودی هنوز با توکن مشترک قدیمی (REMOTE_SYNC_TOKEN) تأیید می‌شوند، نه توکن اختصاصی این
               کسب‌وکار — آخرین بار: {formatTime(syncState.legacyTokenLastUsedAt)}. برای امنیت بیشتر، توکن اختصاصی
-              بالا را تنظیم و به‌جای متغیر محیطی مشترک از آن استفاده کنید.
+              را تنظیم و به‌جای متغیر محیطی مشترک از آن استفاده کنید.
             </InfoBox>
           ) : null}
           <div className="grid gap-x-8 sm:grid-cols-2">
@@ -273,6 +474,6 @@ export function ServerSyncSettings() {
           </div>
         )}
       </section>
-    </div>
+    </>
   );
 }

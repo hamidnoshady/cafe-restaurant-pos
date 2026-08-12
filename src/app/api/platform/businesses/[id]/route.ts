@@ -10,6 +10,7 @@ import {
   setBusinessStatus,
   setBusinessPlan,
   updateBusiness,
+  renameBusinessSubdomain,
   resetBusiness,
   listPlans,
   hardDeleteBusiness,
@@ -18,6 +19,9 @@ import {
   type BusinessStatus,
 } from "@/lib/platform-service";
 import { DESTRUCTIVE_CONFIRMATION_PHRASE } from "@/lib/platform-admin";
+import { validateSubdomain } from "@/lib/slug";
+import { rootDomain } from "@/lib/host";
+import { listSubdomainAliases } from "@/lib/host-resolution";
 
 interface Ctx {
   params: Promise<{ id: string }>;
@@ -44,7 +48,14 @@ export const GET = withPlatformScope(async (_request: NextRequest, ctx: Ctx) => 
   const { id } = await ctx.params;
   const business = await getBusiness(id);
   if (!business) return NextResponse.json({ error: "not_found" }, { status: 404 });
-  return NextResponse.json({ business });
+  // rootDomain and the alias list: the console renders the business's real URL
+  // and the old hosts still pointing at it, and is a client component that
+  // cannot read either for itself.
+  return NextResponse.json({
+    business,
+    rootDomain: rootDomain(),
+    aliases: await listSubdomainAliases(id),
+  });
 });
 
 const STATUS_CAPABILITY: Record<BusinessStatus, "business.suspend" | "business.archive"> = {
@@ -82,8 +93,44 @@ export const PATCH = withPlatformScope(async (request: NextRequest, ctx: Ctx) =>
   const hasStatus = body.status !== undefined;
   const hasPlan = body.plan !== undefined;
   const hasMetadata = body.name !== undefined || body.timezone !== undefined;
-  if (Number(hasStatus) + Number(hasPlan) + Number(hasMetadata) !== 1) {
+  // Phase 23: renaming the public host is its own action, not another
+  // metadata field — it writes an alias and invalidates live sessions, so it
+  // must not ride along with an unrelated edit in the same request.
+  const hasSubdomain = body.subdomain !== undefined;
+  if (Number(hasStatus) + Number(hasPlan) + Number(hasMetadata) + Number(hasSubdomain) !== 1) {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
+  }
+
+  if (hasSubdomain) {
+    if (typeof body.subdomain !== "string") {
+      return NextResponse.json({ error: "bad_request" }, { status: 400 });
+    }
+    const subdomain = body.subdomain.trim().toLowerCase();
+    const invalid = validateSubdomain(subdomain);
+    if (invalid) return NextResponse.json({ error: invalid }, { status: 400 });
+
+    // Same capability as any other business edit, and audited the same way
+    // business.provision is — a rename changes the URL a customer was given.
+    const guard = await requirePlatformCapability("business.edit");
+    if (guard.error) return guard.error;
+
+    const result = await renameBusinessSubdomain(id, subdomain);
+    if (!result.ok) {
+      return NextResponse.json(
+        { error: result.error },
+        { status: result.error === "not_found" ? 404 : 409 },
+      );
+    }
+
+    await platformAudit({
+      adminId: guard.session.padmin,
+      businessId: id,
+      action: "business.subdomain",
+      entity: "business",
+      entityId: id,
+      payload: { subdomain, previous: result.previous },
+    });
+    return NextResponse.json({ business: result.business });
   }
 
   if (hasStatus) {

@@ -50,6 +50,7 @@ app.prepare().then(async () => {
   const { BACKUP_TICK_INTERVAL_MS } = await import("./src/lib/backup");
   const { runServerSyncTick, SERVER_SYNC_INTERVAL_MS } = await import("./src/lib/server-sync");
   const { assertRlsEffective } = await import("./src/lib/db");
+  const { describeDeploymentRole } = await import("./src/lib/deployment-role");
   const { runAiSubscriptionRenewalTick, AI_SUBSCRIPTION_TICK_INTERVAL_MS } = await import("./src/lib/ai-billing-service");
   const { runAiProactiveTick, AI_PROACTIVE_TICK_INTERVAL_MS } = await import("./src/lib/ai-proactive-service");
 
@@ -132,5 +133,10 @@ app.prepare().then(async () => {
 
   server.listen(port, () => {
     console.log(`> Ready on http://localhost:${port} (WebSocket sync on /ws)`);
+    // Phase 23 Wave 2: DEPLOYMENT_ROLE defaults by inference when unset, so
+    // say out loud what the app decided — an operator otherwise has no way to
+    // tell a central server from a site until the sync tab renders the wrong
+    // form.
+    console.log(describeDeploymentRole());
   });
 });

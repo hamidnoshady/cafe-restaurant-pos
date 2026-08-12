@@ -8,7 +8,6 @@
  * pairing-snapshot.test.ts, and the transactional behaviour by
  * integration/pairing.integration.test.ts.
  */
-import { randomBytes } from "node:crypto";
 import { getPool, query, withoutTenantScope } from "./db";
 import { effectiveFeatures } from "./features";
 import {
@@ -21,6 +20,7 @@ import {
 import { PAIRING_SNAPSHOT_VERSION, type PairingSnapshot } from "./pairing-snapshot";
 import { setServerSyncConfig } from "./server-sync";
 import { SETTING_KEYS } from "./settings";
+import { generateSyncToken } from "./sync-token";
 
 export interface PairingCodeSummary {
   id: string;
@@ -216,7 +216,8 @@ export async function buildPairingSnapshot(
   const [bizRes, locRes, userRes, assignRes, accountRes, catRes, itemRes, settingRes, features] =
     await Promise.all([
       query<{ id: string; name: string; slug: string; timezone: string }>(
-        `SELECT id, name, slug::text AS slug, timezone FROM businesses WHERE id = $1`,
+        `SELECT id, name, slug::text AS slug, subdomain::text AS subdomain, timezone
+           FROM businesses WHERE id = $1`,
         [businessId],
       ),
       query<{
@@ -302,7 +303,7 @@ export async function buildPairingSnapshot(
   // unrecoverable (only the hash is stored). Writing it through
   // setServerSyncConfig replaces the business's server_sync_tokens row, which
   // is correct — one paired laptop per business is the model.
-  const syncToken = randomBytes(32).toString("hex");
+  const syncToken = generateSyncToken();
   const existingSync = await query<{ value: { remoteUrl?: string; batchSize?: number } }>(
     `SELECT value FROM settings
       WHERE business_id = $1 AND location_id IS NULL AND key = $2`,

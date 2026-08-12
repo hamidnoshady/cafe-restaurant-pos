@@ -16,6 +16,7 @@ interface UserRow extends Record<string, unknown> {
   id: string;
   business_id: string;
   business_slug: string;
+  business_subdomain: string;
   location_id: string | null;
   role: Role;
   full_name: string;
@@ -94,7 +95,8 @@ export async function POST(request: NextRequest) {
     // RLS confines this to `businessId`, which is why there is no business_id
     // predicate here — the tenant scope is the boundary being relied on.
     const { rows } = await query<UserRow>(
-      `SELECT u.id, u.business_id, b.slug::text AS business_slug, u.location_id,
+      `SELECT u.id, u.business_id, b.slug::text AS business_slug,
+              b.subdomain::text AS business_subdomain, u.location_id,
               u.role, u.full_name, u.pin_hash
          FROM users u
          JOIN businesses b ON b.id = u.business_id
@@ -148,6 +150,7 @@ export async function POST(request: NextRequest) {
       role: user.role,
       businessId: user.business_id,
       businessSlug: user.business_slug,
+      businessSubdomain: user.business_subdomain,
       locationId: user.location_id,
       fullName: user.full_name,
       platformUserId: null,

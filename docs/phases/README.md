@@ -28,6 +28,7 @@ Each phase is a self-contained file with its own scope, exit criteria, and open 
 | 20 | Phase-20-Employee-Secure-Identity.md | Complete — all eight waves shipped |
 | 21 | Phase-21-Multi-Industry-Accounting-Platform.md | Waves 1-4 complete — weight/price infra, jewelry COA, gold pricing/sale posting, stone cost add-ons, and consignment sale posting, reachable through `/api/jewelry/*` routes and the `/dashboard/jewelry` page, and jewelry is now selectable at business creation (`/welcome`) with an industry-aware setup wizard |
 | 22 | Phase-22-Accounting-Standards-Compliance-Gap-Analysis.md | Waves 1-5 and 7 complete (Wave 4 first slice; Wave 6 is Phase 21's own remaining waves, tracked there) — audit/gap-analysis, account hierarchy levels/nature/contra metadata, a terminology standards audit, revenue split by sales channel + a platform-commission expense account, a per-account دفتر معین/گردش حساب statement, a fixed-asset register with straight-line depreciation, and a full regression pass, against GitHub issue #160. Remaining scope (tip capture, food-cost variance report, an online-platform concept) needs product decisions before further work |
+| 23 | Phase-23-Subdomain-Tenancy.md | Waves 1-4 complete in code — typable checksummed sync tokens, a `central`/`site` deployment role with a derived sync URL, and per-business subdomains behind `SUBDOMAIN_ROUTING` (off by default). The production cutover (flipping the flag, then deleting the path-prefix transition code) is blocked on a DNS-01 wildcard certificate for `*.$ROOT_DOMAIN`. Filed as 23 because the issue's own "Phase 21" number was already taken |
 
 Phases 0–11 built a single-business POS. Phases 12–17 turn it into a multi-business platform:
 many businesses isolated in one deployment, teams with real permissions, several branches per
@@ -47,6 +48,9 @@ tenancy foundation before exposing any external data routes. Phase 21 is a diffe
 expansion from everything before it: rather than adding a capability to the existing café/
 restaurant business, it turns the platform multi-industry — gold/jewelry, watch, and
 accessories retail alongside the existing F&B shape, sharing one Core Accounting layer via a
-new domain-event posting engine and a generalized item/variant/serial model.
+new domain-event posting engine and a generalized item/variant/serial model. Phase 23 goes back to
+the tenancy boundary Phase 12 established and gives it the one thing it lacked: a browser origin
+per business. Until it, every tenant on a deployment shared one origin — and therefore one cookie
+jar, one localStorage, one service worker — with only an app-applied path prefix between them.
 
 For overall architecture, full schema, and product summary, see the master spec doc (POS-Spec.md).

@@ -43,6 +43,17 @@ const PUBLIC_ROUTES: Record<string, string> = {
     "credential exchange (Phase 20 Wave 3) — step 2 of a biometric login, necessarily runs " +
     "without a session, the same as auth/pin-login",
   "auth/logout": "only clears the caller's own session cookie",
+  // Phase 23 Wave 3 — the apex host's "which business?" router. It verifies a
+  // password (deliberately: email-only would make it an open account-
+  // enumeration oracle) but mints no session and sets no cookie, which is the
+  // whole point — a session only ever exists on a business's own origin.
+  "auth/directory":
+    "credential exchange — the apex directory checks a password and returns the caller's own " +
+    "businesses without minting a session, so it necessarily runs without one",
+  "host/resolve":
+    "answers 'which business is this hostname?' — the Node-runtime half of host resolution, " +
+    "asked before any tenant is known (the host is how one gets identified) and reaching only " +
+    "what DNS and the TLS certificate already expose",
   "setup/bootstrap": "first-run only — refuses with 409 as soon as any user exists",
   "setup/signup":
     "self-service business registration — creates the tenant a session would otherwise be scoped to; " +
@@ -270,6 +281,22 @@ describe("back-office/financial surfaces exclude floor roles", () => {
 
   it("branch management is gated on the locations.manage permission, which only Owner holds by preset", () => {
     assertPermissionGuarded("branches", "locationsManage");
+  });
+
+  it("server-sync config refuses writes on a central server (Phase 23 Wave 2)", () => {
+    // A central server is what sites sync *to*; it has no peer of its own, so
+    // pointing it at one would aim it at one of its own tenants. The UI hides
+    // the form, but the route is the boundary — and the refusal has to come
+    // before the body is read, or a malformed body would 400 first and hide
+    // the real reason.
+    const src = sources.get("server-sync/config");
+    expect(src, "src/app/api/server-sync/config/route.ts is missing").toBeTruthy();
+    expect(src!).toMatch(/deploymentRole\(\)\s*===\s*"central"/);
+    expect(src!).toMatch(/"central_server"/);
+
+    const put = src!.slice(src!.indexOf("export const PUT"));
+    expect(put.indexOf('deploymentRole() === "central"')).toBeGreaterThan(-1);
+    expect(put.indexOf('deploymentRole() === "central"')).toBeLessThan(put.indexOf("request.json()"));
   });
 
   it("cross-location rollup management is Owner-only (Phase 9 access decision)", () => {

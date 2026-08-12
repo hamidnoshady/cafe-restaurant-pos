@@ -154,6 +154,17 @@ export function errorMessage(code: string | undefined): string {
     member_limit_exceeded: "به سقف تعداد اعضای پلن فعلی رسیده‌اید. برای افزودن عضو بیشتر، پلن را ارتقا دهید.",
     monthly_order_limit_exceeded:
       "به سقف تعداد سفارش‌های این ماه در پلن فعلی رسیده‌اید. برای ثبت سفارش بیشتر، پلن را ارتقا دهید.",
+    // Phase 23 Wave 1 — server sync config & typable tokens (issue #174).
+    // invalid_url / unknown_location predate this wave but had no Persian
+    // string, so they fell through to the raw English code.
+    invalid_url: "آدرس سرور معتبر نیست؛ باید با http:// یا https:// شروع شود.",
+    unknown_location: "شعبهٔ فرستاده‌شده در این سرور شناخته نشد.",
+    bad_prefix: "این توکن همگام‌سازی نیست؛ توکن معتبر با POS1 شروع می‌شود.",
+    bad_length: "طول توکن درست نیست؛ احتمالاً کامل کپی نشده است.",
+    bad_charset: "توکن شامل نویسه‌های نامعتبر است. حروف O و I و رقم‌های ۰ و ۱ در توکن به کار نمی‌روند.",
+    bad_checksum: "توکن معتبر نیست؛ یک نویسه اشتباه تایپ یا جابه‌جا شده است.",
+    // Phase 23 Wave 2 — deployment role
+    central_server: "این سرور، سرور مرکزی است و تنظیمات اتصال برای آن معنا ندارد.",
   };
   return map[code ?? ""] ?? "خطای غیرمنتظره. دوباره تلاش کنید.";
 }

@@ -12,8 +12,9 @@
  * matches the "O" that was issued.
  */
 import { createHash, randomInt } from "node:crypto";
+import { PAIRING_CODE_ALPHABET, foldDigits } from "./code-alphabet";
 
-export const PAIRING_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+export { PAIRING_CODE_ALPHABET };
 
 /** How long an issued code stays redeemable. Long enough to post it, short enough to matter. */
 export const PAIRING_CODE_TTL_HOURS = 72;
@@ -34,19 +35,9 @@ export function generatePairingCode(): string {
   return groups.join("-");
 }
 
-/** Persian and Arabic-Indic digits, folded to ASCII before the look-alike pass. */
-const DIGIT_FOLD: Record<string, string> = {
-  "۰": "0", "۱": "1", "۲": "2", "۳": "3", "۴": "4",
-  "۵": "5", "۶": "6", "۷": "7", "۸": "8", "۹": "9",
-  "٠": "0", "١": "1", "٢": "2", "٣": "3", "٤": "4",
-  "٥": "5", "٦": "6", "٧": "7", "٨": "8", "٩": "9",
-};
-
 /** Display form (or anything close to it) -> the 12 characters that get hashed. */
 export function normalizePairingCode(raw: string): string {
-  return [...raw]
-    .map((ch) => DIGIT_FOLD[ch] ?? ch)
-    .join("")
+  return foldDigits(raw)
     .toUpperCase()
     .replace(/[^A-Z0-9]/g, "")
     .replaceAll("0", "O")
