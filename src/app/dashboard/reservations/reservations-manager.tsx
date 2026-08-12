@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { toLatinDigits, toPersianDigits } from "@/lib/digits";
 import { formatJalali, jalaliToIsoDate, todayJalali } from "@/lib/jalali";
 import { isNoShowOverdue } from "@/lib/reservations";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { JalaliDatePicker } from "../jalali-date-picker";
 import { api, ErrorBox, errorMessage, Field, inputClass } from "../ui";
 
@@ -587,18 +588,15 @@ function BookingForm({
         />
       </Field>
       <Field label="میز (اختیاری — برای تشخیص تداخل لازم است)">
-        <select
+        <SearchableSelect
           className={fieldClass}
           value={tableId}
-          onChange={(event) => setTableId(event.target.value)}
-        >
-          <option value="">بدون میز مشخص</option>
-          {tables.map((table) => (
-            <option key={table.id} value={table.id}>
-              {table.name}
-            </option>
-          ))}
-        </select>
+          onChange={setTableId}
+          options={[
+            { value: "", label: "بدون میز مشخص" },
+            ...tables.map((table) => ({ value: table.id, label: table.name })),
+          ]}
+        />
       </Field>
       <Field label="یادداشت (اختیاری)">
         <input

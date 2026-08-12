@@ -10,7 +10,7 @@
  * one either), so that's the extent of "branding" for now.
  */
 import { toPersianDigits } from "./digits";
-import { formatJalali } from "./jalali";
+import { formatJalali, formatShiftWindow } from "./jalali";
 import { formatToman } from "./money";
 
 export interface ReportPdfBusinessInfo {
@@ -27,6 +27,10 @@ function cellToLabel(v: unknown): string {
   if (v === null || v === undefined) return "";
   if (v instanceof Date) return toPersianDigits(formatJalali(v));
   if (typeof v === "number") return toPersianDigits(v.toLocaleString("en-US"));
+  if (typeof v === "string") {
+    const window = formatShiftWindow(v);
+    if (window) return window;
+  }
   return String(v);
 }
 

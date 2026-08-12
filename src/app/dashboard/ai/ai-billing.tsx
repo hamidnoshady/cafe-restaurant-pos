@@ -7,6 +7,7 @@ import { creditUnitsForRial } from "@/lib/ai-billing";
 import { formatPersianNumber } from "@/lib/digits";
 import { formatToman } from "@/lib/money";
 import { Button } from "@/components/ui/button";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 
 interface Billing {
   balanceRial: number;
@@ -170,17 +171,14 @@ export function AiBillingDashboard() {
           <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_1fr_auto]">
             <label className="block">
               <span className="mb-1 block text-sm font-medium">بستهٔ شارژ</span>
-              <select
-                className="h-10 w-full rounded-lg border border-input bg-transparent px-3 text-sm"
+              <SearchableSelect
                 value={selectedPackageId}
-                onChange={(event) => setSelectedPackageId(event.target.value)}
-              >
-                {data.packages.map((pkg) => (
-                  <option key={pkg.id} value={pkg.id}>
-                    {pkg.name} — {formatToman(pkg.priceRial)}
-                  </option>
-                ))}
-              </select>
+                onChange={setSelectedPackageId}
+                options={data.packages.map((pkg) => ({
+                  value: pkg.id,
+                  label: `${pkg.name} — ${formatToman(pkg.priceRial)}`,
+                }))}
+              />
             </label>
             <label className="block">
               <span className="mb-1 block text-sm font-medium">یادداشت پرداخت (اختیاری)</span>

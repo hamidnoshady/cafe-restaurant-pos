@@ -22,6 +22,7 @@ import {
 import { toPersianDigits } from "@/lib/digits";
 import { formatToman } from "@/lib/money";
 import { formatQueueLabel } from "@/lib/orders";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { api, ErrorBox, errorMessage, inputClass } from "../ui";
 import { useRealtime } from "../use-realtime";
 
@@ -166,7 +167,6 @@ function DeliveryCard({
     canTransitionDelivery(delivery.status, "out_for_delivery");
   const canMarkDelivered = canTransitionDelivery(delivery.status, "delivered");
   const canMarkFailed = canTransitionDelivery(delivery.status, "failed");
-  const courierSelectId = `delivery-courier-${delivery.id}`;
 
   return (
     <article className="overflow-hidden rounded-xl border border-[#EAE8E2] bg-white shadow-[0_1px_2px_rgba(37,37,34,0.03)]">
@@ -237,26 +237,20 @@ function DeliveryCard({
             <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
               <div className="min-w-0 flex-1">
                 <label
-                  htmlFor={courierSelectId}
                   className="mb-1.5 block text-xs font-medium text-[#5E5B55]"
                 >
                   پیک مسئول
                 </label>
-                <select
-                  id={courierSelectId}
+                <SearchableSelect
+                  ariaLabel="پیک مسئول"
                   className={`${inputClass} min-h-[52px] border-[#DEDAD1] bg-[#FFFEFC] text-[#36342F] focus-visible:border-[#D69217] focus-visible:ring-[#D69217]/25`}
                   value={delivery.courier_id ?? ""}
-                  onChange={(event) =>
-                    onAssign(delivery.id, event.target.value)
-                  }
-                >
-                  <option value="">— انتخاب پیک —</option>
-                  {activeCouriers.map((courier) => (
-                    <option key={courier.id} value={courier.id}>
-                      {courier.name}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(value) => onAssign(delivery.id, value)}
+                  options={[
+                    { value: "", label: "— انتخاب پیک —" },
+                    ...activeCouriers.map((courier) => ({ value: courier.id, label: courier.name })),
+                  ]}
+                />
               </div>
 
               <div className="flex flex-col gap-2 sm:flex-row lg:shrink-0">

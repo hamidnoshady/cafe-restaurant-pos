@@ -240,9 +240,13 @@ function errorMessage(code: string | undefined): string {
     no_items: "حداقل یک قلم لازم است.",
     invalid_item: "یکی از اقلام معتبر نیست.",
     invalid_waste_reason: "دلیل ضایعات را انتخاب کنید.",
+    invalid_purchase_date: "تاریخ خرید معتبر نیست.",
     invalid_transition: "این تغییر وضعیت خرید مجاز نیست.",
     purchase_received_cannot_delete:
       "خرید دریافت‌شده برای حفظ موجودی و اسناد حسابداری قابل حذف نیست.",
+    purchase_received_cannot_edit:
+      "خرید دریافت‌شده قابل ویرایش نیست؛ برای اصلاح از برگشت به تأمین‌کننده استفاده کنید.",
+    purchase_cancelled_cannot_edit: "خرید لغوشده قابل ویرایش نیست.",
     no_location: "شعبه‌ای ثبت نشده است.",
     unauthorized: "وارد نشده‌اید.",
     forbidden: "دسترسی مجاز نیست.",

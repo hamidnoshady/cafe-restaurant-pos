@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { formatToman } from "@/lib/money";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { api, Field, inputClass } from "../ui";
 import { PURITY_LABELS, type GoldPriceRow, type Purity, type Runner } from "./jewelry-manager";
 
@@ -67,17 +68,15 @@ export function PricesSection({ prices, busy, run }: { prices: GoldPriceRow[]; b
 
           <form onSubmit={record} className="mt-4">
             <Field label="عیار">
-              <select
+              <SearchableSelect
                 className={jewelryInputClass}
                 value={purity}
-                onChange={(e) => setPurity(e.target.value as Purity)}
-              >
-                {(Object.keys(PURITY_LABELS) as Purity[]).map((p) => (
-                  <option key={p} value={p}>
-                    {PURITY_LABELS[p]}
-                  </option>
-                ))}
-              </select>
+                onChange={(value) => setPurity(value as Purity)}
+                options={(Object.keys(PURITY_LABELS) as Purity[]).map((p) => ({
+                  value: p,
+                  label: PURITY_LABELS[p],
+                }))}
+              />
             </Field>
             <Field label="قیمت هر گرم (ریال)">
               <input

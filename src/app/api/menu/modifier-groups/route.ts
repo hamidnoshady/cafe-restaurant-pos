@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
 import { query } from "@/lib/db";
+import { DEFAULT_SELECTION_BOUNDS, resolveSelectionBounds } from "@/lib/modifier-selection";
 import { resolveActiveLocation } from "@/lib/setup-state";
 
 export const POST = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
 
-  let body: { name?: string; minSelect?: number; maxSelect?: number };
+  let body: { name?: string; minSelect?: unknown; maxSelect?: unknown };
   try {
     body = await request.json();
   } catch {
@@ -15,9 +16,8 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   }
 
   const name = body.name?.trim();
-  const minSelect = Number.isFinite(body.minSelect) ? Number(body.minSelect) : 0;
-  const maxSelect = Number.isFinite(body.maxSelect) ? Number(body.maxSelect) : 1;
-  if (!name || minSelect < 0 || maxSelect < 1 || minSelect > maxSelect) {
+  const bounds = resolveSelectionBounds(DEFAULT_SELECTION_BOUNDS, body);
+  if (!name || !bounds) {
     return NextResponse.json({ error: "missing_fields" }, { status: 400 });
   }
 
@@ -27,7 +27,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   const { rows } = await query<{ id: string }>(
     `INSERT INTO modifier_groups (location_id, name, min_select, max_select)
      VALUES ($1, $2, $3, $4) RETURNING id`,
-    [location.id, name, minSelect, maxSelect],
+    [location.id, name, bounds.min, bounds.max],
   );
   return NextResponse.json({ ok: true, id: rows[0].id });
 });

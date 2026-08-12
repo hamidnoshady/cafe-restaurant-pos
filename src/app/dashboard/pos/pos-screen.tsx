@@ -12,6 +12,7 @@ import { computeOrderTotals, formatQueueLabel, type CartLine, type DiscountInput
 import { kickDrawer, printKitchenTicket, printReceipt } from "@/lib/print-agent-client";
 import { isGlobalCashierShortcutEligible, searchPosMenuItems } from "@/lib/pos-selection";
 import { ModifierPicker } from "../modifier-picker";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { BranchSwitcher } from "../branch-switcher";
 import { apiOrQueue, useOfflineQueue } from "../offline-queue";
 import { api, ErrorBox, errorMessage, inputClass } from "../ui";
@@ -648,12 +649,18 @@ export function PosScreen() {
                   <input id="pos-delivery-fee" className={inputClass + " mt-1 min-h-11 border-[#EAE8E2] bg-[#FCFCFA]"} dir="ltr" inputMode="numeric" value={deliveryFee} onChange={(event) => setDeliveryFee(event.target.value)} placeholder="تومان" />
                 </label>
               </div>
-              <label className="block text-xs font-semibold text-[#5E5B55]" htmlFor="pos-delivery-courier">
+              <label className="block text-xs font-semibold text-[#5E5B55]">
                 پیک
-                <select id="pos-delivery-courier" className={inputClass + " mt-1 min-h-11 border-[#EAE8E2] bg-[#FCFCFA]"} value={deliveryCourierId} onChange={(event) => setDeliveryCourierId(event.target.value)}>
-                  <option value="">تخصیص پیک بعداً (در صف ارسال)</option>
-                  {couriers.map((courier) => <option key={courier.id} value={courier.id}>{courier.name}</option>)}
-                </select>
+                <SearchableSelect
+                  className={inputClass + " mt-1 min-h-11 border-[#EAE8E2] bg-[#FCFCFA]"}
+                  value={deliveryCourierId}
+                  onChange={setDeliveryCourierId}
+                  ariaLabel="پیک ارسال"
+                  options={[
+                    { value: "", label: "تخصیص پیک بعداً (در صف ارسال)" },
+                    ...couriers.map((courier) => ({ value: courier.id, label: courier.name })),
+                  ]}
+                />
               </label>
             </div>
           ) : null}
@@ -703,11 +710,16 @@ export function PosScreen() {
 
         <div className="border-t border-border p-4">
           <div className="mb-3 flex gap-2">
-            <select aria-label="نوع تخفیف" className={inputClass} value={discountType} onChange={(e) => setDiscountType(e.target.value as "" | "percent" | "amount")}>
-              <option value="">بدون تخفیف</option>
-              <option value="percent">درصدی</option>
-              <option value="amount">مبلغ ثابت</option>
-            </select>
+            <SearchableSelect
+              value={discountType}
+              onChange={(value) => setDiscountType(value as "" | "percent" | "amount")}
+              ariaLabel="نوع تخفیف"
+              options={[
+                { value: "", label: "بدون تخفیف" },
+                { value: "percent", label: "درصدی" },
+                { value: "amount", label: "مبلغ ثابت" },
+              ]}
+            />
             {discountType ? (
               <input
                 className={inputClass}
@@ -806,12 +818,18 @@ export function PosScreen() {
                     <input id="pos-mobile-delivery-fee" className={inputClass + " mt-1 min-h-11 border-[#EAE8E2] bg-[#FCFCFA]"} dir="ltr" inputMode="numeric" value={deliveryFee} onChange={(event) => setDeliveryFee(event.target.value)} placeholder="تومان" />
                   </label>
                 </div>
-                <label className="block text-xs font-semibold text-[#5E5B55]" htmlFor="pos-mobile-delivery-courier">
+                <label className="block text-xs font-semibold text-[#5E5B55]">
                   پیک
-                  <select id="pos-mobile-delivery-courier" className={inputClass + " mt-1 min-h-11 border-[#EAE8E2] bg-[#FCFCFA]"} value={deliveryCourierId} onChange={(event) => setDeliveryCourierId(event.target.value)}>
-                    <option value="">تخصیص پیک بعداً</option>
-                    {couriers.map((courier) => <option key={courier.id} value={courier.id}>{courier.name}</option>)}
-                  </select>
+                  <SearchableSelect
+                    className={inputClass + " mt-1 min-h-11 border-[#EAE8E2] bg-[#FCFCFA]"}
+                    value={deliveryCourierId}
+                    onChange={setDeliveryCourierId}
+                    ariaLabel="پیک ارسال"
+                    options={[
+                      { value: "", label: "تخصیص پیک بعداً" },
+                      ...couriers.map((courier) => ({ value: courier.id, label: courier.name })),
+                    ]}
+                  />
                 </label>
               </div>
             ) : null}
@@ -834,9 +852,16 @@ export function PosScreen() {
           </div>
           <div className="border-t border-border p-4">
             <div className="mb-3 flex gap-2">
-              <select className={inputClass} value={discountType} onChange={(event) => setDiscountType(event.target.value as "" | "percent" | "amount")} aria-label="نوع تخفیف">
-                <option value="">بدون تخفیف</option><option value="percent">درصدی</option><option value="amount">مبلغ ثابت</option>
-              </select>
+              <SearchableSelect
+                value={discountType}
+                onChange={(value) => setDiscountType(value as "" | "percent" | "amount")}
+                ariaLabel="نوع تخفیف"
+                options={[
+                  { value: "", label: "بدون تخفیف" },
+                  { value: "percent", label: "درصدی" },
+                  { value: "amount", label: "مبلغ ثابت" },
+                ]}
+              />
               {discountType ? <input className={inputClass} dir="ltr" inputMode="numeric" value={discountValue} onChange={(event) => setDiscountValue(event.target.value)} placeholder={discountType === "percent" ? "درصد" : "تومان"} aria-label="مقدار تخفیف" /> : null}
             </div>
             <Row label="جمع کل" value={formatToman(totals.total)} bold />

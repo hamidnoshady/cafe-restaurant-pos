@@ -1,7 +1,7 @@
 "use client";
 
 import { toPersianDigits } from "@/lib/digits";
-import { formatJalali } from "@/lib/jalali";
+import { formatJalali, formatShiftWindow } from "@/lib/jalali";
 
 export interface ReportRow {
   dim: string | null;
@@ -9,13 +9,17 @@ export interface ReportRow {
 }
 
 export type ChartType = "line" | "bar" | "pie" | "number";
-export type Aggregation = "sum" | "avg" | "count";
+export type Aggregation = "sum" | "avg" | "count" | "count_distinct";
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}/;
 
 /** dim comes back over JSON as a plain string — Jalali-format it if it looks like an ISO date, otherwise it's already an entity label (item name, staff name, …). */
 export function formatDim(dim: string | null): string {
   if (dim === null) return "—";
+  // Checked before ISO_DATE_RE — that regex is unanchored at the end and would
+  // match a "<start>~<end>" window, handing the whole string to new Date().
+  const window = formatShiftWindow(dim);
+  if (window) return window;
   if (ISO_DATE_RE.test(dim)) return toPersianDigits(formatJalali(dim));
   return dim;
 }

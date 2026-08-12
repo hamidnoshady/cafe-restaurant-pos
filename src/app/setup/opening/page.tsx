@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { toPersianDigits } from "@/lib/digits";
 import { formatToman, parseToRial } from "@/lib/money";
 import {
@@ -180,17 +181,19 @@ export default function OpeningStep() {
                   value={r.name}
                   onChange={(e) => setInvRows((rs) => rs.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))}
                 />
-                <select
+                <SearchableSelect
                   className={inputClass}
                   value={r.unit}
-                  onChange={(e) => setInvRows((rs) => rs.map((x, j) => (j === i ? { ...x, unit: e.target.value } : x)))}
-                >
-                  <option value="kg">کیلوگرم</option>
-                  <option value="g">گرم</option>
-                  <option value="l">لیتر</option>
-                  <option value="ml">میلی‌لیتر</option>
-                  <option value="unit">عدد</option>
-                </select>
+                  onChange={(value) => setInvRows((rs) => rs.map((x, j) => (j === i ? { ...x, unit: value } : x)))}
+                  ariaLabel="واحد"
+                  options={[
+                    { value: "kg", label: "کیلوگرم" },
+                    { value: "g", label: "گرم" },
+                    { value: "l", label: "لیتر" },
+                    { value: "ml", label: "میلی‌لیتر" },
+                    { value: "unit", label: "عدد" },
+                  ]}
+                />
                 <input
                   className={inputClass}
                   dir="ltr"
@@ -245,28 +248,28 @@ export default function OpeningStep() {
             <div className="space-y-2">
               {balRows.map((r, i) => (
                 <div key={i} className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                  <select
+                  <SearchableSelect
                     className={inputClass}
                     value={r.accountId}
-                    onChange={(e) => setBalRows((rs) => rs.map((x, j) => (j === i ? { ...x, accountId: e.target.value } : x)))}
-                  >
-                    <option value="">حساب…</option>
-                    {leafAccounts.map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {a.code} — {a.name}
-                      </option>
-                    ))}
-                  </select>
-                  <select
+                    onChange={(value) => setBalRows((rs) => rs.map((x, j) => (j === i ? { ...x, accountId: value } : x)))}
+                    ariaLabel="حساب"
+                    options={[
+                      { value: "", label: "حساب…" },
+                      ...leafAccounts.map((a) => ({ value: a.id, label: `${a.code} — ${a.name}` })),
+                    ]}
+                  />
+                  <SearchableSelect
                     className={inputClass}
                     value={r.side}
-                    onChange={(e) =>
-                      setBalRows((rs) => rs.map((x, j) => (j === i ? { ...x, side: e.target.value as "debit" | "credit" } : x)))
+                    onChange={(value) =>
+                      setBalRows((rs) => rs.map((x, j) => (j === i ? { ...x, side: value as "debit" | "credit" } : x)))
                     }
-                  >
-                    <option value="debit">بدهکار</option>
-                    <option value="credit">بستانکار</option>
-                  </select>
+                    ariaLabel="طرف حساب"
+                    options={[
+                      { value: "debit", label: "بدهکار" },
+                      { value: "credit", label: "بستانکار" },
+                    ]}
+                  />
                   <input
                     className={inputClass}
                     dir="ltr"

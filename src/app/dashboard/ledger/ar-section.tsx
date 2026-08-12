@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
 import { formatToman, parseToRial, rialToToman } from "@/lib/money";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { api, ErrorBox, errorMessage, inputClass, PrimaryButton, SecondaryButton } from "../ui";
 import { ArStatementPanel } from "./ar-statement-panel";
 
@@ -222,10 +223,14 @@ function ReceivePaymentDialog({
           </label>
           <label className="flex flex-col gap-1.5 text-sm">
             <span className="font-medium text-muted-foreground">روش دریافت</span>
-            <select className={inputClass} value={method} onChange={(e) => setMethod(e.target.value as "cash" | "bank")}>
-              <option value="cash">نقدی</option>
-              <option value="bank">بانکی</option>
-            </select>
+            <SearchableSelect
+              value={method}
+              onChange={(value) => setMethod(value as "cash" | "bank")}
+              options={[
+                { value: "cash", label: "نقدی" },
+                { value: "bank", label: "بانکی" },
+              ]}
+            />
           </label>
           <label className="flex flex-col gap-1.5 text-sm">
             <span className="font-medium text-muted-foreground">شرح (اختیاری)</span>

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { kickDrawer, testPrint } from "@/lib/print-agent-client";
 import type { PrinterConnection } from "@/lib/printer-connection";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ErrorBox, Field, InfoBox, PrimaryButton, SecondaryButton, api, errorMessage, inputClass } from "../ui";
 
 interface Printer {
@@ -166,10 +167,14 @@ function PrinterForm({ value, onChange, onSubmit, submitLabel, busy }: { value: 
         <input className={inputClass} value={value.name} onChange={(e) => change("name", e.target.value)} placeholder="مثلاً چاپگر صندوق" required />
       </Field>
       <Field label="نوع چاپگر">
-        <select className={inputClass} value={value.kind} onChange={(e) => change("kind", e.target.value === "kitchen" ? "kitchen" : "receipt")}>
-          <option value="receipt">رسید مشتری</option>
-          <option value="kitchen">آشپزخانه</option>
-        </select>
+        <SearchableSelect
+          value={value.kind}
+          onChange={(next) => change("kind", next === "kitchen" ? "kitchen" : "receipt")}
+          options={[
+            { value: "receipt", label: "رسید مشتری" },
+            { value: "kitchen", label: "آشپزخانه" },
+          ]}
+        />
       </Field>
       <Field label="IP شبکه">
         <input className={inputClass} dir="ltr" value={value.ip} onChange={(e) => change("ip", e.target.value)} placeholder="192.168.1.50" required />
@@ -178,10 +183,14 @@ function PrinterForm({ value, onChange, onSubmit, submitLabel, busy }: { value: 
         <input className={inputClass} dir="ltr" inputMode="numeric" value={value.port} onChange={(e) => change("port", e.target.value)} required />
       </Field>
       <Field label="عرض کاغذ">
-        <select className={inputClass} value={value.paperWidthMm} onChange={(e) => change("paperWidthMm", e.target.value === "58" ? "58" : "80")}>
-          <option value="80">۸۰ میلی‌متر</option>
-          <option value="58">۵۸ میلی‌متر</option>
-        </select>
+        <SearchableSelect
+          value={value.paperWidthMm}
+          onChange={(next) => change("paperWidthMm", next === "58" ? "58" : "80")}
+          options={[
+            { value: "80", label: "۸۰ میلی‌متر" },
+            { value: "58", label: "۵۸ میلی‌متر" },
+          ]}
+        />
       </Field>
       <div className="flex flex-wrap items-center gap-4 pb-4 text-sm">
         <label className="flex items-center gap-2"><input type="checkbox" checked={value.isActive} onChange={(e) => change("isActive", e.target.checked)} />فعال</label>

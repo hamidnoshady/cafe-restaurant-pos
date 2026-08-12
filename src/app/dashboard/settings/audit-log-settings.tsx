@@ -36,7 +36,7 @@ const ENTITY_FILTERS: { value: string; label: string }[] = [
 ];
 
 function formatTime(iso: string): string {
-  return toPersianDigits(formatJalali(iso, { withMonthName: true }));
+  return toPersianDigits(formatJalali(iso, { withMonthName: true, withTime: true }));
 }
 
 function sessionDetail(entry: AuditEntry): string | null {

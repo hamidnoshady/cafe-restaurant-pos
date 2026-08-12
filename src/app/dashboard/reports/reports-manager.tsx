@@ -3,10 +3,12 @@
 import { useState } from "react";
 import { BranchOverviewSection } from "./branch-overview-section";
 import { ReportBuilderSection } from "./report-builder-section";
+import { ShiftOrdersSection } from "./shift-orders-section";
 import { StandardReportsSection } from "./standard-reports-section";
 
 const BASE_TABS = [
   { key: "standard", label: "گزارش‌های آماده" },
+  { key: "shift-orders", label: "سفارش‌های شیفت" },
   { key: "builder", label: "گزارش‌ساز" },
 ] as const;
 /** Owner-only: matches /api/reports/business-overview's guard. */
@@ -59,6 +61,7 @@ export function ReportsManager({ role, canExplain }: { role: string; canExplain:
         className="min-w-0"
       >
         {tab === "standard" ? <StandardReportsSection canExplain={canExplain} /> : null}
+        {tab === "shift-orders" ? <ShiftOrdersSection /> : null}
         {tab === "builder" ? <ReportBuilderSection /> : null}
         {tab === "branches" ? <BranchOverviewSection /> : null}
       </section>

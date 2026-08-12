@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { toPersianDigits } from "@/lib/digits";
 import { api, ErrorBox, errorMessage, Field, inputClass, PrimaryButton, StepShell } from "../ui";
 
@@ -74,16 +75,17 @@ export default function UsersStep() {
         <form onSubmit={submit}>
           <ErrorBox>{error}</ErrorBox>
           <Field label="نقش">
-            <select
+            <SearchableSelect
               className={inputClass}
               value={role}
-              onChange={(e) => setRole(e.target.value as CreatableRole)}
-            >
-              <option value="manager">مدیر</option>
-              <option value="cashier">صندوق‌دار</option>
-              <option value="waiter">گارسون</option>
-              <option value="kitchen">آشپزخانه</option>
-            </select>
+              onChange={(value) => setRole(value as CreatableRole)}
+              options={[
+                { value: "manager", label: "مدیر" },
+                { value: "cashier", label: "صندوق‌دار" },
+                { value: "waiter", label: "گارسون" },
+                { value: "kitchen", label: "آشپزخانه" },
+              ]}
+            />
           </Field>
           <Field label="نام و نام خانوادگی *">
             <input

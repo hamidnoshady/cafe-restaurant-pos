@@ -5,6 +5,7 @@
  * Port of the well-established jalaali-js algorithm (MIT), which follows the
  * astronomical 33-year cycle used by the official Iranian calendar.
  */
+import { toPersianDigits } from "./digits";
 
 export interface JalaliDate {
   jy: number;
@@ -152,12 +153,16 @@ export const JALALI_WEEKDAYS = [
  * Format a Date (or ISO string) as a Jalali date string.
  * Uses the date's value in the given IANA time zone (default Asia/Tehran) —
  * storage stays ISO/UTC, only display shifts.
+ *
+ * `withTime` appends the wall-clock time in that same zone (24-hour, zero
+ * padded) — needed wherever an exact moment matters rather than just the day
+ * (shift start/end, audit events).
  */
 export function formatJalali(
   date: Date | string,
-  opts: { withMonthName?: boolean; timeZone?: string } = {},
+  opts: { withMonthName?: boolean; timeZone?: string; withTime?: boolean } = {},
 ): string {
-  const { withMonthName = false, timeZone = "Asia/Tehran" } = opts;
+  const { withMonthName = false, timeZone = "Asia/Tehran", withTime = false } = opts;
   const d = typeof date === "string" ? new Date(date) : date;
 
   const parts = new Intl.DateTimeFormat("en-US", {
@@ -165,19 +170,47 @@ export function formatJalali(
     year: "numeric",
     month: "numeric",
     day: "numeric",
+    ...(withTime ? { hour: "2-digit" as const, minute: "2-digit" as const, hour12: false } : {}),
   }).formatToParts(d);
   const get = (type: string) => Number(parts.find((p) => p.type === type)?.value);
   const { jy, jm, jd } = toJalali(get("year"), get("month"), get("day"));
 
-  if (withMonthName) {
-    return `${jd} ${JALALI_MONTHS[jm - 1]} ${jy}`;
-  }
   const pad = (n: number) => String(n).padStart(2, "0");
-  return `${jy}/${pad(jm)}/${pad(jd)}`;
+  // Intl renders midnight as hour "24" under hour12:false in some runtimes.
+  const time = withTime ? `${pad(get("hour") % 24)}:${pad(get("minute"))}` : "";
+
+  if (withMonthName) {
+    const day = `${jd} ${JALALI_MONTHS[jm - 1]} ${jy}`;
+    return withTime ? `${day}، ${time}` : day;
+  }
+  const day = `${jy}/${pad(jm)}/${pad(jd)}`;
+  return withTime ? `${day} ${time}` : day;
 }
 
-/** Parse a Jalali date (y/m/d) into an ISO calendar date string (YYYY-MM-DD). */
-export function jalaliToIsoDate(jy: number, jm: number, jd: number): string {
+/**
+ * "<startISO>~<endISO>" — a shift's exact window, emitted by
+ * v_employee_shift_reconciliation's `shift_window` column (migration 0061) as
+ * machine-readable UTC ISO-8601 (Jalali conversion is display-layer only).
+ * The end half is empty while the shift is still open.
+ */
+const SHIFT_WINDOW_RE = /^(\d{4}-\d{2}-\d{2}T[\d:]+Z)~(\d{4}-\d{2}-\d{2}T[\d:]+Z)?$/;
+
+/**
+ * Render a shift_window value as "<start> تا <end>" in Jalali + Tehran time,
+ * or null if the value isn't a shift window. Lives here rather than in
+ * reports.ts so the report table, CSV/Excel export and PDF template share one
+ * implementation — reports.ts pulls in node:crypto and can't be imported by a
+ * client component.
+ */
+export function formatShiftWindow(value: string): string | null {
+  const m = SHIFT_WINDOW_RE.exec(value);
+  if (!m) return null;
+  const start = toPersianDigits(formatJalali(m[1], { withTime: true }));
+  const end = m[2] ? toPersianDigits(formatJalali(m[2], { withTime: true })) : "در حال انجام";
+  return `${start} تا ${end}`;
+}
+
+/** Parse a Jalali date (y/m/d) into an ISO calendar date string (YYYY-MM-DD). */export function jalaliToIsoDate(jy: number, jm: number, jd: number): string {
   if (!isValidJalaliDate(jy, jm, jd)) {
     throw new Error(`Invalid Jalali date ${jy}/${jm}/${jd}`);
   }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ErrorBox, Field, InfoBox, PrimaryButton, api, errorMessage, inputClass } from "../ui";
 
 interface BusinessState {
@@ -131,10 +132,14 @@ export function BusinessSettings() {
             <input className={inputClass} dir="ltr" value={form.website} onChange={(e) => change("website", e.target.value)} placeholder="https://example.com" />
           </Field>
           <Field label="واحد نمایش مبلغ">
-            <select className={inputClass} value={form.currencyDisplay} onChange={(e) => change("currencyDisplay", e.target.value === "rial" ? "rial" : "toman")}>
-              <option value="toman">تومان</option>
-              <option value="rial">ریال</option>
-            </select>
+            <SearchableSelect
+              value={form.currencyDisplay}
+              onChange={(value) => change("currencyDisplay", value === "rial" ? "rial" : "toman")}
+              options={[
+                { value: "toman", label: "تومان" },
+                { value: "rial", label: "ریال" },
+              ]}
+            />
           </Field>
         </div>
       </section>

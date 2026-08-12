@@ -169,7 +169,7 @@ function ShiftModal({
           <>
             {shift && (
               <p className="mb-3 text-xs text-muted-foreground">
-                شروع شیفت: {toPersianDigits(formatJalali(shift.startedAt, { withMonthName: true }))}
+                شروع شیفت: {toPersianDigits(formatJalali(shift.startedAt, { withMonthName: true, withTime: true }))}
                 {shift.openingFloat !== null
                   ? ` · موجودی اول: ${toPersianDigits(formatToman(shift.openingFloat))}`
                   : ""}

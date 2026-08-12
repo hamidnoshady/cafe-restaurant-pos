@@ -8,6 +8,13 @@ import {
 } from "@/lib/ledger-service";
 import { positiveQuantityText, rialText } from "@/lib/inventory-exact";
 import { applyPurchaseReceiptCosting } from "@/lib/purchase-receipt-costing";
+import {
+  preparePurchaseLines,
+  purchaseDateOrNull,
+  PurchaseLineError,
+  type PurchaseItemInput,
+  type PurchaseLine,
+} from "@/lib/purchase-lines";
 import { resolveActiveLocation } from "@/lib/setup-state";
 
 const SETTLEMENT_METHODS = ["cash", "bank", "credit"] as const;
@@ -29,7 +36,9 @@ export const GET = withTenantScope(async (_request: NextRequest, context: { para
   );
   if (!header[0]) return NextResponse.json({ error: "not_found" }, { status: 404 });
   const { rows: items } = await query(
-    `SELECT pi.id, pi.inventory_item_id, ii.name AS inventory_item_name, ii.unit, pi.quantity, pi.unit_cost
+    `SELECT pi.id, pi.inventory_item_id, ii.name AS inventory_item_name, ii.unit,
+            ii.purchase_unit, ii.purchase_unit_factor,
+            pi.quantity, pi.unit_cost, pi.extended_cost
        FROM purchase_items pi JOIN inventory_items ii ON ii.id = pi.inventory_item_id
       WHERE pi.purchase_id = $1 AND ii.location_id = $2
         AND EXISTS (SELECT 1 FROM purchases p WHERE p.id=pi.purchase_id AND p.location_id=$2)`,
@@ -44,6 +53,105 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
   received: [],
   cancelled: [],
 };
+
+/**
+ * Edits an unreceived purchase's supplier, date, note, and lines.
+ *
+ * Only draft/ordered are editable. A received purchase has already moved
+ * stock, rolled cost basis forward, and posted its journal entry, so
+ * correcting one is a supplier return (POST /api/inventory/supplier-returns),
+ * not an edit — the same reason DELETE refuses a received purchase. A
+ * cancelled purchase is a closed record.
+ *
+ * Lines are replaced wholesale rather than diffed: nothing references an
+ * unreceived purchase's purchase_items (the costing allocations and return
+ * lines that do only exist once it's received, and those statuses are
+ * rejected above), so there is no identity worth preserving, and a full
+ * replace can't leave a stale line behind.
+ */
+export const PUT = withTenantScope(async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
+  const { session, error } = await requireRole("owner", "manager");
+  if (error) return error;
+  const { id } = await context.params;
+
+  const location = await resolveActiveLocation(session);
+  if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
+
+  let body: { supplierId?: string | null; note?: string; purchaseDate?: string | null; items?: PurchaseItemInput[] };
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "bad_request" }, { status: 400 });
+  }
+
+  if (body.supplierId) {
+    const { rows: supplier } = await query(
+      "SELECT id FROM suppliers WHERE id = $1 AND location_id = $2",
+      [body.supplierId, location.id],
+    );
+    if (supplier.length === 0) return NextResponse.json({ error: "supplier_not_found" }, { status: 404 });
+  }
+
+  let lines: PurchaseLine[];
+  let total: string;
+  let purchaseDate: string | null;
+  try {
+    purchaseDate = purchaseDateOrNull(body.purchaseDate);
+    ({ lines, total } = await preparePurchaseLines(body.items ?? [], location.id));
+  } catch (err) {
+    if (err instanceof PurchaseLineError) {
+      return NextResponse.json({ error: err.code }, { status: err.status });
+    }
+    throw err;
+  }
+
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const { rows: locked } = await client.query<{ status: string }>(
+      "SELECT status FROM purchases WHERE id = $1 AND location_id = $2 FOR UPDATE",
+      [id, location.id],
+    );
+    const purchase = locked[0];
+    if (!purchase) {
+      await client.query("ROLLBACK");
+      return NextResponse.json({ error: "not_found" }, { status: 404 });
+    }
+    if (purchase.status === "received") {
+      await client.query("ROLLBACK");
+      return NextResponse.json({ error: "purchase_received_cannot_edit" }, { status: 409 });
+    }
+    if (purchase.status === "cancelled") {
+      await client.query("ROLLBACK");
+      return NextResponse.json({ error: "purchase_cancelled_cannot_edit" }, { status: 409 });
+    }
+
+    // A cleared date field means "leave the stored date alone", not "reset to
+    // today" — the edit form always opens prefilled, so an empty value is a
+    // caller that isn't touching the date.
+    await client.query(
+      `UPDATE purchases SET supplier_id = $2, note = $3, total = $4,
+              purchase_date = COALESCE($6::date, purchase_date)
+        WHERE id = $1 AND location_id = $5`,
+      [id, body.supplierId || null, body.note?.trim() || null, total, location.id, purchaseDate],
+    );
+    await client.query("DELETE FROM purchase_items WHERE purchase_id = $1", [id]);
+    for (const line of lines) {
+      await client.query(
+        `INSERT INTO purchase_items (purchase_id, inventory_item_id, quantity, unit_cost, extended_cost)
+         VALUES ($1, $2, $3, $4::numeric / $3::numeric, $4)`,
+        [id, line.inventoryItemId, line.baseQty, line.totalCost],
+      );
+    }
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+  return NextResponse.json({ ok: true, total });
+});
 
 /** Status transitions: draft -> ordered (optional formal PO step) -> received, or straight to received/cancelled. */
 export const PATCH = withTenantScope(async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {

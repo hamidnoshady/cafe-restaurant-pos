@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import type { AccountType, TemplateAccount } from "@/lib/coa-template";
 import { toPersianDigits } from "@/lib/digits";
 import {
@@ -130,17 +131,13 @@ export default function AccountsStep() {
                     />
                   </td>
                   <td className="p-1.5">
-                    <select
+                    <SearchableSelect
                       className={inputClass}
                       value={r.type}
-                      onChange={(e) => update(i, { type: e.target.value as AccountType })}
-                    >
-                      {Object.entries(TYPE_LABELS).map(([v, label]) => (
-                        <option key={v} value={v}>
-                          {label}
-                        </option>
-                      ))}
-                    </select>
+                      onChange={(value) => update(i, { type: value as AccountType })}
+                      ariaLabel="نوع حساب"
+                      options={Object.entries(TYPE_LABELS).map(([v, label]) => ({ value: v, label }))}
+                    />
                   </td>
                   <td className="p-1.5">
                     <input

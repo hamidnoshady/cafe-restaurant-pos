@@ -140,9 +140,11 @@ export function ChartOfAccountsSection({ busy, run }: { busy: boolean; run: Runn
           </label>
           <label className="block">
             <span className="mb-1.5 block text-sm font-medium">نوع حساب</span>
-            <select className={inputClass} value={type} onChange={(e) => setType(e.target.value as AccountType)}>
-              {(Object.keys(TYPE_LABELS) as AccountType[]).map((t) => <option key={t} value={t}>{TYPE_LABELS[t]}</option>)}
-            </select>
+            <SearchableSelect
+              value={type}
+              onChange={(value) => setType(value as AccountType)}
+              options={(Object.keys(TYPE_LABELS) as AccountType[]).map((t) => ({ value: t, label: TYPE_LABELS[t] }))}
+            />
           </label>
           <label className="block">
             <span className="mb-1.5 block text-sm font-medium">حساب والد</span>

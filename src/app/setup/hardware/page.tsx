@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { kickDrawer, testPrint } from "@/lib/print-agent-client";
 import {
   api,
@@ -107,14 +108,15 @@ export default function HardwareStep() {
             />
           </Field>
           <Field label="نوع">
-            <select
+            <SearchableSelect
               className={inputClass}
               value={kind}
-              onChange={(e) => setKind(e.target.value as "receipt" | "kitchen")}
-            >
-              <option value="receipt">رسید (صندوق)</option>
-              <option value="kitchen">آشپزخانه</option>
-            </select>
+              onChange={(value) => setKind(value as "receipt" | "kitchen")}
+              options={[
+                { value: "receipt", label: "رسید (صندوق)" },
+                { value: "kitchen", label: "آشپزخانه" },
+              ]}
+            />
           </Field>
           <Field label="نشانی IP" hint="اختیاری — بعداً هم قابل تنظیم است (پورت پیش‌فرض ۹۱۰۰).">
             <input

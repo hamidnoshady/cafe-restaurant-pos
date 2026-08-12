@@ -15,6 +15,7 @@ import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import { formatToman } from "@/lib/money";
 import { TABLE_STATUS_LABELS, type TableStatus } from "@/lib/table-sessions";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useRealtime } from "../use-realtime";
 import {
   api,
@@ -987,19 +988,16 @@ function SectionEditor({
               <span className="mb-1 block text-[11px] font-bold text-[#77756F]">
                 گارسون بخش
               </span>
-              <select
+              <SearchableSelect
                 className={`${inputClass} min-h-11 border-[#EAE8E2] bg-[#FCFCFA] py-1 text-xs`}
                 value={s.assigned_waiter_id ?? ""}
-                onChange={(e) => assignWaiter(s.id, e.target.value)}
-                aria-label={`گارسون بخش ${s.name}`}
-              >
-                <option value="">بدون گارسون</option>
-                {waiters.map((w) => (
-                  <option key={w.id} value={w.id}>
-                    {w.full_name}
-                  </option>
-                ))}
-              </select>
+                onChange={(value) => assignWaiter(s.id, value)}
+                ariaLabel={`گارسون بخش ${s.name}`}
+                options={[
+                  { value: "", label: "بدون گارسون" },
+                  ...waiters.map((w) => ({ value: w.id, label: w.full_name })),
+                ]}
+              />
             </label>
           </li>
         ))}
@@ -1094,33 +1092,31 @@ function AddTable({
           <span className="mb-1.5 block text-xs font-bold text-[#5E5B55]">
             بخش
           </span>
-          <select
+          <SearchableSelect
             className={`${inputClass} min-h-12 border-[#EAE8E2] bg-[#FCFCFA]`}
             value={sectionId}
-            onChange={(e) => setSectionId(e.target.value)}
-            aria-label="بخش میز"
-          >
-            <option value="">بدون بخش</option>
-            {sections.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
+            onChange={setSectionId}
+            ariaLabel="بخش میز"
+            options={[
+              { value: "", label: "بدون بخش" },
+              ...sections.map((s) => ({ value: s.id, label: s.name })),
+            ]}
+          />
         </label>
         <label className="block">
           <span className="mb-1.5 block text-xs font-bold text-[#5E5B55]">
             شکل میز
           </span>
-          <select
+          <SearchableSelect
             className={`${inputClass} min-h-12 border-[#EAE8E2] bg-[#FCFCFA]`}
             value={shape}
-            onChange={(e) => setShape(e.target.value as "rect" | "circle")}
-            aria-label="شکل میز"
-          >
-            <option value="rect">مربع/مستطیل</option>
-            <option value="circle">گرد</option>
-          </select>
+            onChange={(value) => setShape(value as "rect" | "circle")}
+            ariaLabel="شکل میز"
+            options={[
+              { value: "rect", label: "مربع/مستطیل" },
+              { value: "circle", label: "گرد" },
+            ]}
+          />
         </label>
       </div>
       <button
@@ -1238,33 +1234,31 @@ function TableEditor({
           <span className="mb-1.5 block text-xs font-bold text-[#5E5B55]">
             بخش
           </span>
-          <select
+          <SearchableSelect
             className={`${inputClass} min-h-12 border-[#EAE8E2] bg-[#FCFCFA]`}
             value={sectionId}
-            onChange={(e) => setSectionId(e.target.value)}
-            aria-label="بخش میز"
-          >
-            <option value="">بدون بخش</option>
-            {sections.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
+            onChange={setSectionId}
+            ariaLabel="بخش میز"
+            options={[
+              { value: "", label: "بدون بخش" },
+              ...sections.map((s) => ({ value: s.id, label: s.name })),
+            ]}
+          />
         </label>
         <label className="block">
           <span className="mb-1.5 block text-xs font-bold text-[#5E5B55]">
             شکل میز
           </span>
-          <select
+          <SearchableSelect
             className={`${inputClass} min-h-12 border-[#EAE8E2] bg-[#FCFCFA]`}
             value={shape}
-            onChange={(e) => setShape(e.target.value as "rect" | "circle")}
-            aria-label="شکل میز"
-          >
-            <option value="rect">مربع/مستطیل</option>
-            <option value="circle">گرد</option>
-          </select>
+            onChange={(value) => setShape(value as "rect" | "circle")}
+            ariaLabel="شکل میز"
+            options={[
+              { value: "rect", label: "مربع/مستطیل" },
+              { value: "circle", label: "گرد" },
+            ]}
+          />
         </label>
         <div className="grid grid-cols-2 gap-2">
           <label className="block">

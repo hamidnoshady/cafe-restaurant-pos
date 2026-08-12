@@ -36,6 +36,8 @@ interface SearchableSelectProps {
   disabled?: boolean;
   className?: string;
   dir?: "rtl" | "ltr";
+  /** Accessible name for the trigger button (a labeled-by-field select doesn't need it). */
+  ariaLabel?: string;
 }
 
 export function SearchableSelect({
@@ -48,6 +50,7 @@ export function SearchableSelect({
   disabled,
   className,
   dir = "rtl",
+  ariaLabel,
 }: SearchableSelectProps) {
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
@@ -92,6 +95,7 @@ export function SearchableSelect({
           )}
           aria-haspopup="listbox"
           aria-expanded={open}
+          aria-label={ariaLabel}
         >
           <span className="min-w-0 truncate">{selected ? selected.label : placeholder}</span>
           <ChevronDownIcon className="size-4 shrink-0 text-muted-foreground" />

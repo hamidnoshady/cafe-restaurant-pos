@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { toPersianDigits } from "@/lib/digits";
 import { formatToman, parseToRial } from "@/lib/money";
 import {
@@ -192,19 +193,16 @@ export default function MenuStep() {
         <form onSubmit={addItem} className="rounded-xl border border-border p-4">
           <h2 className="mb-3 font-semibold">افزودن آیتم</h2>
           <div className="grid gap-3 sm:grid-cols-3">
-            <select
+            <SearchableSelect
               className={inputClass}
               value={itemCategory}
-              onChange={(e) => setItemCategory(e.target.value)}
-              required
-            >
-              <option value="">دسته…</option>
-              {categories.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
+              onChange={setItemCategory}
+              ariaLabel="دسته"
+              options={[
+                { value: "", label: "دسته…" },
+                ...categories.map((c) => ({ value: c.id, label: c.name })),
+              ]}
+            />
             <input
               className={inputClass}
               value={itemName}

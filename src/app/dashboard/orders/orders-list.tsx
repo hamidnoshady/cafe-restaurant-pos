@@ -7,6 +7,7 @@ import { toPersianDigits } from "@/lib/digits";
 import { formatToman } from "@/lib/money";
 import { formatQueueLabel } from "@/lib/orders";
 import { useRealtime } from "../use-realtime";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { api } from "../ui";
 
 type OrderStatus = "open" | "held" | "completed" | "voided";
@@ -655,19 +656,16 @@ export function OrdersList() {
         <div className="mt-2 flex flex-col gap-2 sm:flex-row">
           <label className="flex min-h-12 min-w-0 flex-1 items-center gap-2 rounded-xl border border-[#EAE8E2] bg-white px-3 text-xs text-[#77756F] xl:min-h-[52px]">
             <span className="shrink-0">میز</span>
-            <select
+            <SearchableSelect
               value={tableFilter}
-              onChange={(event) => setTableFilter(event.target.value)}
-              className="min-h-10 min-w-0 flex-1 bg-transparent text-sm text-[#252522] outline-none"
-              aria-label="فیلتر میز سفارش"
-            >
-              <option value="all">همهٔ میزها</option>
-              {tableNames.map((tableName) => (
-                <option key={tableName} value={tableName}>
-                  {tableName}
-                </option>
-              ))}
-            </select>
+              onChange={setTableFilter}
+              className="min-h-10 min-w-0 flex-1 border-0 bg-transparent text-sm text-[#252522] outline-none"
+              ariaLabel="فیلتر میز سفارش"
+              options={[
+                { value: "all", label: "همهٔ میزها" },
+                ...tableNames.map((tableName) => ({ value: tableName, label: tableName })),
+              ]}
+            />
           </label>
           <label className="flex min-h-12 min-w-0 flex-1 items-center gap-2 rounded-xl border border-[#EAE8E2] bg-white px-3 text-xs text-[#77756F] xl:min-h-[52px]">
             <span className="shrink-0">تاریخ</span>

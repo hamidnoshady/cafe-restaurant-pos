@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toPersianDigits } from "@/lib/digits";
 import { formatToman } from "@/lib/money";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { api, errorMessage, inputClass, PrimaryButton, SecondaryButton } from "../ui";
 
 interface SessionDetail {
@@ -133,14 +134,15 @@ export function SessionPanel({
       </div>
 
       <div className="mt-3 flex items-center gap-2">
-        <select className={`${inputClass} py-1 text-xs`} value={mergeTableId} onChange={(e) => setMergeTableId(e.target.value)}>
-          <option value="">ادغام با میز آزاد…</option>
-          {freeTables.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.name}
-            </option>
-          ))}
-        </select>
+        <SearchableSelect
+          className={`${inputClass} py-1 text-xs`}
+          value={mergeTableId}
+          onChange={setMergeTableId}
+          options={[
+            { value: "", label: "ادغام با میز آزاد…" },
+            ...freeTables.map((t) => ({ value: t.id, label: t.name })),
+          ]}
+        />
         <SecondaryButton
           onClick={() => mergeTableId && action({ action: "merge", tableId: mergeTableId })}
           disabled={busy || !mergeTableId}
@@ -240,25 +242,25 @@ function SplitDialog({
                 <span className="flex-1 truncate">
                   {l.name} <span className="text-xs text-muted-foreground">{formatToman(l.amount)}</span>
                 </span>
-                <select
+                <SearchableSelect
                   className={`${inputClass} w-28 py-1 text-xs`}
-                  value={assignments[l.orderItemId] ?? ""}
-                  onChange={(e) =>
+                  value={assignments[l.orderItemId]?.toString() ?? ""}
+                  onChange={(value) =>
                     setAssignments((prev) => {
                       const next = { ...prev };
-                      if (e.target.value === "") delete next[l.orderItemId];
-                      else next[l.orderItemId] = Number(e.target.value);
+                      if (value === "") delete next[l.orderItemId];
+                      else next[l.orderItemId] = Number(value);
                       return next;
                     })
                   }
-                >
-                  <option value="">مشترک</option>
-                  {Array.from({ length: guestCount }, (_, i) => (
-                    <option key={i} value={i}>
-                      مهمان {toPersianDigits(i + 1)}
-                    </option>
-                  ))}
-                </select>
+                  options={[
+                    { value: "", label: "مشترک" },
+                    ...Array.from({ length: guestCount }, (_, i) => ({
+                      value: String(i),
+                      label: `مهمان ${toPersianDigits(i + 1)}`,
+                    })),
+                  ]}
+                />
               </div>
             ))}
           </div>

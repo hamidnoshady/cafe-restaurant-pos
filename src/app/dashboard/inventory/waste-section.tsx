@@ -96,13 +96,11 @@ export function WasteSection({ items, busy, run }: { items: InventoryItem[]; bus
             />
           </Field>
           <Field label="دلیل ضایعات">
-            <select className={inputClass} value={reason} onChange={(e) => setReason(e.target.value)}>
-              {Object.entries(REASON_LABELS).map(([key, label]) => (
-                <option key={key} value={key}>
-                  {label}
-                </option>
-              ))}
-            </select>
+            <SearchableSelect
+              value={reason}
+              onChange={setReason}
+              options={Object.entries(REASON_LABELS).map(([key, label]) => ({ value: key, label }))}
+            />
           </Field>
           <Field label="یادداشت">
             <input className={inputClass} value={note} onChange={(e) => setNote(e.target.value)} placeholder="اختیاری" />

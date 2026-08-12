@@ -332,7 +332,15 @@ export function OrderDetail({ orderId, canEdit }: { orderId: string; canEdit: bo
                   <div>
                     <p className={voided ? "text-muted-foreground line-through" : "font-medium"}>{it.name_snapshot}</p>
                     {mods.length > 0 ? (
-                      <p className="text-xs text-muted-foreground">{mods.map((m) => m.name_snapshot).join("، ")}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {mods
+                          .map((m) =>
+                            Number(m.price_delta) !== 0
+                              ? `${m.name_snapshot} (${formatToman(Number(m.price_delta))})`
+                              : m.name_snapshot,
+                          )
+                          .join("، ")}
+                      </p>
                     ) : null}
                     {voided && it.void_reason ? <p className="text-xs text-destructive">باطل: {it.void_reason}</p> : null}
                   </div>
@@ -403,11 +411,16 @@ export function OrderDetail({ orderId, canEdit }: { orderId: string; canEdit: bo
       <section className="rounded-xl border border-border/80 bg-card p-3 shadow-[0_1px_3px_rgb(15_23_42/0.04)]">
         {editable ? (
           <div className="mb-4 flex flex-wrap items-end gap-2 border-b border-border pb-4">
-            <select className={inputClass} value={discountType} onChange={(e) => setDiscountType(e.target.value as "" | "percent" | "amount")}>
-              <option value="">بدون تخفیف</option>
-              <option value="percent">درصدی</option>
-              <option value="amount">مبلغ ثابت</option>
-            </select>
+            <SearchableSelect
+              value={discountType}
+              onChange={(value) => setDiscountType(value as "" | "percent" | "amount")}
+              ariaLabel="نوع تخفیف"
+              options={[
+                { value: "", label: "بدون تخفیف" },
+                { value: "percent", label: "درصدی" },
+                { value: "amount", label: "مبلغ ثابت" },
+              ]}
+            />
             {discountType ? (
               <input
                 className={inputClass}

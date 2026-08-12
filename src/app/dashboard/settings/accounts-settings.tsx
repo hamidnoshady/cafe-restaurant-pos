@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { ACCOUNT_TYPES, FNB_COA_TEMPLATE, type AccountType, type TemplateAccount } from "@/lib/coa-template";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ErrorBox, InfoBox, PrimaryButton, SecondaryButton, api, errorMessage, inputClass } from "../ui";
 
 const TYPE_LABELS: Record<AccountType, string> = {
@@ -118,15 +119,24 @@ export function AccountsSettings() {
             <div key={`${account.code}-${index}`} className="grid gap-2 rounded-xl border border-border p-3 md:grid-cols-[7rem_1fr_9rem_1fr_auto]">
               <input className={inputClass} dir="ltr" value={account.code} onChange={(e) => change(index, { code: e.target.value })} placeholder="کد" aria-label="کد حساب" />
               <input className={inputClass} value={account.name} onChange={(e) => change(index, { name: e.target.value })} placeholder="نام حساب" aria-label="نام حساب" />
-              <select className={inputClass} value={account.type} onChange={(e) => change(index, { type: e.target.value as AccountType })} aria-label="نوع حساب">
-                {ACCOUNT_TYPES.map((type) => <option key={type} value={type}>{TYPE_LABELS[type]}</option>)}
-              </select>
-              <select className={inputClass} dir="ltr" value={account.parentCode ?? ""} onChange={(e) => change(index, { parentCode: e.target.value || undefined })} aria-label="حساب والد">
-                <option value="">بدون والد</option>
-                {accounts.filter((candidate, candidateIndex) => candidateIndex !== index && candidate.code).map((candidate, candidateIndex) => (
-                  <option key={`${candidate.code}-${candidateIndex}`} value={candidate.code}>{candidate.code} — {candidate.name || "بدون نام"}</option>
-                ))}
-              </select>
+              <SearchableSelect
+                value={account.type}
+                onChange={(value) => change(index, { type: value as AccountType })}
+                ariaLabel="نوع حساب"
+                options={ACCOUNT_TYPES.map((type) => ({ value: type, label: TYPE_LABELS[type] }))}
+              />
+              <SearchableSelect
+                value={account.parentCode ?? ""}
+                onChange={(value) => change(index, { parentCode: value || undefined })}
+                ariaLabel="حساب والد"
+                dir="ltr"
+                options={[
+                  { value: "", label: "بدون والد" },
+                  ...accounts
+                    .filter((candidate, candidateIndex) => candidateIndex !== index && candidate.code)
+                    .map((candidate) => ({ value: candidate.code, label: `${candidate.code} — ${candidate.name || "بدون نام"}` })),
+                ]}
+              />
               <SecondaryButton onClick={() => remove(index)}>حذف</SecondaryButton>
             </div>
           ))}

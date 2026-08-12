@@ -1,42 +1,73 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
 import { getPool, query } from "@/lib/db";
-import { convertPurchaseQuantity } from "@/lib/inventory";
 import { resolveActiveLocation } from "@/lib/setup-state";
-import Decimal from "decimal.js";
-import { positiveQuantityText, quantityText, rialText } from "@/lib/inventory-exact";
+import {
+  preparePurchaseLines,
+  purchaseDateOrNull,
+  PurchaseLineError,
+  type PurchaseItemInput,
+  type PurchaseLine,
+} from "@/lib/purchase-lines";
 
-/** Recent purchases, newest first (headers only — GET /api/inventory/purchases/[id] has line items). */
-export const GET = withTenantScope(async () => {
+const PURCHASE_STATUSES = ["draft", "ordered", "received", "cancelled"] as const;
+
+/**
+ * Recent purchases, newest first (headers only — GET /api/inventory/purchases/[id]
+ * has line items). Optionally narrowed by status, supplier, and a purchase_date
+ * range; both bounds are inclusive, since purchase_date is a plain date and the
+ * caller picks a date, not an instant.
+ */
+export const GET = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
 
   const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ purchases: [] });
 
+  const { searchParams } = new URL(request.url);
+  const status = searchParams.get("status");
+  const supplierId = searchParams.get("supplierId");
+  const dateFrom = searchParams.get("dateFrom");
+  const dateTo = searchParams.get("dateTo");
+
+  const conditions = ["p.location_id = $1"];
+  const params: unknown[] = [location.id];
+  if (status && (PURCHASE_STATUSES as readonly string[]).includes(status)) {
+    params.push(status);
+    conditions.push(`p.status = $${params.length}::purchase_status`);
+  }
+  if (supplierId) {
+    params.push(supplierId);
+    conditions.push(`p.supplier_id = $${params.length}::uuid`);
+  }
+  if (dateFrom) {
+    params.push(dateFrom);
+    conditions.push(`p.purchase_date >= $${params.length}::date`);
+  }
+  if (dateTo) {
+    params.push(dateTo);
+    conditions.push(`p.purchase_date <= $${params.length}::date`);
+  }
+
+  // purchase_date as text, not as a `date` node-postgres would hand back as a
+  // Date at the *server's* midnight — JSON would then shift a back-dated
+  // purchase a day off for any server not running in the branch's zone.
   const { rows } = await query(
-    `SELECT p.id, p.status, p.total, p.note, p.ordered_at, p.received_at, p.created_at,
+    `SELECT p.id, p.status, p.total, p.note, p.supplier_id, p.ordered_at, p.received_at, p.created_at,
+            p.purchase_date::text AS purchase_date,
             s.name AS supplier_name
        FROM purchases p LEFT JOIN suppliers s ON s.id = p.supplier_id
-      WHERE p.location_id = $1 ORDER BY p.created_at DESC LIMIT 100`,
-    [location.id],
+      WHERE ${conditions.join(" AND ")} ORDER BY p.purchase_date DESC, p.created_at DESC LIMIT 100`,
+    params,
   );
   return NextResponse.json({ purchases: rows });
 });
 
-interface PurchaseItemInput {
-  inventoryItemId?: string;
-  /** quantity in the item's purchase_unit (or base unit if none is set) */
-  purchaseQty?: string;
-  /** total Rial cost for this line (however the supplier invoiced it) */
-  totalCost?: string;
-}
-
 /**
- * Creates a draft purchase. Each line's purchaseQty is entered in the
- * item's purchase unit (e.g. kg) and converted here to its base/recipe
- * unit (e.g. g) via purchase_unit_factor, so purchase_items/stock_movements
- * always store one unit per item — see migrations/0006_inventory.sql.
+ * Creates a draft purchase. Line validation, ownership checks, and the
+ * purchase-unit -> base-unit conversion live in preparePurchaseLines so the
+ * edit path (PUT /api/inventory/purchases/[id]) behaves identically.
  * unit_cost is derived from the line's total cost, not entered directly,
  * since suppliers invoice by the purchased quantity, not the base unit.
  */
@@ -44,43 +75,15 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
 
-  let body: { supplierId?: string | null; note?: string; items?: PurchaseItemInput[] };
+  let body: { supplierId?: string | null; note?: string; purchaseDate?: string | null; items?: PurchaseItemInput[] };
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
 
-  const items = body.items ?? [];
-  if (items.length === 0) return NextResponse.json({ error: "no_items" }, { status: 400 });
-  for (const it of items) {
-    if (
-      !it.inventoryItemId ||
-      typeof it.purchaseQty !== "string" ||
-      typeof it.totalCost !== "string"
-    ) {
-      return NextResponse.json({ error: "invalid_item" }, { status: 400 });
-    }
-    try {
-      positiveQuantityText(it.purchaseQty);
-      rialText(it.totalCost);
-    } catch {
-      return NextResponse.json({ error: "invalid_item" }, { status: 400 });
-    }
-  }
-
   const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
-
-  const inventoryItemIds = items.map((i) => i.inventoryItemId);
-  const { rows: invItems } = await query<{ id: string; purchase_unit_factor: string }>(
-    "SELECT id, purchase_unit_factor FROM inventory_items WHERE id = ANY($1::uuid[]) AND location_id = $2",
-    [inventoryItemIds, location.id],
-  );
-  const factorById = new Map(invItems.map((i) => [i.id, positiveQuantityText(i.purchase_unit_factor)]));
-  if (invItems.length !== new Set(inventoryItemIds).size) {
-    return NextResponse.json({ error: "item_not_found" }, { status: 404 });
-  }
 
   if (body.supplierId) {
     const { rows: supplier } = await query(
@@ -90,26 +93,31 @@ export const POST = withTenantScope(async (request: NextRequest) => {
     if (supplier.length === 0) return NextResponse.json({ error: "supplier_not_found" }, { status: 404 });
   }
 
-  let lines: Array<{ inventoryItemId: string; baseQty: string; totalCost: string }>;
+  let lines: PurchaseLine[];
+  let total: string;
+  let purchaseDate: string | null;
   try {
-    lines = items.map((it) => {
-      const factor = factorById.get(it.inventoryItemId!)!;
-      const baseQty = quantityText(new Decimal(it.purchaseQty!).times(new Decimal(factor)).toFixed());
-      return { inventoryItemId: it.inventoryItemId!, baseQty, totalCost: rialText(it.totalCost!) };
-    });
-  } catch {
-    return NextResponse.json({ error: "invalid_item" }, { status: 400 });
+    purchaseDate = purchaseDateOrNull(body.purchaseDate);
+    ({ lines, total } = await preparePurchaseLines(body.items ?? [], location.id));
+  } catch (err) {
+    if (err instanceof PurchaseLineError) {
+      return NextResponse.json({ error: err.code }, { status: err.status });
+    }
+    throw err;
   }
-  const totalBigInt = lines.reduce((sum, line) => sum + BigInt(line.totalCost), 0n);
-  const total = totalBigInt.toString();
 
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
+    // No date entered means today *at the branch*, not at the server — the
+    // column's CURRENT_DATE default would be the wrong day for the hours the
+    // two disagree (up to 03:30 in Asia/Tehran on a UTC server).
     const { rows: purchaseRows } = await client.query<{ id: string }>(
-      `INSERT INTO purchases (location_id, supplier_id, status, total, note, created_by)
-       VALUES ($1, $2, 'draft', $3, $4, $5) RETURNING id`,
-      [location.id, body.supplierId || null, total, body.note?.trim() || null, session.sub],
+      `INSERT INTO purchases (location_id, supplier_id, status, total, note, purchase_date, created_by)
+       VALUES ($1, $2, 'draft', $3, $4,
+               COALESCE($5::date, (now() AT TIME ZONE (SELECT timezone FROM locations WHERE id = $1))::date),
+               $6) RETURNING id`,
+      [location.id, body.supplierId || null, total, body.note?.trim() || null, purchaseDate, session.sub],
     );
     const purchaseId = purchaseRows[0].id;
     for (const line of lines) {

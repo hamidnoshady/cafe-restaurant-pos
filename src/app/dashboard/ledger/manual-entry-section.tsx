@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import { formatToman, parseToRial } from "@/lib/money";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { JalaliDatePicker } from "../jalali-date-picker";
 import { api, errorMessage, inputClass, PrimaryButton, SecondaryButton } from "../ui";
 import type { AccountRow, Runner } from "./ledger-manager";
@@ -159,25 +160,25 @@ export function ManualEntrySection({
                 <div className="grid gap-3 md:grid-cols-[minmax(0,2fr)_9rem_minmax(0,1fr)_auto] md:items-end">
                   <label className="block">
                     <span className="mb-1.5 block text-sm font-medium">حساب</span>
-                    <select
-                      className={inputClass}
+                    <SearchableSelect
                       value={line.accountId}
-                      onChange={(e) => updateLine(i, { accountId: e.target.value })}
-                    >
-                      <option value="">انتخاب حساب</option>
-                      {accounts.map((a) => (
-                        <option key={a.id} value={a.id}>
-                          {a.code} — {a.name}
-                        </option>
-                      ))}
-                    </select>
+                      onChange={(value) => updateLine(i, { accountId: value })}
+                      options={[
+                        { value: "", label: "انتخاب حساب" },
+                        ...accounts.map((a) => ({ value: a.id, label: `${a.code} — ${a.name}` })),
+                      ]}
+                    />
                   </label>
                   <label className="block">
                     <span className="mb-1.5 block text-sm font-medium">طرف</span>
-                    <select className={inputClass} value={line.side} onChange={(e) => updateLine(i, { side: e.target.value as "debit" | "credit" })}>
-                      <option value="debit">بدهکار</option>
-                      <option value="credit">بستانکار</option>
-                    </select>
+                    <SearchableSelect
+                      value={line.side}
+                      onChange={(value) => updateLine(i, { side: value as "debit" | "credit" })}
+                      options={[
+                        { value: "debit", label: "بدهکار" },
+                        { value: "credit", label: "بستانکار" },
+                      ]}
+                    />
                   </label>
                   <label className="block">
                     <span className="mb-1.5 block text-sm font-medium">مبلغ (تومان)</span>

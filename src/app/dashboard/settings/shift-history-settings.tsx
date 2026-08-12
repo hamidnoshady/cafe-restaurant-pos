@@ -28,7 +28,7 @@ interface Shift {
 
 function formatTime(iso: string | null): string {
   if (!iso) return "در حال انجام";
-  return toPersianDigits(formatJalali(iso, { withMonthName: true }));
+  return toPersianDigits(formatJalali(iso, { withMonthName: true, withTime: true }));
 }
 
 function formatFloat(value: number | null): string {

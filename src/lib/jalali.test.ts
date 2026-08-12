@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   formatJalali,
+  formatShiftWindow,
   isLeapJalaliYear,
   isoDateToJalali,
   isValidJalaliDate,
@@ -64,6 +65,18 @@ describe("jalali conversion", () => {
     );
   });
 
+  it("appends the Tehran wall-clock time when asked", () => {
+    // 22:00Z + 3:30 = 01:30 local, on the next (Jalali) day.
+    expect(formatJalali("2024-03-19T22:00:00Z", { withTime: true })).toBe("1403/01/01 01:30");
+    expect(formatJalali("2024-03-20T12:00:00Z", { withMonthName: true, withTime: true })).toBe(
+      "1 فروردین 1403، 15:30",
+    );
+    // Local midnight must read 00:00, not 24:00.
+    expect(formatJalali("2024-03-19T20:30:00Z", { withTime: true })).toBe("1403/01/01 00:00");
+    // Without the flag the output is unchanged — the option is additive.
+    expect(formatJalali("2024-03-20T12:00:00Z")).toBe("1403/01/01");
+  });
+
   it("parses Jalali back to ISO date string", () => {
     expect(jalaliToIsoDate(1403, 1, 1)).toBe("2024-03-20");
     expect(() => jalaliToIsoDate(1404, 12, 30)).toThrow();
@@ -90,5 +103,25 @@ describe("jalali conversion", () => {
     // 2026-07-25 is a Saturday → column 0.
     const sat = isoDateToJalali("2026-07-25")!;
     expect(jalaliWeekdayColumn(sat.jy, sat.jm, sat.jd)).toBe(0);
+  });
+});
+
+describe("formatShiftWindow", () => {
+  it("renders a closed shift as both Jalali times, in Persian digits", () => {
+    // 06:00Z + 3:30 = 09:30 Tehran, 12:30Z = 16:00 Tehran, both on 1405/05/20.
+    expect(formatShiftWindow("2026-08-11T06:00:00Z~2026-08-11T12:30:00Z")).toBe(
+      "۱۴۰۵/۰۵/۲۰ ۰۹:۳۰ تا ۱۴۰۵/۰۵/۲۰ ۱۶:۰۰",
+    );
+  });
+
+  it("says the shift is still running when it has no end time", () => {
+    expect(formatShiftWindow("2026-08-11T06:00:00Z~")).toBe("۱۴۰۵/۰۵/۲۰ ۰۹:۳۰ تا در حال انجام");
+  });
+
+  it("returns null for anything that isn't a shift window", () => {
+    expect(formatShiftWindow("2026-08-11")).toBeNull();
+    expect(formatShiftWindow("not-a-date")).toBeNull();
+    expect(formatShiftWindow("2026-08-11T06:00:00Z")).toBeNull(); // no '~'
+    expect(formatShiftWindow("")).toBeNull();
   });
 });

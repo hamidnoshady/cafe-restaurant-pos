@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { formatPersianNumber, formatQuantity } from "@/lib/digits";
 import { formatToman } from "@/lib/money";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { api, Field, inputClass } from "../ui";
 import {
   PURITY_LABELS,
@@ -123,17 +124,15 @@ export function ItemsSection({
               />
             </Field>
             <Field label="عیار">
-              <select
+              <SearchableSelect
                 className={jewelryInputClass}
                 value={purity}
-                onChange={(e) => setPurity(e.target.value as Purity)}
-              >
-                {(Object.keys(PURITY_LABELS) as Purity[]).map((p) => (
-                  <option key={p} value={p}>
-                    {PURITY_LABELS[p]}
-                  </option>
-                ))}
-              </select>
+                onChange={(value) => setPurity(value as Purity)}
+                options={(Object.keys(PURITY_LABELS) as Purity[]).map((p) => ({
+                  value: p,
+                  label: PURITY_LABELS[p],
+                }))}
+              />
             </Field>
             <Field label="وزن ناخالص (گرم)">
               <input
@@ -514,13 +513,12 @@ function ConsignPanel({
     <PanelShell>
       <form onSubmit={submit} className="grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
         <Field label="امانت‌گذار">
-          <select className={jewelryInputClass} value={consignorId} onChange={(e) => setConsignorId(e.target.value)}>
-            {consignors.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
+          <SearchableSelect
+            className={jewelryInputClass}
+            value={consignorId}
+            onChange={setConsignorId}
+            options={consignors.map((c) => ({ value: c.id, label: c.name }))}
+          />
         </Field>
         <div className="flex items-end">
           <Button type="submit" disabled={busy} size="sm" className="min-h-[44px] border border-amber-300 px-5 font-semibold">
@@ -572,14 +570,15 @@ function SellPanel({
     <PanelShell>
       <form onSubmit={submit} className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <Field label="نوع اجرت">
-          <select
+          <SearchableSelect
             className={jewelryInputClass}
             value={makingChargeType}
-            onChange={(e) => setMakingChargeType(e.target.value as "percent" | "fixed")}
-          >
-            <option value="percent">درصدی از ارزش فلز</option>
-            <option value="fixed">مبلغ ثابت (ریال)</option>
-          </select>
+            onChange={(value) => setMakingChargeType(value as "percent" | "fixed")}
+            options={[
+              { value: "percent", label: "درصدی از ارزش فلز" },
+              { value: "fixed", label: "مبلغ ثابت (ریال)" },
+            ]}
+          />
         </Field>
         <Field label={makingChargeType === "percent" ? "درصد اجرت" : "مبلغ اجرت (ریال)"}>
           <input
@@ -609,17 +608,12 @@ function SellPanel({
           />
         </Field>
         <Field label="روش پرداخت">
-          <select
+          <SearchableSelect
             className={jewelryInputClass}
             value={paymentMethod}
-            onChange={(e) => setPaymentMethod(e.target.value as "cash" | "bank" | "credit")}
-          >
-            {Object.entries(PAYMENT_METHOD_LABELS).map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
+            onChange={(value) => setPaymentMethod(value as "cash" | "bank" | "credit")}
+            options={Object.entries(PAYMENT_METHOD_LABELS).map(([value, label]) => ({ value, label }))}
+          />
         </Field>
         <div className="sm:col-span-2 lg:col-span-5">
           <Button

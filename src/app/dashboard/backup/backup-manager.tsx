@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ErrorBox, Field, InfoBox, PrimaryButton, api, inputClass } from "../ui";
 
 interface Health {
@@ -406,17 +407,11 @@ function SettingsCard({ onSaved }: { onSaved: () => void }) {
 
         <div className="grid gap-x-4 sm:grid-cols-2">
           <Field label="بازهٔ پشتیبان‌گیری">
-            <select
-              className={inputClass}
-              value={config.intervalHours}
-              onChange={(e) => setConfig({ ...config, intervalHours: Number(e.target.value) })}
-            >
-              {INTERVAL_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
+            <SearchableSelect
+              value={String(config.intervalHours)}
+              onChange={(value) => setConfig({ ...config, intervalHours: Number(value) })}
+              options={INTERVAL_OPTIONS.map((o) => ({ value: String(o.value), label: o.label }))}
+            />
           </Field>
           <Field label="ساعت شروع (به وقت محلی)" hint="مثلاً ۰۳:۳۰ بامداد، بعد از بستن روز">
             <input

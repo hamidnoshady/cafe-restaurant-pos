@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { SparklesIcon } from "lucide-react";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { JalaliDatePicker } from "../jalali-date-picker";
 import { inputClass } from "../ui";
 import { ChartPreview, DataTable } from "./chart-preview";
@@ -275,18 +276,17 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
                       <span className="mb-1.5 block text-xs font-medium text-[#77756F]">
                         نوع نمایش
                       </span>
-                      <select
+                      <SearchableSelect
                         className={CONTROL_CLASS}
                         value={chartType}
-                        onChange={(event) =>
-                          setChartType(event.target.value as ChartType)
-                        }
-                      >
-                        <option value="bar">میله‌ای</option>
-                        <option value="line">خطی</option>
-                        <option value="pie">دایره‌ای</option>
-                        <option value="number">عدد</option>
-                      </select>
+                        onChange={(value) => setChartType(value as ChartType)}
+                        options={[
+                          { value: "bar", label: "میله‌ای" },
+                          { value: "line", label: "خطی" },
+                          { value: "pie", label: "دایره‌ای" },
+                          { value: "number", label: "عدد" },
+                        ]}
+                      />
                     </label>
                   ) : null}
                 </div>

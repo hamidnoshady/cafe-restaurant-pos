@@ -11,6 +11,7 @@
  */
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 
 interface Branch {
   id: string;
@@ -61,19 +62,14 @@ export function BranchSwitcher({ compact = false }: { compact?: boolean }) {
   return (
     <div className={compact ? "" : "mb-3"}>
       {!compact ? <label className="mb-1 block text-xs text-muted-foreground">شعبهٔ فعال</label> : null}
-      <select
+      <SearchableSelect
         className={compact ? "min-h-11 max-w-40 rounded-xl border border-[#EAE8E2] bg-white px-3 text-sm text-[#252522] outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45" : "w-full rounded-md border bg-background px-2 py-1.5 text-sm"}
         value={state.active.id}
         disabled={busy}
-        onChange={(e) => void switchTo(e.target.value)}
-        aria-label="انتخاب شعبهٔ فعال"
-      >
-        {state.locations.map((location) => (
-          <option key={location.id} value={location.id}>
-            {location.name}
-          </option>
-        ))}
-      </select>
+        onChange={(value) => void switchTo(value)}
+        ariaLabel="انتخاب شعبهٔ فعال"
+        options={state.locations.map((location) => ({ value: location.id, label: location.name }))}
+      />
     </div>
   );
 }

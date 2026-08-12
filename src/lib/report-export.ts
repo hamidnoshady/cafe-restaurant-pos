@@ -10,7 +10,7 @@
  */
 import ExcelJS from "exceljs";
 import { toPersianDigits } from "./digits";
-import { formatJalali } from "./jalali";
+import { formatJalali, formatShiftWindow } from "./jalali";
 
 export interface ReportColumn {
   key: string;
@@ -30,6 +30,12 @@ export function cellValue(value: unknown): string | number {
   // jsonb columns and array columns (e.g. permissions, invitations.location_ids) —
   // otherwise Object/Array would stringify to "[object Object]"/no useful text.
   if (typeof value === "object") return JSON.stringify(value);
+  if (typeof value === "string") {
+    // A shift's exact window — an export of the shift reconciliation report
+    // must show both times, not the raw "a~b" string.
+    const window = formatShiftWindow(value);
+    if (window) return window;
+  }
   return String(value);
 }
 

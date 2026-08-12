@@ -15,13 +15,18 @@
 import { WELL_KNOWN_CODES } from "./coa-template";
 import { addDays } from "./rollup";
 
-export type Aggregation = "sum" | "avg" | "count";
+export type Aggregation = "sum" | "avg" | "count" | "count_distinct";
 export type DateGranularity = "day" | "week" | "month";
 
 export interface MetricDef {
   key: string;
   label: string;
-  /** null = COUNT(*) (row count); ignores the aggregation column. */
+  /**
+   * null = COUNT(*) (row count); ignores the aggregation column. A metric
+   * offering "count_distinct" needs a real column — that's how a view whose
+   * grain is finer than the thing being counted (v_purchase_summary is one row
+   * per purchase *line*) still counts parents rather than lines.
+   */
   column: string | null;
   aggregations: Aggregation[];
 }
@@ -90,6 +95,27 @@ export const REPORT_VIEWS: Record<string, ReportViewDef> = {
       { key: "rows", label: "تعداد ردیف", column: null, aggregations: ["count"] },
     ],
     filters: [{ key: "category", label: "دسته", column: "category_id" }],
+  },
+  // Add-on grain. v_menu_item_performance.revenue already includes these
+  // deltas inside each item's revenue; this view breaks them out so add-on
+  // sales are reportable on their own.
+  v_modifier_performance: {
+    label: "عملکرد افزودنی‌ها",
+    dateColumn: "sale_date",
+    dimensions: [
+      { key: "day", label: "روز", dateTrunc: "day" },
+      { key: "week", label: "هفته", dateTrunc: "week" },
+      { key: "month", label: "ماه", dateTrunc: "month" },
+      { key: "modifier", label: "افزودنی", columns: ["modifier_id", "modifier_name"] },
+      { key: "group", label: "گروه افزودنی", columns: ["modifier_group_id", "modifier_group_name"] },
+      { key: "item", label: "قلم منو", columns: ["menu_item_id", "item_name"] },
+    ],
+    metrics: [
+      { key: "quantity", label: "تعداد فروش", column: "quantity", aggregations: ["sum", "avg"] },
+      { key: "revenue", label: "درآمد افزودنی", column: "revenue", aggregations: ["sum", "avg"] },
+      { key: "rows", label: "تعداد ردیف", column: null, aggregations: ["count"] },
+    ],
+    filters: [{ key: "group", label: "گروه افزودنی", column: "modifier_group_id" }],
   },
   v_inventory_valuation: {
     label: "ارزش‌گذاری موجودی",
@@ -165,6 +191,33 @@ export const REPORT_VIEWS: Record<string, ReportViewDef> = {
       { key: "online_total", label: "آنلاین", column: "online_total", aggregations: ["sum", "avg"] },
       { key: "credit_total", label: "نسیه", column: "credit_total", aggregations: ["sum", "avg"] },
       { key: "order_count", label: "تعداد سفارش", column: "order_count", aggregations: ["sum", "avg"] },
+    ],
+  },
+  // Per-shift grain, from the real employee_shifts entity (migration 0061) —
+  // unlike v_shift_reconciliation above (one row per business day per cashier)
+  // each row is one shift and carries its own start/end time.
+  v_employee_shift_reconciliation: {
+    label: "تطبیق شیفت (به تفکیک شیفت)",
+    dateColumn: "business_date",
+    dimensions: [
+      { key: "shift", label: "شیفت", columns: ["shift_id", "shift_window"] },
+      { key: "day", label: "روز", dateTrunc: "day" },
+      { key: "week", label: "هفته", dateTrunc: "week" },
+      { key: "month", label: "ماه", dateTrunc: "month" },
+      { key: "staff", label: "کارمند", columns: ["employee_id", "employee_name"] },
+    ],
+    metrics: [
+      { key: "gross_total", label: "جمع فروش", column: "gross_total", aggregations: ["sum", "avg"] },
+      { key: "cash_total", label: "نقدی", column: "cash_total", aggregations: ["sum", "avg"] },
+      { key: "card_total", label: "کارت‌خوان", column: "card_total", aggregations: ["sum", "avg"] },
+      { key: "online_total", label: "آنلاین", column: "online_total", aggregations: ["sum", "avg"] },
+      { key: "credit_total", label: "نسیه", column: "credit_total", aggregations: ["sum", "avg"] },
+      { key: "order_count", label: "تعداد سفارش", column: "order_count", aggregations: ["sum", "avg"] },
+      { key: "opening_float", label: "موجودی اولیهٔ صندوق", column: "opening_float", aggregations: ["sum", "avg"] },
+      { key: "closing_float", label: "موجودی پایانی صندوق", column: "closing_float", aggregations: ["sum", "avg"] },
+      { key: "cash_variance", label: "اختلاف صندوق", column: "cash_variance", aggregations: ["sum", "avg"] },
+      { key: "duration_minutes", label: "مدت شیفت (دقیقه)", column: "duration_minutes", aggregations: ["sum", "avg"] },
+      { key: "rows", label: "تعداد شیفت", column: null, aggregations: ["count"] },
     ],
   },
   v_table_turnover: {
@@ -247,6 +300,56 @@ export const REPORT_VIEWS: Record<string, ReportViewDef> = {
       { key: "cost", label: "بهای ضایعات", column: "cost", aggregations: ["sum", "avg"] },
     ],
   },
+  // Purchase-line grain (migration 0063): one row per line, so "how much of
+  // this item did we buy" and "what did we spend with this supplier" are both
+  // answerable. `purchase_count` is count(DISTINCT purchase_id) precisely
+  // because the grain is finer than a purchase — plain count() here would count
+  // lines. All statuses are present; filter on status for received-only spend.
+  v_purchase_summary: {
+    label: "خریدها",
+    dateColumn: "purchase_date",
+    dimensions: [
+      { key: "day", label: "روز", dateTrunc: "day" },
+      { key: "week", label: "هفته", dateTrunc: "week" },
+      { key: "month", label: "ماه", dateTrunc: "month" },
+      { key: "supplier", label: "تأمین‌کننده", columns: ["supplier_id", "supplier_name"] },
+      { key: "item", label: "کالا", columns: ["inventory_item_id", "item_name"] },
+      { key: "status", label: "وضعیت", columns: ["status"] },
+    ],
+    metrics: [
+      { key: "cost", label: "مبلغ خرید", column: "cost", aggregations: ["sum", "avg"] },
+      { key: "quantity", label: "مقدار", column: "quantity", aggregations: ["sum", "avg"] },
+      { key: "unit_cost", label: "بهای واحد", column: "unit_cost", aggregations: ["avg"] },
+      { key: "purchase_count", label: "تعداد خرید", column: "purchase_id", aggregations: ["count_distinct"] },
+      { key: "rows", label: "تعداد ردیف", column: null, aggregations: ["count"] },
+    ],
+    filters: [
+      { key: "status", label: "وضعیت", column: "status" },
+      { key: "supplier", label: "تأمین‌کننده", column: "supplier_id" },
+    ],
+  },
+  // Expense grain (migration 0063): one row per expense. The expense account
+  // *is* the category (see 0030), so "دستهٔ هزینه" below is that account.
+  v_expense_summary: {
+    label: "هزینه‌ها",
+    dateColumn: "expense_date",
+    dimensions: [
+      { key: "day", label: "روز", dateTrunc: "day" },
+      { key: "week", label: "هفته", dateTrunc: "week" },
+      { key: "month", label: "ماه", dateTrunc: "month" },
+      { key: "category", label: "دستهٔ هزینه", columns: ["account_id", "account_code", "account_name"] },
+      { key: "payment_account", label: "حساب پرداخت", columns: ["payment_account_id", "payment_account_name"] },
+      { key: "vendor", label: "طرف حساب", columns: ["vendor"] },
+    ],
+    metrics: [
+      { key: "amount", label: "مبلغ هزینه", column: "amount", aggregations: ["sum", "avg"] },
+      { key: "rows", label: "تعداد هزینه", column: null, aggregations: ["count"] },
+    ],
+    filters: [
+      { key: "account_code", label: "کد حساب هزینه", column: "account_code" },
+      { key: "vendor", label: "طرف حساب", column: "vendor" },
+    ],
+  },
 };
 
 export interface ReportFilters {
@@ -288,6 +391,13 @@ export function validateReportConfig(config: ReportConfig): string[] {
   if (!metric) {
     errors.push("معیار انتخاب‌شده برای این منبع داده معتبر نیست.");
   } else if (!metric.aggregations.includes(config.aggregation)) {
+    errors.push("نوع تجمیع برای این معیار پشتیبانی نمی‌شود.");
+  } else if (config.aggregation !== "count" && metric.column === null) {
+    // Only "count" ignores the column (it's COUNT(*)); every other aggregation
+    // interpolates metric.column into SQL, so a null column here would emit the
+    // literal string "null". Unreachable via REPORT_VIEWS as written — the test
+    // suite asserts the whitelist never pairs the two — but this is the last
+    // line of defense for the whitelist, so it checks rather than assumes.
     errors.push("نوع تجمیع برای این معیار پشتیبانی نمی‌شود.");
   }
 
@@ -359,7 +469,12 @@ export function buildReportQuery(
     groupBy = cols.join(", ");
   }
 
-  const aggExpr = config.aggregation === "count" ? "count(*)" : `${config.aggregation}(${metric.column})`;
+  const aggExpr =
+    config.aggregation === "count"
+      ? "count(*)"
+      : config.aggregation === "count_distinct"
+        ? `count(DISTINCT ${metric.column})`
+        : `${config.aggregation}(${metric.column})`;
 
   const params: unknown[] = [businessId];
   const where = ["business_id = $1"];
@@ -435,10 +550,20 @@ export const STANDARD_REPORTS: StandardReportDef[] = [
   {
     key: "shift_reconciliation",
     label: "تطبیق شیفت",
-    view: "v_shift_reconciliation",
+    // Per-shift since migration 0061 — the report now reports the real
+    // employee_shifts entity (with each shift's own start/end time) instead
+    // of v_shift_reconciliation's (day × cashier) proxy. Existing saved rows
+    // are re-pointed automatically: ensureStandardSavedReports upserts
+    // `config` on every call.
+    view: "v_employee_shift_reconciliation",
     defaultChart: {
       chartType: "bar",
-      config: { view: "v_shift_reconciliation", metric: "gross_total", aggregation: "sum", dimension: "day" },
+      config: {
+        view: "v_employee_shift_reconciliation",
+        metric: "gross_total",
+        aggregation: "sum",
+        dimension: "day",
+      },
     },
   },
   {
@@ -489,12 +614,53 @@ export const STANDARD_REPORTS: StandardReportDef[] = [
     },
   },
   {
+    key: "top_selling_add_ons",
+    label: "پرفروش‌ترین افزودنی‌ها",
+    view: "v_modifier_performance",
+    defaultChart: {
+      chartType: "bar",
+      config: {
+        view: "v_modifier_performance",
+        metric: "revenue",
+        aggregation: "sum",
+        dimension: "modifier",
+        sort: { by: "metric", dir: "desc" },
+        limit: 10,
+      },
+    },
+  },
+  {
     key: "waste_report",
     label: "گزارش ضایعات",
     view: "v_waste_summary",
     defaultChart: {
       chartType: "pie",
       config: { view: "v_waste_summary", metric: "cost", aggregation: "sum", dimension: "reason" },
+    },
+  },
+  {
+    key: "purchases_by_supplier",
+    label: "خرید به تفکیک تأمین‌کننده",
+    view: "v_purchase_summary",
+    defaultChart: {
+      chartType: "bar",
+      config: {
+        view: "v_purchase_summary",
+        metric: "cost",
+        aggregation: "sum",
+        dimension: "supplier",
+        sort: { by: "metric", dir: "desc" },
+        limit: 10,
+      },
+    },
+  },
+  {
+    key: "expenses_by_category",
+    label: "هزینه به تفکیک دسته",
+    view: "v_expense_summary",
+    defaultChart: {
+      chartType: "pie",
+      config: { view: "v_expense_summary", metric: "amount", aggregation: "sum", dimension: "category" },
     },
   },
   { key: "profit_and_loss", label: "صورت سود و زیان", view: null, defaultChart: null },

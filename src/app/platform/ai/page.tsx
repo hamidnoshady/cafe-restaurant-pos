@@ -13,6 +13,7 @@ import {
   inputClass,
   useCan,
 } from "../ui";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { PlatformSupportAssistant } from "./platform-support-assistant";
 
 interface AiConfig {
@@ -259,14 +260,15 @@ export default function PlatformAiPage() {
           ) : null}
           <form onSubmit={saveConfig} className="grid gap-4 lg:grid-cols-2">
             <Field label="ارائه‌دهنده">
-              <select
+              <SearchableSelect
                 className={inputClass}
                 value={configDraft.provider}
-                onChange={(event) => setConfigDraft({ ...configDraft, provider: event.target.value as AiConfig["provider"] })}
-              >
-                <option value="openrouter">OpenRouter</option>
-                <option value="arvan">آروان‌کلاد</option>
-              </select>
+                onChange={(value) => setConfigDraft({ ...configDraft, provider: value as AiConfig["provider"] })}
+                options={[
+                  { value: "openrouter", label: "OpenRouter" },
+                  { value: "arvan", label: "آروان‌کلاد" },
+                ]}
+              />
             </Field>
             <Field label="مدل">
               <input className={inputClass} dir="ltr" value={configDraft.model} onChange={(event) => setConfigDraft({ ...configDraft, model: event.target.value })} />
@@ -385,9 +387,14 @@ export default function PlatformAiPage() {
       <Card title="کنترل کسب‌وکار">
         <div className="mb-4 grid gap-3 md:grid-cols-2">
           <Field label="کسب‌وکار">
-            <select className={inputClass} value={selectedBusinessId} onChange={(event) => setSelectedBusinessId(event.target.value)}>
-              {businesses.map((business) => <option key={business.businessId} value={business.businessId}>{business.businessName}</option>)}
-            </select>
+            <SearchableSelect
+              value={selectedBusinessId}
+              onChange={setSelectedBusinessId}
+              options={businesses.map((business) => ({
+                value: business.businessId,
+                label: business.businessName,
+              }))}
+            />
           </Field>
           {selected ? (
             <div className="rounded-lg border border-white/10 bg-white/2 p-3 text-sm text-white/70">
@@ -415,10 +422,16 @@ export default function PlatformAiPage() {
             </form>
             <form onSubmit={(event) => { event.preventDefault(); void write({ action: "subscription", businessId: selected.businessId, subscriptionPlanId: subscriptionPlanId || null }, "subscription"); }} className="space-y-2">
               <p className="text-sm font-medium">اشتراک</p>
-              <select className={inputClass} value={subscriptionPlanId} onChange={(event) => setSubscriptionPlanId(event.target.value)}>
-                <option value="">بدون اشتراک</option>
-                {subscriptions.filter((plan) => plan.isActive).map((plan) => <option key={plan.id} value={plan.id}>{plan.name}</option>)}
-              </select>
+              <SearchableSelect
+                value={subscriptionPlanId}
+                onChange={setSubscriptionPlanId}
+                options={[
+                  { value: "", label: "بدون اشتراک" },
+                  ...subscriptions
+                    .filter((plan) => plan.isActive)
+                    .map((plan) => ({ value: plan.id, label: plan.name })),
+                ]}
+              />
               <Button type="submit" disabled={busy === "subscription"}>{busy === "subscription" ? "…" : "ثبت اشتراک"}</Button>
             </form>
           </div>

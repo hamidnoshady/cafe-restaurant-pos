@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { JalaliDatePicker } from "../jalali-date-picker";
 import { ErrorBox, Field, inputClass } from "../ui";
 import { ChartPreview, DataTable } from "./chart-preview";
@@ -39,6 +40,7 @@ const AGG_LABELS: Record<Aggregation, string> = {
   sum: "جمع",
   avg: "میانگین",
   count: "تعداد",
+  count_distinct: "تعداد یکتا",
 };
 const CONTROL_CLASS = [
   inputClass,
@@ -77,7 +79,7 @@ export function ReportBuilderSection() {
         setViews(list);
         if (list.length > 0) {
           setView(list[0].key);
-          setMetric(list[0].metrics[0]?.key ?? "");
+          selectMetric(list[0].metrics[0]?.key ?? "", list[0]);
           setDimension(list[0].dimensions[0]?.key ?? "");
         }
       });
@@ -94,10 +96,24 @@ export function ReportBuilderSection() {
   );
   const customReports = (saved ?? []).filter((report) => !report.is_standard);
 
+  /**
+   * Metrics don't all support the same aggregations (a distinct-count metric
+   * supports only count_distinct), so the picked aggregation is clamped to the
+   * new metric's list instead of being left as-is — otherwise the config the
+   * form submits is one the server rejects.
+   */
+  function selectMetric(key: string, from: ViewMeta | null = currentView) {
+    setMetric(key);
+    const aggregations = from?.metrics.find((item) => item.key === key)?.aggregations ?? [];
+    if (aggregations.length > 0 && !aggregations.includes(aggregation)) {
+      setAggregation(aggregations[0]);
+    }
+  }
+
   function selectView(key: string) {
     setView(key);
-    const nextView = views?.find((item) => item.key === key);
-    setMetric(nextView?.metrics[0]?.key ?? "");
+    const nextView = views?.find((item) => item.key === key) ?? null;
+    selectMetric(nextView?.metrics[0]?.key ?? "", nextView);
     setDimension(nextView?.dimensions[0]?.key ?? "");
     setRows(null);
   }
@@ -210,61 +226,48 @@ export function ReportBuilderSection() {
 
           <div className="grid gap-x-4 sm:grid-cols-2 xl:grid-cols-4">
             <Field label="منبع داده">
-              <select
+              <SearchableSelect
                 className={CONTROL_CLASS}
                 value={view}
-                onChange={(event) => selectView(event.target.value)}
-              >
-                {views.map((item) => (
-                  <option key={item.key} value={item.key}>
-                    {item.label}
-                  </option>
-                ))}
-              </select>
+                onChange={selectView}
+                options={views.map((item) => ({ value: item.key, label: item.label }))}
+              />
             </Field>
 
             <Field label="معیار">
-              <select
+              <SearchableSelect
                 className={CONTROL_CLASS}
                 value={metric}
-                onChange={(event) => setMetric(event.target.value)}
-              >
-                {currentView?.metrics.map((item) => (
-                  <option key={item.key} value={item.key}>
-                    {item.label}
-                  </option>
-                ))}
-              </select>
+                onChange={(value) => selectMetric(value)}
+                options={(currentView?.metrics ?? []).map((item) => ({
+                  value: item.key,
+                  label: item.label,
+                }))}
+              />
             </Field>
 
             <Field label="نوع تجمیع">
-              <select
+              <SearchableSelect
                 className={CONTROL_CLASS}
                 value={aggregation}
-                onChange={(event) =>
-                  setAggregation(event.target.value as Aggregation)
-                }
-              >
-                {(currentMetric?.aggregations ?? ["sum"]).map((item) => (
-                  <option key={item} value={item}>
-                    {AGG_LABELS[item]}
-                  </option>
-                ))}
-              </select>
+                onChange={(value) => setAggregation(value as Aggregation)}
+                options={(currentMetric?.aggregations ?? ["sum"]).map((item) => ({
+                  value: item,
+                  label: AGG_LABELS[item],
+                }))}
+              />
             </Field>
 
             <Field label="بُعد">
-              <select
+              <SearchableSelect
                 className={CONTROL_CLASS}
                 value={dimension}
-                onChange={(event) => setDimension(event.target.value)}
-              >
-                {currentView?.dimensions.map((item) => (
-                  <option key={item.key} value={item.key}>
-                    {item.label}
-                  </option>
-                ))}
-              </select>
+                onChange={setDimension}
+                options={(currentView?.dimensions ?? []).map((item) => ({
+                  value: item.key,
+                  label: item.label,
+                }))}
+              />
             </Field>
           </div>
 
@@ -315,18 +318,17 @@ export function ReportBuilderSection() {
               <span className="mb-1.5 block text-xs font-medium text-[#77756F]">
                 نوع نمایش
               </span>
-              <select
+              <SearchableSelect
                 className={CONTROL_CLASS}
                 value={chartType}
-                onChange={(event) =>
-                  setChartType(event.target.value as ChartType)
-                }
-              >
-                <option value="bar">میله‌ای</option>
-                <option value="line">خطی</option>
-                <option value="pie">دایره‌ای</option>
-                <option value="number">عدد</option>
-              </select>
+                onChange={(value) => setChartType(value as ChartType)}
+                options={[
+                  { value: "bar", label: "میله‌ای" },
+                  { value: "line", label: "خطی" },
+                  { value: "pie", label: "دایره‌ای" },
+                  { value: "number", label: "عدد" },
+                ]}
+              />
             </label>
 
             <label className="block">

@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { toPersianDigits, formatPersianNumber } from "@/lib/digits";
 import {
   api,
@@ -482,23 +483,23 @@ function PlanPanel({ business, onChanged }: { business: Business; onChanged: () 
       <form onSubmit={save} className="flex flex-col gap-3 sm:flex-row sm:items-end">
         <div className="min-w-0 flex-1">
           <Field label="پلن">
-            <select
+            <SearchableSelect
               value={plan}
-              onChange={(e) => setPlan(e.target.value)}
+              onChange={setPlan}
               disabled={!editable || plans.length === 0}
               className={inputClass}
-            >
-              {/* The business's current plan key always appears, even if it somehow isn't in the fetched catalogue yet. */}
-              {!plans.some((p) => p.key === business.plan) ? (
-                <option value={business.plan}>{business.plan}</option>
-              ) : null}
-              {plans.map((p) => (
-                <option key={p.key} value={p.key}>
-                  {p.name} (شعبه: {limitLabel(p.branchLimit)}، عضو: {limitLabel(p.memberLimit)}، سفارش ماهانه:{" "}
-                  {limitLabel(p.monthlyOrderLimit)})
-                </option>
-              ))}
-            </select>
+              ariaLabel="پلن اشتراک"
+              options={[
+                // The business's current plan key always appears, even if it somehow isn't in the fetched catalogue yet.
+                ...(!plans.some((p) => p.key === business.plan)
+                  ? [{ value: business.plan, label: business.plan }]
+                  : []),
+                ...plans.map((p) => ({
+                  value: p.key,
+                  label: `${p.name} (شعبه: ${limitLabel(p.branchLimit)}، عضو: ${limitLabel(p.memberLimit)}، سفارش ماهانه: ${limitLabel(p.monthlyOrderLimit)})`,
+                })),
+              ]}
+            />
           </Field>
           {current ? (
             <p className="mt-1 text-xs text-white/40">

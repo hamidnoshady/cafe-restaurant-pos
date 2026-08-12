@@ -15,6 +15,7 @@ import {
 } from "@/lib/permissions";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ErrorBox, Field, InfoBox, PrimaryButton, SecondaryButton, api, errorMessage, inputClass } from "../ui";
 
 const ROLE_LABELS: Record<string, string> = {
@@ -242,13 +243,11 @@ function PermissionEditor({
   return (
     <div className="mt-3 space-y-3 border-t pt-3">
       <Field label="نقش">
-        <select className={inputClass} value={role} onChange={(e) => changeRole(e.target.value)}>
-          {Object.keys(ROLE_LABELS).map((r) => (
-            <option key={r} value={r}>
-              {ROLE_LABELS[r]}
-            </option>
-          ))}
-        </select>
+        <SearchableSelect
+          value={role}
+          onChange={changeRole}
+          options={Object.keys(ROLE_LABELS).map((r) => ({ value: r, label: ROLE_LABELS[r] }))}
+        />
       </Field>
 
       {isOwner ? (
@@ -328,13 +327,11 @@ function InviteSection({
           />
         </Field>
         <Field label="نقش">
-          <select className={inputClass} value={role} onChange={(e) => setRole(e.target.value)}>
-            {INVITABLE_ROLES.map((r) => (
-              <option key={r} value={r}>
-                {ROLE_LABELS[r]}
-              </option>
-            ))}
-          </select>
+          <SearchableSelect
+            value={role}
+            onChange={setRole}
+            options={INVITABLE_ROLES.map((r) => ({ value: r, label: ROLE_LABELS[r] }))}
+          />
         </Field>
       </div>
       <div className="mt-3">
@@ -423,13 +420,11 @@ function AddStaffSection({
           <input className={inputClass} value={fullName} onChange={(e) => setFullName(e.target.value)} />
         </Field>
         <Field label="نقش">
-          <select className={inputClass} value={role} onChange={(e) => setRole(e.target.value)}>
-            {PIN_ROLES.map((r) => (
-              <option key={r} value={r}>
-                {ROLE_LABELS[r]}
-              </option>
-            ))}
-          </select>
+          <SearchableSelect
+            value={role}
+            onChange={setRole}
+            options={PIN_ROLES.map((r) => ({ value: r, label: ROLE_LABELS[r] }))}
+          />
         </Field>
         <Field label="رمز عددی (۴ رقم)">
           <input
