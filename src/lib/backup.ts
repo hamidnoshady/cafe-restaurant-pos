@@ -155,6 +155,33 @@ export function validateBackupConfig(body: unknown): BackupConfigValidation {
 }
 
 // ---------------------------------------------------------------------------
+// Which connection pg_dump runs with
+// ---------------------------------------------------------------------------
+
+/**
+ * Connection string `pg_dump` runs with — deliberately not always the app's.
+ *
+ * The server process connects as the restricted `pos_app` role (NOSUPERUSER,
+ * NOBYPASSRLS) so Phase 12's RLS policies actually apply to it. pg_dump runs
+ * with `row_security = off`, and Postgres refuses that for a role which can't
+ * bypass RLS on a FORCE-ROW-LEVEL-SECURITY table (migration 0021), failing the
+ * whole dump on its first COPY: «query would be affected by row-level security
+ * policy for table "accounts"». A whole-database dump therefore has to use the
+ * privileged (migrating/owner) connection, which the container entrypoint and
+ * the desktop launcher hand over as BACKUP_DATABASE_URL. DATABASE_URL is the
+ * fallback — in a dev shell it *is* the owner connection.
+ *
+ * Passing pg_dump `--enable-row-security` instead would exit 0 and dump only
+ * the rows the role can see, which with no tenant scope set is none of them.
+ * A silently empty backup is far worse than a failing one, so it isn't used.
+ */
+export function dumpDatabaseUrl(env: Partial<NodeJS.ProcessEnv> = process.env): string {
+  const url = env.BACKUP_DATABASE_URL?.trim() || env.DATABASE_URL?.trim();
+  if (!url) throw new Error("neither BACKUP_DATABASE_URL nor DATABASE_URL is set");
+  return url;
+}
+
+// ---------------------------------------------------------------------------
 // Artifact naming
 // ---------------------------------------------------------------------------
 
