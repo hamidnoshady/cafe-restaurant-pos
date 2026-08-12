@@ -2,3 +2,8 @@
 **Vulnerability:** Use of `Math.random().toString(36).slice(2)` for generating IDs (e.g. Chat Messages, Cart Items).
 **Learning:** `Math.random()` does not provide cryptographically secure entropy, making identifiers predictable and increasing the risk of ID collisions across sessions or concurrent users.
 **Prevention:** Use `crypto.randomUUID()` to generate standard, cryptographically secure UUIDv4 identifiers.
+
+## 2026-08-12 - Next.js Middleware Platform Authentication Bypass
+**Vulnerability:** A hardcoded `NextResponse.next()` bypass was incorrectly placed before the `PLATFORM_SESSION_COOKIE` verification logic for any path starting with `/api/platform`.
+**Learning:** Early returns in authentication middleware functions bypass critical security checks, allowing unauthenticated requests to access super-admin platform routes.
+**Prevention:** Always verify token and establish session before returning `NextResponse.next()` for protected API route prefixes.
