@@ -265,10 +265,6 @@ async function handlePlatformAdmin(
       return NextResponse.next();
     }
 
-    if (pathname.startsWith("/api/platform")) {
-      return NextResponse.next();
-    }
-
     const platformToken = request.cookies.get(PLATFORM_SESSION_COOKIE)?.value;
     const platformSession = platformToken
       ? await verifyPlatformSession(platformToken)
