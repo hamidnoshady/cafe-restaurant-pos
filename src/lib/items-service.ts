@@ -28,6 +28,7 @@ import {
   type WeightItemStatus,
 } from "./items";
 import { validateStone, validateWeightAttributes, type Purity, type StoneInput } from "./gold";
+import { validateSerialUnitCost, validateWarrantyMonths } from "./watch";
 
 export interface Item {
   id: string;
@@ -47,6 +48,11 @@ export interface ItemSerial {
   itemId: string;
   serialNumber: string;
   status: SerialStatus;
+  /** Phase 21 Wave 5 — what the shop paid for this unit (Rial); null until recorded. The sale path refuses to sell a unit with none. */
+  unitCost: number | null;
+  /** Phase 21 Wave 5 — the warranty term (months) this unit is sold with; 0 = no warranty. */
+  warrantyMonths: number;
+  soldAt: string | null;
   createdAt: string;
 }
 
@@ -182,8 +188,17 @@ interface SerialRow extends Record<string, unknown> {
   item_id: string;
   serial_number: string;
   status: SerialStatus;
+  // bigint comes back from pg as a string (see gold-prices-service.ts) --
+  // converted to a plain number in mapSerial.
+  unit_cost: string | null;
+  warranty_months: number;
+  sold_at: string | null;
   created_at: string;
 }
+
+/** `sold_at` is a `date`, which node-postgres maps to a JS Date unless cast — every read of a date column in this repo casts it (see expense-service.ts, fixed-assets). */
+const SERIAL_COLUMNS =
+  "id, item_id, serial_number, status, unit_cost, warranty_months, sold_at::text AS sold_at, created_at";
 
 function mapSerial(row: SerialRow): ItemSerial {
   return {
@@ -191,14 +206,33 @@ function mapSerial(row: SerialRow): ItemSerial {
     itemId: row.item_id,
     serialNumber: row.serial_number,
     status: row.status,
+    unitCost: row.unit_cost == null ? null : Number(row.unit_cost),
+    warrantyMonths: row.warranty_months,
+    soldAt: row.sold_at,
     createdAt: row.created_at,
   };
 }
 
-/** Registers one physical unit of a `tracking: 'serial'` item (Wave 5: watches). */
-export async function addSerial(itemId: string, serialNumber: string): Promise<ItemSerial> {
+export interface AddSerialInput {
+  /** Rial, whole — omit until the unit's cost is known; the sale path refuses to sell a unit with none. */
+  unitCost?: number | null;
+  /** Months, 0 = sold with no warranty. Overridable again at the point of sale. */
+  warrantyMonths?: number;
+}
+
+/** Registers one physical unit of a `tracking: 'serial'` item (Wave 5: watches), with its cost basis and standard warranty term. */
+export async function addSerial(
+  itemId: string,
+  serialNumber: string,
+  input: AddSerialInput = {},
+): Promise<ItemSerial> {
   const error = validateSerialNumber(serialNumber);
   if (error) throw new Error(error);
+  const costError = validateSerialUnitCost(input.unitCost);
+  if (costError) throw new Error(costError);
+  const warrantyMonths = input.warrantyMonths ?? 0;
+  const warrantyError = validateWarrantyMonths(warrantyMonths);
+  if (warrantyError) throw new Error(warrantyError);
 
   const item = await getItem(itemId);
   if (!item) throw new Error("کالا یافت نشد.");
@@ -207,15 +241,44 @@ export async function addSerial(itemId: string, serialNumber: string): Promise<I
   }
 
   const { rows } = await query<SerialRow>(
-    `INSERT INTO item_serials (item_id, serial_number) VALUES ($1, $2) RETURNING *`,
-    [itemId, serialNumber.trim()],
+    `INSERT INTO item_serials (item_id, serial_number, unit_cost, warranty_months)
+     VALUES ($1, $2, $3, $4) RETURNING ${SERIAL_COLUMNS}`,
+    [itemId, serialNumber.trim(), input.unitCost ?? null, warrantyMonths],
   );
   return mapSerial(rows[0]);
 }
 
+/** Edits a registered unit's cost basis / standard warranty term — the serial equivalent of editing a weighed piece's `unit_cost_per_gram`. */
+export async function updateSerial(
+  id: string,
+  input: AddSerialInput,
+): Promise<ItemSerial> {
+  const costError = validateSerialUnitCost(input.unitCost);
+  if (costError) throw new Error(costError);
+  if (input.warrantyMonths != null) {
+    const warrantyError = validateWarrantyMonths(input.warrantyMonths);
+    if (warrantyError) throw new Error(warrantyError);
+  }
+
+  const { rows } = await query<SerialRow>(
+    `UPDATE item_serials
+        SET unit_cost = COALESCE($1, unit_cost),
+            warranty_months = COALESCE($2, warranty_months)
+      WHERE id = $3 RETURNING ${SERIAL_COLUMNS}`,
+    [input.unitCost ?? null, input.warrantyMonths ?? null, id],
+  );
+  if (!rows[0]) throw new Error("سریال یافت نشد.");
+  return mapSerial(rows[0]);
+}
+
+export async function getSerial(id: string): Promise<ItemSerial | null> {
+  const { rows } = await query<SerialRow>(`SELECT ${SERIAL_COLUMNS} FROM item_serials WHERE id = $1`, [id]);
+  return rows[0] ? mapSerial(rows[0]) : null;
+}
+
 export async function listSerials(itemId: string): Promise<ItemSerial[]> {
   const { rows } = await query<SerialRow>(
-    `SELECT * FROM item_serials WHERE item_id = $1 ORDER BY serial_number`,
+    `SELECT ${SERIAL_COLUMNS} FROM item_serials WHERE item_id = $1 ORDER BY serial_number`,
     [itemId],
   );
   return rows.map(mapSerial);
@@ -229,7 +292,10 @@ export async function setSerialStatus(
   const run = <T extends Record<string, unknown>>(text: string, params: unknown[]) =>
     client ? client.query<T>(text, params as never) : query<T>(text, params);
 
-  const { rows: existing } = await run<SerialRow>(`SELECT * FROM item_serials WHERE id = $1`, [id]);
+  const { rows: existing } = await run<SerialRow>(
+    `SELECT ${SERIAL_COLUMNS} FROM item_serials WHERE id = $1`,
+    [id],
+  );
   const current = existing[0];
   if (!current) throw new Error("سریال یافت نشد.");
 
@@ -237,7 +303,7 @@ export async function setSerialStatus(
   if (error) throw new Error(error);
 
   const { rows } = await run<SerialRow>(
-    `UPDATE item_serials SET status = $1 WHERE id = $2 RETURNING *`,
+    `UPDATE item_serials SET status = $1 WHERE id = $2 RETURNING ${SERIAL_COLUMNS}`,
     [status, id],
   );
   return mapSerial(rows[0]);

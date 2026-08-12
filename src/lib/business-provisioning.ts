@@ -23,13 +23,8 @@ import {
 } from "./slug";
 import { LOCAL_DISABLED_FEATURES, type DeploymentModeName } from "./deployment-mode";
 import { SETTING_KEYS } from "./settings";
-import { FNB_COA_TEMPLATE, JEWELRY_COA_TEMPLATE, nextAccountLevel, type AccountLevel, type TemplateAccount } from "./coa-template";
+import { coaTemplateForIndustry, nextAccountLevel, type AccountLevel, type TemplateAccount } from "./coa-template";
 import { ENABLED_INDUSTRIES, INDUSTRIES, type Industry } from "./industries";
-
-/** Which seed chart of accounts an industry gets — the same choice /api/setup/accounts's GET makes for the manual wizard path. */
-function coaTemplateFor(industry: Industry): readonly TemplateAccount[] {
-  return industry === "jewelry" ? JEWELRY_COA_TEMPLATE : FNB_COA_TEMPLATE;
-}
 
 export interface ProvisionBusinessInput {
   businessName: string;
@@ -334,7 +329,7 @@ export async function provisionBusiness(
 async function seedChartOfAccounts(client: PoolClient, businessId: string, industry: Industry): Promise<void> {
   const idByCode = new Map<string, string>();
   const levelByCode = new Map<string, AccountLevel>();
-  const pending = [...coaTemplateFor(industry)];
+  const pending = [...coaTemplateForIndustry(industry)];
   while (pending.length > 0) {
     const ready = pending.filter((a) => !a.parentCode || idByCode.has(a.parentCode));
     // The template is a fixed, cycle-free constant; ready can't be empty, and

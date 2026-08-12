@@ -1,0 +1,471 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { formatPersianNumber, formatQuantity, toPersianDigits } from "@/lib/digits";
+import { formatToman } from "@/lib/money";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+import { api, Field, inputClass } from "../ui";
+import {
+  REPAIR_STATUS_LABELS,
+  type RepairPart,
+  type RepairStatus,
+  type RepairTicket,
+  type Runner,
+  type SerialUnit,
+} from "./watch-manager";
+
+const watchInputClass = `${inputClass} min-h-[52px] !border-stone-200 !bg-white shadow-none placeholder:text-stone-400 focus-visible:border-amber-500 focus-visible:ring-amber-400/30`;
+const secondaryActionClass =
+  "min-h-[44px] border-stone-200 bg-white px-3 text-xs text-stone-700 hover:border-amber-300 hover:bg-amber-50 hover:text-stone-950 focus-visible:border-amber-500 focus-visible:ring-amber-400/30";
+
+const STATUS_BADGE_CLASS: Record<RepairStatus, string> = {
+  received: "bg-sky-100 text-sky-900",
+  in_progress: "bg-amber-100 text-amber-900",
+  ready: "bg-emerald-100 text-emerald-900",
+  closed: "bg-stone-200 text-stone-600",
+  cancelled: "bg-rose-100 text-rose-900",
+};
+
+/** The next status a ticket can be moved to by a bare status change — closing is a separate, posting action. */
+const NEXT_STATUSES: Record<RepairStatus, RepairStatus[]> = {
+  received: ["in_progress", "ready", "cancelled"],
+  in_progress: ["ready", "cancelled"],
+  ready: ["cancelled"],
+  closed: [],
+  cancelled: [],
+};
+
+export function RepairsSection({
+  tickets,
+  units,
+  busy,
+  run,
+}: {
+  tickets: RepairTicket[];
+  units: SerialUnit[];
+  busy: boolean;
+  run: Runner;
+}) {
+  const [itemDescription, setItemDescription] = useState("");
+  const [reportedIssue, setReportedIssue] = useState("");
+  const [serialId, setSerialId] = useState("");
+  const [laborCharge, setLaborCharge] = useState("0");
+  const [vatPercent, setVatPercent] = useState("9");
+
+  async function intake(e: React.FormEvent) {
+    e.preventDefault();
+    if (!itemDescription.trim()) return;
+    const ok = await run(() =>
+      api("/api/watch/repairs", {
+        method: "POST",
+        body: JSON.stringify({
+          itemDescription,
+          reportedIssue: reportedIssue.trim() || null,
+          serialId: serialId || null,
+          laborCharge: Number(laborCharge || 0),
+          vatPercent: Number(vatPercent || 0),
+        }),
+      }),
+    );
+    if (ok) {
+      setItemDescription("");
+      setReportedIssue("");
+      setSerialId("");
+      setLaborCharge("0");
+    }
+  }
+
+  return (
+    <div className="grid min-w-0 gap-4 md:grid-cols-[minmax(0,1fr)_18rem] lg:gap-5 lg:grid-cols-[minmax(0,1fr)_21rem] xl:grid-cols-[minmax(0,1fr)_24rem]">
+      <section
+        aria-labelledby="watch-repairs-heading"
+        className="order-2 min-w-0 overflow-hidden rounded-2xl bg-card md:order-1"
+      >
+        <div className="border-b border-stone-200/80 px-4 py-4 sm:px-5">
+          <h2 id="watch-repairs-heading" className="font-semibold text-stone-950">
+            تیکت‌های تعمیر
+          </h2>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">
+            پذیرش → مصرف قطعات → اجرت → تسویه و بستن. با بستن تیکت، درآمد و بهای قطعات در دفتر ثبت می‌شود.
+          </p>
+        </div>
+
+        <ul className="divide-y divide-stone-200/80">
+          {tickets.map((ticket) => (
+            <TicketRow key={ticket.id} ticket={ticket} busy={busy} run={run} />
+          ))}
+          {tickets.length === 0 ? (
+            <li className="px-4 py-5 text-sm text-muted-foreground sm:px-5">تیکتی ثبت نشده است.</li>
+          ) : null}
+        </ul>
+      </section>
+
+      <aside className="order-1 min-w-0 md:order-2">
+        <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-[0_1px_2px_rgb(41_37_36/0.035)] md:sticky md:top-4 sm:p-5">
+          <h2 className="font-semibold text-stone-950">پذیرش تعمیر</h2>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">
+            اگر دستگاه از همین فروشگاه فروخته شده باشد، با انتخاب سریال، گارانتی به‌صورت خودکار بررسی می‌شود.
+          </p>
+
+          <form onSubmit={intake} className="mt-4">
+            <Field label="شرح کالا">
+              <input
+                className={watchInputClass}
+                value={itemDescription}
+                onChange={(e) => setItemDescription(e.target.value)}
+                placeholder="مثلاً ساعت مچی سیتیزن مشکی"
+                required
+              />
+            </Field>
+            <Field label="ایراد اعلامی">
+              <input
+                className={watchInputClass}
+                value={reportedIssue}
+                onChange={(e) => setReportedIssue(e.target.value)}
+                placeholder="اختیاری"
+              />
+            </Field>
+            <Field label="دستگاه فروشگاه" hint="اختیاری — فقط برای دستگاه‌های سریال‌دار خودمان.">
+              <SearchableSelect
+                className={watchInputClass}
+                value={serialId}
+                onChange={setSerialId}
+                options={units.map((u) => ({
+                  value: u.id,
+                  label: `${u.itemName} — ${u.serialNumber}`,
+                }))}
+                placeholder="بدون سریال"
+              />
+            </Field>
+            <Field label="اجرت تعمیر (ریال)">
+              <input
+                className={watchInputClass}
+                dir="ltr"
+                inputMode="numeric"
+                value={laborCharge}
+                onChange={(e) => setLaborCharge(e.target.value)}
+              />
+            </Field>
+            <Field label="مالیات (٪)">
+              <input
+                className={watchInputClass}
+                dir="ltr"
+                inputMode="decimal"
+                value={vatPercent}
+                onChange={(e) => setVatPercent(e.target.value)}
+              />
+            </Field>
+            <Button
+              type="submit"
+              disabled={busy}
+              size="lg"
+              className="min-h-[52px] w-full border border-amber-300 px-5 font-semibold focus-visible:ring-amber-400/30"
+            >
+              پذیرش
+            </Button>
+          </form>
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+function MetaItem({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-stone-500">{label}</dt>
+      <dd className="mt-0.5 break-words font-medium text-stone-700">{children}</dd>
+    </div>
+  );
+}
+
+function TicketRow({ ticket, busy, run }: { ticket: RepairTicket; busy: boolean; run: Runner }) {
+  const [panel, setPanel] = useState<"parts" | "close" | null>(null);
+  const toggle = (next: "parts" | "close") => setPanel((current) => (current === next ? null : next));
+  const isOpen = ticket.status !== "closed" && ticket.status !== "cancelled";
+
+  return (
+    <li className="flex min-w-0 flex-col gap-3 px-4 py-4 sm:px-5">
+      <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0">
+          <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+            <h3 className="min-w-0 break-words font-semibold text-stone-950">
+              تیکت {formatPersianNumber(ticket.ticketNumber)} — {ticket.itemDescription}
+            </h3>
+            <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_BADGE_CLASS[ticket.status]}`}>
+              {REPAIR_STATUS_LABELS[ticket.status]}
+            </span>
+            {ticket.underWarranty ? (
+              <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-900">
+                در گارانتی
+              </span>
+            ) : null}
+          </div>
+
+          <dl className="mt-3 grid min-w-0 gap-x-5 gap-y-2 text-xs text-stone-600 sm:grid-cols-2 xl:grid-cols-4">
+            {ticket.reportedIssue ? <MetaItem label="ایراد اعلامی">{ticket.reportedIssue}</MetaItem> : null}
+            <MetaItem label="اجرت">{formatToman(ticket.laborCharge)}</MetaItem>
+            <MetaItem label="مالیات">{toPersianDigits(String(ticket.vatPercent))}٪</MetaItem>
+          </dl>
+        </div>
+
+        <div className="grid shrink-0 grid-cols-2 gap-2 sm:flex sm:flex-wrap lg:justify-end">
+          {NEXT_STATUSES[ticket.status].map((status) => (
+            <Button
+              key={status}
+              type="button"
+              variant="outline"
+              size="sm"
+              className={secondaryActionClass}
+              disabled={busy}
+              onClick={() =>
+                run(() =>
+                  api(`/api/watch/repairs/${ticket.id}`, {
+                    method: "PATCH",
+                    body: JSON.stringify({ status }),
+                  }),
+                )
+              }
+            >
+              {REPAIR_STATUS_LABELS[status]}
+            </Button>
+          ))}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className={secondaryActionClass}
+            disabled={busy}
+            onClick={() => toggle("parts")}
+          >
+            قطعات
+          </Button>
+          {isOpen ? (
+            <Button
+              type="button"
+              size="sm"
+              className="min-h-[44px] border border-amber-300 px-3 text-xs font-semibold focus-visible:ring-amber-400/30"
+              disabled={busy}
+              onClick={() => toggle("close")}
+            >
+              تسویه و بستن
+            </Button>
+          ) : null}
+        </div>
+      </div>
+
+      {panel === "parts" ? <PartsPanel ticket={ticket} busy={busy} run={run} /> : null}
+      {panel === "close" ? (
+        <ClosePanel ticket={ticket} busy={busy} run={run} onDone={() => setPanel(null)} />
+      ) : null}
+    </li>
+  );
+}
+
+function PanelShell({ children }: { children: React.ReactNode }) {
+  return <div className="rounded-xl bg-amber-50/60 p-3 sm:p-4">{children}</div>;
+}
+
+function PartsPanel({ ticket, busy, run }: { ticket: RepairTicket; busy: boolean; run: Runner }) {
+  const [parts, setParts] = useState<RepairPart[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [description, setDescription] = useState("");
+  const [quantity, setQuantity] = useState("1");
+  const [unitCost, setUnitCost] = useState("");
+  const [charge, setCharge] = useState("");
+
+  const load = useCallback(() => {
+    setLoading(true);
+    api<{ parts: RepairPart[] }>(`/api/watch/repairs/${ticket.id}`).then(({ ok, data }) => {
+      setLoading(false);
+      if (ok) setParts(data.parts);
+    });
+  }, [ticket.id]);
+  useEffect(load, [load]);
+
+  const isOpen = ticket.status !== "closed" && ticket.status !== "cancelled";
+
+  async function add(e: React.FormEvent) {
+    e.preventDefault();
+    if (!description.trim()) return;
+    const ok = await run(() =>
+      api(`/api/watch/repairs/${ticket.id}/parts`, {
+        method: "POST",
+        body: JSON.stringify({
+          description,
+          quantity: quantity || "1",
+          unitCost: Number(unitCost || 0),
+          charge: Number(charge || 0),
+        }),
+      }),
+    );
+    if (ok) {
+      setDescription("");
+      setQuantity("1");
+      setUnitCost("");
+      setCharge("");
+      load();
+    }
+  }
+
+  return (
+    <PanelShell>
+      <ul className="mb-3 space-y-2">
+        {loading ? <li className="text-xs text-muted-foreground">در حال بارگذاری…</li> : null}
+        {!loading && parts.length === 0 ? (
+          <li className="text-xs text-muted-foreground">قطعه‌ای ثبت نشده است.</li>
+        ) : null}
+        {parts.map((part) => (
+          <li key={part.id} className="flex items-center justify-between gap-3 text-xs text-stone-700">
+            <span className="min-w-0 break-words">
+              {part.description} × {formatQuantity(part.quantity)} — بهای تمام‌شده {formatToman(part.unitCost)} / دریافتی{" "}
+              {formatToman(part.charge)}
+            </span>
+            {isOpen ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className={secondaryActionClass}
+                disabled={busy}
+                onClick={async () => {
+                  const ok = await run(() =>
+                    api(`/api/watch/repairs/${ticket.id}/parts/${part.id}`, { method: "DELETE" }),
+                  );
+                  if (ok) load();
+                }}
+              >
+                حذف
+              </Button>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+
+      {isOpen ? (
+        <form onSubmit={add} className="grid min-w-0 gap-3 sm:grid-cols-4">
+          <Field label="شرح قطعه">
+            <input
+              className={watchInputClass}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              required
+            />
+          </Field>
+          <Field label="تعداد">
+            <input
+              className={watchInputClass}
+              dir="ltr"
+              inputMode="decimal"
+              value={quantity}
+              onChange={(e) => setQuantity(e.target.value)}
+            />
+          </Field>
+          <Field label="بهای تمام‌شده (ریال)">
+            <input
+              className={watchInputClass}
+              dir="ltr"
+              inputMode="numeric"
+              value={unitCost}
+              onChange={(e) => setUnitCost(e.target.value)}
+            />
+          </Field>
+          <Field label="دریافتی از مشتری (ریال)" hint="در گارانتی صفر بگذارید.">
+            <input
+              className={watchInputClass}
+              dir="ltr"
+              inputMode="numeric"
+              value={charge}
+              onChange={(e) => setCharge(e.target.value)}
+            />
+          </Field>
+          <div className="sm:col-span-4">
+            <Button type="submit" disabled={busy} size="sm" className="min-h-[44px] border border-amber-300 px-5 font-semibold">
+              افزودن قطعه
+            </Button>
+          </div>
+        </form>
+      ) : null}
+    </PanelShell>
+  );
+}
+
+function ClosePanel({
+  ticket,
+  busy,
+  run,
+  onDone,
+}: {
+  ticket: RepairTicket;
+  busy: boolean;
+  run: Runner;
+  onDone: () => void;
+}) {
+  const [laborCharge, setLaborCharge] = useState(String(ticket.laborCharge));
+  const [vatPercent, setVatPercent] = useState(String(ticket.vatPercent));
+  const [paymentMethod, setPaymentMethod] = useState("cash");
+
+  async function close(e: React.FormEvent) {
+    e.preventDefault();
+    const saved = await run(() =>
+      api(`/api/watch/repairs/${ticket.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          laborCharge: Number(laborCharge || 0),
+          vatPercent: Number(vatPercent || 0),
+        }),
+      }),
+    );
+    if (!saved) return;
+    const ok = await run(() =>
+      api(`/api/watch/repairs/${ticket.id}/close`, {
+        method: "POST",
+        body: JSON.stringify({ paymentMethod }),
+      }),
+    );
+    if (ok) onDone();
+  }
+
+  return (
+    <PanelShell>
+      <form onSubmit={close} className="grid min-w-0 gap-3 sm:grid-cols-3">
+        <Field label="اجرت تعمیر (ریال)">
+          <input
+            className={watchInputClass}
+            dir="ltr"
+            inputMode="numeric"
+            value={laborCharge}
+            onChange={(e) => setLaborCharge(e.target.value)}
+          />
+        </Field>
+        <Field label="مالیات (٪)">
+          <input
+            className={watchInputClass}
+            dir="ltr"
+            inputMode="decimal"
+            value={vatPercent}
+            onChange={(e) => setVatPercent(e.target.value)}
+          />
+        </Field>
+        <Field label="روش پرداخت">
+          <SearchableSelect
+            className={watchInputClass}
+            value={paymentMethod}
+            onChange={setPaymentMethod}
+            options={[
+              { value: "cash", label: "نقدی" },
+              { value: "bank", label: "کارت‌خوان" },
+              { value: "credit", label: "نسیه" },
+            ]}
+          />
+        </Field>
+        <div className="sm:col-span-3">
+          <Button type="submit" disabled={busy} size="sm" className="min-h-[44px] border border-amber-300 px-5 font-semibold">
+            تسویه و بستن
+          </Button>
+        </div>
+      </form>
+    </PanelShell>
+  );
+}
