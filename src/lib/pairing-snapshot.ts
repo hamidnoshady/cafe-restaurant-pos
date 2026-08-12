@@ -71,7 +71,18 @@ export interface SnapshotSetting {
 
 export interface PairingSnapshot {
   version: number;
-  business: { id: string; name: string; slug: string; timezone: string };
+  business: {
+    id: string;
+    name: string;
+    slug: string;
+    /**
+     * Phase 21. Optional so a snapshot minted by an older central server
+     * still validates — the desktop side falls back to the slug, which is
+     * what the column was backfilled from anyway (migration 0066).
+     */
+    subdomain?: string;
+    timezone: string;
+  };
   location: {
     id: string;
     name: string;
@@ -127,6 +138,7 @@ export function validateSnapshot(raw: unknown): SnapshotValidation {
   if (!isUuid(business.id)) return fail;
   if (typeof business.name !== "string" || !business.name) return fail;
   if (typeof business.slug !== "string" || !business.slug) return fail;
+  if (business.subdomain !== undefined && (typeof business.subdomain !== "string" || !business.subdomain)) return fail;
   if (typeof business.timezone !== "string" || !business.timezone) return fail;
 
   const location = raw.location;

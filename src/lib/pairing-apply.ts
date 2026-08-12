@@ -24,6 +24,7 @@ import { SETTING_KEYS } from "./settings";
 export interface AppliedSnapshot {
   businessId: string;
   businessSlug: string;
+  businessSubdomain: string;
   locationId: string;
   ownerUserId: string;
   ownerName: string;
@@ -40,11 +41,14 @@ export async function applyPairingSnapshot(
       await client.query("BEGIN");
 
       await client.query(
-        `INSERT INTO businesses (id, name, slug, timezone) VALUES ($1, $2, $3, $4)`,
+        `INSERT INTO businesses (id, name, slug, subdomain, timezone) VALUES ($1, $2, $3, $4, $5)`,
         [
           snapshot.business.id,
           snapshot.business.name,
           snapshot.business.slug,
+          // Older central servers send no subdomain; the slug is what the
+          // column was backfilled from, so it is the right fallback.
+          snapshot.business.subdomain ?? snapshot.business.slug,
           snapshot.business.timezone,
         ],
       );
@@ -72,6 +76,7 @@ export async function applyPairingSnapshot(
       return {
         businessId: snapshot.business.id,
         businessSlug: snapshot.business.slug,
+        businessSubdomain: snapshot.business.subdomain ?? snapshot.business.slug,
         locationId: snapshot.location.id,
         ...ownerIds,
       };

@@ -43,6 +43,17 @@ const PUBLIC_ROUTES: Record<string, string> = {
     "credential exchange (Phase 20 Wave 3) — step 2 of a biometric login, necessarily runs " +
     "without a session, the same as auth/pin-login",
   "auth/logout": "only clears the caller's own session cookie",
+  // Phase 21 Wave 3 — the apex host's "which business?" router. It verifies a
+  // password (deliberately: email-only would make it an open account-
+  // enumeration oracle) but mints no session and sets no cookie, which is the
+  // whole point — a session only ever exists on a business's own origin.
+  "auth/directory":
+    "credential exchange — the apex directory checks a password and returns the caller's own " +
+    "businesses without minting a session, so it necessarily runs without one",
+  "host/resolve":
+    "answers 'which business is this hostname?' — the Node-runtime half of host resolution, " +
+    "asked before any tenant is known (the host is how one gets identified) and reaching only " +
+    "what DNS and the TLS certificate already expose",
   "setup/bootstrap": "first-run only — refuses with 409 as soon as any user exists",
   "setup/signup":
     "self-service business registration — creates the tenant a session would otherwise be scoped to; " +

@@ -66,6 +66,12 @@ services:
       # which would make every WebAuthn ceremony fail on the real domain.
       WEBAUTHN_RP_ID: ${POS_DOMAIN:?set POS_DOMAIN}
       WEBAUTHN_ORIGIN: https://${POS_DOMAIN:?set POS_DOMAIN}
+      # Phase 21 — per-business origins. ROOT_DOMAIN is the zone every business
+      # subdomain hangs off; SUBDOMAIN_ROUTING is the switch, left off until the
+      # wildcard certificate is confirmed issuing (see .env.komodo.example).
+      ROOT_DOMAIN: ${ROOT_DOMAIN:?set ROOT_DOMAIN}
+      SUBDOMAIN_ROUTING: ${SUBDOMAIN_ROUTING:-off}
+      PLATFORM_BASE_URL: https://${POS_DOMAIN:?set POS_DOMAIN}
     volumes:
       - pos-backups:/app/backups
     networks:
@@ -75,13 +81,45 @@ services:
       traefik.enable: "true"
       # Which Docker network Traefik should use to reach this service.
       traefik.docker.network: ${TRAEFIK_NETWORK:-traefik}
-      # HTTPS router on your subdomain, e.g. pos.example.com
-      traefik.http.routers.pos.rule: Host(`${POS_DOMAIN:?set POS_DOMAIN}`)
+      # Phase 21 — three routers, ONE container. Every business is served from
+      # its own origin ({subdomain}.${ROOT_DOMAIN}), but a new business must
+      # not require a new deployment: the wildcard router below matches any
+      # single label, and the app resolves which business it is from the Host
+      # header. Adding a café is a database row, not a redeploy.
+      #
+      #   pos       — every business subdomain (wildcard)
+      #   pos-admin — the super-admin console's own host
+      #   pos-apex  — the bare domain, a "which business?" router
+      #
+      # Priorities are explicit because HostRegexp would otherwise also match
+      # `admin.`: the more specific Host() rules must win.
+      traefik.http.routers.pos.rule: HostRegexp(`^[a-z0-9-]+\.${ROOT_DOMAIN:?set ROOT_DOMAIN}$`)
+      traefik.http.routers.pos.priority: "10"
       traefik.http.routers.pos.entrypoints: ${TRAEFIK_ENTRYPOINT:-websecure}
       traefik.http.routers.pos.tls: "true"
+      # DNS-01 is not optional here: Let's Encrypt will not issue a wildcard
+      # over HTTP-01, so TRAEFIK_CERTRESOLVER must name a resolver configured
+      # with a DNS provider credential for ${ROOT_DOMAIN}.
       traefik.http.routers.pos.tls.certresolver: ${TRAEFIK_CERTRESOLVER:?set TRAEFIK_CERTRESOLVER}
+      traefik.http.routers.pos.tls.domains[0].main: ${ROOT_DOMAIN:?set ROOT_DOMAIN}
+      traefik.http.routers.pos.tls.domains[0].sans: "*.${ROOT_DOMAIN:?set ROOT_DOMAIN}"
+
+      traefik.http.routers.pos-admin.rule: Host(`admin.${ROOT_DOMAIN:?set ROOT_DOMAIN}`)
+      traefik.http.routers.pos-admin.priority: "20"
+      traefik.http.routers.pos-admin.entrypoints: ${TRAEFIK_ENTRYPOINT:-websecure}
+      traefik.http.routers.pos-admin.tls: "true"
+      traefik.http.routers.pos-admin.tls.certresolver: ${TRAEFIK_CERTRESOLVER:?set TRAEFIK_CERTRESOLVER}
+
+      traefik.http.routers.pos-apex.rule: Host(`${ROOT_DOMAIN:?set ROOT_DOMAIN}`)
+      traefik.http.routers.pos-apex.priority: "20"
+      traefik.http.routers.pos-apex.entrypoints: ${TRAEFIK_ENTRYPOINT:-websecure}
+      traefik.http.routers.pos-apex.tls: "true"
+      traefik.http.routers.pos-apex.tls.certresolver: ${TRAEFIK_CERTRESOLVER:?set TRAEFIK_CERTRESOLVER}
+
       # The app (Next.js + /ws WebSocket) listens on 3000. Traefik forwards the
-      # WebSocket upgrade automatically — no extra config needed for live sync.
+      # WebSocket upgrade automatically — no extra config needed for live sync,
+      # and the wildcard router changes nothing about that (see
+      # docs/deployment-local-network.md).
       traefik.http.services.pos.loadbalancer.server.port: "3000"
 
 volumes:

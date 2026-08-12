@@ -150,6 +150,14 @@ export async function withTenant<T>(
  *     the same reason `provisionBusiness` does: it creates the tenant that
  *     scoping would otherwise require to already exist.
  *
+ *   - **host-resolution** — resolving a request's hostname to the business it
+ *     addresses (Phase 21). The host *is* how a tenant gets identified once
+ *     each business has its own origin, so this is the same identify-the-
+ *     tenant-first shape as login and server-sync-auth, keyed on a DNS label.
+ *     One read-only lookup against `businesses` and
+ *     `business_subdomain_aliases`, returning the business's identity and
+ *     nothing else about it.
+ *
  *   - **first-run** — `hasAnyUser()`: whether this install has been claimed by
  *     anyone at all. Install-wide by definition and asked before a tenant
  *     exists (it is what decides whether one should be created), so there is no

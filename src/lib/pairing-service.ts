@@ -216,7 +216,8 @@ export async function buildPairingSnapshot(
   const [bizRes, locRes, userRes, assignRes, accountRes, catRes, itemRes, settingRes, features] =
     await Promise.all([
       query<{ id: string; name: string; slug: string; timezone: string }>(
-        `SELECT id, name, slug::text AS slug, timezone FROM businesses WHERE id = $1`,
+        `SELECT id, name, slug::text AS slug, subdomain::text AS subdomain, timezone
+           FROM businesses WHERE id = $1`,
         [businessId],
       ),
       query<{

@@ -68,6 +68,29 @@ services:
       # error. Must match the public URL exactly (see .env.example).
       WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID:-pos.eshobe.com}
       WEBAUTHN_ORIGIN: ${WEBAUTHN_ORIGIN:-https://pos.eshobe.com}
+      # Phase 21 — per-business origins. This host has no container labels for
+      # Traefik to read (it runs network_mode: host with the file provider
+      # only), so the wildcard router lives in Traefik's dynamic.yml, not here:
+      #
+      #   http:
+      #     routers:
+      #       pos:
+      #         rule: "HostRegexp(`^[a-z0-9-]+\\.pos.eshobe.com$`)"
+      #         priority: 10
+      #         service: pos
+      #         tls: {certResolver: <dns-01 resolver>,
+      #               domains: [{main: pos.eshobe.com, sans: ["*.pos.eshobe.com"]}]}
+      #       pos-admin: {rule: "Host(`admin.pos.eshobe.com`)", priority: 20, service: pos, tls: {...}}
+      #       pos-apex:  {rule: "Host(`pos.eshobe.com`)",       priority: 20, service: pos, tls: {...}}
+      #     services:
+      #       pos: {loadBalancer: {servers: [{url: "http://127.0.0.1:${POS_HOST_PORT:-3000}"}]}}
+      #
+      # All three point at the one service: a new business is a database row,
+      # never a redeploy. The OpenLiteSpeed front door in front of Traefik must
+      # also be given the wildcard, since it is what terminates TLS on 443.
+      ROOT_DOMAIN: ${ROOT_DOMAIN:-pos.eshobe.com}
+      SUBDOMAIN_ROUTING: ${SUBDOMAIN_ROUTING:-off}
+      PLATFORM_BASE_URL: ${PLATFORM_BASE_URL:-https://pos.eshobe.com}
     # Loopback only. This host runs live customer sites on 80/443 via
     # OpenLiteSpeed; binding 0.0.0.0 here would expose the POS directly and
     # bypass the TLS front door. Traefik connects to 127.0.0.1:${POS_HOST_PORT}.

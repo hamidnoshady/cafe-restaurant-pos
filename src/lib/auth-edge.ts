@@ -50,6 +50,19 @@ export interface SessionPayload {
    * business switch re-mints one.
    */
   businessSlug?: string;
+  /**
+   * Phase 21 — the business's public DNS label, and the origin this session is
+   * valid on. Carried on the token for the same reason `businessSlug` is:
+   * middleware runs on Edge and cannot query Postgres, so comparing the host's
+   * label against this claim is the only tenant check available there — and it
+   * is the isolation boundary, so it fails closed.
+   *
+   * Optional so a token minted before this claim existed still verifies. When
+   * subdomain routing is on, a session without it is treated as not valid on
+   * any business origin and sent back to log in, which re-mints one; when it
+   * is off, nothing reads this field.
+   */
+  businessSubdomain?: string;
   /** This membership's default/home branch; null = roaming (owner or unassigned manager). */
   locationId: string | null;
   /**
@@ -128,6 +141,17 @@ export async function verifySession(token: string): Promise<SessionPayload | nul
   }
 }
 
+/**
+ * There is deliberately no `domain` attribute here, and that omission is
+ * load-bearing — do not "fix" it.
+ *
+ * Without one the cookie is host-scoped: the browser sends it only back to the
+ * exact host that set it, so a session minted on `acme.pos.eshobe.com` is
+ * never sent to `beta.pos.eshobe.com`. That is the entire point of Phase 21's
+ * move to per-business origins. Setting `domain=.pos.eshobe.com` would make
+ * one cookie valid across every tenant subdomain and silently undo the whole
+ * wave, while everything would appear to keep working.
+ */
 export function sessionCookieOptions() {
   return {
     httpOnly: true,

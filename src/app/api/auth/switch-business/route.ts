@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { SESSION_COOKIE, getSession, sessionCookieOptions, signSession, withTenantScope } from "@/lib/auth";
 import { withoutTenantScope } from "@/lib/db";
+import { hostRoutingEnabled } from "@/lib/host";
 import { membershipBlockedReason, membershipForBusiness } from "@/lib/memberships";
 
 /**
@@ -13,8 +14,20 @@ import { membershipBlockedReason, membershipForBusiness } from "@/lib/membership
  * below is what proves they belong to the business they asked for.
  *
  * A PIN-only member has no platform identity and so has nothing to switch to.
+ *
+ * **Being retired (Phase 21).** Once each business has its own origin this
+ * endpoint is exactly the thing the wave removes: it mints, on business A's
+ * host, a cookie valid for business B. Under `SUBDOMAIN_ROUTING=on` it refuses
+ * — a person with several memberships signs in on each business's own host,
+ * finding them through the apex directory. The handler stays for the one
+ * release the path-prefix mode is still supported, and is deleted in Wave 4
+ * along with the rewrite itself.
  */
 export const POST = withTenantScope(async (request: NextRequest) => {
+  if (hostRoutingEnabled()) {
+    return NextResponse.json({ error: "cross_origin_switch_retired" }, { status: 410 });
+  }
+
   const session = await getSession();
   if (!session) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -53,6 +66,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
     role: membership.role,
     businessId: membership.businessId,
     businessSlug: membership.businessSlug,
+    businessSubdomain: membership.businessSubdomain,
     locationId: membership.locationId,
     fullName: membership.fullName,
     platformUserId: session.platformUserId,

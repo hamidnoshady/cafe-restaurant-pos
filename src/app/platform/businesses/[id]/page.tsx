@@ -14,6 +14,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { toPersianDigits, formatPersianNumber } from "@/lib/digits";
+import { validateSubdomain } from "@/lib/slug";
 import {
   api,
   errorMessage,
@@ -32,6 +33,7 @@ interface Business {
   id: string;
   name: string;
   slug: string;
+  subdomain: string;
   status: string;
   plan: string;
   timezone: string;
@@ -40,6 +42,11 @@ interface Business {
   archivedAt: string | null;
   locationCount: number;
   memberCount: number;
+}
+
+interface Alias {
+  alias: string;
+  createdAt: string;
 }
 
 interface Feature {
@@ -99,16 +106,24 @@ export default function BusinessDetailPage() {
   const can = useCan();
 
   const [business, setBusiness] = useState<Business | null>(null);
+  const [rootDomain, setRootDomain] = useState("");
+  const [aliases, setAliases] = useState<Alias[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [resetKey, setResetKey] = useState(0);
 
   const loadBusiness = useCallback(async () => {
-    const { ok, data } = await api<{ business: Business; error?: string }>(
-      `/api/platform/businesses/${id}`,
-    );
-    if (ok) setBusiness(data.business);
-    else setError(errorMessage(data.error));
+    const { ok, data } = await api<{
+      business: Business;
+      rootDomain?: string;
+      aliases?: Alias[];
+      error?: string;
+    }>(`/api/platform/businesses/${id}`);
+    if (ok) {
+      setBusiness(data.business);
+      setRootDomain(data.rootDomain ?? "");
+      setAliases(data.aliases ?? []);
+    } else setError(errorMessage(data.error));
   }, [id]);
 
   useEffect(() => {
@@ -187,6 +202,12 @@ export default function BusinessDetailPage() {
       </Card>
 
       <BusinessDetailsPanel business={business} onChanged={loadBusiness} />
+      <SubdomainPanel
+        business={business}
+        rootDomain={rootDomain}
+        aliases={aliases}
+        onChanged={loadBusiness}
+      />
       <PlanPanel key={`plan-${resetKey}`} business={business} onChanged={loadBusiness} />
       <UsagePanel key={`usage-${resetKey}`} id={id} />
       <FeaturesPanel key={`features-${resetKey}`} id={id} />
@@ -202,6 +223,123 @@ export default function BusinessDetailPage() {
       />
       <RemovePanel business={business} />
     </div>
+  );
+}
+
+/**
+ * Phase 21 — the business's public host.
+ *
+ * Separate from BusinessDetailsPanel, and deliberately: renaming an origin is
+ * not an ordinary metadata edit. It writes the old name into
+ * `business_subdomain_aliases` so existing links keep resolving, and it
+ * invalidates every live session on the old host — the JWT carries the old
+ * subdomain, so middleware sees a mismatch and sends those browsers back to
+ * log in. The admin is told that before they confirm, not after.
+ */
+function SubdomainPanel({
+  business,
+  rootDomain,
+  aliases,
+  onChanged,
+}: {
+  business: Business;
+  rootDomain: string;
+  aliases: Alias[];
+  onChanged: () => void;
+}) {
+  const can = useCan();
+  const editable = can("business.edit");
+  const [subdomain, setSubdomain] = useState(business.subdomain);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    setSubdomain(business.subdomain);
+    setSaved(false);
+  }, [business.id, business.subdomain]);
+
+  const trimmed = subdomain.trim().toLowerCase();
+  const invalid = trimmed ? validateSubdomain(trimmed) : "invalid_subdomain";
+  const changed = trimmed !== business.subdomain.toLowerCase();
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    if (
+      !confirm(
+        `نشانی این کسب‌وکار به «${trimmed}» تغییر کند؟\n\n` +
+          "نشانی قبلی همچنان به نشانی جدید هدایت می‌شود، اما نشست‌های بازِ کاربران روی نشانی قبلی " +
+          "باطل می‌شود و باید دوباره وارد شوند.",
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    setSaved(false);
+    const { ok, data } = await api<{ error?: string }>(`/api/platform/businesses/${business.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ subdomain: trimmed }),
+    });
+    setBusy(false);
+    if (ok) {
+      setSaved(true);
+      onChanged();
+    } else {
+      setError(errorMessage(data.error));
+    }
+  }
+
+  return (
+    <Card title="نشانی اینترنتی">
+      <ErrorBox>{error}</ErrorBox>
+      {saved ? <InfoBox>نشانی تغییر کرد. نشانی قبلی به نشانی جدید هدایت می‌شود.</InfoBox> : null}
+      <form onSubmit={save}>
+        <Field
+          label="زیردامنه"
+          hint={
+            invalid
+              ? undefined
+              : rootDomain
+                ? `https://${trimmed}.${rootDomain}`
+                : "فقط حروف انگلیسی کوچک، رقم و خط تیره."
+          }
+        >
+          <input
+            dir="ltr"
+            value={subdomain}
+            onChange={(e) => setSubdomain(e.target.value)}
+            disabled={!editable}
+            className={`${inputClass} text-start`}
+          />
+          {invalid && changed ? (
+            <span className="mt-1 block text-xs text-rose-300">{errorMessage(invalid)}</span>
+          ) : null}
+        </Field>
+
+        {aliases.length > 0 ? (
+          <div className="mb-4">
+            <p className="mb-1 text-sm font-medium text-white/80">نشانی‌های قبلی</p>
+            <ul className="space-y-1 text-xs text-white/50">
+              {aliases.map((a) => (
+                <li key={a.alias} dir="ltr">
+                  {rootDomain ? `${a.alias}.${rootDomain}` : a.alias}
+                </li>
+              ))}
+            </ul>
+            <p className="mt-1 text-xs text-white/40">
+              این نشانی‌ها همچنان کار می‌کنند و به نشانی فعلی هدایت می‌شوند.
+            </p>
+          </div>
+        ) : null}
+
+        {editable ? (
+          <Button type="submit" disabled={busy || !changed || Boolean(invalid)}>
+            {busy ? "در حال تغییر…" : "تغییر نشانی"}
+          </Button>
+        ) : null}
+      </form>
+    </Card>
   );
 }
 
