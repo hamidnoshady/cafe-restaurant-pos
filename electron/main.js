@@ -219,6 +219,10 @@ async function startBackend() {
 
   serverProcess = spawnServer(appDir, {
     DATABASE_URL: runtimeDatabaseUrl,
+    // pg_dump can't run as that restricted role — RLS refuses its COPYs — so
+    // the backup system keeps the superuser connection (src/lib/backup.ts,
+    // dumpDatabaseUrl).
+    BACKUP_DATABASE_URL: superuserDatabaseUrl,
     JWT_SECRET: config.jwtSecret,
     PORT: String(APP_PORT),
   });

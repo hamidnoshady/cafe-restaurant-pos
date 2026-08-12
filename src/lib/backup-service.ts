@@ -6,7 +6,9 @@
  *
  * Pipeline per run:
  *   1. `pg_dump --format=custom` of the WHOLE local database into
- *      BACKUP_DIR (atomic: dump to *.tmp, fsync, rename).
+ *      BACKUP_DIR (atomic: dump to *.tmp, fsync, rename). It connects with
+ *      `dumpDatabaseUrl()`, not the app's own restricted connection — RLS
+ *      makes pg_dump fail outright as `pos_app`.
  *   2. Copy the artifact to BACKUP_SECONDARY_DIR if configured (USB/NAS) —
  *      a failed copy fails the run, because a silently-unplugged drive is
  *      exactly what the Owner wants alerted about.
@@ -31,6 +33,7 @@ import {
   cloudKeyFor,
   computeBackupAlert,
   DEFAULT_BACKUP_CONFIG,
+  dumpDatabaseUrl,
   encryptBackup,
   isBackupDue,
   makeArtifactName,
@@ -158,8 +161,12 @@ function errText(err: unknown): string {
 const inFlight = new Set<string>();
 
 function runPgDump(outFile: string): Promise<void> {
-  const databaseUrl = process.env.DATABASE_URL;
-  if (!databaseUrl) return Promise.reject(new Error("DATABASE_URL is not set"));
+  let databaseUrl: string;
+  try {
+    databaseUrl = dumpDatabaseUrl();
+  } catch (err) {
+    return Promise.reject(err);
+  }
   const bin = process.env.PG_DUMP_PATH || "pg_dump";
   return new Promise((resolve, reject) => {
     const child = spawn(bin, ["--format=custom", "--no-password", `--file=${outFile}`, databaseUrl], {
@@ -174,8 +181,13 @@ function runPgDump(outFile: string): Promise<void> {
       reject(new Error(`could not start ${bin}: ${err.message} (set PG_DUMP_PATH or install postgresql-client)`)),
     );
     child.on("close", (code, signal) => {
-      if (code === 0) resolve();
-      else reject(new Error(`pg_dump exited with ${signal ?? code}: ${stderr.trim().slice(0, 500)}`));
+      if (code === 0) return resolve();
+      // The RLS failure is the one pg_dump error an operator can't decode from
+      // its own message — see dumpDatabaseUrl() for why it happens.
+      const hint = /row-level security/.test(stderr)
+        ? " — pg_dump must connect as the privileged (migration/owner) role; point BACKUP_DATABASE_URL at it"
+        : "";
+      reject(new Error(`pg_dump exited with ${signal ?? code}: ${stderr.trim().slice(0, 500)}${hint}`));
     });
   });
 }
