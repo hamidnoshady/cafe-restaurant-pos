@@ -225,6 +225,11 @@ async function startBackend() {
     BACKUP_DATABASE_URL: superuserDatabaseUrl,
     JWT_SECRET: config.jwtSecret,
     PORT: String(APP_PORT),
+    // A desktop install is always a site, never the central server (Phase
+    // 21). Without this the role would be inferred, and this process inherits
+    // the user's environment — a stray POS_DOMAIN would silently turn the
+    // Server Sync tab into the central-server view.
+    DEPLOYMENT_ROLE: "site",
   });
 
   await waitForServerReady(APP_URL, 60_000);

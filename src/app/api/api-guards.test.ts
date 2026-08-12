@@ -272,6 +272,22 @@ describe("back-office/financial surfaces exclude floor roles", () => {
     assertPermissionGuarded("branches", "locationsManage");
   });
 
+  it("server-sync config refuses writes on a central server (Phase 21 Wave 2)", () => {
+    // A central server is what sites sync *to*; it has no peer of its own, so
+    // pointing it at one would aim it at one of its own tenants. The UI hides
+    // the form, but the route is the boundary — and the refusal has to come
+    // before the body is read, or a malformed body would 400 first and hide
+    // the real reason.
+    const src = sources.get("server-sync/config");
+    expect(src, "src/app/api/server-sync/config/route.ts is missing").toBeTruthy();
+    expect(src!).toMatch(/deploymentRole\(\)\s*===\s*"central"/);
+    expect(src!).toMatch(/"central_server"/);
+
+    const put = src!.slice(src!.indexOf("export const PUT"));
+    expect(put.indexOf('deploymentRole() === "central"')).toBeGreaterThan(-1);
+    expect(put.indexOf('deploymentRole() === "central"')).toBeLessThan(put.indexOf("request.json()"));
+  });
+
   it("cross-location rollup management is Owner-only (Phase 9 access decision)", () => {
     for (const [key, src] of sources) {
       if (!key.startsWith("rollup") || key === "rollup/ingest") continue;

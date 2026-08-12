@@ -53,6 +53,11 @@ services:
       # MUST be a real secret. Generate with: openssl rand -hex 32
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
       SESSION_HOURS: ${SESSION_HOURS:-12}
+      # Phase 21: this stack IS the central server — sites sync to it and it
+      # syncs to nothing, so the Server Sync tab drops the connection form and
+      # PUT /api/server-sync/config refuses. Declared rather than left to the
+      # POS_DOMAIN inference so the answer doesn't change if that moves.
+      DEPLOYMENT_ROLE: central
       # Scheduled backups (Phase 10) land here; the volume below keeps them.
       BACKUP_DIR: /app/backups
       # Biometric login (Phase 20 Wave 3). Derived from POS_DOMAIN (Traefik

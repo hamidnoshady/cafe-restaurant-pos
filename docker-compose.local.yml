@@ -74,6 +74,11 @@ services:
       # MUST be a real secret. Generate with: openssl rand -hex 32
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
       SESSION_HOURS: ${SESSION_HOURS:-12}
+      # Phase 21: this is a site, not the central server — it syncs *to* one.
+      # Declared explicitly because REMOTE_SYNC_TOKEN (which a laptop accepting
+      # inbound sync also sets) would otherwise make the inference guess
+      # "central".
+      DEPLOYMENT_ROLE: site
       BACKUP_DIR: /app/backups
       # Shared bearer token guarding THIS server's /api/server-sync endpoints.
       # If you want the VPS to also push/pull to this laptop, set the same

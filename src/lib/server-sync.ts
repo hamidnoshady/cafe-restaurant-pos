@@ -189,6 +189,42 @@ export async function listServerSyncDeadLetters(businessId: string, limit = 50):
   }));
 }
 
+export interface PairedSite {
+  /** When this business's sync token was last issued or rotated. */
+  tokenSetAt: string;
+  /** Most recent inbound push/pull this business saw, or null if none yet. */
+  lastSeenAt: string | null;
+  lastSeenStatus: "ok" | "error" | "skipped" | null;
+}
+
+/**
+ * What a *central* server can say about the site paired to this business.
+ *
+ * Singular, not a list, because that is what the schema models:
+ * `server_sync_tokens` is keyed by `business_id` (migration 0033), so one
+ * paired install per business is the design, and setServerSyncConfig replaces
+ * the row rather than appending. Returns null when nothing is paired yet.
+ */
+export async function getPairedSite(businessId: string): Promise<PairedSite | null> {
+  const [tokenRes, logRes] = await Promise.all([
+    query<{ updated_at: string }>(`SELECT updated_at FROM server_sync_tokens WHERE business_id = $1`, [businessId]),
+    query<{ attempted_at: string; status: "ok" | "error" | "skipped" }>(
+      `SELECT attempted_at, status FROM server_sync_log
+        WHERE business_id = $1
+        ORDER BY attempted_at DESC
+        LIMIT 1`,
+      [businessId],
+    ),
+  ]);
+
+  if (!tokenRes.rows[0]) return null;
+  return {
+    tokenSetAt: tokenRes.rows[0].updated_at,
+    lastSeenAt: logRes.rows[0]?.attempted_at ?? null,
+    lastSeenStatus: logRes.rows[0]?.status ?? null,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Row type returned by sync_events queries
 // ---------------------------------------------------------------------------

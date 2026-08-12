@@ -163,6 +163,8 @@ export function errorMessage(code: string | undefined): string {
     bad_length: "طول توکن درست نیست؛ احتمالاً کامل کپی نشده است.",
     bad_charset: "توکن شامل نویسه‌های نامعتبر است. حروف O و I و رقم‌های ۰ و ۱ در توکن به کار نمی‌روند.",
     bad_checksum: "توکن معتبر نیست؛ یک نویسه اشتباه تایپ یا جابه‌جا شده است.",
+    // Phase 21 Wave 2 — deployment role
+    central_server: "این سرور، سرور مرکزی است و تنظیمات اتصال برای آن معنا ندارد.",
   };
   return map[code ?? ""] ?? "خطای غیرمنتظره. دوباره تلاش کنید.";
 }
