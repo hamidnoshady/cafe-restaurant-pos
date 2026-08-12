@@ -10,12 +10,24 @@
 import { useCallback, useEffect, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
-import { ErrorBox, Field, InfoBox, PrimaryButton, api, errorMessage, inputClass } from "../ui";
+import { isLegacySyncToken, parseSyncToken } from "@/lib/sync-token";
+import {
+  ErrorBox,
+  Field,
+  InfoBox,
+  PrimaryButton,
+  SecondaryButton,
+  api,
+  errorMessage,
+  inputClass,
+} from "../ui";
 
 interface ConfigView {
   remoteUrl: string;
   /** masked preview, e.g. "a3f8…9d21" — never the real secret */
   token: string;
+  /** null when no token is configured; "legacy" flags a pre-POS1 hex secret. */
+  tokenFormat: "current" | "legacy" | null;
   enabled: boolean;
   batchSize?: number;
 }
@@ -84,6 +96,9 @@ export function ServerSyncSettings() {
   const [token, setToken] = useState("");
   const [enabled, setEnabled] = useState(false);
   const [batchSize, setBatchSize] = useState("100");
+  /** A freshly generated token, shown in full exactly once so it can be copied. */
+  const [generated, setGenerated] = useState("");
+  const [copied, setCopied] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -104,6 +119,7 @@ export function ServerSyncSettings() {
       setBatchSize(String(data.config?.batchSize ?? 100));
       setToken("");
       setError("");
+      setCopied(false);
     } else {
       setError(errorMessage(data.error));
     }
@@ -114,8 +130,49 @@ export function ServerSyncSettings() {
     void load();
   }, [load]);
 
+  /**
+   * The same check the server runs, run here first: catching a mistyped token
+   * at the input is the entire reason the format has a checksum. Legacy hex
+   * secrets bypass it exactly as they do server-side.
+   */
+  const tokenParse = token && !isLegacySyncToken(token) ? parseSyncToken(token) : null;
+  const tokenInvalid = tokenParse !== null && !tokenParse.ok;
+
+  async function generateToken() {
+    setBusy(true);
+    setError("");
+    setNotice("");
+    const { ok, data } = await api<{ token?: string; error?: string }>(
+      "/api/server-sync/config/generate-token",
+      { method: "POST" },
+    );
+    setBusy(false);
+    if (!ok || !data.token) {
+      setError(errorMessage(data.error));
+      return;
+    }
+    // Prefilled into the field as well as shown in full: the owner still has
+    // to press save, so generating never rotates the live token by itself.
+    setGenerated(data.token);
+    setToken(data.token);
+    setCopied(false);
+  }
+
+  async function copyGenerated() {
+    try {
+      await navigator.clipboard.writeText(generated);
+      setCopied(true);
+    } catch {
+      setError("کپی خودکار ممکن نشد؛ توکن را دستی انتخاب و کپی کنید.");
+    }
+  }
+
   async function save(event: React.FormEvent) {
     event.preventDefault();
+    if (tokenParse && !tokenParse.ok) {
+      setError(errorMessage(tokenParse.error));
+      return;
+    }
     setBusy(true);
     setError("");
     setNotice("");
@@ -165,19 +222,54 @@ export function ServerSyncSettings() {
               dir="ltr"
             />
           </Field>
+          {config?.tokenFormat === "legacy" ? (
+            <InfoBox>
+              توکن فعلی با قالب قدیمی ساخته شده و همچنان کار می‌کند، اما قابل بازخوانی و تایپ نیست. در فرصت مناسب یک
+              توکن جدید بسازید و همان را در سمت دیگر هم ثبت کنید.
+            </InfoBox>
+          ) : null}
+          {generated ? (
+            <InfoBox>
+              <div className="space-y-2">
+                <p>
+                  این توکن فقط همین یک بار نمایش داده می‌شود. آن را کپی کنید، در سمت دیگر ثبت کنید، سپس این فرم را
+                  ذخیره کنید.
+                </p>
+                <code className="block rounded-lg bg-background/70 px-3 py-2 font-mono text-sm" dir="ltr">
+                  {generated}
+                </code>
+                <SecondaryButton onClick={copyGenerated}>{copied ? "کپی شد" : "کپی توکن"}</SecondaryButton>
+              </div>
+            </InfoBox>
+          ) : null}
           <Field
             label="توکن مشترک"
-            hint={config?.token ? `توکن فعلی: ${config.token} — برای تغییر، توکن جدید وارد کنید` : "با openssl rand -hex 32 بسازید"}
+            hint={
+              tokenInvalid
+                ? undefined
+                : config?.token
+                  ? `توکن فعلی: ${config.token} — برای تغییر، توکن جدید وارد کنید`
+                  : "دکمهٔ «ساخت توکن» یک توکن معتبر می‌سازد؛ همان مقدار باید در سمت دیگر هم ثبت شود."
+            }
           >
-            <input
-              className={inputClass}
-              value={token}
-              onChange={(e) => setToken(e.target.value)}
-              placeholder={config?.token ? "برای حفظ توکن فعلی خالی بگذارید" : ""}
-              dir="ltr"
-              type="password"
-              autoComplete="off"
-            />
+            <div className="flex items-center gap-2">
+              <input
+                className={inputClass}
+                value={token}
+                onChange={(e) => setToken(e.target.value)}
+                placeholder={config?.token ? "برای حفظ توکن فعلی خالی بگذارید" : "POS1-…"}
+                dir="ltr"
+                type="text"
+                autoComplete="off"
+                spellCheck={false}
+              />
+              <SecondaryButton onClick={generateToken} disabled={busy}>
+                ساخت توکن
+              </SecondaryButton>
+            </div>
+            {tokenInvalid && tokenParse && !tokenParse.ok ? (
+              <span className="mt-1 block text-xs text-destructive">{errorMessage(tokenParse.error)}</span>
+            ) : null}
           </Field>
           <Field label="تعداد رویداد در هر دسته">
             <input
@@ -194,7 +286,7 @@ export function ServerSyncSettings() {
             <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
             همگام‌سازی فعال باشد
           </label>
-          <PrimaryButton disabled={busy}>{busy ? "در حال ذخیره…" : "ذخیره تنظیمات"}</PrimaryButton>
+          <PrimaryButton disabled={busy || tokenInvalid}>{busy ? "در حال ذخیره…" : "ذخیره تنظیمات"}</PrimaryButton>
         </form>
       </section>
 

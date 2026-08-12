@@ -6,7 +6,11 @@ import {
   listServerSyncDeadLetters,
   setServerSyncConfig,
 } from "@/lib/server-sync";
-import { resolveConfigUpdate, type ServerSyncConfigUpdateInput } from "@/lib/server-sync-config";
+import {
+  resolveConfigUpdate,
+  syncTokenFormat,
+  type ServerSyncConfigUpdateInput,
+} from "@/lib/server-sync-config";
 import { getAppUpdateStatus } from "@/lib/app-update";
 
 /**
@@ -27,9 +31,15 @@ export const GET = withTenantScope(async () => {
     listServerSyncDeadLetters(session.businessId),
     getAppUpdateStatus(session.businessId),
   ]);
-  // Never leak the token back to the client in full — mask it.
+  // Never leak the token back to the client in full — mask it. `tokenFormat`
+  // carries the one fact the UI needs about the real value: whether it is a
+  // pre-format hex secret the owner should rotate when convenient.
   const masked = config
-    ? { ...config, token: config.token ? `${config.token.slice(0, 4)}…${config.token.slice(-4)}` : "" }
+    ? {
+        ...config,
+        token: config.token ? `${config.token.slice(0, 4)}…${config.token.slice(-4)}` : "",
+        tokenFormat: syncTokenFormat(config.token),
+      }
     : null;
   return NextResponse.json({ config: masked, syncState, deadLetters, appUpdateStatus });
 });
