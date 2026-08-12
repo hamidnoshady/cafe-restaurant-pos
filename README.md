@@ -139,6 +139,11 @@ or a per-table Excel workbook, filtered by ordinary RLS
 database with `npm run db:restore-tenant` — full runbook, including why it
 doesn't need a scratch database, in [docs/backup-restore.md](docs/backup-restore.md).
 
+**Moving an install to another server** — the same dump plus a
+drain/verify/cutover procedure, with one recipe per hosting platform (Runflare,
+plain VPS, Komodo, managed-Postgres PaaS, on-site machine):
+[docs/server-migration.md](docs/server-migration.md).
+
 ### AI assistant (دستیار هوشمند)
 
 A floating assistant (bottom-left launcher) built with the shadcn UI kit, in two

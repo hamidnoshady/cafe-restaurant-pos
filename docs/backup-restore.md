@@ -116,6 +116,11 @@ needed.
    `/dashboard/backup` — schedule/cloud settings restored with everything
    else; take a fresh manual backup to prove the new machine can.
 
+Moving a *live* install to a new server (rather than recovering a lost one) is
+the same restore with a drain/verify/cutover procedure around it, and differs
+per hosting platform — see
+[docs/server-migration.md](server-migration.md).
+
 ### Notes
 
 - **What a restore loses:** everything after the artifact's timestamp — the
