@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { MIN_PASSWORD_LENGTH, validateProvisionBody } from "./business-provisioning";
+import { ENABLED_INDUSTRIES, INDUSTRIES } from "./industries";
 
 const VALID = {
   businessName: "کافه نادری",
@@ -68,7 +69,7 @@ describe("validateProvisionBody", () => {
   });
 
   it("accepts an explicit, enabled industry", () => {
-    for (const industry of ["food_service", "jewelry", "watch"]) {
+    for (const industry of ["food_service", "jewelry", "watch", "accessories"]) {
       expect(validateProvisionBody({ ...VALID, industry }).input?.industry, industry).toBe(industry);
     }
   });
@@ -77,11 +78,14 @@ describe("validateProvisionBody", () => {
     expect(validateProvisionBody({ ...VALID, industry: "bakery" }).error).toBe("invalid_industry");
   });
 
-  it("rejects a real but not-yet-offered industry", () => {
-    for (const industry of ["accessories"]) {
-      expect(validateProvisionBody({ ...VALID, industry }).error, industry).toBe(
-        "industry_not_available",
-      );
+  it("offers every industry Phase 21 named, now that all four waves have shipped", () => {
+    // Until Wave 6 this asserted the opposite for watch/accessories — that a
+    // real-but-not-yet-built industry is rejected with industry_not_available.
+    // The gate itself is unchanged (the validator still checks
+    // ENABLED_INDUSTRIES, not INDUSTRIES); there is simply nothing left
+    // behind it.
+    for (const industry of INDUSTRIES) {
+      expect(ENABLED_INDUSTRIES.includes(industry), industry).toBe(true);
     }
   });
 });
