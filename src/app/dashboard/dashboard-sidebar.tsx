@@ -99,18 +99,6 @@ interface SidebarProps {
   fullName: string;
 }
 
-/**
- * The browser URL is `/{slug}/dashboard/**` (see src/middleware.ts), but every
- * `NavItem.href` is the canonical, unprefixed `/dashboard/**` path — this
- * splits the two apart so lookups against `NAV_ICONS`/`isActive` keep working
- * unchanged, and hands back the prefix to rebuild real hrefs with it (so a nav
- * click lands on the slugged URL directly, without a middleware redirect hop).
- */
-function splitDashboardPrefix(pathname: string): { prefix: string; path: string } {
-  const match = pathname.match(/^\/([^/]+)(\/dashboard(?:\/.*)?)$/);
-  return match ? { prefix: `/${match[1]}`, path: match[2] } : { prefix: "", path: pathname };
-}
-
 function isActive(path: string, href: string): boolean {
   if (href === "/dashboard") return path === "/dashboard";
   return path === href || path.startsWith(`${href}/`);
@@ -125,7 +113,6 @@ function NavLinks({
   pathname: string;
   onNavigate: () => void;
 }) {
-  const { prefix, path } = splitDashboardPrefix(pathname);
   return (
     <SidebarContent className="px-3 py-4">
       <nav aria-label="ناوبری داشبورد">
@@ -133,7 +120,7 @@ function NavLinks({
           {navItems.map((item) => {
             if (!item.href) return null;
             const Icon = NAV_ICONS[item.href] ?? CircleIcon;
-            const active = isActive(path, item.href);
+            const active = isActive(pathname, item.href);
             return (
               <SidebarMenuItem key={item.label}>
                 <SidebarMenuButton
@@ -143,7 +130,7 @@ function NavLinks({
                   className="min-h-12 rounded-xl text-[#3C3A36] hover:bg-[#FFF9EE] hover:text-[#9B6700] data-[active=true]:bg-[#FFF1D8] data-[active=true]:font-semibold data-[active=true]:text-[#B97905]"
                 >
                   <Link
-                    href={`${prefix}${item.href}`}
+                    href={item.href}
                     onClick={onNavigate}
                     aria-current={active ? "page" : undefined}
                     aria-label={item.label}
@@ -202,8 +189,7 @@ function SidebarNavigation({ navItems, pathname }: Pick<SidebarProps, "navItems"
 
 function MobileDashboardHeader({ navItems, pathname }: Pick<SidebarProps, "navItems"> & { pathname: string }) {
   const [online, setOnline] = useState(true);
-  const { path } = splitDashboardPrefix(pathname);
-  const active = navItems.find((item) => item.href && isActive(path, item.href));
+  const active = navItems.find((item) => item.href && isActive(pathname, item.href));
   const today = toPersianDigits(formatJalali(new Date(), { withMonthName: true }));
 
   useEffect(() => {
@@ -232,11 +218,10 @@ function MobileDashboardHeader({ navItems, pathname }: Pick<SidebarProps, "navIt
 }
 
 function MobileBottomNavigation({ navItems, pathname }: Pick<SidebarProps, "navItems"> & { pathname: string }) {
-  const { prefix, path } = splitDashboardPrefix(pathname);
   const { setOpenMobile } = useSidebar();
   // Keep the established bottom-navigation set on other screens. On POS, replace
   // reports with the cashier tab so the active sales workflow is always visible.
-  const primaryHrefs = isActive(path, "/dashboard/pos")
+  const primaryHrefs = isActive(pathname, "/dashboard/pos")
     ? ["/dashboard", "/dashboard/pos", "/dashboard/orders"]
     : ["/dashboard", "/dashboard/orders", "/dashboard/reports"];
   const primaryItems = primaryHrefs
@@ -247,11 +232,11 @@ function MobileBottomNavigation({ navItems, pathname }: Pick<SidebarProps, "navI
     <nav className="fixed inset-x-0 bottom-0 z-40 flex border-t border-[#EAE8E2] bg-white/95 px-1 pb-[env(safe-area-inset-bottom)] pt-1 shadow-[0_-1px_8px_rgba(37,37,34,0.04)] backdrop-blur md:hidden" aria-label="ناوبری اصلی">
       {primaryItems.map((item) => {
         const Icon = NAV_ICONS[item.href] ?? CircleIcon;
-        const active = isActive(path, item.href);
+        const active = isActive(pathname, item.href);
         return (
           <Link
             key={item.href}
-            href={`${prefix}${item.href}`}
+            href={item.href}
             aria-current={active ? "page" : undefined}
             className={`flex min-h-14 flex-1 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[10px] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 active:scale-[0.98] ${active ? "bg-[#FFF1D8] text-[#B97905]" : "text-[#77756F]"}`}
           >

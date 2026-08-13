@@ -1,10 +1,14 @@
 /**
- * Business slugs — the short, URL-safe, human-quotable handle for a tenant,
- * and its "english name" in the dashboard URL (`/{slug}/dashboard/...`, see
- * src/middleware.ts). Business names in this product are overwhelmingly
- * Persian, so this transliterates Persian/Arabic letters to Latin rather than
- * keeping them as-is — a slug is meant to be a plain, ASCII, easy-to-type
- * identifier, not the business's display name with hyphens.
+ * Business slugs — the short, URL-safe, human-quotable handle for a tenant.
+ *
+ * The slug is now purely internal: it names a business in stored references
+ * and in the retired `/{slug}/dashboard` URLs that still get redirected, but
+ * it is no longer part of any address the app generates. The *public* name is
+ * `businesses.subdomain`, which a super-admin types in English by hand — see
+ * `validateSubdomain` below and the console's add form. Business names in this
+ * product are overwhelmingly Persian, so this transliterates Persian/Arabic
+ * letters to Latin rather than keeping them as-is: a slug is meant to be a
+ * plain, ASCII, easy-to-type identifier, not the display name with hyphens.
  *
  * The mapping is an approximation: ordinary Persian writing omits short
  * vowels, so this can't reconstruct pronunciation exactly. It only needs to
@@ -71,10 +75,12 @@ export const MAX_SLUG_LENGTH = 48;
  *
  * The path-level entries are the original reason this list exists: a business
  * slug prefixed the dashboard URL (`/{slug}/dashboard/...`), so a slug that
- * collided with one of these would be ambiguous with a real route.
+ * collided with one of these would be ambiguous with a real route. That URL
+ * form is retired but still redirected, so the entries stay.
  *
- * The host-level entries are new and are a different kind of collision. Every
- * business is now served from `{subdomain}.{ROOT_DOMAIN}`, and the deployment
+ * The host-level entries are the ones that matter now, and they are a
+ * different kind of collision. Every business is served from
+ * `{subdomain}.{ROOT_DOMAIN}`, and the deployment
  * reserves some of those labels for itself: `admin` is the platform console's
  * own host, the apex is the "which business?" router, and `www`/`api`/`mail`
  * are the names an operator will inevitably want for the deployment rather

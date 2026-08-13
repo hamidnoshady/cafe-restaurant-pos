@@ -21,6 +21,7 @@ export async function GET(request: NextRequest) {
     businessId: params.get("businessId") ?? undefined,
     businessSlug: params.get("businessSlug") ?? undefined,
     locationId: params.get("locationId") ?? undefined,
+    host: request.headers.get("host"),
   });
   if (!businessId) {
     return NextResponse.json({ error: error ?? "unknown_business" }, { status: 400 });

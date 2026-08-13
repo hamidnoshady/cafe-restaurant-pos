@@ -32,7 +32,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
 
-  const { businessId, error } = await resolveLoginBusinessId(body);
+  const { businessId, error } = await resolveLoginBusinessId({
+    ...body,
+    host: request.headers.get("host"),
+  });
   if (!businessId) {
     return NextResponse.json({ error: error ?? "unknown_business" }, { status: 400 });
   }

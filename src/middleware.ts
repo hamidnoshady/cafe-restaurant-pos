@@ -436,13 +436,14 @@ function handleHostIsolation(
 }
 
 /**
- * The transition window's bookmark bridge (Wave 4 removes it).
+ * The bookmark bridge for the retired path-prefix URLs.
  *
- * `/{slug}/dashboard/**` was the old address of every dashboard page. Under
- * subdomain routing it 301s to the same path on the business's own host, so a
- * saved bookmark or a printed URL still arrives somewhere useful instead of
- * dead-ending. 301 rather than 302 because the move is permanent — the point
- * is for browsers and link-checkers to stop asking.
+ * `/{slug}/dashboard/**` was the old address of every dashboard page. Nothing
+ * in the app emits that form any more — the generator is gone, and a business
+ * is addressed by its origin — but printed URLs and saved bookmarks still
+ * carry it, so it 301s to the same path on the business's own host rather than
+ * dead-ending. 301 rather than 302 because the move is permanent: the point is
+ * for browsers and link-checkers to stop asking.
  */
 function handleLegacyPathRedirect(
   request: NextRequest,
@@ -451,6 +452,11 @@ function handleLegacyPathRedirect(
   sessionSlug: string | undefined,
   sessionSubdomain: string | undefined,
 ): NextResponse | null {
+  // `/api/` first: `/api/dashboard/**` is a real route family and matches the
+  // pattern below exactly (slug "api"), so without this every dashboard data
+  // fetch would be redirected to the host resolver instead of being served.
+  if (pathname.startsWith("/api/")) return null;
+
   const prefixed = pathname.match(/^\/([^/]+)\/dashboard(\/.*)?$/);
   if (!prefixed) return null;
 
@@ -469,33 +475,6 @@ function handleLegacyPathRedirect(
   return toHostResolver(request, next, slug);
 }
 
-function handleDashboardUrlRewrite(
-  request: NextRequest,
-  pathname: string,
-  businessSlug: string,
-): NextResponse | null {
-  if (pathname.startsWith("/api/") || !businessSlug) return null;
-
-  const prefixed = pathname.match(/^\/([^/]+)\/dashboard(\/.*)?$/);
-  if (prefixed) {
-    const [, slug, rest] = prefixed;
-    const url = request.nextUrl.clone();
-    if (slug !== businessSlug) {
-      url.pathname = `/${businessSlug}/dashboard${rest ?? ""}`;
-      return NextResponse.redirect(url);
-    }
-    url.pathname = `/dashboard${rest ?? ""}`;
-    return NextResponse.rewrite(url);
-  }
-  if (pathname === "/dashboard" || pathname.startsWith("/dashboard/")) {
-    const url = request.nextUrl.clone();
-    url.pathname = `/${businessSlug}${pathname}`;
-    return NextResponse.redirect(url);
-  }
-
-  return null;
-}
-
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const now = Date.now();
@@ -504,8 +483,9 @@ export async function middleware(request: NextRequest) {
   const rateLimitResponse = handleRateLimits(request, pathname, now);
   if (rateLimitResponse) return rateLimitResponse;
 
-  // Read once per request. `SUBDOMAIN_ROUTING` is what keeps this whole wave
-  // reversible: until it is on, everything below behaves exactly as it did.
+  // Read once per request. A deployment with a ROOT_DOMAIN is host-routed;
+  // `SUBDOMAIN_ROUTING=off` is the escape hatch for one whose wildcard
+  // certificate is not issuing yet (see subdomainRoutingEnabled).
   const rootDomain = process.env.ROOT_DOMAIN?.trim() ?? "";
   const hostRouting = hostRoutingEnabled();
   // Deliberately the real `Host` header, never `x-forwarded-host`: this drives
@@ -521,6 +501,17 @@ export async function middleware(request: NextRequest) {
 
   // ---- Tenant realm --------------------------------------------------------
   if (hostRouting) {
+    // Neither the apex nor the console host serves a tenant, so a tenant login
+    // there could only mint a cookie valid on an origin that will never use
+    // it. Each is sent to the sign-in its own host does have: the apex's
+    // "which business?" directory, and the console's own login page.
+    if (pathname === "/login") {
+      if (host?.kind === "apex") return NextResponse.redirect(new URL("/", request.url));
+      if (host?.kind === "admin") {
+        return NextResponse.redirect(new URL("/platform/login", request.url));
+      }
+    }
+
     // Ahead of the session check on purpose: an old bookmark should land on
     // the right host whether or not the visitor is signed in here, and the
     // destination host does its own authentication. The session is read (not
@@ -536,6 +527,19 @@ export async function middleware(request: NextRequest) {
       claims?.businessSubdomain,
     );
     if (legacyRedirect) return legacyRedirect;
+  } else {
+    // No root domain — a desktop or single-café install, where there is no
+    // other host to send anyone to. An old prefixed bookmark just loses its
+    // prefix: without this it would 404, since nothing routes `/{slug}/…` any
+    // more.
+    const prefixed = pathname.startsWith("/api/")
+      ? null
+      : pathname.match(/^\/[^/]+(\/dashboard(?:\/.*)?)$/);
+    if (prefixed) {
+      const url = request.nextUrl.clone();
+      url.pathname = prefixed[1];
+      return NextResponse.redirect(url, 301);
+    }
   }
 
   if (isPublicPath(pathname)) {
@@ -548,16 +552,14 @@ export async function middleware(request: NextRequest) {
 
   if (host) {
     // ---- Origin is the tenant boundary -------------------------------------
+    //
+    // The only tenancy the URL carries. A business used to be named by a
+    // `/{slug}/` path prefix that middleware rewrote away; that scheme is gone
+    // (see handleLegacyPathRedirect for what became of its URLs), so an install
+    // with no ROOT_DOMAIN — the desktop app, a single-café laptop — simply
+    // serves `/dashboard` with no host check to make.
     const isolationResponse = handleHostIsolation(request, pathname, host, session.businessSubdomain);
     if (isolationResponse) return isolationResponse;
-  } else if (session.businessSlug) {
-    // ---- Legacy: business slug as a path prefix ----------------------------
-    const dashboardResponse = handleDashboardUrlRewrite(
-      request,
-      pathname,
-      session.businessSlug,
-    );
-    if (dashboardResponse) return dashboardResponse;
   }
 
   // Phase 17 — every authenticated tenant API request counts against its own

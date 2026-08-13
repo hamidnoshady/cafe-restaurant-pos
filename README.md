@@ -277,7 +277,7 @@ path prefix the app itself applied. That means one cookie jar, one `localStorage
 worker, one CSP/CORS boundary shared by every tenant — and origin is the browser's only real
 isolation primitive.
 
-Each business is now served from `{subdomain}.$ROOT_DOMAIN`, the super-admin console from
+Each business is served from `{subdomain}.$ROOT_DOMAIN`, the super-admin console from
 `admin.$ROOT_DOMAIN`, and the bare domain is a "which business?" router. The session cookie
 deliberately carries **no `domain` attribute** (`sessionCookieOptions` in `src/lib/auth-edge.ts`),
 so it is host-scoped and never sent to another business's origin; `src/middleware.ts` additionally
@@ -285,9 +285,22 @@ compares the request's host label against the session's own `businessSubdomain` 
 closed on any mismatch. Setting a cookie `domain` would silently undo all of it, which is why
 that omission carries a comment saying so.
 
-This is behind `SUBDOMAIN_ROUTING=on|off` (off by default, see `.env.example`) until the wildcard
-certificate is in place — ACME will not issue `*.$ROOT_DOMAIN` over an HTTP-01 challenge, so the
-Traefik certresolver must use DNS-01. See
+**The origin is the only tenancy in a URL.** The `/{slug}/dashboard` path prefix is gone: the
+dashboard is served at `/dashboard` on the business's own host, nothing generates a prefixed URL
+any more, and an old prefixed bookmark 301s to the host that serves that business today. Each
+business's subdomain is **typed in English by a super-admin** in `/platform` when the business is
+created — it is never transliterated from the Persian business name — and can be renamed later,
+with the old host kept as a redirecting alias.
+
+**`ROOT_DOMAIN` is the switch**: setting it turns host-based tenancy on, and an install without
+one (the desktop app, a single-café laptop) simply serves `/dashboard` unscoped. The root may
+itself be a subdomain — `ROOT_DOMAIN=ac.eshobe.com` puts businesses at `biz1.ac.eshobe.com` and
+the console at `admin.ac.eshobe.com` — in which case the wildcard certificate has to be
+`*.ac.eshobe.com`, since one for `*.eshobe.com` does not cover a name a level deeper. ACME will
+not issue `*.$ROOT_DOMAIN` over an HTTP-01 challenge, so the Traefik certresolver must use DNS-01;
+`SUBDOMAIN_ROUTING=off` is the escape hatch for a deployment whose certificate is not issuing yet.
+`WEBAUTHN_RP_ID` defaults to `ROOT_DOMAIN` for the same reason biometric login needs it to: a
+browser only accepts an RP ID that is a registrable suffix of the page's origin. See
 [docs/phases/Phase-23-Subdomain-Tenancy.md](docs/phases/Phase-23-Subdomain-Tenancy.md).
 
 **The app's database role must not be a superuser.** Superusers and `BYPASSRLS` roles ignore

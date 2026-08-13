@@ -42,12 +42,13 @@ export interface SessionPayload {
   /** The tenant every query in this request will be scoped to. */
   businessId: string;
   /**
-   * The business's stable slug — its "english name" for URLs. Carried on the
-   * token so `src/middleware.ts` can prefix the dashboard URL with it
-   * (`/{slug}/dashboard/...`) without a database lookup in the Edge runtime.
-   * Optional so a token minted before this field existed still verifies; the
-   * dashboard is simply served unprefixed until the holder's next login or
-   * business switch re-mints one.
+   * The business's stable internal slug. It no longer appears in any URL the
+   * app generates — the origin names the business now — but middleware still
+   * needs it to translate a bookmarked `/{slug}/dashboard` into the host that
+   * serves that business today, which it cannot look up in the Edge runtime.
+   * Optional so a token minted before this field existed still verifies; such
+   * a session simply sends that one redirect through the Node-runtime resolver
+   * instead.
    */
   businessSlug?: string;
   /**

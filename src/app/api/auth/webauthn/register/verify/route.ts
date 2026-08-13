@@ -3,6 +3,7 @@ import type { RegistrationResponseJSON } from "@simplewebauthn/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
 import { resolveDeviceId } from "@/lib/device-service";
 import { completeWebauthnRegistration, EmployeeError } from "@/lib/employee-service";
+import { expectedOriginsFor } from "@/lib/webauthn";
 
 /**
  * Step 2 of registering a biometric authenticator — verifies the ceremony
@@ -41,6 +42,9 @@ export const POST = withTenantScope(async (request: NextRequest) => {
       body.challengeToken,
       body.deviceLabel?.slice(0, 32) ?? null,
       deviceId,
+      // Each business registers from its own origin, so the accepted origin is
+      // this request's rather than a fixed one — see expectedOriginsFor.
+      expectedOriginsFor(request.headers.get("host"), request.headers.get("x-forwarded-proto")),
     );
     return NextResponse.json({ credential });
   } catch (err) {

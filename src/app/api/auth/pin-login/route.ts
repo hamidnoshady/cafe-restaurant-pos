@@ -60,7 +60,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "invalid_pin" }, { status: 400 });
   }
 
-  const { businessId, error } = await resolveLoginBusinessId(body);
+  const { businessId, error } = await resolveLoginBusinessId({
+    ...body,
+    host: request.headers.get("host"),
+  });
   if (!businessId) {
     // "Which business?" is a configuration problem, not a credential one, so
     // it gets a 400 the device can act on rather than a blanket 401.

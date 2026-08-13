@@ -78,6 +78,39 @@ describe("validateProvisionBody", () => {
     expect(validateProvisionBody({ ...VALID, industry: "bakery" }).error).toBe("invalid_industry");
   });
 
+  it("takes a typed subdomain as-is, lower-cased and trimmed", () => {
+    expect(validateProvisionBody({ ...VALID, subdomain: "  AcmeCafe  " }).input?.subdomain).toBe(
+      "acmecafe",
+    );
+  });
+
+  it("rejects a subdomain that is not a usable DNS label", () => {
+    expect(validateProvisionBody({ ...VALID, subdomain: "ab" }).error).toBe("invalid_subdomain");
+    expect(validateProvisionBody({ ...VALID, subdomain: "-acme" }).error).toBe("invalid_subdomain");
+    expect(validateProvisionBody({ ...VALID, subdomain: "کافه" }).error).toBe("invalid_subdomain");
+    expect(validateProvisionBody({ ...VALID, subdomain: "admin" }).error).toBe("reserved_subdomain");
+  });
+
+  it("requires a subdomain only when the caller asks for one", () => {
+    // The console does (a super-admin is there to type the business's public
+    // English address); the first-run wizard and public signup do not, and
+    // fall back to the name-derived label inside provisionBusiness.
+    expect(validateProvisionBody(VALID).error).toBeNull();
+    expect(validateProvisionBody(VALID, { requireSubdomain: true }).error).toBe("missing_subdomain");
+    expect(validateProvisionBody({ ...VALID, subdomain: "   " }, { requireSubdomain: true }).error).toBe(
+      "missing_subdomain",
+    );
+    expect(
+      validateProvisionBody({ ...VALID, subdomain: "acme" }, { requireSubdomain: true }).error,
+    ).toBeNull();
+  });
+
+  it("never derives the subdomain from the business name", () => {
+    // A transliterated Persian name is a poor public address, so an omitted
+    // subdomain stays omitted here rather than being quietly filled in.
+    expect(validateProvisionBody(VALID).input?.subdomain).toBeUndefined();
+  });
+
   it("offers every industry Phase 21 named, now that all four waves have shipped", () => {
     // Until Wave 6 this asserted the opposite for watch/accessories — that a
     // real-but-not-yet-built industry is rejected with industry_not_available.

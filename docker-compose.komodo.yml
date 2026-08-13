@@ -64,13 +64,20 @@ services:
       # always terminates this stack over HTTPS — see tls.certresolver
       # below) so it's never left at webauthn.ts's "localhost" defaults,
       # which would make every WebAuthn ceremony fail on the real domain.
-      WEBAUTHN_RP_ID: ${POS_DOMAIN:?set POS_DOMAIN}
+      # The RP ID must be a registrable suffix of every origin a ceremony runs
+      # on, and businesses run on {subdomain}.${ROOT_DOMAIN} — so it is the root
+      # domain, not POS_DOMAIN. Each business's own origin is accepted per
+      # request (expectedOriginsFor in src/lib/webauthn.ts); WEBAUTHN_ORIGIN
+      # only needs to name the fixed hosts.
+      WEBAUTHN_RP_ID: ${ROOT_DOMAIN:?set ROOT_DOMAIN}
       WEBAUTHN_ORIGIN: https://${POS_DOMAIN:?set POS_DOMAIN}
       # Phase 23 — per-business origins. ROOT_DOMAIN is the zone every business
-      # subdomain hangs off; SUBDOMAIN_ROUTING is the switch, left off until the
-      # wildcard certificate is confirmed issuing (see .env.komodo.example).
+      # subdomain hangs off, and setting it is what turns host-based tenancy on;
+      # it may itself be a subdomain (ROOT_DOMAIN=ac.example.com puts businesses
+      # at biz1.ac.example.com). SUBDOMAIN_ROUTING is only an escape hatch —
+      # set it to `off` while the wildcard certificate is not yet issuing.
       ROOT_DOMAIN: ${ROOT_DOMAIN:?set ROOT_DOMAIN}
-      SUBDOMAIN_ROUTING: ${SUBDOMAIN_ROUTING:-off}
+      SUBDOMAIN_ROUTING: ${SUBDOMAIN_ROUTING:-on}
       PLATFORM_BASE_URL: https://${POS_DOMAIN:?set POS_DOMAIN}
     volumes:
       - pos-backups:/app/backups
@@ -93,6 +100,10 @@ services:
       #
       # Priorities are explicit because HostRegexp would otherwise also match
       # `admin.`: the more specific Host() rules must win.
+      # `\.` on the separator only; the dots inside ${ROOT_DOMAIN} are left as
+      # `.` (any character) because Compose interpolates the value in verbatim.
+      # It matches the real name either way, and Traefik's own Host() rules
+      # above it take priority for admin/apex.
       traefik.http.routers.pos.rule: HostRegexp(`^[a-z0-9-]+\.${ROOT_DOMAIN:?set ROOT_DOMAIN}$`)
       traefik.http.routers.pos.priority: "10"
       traefik.http.routers.pos.entrypoints: ${TRAEFIK_ENTRYPOINT:-websecure}

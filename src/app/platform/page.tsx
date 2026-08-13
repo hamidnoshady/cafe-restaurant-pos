@@ -11,7 +11,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { toPersianDigits, formatPersianNumber } from "@/lib/digits";
-import { subdomainFromBusinessName, validateSubdomain } from "@/lib/slug";
+import { validateSubdomain } from "@/lib/slug";
 import {
   api,
   errorMessage,
@@ -226,16 +226,18 @@ function ProvisionForm({ onDone, rootDomain }: { onDone: () => void; rootDomain:
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [locationName, setLocationName] = useState("");
-  // Phase 23 — prefilled from the business name but editable, and left
-  // untouched by later name edits once the admin has typed their own.
+  // The business's public address, typed in English by the admin. Deliberately
+  // NOT prefilled from the business name: names here are Persian, and a
+  // transliteration of one ("kafeh-shahr-e-ma") is a poor thing to print on a
+  // receipt or read down a phone. The admin chooses it, and it is required.
   const [subdomain, setSubdomain] = useState("");
-  const [subdomainEdited, setSubdomainEdited] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const suggested = subdomainEdited ? subdomain : subdomainFromBusinessName(businessName);
-  const subdomainError = suggested ? validateSubdomain(suggested) : null;
+  // Only complain about what has actually been typed; "empty" is enforced by
+  // the field being required, not by an error message under a pristine form.
+  const subdomainError = subdomain ? validateSubdomain(subdomain) : null;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -250,7 +252,7 @@ function ProvisionForm({ onDone, rootDomain }: { onDone: () => void; rootDomain:
         email: email.trim().toLowerCase(),
         password,
         locationName: locationName.trim() || undefined,
-        subdomain: suggested || undefined,
+        subdomain,
       }),
     });
     setBusy(false);
@@ -281,18 +283,18 @@ function ProvisionForm({ onDone, rootDomain }: { onDone: () => void; rootDomain:
             hint={
               subdomainError
                 ? undefined
-                : suggested && rootDomain
-                  ? `کسب‌وکار از این نشانی سرو می‌شود: https://${suggested}.${rootDomain}`
-                  : "فقط حروف انگلیسی کوچک، رقم و خط تیره."
+                : subdomain && rootDomain
+                  ? `کسب‌وکار از این نشانی سرو می‌شود: https://${subdomain}.${rootDomain}`
+                  : rootDomain
+                    ? `نام انگلیسی کسب‌وکار را وارد کنید؛ نشانی آن زیر ${rootDomain} ساخته می‌شود.`
+                    : "نام انگلیسی کسب‌وکار: فقط حروف انگلیسی کوچک، رقم و خط تیره."
             }
           >
             <input
+              required
               dir="ltr"
-              value={suggested}
-              onChange={(e) => {
-                setSubdomainEdited(true);
-                setSubdomain(e.target.value.trim().toLowerCase());
-              }}
+              value={subdomain}
+              onChange={(e) => setSubdomain(e.target.value.trim().toLowerCase())}
               className={`${inputClass} text-start`}
               placeholder="acme"
             />

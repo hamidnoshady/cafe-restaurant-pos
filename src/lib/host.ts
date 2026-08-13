@@ -11,7 +11,14 @@
  *
  * ROOT_DOMAIN drives everything. Locally it is `localtest.me`, which resolves
  * every subdomain to 127.0.0.1 with no hosts-file editing; in production it is
- * `pos.eshobe.com`.
+ * whatever zone the deployment was given.
+ *
+ * The root may itself be a subdomain — `ac.eshobe.com` is a root just as much
+ * as `eshobe.com` is, and businesses then live at `biz1.ac.eshobe.com`. Nothing
+ * here counts labels in the root: it is matched as a suffix, so one more level
+ * of nesting costs nothing in code. What it costs is in DNS and TLS, where the
+ * wildcard has to be `*.ac.eshobe.com` — a certificate for `*.eshobe.com` does
+ * NOT cover a name one level deeper.
  */
 
 export type HostKind =
@@ -52,7 +59,10 @@ export function normalizeHost(host: string): string {
  * is precisely the case where we cannot say which tenant is being addressed.
  * Multi-label subdomains (`a.b.{root}`) are also "unknown", because a wildcard
  * certificate covers exactly one level and anything deeper would be served
- * without a valid certificate.
+ * without a valid certificate. This is about labels *below* the root, not the
+ * root's own depth: with ROOT_DOMAIN=`ac.eshobe.com`, `biz1.ac.eshobe.com` is
+ * one label below the root and resolves normally, while `a.biz1.ac.eshobe.com`
+ * does not.
  */
 export function parseHost(host: string | null | undefined, rootDomain: string | null | undefined): ParsedHost {
   const root = rootDomain?.trim().toLowerCase().replace(/^\.+|\.+$/g, "") ?? "";
@@ -109,20 +119,34 @@ export function preferredProto(forwardedProto: string | null | undefined, fallba
 /**
  * Whether host-based tenancy is switched on.
  *
- * Off by default and for exactly one release: the path-prefix rewrite stays
- * available until subdomains are proven in production, and a deployment whose
- * DNS or wildcard certificate is not ready yet must not be locked out of its
- * own dashboard by an upgrade. It also needs a ROOT_DOMAIN to be meaningful —
- * `SUBDOMAIN_ROUTING=on` with no root domain would make every host "unknown"
- * and fail every request closed, so that combination reads as off.
+ * **ROOT_DOMAIN is the switch now.** Phase 23 shipped this behind an opt-in
+ * `SUBDOMAIN_ROUTING=on` because the path-prefix rewrite was still the shipped
+ * default and had to stay reachable. That rewrite is gone — a business is
+ * addressed by its origin and by nothing else — so a deployment that declares
+ * a root domain wants per-business origins by definition, and requiring a
+ * second variable to say so only produces the failure mode where ROOT_DOMAIN
+ * is set, routing is off, and several tenants share one origin with no
+ * boundary at all.
+ *
+ * An install with no ROOT_DOMAIN (the desktop app, a single-café laptop) is
+ * unaffected: nothing is host-scoped there, and `/dashboard` is served as-is.
+ *
+ * `SUBDOMAIN_ROUTING=off` remains as an explicit escape hatch for the one case
+ * that still needs it — a deployment whose DNS or wildcard certificate is not
+ * ready, which would otherwise be locked out of its own dashboard by an
+ * upgrade. Any other value, including unset, means on.
  */
 export interface HostEnv {
   SUBDOMAIN_ROUTING?: string;
   ROOT_DOMAIN?: string;
 }
 
+/** The values that turn the switch off; everything else (including unset) is on. */
+const ROUTING_OFF = new Set(["off", "false", "0", "no"]);
+
 export function subdomainRoutingEnabled(env: HostEnv): boolean {
-  return env.SUBDOMAIN_ROUTING?.trim().toLowerCase() === "on" && Boolean(env.ROOT_DOMAIN?.trim());
+  if (!env.ROOT_DOMAIN?.trim()) return false;
+  return !ROUTING_OFF.has(env.SUBDOMAIN_ROUTING?.trim().toLowerCase() ?? "");
 }
 
 /**
