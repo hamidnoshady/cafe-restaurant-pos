@@ -139,6 +139,7 @@ export function preferredProto(forwardedProto: string | null | undefined, fallba
 export interface HostEnv {
   SUBDOMAIN_ROUTING?: string;
   ROOT_DOMAIN?: string;
+  TRUST_FORWARDED_HOST?: string;
 }
 
 /** The values that turn the switch off; everything else (including unset) is on. */
@@ -147,6 +148,69 @@ const ROUTING_OFF = new Set(["off", "false", "0", "no"]);
 export function subdomainRoutingEnabled(env: HostEnv): boolean {
   if (!env.ROOT_DOMAIN?.trim()) return false;
   return !ROUTING_OFF.has(env.SUBDOMAIN_ROUTING?.trim().toLowerCase() ?? "");
+}
+
+/**
+ * Whether the deployment's proxy rewrites `Host`, so the real one arrives in
+ * `X-Forwarded-Host`.
+ *
+ * Off by default, and that default is the safe one: `X-Forwarded-Host` is
+ * client-supplied unless something in front overwrites it, and this decides
+ * which tenant a request belongs to. Traefik passes the original `Host`
+ * through untouched, so a deployment behind it must leave this off.
+ *
+ * A managed platform (Runflare, and most PaaS/CDN edges) does the opposite: it
+ * routes by hostname itself and hands the container an internal name like
+ * `web-1234.internal:3000`, keeping the browser's hostname in
+ * `X-Forwarded-Host`. There, `Host` names no tenant ever, every request parses
+ * as "unknown", and host tenancy cannot work at all — turning this on is the
+ * only way to run per-business origins on such a platform.
+ *
+ * What it costs, stated plainly: a caller who can reach the app *directly*,
+ * bypassing the proxy, can then choose which origin their request appears to
+ * be on. That does not cross the tenant boundary — rows are scoped by the
+ * `businessId` inside the session JWT, not by the host, so RLS is unaffected —
+ * but it does mean the origin check degrades to what the browser's cookie jar
+ * already enforces. Only turn it on when the platform is the sole route in.
+ */
+export function trustForwardedHost(env: HostEnv): boolean {
+  const value = env.TRUST_FORWARDED_HOST?.trim().toLowerCase();
+  return value === "on" || value === "true" || value === "1";
+}
+
+/**
+ * The hostname the tenancy decision is made on.
+ *
+ * One place, so middleware, the root page, the login family and WebAuthn's
+ * origin check can never disagree about what "this request's host" means —
+ * a disagreement there would be a boundary that holds in one layer and not
+ * another.
+ *
+ * `X-Forwarded-Host` may carry a list when several proxies have appended to
+ * it; the first entry is the one the browser asked for, which is the one that
+ * names a tenant.
+ */
+export function resolveRequestHost(
+  hostHeader: string | null | undefined,
+  forwardedHost: string | null | undefined,
+  env: HostEnv,
+): string {
+  if (trustForwardedHost(env)) {
+    const first = forwardedHost?.split(",")[0]?.trim();
+    if (first) return first;
+  }
+  return hostHeader?.trim() ?? "";
+}
+
+/** `resolveRequestHost` against the ambient environment and a request's headers. */
+export function requestHost(headers: {
+  get(name: string): string | null;
+}): string {
+  return resolveRequestHost(
+    headers.get("host"),
+    headers.get("x-forwarded-host"),
+    process.env as HostEnv,
+  );
 }
 
 /**

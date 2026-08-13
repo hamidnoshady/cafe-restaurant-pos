@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withTenant } from "@/lib/db";
 import { resolveDeviceId } from "@/lib/device-service";
+import { requestHost } from "@/lib/host";
 import { beginWebauthnAuthentication, resolveLoginBusinessId } from "@/lib/employee-service";
 
 /**
@@ -34,7 +35,7 @@ export async function POST(request: NextRequest) {
 
   const { businessId, error } = await resolveLoginBusinessId({
     ...body,
-    host: request.headers.get("host"),
+    host: requestHost(request.headers),
   });
   if (!businessId) {
     return NextResponse.json({ error: error ?? "unknown_business" }, { status: 400 });

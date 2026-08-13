@@ -4,8 +4,10 @@ import {
   normalizeHost,
   parseHost,
   preferredProto,
+  resolveRequestHost,
   subdomainRoutingEnabled,
   swapHostLabel,
+  trustForwardedHost,
 } from "./host";
 
 const ROOT = "pos.eshobe.com";
@@ -155,5 +157,58 @@ describe("subdomainRoutingEnabled", () => {
     expect(subdomainRoutingEnabled({})).toBe(false);
     expect(subdomainRoutingEnabled({ SUBDOMAIN_ROUTING: "on" })).toBe(false);
     expect(subdomainRoutingEnabled({ SUBDOMAIN_ROUTING: "on", ROOT_DOMAIN: "  " })).toBe(false);
+  });
+});
+
+describe("resolveRequestHost", () => {
+  it("reads the real Host header and ignores the forwarded one by default", () => {
+    // The default has to be this way round: X-Forwarded-Host is client-supplied
+    // unless a proxy overwrote it, and this value decides which tenant a
+    // request belongs to. Traefik passes the original Host through untouched.
+    expect(resolveRequestHost("acme.pos.eshobe.com", "evil.pos.eshobe.com", {})).toBe(
+      "acme.pos.eshobe.com",
+    );
+  });
+
+  it("reads the forwarded host when the platform is declared to rewrite Host", () => {
+    // A managed platform routes by hostname itself and hands the container an
+    // internal name; without this, Host names no tenant ever and host tenancy
+    // cannot work at all.
+    const env = { TRUST_FORWARDED_HOST: "on" };
+    expect(resolveRequestHost("web-1234.internal:3000", "acme.ac.eshobe.com", env)).toBe(
+      "acme.ac.eshobe.com",
+    );
+  });
+
+  it("takes the first hop when several proxies have appended to the header", () => {
+    const env = { TRUST_FORWARDED_HOST: "on" };
+    expect(resolveRequestHost("internal:3000", "acme.ac.eshobe.com, edge.internal", env)).toBe(
+      "acme.ac.eshobe.com",
+    );
+  });
+
+  it("falls back to Host when the forwarded header is absent or empty", () => {
+    const env = { TRUST_FORWARDED_HOST: "on" };
+    expect(resolveRequestHost("acme.ac.eshobe.com", null, env)).toBe("acme.ac.eshobe.com");
+    expect(resolveRequestHost("acme.ac.eshobe.com", "  ", env)).toBe("acme.ac.eshobe.com");
+  });
+
+  it("returns an empty string when there is no host at all, which parses as unknown", () => {
+    expect(resolveRequestHost(null, null, {})).toBe("");
+    expect(parseHost(resolveRequestHost(null, null, {}), ROOT)).toEqual({ kind: "unknown", label: "" });
+  });
+});
+
+describe("trustForwardedHost", () => {
+  it("is off unless explicitly turned on", () => {
+    expect(trustForwardedHost({})).toBe(false);
+    expect(trustForwardedHost({ TRUST_FORWARDED_HOST: "off" })).toBe(false);
+    expect(trustForwardedHost({ TRUST_FORWARDED_HOST: "" })).toBe(false);
+  });
+
+  it("accepts the usual affirmatives", () => {
+    for (const value of ["on", " ON ", "true", "1"]) {
+      expect(trustForwardedHost({ TRUST_FORWARDED_HOST: value }), value).toBe(true);
+    }
   });
 });

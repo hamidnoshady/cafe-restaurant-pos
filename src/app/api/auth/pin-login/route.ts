@@ -4,6 +4,7 @@ import { query, withTenant } from "@/lib/db";
 import { SESSION_COOKIE, sessionCookieOptions, signSession, type Role } from "@/lib/auth";
 import { toLatinDigits } from "@/lib/digits";
 import { resolveDeviceId } from "@/lib/device-service";
+import { requestHost } from "@/lib/host";
 import {
   auditLoginFailure,
   checkLoginLockout,
@@ -62,7 +63,7 @@ export async function POST(request: NextRequest) {
 
   const { businessId, error } = await resolveLoginBusinessId({
     ...body,
-    host: request.headers.get("host"),
+    host: requestHost(request.headers),
   });
   if (!businessId) {
     // "Which business?" is a configuration problem, not a credential one, so

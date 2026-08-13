@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import type { RegistrationResponseJSON } from "@simplewebauthn/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
 import { resolveDeviceId } from "@/lib/device-service";
+import { requestHost } from "@/lib/host";
 import { completeWebauthnRegistration, EmployeeError } from "@/lib/employee-service";
 import { expectedOriginsFor } from "@/lib/webauthn";
 
@@ -44,7 +45,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
       deviceId,
       // Each business registers from its own origin, so the accepted origin is
       // this request's rather than a fixed one — see expectedOriginsFor.
-      expectedOriginsFor(request.headers.get("host"), request.headers.get("x-forwarded-proto")),
+      expectedOriginsFor(requestHost(request.headers), request.headers.get("x-forwarded-proto")),
     );
     return NextResponse.json({ credential });
   } catch (err) {

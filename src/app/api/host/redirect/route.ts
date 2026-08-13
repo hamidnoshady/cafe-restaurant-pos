@@ -1,5 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { businessHost, parseHost, preferredProto, rootDomain, swapHostLabel } from "@/lib/host";
+import {
+  businessHost,
+  parseHost,
+  preferredProto,
+  requestHost,
+  rootDomain,
+  swapHostLabel,
+} from "@/lib/host";
 import { resolveBusinessByLabel, resolveBusinessBySlug } from "@/lib/host-resolution";
 
 /**
@@ -34,9 +41,14 @@ export async function GET(request: NextRequest) {
   const requested = params.get("next") ?? "/";
   const next = requested.startsWith("/") && !requested.startsWith("//") ? requested : "/";
 
+  // Two different questions, two different headers. *Which host am I?* follows
+  // the same policy as the isolation check in middleware (`requestHost`), so
+  // the two layers cannot disagree about what origin a request is on. *What
+  // URL should the browser be sent to?* is built from the forwarded host,
+  // which is what the client actually typed, port included.
   const hostHeader = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
   const proto = preferredProto(request.headers.get("x-forwarded-proto"), request.nextUrl.protocol);
-  const here = parseHost(hostHeader, root);
+  const here = parseHost(requestHost(request.headers), root);
 
   const business = slug
     ? await resolveBusinessBySlug(slug)

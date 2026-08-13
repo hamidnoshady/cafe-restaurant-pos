@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { query, withoutTenantScope } from "@/lib/db";
 import { SESSION_COOKIE, sessionCookieOptions, signSession } from "@/lib/auth";
-import { hostRoutingEnabled, parseHost, rootDomain } from "@/lib/host";
+import { hostRoutingEnabled, parseHost, requestHost, rootDomain } from "@/lib/host";
 import { resolveBusinessByLabel } from "@/lib/host-resolution";
 import {
   membershipBlockedReason,
@@ -91,7 +91,7 @@ export async function POST(request: NextRequest) {
 
   // Ahead of the credential check, and no oracle: which business a hostname
   // serves is exactly what DNS and the certificate already say out loud.
-  const hostScope = await loginHostBusinessId(request.headers.get("host"));
+  const hostScope = await loginHostBusinessId(requestHost(request.headers));
   if (hostScope.error) {
     return NextResponse.json({ error: hostScope.error }, { status: 400 });
   }
