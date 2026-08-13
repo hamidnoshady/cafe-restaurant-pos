@@ -78,6 +78,10 @@ const PUBLIC_ROUTES: Record<string, string> = {
   "setup/pair":
     "first-run only — claims an existing online business on an empty install and refuses with " +
     "409 as soon as any user exists, exactly like setup/bootstrap",
+  "integrations/woocommerce/webhook/[connectionId]":
+    "Phase 23 (issue #118) — WooCommerce delivers webhooks to this URL with an HMAC-SHA256 " +
+    "signature authenticated against the connection's webhook secret (webhook-ingest-service.ts), " +
+    "not a tenant session; the route resolves its business from the connection id in the URL",
 };
 
 
