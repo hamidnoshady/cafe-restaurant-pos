@@ -1,7 +1,13 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
-import { businessHost, hostRoutingEnabled, parseHost, rootDomain as configuredRootDomain } from "@/lib/host";
+import {
+  hostRoutingEnabled,
+  parseHost,
+  preferredProto,
+  rootDomain as configuredRootDomain,
+  swapHostLabel,
+} from "@/lib/host";
 import { resolveBusinessByLabel } from "@/lib/host-resolution";
 import { hasAnyUser, isSetupComplete } from "@/lib/setup-state";
 import { BusinessDirectory } from "./business-directory";
@@ -13,7 +19,8 @@ export default async function Home() {
   // answered here.
   const rootDomain = configuredRootDomain();
   if (hostRoutingEnabled()) {
-    const host = parseHost((await headers()).get("host"), rootDomain);
+    const headerList = await headers();
+    const host = parseHost(headerList.get("host"), rootDomain);
 
     // The apex has no tenant to show. It is a signpost to the business hosts.
     if (host.kind === "apex") return <BusinessDirectory />;
@@ -21,9 +28,13 @@ export default async function Home() {
     if (host.kind === "business") {
       const business = await resolveBusinessByLabel(host.label);
       // Arrived on a host the business used to have: send them to the current
-      // one so bookmarks made before a rename still work.
+      // one so bookmarks made before a rename still work. The scheme and port
+      // come from the request rather than being assumed — behind a proxy the
+      // app's own view of them is the internal one.
       if (business?.viaAlias) {
-        redirect(`https://${businessHost(business.subdomain, rootDomain)}`);
+        const proto = preferredProto(headerList.get("x-forwarded-proto"), "https");
+        const forwardedHost = headerList.get("x-forwarded-host") ?? headerList.get("host");
+        redirect(`${proto}://${swapHostLabel(forwardedHost, business.subdomain, rootDomain)}/`);
       }
     }
   }

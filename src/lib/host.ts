@@ -75,6 +75,38 @@ export function businessHost(label: string, rootDomain: string): string {
 }
 
 /**
+ * Rewrite the label of an incoming Host header, keeping its port.
+ *
+ * The port is the point. A redirect built by mutating `request.nextUrl` keeps
+ * *that* URL's port — which behind a TLS-terminating proxy is the container's
+ * internal one, not the port the browser is talking to. Traefik listens on 443
+ * and forwards to 3000, so `/platform` on a tenant host redirected to
+ * `https://admin.example.com:3000/platform`, where nothing is listening.
+ *
+ * The Host header is the right source because it is what the *client* asked
+ * for: it carries the external port when there is a non-default one, and none
+ * when there isn't.
+ */
+export function swapHostLabel(hostHeader: string | null | undefined, newLabel: string, rootDomain: string): string {
+  const port = (hostHeader ?? "").trim().match(/:(\d+)$/)?.[1];
+  return businessHost(newLabel, rootDomain) + (port ? `:${port}` : "");
+}
+
+/**
+ * The scheme the browser is actually using.
+ *
+ * `x-forwarded-proto` is what a terminating proxy sets; `fallback` is the
+ * request's own scheme, which is correct when nothing is in front. Anything
+ * other than http/https in the header is ignored rather than trusted — it is
+ * client-supplied unless a proxy overwrote it.
+ */
+export function preferredProto(forwardedProto: string | null | undefined, fallback: string): string {
+  const declared = forwardedProto?.split(",")[0]?.trim().toLowerCase();
+  if (declared === "https" || declared === "http") return declared;
+  return fallback.replace(/:$/, "") || "https";
+}
+
+/**
  * Whether host-based tenancy is switched on.
  *
  * Off by default and for exactly one release: the path-prefix rewrite stays

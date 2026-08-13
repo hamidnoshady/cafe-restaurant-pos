@@ -277,15 +277,51 @@ tenant-scoped table. `host.test.ts` covers apex/admin/business/unknown parsing, 
 impostor, multi-label rejection, and the routing switch; `slug.test.ts` is extended for DNS-label
 validation and host-level reservations.
 
-Manual verification over `*.localtest.me` — which resolves every subdomain to 127.0.0.1 over plain
-HTTP with no hosts-file editing — is the remaining step before the Wave 4 cutover:
+**Done, in a real browser.** Two businesses were provisioned on one deployment and served over
+HTTPS behind a self-signed wildcard certificate, through a proxy setting the same `X-Forwarded-*`
+headers Traefik sets — so the origin construction was exercised the way production exercises it,
+not just over plain HTTP on one port. Chromium confirmed:
 
-- Log into `acme.localtest.me:3000`, then open `beta.localtest.me:3000` in the same browser. It
-  must land on beta's login, not beta's dashboard. **This is the security fix; verify it
-  explicitly.** Confirm in devtools that `pos_session` is listed only under the `acme` host.
-- `admin.localtest.me:3000/platform` works, and the tenant cookie is not sent to it.
-- Renaming a subdomain in the console leaves the old host redirecting to the new one.
-- An `/{slug}/dashboard` bookmark 301s to the subdomain form.
+- `pos_session` is stored as `domain="acme.localtest.me"`, host-only, `Secure`, `HttpOnly`. The
+  browser sends it to acme and **not** to beta.
+- With acme signed in, `beta-new.localtest.me/dashboard` lands on beta's login, while
+  `acme.localtest.me/dashboard` still serves. **This is the security fix.**
+- Replaying the raw cookie value at beta's host — the case a cookie jar would not prevent —
+  returns `307 → /login` with `Set-Cookie: pos_session=; Expires=1970` for a page, and
+  `401 {"error":"wrong_origin"}` for an API route. The guarantee does not rest on the jar.
+- `/platform` on a tenant origin moves to `admin.…`, and the tenant cookie is never sent there.
+- A renamed subdomain's old host forwards to the current one, including on deep paths.
+
+That pass found three defects, fixed in the follow-up below.
+
+### Follow-up fixes (found by the verification pass)
+
+1. **Redirects carried the container's port.** Building a redirect by mutating `request.nextUrl`
+   keeps *that* URL's port, which behind a TLS-terminating proxy is the internal one. `/platform`
+   on a tenant host pointed at `https://admin.example.com:3000/platform`, where nothing listens —
+   so the console was unreachable from a tenant origin. `swapHostLabel()`/`preferredProto()` now
+   build redirects from the `Host` header and `x-forwarded-proto` instead. Note the same trap
+   bites twice and differently: in *middleware* `request.url` reflects the external origin, but in
+   a *route handler* it is the internal one.
+2. **The legacy `/{slug}/dashboard` redirect used the slug as the host label.** Slug and subdomain
+   agree for every business migration 0066 backfilled and diverge the moment an admin sets a real
+   subdomain — the exact split this phase introduced — so `/acme-cafe/dashboard` pointed at
+   `acme-cafe.example.com`, which serves nobody. It now translates via the session claim, or via
+   the resolver when there is no session.
+3. **An alias host only worked at `/`.** Alias resolution lived in `page.tsx`, which runs for `/`
+   alone; every deeper path hit the isolation check first and bounced to a login on a host that
+   serves nobody — and a login there could never succeed, because the session it mints names the
+   *current* subdomain. Since a real bookmark is a deep path, "the old host keeps working" was
+   effectively false. New `GET /api/host/redirect` (Node runtime, session-less) resolves an alias
+   or a legacy slug and 308s to the canonical host preserving the path; middleware sends both the
+   mismatch and the signed-out case there.
+
+None of the three was a hole in the isolation boundary — all failed closed, which is why the
+security assertions passed while these were still broken.
+
+Remaining known gap, pre-existing and out of scope: after being forwarded to the right host a
+signed-out visitor lands on `/login` rather than the page they bookmarked, because login has no
+return-to. The host is now correct, which is what these fixes were for.
 
 ---
 
