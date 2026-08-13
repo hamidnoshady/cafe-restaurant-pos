@@ -57,10 +57,18 @@ export interface ProvisionBusinessInput {
    */
   deploymentMode?: DeploymentModeName;
   /**
-   * Phase 23 — the public host label, when the caller has one in mind (the
-   * console's add form offers it, prefilled and editable). Omitted, it is
-   * derived from the business name the same way the slug is. Either way it is
-   * made unique before it is written.
+   * The business's public host label — the English name a super-admin types by
+   * hand in the console's add form, which becomes `{subdomain}.$ROOT_DOMAIN`.
+   *
+   * Not derived from the business name when it is supplied: a transliterated
+   * Persian name makes a poor address, and this one is going to be printed on
+   * a receipt and read down a phone. A supplied label is taken verbatim, and a
+   * collision is an error the admin resolves rather than something quietly
+   * suffixed into `acme-2`.
+   *
+   * It stays optional for the entry points that have no admin to ask — the
+   * first-run wizard and public signup, both of which run on installs with no
+   * root domain — where it falls back to the name-derived form.
    */
   subdomain?: string;
 }
@@ -80,6 +88,21 @@ export interface ProvisionedBusiness {
 export class EmailPasswordMismatchError extends Error {
   constructor() {
     super("email_password_mismatch");
+  }
+}
+
+/**
+ * The requested subdomain belongs to another business (or to one of its old
+ * hosts, which still redirect and so cannot be handed out).
+ *
+ * Only ever raised for a label the caller asked for by name. Appending `-2` to
+ * someone's typed address would be worse than refusing: they would leave the
+ * form believing they had provisioned `acme.example.com` and hand that address
+ * to a customer.
+ */
+export class SubdomainTakenError extends Error {
+  constructor() {
+    super("subdomain_taken");
   }
 }
 
@@ -108,7 +131,7 @@ export interface ProvisionRequestBody {
   email?: string;
   password?: string;
   industry?: string;
-  /** Phase 23 — the public host label. Derived from the name when omitted. */
+  /** The public host label, typed in English. Derived from the name when omitted. */
   subdomain?: string;
 }
 
@@ -123,6 +146,7 @@ export const MIN_PASSWORD_LENGTH = 8;
  */
 export function validateProvisionBody(
   body: ProvisionRequestBody,
+  options: { requireSubdomain?: boolean } = {},
 ): { input: ProvisionBusinessInput; error: null } | { input: null; error: string } {
   const businessName = body.businessName?.trim();
   const ownerName = body.ownerName?.trim();
@@ -147,14 +171,18 @@ export function validateProvisionBody(
     return { input: null, error: "industry_not_available" };
   }
 
-  // Phase 23 — an explicitly requested subdomain is validated as a DNS label
-  // here rather than silently normalised, because the admin typed it and is
-  // going to hand the resulting URL to a customer. Omitted, it is derived from
-  // the business name inside provisionBusiness.
+  // The subdomain is validated as a DNS label rather than silently normalised,
+  // because the admin typed it and is going to hand the resulting URL to a
+  // customer. `requireSubdomain` is what the console passes: on a multi-tenant
+  // deployment the address is a decision, not a by-product of the name. The
+  // entry points that leave it off (first-run wizard, public signup) have
+  // nobody to ask, and fall back to the derived form in provisionBusiness.
   const subdomain = body.subdomain?.trim().toLowerCase();
   if (subdomain) {
     const invalid = validateSubdomain(subdomain);
     if (invalid) return { input: null, error: invalid };
+  } else if (options.requireSubdomain) {
+    return { input: null, error: "missing_subdomain" };
   }
 
   return {
@@ -211,18 +239,28 @@ export async function provisionBusiness(
         slugRows.map((r) => r.slug),
       );
 
-      // Phase 23: the public host, allocated in the same advisory-locked
-      // transaction as the slug so two concurrent signups can't claim one
-      // origin. `taken` is the subdomain column, not the slug column — the two
-      // are independent namespaces the moment anyone renames a subdomain, and
-      // checking the wrong one would let a rename's freed name be handed out
-      // while its alias still resolves. An explicitly requested subdomain is
-      // validated by the caller (the console); uniqueSlug only settles
-      // collisions, appending -2, -3, … the same way it does for slugs.
-      const subdomain = uniqueSlug(
-        subdomainFromBusinessName(input.subdomain?.trim() || businessName) || SLUG_FALLBACK,
-        slugRows.map((r) => r.subdomain),
+      // The public host, allocated in the same advisory-locked transaction as
+      // the slug so two concurrent signups can't claim one origin.
+      //
+      // A requested label is taken exactly as typed and refused if it is
+      // spoken for; only the derived fallback is allowed to settle a collision
+      // by suffixing. The namespace checked is the subdomain column plus the
+      // alias table, never the slug column: the two are independent the moment
+      // anyone renames a subdomain, and handing out a name an alias still
+      // redirects would hijack the old address of another business.
+      const requested = input.subdomain?.trim().toLowerCase();
+      const { rows: aliasRows } = await client.query<{ alias: string }>(
+        "SELECT alias::text AS alias FROM business_subdomain_aliases",
       );
+      const takenHosts = [...slugRows.map((r) => r.subdomain), ...aliasRows.map((r) => r.alias)];
+
+      let subdomain: string;
+      if (requested) {
+        if (takenHosts.some((h) => h.toLowerCase() === requested)) throw new SubdomainTakenError();
+        subdomain = requested;
+      } else {
+        subdomain = uniqueSlug(subdomainFromBusinessName(businessName) || SLUG_FALLBACK, takenHosts);
+      }
 
       const { rows: existingIdentity } = await client.query<{
         id: string;

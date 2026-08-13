@@ -32,6 +32,7 @@ import {
   type RegistrationResponseJSON,
 } from "@simplewebauthn/server";
 import { getJwtSecret } from "./jwt-secret";
+import { parseHost, preferredProto } from "./host";
 
 /** Long enough for a fingerprint/face prompt; short enough that a stale token is useless. */
 const CHALLENGE_TTL_SECONDS = 120;
@@ -39,9 +40,23 @@ const CHALLENGE_TTL_SECONDS = 120;
 export const CHALLENGE_PURPOSES = ["webauthn-register", "webauthn-authenticate"] as const;
 export type ChallengePurpose = (typeof CHALLENGE_PURPOSES)[number];
 
-/** One deployment == one domain (see auth-edge.ts's REALM comment on the shared JWT_SECRET) — a single RP ID/origin pair covers every business. */
+/**
+ * The Relying Party ID — the domain a credential is bound to.
+ *
+ * One deployment == one RP (see auth-edge.ts's REALM comment on the shared
+ * JWT_SECRET), and under per-business origins that RP has to be the *root*
+ * domain rather than any one business's host: a browser only accepts an RP ID
+ * that is a registrable suffix of the page's origin, so an RP ID of
+ * `acme.$ROOT_DOMAIN` would make every ceremony on `beta.$ROOT_DOMAIN` fail.
+ * ROOT_DOMAIN is therefore the default, and a credential registered at one
+ * business's address keeps working at the deployment's others.
+ *
+ * WEBAUTHN_RP_ID still wins when set, for a deployment that serves from one
+ * fixed host; setting it to anything that is not a suffix of the origins
+ * actually served is a misconfiguration the browser will reject.
+ */
 export function rpId(): string {
-  return process.env.WEBAUTHN_RP_ID || "localhost";
+  return process.env.WEBAUTHN_RP_ID?.trim() || process.env.ROOT_DOMAIN?.trim() || "localhost";
 }
 
 export function rpName(): string {
@@ -55,6 +70,35 @@ export function expectedOrigin(): string | string[] {
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
+}
+
+/**
+ * The origins a ceremony is allowed to have been performed on, for one request.
+ *
+ * WEBAUTHN_ORIGIN names the fixed ones, and under per-business origins there
+ * is one more for every business — a list that cannot be written out in
+ * advance, since a new business is a database row. So the request's own origin
+ * is added, but only when its host parses as a name this deployment answers on
+ * (`parseHost` against ROOT_DOMAIN, the same check the tenant boundary uses).
+ *
+ * A forged `Host` header cannot widen this: a name outside ROOT_DOMAIN parses
+ * as "unknown" and is dropped, and the names inside it are ones the deployment
+ * owns and holds a certificate for. The host is kept verbatim (port included)
+ * because a browser's origin carries the port it was actually served on.
+ */
+export function expectedOriginsFor(
+  hostHeader: string | null | undefined,
+  forwardedProto: string | null | undefined,
+): string | string[] {
+  const configured = expectedOrigin();
+  const base = Array.isArray(configured) ? configured : [configured];
+
+  const root = process.env.ROOT_DOMAIN?.trim() ?? "";
+  const host = (hostHeader ?? "").trim().toLowerCase().replace(/\.$/, "");
+  if (!root || !host || parseHost(host, root).kind === "unknown") return configured;
+
+  const derived = `${preferredProto(forwardedProto, "https")}://${host}`;
+  return base.includes(derived) ? configured : [...base, derived];
 }
 
 export interface ChallengeClaims {
@@ -148,6 +192,8 @@ export async function verifyRegistration(
   businessId: string,
   response: RegistrationResponseJSON,
   challengeToken: string,
+  /** The origins this request may have come from; defaults to the configured ones. */
+  origins: string | string[] = expectedOrigin(),
 ): Promise<VerifiedRegistration | null> {
   const challenge = await verifyChallenge(challengeToken, "webauthn-register", employeeId, businessId);
   if (!challenge) return null;
@@ -156,7 +202,7 @@ export async function verifyRegistration(
     const result = await verifyRegistrationResponse({
       response,
       expectedChallenge: challenge,
-      expectedOrigin: expectedOrigin(),
+      expectedOrigin: origins,
       expectedRPID: rpId(),
     });
     if (!result.verified || !result.registrationInfo) return null;
@@ -209,6 +255,8 @@ export async function verifyAuthentication(
   response: AuthenticationResponseJSON,
   challengeToken: string,
   stored: StoredCredential,
+  /** The origins this request may have come from; defaults to the configured ones. */
+  origins: string | string[] = expectedOrigin(),
 ): Promise<{ newSignCount: number } | null> {
   const challenge = await verifyChallenge(challengeToken, "webauthn-authenticate", employeeId, businessId);
   if (!challenge) return null;
@@ -217,7 +265,7 @@ export async function verifyAuthentication(
     const result = await verifyAuthenticationResponse({
       response,
       expectedChallenge: challenge,
-      expectedOrigin: expectedOrigin(),
+      expectedOrigin: origins,
       expectedRPID: rpId(),
       credential: {
         id: stored.credentialId,

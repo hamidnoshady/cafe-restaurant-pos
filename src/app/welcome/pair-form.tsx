@@ -36,10 +36,11 @@ export function PairForm({ onBack }: { onBack: () => void }) {
     });
 
     if (res.ok) {
-      const data = (await res.json()) as { slug: string };
       // The snapshot already carries a completed wizard, so this goes straight
-      // to the dashboard rather than /setup/business.
-      router.replace(`/${data.slug}/dashboard`);
+      // to the dashboard rather than /setup/business. Unprefixed: a paired
+      // laptop serves one business from its own address, and the dashboard has
+      // had no slug in its URL since the path-prefix scheme was retired.
+      router.replace("/dashboard");
       return;
     }
 

@@ -37,6 +37,20 @@ describe("parseHost", () => {
     expect(parseHost("acme.localtest.me:3000", "localtest.me")).toEqual({ kind: "business", label: "acme" });
   });
 
+  it("works when the root is itself a subdomain", () => {
+    // The deployment lives at ac.eshobe.com and businesses hang off it, so a
+    // host is three labels deep and still perfectly ordinary: what parseHost
+    // limits is the depth *below* the root, not the root's own.
+    const nested = "ac.eshobe.com";
+    expect(parseHost(nested, nested)).toEqual({ kind: "apex", label: "" });
+    expect(parseHost(`biz1.${nested}`, nested)).toEqual({ kind: "business", label: "biz1" });
+    expect(parseHost(`admin.${nested}`, nested)).toEqual({ kind: "admin", label: "admin" });
+    // One level deeper still has no wildcard certificate covering it.
+    expect(parseHost(`a.biz1.${nested}`, nested)).toEqual({ kind: "unknown", label: "" });
+    // The parent zone is not the root, so it addresses no tenant here.
+    expect(parseHost("biz1.eshobe.com", nested)).toEqual({ kind: "unknown", label: "" });
+  });
+
   it("refuses a host outside the root domain", () => {
     expect(parseHost("pos.example.com", ROOT)).toEqual({ kind: "unknown", label: "" });
     // Suffix-shaped but not a subdomain: "evilpos.eshobe.com" merely ends with
@@ -119,18 +133,26 @@ describe("preferredProto", () => {
 });
 
 describe("subdomainRoutingEnabled", () => {
-  it("is off unless explicitly turned on", () => {
-    expect(subdomainRoutingEnabled({ ROOT_DOMAIN: ROOT })).toBe(false);
-    expect(subdomainRoutingEnabled({ SUBDOMAIN_ROUTING: "off", ROOT_DOMAIN: ROOT })).toBe(false);
-    expect(subdomainRoutingEnabled({ SUBDOMAIN_ROUTING: "true", ROOT_DOMAIN: ROOT })).toBe(false);
-  });
-
-  it("is on only with both the switch and a root domain", () => {
+  it("is on as soon as a root domain is declared", () => {
+    // Declaring a root domain IS the request for per-business origins. The old
+    // opt-in existed only while the path-prefix rewrite was still the default;
+    // with that gone, "root domain set, routing off" would mean several
+    // tenants sharing one origin with no boundary at all.
+    expect(subdomainRoutingEnabled({ ROOT_DOMAIN: ROOT })).toBe(true);
+    expect(subdomainRoutingEnabled({ ROOT_DOMAIN: "ac.eshobe.com" })).toBe(true);
     expect(subdomainRoutingEnabled({ SUBDOMAIN_ROUTING: "on", ROOT_DOMAIN: ROOT })).toBe(true);
     expect(subdomainRoutingEnabled({ SUBDOMAIN_ROUTING: " ON ", ROOT_DOMAIN: ROOT })).toBe(true);
   });
 
+  it("can still be switched off explicitly, for a deployment whose certificate is not ready", () => {
+    expect(subdomainRoutingEnabled({ SUBDOMAIN_ROUTING: "off", ROOT_DOMAIN: ROOT })).toBe(false);
+    expect(subdomainRoutingEnabled({ SUBDOMAIN_ROUTING: " OFF ", ROOT_DOMAIN: ROOT })).toBe(false);
+    expect(subdomainRoutingEnabled({ SUBDOMAIN_ROUTING: "false", ROOT_DOMAIN: ROOT })).toBe(false);
+    expect(subdomainRoutingEnabled({ SUBDOMAIN_ROUTING: "0", ROOT_DOMAIN: ROOT })).toBe(false);
+  });
+
   it("reads as off with no root domain, rather than failing every host closed", () => {
+    expect(subdomainRoutingEnabled({})).toBe(false);
     expect(subdomainRoutingEnabled({ SUBDOMAIN_ROUTING: "on" })).toBe(false);
     expect(subdomainRoutingEnabled({ SUBDOMAIN_ROUTING: "on", ROOT_DOMAIN: "  " })).toBe(false);
   });

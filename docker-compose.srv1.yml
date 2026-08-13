@@ -64,9 +64,14 @@ services:
       BACKUP_DIR: /app/backups
       # Biometric login (Phase 20 Wave 3). Without these, webauthn.ts falls
       # back to its "localhost" defaults, which never match this host's real
-      # origin — every registration/login ceremony fails with a generic
-      # error. Must match the public URL exactly (see .env.example).
-      WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID:-pos.eshobe.com}
+      # origin — every registration/login ceremony fails with a generic error.
+      #
+      # The RP ID is left empty on purpose: webauthn.ts then uses ROOT_DOMAIN,
+      # which is the only value that works once businesses are served from
+      # their own subdomains (a browser requires the RP ID to be a registrable
+      # suffix of the page's origin, so pinning it to one host breaks every
+      # other). Set WEBAUTHN_RP_ID in .env only to override that.
+      WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID:-}
       WEBAUTHN_ORIGIN: ${WEBAUTHN_ORIGIN:-https://pos.eshobe.com}
       # Phase 23 — per-business origins. This host has no container labels for
       # Traefik to read (it runs network_mode: host with the file provider
@@ -88,8 +93,13 @@ services:
       # All three point at the one service: a new business is a database row,
       # never a redeploy. The OpenLiteSpeed front door in front of Traefik must
       # also be given the wildcard, since it is what terminates TLS on 443.
+      # Setting ROOT_DOMAIN is what turns host-based tenancy on; it may itself
+      # be a subdomain, e.g. ac.eshobe.com with businesses at biz1.ac.eshobe.com
+      # (the wildcard certificate then has to be *.ac.eshobe.com — one for
+      # *.eshobe.com does not cover a name a level deeper). SUBDOMAIN_ROUTING is
+      # only an escape hatch: `off` while that certificate is not yet issuing.
       ROOT_DOMAIN: ${ROOT_DOMAIN:-pos.eshobe.com}
-      SUBDOMAIN_ROUTING: ${SUBDOMAIN_ROUTING:-off}
+      SUBDOMAIN_ROUTING: ${SUBDOMAIN_ROUTING:-on}
       PLATFORM_BASE_URL: ${PLATFORM_BASE_URL:-https://pos.eshobe.com}
     # Loopback only. This host runs live customer sites on 80/443 via
     # OpenLiteSpeed; binding 0.0.0.0 here would expose the POS directly and

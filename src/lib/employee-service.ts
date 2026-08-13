@@ -17,6 +17,8 @@ import bcrypt from "bcryptjs";
 import type { PoolClient } from "pg";
 import type { AuthenticationResponseJSON, AuthenticatorTransportFuture, RegistrationResponseJSON } from "@simplewebauthn/server";
 import { getPool, query, withoutTenantScope } from "./db";
+import { hostRoutingEnabled, parseHost, rootDomain } from "./host";
+import { resolveBusinessByLabel } from "./host-resolution";
 import { isValidPin } from "./team";
 import {
   generateSessionToken,
@@ -462,8 +464,10 @@ export async function completeWebauthnRegistration(
   challengeToken: string,
   deviceLabel?: string | null,
   deviceId?: string | null,
+  /** The origins the ceremony may have been performed on — see expectedOriginsFor. */
+  origins?: string | string[],
 ): Promise<EmployeeCredentialSummary> {
-  const verified = await verifyRegistration(employeeId, businessId, response, challengeToken);
+  const verified = await verifyRegistration(employeeId, businessId, response, challengeToken, origins);
   if (!verified) throw new EmployeeError("webauthn_verification_failed");
 
   await ensureEmployeeProfile(employeeId, businessId);
@@ -537,17 +541,26 @@ export async function completeWebauthnAuthentication(
   businessId: string,
   response: AuthenticationResponseJSON,
   challengeToken: string,
+  /** The origins the ceremony may have been performed on — see expectedOriginsFor. */
+  origins?: string | string[],
 ): Promise<{ credentialId: string } | null> {
   const candidates = await activeWebauthnCredentials(employeeId, businessId);
   const match = candidates.find((row) => row.webauthn_credential_id === response.id);
   if (!match) return null;
 
-  const result = await verifyAuthentication(employeeId, businessId, response, challengeToken, {
-    credentialId: match.webauthn_credential_id,
-    publicKey: match.webauthn_public_key,
-    signCount: Number(match.webauthn_sign_count),
-    transports: (match.webauthn_transports as AuthenticatorTransportFuture[] | null) ?? null,
-  });
+  const result = await verifyAuthentication(
+    employeeId,
+    businessId,
+    response,
+    challengeToken,
+    {
+      credentialId: match.webauthn_credential_id,
+      publicKey: match.webauthn_public_key,
+      signCount: Number(match.webauthn_sign_count),
+      transports: (match.webauthn_transports as AuthenticatorTransportFuture[] | null) ?? null,
+    },
+    origins,
+  );
   if (!result) return null;
 
   await query(
@@ -881,17 +894,43 @@ export async function revokeSession(
 // ---------------------------------------------------------------------------
 
 /**
- * Resolves which business a PIN-login-family request (the PIN itself, or the
- * employee-picker roster that precedes it) is for. Lifted verbatim out of
- * `pin-login/route.ts` (Wave 1 predates this module having a caller for it)
- * so `pin-login/roster/route.ts` doesn't duplicate the same business-scoping
- * rules — see that route's original comment for why each fallback exists.
+ * Resolves which business a PIN-login-family request (the PIN itself, the
+ * employee-picker roster that precedes it, or a biometric ceremony) is for.
+ * Lifted verbatim out of `pin-login/route.ts` (Wave 1 predates this module
+ * having a caller for it) so `pin-login/roster/route.ts` doesn't duplicate the
+ * same business-scoping rules — see that route's original comment for why each
+ * fallback exists.
+ *
+ * **The host decides, when there is one.** Under subdomain routing the origin
+ * *is* the tenant, so it outranks everything in the body: a request that
+ * arrived on `acme.$ROOT_DOMAIN` is acme's, whatever it claims. This is both
+ * the boundary (a body naming another business must not reach that business's
+ * roster) and the only thing that makes these routes work at all on a
+ * multi-tenant deployment — the last fallback below answers "the only active
+ * business", which on a platform holding two is `business_required`, i.e. no
+ * cashier could sign in.
+ *
+ * A login that arrives on the apex, the console host, or an unknown name is
+ * refused rather than falling back to the body: on a host-routed deployment
+ * there is no legitimate PIN login anywhere but a business's own origin.
  */
 export async function resolveLoginBusinessId(body: {
   businessId?: string;
   businessSlug?: string;
   locationId?: string;
+  /** The request's `Host` header, so the origin can answer first. */
+  host?: string | null;
 }): Promise<{ businessId: string | null; error: string | null }> {
+  if (hostRoutingEnabled()) {
+    const parsed = parseHost(body.host, rootDomain());
+    if (parsed.kind !== "business") return { businessId: null, error: "unknown_business" };
+    const business = await resolveBusinessByLabel(parsed.label);
+    if (!business || business.status !== "active") {
+      return { businessId: null, error: "unknown_business" };
+    }
+    return { businessId: business.businessId, error: null };
+  }
+
   return withoutTenantScope("login", async () => {
     if (body.businessId) {
       const { rows } = await query<{ id: string }>(

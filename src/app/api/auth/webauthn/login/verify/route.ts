@@ -10,6 +10,7 @@ import {
   createSession,
   resolveLoginBusinessId,
 } from "@/lib/employee-service";
+import { expectedOriginsFor } from "@/lib/webauthn";
 
 interface UserRow extends Record<string, unknown> {
   id: string;
@@ -47,7 +48,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
 
-  const { businessId, error } = await resolveLoginBusinessId(body);
+  const { businessId, error } = await resolveLoginBusinessId({
+    ...body,
+    host: request.headers.get("host"),
+  });
   if (!businessId) {
     return NextResponse.json({ error: error ?? "unknown_business" }, { status: 400 });
   }
@@ -69,6 +73,9 @@ export async function POST(request: NextRequest) {
       businessId,
       body.response!,
       body.challengeToken!,
+      // The ceremony happened on this business's own origin, which no fixed
+      // WEBAUTHN_ORIGIN list can enumerate — see expectedOriginsFor.
+      expectedOriginsFor(request.headers.get("host"), request.headers.get("x-forwarded-proto")),
     );
     if (!result) {
       // Phase 20 Wave 7 — same visibility pin-login's failure path just

@@ -62,6 +62,13 @@ RLS protects the rows; the origin protects the cookie jar, `localStorage`, servi
 CSP/CORS boundary that RLS says nothing about. Never add a `domain` attribute to the session
 cookie — that one change would collapse the second boundary while everything appeared to work.
 
+The origin is the **only** thing that names a tenant in a URL: the `/{slug}/dashboard` prefix was
+deleted in Wave 5, so don't reintroduce a business identifier into a path. `ROOT_DOMAIN` is what
+switches host tenancy on (it may itself be a subdomain — `biz1.ac.eshobe.com` under
+`ROOT_DOMAIN=ac.eshobe.com`), and a subdomain is **typed in English by a super-admin**, never
+derived from the Persian business name. Anything that resolves a tenant before a session exists
+(the login family, WebAuthn's expected origin) must ask the host, not a field in the body.
+
 Three rules follow for the database side:
 
 - **A new tenant-scoped table needs an RLS policy** in the same migration that creates it.

@@ -6,6 +6,7 @@ import {
   provisionBusiness,
   validateProvisionBody,
   EmailPasswordMismatchError,
+  SubdomainTakenError,
   type ProvisionRequestBody,
 } from "@/lib/business-provisioning";
 
@@ -38,7 +39,11 @@ export const POST = withPlatformScope(async (request: NextRequest) => {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
 
-  const validated = validateProvisionBody(body);
+  // The console is the one caller with a super-admin in front of it, so it is
+  // the one caller required to name the business's address: `{subdomain}.$ROOT_DOMAIN`
+  // is what the owner will be given, and it is typed in English by hand rather
+  // than transliterated from a Persian business name.
+  const validated = validateProvisionBody(body, { requireSubdomain: true });
   if (validated.input === null) {
     return NextResponse.json({ error: validated.error }, { status: 400 });
   }
@@ -78,6 +83,12 @@ export const POST = withPlatformScope(async (request: NextRequest) => {
       { status: 201 },
     );
   } catch (err) {
+    if (err instanceof SubdomainTakenError) {
+      // Someone else already answers on that host, or it is an old host of
+      // theirs that still redirects. The admin picks another rather than
+      // being silently given `acme-2`.
+      return NextResponse.json({ error: "subdomain_taken" }, { status: 409 });
+    }
     if (err instanceof EmailPasswordMismatchError) {
       // The email already belongs to a person, and a different password was
       // offered. Adding a business to their account must be authenticated as

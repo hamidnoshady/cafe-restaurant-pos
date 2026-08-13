@@ -335,8 +335,8 @@ return-to. The host is now correct, which is what these fixes were for.
 
 ## Out of scope (this wave) — the remaining cutover steps
 
-These are deliberately **not** done in code, because they are operational and gated on the
-prerequisite below:
+Done in Wave 5 below. They were deliberately **not** done here, because they are operational and
+were gated on the wildcard certificate:
 
 - **Flipping `SUBDOMAIN_ROUTING=on` in production**, once the wildcard certificate is confirmed
   issuing.
@@ -358,3 +358,112 @@ changes the ops story materially and should be decided before the flip.
 
 `npx tsc --noEmit`, `npm test`, `npm run test:db`, and `npm run build` pass on every wave commit —
 the same four commands CI's `test` job runs.
+
+---
+
+## Scope — Wave 5: The cutover — one URL scheme, a nested root, a typed subdomain
+
+The deployment now lives at a subdomain of its own (`ac.eshobe.com`), with businesses one label
+below it (`biz1.ac.eshobe.com`). Three changes, all of them the other half of Wave 3:
+
+### 5a. `ROOT_DOMAIN` is the switch
+
+`subdomainRoutingEnabled` is on whenever a root domain is configured; `SUBDOMAIN_ROUTING=off`
+survives only as an escape hatch for a deployment whose wildcard certificate is not issuing yet.
+An install with no root domain — the desktop app, a single-café laptop — is untouched and serves
+`/dashboard` with nothing host-scoped.
+
+**A nested root needed no code.** `parseHost` matches the root as a suffix and only limits the
+depth *below* it, so `biz1.ac.eshobe.com` against `ROOT_DOMAIN=ac.eshobe.com` was already an
+ordinary business host. What the nesting costs is in TLS: the wildcard has to be
+`*.ac.eshobe.com`, since one for `*.eshobe.com` does not cover a name a level deeper. `host.test.ts`
+pins the nested case so it cannot regress.
+
+### 5b. The path-prefix URL scheme is deleted
+
+- `handleDashboardUrlRewrite` and the `session.businessSlug` branch that called it are gone from
+  `src/middleware.ts`.
+- `src/app/page.tsx` redirects to `/dashboard`, unconditionally.
+- `dashboard-sidebar.tsx`'s `splitDashboardPrefix` is gone — every `NavItem.href` is already the
+  canonical path, and there is no longer a prefix to graft back on.
+- `welcome/pair-form.tsx` lands a freshly-paired laptop on `/dashboard`.
+- The bookmark bridge stays: `/{slug}/dashboard/**` still 301s to the same path on the business's
+  own host (or, with no root domain, simply loses its prefix).
+
+### 5c. The subdomain is typed, not generated
+
+- The console's add form no longer prefills the label from the business name; the field is
+  required, live-validated, and previews the resulting URL.
+- `POST /api/platform/businesses` passes `requireSubdomain: true`, so a console-provisioned
+  business without one is a `400 missing_subdomain`.
+- `provisionBusiness` takes a requested label **verbatim** and raises `SubdomainTakenError`
+  (`409 subdomain_taken`) when it is spoken for, checking live subdomains *and* the alias table.
+  Only the name-derived fallback — the first-run wizard and public signup, which have no admin to
+  ask — still settles a collision by suffixing.
+
+### 5d. What the cutover exposed
+
+Three things worked only because the flag was off, and are fixed here:
+
+- **`/api/dashboard/**` matched the legacy-URL pattern** (slug `api`), so with routing on every
+  dashboard data fetch would have been redirected to the host resolver instead of served.
+- **PIN, roster and biometric login could not resolve a business.** `resolveLoginBusinessId`'s
+  last fallback is "the only active business", which on a platform holding two is
+  `business_required` — no cashier could sign in. It now resolves the origin first, which is both
+  the fix and the boundary: a body naming another business cannot reach that business's roster.
+- **WebAuthn was bound to one host.** `rpId()` now defaults to `ROOT_DOMAIN` (a browser only
+  accepts an RP ID that is a registrable suffix of the page's origin), and `expectedOriginsFor`
+  adds the request's own origin when its host parses under the root — the per-business origins
+  cannot be enumerated in `WEBAUTHN_ORIGIN` ahead of time, because a new business is a row.
+
+`/api/auth/login` is host-scoped too: on a business host it only ever signs someone into *that*
+business, so a person with several memberships is never offered a picker that would mint a cookie
+the next request bounces. `/login` on the apex goes to the directory, and on the console host to
+`/platform/login`.
+
+## Out of scope (this wave)
+
+- **Deleting `POST /api/auth/switch-business`.** It already refuses (`410`) whenever host routing
+  is on, and that is now every deployment with a root domain. On an install *without* one it is
+  still the only way to move between memberships, so it stays until that case does.
+- **Renaming or backfilling anyone's subdomain.** `biz-xxxxxxxx` hosts from migration 0066's
+  backfill keep working and keep their badge in the console list; renaming one is the operator's
+  call, and the alias table already covers the consequences.
+- **`businesses.slug`.** Still the stable internal handle every stored reference uses. It is no
+  longer in any URL the app generates, which is exactly why it can stay stable.
+
+## Decisions
+
+- **Declaring `ROOT_DOMAIN` is the request for per-business origins.** Keeping a separate opt-in
+  after the path-prefix scheme is gone would leave one genuinely bad state reachable — root domain
+  set, routing off, several tenants sharing one origin with *no* prefix and no boundary. The
+  escape hatch is still there, but it now has to be asked for.
+- **The bookmark bridge is not transition-window code.** Wave 4 listed the legacy 301 for deletion
+  alongside the rewrite, but the two are opposites: the rewrite *generated* prefixed URLs, the 301
+  *retires* them. Deleting it would only break printed URLs, so it stays.
+- **A typed subdomain that is taken is an error, not an `acme-2`.** The admin leaves the form
+  believing they provisioned `acme.$ROOT_DOMAIN` and hands that address to a customer. Silent
+  suffixing is fine for a derived label nobody has seen yet, and wrong for one somebody typed.
+- **The login host check runs before the password check.** No oracle: which business a hostname
+  serves is what DNS and the certificate already announce.
+- **A login on the apex or the console host is refused rather than redirected mid-POST.** The page
+  request is redirected (`/login` → the directory), but the API answers `wrong_origin`: a cookie
+  minted there would be valid on an origin that never uses it.
+
+## Where each exit criterion is satisfied (Wave 5)
+
+| Criterion | Where |
+|---|---|
+| Businesses are served one label below a nested project subdomain | `parseHost` (unchanged) + the nested-root cases in `host.test.ts` |
+| No subdirectory URL is generated anywhere | `src/app/page.tsx`, `dashboard-sidebar.tsx`, `pair-form.tsx`; `handleDashboardUrlRewrite` deleted |
+| An old prefixed bookmark still resolves | `handleLegacyPathRedirect` (routed) and the unprefixing 301 (unrouted), `src/middleware.ts` |
+| The subdomain is a hand-typed English name | the required, unprefilled field in `src/app/platform/page.tsx` + `requireSubdomain` in `validateProvisionBody` |
+| A taken subdomain is refused | `SubdomainTakenError` → `409 subdomain_taken` in `POST /api/platform/businesses` |
+| Every login family works per-origin | `resolveLoginBusinessId`'s host branch, `loginHostBusinessId` in `/api/auth/login`, `expectedOriginsFor` |
+
+## Verification
+
+`npx tsc --noEmit`, `npm test`, `npm run test:db` and `npm run build` pass. New unit coverage:
+nested-root parsing and the new switch semantics in `host.test.ts`, the typed/required/derived
+subdomain rules in `business-provisioning.test.ts`, and `expectedOriginsFor` (including that a
+forged `Host` outside the root cannot widen the accepted origins) in `webauthn.test.ts`.

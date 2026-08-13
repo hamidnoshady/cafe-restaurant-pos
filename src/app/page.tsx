@@ -51,9 +51,9 @@ export default async function Home() {
   ) {
     redirect("/setup");
   }
-  // Under subdomain routing the host already names the business, so the
-  // dashboard is served unprefixed. The slug prefix is the pre-Phase-21 form,
-  // which middleware still rewrites while SUBDOMAIN_ROUTING is off.
-  if (hostRoutingEnabled()) redirect("/dashboard");
-  redirect(session.businessSlug ? `/${session.businessSlug}/dashboard` : "/dashboard");
+  // The dashboard has one address. A business is named by its origin, never by
+  // a path prefix: `/{slug}/dashboard` is the retired form, still redirected
+  // for old bookmarks (see handleLegacyPathRedirect in src/middleware.ts) but
+  // no longer generated anywhere.
+  redirect("/dashboard");
 }
