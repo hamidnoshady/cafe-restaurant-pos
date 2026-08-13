@@ -19,6 +19,11 @@
  *     the same "resolve against the current record, not a caller-supplied
  *     snapshot" instinct accountIdsByCode already uses for account ids.
  *
+ * `consignment.payout` (Wave 7) settles what those sales credited: Debit
+ * `consignmentPayable`, Credit the cash/bank account the money left from —
+ * the second half of the "invoice, then collect/pay" shape Phase 16's AR/AP
+ * subledgers already use, which Wave 4 deliberately left for its own slice.
+ *
  * `gold.consignment_sale_revenue` (Wave 4) is a third, separate rule for a
  * consigned (امانی) piece — same pricing engine, different posting. The
  * shop never owned the piece, so there is no `gold.sale_cogs` counterpart
@@ -164,5 +169,39 @@ registerPostingRule("gold.sale_cogs", async (event, client): Promise<PostingResu
     ],
     memo: "بهای تمام‌شده طلای فروخته‌شده",
     postingKind: "gold_sale_cogs",
+  };
+});
+
+interface ConsignmentPayoutPayload {
+  consignorId: string;
+  amount: RialText;
+  paymentMethod: SettlementMethod;
+}
+
+/**
+ * Paying a consignor what their sold goods credited (Wave 7). Only cash and
+ * bank make sense here — `credit` would mean the shop paid its consignor by
+ * taking on a receivable from them, which is not a thing — so the rule maps
+ * a payout through the two settlement accounts and the service layer
+ * rejects `credit` before it ever gets here.
+ */
+registerPostingRule("consignment.payout", async (event, client): Promise<PostingResult | null> => {
+  const payload = event.payload as unknown as ConsignmentPayoutPayload;
+  if (rialBigInt(payload.amount) === 0n) return null;
+
+  const paymentCode = PAYMENT_ACCOUNT_CODE[payload.paymentMethod];
+  const accounts = await accountIdsByCode(client, event.businessId, [
+    WELL_KNOWN_CODES.consignmentPayable,
+    paymentCode,
+  ]);
+  const zero = "0" as RialText;
+
+  return {
+    lines: [
+      { accountId: accounts.get(WELL_KNOWN_CODES.consignmentPayable)!, debit: payload.amount, credit: zero },
+      { accountId: accounts.get(paymentCode)!, debit: zero, credit: payload.amount },
+    ],
+    memo: "تسویه با امانت‌گذار",
+    postingKind: "consignment_payout",
   };
 });

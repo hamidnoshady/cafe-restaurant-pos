@@ -7,6 +7,7 @@ import { formatToman } from "@/lib/money";
 import { formatJalali } from "@/lib/jalali";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { api, Field, inputClass } from "../ui";
+import { ItemAuditPanel } from "../item-audit-panel";
 import {
   SERIAL_STATUS_LABELS,
   type Runner,
@@ -203,8 +204,9 @@ function MetaItem({ label, children }: { label: string; children: React.ReactNod
 }
 
 function UnitRow({ unit, busy, run }: { unit: SerialUnit; busy: boolean; run: Runner }) {
-  const [panel, setPanel] = useState<"cost" | "sell" | null>(null);
-  const toggle = (next: "cost" | "sell") => setPanel((current) => (current === next ? null : next));
+  const [panel, setPanel] = useState<"cost" | "sell" | "audit" | null>(null);
+  const toggle = (next: "cost" | "sell" | "audit") =>
+    setPanel((current) => (current === next ? null : next));
 
   return (
     <li className="flex min-w-0 flex-col gap-3 px-4 py-4 sm:px-5">
@@ -247,6 +249,16 @@ function UnitRow({ unit, busy, run }: { unit: SerialUnit; busy: boolean; run: Ru
           >
             ویرایش بها
           </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className={secondaryActionClass}
+            disabled={busy}
+            onClick={() => toggle("audit")}
+          >
+            تاریخچه
+          </Button>
           {unit.status === "in_stock" ? (
             <Button
               type="button"
@@ -267,6 +279,7 @@ function UnitRow({ unit, busy, run }: { unit: SerialUnit; busy: boolean; run: Ru
       {panel === "sell" ? (
         <SellPanel unit={unit} busy={busy} run={run} onDone={() => setPanel(null)} />
       ) : null}
+      {panel === "audit" ? <ItemAuditPanel itemId={unit.itemId} /> : null}
     </li>
   );
 }

@@ -5,6 +5,7 @@ import { resolveActiveLocation } from "@/lib/setup-state";
 import { getItem, getSerial, updateSerial } from "@/lib/items-service";
 import { getSerialWarranty } from "@/lib/watch-sales-service";
 import { listRepairsForSerial } from "@/lib/repairs-service";
+import { recordItemEvent } from "@/lib/item-audit-service";
 
 /** A unit is only this caller's if its model lives at the branch they're scoped to. */
 async function ownedSerial(session: SessionPayload, id: string) {
@@ -54,6 +55,21 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
       unitCost: body.unitCost ?? null,
       warrantyMonths: body.warrantyMonths,
     });
+    const location = await resolveActiveLocation(session);
+    if (location) {
+      await recordItemEvent({
+        businessId: session.businessId,
+        locationId: location.id,
+        itemId: serial.itemId,
+        eventType: "item.cost_basis_changed",
+        payload: {
+          serialId: id,
+          from: { unitCost: serial.unitCost, warrantyMonths: serial.warrantyMonths },
+          to: { unitCost: updated.unitCost, warrantyMonths: updated.warrantyMonths },
+        },
+        createdBy: session.sub,
+      });
+    }
     return NextResponse.json({ ok: true, serial: updated });
   } catch (err) {
     return NextResponse.json({ error: "validation_failed", message: (err as Error).message }, { status: 400 });

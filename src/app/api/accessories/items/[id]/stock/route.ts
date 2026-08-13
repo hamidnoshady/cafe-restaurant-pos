@@ -4,6 +4,7 @@ import { requireIndustryForApi } from "@/lib/industry-guard";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { getItem } from "@/lib/items-service";
 import { receiveStock, setUnitPrice } from "@/lib/accessories-service";
+import { recordItemEvent } from "@/lib/item-audit-service";
 
 async function ownedItem(session: SessionPayload, id: string) {
   const location = await resolveActiveLocation(session);
@@ -32,11 +33,36 @@ export const POST = withTenantScope(async (request: NextRequest, context: { para
   }
 
   try {
-    if (body.unitPrice != null) await setUnitPrice(id, Number(body.unitPrice));
+    if (body.unitPrice != null) {
+      await setUnitPrice(id, Number(body.unitPrice));
+      await recordItemEvent({
+        businessId: session.businessId,
+        locationId: item.locationId,
+        itemId: id,
+        eventType: "item.price_changed",
+        payload: { unitPrice: Number(body.unitPrice) },
+        createdBy: session.sub,
+      });
+    }
     const stock =
       body.quantity != null
         ? await receiveStock(id, { quantity: String(body.quantity), unitCost: Number(body.unitCost ?? 0) })
         : null;
+    if (stock) {
+      await recordItemEvent({
+        businessId: session.businessId,
+        locationId: item.locationId,
+        itemId: id,
+        eventType: "item.stock_received",
+        payload: {
+          quantity: String(body.quantity),
+          unitCost: Number(body.unitCost ?? 0),
+          quantityOnHand: stock.quantity,
+          averageUnitCost: stock.unitCost,
+        },
+        createdBy: session.sub,
+      });
+    }
     return NextResponse.json({ ok: true, stock });
   } catch (err) {
     return NextResponse.json({ error: "validation_failed", message: (err as Error).message }, { status: 400 });

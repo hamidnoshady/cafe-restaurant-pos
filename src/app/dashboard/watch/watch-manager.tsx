@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api, ErrorBox, errorMessage as sharedErrorMessage } from "../ui";
 import { UnitsSection } from "./units-section";
 import { RepairsSection } from "./repairs-section";
+import { ReportsSection } from "./reports-section";
 
 export type SerialStatus = "in_stock" | "reserved" | "sold" | "in_repair";
 export type RepairStatus = "received" | "in_progress" | "ready" | "closed" | "cancelled";
@@ -67,6 +68,7 @@ export interface RepairPart {
 const TABS = [
   { key: "units", label: "دستگاه‌ها" },
   { key: "repairs", label: "تعمیرات" },
+  { key: "reports", label: "گزارش‌ها" },
 ] as const;
 type TabKey = (typeof TABS)[number]["key"];
 
@@ -139,7 +141,7 @@ export function WatchManager() {
         aria-label="بخش‌های ساعت"
         className="rounded-2xl border border-stone-200/80 bg-white p-2 shadow-[0_1px_2px_rgb(41_37_36/0.03)]"
       >
-        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+        <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap">
           {TABS.map((t) => {
             const isActive = tab === t.key;
             return (
@@ -170,6 +172,7 @@ export function WatchManager() {
         {tab === "repairs" ? (
           <RepairsSection tickets={tickets} units={units} busy={busy} run={run} />
         ) : null}
+        {tab === "reports" ? <ReportsSection /> : null}
       </div>
     </div>
   );

@@ -116,6 +116,16 @@ and left:
   handlers guard with `requirePlatformAdmin()`/`requirePlatformCapability(...)` from
   `src/lib/platform-auth.ts`, not `requireRole`/`requirePermission` — see
   `src/lib/platform-admin.ts` for the role→capability mapping.
+- **Industry modules (Phase 21)** — a business picks an `industry` at creation
+  (`src/lib/industries.ts`), immutable afterwards, and that choice selects its chart of accounts
+  (`coaTemplateForIndustry`), its setup-wizard steps (`wizardStepsForIndustry`), and which dashboard
+  it sees. `food_service` is the original F&B app; `jewelry`/`watch`/`accessories` build on a
+  parallel `items`/`item_serials`/`item_weight_attributes`/`item_stock` model and post through the
+  domain-event engine (`src/lib/posting-engine.ts` + each industry's `*-posting-rules.ts`) rather
+  than hand-written ledger functions. **F&B's `menu_items`/`inventory_items`/recipes are never
+  migrated onto that model, by decision** — see the phase doc's "Revised" scope note before assuming
+  otherwise. Industry-gated pages and routes use `src/lib/industry-guard.ts`, the industry-keyed
+  counterpart of `features.ts`.
 - `src/lib/*.ts` — framework-free logic (money, dates, digits, order totals, …); these are
   what `*.test.ts` files cover. `src/lib/db.ts` and files that call `query()`/`getPool()`
   are the DB-touching exception and aren't unit-tested directly.

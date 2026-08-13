@@ -4,6 +4,7 @@ import { requireIndustryForApi } from "@/lib/industry-guard";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { addSerial, getItem } from "@/lib/items-service";
 import { listSerialUnits } from "@/lib/watch-sales-service";
+import { recordItemEvent } from "@/lib/item-audit-service";
 
 /** Every physical unit at this branch, with its model, cost basis and live warranty window. */
 export const GET = withTenantScope(async () => {
@@ -48,6 +49,14 @@ export const POST = withTenantScope(async (request: NextRequest) => {
     const serial = await addSerial(body.itemId, body.serialNumber, {
       unitCost: body.unitCost ?? null,
       warrantyMonths: body.warrantyMonths ?? 0,
+    });
+    await recordItemEvent({
+      businessId: session.businessId,
+      locationId: location.id,
+      itemId: body.itemId,
+      eventType: "item.created",
+      payload: { serialId: serial.id, serialNumber: serial.serialNumber, unitCost: serial.unitCost, warrantyMonths: serial.warrantyMonths },
+      createdBy: session.sub,
     });
     return NextResponse.json({ ok: true, serial });
   } catch (err) {

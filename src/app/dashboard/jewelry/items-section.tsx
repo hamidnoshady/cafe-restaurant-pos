@@ -6,6 +6,7 @@ import { formatPersianNumber, formatQuantity } from "@/lib/digits";
 import { formatToman } from "@/lib/money";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { api, Field, inputClass } from "../ui";
+import { ItemAuditPanel } from "../item-audit-panel";
 import {
   PURITY_LABELS,
   WEIGHT_ITEM_STATUS_LABELS,
@@ -179,7 +180,7 @@ export function ItemsSection({
   );
 }
 
-type Panel = "cost" | "stones" | "consign" | "sell";
+type Panel = "cost" | "stones" | "consign" | "sell" | "audit";
 
 function ItemRow({
   item,
@@ -245,6 +246,16 @@ function ItemRow({
           >
             سنگ‌ها
           </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className={secondaryActionClass}
+            disabled={busy}
+            onClick={() => toggle("audit")}
+          >
+            تاریخچه
+          </Button>
           {!item.consignorId ? (
             <Button
               type="button"
@@ -281,6 +292,7 @@ function ItemRow({
       {openPanel === "sell" ? (
         <SellPanel item={item} busy={busy} run={run} onDone={() => setOpenPanel(null)} />
       ) : null}
+      {openPanel === "audit" ? <ItemAuditPanel itemId={item.id} /> : null}
     </li>
   );
 }
