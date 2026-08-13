@@ -57,6 +57,7 @@ const API_FEATURE_PREFIXES: [string, string][] = [
   ["/api/server-sync", "offline_mode"],
   ["/api/backup", "backup"],
   ["/api/ai", "ai_assistant"],
+  ["/api/integrations", "integrations"],
 ];
 
 export function featureForApiPath(pathname: string): string | null {
@@ -79,6 +80,7 @@ export const PAGE_FEATURE_PREFIXES: [string, string][] = [
   ["/dashboard/locations", "offline_mode"],
   ["/dashboard/backup", "backup"],
   ["/dashboard/ai", "ai_assistant"],
+  ["/dashboard/integrations", "integrations"],
 ];
 
 export function featureForPagePath(pathname: string): string | null {

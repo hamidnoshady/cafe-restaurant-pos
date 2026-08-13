@@ -73,6 +73,10 @@ const PUBLIC_PATHS = [
   // bearer API key inside api-auth.ts, not with a tenant session cookie.
   // Prefix matching keeps every /api/v1/* route reachable pre-session.
   "/api/v1",
+  // Phase 23: WooCommerce delivers webhooks to this URL with an HMAC-SHA256
+  // signature, not a tenant session — the handler authenticates the delivery
+  // against the connection's webhook secret before resolving its business.
+  "/api/integrations/woocommerce/webhook",
   // Phase 23: the apex host's "which business?" router. It verifies a password
   // but mints nothing — the whole point is that no session exists on the apex —
   // so like every other credential exchange it cannot require one.

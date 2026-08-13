@@ -53,6 +53,7 @@ app.prepare().then(async () => {
   const { describeDeploymentRole } = await import("./src/lib/deployment-role");
   const { runAiSubscriptionRenewalTick, AI_SUBSCRIPTION_TICK_INTERVAL_MS } = await import("./src/lib/ai-billing-service");
   const { runAiProactiveTick, AI_PROACTIVE_TICK_INTERVAL_MS } = await import("./src/lib/ai-proactive-service");
+  const { runWooCommerceSyncTick, WOO_SYNC_TICK_INTERVAL_MS } = await import("./src/lib/integrations/outbox-service");
 
   // Phase 12: tenant isolation is enforced by Postgres row-level security,
   // which superusers and BYPASSRLS roles ignore outright — silently, with no
@@ -103,6 +104,15 @@ app.prepare().then(async () => {
     runAiProactiveTick().catch((err) => console.error("proactive AI tick failed:", err));
   setInterval(aiProactiveTick, AI_PROACTIVE_TICK_INTERVAL_MS).unref();
   setTimeout(aiProactiveTick, 75_000).unref();
+
+  // Phase 23 (issue #118): drain the WooCommerce stock/price outbox. The tick
+  // enumerates active connections under the documented platform bypass, then
+  // wraps each business's diff/push work in withTenant — the same shape as
+  // every other background tick here.
+  const wooSyncTick = () =>
+    runWooCommerceSyncTick().catch((err) => console.error("woocommerce sync tick failed:", err));
+  setInterval(wooSyncTick, WOO_SYNC_TICK_INTERVAL_MS).unref();
+  setTimeout(wooSyncTick, 90_000).unref();
 
   const server = createServer((req, res) => {
     handle(req, res, parse(req.url ?? "/", true));

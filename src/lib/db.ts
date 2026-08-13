@@ -132,6 +132,10 @@ export async function withTenant<T>(
  *   - **api-key-auth** — resolving a public API bearer key to the
  *     business/location it belongs to (Phase 19) has the same identify-the-
  *     tenant-first shape as server-sync authentication;
+ *   - **woocommerce-webhook-auth** — resolving an inbound WooCommerce webhook
+ *     delivery (keyed on the connection id in its URL) to the business its
+ *     store belongs to, before that business can be known any other way
+ *     (Phase 23);
  *   - **identity** — a narrow write to the global identity table
  *     (`platform_users`, which carries no `business_id` to scope by) on
  *     behalf of a membership already verified to belong to the caller's own
