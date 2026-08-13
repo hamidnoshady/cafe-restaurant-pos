@@ -614,7 +614,7 @@ export async function businessUsage(businessId: string): Promise<BusinessUsage> 
          (SELECT count(*) FROM menu_items mi
             JOIN locations l ON l.id = mi.location_id WHERE l.business_id = $1) AS menu_items,
          (SELECT count(*) FROM journal_entries je WHERE je.business_id = $1) AS journal_entries,
-         (SELECT max(o.created_at) FROM orders o
+         (SELECT max(o.opened_at) FROM orders o
             JOIN locations l ON l.id = o.location_id WHERE l.business_id = $1) AS last_activity`,
       [businessId],
     ),
