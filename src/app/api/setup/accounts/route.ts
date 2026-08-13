@@ -3,8 +3,7 @@ import { getPool, query } from "@/lib/db";
 import { markStepDone } from "@/lib/settings";
 import { requireManager } from "@/lib/setup-state";
 import {
-  FNB_COA_TEMPLATE,
-  JEWELRY_COA_TEMPLATE,
+  coaTemplateForIndustry,
   nextAccountLevel,
   validateAccounts,
   type AccountLevel,
@@ -27,7 +26,7 @@ export const GET = withTenantScope(async () => {
       [session.businessId],
     ),
   ]);
-  const template = industry === "jewelry" ? JEWELRY_COA_TEMPLATE : FNB_COA_TEMPLATE;
+  const template = coaTemplateForIndustry(industry ?? "food_service");
   return NextResponse.json({ template, existing });
 });
 

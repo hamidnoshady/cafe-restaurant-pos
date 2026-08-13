@@ -1,0 +1,75 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import { formatQuantity } from "@/lib/digits";
+import { formatToman } from "@/lib/money";
+import { api } from "../ui";
+
+interface VariantSalesRow {
+  itemId: string;
+  itemName: string;
+  parentName: string | null;
+  attributes: { name: string; value: string }[];
+  quantitySold: string;
+  netRevenue: number;
+  cogs: number;
+  margin: number;
+}
+
+export function ReportsSection() {
+  const [rows, setRows] = useState<VariantSalesRow[] | null>(null);
+
+  const load = useCallback(() => {
+    api<{ rows: VariantSalesRow[] }>("/api/accessories/reports").then(({ ok, data }) => {
+      if (ok) setRows(data.rows);
+    });
+  }, []);
+  useEffect(load, [load]);
+
+  if (!rows) return <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>;
+
+  return (
+    <section aria-labelledby="accessories-reports-heading" className="min-w-0 overflow-hidden rounded-2xl bg-card">
+      <div className="border-b border-stone-200/80 px-4 py-4 sm:px-5">
+        <h2 id="accessories-reports-heading" className="font-semibold text-stone-950">
+          تحلیل فروش تنوع‌ها
+        </h2>
+        <p className="mt-1 text-xs leading-5 text-muted-foreground">
+          مستقیماً از رویدادهای فروش خوانده می‌شود — همان رویدادهایی که اسناد حسابداری از آن‌ها ساخته شده، پس
+          هیچ‌گاه با دفاتر اختلاف پیدا نمی‌کند.
+        </p>
+      </div>
+
+      <ul className="divide-y divide-stone-200/80">
+        {rows.map((row) => (
+          <li key={row.itemId} className="flex min-w-0 flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-5">
+            <div className="min-w-0">
+              <h3 className="font-semibold text-stone-950">{row.itemName}</h3>
+              <div className="mt-1 flex flex-wrap gap-1.5">
+                {row.parentName ? (
+                  <span className="rounded-full bg-stone-100 px-2 py-0.5 text-xs text-stone-600">{row.parentName}</span>
+                ) : null}
+                {row.attributes.map((attribute) => (
+                  <span
+                    key={attribute.name}
+                    className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-950"
+                  >
+                    {attribute.name}: {attribute.value}
+                  </span>
+                ))}
+              </div>
+            </div>
+            <div className="text-xs text-stone-600">
+              فروش {formatQuantity(row.quantitySold)} عدد — درآمد {formatToman(row.netRevenue)} / بهای تمام‌شده{" "}
+              {formatToman(row.cogs)}
+              <span className="ms-2 font-semibold text-stone-950">حاشیه {formatToman(row.margin)}</span>
+            </div>
+          </li>
+        ))}
+        {rows.length === 0 ? (
+          <li className="px-4 py-5 text-sm text-muted-foreground sm:px-5">هنوز فروشی ثبت نشده است.</li>
+        ) : null}
+      </ul>
+    </section>
+  );
+}

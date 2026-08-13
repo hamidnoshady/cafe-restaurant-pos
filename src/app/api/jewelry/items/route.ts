@@ -4,6 +4,7 @@ import { requireIndustryForApi } from "@/lib/industry-guard";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { createItem, listWeightItems, setWeightAttributes } from "@/lib/items-service";
 import { validateWeightAttributes } from "@/lib/gold";
+import { recordItemEvent } from "@/lib/item-audit-service";
 
 export const GET = withTenantScope(async () => {
   const { session, error } = await requireRole("owner", "manager");
@@ -66,5 +67,13 @@ export const POST = withTenantScope(async (request: NextRequest) => {
     tracking: "weight",
   });
   await setWeightAttributes(item.id, weightInput);
+  await recordItemEvent({
+    businessId: session.businessId,
+    locationId: location.id,
+    itemId: item.id,
+    eventType: "item.created",
+    payload: { name, ...weightInput },
+    createdBy: session.sub,
+  });
   return NextResponse.json({ ok: true, id: item.id });
 });

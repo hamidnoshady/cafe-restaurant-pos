@@ -5,6 +5,7 @@ import { api, ErrorBox, errorMessage as sharedErrorMessage } from "../ui";
 import { ItemsSection } from "./items-section";
 import { PricesSection } from "./prices-section";
 import { ConsignorsSection } from "./consignors-section";
+import { ReportsSection } from "./reports-section";
 
 export type Purity = "18" | "21" | "24";
 export type WeightItemStatus = "in_stock" | "reserved" | "sold";
@@ -62,6 +63,7 @@ const TABS = [
   { key: "items", label: "کالاها" },
   { key: "prices", label: "نرخ طلا" },
   { key: "consignors", label: "امانت‌گذاران" },
+  { key: "reports", label: "گزارش‌ها" },
 ] as const;
 type TabKey = (typeof TABS)[number]["key"];
 
@@ -133,7 +135,7 @@ export function JewelryManager() {
         aria-label="بخش‌های طلا و جواهر"
         className="rounded-2xl border border-stone-200/80 bg-white p-2 shadow-[0_1px_2px_rgb(41_37_36/0.03)]"
       >
-        <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap">
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
           {TABS.map((t) => {
             const isActive = tab === t.key;
             return (
@@ -168,6 +170,7 @@ export function JewelryManager() {
         ) : null}
         {tab === "prices" ? <PricesSection prices={prices} busy={busy} run={run} /> : null}
         {tab === "consignors" ? <ConsignorsSection consignors={consignors} busy={busy} run={run} /> : null}
+        {tab === "reports" ? <ReportsSection busy={busy} run={run} /> : null}
       </div>
     </div>
   );

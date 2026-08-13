@@ -3,6 +3,7 @@ import { requireRole, withTenantScope } from "@/lib/auth";
 import { requireIndustryForApi } from "@/lib/industry-guard";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { addStone, getItem } from "@/lib/items-service";
+import { recordItemEvent } from "@/lib/item-audit-service";
 
 export const POST = withTenantScope(async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
   const { session, error } = await requireRole("owner", "manager");
@@ -30,6 +31,14 @@ export const POST = withTenantScope(async (request: NextRequest, context: { para
       stoneType: body.stoneType ?? "",
       carat: body.carat ?? "",
       cost: Number(body.cost),
+    });
+    await recordItemEvent({
+      businessId: session.businessId,
+      locationId: location.id,
+      itemId: id,
+      eventType: "item.stone_added",
+      payload: { stoneId: stone.id, stoneType: stone.stoneType, carat: stone.carat, cost: stone.cost },
+      createdBy: session.sub,
     });
     return NextResponse.json({ ok: true, stone });
   } catch (err) {

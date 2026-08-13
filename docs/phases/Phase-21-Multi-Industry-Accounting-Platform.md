@@ -176,11 +176,16 @@ Each wave is still developed, tested, and PR'd independently, per the issue's ow
 3. **External gold-price feed** — provider TBD. The hook exists (`gold_prices.source`, shipped in
    migration 0052 and `gold-prices-service.ts`'s `source: 'external'`) and manual entry ships as the
    baseline; a specific integration is still a follow-up once a provider is chosen.
-4. **Consignment settlement accounts** — new well-known accounts (a consignment-liability account
-   distinct from Accounts Payable?) — to be designed alongside Wave 4, following Phase 16's
-   pattern of adding well-known codes plus a backfill migration.
-5. **Repair ticket workflow detail** (statuses, whether it reuses the kitchen-ticket state-machine
-   shape or needs its own) — deferred to Wave 5 design.
+4. ~~**Consignment settlement accounts**~~ **Settled:** two new well-known codes, both distinct from
+   Accounts Payable — `consignmentPayable` (2110) for what a sale owes the consignor and
+   `consignmentCommissionRevenue` (4700) for the shop's own earning on it (Wave 4). Wave 7 added the
+   settlement half: `consignment.payout` debits 2110 and credits cash/bank.
+5. ~~**Repair ticket workflow detail**~~ **Settled (Wave 5):** its own five-state machine —
+   `received → in_progress → ready → closed`, with `cancelled` reachable from any open state and both
+   terminal states terminal — not a reuse of Phase 4's kitchen-ticket shape. A kitchen ticket lives for
+   minutes and is never billed; a repair ticket lives for days, accrues parts and labor, and posts to
+   the ledger when it closes. `closed` is deliberately unreachable through a bare status update
+   (`validateRepairStatusTransition` rejects it), because closing is what posts.
 6. **Can an existing F&B business ever switch industry later**, or is the setup-time choice as
    permanent as the costing-method lock? Leaning permanent for v1 (same reasoning as costing
    method — changing it retroactively would corrupt historical postings), revisit only if asked.
@@ -294,9 +299,9 @@ Wave 1, third slice — the item-model scope decision — implemented:
   F&B's costing engine is wired into `inventory_items`'s own columns). This closes out what was
   previously listed as "remaining Wave 1 work" on that front.
 
-Remaining Wave 1 work: the industry-specific setup-wizard branches (chart-of-accounts template +
-remaining steps) for `jewelry`/`watch`/`accessories`, deferred until each of those waves actually
-needs them — there is nothing productive to build here before Wave 2+ defines what a gold/watch/
+Remaining Wave 1 work at the time: the industry-specific setup-wizard branches (chart-of-accounts
+template + remaining steps) for `jewelry`/`watch`/`accessories`, deferred until each of those waves
+actually needed them — all four now exist (`coaTemplateForIndustry`, Waves 5/6) — there is nothing productive to build here before Wave 2+ defines what a gold/watch/
 accessories business's own onboarding actually looks like. With the item-model question now settled,
 Wave 1's core is otherwise complete.
 
@@ -610,3 +615,185 @@ provider is wired up — blocked on the product owner picking one); paying out a
 `consignmentPayable` balance and consignor statements (Wave 4's deferred follow-up); and weight-based
 lots/FIFO costing for bulk gold stock (Wave 2's deferred costing subsystem — today's single
 `unit_cost_per_gram` is an average-cost simplification, not FIFO lots).
+
+Wave 5 — watch (ساعت): serialized units, warranty, repairs — implemented:
+
+- **`item_serials` gained the lifecycle Wave 1 left to this wave**
+  (`migrations/0067_watch_serials_warranty_repairs.sql`): `unit_cost` (nullable, same reasoning as
+  `item_weight_attributes.unit_cost_per_gram` — a unit can exist mid-intake before its cost is known,
+  and the sale path refuses to sell one with none), `warranty_months` (0 = sold with no warranty, a
+  real answer rather than a missing one), and `sold_at`. A serialized unit is the easiest possible
+  cost-basis case — one unit, one purchase, one cost — so unlike bulk gold there is no fungible-pool
+  question deferred here at all.
+- **`serial_warranties`** records the window that opens *at sale*, separate from the months column
+  because the two answer different questions: the column is the term a unit *would* be sold with, the
+  row is the window actually running on a unit that sold. `addMonthsToIsoDate` (`src/lib/watch.ts`)
+  clamps to the target month's last day, so a 31st never spills into the next month — a warranty that
+  silently gained a day is a customer-visible bug, not a rounding detail.
+- **`repair_tickets` + `repair_ticket_parts` + `repair_ticket_counters`.** Ticket numbers are
+  per-location and race-safe through the same atomic `UPDATE … RETURNING` counter Phase 2 uses for
+  order numbers (migration 0003) — a repair ticket is a numbered document a customer walks out with.
+  `serial_id` is nullable on purpose: most repairs walking into a watch shop are for a piece the shop
+  never sold, so free-text `item_description` is the required identity and the serial link is the
+  *optional* extra that makes the warranty check possible. A part carries `unit_cost` and `charge` as
+  two separate columns rather than one marked-up number, because they post to different sides of the
+  ledger — and because a warranty repair charges nothing while still consuming a part that cost real
+  money.
+- **`src/lib/watch.ts` / `watch-pricing.ts`** — the pure rules: cost/warranty validation, the month
+  arithmetic above, the repair state machine (open question 5, settled above), and the sale and repair
+  bills. A watch has a price, not a formula, and — unlike gold — none of it is VAT-exempt, so the only
+  computation is VAT on the discounted price, rounded per component so a receipt's lines always sum to
+  its total (Wave 3's rule, unchanged).
+- **`src/lib/watch-posting-rules.ts`** registers four rules against Wave 1's engine:
+  `watch.sale_revenue` (Debit payment account; Credit `watchSalesRevenue` + `vatPayable`),
+  `watch.sale_cogs` (Debit `watchCogs` / Credit `watchInventory` for the unit's own cost),
+  `watch.repair_revenue` (Debit payment account; Credit `repairServiceRevenue` + `vatPayable` — and
+  **returns `null` on a zero total**, so a warranty job records its event and posts no revenue entry:
+  exactly the "not every domain event has a ledger effect" path the engine was built with), and
+  `watch.repair_cogs` (Debit `repairPartsExpense` / Credit `watchInventory`), which posts **even on a
+  warranty job** — the shop ate the cost, and the books have to show it. Parts cost is summed live from
+  `repair_ticket_parts` at posting time, not passed through the payload, matching what
+  `gold.sale_cogs` already does with `item_stones`.
+- **`watch-sales-service.ts` / `repairs-service.ts`** — the sale (revenue, COGS, status, warranty row,
+  all atomic in the caller's transaction) and the intake → parts → labor → close workflow. Intake
+  resolves the under-warranty question *once*, from the linked unit's live window, and stores it: the
+  window can expire between intake and close, and what governs the bill is the state on the day the
+  shop accepted the piece. A shop-owned unit goes to `in_repair` on intake and back to `in_stock` when
+  the ticket closes or is cancelled; an already-`sold` unit stays sold (Wave 1's terminal-status rule
+  is not walked back by a service visit).
+- **Chart of accounts:** `WATCH_COA_TEMPLATE` plus five well-known codes (`watchInventory` 1330,
+  `watchSalesRevenue` 4550, `watchCogs` 5120, `repairServiceRevenue` 4800, `repairPartsExpense` 5130),
+  keeping unit sales and repair service as separate revenue lines — a shop wants to know what it earns
+  servicing watches versus selling them. `coaTemplateForIndustry()` now centralizes the industry →
+  template choice that three call sites were each ternary-ing; two industries could get away with
+  that, four cannot.
+- **`/api/watch/*` and `/dashboard/watch`** (دستگاه‌ها / تعمیرات), industry-gated exactly like the
+  jewelry ones, and `watch` joined `ENABLED_INDUSTRIES` so `/welcome` offers it. The wizard needed no
+  new work: `wizardStepsForIndustry` already drops `costing`/`menu` for any non-`food_service`
+  industry.
+- Verified in `src/lib/watch.test.ts` + `src/lib/watch-pricing.test.ts` (28 pure cases, including the
+  short-month clamp and every rejection) and `integration/watch.integration.test.ts` (12 cases:
+  hand-verified postings for a sale, a billed repair and a warranty repair, the warranty window,
+  refusing to sell a unit twice or without a cost basis, per-location ticket numbering, and the
+  `in_repair` ↔ `in_stock` shelf transitions). `npx tsc --noEmit`, `npm test` (1203), `npm run
+  db:migrate` (twice) + `npm run test:db` (378), and `npm run build` all pass.
+
+Wave 6 — accessories (بدلیجات) & variant management — implemented, and genuinely the thin wave the
+plan predicted:
+
+- Wave 1's variant primitive already models a product family and its variants
+  (`items` with `variant_parent`/`variant_child`, `item_variant_attributes`, `createVariantChild`),
+  so the only missing piece was the half a variant needs and the other two industries don't: an
+  accessory is **fungible** — a countable quantity on hand and a shelf price, neither of which had
+  anywhere to live. **`item_stock`** (`migrations/0068_item_stock.sql`) is that: `quantity`
+  (`numeric(24,9)`, the precision this schema already spends on quantities), a running weighted-average
+  `unit_cost`, and a `unit_price`. Deliberately **not** a second inventory subsystem — no lots, no
+  movements, no FIFO — the same "prove the simple case first" call gold (one average cost per piece)
+  and watch (one cost per unit) already made.
+- **`src/lib/accessories.ts`** — the running average after a receipt and a sale line's price. This is
+  deliberately not a call to `inventory-costing.ts`'s existing `calculateNewAverageCost`: that one is
+  plain-number (`Rial`) arithmetic against F&B's costing engine, and every posting path this phase has
+  built runs on the exact Decimal/RialText path instead (the correction Wave 1's second slice already
+  made once). Recomputing a cost in floating point and then posting it exactly would put the
+  imprecision back one layer up.
+- **`accessories-posting-rules.ts`** registers `accessory.sale_revenue` / `accessory.sale_cogs` — the
+  plain revenue/COGS pair, with no industry-specific split (nothing VAT-exempt like gold's metal value,
+  no service line like watch's repairs).
+- **`accessories-service.ts`** — receive stock (rolling the average forward under a `FOR UPDATE` read,
+  since the new average depends on the row's current values), set a price, and sell. The sale posts
+  both entries and decrements stock in one transaction, so stock can never drift from what the ledger
+  was told; overselling is refused in front of the `CHECK (quantity >= 0)` that is the real guard.
+  A `variant_parent` is rejected everywhere a sellable thing is expected — a product family is not a
+  thing on a shelf.
+- **`ACCESSORIES_COA_TEMPLATE`** plus three well-known codes (1340/4560/5140), `/api/accessories/*`,
+  and a `/dashboard/accessories` page (families, variants with their attribute chips, stock/price,
+  sale). `accessories` joined `ENABLED_INDUSTRIES`, so all four of Phase 21's industries are now
+  offered at `/welcome`.
+- Verified in `src/lib/accessories.test.ts` (11 pure cases) and
+  `integration/accessories.integration.test.ts` (8 cases: average-cost roll-forward across receipts,
+  hand-verified revenue/COGS postings, overselling refused with stock *and* the ledger untouched,
+  price and cost kept as separate facts, and the board query). `npx tsc --noEmit`, `npm test` (1217),
+  `npm run db:migrate` (twice) + `npm run test:db` (386), and `npm run build` all pass.
+
+Wave 7 — specialized reports & audit controls — implemented, closing the phase:
+
+- **Weight reconciliation (تطبیق وزنی)** — `weight_counts` (`migrations/0069_weight_counts.sql`) is
+  the weight-based analogue of Phase 6's stock counts: one row per (branch, day, purity) recording
+  what the scale said against what the books believed. `system_weight` is **stored at count time**,
+  not recomputed on read — a count is evidence of a discrepancy on a given day, and a figure that
+  drifted as later sales posted would be worthless as evidence (asserted directly in the integration
+  test). It deliberately **posts nothing**: a gold variance in grams has no unambiguous Rial value
+  under this phase's costing model, since each piece carries its own `unit_cost_per_gram`, so "0.4g
+  missing" doesn't say whose cost basis to relieve. Valuing that variance needs the weight-based lot
+  costing Wave 2 deferred; until then the count is an audit record and correcting the books is a
+  manual journal (Phase 16's workflow) with this row as its evidence.
+- **Consignor statements and payouts** — `getConsignorStatement` reconstructs what a consignor is owed
+  from the domain-event log (metal value + making charge credited by each
+  `gold.consignment_sale_revenue`, less each `consignment.payout`) rather than keeping a running
+  balance column, the same "never a shadow copy" rule Phase 16's AR/AP statements follow; every line
+  also carries the `entry_id` it posted, so statement and ledger reconcile against each other.
+  `payConsignor` + the new `consignment.payout` rule (Debit `consignmentPayable`, Credit cash/bank)
+  are the settlement half Wave 4 explicitly deferred — completing the "invoice, then collect/pay"
+  shape. Overpaying is refused; `credit` as a payout method is refused (paying a consignor by taking
+  on a receivable *from* them is not a thing).
+- **Warranty and repair reports** — `warrantyReport` classifies every window ever opened at a branch as
+  active/expiring/expired against a given date (`expiring` = active within a notice window, because a
+  shop wants the list of customers whose cover is about to lapse, not just a yes/no). `repairReport`
+  gives throughput by status and profitability — over **closed tickets only**, since an open ticket's
+  agreed charges are an intention, not revenue — and reports a warranty job's negative margin rather
+  than hiding it: the shop spent parts and billed nobody.
+- **Variant-level sales analysis** — `variantSalesAnalysis` reads quantity, revenue and COGS straight
+  off the `accessory.sale_*` events, so it can never disagree with the postings those same events
+  produced.
+- **Item-level audit trail** — the phase's last piece, and the one that justifies the domain-event log
+  beyond posting. Sales and repairs already left a record; intake and edits did not, because they have
+  no ledger effect — and they need none: the engine has recorded-but-unposted events as a designed
+  path since Wave 1. `item-audit-service.ts`'s `recordItemEvent` appends `item.created`,
+  `item.cost_basis_changed`, `item.stone_added`, `item.consigned`, `item.stock_received`,
+  `item.price_changed` from the route handlers (the request is what knows *who* acted; the item
+  services take neither actor nor business), best-effort so an audit note can never be why a
+  legitimate edit fails. `itemAuditTrail` reads posted and unposted events back as one timeline,
+  joined to the journal entry where there is one, and follows a watch unit by either its item id or
+  its serial id.
+- **Routes and UI**: `/api/jewelry/reports/*`, `/api/jewelry/consignors/[id]/payout`,
+  `/api/watch/reports`, `/api/accessories/reports`, and `/api/industry/items/[id]/audit` (shared by all
+  three industries — the timeline is the same log whoever wrote it, and the guard that matters is that
+  the item belongs to the caller's branch; F&B is excluded because it has no `items` rows at all). Each
+  dashboard gained a گزارش‌ها tab, and the jewelry/watch boards a per-item «تاریخچه» panel.
+- Verified in `src/lib/industry-reports.test.ts` (12 pure cases) and
+  `integration/industry-reports.integration.test.ts` (14 cases, every figure asserted against records
+  the earlier waves' own services wrote rather than hand-inserted rows: the count's frozen system
+  weight, a consignor statement's three-way split and its payout posting, overpay refusal, warranty
+  classification across three windows, closed-only repair totals including the negative warranty
+  margin, variant ranking, and an audit trail interleaving unposted lifecycle events with posted sale
+  events — plus that another business's id returns nothing). `npx tsc --noEmit`, `npm test` (1235),
+  `npm run db:migrate` (twice) + `npm run test:db` (400), and `npm run build` all pass.
+
+### Where each exit criterion is satisfied
+
+- *No behavioral change for an existing F&B business* — every pre-existing unit and integration test
+  passes unmodified across all three waves (the only test edits were adding new cases and moving
+  `watch`/`accessories` from the "rejected" list to the "accepted" list in
+  `business-provisioning.test.ts`, which is the behavior change the waves were for).
+- *A new business can pick any of the four industries at setup and get its own item model, sales flow
+  and chart of accounts, with no F&B-only nav* — `ENABLED_INDUSTRIES` (all four),
+  `coaTemplateForIndustry`, `wizardStepsForIndustry`, and the `industry` field on `NAV_ITEMS`.
+- *A gold sale's receipt shows the full breakdown and posts a balanced entry* — Wave 3, unchanged.
+- *A consigned item never appears in the business's own valuation until sold, and selling it posts the
+  commission/settlement split* — Wave 4, with Wave 7 adding the statement and the payout that settles
+  it.
+- *A watch's serial number, warranty window and repair history are queryable from one item record, and
+  a repair ticket's parts/labor post correctly* — `listSerialUnits`, `getSerialWarranty`,
+  `listRepairsForSerial` (all three reachable from `GET /api/watch/units/[id]`), and Wave 5's four
+  posting rules.
+- *Every new table has an RLS policy and is covered by the generated tenant-isolation test* — the six
+  tables added across Waves 5-7 (`serial_warranties`, `repair_ticket_counters`, `repair_tickets`,
+  `repair_ticket_parts`, `item_stock`, `weight_counts`) each carry their policy in the same migration,
+  and `integration/tenant-isolation.integration.test.ts` discovers them from `pg_class` — it passes
+  with no edits, which is the point.
+
+Deliberately still open after Phase 21 (each a product decision, not an unfinished build): an external
+gold-price feed (the `source: 'external'` hook exists; no provider chosen); weight-based lot/FIFO
+costing for bulk gold, and with it a *valued* weight variance that could post automatically; and coin
+("سکه") pricing, which is per-unit rather than per-gram and so fits neither `gold_prices` nor
+`item_weight_attributes`.

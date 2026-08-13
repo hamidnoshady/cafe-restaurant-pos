@@ -13,7 +13,7 @@ export const INDUSTRIES = ["food_service", "jewelry", "watch", "accessories"] as
 export type Industry = (typeof INDUSTRIES)[number];
 
 /** Which industries the setup UI actually offers a new business, vs. reserved for a later wave. */
-export const ENABLED_INDUSTRIES: Industry[] = ["food_service", "jewelry"];
+export const ENABLED_INDUSTRIES: Industry[] = ["food_service", "jewelry", "watch", "accessories"];
 
 export const INDUSTRY_LABELS: Record<Industry, string> = {
   food_service: "کافه و رستوران",
