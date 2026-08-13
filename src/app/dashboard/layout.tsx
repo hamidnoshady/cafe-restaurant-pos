@@ -23,6 +23,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "انبار", href: "/dashboard/inventory", roles: ["owner", "manager"], flag: "inventory" },
   { label: "طلا و جواهر", href: "/dashboard/jewelry", roles: ["owner", "manager"], industry: "jewelry" },
   { label: "حسابداری", href: "/dashboard/ledger", roles: ["owner", "manager", "accountant"], flag: "ledger" },
+  { label: "فروشگاه آنلاین", href: "/dashboard/integrations", roles: ["owner", "manager"], flag: "integrations" },
   { label: "گزارش‌ها", href: "/dashboard/reports", roles: ["owner", "manager", "accountant"], flag: "reporting" },
   { label: "دستیار هوشمند", href: "/dashboard/ai", roles: ["owner", "manager"], flag: "ai_assistant" },
   { label: "تنظیمات", href: "/dashboard/settings" },
