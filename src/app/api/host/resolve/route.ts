@@ -1,5 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { parseHost, businessHost } from "@/lib/host";
+import {
+  businessHost,
+  hostRoutingEnabled,
+  parseHost,
+  requestHost,
+  trustForwardedHost,
+  type HostEnv,
+} from "@/lib/host";
 import { resolveBusinessByLabel } from "@/lib/host-resolution";
 
 /**
@@ -16,24 +23,48 @@ import { resolveBusinessByLabel } from "@/lib/host-resolution";
  * business behind it beyond its display name, which its own login page shows
  * anyway. Callers are the apex router (does this name exist?) and an alias
  * host redirecting itself to the current name.
+ *
+ * `?debug=1` adds what the app *saw* — the two host headers, which of them the
+ * tenancy decision used, and how it parsed. Behind a managed platform that
+ * rewrites `Host`, this is the only way to find out that it does: every symptom
+ * of it (endless redirects to the apex, a login that never sticks) looks like
+ * something else. It echoes the caller's own request headers back to them,
+ * plus the root domain, which is in the URL they typed — so the one new fact
+ * it can reveal is the platform's internal hostname for the container.
  */
 export async function GET(request: NextRequest) {
   const rootDomain = process.env.ROOT_DOMAIN?.trim() ?? "";
-  const requested = request.nextUrl.searchParams.get("host") ?? request.headers.get("host");
-  const parsed = parseHost(requested, rootDomain);
+  const used = request.nextUrl.searchParams.get("host") ?? requestHost(request.headers);
+  const parsed = parseHost(used, rootDomain);
+
+  const debug =
+    request.nextUrl.searchParams.get("debug") === "1"
+      ? {
+          request: {
+            host: request.headers.get("host"),
+            forwardedHost: request.headers.get("x-forwarded-host"),
+            usedForTenancy: used,
+            trustForwardedHost: trustForwardedHost(process.env as HostEnv),
+            rootDomain,
+            subdomainRouting: hostRoutingEnabled(),
+            parsed,
+          },
+        }
+      : null;
 
   if (parsed.kind !== "business") {
-    return NextResponse.json({ kind: parsed.kind, business: null });
+    return NextResponse.json({ kind: parsed.kind, business: null, ...debug });
   }
 
   const business = await resolveBusinessByLabel(parsed.label);
   // Archived businesses are treated as absent: the origin should stop
   // resolving when the tenant is gone, not offer a login that can never work.
   if (!business || business.status === "archived") {
-    return NextResponse.json({ kind: "business", business: null });
+    return NextResponse.json({ kind: "business", business: null, ...debug });
   }
 
   return NextResponse.json({
+    ...debug,
     kind: "business",
     business: {
       name: business.name,

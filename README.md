@@ -300,7 +300,14 @@ the console at `admin.ac.eshobe.com` — in which case the wildcard certificate 
 not issue `*.$ROOT_DOMAIN` over an HTTP-01 challenge, so the Traefik certresolver must use DNS-01;
 `SUBDOMAIN_ROUTING=off` is the escape hatch for a deployment whose certificate is not issuing yet.
 `WEBAUTHN_RP_ID` defaults to `ROOT_DOMAIN` for the same reason biometric login needs it to: a
-browser only accepts an RP ID that is a registrable suffix of the page's origin. See
+browser only accepts an RP ID that is a registrable suffix of the page's origin.
+
+**Behind a managed platform rather than Traefik, set `TRUST_FORWARDED_HOST=on`.** A PaaS/CDN edge
+routes by hostname itself and gives the container an internal `Host` (`web-1234.internal:3000`),
+leaving the browser's hostname in `X-Forwarded-Host`. Tenancy is decided from `Host` by default —
+correct behind Traefik, which passes it through untouched — so on such a platform every request
+would parse as an unknown host and fail closed. `GET /api/host/resolve?debug=1` shows which header
+the app used and how it parsed, which is the quickest way to tell. See
 [docs/phases/Phase-23-Subdomain-Tenancy.md](docs/phases/Phase-23-Subdomain-Tenancy.md).
 
 **The app's database role must not be a superuser.** Superusers and `BYPASSRLS` roles ignore

@@ -3,6 +3,7 @@ import type { AuthenticationResponseJSON } from "@simplewebauthn/server";
 import { query, withTenant } from "@/lib/db";
 import { SESSION_COOKIE, sessionCookieOptions, signSession, type Role } from "@/lib/auth";
 import { resolveDeviceId } from "@/lib/device-service";
+import { requestHost } from "@/lib/host";
 import {
   auditLoginFailure,
   checkLoginLockout,
@@ -50,7 +51,7 @@ export async function POST(request: NextRequest) {
 
   const { businessId, error } = await resolveLoginBusinessId({
     ...body,
-    host: request.headers.get("host"),
+    host: requestHost(request.headers),
   });
   if (!businessId) {
     return NextResponse.json({ error: error ?? "unknown_business" }, { status: 400 });
@@ -75,7 +76,7 @@ export async function POST(request: NextRequest) {
       body.challengeToken!,
       // The ceremony happened on this business's own origin, which no fixed
       // WEBAUTHN_ORIGIN list can enumerate — see expectedOriginsFor.
-      expectedOriginsFor(request.headers.get("host"), request.headers.get("x-forwarded-proto")),
+      expectedOriginsFor(requestHost(request.headers), request.headers.get("x-forwarded-proto")),
     );
     if (!result) {
       // Phase 20 Wave 7 — same visibility pin-login's failure path just

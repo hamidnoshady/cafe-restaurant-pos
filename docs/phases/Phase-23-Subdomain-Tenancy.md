@@ -467,3 +467,69 @@ the next request bounces. `/login` on the apex goes to the directory, and on the
 nested-root parsing and the new switch semantics in `host.test.ts`, the typed/required/derived
 subdomain rules in `business-provisioning.test.ts`, and `expectedOriginsFor` (including that a
 forged `Host` outside the root cannot widen the accepted origins) in `webauthn.test.ts`.
+
+---
+
+## Scope — Wave 6: Running behind a managed platform
+
+Wave 5's cutover was attempted on a PaaS (Runflare) rather than the Traefik stack the compose
+files describe, and it failed in a way worth writing down: setting `ROOT_DOMAIN` returned **502 on
+every hostname, including the apex that had been serving a second earlier**.
+
+### What actually happened
+
+The app decides tenancy from the real `Host` header, deliberately — a forwarded header is
+client-supplied unless a proxy overwrote it, and Traefik passes the original through untouched. A
+managed platform does the opposite: it routes by hostname at its edge and hands the container an
+internal name, keeping the browser's hostname in `X-Forwarded-Host`. So `Host` named no tenant on
+any request, and with `ROOT_DOMAIN` set every request parsed as `unknown` and failed closed.
+
+Failing closed is correct. The 502 came from what failing closed *looked like* in a loop:
+
+1. `/dashboard` with a valid session, unknown host → middleware sends it to `/api/host/redirect`.
+2. The resolver cannot name the host either → redirects to the apex `/`.
+3. `/` is public, so page.tsx runs, finds a session, and redirects to `/dashboard` — back to (1).
+
+A platform health probe caught in that cycle marks the instance unhealthy, and the edge then
+serves 502 for *everything*, which is why the apex went down too.
+
+### The two fixes
+
+- **`TRUST_FORWARDED_HOST=on|off`** (default off, so Traefik deployments are byte-for-byte
+  unchanged). On, the tenancy decision reads the first entry of `X-Forwarded-Host`.
+  `resolveRequestHost` is the single place that decides, and middleware, `page.tsx`, the login
+  family, `/api/host/*` and WebAuthn's origin check all now go through it — a boundary that held
+  in one layer and not another would be worse than no boundary at all.
+- **The loop terminates at `/`.** Every cycle passes through the root page, so that is where it
+  stops: an unknown host under host routing renders an explanation instead of continuing to
+  `/dashboard`. A misconfiguration now costs one page, not the deployment.
+
+`GET /api/host/resolve?debug=1` reports both host headers, which one the tenancy decision used,
+and how it parsed. Without it this class of problem is close to undiagnosable — every symptom
+(a login that never sticks, endless redirects, a 502 from the edge) points somewhere else.
+
+## Decisions
+
+- **Opt-in, not auto-detected.** "Use `X-Forwarded-Host` when `Host` doesn't parse under the root"
+  would have made this work with no configuration — and would have meant the boundary silently
+  weakens whenever the root domain is misconfigured, which is exactly when nobody is looking. An
+  operator naming their platform is a decision that can be reviewed.
+- **The cost is stated where it is taken.** Turning it on means a caller who can reach the app
+  directly, bypassing the platform, chooses which origin their request appears to be on. That does
+  not cross the tenant boundary — rows are scoped by the session JWT's `businessId`, so RLS is
+  untouched — but the origin check degrades to what the cookie jar already enforces. Both
+  `trustForwardedHost`'s doc comment and `.env.example` say so in those terms.
+- **The diagnostic is public.** It echoes the caller's own request headers back to them plus
+  `ROOT_DOMAIN`, which is in the URL they typed; the one new fact is the platform's internal
+  hostname for the container. Worth it, and gated behind `?debug=1`.
+- **The unknown-host page is not a redirect.** Redirecting anywhere is what caused this; a
+  terminal page is the only response that cannot participate in a loop.
+
+## Where each exit criterion is satisfied (Wave 6)
+
+| Criterion | Where |
+|---|---|
+| Per-business origins work behind a Host-rewriting platform | `TRUST_FORWARDED_HOST` + `resolveRequestHost`, `src/lib/host.ts` |
+| One definition of "this request's host" | `requestHost` used by middleware, `page.tsx`, the login family, `/api/host/*`, WebAuthn |
+| A host misconfiguration cannot loop the deployment down | the `host.kind === "unknown"` branch in `src/app/page.tsx` |
+| An operator can see what the app sees | `GET /api/host/resolve?debug=1` |

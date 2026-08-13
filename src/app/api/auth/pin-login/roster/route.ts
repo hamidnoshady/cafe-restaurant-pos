@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withTenant } from "@/lib/db";
 import { resolveDeviceId } from "@/lib/device-service";
+import { requestHost } from "@/lib/host";
 import { loginRoster, resolveLoginBusinessId } from "@/lib/employee-service";
 
 /**
@@ -21,7 +22,7 @@ export async function GET(request: NextRequest) {
     businessId: params.get("businessId") ?? undefined,
     businessSlug: params.get("businessSlug") ?? undefined,
     locationId: params.get("locationId") ?? undefined,
-    host: request.headers.get("host"),
+    host: requestHost(request.headers),
   });
   if (!businessId) {
     return NextResponse.json({ error: error ?? "unknown_business" }, { status: 400 });

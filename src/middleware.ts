@@ -18,6 +18,7 @@ import {
   hostRoutingEnabled,
   parseHost,
   preferredProto,
+  requestHost,
   swapHostLabel,
   type ParsedHost,
 } from "@/lib/host";
@@ -488,12 +489,16 @@ export async function middleware(request: NextRequest) {
   // certificate is not issuing yet (see subdomainRoutingEnabled).
   const rootDomain = process.env.ROOT_DOMAIN?.trim() ?? "";
   const hostRouting = hostRoutingEnabled();
-  // Deliberately the real `Host` header, never `x-forwarded-host`: this drives
+  // The real `Host` header by default, never `x-forwarded-host`: this drives
   // the isolation decision, and a forwarded header is client-supplied unless a
   // proxy overwrote it. Traefik passes the original Host through untouched.
-  // The forwarded headers are consulted only when *building* a redirect, where
-  // the worst a spoofed value can do is change a port.
-  const host = hostRouting ? parseHost(request.headers.get("host"), rootDomain) : null;
+  // The forwarded headers are otherwise consulted only when *building* a
+  // redirect, where the worst a spoofed value can do is change a port.
+  //
+  // `TRUST_FORWARDED_HOST=on` inverts that, for a managed platform whose edge
+  // routes by hostname and hands the container an internal name instead — see
+  // `trustForwardedHost` for what that costs and when it is the only option.
+  const host = hostRouting ? parseHost(requestHost(request.headers), rootDomain) : null;
 
   // ---- Super-admin realm ---------------------------------------------------
   const platformResponse = await handlePlatformAdmin(request, pathname, host, rootDomain);
