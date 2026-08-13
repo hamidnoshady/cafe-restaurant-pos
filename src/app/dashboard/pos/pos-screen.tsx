@@ -384,22 +384,34 @@ export function PosScreen() {
     setCart((prev) => prev.filter((l) => l.key !== key));
   }
 
-  const discount: DiscountInput = discountType
-    ? { type: discountType, value: Number(discountValue) || 0 }
-    : { type: null };
-  const cartLines: CartLine[] = cart.map((l) => ({
-    unitPrice: l.unitPrice,
-    quantity: l.quantity,
-    modifierDeltas: l.modifierDeltas,
-    taxRatePercent: l.taxRatePercent,
-  }));
+  // ⚡ Bolt: Memoize cart computations to prevent jank on frequent state changes (e.g., search typing)
+  const discount: DiscountInput = useMemo(
+    () =>
+      discountType
+        ? { type: discountType, value: Number(discountValue) || 0 }
+        : { type: null },
+    [discountType, discountValue],
+  );
+  const cartLines: CartLine[] = useMemo(
+    () =>
+      cart.map((l) => ({
+        unitPrice: l.unitPrice,
+        quantity: l.quantity,
+        modifierDeltas: l.modifierDeltas,
+        taxRatePercent: l.taxRatePercent,
+      })),
+    [cart],
+  );
   // Fee/tip are entered in Toman (like menu prices) but stored/sent in Rial.
   const feeNum =
     orderType === "delivery"
       ? tomanToRial(Math.max(0, Math.round(Number(deliveryFee) || 0)))
       : 0;
   const tipNum = tomanToRial(Math.max(0, Math.round(Number(tipInput) || 0)));
-  const totals = computeOrderTotals(cartLines, discount, feeNum);
+  const totals = useMemo(
+    () => computeOrderTotals(cartLines, discount, feeNum),
+    [cartLines, discount, feeNum],
+  );
 
   async function submit(intent: CheckoutIntent = "order") {
     if (busy || submissionInFlight.current) return false;
@@ -1064,13 +1076,18 @@ export function PosScreen() {
               <label className="block text-xs font-semibold text-[#5E5B55]">
                 پیک
                 <SearchableSelect
-                  className={inputClass + " mt-1 min-h-11 border-[#EAE8E2] bg-[#FCFCFA]"}
+                  className={
+                    inputClass + " mt-1 min-h-11 border-[#EAE8E2] bg-[#FCFCFA]"
+                  }
                   value={deliveryCourierId}
                   onChange={setDeliveryCourierId}
                   ariaLabel="پیک ارسال"
                   options={[
                     { value: "", label: "تخصیص پیک بعداً (در صف ارسال)" },
-                    ...couriers.map((courier) => ({ value: courier.id, label: courier.name })),
+                    ...couriers.map((courier) => ({
+                      value: courier.id,
+                      label: courier.name,
+                    })),
                   ]}
                 />
               </label>
@@ -1143,7 +1160,9 @@ export function PosScreen() {
           <div className="mb-3 flex gap-2">
             <SearchableSelect
               value={discountType}
-              onChange={(value) => setDiscountType(value as "" | "percent" | "amount")}
+              onChange={(value) =>
+                setDiscountType(value as "" | "percent" | "amount")
+              }
               ariaLabel="نوع تخفیف"
               options={[
                 { value: "", label: "بدون تخفیف" },
@@ -1392,13 +1411,19 @@ export function PosScreen() {
                 <label className="block text-xs font-semibold text-[#5E5B55]">
                   پیک
                   <SearchableSelect
-                    className={inputClass + " mt-1 min-h-11 border-[#EAE8E2] bg-[#FCFCFA]"}
+                    className={
+                      inputClass +
+                      " mt-1 min-h-11 border-[#EAE8E2] bg-[#FCFCFA]"
+                    }
                     value={deliveryCourierId}
                     onChange={setDeliveryCourierId}
                     ariaLabel="پیک ارسال"
                     options={[
                       { value: "", label: "تخصیص پیک بعداً" },
-                      ...couriers.map((courier) => ({ value: courier.id, label: courier.name })),
+                      ...couriers.map((courier) => ({
+                        value: courier.id,
+                        label: courier.name,
+                      })),
                     ]}
                   />
                 </label>
@@ -1455,7 +1480,9 @@ export function PosScreen() {
             <div className="mb-3 flex gap-2">
               <SearchableSelect
                 value={discountType}
-                onChange={(value) => setDiscountType(value as "" | "percent" | "amount")}
+                onChange={(value) =>
+                  setDiscountType(value as "" | "percent" | "amount")
+                }
                 ariaLabel="نوع تخفیف"
                 options={[
                   { value: "", label: "بدون تخفیف" },
@@ -1463,7 +1490,17 @@ export function PosScreen() {
                   { value: "amount", label: "مبلغ ثابت" },
                 ]}
               />
-              {discountType ? <input className={inputClass} dir="ltr" inputMode="numeric" value={discountValue} onChange={(event) => setDiscountValue(event.target.value)} placeholder={discountType === "percent" ? "درصد" : "تومان"} aria-label="مقدار تخفیف" /> : null}
+              {discountType ? (
+                <input
+                  className={inputClass}
+                  dir="ltr"
+                  inputMode="numeric"
+                  value={discountValue}
+                  onChange={(event) => setDiscountValue(event.target.value)}
+                  placeholder={discountType === "percent" ? "درصد" : "تومان"}
+                  aria-label="مقدار تخفیف"
+                />
+              ) : null}
             </div>
             <Row label="جمع کل" value={formatToman(totals.total)} bold />
             <div className="mt-4">
