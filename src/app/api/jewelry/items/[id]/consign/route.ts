@@ -4,6 +4,7 @@ import { requireIndustryForApi } from "@/lib/industry-guard";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { getItem } from "@/lib/items-service";
 import { markAsConsigned } from "@/lib/consignment-service";
+import { recordItemEvent } from "@/lib/item-audit-service";
 
 /** Marks an already-created `tracking: 'weight'` item as held for a consignor (امانی) rather than owned by the business. One-time, at intake -- see consignment-service.ts. */
 export const POST = withTenantScope(async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
@@ -30,6 +31,14 @@ export const POST = withTenantScope(async (request: NextRequest, context: { para
 
   try {
     const consignment = await markAsConsigned(id, body.consignorId);
+    await recordItemEvent({
+      businessId: session.businessId,
+      locationId: location.id,
+      itemId: id,
+      eventType: "item.consigned",
+      payload: { consignorId: consignment.consignorId },
+      createdBy: session.sub,
+    });
     return NextResponse.json({ ok: true, consignment });
   } catch (err) {
     return NextResponse.json({ error: "validation_failed", message: (err as Error).message }, { status: 400 });

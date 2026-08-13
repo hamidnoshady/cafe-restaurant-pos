@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  ACCESSORIES_COA_TEMPLATE,
   ACCOUNT_LEVELS,
+  coaTemplateForIndustry,
   FNB_COA_TEMPLATE,
   JEWELRY_COA_TEMPLATE,
   nextAccountLevel,
+  WATCH_COA_TEMPLATE,
   normalBalanceForType,
   validateAccounts,
   WELL_KNOWN_CODES,
@@ -14,13 +17,22 @@ import {
 // template (jewelry's gold-specific accounts alongside F&B's), so "every
 // well-known code" is no longer one flat list every template must contain —
 // each template only needs the subset its own industry's posting paths use.
-const JEWELRY_ONLY_KEYS = new Set([
+// Waves 5/6 add watch's and accessories' own codes on the same footing.
+const OTHER_INDUSTRY_KEYS = new Set([
   "goldInventory",
   "goldSalesRevenue",
   "makingChargeRevenue",
   "goldCogs",
   "consignmentPayable",
   "consignmentCommissionRevenue",
+  "watchInventory",
+  "watchSalesRevenue",
+  "watchCogs",
+  "repairServiceRevenue",
+  "repairPartsExpense",
+  "accessoryInventory",
+  "accessorySalesRevenue",
+  "accessoryCogs",
 ]);
 
 describe("FNB_COA_TEMPLATE", () => {
@@ -31,7 +43,7 @@ describe("FNB_COA_TEMPLATE", () => {
   it("contains the well-known accounts other steps rely on", () => {
     const codes = new Set(FNB_COA_TEMPLATE.map((a) => a.code));
     for (const [key, code] of Object.entries(WELL_KNOWN_CODES)) {
-      if (JEWELRY_ONLY_KEYS.has(key)) continue;
+      if (OTHER_INDUSTRY_KEYS.has(key)) continue;
       expect(codes.has(code)).toBe(true);
     }
   });
@@ -60,6 +72,65 @@ describe("JEWELRY_COA_TEMPLATE", () => {
     ]) {
       expect(codes.has(code)).toBe(true);
     }
+  });
+});
+
+describe("WATCH_COA_TEMPLATE", () => {
+  it("is itself valid", () => {
+    expect(validateAccounts(WATCH_COA_TEMPLATE)).toEqual([]);
+  });
+
+  it("contains the well-known accounts watch sale and repair posting rely on", () => {
+    const codes = new Set(WATCH_COA_TEMPLATE.map((a) => a.code));
+    for (const code of [
+      WELL_KNOWN_CODES.cash,
+      WELL_KNOWN_CODES.bankClearing,
+      WELL_KNOWN_CODES.accountsReceivable,
+      WELL_KNOWN_CODES.vatPayable,
+      WELL_KNOWN_CODES.watchInventory,
+      WELL_KNOWN_CODES.watchSalesRevenue,
+      WELL_KNOWN_CODES.watchCogs,
+      WELL_KNOWN_CODES.repairServiceRevenue,
+      WELL_KNOWN_CODES.repairPartsExpense,
+    ]) {
+      expect(codes.has(code)).toBe(true);
+    }
+  });
+
+  it("carries none of F&B's menu/recipe-shaped accounts", () => {
+    const codes = new Set(WATCH_COA_TEMPLATE.map((a) => a.code));
+    expect(codes.has(WELL_KNOWN_CODES.inventory)).toBe(false);
+    expect(codes.has(WELL_KNOWN_CODES.cogs)).toBe(false);
+  });
+});
+
+describe("ACCESSORIES_COA_TEMPLATE", () => {
+  it("is itself valid", () => {
+    expect(validateAccounts(ACCESSORIES_COA_TEMPLATE)).toEqual([]);
+  });
+
+  it("contains the well-known accounts accessory sale posting relies on", () => {
+    const codes = new Set(ACCESSORIES_COA_TEMPLATE.map((a) => a.code));
+    for (const code of [
+      WELL_KNOWN_CODES.cash,
+      WELL_KNOWN_CODES.bankClearing,
+      WELL_KNOWN_CODES.accountsReceivable,
+      WELL_KNOWN_CODES.vatPayable,
+      WELL_KNOWN_CODES.accessoryInventory,
+      WELL_KNOWN_CODES.accessorySalesRevenue,
+      WELL_KNOWN_CODES.accessoryCogs,
+    ]) {
+      expect(codes.has(code)).toBe(true);
+    }
+  });
+});
+
+describe("coaTemplateForIndustry", () => {
+  it("gives each industry its own template", () => {
+    expect(coaTemplateForIndustry("food_service")).toBe(FNB_COA_TEMPLATE);
+    expect(coaTemplateForIndustry("jewelry")).toBe(JEWELRY_COA_TEMPLATE);
+    expect(coaTemplateForIndustry("watch")).toBe(WATCH_COA_TEMPLATE);
+    expect(coaTemplateForIndustry("accessories")).toBe(ACCESSORIES_COA_TEMPLATE);
   });
 });
 

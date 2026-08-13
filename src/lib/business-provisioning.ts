@@ -14,16 +14,17 @@
 import bcrypt from "bcryptjs";
 import type { PoolClient } from "pg";
 import { getPool, withoutTenantScope } from "./db";
-import { slugifyBusinessName, uniqueSlug } from "./slug";
+import {
+  SLUG_FALLBACK,
+  slugifyBusinessName,
+  subdomainFromBusinessName,
+  uniqueSlug,
+  validateSubdomain,
+} from "./slug";
 import { LOCAL_DISABLED_FEATURES, type DeploymentModeName } from "./deployment-mode";
 import { SETTING_KEYS } from "./settings";
-import { FNB_COA_TEMPLATE, JEWELRY_COA_TEMPLATE, nextAccountLevel, type AccountLevel, type TemplateAccount } from "./coa-template";
+import { coaTemplateForIndustry, nextAccountLevel, type AccountLevel, type TemplateAccount } from "./coa-template";
 import { ENABLED_INDUSTRIES, INDUSTRIES, type Industry } from "./industries";
-
-/** Which seed chart of accounts an industry gets — the same choice /api/setup/accounts's GET makes for the manual wizard path. */
-function coaTemplateFor(industry: Industry): readonly TemplateAccount[] {
-  return industry === "jewelry" ? JEWELRY_COA_TEMPLATE : FNB_COA_TEMPLATE;
-}
 
 export interface ProvisionBusinessInput {
   businessName: string;
@@ -55,11 +56,20 @@ export interface ProvisionBusinessInput {
    * unchanged.
    */
   deploymentMode?: DeploymentModeName;
+  /**
+   * Phase 23 — the public host label, when the caller has one in mind (the
+   * console's add form offers it, prefilled and editable). Omitted, it is
+   * derived from the business name the same way the slug is. Either way it is
+   * made unique before it is written.
+   */
+  subdomain?: string;
 }
 
 export interface ProvisionedBusiness {
   businessId: string;
   businessSlug: string;
+  /** Phase 23 — the origin the new business is served from. */
+  businessSubdomain: string;
   locationId: string;
   /** users.id — the owner's membership in the new business. */
   userId: string;
@@ -98,6 +108,8 @@ export interface ProvisionRequestBody {
   email?: string;
   password?: string;
   industry?: string;
+  /** Phase 23 — the public host label. Derived from the name when omitted. */
+  subdomain?: string;
 }
 
 export const MIN_PASSWORD_LENGTH = 8;
@@ -135,6 +147,16 @@ export function validateProvisionBody(
     return { input: null, error: "industry_not_available" };
   }
 
+  // Phase 23 — an explicitly requested subdomain is validated as a DNS label
+  // here rather than silently normalised, because the admin typed it and is
+  // going to hand the resulting URL to a customer. Omitted, it is derived from
+  // the business name inside provisionBusiness.
+  const subdomain = body.subdomain?.trim().toLowerCase();
+  if (subdomain) {
+    const invalid = validateSubdomain(subdomain);
+    if (invalid) return { input: null, error: invalid };
+  }
+
   return {
     input: {
       businessName,
@@ -145,6 +167,7 @@ export function validateProvisionBody(
       email,
       password,
       industry,
+      subdomain: subdomain || undefined,
     },
     error: null,
   };
@@ -180,12 +203,25 @@ export async function provisionBusiness(
       // lock, because in both cases the row may not exist yet.
       await client.query("SELECT pg_advisory_xact_lock(hashtext('business_provisioning'))");
 
-      const { rows: slugRows } = await client.query<{ slug: string }>(
-        "SELECT slug::text AS slug FROM businesses",
+      const { rows: slugRows } = await client.query<{ slug: string; subdomain: string }>(
+        "SELECT slug::text AS slug, subdomain::text AS subdomain FROM businesses",
       );
       const slug = uniqueSlug(
         slugifyBusinessName(businessName),
         slugRows.map((r) => r.slug),
+      );
+
+      // Phase 23: the public host, allocated in the same advisory-locked
+      // transaction as the slug so two concurrent signups can't claim one
+      // origin. `taken` is the subdomain column, not the slug column — the two
+      // are independent namespaces the moment anyone renames a subdomain, and
+      // checking the wrong one would let a rename's freed name be handed out
+      // while its alias still resolves. An explicitly requested subdomain is
+      // validated by the caller (the console); uniqueSlug only settles
+      // collisions, appending -2, -3, … the same way it does for slugs.
+      const subdomain = uniqueSlug(
+        subdomainFromBusinessName(input.subdomain?.trim() || businessName) || SLUG_FALLBACK,
+        slugRows.map((r) => r.subdomain),
       );
 
       const { rows: existingIdentity } = await client.query<{
@@ -210,8 +246,9 @@ export async function provisionBusiness(
       }
 
       const { rows: bizRows } = await client.query<{ id: string }>(
-        `INSERT INTO businesses (name, slug, timezone, industry) VALUES ($1, $2, $3, $4) RETURNING id`,
-        [businessName, slug, input.timezone ?? "Asia/Tehran", input.industry ?? "food_service"],
+        `INSERT INTO businesses (name, slug, subdomain, timezone, industry)
+         VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+        [businessName, slug, subdomain, input.timezone ?? "Asia/Tehran", input.industry ?? "food_service"],
       );
       const businessId = bizRows[0].id;
 
@@ -269,7 +306,7 @@ export async function provisionBusiness(
       }
 
       await client.query("COMMIT");
-      return { businessId, businessSlug: slug, locationId, userId, platformUserId };
+      return { businessId, businessSlug: slug, businessSubdomain: subdomain, locationId, userId, platformUserId };
     } catch (err) {
       await client.query("ROLLBACK");
       throw err;
@@ -292,7 +329,7 @@ export async function provisionBusiness(
 async function seedChartOfAccounts(client: PoolClient, businessId: string, industry: Industry): Promise<void> {
   const idByCode = new Map<string, string>();
   const levelByCode = new Map<string, AccountLevel>();
-  const pending = [...coaTemplateFor(industry)];
+  const pending = [...coaTemplateForIndustry(industry)];
   while (pending.length > 0) {
     const ready = pending.filter((a) => !a.parentCode || idByCode.has(a.parentCode));
     // The template is a fixed, cycle-free constant; ready can't be empty, and

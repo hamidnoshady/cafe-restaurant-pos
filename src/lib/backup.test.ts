@@ -5,6 +5,7 @@ import {
   computeBackupAlert,
   decryptBackup,
   DEFAULT_BACKUP_CONFIG,
+  dumpDatabaseUrl,
   encryptBackup,
   isBackupDue,
   isBackupStale,
@@ -313,5 +314,24 @@ describe("cloud artifact encryption", () => {
     expect(() => decryptBackup(tampered, "correct horse battery")).toThrow();
     expect(() => decryptBackup(plain, "x")).toThrow(/bad magic/);
     expect(() => decryptBackup(enc.subarray(0, 20), "x")).toThrow(/truncated/);
+  });
+});
+
+describe("dumpDatabaseUrl", () => {
+  const admin = "postgres://pos:pw@db:5432/pos";
+  const app = "postgres://pos_app:pw@db:5432/pos";
+
+  it("prefers the privileged BACKUP_DATABASE_URL over the app's connection", () => {
+    // The app runs as pos_app (NOBYPASSRLS); dumping as it fails on the first COPY.
+    expect(dumpDatabaseUrl({ BACKUP_DATABASE_URL: admin, DATABASE_URL: app })).toBe(admin);
+  });
+
+  it("falls back to DATABASE_URL, ignoring blank overrides", () => {
+    expect(dumpDatabaseUrl({ DATABASE_URL: admin })).toBe(admin);
+    expect(dumpDatabaseUrl({ BACKUP_DATABASE_URL: "  ", DATABASE_URL: admin })).toBe(admin);
+  });
+
+  it("throws when neither is set", () => {
+    expect(() => dumpDatabaseUrl({})).toThrow(/BACKUP_DATABASE_URL|DATABASE_URL/);
   });
 });

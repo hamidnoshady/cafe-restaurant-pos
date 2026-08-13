@@ -791,6 +791,7 @@ export async function previewInvitation(token: string): Promise<InvitationPrevie
 export interface AcceptInvitationResult {
   businessId: string;
   businessSlug: string;
+  businessSubdomain: string;
   userId: string;
   platformUserId: string;
   role: Role;
@@ -821,6 +822,7 @@ export async function acceptInvitation(
       id: string;
       business_id: string;
       business_slug: string;
+      business_subdomain: string;
       email: string;
       role: Role;
       full_name: string;
@@ -830,7 +832,8 @@ export async function acceptInvitation(
       accepted_at: Date | null;
       revoked_at: Date | null;
     }>(
-      `SELECT i.id, i.business_id, b.slug::text AS business_slug, i.email::text AS email,
+      `SELECT i.id, i.business_id, b.slug::text AS business_slug,
+              b.subdomain::text AS business_subdomain, i.email::text AS email,
               i.role, i.full_name, i.permissions, i.location_ids, i.expires_at,
               i.accepted_at, i.revoked_at
          FROM invitations i
@@ -944,6 +947,7 @@ export async function acceptInvitation(
     return {
       businessId: invitation.business_id,
       businessSlug: invitation.business_slug,
+      businessSubdomain: invitation.business_subdomain,
       userId,
       platformUserId,
       role: invitation.role,

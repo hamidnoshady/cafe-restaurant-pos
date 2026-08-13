@@ -66,13 +66,26 @@ export const SLUG_FALLBACK = "biz";
 export const MAX_SLUG_LENGTH = 48;
 
 /**
- * Top-level segments the app itself routes on. A business slug prefixes the
- * dashboard URL (`/{slug}/dashboard/...`, see src/middleware.ts), so a slug
- * that collided with one of these would be ambiguous with a real route.
+ * Top-level segments the app itself routes on, plus (since Phase 23) the host
+ * labels the deployment itself answers on.
+ *
+ * The path-level entries are the original reason this list exists: a business
+ * slug prefixed the dashboard URL (`/{slug}/dashboard/...`), so a slug that
+ * collided with one of these would be ambiguous with a real route.
+ *
+ * The host-level entries are new and are a different kind of collision. Every
+ * business is now served from `{subdomain}.{ROOT_DOMAIN}`, and the deployment
+ * reserves some of those labels for itself: `admin` is the platform console's
+ * own host, the apex is the "which business?" router, and `www`/`api`/`mail`
+ * are the names an operator will inevitably want for the deployment rather
+ * than for a tenant. A business handed one of these would shadow it, under a
+ * wildcard certificate that covers it perfectly happily.
+ *
  * Treated as already "taken" in `uniqueSlug` so a business named e.g. "API"
  * gets "api-2" instead of colliding with `/api`.
  */
 export const RESERVED_SLUGS = [
+  // Path-level: top-level route segments.
   "dashboard",
   "api",
   "login",
@@ -82,7 +95,64 @@ export const RESERVED_SLUGS = [
   "setup",
   "_next",
   "favicon.ico",
+  // Host-level (Phase 23): labels the deployment answers on itself.
+  "admin",
+  "www",
+  "app",
+  "mail",
+  "smtp",
+  "imap",
+  "ns",
+  "ns1",
+  "ns2",
+  "mx",
+  "autodiscover",
+  "autoconfig",
+  // `_acme-challenge` — the label the wildcard certificate's DNS-01 challenge
+  // is published at — needs no entry: the underscore fails the charset check
+  // in validateSubdomain before reservations are consulted.
 ];
+
+/**
+ * A DNS label is not a slug, and the difference matters at exactly the points
+ * where a bad value stops being cosmetic:
+ *
+ *  - 63 characters is the hard limit for one label in DNS, not a style choice.
+ *  - 3 characters minimum keeps single-letter hosts (and their typo-squatting
+ *    neighbours) out, and leaves room for the operator's own short names.
+ *  - A leading or trailing hyphen is illegal in a hostname.
+ *  - `xx--` at positions 3-4 is the punycode prefix form (`xn--`); any label
+ *    shaped that way is interpreted as an internationalised domain name by
+ *    resolvers and certificate authorities, so it is refused rather than
+ *    issued and left to fail mysteriously later.
+ */
+export const MIN_SUBDOMAIN_LENGTH = 3;
+export const MAX_SUBDOMAIN_LENGTH = 63;
+
+export type SubdomainError = "invalid_subdomain" | "reserved_subdomain";
+
+/** null when `value` is a usable subdomain; otherwise why it is not. */
+export function validateSubdomain(value: string): SubdomainError | null {
+  const label = value.trim().toLowerCase();
+
+  if (!/^[a-z0-9-]+$/.test(label)) return "invalid_subdomain";
+  if (label.length < MIN_SUBDOMAIN_LENGTH || label.length > MAX_SUBDOMAIN_LENGTH) return "invalid_subdomain";
+  if (label.startsWith("-") || label.endsWith("-")) return "invalid_subdomain";
+  if (label.slice(2, 4) === "--") return "invalid_subdomain";
+  if (RESERVED_SLUGS.includes(label)) return "reserved_subdomain";
+
+  return null;
+}
+
+/**
+ * A subdomain candidate from a business name: the slug rules, then the label
+ * rules on top. Returns "" when nothing usable survives, so the caller decides
+ * between a fallback and an error — same contract as slugifyBusinessName.
+ */
+export function subdomainFromBusinessName(name: string): string {
+  const candidate = slugifyBusinessName(name).slice(0, MAX_SUBDOMAIN_LENGTH).replace(/^-+|-+$/g, "");
+  return validateSubdomain(candidate) === null ? candidate : "";
+}
 
 /**
  * A slug candidate for a business name.

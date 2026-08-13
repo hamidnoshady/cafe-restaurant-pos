@@ -5,6 +5,7 @@ import { resolveActiveLocation } from "@/lib/setup-state";
 import { getItem, getWeightAttributes, listStones, setWeightAttributes } from "@/lib/items-service";
 import { getConsignment } from "@/lib/consignment-service";
 import { validateWeightAttributes } from "@/lib/gold";
+import { recordItemEvent } from "@/lib/item-audit-service";
 
 async function ownedWeightItem(session: SessionPayload, id: string) {
   const location = await resolveActiveLocation(session);
@@ -65,5 +66,16 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
   }
 
   const weightAttrs = await setWeightAttributes(id, input);
+  await recordItemEvent({
+    businessId: session.businessId,
+    locationId: item.locationId,
+    itemId: id,
+    eventType: "item.cost_basis_changed",
+    payload: {
+      from: { grossWeight: current.grossWeight, netWeight: current.netWeight, unitCostPerGram: current.unitCostPerGram },
+      to: { grossWeight: weightAttrs.grossWeight, netWeight: weightAttrs.netWeight, unitCostPerGram: weightAttrs.unitCostPerGram },
+    },
+    createdBy: session.sub,
+  });
   return NextResponse.json({ ok: true, weightAttrs });
 });

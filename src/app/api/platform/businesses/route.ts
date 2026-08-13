@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requirePlatformAdmin, requirePlatformCapability, platformAudit, withPlatformScope } from "@/lib/platform-auth";
 import { listBusinesses } from "@/lib/platform-service";
+import { rootDomain } from "@/lib/host";
 import {
   provisionBusiness,
   validateProvisionBody,
@@ -8,11 +9,16 @@ import {
   type ProvisionRequestBody,
 } from "@/lib/business-provisioning";
 
-/** Every business on the deployment — the console's landing list (any admin reads). */
+/**
+ * Every business on the deployment — the console's landing list (any admin
+ * reads). `rootDomain` rides along because the console is a client component
+ * and cannot read the server's environment: it needs the root to render a
+ * business's real URL and to preview one before provisioning.
+ */
 export const GET = withPlatformScope(async () => {
   const { error } = await requirePlatformAdmin();
   if (error) return error;
-  return NextResponse.json({ businesses: await listBusinesses() });
+  return NextResponse.json({ businesses: await listBusinesses(), rootDomain: rootDomain() });
 });
 
 /**
@@ -54,6 +60,7 @@ export const POST = withPlatformScope(async (request: NextRequest) => {
       payload: {
         businessName: input.businessName,
         slug: provisioned.businessSlug,
+        subdomain: provisioned.businessSubdomain,
         ownerEmail: input.email,
       },
 
@@ -64,6 +71,7 @@ export const POST = withPlatformScope(async (request: NextRequest) => {
         business: {
           id: provisioned.businessId,
           slug: provisioned.businessSlug,
+          subdomain: provisioned.businessSubdomain,
           locationId: provisioned.locationId,
         },
       },

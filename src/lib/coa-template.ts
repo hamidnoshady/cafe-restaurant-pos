@@ -5,6 +5,8 @@
  * 1xxx assets, 2xxx liabilities, 3xxx equity, 4xxx revenue, 5xxx expenses.
  */
 
+import type { Industry } from "./industries";
+
 export type AccountType = "asset" | "liability" | "equity" | "revenue" | "expense";
 
 export interface TemplateAccount {
@@ -127,6 +129,24 @@ export const WELL_KNOWN_CODES = {
   // revenue, it's owed to the consignor) — it posts to these two instead.
   consignmentPayable: "2110",
   consignmentCommissionRevenue: "4700",
+  // Phase 21 Wave 5 — watch (WATCH_COA_TEMPLATE below). A watch sale is an
+  // ordinary finished-goods sale (no VAT-exempt component the way gold's
+  // metal value is), so it needs only the usual inventory/revenue/COGS
+  // triple. Repairs are the industry's second revenue stream and are kept
+  // separate from unit sales — a shop wants to know what it earns servicing
+  // watches vs. selling them, and the parts it consumes are a cost of that
+  // service, not of a sale.
+  watchInventory: "1330",
+  watchSalesRevenue: "4550",
+  watchCogs: "5120",
+  repairServiceRevenue: "4800",
+  repairPartsExpense: "5130",
+  // Phase 21 Wave 6 — accessories (بدلیجات, ACCESSORIES_COA_TEMPLATE
+  // below). Same three-account shape as watch: variant stock is ordinary
+  // finished goods bought and resold, with no industry-specific split.
+  accessoryInventory: "1340",
+  accessorySalesRevenue: "4560",
+  accessoryCogs: "5140",
 } as const;
 
 /**
@@ -242,7 +262,108 @@ export const JEWELRY_COA_TEMPLATE: TemplateAccount[] = [
   { code: "5900", name: "سایر هزینه‌ها", type: "expense", parentCode: "5000" },
 ];
 
+/**
+ * Phase 21 Wave 5 — watch (ساعت) chart of accounts. Mirrors
+ * JEWELRY_COA_TEMPLATE's approach: every generic account (cash, bank, AR,
+ * AP, VAT) is reused unchanged, and only the industry's own
+ * inventory/revenue/COGS accounts differ — plus the two repair accounts, a
+ * watch shop's second line of business (see WELL_KNOWN_CODES above).
+ */
+export const WATCH_COA_TEMPLATE: TemplateAccount[] = [
+  { code: "1000", name: "دارایی‌ها", type: "asset" },
+  { code: "1100", name: "صندوق", type: "asset", parentCode: "1000" },
+  { code: "1110", name: "بانک", type: "asset", parentCode: "1000" },
+  { code: "1120", name: "کارت‌خوان (در راه)", type: "asset", parentCode: "1000" },
+  { code: "1200", name: "حساب‌های دریافتنی", type: "asset", parentCode: "1000" },
+  { code: "1220", name: "مالیات بر ارزش افزوده خرید (قابل استرداد)", type: "asset", parentCode: "1000" },
+  { code: "1330", name: "موجودی ساعت و قطعات", type: "asset", parentCode: "1000" },
+  { code: "1400", name: "پیش‌پرداخت‌ها", type: "asset", parentCode: "1000" },
+  { code: "1500", name: "اثاثه و تجهیزات", type: "asset", parentCode: "1000" },
+
+  { code: "2000", name: "بدهی‌ها", type: "liability" },
+  { code: "2100", name: "حساب‌های پرداختنی", type: "liability", parentCode: "2000" },
+  { code: "2200", name: "مالیات بر ارزش افزوده پرداختنی", type: "liability", parentCode: "2000" },
+
+  { code: "3000", name: "حقوق صاحبان سرمایه", type: "equity" },
+  { code: "3100", name: "سرمایه", type: "equity", parentCode: "3000" },
+  { code: "3800", name: "سود (زیان) انباشته", type: "equity", parentCode: "3000" },
+  { code: "3900", name: "تراز افتتاحیه", type: "equity", parentCode: "3000" },
+
+  { code: "4000", name: "درآمدها", type: "revenue" },
+  { code: "4550", name: "فروش ساعت", type: "revenue", parentCode: "4000" },
+  { code: "4800", name: "درآمد تعمیرات", type: "revenue", parentCode: "4000" },
+  { code: "4900", name: "سایر درآمدها", type: "revenue", parentCode: "4000" },
+
+  { code: "5000", name: "هزینه‌ها", type: "expense" },
+  { code: "5120", name: "بهای تمام‌شده ساعت فروخته‌شده", type: "expense", parentCode: "5000" },
+  { code: "5130", name: "بهای قطعات مصرفی تعمیرات", type: "expense", parentCode: "5000" },
+  { code: "5300", name: "اجاره", type: "expense", parentCode: "5000" },
+  { code: "5400", name: "آب، برق و گاز", type: "expense", parentCode: "5000" },
+  { code: "5600", name: "بازاریابی و تبلیغات", type: "expense", parentCode: "5000" },
+  { code: "5900", name: "سایر هزینه‌ها", type: "expense", parentCode: "5000" },
+];
+
+/**
+ * Phase 21 Wave 6 — accessories (بدلیجات) chart of accounts. The thinnest
+ * of the four: accessories are ordinary finished goods bought and resold in
+ * variant matrices, with no weight, no serial identity, and no service
+ * line — so this is the generic template plus one inventory/revenue/COGS
+ * triple of its own.
+ */
+export const ACCESSORIES_COA_TEMPLATE: TemplateAccount[] = [
+  { code: "1000", name: "دارایی‌ها", type: "asset" },
+  { code: "1100", name: "صندوق", type: "asset", parentCode: "1000" },
+  { code: "1110", name: "بانک", type: "asset", parentCode: "1000" },
+  { code: "1120", name: "کارت‌خوان (در راه)", type: "asset", parentCode: "1000" },
+  { code: "1200", name: "حساب‌های دریافتنی", type: "asset", parentCode: "1000" },
+  { code: "1220", name: "مالیات بر ارزش افزوده خرید (قابل استرداد)", type: "asset", parentCode: "1000" },
+  { code: "1340", name: "موجودی بدلیجات", type: "asset", parentCode: "1000" },
+  { code: "1400", name: "پیش‌پرداخت‌ها", type: "asset", parentCode: "1000" },
+  { code: "1500", name: "اثاثه و تجهیزات", type: "asset", parentCode: "1000" },
+
+  { code: "2000", name: "بدهی‌ها", type: "liability" },
+  { code: "2100", name: "حساب‌های پرداختنی", type: "liability", parentCode: "2000" },
+  { code: "2200", name: "مالیات بر ارزش افزوده پرداختنی", type: "liability", parentCode: "2000" },
+
+  { code: "3000", name: "حقوق صاحبان سرمایه", type: "equity" },
+  { code: "3100", name: "سرمایه", type: "equity", parentCode: "3000" },
+  { code: "3800", name: "سود (زیان) انباشته", type: "equity", parentCode: "3000" },
+  { code: "3900", name: "تراز افتتاحیه", type: "equity", parentCode: "3000" },
+
+  { code: "4000", name: "درآمدها", type: "revenue" },
+  { code: "4560", name: "فروش بدلیجات", type: "revenue", parentCode: "4000" },
+  { code: "4900", name: "سایر درآمدها", type: "revenue", parentCode: "4000" },
+
+  { code: "5000", name: "هزینه‌ها", type: "expense" },
+  { code: "5140", name: "بهای تمام‌شده بدلیجات فروخته‌شده", type: "expense", parentCode: "5000" },
+  { code: "5300", name: "اجاره", type: "expense", parentCode: "5000" },
+  { code: "5400", name: "آب، برق و گاز", type: "expense", parentCode: "5000" },
+  { code: "5600", name: "بازاریابی و تبلیغات", type: "expense", parentCode: "5000" },
+  { code: "5900", name: "سایر هزینه‌ها", type: "expense", parentCode: "5000" },
+];
+
 export const ACCOUNT_TYPES: AccountType[] = ["asset", "liability", "equity", "revenue", "expense"];
+
+/**
+ * The seed chart of accounts an industry starts from. One place, because
+ * three call sites need the same answer: `seedChartOfAccounts`
+ * (business-provisioning.ts, the platform console's path),
+ * `/api/setup/accounts`'s GET (the wizard's path), and the wizard copy that
+ * names the template. Two industries could get away with a ternary in each;
+ * four cannot.
+ */
+export function coaTemplateForIndustry(industry: Industry): readonly TemplateAccount[] {
+  switch (industry) {
+    case "jewelry":
+      return JEWELRY_COA_TEMPLATE;
+    case "watch":
+      return WATCH_COA_TEMPLATE;
+    case "accessories":
+      return ACCESSORIES_COA_TEMPLATE;
+    case "food_service":
+      return FNB_COA_TEMPLATE;
+  }
+}
 
 /**
  * Validate a (possibly user-edited) account list before creation.

@@ -66,6 +66,7 @@ export const POST = withPlatformScope(async (request: NextRequest, ctx: Ctx) => 
       role: "owner",
       businessId: id,
       businessSlug: business?.slug,
+      businessSubdomain: business?.subdomain,
       locationId: null,
       fullName,
       imp: { grantId: grant.id, adminId: session.padmin, mode },

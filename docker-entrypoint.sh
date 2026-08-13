@@ -17,7 +17,11 @@
 #    scripts/derive-runtime-database-url.ts for exactly what it checks before
 #    doing so (an explicit RUNTIME_DATABASE_URL, or an already-restricted
 #    DATABASE_URL, both skip provisioning).
-# 4. Hand off to CMD (the production server) with that connection string.
+# 4. Hand off to CMD (the production server) with that connection string, while
+#    keeping the privileged one as BACKUP_DATABASE_URL: `pg_dump` (the Phase 10
+#    backup) runs with row_security off, which Postgres refuses for a role that
+#    can't bypass RLS, so a whole-database dump has to use the owner connection
+#    — see dumpDatabaseUrl() in src/lib/backup.ts.
 set -e
 
 if [ -z "$DATABASE_URL" ]; then
@@ -47,6 +51,7 @@ if [ -z "$RUNTIME_DATABASE_URL_RESOLVED" ]; then
   echo "FATAL: could not resolve a runtime database connection (see error above)." >&2
   exit 1
 fi
+export BACKUP_DATABASE_URL="${BACKUP_DATABASE_URL:-$DATABASE_URL}"
 export DATABASE_URL="$RUNTIME_DATABASE_URL_RESOLVED"
 
 echo "Starting POS server ..."

@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { toPersianDigits, formatPersianNumber } from "@/lib/digits";
+import { subdomainFromBusinessName, validateSubdomain } from "@/lib/slug";
 import {
   api,
   errorMessage,
@@ -28,11 +29,29 @@ interface Business {
   id: string;
   name: string;
   slug: string;
+  subdomain: string;
   status: string;
   plan: string;
   locationCount: number;
   memberCount: number;
   createdAt: string;
+}
+
+/**
+ * Phase 23 — a business still on the `biz-xxxxxxxx` host that migration 0066
+ * backfilled from its slug. It works, but it is not a name anyone would print
+ * on a receipt, so the console flags it for the admin to rename.
+ */
+function isPlaceholderSubdomain(subdomain: string): boolean {
+  return /^biz-[0-9a-f]{8}$/i.test(subdomain);
+}
+
+function PlaceholderSubdomainBadge() {
+  return (
+    <span className="rounded px-1.5 py-0.5 text-[10px] font-medium text-amber-300 ring-1 ring-amber-400/40">
+      زیردامنه موقت
+    </span>
+  );
 }
 
 function formatDate(iso: string): string {
@@ -48,15 +67,18 @@ function formatDate(iso: string): string {
 export default function BusinessesPage() {
   const can = useCan();
   const [businesses, setBusinesses] = useState<Business[] | null>(null);
+  const [rootDomain, setRootDomain] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
 
   const load = useCallback(async () => {
-    const { ok, data } = await api<{ businesses: Business[]; error?: string }>(
+    const { ok, data } = await api<{ businesses: Business[]; rootDomain?: string; error?: string }>(
       "/api/platform/businesses",
     );
-    if (ok) setBusinesses(data.businesses);
-    else setError(errorMessage(data.error));
+    if (ok) {
+      setBusinesses(data.businesses);
+      setRootDomain(data.rootDomain ?? "");
+    } else setError(errorMessage(data.error));
   }, []);
 
   useEffect(() => {
@@ -84,6 +106,7 @@ export default function BusinessesPage() {
       {showForm && can("business.provision") ? (
         <div className="mb-6">
           <ProvisionForm
+            rootDomain={rootDomain}
             onDone={() => {
               setShowForm(false);
               void load();
@@ -130,8 +153,9 @@ export default function BusinessesPage() {
                       >
                         {b.name}
                       </Link>
-                      <span className="mt-0.5 block text-xs text-white/30" dir="ltr">
-                        {b.slug}
+                      <span className="mt-0.5 flex items-center gap-2 text-xs text-white/30">
+                        <span dir="ltr">{b.subdomain}</span>
+                        {isPlaceholderSubdomain(b.subdomain) ? <PlaceholderSubdomainBadge /> : null}
                       </span>
                     </td>
                     <td className="px-4 py-3">
@@ -164,8 +188,13 @@ function BusinessListCard({ business }: { business: Business }) {
         <div className="min-w-0">
           <p className="truncate font-semibold text-sky-300">{business.name}</p>
           <p className="mt-1 break-all text-xs text-white/35" dir="ltr">
-            {business.slug}
+            {business.subdomain}
           </p>
+          {isPlaceholderSubdomain(business.subdomain) ? (
+            <p className="mt-1">
+              <PlaceholderSubdomainBadge />
+            </p>
+          ) : null}
         </div>
         <StatusBadge status={business.status} />
       </div>
@@ -191,15 +220,22 @@ function BusinessListCard({ business }: { business: Business }) {
   );
 }
 
-function ProvisionForm({ onDone }: { onDone: () => void }) {
+function ProvisionForm({ onDone, rootDomain }: { onDone: () => void; rootDomain: string }) {
   const [businessName, setBusinessName] = useState("");
   const [ownerName, setOwnerName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [locationName, setLocationName] = useState("");
+  // Phase 23 — prefilled from the business name but editable, and left
+  // untouched by later name edits once the admin has typed their own.
+  const [subdomain, setSubdomain] = useState("");
+  const [subdomainEdited, setSubdomainEdited] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  const suggested = subdomainEdited ? subdomain : subdomainFromBusinessName(businessName);
+  const subdomainError = suggested ? validateSubdomain(suggested) : null;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -214,6 +250,7 @@ function ProvisionForm({ onDone }: { onDone: () => void }) {
         email: email.trim().toLowerCase(),
         password,
         locationName: locationName.trim() || undefined,
+        subdomain: suggested || undefined,
       }),
     });
     setBusy(false);
@@ -238,6 +275,30 @@ function ProvisionForm({ onDone }: { onDone: () => void }) {
               onChange={(e) => setBusinessName(e.target.value)}
               className={inputClass}
             />
+          </Field>
+          <Field
+            label="نشانی اینترنتی (زیردامنه)"
+            hint={
+              subdomainError
+                ? undefined
+                : suggested && rootDomain
+                  ? `کسب‌وکار از این نشانی سرو می‌شود: https://${suggested}.${rootDomain}`
+                  : "فقط حروف انگلیسی کوچک، رقم و خط تیره."
+            }
+          >
+            <input
+              dir="ltr"
+              value={suggested}
+              onChange={(e) => {
+                setSubdomainEdited(true);
+                setSubdomain(e.target.value.trim().toLowerCase());
+              }}
+              className={`${inputClass} text-start`}
+              placeholder="acme"
+            />
+            {subdomainError ? (
+              <span className="mt-1 block text-xs text-rose-300">{errorMessage(subdomainError)}</span>
+            ) : null}
           </Field>
           <Field label="نام شعبه" hint="خالی بماند، «شعبه مرکزی» ساخته می‌شود.">
             <input
@@ -276,7 +337,7 @@ function ProvisionForm({ onDone }: { onDone: () => void }) {
           </Field>
         </div>
         <div className="mt-2">
-          <Button type="submit" disabled={busy}>
+          <Button type="submit" disabled={busy || Boolean(subdomainError)}>
             {busy ? "در حال ایجاد…" : "ایجاد و راه‌اندازی"}
           </Button>
         </div>

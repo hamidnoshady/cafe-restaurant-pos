@@ -1,5 +1,5 @@
 -- ============================================================================
--- 0066_woocommerce_integration.sql — Phase 23 / issue #118
+-- 0070_woocommerce_integration.sql — Phase 23 / issue #118
 -- WooCommerce two-way integration: connection auth, order/refund inbox,
 -- product/customer mapping, stock/price outbox, reconciliation, audit log.
 --

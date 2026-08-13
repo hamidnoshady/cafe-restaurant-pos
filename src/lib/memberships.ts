@@ -19,6 +19,8 @@ export interface Membership {
   businessId: string;
   businessName: string;
   businessSlug: string;
+  /** Phase 23 — the origin this membership's session is valid on. */
+  businessSubdomain: string;
   businessStatus: "active" | "suspended" | "archived";
   role: Role;
   fullName: string;
@@ -31,6 +33,7 @@ interface MembershipRow extends Record<string, unknown> {
   business_id: string;
   business_name: string;
   business_slug: string;
+  business_subdomain: string;
   business_status: "active" | "suspended" | "archived";
   role: Role;
   full_name: string;
@@ -43,6 +46,7 @@ function toMembership(row: MembershipRow): Membership {
     businessId: row.business_id,
     businessName: row.business_name,
     businessSlug: row.business_slug,
+    businessSubdomain: row.business_subdomain,
     businessStatus: row.business_status,
     role: row.role,
     fullName: row.full_name,
@@ -52,7 +56,7 @@ function toMembership(row: MembershipRow): Membership {
 
 const MEMBERSHIP_SELECT = `
   SELECT u.id AS user_id, u.business_id, b.name AS business_name, b.slug::text AS business_slug,
-         b.status::text AS business_status, u.role, u.full_name, u.location_id
+         b.subdomain::text AS business_subdomain, b.status::text AS business_status, u.role, u.full_name, u.location_id
     FROM users u
     JOIN businesses b ON b.id = u.business_id
 `;

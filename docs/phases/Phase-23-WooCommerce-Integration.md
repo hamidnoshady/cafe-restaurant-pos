@@ -7,7 +7,7 @@ reconciliation — built so a Shopify/Magento adapter can slot in later.
 
 This is issue #118's epic. Its six waves map directly to the issue's `## Waves`
 list. Each wave is a commit on the PR; the schema for all of them lands in one
-forward-only migration (`migrations/0066_woocommerce_integration.sql`) because
+forward-only migration (`migrations/0070_woocommerce_integration.sql`) because
 the tables interlock (an inbox event references a connection; an outbox event
 references a mapping), and splitting them would mean repeatedly altering the
 same tables in later migrations.

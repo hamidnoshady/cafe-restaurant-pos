@@ -32,6 +32,17 @@ scratch database before anything destructive.
   automatically on both sides. Run history is in the `backup_runs` table and
   on the dashboard; a failed or overdue backup shows a red alert on the main
   Owner dashboard within one interval + grace (nightly ⇒ within 30h).
+- **Which database connection it uses:** `BACKUP_DATABASE_URL`, falling back to
+  `DATABASE_URL`. This is deliberately *not* the connection the app serves
+  requests with: since Phase 12 the server runs as the restricted `pos_app`
+  role so row-level security applies to it, and `pg_dump` cannot dump a
+  RLS-forced table as such a role — it aborts on the first table with
+  `query would be affected by row-level security policy for table "accounts"`.
+  Docker's entrypoint and the desktop launcher both keep the privileged
+  (migrating/owner) connection in `BACKUP_DATABASE_URL` for this, so nothing
+  needs configuring; set it by hand only where `DATABASE_URL` itself isn't
+  privileged (e.g. managed Postgres with a hand-provisioned `pos_app`). If a
+  run fails with that error, this variable is what's wrong.
 - The Phase 9 **central aggregation server is just another deployment of
   this app**, so it gets the exact same backup system — enable it on the
   central instance's own dashboard too.
