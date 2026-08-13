@@ -29,6 +29,7 @@ Each phase is a self-contained file with its own scope, exit criteria, and open 
 | 21 | Phase-21-Multi-Industry-Accounting-Platform.md | Complete — all seven waves shipped. Jewelry (weight/purity, gold pricing, stones, consignment), watch (serialized units, warranty, repair tickets) and accessories (variant stock and pricing) each have their own item model, posting rules, chart of accounts, setup-wizard path and dashboard, all sharing Wave 1's domain-event posting engine; Wave 7 adds weight reconciliation, consignor statements and payouts, warranty/repair reporting, variant sales analysis and a per-item audit trail. Remaining open items are product decisions, not unfinished builds: an external gold-price feed, weight-based FIFO costing for bulk gold, and coin (per-unit) pricing |
 | 22 | Phase-22-Accounting-Standards-Compliance-Gap-Analysis.md | Waves 1-5 and 7 complete (Wave 4 first slice; Wave 6 is Phase 21's own remaining waves, tracked there) — audit/gap-analysis, account hierarchy levels/nature/contra metadata, a terminology standards audit, revenue split by sales channel + a platform-commission expense account, a per-account دفتر معین/گردش حساب statement, a fixed-asset register with straight-line depreciation, and a full regression pass, against GitHub issue #160. Remaining scope (tip capture, food-cost variance report, an online-platform concept) needs product decisions before further work |
 | 23 | Phase-23-Subdomain-Tenancy.md | Waves 1-4 complete in code — typable checksummed sync tokens, a `central`/`site` deployment role with a derived sync URL, and per-business subdomains behind `SUBDOMAIN_ROUTING` (off by default). The production cutover (flipping the flag, then deleting the path-prefix transition code) is blocked on a DNS-01 wildcard certificate for `*.$ROOT_DOMAIN`. Filed as 23 because the issue's own "Phase 21" number was already taken |
+| 24 | Phase-24-Security-Hardening-Data-Protection.md | Designed — all five waves specified, implementation not started, against GitHub issue #228. A threat model (three trust boundaries, seven adversaries) plus: Wave 1 perimeter and credential hardening (security response headers with a nonce CSP, login lockout for the password realms, the shared `REMOTE_SYNC_TOKEN` denied by default, per-realm JWT keys, encrypted local/USB backups, a non-root container, `/ws` revocation re-checks); Wave 2 mandatory two-factor auth for platform admins and Owners (Kavenegar SMS OTP by default, Google Authenticator TOTP as the alternative, enrolled at business creation, grace period for existing accounts); Wave 3 field-level encryption at rest with per-business keys; Wave 4 VPN-only networking and LAN HTTPS; Wave 5 the remaining hardening. Zero-knowledge end-to-end encryption is explicitly rejected — it is incompatible with server-side reporting, the posting engine and the RLS predicates |
 
 Phases 0–11 built a single-business POS. Phases 12–17 turn it into a multi-business platform:
 many businesses isolated in one deployment, teams with real permissions, several branches per
@@ -53,5 +54,13 @@ seventh wave, with all four industries selectable at signup. Phase 23 goes back 
 the tenancy boundary Phase 12 established and gives it the one thing it lacked: a browser origin
 per business. Until it, every tenant on a deployment shared one origin — and therefore one cookie
 jar, one localStorage, one service worker — with only an app-applied path prefix between them.
+Phase 24 is the first phase to treat security as its own subject rather than as a section inside
+another phase's work. Phases 12 and 23 built the two boundaries that matter — the tenant row
+boundary in Postgres and the browser origin boundary — and Phase 24 deliberately leaves both
+alone, addressing instead everything around them that was never built: response headers, lockout
+on the password realms, a second factor on every full-privilege account, encryption of data at
+rest and of local backups, and a network posture where a café's box need not be reachable from
+the internet at all. It also records, as a decision rather than an omission, why zero-knowledge
+end-to-end encryption is not available to a product whose server has to produce a trial balance.
 
 For overall architecture, full schema, and product summary, see the master spec doc (POS-Spec.md).
