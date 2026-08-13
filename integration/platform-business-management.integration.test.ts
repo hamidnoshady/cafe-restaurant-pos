@@ -213,6 +213,26 @@ describe("super-admin business metadata", () => {
   });
 });
 
+describe("businessUsage", () => {
+  it("returns per-business counts and last activity", async () => {
+    const business = await seedBusiness("Usage Cafe", `usage-${randomUUID().slice(0, 8)}`);
+
+    const usage = await platformService.businessUsage(business.id);
+
+    expect(usage).toMatchObject({
+      orders: 1,
+      openOrders: 0,
+      members: 2,
+      locations: 1,
+      menuItems: 1,
+      journalEntries: 0,
+    });
+    // lastActivity comes from the order's opened_at (orders has no created_at);
+    // the seeded order defaults opened_at to now, so it must be non-null.
+    expect(usage.lastActivity).toBeTruthy();
+  });
+});
+
 describe("resetBusiness", () => {
   it("clears one tenant completely, preserves its owner identity and plan, and leaves another tenant untouched", async () => {
     const target = await seedBusiness("Reset Cafe", `reset-${randomUUID().slice(0, 8)}`);
