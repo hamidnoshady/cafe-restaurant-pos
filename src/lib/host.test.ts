@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { businessHost, normalizeHost, parseHost, subdomainRoutingEnabled } from "./host";
+import {
+  businessHost,
+  normalizeHost,
+  parseHost,
+  preferredProto,
+  subdomainRoutingEnabled,
+  swapHostLabel,
+} from "./host";
 
 const ROOT = "pos.eshobe.com";
 
@@ -61,6 +68,53 @@ describe("businessHost", () => {
   it("joins a label to the root domain", () => {
     expect(businessHost("acme", ROOT)).toBe("acme.pos.eshobe.com");
     expect(businessHost("acme", `.${ROOT}`)).toBe("acme.pos.eshobe.com");
+  });
+});
+
+describe("swapHostLabel", () => {
+  it("keeps the port the client is actually talking to", () => {
+    // The regression this guards: building a redirect by mutating
+    // request.nextUrl kept the *container's* port (3000) rather than the one
+    // the browser used, so `/platform` behind Traefik pointed at
+    // https://admin.example.com:3000/platform — a dead address.
+    expect(swapHostLabel("acme.localtest.me:8443", "admin", "localtest.me")).toBe("admin.localtest.me:8443");
+    expect(swapHostLabel("acme.localtest.me:3000", "beta", "localtest.me")).toBe("beta.localtest.me:3000");
+  });
+
+  it("emits no port when the request carried none, as on 443", () => {
+    expect(swapHostLabel("acme.pos.eshobe.com", "admin", ROOT)).toBe("admin.pos.eshobe.com");
+  });
+
+  it("survives a missing Host header", () => {
+    expect(swapHostLabel(null, "admin", ROOT)).toBe("admin.pos.eshobe.com");
+    expect(swapHostLabel("", "admin", ROOT)).toBe("admin.pos.eshobe.com");
+  });
+
+  it("does not mistake an IPv6-looking host's colons for a port", () => {
+    expect(swapHostLabel("acme.pos.eshobe.com:not-a-port", "admin", ROOT)).toBe("admin.pos.eshobe.com");
+  });
+});
+
+describe("preferredProto", () => {
+  it("trusts a proxy's x-forwarded-proto over the request's own scheme", () => {
+    expect(preferredProto("https", "http:")).toBe("https");
+    expect(preferredProto("http", "https:")).toBe("http");
+  });
+
+  it("takes the first hop when the header has been appended to", () => {
+    expect(preferredProto("https, http", "http:")).toBe("https");
+  });
+
+  it("falls back to the request's own scheme when there is no proxy", () => {
+    expect(preferredProto(null, "http:")).toBe("http");
+    expect(preferredProto(undefined, "https:")).toBe("https");
+  });
+
+  it("ignores a value that is neither http nor https rather than trusting it", () => {
+    // Client-supplied unless a proxy overwrote it, so `javascript:` and
+    // friends must never end up as the scheme of a redirect we emit.
+    expect(preferredProto("javascript", "https:")).toBe("https");
+    expect(preferredProto("", "http:")).toBe("http");
   });
 });
 

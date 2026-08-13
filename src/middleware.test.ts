@@ -28,3 +28,17 @@ describe("isPublicPath", () => {
     expect(isPublicPath("/logindecoy")).toBe(false);
   });
 });
+
+describe("public paths — Phase 23 host resolution", () => {
+  it("keeps both host-resolution routes session-less", () => {
+    // They exist precisely for callers whose session is absent or belongs to
+    // another origin, so requiring one would make them unreachable exactly
+    // when they are needed.
+    expect(isPublicPath("/api/host/resolve")).toBe(true);
+    expect(isPublicPath("/api/host/redirect")).toBe(true);
+  });
+
+  it("does not open anything else that merely starts with the same text", () => {
+    expect(isPublicPath("/api/hostile")).toBe(false);
+  });
+});

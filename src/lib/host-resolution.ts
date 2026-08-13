@@ -62,6 +62,37 @@ export async function resolveBusinessByLabel(label: string): Promise<ResolvedBus
   });
 }
 
+/**
+ * A business by its stable internal slug, for translating a pre-Phase-23
+ * `/{slug}/dashboard` URL into the host that serves it now.
+ *
+ * Slug and subdomain agree for every business migration 0066 backfilled, but
+ * they diverge the moment an admin sets a real subdomain — so the old URL
+ * cannot simply be reinterpreted as a host label, which is exactly the bug
+ * this exists to fix. Same bypass rationale as resolveBusinessByLabel: no
+ * tenant has been chosen yet, because identifying it is the whole task.
+ */
+export async function resolveBusinessBySlug(slug: string): Promise<ResolvedBusinessHost | null> {
+  if (!slug) return null;
+
+  return withoutTenantScope("host-resolution", async () => {
+    const { rows } = await query<{
+      id: string;
+      name: string;
+      subdomain: string;
+      status: ResolvedBusinessHost["status"];
+    }>(
+      `SELECT id, name, subdomain::text AS subdomain, status::text AS status
+         FROM businesses WHERE slug = $1`,
+      [slug],
+    );
+    const row = rows[0];
+    return row
+      ? { businessId: row.id, name: row.name, subdomain: row.subdomain, status: row.status, viaAlias: false }
+      : null;
+  });
+}
+
 /** `parseHost` + the database lookup, for callers that hold a raw Host header. */
 export async function resolveHost(
   host: string | null | undefined,

@@ -54,6 +54,11 @@ const PUBLIC_ROUTES: Record<string, string> = {
     "answers 'which business is this hostname?' — the Node-runtime half of host resolution, " +
     "asked before any tenant is known (the host is how one gets identified) and reaching only " +
     "what DNS and the TLS certificate already expose",
+  "host/redirect":
+    "forwards a visitor from an old (renamed) host or a pre-Phase-23 /{slug}/dashboard URL to " +
+    "the host that serves that business now — reached precisely because the caller's session is " +
+    "absent or belongs to another origin, so it cannot require one; reads no tenant data and " +
+    "only ever emits a redirect",
   "setup/bootstrap": "first-run only — refuses with 409 as soon as any user exists",
   "setup/signup":
     "self-service business registration — creates the tenant a session would otherwise be scoped to; " +

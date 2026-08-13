@@ -13,7 +13,14 @@ import {
   sweepExpired,
   type RateLimitEntry,
 } from "@/lib/rate-limit";
-import { hostRoutingEnabled, parseHost, type ParsedHost } from "@/lib/host";
+import {
+  ADMIN_HOST_LABEL,
+  hostRoutingEnabled,
+  parseHost,
+  preferredProto,
+  swapHostLabel,
+  type ParsedHost,
+} from "@/lib/host";
 
 const PUBLIC_PATHS = [
   // The root path decides, in src/app/page.tsx, between the login page and the
@@ -70,10 +77,11 @@ const PUBLIC_PATHS = [
   // but mints nothing — the whole point is that no session exists on the apex —
   // so like every other credential exchange it cannot require one.
   "/api/auth/directory",
-  // Phase 23: "what business is this hostname?". Answers the question the Edge
-  // runtime cannot (it needs Postgres), for callers that have no session yet by
-  // definition: the apex router, and an old host redirecting to its new one.
-  "/api/host/resolve",
+  // Phase 23: host resolution — "what business is this hostname?" (/resolve)
+  // and "you're at the wrong address, here's the right one" (/redirect). Both
+  // answer questions the Edge runtime cannot, because they need Postgres, for
+  // callers who by definition have no usable session on this origin.
+  "/api/host",
 ];
 
 /**
@@ -281,9 +289,12 @@ async function handlePlatformAdmin(
     // tenant's browser origin — the exact sharing this wave removes — so the
     // request is moved to the console's own host rather than answered here.
     if (host && host.kind !== "admin") {
-      const url = request.nextUrl.clone();
-      url.hostname = `admin.${rootDomain}`;
-      return NextResponse.redirect(url);
+      return redirectToLabel(
+        request,
+        ADMIN_HOST_LABEL,
+        rootDomain,
+        `${request.nextUrl.pathname}${request.nextUrl.search}`,
+      );
     }
 
     if (PLATFORM_PUBLIC_PATHS.some((p) => pathname === p)) {
@@ -302,7 +313,46 @@ async function handlePlatformAdmin(
   return null;
 }
 
-async function handleTenantAuth(request: NextRequest, pathname: string) {
+/**
+ * A redirect to another label under ROOT_DOMAIN, on the origin the *browser*
+ * is using.
+ *
+ * Mutating `request.nextUrl` would keep that URL's port, which behind a
+ * TLS-terminating proxy is the container's internal one — Traefik listens on
+ * 443 and forwards to 3000, so `/platform` on a tenant host used to redirect
+ * to `https://admin.example.com:3000/platform`, where nothing is listening.
+ * The Host header is what the client actually asked for, so it is the source
+ * of truth for both host and port.
+ */
+function redirectToLabel(
+  request: NextRequest,
+  label: string,
+  rootDomain: string,
+  pathAndQuery: string,
+  status?: number,
+): NextResponse {
+  const hostHeader = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
+  const proto = preferredProto(request.headers.get("x-forwarded-proto"), request.nextUrl.protocol);
+  const target = swapHostLabel(hostHeader, label, rootDomain);
+  return NextResponse.redirect(`${proto}://${target}${pathAndQuery}`, status);
+}
+
+/**
+ * Hand a request to the Node-runtime resolver, on this same host.
+ *
+ * Middleware can see that a host does not match the session but not *why* —
+ * an alias left over from a rename looks identical to a wrong origin, and
+ * telling them apart needs the database. /api/host/redirect can, and either
+ * forwards to the canonical host or sends the visitor to this host's login.
+ */
+function toHostResolver(request: NextRequest, next: string, slug?: string): NextResponse {
+  const url = new URL("/api/host/redirect", request.url);
+  url.searchParams.set("next", next);
+  if (slug) url.searchParams.set("slug", slug);
+  return NextResponse.redirect(url);
+}
+
+async function handleTenantAuth(request: NextRequest, pathname: string, host: ParsedHost | null) {
   const token = request.cookies.get(SESSION_COOKIE)?.value;
   const session = token ? await verifySession(token) : null;
 
@@ -310,6 +360,18 @@ async function handleTenantAuth(request: NextRequest, pathname: string) {
     if (pathname.startsWith("/api/")) {
       return {
         response: NextResponse.json({ error: "unauthorized" }, { status: 401 }),
+      };
+    }
+    // On a business host the signed-out case has to go through the resolver
+    // too, not straight to /login. A bookmark to an old host is *usually*
+    // followed while signed out, and a login served from a renamed host can
+    // never succeed — the session it mints names the current subdomain, which
+    // this host no longer matches, so the visitor would be bounced right back.
+    // The resolver forwards an alias and sends a canonical host to /login
+    // itself, so a signed-out visit costs one extra hop and terminates.
+    if (host?.kind === "business") {
+      return {
+        response: toHostResolver(request, `${request.nextUrl.pathname}${request.nextUrl.search}`),
       };
     }
     const loginUrl = new URL("/login", request.url);
@@ -355,10 +417,16 @@ function handleHostIsolation(
     return NextResponse.json({ error: "wrong_origin" }, { status: 401 });
   }
 
+  // A page request goes to the resolver rather than straight to /login,
+  // because this host may be an alias from a rename — in which case the right
+  // answer is "you're at the old address, here's the new one", not "log in
+  // again at an address that serves nobody". The resolver sends a genuinely
+  // wrong origin to /login itself.
+  //
   // Clearing the cookie matters as much as the redirect: leaving it in place
   // would send the browser back into the same mismatch on every navigation,
   // and the value is useless on this origin by definition.
-  const response = NextResponse.redirect(new URL("/login", request.url));
+  const response = toHostResolver(request, `${request.nextUrl.pathname}${request.nextUrl.search}`);
   response.cookies.delete(SESSION_COOKIE);
   return response;
 }
@@ -376,17 +444,25 @@ function handleLegacyPathRedirect(
   request: NextRequest,
   pathname: string,
   rootDomain: string,
+  sessionSlug: string | undefined,
+  sessionSubdomain: string | undefined,
 ): NextResponse | null {
   const prefixed = pathname.match(/^\/([^/]+)\/dashboard(\/.*)?$/);
   if (!prefixed) return null;
 
-  const [, label, rest] = prefixed;
-  const url = request.nextUrl.clone();
-  // `hostname`, not `host`: the latter includes the port, so assigning it
-  // would drop `:3000` and send a local developer to a closed port.
-  url.hostname = `${label}.${rootDomain}`;
-  url.pathname = `/dashboard${rest ?? ""}`;
-  return NextResponse.redirect(url, 301);
+  const [, slug, rest] = prefixed;
+  const next = `/dashboard${rest ?? ""}${request.nextUrl.search}`;
+
+  // The slug is NOT the host label. They agree for every business migration
+  // 0066 backfilled, and diverge the moment an admin sets a real subdomain —
+  // so reinterpreting the slug as a label sends `/acme-cafe/dashboard` to
+  // `acme-cafe.example.com`, which serves nobody. A session that names this
+  // very business already carries the translation; otherwise only the
+  // database has it, so the Node-runtime resolver does the lookup.
+  if (sessionSlug && sessionSubdomain && sessionSlug === slug) {
+    return redirectToLabel(request, sessionSubdomain, rootDomain, next, 301);
+  }
+  return toHostResolver(request, next, slug);
 }
 
 function handleDashboardUrlRewrite(
@@ -428,6 +504,11 @@ export async function middleware(request: NextRequest) {
   // reversible: until it is on, everything below behaves exactly as it did.
   const rootDomain = process.env.ROOT_DOMAIN?.trim() ?? "";
   const hostRouting = hostRoutingEnabled();
+  // Deliberately the real `Host` header, never `x-forwarded-host`: this drives
+  // the isolation decision, and a forwarded header is client-supplied unless a
+  // proxy overwrote it. Traefik passes the original Host through untouched.
+  // The forwarded headers are consulted only when *building* a redirect, where
+  // the worst a spoofed value can do is change a port.
   const host = hostRouting ? parseHost(request.headers.get("host"), rootDomain) : null;
 
   // ---- Super-admin realm ---------------------------------------------------
@@ -438,8 +519,18 @@ export async function middleware(request: NextRequest) {
   if (hostRouting) {
     // Ahead of the session check on purpose: an old bookmark should land on
     // the right host whether or not the visitor is signed in here, and the
-    // destination host does its own authentication.
-    const legacyRedirect = handleLegacyPathRedirect(request, pathname, rootDomain);
+    // destination host does its own authentication. The session is read (not
+    // required) only because it carries the slug→subdomain translation the
+    // Edge runtime cannot look up.
+    const token = request.cookies.get(SESSION_COOKIE)?.value;
+    const claims = token ? await verifySession(token) : null;
+    const legacyRedirect = handleLegacyPathRedirect(
+      request,
+      pathname,
+      rootDomain,
+      claims?.businessSlug,
+      claims?.businessSubdomain,
+    );
     if (legacyRedirect) return legacyRedirect;
   }
 
@@ -447,7 +538,7 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const authResult = await handleTenantAuth(request, pathname);
+  const authResult = await handleTenantAuth(request, pathname, host);
   if ("response" in authResult) return authResult.response;
   const session = authResult.session;
 
