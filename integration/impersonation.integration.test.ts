@@ -194,3 +194,89 @@ describe("expiry", () => {
     expect(await platformService.activeGrant(admin.id, biz.id)).toBeNull();
   });
 });
+
+describe("redeemImpersonationHandoff — the business-origin half", () => {
+  it("redeems a fresh handoff into the owner membership its grant names", async () => {
+    const { grant, handoff, userId, fullName } = await platformService.startImpersonation({
+      adminId: admin.id,
+      businessId: biz.id,
+      mode: "full",
+    });
+
+    const result = await platformService.redeemImpersonationHandoff(handoff.token);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.grantId).toBe(grant.id);
+    expect(result.adminId).toBe(admin.id);
+    expect(result.mode).toBe("full");
+    expect(result.userId).toBe(userId);
+    expect(result.fullName).toBe(fullName);
+    expect(result.businessId).toBe(biz.id);
+    expect(result.businessSlug).toBeTruthy();
+    expect(result.businessSubdomain).toBeTruthy();
+  });
+
+  it("is single-use: a second redemption of the same token fails", async () => {
+    const { handoff } = await platformService.startImpersonation({
+      adminId: admin.id,
+      businessId: biz.id,
+      mode: "read_only",
+    });
+    expect(await platformService.redeemImpersonationHandoff(handoff.token)).toMatchObject({ ok: true });
+    expect(await platformService.redeemImpersonationHandoff(handoff.token)).toEqual({
+      ok: false,
+      error: "used",
+    });
+  });
+
+  it("rejects a token that was never minted", async () => {
+    expect(await platformService.redeemImpersonationHandoff("impho_never-minted")).toEqual({
+      ok: false,
+      error: "invalid",
+    });
+  });
+
+  it("refuses a handoff whose grant has been revoked", async () => {
+    const { grant, handoff } = await platformService.startImpersonation({
+      adminId: admin.id,
+      businessId: biz.id,
+      mode: "full",
+    });
+    await platformService.revokeImpersonation(grant.id, otherAdmin.id);
+    expect(await platformService.redeemImpersonationHandoff(handoff.token)).toEqual({
+      ok: false,
+      error: "grant_inactive",
+    });
+  });
+
+  it("refuses a handoff whose grant has expired", async () => {
+    const { grant, handoff } = await platformService.startImpersonation({
+      adminId: admin.id,
+      businessId: biz.id,
+      mode: "read_only",
+    });
+    await db.query("UPDATE impersonation_grants SET expires_at = now() - interval '1 minute' WHERE id = $1", [
+      grant.id,
+    ]);
+    expect(await platformService.redeemImpersonationHandoff(handoff.token)).toEqual({
+      ok: false,
+      error: "grant_inactive",
+    });
+  });
+
+  it("refuses a handoff that expired on its own clock, grant still live", async () => {
+    const { grant, handoff } = await platformService.startImpersonation({
+      adminId: admin.id,
+      businessId: biz.id,
+      mode: "read_only",
+    });
+    await db.query(
+      "UPDATE impersonation_handoffs SET expires_at = now() - interval '1 minute' WHERE grant_id = $1",
+      [grant.id],
+    );
+    expect(await platformService.redeemImpersonationHandoff(handoff.token)).toEqual({
+      ok: false,
+      error: "expired",
+    });
+  });
+});

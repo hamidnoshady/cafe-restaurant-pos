@@ -41,6 +41,11 @@ const PUBLIC_PATHS = [
   // that's self-service for an already-authenticated employee, not a login
   // path, so it goes through the normal session requirement below.
   "/api/auth/webauthn/login",
+  // Phase 23 follow-up — the console's one-time impersonation handoff token is
+  // the credential: the caller has no session on the business's origin yet, by
+  // definition (the token exists precisely to mint the first one). Same shape
+  // as accept-invite.
+  "/api/auth/impersonate-handoff",
   // First-run flow: /welcome bootstraps an empty install; the state endpoint
   // answers "needsBootstrap" (and nothing more) without a session.
   "/welcome",
@@ -210,6 +215,10 @@ const AUTH_RATE_LIMITED_PATHS = [
   // public origin, so it is a brute-force target on exactly the same terms as
   // the login routes above and shares their per-IP bucket.
   "/api/auth/directory",
+  // Phase 23 follow-up — a one-time impersonation handoff token is a
+  // credential exchange like every other token/code redemption, so it shares
+  // the per-IP bucket rather than going unlimited.
+  "/api/auth/impersonate-handoff",
   // A pairing code is a 12-character credential submitted without a session,
   // and /api/setup/pair forwards one; both belong in the same per-IP bucket as
   // every other credential exchange rather than going unlimited.

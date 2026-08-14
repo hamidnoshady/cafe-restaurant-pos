@@ -54,7 +54,13 @@ async function loginHostBusinessId(
   if (parsed.kind !== "business") return { businessId: null, error: "wrong_origin" };
 
   const business = await resolveBusinessByLabel(parsed.label);
-  if (!business || business.status !== "active") {
+  // An alias is a business's *old* host after a rename. It must not mint a
+  // session: the cookie about to be written would be host-scoped to this old
+  // origin while the session's `businessSubdomain` names the current one, so
+  // middleware would bounce the visitor straight back to a login on a host
+  // that no longer serves the business. The canonical host is where login
+  // happens; the alias only forwards there.
+  if (!business || business.status !== "active" || business.viaAlias) {
     return { businessId: null, error: "wrong_origin" };
   }
   return { businessId: business.businessId, error: null };

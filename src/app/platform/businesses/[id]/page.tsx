@@ -973,14 +973,16 @@ function ImpersonationPanel({ id, businessName }: { id: string; businessName: st
     if (!confirm(`ورود به «${businessName}» با ${label}؟ این اقدام ثبت می‌شود.`)) return;
     setBusy(true);
     setError(null);
-    const { ok, data } = await api<{ error?: string }>(
+    const { ok, data } = await api<{ handoffUrl?: string; error?: string }>(
       `/api/platform/businesses/${id}/impersonate`,
       { method: "POST", body: JSON.stringify({ mode, reason: reason.trim() || undefined }) },
     );
     setBusy(false);
     if (ok) {
-      // Enter the tenant app; the impersonation cookie is now set.
-      window.location.href = "/dashboard";
+      // Host-routed deployments mint the session on the business's own origin,
+      // so the console hands the browser a one-time URL to follow there; a
+      // single-host install mints the cookie here and navigates straight in.
+      window.location.href = data.handoffUrl ?? "/dashboard";
     } else {
       setError(errorMessage(data.error));
     }
