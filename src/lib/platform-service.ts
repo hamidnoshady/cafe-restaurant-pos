@@ -19,6 +19,11 @@ import { disableFeatures, seedChartOfAccounts } from "./business-provisioning";
 import type { Industry } from "./industries";
 import { industryProfile } from "./industry-profile";
 import { clampImpersonationMinutes } from "./platform-admin";
+import {
+  generateImpersonationHandoffToken,
+  hashImpersonationHandoffToken,
+  IMPERSONATION_HANDOFF_TTL_MINUTES,
+} from "./impersonation-handoff";
 import { SETTING_KEYS } from "./settings";
 import type { AppUpdateStatus } from "./app-update";
 
@@ -924,7 +929,13 @@ export async function startImpersonation(params: {
   mode: ImpersonationMode;
   reason?: string | null;
   minutes?: number;
-}): Promise<{ grant: ImpersonationGrant; userId: string; fullName: string }> {
+}): Promise<{
+  grant: ImpersonationGrant;
+  userId: string;
+  fullName: string;
+  /** The one-time plaintext handoff token — returned exactly once, never stored. */
+  handoff: { token: string };
+}> {
   const minutes = clampImpersonationMinutes(params.minutes);
 
   return withoutTenantScope("platform", async () => {
@@ -967,11 +978,147 @@ export async function startImpersonation(params: {
         ],
       );
 
+      // The handoff row is written in the same transaction as the grant, so a
+      // browser can never be handed a token whose grant does not exist — the
+      // same ordering guarantee the grant itself exists to provide. Only the
+      // hash is stored; the plaintext goes back to the caller exactly once.
+      const { token, tokenHash } = generateImpersonationHandoffToken();
+      await client.query(
+        `INSERT INTO impersonation_handoffs (grant_id, token_hash, expires_at)
+         VALUES ($1, $2, now() + ($3 || ' minutes')::interval)`,
+        [grantRows[0].id, tokenHash, String(IMPERSONATION_HANDOFF_TTL_MINUTES)],
+      );
+
       await client.query("COMMIT");
       return {
         grant: toGrant(grantRows[0]),
         userId: ownerRows[0].id,
         fullName: ownerRows[0].full_name,
+        handoff: { token },
+      };
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    } finally {
+      client.release();
+    }
+  });
+}
+
+export type RedeemImpersonationHandoffResult =
+  | {
+      ok: true;
+      grantId: string;
+      adminId: string;
+      mode: ImpersonationMode;
+      userId: string;
+      fullName: string;
+      businessId: string;
+      businessSlug: string;
+      businessSubdomain: string;
+    }
+  | {
+      ok: false;
+      error: "invalid" | "expired" | "used" | "grant_inactive";
+    };
+
+/**
+ * Redeem a handoff token — the business-origin half of entering a business.
+ *
+ * The console mints the token on admin.{root} (inside `startImpersonation`);
+ * the browser presents it here, on the business's own origin, where the
+ * host-scoped tenant cookie can actually be minted. This runs session-less and
+ * bypassed for the same reason accept-invite does: the caller has no session
+ * on this origin yet — the token is what creates the first one.
+ *
+ * Single-use is enforced by the row lock, not by a client check: two
+ * concurrent redemptions serialize on `FOR UPDATE`, and the second sees the
+ * first's `redeemed_at` stamp. The grant must still be live (not ended,
+ * revoked or expired) and its owner membership must still exist, because the
+ * token is only ever a pointer to the grant — the grant is what authorises the
+ * session, re-checked here exactly as `activeGrant` re-checks it on every
+ * subsequent request.
+ */
+export async function redeemImpersonationHandoff(
+  token: string,
+): Promise<RedeemImpersonationHandoffResult> {
+  const tokenHash = hashImpersonationHandoffToken(token);
+
+  return withoutTenantScope("impersonation-handoff", async () => {
+    const client = await getPool().connect();
+    try {
+      await client.query("BEGIN");
+
+      const { rows } = await client.query<{
+        id: string;
+        grant_id: string;
+        expires_at: Date;
+        redeemed_at: Date | null;
+        admin_id: string;
+        mode: string;
+        user_id: string | null;
+        business_id: string;
+        business_slug: string;
+        business_subdomain: string;
+        full_name: string | null;
+      }>(
+        `SELECT h.id, h.grant_id, h.expires_at, h.redeemed_at,
+                g.platform_admin_id AS admin_id, g.mode::text AS mode, g.user_id,
+                b.id AS business_id, b.slug::text AS business_slug,
+                b.subdomain::text AS business_subdomain,
+                u.full_name
+           FROM impersonation_handoffs h
+           JOIN impersonation_grants g ON g.id = h.grant_id
+           JOIN businesses b ON b.id = g.business_id
+           LEFT JOIN users u ON u.id = g.user_id
+          WHERE h.token_hash = $1
+          FOR UPDATE OF h`,
+        [tokenHash],
+      );
+
+      const handoff = rows[0];
+      if (!handoff) {
+        await client.query("ROLLBACK");
+        return { ok: false as const, error: "invalid" as const };
+      }
+      if (handoff.redeemed_at) {
+        await client.query("ROLLBACK");
+        return { ok: false as const, error: "used" as const };
+      }
+      if (handoff.expires_at.getTime() <= Date.now()) {
+        await client.query("ROLLBACK");
+        return { ok: false as const, error: "expired" as const };
+      }
+
+      // The grant must still be open, and its owner membership must still
+      // exist (grant.user_id is nullable precisely because it may be deleted
+      // mid-window) — a live grant with no seat to act as mints nothing.
+      const grantLive = await client.query<{ live: boolean }>(
+        `SELECT (ended_at IS NULL AND revoked_at IS NULL AND expires_at > now()) AS live
+           FROM impersonation_grants WHERE id = $1`,
+        [handoff.grant_id],
+      );
+      if (!handoff.user_id || !handoff.full_name || !grantLive.rows[0]?.live) {
+        await client.query("ROLLBACK");
+        return { ok: false as const, error: "grant_inactive" as const };
+      }
+
+      await client.query(
+        `UPDATE impersonation_handoffs SET redeemed_at = now() WHERE id = $1`,
+        [handoff.id],
+      );
+
+      await client.query("COMMIT");
+      return {
+        ok: true as const,
+        grantId: handoff.grant_id,
+        adminId: handoff.admin_id,
+        mode: handoff.mode as ImpersonationMode,
+        userId: handoff.user_id,
+        fullName: handoff.full_name,
+        businessId: handoff.business_id,
+        businessSlug: handoff.business_slug,
+        businessSubdomain: handoff.business_subdomain,
       };
     } catch (err) {
       await client.query("ROLLBACK");
