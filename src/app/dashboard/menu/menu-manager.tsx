@@ -1,9 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useDeferredValue } from "react";
 import { toPersianDigits } from "@/lib/digits";
 import { formatToman, parseToRial, rialToToman } from "@/lib/money";
-import { api, ErrorBox, errorMessage, Field, inputClass, PrimaryButton, SecondaryButton } from "../ui";
+import {
+  api,
+  ErrorBox,
+  errorMessage,
+  Field,
+  inputClass,
+  PrimaryButton,
+  SecondaryButton,
+} from "../ui";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ChevronDown } from "lucide-react";
 
@@ -72,7 +80,9 @@ export function MenuManager() {
   }, []);
   useEffect(load, [load]);
 
-  async function run(fn: () => Promise<{ ok: boolean; data: { error?: string } }>) {
+  async function run(
+    fn: () => Promise<{ ok: boolean; data: { error?: string } }>,
+  ) {
     setBusy(true);
     setError("");
     const { ok, data } = await fn();
@@ -85,7 +95,8 @@ export function MenuManager() {
     return true;
   }
 
-  if (!data) return <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>;
+  if (!data)
+    return <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>;
 
   return (
     <div className="space-y-8">
@@ -97,14 +108,29 @@ export function MenuManager() {
   );
 }
 
-type Runner = (fn: () => Promise<{ ok: boolean; data: { error?: string } }>) => Promise<boolean>;
+type Runner = (
+  fn: () => Promise<{ ok: boolean; data: { error?: string } }>,
+) => Promise<boolean>;
 
-function CategorySection({ data, busy, run }: { data: MenuData; busy: boolean; run: Runner }) {
+function CategorySection({
+  data,
+  busy,
+  run,
+}: {
+  data: MenuData;
+  busy: boolean;
+  run: Runner;
+}) {
   const [name, setName] = useState("");
 
   async function add() {
     if (!name.trim()) return;
-    const ok = await run(() => api("/api/menu/categories", { method: "POST", body: JSON.stringify({ name }) }));
+    const ok = await run(() =>
+      api("/api/menu/categories", {
+        method: "POST",
+        body: JSON.stringify({ name }),
+      }),
+    );
     if (ok) setName("");
   }
 
@@ -134,9 +160,17 @@ function CategorySection({ data, busy, run }: { data: MenuData; busy: boolean; r
       </form>
       <ul className="divide-y divide-border">
         {data.categories.map((c) => (
-          <li key={c.id} className="flex min-w-0 flex-col gap-2 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
-            <span className={`min-w-0 break-words ${c.is_active ? "" : "text-muted-foreground line-through"}`}>
-              {c.name} <span className="text-xs text-muted-foreground">(مالیات {toPersianDigits(c.tax_rate)}%)</span>
+          <li
+            key={c.id}
+            className="flex min-w-0 flex-col gap-2 py-3 text-sm sm:flex-row sm:items-center sm:justify-between"
+          >
+            <span
+              className={`min-w-0 break-words ${c.is_active ? "" : "text-muted-foreground line-through"}`}
+            >
+              {c.name}{" "}
+              <span className="text-xs text-muted-foreground">
+                (مالیات {toPersianDigits(c.tax_rate)}%)
+              </span>
             </span>
             <SecondaryButton
               disabled={busy}
@@ -153,17 +187,29 @@ function CategorySection({ data, busy, run }: { data: MenuData; busy: boolean; r
             </SecondaryButton>
           </li>
         ))}
-        {data.categories.length === 0 ? <p className="text-sm text-muted-foreground">دسته‌ای ثبت نشده است.</p> : null}
+        {data.categories.length === 0 ? (
+          <p className="text-sm text-muted-foreground">دسته‌ای ثبت نشده است.</p>
+        ) : null}
       </ul>
     </section>
   );
 }
 
-function ItemSection({ data, busy, run }: { data: MenuData; busy: boolean; run: Runner }) {
+function ItemSection({
+  data,
+  busy,
+  run,
+}: {
+  data: MenuData;
+  busy: boolean;
+  run: Runner;
+}) {
   const [categoryId, setCategoryId] = useState("");
   const [name, setName] = useState("");
   const [price, setPrice] = useState("");
-  const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(() => new Set());
+  const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(
+    () => new Set(),
+  );
 
   function toggleCategory(id: string) {
     setCollapsedCategories((prev) => {
@@ -174,6 +220,7 @@ function ItemSection({ data, busy, run }: { data: MenuData; busy: boolean; run: 
     });
   }
   const [query, setQuery] = useState("");
+  const deferredQuery = useDeferredValue(query);
 
   async function add(e: React.FormEvent) {
     e.preventDefault();
@@ -197,13 +244,19 @@ function ItemSection({ data, busy, run }: { data: MenuData; busy: boolean; run: 
 
   const activeCategories = data.categories.filter((c) => c.is_active);
 
-  const q = query.trim().toLowerCase();
-  const matches = (i: Item) => !q || i.name.toLowerCase().includes(q) || (i.sku ? i.sku.toLowerCase().includes(q) : false);
+  const q = deferredQuery.trim().toLowerCase();
+  const matches = (i: Item) =>
+    !q ||
+    i.name.toLowerCase().includes(q) ||
+    (i.sku ? i.sku.toLowerCase().includes(q) : false);
 
   return (
     <section className="rounded-2xl bg-card p-5 shadow-sm">
       <h2 className="mb-3 font-semibold">آیتم‌ها</h2>
-      <form onSubmit={add} className="mb-4 grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <form
+        onSubmit={add}
+        className="mb-4 grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4"
+      >
         <Field label="دسته">
           <SearchableSelect
             value={categoryId}
@@ -215,7 +268,12 @@ function ItemSection({ data, busy, run }: { data: MenuData; busy: boolean; run: 
           />
         </Field>
         <Field label="نام آیتم">
-          <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} required />
+          <input
+            className={inputClass}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
+          />
         </Field>
         <Field label="قیمت (تومان)">
           <input
@@ -228,7 +286,9 @@ function ItemSection({ data, busy, run }: { data: MenuData; busy: boolean; run: 
           />
         </Field>
         <div className="mb-4 flex items-end">
-          <PrimaryButton disabled={busy || activeCategories.length === 0}>افزودن آیتم</PrimaryButton>
+          <PrimaryButton disabled={busy || activeCategories.length === 0}>
+            افزودن آیتم
+          </PrimaryButton>
         </div>
       </form>
 
@@ -241,7 +301,9 @@ function ItemSection({ data, busy, run }: { data: MenuData; busy: boolean; run: 
       />
       <div className="space-y-4">
         {data.categories.map((c) => {
-          const items = data.items.filter((i) => i.category_id === c.id && matches(i));
+          const items = data.items.filter(
+            (i) => i.category_id === c.id && matches(i),
+          );
           if (items.length === 0) return null;
           const isCollapsed = collapsedCategories.has(c.id);
           return (
@@ -257,7 +319,9 @@ function ItemSection({ data, busy, run }: { data: MenuData; busy: boolean; run: 
                   aria-hidden="true"
                 />
                 {c.name}
-                <span className="text-xs font-normal text-muted-foreground">({toPersianDigits(items.length)})</span>
+                <span className="text-xs font-normal text-muted-foreground">
+                  ({toPersianDigits(items.length)})
+                </span>
               </button>
               {isCollapsed ? null : (
                 <ul className="divide-y divide-border rounded-lg border border-border">
@@ -300,21 +364,45 @@ function ItemRow({
   const [expanded, setExpanded] = useState(false);
   const [pricingOpen, setPricingOpen] = useState(false);
   const [editing, setEditing] = useState(false);
-  const attached = new Set(links.filter((l) => l.menu_item_id === item.id).map((l) => l.modifier_group_id));
+  const attached = new Set(
+    links
+      .filter((l) => l.menu_item_id === item.id)
+      .map((l) => l.modifier_group_id),
+  );
 
   if (editing) {
-    return <EditItemRow item={item} categories={categories} busy={busy} run={run} onDone={() => setEditing(false)} />;
+    return (
+      <EditItemRow
+        item={item}
+        categories={categories}
+        busy={busy}
+        run={run}
+        onDone={() => setEditing(false)}
+      />
+    );
   }
 
   return (
     <li className="min-w-0 px-4 py-3 text-sm">
       <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <span className={`min-w-0 break-words ${item.is_active ? "" : "text-muted-foreground line-through"}`}>{item.name}</span>
+        <span
+          className={`min-w-0 break-words ${item.is_active ? "" : "text-muted-foreground line-through"}`}
+        >
+          {item.name}
+        </span>
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-muted-foreground">{formatToman(Number(item.price))}</span>
-          <SecondaryButton disabled={busy} onClick={() => setEditing(true)}>ویرایش</SecondaryButton>
-          <SecondaryButton onClick={() => setExpanded((v) => !v)}>افزودنی‌ها</SecondaryButton>
-          <SecondaryButton onClick={() => setPricingOpen((v) => !v)}>قیمت پیشنهادی</SecondaryButton>
+          <span className="text-muted-foreground">
+            {formatToman(Number(item.price))}
+          </span>
+          <SecondaryButton disabled={busy} onClick={() => setEditing(true)}>
+            ویرایش
+          </SecondaryButton>
+          <SecondaryButton onClick={() => setExpanded((v) => !v)}>
+            افزودنی‌ها
+          </SecondaryButton>
+          <SecondaryButton onClick={() => setPricingOpen((v) => !v)}>
+            قیمت پیشنهادی
+          </SecondaryButton>
           <SecondaryButton
             disabled={busy}
             onClick={() =>
@@ -331,8 +419,15 @@ function ItemRow({
           <SecondaryButton
             disabled={busy}
             onClick={() => {
-              if (!window.confirm(`آیتم منوی «${item.name}» حذف شود؟ آیتمی که در سفارش استفاده شده باشد غیرفعال می‌شود.`)) return;
-              void run(() => api(`/api/menu/items/${item.id}`, { method: "DELETE" }));
+              if (
+                !window.confirm(
+                  `آیتم منوی «${item.name}» حذف شود؟ آیتمی که در سفارش استفاده شده باشد غیرفعال می‌شود.`,
+                )
+              )
+                return;
+              void run(() =>
+                api(`/api/menu/items/${item.id}`, { method: "DELETE" }),
+              );
             }}
           >
             حذف
@@ -343,7 +438,9 @@ function ItemRow({
       {expanded ? (
         <div className="mt-2 flex flex-wrap gap-2 border-t border-border pt-2">
           {groups.length === 0 ? (
-            <span className="text-xs text-muted-foreground">گروه افزودنی‌ای ثبت نشده است.</span>
+            <span className="text-xs text-muted-foreground">
+              گروه افزودنی‌ای ثبت نشده است.
+            </span>
           ) : (
             groups.map((g) => {
               const isOn = attached.has(g.id);
@@ -361,12 +458,17 @@ function ItemRow({
                           )
                         : api("/api/menu/item-modifier-groups", {
                             method: "POST",
-                            body: JSON.stringify({ menuItemId: item.id, modifierGroupId: g.id }),
+                            body: JSON.stringify({
+                              menuItemId: item.id,
+                              modifierGroupId: g.id,
+                            }),
                           }),
                     )
                   }
                   className={`rounded-full border px-3 py-1 text-xs ${
-                    isOn ? "border-primary/40 bg-primary/5 text-primary" : "border-input text-muted-foreground"
+                    isOn
+                      ? "border-primary/40 bg-primary/5 text-primary"
+                      : "border-input text-muted-foreground"
                   }`}
                 >
                   {g.name}
@@ -396,7 +498,9 @@ function EditItemRow({
   const [categoryId, setCategoryId] = useState(item.category_id ?? "");
   const [name, setName] = useState(item.name);
   const [price, setPrice] = useState(String(rialToToman(Number(item.price))));
-  const selectableCategories = categories.filter((category) => category.is_active || category.id === item.category_id);
+  const selectableCategories = categories.filter(
+    (category) => category.is_active || category.id === item.category_id,
+  );
 
   async function save(event: React.FormEvent) {
     event.preventDefault();
@@ -418,19 +522,30 @@ function EditItemRow({
 
   return (
     <li className="px-4 py-3">
-      <form onSubmit={save} className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      <form
+        onSubmit={save}
+        className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-3"
+      >
         <Field label="دسته">
           <SearchableSelect
             value={categoryId}
             onChange={setCategoryId}
             options={[
               { value: "", label: "دسته را انتخاب کنید…" },
-              ...selectableCategories.map((category) => ({ value: category.id, label: category.name })),
+              ...selectableCategories.map((category) => ({
+                value: category.id,
+                label: category.name,
+              })),
             ]}
           />
         </Field>
         <Field label="نام آیتم">
-          <input className={inputClass} value={name} onChange={(event) => setName(event.target.value)} required />
+          <input
+            className={inputClass}
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            required
+          />
         </Field>
         <Field label="قیمت (تومان)">
           <input
@@ -456,16 +571,28 @@ function EditItemRow({
 }
 
 /** Cost-plus pricing advisory: material cost (from the recipe) + ledger-derived overhead, target margin -> a suggested price the owner can apply or ignore. */
-function PricingPanel({ item, busy, run }: { item: Item; busy: boolean; run: Runner }) {
+function PricingPanel({
+  item,
+  busy,
+  run,
+}: {
+  item: Item;
+  busy: boolean;
+  run: Runner;
+}) {
   const [suggestion, setSuggestion] = useState<SuggestedPrice | null>(null);
   const [loading, setLoading] = useState(true);
   const [marginInput, setMarginInput] = useState(
-    item.target_margin_percent != null ? String(item.target_margin_percent) : "",
+    item.target_margin_percent != null
+      ? String(item.target_margin_percent)
+      : "",
   );
 
   const load = useCallback(() => {
     setLoading(true);
-    api<{ suggestion: SuggestedPrice }>(`/api/menu/items/${item.id}/suggested-price`).then(({ ok, data }) => {
+    api<{ suggestion: SuggestedPrice }>(
+      `/api/menu/items/${item.id}/suggested-price`,
+    ).then(({ ok, data }) => {
       setSuggestion(ok ? data.suggestion : null);
       setLoading(false);
     });
@@ -478,7 +605,11 @@ function PricingPanel({ item, busy, run }: { item: Item; busy: boolean; run: Run
   async function saveMargin() {
     const trimmed = marginInput.trim();
     const value = trimmed === "" ? null : Number(trimmed);
-    if (value !== null && (!Number.isFinite(value) || value < 0 || value >= 100)) return;
+    if (
+      value !== null &&
+      (!Number.isFinite(value) || value < 0 || value >= 100)
+    )
+      return;
     await run(() =>
       api(`/api/menu/items/${item.id}`, {
         method: "PATCH",
@@ -506,19 +637,28 @@ function PricingPanel({ item, busy, run }: { item: Item; busy: boolean; run: Run
       ) : (
         <>
           {!suggestion.hasRecipe ? (
-            <p className="text-muted-foreground">دستورالعمل مصرف (رسپی) این آیتم ثبت نشده؛ بهای مواد قابل محاسبه نیست.</p>
+            <p className="text-muted-foreground">
+              دستورالعمل مصرف (رسپی) این آیتم ثبت نشده؛ بهای مواد قابل محاسبه
+              نیست.
+            </p>
           ) : (
             <div className="grid grid-cols-2 gap-x-4 gap-y-1 sm:grid-cols-4">
-              <span className="text-muted-foreground">بهای مواد: {formatToman(suggestion.materialCost)}</span>
+              <span className="text-muted-foreground">
+                بهای مواد: {formatToman(suggestion.materialCost)}
+              </span>
               <span className="text-muted-foreground">
                 سربار:{" "}
                 {suggestion.overheadRatePercent != null
                   ? `${toPersianDigits(Math.round(suggestion.overheadRatePercent))}٪ (${
-                      suggestion.overheadSource === "ledger" ? "بر اساس دفتر" : "برآورد دستی"
+                      suggestion.overheadSource === "ledger"
+                        ? "بر اساس دفتر"
+                        : "برآورد دستی"
                     })`
                   : "بدون داده"}
               </span>
-              <span className="text-muted-foreground">بهای تمام‌شده: {formatToman(suggestion.loadedCost)}</span>
+              <span className="text-muted-foreground">
+                بهای تمام‌شده: {formatToman(suggestion.loadedCost)}
+              </span>
               <span className="text-muted-foreground">
                 حاشیه سود:{" "}
                 {suggestion.marginPercent != null
@@ -531,14 +671,17 @@ function PricingPanel({ item, busy, run }: { item: Item; busy: boolean; run: Run
           )}
           {suggestion.hasRecipe && suggestion.suggestedPrice != null ? (
             <div className="flex flex-col gap-2 rounded-md bg-card px-2 py-1.5 sm:flex-row sm:items-center sm:justify-between">
-              <span className="font-medium">قیمت پیشنهادی: {formatToman(suggestion.suggestedPrice)}</span>
+              <span className="font-medium">
+                قیمت پیشنهادی: {formatToman(suggestion.suggestedPrice)}
+              </span>
               <SecondaryButton disabled={busy} onClick={applySuggestedPrice}>
                 اعمال قیمت
               </SecondaryButton>
             </div>
           ) : suggestion.hasRecipe ? (
             <p className="text-muted-foreground">
-              برای پیشنهاد قیمت، ابتدا هدف حاشیه سود را (در تنظیمات یا برای همین آیتم) مشخص کنید.
+              برای پیشنهاد قیمت، ابتدا هدف حاشیه سود را (در تنظیمات یا برای همین
+              آیتم) مشخص کنید.
             </p>
           ) : null}
         </>
@@ -565,7 +708,15 @@ function PricingPanel({ item, busy, run }: { item: Item; busy: boolean; run: Run
   );
 }
 
-function ModifierSection({ data, busy, run }: { data: MenuData; busy: boolean; run: Runner }) {
+function ModifierSection({
+  data,
+  busy,
+  run,
+}: {
+  data: MenuData;
+  busy: boolean;
+  run: Runner;
+}) {
   const [groupName, setGroupName] = useState("");
   const [minSelect, setMinSelect] = useState("0");
   const [maxSelect, setMaxSelect] = useState("1");
@@ -575,7 +726,11 @@ function ModifierSection({ data, busy, run }: { data: MenuData; busy: boolean; r
     const ok = await run(() =>
       api("/api/menu/modifier-groups", {
         method: "POST",
-        body: JSON.stringify({ name: groupName, minSelect: Number(minSelect), maxSelect: Number(maxSelect) }),
+        body: JSON.stringify({
+          name: groupName,
+          minSelect: Number(minSelect),
+          maxSelect: Number(maxSelect),
+        }),
       }),
     );
     if (ok) {
@@ -596,13 +751,30 @@ function ModifierSection({ data, busy, run }: { data: MenuData; busy: boolean; r
         }}
       >
         <Field label="نام گروه">
-          <input className={inputClass} value={groupName} onChange={(e) => setGroupName(e.target.value)} placeholder="مثلاً نوع شیر" />
+          <input
+            className={inputClass}
+            value={groupName}
+            onChange={(e) => setGroupName(e.target.value)}
+            placeholder="مثلاً نوع شیر"
+          />
         </Field>
         <Field label="حداقل انتخاب">
-          <input className={inputClass} dir="ltr" inputMode="numeric" value={minSelect} onChange={(e) => setMinSelect(e.target.value)} />
+          <input
+            className={inputClass}
+            dir="ltr"
+            inputMode="numeric"
+            value={minSelect}
+            onChange={(e) => setMinSelect(e.target.value)}
+          />
         </Field>
         <Field label="حداکثر انتخاب">
-          <input className={inputClass} dir="ltr" inputMode="numeric" value={maxSelect} onChange={(e) => setMaxSelect(e.target.value)} />
+          <input
+            className={inputClass}
+            dir="ltr"
+            inputMode="numeric"
+            value={maxSelect}
+            onChange={(e) => setMaxSelect(e.target.value)}
+          />
         </Field>
         <div className="mb-4 flex items-end">
           <SecondaryButton onClick={addGroup} disabled={busy}>
@@ -613,9 +785,17 @@ function ModifierSection({ data, busy, run }: { data: MenuData; busy: boolean; r
 
       <div className="space-y-4">
         {data.modifierGroups.map((g) => (
-          <ModifierGroupRow key={g.id} group={g} modifiers={data.modifiers.filter((m) => m.group_id === g.id)} busy={busy} run={run} />
+          <ModifierGroupRow
+            key={g.id}
+            group={g}
+            modifiers={data.modifiers.filter((m) => m.group_id === g.id)}
+            busy={busy}
+            run={run}
+          />
         ))}
-        {data.modifierGroups.length === 0 ? <p className="text-sm text-muted-foreground">گروهی ثبت نشده است.</p> : null}
+        {data.modifierGroups.length === 0 ? (
+          <p className="text-sm text-muted-foreground">گروهی ثبت نشده است.</p>
+        ) : null}
       </div>
     </section>
   );
@@ -650,7 +830,11 @@ function ModifierGroupRow({
     const ok = await run(() =>
       api("/api/menu/modifiers", {
         method: "POST",
-        body: JSON.stringify({ groupId: group.id, name: modifierName, priceDelta: deltaRial }),
+        body: JSON.stringify({
+          groupId: group.id,
+          name: modifierName,
+          priceDelta: deltaRial,
+        }),
       }),
     );
     if (ok) {
@@ -663,29 +847,55 @@ function ModifierGroupRow({
     event.preventDefault();
     const min = Number(editMin);
     const max = Number(editMax);
-    if (!editName.trim() || !Number.isInteger(min) || !Number.isInteger(max) || min < 0 || max < 1 || min > max) {
+    if (
+      !editName.trim() ||
+      !Number.isInteger(min) ||
+      !Number.isInteger(max) ||
+      min < 0 ||
+      max < 1 ||
+      min > max
+    ) {
       return;
     }
     const ok = await run(() =>
       api(`/api/menu/modifier-groups/${group.id}`, {
         method: "PATCH",
-        body: JSON.stringify({ name: editName.trim(), minSelect: min, maxSelect: max }),
+        body: JSON.stringify({
+          name: editName.trim(),
+          minSelect: min,
+          maxSelect: max,
+        }),
       }),
     );
     if (ok) setEditing(false);
   }
 
   function removeGroup() {
-    if (!window.confirm(`گروه افزودنی «${group.name}» و همهٔ افزودنی‌هایش حذف شود؟`)) return;
-    void run(() => api(`/api/menu/modifier-groups/${group.id}`, { method: "DELETE" }));
+    if (
+      !window.confirm(
+        `گروه افزودنی «${group.name}» و همهٔ افزودنی‌هایش حذف شود؟`,
+      )
+    )
+      return;
+    void run(() =>
+      api(`/api/menu/modifier-groups/${group.id}`, { method: "DELETE" }),
+    );
   }
 
   return (
     <div className="min-w-0 rounded-lg border border-border p-3">
       {editing ? (
-        <form className="mb-2 grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-3" onSubmit={save}>
+        <form
+          className="mb-2 grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-3"
+          onSubmit={save}
+        >
           <Field label="نام گروه">
-            <input className={inputClass} value={editName} onChange={(e) => setEditName(e.target.value)} required />
+            <input
+              className={inputClass}
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              required
+            />
           </Field>
           <Field label="حداقل انتخاب">
             <input
@@ -719,7 +929,8 @@ function ModifierGroupRow({
           <p className="text-sm font-medium">
             {group.name}{" "}
             <span className="text-xs text-muted-foreground">
-              (انتخاب {toPersianDigits(group.min_select)} تا {toPersianDigits(group.max_select)})
+              (انتخاب {toPersianDigits(group.min_select)} تا{" "}
+              {toPersianDigits(group.max_select)})
             </span>
           </p>
           <div className="flex flex-wrap items-center gap-2">
@@ -744,7 +955,11 @@ function ModifierGroupRow({
         {modifiers.map((m) => (
           <ModifierRow key={m.id} modifier={m} busy={busy} run={run} />
         ))}
-        {modifiers.length === 0 ? <p className="py-1 text-xs text-muted-foreground">افزودنی‌ای ثبت نشده است.</p> : null}
+        {modifiers.length === 0 ? (
+          <p className="py-1 text-xs text-muted-foreground">
+            افزودنی‌ای ثبت نشده است.
+          </p>
+        ) : null}
       </ul>
       <form
         className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-3"
@@ -754,7 +969,11 @@ function ModifierGroupRow({
         }}
       >
         <Field label="نام افزودنی">
-          <input className={inputClass} value={modifierName} onChange={(e) => setModifierName(e.target.value)} />
+          <input
+            className={inputClass}
+            value={modifierName}
+            onChange={(e) => setModifierName(e.target.value)}
+          />
         </Field>
         <Field label="مبلغ اضافه (تومان)">
           <input
@@ -775,20 +994,42 @@ function ModifierGroupRow({
   );
 }
 
-
-function ModifierRow({ modifier, busy, run }: { modifier: Modifier; busy: boolean; run: Runner }) {
+function ModifierRow({
+  modifier,
+  busy,
+  run,
+}: {
+  modifier: Modifier;
+  busy: boolean;
+  run: Runner;
+}) {
   const [editing, setEditing] = useState(false);
 
   if (editing) {
-    return <EditModifierRow modifier={modifier} busy={busy} run={run} onDone={() => setEditing(false)} />;
+    return (
+      <EditModifierRow
+        modifier={modifier}
+        busy={busy}
+        run={run}
+        onDone={() => setEditing(false)}
+      />
+    );
   }
 
   return (
     <li className="flex min-w-0 flex-col gap-2 py-2 text-sm sm:flex-row sm:items-center sm:justify-between">
-      <span className={`min-w-0 break-words ${modifier.is_active ? "" : "text-muted-foreground line-through"}`}>{modifier.name}</span>
+      <span
+        className={`min-w-0 break-words ${modifier.is_active ? "" : "text-muted-foreground line-through"}`}
+      >
+        {modifier.name}
+      </span>
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-muted-foreground">{formatToman(Number(modifier.price_delta))}</span>
-        <SecondaryButton disabled={busy} onClick={() => setEditing(true)}>ویرایش</SecondaryButton>
+        <span className="text-muted-foreground">
+          {formatToman(Number(modifier.price_delta))}
+        </span>
+        <SecondaryButton disabled={busy} onClick={() => setEditing(true)}>
+          ویرایش
+        </SecondaryButton>
         <SecondaryButton
           disabled={busy}
           onClick={() =>
@@ -805,8 +1046,15 @@ function ModifierRow({ modifier, busy, run }: { modifier: Modifier; busy: boolea
         <SecondaryButton
           disabled={busy}
           onClick={() => {
-            if (!window.confirm(`افزودنی «${modifier.name}» حذف شود؟ افزودنی که در سفارش استفاده شده باشد غیرفعال می‌شود.`)) return;
-            void run(() => api(`/api/menu/modifiers/${modifier.id}`, { method: "DELETE" }));
+            if (
+              !window.confirm(
+                `افزودنی «${modifier.name}» حذف شود؟ افزودنی که در سفارش استفاده شده باشد غیرفعال می‌شود.`,
+              )
+            )
+              return;
+            void run(() =>
+              api(`/api/menu/modifiers/${modifier.id}`, { method: "DELETE" }),
+            );
           }}
         >
           حذف
@@ -828,7 +1076,9 @@ function EditModifierRow({
   onDone: () => void;
 }) {
   const [name, setName] = useState(modifier.name);
-  const [delta, setDelta] = useState(String(rialToToman(Number(modifier.price_delta))));
+  const [delta, setDelta] = useState(
+    String(rialToToman(Number(modifier.price_delta))),
+  );
 
   async function save(event: React.FormEvent) {
     event.preventDefault();
@@ -850,9 +1100,17 @@ function EditModifierRow({
 
   return (
     <li className="py-2">
-      <form onSubmit={save} className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      <form
+        onSubmit={save}
+        className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-3"
+      >
         <Field label="نام افزودنی">
-          <input className={inputClass} value={name} onChange={(event) => setName(event.target.value)} required />
+          <input
+            className={inputClass}
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            required
+          />
         </Field>
         <Field label="مبلغ اضافه (تومان)">
           <input
