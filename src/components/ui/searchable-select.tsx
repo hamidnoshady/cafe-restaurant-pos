@@ -54,18 +54,19 @@ export function SearchableSelect({
 }: SearchableSelectProps) {
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
+  const deferredQuery = React.useDeferredValue(query);
   const [activeIndex, setActiveIndex] = React.useState(0);
   const inputRef = React.useRef<HTMLInputElement>(null);
 
   const selected = options.find((o) => o.value === value);
   const filtered = React.useMemo(() => {
-    const q = normalizePosSearchText(query);
+    const q = normalizePosSearchText(deferredQuery);
     return q
       ? options.filter((o) =>
           normalizePosSearchText(o.searchString ?? o.label).includes(q),
         )
       : options;
-  }, [options, query]);
+  }, [options, deferredQuery]);
 
   React.useEffect(() => {
     if (open) {
@@ -97,7 +98,9 @@ export function SearchableSelect({
           aria-expanded={open}
           aria-label={ariaLabel}
         >
-          <span className="min-w-0 truncate">{selected ? selected.label : placeholder}</span>
+          <span className="min-w-0 truncate">
+            {selected ? selected.label : placeholder}
+          </span>
           <ChevronDownIcon className="size-4 shrink-0 text-muted-foreground" />
         </button>
       </Popover.Trigger>
@@ -141,10 +144,14 @@ export function SearchableSelect({
           <ul
             role="listbox"
             className="max-h-64 overflow-y-auto p-1"
-            onMouseDown={(e) => e.preventDefault() /* keep input focused on scroll */}
+            onMouseDown={
+              (e) => e.preventDefault() /* keep input focused on scroll */
+            }
           >
             {filtered.length === 0 ? (
-              <li className="px-2.5 py-2 text-sm text-muted-foreground">{emptyText}</li>
+              <li className="px-2.5 py-2 text-sm text-muted-foreground">
+                {emptyText}
+              </li>
             ) : (
               filtered.map((option, i) => {
                 const isActive = i === activeIndex;
@@ -163,7 +170,9 @@ export function SearchableSelect({
                       )}
                     >
                       <span className="min-w-0 truncate">{option.label}</span>
-                      {isSelected ? <CheckIcon className="size-4 shrink-0" /> : null}
+                      {isSelected ? (
+                        <CheckIcon className="size-4 shrink-0" />
+                      ) : null}
                     </button>
                   </li>
                 );
