@@ -57,12 +57,23 @@ export interface WooOrder {
   shipping?: { address_1?: string; city?: string };
 }
 
+export interface WooRefundLineItem {
+  product_id: number;
+  /** Negative for refunds (the WooCommerce convention). */
+  quantity: number;
+  /** Negative for refunds. */
+  total: string;
+}
+
 export interface WooRefund {
   id: number;
+  /** The order the refund belongs to. */
+  parent_id: number;
   date_created: string;
   amount: string;
   total_tax?: string;
   reason: string;
+  line_items?: WooRefundLineItem[];
 }
 
 export interface WooList<T> {

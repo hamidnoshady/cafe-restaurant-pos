@@ -433,7 +433,7 @@ export async function postExactOperationalInventoryEntry(
 export async function postExactCustomerRefundEntry(
   client: PoolClient,
   params: {
-    businessId:string; locationId:string; customerReturnId:string; createdBy:string;
+    businessId:string; locationId:string; customerReturnId:string; createdBy:string|null;
     inventoryEventId:string; paymentMethod:string; amount:RialText; tax:RialText;
   },
 ): Promise<string|null> {

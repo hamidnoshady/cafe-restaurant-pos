@@ -89,8 +89,14 @@ pure and unit-tested; amounts never round-trip through floating point.
 - `POST /api/integrations/connections/[id]/sync/inventory` forces a push.
 
 ### Wave 5 — refund, reconciliation & error management
-- `refund.created` webhook → a balanced refund journal entry (debit sales
-  returns + VAT payable, credit bank-clearing), idempotent on the refund id.
+- `refund.created` webhook → idempotent on the refund id. When the refund's
+  parent order and line items resolve through the mapping table, it flows
+  through the shared customer-return path (`createCustomerReturn`): the
+  balanced refund journal entry (debit sales returns + VAT payable, credit
+  bank-clearing) plus an inventory recovery entry and restocked ingredient
+  lots — reversing what the sale deducted, exactly like a POS return. A
+  refund that can't be tied to local order items (unmapped at import,
+  amount-only refund, unknown order) posts the money side alone.
 - Reconciliation (`integration_reconciliations`): compares a period's
   WooCommerce order totals against the locally recorded `woocommerce_order`
   journal totals and stores the difference for review

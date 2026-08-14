@@ -88,7 +88,9 @@ beforeAll(async () => {
 
   await db.query(
     `INSERT INTO accounts (business_id, code, name, type) VALUES
+       ($1, '1100', 'Cash', 'asset'),
        ($1, '1120', 'Card clearing', 'asset'),
+       ($1, '1200', 'Accounts Receivable', 'asset'),
        ($1, '1300', 'Inventory', 'asset'),
        ($1, '4330', 'Delivery', 'revenue'),
        ($1, '2200', 'VAT Payable', 'liability'),
@@ -305,8 +307,85 @@ describe("WooCommerce webhook ingest", () => {
     expect(movements.rows[0].n).toBe(0);
   });
 
-  it("posts a balanced refund entry for refund.created", async () => {
-    const body = JSON.stringify({ id: 77, date_created: new Date().toISOString(), amount: "2000", total_tax: "200", reason: "return" });
+  it("reverses inventory and COGS for a refund of a mapped order, through the customer-return path", async () => {
+    const body = JSON.stringify({
+      id: 77,
+      parent_id: 1, // the imported order (remote order #1)
+      date_created: new Date().toISOString(),
+      amount: "2000",
+      total_tax: "200",
+      reason: "return",
+      line_items: [{ product_id: 1, quantity: -1, total: "-5000" }],
+    });
+    const res = await ingest.handleWooCommerceWebhook(biz.connectionId, body, signedHeaders(body, "refund.created", `d-${randomUUID()}`));
+    expect(res.status).toBe(200);
+
+    const returns = await db.query<{ id: string; refund_method: string; refund_amount_rial: string }>(
+      "SELECT id, refund_method, refund_amount_rial FROM customer_returns WHERE business_id = $1",
+      [biz.id],
+    );
+    expect(returns.rowCount).toBe(1);
+    expect(returns.rows[0]).toMatchObject({ refund_method: "online", refund_amount_rial: "20000" });
+    const returnId = returns.rows[0].id;
+
+    const returnLines = await db.query<{ quantity: string; disposition: string }>(
+      `SELECT l.quantity::text AS quantity, l.disposition FROM customer_return_lines l WHERE l.customer_return_id = $1`,
+      [returnId],
+    );
+    expect(returnLines.rows).toEqual([{ quantity: "1.000000000", disposition: "restockable" }]);
+
+    // Restored: the sale consumed 1 flour @ 5,000; returning 1 unit of the
+    // 2-unit order restores half → +0.5 flour @ 2,500.
+    const movements = await db.query<{ type: string; quantity: string; cost_value_rial: string }>(
+      `SELECT type, quantity::text AS quantity, cost_value_rial FROM stock_movements
+        WHERE inventory_item_id = $1 AND source_type = 'customer_return'`,
+      [biz.inventoryItemId],
+    );
+    expect(movements.rows).toEqual([{ type: "adjustment", quantity: "0.500000000", cost_value_rial: "2500" }]);
+
+    const reversal = await db.query<{ id: string }>(
+      "SELECT id FROM journal_entries WHERE business_id = $1 AND source_type = 'customer_return' AND posting_kind = 'cogs_reversal'",
+      [biz.id],
+    );
+    expect(reversal.rowCount).toBe(1);
+    const reversalLines = await db.query<{ code: string; debit: string; credit: string }>(
+      `SELECT a.code, jl.debit, jl.credit FROM journal_lines jl JOIN accounts a ON a.id = jl.account_id
+        WHERE jl.entry_id = $1 ORDER BY jl.debit DESC`,
+      [reversal.rows[0].id],
+    );
+    expect(reversalLines.rows).toEqual([
+      { code: "1300", debit: "2500", credit: "0" },
+      { code: "5100", debit: "0", credit: "2500" },
+    ]);
+
+    // Money side, same shape as before: 2,000 toman = 20,000 rial, 200 toman
+    // = 2,000 rial tax → net 18,000.
+    const refundEntry = await db.query<{ id: string }>(
+      "SELECT id FROM journal_entries WHERE business_id = $1 AND source_type = 'customer_return' AND posting_kind = 'customer_refund'",
+      [biz.id],
+    );
+    expect(refundEntry.rowCount).toBe(1);
+    const refundLines = await db.query<{ code: string; debit: string; credit: string }>(
+      `SELECT a.code, jl.debit, jl.credit FROM journal_lines jl JOIN accounts a ON a.id = jl.account_id
+        WHERE jl.entry_id = $1 ORDER BY jl.debit DESC`,
+      [refundEntry.rows[0].id],
+    );
+    expect(refundLines.rows).toEqual([
+      { code: "4400", debit: "18000", credit: "0" },
+      { code: "2200", debit: "2000", credit: "0" },
+      { code: "1120", debit: "0", credit: "20000" },
+    ]);
+  });
+
+  it("posts a money-only refund entry when the refund cannot be tied to an imported order", async () => {
+    const body = JSON.stringify({
+      id: 78,
+      parent_id: 999, // no order mapping
+      date_created: new Date().toISOString(),
+      amount: "1000",
+      total_tax: "0",
+      reason: "return",
+    });
     const res = await ingest.handleWooCommerceWebhook(biz.connectionId, body, signedHeaders(body, "refund.created", `d-${randomUUID()}`));
     expect(res.status).toBe(200);
 
@@ -320,11 +399,16 @@ describe("WooCommerce webhook ingest", () => {
         WHERE jl.entry_id = $1 ORDER BY jl.debit DESC`,
       [entry.rows[0].id],
     );
-    // 2,000 toman = 20,000 rial, 200 toman = 2,000 rial tax → net 18,000.
+    // 1,000 toman = 10,000 rial, no tax.
     expect(lines.rows).toEqual([
-      { code: "4400", debit: "18000", credit: "0" },
-      { code: "2200", debit: "2000", credit: "0" },
-      { code: "1120", debit: "0", credit: "20000" },
+      { code: "4400", debit: "10000", credit: "0" },
+      { code: "1120", debit: "0", credit: "10000" },
     ]);
+
+    const returns = await db.query<{ n: number }>(
+      "SELECT count(*)::int AS n FROM customer_returns WHERE business_id = $1",
+      [biz.id],
+    );
+    expect(returns.rows[0].n).toBe(1); // only the resolvable refund created a return
   });
 });
