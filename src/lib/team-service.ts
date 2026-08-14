@@ -13,7 +13,11 @@ import bcrypt from "bcryptjs";
 import type { PoolClient } from "pg";
 import { getPool, query, withoutTenantScope } from "./db";
 import type { Role } from "./auth-edge";
-import { effectivePermissions, parseOverrides, type PermissionOverrides } from "./permissions";
+import {
+  effectivePermissions,
+  parseOverrides,
+  type PermissionOverrides,
+} from "./permissions";
 import { activeMemberCount, planLimitsFor } from "./plan-limits";
 import {
   checkLastOwner,
@@ -151,7 +155,10 @@ async function auditMembership(
       params.actorId,
       params.action,
       params.targetUserId,
-      JSON.stringify({ before: params.before ?? null, after: params.after ?? null }),
+      JSON.stringify({
+        before: params.before ?? null,
+        after: params.after ?? null,
+      }),
     ],
   );
 }
@@ -185,17 +192,23 @@ export interface CreateMembershipInput {
  * two businesses, and it is why no password is needed in that case: they
  * already have one, and this doesn't change it.
  */
-export async function createMembership(input: CreateMembershipInput): Promise<{ userId: string }> {
+export async function createMembership(
+  input: CreateMembershipInput,
+): Promise<{ userId: string }> {
   const fullName = input.fullName.trim();
   const email = input.email?.trim().toLowerCase() || null;
 
   if (!fullName) throw new TeamError("missing_fields");
 
-  if (isPasswordRole(input.role) && !email) throw new TeamError("email_required");
+  if (isPasswordRole(input.role) && !email)
+    throw new TeamError("email_required");
   if (isPinRole(input.role) && !input.pin) throw new TeamError("pin_required");
 
   const limits = await planLimitsFor(input.businessId);
-  if (limits.memberLimit !== null && (await activeMemberCount(input.businessId)) >= limits.memberLimit) {
+  if (
+    limits.memberLimit !== null &&
+    (await activeMemberCount(input.businessId)) >= limits.memberLimit
+  ) {
     throw new TeamError("member_limit_exceeded", 403);
   }
 
@@ -229,7 +242,9 @@ export async function createMembership(input: CreateMembershipInput): Promise<{ 
         platformUserId = rows[0].id;
       }
       await client.query("SELECT set_config('app.rls_bypass', '', true)");
-      await client.query("SELECT set_config('app.business_id', $1, true)", [input.businessId]);
+      await client.query("SELECT set_config('app.business_id', $1, true)", [
+        input.businessId,
+      ]);
 
       const { rows: dup } = await client.query(
         "SELECT 1 FROM users WHERE business_id = $1 AND platform_user_id = $2",
@@ -260,10 +275,10 @@ export async function createMembership(input: CreateMembershipInput): Promise<{ 
     );
     const userId = created[0].id;
 
-    for (const locationId of input.locationIds ?? []) {
+    if (input.locationIds?.length) {
       await client.query(
-        "INSERT INTO user_locations (user_id, location_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
-        [userId, locationId],
+        "INSERT INTO user_locations (user_id, location_id) SELECT $1, unnest($2::uuid[]) ON CONFLICT DO NOTHING",
+        [userId, input.locationIds],
       );
     }
 
@@ -325,7 +340,9 @@ export interface UpdateMembershipInput {
   defaultLocationId?: string | null;
 }
 
-export async function updateMembership(input: UpdateMembershipInput): Promise<void> {
+export async function updateMembership(
+  input: UpdateMembershipInput,
+): Promise<void> {
   const members = await memberSummaries(input.businessId);
   const target = members.find((m) => m.id === input.userId);
   if (!target) throw new TeamError("not_found", 404);
@@ -373,11 +390,13 @@ export async function updateMembership(input: UpdateMembershipInput): Promise<vo
     );
 
     if (input.locationIds) {
-      await client.query("DELETE FROM user_locations WHERE user_id = $1", [input.userId]);
-      for (const locationId of input.locationIds) {
+      await client.query("DELETE FROM user_locations WHERE user_id = $1", [
+        input.userId,
+      ]);
+      if (input.locationIds.length > 0) {
         await client.query(
-          "INSERT INTO user_locations (user_id, location_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
-          [input.userId, locationId],
+          "INSERT INTO user_locations (user_id, location_id) SELECT $1, unnest($2::uuid[]) ON CONFLICT DO NOTHING",
+          [input.userId, input.locationIds],
         );
       }
     }
@@ -430,7 +449,8 @@ export async function removeMembership(
   actorId: string | null,
 ): Promise<void> {
   const members = await memberSummaries(businessId);
-  if (!members.some((m) => m.id === userId)) throw new TeamError("not_found", 404);
+  if (!members.some((m) => m.id === userId))
+    throw new TeamError("not_found", 404);
 
   const lockout = checkLastOwner(members, userId, { remove: true });
   if (lockout) throw new TeamError(lockout, 409);
@@ -454,7 +474,9 @@ export async function removeMembership(
         WHERE id = $1 AND business_id = $2`,
       [userId, businessId],
     );
-    await client.query("DELETE FROM user_locations WHERE user_id = $1", [userId]);
+    await client.query("DELETE FROM user_locations WHERE user_id = $1", [
+      userId,
+    ]);
     await client.query(
       `UPDATE employee_credentials
           SET status = 'revoked', revoked_at = now()
@@ -506,7 +528,8 @@ export async function setPin(
   pin: string,
   actorId: string | null,
 ): Promise<void> {
-  if (await isPinTaken(businessId, pin, userId)) throw new TeamError("pin_taken", 409);
+  if (await isPinTaken(businessId, pin, userId))
+    throw new TeamError("pin_taken", 409);
 
   const client = await getPool().connect();
   try {
@@ -564,10 +587,10 @@ export async function setPassword(
   // above: platformUserId was only ever reached via a users row this business
   // owns, and platform_users itself carries no business_id to scope by.
   await withoutTenantScope("identity", async () => {
-    await query("UPDATE platform_users SET password_hash = $2, updated_at = now() WHERE id = $1", [
-      platformUserId,
-      hash,
-    ]);
+    await query(
+      "UPDATE platform_users SET password_hash = $2, updated_at = now() WHERE id = $1",
+      [platformUserId, hash],
+    );
   });
 
   await auditMembership(getPool(), {
@@ -579,7 +602,10 @@ export async function setPassword(
 }
 
 /** Verifies a person's current password — required before they change it themselves. */
-export async function verifyPassword(userId: string, password: string): Promise<boolean> {
+export async function verifyPassword(
+  userId: string,
+  password: string,
+): Promise<boolean> {
   return withoutTenantScope("login", async () => {
     const { rows } = await query<{ password_hash: string }>(
       `SELECT p.password_hash FROM users u
@@ -606,7 +632,9 @@ export interface InvitationSummary {
   createdAt: string;
 }
 
-export async function listInvitations(businessId: string): Promise<InvitationSummary[]> {
+export async function listInvitations(
+  businessId: string,
+): Promise<InvitationSummary[]> {
   const { rows } = await query<{
     id: string;
     email: string;
@@ -700,7 +728,12 @@ export async function createInvitation(
     await client.query(
       `INSERT INTO audit_log (business_id, user_id, action, entity, entity_id, payload)
        VALUES ($1, $2, 'team.invited', 'invitation', $3, $4)`,
-      [input.businessId, input.actorId, rows[0].id, JSON.stringify({ email, role: input.role })],
+      [
+        input.businessId,
+        input.actorId,
+        rows[0].id,
+        JSON.stringify({ email, role: input.role }),
+      ],
     );
 
     await client.query("COMMIT");
@@ -747,7 +780,9 @@ export interface InvitationPreview {
  * Runs bypassed: whoever is accepting has no session yet, and by definition no
  * membership of the business that invited them. The token is the credential.
  */
-export async function previewInvitation(token: string): Promise<InvitationPreview> {
+export async function previewInvitation(
+  token: string,
+): Promise<InvitationPreview> {
   return withoutTenantScope("login", async () => {
     const { rows } = await query<{
       email: string;
@@ -874,7 +909,11 @@ export async function acceptInvitation(
       const { rows: created } = await client.query<{ id: string }>(
         `INSERT INTO platform_users (email, password_hash, full_name)
          VALUES ($1, $2, $3) RETURNING id`,
-        [invitation.email, await bcrypt.hash(password, 10), invitation.full_name],
+        [
+          invitation.email,
+          await bcrypt.hash(password, 10),
+          invitation.full_name,
+        ],
       );
       platformUserId = created[0].id;
     }
@@ -892,10 +931,14 @@ export async function acceptInvitation(
     // set by hand above, so the check must run on this same connection (see
     // plan-limits.ts's module comment for why a fresh pool connection would
     // silently under-count here).
-    const invitationLimits = await planLimitsFor(invitation.business_id, client);
+    const invitationLimits = await planLimitsFor(
+      invitation.business_id,
+      client,
+    );
     if (
       invitationLimits.memberLimit !== null &&
-      (await activeMemberCount(invitation.business_id, client)) >= invitationLimits.memberLimit
+      (await activeMemberCount(invitation.business_id, client)) >=
+        invitationLimits.memberLimit
     ) {
       await client.query("ROLLBACK");
       throw new TeamError("member_limit_exceeded", 403);
@@ -918,10 +961,10 @@ export async function acceptInvitation(
     );
     const userId = member[0].id;
 
-    for (const locationId of invitation.location_ids) {
+    if (invitation.location_ids?.length) {
       await client.query(
-        "INSERT INTO user_locations (user_id, location_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
-        [userId, locationId],
+        "INSERT INTO user_locations (user_id, location_id) SELECT $1, unnest($2::uuid[]) ON CONFLICT DO NOTHING",
+        [userId, invitation.location_ids],
       );
     }
 
