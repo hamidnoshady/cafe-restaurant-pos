@@ -5,7 +5,10 @@ import { getSession } from "@/lib/auth";
 import { getBackupHealth } from "@/lib/backup-service";
 import { isSetupComplete } from "@/lib/setup-state";
 import { effectiveFeatures } from "@/lib/features";
+import { getBusinessIndustry } from "@/lib/industry-guard";
+import { industryProfile } from "@/lib/industry-profile";
 import { OperationsOverview } from "./operations-overview";
+import { RetailOverview } from "./retail-overview";
 import { PinnedReports } from "./pinned-reports";
 import { SetupBanner } from "./setup-banner";
 
@@ -36,6 +39,10 @@ export default async function DashboardPage() {
     session && canSetup
       ? await getBackupHealth(session.businessId).catch(() => null)
       : null;
+  const industry = session ? ((await getBusinessIndustry(session.businessId)) ?? "food_service") : "food_service";
+  // A shop has no open order tickets, no tables and no kitchen, so the F&B
+  // overview would render a permanently empty «سفارش‌های فعال» table for it.
+  const isRetail = industryProfile(industry).salesModel === "retail_invoice";
   const hasOperationalOverview = session
     ? OPERATIONAL_ROLES.includes(
         session.role as (typeof OPERATIONAL_ROLES)[number],
@@ -44,7 +51,7 @@ export default async function DashboardPage() {
 
   return (
     <div className="mx-auto w-full max-w-[1440px] pb-6">
-      {!hasOperationalOverview ? (
+      {!hasOperationalOverview && !isRetail ? (
         <header className="mb-5 flex items-baseline justify-between border-b border-border/80 pb-4">
           <h1 className="text-2xl font-bold">داشبورد</h1>
           <p className="text-sm text-muted-foreground">امروز: {today}</p>
@@ -81,7 +88,9 @@ export default async function DashboardPage() {
         </Link>
       ) : null}
 
-      {hasOperationalOverview && session ? (
+      {session && isRetail ? <RetailOverview industry={industry} /> : null}
+
+      {hasOperationalOverview && session && !isRetail ? (
         <OperationsOverview
           role={session.role as (typeof OPERATIONAL_ROLES)[number]}
         />

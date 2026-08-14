@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { formatQuantity, toPersianDigits } from "@/lib/digits";
 import { formatToman } from "@/lib/money";
@@ -201,8 +202,8 @@ function MetaItem({ label, children }: { label: string; children: React.ReactNod
 }
 
 function VariantRowView({ item, busy, run }: { item: VariantRow; busy: boolean; run: Runner }) {
-  const [panel, setPanel] = useState<"stock" | "sell" | null>(null);
-  const toggle = (next: "stock" | "sell") => setPanel((current) => (current === next ? null : next));
+  const [panel, setPanel] = useState<"stock" | null>(null);
+  const toggle = (next: "stock") => setPanel((current) => (current === next ? null : next));
   const isFamily = item.kind === "variant_parent";
 
   return (
@@ -252,24 +253,24 @@ function VariantRowView({ item, busy, run }: { item: VariantRow; busy: boolean; 
             >
               ورود کالا / قیمت
             </Button>
-            <Button
-              type="button"
-              size="sm"
-              className="min-h-[44px] border border-amber-300 px-3 text-xs font-semibold focus-visible:ring-amber-400/30"
-              disabled={busy || Number(item.quantity) <= 0}
-              onClick={() => toggle("sell")}
-            >
-              فروش
-            </Button>
+            {Number(item.quantity) > 0 ? (
+              // Selling happens on the invoice screen, the only place a sale
+              // becomes a document (Phase 25 Wave 3). This page manages the
+              // catalogue; it no longer offers a parallel way to sell straight
+              // to the ledger.
+              <Link
+                href="/dashboard/pos"
+                className="inline-flex min-h-[44px] items-center rounded-md border border-amber-300 bg-amber-100 px-3 text-xs font-semibold text-amber-950 transition-colors hover:bg-amber-200"
+              >
+                فروش در فاکتور
+              </Link>
+            ) : null}
           </div>
         ) : null}
       </div>
 
       {panel === "stock" ? (
         <StockPanel item={item} busy={busy} run={run} onDone={() => setPanel(null)} />
-      ) : null}
-      {panel === "sell" ? (
-        <SellPanel item={item} busy={busy} run={run} onDone={() => setPanel(null)} />
       ) : null}
     </li>
   );
@@ -342,106 +343,6 @@ function StockPanel({
         <div className="sm:col-span-3">
           <Button type="submit" disabled={busy} size="sm" className="min-h-[44px] border border-amber-300 px-5 font-semibold">
             ذخیره
-          </Button>
-        </div>
-      </form>
-    </PanelShell>
-  );
-}
-
-function SellPanel({
-  item,
-  busy,
-  run,
-  onDone,
-}: {
-  item: VariantRow;
-  busy: boolean;
-  run: Runner;
-  onDone: () => void;
-}) {
-  const [quantity, setQuantity] = useState("1");
-  const [unitPrice, setUnitPrice] = useState(item.unitPrice != null ? String(item.unitPrice) : "");
-  const [discount, setDiscount] = useState("0");
-  const [vatPercent, setVatPercent] = useState("9");
-  const [paymentMethod, setPaymentMethod] = useState("cash");
-
-  async function sell(e: React.FormEvent) {
-    e.preventDefault();
-    const ok = await run(() =>
-      api(`/api/accessories/items/${item.id}/sell`, {
-        method: "POST",
-        body: JSON.stringify({
-          quantity,
-          unitPrice: unitPrice.trim() ? Number(unitPrice) : undefined,
-          discount: Number(discount || 0),
-          vatPercent: Number(vatPercent || 0),
-          paymentMethod,
-        }),
-      }),
-    );
-    if (ok) onDone();
-  }
-
-  return (
-    <PanelShell>
-      <p className="mb-3 text-xs text-muted-foreground">
-        موجودی فعلی: {formatQuantity(item.quantity)} — مالیات روی مبلغ پس از تخفیف محاسبه می‌شود (
-        {toPersianDigits(vatPercent || "0")}٪).
-      </p>
-      <form onSubmit={sell} className="grid min-w-0 gap-3 sm:grid-cols-3">
-        <Field label="تعداد">
-          <input
-            className={accInputClass}
-            dir="ltr"
-            inputMode="decimal"
-            value={quantity}
-            onChange={(e) => setQuantity(e.target.value)}
-            required
-          />
-        </Field>
-        <Field label="قیمت هر واحد (ریال)">
-          <input
-            className={accInputClass}
-            dir="ltr"
-            inputMode="numeric"
-            value={unitPrice}
-            onChange={(e) => setUnitPrice(e.target.value)}
-          />
-        </Field>
-        <Field label="تخفیف (ریال)">
-          <input
-            className={accInputClass}
-            dir="ltr"
-            inputMode="numeric"
-            value={discount}
-            onChange={(e) => setDiscount(e.target.value)}
-          />
-        </Field>
-        <Field label="مالیات (٪)">
-          <input
-            className={accInputClass}
-            dir="ltr"
-            inputMode="decimal"
-            value={vatPercent}
-            onChange={(e) => setVatPercent(e.target.value)}
-          />
-        </Field>
-        <Field label="روش پرداخت">
-          <SearchableSelect
-            className={accInputClass}
-            value={paymentMethod}
-            onChange={setPaymentMethod}
-            options={[
-              { value: "cash", label: "نقدی" },
-              { value: "bank", label: "کارت‌خوان" },
-              { value: "credit", label: "نسیه" },
-            ]}
-          />
-        </Field>
-        <div className="sm:col-span-3">
-          <Button type="submit" disabled={busy} size="sm" className="min-h-[44px] border border-amber-300 px-5 font-semibold">
-            ثبت فروش
           </Button>
         </div>
       </form>
