@@ -15,6 +15,9 @@
  */
 import { getPool, query, withoutTenantScope } from "./db";
 import type { PoolClient } from "pg";
+import { disableFeatures, seedChartOfAccounts } from "./business-provisioning";
+import type { Industry } from "./industries";
+import { industryProfile } from "./industry-profile";
 import { clampImpersonationMinutes } from "./platform-admin";
 import { SETTING_KEYS } from "./settings";
 import type { AppUpdateStatus } from "./app-update";
@@ -34,6 +37,8 @@ export interface BusinessSummary {
   status: BusinessStatus;
   plan: string;
   timezone: string;
+  /** Phase 21's `businesses.industry` — which module set, labels and sales model this tenant gets. */
+  industry: Industry;
   createdAt: string;
   suspendedAt: string | null;
   archivedAt: string | null;
@@ -49,6 +54,7 @@ interface BusinessRow extends Record<string, unknown> {
   status: BusinessStatus;
   plan: string;
   timezone: string;
+  industry: Industry;
   created_at: string;
   suspended_at: string | null;
   archived_at: string | null;
@@ -65,6 +71,7 @@ function toSummary(row: BusinessRow): BusinessSummary {
     status: row.status,
     plan: row.plan,
     timezone: row.timezone,
+    industry: row.industry,
     createdAt: row.created_at,
     suspendedAt: row.suspended_at,
     archivedAt: row.archived_at,
@@ -79,7 +86,7 @@ export async function listBusinesses(): Promise<BusinessSummary[]> {
     const { rows } = await query<BusinessRow>(
       `SELECT b.id, b.name, b.slug::text AS slug, b.subdomain::text AS subdomain,
               b.status::text AS status, b.plan,
-              b.timezone, b.created_at, b.suspended_at, b.archived_at,
+              b.timezone, b.industry, b.created_at, b.suspended_at, b.archived_at,
               (SELECT count(*) FROM locations l WHERE l.business_id = b.id) AS location_count,
               (SELECT count(*) FROM users u WHERE u.business_id = b.id AND u.is_active) AS member_count
          FROM businesses b
@@ -95,7 +102,7 @@ export async function getBusiness(businessId: string): Promise<BusinessSummary |
     const { rows } = await query<BusinessRow>(
       `SELECT b.id, b.name, b.slug::text AS slug, b.subdomain::text AS subdomain,
               b.status::text AS status, b.plan,
-              b.timezone, b.created_at, b.suspended_at, b.archived_at,
+              b.timezone, b.industry, b.created_at, b.suspended_at, b.archived_at,
               (SELECT count(*) FROM locations l WHERE l.business_id = b.id) AS location_count,
               (SELECT count(*) FROM users u WHERE u.business_id = b.id AND u.is_active) AS member_count
          FROM businesses b
@@ -263,6 +270,126 @@ export async function updateBusiness(
     ),
   );
   return rows[0] ? getBusiness(businessId) : null;
+}
+
+/**
+ * How much industry-shaped data a business already holds — what the console
+ * shows an admin *before* they change its industry, so the warning is a fact
+ * rather than a generic scare. Cheap counts, all cross-tenant reads a platform
+ * session is entitled to.
+ */
+export interface IndustryDataCounts {
+  /** F&B catalogue rows (`menu_items`), meaningless to a retail industry. */
+  menuItems: number;
+  /** Phase 21 generic items (`items`), meaningless to F&B. */
+  industryItems: number;
+  /** Sales already recorded as orders. */
+  orders: number;
+  /** Journal entries already posted against this business's chart of accounts. */
+  journalEntries: number;
+}
+
+export async function industryDataCounts(businessId: string): Promise<IndustryDataCounts> {
+  return withoutTenantScope("platform", async () => {
+    const { rows } = await query<{
+      menu_items: string;
+      industry_items: string;
+      orders: string;
+      journal_entries: string;
+    }>(
+      `SELECT (SELECT count(*) FROM menu_items m
+                 JOIN locations l ON l.id = m.location_id WHERE l.business_id = $1) AS menu_items,
+              (SELECT count(*) FROM items i
+                 JOIN locations l ON l.id = i.location_id WHERE l.business_id = $1) AS industry_items,
+              (SELECT count(*) FROM orders o
+                 JOIN locations l ON l.id = o.location_id WHERE l.business_id = $1) AS orders,
+              (SELECT count(*) FROM journal_entries j WHERE j.business_id = $1) AS journal_entries`,
+      [businessId],
+    );
+    const row = rows[0];
+    return {
+      menuItems: Number(row?.menu_items ?? 0),
+      industryItems: Number(row?.industry_items ?? 0),
+      orders: Number(row?.orders ?? 0),
+      journalEntries: Number(row?.journal_entries ?? 0),
+    };
+  });
+}
+
+/**
+ * Change which industry a business operates in, and top up its chart of
+ * accounts so the new industry's posting rules have the accounts they need.
+ *
+ * Migration 0048 originally made `industry` immutable *by omission* — no update
+ * route existed — because the chart of accounts is seeded from it at creation
+ * and there was no way to reconcile a switch. This is the deliberate reversal
+ * of that (Phase 25 Wave 1, issue #234): an operator who mis-provisioned a
+ * tenant, or a shop that genuinely changes trade, should not need a factory
+ * reset.
+ *
+ * What it is careful *not* to do is rewrite history. Seeding is additive —
+ * `seedChartOfAccounts` skips every code the business already has — so existing
+ * accounts, their names, and every journal entry posted against them survive
+ * untouched. Data belonging to the old industry's model (`menu_items` for an
+ * ex-F&B business, `items` for an ex-retail one) is likewise left alone: it
+ * simply stops being reachable from the new industry's UI. Reconciling it is
+ * the operator's call, which is why `industryDataCounts` exists to tell them
+ * what they are leaving behind before they confirm.
+ */
+export async function changeBusinessIndustry(
+  businessId: string,
+  industry: Industry,
+): Promise<{ business: BusinessSummary; seededAccountCodes: string[] } | null> {
+  const seededAccountCodes = await withoutTenantScope("platform", async () => {
+    const client = await getPool().connect();
+    try {
+      await client.query("BEGIN");
+      const { rows: previous } = await client.query<{ industry: Industry }>(
+        `SELECT industry FROM businesses WHERE id = $1 FOR UPDATE`,
+        [businessId],
+      );
+      if (!previous[0]) {
+        await client.query("ROLLBACK");
+        return null;
+      }
+      await client.query(
+        `UPDATE businesses SET industry = $2, updated_at = now() WHERE id = $1`,
+        [businessId, industry],
+      );
+      const seeded = await seedChartOfAccounts(client, businessId, industry);
+
+      // Move the feature overrides across too, in both directions. Seeding the
+      // new industry's defaults alone would leave a business switched *to*
+      // food_service with no tables and no menu, because the overrides its old
+      // trade seeded would still be sitting there switched off — so first clear
+      // the ones the old industry turned off and the new one has no opinion
+      // about. This can undo an operator's own manual "off" for one of those
+      // flags; the console is where they turn it back off, and that is a better
+      // failure than a café that silently has no floor plan.
+      const stale = industryProfile(previous[0].industry).defaultDisabledFeatures.filter(
+        (flag) => !industryProfile(industry).defaultDisabledFeatures.includes(flag),
+      );
+      if (stale.length > 0) {
+        await client.query(
+          `DELETE FROM business_features WHERE business_id = $1 AND flag_key = ANY($2)`,
+          [businessId, stale],
+        );
+      }
+      await disableFeatures(client, businessId, industryProfile(industry).defaultDisabledFeatures);
+
+      await client.query("COMMIT");
+      return seeded;
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    } finally {
+      client.release();
+    }
+  });
+  if (seededAccountCodes === null) return null;
+
+  const business = await getBusiness(businessId);
+  return business ? { business, seededAccountCodes } : null;
 }
 
 /**

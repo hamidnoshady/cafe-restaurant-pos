@@ -14,6 +14,7 @@ import { NextResponse } from "next/server";
 import type { SessionPayload } from "./auth";
 import { query } from "./db";
 import type { Industry } from "./industries";
+import { hasModule, type ModuleKey } from "./industry-profile";
 
 export async function getBusinessIndustry(businessId: string): Promise<Industry | null> {
   const { rows } = await query<{ industry: Industry }>(
@@ -37,4 +38,31 @@ export async function requireIndustryForApi(
     return NextResponse.json({ error: "industry_mismatch" }, { status: 403 });
   }
   return null;
+}
+
+/**
+ * Phase 25 Wave 2 — the module half of the same idea.
+ *
+ * `requireIndustryForPage`/`ForApi` above ask "is this business exactly this
+ * industry", which is right for a page that only one industry has. These ask
+ * the broader question the shell needs — "does this industry have this area at
+ * all" — using `industry-profile.ts`'s module sets, so an F&B-only route
+ * refuses a jewellery business without needing an `industry` named at every
+ * call site.
+ *
+ * Enforced at the API guard (`withTenantScope`, auth.ts) rather than only in
+ * the nav, for the same reason `features.ts` is: hiding a link is decoration
+ * if the route still answers.
+ */
+export async function isModuleEnabled(businessId: string, module: ModuleKey): Promise<boolean> {
+  const industry = await getBusinessIndustry(businessId);
+  // A business whose row we cannot read is not a business whose modules we can
+  // narrow — fail open here and let the ordinary auth/tenancy guards refuse,
+  // exactly as `isFeatureEnabled` does for an unknown flag.
+  return industry === null || hasModule(industry, module);
+}
+
+/** Called from a gated dashboard page's server component; redirects away if this industry has no such module. */
+export async function requireModuleForPage(businessId: string, module: ModuleKey): Promise<void> {
+  if (!(await isModuleEnabled(businessId, module))) redirect("/dashboard");
 }

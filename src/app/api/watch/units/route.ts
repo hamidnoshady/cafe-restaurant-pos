@@ -7,8 +7,11 @@ import { listSerialUnits } from "@/lib/watch-sales-service";
 import { recordItemEvent } from "@/lib/item-audit-service";
 
 /** Every physical unit at this branch, with its model, cost basis and live warranty window. */
+  // Cashier included on the read side only: selling from the invoice screen
+  // means listing what is in stock, exactly as /api/menu's GET is readable by
+  // every floor role. The write handlers below stay owner/manager.
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requireRole("owner", "manager", "cashier");
   if (error) return error;
   const industryError = await requireIndustryForApi(session, "watch");
   if (industryError) return industryError;

@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { api, ErrorBox, errorMessage as sharedErrorMessage } from "../ui";
+import { api, errorMessage as sharedErrorMessage } from "../ui";
+import { IndustryManagerShell, type Runner } from "../industry-manager-shell";
 import { VariantsSection } from "./variants-section";
 import { ReportsSection } from "./reports-section";
 
@@ -19,9 +20,7 @@ export interface VariantRow {
   attributes: { name: string; value: string }[];
 }
 
-export type Runner = (
-  fn: () => Promise<{ ok: boolean; data: { error?: string; message?: string } }>,
-) => Promise<boolean>;
+export type { Runner } from "../industry-manager-shell";
 
 function accessoriesErrorMessage(code: string | undefined): string {
   const map: Record<string, string> = {
@@ -67,46 +66,16 @@ export function AccessoriesManager() {
   };
 
   return (
-    <div className="min-w-0 space-y-4 sm:space-y-5">
-      <ErrorBox>{error}</ErrorBox>
-
-      <nav
-        aria-label="بخش‌های بدلیجات"
-        className="rounded-2xl border border-stone-200/80 bg-white p-2 shadow-[0_1px_2px_rgb(41_37_36/0.03)]"
-      >
-        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
-          {TABS.map((t) => {
-            const isActive = tab === t.key;
-            return (
-              <button
-                key={t.key}
-                id={`accessories-tab-${t.key}`}
-                type="button"
-                aria-pressed={isActive}
-                aria-controls="accessories-tabpanel"
-                onClick={() => setTab(t.key)}
-                className={`min-h-[52px] rounded-xl border px-3 text-center text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-amber-400/40 sm:px-4 ${
-                  isActive
-                    ? "border-amber-200 bg-amber-100 text-amber-950 shadow-[0_1px_2px_rgb(120_53_15/0.08)]"
-                    : "border-transparent bg-transparent text-stone-600 hover:border-stone-200 hover:bg-stone-50 hover:text-stone-950"
-                }`}
-              >
-                {t.label}
-              </button>
-            );
-          })}
-        </div>
-      </nav>
-
-      <div
-        id="accessories-tabpanel"
-        role="region"
-        aria-labelledby={`accessories-tab-${tab}`}
-        className="min-w-0"
-      >
-        {tab === "items" ? <VariantsSection items={items} busy={busy} run={run} /> : null}
-        {tab === "reports" ? <ReportsSection /> : null}
-      </div>
-    </div>
+    <IndustryManagerShell
+      idPrefix="accessories"
+      navLabel="بخش‌های بدلیجات"
+      tabs={TABS}
+      activeTab={tab}
+      onTabChange={setTab}
+      error={error}
+    >
+      {tab === "items" ? <VariantsSection items={items} busy={busy} run={run} /> : null}
+      {tab === "reports" ? <ReportsSection /> : null}
+    </IndustryManagerShell>
   );
 }

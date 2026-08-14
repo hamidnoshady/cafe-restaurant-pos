@@ -10,6 +10,7 @@
  */
 import { getPool, query, withoutTenantScope } from "./db";
 import { effectiveFeatures } from "./features";
+import type { Industry } from "./industries";
 import {
   generatePairingCode,
   hashPairingCode,
@@ -215,8 +216,8 @@ export async function buildPairingSnapshot(
 ): Promise<PairingSnapshot> {
   const [bizRes, locRes, userRes, assignRes, accountRes, catRes, itemRes, settingRes, features] =
     await Promise.all([
-      query<{ id: string; name: string; slug: string; timezone: string }>(
-        `SELECT id, name, slug::text AS slug, subdomain::text AS subdomain, timezone
+      query<{ id: string; name: string; slug: string; timezone: string; industry: Industry }>(
+        `SELECT id, name, slug::text AS slug, subdomain::text AS subdomain, timezone, industry
            FROM businesses WHERE id = $1`,
         [businessId],
       ),

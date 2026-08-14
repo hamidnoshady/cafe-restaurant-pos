@@ -66,6 +66,8 @@ export function errorMessage(code: string | undefined): string {
     reserved_subdomain: "این زیردامنه رزرو شده است و قابل استفاده نیست.",
     missing_subdomain: "زیردامنهٔ کسب‌وکار را به انگلیسی وارد کنید.",
     subdomain_taken: "این زیردامنه قبلاً به کسب‌وکار دیگری اختصاص یافته است.",
+    invalid_industry: "نوع کسب‌وکار نامعتبر است.",
+    industry_not_available: "این نوع کسب‌وکار هنوز در دسترس نیست.",
     unchanged: "زیردامنه تغییری نکرده است.",
   };
   return map[code ?? ""] ?? "خطای غیرمنتظره. دوباره تلاش کنید.";

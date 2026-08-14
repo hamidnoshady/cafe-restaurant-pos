@@ -11,7 +11,9 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { toPersianDigits, formatPersianNumber } from "@/lib/digits";
+import { INDUSTRY_LABELS, type Industry } from "@/lib/industries";
 import { validateSubdomain } from "@/lib/slug";
+import { IndustryPicker } from "./industry-picker";
 import {
   api,
   errorMessage,
@@ -32,6 +34,7 @@ interface Business {
   subdomain: string;
   status: string;
   plan: string;
+  industry: Industry;
   locationCount: number;
   memberCount: number;
   createdAt: string;
@@ -133,6 +136,7 @@ export default function BusinessesPage() {
               <thead className="bg-white/3 text-white/50">
                 <tr>
                   <th className="px-4 py-3 text-start font-medium">نام</th>
+                  <th className="px-4 py-3 text-start font-medium">نوع</th>
                   <th className="px-4 py-3 text-start font-medium">وضعیت</th>
                   <th className="px-4 py-3 text-start font-medium">پلن</th>
                   <th className="px-4 py-3 text-start font-medium">شعبه</th>
@@ -158,6 +162,7 @@ export default function BusinessesPage() {
                         {isPlaceholderSubdomain(b.subdomain) ? <PlaceholderSubdomainBadge /> : null}
                       </span>
                     </td>
+                    <td className="px-4 py-3 text-white/70">{INDUSTRY_LABELS[b.industry]}</td>
                     <td className="px-4 py-3">
                       <StatusBadge status={b.status} />
                     </td>
@@ -200,6 +205,10 @@ function BusinessListCard({ business }: { business: Business }) {
       </div>
       <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
         <div>
+          <dt className="text-xs text-white/40">نوع</dt>
+          <dd className="mt-1 text-white/80">{INDUSTRY_LABELS[business.industry]}</dd>
+        </div>
+        <div>
           <dt className="text-xs text-white/40">پلن</dt>
           <dd className="mt-1 text-white/80">{business.plan}</dd>
         </div>
@@ -231,6 +240,11 @@ function ProvisionForm({ onDone, rootDomain }: { onDone: () => void; rootDomain:
   // transliteration of one ("kafeh-shahr-e-ma") is a poor thing to print on a
   // receipt or read down a phone. The admin chooses it, and it is required.
   const [subdomain, setSubdomain] = useState("");
+  // Which industry the tenant is: it selects the chart of accounts seeded
+  // below, the setup-wizard path its owner walks, and (Phase 25 Wave 2) which
+  // modules and labels the dashboard shows. Until this form asked, every
+  // console-provisioned business silently became a café.
+  const [industry, setIndustry] = useState<Industry>("food_service");
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -253,6 +267,7 @@ function ProvisionForm({ onDone, rootDomain }: { onDone: () => void; rootDomain:
         password,
         locationName: locationName.trim() || undefined,
         subdomain,
+        industry,
       }),
     });
     setBusy(false);
@@ -302,6 +317,14 @@ function ProvisionForm({ onDone, rootDomain }: { onDone: () => void; rootDomain:
               <span className="mt-1 block text-xs text-rose-300">{errorMessage(subdomainError)}</span>
             ) : null}
           </Field>
+          <div className="sm:col-span-2">
+            <Field
+              label="نوع کسب‌وکار"
+              hint="سرفصل حساب‌ها، مراحل راه‌اندازی و ماژول‌های کسب‌وکار بر اساس همین انتخاب ساخته می‌شوند."
+            >
+              <IndustryPicker value={industry} onChange={setIndustry} disabled={busy} />
+            </Field>
+          </div>
           <Field label="نام شعبه" hint="خالی بماند، «شعبه مرکزی» ساخته می‌شود.">
             <input
               value={locationName}

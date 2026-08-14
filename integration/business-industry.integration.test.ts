@@ -1,0 +1,337 @@
+/**
+ * Phase 25 Wave 1 — the business type as something a super-admin owns.
+ *
+ * Two things need real-database proof, because both are about SQL the unit
+ * tests deliberately do not reach:
+ *
+ * 1. **Provisioning honours the industry the console sends.** The validation
+ *    was always there (`validateProvisionBody`, unit-tested); what was missing
+ *    was any caller passing it, so every console-provisioned business silently
+ *    became `food_service` *with the F&B chart of accounts*. The account codes
+ *    are the assertion that matters — a business can carry the right `industry`
+ *    string and still be unusable if its ledger was seeded for another trade.
+ *
+ * 2. **Changing the industry is additive.** `changeBusinessIndustry` re-seeds
+ *    through the same idempotent `seedChartOfAccounts`, so it must add the new
+ *    industry's missing codes while leaving every existing account — its id,
+ *    its name, and anything posted against it — exactly as it was. That
+ *    "leaves nothing behind" property is the whole basis on which the change is
+ *    safe to expose at all, so it is asserted directly rather than assumed.
+ */
+import { randomUUID } from "node:crypto";
+import { Client } from "pg";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { runMigrations } from "../scripts/migrate";
+import { coaTemplateForIndustry } from "../src/lib/coa-template";
+
+const rootDatabaseUrl = process.env.DATABASE_URL;
+if (!rootDatabaseUrl) {
+  throw new Error("DATABASE_URL is required for database integration tests");
+}
+
+let databaseName: string;
+let db: Client;
+let dbLib: typeof import("../src/lib/db");
+let provisioning: typeof import("../src/lib/business-provisioning");
+let platformService: typeof import("../src/lib/platform-service");
+
+function urlFor(database: string): string {
+  const url = new URL(rootDatabaseUrl!);
+  url.pathname = `/${database}`;
+  return url.toString();
+}
+
+function maintenanceUrl(): string {
+  const url = new URL(rootDatabaseUrl!);
+  url.pathname = "/postgres";
+  return url.toString();
+}
+
+beforeAll(async () => {
+  databaseName = `pos_business_industry_${randomUUID().replaceAll("-", "")}`;
+
+  const maintenance = new Client({ connectionString: maintenanceUrl() });
+  await maintenance.connect();
+  try {
+    await maintenance.query(`CREATE DATABASE "${databaseName}"`);
+  } finally {
+    await maintenance.end();
+  }
+
+  await runMigrations({ databaseUrl: urlFor(databaseName), quiet: true });
+
+  process.env.DATABASE_URL = urlFor(databaseName);
+  dbLib = await import("../src/lib/db");
+  provisioning = await import("../src/lib/business-provisioning");
+  platformService = await import("../src/lib/platform-service");
+
+  db = new Client({ connectionString: urlFor(databaseName) });
+  await db.connect();
+}, 120_000);
+
+afterAll(async () => {
+  await db?.end();
+  await dbLib?.getPool().end().catch(() => {});
+  process.env.DATABASE_URL = rootDatabaseUrl;
+
+  const maintenance = new Client({ connectionString: maintenanceUrl() });
+  await maintenance.connect();
+  try {
+    await maintenance.query(`DROP DATABASE IF EXISTS "${databaseName}" WITH (FORCE)`);
+  } finally {
+    await maintenance.end();
+  }
+});
+
+let seq = 0;
+
+/** Provision the way the console does: a named industry and a seeded chart of accounts. */
+async function provision(industry: "food_service" | "jewelry" | "watch" | "accessories") {
+  seq += 1;
+  return provisioning.provisionBusiness({
+    businessName: `کسب‌وکار ${industry} ${seq}`,
+    ownerName: "مالک",
+    email: `owner-${industry}-${seq}@example.com`,
+    password: "correct-horse",
+    subdomain: `biz${industry.replace("_", "")}${seq}`,
+    industry,
+    seedChartOfAccounts: true,
+  });
+}
+
+async function accountCodes(businessId: string): Promise<string[]> {
+  const { rows } = await db.query<{ code: string }>(
+    "SELECT code FROM accounts WHERE business_id = $1 ORDER BY code",
+    [businessId],
+  );
+  return rows.map((r) => r.code);
+}
+
+describe("provisioning with an industry", () => {
+  it("stores the industry the caller asked for", async () => {
+    const { businessId } = await provision("jewelry");
+    const { rows } = await db.query<{ industry: string }>(
+      "SELECT industry FROM businesses WHERE id = $1",
+      [businessId],
+    );
+    expect(rows[0].industry).toBe("jewelry");
+  });
+
+  it("seeds that industry's chart of accounts, not the F&B one", async () => {
+    const { businessId } = await provision("jewelry");
+    const codes = await accountCodes(businessId);
+
+    // The jewelry-specific codes Phase 21 posts against (coa-template.ts's
+    // WELL_KNOWN_CODES): gold inventory, gold sales revenue, making-charge
+    // revenue, gold COGS. None of these exist in the F&B template, so their
+    // presence is proof the right template ran.
+    for (const code of ["1320", "4500", "4600", "5110"]) {
+      expect(codes, `jewelry account ${code}`).toContain(code);
+    }
+    expect(codes.sort()).toEqual(
+      [...coaTemplateForIndustry("jewelry")].map((a) => a.code).sort(),
+    );
+  });
+
+  it("still defaults to food_service when no industry is named", async () => {
+    seq += 1;
+    const { businessId } = await provisioning.provisionBusiness({
+      businessName: `کافه ${seq}`,
+      ownerName: "مالک",
+      email: `owner-default-${seq}@example.com`,
+      password: "correct-horse",
+      subdomain: `bizdefault${seq}`,
+      seedChartOfAccounts: true,
+    });
+    const { rows } = await db.query<{ industry: string }>(
+      "SELECT industry FROM businesses WHERE id = $1",
+      [businessId],
+    );
+    expect(rows[0].industry).toBe("food_service");
+  });
+});
+
+describe("changeBusinessIndustry", () => {
+  it("switches the type and tops the chart of accounts up", async () => {
+    const { businessId } = await provision("food_service");
+    const before = await accountCodes(businessId);
+    expect(before).not.toContain("1320");
+
+    const result = await platformService.changeBusinessIndustry(businessId, "jewelry");
+    expect(result).not.toBeNull();
+    expect(result!.business.industry).toBe("jewelry");
+
+    const after = await accountCodes(businessId);
+    for (const code of ["1320", "4500", "4600", "5110"]) {
+      expect(after, `jewelry account ${code}`).toContain(code);
+    }
+    // Everything the new template needed and the business lacked, and nothing else.
+    expect([...result!.seededAccountCodes].sort()).toEqual(
+      after.filter((c) => !before.includes(c)).sort(),
+    );
+  });
+
+  it("leaves every pre-existing account untouched, ids and names included", async () => {
+    const { businessId } = await provision("food_service");
+    const { rows: before } = await db.query<{ id: string; code: string; name: string }>(
+      "SELECT id, code, name FROM accounts WHERE business_id = $1 ORDER BY code",
+      [businessId],
+    );
+    // Rename one so a blind re-seed that overwrote names would be caught.
+    await db.query("UPDATE accounts SET name = 'نام دستیِ حسابدار' WHERE business_id = $1 AND code = $2", [
+      businessId,
+      before[0].code,
+    ]);
+
+    await platformService.changeBusinessIndustry(businessId, "jewelry");
+
+    const { rows: after } = await db.query<{ id: string; code: string; name: string }>(
+      "SELECT id, code, name FROM accounts WHERE business_id = $1 AND code = ANY($2) ORDER BY code",
+      [businessId, before.map((a) => a.code)],
+    );
+    expect(after).toHaveLength(before.length);
+    for (const [i, row] of after.entries()) {
+      expect(row.id, `account ${row.code} kept its id`).toBe(before[i].id);
+    }
+    expect(after[0].name).toBe("نام دستیِ حسابدار");
+  });
+
+  it("is idempotent — changing to the same industry seeds nothing new", async () => {
+    const { businessId } = await provision("watch");
+    const before = await accountCodes(businessId);
+
+    const result = await platformService.changeBusinessIndustry(businessId, "watch");
+    expect(result!.seededAccountCodes).toEqual([]);
+    expect(await accountCodes(businessId)).toEqual(before);
+  });
+
+  it("deletes no tenant data when the type changes", async () => {
+    const { businessId, locationId } = await provision("food_service");
+    const category = await db.query<{ id: string }>(
+      `INSERT INTO menu_categories (location_id, name) VALUES ($1, 'نوشیدنی') RETURNING id`,
+      [locationId],
+    );
+    await db.query(
+      `INSERT INTO menu_items (location_id, category_id, name, price) VALUES ($1, $2, 'اسپرسو', 100000)`,
+      [locationId, category.rows[0].id],
+    );
+
+    await platformService.changeBusinessIndustry(businessId, "accessories");
+
+    // The café's menu is now unreachable from the dashboard, but it is still
+    // there — the console warned about exactly this rather than dropping it.
+    const { rows } = await db.query<{ count: string }>(
+      "SELECT count(*) FROM menu_items WHERE location_id = $1",
+      [locationId],
+    );
+    expect(Number(rows[0].count)).toBe(1);
+  });
+
+  it("returns null for a business that does not exist", async () => {
+    expect(await platformService.changeBusinessIndustry(randomUUID(), "jewelry")).toBeNull();
+  });
+});
+
+describe("industryDataCounts", () => {
+  it("counts what a type change would leave behind", async () => {
+    const { businessId, locationId } = await provision("food_service");
+    expect(await platformService.industryDataCounts(businessId)).toEqual({
+      menuItems: 0,
+      industryItems: 0,
+      orders: 0,
+      journalEntries: 0,
+    });
+
+    const category = await db.query<{ id: string }>(
+      `INSERT INTO menu_categories (location_id, name) VALUES ($1, 'نوشیدنی') RETURNING id`,
+      [locationId],
+    );
+    await db.query(
+      `INSERT INTO menu_items (location_id, category_id, name, price) VALUES ($1, $2, 'چای', 50000)`,
+      [locationId, category.rows[0].id],
+    );
+    await db.query(
+      `INSERT INTO orders (location_id, order_number, type, status, total)
+       VALUES ($1, 1, 'takeaway', 'completed', 50000)`,
+      [locationId],
+    );
+
+    const counts = await platformService.industryDataCounts(businessId);
+    expect(counts.menuItems).toBe(1);
+    expect(counts.orders).toBe(1);
+  });
+
+  it("counts only the business asked about", async () => {
+    const a = await provision("food_service");
+    const b = await provision("food_service");
+    const category = await db.query<{ id: string }>(
+      `INSERT INTO menu_categories (location_id, name) VALUES ($1, 'نوشیدنی') RETURNING id`,
+      [a.locationId],
+    );
+    await db.query(
+      `INSERT INTO menu_items (location_id, category_id, name, price) VALUES ($1, $2, 'قهوه', 90000)`,
+      [a.locationId, category.rows[0].id],
+    );
+
+    expect((await platformService.industryDataCounts(a.businessId)).menuItems).toBe(1);
+    expect((await platformService.industryDataCounts(b.businessId)).menuItems).toBe(0);
+  });
+});
+
+describe("industry feature defaults", () => {
+  async function overrides(businessId: string): Promise<Record<string, boolean>> {
+    const { rows } = await db.query<{ flag_key: string; enabled: boolean }>(
+      "SELECT flag_key, enabled FROM business_features WHERE business_id = $1",
+      [businessId],
+    );
+    return Object.fromEntries(rows.map((r) => [r.flag_key, r.enabled]));
+  }
+
+  it("turns off the F&B-shaped features for a retail business at provision", async () => {
+    const { businessId } = await provision("jewelry");
+    const flags = await overrides(businessId);
+    // `inventory` is F&B's recipe-costed raw-material store and `reservations`
+    // gates tables and the floor plan; a jewellery shop has neither.
+    expect(flags.inventory).toBe(false);
+    expect(flags.reservations).toBe(false);
+    expect(flags.delivery).toBe(false);
+  });
+
+  it("turns nothing off for a café", async () => {
+    const { businessId } = await provision("food_service");
+    expect(await overrides(businessId)).toEqual({});
+  });
+
+  it("applies the new industry's defaults on a change", async () => {
+    const { businessId } = await provision("food_service");
+    expect(await overrides(businessId)).toEqual({});
+
+    await platformService.changeBusinessIndustry(businessId, "watch");
+    const flags = await overrides(businessId);
+    expect(flags.inventory).toBe(false);
+    expect(flags.reservations).toBe(false);
+  });
+
+  it("clears the old industry's defaults when switching back to a café", async () => {
+    // Otherwise a business switched to food_service would come up with no
+    // tables and no floor plan, because the overrides its previous trade
+    // seeded would still be sitting there switched off.
+    const { businessId } = await provision("jewelry");
+    expect((await overrides(businessId)).reservations).toBe(false);
+
+    await platformService.changeBusinessIndustry(businessId, "food_service");
+    const flags = await overrides(businessId);
+    expect(flags.reservations).toBeUndefined();
+    expect(flags.inventory).toBeUndefined();
+  });
+
+  it("leaves an override the new industry also disables in place", async () => {
+    const { businessId } = await provision("jewelry");
+    await platformService.changeBusinessIndustry(businessId, "watch");
+    // Both trades disable these, so the change is a no-op for them rather than
+    // a delete-then-reinsert that would briefly flip the flag on.
+    const flags = await overrides(businessId);
+    expect(flags.inventory).toBe(false);
+    expect(flags.reservations).toBe(false);
+  });
+});

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { toPersianDigits } from "@/lib/digits";
 import { formatToman } from "@/lib/money";
@@ -204,8 +205,8 @@ function MetaItem({ label, children }: { label: string; children: React.ReactNod
 }
 
 function UnitRow({ unit, busy, run }: { unit: SerialUnit; busy: boolean; run: Runner }) {
-  const [panel, setPanel] = useState<"cost" | "sell" | "audit" | null>(null);
-  const toggle = (next: "cost" | "sell" | "audit") =>
+  const [panel, setPanel] = useState<"cost" | "audit" | null>(null);
+  const toggle = (next: "cost" | "audit") =>
     setPanel((current) => (current === next ? null : next));
 
   return (
@@ -260,24 +261,22 @@ function UnitRow({ unit, busy, run }: { unit: SerialUnit; busy: boolean; run: Ru
             تاریخچه
           </Button>
           {unit.status === "in_stock" ? (
-            <Button
-              type="button"
-              size="sm"
-              className="min-h-[44px] border border-amber-300 px-3 text-xs font-semibold focus-visible:ring-amber-400/30"
-              disabled={busy}
-              onClick={() => toggle("sell")}
+            // Selling happens on the invoice screen, the only place a sale
+            // becomes a document (Phase 25 Wave 3). This page manages the
+            // catalogue; it no longer offers a parallel way to sell one unit
+            // straight to the ledger.
+            <Link
+              href="/dashboard/pos"
+              className="inline-flex min-h-[44px] items-center rounded-md border border-amber-300 bg-amber-100 px-3 text-xs font-semibold text-amber-950 transition-colors hover:bg-amber-200"
             >
-              فروش
-            </Button>
+              فروش در فاکتور
+            </Link>
           ) : null}
         </div>
       </div>
 
       {panel === "cost" ? (
         <CostPanel unit={unit} busy={busy} run={run} onDone={() => setPanel(null)} />
-      ) : null}
-      {panel === "sell" ? (
-        <SellPanel unit={unit} busy={busy} run={run} onDone={() => setPanel(null)} />
       ) : null}
       {panel === "audit" ? <ItemAuditPanel itemId={unit.itemId} /> : null}
     </li>
@@ -340,103 +339,6 @@ function CostPanel({
         <div className="sm:col-span-3">
           <Button type="submit" disabled={busy} size="sm" className="min-h-[44px] border border-amber-300 px-5 font-semibold">
             ذخیره
-          </Button>
-        </div>
-      </form>
-    </PanelShell>
-  );
-}
-
-function SellPanel({
-  unit,
-  busy,
-  run,
-  onDone,
-}: {
-  unit: SerialUnit;
-  busy: boolean;
-  run: Runner;
-  onDone: () => void;
-}) {
-  const [price, setPrice] = useState("");
-  const [discount, setDiscount] = useState("0");
-  const [vatPercent, setVatPercent] = useState("9");
-  const [warrantyMonths, setWarrantyMonths] = useState(String(unit.warrantyMonths));
-  const [paymentMethod, setPaymentMethod] = useState("cash");
-
-  async function sell(e: React.FormEvent) {
-    e.preventDefault();
-    if (!price.trim()) return;
-    const ok = await run(() =>
-      api(`/api/watch/units/${unit.id}/sell`, {
-        method: "POST",
-        body: JSON.stringify({
-          price: Number(price),
-          discount: Number(discount || 0),
-          vatPercent: Number(vatPercent || 0),
-          warrantyMonths: Number(warrantyMonths || 0),
-          paymentMethod,
-        }),
-      }),
-    );
-    if (ok) onDone();
-  }
-
-  return (
-    <PanelShell>
-      <form onSubmit={sell} className="grid min-w-0 gap-3 sm:grid-cols-3">
-        <Field label="قیمت فروش (ریال)">
-          <input
-            className={watchInputClass}
-            dir="ltr"
-            inputMode="numeric"
-            value={price}
-            onChange={(e) => setPrice(e.target.value)}
-            required
-          />
-        </Field>
-        <Field label="تخفیف (ریال)">
-          <input
-            className={watchInputClass}
-            dir="ltr"
-            inputMode="numeric"
-            value={discount}
-            onChange={(e) => setDiscount(e.target.value)}
-          />
-        </Field>
-        <Field label="مالیات (٪)">
-          <input
-            className={watchInputClass}
-            dir="ltr"
-            inputMode="decimal"
-            value={vatPercent}
-            onChange={(e) => setVatPercent(e.target.value)}
-          />
-        </Field>
-        <Field label="گارانتی (ماه)">
-          <input
-            className={watchInputClass}
-            dir="ltr"
-            inputMode="numeric"
-            value={warrantyMonths}
-            onChange={(e) => setWarrantyMonths(e.target.value)}
-          />
-        </Field>
-        <Field label="روش پرداخت">
-          <SearchableSelect
-            className={watchInputClass}
-            value={paymentMethod}
-            onChange={setPaymentMethod}
-            options={[
-              { value: "cash", label: "نقدی" },
-              { value: "bank", label: "کارت‌خوان" },
-              { value: "credit", label: "نسیه" },
-            ]}
-          />
-        </Field>
-        <div className="sm:col-span-3">
-          <Button type="submit" disabled={busy} size="sm" className="min-h-[44px] border border-amber-300 px-5 font-semibold">
-            ثبت فروش
           </Button>
         </div>
       </form>

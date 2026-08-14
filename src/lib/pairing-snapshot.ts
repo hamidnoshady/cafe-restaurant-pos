@@ -2,8 +2,9 @@
  * The payload a desktop install receives when it redeems a pairing code, and
  * the validation it runs before touching its database.
  *
- * Pure — no imports beyond types — so it is unit-tested directly and can be
- * used on both sides: the online server builds a value of this shape
+ * Pure — its only import is `industries.ts`, which is itself framework-free
+ * (no db, no next) for exactly this reason — so it is unit-tested directly and
+ * can be used on both sides: the online server builds a value of this shape
  * (pairing-service.ts) and the local install validates one (pairing-apply.ts).
  *
  * IDs are carried verbatim rather than regenerated. The local install ends up
@@ -14,6 +15,8 @@
  * Credential hashes cross as-is (bcrypt output, never plaintext), so staff sign
  * in on the laptop with the PIN they already know.
  */
+
+import { isIndustry, type Industry } from "./industries";
 
 export const PAIRING_SNAPSHOT_VERSION = 1;
 
@@ -81,6 +84,14 @@ export interface PairingSnapshot {
      * what the column was backfilled from anyway (migration 0066).
      */
     subdomain?: string;
+    /**
+     * Phase 25. Optional for the same reason as `subdomain`: a snapshot minted
+     * by an older central server carries none, and the desktop side then falls
+     * back to `food_service` — the column's own default, which is exactly what
+     * a paired install got before this field existed. Without it, pairing a
+     * jewellery business produced a café on the laptop.
+     */
+    industry?: Industry;
     timezone: string;
   };
   location: {
@@ -139,6 +150,9 @@ export function validateSnapshot(raw: unknown): SnapshotValidation {
   if (typeof business.name !== "string" || !business.name) return fail;
   if (typeof business.slug !== "string" || !business.slug) return fail;
   if (business.subdomain !== undefined && (typeof business.subdomain !== "string" || !business.subdomain)) return fail;
+  if (business.industry !== undefined && (typeof business.industry !== "string" || !isIndustry(business.industry))) {
+    return fail;
+  }
   if (typeof business.timezone !== "string" || !business.timezone) return fail;
 
   const location = raw.location;

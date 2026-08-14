@@ -33,6 +33,8 @@ const ACTION_LABELS: Record<string, string> = {
   "business.delete": "حذف قطعی",
   "business.plan": "تغییر پلن",
   "business.edit": "ویرایش کسب‌وکار",
+  "business.subdomain": "تغییر نشانی (ساب‌دامنه)",
+  "business.industry_change": "تغییر نوع کسب‌وکار",
   "business.reset": "ریست کامل کسب‌وکار",
   "feature.override": "بازنویسی پرچم ویژگی",
   "impersonation.start": "شروع دسترسی پشتیبانی",

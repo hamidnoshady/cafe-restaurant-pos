@@ -123,10 +123,17 @@ and left:
   handlers guard with `requirePlatformAdmin()`/`requirePlatformCapability(...)` from
   `src/lib/platform-auth.ts`, not `requireRole`/`requirePermission` — see
   `src/lib/platform-admin.ts` for the role→capability mapping.
-- **Industry modules (Phase 21)** — a business picks an `industry` at creation
-  (`src/lib/industries.ts`), immutable afterwards, and that choice selects its chart of accounts
-  (`coaTemplateForIndustry`), its setup-wizard steps (`wizardStepsForIndustry`), and which dashboard
-  it sees. `food_service` is the original F&B app; `jewelry`/`watch`/`accessories` build on a
+- **Industry modules (Phase 21, Phase 25)** — a business has an `industry`
+  (`src/lib/industries.ts`), set by a super-admin when provisioning it from the platform console and
+  changeable there afterwards (additively and audited — see Phase 25's doc for why that is safe).
+  That choice selects its chart of accounts (`coaTemplateForIndustry`), its setup-wizard steps
+  (`wizardStepsForIndustry`), and — since Phase 25 — **which modules it has at all, what they are
+  called, and how it sells**, all from one place: `src/lib/industry-profile.ts`. Prefer adding to
+  that profile over adding an `if (industry === …)` anywhere else. A module the trade does not have
+  is refused at the API guard (`moduleForApiPath` in `withTenantScope`), not merely hidden from the
+  nav — the same discipline `features.ts` follows. The retail industries sell through a multi-line
+  invoice (`retail-invoice-service.ts`) that is an `orders` row settled by Phase 21's own sell
+  services, so no posting rule is duplicated. `food_service` is the original F&B app; `jewelry`/`watch`/`accessories` build on a
   parallel `items`/`item_serials`/`item_weight_attributes`/`item_stock` model and post through the
   domain-event engine (`src/lib/posting-engine.ts` + each industry's `*-posting-rules.ts`) rather
   than hand-written ledger functions. **F&B's `menu_items`/`inventory_items`/recipes are never

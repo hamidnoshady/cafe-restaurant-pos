@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { formatPersianNumber, formatQuantity } from "@/lib/digits";
 import { formatToman } from "@/lib/money";
@@ -180,7 +181,7 @@ export function ItemsSection({
   );
 }
 
-type Panel = "cost" | "stones" | "consign" | "sell" | "audit";
+type Panel = "cost" | "stones" | "consign" | "audit";
 
 function ItemRow({
   item,
@@ -269,15 +270,16 @@ function ItemRow({
             </Button>
           ) : null}
           {item.status === "in_stock" ? (
-            <Button
-              type="button"
-              size="sm"
-              className="min-h-[44px] border border-amber-300 px-3 text-xs font-semibold focus-visible:ring-amber-400/30"
-              disabled={busy}
-              onClick={() => toggle("sell")}
+            // Selling happens on the invoice screen, which is the only place a
+            // sale becomes a document (Phase 25 Wave 3). This page manages the
+            // catalogue; it deliberately no longer offers a second, parallel
+            // way to sell one piece straight to the ledger.
+            <Link
+              href="/dashboard/pos"
+              className="inline-flex min-h-[44px] items-center rounded-md border border-amber-300 bg-amber-100 px-3 text-xs font-semibold text-amber-950 transition-colors hover:bg-amber-200"
             >
-              فروش
-            </Button>
+              فروش در فاکتور
+            </Link>
           ) : null}
         </div>
       </div>
@@ -288,9 +290,6 @@ function ItemRow({
       {openPanel === "stones" ? <StonesPanel item={item} busy={busy} run={run} /> : null}
       {openPanel === "consign" ? (
         <ConsignPanel item={item} consignors={consignors} busy={busy} run={run} onDone={() => setOpenPanel(null)} />
-      ) : null}
-      {openPanel === "sell" ? (
-        <SellPanel item={item} busy={busy} run={run} onDone={() => setOpenPanel(null)} />
       ) : null}
       {openPanel === "audit" ? <ItemAuditPanel itemId={item.id} /> : null}
     </li>
@@ -535,106 +534,6 @@ function ConsignPanel({
         <div className="flex items-end">
           <Button type="submit" disabled={busy} size="sm" className="min-h-[44px] border border-amber-300 px-5 font-semibold">
             ثبت به‌عنوان امانی
-          </Button>
-        </div>
-      </form>
-    </PanelShell>
-  );
-}
-
-const PAYMENT_METHOD_LABELS = { cash: "نقدی", bank: "کارت‌خوان / بانک", credit: "نسیه" } as const;
-
-function SellPanel({
-  item,
-  busy,
-  run,
-  onDone,
-}: {
-  item: WeightItem;
-  busy: boolean;
-  run: Runner;
-  onDone: () => void;
-}) {
-  const [makingChargeType, setMakingChargeType] = useState<"percent" | "fixed">("percent");
-  const [makingChargeValue, setMakingChargeValue] = useState("7");
-  const [profitPercent, setProfitPercent] = useState("10");
-  const [vatPercent, setVatPercent] = useState("9");
-  const [paymentMethod, setPaymentMethod] = useState<"cash" | "bank" | "credit">("cash");
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    const ok = await run(() =>
-      api(`/api/jewelry/items/${item.id}/sell`, {
-        method: "POST",
-        body: JSON.stringify({
-          makingChargeType,
-          makingChargeValue: Number(makingChargeValue),
-          profitPercent: Number(profitPercent),
-          vatPercent: Number(vatPercent),
-          paymentMethod,
-        }),
-      }),
-    );
-    if (ok) onDone();
-  }
-
-  return (
-    <PanelShell>
-      <form onSubmit={submit} className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-5">
-        <Field label="نوع اجرت">
-          <SearchableSelect
-            className={jewelryInputClass}
-            value={makingChargeType}
-            onChange={(value) => setMakingChargeType(value as "percent" | "fixed")}
-            options={[
-              { value: "percent", label: "درصدی از ارزش فلز" },
-              { value: "fixed", label: "مبلغ ثابت (ریال)" },
-            ]}
-          />
-        </Field>
-        <Field label={makingChargeType === "percent" ? "درصد اجرت" : "مبلغ اجرت (ریال)"}>
-          <input
-            className={jewelryInputClass}
-            dir="ltr"
-            inputMode="decimal"
-            value={makingChargeValue}
-            onChange={(e) => setMakingChargeValue(e.target.value)}
-          />
-        </Field>
-        <Field label="درصد سود">
-          <input
-            className={jewelryInputClass}
-            dir="ltr"
-            inputMode="decimal"
-            value={profitPercent}
-            onChange={(e) => setProfitPercent(e.target.value)}
-          />
-        </Field>
-        <Field label="درصد مالیات">
-          <input
-            className={jewelryInputClass}
-            dir="ltr"
-            inputMode="decimal"
-            value={vatPercent}
-            onChange={(e) => setVatPercent(e.target.value)}
-          />
-        </Field>
-        <Field label="روش پرداخت">
-          <SearchableSelect
-            className={jewelryInputClass}
-            value={paymentMethod}
-            onChange={(value) => setPaymentMethod(value as "cash" | "bank" | "credit")}
-            options={Object.entries(PAYMENT_METHOD_LABELS).map(([value, label]) => ({ value, label }))}
-          />
-        </Field>
-        <div className="sm:col-span-2 lg:col-span-5">
-          <Button
-            type="submit"
-            disabled={busy}
-            size="sm"
-            className="min-h-[44px] border border-amber-300 px-6 font-semibold"
-          >
-            ثبت فروش
           </Button>
         </div>
       </form>
