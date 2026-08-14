@@ -11,6 +11,8 @@ import {
   setBusinessPlan,
   updateBusiness,
   renameBusinessSubdomain,
+  changeBusinessIndustry,
+  industryDataCounts,
   resetBusiness,
   listPlans,
   hardDeleteBusiness,
@@ -19,6 +21,7 @@ import {
   type BusinessStatus,
 } from "@/lib/platform-service";
 import { DESTRUCTIVE_CONFIRMATION_PHRASE } from "@/lib/platform-admin";
+import { ENABLED_INDUSTRIES, isIndustry, type Industry } from "@/lib/industries";
 import { validateSubdomain } from "@/lib/slug";
 import { rootDomain } from "@/lib/host";
 import { listSubdomainAliases } from "@/lib/host-resolution";
@@ -50,11 +53,14 @@ export const GET = withPlatformScope(async (_request: NextRequest, ctx: Ctx) => 
   if (!business) return NextResponse.json({ error: "not_found" }, { status: 404 });
   // rootDomain and the alias list: the console renders the business's real URL
   // and the old hosts still pointing at it, and is a client component that
-  // cannot read either for itself.
+  // cannot read either for itself. `industryCounts` is the same idea for the
+  // industry panel — it warns with real numbers about what a type change would
+  // orphan, and cannot count rows for itself.
   return NextResponse.json({
     business,
     rootDomain: rootDomain(),
     aliases: await listSubdomainAliases(id),
+    industryCounts: await industryDataCounts(id),
   });
 });
 
@@ -97,8 +103,53 @@ export const PATCH = withPlatformScope(async (request: NextRequest, ctx: Ctx) =>
   // metadata field — it writes an alias and invalidates live sessions, so it
   // must not ride along with an unrelated edit in the same request.
   const hasSubdomain = body.subdomain !== undefined;
-  if (Number(hasStatus) + Number(hasPlan) + Number(hasMetadata) + Number(hasSubdomain) !== 1) {
+  // Phase 25: changing the industry re-shapes which modules the tenant has and
+  // tops up its chart of accounts, so — like a subdomain rename — it is its own
+  // action rather than a metadata field riding along with an unrelated edit.
+  const hasIndustry = body.industry !== undefined;
+  if (
+    Number(hasStatus) + Number(hasPlan) + Number(hasMetadata) + Number(hasSubdomain) + Number(hasIndustry) !==
+    1
+  ) {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
+  }
+
+  if (hasIndustry) {
+    if (typeof body.industry !== "string" || !isIndustry(body.industry)) {
+      return NextResponse.json({ error: "invalid_industry" }, { status: 400 });
+    }
+    const industry: Industry = body.industry;
+    if (!ENABLED_INDUSTRIES.includes(industry)) {
+      return NextResponse.json({ error: "industry_not_available" }, { status: 400 });
+    }
+
+    const guard = await requirePlatformCapability("business.edit");
+    if (guard.error) return guard.error;
+
+    const existing = await getBusiness(id);
+    if (!existing) return NextResponse.json({ error: "not_found" }, { status: 404 });
+    if (existing.industry === industry) {
+      return NextResponse.json({ business: existing, seededAccountCodes: [] });
+    }
+
+    const result = await changeBusinessIndustry(id, industry);
+    if (!result) return NextResponse.json({ error: "not_found" }, { status: 404 });
+
+    await platformAudit({
+      adminId: guard.session.padmin,
+      businessId: id,
+      action: "business.industry_change",
+      entity: "business",
+      entityId: id,
+      // `from` is the whole point of this record: once the column is
+      // overwritten, nothing else remembers what the tenant used to be.
+      payload: {
+        from: existing.industry,
+        to: industry,
+        seededAccountCodes: result.seededAccountCodes,
+      },
+    });
+    return NextResponse.json({ business: result.business, seededAccountCodes: result.seededAccountCodes });
   }
 
   if (hasSubdomain) {

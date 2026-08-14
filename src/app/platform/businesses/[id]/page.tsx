@@ -27,6 +27,8 @@ import {
   inputClass,
   useCan,
 } from "../../ui";
+import { INDUSTRY_LABELS, type Industry } from "@/lib/industries";
+import { IndustryPicker } from "../../industry-picker";
 import { PairingPanel } from "./pairing-panel";
 
 interface Business {
@@ -37,6 +39,7 @@ interface Business {
   status: string;
   plan: string;
   timezone: string;
+  industry: Industry;
   createdAt: string;
   suspendedAt: string | null;
   archivedAt: string | null;
@@ -47,6 +50,14 @@ interface Business {
 interface Alias {
   alias: string;
   createdAt: string;
+}
+
+/** What a type change would leave behind, counted server-side (platform-service.ts). */
+interface IndustryCounts {
+  menuItems: number;
+  industryItems: number;
+  orders: number;
+  journalEntries: number;
 }
 
 interface Feature {
@@ -108,6 +119,7 @@ export default function BusinessDetailPage() {
   const [business, setBusiness] = useState<Business | null>(null);
   const [rootDomain, setRootDomain] = useState("");
   const [aliases, setAliases] = useState<Alias[]>([]);
+  const [industryCounts, setIndustryCounts] = useState<IndustryCounts | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [resetKey, setResetKey] = useState(0);
@@ -117,12 +129,14 @@ export default function BusinessDetailPage() {
       business: Business;
       rootDomain?: string;
       aliases?: Alias[];
+      industryCounts?: IndustryCounts;
       error?: string;
     }>(`/api/platform/businesses/${id}`);
     if (ok) {
       setBusiness(data.business);
       setRootDomain(data.rootDomain ?? "");
       setAliases(data.aliases ?? []);
+      setIndustryCounts(data.industryCounts ?? null);
     } else setError(errorMessage(data.error));
   }, [id]);
 
@@ -176,6 +190,7 @@ export default function BusinessDetailPage() {
       {/* Lifecycle */}
       <Card title="چرخهٔ حیات">
         <dl className="mb-4 grid gap-3 text-sm sm:grid-cols-2">
+          <Meta label="نوع کسب‌وکار" value={INDUSTRY_LABELS[business.industry]} />
           <Meta label="منطقهٔ زمانی" value={business.timezone} ltr />
           <Meta label="ایجاد" value={fmtDate(business.createdAt)} />
           <Meta label="تعلیق در" value={fmtDate(business.suspendedAt)} />
@@ -202,6 +217,7 @@ export default function BusinessDetailPage() {
       </Card>
 
       <BusinessDetailsPanel business={business} onChanged={loadBusiness} />
+      <IndustryPanel business={business} counts={industryCounts} onChanged={loadBusiness} />
       <SubdomainPanel
         business={business}
         rootDomain={rootDomain}
@@ -337,6 +353,131 @@ function SubdomainPanel({
           <Button type="submit" disabled={busy || !changed || Boolean(invalid)}>
             {busy ? "در حال تغییر…" : "تغییر نشانی"}
           </Button>
+        ) : null}
+      </form>
+    </Card>
+  );
+}
+
+/**
+ * Phase 25 Wave 1 — change which industry a business operates in.
+ *
+ * Migration 0048 made `industry` immutable *by omission*: no update route
+ * existed, because the chart of accounts is seeded from it at creation and
+ * there was no way to reconcile a switch. This panel is the deliberate
+ * reversal of that, so a mis-provisioned tenant does not need a factory reset.
+ *
+ * What it cannot do is rewrite history, and it says so rather than implying
+ * otherwise. Seeding is additive (`seedChartOfAccounts` skips codes the
+ * business already has), and data belonging to the old industry's model —
+ * `menu_items` for an ex-café, `items` for an ex-jewellers — is left in place;
+ * it simply stops being reachable from the new industry's UI. The counts below
+ * are the real numbers, fetched with the business, so the admin confirms
+ * against facts instead of a generic warning.
+ */
+function IndustryPanel({
+  business,
+  counts,
+  onChanged,
+}: {
+  business: Business;
+  counts: IndustryCounts | null;
+  onChanged: () => void;
+}) {
+  const can = useCan();
+  const editable = can("business.edit");
+  const [industry, setIndustry] = useState<Industry>(business.industry);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    setIndustry(business.industry);
+    setSaved(null);
+  }, [business.id, business.industry]);
+
+  const changed = industry !== business.industry;
+  const carried = counts
+    ? [
+        { label: "آیتم منو", value: counts.menuItems },
+        { label: "کالای صنفی", value: counts.industryItems },
+        { label: "سفارش", value: counts.orders },
+        { label: "سند حسابداری", value: counts.journalEntries },
+      ].filter((c) => c.value > 0)
+    : [];
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    const warning =
+      carried.length > 0
+        ? "\n\nاین کسب‌وکار داده‌ای دارد که به نوع فعلی تعلق دارد:\n" +
+          carried.map((c) => `• ${c.label}: ${formatPersianNumber(c.value)}`).join("\n") +
+          "\n\nاین داده‌ها حذف نمی‌شوند، اما پس از تغییر نوع، دیگر از داشبورد در دسترس نخواهند بود. " +
+          "سرفصل‌های حساب موجود هم دست‌نخورده می‌مانند و فقط حساب‌های نبودهٔ نوع جدید اضافه می‌شوند."
+        : "";
+    if (
+      !confirm(
+        `نوع «${business.name}» از «${INDUSTRY_LABELS[business.industry]}» به «${INDUSTRY_LABELS[industry]}» تغییر کند؟` +
+          warning,
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    setSaved(null);
+    const { ok, data } = await api<{ seededAccountCodes?: string[]; error?: string }>(
+      `/api/platform/businesses/${business.id}`,
+      { method: "PATCH", body: JSON.stringify({ industry }) },
+    );
+    setBusy(false);
+    if (ok) {
+      const seeded = data.seededAccountCodes?.length ?? 0;
+      setSaved(
+        seeded > 0
+          ? `نوع کسب‌وکار تغییر کرد و ${formatPersianNumber(seeded)} سرفصل حساب جدید اضافه شد.`
+          : "نوع کسب‌وکار تغییر کرد. سرفصل حساب جدیدی لازم نبود.",
+      );
+      onChanged();
+    } else {
+      setError(errorMessage(data.error));
+    }
+  }
+
+  return (
+    <Card title="نوع کسب‌وکار">
+      <ErrorBox>{error}</ErrorBox>
+      {saved ? <InfoBox>{saved}</InfoBox> : null}
+      <form onSubmit={save}>
+        <p className="mb-3 text-sm text-white/60">
+          نوع فعلی: <span className="font-medium text-white/85">{INDUSTRY_LABELS[business.industry]}</span>
+        </p>
+        <IndustryPicker value={industry} onChange={setIndustry} disabled={!editable || busy} />
+        <p className="mt-3 text-xs leading-5 text-white/40">
+          نوع کسب‌وکار تعیین می‌کند چه سرفصل حساب‌هایی ساخته می‌شود، مالک چه مراحلی از راه‌اندازی را می‌بیند،
+          و داشبورد کدام ماژول‌ها را نشان می‌دهد.
+        </p>
+        {changed && carried.length > 0 ? (
+          <div className="mt-3 rounded-lg border border-amber-400/30 bg-amber-400/5 px-3 py-2.5 text-xs leading-6 text-amber-200/90">
+            <p className="font-medium">این کسب‌وکار داده‌ای دارد که به نوع فعلی تعلق دارد:</p>
+            <ul className="mt-1 space-y-0.5">
+              {carried.map((c) => (
+                <li key={c.label}>
+                  {c.label}: {formatPersianNumber(c.value)}
+                </li>
+              ))}
+            </ul>
+            <p className="mt-1.5">
+              چیزی حذف نمی‌شود؛ اما این داده‌ها پس از تغییر از داشبورد در دسترس نخواهند بود.
+            </p>
+          </div>
+        ) : null}
+        {editable ? (
+          <div className="mt-4">
+            <Button type="submit" disabled={busy || !changed}>
+              {busy ? "در حال تغییر…" : "تغییر نوع کسب‌وکار"}
+            </Button>
+          </div>
         ) : null}
       </form>
     </Card>

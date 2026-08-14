@@ -41,7 +41,7 @@ export async function applyPairingSnapshot(
       await client.query("BEGIN");
 
       await client.query(
-        `INSERT INTO businesses (id, name, slug, subdomain, timezone) VALUES ($1, $2, $3, $4, $5)`,
+        `INSERT INTO businesses (id, name, slug, subdomain, timezone, industry) VALUES ($1, $2, $3, $4, $5, $6)`,
         [
           snapshot.business.id,
           snapshot.business.name,
@@ -50,6 +50,12 @@ export async function applyPairingSnapshot(
           // column was backfilled from, so it is the right fallback.
           snapshot.business.subdomain ?? snapshot.business.slug,
           snapshot.business.timezone,
+          // Likewise for industry: absent from an older snapshot means fall
+          // back to the column default, which is what a paired install got
+          // before the field crossed at all. Carrying it matters because the
+          // laptop's dashboard, wizard and chart of accounts all key off it —
+          // a paired jewellery business used to come up as a café.
+          snapshot.business.industry ?? "food_service",
         ],
       );
 

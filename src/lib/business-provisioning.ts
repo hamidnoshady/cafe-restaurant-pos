@@ -355,24 +355,45 @@ export async function provisionBusiness(
 }
 
 /**
- * Insert the industry-appropriate default chart of accounts for a freshly-created business.
+ * Insert the industry-appropriate default chart of accounts for a business.
  *
- * Runs inside the provisioning transaction (so a failure rolls the whole
- * business back) and mirrors the ordering logic of `/api/setup/accounts`:
- * parents before children, so `parent_id` can be resolved from a code→id map
- * built as we go. Each template is already topologically sane (roots first),
- * but resolving by code rather than array position keeps it correct even if
- * a template is later reordered.
+ * Runs inside the caller's transaction (so a failure rolls the whole business
+ * back at provision time) and mirrors the ordering logic of
+ * `/api/setup/accounts`: parents before children, so `parent_id` can be
+ * resolved from a code→id map built as we go. Each template is already
+ * topologically sane (roots first), but resolving by code rather than array
+ * position keeps it correct even if a template is later reordered.
+ *
+ * **Idempotent by code**, which is what makes it safe for the second caller,
+ * `changeBusinessIndustry` (platform-service.ts): an account whose code the
+ * business already has is left exactly as it is — name, type and any postings
+ * against it untouched — and only the codes missing from the new industry's
+ * template are inserted. Seeding is therefore purely additive; nothing an
+ * operator already uses is rewritten or removed.
+ *
+ * Returns the codes it actually inserted, so the console can report what a
+ * change did.
  */
-async function seedChartOfAccounts(client: PoolClient, businessId: string, industry: Industry): Promise<void> {
-  const idByCode = new Map<string, string>();
-  const levelByCode = new Map<string, AccountLevel>();
-  const pending = [...coaTemplateForIndustry(industry)];
+export async function seedChartOfAccounts(
+  client: PoolClient,
+  businessId: string,
+  industry: Industry,
+): Promise<string[]> {
+  const { rows: existing } = await client.query<{ id: string; code: string; level: AccountLevel }>(
+    "SELECT id, code, level FROM accounts WHERE business_id = $1",
+    [businessId],
+  );
+  const idByCode = new Map<string, string>(existing.map((a) => [a.code, a.id]));
+  const levelByCode = new Map<string, AccountLevel>(existing.map((a) => [a.code, a.level]));
+  const inserted: string[] = [];
+
+  const pending = [...coaTemplateForIndustry(industry)].filter((a) => !idByCode.has(a.code));
   while (pending.length > 0) {
     const ready = pending.filter((a) => !a.parentCode || idByCode.has(a.parentCode));
-    // The template is a fixed, cycle-free constant; ready can't be empty, and
-    // it's never nested past four levels, so nextAccountLevel never returns
-    // null here.
+    // The template is a fixed, cycle-free constant and every parentCode in it
+    // is either already in the business or earlier in the same template, so
+    // `ready` can't be empty; it's never nested past four levels, so
+    // nextAccountLevel never returns null here.
     for (const a of ready) {
       const level = nextAccountLevel(a.parentCode ? (levelByCode.get(a.parentCode) ?? null) : null)!;
       const { rows } = await client.query<{ id: string }>(
@@ -382,9 +403,11 @@ async function seedChartOfAccounts(client: PoolClient, businessId: string, indus
       );
       idByCode.set(a.code, rows[0].id);
       levelByCode.set(a.code, level);
+      inserted.push(a.code);
       pending.splice(pending.indexOf(a), 1);
     }
   }
+  return inserted;
 }
 
 /** Whether this deployment has any business at all (drives the first-run flow). */

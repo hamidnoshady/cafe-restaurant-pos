@@ -95,6 +95,29 @@ describe("validateSnapshot", () => {
     expect(validateSnapshot(s)).toEqual({ ok: false, error: "snapshot_invalid" });
   });
 
+  it("carries the business's industry across", () => {
+    const s = validSnapshot();
+    s.business.industry = "jewelry";
+    const result = validateSnapshot(s);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.snapshot.business.industry).toBe("jewelry");
+  });
+
+  it("accepts a snapshot from an older central server that sends no industry", () => {
+    // The desktop side then falls back to 'food_service' (pairing-apply.ts),
+    // which is exactly what a paired install got before the field existed —
+    // so an upgrade must not start rejecting in-flight pairings.
+    const s = validSnapshot();
+    expect(s.business.industry).toBeUndefined();
+    expect(validateSnapshot(s).ok).toBe(true);
+  });
+
+  it("rejects an industry the app does not know", () => {
+    const s = validSnapshot() as unknown as { business: Record<string, unknown> };
+    s.business.industry = "bakery";
+    expect(validateSnapshot(s)).toEqual({ ok: false, error: "snapshot_invalid" });
+  });
+
   it("rejects a location belonging to no business slug/timezone shape", () => {
     const s = validSnapshot() as unknown as Record<string, unknown>;
     s.location = { id: "22222222-2222-2222-2222-222222222222" };

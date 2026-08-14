@@ -66,6 +66,7 @@ export const POST = withPlatformScope(async (request: NextRequest) => {
         businessName: input.businessName,
         slug: provisioned.businessSlug,
         subdomain: provisioned.businessSubdomain,
+        industry: input.industry,
         ownerEmail: input.email,
       },
 
