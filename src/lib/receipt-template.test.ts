@@ -91,3 +91,32 @@ describe("renderReceiptHtml", () => {
     expect(html).toContain(`width: ${PAPER_WIDTH_PRESETS[80]}px`);
   });
 });
+
+describe("retail invoice fields (Phase 25)", () => {
+  it("prints a gold line's components under the line", () => {
+    const html = renderReceiptHtml({
+      ...baseData,
+      orderTypeLabel: "فاکتور فروش",
+      customerName: "خانم رضایی",
+      lines: [
+        {
+          name: "دستبند طرح بافت",
+          quantity: 1,
+          lineTotal: 50_000_000,
+          goldBreakdown: { metalValue: 40_000_000, makingCharge: 6_000_000, profit: 4_000_000 },
+        },
+      ],
+    });
+    // A jewellery invoice showing only a total is not a document that trade
+    // would accept: the customer is entitled to see metal/اجرت/سود.
+    expect(html).toContain("اجرت");
+    expect(html).toContain("سود");
+    expect(html).toContain("خانم رضایی");
+  });
+
+  it("leaves an ordinary caf\u00e9 receipt exactly as it was", () => {
+    const html = renderReceiptHtml(baseData);
+    expect(html).not.toContain("اجرت");
+    expect(html).not.toContain("مشتری");
+  });
+});

@@ -93,16 +93,21 @@ describe("module sets", () => {
     }
   });
 
-  it("withholds the selling modules from retail until Wave 3 builds their screen", () => {
-    // Documented as a deliberate wave boundary in the profile: /dashboard/pos
-    // renders `menu_items` a shop has none of, and nothing writes retail
-    // orders yet. Change this test with the profiles, not before.
+  it("gives every industry a selling screen", () => {
+    for (const industry of INDUSTRIES) {
+      expect(hasModule(industry, "pos"), industry).toBe(true);
+    }
+  });
+
+  it("keeps the open-orders board to F&B", () => {
+    // /dashboard/orders is a board of open tickets with kitchen statuses and a
+    // realtime feed. A retail invoice is settled the moment it is written, so
+    // it would never appear there; the shop's history lives on its selling
+    // screen instead.
+    expect(hasModule("food_service", "orders")).toBe(true);
     for (const industry of RETAIL_INDUSTRIES) {
-      expect(hasModule(industry, "pos"), industry).toBe(false);
       expect(hasModule(industry, "orders"), industry).toBe(false);
     }
-    expect(hasModule("food_service", "pos")).toBe(true);
-    expect(hasModule("food_service", "orders")).toBe(true);
   });
 });
 

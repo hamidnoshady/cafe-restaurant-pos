@@ -1,0 +1,786 @@
+"use client";
+
+/**
+ * Phase 25 Wave 3 — the retail industries' selling screen.
+ *
+ * The café POS sells `menu_items` from a category grid; a jewellery shop has
+ * none, so `/dashboard/pos` branches on `salesModel` (see page.tsx) and lands
+ * here instead. What a shop counter does is build up a few priced lines for one
+ * customer and settle them together — so this is a cart over the industry's own
+ * catalogue, and it posts one invoice.
+ *
+ * Every line's price comes from the pricing module Phase 21 already wrote for
+ * that trade, and the server settles each line through the same sell service
+ * the per-item panel always used (retail-invoice-service.ts). Nothing here
+ * computes a ledger amount; the totals shown are the ones the server will
+ * confirm back.
+ */
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { PlusIcon, RefreshCwIcon, Trash2Icon } from "lucide-react";
+import { formatPersianNumber, formatQuantity, toPersianDigits } from "@/lib/digits";
+import { formatToman, parseToRial } from "@/lib/money";
+import { normalizePosSearchText } from "@/lib/pos-selection";
+import { computeGoldSalePrice, type MakingChargeType } from "@/lib/gold-pricing";
+import { computeAccessorySalePrice } from "@/lib/accessories";
+import { computeWatchSalePrice } from "@/lib/watch-pricing";
+import { labelFor } from "@/lib/industry-profile";
+import type { Industry } from "@/lib/industries";
+import { Button } from "@/components/ui/button";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+import { api, ErrorBox, Field, inputClass } from "../ui";
+
+type Purity = "18" | "21" | "24";
+
+interface WeightItem {
+  id: string;
+  name: string;
+  sku: string | null;
+  purity: Purity;
+  netWeight: string;
+  status: string;
+  stoneCost: number;
+}
+
+interface GoldPrice {
+  purity: Purity;
+  priceDate: string;
+  pricePerGram: number;
+}
+
+interface SerialUnit {
+  id: string;
+  itemId: string;
+  itemName: string;
+  serialNumber: string;
+  status: string;
+  warrantyMonths: number;
+}
+
+interface Variant {
+  id: string;
+  parentName: string | null;
+  name: string;
+  sku: string | null;
+  kind: string;
+  quantity: string;
+  unitPrice: number | null;
+}
+
+interface Customer {
+  id: string;
+  name: string;
+}
+
+interface InvoiceSummary {
+  id: string;
+  orderNumber: number;
+  total: number;
+  closedAt: string;
+  customerName: string | null;
+  lineCount: number;
+}
+
+/** One line in the cart, before it is sent. Prices are previews of what the server will compute. */
+interface CartLine {
+  key: string;
+  label: string;
+  /** Discriminates which payload shape goes to the API. */
+  payload: Record<string, unknown> & { kind: "gold" | "watch" | "accessory" };
+  net: number;
+  vat: number;
+  total: number;
+  /** Gold only, for the preview breakdown. */
+  parts?: { metalValue: number; makingCharge: number; profit: number };
+}
+
+const PAYMENT_METHODS: { value: string; label: string }[] = [
+  { value: "cash", label: "نقدی" },
+  { value: "bank", label: "کارت‌خوان" },
+  { value: "credit", label: "نسیه" },
+];
+
+const PURITY_LABELS: Record<Purity, string> = {
+  "18": "۱۸ عیار",
+  "21": "۲۱ عیار",
+  "24": "۲۴ عیار",
+};
+
+function newKey(): string {
+  return Math.random().toString(36).slice(2);
+}
+
+export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
+  const [weightItems, setWeightItems] = useState<WeightItem[]>([]);
+  const [prices, setPrices] = useState<GoldPrice[]>([]);
+  const [units, setUnits] = useState<SerialUnit[]>([]);
+  const [variants, setVariants] = useState<Variant[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [invoices, setInvoices] = useState<InvoiceSummary[]>([]);
+
+  const [lines, setLines] = useState<CartLine[]>([]);
+  const [customerId, setCustomerId] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState("cash");
+  const [note, setNote] = useState("");
+
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState<{ orderNumber: number; total: number } | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const requests: Promise<unknown>[] = [
+      api<{ customers?: Customer[] }>("/api/customers").then(({ ok, data }) => {
+        if (ok) setCustomers(data.customers ?? []);
+      }),
+      api<{ invoices?: InvoiceSummary[] }>("/api/sales/invoices?limit=20").then(({ ok, data }) => {
+        if (ok) setInvoices(data.invoices ?? []);
+      }),
+    ];
+    if (industry === "jewelry") {
+      requests.push(
+        api<{ items?: WeightItem[] }>("/api/jewelry/items").then(({ ok, data }) => {
+          if (ok) setWeightItems(data.items ?? []);
+        }),
+        api<{ prices?: GoldPrice[] }>("/api/jewelry/prices").then(({ ok, data }) => {
+          if (ok) setPrices(data.prices ?? []);
+        }),
+      );
+    }
+    if (industry === "watch") {
+      requests.push(
+        api<{ units?: SerialUnit[] }>("/api/watch/units").then(({ ok, data }) => {
+          if (ok) setUnits(data.units ?? []);
+        }),
+      );
+    }
+    if (industry === "accessories") {
+      requests.push(
+        api<{ items?: Variant[] }>("/api/accessories/items").then(({ ok, data }) => {
+          if (ok) setVariants(data.items ?? []);
+        }),
+      );
+    }
+    await Promise.all(requests);
+    setLoading(false);
+  }, [industry]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const totals = useMemo(
+    () =>
+      lines.reduce(
+        (acc, l) => ({ net: acc.net + l.net, vat: acc.vat + l.vat, total: acc.total + l.total }),
+        { net: 0, vat: 0, total: 0 },
+      ),
+    [lines],
+  );
+
+  function addLine(line: CartLine) {
+    setDone(null);
+    setError(null);
+    setLines((current) => [...current, line]);
+  }
+
+  function removeLine(key: string) {
+    setLines((current) => current.filter((l) => l.key !== key));
+  }
+
+  async function submit() {
+    if (lines.length === 0) return;
+    setBusy(true);
+    setError(null);
+    const { ok, data } = await api<{
+      invoice?: { orderNumber: number; total: string };
+      error?: string;
+      message?: string;
+    }>("/api/sales/invoices", {
+      method: "POST",
+      body: JSON.stringify({
+        lines: lines.map((l) => l.payload),
+        paymentMethod,
+        customerId: customerId || null,
+        note: note.trim() || null,
+      }),
+    });
+    setBusy(false);
+    if (ok && data.invoice) {
+      setDone({ orderNumber: data.invoice.orderNumber, total: Number(data.invoice.total) });
+      setLines([]);
+      setCustomerId("");
+      setNote("");
+      void load();
+    } else {
+      // The server sends the sell services' own Persian refusals (no stock, no
+      // cost basis, no gold rate recorded for today) as `message`; showing that
+      // is far more useful than a generic failure.
+      setError(data.message ?? "ثبت فاکتور ناموفق بود.");
+    }
+  }
+
+  return (
+    <div className="mx-auto w-full max-w-[1600px]">
+      <header className="mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-stone-200/80 pb-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-stone-950">
+            {labelFor(industry, "sellScreen")}
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            کالاها را به فاکتور اضافه کنید، مشتری و روش پرداخت را انتخاب کنید و فاکتور را ثبت کنید.
+          </p>
+        </div>
+        <Button variant="outline" onClick={() => void load()} disabled={loading || busy}>
+          <RefreshCwIcon aria-hidden="true" className="size-4" />
+          به‌روزرسانی
+        </Button>
+      </header>
+
+      <ErrorBox>{error}</ErrorBox>
+      {done ? (
+        <div className="mb-4 rounded-xl border border-emerald-300/60 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+          فاکتور شمارهٔ {toPersianDigits(done.orderNumber)} به مبلغ {formatToman(done.total)} ثبت شد.
+        </div>
+      ) : null}
+
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem] xl:grid-cols-[minmax(0,1fr)_26rem]">
+        <div className="min-w-0 space-y-4">
+          {industry === "jewelry" ? (
+            <GoldLineForm items={weightItems} prices={prices} onAdd={addLine} />
+          ) : null}
+          {industry === "watch" ? <WatchLineForm units={units} onAdd={addLine} /> : null}
+          {industry === "accessories" ? <AccessoryLineForm variants={variants} onAdd={addLine} /> : null}
+
+          <RecentInvoices invoices={invoices} loading={loading} />
+        </div>
+
+        <aside className="min-w-0">
+          <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-[0_1px_2px_rgb(41_37_36/0.035)] lg:sticky lg:top-4 sm:p-5">
+            <h2 className="font-semibold text-stone-950">فاکتور جاری</h2>
+
+            {lines.length === 0 ? (
+              <p className="mt-4 rounded-xl border border-dashed border-stone-200 px-3 py-6 text-center text-sm text-muted-foreground">
+                هنوز کالایی اضافه نشده است.
+              </p>
+            ) : (
+              <ul className="mt-4 divide-y divide-stone-200/80">
+                {lines.map((line) => (
+                  <li key={line.key} className="py-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-stone-950">{line.label}</p>
+                        {line.parts ? (
+                          <p className="mt-0.5 text-[11px] leading-5 text-muted-foreground">
+                            طلا {formatToman(line.parts.metalValue)} · اجرت{" "}
+                            {formatToman(line.parts.makingCharge)} · سود {formatToman(line.parts.profit)}
+                          </p>
+                        ) : null}
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          مالیات {formatToman(line.vat)}
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 flex-col items-end gap-1">
+                        <span className="text-sm font-semibold text-stone-950">
+                          {formatToman(line.total)}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => removeLine(line.key)}
+                          className="inline-flex min-h-8 items-center gap-1 rounded-lg px-2 text-xs text-rose-700 hover:bg-rose-50"
+                          aria-label={`حذف ${line.label}`}
+                        >
+                          <Trash2Icon aria-hidden="true" className="size-3.5" />
+                          حذف
+                        </button>
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            <dl className="mt-4 space-y-1.5 border-t border-stone-200/80 pt-4 text-sm">
+              <Row label="جمع جزء" value={formatToman(totals.net)} />
+              <Row label="مالیات" value={formatToman(totals.vat)} />
+              <Row label="جمع کل" value={formatToman(totals.total)} strong />
+            </dl>
+
+            <div className="mt-4">
+              <Field label="مشتری">
+                <SearchableSelect
+                  value={customerId}
+                  onChange={setCustomerId}
+                  ariaLabel="انتخاب مشتری"
+                  options={[
+                    { value: "", label: "بدون مشتری" },
+                    ...customers.map((c) => ({ value: c.id, label: c.name })),
+                  ]}
+                />
+              </Field>
+              <Field label="روش پرداخت">
+                <div className="flex flex-wrap gap-2">
+                  {PAYMENT_METHODS.map((method) => (
+                    <button
+                      key={method.value}
+                      type="button"
+                      onClick={() => setPaymentMethod(method.value)}
+                      className={`min-h-11 flex-1 rounded-xl border px-3 text-sm transition-colors ${
+                        paymentMethod === method.value
+                          ? "border-amber-500 bg-amber-50 font-medium text-amber-900"
+                          : "border-stone-200 text-stone-700 hover:border-amber-300"
+                      }`}
+                    >
+                      {method.label}
+                    </button>
+                  ))}
+                </div>
+              </Field>
+              <Field label="توضیح">
+                <input className={inputClass} value={note} onChange={(e) => setNote(e.target.value)} />
+              </Field>
+            </div>
+
+            <Button
+              onClick={() => void submit()}
+              disabled={busy || lines.length === 0}
+              className="min-h-12 w-full"
+            >
+              {busy ? "در حال ثبت…" : "ثبت فاکتور"}
+            </Button>
+          </div>
+        </aside>
+      </div>
+    </div>
+  );
+}
+
+function Row({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
+  return (
+    <div className="flex items-center justify-between">
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className={strong ? "font-bold text-stone-950" : "text-stone-800"}>{value}</dd>
+    </div>
+  );
+}
+
+function Panel({ title, hint, children }: { title: string; hint: string; children: React.ReactNode }) {
+  return (
+    <section className="rounded-2xl border border-stone-200 bg-white p-4 shadow-[0_1px_2px_rgb(41_37_36/0.035)] sm:p-5">
+      <h2 className="font-semibold text-stone-950">{title}</h2>
+      <p className="mt-1 text-xs leading-5 text-muted-foreground">{hint}</p>
+      <div className="mt-4">{children}</div>
+    </section>
+  );
+}
+
+/**
+ * A gold line: pick a piece, and the price is its net weight × today's rate for
+ * its purity, plus اجرت, plus سود, plus VAT — `computeGoldSalePrice`, the same
+ * pure function the server will run. Showing it before submitting is the point:
+ * the cashier and the customer agree the اجرت before the sale is posted.
+ */
+function GoldLineForm({
+  items,
+  prices,
+  onAdd,
+}: {
+  items: WeightItem[];
+  prices: GoldPrice[];
+  onAdd: (line: CartLine) => void;
+}) {
+  const [itemId, setItemId] = useState("");
+  const [makingChargeType, setMakingChargeType] = useState<MakingChargeType>("percent");
+  const [makingChargeValue, setMakingChargeValue] = useState("7");
+  const [profitPercent, setProfitPercent] = useState("7");
+  const [vatPercent, setVatPercent] = useState("9");
+  const [search, setSearch] = useState("");
+
+  const inStock = useMemo(() => items.filter((i) => i.status === "in_stock"), [items]);
+  const filtered = useMemo(() => {
+    const needle = normalizePosSearchText(search);
+    if (!needle) return inStock;
+    return inStock.filter((i) => normalizePosSearchText(`${i.name} ${i.sku ?? ""}`).includes(needle));
+  }, [inStock, search]);
+
+  const item = inStock.find((i) => i.id === itemId) ?? null;
+  // The rate the server will use: the most recent one recorded for this purity.
+  const rate = item
+    ? prices.filter((p) => p.purity === item.purity).sort((a, b) => b.priceDate.localeCompare(a.priceDate))[0]
+    : null;
+
+  let preview: { net: number; vat: number; total: number; parts: CartLine["parts"] } | null = null;
+  let previewError: string | null = null;
+  if (item && rate) {
+    try {
+      const breakdown = computeGoldSalePrice({
+        netWeight: item.netWeight,
+        pricePerGram: rate.pricePerGram,
+        makingCharge: { type: makingChargeType, value: Number(makingChargeValue) },
+        profitPercent: Number(profitPercent),
+        vatPercent: Number(vatPercent),
+      });
+      const metalValue = Number(breakdown.metalValue);
+      const makingCharge = Number(breakdown.makingCharge);
+      const profit = Number(breakdown.profit);
+      preview = {
+        net: metalValue + makingCharge + profit,
+        vat: Number(breakdown.vat),
+        total: Number(breakdown.total),
+        parts: { metalValue, makingCharge, profit },
+      };
+    } catch (err) {
+      previewError = err instanceof Error ? err.message : "محاسبهٔ قیمت ممکن نیست.";
+    }
+  }
+
+  return (
+    <Panel
+      title="افزودن کالای طلا"
+      hint="قیمت از وزن خالص و نرخ روزِ عیار همان قطعه محاسبه می‌شود؛ اجرت و سود را اینجا تعیین کنید."
+    >
+      <Field label="جستجوی کالا">
+        <input
+          className={inputClass}
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="نام یا کد کالا"
+        />
+      </Field>
+      <Field label="کالا">
+        <SearchableSelect
+          value={itemId}
+          onChange={setItemId}
+          ariaLabel="انتخاب کالای طلا"
+          options={[
+            { value: "", label: "انتخاب کنید" },
+            ...filtered.map((i) => ({
+              value: i.id,
+              label: `${i.name} — ${formatQuantity(i.netWeight)} گرم — ${PURITY_LABELS[i.purity]}`,
+            })),
+          ]}
+        />
+      </Field>
+
+      <div className="grid gap-x-4 sm:grid-cols-2">
+        <Field label="نوع اجرت">
+          <select
+            className={inputClass}
+            value={makingChargeType}
+            onChange={(e) => setMakingChargeType(e.target.value as MakingChargeType)}
+          >
+            <option value="percent">درصدی</option>
+            <option value="fixed">مبلغ ثابت (ریال)</option>
+          </select>
+        </Field>
+        <Field label="مقدار اجرت">
+          <input
+            className={inputClass}
+            dir="ltr"
+            value={makingChargeValue}
+            onChange={(e) => setMakingChargeValue(e.target.value)}
+          />
+        </Field>
+        <Field label="درصد سود">
+          <input
+            className={inputClass}
+            dir="ltr"
+            value={profitPercent}
+            onChange={(e) => setProfitPercent(e.target.value)}
+          />
+        </Field>
+        <Field label="درصد مالیات">
+          <input
+            className={inputClass}
+            dir="ltr"
+            value={vatPercent}
+            onChange={(e) => setVatPercent(e.target.value)}
+          />
+        </Field>
+      </div>
+
+      {item && !rate ? (
+        <p className="mb-3 rounded-lg border border-amber-300/60 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          نرخ طلای {PURITY_LABELS[item.purity]} ثبت نشده است؛ ابتدا نرخ روز را در صفحهٔ «طلا و جواهر» وارد کنید.
+        </p>
+      ) : null}
+      {previewError ? (
+        <p className="mb-3 text-xs text-rose-700">{previewError}</p>
+      ) : null}
+      {preview ? (
+        <p className="mb-3 text-xs leading-6 text-muted-foreground">
+          طلا {formatToman(preview.parts!.metalValue)} · اجرت {formatToman(preview.parts!.makingCharge)} · سود{" "}
+          {formatToman(preview.parts!.profit)} · مالیات {formatToman(preview.vat)} —{" "}
+          <b className="text-stone-900">{formatToman(preview.total)}</b>
+        </p>
+      ) : null}
+
+      <Button
+        disabled={!item || !preview}
+        onClick={() => {
+          if (!item || !preview) return;
+          onAdd({
+            key: newKey(),
+            label: `${item.name} (${formatQuantity(item.netWeight)} گرم، ${PURITY_LABELS[item.purity]})`,
+            payload: {
+              kind: "gold",
+              itemId: item.id,
+              makingChargeType,
+              makingChargeValue: Number(makingChargeValue),
+              profitPercent: Number(profitPercent),
+              vatPercent: Number(vatPercent),
+            },
+            net: preview.net,
+            vat: preview.vat,
+            total: preview.total,
+            parts: preview.parts,
+          });
+          setItemId("");
+        }}
+      >
+        <PlusIcon aria-hidden="true" className="size-4" />
+        افزودن به فاکتور
+      </Button>
+    </Panel>
+  );
+}
+
+/** A watch line: one serialised unit at an agreed price. Selling it starts its warranty. */
+function WatchLineForm({ units, onAdd }: { units: SerialUnit[]; onAdd: (line: CartLine) => void }) {
+  const [serialId, setSerialId] = useState("");
+  const [price, setPrice] = useState("");
+  const [discount, setDiscount] = useState("");
+  const [vatPercent, setVatPercent] = useState("9");
+
+  const inStock = useMemo(() => units.filter((u) => u.status === "in_stock"), [units]);
+  const unit = inStock.find((u) => u.id === serialId) ?? null;
+
+  const priceRial = price.trim() ? parseToRial(price, "toman") : 0;
+  const discountRial = discount.trim() ? parseToRial(discount, "toman") : 0;
+
+  let preview: { net: number; vat: number; total: number } | null = null;
+  if (unit && priceRial > 0) {
+    try {
+      const breakdown = computeWatchSalePrice({
+        price: priceRial,
+        discount: discountRial,
+        vatPercent: Number(vatPercent),
+      });
+      preview = {
+        net: Number(breakdown.net),
+        vat: Number(breakdown.vat),
+        total: Number(breakdown.total),
+      };
+    } catch {
+      preview = null;
+    }
+  }
+
+  return (
+    <Panel title="افزودن دستگاه" hint="هر دستگاه با شماره سریال خودش فروخته می‌شود و گارانتی از همین لحظه آغاز می‌شود.">
+      <Field label="دستگاه">
+        <SearchableSelect
+          value={serialId}
+          onChange={setSerialId}
+          ariaLabel="انتخاب دستگاه"
+          options={[
+            { value: "", label: "انتخاب کنید" },
+            ...inStock.map((u) => ({ value: u.id, label: `${u.itemName} — ${u.serialNumber}` })),
+          ]}
+        />
+      </Field>
+      <div className="grid gap-x-4 sm:grid-cols-3">
+        <Field label="قیمت (تومان)">
+          <input className={inputClass} dir="ltr" value={price} onChange={(e) => setPrice(e.target.value)} />
+        </Field>
+        <Field label="تخفیف (تومان)">
+          <input className={inputClass} dir="ltr" value={discount} onChange={(e) => setDiscount(e.target.value)} />
+        </Field>
+        <Field label="درصد مالیات">
+          <input className={inputClass} dir="ltr" value={vatPercent} onChange={(e) => setVatPercent(e.target.value)} />
+        </Field>
+      </div>
+      {preview ? (
+        <p className="mb-3 text-xs leading-6 text-muted-foreground">
+          خالص {formatToman(preview.net)} · مالیات {formatToman(preview.vat)} —{" "}
+          <b className="text-stone-900">{formatToman(preview.total)}</b>
+        </p>
+      ) : null}
+      <Button
+        disabled={!unit || !preview}
+        onClick={() => {
+          if (!unit || !preview) return;
+          onAdd({
+            key: newKey(),
+            label: `${unit.itemName} — ${unit.serialNumber}`,
+            payload: {
+              kind: "watch",
+              serialId: unit.id,
+              price: priceRial,
+              discount: discountRial,
+              vatPercent: Number(vatPercent),
+            },
+            net: preview.net,
+            vat: preview.vat,
+            total: preview.total,
+          });
+          setSerialId("");
+          setPrice("");
+          setDiscount("");
+        }}
+      >
+        <PlusIcon aria-hidden="true" className="size-4" />
+        افزودن به فاکتور
+      </Button>
+    </Panel>
+  );
+}
+
+/** An accessories line: a quantity of one variant, at its standard price unless overridden. */
+function AccessoryLineForm({ variants, onAdd }: { variants: Variant[]; onAdd: (line: CartLine) => void }) {
+  const [itemId, setItemId] = useState("");
+  const [quantity, setQuantity] = useState("1");
+  const [unitPrice, setUnitPrice] = useState("");
+  const [discount, setDiscount] = useState("");
+  const [vatPercent, setVatPercent] = useState("9");
+
+  const sellable = useMemo(
+    () => variants.filter((v) => v.kind !== "variant_parent" && Number(v.quantity) > 0),
+    [variants],
+  );
+  const variant = sellable.find((v) => v.id === itemId) ?? null;
+
+  const effectivePrice = unitPrice.trim() ? parseToRial(unitPrice, "toman") : (variant?.unitPrice ?? 0);
+  const discountRial = discount.trim() ? parseToRial(discount, "toman") : 0;
+
+  let preview: { net: number; vat: number; total: number } | null = null;
+  if (variant && effectivePrice > 0 && quantity.trim()) {
+    try {
+      const breakdown = computeAccessorySalePrice({
+        unitPrice: effectivePrice,
+        quantity,
+        discount: discountRial,
+        vatPercent: Number(vatPercent),
+      });
+      preview = {
+        net: Number(breakdown.net),
+        vat: Number(breakdown.vat),
+        total: Number(breakdown.total),
+      };
+    } catch {
+      preview = null;
+    }
+  }
+
+  return (
+    <Panel title="افزودن کالا" hint="از هر تنوع به تعداد دلخواه؛ قیمت پیش‌فرض همان قیمت ثبت‌شدهٔ تنوع است.">
+      <Field label="کالا">
+        <SearchableSelect
+          value={itemId}
+          onChange={setItemId}
+          ariaLabel="انتخاب کالا"
+          options={[
+            { value: "", label: "انتخاب کنید" },
+            ...sellable.map((v) => ({
+              value: v.id,
+              label: `${v.parentName ? `${v.parentName} — ` : ""}${v.name} (موجودی ${formatQuantity(v.quantity)})`,
+            })),
+          ]}
+        />
+      </Field>
+      <div className="grid gap-x-4 sm:grid-cols-2">
+        <Field label="تعداد">
+          <input className={inputClass} dir="ltr" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
+        </Field>
+        <Field
+          label="قیمت واحد (تومان)"
+          hint={variant?.unitPrice ? `قیمت ثبت‌شده: ${formatToman(variant.unitPrice)}` : undefined}
+        >
+          <input
+            className={inputClass}
+            dir="ltr"
+            value={unitPrice}
+            onChange={(e) => setUnitPrice(e.target.value)}
+            placeholder="خالی = قیمت ثبت‌شده"
+          />
+        </Field>
+        <Field label="تخفیف (تومان)">
+          <input className={inputClass} dir="ltr" value={discount} onChange={(e) => setDiscount(e.target.value)} />
+        </Field>
+        <Field label="درصد مالیات">
+          <input className={inputClass} dir="ltr" value={vatPercent} onChange={(e) => setVatPercent(e.target.value)} />
+        </Field>
+      </div>
+      {preview ? (
+        <p className="mb-3 text-xs leading-6 text-muted-foreground">
+          خالص {formatToman(preview.net)} · مالیات {formatToman(preview.vat)} —{" "}
+          <b className="text-stone-900">{formatToman(preview.total)}</b>
+        </p>
+      ) : null}
+      <Button
+        disabled={!variant || !preview}
+        onClick={() => {
+          if (!variant || !preview) return;
+          onAdd({
+            key: newKey(),
+            label: `${variant.name} × ${formatQuantity(quantity)}`,
+            payload: {
+              kind: "accessory",
+              itemId: variant.id,
+              quantity,
+              unitPrice: unitPrice.trim() ? effectivePrice : undefined,
+              discount: discountRial,
+              vatPercent: Number(vatPercent),
+            },
+            net: preview.net,
+            vat: preview.vat,
+            total: preview.total,
+          });
+          setItemId("");
+          setQuantity("1");
+          setUnitPrice("");
+          setDiscount("");
+        }}
+      >
+        <PlusIcon aria-hidden="true" className="size-4" />
+        افزودن به فاکتور
+      </Button>
+    </Panel>
+  );
+}
+
+/**
+ * The sales history a retail business never had. It lives here rather than on
+ * `/dashboard/orders`, which is a board of *open* order tickets — a retail
+ * invoice is settled the moment it is written and would never appear there.
+ */
+function RecentInvoices({ invoices, loading }: { invoices: InvoiceSummary[]; loading: boolean }) {
+  return (
+    <Panel title="فاکتورهای اخیر" hint="آخرین فاکتورهای ثبت‌شده در این شعبه.">
+      {loading ? (
+        <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>
+      ) : invoices.length === 0 ? (
+        <p className="rounded-xl border border-dashed border-stone-200 px-3 py-6 text-center text-sm text-muted-foreground">
+          هنوز فاکتوری ثبت نشده است.
+        </p>
+      ) : (
+        <ul className="divide-y divide-stone-200/80">
+          {invoices.map((invoice) => (
+            <li key={invoice.id} className="flex items-center justify-between gap-3 py-2.5 text-sm">
+              <div className="min-w-0">
+                <span className="font-medium text-stone-950">
+                  فاکتور {toPersianDigits(invoice.orderNumber)}
+                </span>
+                <span className="mr-2 text-xs text-muted-foreground">
+                  {invoice.customerName ?? "بدون مشتری"} ·{" "}
+                  {formatPersianNumber(invoice.lineCount)} قلم
+                </span>
+              </div>
+              <span className="shrink-0 font-semibold text-stone-900">{formatToman(invoice.total)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Panel>
+  );
+}

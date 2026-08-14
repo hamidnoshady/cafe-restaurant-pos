@@ -4,8 +4,10 @@ import { requireIndustryForApi } from "@/lib/industry-guard";
 import { listCurrentGoldPrices, recordGoldPrice } from "@/lib/gold-prices-service";
 
 /** Today's (or the latest recorded) price board, one row per purity. */
+  // Cashier reads only: the invoice screen prices a piece from the day's
+  // rate, so it has to be able to see it. Recording a rate stays owner/manager.
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requireRole("owner", "manager", "cashier");
   if (error) return error;
   const industryError = await requireIndustryForApi(session, "jewelry");
   if (industryError) return industryError;

@@ -141,13 +141,14 @@ const CORE_MODULES: readonly ModuleKey[] = [
 /**
  * Selling modules.
  *
- * F&B has these today. The retail industries do **not** get them until Wave 3
- * builds the invoice screen they would point at: `/dashboard/pos` currently
- * renders a grid of `menu_items` a jewellery shop does not have, and
- * `/dashboard/orders` would list rows nothing writes, since the per-item sell
- * services post straight to the ledger without an order. Adding "pos" and
- * "orders" to the retail profiles is the switch Wave 3 flips once
- * `RetailInvoiceScreen` and `retail-invoice-service.ts` exist.
+ * Both industries sell from `/dashboard/pos` — the route branches on
+ * `salesModel` — so every profile has "pos".
+ *
+ * "orders" is F&B-only, and not as an oversight: `/dashboard/orders` is a live
+ * board of *open* order tickets, with kitchen statuses, table filters and a
+ * realtime feed. A retail invoice is settled the moment it is written, so it
+ * would never appear there. The shop's sales history lives on its own selling
+ * screen instead, which is also where a counter actually looks for it.
  */
 const SELLING_MODULES: readonly ModuleKey[] = ["orders", "pos"];
 
@@ -163,7 +164,7 @@ export const INDUSTRY_PROFILES: Record<Industry, IndustryProfile> = {
   jewelry: {
     brandTitle: "طلا و جواهر",
     brandSubtitle: "مدیریت خرید، فروش و موجودی",
-    modules: [...CORE_MODULES, "jewelry"],
+    modules: [...CORE_MODULES, "pos", "jewelry"],
     labels: RETAIL_LABELS,
     salesModel: "retail_invoice",
     // `inventory` is F&B's recipe-costed raw-material store
@@ -176,7 +177,7 @@ export const INDUSTRY_PROFILES: Record<Industry, IndustryProfile> = {
   watch: {
     brandTitle: "ساعت",
     brandSubtitle: "مدیریت فروش، گارانتی و تعمیرات",
-    modules: [...CORE_MODULES, "watch"],
+    modules: [...CORE_MODULES, "pos", "watch"],
     labels: RETAIL_LABELS,
     salesModel: "retail_invoice",
     defaultDisabledFeatures: ["inventory", "reservations", "delivery"],
@@ -184,7 +185,7 @@ export const INDUSTRY_PROFILES: Record<Industry, IndustryProfile> = {
   accessories: {
     brandTitle: "بدلیجات",
     brandSubtitle: "مدیریت تنوع‌ها، موجودی و فروش",
-    modules: [...CORE_MODULES, "accessories"],
+    modules: [...CORE_MODULES, "pos", "accessories"],
     labels: RETAIL_LABELS,
     salesModel: "retail_invoice",
     defaultDisabledFeatures: ["inventory", "reservations", "delivery"],

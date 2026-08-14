@@ -6,8 +6,11 @@ import { createItem, listWeightItems, setWeightAttributes } from "@/lib/items-se
 import { validateWeightAttributes } from "@/lib/gold";
 import { recordItemEvent } from "@/lib/item-audit-service";
 
+  // Cashier included on the read side only: selling from the invoice screen
+  // means listing what is in stock, exactly as /api/menu's GET is readable by
+  // every floor role. The write handlers below stay owner/manager.
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requireRole("owner", "manager", "cashier");
   if (error) return error;
   const industryError = await requireIndustryForApi(session, "jewelry");
   if (industryError) return industryError;

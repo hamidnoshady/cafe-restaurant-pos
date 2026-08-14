@@ -26,6 +26,17 @@ export interface ReceiptLine {
   /** modifiers included, per line total (Rial) */
   lineTotal: Rial;
   modifiersLabel?: string | null;
+  /**
+   * Phase 25 — a gold line's price components (src/lib/gold-pricing.ts),
+   * printed under the line so the customer can see what they are paying for.
+   * A jewellery invoice that shows only a total is not a document anyone in
+   * that trade would accept. Absent on every other kind of line.
+   */
+  goldBreakdown?: {
+    metalValue: Rial;
+    makingCharge: Rial;
+    profit: Rial;
+  } | null;
 }
 
 const PAYMENT_METHOD_LABELS: Record<string, string> = {
@@ -40,8 +51,10 @@ export interface ReceiptData {
   business: ReceiptBusinessInfo;
   /** e.g. "#42" or "T-42" (formatQueueLabel) */
   orderLabel: string;
-  /** e.g. "حضوری — میز ۳" or "بیرون‌بر" */
+  /** e.g. "حضوری — میز ۳" or "بیرون‌بر"; "فاکتور فروش" on a retail invoice. */
   orderTypeLabel: string;
+  /** Named on the invoice when the sale was made to a known customer. */
+  customerName?: string | null;
   issuedAt: Date | string;
   lines: ReceiptLine[];
   subtotal: Rial;
@@ -71,6 +84,11 @@ export function renderReceiptHtml(data: ReceiptData, opts: { paperWidthMm?: Pape
       const modRow = l.modifiersLabel
         ? `<div class="mods">${escapeHtml(l.modifiersLabel)}</div>`
         : "";
+      const goldRow = l.goldBreakdown
+        ? `<div class="mods">طلا ${formatToman(l.goldBreakdown.metalValue, { withUnit: false })}` +
+          ` · اجرت ${formatToman(l.goldBreakdown.makingCharge, { withUnit: false })}` +
+          ` · سود ${formatToman(l.goldBreakdown.profit, { withUnit: false })}</div>`
+        : "";
       return `
         <div class="line">
           <div class="line-main">
@@ -79,6 +97,7 @@ export function renderReceiptHtml(data: ReceiptData, opts: { paperWidthMm?: Pape
             <span class="amount">${formatToman(l.lineTotal, { withUnit: false })}</span>
           </div>
           ${modRow}
+          ${goldRow}
         </div>`;
     })
     .join("");
@@ -143,6 +162,7 @@ export function renderReceiptHtml(data: ReceiptData, opts: { paperWidthMm?: Pape
   <div class="divider"></div>
   <div class="order-label">${escapeHtml(data.orderLabel)}</div>
   <div class="meta-row"><span>${escapeHtml(data.orderTypeLabel)}</span><span>${dateLabel}</span></div>
+  ${data.customerName ? `<div class="meta-row"><span>مشتری</span><span>${escapeHtml(data.customerName)}</span></div>` : ""}
   ${data.cashierName ? `<div class="meta-row"><span>صندوق‌دار</span><span>${escapeHtml(data.cashierName)}</span></div>` : ""}
 
   <div class="divider"></div>
