@@ -12,7 +12,7 @@ import { getCostingMethod } from "./inventory-service";
 import { postExactCustomerRefundEntry, postExactOperationalInventoryEntry } from "./ledger-service";
 import { WELL_KNOWN_CODES } from "./coa-template";
 
-type ReturnLine = {
+export type ReturnLine = {
   orderItemId: string;
   quantity: QuantityText;
   disposition: "restockable" | "discarded";
@@ -28,7 +28,8 @@ export async function createCustomerReturn(
     refundAmount: RialText;
     reason: string;
     idempotencyKey: string;
-    createdBy: string;
+    /** null for system-driven returns (e.g. a WooCommerce webhook) with no local user. */
+    createdBy: string | null;
     lines: ReturnLine[];
   },
 ): Promise<{ id: string; refundAmount: RialText; recoveredValue: RialText; duplicate: boolean }> {

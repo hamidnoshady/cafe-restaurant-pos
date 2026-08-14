@@ -13,8 +13,10 @@ import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { getPool, query, withoutTenantScope, withTenant } from "../db";
 import { WELL_KNOWN_CODES } from "../coa-template";
-import { accountIdsByCode, postExactJournalEntry } from "../ledger-service";
-import type { RialText } from "../inventory-exact";
+import { accountIdsByCode, postExactCogsEntry, postExactJournalEntry } from "../ledger-service";
+import { deductForOrder } from "../inventory-service";
+import { createCustomerReturn, type ReturnLine } from "../customer-return-service";
+import { quantityText, type RialText } from "../inventory-exact";
 import { getPrimaryLocation } from "../setup-state";
 import {
   CONNECTION_COLUMNS,
@@ -178,13 +180,33 @@ async function ingestOrder(connection: ConnectionRow, order: WooOrder): Promise<
     );
     const orderId = orderRows[0].id;
 
+    // Resolve each line's WooCommerce product to its mapped local menu item
+    // (Wave 3's integration_mappings) so recipe-based inventory deducts for
+    // online sales exactly like a POS sale. Unmapped lines are still recorded
+    // — revenue is never missed — but contribute no stock movement, the POS
+    // equivalent of an order item with no recipe.
+    const remoteProductIds = (order.line_items ?? [])
+      .map((line) => String(line.product_id))
+      .filter((id): id is string => Boolean(id));
+    const menuItemByRemote = new Map<string, string>();
+    if (remoteProductIds.length > 0) {
+      const { rows: productMappings } = await client.query<{ remote_id: string; local_id: string }>(
+        `SELECT remote_id, local_id FROM integration_mappings
+          WHERE business_id = $1 AND connection_id = $2 AND entity_type = 'product'
+            AND remote_id = ANY($3::text[])`,
+        [businessId, connection.id, remoteProductIds],
+      );
+      for (const m of productMappings) menuItemByRemote.set(m.remote_id, m.local_id);
+    }
+
     for (const line of order.line_items ?? []) {
       const unitPrice = wooAmountToRial(line.price ?? "0", connection.currency_unit);
       const quantity = Math.max(1, Math.round(line.quantity ?? 1));
+      const menuItemId = menuItemByRemote.get(String(line.product_id)) ?? null;
       await client.query(
-        `INSERT INTO order_items (location_id, order_id, name_snapshot, unit_price, quantity, status)
-         VALUES ($1, $2, $3, $4, $5, 'served')`,
-        [locationId, orderId, line.name, unitPrice.toString(), quantity],
+        `INSERT INTO order_items (location_id, order_id, menu_item_id, name_snapshot, unit_price, quantity, status)
+         VALUES ($1, $2, $3, $4, $5, $6, 'served')`,
+        [locationId, orderId, menuItemId, line.name, unitPrice.toString(), quantity],
       );
     }
 
@@ -206,6 +228,35 @@ async function ingestOrder(connection: ConnectionRow, order: WooOrder): Promise<
       throw new Error("order_close_failed");
     }
 
+    // Inventory + COGS for the mapped lines — the identical flow the POS pay
+    // route runs: one sale_consumption inventory event, recipe-based
+    // deduction through the shared inventory service, and the same COGS
+    // journal entry (Debit COGS / Credit Inventory), all in this transaction.
+    // Orders with no mapped products post no COGS (their cost basis doesn't
+    // exist yet), the same shape as a POS item with no recipe.
+    let inventoryEventId: string | null = null;
+    let cogsRial = "0";
+    if (menuItemByRemote.size > 0) {
+      const { rows: eventRows } = await client.query<{ id: string }>(
+        `INSERT INTO inventory_events
+           (business_id, location_id, event_type, source_type, source_id, created_by, idempotency_key, costing_version)
+         VALUES ($1, $2, 'sale_consumption', 'order', $3, NULL, $4, 2)
+         RETURNING id`,
+        [businessId, locationId, orderId, `woo-order:${orderId}`],
+      );
+      inventoryEventId = eventRows[0].id;
+      const { totalCost } = await deductForOrder(client, businessId, locationId, orderId, null, inventoryEventId);
+      cogsRial = totalCost;
+      await postExactCogsEntry(client, {
+        businessId,
+        locationId,
+        orderId,
+        createdBy: null,
+        totalCost,
+        inventoryEventId,
+      });
+    }
+
     const accounts = await accountIdsByCode(client, businessId, [
       WELL_KNOWN_CODES.bankClearing,
       WELL_KNOWN_CODES.deliveryRevenue,
@@ -219,6 +270,7 @@ async function ingestOrder(connection: ConnectionRow, order: WooOrder): Promise<
       sourceId: orderId,
       createdBy: null,
       postingKind: "revenue",
+      inventoryEventId,
       lines: [
         { accountId: accounts.get(WELL_KNOWN_CODES.bankClearing)!, debit: total.toString() as RialText, credit: zero },
         { accountId: accounts.get(WELL_KNOWN_CODES.deliveryRevenue)!, debit: zero, credit: net.toString() as RialText },
@@ -227,6 +279,9 @@ async function ingestOrder(connection: ConnectionRow, order: WooOrder): Promise<
           : []),
       ],
     });
+    if (inventoryEventId) {
+      await client.query("UPDATE inventory_events SET posting_status='posted' WHERE id=$1", [inventoryEventId]);
+    }
 
     await client.query(
       `INSERT INTO integration_mappings (business_id, connection_id, entity_type, remote_id, local_id)
@@ -243,7 +298,7 @@ async function ingestOrder(connection: ConnectionRow, order: WooOrder): Promise<
       entityType: "order",
       remoteId,
       localId: orderId,
-      payload: { orderNumber: order.number ?? remoteId, totalRial: total.toString() },
+      payload: { orderNumber: order.number ?? remoteId, totalRial: total.toString(), cogsRial },
     });
   } catch (err) {
     await client.query("ROLLBACK");
@@ -251,6 +306,60 @@ async function ingestOrder(connection: ConnectionRow, order: WooOrder): Promise<
   } finally {
     client.release();
   }
+}
+
+/**
+ * Maps a WooCommerce refund's line items to local order items via the product
+ * mapping, splitting a quantity across repeated rows of the same product and
+ * never exceeding what each order item still has returnable. Unmapped products
+ * are skipped — an order line that never deducted inventory has nothing to
+ * restore.
+ */
+async function buildRefundReturnLines(
+  client: import("pg").PoolClient,
+  businessId: string,
+  connection: ConnectionRow,
+  orderId: string,
+  refund: WooRefund,
+): Promise<ReturnLine[]> {
+  const lines: ReturnLine[] = [];
+  const remoteProductIds = (refund.line_items ?? [])
+    .map((line) => String(line.product_id))
+    .filter((id): id is string => Boolean(id));
+  if (remoteProductIds.length === 0) return lines;
+  const { rows: productMappings } = await client.query<{ remote_id: string; local_id: string }>(
+    `SELECT remote_id, local_id FROM integration_mappings
+      WHERE business_id = $1 AND connection_id = $2 AND entity_type = 'product'
+        AND remote_id = ANY($3::text[])`,
+    [businessId, connection.id, remoteProductIds],
+  );
+  const menuItemByRemote = new Map(productMappings.map((m) => [m.remote_id, m.local_id]));
+
+  for (const line of refund.line_items ?? []) {
+    const menuItemId = menuItemByRemote.get(String(line.product_id));
+    if (!menuItemId) continue;
+    // WooCommerce refund quantities are negative.
+    let remaining = Math.max(0, Math.abs(Math.round(line.quantity ?? 0)));
+    if (remaining === 0) continue;
+    const { rows: items } = await client.query<{ id: string; quantity: string; returned: string }>(
+      `SELECT oi.id, oi.quantity::text,
+              COALESCE((SELECT sum(l.quantity)::text FROM customer_return_lines l
+                         WHERE l.order_item_id = oi.id), '0') AS returned
+         FROM order_items oi
+        WHERE oi.order_id = $1 AND oi.menu_item_id = $2 AND oi.status <> 'voided'
+        ORDER BY oi.created_at, oi.id`,
+      [orderId, menuItemId],
+    );
+    for (const item of items) {
+      if (remaining <= 0) break;
+      const take = Math.min(Number(item.quantity) - Number(item.returned), remaining);
+      if (take > 0) {
+        lines.push({ orderItemId: item.id, quantity: quantityText(String(take)), disposition: "restockable" });
+        remaining -= take;
+      }
+    }
+  }
+  return lines;
 }
 
 async function ingestRefund(connection: ConnectionRow, refund: WooRefund, inboxId: string): Promise<void> {
@@ -279,27 +388,57 @@ async function ingestRefund(connection: ConnectionRow, refund: WooRefund, inboxI
       return;
     }
 
-    const accounts = await accountIdsByCode(client, businessId, [
-      WELL_KNOWN_CODES.salesReturns,
-      WELL_KNOWN_CODES.vatPayable,
-      WELL_KNOWN_CODES.bankClearing,
-    ]);
-    await postExactJournalEntry(client, {
-      businessId,
-      locationId,
-      memo: `برگشت از فروش ووکامرس #${refund.id}`,
-      sourceType: "woocommerce_refund",
-      sourceId: inboxId,
-      createdBy: null,
-      postingKind: "customer_refund",
-      lines: [
-        { accountId: accounts.get(WELL_KNOWN_CODES.salesReturns)!, debit: net.toString() as RialText, credit: zero },
-        ...(tax > 0n
-          ? [{ accountId: accounts.get(WELL_KNOWN_CODES.vatPayable)!, debit: tax.toString() as RialText, credit: zero }]
-          : []),
-        { accountId: accounts.get(WELL_KNOWN_CODES.bankClearing)!, debit: zero, credit: amount.toString() as RialText },
-      ],
-    });
+    // Tie the refund to the imported order (via the order mapping) and, for
+    // line items whose products were mapped at import time, reverse the
+    // inventory deduction and COGS through the shared customer-return path —
+    // exactly like a POS return. A refund that can't be tied to local order
+    // items (unmapped at import, amount-only refund, unknown order) still
+    // posts the money side.
+    let recoveredValueRial = "0";
+    const { rows: orderRows } = await client.query<{ id: string }>(
+      `SELECT local_id::text AS id FROM integration_mappings
+        WHERE business_id = $1 AND connection_id = $2 AND entity_type = 'order' AND remote_id = $3`,
+      [businessId, connection.id, String(refund.parent_id)],
+    );
+    const orderId = orderRows[0]?.id ?? null;
+    const returnLines = orderId ? await buildRefundReturnLines(client, businessId, connection, orderId, refund) : [];
+
+    if (orderId && returnLines.length > 0) {
+      const result = await createCustomerReturn(client, {
+        businessId,
+        locationId,
+        orderId,
+        refundMethod: "online",
+        refundAmount: amount.toString() as RialText,
+        reason: refund.reason?.trim() || "WooCommerce refund",
+        idempotencyKey: `woo-refund:${connection.id}:${remoteId}`,
+        createdBy: null,
+        lines: returnLines,
+      });
+      recoveredValueRial = result.recoveredValue;
+    } else {
+      const accounts = await accountIdsByCode(client, businessId, [
+        WELL_KNOWN_CODES.salesReturns,
+        WELL_KNOWN_CODES.vatPayable,
+        WELL_KNOWN_CODES.bankClearing,
+      ]);
+      await postExactJournalEntry(client, {
+        businessId,
+        locationId,
+        memo: `برگشت از فروش ووکامرس #${refund.id}`,
+        sourceType: "woocommerce_refund",
+        sourceId: inboxId,
+        createdBy: null,
+        postingKind: "customer_refund",
+        lines: [
+          { accountId: accounts.get(WELL_KNOWN_CODES.salesReturns)!, debit: net.toString() as RialText, credit: zero },
+          ...(tax > 0n
+            ? [{ accountId: accounts.get(WELL_KNOWN_CODES.vatPayable)!, debit: tax.toString() as RialText, credit: zero }]
+            : []),
+          { accountId: accounts.get(WELL_KNOWN_CODES.bankClearing)!, debit: zero, credit: amount.toString() as RialText },
+        ],
+      });
+    }
     await client.query(
       `INSERT INTO integration_mappings (business_id, connection_id, entity_type, remote_id, local_id)
        VALUES ($1, $2, 'refund', $3, $4)
@@ -314,7 +453,7 @@ async function ingestRefund(connection: ConnectionRow, refund: WooRefund, inboxI
       action: "refund.imported",
       entityType: "refund",
       remoteId,
-      payload: { amountRial: amount.toString() },
+      payload: { amountRial: amount.toString(), parentRemoteId: String(refund.parent_id), recoveredValueRial },
     });
   } catch (err) {
     await client.query("ROLLBACK");
