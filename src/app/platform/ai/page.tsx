@@ -15,6 +15,7 @@ import {
 } from "../ui";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { PlatformSupportAssistant } from "./platform-support-assistant";
+import { Loader2Icon } from "lucide-react";
 
 interface AiConfig {
   enabled: boolean;
@@ -342,7 +343,7 @@ export default function PlatformAiPage() {
               <input className={inputClass} placeholder="نام بسته" value={packageName} onChange={(event) => setPackageName(event.target.value)} />
               <input className={inputClass} type="number" min="1" placeholder="قیمت (تومان)" value={packagePrice} onChange={(event) => setPackagePrice(event.target.value)} />
               <input className={inputClass} type="number" min="1" placeholder="اعتبار (تومان)" value={packageCredit} onChange={(event) => setPackageCredit(event.target.value)} />
-              <Button type="submit" disabled={busy === "package"} className="sm:col-span-3">{busy === "package" ? "…" : "افزودن بسته"}</Button>
+              <Button type="submit" disabled={busy === "package"} className="sm:col-span-3">{busy === "package" ? <Loader2Icon className="animate-spin" /> : "افزودن بسته"}</Button>
             </form>
           </Card>
 
@@ -378,7 +379,7 @@ export default function PlatformAiPage() {
               <input className={inputClass} placeholder="نام اشتراک" value={planName} onChange={(event) => setPlanName(event.target.value)} />
               <input className={inputClass} type="number" min="1" placeholder="قیمت ماهانه (تومان)" value={planPrice} onChange={(event) => setPlanPrice(event.target.value)} />
               <input className={inputClass} type="number" min="1" placeholder="اعتبار ماهانه (تومان)" value={planCredit} onChange={(event) => setPlanCredit(event.target.value)} />
-              <Button type="submit" disabled={busy === "plan"} className="sm:col-span-3">{busy === "plan" ? "…" : "افزودن اشتراک"}</Button>
+              <Button type="submit" disabled={busy === "plan"} className="sm:col-span-3">{busy === "plan" ? <Loader2Icon className="animate-spin" /> : "افزودن اشتراک"}</Button>
             </form>
           </Card>
         </section>
@@ -418,7 +419,7 @@ export default function PlatformAiPage() {
               <p className="text-sm font-medium">اعطای اعتبار دستی</p>
               <input className={inputClass} type="number" min="1" placeholder="اعتبار (تومان)" value={grantToman} onChange={(event) => setGrantToman(event.target.value)} />
               <input className={inputClass} placeholder="یادداشت (اختیاری)" value={grantNote} onChange={(event) => setGrantNote(event.target.value)} />
-              <Button type="submit" disabled={busy === "grant"}>{busy === "grant" ? "…" : "افزودن اعتبار"}</Button>
+              <Button type="submit" disabled={busy === "grant"}>{busy === "grant" ? <Loader2Icon className="animate-spin" /> : "افزودن اعتبار"}</Button>
             </form>
             <form onSubmit={(event) => { event.preventDefault(); void write({ action: "subscription", businessId: selected.businessId, subscriptionPlanId: subscriptionPlanId || null }, "subscription"); }} className="space-y-2">
               <p className="text-sm font-medium">اشتراک</p>
@@ -432,7 +433,7 @@ export default function PlatformAiPage() {
                     .map((plan) => ({ value: plan.id, label: plan.name })),
                 ]}
               />
-              <Button type="submit" disabled={busy === "subscription"}>{busy === "subscription" ? "…" : "ثبت اشتراک"}</Button>
+              <Button type="submit" disabled={busy === "subscription"}>{busy === "subscription" ? <Loader2Icon className="animate-spin" /> : "ثبت اشتراک"}</Button>
             </form>
           </div>
         ) : null}
