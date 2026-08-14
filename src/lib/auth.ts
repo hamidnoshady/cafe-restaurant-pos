@@ -12,6 +12,8 @@ import {
 import { query, withoutTenantScope } from "./db";
 import { sessionStatus } from "./employee";
 import { featureForApiPath, isFeatureEnabled } from "./features";
+import { isModuleEnabled } from "./industry-guard";
+import { moduleForApiPath } from "./industry-profile";
 import { hasPermission, parseOverrides, PERMISSIONS, type Permission } from "./permissions";
 import { activeGrant } from "./platform-service";
 import { platformAudit } from "./platform-auth";
@@ -154,6 +156,16 @@ export function withTenantScope<Args extends unknown[]>(
         const flag = request ? featureForApiPath(request.nextUrl.pathname) : null;
         if (flag && !(await isFeatureEnabled(session.businessId, flag))) {
           return NextResponse.json({ error: "feature_disabled", flag }, { status: 403 });
+        }
+
+        // Phase 25 — the same enforcement, keyed on the industry's module set
+        // rather than a togglable flag. A feature flag is something an
+        // operator turns off; a module a trade does not have is something it
+        // never had, so a jewellery business asking /api/tables is refused
+        // here rather than relying on the nav not linking to it.
+        const module = request ? moduleForApiPath(request.nextUrl.pathname) : null;
+        if (module && !(await isModuleEnabled(session.businessId, module))) {
+          return NextResponse.json({ error: "module_unavailable", module }, { status: 403 });
         }
       }
 

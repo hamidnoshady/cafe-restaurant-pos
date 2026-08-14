@@ -25,6 +25,7 @@ import { LOCAL_DISABLED_FEATURES, type DeploymentModeName } from "./deployment-m
 import { SETTING_KEYS } from "./settings";
 import { coaTemplateForIndustry, nextAccountLevel, type AccountLevel, type TemplateAccount } from "./coa-template";
 import { ENABLED_INDUSTRIES, INDUSTRIES, type Industry } from "./industries";
+import { industryProfile } from "./industry-profile";
 
 export interface ProvisionBusinessInput {
   businessName: string;
@@ -323,6 +324,16 @@ export async function provisionBusiness(
         await seedChartOfAccounts(client, businessId, input.industry ?? "food_service");
       }
 
+      // Phase 25 — features this trade has no use for start off, in the same
+      // transaction that creates the business so there is never a window where
+      // a jewellery shop looks like a café. They remain individually flippable
+      // from the platform console: an industry default, not a prohibition.
+      await disableFeatures(
+        client,
+        businessId,
+        industryProfile(input.industry ?? "food_service").defaultDisabledFeatures,
+      );
+
       // Local-only installs record the mode and turn off the platform-dependent
       // features in the same transaction that creates the business, so there is
       // never a window where a local install looks like a connected one.
@@ -332,15 +343,7 @@ export async function provisionBusiness(
            VALUES ($1, NULL, $2, $3)`,
           [businessId, SETTING_KEYS.deploymentMode, JSON.stringify({ mode: "local", pairedAt: null })],
         );
-        for (const flagKey of LOCAL_DISABLED_FEATURES) {
-          await client.query(
-            `INSERT INTO business_features (business_id, flag_key, enabled)
-             SELECT $1, $2, false
-              WHERE EXISTS (SELECT 1 FROM feature_flags WHERE key = $2)
-             ON CONFLICT (business_id, flag_key) DO UPDATE SET enabled = false, updated_at = now()`,
-            [businessId, flagKey],
-          );
-        }
+        await disableFeatures(client, businessId, LOCAL_DISABLED_FEATURES);
       }
 
       await client.query("COMMIT");
@@ -352,6 +355,31 @@ export async function provisionBusiness(
       client.release();
     }
   });
+}
+
+/**
+ * Seed `business_features` "off" overrides for a list of flags.
+ *
+ * One loop for both callers that need it — the industry defaults every
+ * business gets, and the extra set a local-only install cannot deliver — so the
+ * upsert semantics (skip a flag that is not in the catalogue; overwrite an
+ * existing override) are written once. An override is a default, not a lock:
+ * the platform console can flip any of these back on afterwards.
+ */
+export async function disableFeatures(
+  client: PoolClient,
+  businessId: string,
+  flagKeys: readonly string[],
+): Promise<void> {
+  for (const flagKey of flagKeys) {
+    await client.query(
+      `INSERT INTO business_features (business_id, flag_key, enabled)
+       SELECT $1, $2, false
+        WHERE EXISTS (SELECT 1 FROM feature_flags WHERE key = $2)
+       ON CONFLICT (business_id, flag_key) DO UPDATE SET enabled = false, updated_at = now()`,
+      [businessId, flagKey],
+    );
+  }
 }
 
 /**

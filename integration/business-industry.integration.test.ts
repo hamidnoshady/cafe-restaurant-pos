@@ -277,3 +277,61 @@ describe("industryDataCounts", () => {
     expect((await platformService.industryDataCounts(b.businessId)).menuItems).toBe(0);
   });
 });
+
+describe("industry feature defaults", () => {
+  async function overrides(businessId: string): Promise<Record<string, boolean>> {
+    const { rows } = await db.query<{ flag_key: string; enabled: boolean }>(
+      "SELECT flag_key, enabled FROM business_features WHERE business_id = $1",
+      [businessId],
+    );
+    return Object.fromEntries(rows.map((r) => [r.flag_key, r.enabled]));
+  }
+
+  it("turns off the F&B-shaped features for a retail business at provision", async () => {
+    const { businessId } = await provision("jewelry");
+    const flags = await overrides(businessId);
+    // `inventory` is F&B's recipe-costed raw-material store and `reservations`
+    // gates tables and the floor plan; a jewellery shop has neither.
+    expect(flags.inventory).toBe(false);
+    expect(flags.reservations).toBe(false);
+    expect(flags.delivery).toBe(false);
+  });
+
+  it("turns nothing off for a café", async () => {
+    const { businessId } = await provision("food_service");
+    expect(await overrides(businessId)).toEqual({});
+  });
+
+  it("applies the new industry's defaults on a change", async () => {
+    const { businessId } = await provision("food_service");
+    expect(await overrides(businessId)).toEqual({});
+
+    await platformService.changeBusinessIndustry(businessId, "watch");
+    const flags = await overrides(businessId);
+    expect(flags.inventory).toBe(false);
+    expect(flags.reservations).toBe(false);
+  });
+
+  it("clears the old industry's defaults when switching back to a café", async () => {
+    // Otherwise a business switched to food_service would come up with no
+    // tables and no floor plan, because the overrides its previous trade
+    // seeded would still be sitting there switched off.
+    const { businessId } = await provision("jewelry");
+    expect((await overrides(businessId)).reservations).toBe(false);
+
+    await platformService.changeBusinessIndustry(businessId, "food_service");
+    const flags = await overrides(businessId);
+    expect(flags.reservations).toBeUndefined();
+    expect(flags.inventory).toBeUndefined();
+  });
+
+  it("leaves an override the new industry also disables in place", async () => {
+    const { businessId } = await provision("jewelry");
+    await platformService.changeBusinessIndustry(businessId, "watch");
+    // Both trades disable these, so the change is a no-op for them rather than
+    // a delete-then-reinsert that would briefly flip the flag on.
+    const flags = await overrides(businessId);
+    expect(flags.inventory).toBe(false);
+    expect(flags.reservations).toBe(false);
+  });
+});

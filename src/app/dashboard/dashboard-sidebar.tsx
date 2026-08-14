@@ -17,9 +17,11 @@ import {
   PackageIcon,
   SettingsIcon,
   ShoppingCartIcon,
+  SparklesIcon,
   TruckIcon,
   UserRoundIcon,
   UsersIcon,
+  WatchIcon,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -27,6 +29,7 @@ import {
   toggleDashboardSidebarPreference,
   type DashboardSidebarPreference,
 } from "@/lib/sidebar-state";
+import type { ModuleKey } from "@/lib/industry-profile";
 import type { Permission } from "@/lib/permissions";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
@@ -75,6 +78,8 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   "/dashboard/delivery": TruckIcon,
   "/dashboard/inventory": PackageIcon,
   "/dashboard/jewelry": GemIcon,
+  "/dashboard/watch": WatchIcon,
+  "/dashboard/accessories": SparklesIcon,
   "/dashboard/ledger": CalculatorIcon,
   "/dashboard/reports": BarChart3Icon,
   "/dashboard/ai": BotIcon,
@@ -83,12 +88,12 @@ const NAV_ICONS: Record<string, LucideIcon> = {
 
 export interface NavItem {
   label: string;
+  /** The industry module that owns this entry (src/lib/industry-profile.ts); already filtered out of navItems for an industry that has no such module. */
+  module: ModuleKey;
   href?: string;
   roles?: string[];
   /** Set when this page is gated by a Phase 17 feature flag; already filtered out of navItems if disabled. */
   flag?: string;
-  /** Set when this page is gated by Phase 21's `businesses.industry`; already filtered out of navItems for any other industry. */
-  industry?: string;
   /** Server-filtered against the member's effective permission set before reaching the client. */
   requiredAnyPermission?: Permission[];
 }
@@ -97,6 +102,9 @@ interface SidebarProps {
   navItems: NavItem[];
   role: string;
   fullName: string;
+  /** From the business's industry profile — a jewellery shop is not «کافه و رستوران». */
+  brandTitle: string;
+  brandSubtitle: string;
 }
 
 function isActive(path: string, href: string): boolean {
@@ -148,13 +156,13 @@ function NavLinks({
   );
 }
 
-function SidebarBrand() {
+function SidebarBrand({ title, subtitle }: { title: string; subtitle: string }) {
   return (
     <SidebarHeader className="border-[#EAE8E2] bg-white p-4">
       <div className="flex items-start justify-between gap-2 group-data-[state=collapsed]/sidebar:justify-center">
         <div className="min-w-0 group-data-[state=collapsed]/sidebar:hidden">
-          <p className="truncate font-bold text-[#252522]">کافه و رستوران</p>
-          <p className="text-xs text-[#77756F]">مدیریت عملیات روزانه</p>
+          <p className="truncate font-bold text-[#252522]">{title}</p>
+          <p className="text-xs text-[#77756F]">{subtitle}</p>
         </div>
         <div className="flex shrink-0 items-center gap-1">
           <span className="hidden md:block group-data-[state=collapsed]/sidebar:hidden"><ThemeToggle /></span>
@@ -258,7 +266,7 @@ function MobileBottomNavigation({ navItems, pathname }: Pick<SidebarProps, "navI
   );
 }
 
-export function DashboardSidebar({ navItems, role, fullName }: SidebarProps) {
+export function DashboardSidebar({ navItems, role, fullName, brandTitle, brandSubtitle }: SidebarProps) {
   const pathname = usePathname();
   const [preference, setPreference] = useState<DashboardSidebarPreference>("expanded");
   const [preferenceLoaded, setPreferenceLoaded] = useState(false);
@@ -314,7 +322,7 @@ export function DashboardSidebar({ navItems, role, fullName }: SidebarProps) {
     <SidebarProvider open={mode === "expanded"} onOpenChange={setExpanded}>
       <MobileDashboardHeader navItems={navItems} pathname={pathname} />
       <Sidebar side="right" className="border-[#EAE8E2] bg-white text-[#252522]">
-        <SidebarBrand />
+        <SidebarBrand title={brandTitle} subtitle={brandSubtitle} />
         <SidebarNavigation navItems={navItems} pathname={pathname} />
         <DashboardSidebarFooter role={role} fullName={fullName} />
       </Sidebar>

@@ -2,6 +2,8 @@ import { redirect } from "next/navigation";
 import { getSession, type Role } from "@/lib/auth";
 import { query, withTenant } from "@/lib/db";
 import { effectiveFeatures } from "@/lib/features";
+import type { Industry } from "@/lib/industries";
+import { labelFor } from "@/lib/industry-profile";
 import { effectivePermissions, parseOverrides } from "@/lib/permissions";
 import { visibleSettingsTabs } from "@/lib/settings-tabs";
 import { SettingsManager } from "./settings-manager";
@@ -14,7 +16,7 @@ export default async function SettingsPage() {
   // withTenant() scope, not the ambient one getSession() set via enterWith(),
   // since that doesn't survive a concurrent run() elsewhere in the process.
   // Keep every database-backed visibility check in this same scope.
-  const [{ rows }, features] = await withTenant(
+  const [{ rows }, features, { rows: bizRows }] = await withTenant(
     session.businessId,
     () =>
       Promise.all([
@@ -23,15 +25,17 @@ export default async function SettingsPage() {
           [session.sub, session.businessId],
         ),
         effectiveFeatures(session.businessId),
+        query<{ industry: Industry }>("SELECT industry FROM businesses WHERE id = $1", [session.businessId]),
       ]),
     { locationId: session.locationId, userId: session.sub },
   );
   const member = rows[0];
   if (!member?.is_active) redirect("/dashboard");
+  const industry = bizRows[0]?.industry ?? "food_service";
 
   const tabs = visibleSettingsTabs(
     effectivePermissions(member.role, parseOverrides(member.permissions)),
-    { role: member.role, features },
+    { role: member.role, features, industry },
   );
   if (tabs.length === 0) redirect("/dashboard");
 
@@ -40,7 +44,8 @@ export default async function SettingsPage() {
       <header className="mb-6">
         <h1 className="text-2xl font-bold">تنظیمات</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          مدیریت اطلاعات کسب‌وکار، امور مالی، دسترسی‌ها، منو و تجهیزات. بخش‌هایی که مجوزشان را ندارید نمایش داده نمی‌شوند.
+          مدیریت اطلاعات کسب‌وکار، امور مالی، دسترسی‌ها، {labelFor(industry, "catalogue")} و تجهیزات. بخش‌هایی که مجوزشان را
+          ندارید نمایش داده نمی‌شوند.
         </p>
       </header>
       <SettingsManager tabs={tabs} features={features} currentUserId={session.sub} isOwner={member.role === "owner"} />

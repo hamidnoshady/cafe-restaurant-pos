@@ -15,8 +15,9 @@
  */
 import { getPool, query, withoutTenantScope } from "./db";
 import type { PoolClient } from "pg";
-import { seedChartOfAccounts } from "./business-provisioning";
+import { disableFeatures, seedChartOfAccounts } from "./business-provisioning";
 import type { Industry } from "./industries";
+import { industryProfile } from "./industry-profile";
 import { clampImpersonationMinutes } from "./platform-admin";
 import { SETTING_KEYS } from "./settings";
 import type { AppUpdateStatus } from "./app-update";
@@ -343,15 +344,39 @@ export async function changeBusinessIndustry(
     const client = await getPool().connect();
     try {
       await client.query("BEGIN");
-      const { rowCount } = await client.query(
-        `UPDATE businesses SET industry = $2, updated_at = now() WHERE id = $1`,
-        [businessId, industry],
+      const { rows: previous } = await client.query<{ industry: Industry }>(
+        `SELECT industry FROM businesses WHERE id = $1 FOR UPDATE`,
+        [businessId],
       );
-      if (rowCount === 0) {
+      if (!previous[0]) {
         await client.query("ROLLBACK");
         return null;
       }
+      await client.query(
+        `UPDATE businesses SET industry = $2, updated_at = now() WHERE id = $1`,
+        [businessId, industry],
+      );
       const seeded = await seedChartOfAccounts(client, businessId, industry);
+
+      // Move the feature overrides across too, in both directions. Seeding the
+      // new industry's defaults alone would leave a business switched *to*
+      // food_service with no tables and no menu, because the overrides its old
+      // trade seeded would still be sitting there switched off — so first clear
+      // the ones the old industry turned off and the new one has no opinion
+      // about. This can undo an operator's own manual "off" for one of those
+      // flags; the console is where they turn it back off, and that is a better
+      // failure than a café that silently has no floor plan.
+      const stale = industryProfile(previous[0].industry).defaultDisabledFeatures.filter(
+        (flag) => !industryProfile(industry).defaultDisabledFeatures.includes(flag),
+      );
+      if (stale.length > 0) {
+        await client.query(
+          `DELETE FROM business_features WHERE business_id = $1 AND flag_key = ANY($2)`,
+          [businessId, stale],
+        );
+      }
+      await disableFeatures(client, businessId, industryProfile(industry).defaultDisabledFeatures);
+
       await client.query("COMMIT");
       return seeded;
     } catch (err) {
