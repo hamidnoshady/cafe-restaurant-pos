@@ -64,8 +64,12 @@ pure and unit-tested; amounts never round-trip through floating point.
   `payments` row (method `online`) and a balanced journal entry: debit
   bank-clearing, credit delivery-revenue + VAT payable
   (`src/lib/integrations/webhook-ingest-service.ts`).
-- No inventory/COGS deduction here: an online order's line items don't yet map
-  to recipes; stock sync is Wave 4's job. Decision recorded below.
+- Line items whose WooCommerce product has a product→recipe mapping (the Wave 3
+  `integration_mappings` row to a local `menu_items` row with a recipe) are
+  deducted and posted to COGS through the shared POS sale path — one
+  `sale_consumption` inventory event, `deductForOrder`, `postExactCogsEntry` —
+  so online sales relieve stock exactly like POS sales. Unmapped lines record
+  the sale with no COGS (their cost basis doesn't exist yet); see decision 3.
 
 ### Wave 3 — product, customer & mapping sync
 - `integration_mappings` (remote id ↔ local id per entity type).
@@ -116,11 +120,14 @@ pure and unit-tested; amounts never round-trip through floating point.
 2. **Revenue channel for online orders** — recorded as `delivery` orders so the
    existing channel-split revenue account (4330) applies, rather than adding a
    new order type enum value.
-3. **COGS for online orders** — deferred to the mapping wave (Wave 3/4) and
-   deliberately not approximated in Wave 2: without a product→recipe mapping a
-   "COGS" number would be fabricated. Wave 2 posts only the sale (revenue +
-   receivable/bank + VAT), which is the financial event that must never be
-   missed.
+3. **COGS for online orders** — posted only for line items whose WooCommerce
+   product maps to a local menu item with a recipe, through the shared POS
+   deduction path (`deductForOrder` + `postExactCogsEntry`, one
+   `sale_consumption` inventory event linked to the same entry as the sale's
+   revenue). An unmapped line records the sale without a COGS number — never
+   fabricated. The cost basis for mapped lines is the same FIFO/weighted-
+   average basis POS sales consume, so online sales relieve stock and post
+   COGS exactly like a POS delivery sale.
 4. **Multiple stores** — a connection is scoped to a business *and* optionally
    a branch (`location_id`), so one business can run several stores and a
    multi-branch business can map one store per branch.
