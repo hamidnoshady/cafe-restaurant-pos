@@ -106,7 +106,7 @@ const PURITY_LABELS: Record<Purity, string> = {
 };
 
 function newKey(): string {
-  return Math.random().toString(36).slice(2);
+  return crypto.randomUUID();
 }
 
 export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
