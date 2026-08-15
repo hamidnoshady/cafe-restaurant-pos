@@ -38,6 +38,14 @@ interface SearchableSelectProps {
   dir?: "rtl" | "ltr";
   /** Accessible name for the trigger button (a labeled-by-field select doesn't need it). */
   ariaLabel?: string;
+  /**
+   * Called with the typed filter text. Options that come from a server search
+   * (a customer directory, say) can't all be shipped to the browser, so the
+   * owner refetches `options` on each keystroke; the local filter still runs
+   * over whatever it hands back, which is harmless because the server already
+   * matched them. Purely local lists ignore this.
+   */
+  onQueryChange?: (query: string) => void;
 }
 
 export function SearchableSelect({
@@ -51,6 +59,7 @@ export function SearchableSelect({
   className,
   dir = "rtl",
   ariaLabel,
+  onQueryChange,
 }: SearchableSelectProps) {
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
@@ -68,10 +77,14 @@ export function SearchableSelect({
       : options;
   }, [options, deferredQuery]);
 
+  const notifyQuery = React.useRef(onQueryChange);
+  notifyQuery.current = onQueryChange;
+
   React.useEffect(() => {
     if (open) {
       setQuery("");
       setActiveIndex(0);
+      notifyQuery.current?.("");
       // Focus after the popover mounts so type-to-search works immediately.
       requestAnimationFrame(() => inputRef.current?.focus());
     }
@@ -121,6 +134,7 @@ export function SearchableSelect({
                 onChange={(e) => {
                   setQuery(e.target.value);
                   setActiveIndex(0);
+                  onQueryChange?.(e.target.value);
                 }}
                 onKeyDown={(e) => {
                   if (e.key === "ArrowDown") {
