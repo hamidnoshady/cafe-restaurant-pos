@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { api, ErrorBox, errorMessage, InfoBox, PrimaryButton, StepShell } from "../ui";
 import { nextPath, skipToPath, stepsFor } from "../steps";
 import { useSetupIndustry } from "../industry-context";
+import { industryProfile, type SalesModel } from "@/lib/industry-profile";
 
 type Method = "fifo" | "weighted_average";
 
@@ -14,20 +15,61 @@ interface CostingResponse {
   error?: string;
 }
 
-const OPTIONS: { value: Method; title: string; example: string }[] = [
-  {
-    value: "fifo",
-    title: "اولین صادره از اولین وارده (FIFO)",
-    example:
-      "مثال: اول ۱۰ کیلو قهوه کیلویی ۵۰۰ هزار تومان خریده‌اید و بعد ۱۰ کیلو کیلویی ۶۰۰ هزار تومان. تا وقتی خرید اول تمام نشده، مصرف با همان کیلویی ۵۰۰ حساب می‌شود و بعد سراغ خرید دوم می‌رود. یعنی بهای مصرف دقیقاً به ترتیب خریدها است.",
+interface Option {
+  value: Method;
+  title: string;
+  example: string;
+}
+
+/**
+ * The same two methods, explained in the caller's own trade.
+ *
+ * Keyed on `salesModel` rather than on `industry` so a fifth industry inherits
+ * whichever wording its profile already declares, instead of needing a case
+ * here (CLAUDE.md: prefer the profile over an `if (industry === …)`).
+ *
+ * «مواد مصرفی» / a coffee example is F&B's wording and stays exactly as it
+ * was; a shop consumes nothing — it buys goods and sells them — so the retail
+ * copy talks about بهای تمام‌شدهٔ کالای فروش‌رفته and counts pieces, not kilos.
+ */
+const COPY: Record<SalesModel, { description: string; options: Option[] }> = {
+  order_ticket: {
+    description:
+      "مشخص می‌کند بهای تمام‌شدهٔ مواد مصرفی چطور محاسبه شود. بعد از اولین تراکنش انبار این انتخاب قفل می‌شود.",
+    options: [
+      {
+        value: "fifo",
+        title: "اولین صادره از اولین وارده (FIFO)",
+        example:
+          "مثال: اول ۱۰ کیلو قهوه کیلویی ۵۰۰ هزار تومان خریده‌اید و بعد ۱۰ کیلو کیلویی ۶۰۰ هزار تومان. تا وقتی خرید اول تمام نشده، مصرف با همان کیلویی ۵۰۰ حساب می‌شود و بعد سراغ خرید دوم می‌رود. یعنی بهای مصرف دقیقاً به ترتیب خریدها است.",
+      },
+      {
+        value: "weighted_average",
+        title: "میانگین موزون",
+        example:
+          "مثال: با همان دو خرید، میانگین قیمت می‌شود کیلویی ۵۵۰ هزار تومان و هر مصرفی با همین میانگین حساب می‌شود. یعنی قیمت‌ها با هم مخلوط می‌شوند و محاسبه ساده‌تر است.",
+      },
+    ],
   },
-  {
-    value: "weighted_average",
-    title: "میانگین موزون",
-    example:
-      "مثال: با همان دو خرید، میانگین قیمت می‌شود کیلویی ۵۵۰ هزار تومان و هر مصرفی با همین میانگین حساب می‌شود. یعنی قیمت‌ها با هم مخلوط می‌شوند و محاسبه ساده‌تر است.",
+  retail_invoice: {
+    description:
+      "مشخص می‌کند بهای تمام‌شدهٔ کالای فروش‌رفته چطور محاسبه شود. بعد از اولین تراکنش انبار این انتخاب قفل می‌شود.",
+    options: [
+      {
+        value: "fifo",
+        title: "اولین صادره از اولین وارده (FIFO)",
+        example:
+          "مثال: اول ۱۰ عدد از یک کالا را دانه‌ای ۵۰۰ هزار تومان خریده‌اید و بعد ۱۰ عدد دیگر را دانه‌ای ۶۰۰ هزار تومان. تا وقتی خرید اول تمام نشده، بهای کالای فروش‌رفته با همان دانه‌ای ۵۰۰ حساب می‌شود و بعد سراغ خرید دوم می‌رود. یعنی بهای تمام‌شده دقیقاً به ترتیب خریدها است.",
+      },
+      {
+        value: "weighted_average",
+        title: "میانگین موزون",
+        example:
+          "مثال: با همان دو خرید، میانگین قیمت می‌شود دانه‌ای ۵۵۰ هزار تومان و بهای هر فروش با همین میانگین حساب می‌شود. یعنی قیمت‌ها با هم مخلوط می‌شوند و محاسبه ساده‌تر است.",
+      },
+    ],
   },
-];
+};
 
 export default function CostingStep() {
   const router = useRouter();
@@ -37,6 +79,7 @@ export default function CostingStep() {
   // concept -- a jewelry business landing here (a stale link, the back
   // button) belongs at whatever step actually follows it in their flow.
   const available = steps.some((s) => s.id === "costing");
+  const copy = COPY[industryProfile(industry).salesModel];
   const [method, setMethod] = useState<Method>("weighted_average");
   const [locked, setLocked] = useState(false);
   const [error, setError] = useState("");
@@ -76,10 +119,7 @@ export default function CostingStep() {
   }
 
   return (
-    <StepShell
-      step="costing"
-      description="مشخص می‌کند بهای تمام‌شدهٔ مواد مصرفی چطور محاسبه شود. بعد از اولین تراکنش انبار این انتخاب قفل می‌شود."
-    >
+    <StepShell step="costing" description={copy.description}>
       {locked ? (
         <InfoBox>
           روش قیمت‌گذاری قفل شده است (اولین تراکنش انبار ثبت شده). تغییر آن فقط از طریق فرایند
@@ -89,7 +129,7 @@ export default function CostingStep() {
       <form onSubmit={submit} className="max-w-2xl">
         <ErrorBox>{error}</ErrorBox>
         <div className="space-y-3">
-          {OPTIONS.map((o) => (
+          {copy.options.map((o) => (
             <label
               key={o.value}
               className={`block cursor-pointer rounded-xl border p-4 transition ${

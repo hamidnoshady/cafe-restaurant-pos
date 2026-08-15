@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { getBusinessIndustry } from "@/lib/industry-guard";
+import { industryProfile, labelFor } from "@/lib/industry-profile";
 import { StepNav } from "./step-nav";
 import { SetupAssistant } from "./setup-assistant";
 import { SetupIndustryProvider } from "./industry-context";
@@ -21,8 +22,19 @@ export default async function SetupLayout({
         <aside className="hidden w-60 shrink-0 sm:block">
           <div className="sticky top-6 rounded-2xl bg-card p-4 shadow-sm">
             <p className="mb-1 font-bold">راه‌اندازی اولیه</p>
+            {/*
+              Which trade this business is registered as -- it decides the step
+              list, the chart of accounts and the wording of every step, so an
+              owner who was provisioned as the wrong industry should be able to
+              see that here rather than infer it from a café example three
+              steps in. Changing it is a super-admin action in the platform
+              console, not something the wizard can offer.
+            */}
+            <p className="text-xs font-medium text-foreground/80">
+              {industryProfile(industry).brandTitle}
+            </p>
             <p className="mb-4 text-xs text-muted-foreground">
-              گام‌به‌گام تا آماده‌شدن برای ثبت سفارش
+              گام‌به‌گام تا آماده‌شدن برای ثبت {labelFor(industry, "saleDocument")}
             </p>
             <StepNav />
           </div>
