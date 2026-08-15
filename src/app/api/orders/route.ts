@@ -21,6 +21,7 @@ export const GET = withTenantScope(async () => {
 interface CreateOrderBody {
   type?: "dine_in" | "takeaway" | "delivery";
   tableId?: string;
+  customerId?: string;
   guestCount?: number;
   note?: string;
   discount?: { type?: "percent" | "amount"; value?: number };
@@ -60,6 +61,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
     locationId: location.id,
     type: body.type,
     tableId: body.tableId ?? null,
+    customerId: body.customerId ?? null,
     guestCount,
     note: body.note ?? null,
     discount,

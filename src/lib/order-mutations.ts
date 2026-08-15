@@ -91,6 +91,12 @@ export interface CreateOrderInput {
   locationId: string;
   type: OrderType;
   tableId?: string | null;
+  /**
+   * Optional customer the sale is attributed to, picked at the till. Customers
+   * are business-wide (see customers-service.ts), so it is validated against
+   * the location's business rather than the location itself.
+   */
+  customerId?: string | null;
   guestCount?: number | null;
   note?: string | null;
   discount: DiscountInput;
@@ -123,6 +129,18 @@ export async function createOrder(
     ) {
       return { ok: false, error: "monthly_order_limit_exceeded", status: 403 };
     }
+  }
+
+  const customerId = input.customerId?.trim() || null;
+  if (customerId) {
+    const params: unknown[] = [customerId];
+    if (businessId) params.push(businessId);
+    const { rows: customer } = await query<{ id: string }>(
+      `SELECT id FROM customers WHERE id = $1` + (businessId ? ` AND business_id = $2` : ``),
+      params,
+    );
+    if (customer.length === 0)
+      return { ok: false, error: "customer_not_found", status: 404 };
   }
 
   let tableId: string | null = null;
@@ -199,9 +217,9 @@ export async function createOrder(
 
     const discountType = input.discount.type;
     const { rows: orderRows } = await client.query<{ id: string }>(
-      `INSERT INTO orders (location_id, order_number, type, status, table_id, table_session_id, guest_count,
+      `INSERT INTO orders (location_id, order_number, type, status, table_id, table_session_id, customer_id, guest_count,
               subtotal, discount, discount_type, discount_value, service_charge, tax, total, note, opened_by)
-       VALUES ($1, $2, $3, 'open', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+       VALUES ($1, $2, $3, 'open', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
        RETURNING id`,
       [
         input.locationId,
@@ -209,6 +227,7 @@ export async function createOrder(
         input.type,
         tableId,
         tableSessionId,
+        customerId,
         input.guestCount ?? null,
         totals.subtotal,
         totals.discount,
