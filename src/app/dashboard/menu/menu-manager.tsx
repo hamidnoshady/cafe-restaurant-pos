@@ -788,6 +788,7 @@ function ModifierSection({
           <ModifierGroupRow
             key={g.id}
             group={g}
+            groups={data.modifierGroups}
             modifiers={data.modifiers.filter((m) => m.group_id === g.id)}
             busy={busy}
             run={run}
@@ -803,11 +804,14 @@ function ModifierSection({
 
 function ModifierGroupRow({
   group,
+  groups,
   modifiers,
   busy,
   run,
 }: {
   group: ModifierGroup;
+  /** Every group of the branch — the edit row lets an addon be moved to any of them. */
+  groups: ModifierGroup[];
   modifiers: Modifier[];
   busy: boolean;
   run: Runner;
@@ -953,7 +957,13 @@ function ModifierGroupRow({
       )}
       <ul className="mb-2 divide-y divide-border">
         {modifiers.map((m) => (
-          <ModifierRow key={m.id} modifier={m} busy={busy} run={run} />
+          <ModifierRow
+            key={m.id}
+            modifier={m}
+            groups={groups}
+            busy={busy}
+            run={run}
+          />
         ))}
         {modifiers.length === 0 ? (
           <p className="py-1 text-xs text-muted-foreground">
@@ -996,10 +1006,12 @@ function ModifierGroupRow({
 
 function ModifierRow({
   modifier,
+  groups,
   busy,
   run,
 }: {
   modifier: Modifier;
+  groups: ModifierGroup[];
   busy: boolean;
   run: Runner;
 }) {
@@ -1009,6 +1021,7 @@ function ModifierRow({
     return (
       <EditModifierRow
         modifier={modifier}
+        groups={groups}
         busy={busy}
         run={run}
         onDone={() => setEditing(false)}
@@ -1066,19 +1079,23 @@ function ModifierRow({
 
 function EditModifierRow({
   modifier,
+  groups,
   busy,
   run,
   onDone,
 }: {
   modifier: Modifier;
+  groups: ModifierGroup[];
   busy: boolean;
   run: Runner;
   onDone: () => void;
 }) {
+  const [groupId, setGroupId] = useState(modifier.group_id);
   const [name, setName] = useState(modifier.name);
   const [delta, setDelta] = useState(
     String(rialToToman(Number(modifier.price_delta))),
   );
+  const moved = groupId !== modifier.group_id;
 
   async function save(event: React.FormEvent) {
     event.preventDefault();
@@ -1088,11 +1105,11 @@ function EditModifierRow({
     } catch {
       return;
     }
-    if (!name.trim()) return;
+    if (!name.trim() || !groupId) return;
     const ok = await run(() =>
       api(`/api/menu/modifiers/${modifier.id}`, {
         method: "PATCH",
-        body: JSON.stringify({ name, priceDelta: deltaRial }),
+        body: JSON.stringify({ groupId, name, priceDelta: deltaRial }),
       }),
     );
     if (ok) onDone();
@@ -1104,6 +1121,16 @@ function EditModifierRow({
         onSubmit={save}
         className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-3"
       >
+        <Field label="گروه افزودنی">
+          <SearchableSelect
+            value={groupId}
+            onChange={setGroupId}
+            options={groups.map((group) => ({
+              value: group.id,
+              label: group.name,
+            }))}
+          />
+        </Field>
         <Field label="نام افزودنی">
           <input
             className={inputClass}
@@ -1128,6 +1155,12 @@ function EditModifierRow({
             انصراف
           </SecondaryButton>
         </div>
+        {moved ? (
+          <p className="text-xs text-muted-foreground sm:col-span-2 xl:col-span-3">
+            این افزودنی به گروه دیگری منتقل می‌شود و از این پس روی آیتم‌های همان
+            گروه نمایش داده می‌شود. سفارش‌های ثبت‌شده تغییری نمی‌کنند.
+          </p>
+        ) : null}
       </form>
     </li>
   );
