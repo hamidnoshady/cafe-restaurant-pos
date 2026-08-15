@@ -2,20 +2,40 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
 import { type CartItemInput } from "@/lib/order-cart";
 import { createOrder } from "@/lib/order-mutations";
-import { listOrders } from "@/lib/order-read-service";
+import { listOrders, listOrdersClosedSince } from "@/lib/order-read-service";
+import { branchShiftStartedAt } from "@/lib/shift-service";
 import type { DiscountInput } from "@/lib/orders";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { broadcast } from "@/lib/realtime";
 
-/** Open orders for the cashier's "current orders" list. */
-export const GET = withTenantScope(async () => {
+/**
+ * Open orders for the cashier's "current orders" list.
+ *
+ * `?scope=shift` additionally returns the orders *closed* since the branch's
+ * running shift began (`closedOrders`, newest close first) plus that shift's
+ * start, for the orders screen — a closed order is otherwise invisible the
+ * moment it is paid. Only that screen asks for it, so the POS and waiter
+ * panels, which poll this route for their queue, keep paying for one query.
+ * With no shift open there is no window, so `closedOrders` is empty and the
+ * screen says why rather than falling back to a date range.
+ */
+export const GET = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireRole("owner", "manager", "cashier", "waiter");
   if (error) return error;
 
   const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ orders: [] });
 
-  return NextResponse.json({ orders: await listOrders(location.id, { status: "open" }) });
+  const orders = await listOrders(location.id, { status: "open" });
+  if (new URL(request.url).searchParams.get("scope") !== "shift") {
+    return NextResponse.json({ orders });
+  }
+
+  const shiftStartedAt = await branchShiftStartedAt(location.id);
+  const closedOrders = shiftStartedAt
+    ? await listOrdersClosedSince(location.id, shiftStartedAt)
+    : [];
+  return NextResponse.json({ orders, closedOrders, shiftStartedAt });
 });
 
 interface CreateOrderBody {

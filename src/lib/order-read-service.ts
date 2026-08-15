@@ -13,6 +13,13 @@ export interface ListOrdersOptions {
   limit?: number;
 }
 
+/** The summary shape both order lists return, so the two can never disagree on columns. */
+const ORDER_SUMMARY_SELECT =
+  "SELECT o.id, o.order_number, o.type, o.status, o.table_id, dt.name AS table_name, " +
+  "o.guest_count, o.subtotal, o.discount, o.discount_type, o.discount_value, " +
+  "o.service_charge, o.tax, o.total, o.note, o.opened_at, o.closed_at, o.voided_reason " +
+  "FROM orders o LEFT JOIN dining_tables dt ON dt.id = o.table_id";
+
 /**
  * Reads order summaries from exactly one branch. Branch-level isolation is
  * application-enforced in this product, so every public-key read retains the
@@ -34,12 +41,36 @@ export async function listOrders(locationId: string, options: ListOrdersOptions 
   }
 
   const { rows } = await query(
-    "SELECT o.id, o.order_number, o.type, o.status, o.table_id, dt.name AS table_name, " +
-      "o.guest_count, o.subtotal, o.discount, o.discount_type, o.discount_value, " +
-      "o.service_charge, o.tax, o.total, o.note, o.opened_at, o.closed_at, o.voided_reason " +
-      "FROM orders o LEFT JOIN dining_tables dt ON dt.id = o.table_id " +
-      "WHERE " + where.join(" AND ") + " ORDER BY o.opened_at DESC, o.id DESC" + limitClause,
+    ORDER_SUMMARY_SELECT +
+      " WHERE " + where.join(" AND ") + " ORDER BY o.opened_at DESC, o.id DESC" + limitClause,
     params,
+  );
+  return rows;
+}
+
+/**
+ * The branch's orders that were *closed* — completed or voided — at or after
+ * `since`, newest close first. Paired with `listOrders(..., { status: "open" })`
+ * by the orders screen, which passes the start of the branch's running shift so
+ * a cashier can look back over what they already closed this shift; the list
+ * empties on its own once the shift ends and there is no window to ask for.
+ *
+ * Voided orders are kept rather than filtered out: "what happened to order #12"
+ * is exactly the question this list exists to answer, and the caller renders the
+ * status. `limit` is a safety net for a branch that closes an unusual number of
+ * orders in one shift, not a paging cursor.
+ */
+export async function listOrdersClosedSince(
+  locationId: string,
+  since: Date | string,
+  limit = 200,
+) {
+  const { rows } = await query(
+    ORDER_SUMMARY_SELECT +
+      " WHERE o.location_id = $1 AND o.status IN ('completed', 'voided')" +
+      " AND o.closed_at IS NOT NULL AND o.closed_at >= $2" +
+      " ORDER BY o.closed_at DESC, o.id DESC LIMIT $3",
+    [locationId, since, limit],
   );
   return rows;
 }
