@@ -258,6 +258,49 @@ export async function postExactStockCountEntry(
   });
 }
 
+/**
+ * Reversal of a posted stock-count variance: the original shortage expense and
+ * surplus gain are put back. Uses the reversal row's own source identity so the
+ * `(business_id, source_type, source_id, posting_kind)` uniqueness index never
+ * collides with the original count's entries.
+ */
+export async function postExactStockCountReversalEntry(
+  client: PoolClient,
+  params: {
+    businessId: string;
+    locationId: string;
+    stockCountId: string;
+    inventoryEventId: string;
+    createdBy: string | null;
+    shortageValue: RialText;
+    surplusValue: RialText;
+  },
+): Promise<string | null> {
+  const accounts = await accountIdsByCode(client, params.businessId, [
+    WELL_KNOWN_CODES.inventory,
+    WELL_KNOWN_CODES.inventoryCountExpense,
+    WELL_KNOWN_CODES.inventoryCountGain,
+  ]);
+  const inventory = accounts.get(WELL_KNOWN_CODES.inventory)!;
+  const zero = "0" as RialText;
+  return postExactJournalEntry(client, {
+    businessId: params.businessId,
+    locationId: params.locationId,
+    memo: "ابطال مغایرت شمارش موجودی",
+    sourceType: "stock_count_reversal",
+    sourceId: params.stockCountId,
+    createdBy: params.createdBy,
+    postingKind: "variance_reversal",
+    inventoryEventId: params.inventoryEventId,
+    lines: [
+      { accountId: inventory, debit: params.shortageValue, credit: zero },
+      { accountId: accounts.get(WELL_KNOWN_CODES.inventoryCountExpense)!, debit: zero, credit: params.shortageValue },
+      { accountId: accounts.get(WELL_KNOWN_CODES.inventoryCountGain)!, debit: params.surplusValue, credit: zero },
+      { accountId: inventory, debit: zero, credit: params.surplusValue },
+    ],
+  });
+}
+
 export async function postExactCogsEntry(
   client: PoolClient,
   params: {
