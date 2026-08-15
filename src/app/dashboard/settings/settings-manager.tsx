@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import type { SettingsTab, SettingsTabKey } from "@/lib/settings-tabs";
+import type { ResolvedSettingsTab, SettingsTabKey } from "@/lib/settings-tabs";
 import { isSettingsTabKey } from "@/lib/settings-tabs";
 import { BackupManager } from "../backup/backup-manager";
 import { BranchManagementSettings } from "./branch-management-settings";
@@ -21,7 +21,7 @@ import { ShiftHistorySettings } from "./shift-history-settings";
 import { TaxSettings } from "./tax-settings";
 
 interface SettingsManagerProps {
-  tabs: SettingsTab[];
+  tabs: ResolvedSettingsTab[];
   features: Record<string, boolean>;
   currentUserId: string;
   isOwner: boolean;
