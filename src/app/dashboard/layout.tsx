@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSession, type Role } from "@/lib/auth";
 import { query, withTenant } from "@/lib/db";
-import { effectiveFeatures } from "@/lib/features";
+import { effectiveFeatures, isLockableFeature } from "@/lib/features";
 import { INDUSTRY_LABELS, type Industry } from "@/lib/industries";
 import { hasModule, industryProfile, labelFor } from "@/lib/industry-profile";
 import { effectivePermissions, parseOverrides, PERMISSIONS, type Permission } from "@/lib/permissions";
@@ -72,7 +72,11 @@ function canSee(
   // Industry first: a module this trade does not have is not merely switched
   // off, it does not exist here, and its route refuses too (auth.ts).
   if (!hasModule(industry, item.module)) return false;
-  if (item.flag && !features[item.flag]) return false;
+  // A disabled flag hides its entry — unless the feature is lockable, in which
+  // case the entry stays and is marked with a padlock instead (see
+  // LOCKABLE_FEATURES in features.ts). Its page renders a read-only preview
+  // rather than redirecting, so the link goes somewhere real either way.
+  if (item.flag && !features[item.flag] && !isLockableFeature(item.flag)) return false;
   if (item.roles && !item.roles.includes(role)) return false;
   return !item.requiredAnyPermission || item.requiredAnyPermission.some((permission) => permissions.has(permission));
 }
@@ -111,7 +115,8 @@ export default async function DashboardLayout({
   const profile = industryProfile(industry);
   const navItems = navItemsFor(industry)
     .filter((item) => canSee(item, member.role, permissions, features, industry))
-    .filter((item) => item.href !== "/dashboard/settings" || settingsTabs.length > 0);
+    .filter((item) => item.href !== "/dashboard/settings" || settingsTabs.length > 0)
+    .map((item) => ({ ...item, locked: Boolean(item.flag && !features[item.flag]) }));
   const assistantMode =
     member.role === "cashier" || member.role === "waiter"
       ? "floor"

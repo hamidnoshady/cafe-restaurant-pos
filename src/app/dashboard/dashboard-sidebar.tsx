@@ -14,6 +14,7 @@ import {
   ClipboardListIcon,
   GemIcon,
   LayoutDashboardIcon,
+  LockIcon,
   PackageIcon,
   SettingsIcon,
   ShoppingCartIcon,
@@ -92,8 +93,14 @@ export interface NavItem {
   module: ModuleKey;
   href?: string;
   roles?: string[];
-  /** Set when this page is gated by a Phase 17 feature flag; already filtered out of navItems if disabled. */
+  /** Set when this page is gated by a Phase 17 feature flag; already filtered out of navItems if disabled and not lockable. */
   flag?: string;
+  /**
+   * The flag is off but the feature is lockable (features.ts's
+   * LOCKABLE_FEATURES), so the entry stays in the nav and its page renders a
+   * read-only preview. Server-computed; the padlock here only labels it.
+   */
+  locked?: boolean;
   /** Server-filtered against the member's effective permission set before reaching the client. */
   requiredAnyPermission?: Permission[];
 }
@@ -141,10 +148,17 @@ function NavLinks({
                     href={item.href}
                     onClick={onNavigate}
                     aria-current={active ? "page" : undefined}
-                    aria-label={item.label}
+                    aria-label={item.locked ? `${item.label} (فعال نیست)` : item.label}
+                    title={item.locked ? `${item.label} — برای کسب‌وکار شما فعال نیست` : undefined}
                   >
                     <Icon aria-hidden="true" className="size-5 shrink-0" />
                     <span className="group-data-[state=collapsed]/sidebar:hidden">{item.label}</span>
+                    {item.locked ? (
+                      <LockIcon
+                        aria-hidden="true"
+                        className="ms-auto size-3.5 shrink-0 text-[#A8A49A] group-data-[state=collapsed]/sidebar:hidden"
+                      />
+                    ) : null}
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
