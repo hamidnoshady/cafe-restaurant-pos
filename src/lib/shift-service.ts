@@ -201,6 +201,30 @@ export async function getActiveShift(
   return rows[0] ? toShift(rows[0]) : null;
 }
 
+/**
+ * When the *branch's* running shift began — the earliest start among the shifts
+ * still open there — or null when nobody at the branch is clocked in.
+ *
+ * Shifts are per employee (one open shift each), so a branch that has two
+ * people clocked in has two rows; the earliest of them is the point from which
+ * "this shift" has been trading, and taking the earliest means a colleague
+ * clocking in mid-service never hides what was closed before they arrived.
+ * Deliberately not `coalesce(ended_at, now())`-style widening like the shift
+ * report's default: this powers the orders screen's "closed this shift" list,
+ * which is meant to empty the moment the last shift ends rather than keep
+ * showing the previous one's orders.
+ */
+export async function branchShiftStartedAt(locationId: string): Promise<string | null> {
+  const { rows } = await query<{ started_at: Date | null }>(
+    `SELECT min(started_at) AS started_at
+       FROM employee_shifts
+      WHERE location_id = $1 AND ended_at IS NULL`,
+    [locationId],
+  );
+  const startedAt = rows[0]?.started_at ?? null;
+  return startedAt ? startedAt.toISOString() : null;
+}
+
 export interface CloseShiftResult {
   shift: EmployeeShift;
   cashSummary: ShiftCashSummary;

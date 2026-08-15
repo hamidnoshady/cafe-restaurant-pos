@@ -18,7 +18,8 @@ import { api } from "../ui";
 type OrderStatus = "open" | "held" | "completed" | "voided";
 type OrderType = "dine_in" | "takeaway" | "delivery";
 
-interface OpenOrder {
+/** A row of either list the orders screen shows: the open queue, or an order closed this shift. */
+interface OrderRow {
   id: string;
   order_number: number;
   type: OrderType;
@@ -27,6 +28,8 @@ interface OpenOrder {
   guest_count: number | null;
   total: string | number;
   opened_at: string;
+  /** Set once the order is paid or voided — null for everything still in the queue. */
+  closed_at: string | null;
 }
 
 interface OrderItem {
@@ -46,7 +49,7 @@ interface OrderModifier {
   price_delta: string | number;
 }
 
-interface DetailedOrder extends OpenOrder {
+interface DetailedOrder extends OrderRow {
   subtotal: string | number;
   discount: string | number;
   tax: string | number;
@@ -65,6 +68,22 @@ const STATUS_LABELS: Record<OrderStatus, string> = {
   completed: "تکمیل‌شده",
   voided: "باطل‌شده",
 };
+
+/** Closed = it left the queue. The pair `listOrdersClosedSince` reads back. */
+const CLOSED_STATUSES: OrderStatus[] = ["completed", "voided"];
+
+function isClosed(order: OrderRow): boolean {
+  return CLOSED_STATUSES.includes(order.status);
+}
+
+/** Voided orders are muted rather than amber: they are history, not takings. */
+function statusBadgeClass(status: OrderStatus): string {
+  return status === "voided"
+    ? "bg-[#F3F2EF] text-[#5E5B55]"
+    : status === "completed"
+      ? "bg-[#E7F1E9] text-[#2F6B41]"
+      : "bg-[#FFF1D8] text-[#9B6700]";
+}
 
 const TYPE_LABELS: Record<OrderType, string> = {
   dine_in: "حضوری",
@@ -164,7 +183,7 @@ function OrderDetailsPanel({
   error,
   onRetry,
 }: {
-  selectedOrder: OpenOrder | null;
+  selectedOrder: OrderRow | null;
   detail: OrderDetailsResponse | null;
   isLoading: boolean;
   error: string;
@@ -206,7 +225,9 @@ function OrderDetailsPanel({
     });
     addOnsByItem.set(modifier.order_item_id, current);
   }
-  const elapsed = elapsedLabel(order.opened_at);
+  const closed = isClosed(order);
+  // A closed order's "3 hours ago" is noise; when it closed is the useful fact.
+  const elapsed = closed ? null : elapsedLabel(order.opened_at);
 
   return (
     <aside
@@ -220,7 +241,9 @@ function OrderDetailsPanel({
             {toPersianDigits(formatQueueLabel(order.type, order.order_number))}
           </h2>
         </div>
-        <span className="inline-flex min-h-8 shrink-0 items-center rounded-lg bg-[#FFF1D8] px-2.5 text-xs font-bold text-[#9B6700]">
+        <span
+          className={`inline-flex min-h-8 shrink-0 items-center rounded-lg px-2.5 text-xs font-bold ${statusBadgeClass(order.status)}`}
+        >
           {STATUS_LABELS[order.status]}
         </span>
       </div>
@@ -290,6 +313,16 @@ function OrderDetailsPanel({
                 {orderTimeLabel(order.opened_at)}
               </dd>
             </div>
+            {order.closed_at ? (
+              <div className="rounded-xl bg-[#FCFCFA] p-3">
+                <dt className="text-[11px] text-[#77756F]">
+                  {order.status === "voided" ? "زمان ابطال" : "زمان تسویه"}
+                </dt>
+                <dd className="mt-1 text-sm font-bold text-[#252522]">
+                  {orderTimeLabel(order.closed_at)}
+                </dd>
+              </div>
+            ) : null}
           </dl>
 
           <section
@@ -372,9 +405,11 @@ function OrderDetailsPanel({
 
           <div className="pt-4 md:sticky md:bottom-0 md:-mx-4 md:-mb-4 md:border-t md:border-[#EAE8E2] md:bg-white md:px-4 md:pb-4">
             <p className="mb-3 text-xs text-[#77756F]">
-              {elapsed
-                ? `از زمان ثبت: ${elapsed}`
-                : `ثبت‌شده در ${orderDateLabel(order.opened_at)}`}
+              {closed && order.closed_at
+                ? `${order.status === "voided" ? "باطل‌شده" : "بسته‌شده"} در ${orderDateLabel(order.closed_at)}، ساعت ${orderTimeLabel(order.closed_at)}`
+                : elapsed
+                  ? `از زمان ثبت: ${elapsed}`
+                  : `ثبت‌شده در ${orderDateLabel(order.opened_at)}`}
             </p>
             <Link
               href={`/dashboard/orders/${order.id}`}
@@ -390,7 +425,10 @@ function OrderDetailsPanel({
 }
 
 export function OrdersList() {
-  const [orders, setOrders] = useState<OpenOrder[] | null>(null);
+  const [orders, setOrders] = useState<OrderRow[] | null>(null);
+  const [closedOrders, setClosedOrders] = useState<OrderRow[]>([]);
+  /** null = no shift is open at this branch, so there is no "this shift" to look back over. */
+  const [shiftStartedAt, setShiftStartedAt] = useState<string | null>(null);
   const [initialLoading, setInitialLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [loadError, setLoadError] = useState("");
@@ -409,11 +447,16 @@ export function OrdersList() {
     setIsRefreshing(true);
     setLoadError("");
     try {
-      const { ok, data } = await api<{ orders: OpenOrder[]; error?: string }>(
-        "/api/orders",
-      );
+      const { ok, data } = await api<{
+        orders: OrderRow[];
+        closedOrders?: OrderRow[];
+        shiftStartedAt?: string | null;
+        error?: string;
+      }>("/api/orders?scope=shift");
       if (ok) {
         setOrders(data.orders);
+        setClosedOrders(data.closedOrders ?? []);
+        setShiftStartedAt(data.shiftStartedAt ?? null);
         setDetailRefreshToken((token) => token + 1);
       } else {
         setLoadError("فهرست سفارش‌ها به‌روز نشد. داده‌های موجود حفظ شده‌اند.");
@@ -446,7 +489,14 @@ export function OrdersList() {
     ),
   );
 
-  const orderRows = orders ?? [];
+  // The open queue stays on top, newest first as the API returns it; the
+  // shift's closed orders follow, newest close first. Statuses are disjoint,
+  // so the two lists never carry the same order twice.
+  const orderRows = useMemo(
+    () => [...(orders ?? []), ...closedOrders],
+    [closedOrders, orders],
+  );
+  const openCount = orders?.length ?? 0;
   const availableStatuses = useMemo(
     () => Array.from(new Set(orderRows.map((order) => order.status))),
     [orderRows],
@@ -585,7 +635,7 @@ export function OrdersList() {
               سفارش‌ها
             </h1>
             <p className="mt-0.5 truncate text-xs text-[#77756F]">
-              صف پیگیری سفارش‌های بازِ شعبهٔ فعال
+              صف سفارش‌های باز و سفارش‌های بسته‌شدهٔ شیفت جاریِ شعبهٔ فعال
             </p>
           </div>
         </div>
@@ -597,7 +647,10 @@ export function OrdersList() {
           >
             {isRefreshing
               ? "در حال به‌روزرسانی…"
-              : `${toPersianDigits(orderRows.length)} سفارش باز`}
+              : `${toPersianDigits(openCount)} سفارش باز` +
+                (closedOrders.length
+                  ? ` · ${toPersianDigits(closedOrders.length)} بسته‌شده در شیفت`
+                  : "")}
           </span>
           <button
             type="button"
@@ -752,6 +805,16 @@ export function OrdersList() {
             </span>
           </div>
 
+          {orders && !shiftStartedAt ? (
+            <p
+              className="border-b border-[#EAE8E2] bg-[#FCFCFA] px-4 py-2 text-[11px] leading-5 text-[#77756F]"
+              role="status"
+            >
+              شیفتی باز نیست؛ سفارش‌های بسته‌شده از زمان شروع شیفت این‌جا نشان
+              داده می‌شوند و با پایان شیفت از فهرست کنار می‌روند.
+            </p>
+          ) : null}
+
           {initialLoading && !orders ? (
             <OrderRowsSkeleton />
           ) : !orders ? (
@@ -779,10 +842,11 @@ export function OrdersList() {
                 <ShoppingBagIcon className="size-5" aria-hidden="true" />
               </span>
               <p className="mt-4 text-sm font-bold text-[#252522]">
-                سفارش بازی وجود ندارد
+                سفارشی برای این شیفت نیست
               </p>
               <p className="mt-2 max-w-72 text-xs leading-6 text-[#77756F]">
                 با ثبت سفارش جدید، این صف به‌صورت خودکار به‌روز می‌شود.
+                سفارش‌های بسته‌شده تا پایان شیفت همین‌جا می‌مانند.
               </p>
             </div>
           ) : filteredOrders.length === 0 ? (
@@ -806,7 +870,12 @@ export function OrdersList() {
             <div className="divide-y divide-[#EAE8E2]">
               {filteredOrders.map((order) => {
                 const isSelected = order.id === selectedOrderId;
-                const elapsed = elapsedLabel(order.opened_at);
+                const closed = isClosed(order);
+                const elapsed = closed ? null : elapsedLabel(order.opened_at);
+                const closedLabel =
+                  closed && order.closed_at
+                    ? `${order.status === "voided" ? "ابطال" : "تسویه"} ${orderTimeLabel(order.closed_at)}`
+                    : null;
                 return (
                   <button
                     key={order.id}
@@ -826,7 +895,9 @@ export function OrdersList() {
                             formatQueueLabel(order.type, order.order_number),
                           )}
                         </span>
-                        <span className="inline-flex min-h-7 items-center rounded-lg bg-[#FFF1D8] px-2 text-[11px] font-bold text-[#9B6700]">
+                        <span
+                          className={`inline-flex min-h-7 items-center rounded-lg px-2 text-[11px] font-bold ${statusBadgeClass(order.status)}`}
+                        >
                           {STATUS_LABELS[order.status]}
                         </span>
                       </div>
@@ -834,10 +905,13 @@ export function OrdersList() {
                         {TYPE_LABELS[order.type]}
                         {order.table_name ? ` · ${order.table_name}` : ""}
                         {elapsed ? ` · ${elapsed}` : ""}
+                        {closedLabel ? ` · ${closedLabel}` : ""}
                       </p>
                     </div>
                     <div className="shrink-0 text-end">
-                      <p className="text-sm font-bold text-[#B97905]">
+                      <p
+                        className={`text-sm font-bold ${closed ? "text-[#77756F]" : "text-[#B97905]"}`}
+                      >
                         {formatToman(Number(order.total))}
                       </p>
                       <p className="mt-1 text-[11px] text-[#77756F]">
