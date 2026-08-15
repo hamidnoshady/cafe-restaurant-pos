@@ -143,3 +143,60 @@ export function isGlobalCashierShortcutEligible({
     tagName !== "select"
   );
 }
+
+export type PosTable = {
+  id: string;
+  name: string;
+  capacity: number;
+};
+
+export type PosTableChoice = PosTable & {
+  /** True when an open order already sits on the table, so it can't take another. */
+  occupied: boolean;
+};
+
+export type PosTableListInput = {
+  tables: PosTable[];
+  occupiedTableIds: Iterable<string>;
+  query: string;
+};
+
+export type TableGateInput = {
+  orderType: string;
+  tableId: string;
+};
+
+/**
+ * A dine-in sale can't be sent to the kitchen or paid for without knowing which
+ * table it belongs to. The cashier is asked for one at the moment they close the
+ * sale — this is the single place that decides whether that question is still
+ * outstanding, so the pay button, the open-order button and the shortcut all
+ * gate identically.
+ */
+export function requiresTableSelection({
+  orderType,
+  tableId,
+}: TableGateInput): boolean {
+  return orderType === "dine_in" && tableId.trim() === "";
+}
+
+/**
+ * The tables offered by that prompt, in the order they were registered — a
+ * cashier reads the list as their floor plan, so an occupied table stays in
+ * place and is marked rather than filtered out or sorted away.
+ */
+export function listSelectableTables({
+  tables,
+  occupiedTableIds,
+  query,
+}: PosTableListInput): PosTableChoice[] {
+  const occupied = new Set(occupiedTableIds);
+  const normalizedQuery = normalizePosSearchText(query);
+  return tables
+    .filter(
+      (table) =>
+        !normalizedQuery ||
+        normalizePosSearchText(table.name).includes(normalizedQuery),
+    )
+    .map((table) => ({ ...table, occupied: occupied.has(table.id) }));
+}

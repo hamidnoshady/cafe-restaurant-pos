@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   isGlobalCashierShortcutEligible,
+  listSelectableTables,
   normalizePosSearchText,
+  requiresTableSelection,
   searchPosMenuItems,
 } from "./pos-selection";
 
@@ -16,7 +18,18 @@ const items = [
   { id: "latte", category_id: "hot", name: "لاته", is_active: true },
   { id: "cola", category_id: "cold", name: "کولا", is_active: true },
   { id: "water", category_id: "cold", name: "آب", is_active: false },
-  { id: "secret", category_id: "hidden", name: "نوشیدنی ویژه", is_active: true },
+  {
+    id: "secret",
+    category_id: "hidden",
+    name: "نوشیدنی ویژه",
+    is_active: true,
+  },
+];
+
+const tables = [
+  { id: "t1", name: "میز ۱", capacity: 2 },
+  { id: "t2", name: "میز ۲", capacity: 4 },
+  { id: "b1", name: "بار ۱", capacity: 1 },
 ];
 
 describe("POS selection helpers", () => {
@@ -25,24 +38,124 @@ describe("POS selection helpers", () => {
   });
 
   it("keeps an empty POS search inside the selected active category", () => {
-    expect(searchPosMenuItems({ categories, items, selectedCategoryId: "hot", query: "   " }))
-      .toEqual([
-        { id: "tea", category_id: "hot", name: "چای ۱۲", is_active: true, categoryLabel: "نوشیدنی گرم" },
-        { id: "latte", category_id: "hot", name: "لاته", is_active: true, categoryLabel: "نوشیدنی گرم" },
-      ]);
+    expect(
+      searchPosMenuItems({
+        categories,
+        items,
+        selectedCategoryId: "hot",
+        query: "   ",
+      }),
+    ).toEqual([
+      {
+        id: "tea",
+        category_id: "hot",
+        name: "چای ۱۲",
+        is_active: true,
+        categoryLabel: "نوشیدنی گرم",
+      },
+      {
+        id: "latte",
+        category_id: "hot",
+        name: "لاته",
+        is_active: true,
+        categoryLabel: "نوشیدنی گرم",
+      },
+    ]);
   });
 
   it("finds active POS products across categories by normalized product or category name", () => {
-    expect(searchPosMenuItems({ categories, items, selectedCategoryId: "hot", query: "نوشيدني سرد" }))
-      .toEqual([
-        { id: "cola", category_id: "cold", name: "کولا", is_active: true, categoryLabel: "نوشیدنی سرد" },
-      ]);
+    expect(
+      searchPosMenuItems({
+        categories,
+        items,
+        selectedCategoryId: "hot",
+        query: "نوشيدني سرد",
+      }),
+    ).toEqual([
+      {
+        id: "cola",
+        category_id: "cold",
+        name: "کولا",
+        is_active: true,
+        categoryLabel: "نوشیدنی سرد",
+      },
+    ]);
   });
 
   it("blocks global cashier shortcuts for editable focus and open dialogs", () => {
-    expect(isGlobalCashierShortcutEligible({ activeElement: { tagName: "INPUT" }, hasOpenDialog: false })).toBe(false);
-    expect(isGlobalCashierShortcutEligible({ activeElement: { tagName: "DIV", isContentEditable: true }, hasOpenDialog: false })).toBe(false);
-    expect(isGlobalCashierShortcutEligible({ activeElement: null, hasOpenDialog: true })).toBe(false);
-    expect(isGlobalCashierShortcutEligible({ activeElement: { tagName: "BUTTON" }, hasOpenDialog: false })).toBe(true);
+    expect(
+      isGlobalCashierShortcutEligible({
+        activeElement: { tagName: "INPUT" },
+        hasOpenDialog: false,
+      }),
+    ).toBe(false);
+    expect(
+      isGlobalCashierShortcutEligible({
+        activeElement: { tagName: "DIV", isContentEditable: true },
+        hasOpenDialog: false,
+      }),
+    ).toBe(false);
+    expect(
+      isGlobalCashierShortcutEligible({
+        activeElement: null,
+        hasOpenDialog: true,
+      }),
+    ).toBe(false);
+    expect(
+      isGlobalCashierShortcutEligible({
+        activeElement: { tagName: "BUTTON" },
+        hasOpenDialog: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("asks for a table only when an in-person sale still has none", () => {
+    expect(requiresTableSelection({ orderType: "dine_in", tableId: "" })).toBe(
+      true,
+    );
+    expect(
+      requiresTableSelection({ orderType: "dine_in", tableId: "  " }),
+    ).toBe(true);
+    expect(
+      requiresTableSelection({ orderType: "dine_in", tableId: "t1" }),
+    ).toBe(false);
+    expect(requiresTableSelection({ orderType: "takeaway", tableId: "" })).toBe(
+      false,
+    );
+    expect(requiresTableSelection({ orderType: "delivery", tableId: "" })).toBe(
+      false,
+    );
+  });
+
+  it("marks occupied tables instead of hiding them, keeping registration order", () => {
+    expect(
+      listSelectableTables({ tables, occupiedTableIds: ["t1"], query: "" }),
+    ).toEqual([
+      { id: "t1", name: "میز ۱", capacity: 2, occupied: true },
+      { id: "t2", name: "میز ۲", capacity: 4, occupied: false },
+      { id: "b1", name: "بار ۱", capacity: 1, occupied: false },
+    ]);
+  });
+
+  it("filters the table prompt by normalized name, so Latin digits and Arabic letters still match", () => {
+    expect(
+      listSelectableTables({
+        tables,
+        occupiedTableIds: [],
+        query: "ميز 2",
+      }).map((table) => table.id),
+    ).toEqual(["t2"]);
+    expect(
+      listSelectableTables({ tables, occupiedTableIds: [], query: "بار" }).map(
+        (table) => table.id,
+      ),
+    ).toEqual(["b1"]);
+    expect(
+      listSelectableTables({
+        tables,
+        occupiedTableIds: [],
+        query: "انبار طبقهٔ دوم",
+      }),
+    ).toEqual([]);
   });
 });

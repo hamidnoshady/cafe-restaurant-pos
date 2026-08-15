@@ -46,6 +46,7 @@ import {
 } from "@/lib/print-agent-client";
 import {
   isGlobalCashierShortcutEligible,
+  requiresTableSelection,
   searchPosMenuItems,
 } from "@/lib/pos-selection";
 import {
@@ -56,6 +57,7 @@ import {
 } from "@/lib/modifier-display";
 import { ModifierBadges } from "../modifier-badges";
 import { ModifierPicker } from "../modifier-picker";
+import { TablePickerDialog } from "./table-picker-dialog";
 import {
   SearchableSelect,
   type SelectOption,
@@ -193,6 +195,7 @@ export function PosScreen() {
   const [pickerItem, setPickerItem] = useState<Item | null>(null);
   const [cartSheetOpen, setCartSheetOpen] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
+  const [tablePickerOpen, setTablePickerOpen] = useState(false);
   const [checkoutIntent, setCheckoutIntent] = useState<CheckoutIntent>("order");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
   const [tipInput, setTipInput] = useState("");
@@ -265,7 +268,12 @@ export function PosScreen() {
   }, [customerQuery]);
 
   const occupiedTableIds = useMemo(
-    () => new Set(openOrders.map((o) => o.table_id).filter(Boolean)),
+    () =>
+      new Set(
+        openOrders
+          .map((o) => o.table_id)
+          .filter((id): id is string => Boolean(id)),
+      ),
     [openOrders],
   );
   const activeCategories = useMemo(
@@ -304,7 +312,27 @@ export function PosScreen() {
       ?.scrollIntoView({ block: "nearest" });
   }, [searchActiveIndex, visibleProducts]);
 
-  const hasOpenOverlay = Boolean(pickerItem || reviewOpen || cartSheetOpen);
+  /**
+   * The one way into the checkout, whichever button (or shortcut) starts it: an
+   * in-person sale with no table yet is asked for one first and continues into
+   * the same review dialog afterwards, rather than being rejected there.
+   */
+  const startCheckout = useCallback(
+    (intent: CheckoutIntent) => {
+      setError("");
+      setCheckoutIntent(intent);
+      if (requiresTableSelection({ orderType, tableId })) {
+        setTablePickerOpen(true);
+        return;
+      }
+      setReviewOpen(true);
+    },
+    [orderType, tableId],
+  );
+
+  const hasOpenOverlay = Boolean(
+    pickerItem || reviewOpen || tablePickerOpen || cartSheetOpen,
+  );
   useEffect(() => {
     function handleGlobalShortcut(event: KeyboardEvent) {
       const eligible = isGlobalCashierShortcutEligible({
@@ -344,13 +372,19 @@ export function PosScreen() {
         cart.length > 0
       ) {
         event.preventDefault();
-        setReviewOpen(true);
+        startCheckout(checkoutIntent);
       }
     }
 
     window.addEventListener("keydown", handleGlobalShortcut);
     return () => window.removeEventListener("keydown", handleGlobalShortcut);
-  }, [activeCategories, cart.length, hasOpenOverlay]);
+  }, [
+    activeCategories,
+    cart.length,
+    checkoutIntent,
+    hasOpenOverlay,
+    startCheckout,
+  ]);
 
   const attachedGroups = useCallback(
     (itemId: string): (ModifierGroup & { modifiers: Modifier[] })[] => {
@@ -1368,10 +1402,7 @@ export function PosScreen() {
             />
             <button
               type="button"
-              onClick={() => {
-                setCheckoutIntent("payment");
-                setReviewOpen(true);
-              }}
+              onClick={() => startCheckout("payment")}
               disabled={busy || cart.length === 0}
               className="mt-3 flex min-h-14 w-full items-center justify-center gap-2 rounded-xl bg-[#E9A11B] px-4 text-sm font-bold text-[#252522] transition duration-200 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 disabled:opacity-55 motion-reduce:transition-none"
             >
@@ -1380,10 +1411,7 @@ export function PosScreen() {
             </button>
             <button
               type="button"
-              onClick={() => {
-                setCheckoutIntent("order");
-                setReviewOpen(true);
-              }}
+              onClick={() => startCheckout("order")}
               disabled={busy || cart.length === 0}
               className="mt-2 min-h-12 w-full rounded-xl border border-[#EAE8E2] bg-white px-4 text-sm font-semibold text-[#5E5B55] transition duration-200 hover:bg-[#FCFCFA] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 disabled:opacity-55 motion-reduce:transition-none"
             >
@@ -1481,7 +1509,9 @@ export function PosScreen() {
                       }
                       rows={2}
                       value={deliveryAddress}
-                      onChange={(event) => setDeliveryAddress(event.target.value)}
+                      onChange={(event) =>
+                        setDeliveryAddress(event.target.value)
+                      }
                       placeholder="آدرس کامل تحویل"
                     />
                   </label>
@@ -1500,7 +1530,9 @@ export function PosScreen() {
                         dir="ltr"
                         inputMode="tel"
                         value={deliveryPhone}
-                        onChange={(event) => setDeliveryPhone(event.target.value)}
+                        onChange={(event) =>
+                          setDeliveryPhone(event.target.value)
+                        }
                         placeholder="اختیاری"
                       />
                     </label>
@@ -1735,19 +1767,14 @@ export function PosScreen() {
           </div>
           <div className="shrink-0 border-t border-border bg-card p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
             <div className="mb-3 flex items-center justify-between">
-              <span className="text-xs font-bold text-[#5E5B55]">
-                جمع کل
-              </span>
+              <span className="text-xs font-bold text-[#5E5B55]">جمع کل</span>
               <span className="text-base font-bold text-[#252522]">
                 {formatToman(totals.total)}
               </span>
             </div>
             <button
               type="button"
-              onClick={() => {
-                setCheckoutIntent("payment");
-                setReviewOpen(true);
-              }}
+              onClick={() => startCheckout("payment")}
               disabled={busy || cart.length === 0}
               className="flex min-h-14 w-full items-center justify-center gap-2 rounded-xl bg-[#E9A11B] px-4 text-sm font-bold text-[#252522] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 disabled:opacity-55"
             >
@@ -1756,10 +1783,7 @@ export function PosScreen() {
             </button>
             <button
               type="button"
-              onClick={() => {
-                setCheckoutIntent("order");
-                setReviewOpen(true);
-              }}
+              onClick={() => startCheckout("order")}
               disabled={busy || cart.length === 0}
               className="mt-2 min-h-12 w-full rounded-xl border border-[#EAE8E2] bg-white px-4 text-sm font-semibold text-[#5E5B55] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 disabled:opacity-55"
             >
@@ -1893,6 +1917,21 @@ export function PosScreen() {
           )}
         </DialogContent>
       </Dialog>
+      <TablePickerDialog
+        open={tablePickerOpen}
+        tables={tables}
+        occupiedTableIds={occupiedTableIds}
+        selectedTableId={tableId}
+        guestCount={guestCount}
+        intent={checkoutIntent}
+        onCancel={() => setTablePickerOpen(false)}
+        onConfirm={(chosenTableId, chosenGuestCount) => {
+          setTableId(chosenTableId);
+          setGuestCount(chosenGuestCount);
+          setTablePickerOpen(false);
+          setReviewOpen(true);
+        }}
+      />
       {pickerItem ? (
         <ModifierPicker
           itemName={pickerItem.name}
