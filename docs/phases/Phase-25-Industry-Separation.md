@@ -212,6 +212,39 @@ Manually:
 - **W4** — confirm the retail home shows real numbers and no empty «سفارش‌های فعال» table, and
   that a jeweller with no gold rate recorded is told so on the home page.
 
+## Fixes after the phase shipped
+
+1. **`/dashboard/settings` returned a 500 for every business, on every industry, from Wave 2 until
+   this fix.** Reported as "the app settings has a problem", with Next.js's generic
+   `Application error: a server-side exception has occurred while loading {host}` page and a digest.
+   The server log names the real error: *"Functions cannot be passed directly to Client Components
+   unless you explicitly expose it by marking it with `use server`"*, pointing at the `tax` and
+   `pricing` tabs' `industryText`.
+
+   Wave 2 gave a `SettingsTab` a function field (`industryText`) so a tab could reword itself per
+   trade. `visibleSettingsTabs` calls it — and then returned the tab with the function still
+   attached, by both of its paths: the tab whose rewrite returns `{}` (F&B's `tax`) was passed
+   through untouched, and the tab whose rewrite returns a description (`pricing`, always) was
+   `{...tab, description}`-spread, which copies `industryText` along with everything else.
+   `src/app/dashboard/settings/page.tsx` is a server component that hands the result straight to
+   `<SettingsManager>`, a client one, so React tried to serialize a function across the RSC boundary
+   and threw at render time. Nothing catches that earlier: `tsc --noEmit` and `next build` both pass,
+   because a function *is* a legal property of the declared type — the boundary is only checked when
+   the page actually renders. `src/app/dashboard/layout.tsx` calls the same function but only reads
+   `.length`, which is why the sidebar's settings entry appeared and only the page behind it broke.
+
+   Fixed in the resolver rather than at the call site: `visibleSettingsTabs` now destructures
+   `industryText` off unconditionally and returns `ResolvedSettingsTab` (`Omit<SettingsTab,
+   "industryText">`), so the field cannot reach a client component from anywhere. The wording feature
+   itself is unchanged and now actually visible — «هدف حاشیه سود پیش‌فرض برای پیشنهاد قیمت کالاها» on
+   the retail trades vs. «…آیتم منوها» on `food_service`. Pinned by two tests in
+   `src/lib/settings-tabs.test.ts` (one asserting every resolved tab is JSON-round-trippable and
+   carries no function-valued property, across all four industries; one asserting the per-industry
+   wording still applies through both paths), which fail on the unfixed resolver. Verified live
+   against a real server running as the unprivileged `pos_app` role with `ROOT_DOMAIN` set: the page
+   500s before the change and renders for all four industries after it, with no other page route in
+   the app returning a 500.
+
 ## Known follow-ups
 
 - A dedicated فاکتورها history *page* (with filters and a detail view) would be better than the

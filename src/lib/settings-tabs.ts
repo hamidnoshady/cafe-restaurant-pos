@@ -46,6 +46,21 @@ export interface SettingsTab {
   industryText?: (industry: Industry) => { label?: string; description?: string };
 }
 
+/**
+ * A tab after `visibleSettingsTabs` has resolved it — what a caller actually
+ * gets back, and deliberately *not* a `SettingsTab`.
+ *
+ * `industryText` is an authoring detail of the table above: a function, and so
+ * the one field on a tab that cannot cross the server/client boundary. The
+ * settings page is a server component that hands its resolved tabs straight to
+ * `<SettingsManager>`, a client one, and React refuses to serialize a function
+ * prop — "Functions cannot be passed directly to Client Components" — which
+ * surfaces as a 500 on /dashboard/settings, not as a build error. Dropping the
+ * field at the point the wording is resolved makes that unrepresentable rather
+ * than something each call site has to remember.
+ */
+export type ResolvedSettingsTab = Omit<SettingsTab, "industryText">;
+
 export interface SettingsTabVisibilityOptions {
   role?: Role;
   features?: Record<string, boolean>;
@@ -166,7 +181,7 @@ export const SETTINGS_TABS: SettingsTab[] = [
 export function visibleSettingsTabs(
   permissions: Iterable<Permission | string>,
   options: SettingsTabVisibilityOptions = {},
-): SettingsTab[] {
+): ResolvedSettingsTab[] {
   const granted = new Set(permissions);
   const industry = options.industry;
   return SETTINGS_TABS.filter((tab) => {
@@ -178,10 +193,12 @@ export function visibleSettingsTabs(
     if (tab.requiredAnyFeature && !tab.requiredAnyFeature.some((feature) => options.features?.[feature])) return false;
     if (tab.module && industry && !hasModule(industry, tab.module)) return false;
     return true;
-  }).map((tab) => {
+  }).map(({ industryText, ...tab }) => {
     // Rewrite wording only once the industry is known; a caller without one
     // (a test, a context with no business) keeps the F&B defaults it always had.
-    const text = industry && tab.industryText ? tab.industryText(industry) : null;
+    // `industryText` is destructured off unconditionally rather than spread
+    // along with the rest — see ResolvedSettingsTab for why it must not travel.
+    const text = industry && industryText ? industryText(industry) : null;
     return text && (text.label || text.description)
       ? { ...tab, label: text.label ?? tab.label, description: text.description ?? tab.description }
       : tab;
