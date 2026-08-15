@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, useDeferredValue } from "react";
 import { RefreshCwIcon, SearchIcon, ShoppingBagIcon } from "lucide-react";
 import { toPersianDigits } from "@/lib/digits";
-import { formatJalali } from "@/lib/jalali";
+import { formatJalali, isoDateInTimeZone } from "@/lib/jalali";
 import { formatToman } from "@/lib/money";
 import { formatQueueLabel } from "@/lib/orders";
 import {
@@ -14,6 +14,7 @@ import {
 import { ModifierBadges } from "../modifier-badges";
 import { useRealtime } from "../use-realtime";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { JalaliDatePicker } from "../jalali-date-picker";
 import { api } from "../ui";
 
 type OrderStatus = "open" | "held" | "completed" | "voided";
@@ -111,10 +112,15 @@ const TYPE_LABELS: Record<OrderType, string> = {
   delivery: "ارسالی",
 };
 
+/**
+ * The day an order belongs to, as the date filter's calendar counts days.
+ * Tehran rather than UTC: JalaliDatePicker hands back the ISO date behind the
+ * Jalali day the user tapped, and that calendar is Tehran's (todayJalali), so
+ * bucketing in UTC would drop every order rung up after 20:30 local into the
+ * previous day and hide it.
+ */
 function orderDateValue(value: string): string | null {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  return date.toISOString().slice(0, 10);
+  return isoDateInTimeZone(value);
 }
 
 function orderTimeLabel(value: string): string {
@@ -829,17 +835,17 @@ export function OrdersList() {
               ]}
             />
           </label>
-          <label className="flex min-h-12 min-w-0 flex-1 items-center gap-2 rounded-xl border border-[#EAE8E2] bg-white px-3 text-xs text-[#77756F] xl:min-h-[52px]">
+          <div className="flex min-h-12 min-w-0 flex-1 items-center gap-2 rounded-xl border border-[#EAE8E2] bg-white px-3 text-xs text-[#77756F] xl:min-h-[52px]">
             <span className="shrink-0">تاریخ</span>
-            <input
-              type="date"
-              value={dateFilter}
-              onChange={(event) => setDateFilter(event.target.value)}
-              className="min-h-10 min-w-0 flex-1 bg-transparent text-sm text-[#252522] outline-none"
-              dir="ltr"
-              aria-label="فیلتر تاریخ ثبت سفارش"
-            />
-          </label>
+            <div className="min-w-0 flex-1">
+              <JalaliDatePicker
+                value={dateFilter}
+                onChange={setDateFilter}
+                placeholder="همهٔ روزها"
+                className="min-h-10 w-full min-w-0 bg-transparent text-sm text-[#252522] outline-none"
+              />
+            </div>
+          </div>
           {hasActiveFilters ? (
             <button
               type="button"

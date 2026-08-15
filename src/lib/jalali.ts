@@ -234,6 +234,33 @@ export function isoDateToJalali(iso: string): JalaliDate | null {
   return toJalali(gy, gm, gd);
 }
 
+/**
+ * The calendar date (YYYY-MM-DD, Gregorian) an instant falls on in a time zone
+ * — the same "which day was this?" question `todayJalali` answers for now.
+ *
+ * `new Date(iso).toISOString().slice(0, 10)` looks like this but is the date in
+ * *UTC*, which is a different day for a third of every Tehran evening: an order
+ * rung up at 01:20 local is 21:50 the previous day in UTC. Anything comparing a
+ * timestamp against a date the user picked on a calendar has to bucket it the
+ * way that calendar does, or the last hours of each day go missing.
+ */
+export function isoDateInTimeZone(
+  value: Date | string,
+  timeZone = "Asia/Tehran",
+): string | null {
+  const date = typeof value === "string" ? new Date(value) : value;
+  if (Number.isNaN(date.getTime())) return null;
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const get = (type: string) => parts.find((part) => part.type === type)?.value;
+  const [year, month, day] = [get("year"), get("month"), get("day")];
+  return year && month && day ? `${year}-${month}-${day}` : null;
+}
+
 /** Today's date as Jalali parts, in the given IANA time zone (default Asia/Tehran). */
 export function todayJalali(timeZone = "Asia/Tehran"): JalaliDate {
   const parts = new Intl.DateTimeFormat("en-US", {
