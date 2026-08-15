@@ -7,6 +7,8 @@ import { formatToman, parseToRial } from "@/lib/money";
 import { formatQueueLabel } from "@/lib/orders";
 import { kickDrawer, printReceipt } from "@/lib/print-agent-client";
 import type { ReceiptData } from "@/lib/receipt-template";
+import { formatModifierDelta, linePriceBreakdown, modifierNamesLabel } from "@/lib/modifier-display";
+import { ModifierBadges } from "../../modifier-badges";
 import { ModifierPicker, type ModifierGroupWithModifiers } from "../../modifier-picker";
 import { apiOrQueue } from "../../offline-queue";
 import { api, ErrorBox, errorMessage, InfoBox, inputClass, PrimaryButton, SecondaryButton } from "../../ui";
@@ -273,13 +275,18 @@ export function OrderDetail({ orderId, canEdit }: { orderId: string; canEdit: bo
         lines: items
           .filter((it) => it.status !== "voided")
           .map((it) => {
-            const mods = modifiers.filter((m) => m.order_item_id === it.id);
-            const modSum = mods.reduce((a, m) => a + Number(m.price_delta), 0);
+            const addOns = modifiers
+              .filter((m) => m.order_item_id === it.id)
+              .map((m) => ({ name: m.name_snapshot, priceDelta: Number(m.price_delta) }));
             return {
               name: it.name_snapshot,
               quantity: it.quantity,
-              lineTotal: (Number(it.unit_price) + modSum) * it.quantity,
-              modifiersLabel: mods.map((m) => m.name_snapshot).join("، ") || null,
+              lineTotal: linePriceBreakdown({
+                unitPrice: Number(it.unit_price),
+                modifierDeltas: addOns.map((addOn) => addOn.priceDelta),
+                quantity: it.quantity,
+              }).total,
+              modifiersLabel: modifierNamesLabel(addOns) || null,
             };
           }),
         subtotal: Number(order.subtotal),
@@ -300,6 +307,18 @@ export function OrderDetail({ orderId, canEdit }: { orderId: string; canEdit: bo
   const isOpen = order.status === "open";
   const editable = canEdit && isOpen;
   const activeItems = menu?.items.filter((i) => i.is_active) ?? [];
+  /** How much of the subtotal came from add-ons — the number a customer disputes most often. */
+  const addOnTotal = items
+    .filter((it) => it.status !== "voided")
+    .reduce(
+      (sum, it) =>
+        sum +
+        modifiers
+          .filter((m) => m.order_item_id === it.id)
+          .reduce((lineSum, m) => lineSum + Number(m.price_delta), 0) *
+          it.quantity,
+      0,
+    );
 
   return (
     <div className="mx-auto w-full max-w-4xl">
@@ -324,28 +343,42 @@ export function OrderDetail({ orderId, canEdit }: { orderId: string; canEdit: bo
       <section className="mb-3 rounded-xl border border-border/80 bg-card p-3 shadow-[0_1px_3px_rgb(15_23_42/0.04)]">
         <ul className="divide-y divide-border/80">
           {items.map((it) => {
-            const mods = modifiers.filter((m) => m.order_item_id === it.id);
+            const addOns = modifiers
+              .filter((m) => m.order_item_id === it.id)
+              .map((m) => ({ name: m.name_snapshot, priceDelta: Number(m.price_delta) }));
             const voided = it.status === "voided";
+            const breakdown = linePriceBreakdown({
+              unitPrice: Number(it.unit_price),
+              modifierDeltas: addOns.map((addOn) => addOn.priceDelta),
+              quantity: it.quantity,
+            });
             return (
               <li key={it.id} className="py-4 text-sm first:pt-0 last:pb-0">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <p className={voided ? "text-muted-foreground line-through" : "font-medium"}>{it.name_snapshot}</p>
-                    {mods.length > 0 ? (
-                      <p className="text-xs text-muted-foreground">
-                        {mods
-                          .map((m) =>
-                            Number(m.price_delta) !== 0
-                              ? `${m.name_snapshot} (${formatToman(Number(m.price_delta))})`
-                              : m.name_snapshot,
-                          )
-                          .join("، ")}
-                      </p>
-                    ) : null}
-                    {voided && it.void_reason ? <p className="text-xs text-destructive">باطل: {it.void_reason}</p> : null}
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className={voided ? "text-muted-foreground line-through" : "font-bold"}>{it.name_snapshot}</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {addOns.length > 0 ? (
+                        <>
+                          {formatToman(breakdown.base, { withUnit: false })}
+                          {" + "}
+                          <span className="font-bold text-primary">
+                            {formatModifierDelta(breakdown.addOns, { withUnit: false })}
+                          </span>
+                          {" = "}
+                          <span className="font-bold text-foreground">{formatToman(breakdown.unit)}</span>{" "}
+                          هر واحد
+                        </>
+                      ) : (
+                        formatToman(breakdown.base) + " هر واحد"
+                      )}
+                    </p>
+                    <ModifierBadges modifiers={addOns} tone="brand" showCaption={false} className="mt-2" />
+                    {it.note ? <p className="mt-2 text-xs text-muted-foreground">یادداشت: {it.note}</p> : null}
+                    {voided && it.void_reason ? <p className="mt-2 text-xs text-destructive">باطل: {it.void_reason}</p> : null}
                   </div>
-                  <p className="text-muted-foreground">
-                    {formatToman((Number(it.unit_price) + mods.reduce((a, m) => a + Number(m.price_delta), 0)) * it.quantity)}
+                  <p className={voided ? "shrink-0 text-muted-foreground line-through" : "shrink-0 font-bold text-foreground"}>
+                    {formatToman(breakdown.total)}
                   </p>
                 </div>
                 {editable && !voided ? (
@@ -439,6 +472,7 @@ export function OrderDetail({ orderId, canEdit }: { orderId: string; canEdit: bo
 
         <dl className="space-y-1 rounded-lg bg-muted/45 p-2.5 text-sm">
           <Row label="جمع جزء" value={formatToman(Number(order.subtotal))} />
+          {addOnTotal !== 0 ? <Row label="از این مبلغ، افزودنی‌ها" value={formatModifierDelta(addOnTotal)} /> : null}
           {Number(order.discount) > 0 ? <Row label="تخفیف" value={`- ${formatToman(Number(order.discount))}`} /> : null}
           {Number(order.tax) > 0 ? <Row label="مالیات" value={formatToman(Number(order.tax))} /> : null}
           <Row label="جمع کل" value={formatToman(Number(order.total))} bold />
@@ -560,6 +594,8 @@ export function OrderDetail({ orderId, canEdit }: { orderId: string; canEdit: bo
       {pickerItem ? (
         <ModifierPicker
           itemName={pickerItem.name}
+          itemPrice={Number(pickerItem.price)}
+          quantity={Number(addQty) || 1}
           groups={attachedGroups(pickerItem.id)}
           onCancel={() => setPickerItem(null)}
           onConfirm={(modifierIds, note) => {

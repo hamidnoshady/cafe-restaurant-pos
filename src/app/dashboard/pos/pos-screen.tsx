@@ -10,6 +10,7 @@ import {
 } from "react";
 import {
   BanknoteIcon,
+  CheckIcon,
   CreditCardIcon,
   ReceiptTextIcon,
   RefreshCwIcon,
@@ -47,6 +48,13 @@ import {
   isGlobalCashierShortcutEligible,
   searchPosMenuItems,
 } from "@/lib/pos-selection";
+import {
+  formatModifierDelta,
+  linePriceBreakdown,
+  modifierNamesLabel,
+  type DisplayModifier,
+} from "@/lib/modifier-display";
+import { ModifierBadges } from "../modifier-badges";
 import { ModifierPicker } from "../modifier-picker";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { BranchSwitcher } from "../branch-switcher";
@@ -114,8 +122,13 @@ interface CartUiLine {
   quantity: number;
   taxRatePercent: number;
   modifierIds: string[];
-  modifierLabel: string;
-  modifierDeltas: number[];
+  /**
+   * Name + price of every chosen add-on, kept together so any surface that
+   * renders this line can show what was added *and* what it costs. The label
+   * and the deltas the printer/total code needs are derived from this rather
+   * than stored beside it, so they can't drift apart.
+   */
+  modifiers: DisplayModifier[];
   note: string;
 }
 
@@ -132,11 +145,14 @@ type CheckoutIntent = "order" | "payment";
 interface CheckoutResult {
   orderNumber: number | null;
   type: OrderType;
+  tableName: string | null;
   total: number;
   queued: boolean;
   paid: boolean;
   paymentPending: boolean;
   paymentError?: string;
+  /** Snapshot of what was sent, so the confirmation can restate the lines and their add-ons. */
+  lines: CartUiLine[];
 }
 
 export function PosScreen() {
@@ -330,11 +346,11 @@ export function PosScreen() {
   }
 
   function addToCart(item: Item, selectedModifierIds: string[], note: string) {
-    const modifiers = selectedModifierIds.map(
-      (id) => menu!.modifiers.find((m) => m.id === id)!,
-    );
+    const modifiers: DisplayModifier[] = selectedModifierIds.map((id) => {
+      const modifier = menu!.modifiers.find((m) => m.id === id)!;
+      return { name: modifier.name, priceDelta: Number(modifier.price_delta) };
+    });
     const modifierIds = [...selectedModifierIds].sort();
-    const modifierLabel = modifiers.map((m) => m.name).join("، ");
     setCart((prev) => {
       const existing = prev.find(
         (l) =>
@@ -356,8 +372,7 @@ export function PosScreen() {
         quantity: 1,
         taxRatePercent: categoryTaxRate(item.category_id),
         modifierIds,
-        modifierLabel,
-        modifierDeltas: modifiers.map((m) => Number(m.price_delta)),
+        modifiers,
         note,
       };
       return [...prev, line];
@@ -397,9 +412,27 @@ export function PosScreen() {
       cart.map((l) => ({
         unitPrice: l.unitPrice,
         quantity: l.quantity,
-        modifierDeltas: l.modifierDeltas,
+        modifierDeltas: l.modifiers.map((modifier) => modifier.priceDelta),
         taxRatePercent: l.taxRatePercent,
       })),
+    [cart],
+  );
+  const cartItemCount = useMemo(
+    () => cart.reduce((count, line) => count + line.quantity, 0),
+    [cart],
+  );
+  const cartAddOnTotal = useMemo(
+    () =>
+      cart.reduce(
+        (sum, line) =>
+          sum +
+          line.modifiers.reduce(
+            (lineSum, modifier) => lineSum + modifier.priceDelta,
+            0,
+          ) *
+            line.quantity,
+        0,
+      ),
     [cart],
   );
   // Fee/tip are entered in Toman (like menu prices) but stored/sent in Rial.
@@ -539,7 +572,7 @@ export function PosScreen() {
         lines: cart.map((line) => ({
           name: line.name,
           quantity: line.quantity,
-          modifiersLabel: line.modifierLabel || null,
+          modifiersLabel: modifierNamesLabel(line.modifiers) || null,
           note: line.note || null,
         })),
       };
@@ -570,11 +603,14 @@ export function PosScreen() {
           lines: cart.map((line) => ({
             name: line.name,
             quantity: line.quantity,
-            lineTotal:
-              (line.unitPrice +
-                line.modifierDeltas.reduce((sum, delta) => sum + delta, 0)) *
-              line.quantity,
-            modifiersLabel: line.modifierLabel || null,
+            lineTotal: linePriceBreakdown({
+              unitPrice: line.unitPrice,
+              modifierDeltas: line.modifiers.map(
+                (modifier) => modifier.priceDelta,
+              ),
+              quantity: line.quantity,
+            }).total,
+            modifiersLabel: modifierNamesLabel(line.modifiers) || null,
           })),
           subtotal: totals.subtotal,
           discount: totals.discount,
@@ -592,11 +628,16 @@ export function PosScreen() {
     setResult({
       orderNumber,
       type: orderType,
+      tableName:
+        orderType === "dine_in"
+          ? (tables.find((table) => table.id === tableId)?.name ?? null)
+          : null,
       total: totals.total,
       queued: creation.queued,
       paid,
       paymentPending,
       paymentError,
+      lines: cart,
     });
     setCart([]);
     setTableId("");
@@ -626,72 +667,15 @@ export function PosScreen() {
       />
     );
 
-  if (result) {
-    return (
-      <div className="mx-auto flex min-h-[55dvh] max-w-md flex-col items-center justify-center rounded-2xl border border-[#EAE8E2] bg-white p-8 text-center shadow-[0_10px_28px_rgba(37,37,34,0.06)]">
-        <span
-          className={
-            "mb-4 flex size-14 items-center justify-center rounded-2xl " +
-            (result.paid
-              ? "bg-[#EAF8EF] text-[#258A4C]"
-              : "bg-[#FFF1D8] text-[#B97905]")
-          }
-        >
-          <ReceiptTextIcon className="size-7" aria-hidden="true" />
-        </span>
-        {result.queued ? (
-          <>
-            <p className="text-sm font-bold text-[#B97905]">
-              سفارش در صف همگام‌سازی ثبت شد
-            </p>
-            <p className="mt-2 text-sm leading-6 text-[#77756F]">
-              {result.paymentPending
-                ? "دریافت وجه را پس از اتصال از بخش سفارش‌ها تکمیل کنید."
-                : "با اتصال مجدد، سفارش بدون از دست رفتن داده‌ها ارسال می‌شود."}
-            </p>
-          </>
-        ) : result.paid ? (
-          <>
-            <p className="text-sm font-bold text-[#258A4C]">
-              پرداخت ثبت و سفارش تکمیل شد
-            </p>
-            <p className="mt-2 text-sm leading-6 text-[#77756F]">
-              رسید و کشوی پول، در صورت اتصال چاپگر، اجرا شدند.
-            </p>
-          </>
-        ) : result.paymentPending ? (
-          <>
-            <p className="text-sm font-bold text-[#B97905]">
-              سفارش ثبت شد؛ پرداخت تکمیل نشد
-            </p>
-            <p className="mt-2 text-sm leading-6 text-[#77756F]">
-              {result.paymentError || "پرداخت را از بخش سفارش‌ها ادامه دهید."}
-            </p>
-          </>
-        ) : (
-          <p className="text-sm font-bold text-[#252522]">
-            سفارش باز ثبت شد و برای ادامهٔ عملیات آماده است
-          </p>
-        )}
-        <p className="mt-5 text-3xl font-bold text-[#252522]">
-          {toPersianDigits(
-            result.orderNumber
-              ? formatQueueLabel(result.type, result.orderNumber)
-              : "سفارش جدید",
-          )}
-        </p>
-        <p className="mt-2 text-lg font-bold text-[#B97905]">
-          {formatToman(result.total)}
-        </p>
-        <button
-          type="button"
-          onClick={() => setResult(null)}
-          className="mt-7 min-h-12 w-full rounded-xl bg-[#E9A11B] px-5 text-sm font-bold text-[#252522] transition duration-200 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 motion-reduce:transition-none"
-        >
-          سفارش جدید
-        </button>
-      </div>
-    );
+  /**
+   * Dismissing the confirmation is what ends one sale and starts the next: the
+   * cart and every order-level field were already reset by submit(), so closing
+   * the dialog just drops the receipt and hands the cashier an empty POS.
+   */
+  function closeCheckout() {
+    setResult(null);
+    setReviewOpen(false);
+    setError("");
   }
 
   return (
@@ -1100,58 +1084,94 @@ export function PosScreen() {
             <p className="text-sm text-muted-foreground">سبد خالی است.</p>
           ) : (
             <ul className="space-y-2.5">
-              {cart.map((l) => (
-                <li
-                  key={l.key}
-                  className="text-sm animate-in fade-in slide-in-from-top-1 duration-150"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="font-medium">{l.name}</p>
-                      {l.modifierLabel ? (
-                        <p className="text-xs text-muted-foreground">
-                          {l.modifierLabel}
+              {cart.map((l) => {
+                const line = linePriceBreakdown({
+                  unitPrice: l.unitPrice,
+                  modifierDeltas: l.modifiers.map(
+                    (modifier) => modifier.priceDelta,
+                  ),
+                  quantity: l.quantity,
+                });
+                return (
+                  <li
+                    key={l.key}
+                    className={
+                      "rounded-xl border p-3 text-sm animate-in fade-in slide-in-from-top-1 duration-150 " +
+                      (l.modifiers.length > 0
+                        ? "border-[#F2D097] bg-[#FFFCF5]"
+                        : "border-[#EAE8E2] bg-white")
+                    }
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="font-bold text-[#252522]">{l.name}</p>
+                        <p className="mt-0.5 text-xs text-[#77756F]">
+                          {l.modifiers.length > 0 ? (
+                            <>
+                              {formatToman(l.unitPrice, { withUnit: false })}
+                              {" + "}
+                              <span className="font-bold text-[#B97905]">
+                                {formatModifierDelta(line.addOns, {
+                                  withUnit: false,
+                                })}
+                              </span>
+                              {" = "}
+                              <span className="font-bold text-[#252522]">
+                                {formatToman(line.unit)}
+                              </span>{" "}
+                              هر واحد
+                            </>
+                          ) : (
+                            formatToman(l.unitPrice) + " هر واحد"
+                          )}
                         </p>
-                      ) : null}
+                      </div>
+                      <p className="shrink-0 font-bold text-[#B97905]">
+                        {formatToman(line.total)}
+                      </p>
                     </div>
-                    <p className="shrink-0 font-medium">
-                      {formatToman(
-                        (l.unitPrice +
-                          l.modifierDeltas.reduce((a, b) => a + b, 0)) *
-                          l.quantity,
-                      )}
-                    </p>
-                  </div>
-                  <div className="mt-1.5 flex items-center gap-2">
-                    <button
-                      type="button"
-                      aria-label="کاهش تعداد"
-                      onClick={() => setQty(l.key, l.quantity - 1)}
-                      className="flex size-12 items-center justify-center rounded-lg bg-muted text-lg text-muted-foreground transition-colors hover:bg-muted-foreground/20 hover:text-foreground active:scale-95"
-                    >
-                      −
-                    </button>
-                    <span className="w-8 text-center text-base font-semibold">
-                      {toPersianDigits(l.quantity)}
-                    </span>
-                    <button
-                      type="button"
-                      aria-label="افزایش تعداد"
-                      onClick={() => setQty(l.key, l.quantity + 1)}
-                      className="flex size-12 items-center justify-center rounded-lg bg-muted text-lg text-muted-foreground transition-colors hover:bg-muted-foreground/20 hover:text-foreground active:scale-95"
-                    >
-                      +
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => removeLine(l.key)}
-                      className="ms-auto px-2 py-1 text-sm text-destructive hover:underline"
-                    >
-                      حذف
-                    </button>
-                  </div>
-                </li>
-              ))}
+                    <ModifierBadges
+                      modifiers={l.modifiers}
+                      tone="amber"
+                      showCaption={false}
+                      className="mt-2"
+                    />
+                    {l.note ? (
+                      <p className="mt-2 text-xs text-[#77756F]">
+                        یادداشت: {l.note}
+                      </p>
+                    ) : null}
+                    <div className="mt-2 flex items-center gap-2">
+                      <button
+                        type="button"
+                        aria-label="کاهش تعداد"
+                        onClick={() => setQty(l.key, l.quantity - 1)}
+                        className="flex size-12 items-center justify-center rounded-lg bg-muted text-lg text-muted-foreground transition-colors hover:bg-muted-foreground/20 hover:text-foreground active:scale-95"
+                      >
+                        −
+                      </button>
+                      <span className="w-8 text-center text-base font-semibold">
+                        {toPersianDigits(l.quantity)}
+                      </span>
+                      <button
+                        type="button"
+                        aria-label="افزایش تعداد"
+                        onClick={() => setQty(l.key, l.quantity + 1)}
+                        className="flex size-12 items-center justify-center rounded-lg bg-muted text-lg text-muted-foreground transition-colors hover:bg-muted-foreground/20 hover:text-foreground active:scale-95"
+                      >
+                        +
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => removeLine(l.key)}
+                        className="ms-auto px-2 py-1 text-sm text-destructive hover:underline"
+                      >
+                        حذف
+                      </button>
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </div>
@@ -1185,6 +1205,12 @@ export function PosScreen() {
 
           <dl className="mb-3 space-y-1 text-sm">
             <Row label="جمع جزء" value={formatToman(totals.subtotal)} />
+            {cartAddOnTotal !== 0 ? (
+              <Row
+                label="از این مبلغ، افزودنی‌ها"
+                value={formatModifierDelta(cartAddOnTotal)}
+              />
+            ) : null}
             {totals.discount > 0 ? (
               <Row label="تخفیف" value={`- ${formatToman(totals.discount)}`} />
             ) : null}
@@ -1436,43 +1462,79 @@ export function PosScreen() {
                 سبد خرید خالی است.
               </p>
             ) : (
-              <ul className="space-y-3">
-                {cart.map((line) => (
-                  <li
-                    key={line.key}
-                    className="flex items-center justify-between gap-3"
-                  >
-                    <div className="min-w-0">
-                      <p className="font-medium">{line.name}</p>
-                      {line.modifierLabel ? (
-                        <p className="text-xs text-muted-foreground">
-                          {line.modifierLabel}
+              <ul className="space-y-2.5">
+                {cart.map((line) => {
+                  const breakdown = linePriceBreakdown({
+                    unitPrice: line.unitPrice,
+                    modifierDeltas: line.modifiers.map(
+                      (modifier) => modifier.priceDelta,
+                    ),
+                    quantity: line.quantity,
+                  });
+                  return (
+                    <li
+                      key={line.key}
+                      className={
+                        "rounded-xl border p-3 " +
+                        (line.modifiers.length > 0
+                          ? "border-[#F2D097] bg-[#FFFCF5]"
+                          : "border-[#EAE8E2] bg-white")
+                      }
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="font-bold text-[#252522]">
+                            {line.name}
+                          </p>
+                          <p className="mt-0.5 text-xs text-[#77756F]">
+                            {formatToman(breakdown.unit)} هر واحد
+                          </p>
+                        </div>
+                        <p className="shrink-0 text-sm font-bold text-[#B97905]">
+                          {formatToman(breakdown.total)}
+                        </p>
+                      </div>
+                      <ModifierBadges
+                        modifiers={line.modifiers}
+                        tone="amber"
+                        className="mt-2"
+                      />
+                      {line.note ? (
+                        <p className="mt-2 text-xs text-[#77756F]">
+                          یادداشت: {line.note}
                         </p>
                       ) : null}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        aria-label="کاهش تعداد"
-                        onClick={() => setQty(line.key, line.quantity - 1)}
-                        className="flex size-11 items-center justify-center rounded-lg bg-muted"
-                      >
-                        −
-                      </button>
-                      <span className="w-5 text-center">
-                        {toPersianDigits(line.quantity)}
-                      </span>
-                      <button
-                        type="button"
-                        aria-label="افزایش تعداد"
-                        onClick={() => setQty(line.key, line.quantity + 1)}
-                        className="flex size-11 items-center justify-center rounded-lg bg-muted"
-                      >
-                        +
-                      </button>
-                    </div>
-                  </li>
-                ))}
+                      <div className="mt-2 flex items-center gap-2">
+                        <button
+                          type="button"
+                          aria-label="کاهش تعداد"
+                          onClick={() => setQty(line.key, line.quantity - 1)}
+                          className="flex size-11 items-center justify-center rounded-lg bg-muted"
+                        >
+                          −
+                        </button>
+                        <span className="w-8 text-center font-semibold">
+                          {toPersianDigits(line.quantity)}
+                        </span>
+                        <button
+                          type="button"
+                          aria-label="افزایش تعداد"
+                          onClick={() => setQty(line.key, line.quantity + 1)}
+                          className="flex size-11 items-center justify-center rounded-lg bg-muted"
+                        >
+                          +
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => removeLine(line.key)}
+                          className="ms-auto px-2 py-1 text-sm text-destructive"
+                        >
+                          حذف
+                        </button>
+                      </div>
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </div>
@@ -1502,6 +1564,12 @@ export function PosScreen() {
                 />
               ) : null}
             </div>
+            {cartAddOnTotal !== 0 ? (
+              <Row
+                label="از این مبلغ، افزودنی‌ها"
+                value={formatModifierDelta(cartAddOnTotal)}
+              />
+            ) : null}
             <Row label="جمع کل" value={formatToman(totals.total)} bold />
             <div className="mt-4">
               <p className="mb-2 text-xs font-bold text-[#5E5B55]">
@@ -1596,103 +1664,135 @@ export function PosScreen() {
         </SheetContent>
       </Sheet>
 
-      <Dialog open={reviewOpen} onOpenChange={setReviewOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              {checkoutIntent === "payment"
-                ? "تأیید دریافت وجه"
-                : "بررسی سفارش"}
-            </DialogTitle>
-            <DialogDescription>
-              {checkoutIntent === "payment"
-                ? "پرداخت فقط پس از ثبت موفق سفارش به جریان موجود پرداخت ارسال می‌شود."
-                : "پیش از ثبت، جزئیات سفارش را بررسی کنید."}
-            </DialogDescription>
-            <ErrorBox>{error}</ErrorBox>
-          </DialogHeader>
-          <dl className="space-y-2 text-sm">
-            <Row
-              label="نوع سفارش"
-              value={
-                orderType === "dine_in"
-                  ? "حضوری"
-                  : orderType === "takeaway"
-                    ? "بیرون‌بر"
-                    : "ارسالی"
-              }
-            />
-            {orderType === "dine_in" ? (
-              <Row
-                label="میز"
-                value={
-                  tables.find((table) => table.id === tableId)?.name ??
-                  "انتخاب نشده"
-                }
-              />
-            ) : null}
-            {orderType === "delivery" ? (
-              <Row label="آدرس" value={deliveryAddress.trim() || "ثبت نشده"} />
-            ) : null}
-            <Row
-              label="تعداد اقلام"
-              value={toPersianDigits(
-                cart.reduce((count, line) => count + line.quantity, 0),
-              )}
-            />
-            {checkoutIntent === "payment" ? (
-              <Row
-                label="روش پرداخت"
-                value={PAYMENT_METHOD_LABELS[paymentMethod]}
-              />
-            ) : null}
-            <Row
-              label="مبلغ قابل پرداخت"
-              value={formatToman(totals.total)}
-              bold
-            />
-            {checkoutIntent === "payment" && tipNum > 0 ? (
-              <>
-                <Row label="انعام" value={formatToman(tipNum)} />
+      {/*
+        One dialog carries the whole close of a sale: it reviews the order, and
+        once submit() succeeds it turns into that order's confirmation instead
+        of taking over the page. Dismissing it is what starts the next order —
+        the POS behind it is already empty by then.
+      */}
+      <Dialog
+        open={reviewOpen}
+        onOpenChange={(open) => (open ? setReviewOpen(true) : closeCheckout())}
+      >
+        <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-md">
+          {result ? (
+            <CheckoutConfirmation result={result} onDone={closeCheckout} />
+          ) : (
+            <>
+              <DialogHeader>
+                <DialogTitle>
+                  {checkoutIntent === "payment"
+                    ? "تأیید دریافت وجه"
+                    : "بررسی سفارش"}
+                </DialogTitle>
+                <DialogDescription>
+                  {checkoutIntent === "payment"
+                    ? "پرداخت فقط پس از ثبت موفق سفارش به جریان موجود پرداخت ارسال می‌شود."
+                    : "پیش از ثبت، جزئیات سفارش را بررسی کنید."}
+                </DialogDescription>
+                <ErrorBox>{error}</ErrorBox>
+              </DialogHeader>
+              <section aria-label="اقلام سفارش">
+                <h3 className="mb-2 text-xs font-bold text-[#5E5B55]">
+                  اقلام سفارش
+                </h3>
+                <ul className="space-y-2">
+                  {cart.map((line) => (
+                    <CheckoutLineRow key={line.key} line={line} />
+                  ))}
+                </ul>
+              </section>
+              <dl className="space-y-2 text-sm">
                 <Row
-                  label="مبلغ دریافتی"
-                  value={formatToman(totals.total + tipNum)}
+                  label="نوع سفارش"
+                  value={
+                    orderType === "dine_in"
+                      ? "حضوری"
+                      : orderType === "takeaway"
+                        ? "بیرون‌بر"
+                        : "ارسالی"
+                  }
+                />
+                {orderType === "dine_in" ? (
+                  <Row
+                    label="میز"
+                    value={
+                      tables.find((table) => table.id === tableId)?.name ??
+                      "انتخاب نشده"
+                    }
+                  />
+                ) : null}
+                {orderType === "delivery" ? (
+                  <Row
+                    label="آدرس"
+                    value={deliveryAddress.trim() || "ثبت نشده"}
+                  />
+                ) : null}
+                <Row
+                  label="تعداد اقلام"
+                  value={toPersianDigits(cartItemCount)}
+                />
+                {cartAddOnTotal !== 0 ? (
+                  <Row
+                    label="افزودنی‌ها"
+                    value={formatModifierDelta(cartAddOnTotal)}
+                  />
+                ) : null}
+                {checkoutIntent === "payment" ? (
+                  <Row
+                    label="روش پرداخت"
+                    value={PAYMENT_METHOD_LABELS[paymentMethod]}
+                  />
+                ) : null}
+                <Row
+                  label="مبلغ قابل پرداخت"
+                  value={formatToman(totals.total)}
                   bold
                 />
-              </>
-            ) : null}
-          </dl>
-          <DialogFooter>
-            <button
-              type="button"
-              onClick={() => setReviewOpen(false)}
-              className="min-h-11 rounded-lg border border-input px-4 text-sm font-medium"
-            >
-              بازگشت
-            </button>
-            <button
-              type="button"
-              disabled={busy || cart.length === 0}
-              onClick={() => {
-                void submit(checkoutIntent).then((submitted) => {
-                  if (submitted) setReviewOpen(false);
-                });
-              }}
-              className="min-h-12 rounded-xl bg-[#E9A11B] px-4 text-sm font-bold text-[#252522] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 disabled:opacity-55"
-            >
-              {busy
-                ? "در حال ثبت…"
-                : checkoutIntent === "payment"
-                  ? "تأیید دریافت وجه"
-                  : "تأیید و ثبت سفارش"}
-            </button>
-          </DialogFooter>
+                {checkoutIntent === "payment" && tipNum > 0 ? (
+                  <>
+                    <Row label="انعام" value={formatToman(tipNum)} />
+                    <Row
+                      label="مبلغ دریافتی"
+                      value={formatToman(totals.total + tipNum)}
+                      bold
+                    />
+                  </>
+                ) : null}
+              </dl>
+              <DialogFooter>
+                <button
+                  type="button"
+                  onClick={() => setReviewOpen(false)}
+                  className="min-h-11 rounded-lg border border-input px-4 text-sm font-medium"
+                >
+                  بازگشت
+                </button>
+                <button
+                  type="button"
+                  disabled={busy || cart.length === 0}
+                  onClick={() => {
+                    void submit(checkoutIntent);
+                  }}
+                  className="min-h-12 rounded-xl bg-[#E9A11B] px-4 text-sm font-bold text-[#252522] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 disabled:opacity-55"
+                >
+                  {busy
+                    ? "در حال ثبت…"
+                    : checkoutIntent === "payment"
+                      ? "تأیید دریافت وجه"
+                      : "تأیید و ثبت سفارش"}
+                </button>
+              </DialogFooter>
+            </>
+          )}
         </DialogContent>
       </Dialog>
       {pickerItem ? (
         <ModifierPicker
           itemName={pickerItem.name}
+          itemPrice={Number(pickerItem.price)}
           groups={attachedGroups(pickerItem.id)}
+          tone="amber"
           onCancel={() => setPickerItem(null)}
           onConfirm={(modifierIds, note) => {
             addToCart(pickerItem, modifierIds, note);
@@ -1701,6 +1801,154 @@ export function PosScreen() {
         />
       ) : null}
     </div>
+  );
+}
+
+/** One cart line as it reads in the review dialog and in the confirmation: what it is, its add-ons, and what it costs. */
+function CheckoutLineRow({ line }: { line: CartUiLine }) {
+  const breakdown = linePriceBreakdown({
+    unitPrice: line.unitPrice,
+    modifierDeltas: line.modifiers.map((modifier) => modifier.priceDelta),
+    quantity: line.quantity,
+  });
+  return (
+    <li
+      className={
+        "rounded-xl border p-2.5 " +
+        (line.modifiers.length > 0
+          ? "border-[#F2D097] bg-[#FFFCF5]"
+          : "border-[#EAE8E2] bg-[#FCFCFA]")
+      }
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm font-bold text-[#252522]">
+            {line.name}{" "}
+            <span className="text-xs font-semibold text-[#77756F]">
+              × {toPersianDigits(line.quantity)}
+            </span>
+          </p>
+          <p className="mt-0.5 text-[11px] text-[#77756F]">
+            {formatToman(breakdown.unit)} هر واحد
+          </p>
+        </div>
+        <p className="shrink-0 text-sm font-bold text-[#B97905]">
+          {formatToman(breakdown.total)}
+        </p>
+      </div>
+      <ModifierBadges
+        modifiers={line.modifiers}
+        tone="amber"
+        className="mt-2"
+      />
+      {line.note ? (
+        <p className="mt-2 text-[11px] text-[#77756F]">یادداشت: {line.note}</p>
+      ) : null}
+    </li>
+  );
+}
+
+/**
+ * What the review dialog becomes once the order is in: the receipt for the sale
+ * that just closed, restated line by line (add-ons included) so the cashier can
+ * check it against what the customer asked for before starting the next one.
+ */
+function CheckoutConfirmation({
+  result,
+  onDone,
+}: {
+  result: CheckoutResult;
+  onDone: () => void;
+}) {
+  const settled = result.paid && !result.queued;
+  return (
+    <>
+      <DialogHeader>
+        <div className="flex items-center gap-3">
+          <span
+            className={
+              "flex size-11 shrink-0 items-center justify-center rounded-2xl " +
+              (settled
+                ? "bg-[#EAF8EF] text-[#258A4C]"
+                : "bg-[#FFF1D8] text-[#B97905]")
+            }
+            aria-hidden="true"
+          >
+            {settled ? (
+              <CheckIcon className="size-6" />
+            ) : (
+              <ReceiptTextIcon className="size-6" />
+            )}
+          </span>
+          <div className="min-w-0">
+            <DialogTitle>
+              {result.queued
+                ? "سفارش در صف همگام‌سازی ثبت شد"
+                : result.paid
+                  ? "پرداخت ثبت و سفارش تکمیل شد"
+                  : result.paymentPending
+                    ? "سفارش ثبت شد؛ پرداخت تکمیل نشد"
+                    : "سفارش باز ثبت شد"}
+            </DialogTitle>
+            <DialogDescription>
+              {result.queued
+                ? result.paymentPending
+                  ? "دریافت وجه را پس از اتصال از بخش سفارش‌ها تکمیل کنید."
+                  : "با اتصال مجدد، سفارش بدون از دست رفتن داده‌ها ارسال می‌شود."
+                : result.paid
+                  ? "رسید و کشوی پول، در صورت اتصال چاپگر، اجرا شدند."
+                  : result.paymentPending
+                    ? result.paymentError ||
+                      "پرداخت را از بخش سفارش‌ها ادامه دهید."
+                    : "سفارش در فهرست سفارش‌های باز در دسترس است."}
+            </DialogDescription>
+          </div>
+        </div>
+      </DialogHeader>
+
+      <div className="rounded-2xl border border-[#F2D097] bg-[#FFF9EE] p-4 text-center">
+        <p className="text-2xl font-bold text-[#252522]">
+          {toPersianDigits(
+            result.orderNumber
+              ? formatQueueLabel(result.type, result.orderNumber)
+              : "سفارش جدید",
+          )}
+        </p>
+        <p className="mt-1 text-xs text-[#77756F]">
+          {result.type === "dine_in"
+            ? "حضوری" + (result.tableName ? " — " + result.tableName : "")
+            : result.type === "takeaway"
+              ? "بیرون‌بر"
+              : "ارسالی"}
+        </p>
+        <p className="mt-2 text-lg font-bold text-[#B97905]">
+          {formatToman(result.total)}
+        </p>
+      </div>
+
+      {result.lines.length > 0 ? (
+        <section aria-label="اقلام سفارش ثبت‌شده">
+          <h3 className="mb-2 text-xs font-bold text-[#5E5B55]">
+            اقلام ثبت‌شده
+          </h3>
+          <ul className="space-y-2">
+            {result.lines.map((line) => (
+              <CheckoutLineRow key={line.key} line={line} />
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      <DialogFooter>
+        <button
+          type="button"
+          onClick={onDone}
+          className="min-h-12 w-full rounded-xl bg-[#E9A11B] px-5 text-sm font-bold text-[#252522] transition duration-200 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 motion-reduce:transition-none"
+        >
+          بستن و شروع سفارش بعدی
+        </button>
+      </DialogFooter>
+    </>
   );
 }
 

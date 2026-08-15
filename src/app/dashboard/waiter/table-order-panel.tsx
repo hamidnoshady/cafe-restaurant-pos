@@ -10,6 +10,11 @@ import {
   type OrderItemStatus,
 } from "@/lib/order-item-status";
 import { printKitchenTicket } from "@/lib/print-agent-client";
+import {
+  modifierNamesLabel,
+  type DisplayModifier,
+} from "@/lib/modifier-display";
+import { ModifierBadges } from "../modifier-badges";
 import { ModifierPicker } from "../modifier-picker";
 import { apiOrQueue } from "../offline-queue";
 import { useRealtime } from "../use-realtime";
@@ -69,6 +74,7 @@ interface OrderItem {
 interface OrderModifier {
   order_item_id: string;
   name_snapshot: string;
+  price_delta: string | number;
 }
 
 interface CartUiLine {
@@ -78,7 +84,7 @@ interface CartUiLine {
   unitPrice: number;
   quantity: number;
   modifierIds: string[];
-  modifierLabel: string;
+  modifiers: DisplayModifier[];
   note: string;
 }
 
@@ -167,10 +173,13 @@ export function TableOrderPanel({
   );
 
   const modsByItem = useMemo(() => {
-    const map = new Map<string, string[]>();
+    const map = new Map<string, DisplayModifier[]>();
     for (const m of orderModifiers) {
       if (!map.has(m.order_item_id)) map.set(m.order_item_id, []);
-      map.get(m.order_item_id)!.push(m.name_snapshot);
+      map.get(m.order_item_id)!.push({
+        name: m.name_snapshot,
+        priceDelta: Number(m.price_delta),
+      });
     }
     return map;
   }, [orderModifiers]);
@@ -194,9 +203,10 @@ export function TableOrderPanel({
   );
 
   function addToCart(item: Item, selectedModifierIds: string[], note: string) {
-    const modifiers = selectedModifierIds.map(
-      (id) => menu!.modifiers.find((m) => m.id === id)!,
-    );
+    const modifiers: DisplayModifier[] = selectedModifierIds.map((id) => {
+      const modifier = menu!.modifiers.find((m) => m.id === id)!;
+      return { name: modifier.name, priceDelta: Number(modifier.price_delta) };
+    });
     setCart((prev) => [
       ...prev,
       {
@@ -206,7 +216,7 @@ export function TableOrderPanel({
         unitPrice: Number(item.price),
         quantity: 1,
         modifierIds: selectedModifierIds,
-        modifierLabel: modifiers.map((m) => m.name).join("، "),
+        modifiers,
         note,
       },
     ]);
@@ -278,7 +288,7 @@ export function TableOrderPanel({
           lines: cart.map((l) => ({
             name: l.name,
             quantity: l.quantity,
-            modifiersLabel: l.modifierLabel || null,
+            modifiersLabel: modifierNamesLabel(l.modifiers) || null,
             note: l.note || null,
           })),
         };
@@ -338,11 +348,11 @@ export function TableOrderPanel({
                         <p className="text-sm font-medium">
                           {toPersianDigits(it.quantity)}× {it.name_snapshot}
                         </p>
-                        {(modsByItem.get(it.id) ?? []).length > 0 ? (
-                          <p className="text-xs text-muted-foreground">
-                            {(modsByItem.get(it.id) ?? []).join("، ")}
-                          </p>
-                        ) : null}
+                        <ModifierBadges
+                          modifiers={modsByItem.get(it.id) ?? []}
+                          tone="brand"
+                          className="mt-1.5"
+                        />
                       </div>
                       <span
                         className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${STATUS_BADGE[it.status]}`}
@@ -418,16 +428,16 @@ export function TableOrderPanel({
                       {cart.map((l) => (
                         <li
                           key={l.key}
-                          className="flex items-center justify-between text-sm"
+                          className="flex items-start justify-between gap-3 text-sm"
                         >
-                          <span>
-                            {l.name}
-                            {l.modifierLabel ? (
-                              <span className="text-xs text-muted-foreground">
-                                {" "}
-                                ({l.modifierLabel})
-                              </span>
-                            ) : null}
+                          <span className="min-w-0">
+                            <span className="block font-medium">{l.name}</span>
+                            <ModifierBadges
+                              modifiers={l.modifiers}
+                              tone="brand"
+                              showCaption={false}
+                              className="mt-1"
+                            />
                           </span>
                           <span className="flex items-center gap-2">
                             <button
@@ -469,6 +479,7 @@ export function TableOrderPanel({
       {pickerItem ? (
         <ModifierPicker
           itemName={pickerItem.name}
+          itemPrice={Number(pickerItem.price)}
           groups={attachedGroups(pickerItem.id)}
           onCancel={() => setPickerItem(null)}
           onConfirm={(modifierIds, note) => {
