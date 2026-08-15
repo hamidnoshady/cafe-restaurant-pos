@@ -48,29 +48,41 @@ export async function listOrders(locationId: string, options: ListOrdersOptions 
   return rows;
 }
 
+export interface ClosedOrdersOptions {
+  /** Upper bound on closed_at — the end of a finished shift. Omit for "up to now". */
+  until?: Date | string | null;
+  /** Safety net for an unusually busy window, not a paging cursor. */
+  limit?: number;
+}
+
 /**
- * The branch's orders that were *closed* — completed or voided — at or after
- * `since`, newest close first. Paired with `listOrders(..., { status: "open" })`
- * by the orders screen, which passes the start of the branch's running shift so
- * a cashier can look back over what they already closed this shift; the list
- * empties on its own once the shift ends and there is no window to ask for.
+ * The branch's orders that were *closed* — completed or voided — inside the
+ * window starting at `since`, newest close first. Paired with
+ * `listOrders(..., { status: "open" })` by the orders screen: the open queue
+ * plus what has already been settled, which is otherwise invisible the moment
+ * it is paid.
+ *
+ * The window is the caller's to choose — the current business day, or one
+ * shift's own `[started_at, ended_at]` when someone with the privilege to
+ * review shifts picks one.
  *
  * Voided orders are kept rather than filtered out: "what happened to order #12"
- * is exactly the question this list exists to answer, and the caller renders the
- * status. `limit` is a safety net for a branch that closes an unusual number of
- * orders in one shift, not a paging cursor.
+ * is exactly the question this list exists to answer, and the caller renders
+ * the status.
  */
 export async function listOrdersClosedSince(
   locationId: string,
   since: Date | string,
-  limit = 200,
+  options: ClosedOrdersOptions = {},
 ) {
+  const { until = null, limit = 200 } = options;
   const { rows } = await query(
     ORDER_SUMMARY_SELECT +
       " WHERE o.location_id = $1 AND o.status IN ('completed', 'voided')" +
       " AND o.closed_at IS NOT NULL AND o.closed_at >= $2" +
-      " ORDER BY o.closed_at DESC, o.id DESC LIMIT $3",
-    [locationId, since, limit],
+      " AND ($3::timestamptz IS NULL OR o.closed_at <= $3::timestamptz)" +
+      " ORDER BY o.closed_at DESC, o.id DESC LIMIT $4",
+    [locationId, since, until, limit],
   );
   return rows;
 }

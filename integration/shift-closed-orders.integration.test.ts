@@ -18,7 +18,10 @@
  *   5. yesterday's orders are not today's;
  *   6. voided orders are listed alongside completed ones, newest close first,
  *      and open ones are left to the queue;
- *   7. another branch's closed orders are never listed.
+ *   7. another branch's closed orders are never listed;
+ *   8. the shift picker an owner/manager gets: the branch's shifts as options,
+ *      one shift's own closed orders bounded by its end, and no foreign
+ *      branch's shift among the options.
  */
 import { randomUUID } from "node:crypto";
 import { Client } from "pg";
@@ -36,6 +39,7 @@ let db: Client;
 /** Imported after DATABASE_URL is pointed at the scratch DB. */
 let orderRead: typeof import("../src/lib/order-read-service");
 let shiftService: typeof import("../src/lib/shift-service");
+let shiftOrders: typeof import("../src/lib/shift-orders-service");
 let dbLib: typeof import("../src/lib/db");
 
 let businessId = "";
@@ -135,6 +139,7 @@ beforeAll(async () => {
   process.env.DATABASE_URL = urlFor(databaseName);
   orderRead = await import("../src/lib/order-read-service");
   shiftService = await import("../src/lib/shift-service");
+  shiftOrders = await import("../src/lib/shift-orders-service");
   dbLib = await import("../src/lib/db");
 
   db = new Client({ connectionString: urlFor(databaseName) });
@@ -319,5 +324,86 @@ describe("the branch's closed orders", () => {
     });
 
     expect(await closedThisShift(mainId)).toEqual([]);
+  });
+});
+
+describe("reviewing one shift (the owner's picker)", () => {
+  /** What the route does once a shift id resolves against the branch's options. */
+  async function closedDuring(shiftId: string): Promise<number[]> {
+    return dbLib.withTenant(businessId, async () => {
+      const options = await shiftOrders.listRecentShiftOptions(mainId);
+      const shift = options.find((option) => option.id === shiftId);
+      if (!shift) return [];
+      const rows = await orderRead.listOrdersClosedSince(mainId, shift.startedAt, {
+        until: shift.endedAt,
+      });
+      return rows.map((row) => Number((row as { order_number: string }).order_number));
+    });
+  }
+
+  it("offers the branch's shifts newest first, including unattributed ones", async () => {
+    const older = await insertShift(mainId, await today(-6 * 60), await today(-5 * 60));
+    const startedAt = await today(-2 * 60);
+    const { rows } = await db.query<{ id: string }>(
+      `INSERT INTO employee_shifts
+         (employee_id, business_id, location_id, business_date, started_at)
+       VALUES ($1, $2, NULL, $3::timestamptz::date, $3)
+       RETURNING id`,
+      [employeeId, businessId, startedAt],
+    );
+
+    const options = await dbLib.withTenant(businessId, () =>
+      shiftOrders.listRecentShiftOptions(mainId),
+    );
+    expect(options.map((option) => option.id)).toEqual([rows[0].id, older]);
+    expect(options[0].employeeName).toBe("نگار سلطانی");
+    expect(options[0].endedAt).toBeNull();
+  });
+
+  it("lists a finished shift's own closed orders, bounded by when it ended", async () => {
+    const shift = await insertShift(mainId, await today(-6 * 60), await today(-4 * 60));
+    await insertOrder(mainId, {
+      openedAt: await today(-7 * 60),
+      closedAt: await today(-6 * 60 - 1),
+    });
+    const during = await insertOrder(mainId, {
+      openedAt: await today(-6 * 60),
+      closedAt: await today(-5 * 60),
+    });
+    await insertOrder(mainId, {
+      openedAt: await today(-4 * 60),
+      closedAt: await today(-3 * 60),
+    });
+
+    expect(await closedDuring(shift)).toEqual([during]);
+  });
+
+  it("runs a still-open shift up to now rather than cutting it short", async () => {
+    const shift = await insertShift(mainId, await today(-2 * 60), null);
+    const settled = await insertOrder(mainId, {
+      openedAt: await today(-90),
+      closedAt: await today(-60),
+    });
+
+    expect(await closedDuring(shift)).toEqual([settled]);
+  });
+
+  it("does not offer — or report on — another branch's shift", async () => {
+    const foreign = await insertShift(
+      otherId,
+      await today(-3 * 60),
+      null,
+      await seedEmployee(),
+    );
+    await insertOrder(otherId, {
+      openedAt: await today(-2 * 60),
+      closedAt: await today(-60),
+    });
+
+    const options = await dbLib.withTenant(businessId, () =>
+      shiftOrders.listRecentShiftOptions(mainId),
+    );
+    expect(options.map((option) => option.id)).not.toContain(foreign);
+    expect(await closedDuring(foreign)).toEqual([]);
   });
 });

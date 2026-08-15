@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, useDeferredValue } from "react";
 import { RefreshCwIcon, SearchIcon, ShoppingBagIcon } from "lucide-react";
 import { toPersianDigits } from "@/lib/digits";
+import { formatJalali } from "@/lib/jalali";
 import { formatToman } from "@/lib/money";
 import { formatQueueLabel } from "@/lib/orders";
 import {
@@ -68,6 +69,25 @@ const STATUS_LABELS: Record<OrderStatus, string> = {
   completed: "تکمیل‌شده",
   voided: "باطل‌شده",
 };
+
+/** One of the branch's recent shifts — only owners/managers are sent these. */
+interface ShiftOption {
+  id: string;
+  employeeName: string;
+  startedAt: string;
+  endedAt: string | null;
+}
+
+/** Spans days, so it carries the Jalali date — the same wording the reports tab uses. */
+function shiftOptionLabel(shift: ShiftOption): string {
+  const start = toPersianDigits(
+    formatJalali(shift.startedAt, { withMonthName: true, withTime: true }),
+  );
+  const end = shift.endedAt
+    ? toPersianDigits(orderTimeLabel(shift.endedAt))
+    : "در حال انجام";
+  return `${shift.employeeName} · ${start} تا ${end}`;
+}
 
 /** Closed = it left the queue. The pair `listOrdersClosedSince` reads back. */
 const CLOSED_STATUSES: OrderStatus[] = ["completed", "voided"];
@@ -429,6 +449,10 @@ export function OrdersList() {
   const [closedOrders, setClosedOrders] = useState<OrderRow[]>([]);
   /** null = nobody is clocked in, so the closed list covers the business day instead of a shift. */
   const [shiftStartedAt, setShiftStartedAt] = useState<string | null>(null);
+  /** Empty for roles that may not review other people's shifts — the picker hides itself. */
+  const [shifts, setShifts] = useState<ShiftOption[]>([]);
+  /** "" = the default window (this shift, or today). Otherwise the shift being reviewed. */
+  const [shiftFilter, setShiftFilter] = useState("");
   const [initialLoading, setInitialLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [loadError, setLoadError] = useState("");
@@ -452,12 +476,22 @@ export function OrdersList() {
         closedOrders?: OrderRow[];
         closedSince?: string | null;
         shiftStartedAt?: string | null;
+        shifts?: ShiftOption[];
+        selectedShift?: ShiftOption | null;
         error?: string;
-      }>("/api/orders?scope=shift");
+      }>(
+        "/api/orders?scope=shift" +
+          (shiftFilter ? `&shiftId=${encodeURIComponent(shiftFilter)}` : ""),
+      );
       if (ok) {
         setOrders(data.orders);
         setClosedOrders(data.closedOrders ?? []);
         setShiftStartedAt(data.shiftStartedAt ?? null);
+        setShifts(data.shifts ?? []);
+        // A shift the branch no longer lists (revoked, or another branch's) is
+        // answered with the default window — follow the server rather than
+        // leaving the picker pointing at something it isn't showing.
+        if (shiftFilter && !data.selectedShift) setShiftFilter("");
         setDetailRefreshToken((token) => token + 1);
       } else {
         setLoadError("فهرست سفارش‌ها به‌روز نشد. داده‌های موجود حفظ شده‌اند.");
@@ -470,7 +504,7 @@ export function OrdersList() {
       setInitialLoading(false);
       setIsRefreshing(false);
     }
-  }, []);
+  }, [shiftFilter]);
 
   useEffect(() => {
     void load();
@@ -498,6 +532,9 @@ export function OrdersList() {
     [closedOrders, orders],
   );
   const openCount = orders?.length ?? 0;
+  const reviewedShift = shiftFilter
+    ? (shifts.find((shift) => shift.id === shiftFilter) ?? null)
+    : null;
   const availableStatuses = useMemo(
     () => Array.from(new Set(orderRows.map((order) => order.status))),
     [orderRows],
@@ -613,7 +650,8 @@ export function OrdersList() {
       statusFilter !== "all" ||
       typeFilter !== "all" ||
       tableFilter !== "all" ||
-      dateFilter,
+      dateFilter ||
+      shiftFilter,
   );
 
   function clearFilters() {
@@ -622,6 +660,7 @@ export function OrdersList() {
     setTypeFilter("all");
     setTableFilter("all");
     setDateFilter("");
+    setShiftFilter("");
   }
 
   return (
@@ -757,6 +796,25 @@ export function OrdersList() {
           ))}
         </div>
 
+        {shifts.length > 0 ? (
+          <label className="mt-2 flex min-h-12 min-w-0 items-center gap-2 rounded-xl border border-[#EAE8E2] bg-white px-3 text-xs text-[#77756F] xl:min-h-[52px]">
+            <span className="shrink-0">شیفت</span>
+            <SearchableSelect
+              value={shiftFilter}
+              onChange={setShiftFilter}
+              className="min-h-10 min-w-0 flex-1 border-0 bg-transparent text-sm text-[#252522] outline-none"
+              ariaLabel="مرور سفارش‌های بسته‌شدهٔ یک شیفت"
+              options={[
+                { value: "", label: shiftStartedAt ? "شیفت جاری" : "امروز" },
+                ...shifts.map((shift) => ({
+                  value: shift.id,
+                  label: shiftOptionLabel(shift),
+                })),
+              ]}
+            />
+          </label>
+        ) : null}
+
         <div className="mt-2 flex flex-col gap-2 sm:flex-row">
           <label className="flex min-h-12 min-w-0 flex-1 items-center gap-2 rounded-xl border border-[#EAE8E2] bg-white px-3 text-xs text-[#77756F] xl:min-h-[52px]">
             <span className="shrink-0">میز</span>
@@ -811,9 +869,11 @@ export function OrdersList() {
               className="border-b border-[#EAE8E2] bg-[#FCFCFA] px-4 py-2 text-[11px] leading-5 text-[#77756F]"
               role="status"
             >
-              {shiftStartedAt
-                ? `سفارش‌های بسته‌شده از شروع شیفت (ساعت ${orderTimeLabel(shiftStartedAt)}) نمایش داده می‌شوند.`
-                : "سفارش‌های بسته‌شدهٔ امروز نمایش داده می‌شوند؛ با شروع شیفت، فهرست از زمان شیفت شمرده می‌شود."}
+              {reviewedShift
+                ? `سفارش‌های بسته‌شدهٔ شیفت ${reviewedShift.employeeName} نمایش داده می‌شوند؛ صف بازِ بالا همچنان لحظه‌ای است.`
+                : shiftStartedAt
+                  ? `سفارش‌های بسته‌شده از شروع شیفت (ساعت ${orderTimeLabel(shiftStartedAt)}) نمایش داده می‌شوند.`
+                  : "سفارش‌های بسته‌شدهٔ امروز نمایش داده می‌شوند؛ با شروع شیفت، فهرست از زمان شیفت شمرده می‌شود."}
             </p>
           ) : null}
 

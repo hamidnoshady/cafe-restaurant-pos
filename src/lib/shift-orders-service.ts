@@ -36,6 +36,38 @@ export interface ShiftOption {
   endedAt: string | null;
 }
 
+/**
+ * The branch's recent shifts, newest first — the options behind every shift
+ * picker (this report's, and the orders screen's since it gained one).
+ *
+ * A shift whose `location_id` is null is included: a shift only records a
+ * branch when the session that opened it had one, so rows written before
+ * openShift took a fallback branch have none, and excluding them would hide
+ * exactly the shifts a single-branch business worked. Nothing branch-scoped
+ * leaks by including them — every caller filters the orders themselves by
+ * `location_id`, so an unattributed shift can only ever name a time window.
+ */
+export async function listRecentShiftOptions(
+  locationId: string,
+  limit = 50,
+): Promise<ShiftOption[]> {
+  const { rows } = await query<ShiftWindowRow>(
+    `SELECT s.id, u.full_name AS employee_name, s.started_at, s.ended_at
+       FROM employee_shifts s
+       JOIN users u ON u.id = s.employee_id
+      WHERE (s.location_id = $1 OR s.location_id IS NULL)
+      ORDER BY s.started_at DESC
+      LIMIT $2`,
+    [locationId, limit],
+  );
+  return rows.map((row) => ({
+    id: row.id,
+    employeeName: row.employee_name,
+    startedAt: row.started_at.toISOString(),
+    endedAt: row.ended_at ? row.ended_at.toISOString() : null,
+  }));
+}
+
 export interface ShiftOrdersReport {
   shift: ShiftOption;
   /** The branch's recent shifts, newest first — the picker's options, always including `shift`. */
@@ -80,24 +112,10 @@ export async function getShiftOrdersReport(
   locationId: string,
   shiftId?: string,
 ): Promise<ShiftOrdersReport | null> {
-  const { rows: shiftRows } = await query<ShiftWindowRow>(
-    `SELECT s.id, u.full_name AS employee_name, s.started_at, s.ended_at
-       FROM employee_shifts s
-       JOIN users u ON u.id = s.employee_id
-      WHERE s.location_id = $1
-      ORDER BY s.started_at DESC
-      LIMIT 50`,
-    [locationId],
-  );
-  const shifts: ShiftOption[] = shiftRows.map((row) => ({
-    id: row.id,
-    employeeName: row.employee_name,
-    startedAt: row.started_at.toISOString(),
-    endedAt: row.ended_at ? row.ended_at.toISOString() : null,
-  }));
+  const shifts = await listRecentShiftOptions(locationId);
 
-  const index = shiftId ? shiftRows.findIndex((row) => row.id === shiftId) : 0;
-  const shift = index === -1 ? undefined : shiftRows[index];
+  const index = shiftId ? shifts.findIndex((option) => option.id === shiftId) : 0;
+  const shift = index === -1 ? undefined : shifts[index];
   if (!shift) return null;
 
   const { rows } = await query<ShiftOrderItemRow>(
@@ -118,7 +136,7 @@ export async function getShiftOrdersReport(
         AND o.opened_at >= $2
         AND o.opened_at <= coalesce($3::timestamptz, now())
       ORDER BY o.opened_at DESC, o.id DESC, oi.created_at`,
-    [locationId, shift.started_at, shift.ended_at],
+    [locationId, shift.startedAt, shift.endedAt],
   );
 
   const inputs: ShiftOrderItemInput[] = rows.map((row) => ({
@@ -139,7 +157,7 @@ export async function getShiftOrdersReport(
   }));
 
   return {
-    shift: shifts[index]!,
+    shift,
     shifts,
     orders: groupShiftOrders(inputs),
   };

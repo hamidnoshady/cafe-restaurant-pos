@@ -4,6 +4,7 @@ import { type CartItemInput } from "@/lib/order-cart";
 import { createOrder } from "@/lib/order-mutations";
 import { listOrders, listOrdersClosedSince } from "@/lib/order-read-service";
 import { branchClosedOrdersWindow } from "@/lib/shift-service";
+import { listRecentShiftOptions } from "@/lib/shift-orders-service";
 import type { DiscountInput } from "@/lib/orders";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { broadcast } from "@/lib/realtime";
@@ -17,9 +18,18 @@ import { broadcast } from "@/lib/realtime";
  * is paid. Only that screen asks for it, so the POS and waiter panels, which
  * poll this route for their queue, keep paying for one query.
  *
- * The window is today's business day at the branch, widened to a still-running
- * shift that began earlier (see branchClosedOrdersWindow); `shiftStartedAt` is
- * reported alongside so the screen can name which of the two it is showing.
+ * The default window is today's business day at the branch, widened to a
+ * still-running shift that began earlier (see branchClosedOrdersWindow);
+ * `shiftStartedAt` is reported alongside so the screen can name which of the
+ * two it is showing.
+ *
+ * An owner or manager may instead ask for one shift by id (`&shiftId=`), and
+ * gets the branch's recent shifts back as that picker's options — reviewing a
+ * shift someone else worked is a supervisory privilege, the same audience
+ * /api/reports/shift-orders serves, so a cashier or waiter is answered with the
+ * default window and no shift list. The id is resolved *within* the branch's
+ * own list rather than by its own query, so an unknown or foreign id falls back
+ * to the default window instead of reaching another branch's shift.
  */
 export const GET = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireRole("owner", "manager", "cashier", "waiter");
@@ -33,13 +43,29 @@ export const GET = withTenantScope(async (request: NextRequest) => {
     return NextResponse.json({ orders });
   }
 
-  const window = await branchClosedOrdersWindow(location.id);
-  const closedOrders = await listOrdersClosedSince(location.id, window.since);
+  // The shift-review audience of /api/reports/shift-orders, minus accountant —
+  // who has no orders screen to render a picker on.
+  const canReviewShifts = session.role === "owner" || session.role === "manager";
+  const shifts = canReviewShifts ? await listRecentShiftOptions(location.id) : [];
+  const requestedShiftId = new URL(request.url).searchParams.get("shiftId");
+  const selectedShift = requestedShiftId
+    ? (shifts.find((shift) => shift.id === requestedShiftId) ?? null)
+    : null;
+
+  const window = selectedShift
+    ? { since: selectedShift.startedAt, shiftStartedAt: selectedShift.startedAt }
+    : await branchClosedOrdersWindow(location.id);
+  const closedOrders = await listOrdersClosedSince(location.id, window.since, {
+    until: selectedShift?.endedAt ?? null,
+  });
+
   return NextResponse.json({
     orders,
     closedOrders,
     closedSince: window.since,
     shiftStartedAt: window.shiftStartedAt,
+    shifts,
+    selectedShift,
   });
 });
 
