@@ -5,6 +5,7 @@ import { FileBarChart2Icon, HandCoinsIcon, Loader2Icon, ScaleIcon, TrendingUpIco
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Switch } from "@/components/ui/switch";
+import { useFeatureLocked } from "@/components/feature-lock";
 import { AI_AGENT_DEFINITIONS, type AiAgentKey } from "@/lib/ai-agents";
 
 interface AgentOverviewEntry {
@@ -46,6 +47,7 @@ const STATUS_CLASS: Record<AgentOverviewEntry["status"], string> = {
 export function AiAgentCards({ onTodayTasksChange }: { onTodayTasksChange?: (tasks: AgentTodayTask[]) => void }) {
   const [agents, setAgents] = useState<AgentOverviewEntry[] | null>(null);
   const [savingKey, setSavingKey] = useState<AiAgentKey | null>(null);
+  const locked = useFeatureLocked();
 
   async function load() {
     try {
@@ -64,9 +66,14 @@ export function AiAgentCards({ onTodayTasksChange }: { onTodayTasksChange?: (tas
   }
 
   useEffect(() => {
+    if (locked) {
+      setAgents([]);
+      onTodayTasksChange?.([]);
+      return;
+    }
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [locked]);
 
   async function toggle(agentKey: AiAgentKey, enabled: boolean) {
     if (savingKey) return;

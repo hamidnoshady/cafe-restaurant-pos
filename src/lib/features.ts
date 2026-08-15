@@ -13,16 +13,40 @@
  * nav.
  */
 import { redirect } from "next/navigation";
-import { query } from "./db";
+import { query, withTenant } from "./db";
 
-/** Every flag this business has, with its per-business override resolved against the catalogue default. */
+/**
+ * Every flag this business has, with its per-business override resolved
+ * against the catalogue default.
+ *
+ * The read is wrapped in `withTenant(businessId, …)` rather than trusting the
+ * ambient scope, and that is load-bearing rather than belt-and-braces:
+ * `business_features` is RLS-protected (migration 0021) while `feature_flags`
+ * is not, so a read that runs *unscoped* still returns the catalogue but
+ * silently loses every override — `LEFT JOIN` turning them into NULL, which
+ * this function then resolves to `default_enabled`.
+ *
+ * That is exactly what happened on gated **pages**. A route handler is wrapped
+ * in `withTenantScope` (auth.ts) and holds its scope through `run()`, but a
+ * server component only has the `enterWith()` scope `getSession()` sets, and
+ * that is lost the moment any concurrent `run()` — a background tick in
+ * server.ts, the dashboard layout's own `withTenant` call, which renders
+ * alongside the page — interleaves. The failure was invisible for every
+ * default-ON flag, since losing the override lands on "enabled" anyway, and
+ * bit exactly the two default-OFF ones: a business entitled to `ai_assistant`
+ * or `integrations` saw the nav entry (the layout scopes its read) and was
+ * then redirected away from the page (this one had not been). Naming the
+ * business here makes the answer independent of what else is in flight.
+ */
 export async function effectiveFeatures(businessId: string): Promise<Record<string, boolean>> {
-  const { rows } = await query<{ key: string; default_enabled: boolean; override: boolean | null }>(
-    `SELECT f.key, f.default_enabled, bf.enabled AS override
-       FROM feature_flags f
-       LEFT JOIN business_features bf ON bf.flag_key = f.key AND bf.business_id = $1
-      ORDER BY f.key`,
-    [businessId],
+  const { rows } = await withTenant(businessId, () =>
+    query<{ key: string; default_enabled: boolean; override: boolean | null }>(
+      `SELECT f.key, f.default_enabled, bf.enabled AS override
+         FROM feature_flags f
+         LEFT JOIN business_features bf ON bf.flag_key = f.key AND bf.business_id = $1
+        ORDER BY f.key`,
+      [businessId],
+    ),
   );
   return Object.fromEntries(rows.map((r) => [r.key, r.override ?? r.default_enabled]));
 }
@@ -90,7 +114,43 @@ export function featureForPagePath(pathname: string): string | null {
   return null;
 }
 
+/**
+ * Features a business that is *not* entitled to them still gets to look at.
+ *
+ * The rest of the catalogue is all-or-nothing: a business without `inventory`
+ * has no use for an anbar page it can only stare at, so its page redirects and
+ * its nav entry is not rendered at all. These two are the sales-facing ones —
+ * they are the reason a business would ask to be upgraded — so hiding them
+ * makes the product look like it does not have the capability, rather than
+ * like the capability is available and switched off. They render instead as a
+ * read-only preview: the real screen, visible, with every control inert and a
+ * banner saying how to switch it on (`FeatureLock`, src/components/feature-lock.tsx).
+ *
+ * "Locked" is a UI affordance and nothing more. The API enforcement is
+ * unchanged and unconditional — `withTenantScope` still refuses `/api/ai/*`
+ * and `/api/integrations/*` with `feature_disabled` — so a preview cannot be
+ * turned into a working feature from the browser.
+ */
+const LOCKABLE_FEATURES = new Set(["ai_assistant", "integrations"]);
+
+export function isLockableFeature(flagKey: string): boolean {
+  return LOCKABLE_FEATURES.has(flagKey);
+}
+
 /** Called from a gated dashboard page's server component; redirects away if the feature is off for this business. */
 export async function requireFeatureForPage(businessId: string, flagKey: string): Promise<void> {
   if (!(await isFeatureEnabled(businessId, flagKey))) redirect("/dashboard");
+}
+
+/**
+ * `requireFeatureForPage` for a lockable feature: returns whether the page
+ * should render its read-only preview instead of its working self.
+ *
+ * A flag that is not lockable keeps the redirect, so this stays a per-feature
+ * decision made in one place rather than something each page invents.
+ */
+export async function featureLockedForPage(businessId: string, flagKey: string): Promise<boolean> {
+  if (await isFeatureEnabled(businessId, flagKey)) return false;
+  if (!isLockableFeature(flagKey)) redirect("/dashboard");
+  return true;
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useFeatureLocked } from "@/components/feature-lock";
 
 interface Connection {
   id: string;
@@ -46,6 +47,7 @@ export function IntegrationsManager() {
   const [newSecret, setNewSecret] = useState<string | null>(null);
   const [audit, setAudit] = useState<AuditEntry[]>([]);
   const [auditFor, setAuditFor] = useState<string | null>(null);
+  const locked = useFeatureLocked();
 
   const [form, setForm] = useState({
     name: "",
@@ -56,6 +58,14 @@ export function IntegrationsManager() {
   });
 
   const load = useCallback(async () => {
+    // Locked preview: /api/integrations/* answers `feature_disabled`, so asking
+    // would only replace the (accurate) "no store connected yet" empty state
+    // with a load error.
+    if (locked) {
+      setConnections([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const res = await fetch("/api/integrations/overview");
@@ -67,7 +77,7 @@ export function IntegrationsManager() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [locked]);
 
   useEffect(() => {
     void load();

@@ -1,13 +1,16 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
-import { requireFeatureForPage } from "@/lib/features";
+import { featureLockedForPage } from "@/lib/features";
+import { FeatureLock } from "@/components/feature-lock";
 import { IntegrationsManager } from "./integrations-manager";
 
 export default async function IntegrationsPage() {
   const session = await getSession();
   if (!session) redirect("/login");
   if (session.role !== "owner" && session.role !== "manager") redirect("/dashboard");
-  await requireFeatureForPage(session.businessId, "integrations");
+  // Lockable like the AI hub: the page is a shop window for a business that
+  // does not have the WooCommerce integration yet, not a closed door.
+  const locked = await featureLockedForPage(session.businessId, "integrations");
 
   return (
     <div className="mx-auto w-full max-w-[1400px]">
@@ -20,7 +23,9 @@ export default async function IntegrationsPage() {
           به‌همراه ثبت خودکار حسابداری، مدیریت خطا و مغایرت‌گیری.
         </p>
       </header>
-      <IntegrationsManager />
+      <FeatureLock locked={locked} title="فروشگاه آنلاین (ووکامرس)">
+        <IntegrationsManager />
+      </FeatureLock>
     </div>
   );
 }

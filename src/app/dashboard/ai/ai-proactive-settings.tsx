@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Loader2Icon, SparklesIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { useFeatureLocked } from "@/components/feature-lock";
 
 interface Overview {
   enabled: boolean;
@@ -27,6 +28,7 @@ export function AiProactiveSettings() {
   const [data, setData] = useState<Overview | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const locked = useFeatureLocked();
 
   async function load() {
     setLoading(true);
@@ -43,8 +45,14 @@ export function AiProactiveSettings() {
   }
 
   useEffect(() => {
+    if (locked) {
+      setData({ enabled: false, lastRunAt: null, lastRunStatus: null, draftCount: 0 });
+      setLoading(false);
+      return;
+    }
     void load();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locked]);
 
   async function toggle() {
     if (!data || saving) return;

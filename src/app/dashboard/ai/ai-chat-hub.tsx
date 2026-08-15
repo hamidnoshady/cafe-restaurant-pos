@@ -12,6 +12,7 @@ import { Loader2Icon, MessageSquarePlusIcon, SendIcon, SparklesIcon } from "luci
 import { formatToman } from "@/lib/money";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useFeatureLocked } from "@/components/feature-lock";
 import { AiAttachmentChip, AiComposerTools } from "@/components/ai/ai-composer-tools";
 import { AiProposalCard } from "@/components/ai/ai-proposal-card";
 import { SUGGESTED_PROMPTS, useAiChat } from "@/components/ai/use-ai-chat";
@@ -32,6 +33,7 @@ function tabClass(active: boolean): string {
 }
 
 export function AiChatHub() {
+  const locked = useFeatureLocked();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [tab, setTab] = useState<HubTab>(searchParams.get("tab") === "settings" ? "settings" : "chat");
@@ -72,7 +74,9 @@ export function AiChatHub() {
   useEffect(() => {
     if (initialized.current) return;
     initialized.current = true;
-    const requested = searchParams.get("conversation");
+    // The greeting is local, so a locked preview still opens on a real-looking
+    // chat; reopening a stored conversation is a request, and would only 403.
+    const requested = locked ? null : searchParams.get("conversation");
     if (requested) void loadConversation(requested);
     else ensureGreeting();
     // eslint-disable-next-line react-hooks/exhaustive-deps

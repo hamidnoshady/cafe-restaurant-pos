@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { featureForApiPath, featureForPagePath } from "./features";
+import { featureForApiPath, featureForPagePath, isLockableFeature } from "./features";
 
 describe("featureForApiPath", () => {
   it("maps a gated prefix and its sub-paths to the right flag", () => {
@@ -44,5 +44,26 @@ describe("featureForPagePath", () => {
     expect(featureForPagePath("/dashboard/kitchen")).toBeNull();
     expect(featureForPagePath("/dashboard/pos")).toBeNull();
     expect(featureForPagePath("/dashboard/team")).toBeNull();
+  });
+});
+
+describe("isLockableFeature", () => {
+  it("marks the two features a business without them may still look at", () => {
+    expect(isLockableFeature("ai_assistant")).toBe(true);
+    expect(isLockableFeature("integrations")).toBe(true);
+  });
+
+  it("leaves every other flag all-or-nothing, so its page keeps redirecting", () => {
+    expect(isLockableFeature("inventory")).toBe(false);
+    expect(isLockableFeature("ledger")).toBe(false);
+    expect(isLockableFeature("reporting")).toBe(false);
+    expect(isLockableFeature("multi_location")).toBe(false);
+  });
+
+  it("agrees with the page map, so a lockable flag always has a page to preview", () => {
+    const lockablePages = featureForPagePath("/dashboard/ai");
+    expect(lockablePages).toBe("ai_assistant");
+    expect(featureForPagePath("/dashboard/integrations")).toBe("integrations");
+    expect(isLockableFeature(featureForApiPath("/api/ai/chat")!)).toBe(true);
   });
 });

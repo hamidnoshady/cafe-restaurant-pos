@@ -8,6 +8,7 @@ import { formatPersianNumber } from "@/lib/digits";
 import { formatToman } from "@/lib/money";
 import { Button } from "@/components/ui/button";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { useFeatureLocked } from "@/components/feature-lock";
 
 interface Billing {
   balanceRial: number;
@@ -61,6 +62,7 @@ export function AiBillingDashboard() {
   const [selectedPackageId, setSelectedPackageId] = useState("");
   const [note, setNote] = useState("");
   const [requesting, setRequesting] = useState(false);
+  const locked = useFeatureLocked();
 
   async function load() {
     setLoading(true);
@@ -82,8 +84,22 @@ export function AiBillingDashboard() {
   }
 
   useEffect(() => {
+    // A business without the feature has no AI credit by definition, so the
+    // preview shows that zero state rather than an error or a blank panel.
+    if (locked) {
+      setData({
+        billing: { balanceRial: 0, subscriptionPlan: null, subscriptionRenewsAt: null },
+        ledger: [],
+        packages: [],
+        creditUnitRial: 0,
+        providerReady: false,
+      });
+      setLoading(false);
+      return;
+    }
     void load();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locked]);
 
   const selected = useMemo(
     () => data?.packages.find((pkg) => pkg.id === selectedPackageId) ?? null,

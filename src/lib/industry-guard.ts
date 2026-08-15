@@ -12,14 +12,23 @@
 import { redirect } from "next/navigation";
 import { NextResponse } from "next/server";
 import type { SessionPayload } from "./auth";
-import { query } from "./db";
+import { query, withTenant } from "./db";
 import type { Industry } from "./industries";
 import { hasModule, type ModuleKey } from "./industry-profile";
 
+/**
+ * Scoped with `withTenant` for the same reason `effectiveFeatures` is (see its
+ * doc comment): `businesses` is RLS-protected, so an unscoped read returns no
+ * row at all and this answers `null`. `isModuleEnabled` fails open on `null`
+ * and so shrugs it off, but `requireIndustryForPage` does not — a `null`
+ * industry matches nothing and redirects, which on a server component (whose
+ * `enterWith` scope any concurrent `run()` can drop) made the industry pages
+ * bounce intermittently. The business is named right here, so there is no
+ * reason to depend on what is ambient.
+ */
 export async function getBusinessIndustry(businessId: string): Promise<Industry | null> {
-  const { rows } = await query<{ industry: Industry }>(
-    "SELECT industry FROM businesses WHERE id = $1",
-    [businessId],
+  const { rows } = await withTenant(businessId, () =>
+    query<{ industry: Industry }>("SELECT industry FROM businesses WHERE id = $1", [businessId]),
   );
   return rows[0]?.industry ?? null;
 }

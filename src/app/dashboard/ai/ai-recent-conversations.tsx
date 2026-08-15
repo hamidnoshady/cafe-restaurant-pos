@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Loader2Icon, MessageSquareIcon } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { useFeatureLocked } from "@/components/feature-lock";
 
 interface ConversationSummary {
   id: string;
@@ -28,9 +29,14 @@ export function AiRecentConversations({
   onSelect: (id: string) => void;
 }) {
   const [items, setItems] = useState<ConversationSummary[] | null>(null);
+  const locked = useFeatureLocked();
 
   useEffect(() => {
     let cancelled = false;
+    if (locked) {
+      setItems([]);
+      return;
+    }
     fetch("/api/ai/conversations")
       .then(async (response) => {
         const data = (await response.json().catch(() => ({}))) as {
@@ -49,7 +55,7 @@ export function AiRecentConversations({
     return () => {
       cancelled = true;
     };
-  }, [refreshKey]);
+  }, [refreshKey, locked]);
 
   return (
     <section className="flex flex-1 flex-col overflow-hidden rounded-2xl border bg-card">

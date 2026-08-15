@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { ClipboardCheckIcon, Loader2Icon } from "lucide-react";
+import { useFeatureLocked } from "@/components/feature-lock";
 
 type AuditStatus = "proposed" | "applied" | "failed" | "dismissed";
 
@@ -40,9 +41,16 @@ function formatDate(value: string) {
 export function AiActionAudit() {
   const [entries, setEntries] = useState<AuditEntry[] | null>(null);
   const [error, setError] = useState("");
+  const locked = useFeatureLocked();
 
   useEffect(() => {
     let cancelled = false;
+    // In a locked preview the route would answer `feature_disabled`; show the
+    // panel's genuine empty state instead of an error the reader cannot act on.
+    if (locked) {
+      setEntries([]);
+      return;
+    }
     fetch("/api/ai/action-audit")
       .then(async (response) => {
         const data = (await response.json().catch(() => ({}))) as { entries?: AuditEntry[]; error?: string };
@@ -58,7 +66,7 @@ export function AiActionAudit() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [locked]);
 
   return (
     <section className="rounded-2xl border bg-card p-5" aria-labelledby="ai-action-audit-title">
