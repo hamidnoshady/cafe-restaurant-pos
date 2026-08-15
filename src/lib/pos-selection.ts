@@ -36,20 +36,49 @@ const arabicDigitPattern = /[٠-٩]/g;
 const persianDigitPattern = /[۰-۹]/g;
 const arabicDiacriticPattern = /[\u064B-\u065F\u0670]/g;
 
+// ⚡ Bolt: Use a global LRU or simple map to cache normalization results.
+// Normalization involves multiple Regex replacements and allocations which
+// become expensive when called on hundreds of items per keystroke.
+const normalizationCache = new Map<string, string>();
+
 export function normalizePosSearchText(value: string): string {
-  return value
+  if (normalizationCache.has(value)) {
+    return normalizationCache.get(value)!;
+  }
+
+  const result = value
     .replace(/ي/g, "ی")
     .replace(/ك/g, "ک")
     .replace(arabicDigitPattern, (digit) => String("٠١٢٣٤٥٦٧٨٩".indexOf(digit)))
-    .replace(persianDigitPattern, (digit) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(digit)))
+    .replace(persianDigitPattern, (digit) =>
+      String("۰۱۲۳۴۵۶۷۸۹".indexOf(digit)),
+    )
     .replace(arabicDiacriticPattern, "")
     .replace(/\s+/g, " ")
     .trim()
     .toLocaleLowerCase("fa");
+
+  // Prevent unbounded growth (though in POS menus it's typically < 1000 items)
+  if (normalizationCache.size > 2000) {
+    // Simple clear strategy to avoid memory leak
+    normalizationCache.clear();
+  }
+
+  normalizationCache.set(value, result);
+  return result;
 }
 
-export function searchPosMenuItems({ categories, items, selectedCategoryId, query }: PosSearchInput): PosSearchResult[] {
-  const activeCategories = new Map(categories.filter((category) => category.is_active).map((category) => [category.id, category]));
+export function searchPosMenuItems({
+  categories,
+  items,
+  selectedCategoryId,
+  query,
+}: PosSearchInput): PosSearchResult[] {
+  const activeCategories = new Map(
+    categories
+      .filter((category) => category.is_active)
+      .map((category) => [category.id, category]),
+  );
   const normalizedQuery = normalizePosSearchText(query);
 
   const results: PosSearchResult[] = [];
@@ -86,8 +115,13 @@ export function searchPosMenuItems({ categories, items, selectedCategoryId, quer
     const category = activeCategories.get(item.category_id);
     if (!category) continue;
 
-    const categoryMatch = normalizedCategoryNames.get(item.category_id)!.includes(normalizedQuery);
-    if (categoryMatch || normalizePosSearchText(item.name).includes(normalizedQuery)) {
+    const categoryMatch = normalizedCategoryNames
+      .get(item.category_id)!
+      .includes(normalizedQuery);
+    if (
+      categoryMatch ||
+      normalizePosSearchText(item.name).includes(normalizedQuery)
+    ) {
       results.push({ ...item, categoryLabel: category.name });
     }
   }
@@ -95,9 +129,17 @@ export function searchPosMenuItems({ categories, items, selectedCategoryId, quer
   return results;
 }
 
-export function isGlobalCashierShortcutEligible({ activeElement, hasOpenDialog }: GlobalCashierShortcutInput): boolean {
+export function isGlobalCashierShortcutEligible({
+  activeElement,
+  hasOpenDialog,
+}: GlobalCashierShortcutInput): boolean {
   if (hasOpenDialog || !activeElement) return !hasOpenDialog;
 
   const tagName = activeElement.tagName?.toLowerCase();
-  return !activeElement.isContentEditable && tagName !== "input" && tagName !== "textarea" && tagName !== "select";
+  return (
+    !activeElement.isContentEditable &&
+    tagName !== "input" &&
+    tagName !== "textarea" &&
+    tagName !== "select"
+  );
 }
