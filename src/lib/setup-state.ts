@@ -4,7 +4,7 @@
  */
 import { NextResponse } from "next/server";
 import { getSession, type Role, type SessionPayload } from "./auth";
-import { query, withoutTenantScope } from "./db";
+import { query, withTenant, withoutTenantScope } from "./db";
 import {
   accessibleLocationIds,
   canAccessLocation,
@@ -123,12 +123,25 @@ export async function hasAnyUser(): Promise<boolean> {
   );
 }
 
-/** True once the wizard has been formally completed for this business. */
+/**
+ * True once the wizard has been formally completed for this business.
+ *
+ * Runs under `withTenant(businessId)` rather than whatever ambient scope the
+ * caller happens to have. Server components (`app/page.tsx`, `app/setup/*`)
+ * only ever carry `getSession()`'s `enterWith()` scope, which a concurrent
+ * background tick's `.run()` can clobber mid-request (see the `withTenantScope`
+ * doc comment in src/lib/auth.ts). Under RLS the reads then come back empty,
+ * so a finished business would be bounced back into the wizard on every login
+ * even though every step is green. `.run()` — what `withTenant` uses — has no
+ * such race.
+ */
 export async function isSetupComplete(businessId: string): Promise<boolean> {
-  const progress = await getWizardProgress(businessId);
-  if (progress.completedAt) return true;
-  const state = await computeSetupState(businessId);
-  return state.missingForCompletion.length === 0;
+  return withTenant(businessId, async () => {
+    const progress = await getWizardProgress(businessId);
+    if (progress.completedAt) return true;
+    const state = await computeSetupState(businessId);
+    return state.missingForCompletion.length === 0;
+  });
 }
 
 export interface LocationRow extends Record<string, unknown> {
@@ -254,7 +267,18 @@ export async function costingLocked(businessId: string): Promise<boolean> {
   return n > 0;
 }
 
-export async function computeSetupState(
+/**
+ * Self-scopes for the same reason `isSetupComplete` does: called from server
+ * components whose ambient scope is only `enterWith()`-based and therefore
+ * clobberable by a background tick. Wrapping here means every caller — the
+ * `/api/setup/*` routes (already `.run()`-scoped) included — reads the same
+ * reliable way.
+ */
+export async function computeSetupState(businessId: string): Promise<SetupState> {
+  return withTenant(businessId, () => computeSetupStateInner(businessId));
+}
+
+async function computeSetupStateInner(
   businessId: string,
 ): Promise<SetupState> {
   const { rows: bizRows } = await query<{
