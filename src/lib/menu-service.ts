@@ -131,3 +131,103 @@ export async function updateMenuItem(
   if (result.rowCount !== 1) return { ok: false, error: "item_not_found", status: 404 };
   return { ok: true };
 }
+
+export interface ModifierPatchInput {
+  groupId?: unknown;
+  name?: unknown;
+  priceDelta?: unknown;
+  sortOrder?: unknown;
+  isActive?: unknown;
+}
+
+export type UpdateModifierResult =
+  | { ok: true }
+  | {
+      ok: false;
+      error: "bad_request" | "missing_fields" | "modifier_not_found" | "group_not_found";
+      status: number;
+    };
+
+/**
+ * Allowlisted update of a single modifier (an "افزودنی" on the menu screen),
+ * including moving it to a different modifier group.
+ *
+ * A move is a re-parent and nothing more: closed orders carry their own
+ * name/price snapshot in order_item_modifiers, so no history moves with it. What
+ * does change is where the addon is offered, since it is groups — not
+ * modifiers — that menu items are linked to.
+ *
+ * The moved row lands at the end of the target group: the sort_order it held
+ * among its old siblings says nothing about where it belongs among its new ones,
+ * and reusing it would silently interleave. An explicit `sortOrder` in the same
+ * patch still wins. Both the modifier and the target group are constrained to
+ * the supplied branch, so a move can never pull a group in from another one.
+ */
+export async function updateModifier(
+  locationId: string,
+  id: string,
+  body: ModifierPatchInput,
+): Promise<UpdateModifierResult> {
+  const { rows: existing } = await query<{ group_id: string }>(
+    "SELECT group_id FROM modifiers WHERE id = $1 AND location_id = $2",
+    [id, locationId],
+  );
+  if (!existing[0]) return { ok: false, error: "modifier_not_found", status: 404 };
+
+  const fields: string[] = [];
+  const values: unknown[] = [id, locationId];
+  let parameterIndex = 2;
+  const set = (column: string, value: unknown) => {
+    parameterIndex += 1;
+    fields.push(column + " = $" + parameterIndex);
+    values.push(value);
+  };
+
+  /** A patch naming the group the modifier is already in changes nothing, but isn't an error. */
+  let groupChecked = false;
+
+  if (body.groupId !== undefined) {
+    if (typeof body.groupId !== "string" || !body.groupId) {
+      return { ok: false, error: "bad_request", status: 400 };
+    }
+    const { rows: group } = await query(
+      "SELECT id FROM modifier_groups WHERE id = $1 AND location_id = $2",
+      [body.groupId, locationId],
+    );
+    if (group.length === 0) return { ok: false, error: "group_not_found", status: 404 };
+    groupChecked = true;
+    if (body.groupId !== existing[0].group_id) {
+      set("group_id", body.groupId);
+      if (body.sortOrder === undefined) {
+        fields.push(
+          "sort_order = (SELECT COALESCE(MAX(sibling.sort_order) + 1, 0) FROM modifiers sibling" +
+            " WHERE sibling.group_id = $" + parameterIndex + ")",
+        );
+      }
+    }
+  }
+  if (body.name !== undefined) {
+    if (typeof body.name !== "string") return { ok: false, error: "missing_fields", status: 400 };
+    const name = body.name.trim();
+    if (!name) return { ok: false, error: "missing_fields", status: 400 };
+    set("name", name);
+  }
+  if (body.priceDelta !== undefined) {
+    const priceDelta = Number(body.priceDelta);
+    if (!Number.isSafeInteger(priceDelta)) return { ok: false, error: "missing_fields", status: 400 };
+    set("price_delta", priceDelta);
+  }
+  if (body.sortOrder !== undefined) set("sort_order", Number(body.sortOrder) || 0);
+  if (body.isActive !== undefined) set("is_active", Boolean(body.isActive));
+
+  if (fields.length === 0) {
+    return groupChecked ? { ok: true } : { ok: false, error: "bad_request", status: 400 };
+  }
+
+  const result = await query(
+    "UPDATE modifiers SET " + fields.join(", ") + " WHERE id = $1 AND location_id = $2",
+    values,
+  );
+  if (result.rowCount !== 1) return { ok: false, error: "modifier_not_found", status: 404 };
+  return { ok: true };
+}
