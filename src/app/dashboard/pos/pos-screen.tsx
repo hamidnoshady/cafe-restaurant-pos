@@ -56,7 +56,10 @@ import {
 } from "@/lib/modifier-display";
 import { ModifierBadges } from "../modifier-badges";
 import { ModifierPicker } from "../modifier-picker";
-import { SearchableSelect } from "@/components/ui/searchable-select";
+import {
+  SearchableSelect,
+  type SelectOption,
+} from "@/components/ui/searchable-select";
 import { BranchSwitcher } from "../branch-switcher";
 import { apiOrQueue, useOfflineQueue } from "../offline-queue";
 import { api, ErrorBox, errorMessage, inputClass } from "../ui";
@@ -113,6 +116,11 @@ interface Courier {
   name: string;
   phone: string | null;
 }
+interface Customer {
+  id: string;
+  name: string;
+  phone: string | null;
+}
 
 interface CartUiLine {
   key: string;
@@ -163,6 +171,9 @@ export function PosScreen() {
   const [tables, setTables] = useState<Table[]>([]);
   const [openOrders, setOpenOrders] = useState<OpenOrder[]>([]);
   const [couriers, setCouriers] = useState<Courier[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [customerQuery, setCustomerQuery] = useState("");
+  const [customer, setCustomer] = useState<Customer | null>(null);
   const [activeCategory, setActiveCategory] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState("");
   const deferredSearchQuery = useDeferredValue(searchQuery);
@@ -232,6 +243,26 @@ export function PosScreen() {
   }, []);
 
   useEffect(load, [load]);
+
+  /**
+   * The customer picker searches server-side: the directory can be far longer
+   * than the twenty rows /api/customers returns, so each keystroke in the
+   * combobox refetches instead of filtering a truncated local list. The empty
+   * query on mount is what fills the picker with the most recent customers.
+   */
+  useEffect(() => {
+    const timer = setTimeout(
+      () => {
+        api<{ customers?: Customer[] }>(
+          "/api/customers?q=" + encodeURIComponent(customerQuery.trim()),
+        ).then(({ ok, data }) => {
+          if (ok) setCustomers(data.customers ?? []);
+        });
+      },
+      customerQuery.trim() ? 250 : 0,
+    );
+    return () => clearTimeout(timer);
+  }, [customerQuery]);
 
   const occupiedTableIds = useMemo(
     () => new Set(openOrders.map((o) => o.table_id).filter(Boolean)),
@@ -445,6 +476,36 @@ export function PosScreen() {
     () => computeOrderTotals(cartLines, discount, feeNum),
     [cartLines, discount, feeNum],
   );
+  /**
+   * A chosen customer stays in the list even once a later search stops
+   * returning them — otherwise the trigger would fall back to its placeholder
+   * while the order still carries the selection.
+   */
+  const customerOptions = useMemo(() => {
+    const known =
+      customer && !customers.some((row) => row.id === customer.id)
+        ? [customer, ...customers]
+        : customers;
+    return [
+      { value: "", label: "بدون مشتری" },
+      ...known.map((row) => ({
+        value: row.id,
+        label: row.phone
+          ? row.name + " — " + toPersianDigits(row.phone)
+          : row.name,
+        searchString: row.name + " " + (row.phone ?? ""),
+      })),
+    ];
+  }, [customer, customers]);
+
+  function selectCustomer(value: string) {
+    setCustomer(
+      value
+        ? (customers.find((row) => row.id === value) ??
+            (customer?.id === value ? customer : null))
+        : null,
+    );
+  }
 
   async function submit(intent: CheckoutIntent = "order") {
     if (busy || submissionInFlight.current) return false;
@@ -460,6 +521,7 @@ export function PosScreen() {
     const orderBody = {
       type: orderType,
       tableId: orderType === "dine_in" ? tableId : undefined,
+      customerId: customer?.id ?? undefined,
       guestCount: guestCount ? Number(guestCount) : undefined,
       discount: discountType
         ? { type: discountType, value: Number(discountValue) || 0 }
@@ -642,6 +704,8 @@ export function PosScreen() {
     setCart([]);
     setTableId("");
     setGuestCount("");
+    setCustomer(null);
+    setCustomerQuery("");
     setDiscountType("");
     setDiscountValue("");
     setDeliveryAddress("");
@@ -918,8 +982,14 @@ export function PosScreen() {
         </div>
       </div>
       {/* Cart */}
-      <div className="hidden max-h-[46dvh] w-full shrink-0 flex-col overflow-hidden rounded-2xl border border-[#EAE8E2] bg-white shadow-[0_1px_3px_rgba(37,37,34,0.03)] md:flex md:max-h-none md:w-[23rem] xl:w-[25rem]">
-        <div className="border-b border-[#EAE8E2] p-4">
+      {/*
+        Same squeeze as the mobile sheet, milder: on a short laptop the intake
+        header and the payment block can leave the line list a few pixels of
+        scroll. `min-h-40` on the list is its floor, and the column itself
+        scrolls once the three sections together outgrow the viewport.
+      */}
+      <div className="hidden max-h-[46dvh] w-full shrink-0 flex-col overflow-y-auto rounded-2xl border border-[#EAE8E2] bg-white shadow-[0_1px_3px_rgba(37,37,34,0.03)] md:flex md:max-h-none md:w-[23rem] xl:w-[25rem]">
+        <div className="shrink-0 border-b border-[#EAE8E2] p-4">
           <ErrorBox>{error}</ErrorBox>
           <div className="mb-3 grid grid-cols-3 gap-2 text-sm font-medium">
             <button
@@ -1077,9 +1147,15 @@ export function PosScreen() {
               </label>
             </div>
           ) : null}
+          <CustomerField
+            value={customer?.id ?? ""}
+            options={customerOptions}
+            onChange={selectCustomer}
+            onQueryChange={setCustomerQuery}
+          />
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto p-4">
+        <div className="min-h-40 flex-1 overflow-y-auto p-4">
           {cart.length === 0 ? (
             <p className="text-sm text-muted-foreground">سبد خالی است.</p>
           ) : (
@@ -1176,7 +1252,9 @@ export function PosScreen() {
           )}
         </div>
 
-        <div className="border-t border-border p-4">
+        {/* Sticky, so the column scrolling never takes the pay button
+            off-screen the way a plain flow footer would. */}
+        <div className="sticky bottom-0 z-10 shrink-0 border-t border-border bg-white p-4">
           <div className="mb-3 flex gap-2">
             <SearchableSelect
               value={discountType}
@@ -1335,331 +1413,358 @@ export function PosScreen() {
       <Sheet open={cartSheetOpen} onOpenChange={setCartSheetOpen}>
         <SheetContent
           side="bottom"
-          className="max-h-[90dvh] gap-0 rounded-t-3xl border-[#EAE8E2] p-0 data-[state=open]:duration-200 data-[state=closed]:duration-200 md:hidden"
+          className="flex max-h-[92dvh] flex-col gap-0 rounded-t-3xl border-[#EAE8E2] p-0 data-[state=open]:duration-200 data-[state=closed]:duration-200 md:hidden"
         >
-          <div className="border-b border-border p-4">
+          <div className="shrink-0 border-b border-border px-4 py-3">
             <SheetTitle>سبد خرید</SheetTitle>
             <ErrorBox>{error}</ErrorBox>
-            <div className="mt-3 grid grid-cols-3 gap-2 text-sm font-medium">
-              {(["dine_in", "takeaway", "delivery"] as const).map((type) => (
-                <button
-                  key={type}
-                  type="button"
-                  onClick={() => {
-                    setOrderType(type);
-                    if (type !== "dine_in") setTableId("");
-                  }}
-                  className={`min-h-11 rounded-lg px-2 ${orderType === type ? "bg-primary text-primary-foreground" : "bg-muted"}`}
-                >
-                  {type === "dine_in"
-                    ? "حضوری"
-                    : type === "takeaway"
-                      ? "بیرون‌بر"
-                      : "ارسالی"}
-                </button>
-              ))}
-            </div>
-            {orderType === "dine_in" ? (
-              <div className="mt-3 flex flex-wrap gap-2">
-                {tables.map((table) => {
-                  const occupied = occupiedTableIds.has(table.id);
-                  return (
-                    <button
-                      key={table.id}
-                      type="button"
-                      disabled={occupied}
-                      onClick={() => setTableId(table.id)}
-                      className={`min-h-11 rounded-lg border px-3 text-sm ${tableId === table.id ? "border-[#E9A11B] bg-[#FFF1D8] text-[#9B6700]" : "border-input"}`}
-                    >
-                      {table.name}
-                    </button>
-                  );
-                })}
+          </div>
+          {/*
+            One scroll region for the sheet, not three. The order type, the
+            table grid and the payment block each used to hold a fixed slice
+            of a 90dvh sheet, which left the item list a sliver to scroll in
+            on a phone — the taller the intake form, the less of the cart was
+            visible. Only the title and the two actions stay pinned now;
+            everything between them scrolls as one.
+          */}
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+            <div className="border-b border-border p-4">
+              <div className="grid grid-cols-3 gap-2 text-sm font-medium">
+                {(["dine_in", "takeaway", "delivery"] as const).map((type) => (
+                  <button
+                    key={type}
+                    type="button"
+                    onClick={() => {
+                      setOrderType(type);
+                      if (type !== "dine_in") setTableId("");
+                    }}
+                    className={`min-h-11 rounded-lg px-2 ${orderType === type ? "bg-primary text-primary-foreground" : "bg-muted"}`}
+                  >
+                    {type === "dine_in"
+                      ? "حضوری"
+                      : type === "takeaway"
+                        ? "بیرون‌بر"
+                        : "ارسالی"}
+                  </button>
+                ))}
               </div>
-            ) : null}
-            {orderType === "delivery" ? (
-              <div className="mt-3 space-y-3">
-                <label
-                  className="block text-xs font-semibold text-[#5E5B55]"
-                  htmlFor="pos-mobile-delivery-address"
-                >
-                  آدرس تحویل
-                  <textarea
-                    id="pos-mobile-delivery-address"
-                    className={
-                      inputClass +
-                      " mt-1 h-auto min-h-20 border-[#EAE8E2] bg-[#FCFCFA] py-2"
-                    }
-                    rows={2}
-                    value={deliveryAddress}
-                    onChange={(event) => setDeliveryAddress(event.target.value)}
-                    placeholder="آدرس کامل تحویل"
-                  />
-                </label>
-                <div className="grid grid-cols-2 gap-2">
+              {orderType === "dine_in" ? (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {tables.map((table) => {
+                    const occupied = occupiedTableIds.has(table.id);
+                    return (
+                      <button
+                        key={table.id}
+                        type="button"
+                        disabled={occupied}
+                        onClick={() => setTableId(table.id)}
+                        className={`min-h-11 rounded-lg border px-3 text-sm ${tableId === table.id ? "border-[#E9A11B] bg-[#FFF1D8] text-[#9B6700]" : "border-input"}`}
+                      >
+                        {table.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : null}
+              {orderType === "delivery" ? (
+                <div className="mt-3 space-y-3">
                   <label
                     className="block text-xs font-semibold text-[#5E5B55]"
-                    htmlFor="pos-mobile-delivery-phone"
+                    htmlFor="pos-mobile-delivery-address"
                   >
-                    تلفن مشتری
-                    <input
-                      id="pos-mobile-delivery-phone"
+                    آدرس تحویل
+                    <textarea
+                      id="pos-mobile-delivery-address"
                       className={
                         inputClass +
-                        " mt-1 min-h-11 border-[#EAE8E2] bg-[#FCFCFA]"
+                        " mt-1 h-auto min-h-20 border-[#EAE8E2] bg-[#FCFCFA] py-2"
                       }
-                      dir="ltr"
-                      inputMode="tel"
-                      value={deliveryPhone}
-                      onChange={(event) => setDeliveryPhone(event.target.value)}
-                      placeholder="اختیاری"
+                      rows={2}
+                      value={deliveryAddress}
+                      onChange={(event) => setDeliveryAddress(event.target.value)}
+                      placeholder="آدرس کامل تحویل"
                     />
                   </label>
-                  <label
-                    className="block text-xs font-semibold text-[#5E5B55]"
-                    htmlFor="pos-mobile-delivery-fee"
-                  >
-                    هزینهٔ ارسال
-                    <input
-                      id="pos-mobile-delivery-fee"
+                  <div className="grid grid-cols-2 gap-2">
+                    <label
+                      className="block text-xs font-semibold text-[#5E5B55]"
+                      htmlFor="pos-mobile-delivery-phone"
+                    >
+                      تلفن مشتری
+                      <input
+                        id="pos-mobile-delivery-phone"
+                        className={
+                          inputClass +
+                          " mt-1 min-h-11 border-[#EAE8E2] bg-[#FCFCFA]"
+                        }
+                        dir="ltr"
+                        inputMode="tel"
+                        value={deliveryPhone}
+                        onChange={(event) => setDeliveryPhone(event.target.value)}
+                        placeholder="اختیاری"
+                      />
+                    </label>
+                    <label
+                      className="block text-xs font-semibold text-[#5E5B55]"
+                      htmlFor="pos-mobile-delivery-fee"
+                    >
+                      هزینهٔ ارسال
+                      <input
+                        id="pos-mobile-delivery-fee"
+                        className={
+                          inputClass +
+                          " mt-1 min-h-11 border-[#EAE8E2] bg-[#FCFCFA]"
+                        }
+                        dir="ltr"
+                        inputMode="numeric"
+                        value={deliveryFee}
+                        onChange={(event) => setDeliveryFee(event.target.value)}
+                        placeholder="تومان"
+                      />
+                    </label>
+                  </div>
+                  <label className="block text-xs font-semibold text-[#5E5B55]">
+                    پیک
+                    <SearchableSelect
                       className={
                         inputClass +
                         " mt-1 min-h-11 border-[#EAE8E2] bg-[#FCFCFA]"
                       }
-                      dir="ltr"
-                      inputMode="numeric"
-                      value={deliveryFee}
-                      onChange={(event) => setDeliveryFee(event.target.value)}
-                      placeholder="تومان"
+                      value={deliveryCourierId}
+                      onChange={setDeliveryCourierId}
+                      ariaLabel="پیک ارسال"
+                      options={[
+                        { value: "", label: "تخصیص پیک بعداً" },
+                        ...couriers.map((courier) => ({
+                          value: courier.id,
+                          label: courier.name,
+                        })),
+                      ]}
                     />
                   </label>
                 </div>
-                <label className="block text-xs font-semibold text-[#5E5B55]">
-                  پیک
-                  <SearchableSelect
-                    className={
-                      inputClass +
-                      " mt-1 min-h-11 border-[#EAE8E2] bg-[#FCFCFA]"
-                    }
-                    value={deliveryCourierId}
-                    onChange={setDeliveryCourierId}
-                    ariaLabel="پیک ارسال"
-                    options={[
-                      { value: "", label: "تخصیص پیک بعداً" },
-                      ...couriers.map((courier) => ({
-                        value: courier.id,
-                        label: courier.name,
-                      })),
-                    ]}
-                  />
-                </label>
-              </div>
-            ) : null}
-          </div>
-          <div className="min-h-0 flex-1 overflow-y-auto p-4">
-            {cart.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                سبد خرید خالی است.
-              </p>
-            ) : (
-              <ul className="space-y-2.5">
-                {cart.map((line) => {
-                  const breakdown = linePriceBreakdown({
-                    unitPrice: line.unitPrice,
-                    modifierDeltas: line.modifiers.map(
-                      (modifier) => modifier.priceDelta,
-                    ),
-                    quantity: line.quantity,
-                  });
-                  return (
-                    <li
-                      key={line.key}
-                      className={
-                        "rounded-xl border p-3 " +
-                        (line.modifiers.length > 0
-                          ? "border-[#F2D097] bg-[#FFFCF5]"
-                          : "border-[#EAE8E2] bg-white")
-                      }
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="font-bold text-[#252522]">
-                            {line.name}
-                          </p>
-                          <p className="mt-0.5 text-xs text-[#77756F]">
-                            {formatToman(breakdown.unit)} هر واحد
+              ) : null}
+              <CustomerField
+                value={customer?.id ?? ""}
+                options={customerOptions}
+                onChange={selectCustomer}
+                onQueryChange={setCustomerQuery}
+              />
+            </div>
+            <div className="p-4">
+              {cart.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  سبد خرید خالی است.
+                </p>
+              ) : (
+                <ul className="space-y-2.5">
+                  {cart.map((line) => {
+                    const breakdown = linePriceBreakdown({
+                      unitPrice: line.unitPrice,
+                      modifierDeltas: line.modifiers.map(
+                        (modifier) => modifier.priceDelta,
+                      ),
+                      quantity: line.quantity,
+                    });
+                    return (
+                      <li
+                        key={line.key}
+                        className={
+                          "rounded-xl border p-3 " +
+                          (line.modifiers.length > 0
+                            ? "border-[#F2D097] bg-[#FFFCF5]"
+                            : "border-[#EAE8E2] bg-white")
+                        }
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="font-bold text-[#252522]">
+                              {line.name}
+                            </p>
+                            <p className="mt-0.5 text-xs text-[#77756F]">
+                              {formatToman(breakdown.unit)} هر واحد
+                            </p>
+                          </div>
+                          <p className="shrink-0 text-sm font-bold text-[#B97905]">
+                            {formatToman(breakdown.total)}
                           </p>
                         </div>
-                        <p className="shrink-0 text-sm font-bold text-[#B97905]">
-                          {formatToman(breakdown.total)}
-                        </p>
-                      </div>
-                      <ModifierBadges
-                        modifiers={line.modifiers}
-                        tone="amber"
-                        className="mt-2"
-                      />
-                      {line.note ? (
-                        <p className="mt-2 text-xs text-[#77756F]">
-                          یادداشت: {line.note}
-                        </p>
-                      ) : null}
-                      <div className="mt-2 flex items-center gap-2">
-                        <button
-                          type="button"
-                          aria-label="کاهش تعداد"
-                          onClick={() => setQty(line.key, line.quantity - 1)}
-                          className="flex size-11 items-center justify-center rounded-lg bg-muted"
-                        >
-                          −
-                        </button>
-                        <span className="w-8 text-center font-semibold">
-                          {toPersianDigits(line.quantity)}
-                        </span>
-                        <button
-                          type="button"
-                          aria-label="افزایش تعداد"
-                          onClick={() => setQty(line.key, line.quantity + 1)}
-                          className="flex size-11 items-center justify-center rounded-lg bg-muted"
-                        >
-                          +
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => removeLine(line.key)}
-                          className="ms-auto px-2 py-1 text-sm text-destructive"
-                        >
-                          حذف
-                        </button>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </div>
-          <div className="border-t border-border p-4">
-            <div className="mb-3 flex gap-2">
-              <SearchableSelect
-                value={discountType}
-                onChange={(value) =>
-                  setDiscountType(value as "" | "percent" | "amount")
-                }
-                ariaLabel="نوع تخفیف"
-                options={[
-                  { value: "", label: "بدون تخفیف" },
-                  { value: "percent", label: "درصدی" },
-                  { value: "amount", label: "مبلغ ثابت" },
-                ]}
-              />
-              {discountType ? (
-                <input
-                  className={inputClass}
-                  dir="ltr"
-                  inputMode="numeric"
-                  value={discountValue}
-                  onChange={(event) => setDiscountValue(event.target.value)}
-                  placeholder={discountType === "percent" ? "درصد" : "تومان"}
-                  aria-label="مقدار تخفیف"
+                        <ModifierBadges
+                          modifiers={line.modifiers}
+                          tone="amber"
+                          className="mt-2"
+                        />
+                        {line.note ? (
+                          <p className="mt-2 text-xs text-[#77756F]">
+                            یادداشت: {line.note}
+                          </p>
+                        ) : null}
+                        <div className="mt-2 flex items-center gap-2">
+                          <button
+                            type="button"
+                            aria-label="کاهش تعداد"
+                            onClick={() => setQty(line.key, line.quantity - 1)}
+                            className="flex size-11 items-center justify-center rounded-lg bg-muted"
+                          >
+                            −
+                          </button>
+                          <span className="w-8 text-center font-semibold">
+                            {toPersianDigits(line.quantity)}
+                          </span>
+                          <button
+                            type="button"
+                            aria-label="افزایش تعداد"
+                            onClick={() => setQty(line.key, line.quantity + 1)}
+                            className="flex size-11 items-center justify-center rounded-lg bg-muted"
+                          >
+                            +
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => removeLine(line.key)}
+                            className="ms-auto px-2 py-1 text-sm text-destructive"
+                          >
+                            حذف
+                          </button>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+            <div className="border-t border-border p-4">
+              <div className="mb-3 flex gap-2">
+                <SearchableSelect
+                  value={discountType}
+                  onChange={(value) =>
+                    setDiscountType(value as "" | "percent" | "amount")
+                  }
+                  ariaLabel="نوع تخفیف"
+                  options={[
+                    { value: "", label: "بدون تخفیف" },
+                    { value: "percent", label: "درصدی" },
+                    { value: "amount", label: "مبلغ ثابت" },
+                  ]}
+                />
+                {discountType ? (
+                  <input
+                    className={inputClass}
+                    dir="ltr"
+                    inputMode="numeric"
+                    value={discountValue}
+                    onChange={(event) => setDiscountValue(event.target.value)}
+                    placeholder={discountType === "percent" ? "درصد" : "تومان"}
+                    aria-label="مقدار تخفیف"
+                  />
+                ) : null}
+              </div>
+              {cartAddOnTotal !== 0 ? (
+                <Row
+                  label="از این مبلغ، افزودنی‌ها"
+                  value={formatModifierDelta(cartAddOnTotal)}
                 />
               ) : null}
-            </div>
-            {cartAddOnTotal !== 0 ? (
-              <Row
-                label="از این مبلغ، افزودنی‌ها"
-                value={formatModifierDelta(cartAddOnTotal)}
-              />
-            ) : null}
-            <Row label="جمع کل" value={formatToman(totals.total)} bold />
-            <div className="mt-4">
-              <p className="mb-2 text-xs font-bold text-[#5E5B55]">
-                روش دریافت وجه
-              </p>
-              <div className="grid grid-cols-3 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setPaymentMethod("cash")}
-                  className={
-                    "flex min-h-14 items-center justify-center gap-2 rounded-xl border text-sm font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 " +
-                    (paymentMethod === "cash"
-                      ? "border-[#F2D097] bg-[#FFF1D8] text-[#9B6700]"
-                      : "border-[#EAE8E2] text-[#5E5B55]")
-                  }
+              <div className="mt-4">
+                <p className="mb-2 text-xs font-bold text-[#5E5B55]">
+                  روش دریافت وجه
+                </p>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMethod("cash")}
+                    className={
+                      "flex min-h-14 items-center justify-center gap-2 rounded-xl border text-sm font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 " +
+                      (paymentMethod === "cash"
+                        ? "border-[#F2D097] bg-[#FFF1D8] text-[#9B6700]"
+                        : "border-[#EAE8E2] text-[#5E5B55]")
+                    }
+                  >
+                    <BanknoteIcon className="size-4" aria-hidden="true" />
+                    نقدی
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMethod("card")}
+                    className={
+                      "flex min-h-14 items-center justify-center gap-2 rounded-xl border text-sm font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 " +
+                      (paymentMethod === "card"
+                        ? "border-[#F2D097] bg-[#FFF1D8] text-[#9B6700]"
+                        : "border-[#EAE8E2] text-[#5E5B55]")
+                    }
+                  >
+                    <CreditCardIcon className="size-4" aria-hidden="true" />
+                    کارت‌خوان
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMethod("snappfood")}
+                    className={
+                      "flex min-h-14 items-center justify-center gap-2 rounded-xl border text-sm font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 " +
+                      (paymentMethod === "snappfood"
+                        ? "border-[#F2D097] bg-[#FFF1D8] text-[#9B6700]"
+                        : "border-[#EAE8E2] text-[#5E5B55]")
+                    }
+                  >
+                    <SmartphoneIcon className="size-4" aria-hidden="true" />
+                    اسنپ‌فود
+                  </button>
+                </div>
+                <label
+                  htmlFor="pos-mobile-tip"
+                  className="mt-2 block text-xs font-bold text-[#5E5B55]"
                 >
-                  <BanknoteIcon className="size-4" aria-hidden="true" />
-                  نقدی
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPaymentMethod("card")}
+                  انعام{" "}
+                  <span className="font-normal text-[#8B8A85]">
+                    (اختیاری، تومان)
+                  </span>
+                </label>
+                <input
+                  id="pos-mobile-tip"
                   className={
-                    "flex min-h-14 items-center justify-center gap-2 rounded-xl border text-sm font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 " +
-                    (paymentMethod === "card"
-                      ? "border-[#F2D097] bg-[#FFF1D8] text-[#9B6700]"
-                      : "border-[#EAE8E2] text-[#5E5B55]")
+                    inputClass + " mt-1 min-h-11 border-[#EAE8E2] bg-[#FCFCFA]"
                   }
-                >
-                  <CreditCardIcon className="size-4" aria-hidden="true" />
-                  کارت‌خوان
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPaymentMethod("snappfood")}
-                  className={
-                    "flex min-h-14 items-center justify-center gap-2 rounded-xl border text-sm font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 " +
-                    (paymentMethod === "snappfood"
-                      ? "border-[#F2D097] bg-[#FFF1D8] text-[#9B6700]"
-                      : "border-[#EAE8E2] text-[#5E5B55]")
-                  }
-                >
-                  <SmartphoneIcon className="size-4" aria-hidden="true" />
-                  اسنپ‌فود
-                </button>
+                  dir="ltr"
+                  inputMode="numeric"
+                  value={tipInput}
+                  onChange={(event) => setTipInput(event.target.value)}
+                  placeholder="۰"
+                />
               </div>
-              <label
-                htmlFor="pos-mobile-tip"
-                className="mt-2 block text-xs font-bold text-[#5E5B55]"
-              >
-                انعام{" "}
-                <span className="font-normal text-[#8B8A85]">
-                  (اختیاری، تومان)
-                </span>
-              </label>
-              <input
-                id="pos-mobile-tip"
-                className={
-                  inputClass + " mt-1 min-h-11 border-[#EAE8E2] bg-[#FCFCFA]"
-                }
-                dir="ltr"
-                inputMode="numeric"
-                value={tipInput}
-                onChange={(event) => setTipInput(event.target.value)}
-                placeholder="۰"
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  setCheckoutIntent("payment");
-                  setReviewOpen(true);
-                }}
-                disabled={busy || cart.length === 0}
-                className="mt-3 flex min-h-14 w-full items-center justify-center gap-2 rounded-xl bg-[#E9A11B] px-4 text-sm font-bold text-[#252522] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 disabled:opacity-55"
-              >
-                <ReceiptTextIcon className="size-5" aria-hidden="true" />
-                دریافت {PAYMENT_METHOD_LABELS[paymentMethod]} و تکمیل
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setCheckoutIntent("order");
-                  setReviewOpen(true);
-                }}
-                disabled={busy || cart.length === 0}
-                className="mt-2 min-h-12 w-full rounded-xl border border-[#EAE8E2] bg-white px-4 text-sm font-semibold text-[#5E5B55] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 disabled:opacity-55"
-              >
-                ثبت سفارش باز
-              </button>
             </div>
+          </div>
+          <div className="shrink-0 border-t border-border bg-card p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+            <div className="mb-3 flex items-center justify-between">
+              <span className="text-xs font-bold text-[#5E5B55]">
+                جمع کل
+              </span>
+              <span className="text-base font-bold text-[#252522]">
+                {formatToman(totals.total)}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setCheckoutIntent("payment");
+                setReviewOpen(true);
+              }}
+              disabled={busy || cart.length === 0}
+              className="flex min-h-14 w-full items-center justify-center gap-2 rounded-xl bg-[#E9A11B] px-4 text-sm font-bold text-[#252522] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 disabled:opacity-55"
+            >
+              <ReceiptTextIcon className="size-5" aria-hidden="true" />
+              دریافت {PAYMENT_METHOD_LABELS[paymentMethod]} و تکمیل
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setCheckoutIntent("order");
+                setReviewOpen(true);
+              }}
+              disabled={busy || cart.length === 0}
+              className="mt-2 min-h-12 w-full rounded-xl border border-[#EAE8E2] bg-white px-4 text-sm font-semibold text-[#5E5B55] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 disabled:opacity-55"
+            >
+              ثبت سفارش باز
+            </button>
           </div>
         </SheetContent>
       </Sheet>
@@ -1728,6 +1833,7 @@ export function PosScreen() {
                     value={deliveryAddress.trim() || "ثبت نشده"}
                   />
                 ) : null}
+                <Row label="مشتری" value={customer?.name ?? "بدون مشتری"} />
                 <Row
                   label="تعداد اقلام"
                   value={toPersianDigits(cartItemCount)}
@@ -2027,6 +2133,40 @@ function PosLoadingState({
         </aside>
       </div>
     </div>
+  );
+}
+
+/**
+ * The till's customer picker, shared by the desktop cart panel and the mobile
+ * cart sheet so both send the same field. Optional by design — a walk-in sale
+ * stays anonymous, and picking someone only attributes the order to them.
+ */
+function CustomerField({
+  value,
+  options,
+  onChange,
+  onQueryChange,
+}: {
+  value: string;
+  options: SelectOption[];
+  onChange: (value: string) => void;
+  onQueryChange: (query: string) => void;
+}) {
+  return (
+    <label className="mt-3 block text-xs font-semibold text-[#5E5B55]">
+      مشتری <span className="font-normal text-[#8B8A85]">(اختیاری)</span>
+      <SearchableSelect
+        className={inputClass + " mt-1 min-h-11 border-[#EAE8E2] bg-[#FCFCFA]"}
+        value={value}
+        onChange={onChange}
+        onQueryChange={onQueryChange}
+        options={options}
+        ariaLabel="انتخاب مشتری"
+        placeholder="بدون مشتری"
+        searchPlaceholder="جستجوی نام یا شماره…"
+        emptyText="مشتری‌ای یافت نشد."
+      />
+    </label>
   );
 }
 

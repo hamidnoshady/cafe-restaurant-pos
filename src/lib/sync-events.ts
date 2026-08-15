@@ -45,6 +45,7 @@ export interface SyncEventResult {
 interface OrderCreatePayload {
   type?: "dine_in" | "takeaway" | "delivery";
   tableId?: string;
+  customerId?: string;
   guestCount?: number;
   note?: string;
   discount?: { type?: "percent" | "amount"; value?: number };
@@ -91,6 +92,7 @@ async function dispatch(
       locationId,
       type: payload.type,
       tableId: payload.tableId ?? null,
+      customerId: payload.customerId ?? null,
       guestCount: Number.isFinite(payload.guestCount) ? Number(payload.guestCount) : null,
       note: payload.note ?? null,
       discount,
