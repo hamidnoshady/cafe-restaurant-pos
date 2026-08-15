@@ -2,12 +2,18 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
 import { isValidCashFloat } from "@/lib/shift";
 import { ShiftError, openShift } from "@/lib/shift-service";
+import { resolveActiveLocation } from "@/lib/setup-state";
 
 /**
  * Self-service clock-in (Phase 20 Wave 5) — the same PIN-role audience as
  * the lock screen and biometric-settings panel. `openingFloat` is optional
  * (Rial): a cashier starting a till counts it, a waiter/kitchen shift
  * usually won't.
+ *
+ * The caller's active branch is passed down so the shift is attributed to it
+ * when the employee session carries no location of its own — an employee with
+ * no default branch assigned would otherwise open a branch-less shift that no
+ * branch-scoped read can see.
  */
 export const POST = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireRole("cashier", "waiter", "kitchen");
@@ -25,11 +31,13 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   }
 
   try {
+    const location = await resolveActiveLocation(session);
     const shift = await openShift(
       session.sub,
       session.businessId,
       session.employeeSessionId ?? null,
       body.openingFloat ?? null,
+      location?.id ?? null,
     );
     return NextResponse.json({ shift }, { status: 201 });
   } catch (err) {

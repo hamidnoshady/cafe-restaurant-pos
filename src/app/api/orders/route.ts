@@ -3,7 +3,7 @@ import { requireRole, withTenantScope } from "@/lib/auth";
 import { type CartItemInput } from "@/lib/order-cart";
 import { createOrder } from "@/lib/order-mutations";
 import { listOrders, listOrdersClosedSince } from "@/lib/order-read-service";
-import { branchShiftStartedAt } from "@/lib/shift-service";
+import { branchClosedOrdersWindow } from "@/lib/shift-service";
 import type { DiscountInput } from "@/lib/orders";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { broadcast } from "@/lib/realtime";
@@ -11,13 +11,15 @@ import { broadcast } from "@/lib/realtime";
 /**
  * Open orders for the cashier's "current orders" list.
  *
- * `?scope=shift` additionally returns the orders *closed* since the branch's
- * running shift began (`closedOrders`, newest close first) plus that shift's
- * start, for the orders screen — a closed order is otherwise invisible the
- * moment it is paid. Only that screen asks for it, so the POS and waiter
- * panels, which poll this route for their queue, keep paying for one query.
- * With no shift open there is no window, so `closedOrders` is empty and the
- * screen says why rather than falling back to a date range.
+ * `?scope=shift` additionally returns the orders *closed* over the branch's
+ * current window (`closedOrders`, newest close first) plus the window itself,
+ * for the orders screen — a closed order is otherwise invisible the moment it
+ * is paid. Only that screen asks for it, so the POS and waiter panels, which
+ * poll this route for their queue, keep paying for one query.
+ *
+ * The window is today's business day at the branch, widened to a still-running
+ * shift that began earlier (see branchClosedOrdersWindow); `shiftStartedAt` is
+ * reported alongside so the screen can name which of the two it is showing.
  */
 export const GET = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireRole("owner", "manager", "cashier", "waiter");
@@ -31,11 +33,14 @@ export const GET = withTenantScope(async (request: NextRequest) => {
     return NextResponse.json({ orders });
   }
 
-  const shiftStartedAt = await branchShiftStartedAt(location.id);
-  const closedOrders = shiftStartedAt
-    ? await listOrdersClosedSince(location.id, shiftStartedAt)
-    : [];
-  return NextResponse.json({ orders, closedOrders, shiftStartedAt });
+  const window = await branchClosedOrdersWindow(location.id);
+  const closedOrders = await listOrdersClosedSince(location.id, window.since);
+  return NextResponse.json({
+    orders,
+    closedOrders,
+    closedSince: window.since,
+    shiftStartedAt: window.shiftStartedAt,
+  });
 });
 
 interface CreateOrderBody {

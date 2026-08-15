@@ -427,7 +427,7 @@ function OrderDetailsPanel({
 export function OrdersList() {
   const [orders, setOrders] = useState<OrderRow[] | null>(null);
   const [closedOrders, setClosedOrders] = useState<OrderRow[]>([]);
-  /** null = no shift is open at this branch, so there is no "this shift" to look back over. */
+  /** null = nobody is clocked in, so the closed list covers the business day instead of a shift. */
   const [shiftStartedAt, setShiftStartedAt] = useState<string | null>(null);
   const [initialLoading, setInitialLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -450,6 +450,7 @@ export function OrdersList() {
       const { ok, data } = await api<{
         orders: OrderRow[];
         closedOrders?: OrderRow[];
+        closedSince?: string | null;
         shiftStartedAt?: string | null;
         error?: string;
       }>("/api/orders?scope=shift");
@@ -635,7 +636,7 @@ export function OrdersList() {
               سفارش‌ها
             </h1>
             <p className="mt-0.5 truncate text-xs text-[#77756F]">
-              صف سفارش‌های باز و سفارش‌های بسته‌شدهٔ شیفت جاریِ شعبهٔ فعال
+              صف سفارش‌های باز و سفارش‌های بسته‌شدهٔ شعبهٔ فعال
             </p>
           </div>
         </div>
@@ -649,7 +650,7 @@ export function OrdersList() {
               ? "در حال به‌روزرسانی…"
               : `${toPersianDigits(openCount)} سفارش باز` +
                 (closedOrders.length
-                  ? ` · ${toPersianDigits(closedOrders.length)} بسته‌شده در شیفت`
+                  ? ` · ${toPersianDigits(closedOrders.length)} بسته‌شده`
                   : "")}
           </span>
           <button
@@ -805,13 +806,14 @@ export function OrdersList() {
             </span>
           </div>
 
-          {orders && !shiftStartedAt ? (
+          {orders ? (
             <p
               className="border-b border-[#EAE8E2] bg-[#FCFCFA] px-4 py-2 text-[11px] leading-5 text-[#77756F]"
               role="status"
             >
-              شیفتی باز نیست؛ سفارش‌های بسته‌شده از زمان شروع شیفت این‌جا نشان
-              داده می‌شوند و با پایان شیفت از فهرست کنار می‌روند.
+              {shiftStartedAt
+                ? `سفارش‌های بسته‌شده از شروع شیفت (ساعت ${orderTimeLabel(shiftStartedAt)}) نمایش داده می‌شوند.`
+                : "سفارش‌های بسته‌شدهٔ امروز نمایش داده می‌شوند؛ با شروع شیفت، فهرست از زمان شیفت شمرده می‌شود."}
             </p>
           ) : null}
 
@@ -842,11 +844,11 @@ export function OrdersList() {
                 <ShoppingBagIcon className="size-5" aria-hidden="true" />
               </span>
               <p className="mt-4 text-sm font-bold text-[#252522]">
-                سفارشی برای این شیفت نیست
+                سفارشی برای نمایش نیست
               </p>
               <p className="mt-2 max-w-72 text-xs leading-6 text-[#77756F]">
                 با ثبت سفارش جدید، این صف به‌صورت خودکار به‌روز می‌شود.
-                سفارش‌های بسته‌شده تا پایان شیفت همین‌جا می‌مانند.
+                سفارش‌های بسته‌شده تا پایان روز کاری همین‌جا می‌مانند.
               </p>
             </div>
           ) : filteredOrders.length === 0 ? (
