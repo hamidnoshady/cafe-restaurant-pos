@@ -2,6 +2,21 @@
 
 ## Status: designed — all thirteen waves specified, implementation not started
 
+Tracked by GitHub issue [#261](https://github.com/hamidnoshady/cafe-restaurant-pos/issues/261),
+with one sub-issue per wave: [#262](https://github.com/hamidnoshady/cafe-restaurant-pos/issues/262),
+[#263](https://github.com/hamidnoshady/cafe-restaurant-pos/issues/263),
+[#264](https://github.com/hamidnoshady/cafe-restaurant-pos/issues/264),
+[#265](https://github.com/hamidnoshady/cafe-restaurant-pos/issues/265),
+[#266](https://github.com/hamidnoshady/cafe-restaurant-pos/issues/266),
+[#267](https://github.com/hamidnoshady/cafe-restaurant-pos/issues/267),
+[#268](https://github.com/hamidnoshady/cafe-restaurant-pos/issues/268),
+[#269](https://github.com/hamidnoshady/cafe-restaurant-pos/issues/269),
+[#270](https://github.com/hamidnoshady/cafe-restaurant-pos/issues/270),
+[#271](https://github.com/hamidnoshady/cafe-restaurant-pos/issues/271),
+[#272](https://github.com/hamidnoshady/cafe-restaurant-pos/issues/272),
+[#273](https://github.com/hamidnoshady/cafe-restaurant-pos/issues/273),
+[#274](https://github.com/hamidnoshady/cafe-restaurant-pos/issues/274).
+
 ## Numbering note
 
 26 is already claimed by the Holoo-interoperability work (issues
@@ -103,7 +118,7 @@ than from an `if (industry === …)` scattered through the app.
 
 # Track A — the new business type
 
-## Scope — Wave 1: cosmetics & toiletries, wired end to end
+## Scope — Wave 1: cosmetics & toiletries, wired end to end ([#262](https://github.com/hamidnoshady/cafe-restaurant-pos/issues/262))
 
 The unglamorous half: the trade exists, provisions, and can sell.
 
@@ -137,7 +152,7 @@ The unglamorous half: the trade exists, provisions, and can sell.
   covered, has its own brand, and gets a selling screen), `coa-template.test.ts`, and the
   business-industry integration test.
 
-## Scope — Wave 2: batch, expiry and FEFO
+## Scope — Wave 2: batch, expiry and FEFO ([#263](https://github.com/hamidnoshady/cafe-restaurant-pos/issues/263))
 
 The capability that makes cosmetics a real trade rather than accessories with a new label.
 
@@ -153,7 +168,7 @@ The capability that makes cosmetics a real trade rather than accessories with a 
   pure `receipt-template.ts`, the same way Phase 25 Wave 3 added the gold breakdown.
 - New profile capability `batch_expiry`, on for `cosmetics`.
 
-## Scope — Wave 3: cosmetics merchandising and regulatory identity
+## Scope — Wave 3: cosmetics merchandising and regulatory identity ([#264](https://github.com/hamidnoshady/cafe-restaurant-pos/issues/264))
 
 - `item_brands` (برند + کشور سازنده) and product line, so «برند» becomes a first-class filter,
   report axis and commission basis (Wave 7).
@@ -170,7 +185,7 @@ The capability that makes cosmetics a real trade rather than accessories with a 
 
 # Track B — shared retail capability, built once
 
-## Scope — Wave 4: barcode and label printing
+## Scope — Wave 4: barcode and label printing ([#265](https://github.com/hamidnoshady/cafe-restaurant-pos/issues/265))
 
 *Capability `barcode` — all four retail trades.*
 
@@ -180,7 +195,7 @@ The capability that makes cosmetics a real trade rather than accessories with a 
   of `receipt-template.ts`): price/shade/expiry for cosmetics, price/عیار/وزن for jewelry,
   price/size for accessories.
 
-## Scope — Wave 5: loyalty, store credit and a customer worth having
+## Scope — Wave 5: loyalty, store credit and a customer worth having ([#266](https://github.com/hamidnoshady/cafe-restaurant-pos/issues/266))
 
 *Module `loyalty`.*
 
@@ -191,7 +206,7 @@ The capability that makes cosmetics a real trade rather than accessories with a 
   the counter a «مشتریان آماده خرید مجدد» list. A shampoo is a 45-day cycle; this is the
   highest-value CRM feature cosmetics has, and every trade can use it.
 
-## Scope — Wave 6: promotions, bundles and gift cards
+## Scope — Wave 6: promotions, bundles and gift cards ([#267](https://github.com/hamidnoshady/cafe-restaurant-pos/issues/267))
 
 *Module `promotions`.*
 
@@ -202,7 +217,7 @@ The capability that makes cosmetics a real trade rather than accessories with a 
   café.
 - `gift_cards` / vouchers with their own liability account and posting rule.
 
-## Scope — Wave 7: sales-staff commission
+## Scope — Wave 7: sales-staff commission ([#268](https://github.com/hamidnoshady/cafe-restaurant-pos/issues/268))
 
 *Module `commission`.*
 
@@ -212,7 +227,7 @@ The capability that makes cosmetics a real trade rather than accessories with a 
 - Per-staff report and leaderboard. Cosmetics and jewelry counters run on this; nothing in the
   product models it today.
 
-## Scope — Wave 8: purchasing, returns and transfers on the `items` model
+## Scope — Wave 8: purchasing, returns and transfers on the `items` model ([#269](https://github.com/hamidnoshady/cafe-restaurant-pos/issues/269))
 
 The largest standing gap on the retail side. Build the same semantics as
 `purchase-receipt-costing.ts`, `supplier-return-service.ts` and `transfer-service.ts` against
@@ -223,7 +238,7 @@ worlds — plus reorder points and a low-stock / dead-stock report per trade.
 
 # Track C — a flagship for each existing trade
 
-## Scope — Wave 9: jewelry — layaway, buy-back, and the customer gold account
+## Scope — Wave 9: jewelry — layaway, buy-back, and the customer gold account ([#270](https://github.com/hamidnoshady/cafe-restaurant-pos/issues/270))
 
 - **`layaway_plans` denominated in grams**, so an instalment plan survives a gold-price move.
   Posted through the engine. The single feature most likely to sell the product to a jeweller.
@@ -235,7 +250,7 @@ worlds — plus reorder points and a low-stock / dead-stock report per trade.
 - **سفارش ساخت** (custom-order) tickets with a deposit and a promised date, reusing
   `repair_ticket_counters`' numbering pattern.
 
-## Scope — Wave 10: watch — service CRM, pre-owned trade-in, provenance
+## Scope — Wave 10: watch — service CRM, pre-owned trade-in, provenance ([#271](https://github.com/hamidnoshady/cafe-restaurant-pos/issues/271))
 
 - Service and battery **reminders** from `serial_warranties` plus sale date, surfaced as a due list
   and as a nudge through the existing `ai-proactive` job runner.
@@ -244,13 +259,13 @@ worlds — plus reorder points and a low-stock / dead-stock report per trade.
   approval step and a printed estimate — and opening the repairs module to jewelry, since the table
   is already generic (`item_description`, nullable `serial_id`).
 
-## Scope — Wave 11: accessories & cosmetics merchandising analytics
+## Scope — Wave 11: accessories & cosmetics merchandising analytics ([#272](https://github.com/hamidnoshady/cafe-restaurant-pos/issues/272))
 
 - Variant-matrix bulk price/stock editor; fast / slow / dead-stock classification; a markdown
   planner posting the write-down through `nrv-service.ts`'s existing shape.
 - Season/collection tagging and sell-through reporting.
 
-## Scope — Wave 12: food service — what the café gets
+## Scope — Wave 12: food service — what the café gets ([#273](https://github.com/hamidnoshady/cafe-restaurant-pos/issues/273))
 
 - **Happy-hour / time-of-day pricing** through Wave 6's engine, so there is no second discount path.
 - **Recipe cost-drift alerts** — ingredient cost has moved more than X% since the menu price was set
@@ -258,7 +273,7 @@ worlds — plus reorder points and a low-stock / dead-stock report per trade.
 - **Waste analytics** over the `inventory_events` waste postings that already exist.
 - Wave 5's loyalty and repeat-visit turned on for F&B.
 
-## Scope — Wave 13: close-out
+## Scope — Wave 13: close-out ([#274](https://github.com/hamidnoshady/cafe-restaurant-pos/issues/274))
 
 - Per-trade report pack additions in `industry-reports.ts` and each `/api/{trade}/reports`.
 - Teach the assistant the new tools (`src/lib/ai-tools.ts`) so «کدام کالاها تا ۳۰ روز دیگر منقضی
