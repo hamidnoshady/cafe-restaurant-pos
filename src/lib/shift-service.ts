@@ -158,24 +158,33 @@ const SHIFT_COLUMNS =
  * same way every reporting view already buckets a business day (Phase 8) —
  * computed once at open time and stored, not recomputed later, so a shift
  * that runs past local midnight stays on the day it started.
+ *
+ * A session only carries a location when the employee has a default branch
+ * assigned (users.location_id, copied at PIN/WebAuthn login) or signed in from
+ * a paired device — otherwise it is null, and a shift used to be recorded with
+ * no branch at all even though the request itself resolves one. The caller
+ * passes that resolved branch as `fallbackLocationId` so every shift is
+ * attributed to where it was actually worked; without it a branch-scoped read
+ * of open shifts silently finds nothing.
  */
 export async function openShift(
   employeeId: string,
   businessId: string,
   sessionId: string | null,
   openingFloat: number | null = null,
+  fallbackLocationId: string | null = null,
 ): Promise<EmployeeShift> {
   try {
     const { rows } = await query<ShiftRow>(
       `INSERT INTO employee_shifts
          (employee_id, business_id, location_id, session_id, device_id, opening_float, business_date)
-       SELECT $1, $2, s.location_id, s.id, s.device_id, $4,
+       SELECT $1, $2, coalesce(s.location_id, $5::uuid), s.id, s.device_id, $4,
               (now() AT TIME ZONE coalesce(l.timezone, 'UTC'))::date
          FROM employee_sessions s
-         LEFT JOIN locations l ON l.id = s.location_id
+         LEFT JOIN locations l ON l.id = coalesce(s.location_id, $5::uuid)
         WHERE s.id = $3 AND s.business_id = $2
        RETURNING ${SHIFT_COLUMNS}`,
-      [employeeId, businessId, sessionId, openingFloat],
+      [employeeId, businessId, sessionId, openingFloat, fallbackLocationId],
     );
     if (!rows[0]) throw new ShiftError("session_required", 400);
     const shift = toShift(rows[0]);
@@ -201,28 +210,58 @@ export async function getActiveShift(
   return rows[0] ? toShift(rows[0]) : null;
 }
 
+export interface ClosedOrdersWindow {
+  /** Start of the period the orders screen lists closed orders for. */
+  since: string;
+  /** When the branch's running shift began, or null when nobody is clocked in. */
+  shiftStartedAt: string | null;
+}
+
 /**
- * When the *branch's* running shift began — the earliest start among the shifts
- * still open there — or null when nobody at the branch is clocked in.
+ * The period the orders screen looks back over for closed orders: the current
+ * business day at the branch, extended back to the start of a shift that is
+ * still running if that shift began earlier.
  *
- * Shifts are per employee (one open shift each), so a branch that has two
- * people clocked in has two rows; the earliest of them is the point from which
- * "this shift" has been trading, and taking the earliest means a colleague
- * clocking in mid-service never hides what was closed before they arrived.
- * Deliberately not `coalesce(ended_at, now())`-style widening like the shift
- * report's default: this powers the orders screen's "closed this shift" list,
- * which is meant to empty the moment the last shift ends rather than keep
- * showing the previous one's orders.
+ * The first version of this keyed the window on the open shift alone, and that
+ * was wrong in practice in three separate ways, each of which showed an empty
+ * list on a branch that had been trading all day: a business whose staff never
+ * clock in has no shift at all; an owner/manager *cannot* clock in (the shift
+ * routes are cashier/waiter/kitchen only); and a cashier who clocks in at 14:00
+ * would hide everything sold that morning. Anchoring on the business day fixes
+ * all three, and taking the earlier of the two keeps a night shift that crossed
+ * local midnight whole instead of truncating it at 00:00.
+ *
+ * Shifts are per employee (one open shift each), so a branch with two people
+ * clocked in has two rows and the earliest wins — a colleague arriving mid-
+ * service never narrows the window. A shift row whose location is null counts
+ * for the branch: rows written before shifts recorded a fallback branch (see
+ * openShift) have no branch of their own, and dropping them would reintroduce
+ * exactly the empty list this function exists to prevent. Reads stay tenant-
+ * scoped by RLS, and the orders themselves are always filtered by branch, so
+ * the only thing such a row can affect is where the window starts.
  */
-export async function branchShiftStartedAt(locationId: string): Promise<string | null> {
-  const { rows } = await query<{ started_at: Date | null }>(
-    `SELECT min(started_at) AS started_at
-       FROM employee_shifts
-      WHERE location_id = $1 AND ended_at IS NULL`,
+export async function branchClosedOrdersWindow(locationId: string): Promise<ClosedOrdersWindow> {
+  const { rows } = await query<{ shift_started_at: Date | null; day_started_at: Date }>(
+    `SELECT (
+              SELECT min(s.started_at)
+                FROM employee_shifts s
+               WHERE s.ended_at IS NULL
+                 AND (s.location_id = l.id OR s.location_id IS NULL)
+            ) AS shift_started_at,
+            date_trunc('day', now() AT TIME ZONE l.timezone) AT TIME ZONE l.timezone
+              AS day_started_at
+       FROM locations l
+      WHERE l.id = $1`,
     [locationId],
   );
-  const startedAt = rows[0]?.started_at ?? null;
-  return startedAt ? startedAt.toISOString() : null;
+
+  const dayStartedAt = rows[0]?.day_started_at ?? new Date();
+  const shiftStartedAt = rows[0]?.shift_started_at ?? null;
+  const since = shiftStartedAt && shiftStartedAt < dayStartedAt ? shiftStartedAt : dayStartedAt;
+  return {
+    since: since.toISOString(),
+    shiftStartedAt: shiftStartedAt ? shiftStartedAt.toISOString() : null,
+  };
 }
 
 export interface CloseShiftResult {

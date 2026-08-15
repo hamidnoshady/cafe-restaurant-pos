@@ -10,6 +10,7 @@ import {
   jalaliWeekdayColumn,
   toGregorian,
   toJalali,
+  isoDateInTimeZone,
 } from "./jalali";
 
 describe("jalali conversion", () => {
@@ -123,5 +124,30 @@ describe("formatShiftWindow", () => {
     expect(formatShiftWindow("not-a-date")).toBeNull();
     expect(formatShiftWindow("2026-08-11T06:00:00Z")).toBeNull(); // no '~'
     expect(formatShiftWindow("")).toBeNull();
+  });
+});
+
+describe("isoDateInTimeZone", () => {
+  it("buckets an evening order on the local day, not the UTC one", () => {
+    // 21:50Z is already 01:20 the next day in Tehran (+3:30) — the case that
+    // made a date filter hide everything rung up after 20:30 local.
+    expect(isoDateInTimeZone("2026-08-15T21:50:00Z")).toBe("2026-08-16");
+    expect(new Date("2026-08-15T21:50:00Z").toISOString().slice(0, 10)).toBe("2026-08-15");
+  });
+
+  it("agrees with UTC in the middle of the day", () => {
+    expect(isoDateInTimeZone("2026-08-15T09:00:00Z")).toBe("2026-08-15");
+  });
+
+  it("honours the time zone it is given", () => {
+    expect(isoDateInTimeZone("2026-08-15T21:50:00Z", "UTC")).toBe("2026-08-15");
+  });
+
+  it("accepts a Date as readily as a string", () => {
+    expect(isoDateInTimeZone(new Date("2026-03-20T20:30:00Z"))).toBe("2026-03-21");
+  });
+
+  it("returns null for something that isn't a date", () => {
+    expect(isoDateInTimeZone("not-a-date")).toBeNull();
   });
 });

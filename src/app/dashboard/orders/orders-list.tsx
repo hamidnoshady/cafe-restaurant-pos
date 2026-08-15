@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, useDeferredValue } from "react";
 import { RefreshCwIcon, SearchIcon, ShoppingBagIcon } from "lucide-react";
 import { toPersianDigits } from "@/lib/digits";
+import { formatJalali, isoDateInTimeZone } from "@/lib/jalali";
 import { formatToman } from "@/lib/money";
 import { formatQueueLabel } from "@/lib/orders";
 import {
@@ -13,6 +14,7 @@ import {
 import { ModifierBadges } from "../modifier-badges";
 import { useRealtime } from "../use-realtime";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { JalaliDatePicker } from "../jalali-date-picker";
 import { api } from "../ui";
 
 type OrderStatus = "open" | "held" | "completed" | "voided";
@@ -69,6 +71,25 @@ const STATUS_LABELS: Record<OrderStatus, string> = {
   voided: "باطل‌شده",
 };
 
+/** One of the branch's recent shifts — only owners/managers are sent these. */
+interface ShiftOption {
+  id: string;
+  employeeName: string;
+  startedAt: string;
+  endedAt: string | null;
+}
+
+/** Spans days, so it carries the Jalali date — the same wording the reports tab uses. */
+function shiftOptionLabel(shift: ShiftOption): string {
+  const start = toPersianDigits(
+    formatJalali(shift.startedAt, { withMonthName: true, withTime: true }),
+  );
+  const end = shift.endedAt
+    ? toPersianDigits(orderTimeLabel(shift.endedAt))
+    : "در حال انجام";
+  return `${shift.employeeName} · ${start} تا ${end}`;
+}
+
 /** Closed = it left the queue. The pair `listOrdersClosedSince` reads back. */
 const CLOSED_STATUSES: OrderStatus[] = ["completed", "voided"];
 
@@ -91,10 +112,15 @@ const TYPE_LABELS: Record<OrderType, string> = {
   delivery: "ارسالی",
 };
 
+/**
+ * The day an order belongs to, as the date filter's calendar counts days.
+ * Tehran rather than UTC: JalaliDatePicker hands back the ISO date behind the
+ * Jalali day the user tapped, and that calendar is Tehran's (todayJalali), so
+ * bucketing in UTC would drop every order rung up after 20:30 local into the
+ * previous day and hide it.
+ */
 function orderDateValue(value: string): string | null {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  return date.toISOString().slice(0, 10);
+  return isoDateInTimeZone(value);
 }
 
 function orderTimeLabel(value: string): string {
@@ -427,8 +453,12 @@ function OrderDetailsPanel({
 export function OrdersList() {
   const [orders, setOrders] = useState<OrderRow[] | null>(null);
   const [closedOrders, setClosedOrders] = useState<OrderRow[]>([]);
-  /** null = no shift is open at this branch, so there is no "this shift" to look back over. */
+  /** null = nobody is clocked in, so the closed list covers the business day instead of a shift. */
   const [shiftStartedAt, setShiftStartedAt] = useState<string | null>(null);
+  /** Empty for roles that may not review other people's shifts — the picker hides itself. */
+  const [shifts, setShifts] = useState<ShiftOption[]>([]);
+  /** "" = the default window (this shift, or today). Otherwise the shift being reviewed. */
+  const [shiftFilter, setShiftFilter] = useState("");
   const [initialLoading, setInitialLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [loadError, setLoadError] = useState("");
@@ -450,13 +480,24 @@ export function OrdersList() {
       const { ok, data } = await api<{
         orders: OrderRow[];
         closedOrders?: OrderRow[];
+        closedSince?: string | null;
         shiftStartedAt?: string | null;
+        shifts?: ShiftOption[];
+        selectedShift?: ShiftOption | null;
         error?: string;
-      }>("/api/orders?scope=shift");
+      }>(
+        "/api/orders?scope=shift" +
+          (shiftFilter ? `&shiftId=${encodeURIComponent(shiftFilter)}` : ""),
+      );
       if (ok) {
         setOrders(data.orders);
         setClosedOrders(data.closedOrders ?? []);
         setShiftStartedAt(data.shiftStartedAt ?? null);
+        setShifts(data.shifts ?? []);
+        // A shift the branch no longer lists (revoked, or another branch's) is
+        // answered with the default window — follow the server rather than
+        // leaving the picker pointing at something it isn't showing.
+        if (shiftFilter && !data.selectedShift) setShiftFilter("");
         setDetailRefreshToken((token) => token + 1);
       } else {
         setLoadError("فهرست سفارش‌ها به‌روز نشد. داده‌های موجود حفظ شده‌اند.");
@@ -469,7 +510,7 @@ export function OrdersList() {
       setInitialLoading(false);
       setIsRefreshing(false);
     }
-  }, []);
+  }, [shiftFilter]);
 
   useEffect(() => {
     void load();
@@ -497,6 +538,9 @@ export function OrdersList() {
     [closedOrders, orders],
   );
   const openCount = orders?.length ?? 0;
+  const reviewedShift = shiftFilter
+    ? (shifts.find((shift) => shift.id === shiftFilter) ?? null)
+    : null;
   const availableStatuses = useMemo(
     () => Array.from(new Set(orderRows.map((order) => order.status))),
     [orderRows],
@@ -612,7 +656,8 @@ export function OrdersList() {
       statusFilter !== "all" ||
       typeFilter !== "all" ||
       tableFilter !== "all" ||
-      dateFilter,
+      dateFilter ||
+      shiftFilter,
   );
 
   function clearFilters() {
@@ -621,6 +666,7 @@ export function OrdersList() {
     setTypeFilter("all");
     setTableFilter("all");
     setDateFilter("");
+    setShiftFilter("");
   }
 
   return (
@@ -635,7 +681,7 @@ export function OrdersList() {
               سفارش‌ها
             </h1>
             <p className="mt-0.5 truncate text-xs text-[#77756F]">
-              صف سفارش‌های باز و سفارش‌های بسته‌شدهٔ شیفت جاریِ شعبهٔ فعال
+              صف سفارش‌های باز و سفارش‌های بسته‌شدهٔ شعبهٔ فعال
             </p>
           </div>
         </div>
@@ -649,7 +695,7 @@ export function OrdersList() {
               ? "در حال به‌روزرسانی…"
               : `${toPersianDigits(openCount)} سفارش باز` +
                 (closedOrders.length
-                  ? ` · ${toPersianDigits(closedOrders.length)} بسته‌شده در شیفت`
+                  ? ` · ${toPersianDigits(closedOrders.length)} بسته‌شده`
                   : "")}
           </span>
           <button
@@ -756,6 +802,25 @@ export function OrdersList() {
           ))}
         </div>
 
+        {shifts.length > 0 ? (
+          <label className="mt-2 flex min-h-12 min-w-0 items-center gap-2 rounded-xl border border-[#EAE8E2] bg-white px-3 text-xs text-[#77756F] xl:min-h-[52px]">
+            <span className="shrink-0">شیفت</span>
+            <SearchableSelect
+              value={shiftFilter}
+              onChange={setShiftFilter}
+              className="min-h-10 min-w-0 flex-1 border-0 bg-transparent text-sm text-[#252522] outline-none"
+              ariaLabel="مرور سفارش‌های بسته‌شدهٔ یک شیفت"
+              options={[
+                { value: "", label: shiftStartedAt ? "شیفت جاری" : "امروز" },
+                ...shifts.map((shift) => ({
+                  value: shift.id,
+                  label: shiftOptionLabel(shift),
+                })),
+              ]}
+            />
+          </label>
+        ) : null}
+
         <div className="mt-2 flex flex-col gap-2 sm:flex-row">
           <label className="flex min-h-12 min-w-0 flex-1 items-center gap-2 rounded-xl border border-[#EAE8E2] bg-white px-3 text-xs text-[#77756F] xl:min-h-[52px]">
             <span className="shrink-0">میز</span>
@@ -770,17 +835,17 @@ export function OrdersList() {
               ]}
             />
           </label>
-          <label className="flex min-h-12 min-w-0 flex-1 items-center gap-2 rounded-xl border border-[#EAE8E2] bg-white px-3 text-xs text-[#77756F] xl:min-h-[52px]">
+          <div className="flex min-h-12 min-w-0 flex-1 items-center gap-2 rounded-xl border border-[#EAE8E2] bg-white px-3 text-xs text-[#77756F] xl:min-h-[52px]">
             <span className="shrink-0">تاریخ</span>
-            <input
-              type="date"
-              value={dateFilter}
-              onChange={(event) => setDateFilter(event.target.value)}
-              className="min-h-10 min-w-0 flex-1 bg-transparent text-sm text-[#252522] outline-none"
-              dir="ltr"
-              aria-label="فیلتر تاریخ ثبت سفارش"
-            />
-          </label>
+            <div className="min-w-0 flex-1">
+              <JalaliDatePicker
+                value={dateFilter}
+                onChange={setDateFilter}
+                placeholder="همهٔ روزها"
+                className="min-h-10 w-full min-w-0 bg-transparent text-sm text-[#252522] outline-none"
+              />
+            </div>
+          </div>
           {hasActiveFilters ? (
             <button
               type="button"
@@ -805,13 +870,16 @@ export function OrdersList() {
             </span>
           </div>
 
-          {orders && !shiftStartedAt ? (
+          {orders ? (
             <p
               className="border-b border-[#EAE8E2] bg-[#FCFCFA] px-4 py-2 text-[11px] leading-5 text-[#77756F]"
               role="status"
             >
-              شیفتی باز نیست؛ سفارش‌های بسته‌شده از زمان شروع شیفت این‌جا نشان
-              داده می‌شوند و با پایان شیفت از فهرست کنار می‌روند.
+              {reviewedShift
+                ? `سفارش‌های بسته‌شدهٔ شیفت ${reviewedShift.employeeName} نمایش داده می‌شوند؛ صف بازِ بالا همچنان لحظه‌ای است.`
+                : shiftStartedAt
+                  ? `سفارش‌های بسته‌شده از شروع شیفت (ساعت ${orderTimeLabel(shiftStartedAt)}) نمایش داده می‌شوند.`
+                  : "سفارش‌های بسته‌شدهٔ امروز نمایش داده می‌شوند؛ با شروع شیفت، فهرست از زمان شیفت شمرده می‌شود."}
             </p>
           ) : null}
 
@@ -842,11 +910,11 @@ export function OrdersList() {
                 <ShoppingBagIcon className="size-5" aria-hidden="true" />
               </span>
               <p className="mt-4 text-sm font-bold text-[#252522]">
-                سفارشی برای این شیفت نیست
+                سفارشی برای نمایش نیست
               </p>
               <p className="mt-2 max-w-72 text-xs leading-6 text-[#77756F]">
                 با ثبت سفارش جدید، این صف به‌صورت خودکار به‌روز می‌شود.
-                سفارش‌های بسته‌شده تا پایان شیفت همین‌جا می‌مانند.
+                سفارش‌های بسته‌شده تا پایان روز کاری همین‌جا می‌مانند.
               </p>
             </div>
           ) : filteredOrders.length === 0 ? (

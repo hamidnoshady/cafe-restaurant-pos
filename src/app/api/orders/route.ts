@@ -3,7 +3,8 @@ import { requireRole, withTenantScope } from "@/lib/auth";
 import { type CartItemInput } from "@/lib/order-cart";
 import { createOrder } from "@/lib/order-mutations";
 import { listOrders, listOrdersClosedSince } from "@/lib/order-read-service";
-import { branchShiftStartedAt } from "@/lib/shift-service";
+import { branchClosedOrdersWindow } from "@/lib/shift-service";
+import { listRecentShiftOptions } from "@/lib/shift-orders-service";
 import type { DiscountInput } from "@/lib/orders";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { broadcast } from "@/lib/realtime";
@@ -11,13 +12,24 @@ import { broadcast } from "@/lib/realtime";
 /**
  * Open orders for the cashier's "current orders" list.
  *
- * `?scope=shift` additionally returns the orders *closed* since the branch's
- * running shift began (`closedOrders`, newest close first) plus that shift's
- * start, for the orders screen — a closed order is otherwise invisible the
- * moment it is paid. Only that screen asks for it, so the POS and waiter
- * panels, which poll this route for their queue, keep paying for one query.
- * With no shift open there is no window, so `closedOrders` is empty and the
- * screen says why rather than falling back to a date range.
+ * `?scope=shift` additionally returns the orders *closed* over the branch's
+ * current window (`closedOrders`, newest close first) plus the window itself,
+ * for the orders screen — a closed order is otherwise invisible the moment it
+ * is paid. Only that screen asks for it, so the POS and waiter panels, which
+ * poll this route for their queue, keep paying for one query.
+ *
+ * The default window is today's business day at the branch, widened to a
+ * still-running shift that began earlier (see branchClosedOrdersWindow);
+ * `shiftStartedAt` is reported alongside so the screen can name which of the
+ * two it is showing.
+ *
+ * An owner or manager may instead ask for one shift by id (`&shiftId=`), and
+ * gets the branch's recent shifts back as that picker's options — reviewing a
+ * shift someone else worked is a supervisory privilege, the same audience
+ * /api/reports/shift-orders serves, so a cashier or waiter is answered with the
+ * default window and no shift list. The id is resolved *within* the branch's
+ * own list rather than by its own query, so an unknown or foreign id falls back
+ * to the default window instead of reaching another branch's shift.
  */
 export const GET = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireRole("owner", "manager", "cashier", "waiter");
@@ -31,11 +43,30 @@ export const GET = withTenantScope(async (request: NextRequest) => {
     return NextResponse.json({ orders });
   }
 
-  const shiftStartedAt = await branchShiftStartedAt(location.id);
-  const closedOrders = shiftStartedAt
-    ? await listOrdersClosedSince(location.id, shiftStartedAt)
-    : [];
-  return NextResponse.json({ orders, closedOrders, shiftStartedAt });
+  // The shift-review audience of /api/reports/shift-orders, minus accountant —
+  // who has no orders screen to render a picker on.
+  const canReviewShifts = session.role === "owner" || session.role === "manager";
+  const shifts = canReviewShifts ? await listRecentShiftOptions(location.id) : [];
+  const requestedShiftId = new URL(request.url).searchParams.get("shiftId");
+  const selectedShift = requestedShiftId
+    ? (shifts.find((shift) => shift.id === requestedShiftId) ?? null)
+    : null;
+
+  const window = selectedShift
+    ? { since: selectedShift.startedAt, shiftStartedAt: selectedShift.startedAt }
+    : await branchClosedOrdersWindow(location.id);
+  const closedOrders = await listOrdersClosedSince(location.id, window.since, {
+    until: selectedShift?.endedAt ?? null,
+  });
+
+  return NextResponse.json({
+    orders,
+    closedOrders,
+    closedSince: window.since,
+    shiftStartedAt: window.shiftStartedAt,
+    shifts,
+    selectedShift,
+  });
 });
 
 interface CreateOrderBody {

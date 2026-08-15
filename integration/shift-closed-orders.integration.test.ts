@@ -5,18 +5,23 @@
  * directly, per repo convention.
  *
  * What GET /api/orders?scope=shift promises, and what this pins down:
- *   1. no shift open at the branch = no window, so nothing is listed — the
- *      "closed orders disappear once the shift ends" rule the screen is built
- *      around, rather than falling back to a date range;
- *   2. with a shift running, the branch's orders closed since it started are
- *      listed newest close first;
- *   3. voided orders are listed alongside completed ones — reviewing a shift is
- *      exactly when someone goes looking for them;
- *   4. an order closed before the shift started belongs to the previous shift
- *      and is not listed;
- *   5. two employees clocked in means the window starts at the earlier of them,
- *      so clocking in mid-service never hides what was closed beforehand;
- *   6. another branch's closed orders are never listed.
+ *   1. with nobody clocked in the window is still today's business day — the
+ *      case that shipped broken, since a business whose staff never clock in
+ *      (and an owner, who *cannot*) saw a permanently empty list;
+ *   2. a shift that began earlier than today — one that crossed local midnight
+ *      — widens the window back to its start instead of truncating at 00:00;
+ *   3. a shift that began part-way through today does not narrow it, so a
+ *      cashier clocking in at 14:00 still sees the morning's orders;
+ *   4. a shift row with no branch of its own still counts for the branch — rows
+ *      written before openShift recorded a fallback branch have none, and
+ *      dropping them is what made the list empty for a clocked-in cashier;
+ *   5. yesterday's orders are not today's;
+ *   6. voided orders are listed alongside completed ones, newest close first,
+ *      and open ones are left to the queue;
+ *   7. another branch's closed orders are never listed;
+ *   8. the shift picker an owner/manager gets: the branch's shifts as options,
+ *      one shift's own closed orders bounded by its end, and no foreign
+ *      branch's shift among the options.
  */
 import { randomUUID } from "node:crypto";
 import { Client } from "pg";
@@ -34,6 +39,7 @@ let db: Client;
 /** Imported after DATABASE_URL is pointed at the scratch DB. */
 let orderRead: typeof import("../src/lib/order-read-service");
 let shiftService: typeof import("../src/lib/shift-service");
+let shiftOrders: typeof import("../src/lib/shift-orders-service");
 let dbLib: typeof import("../src/lib/db");
 
 let businessId = "";
@@ -108,12 +114,11 @@ async function insertOrder(
   return number;
 }
 
-/** The pair the route runs: the branch's shift window, then what closed inside it. */
+/** The pair the route runs: the branch's window, then what closed inside it. */
 async function closedThisShift(locationId: string): Promise<number[]> {
   return dbLib.withTenant(businessId, async () => {
-    const startedAt = await shiftService.branchShiftStartedAt(locationId);
-    if (!startedAt) return [];
-    const rows = await orderRead.listOrdersClosedSince(locationId, startedAt);
+    const { since } = await shiftService.branchClosedOrdersWindow(locationId);
+    const rows = await orderRead.listOrdersClosedSince(locationId, since);
     return rows.map((row) => Number((row as { order_number: string }).order_number));
   });
 }
@@ -134,6 +139,7 @@ beforeAll(async () => {
   process.env.DATABASE_URL = urlFor(databaseName);
   orderRead = await import("../src/lib/order-read-service");
   shiftService = await import("../src/lib/shift-service");
+  shiftOrders = await import("../src/lib/shift-orders-service");
   dbLib = await import("../src/lib/db");
 
   db = new Client({ connectionString: urlFor(databaseName) });
@@ -179,107 +185,225 @@ beforeEach(async () => {
   employeeId = await seedEmployee();
 });
 
-describe("branchShiftStartedAt", () => {
-  it("is null when the branch has no shift open", async () => {
-    await insertShift(mainId, "2026-08-14T06:00:00Z", "2026-08-14T14:00:00Z");
-    const startedAt = await dbLib.withTenant(businessId, () =>
-      shiftService.branchShiftStartedAt(mainId),
+/** Midnight tonight/last night in the branch's timezone, as the DB computes it. */
+async function dayStart(offsetDays = 0): Promise<Date> {
+  const { rows } = await db.query<{ at: Date }>(
+    `SELECT (date_trunc('day', now() AT TIME ZONE l.timezone) + make_interval(days => $2))
+              AT TIME ZONE l.timezone AS at
+       FROM locations l WHERE l.id = $1`,
+    [mainId, offsetDays],
+  );
+  return rows[0].at;
+}
+
+/** `minutes` after the start of today (negative reaches back into yesterday). */
+async function today(minutes: number): Promise<string> {
+  const start = await dayStart();
+  return new Date(start.getTime() + minutes * 60_000).toISOString();
+}
+
+describe("branchClosedOrdersWindow", () => {
+  it("falls back to today's business day when nobody is clocked in", async () => {
+    const window = await dbLib.withTenant(businessId, () =>
+      shiftService.branchClosedOrdersWindow(mainId),
     );
-    expect(startedAt).toBeNull();
+    expect(window.shiftStartedAt).toBeNull();
+    expect(window.since).toBe((await dayStart()).toISOString());
   });
 
-  it("is the earliest still-open shift's start when several are clocked in", async () => {
-    await insertShift(mainId, "2026-08-15T06:00:00Z", null);
-    // One open shift per employee (idx_employee_shifts_employee_open), so the
-    // later clock-in is a second employee.
-    await insertShift(mainId, "2026-08-15T10:00:00Z", null, await seedEmployee());
+  it("widens to a shift that began before today, so a night shift stays whole", async () => {
+    const startedAt = await today(-3 * 60); // 21:00 yesterday
+    await insertShift(mainId, startedAt, null);
 
-    const startedAt = await dbLib.withTenant(businessId, () =>
-      shiftService.branchShiftStartedAt(mainId),
+    const window = await dbLib.withTenant(businessId, () =>
+      shiftService.branchClosedOrdersWindow(mainId),
     );
-    expect(startedAt).toBe(new Date("2026-08-15T06:00:00Z").toISOString());
+    expect(window.shiftStartedAt).toBe(new Date(startedAt).toISOString());
+    expect(window.since).toBe(new Date(startedAt).toISOString());
   });
 
-  it("ignores another branch's open shift", async () => {
-    await insertShift(otherId, "2026-08-15T06:00:00Z", null);
-    const startedAt = await dbLib.withTenant(businessId, () =>
-      shiftService.branchShiftStartedAt(mainId),
+  it("is not narrowed by a shift that began part-way through today", async () => {
+    const startedAt = await today(9 * 60); // clocked in at 09:00
+    await insertShift(mainId, startedAt, null);
+
+    const window = await dbLib.withTenant(businessId, () =>
+      shiftService.branchClosedOrdersWindow(mainId),
     );
-    expect(startedAt).toBeNull();
+    expect(window.shiftStartedAt).toBe(new Date(startedAt).toISOString());
+    expect(window.since).toBe((await dayStart()).toISOString());
+  });
+
+  it("counts an open shift that carries no branch of its own", async () => {
+    const startedAt = await today(-2 * 60);
+    await db.query(
+      `INSERT INTO employee_shifts
+         (employee_id, business_id, location_id, business_date, started_at)
+       VALUES ($1, $2, NULL, $3::timestamptz::date, $3)`,
+      [employeeId, businessId, startedAt],
+    );
+
+    const window = await dbLib.withTenant(businessId, () =>
+      shiftService.branchClosedOrdersWindow(mainId),
+    );
+    expect(window.shiftStartedAt).toBe(new Date(startedAt).toISOString());
+  });
+
+  it("ignores a shift that has already ended", async () => {
+    await insertShift(mainId, await today(-4 * 60), await today(-60));
+
+    const window = await dbLib.withTenant(businessId, () =>
+      shiftService.branchClosedOrdersWindow(mainId),
+    );
+    expect(window.shiftStartedAt).toBeNull();
+    expect(window.since).toBe((await dayStart()).toISOString());
   });
 });
 
-describe("orders closed during the branch's running shift", () => {
-  it("lists nothing once the shift has ended", async () => {
-    await insertShift(mainId, "2026-08-14T06:00:00Z", "2026-08-14T14:00:00Z");
+describe("the branch's closed orders", () => {
+  it("lists today's even with nobody clocked in", async () => {
+    const number = await insertOrder(mainId, {
+      openedAt: await today(60),
+      closedAt: await today(90),
+    });
+
+    expect(await closedThisShift(mainId)).toEqual([number]);
+  });
+
+  it("lists what was closed before a mid-day clock-in", async () => {
+    const morning = await insertOrder(mainId, {
+      openedAt: await today(8 * 60),
+      closedAt: await today(9 * 60),
+    });
+    await insertShift(mainId, await today(14 * 60), null);
+
+    expect(await closedThisShift(mainId)).toEqual([morning]);
+  });
+
+  it("keeps a night shift's orders from before local midnight", async () => {
+    await insertShift(mainId, await today(-4 * 60), null);
+    const lastNight = await insertOrder(mainId, {
+      openedAt: await today(-3 * 60),
+      closedAt: await today(-2 * 60),
+    });
+
+    expect(await closedThisShift(mainId)).toEqual([lastNight]);
+  });
+
+  it("excludes yesterday's orders when no shift reaches back that far", async () => {
     await insertOrder(mainId, {
-      openedAt: "2026-08-14T08:00:00Z",
-      closedAt: "2026-08-14T08:30:00Z",
+      openedAt: await today(-10 * 60),
+      closedAt: await today(-9 * 60),
+    });
+    const todays = await insertOrder(mainId, {
+      openedAt: await today(30),
+      closedAt: await today(45),
     });
 
-    expect(await closedThisShift(mainId)).toEqual([]);
+    expect(await closedThisShift(mainId)).toEqual([todays]);
   });
 
-  it("lists the shift's closed orders, newest close first", async () => {
-    await insertShift(mainId, "2026-08-15T06:00:00Z", null);
+  it("lists newest close first, keeps voided, and leaves open ones to the queue", async () => {
     const first = await insertOrder(mainId, {
-      openedAt: "2026-08-15T07:00:00Z",
-      closedAt: "2026-08-15T07:30:00Z",
+      openedAt: await today(60),
+      closedAt: await today(90),
     });
-    const second = await insertOrder(mainId, {
-      openedAt: "2026-08-15T09:00:00Z",
-      closedAt: "2026-08-15T09:20:00Z",
-    });
-
-    expect(await closedThisShift(mainId)).toEqual([second, first]);
-  });
-
-  it("keeps voided orders and leaves open ones to the queue", async () => {
-    await insertShift(mainId, "2026-08-15T06:00:00Z", null);
     const voided = await insertOrder(mainId, {
-      openedAt: "2026-08-15T07:00:00Z",
-      closedAt: "2026-08-15T07:10:00Z",
+      openedAt: await today(120),
+      closedAt: await today(150),
       status: "voided",
     });
-    await insertOrder(mainId, { openedAt: "2026-08-15T08:00:00Z" });
+    await insertOrder(mainId, { openedAt: await today(180) });
 
-    expect(await closedThisShift(mainId)).toEqual([voided]);
-  });
-
-  it("excludes an order closed before the shift started", async () => {
-    await insertShift(mainId, "2026-08-15T06:00:00Z", null);
-    await insertOrder(mainId, {
-      openedAt: "2026-08-15T05:00:00Z",
-      closedAt: "2026-08-15T05:59:00Z",
-    });
-    const inShift = await insertOrder(mainId, {
-      openedAt: "2026-08-15T05:30:00Z",
-      closedAt: "2026-08-15T06:00:00Z",
-    });
-
-    // An order opened before the shift but paid after it started is this
-    // shift's, which is why the window is on closed_at rather than opened_at.
-    expect(await closedThisShift(mainId)).toEqual([inShift]);
-  });
-
-  it("covers what a colleague closed before the later clock-in", async () => {
-    await insertShift(mainId, "2026-08-15T06:00:00Z", null);
-    await insertShift(mainId, "2026-08-15T10:00:00Z", null, await seedEmployee());
-    const early = await insertOrder(mainId, {
-      openedAt: "2026-08-15T07:00:00Z",
-      closedAt: "2026-08-15T07:30:00Z",
-    });
-
-    expect(await closedThisShift(mainId)).toEqual([early]);
+    expect(await closedThisShift(mainId)).toEqual([voided, first]);
   });
 
   it("never lists another branch's closed orders", async () => {
-    await insertShift(mainId, "2026-08-15T06:00:00Z", null);
     await insertOrder(otherId, {
-      openedAt: "2026-08-15T07:00:00Z",
-      closedAt: "2026-08-15T07:30:00Z",
+      openedAt: await today(60),
+      closedAt: await today(90),
     });
 
     expect(await closedThisShift(mainId)).toEqual([]);
+  });
+});
+
+describe("reviewing one shift (the owner's picker)", () => {
+  /** What the route does once a shift id resolves against the branch's options. */
+  async function closedDuring(shiftId: string): Promise<number[]> {
+    return dbLib.withTenant(businessId, async () => {
+      const options = await shiftOrders.listRecentShiftOptions(mainId);
+      const shift = options.find((option) => option.id === shiftId);
+      if (!shift) return [];
+      const rows = await orderRead.listOrdersClosedSince(mainId, shift.startedAt, {
+        until: shift.endedAt,
+      });
+      return rows.map((row) => Number((row as { order_number: string }).order_number));
+    });
+  }
+
+  it("offers the branch's shifts newest first, including unattributed ones", async () => {
+    const older = await insertShift(mainId, await today(-6 * 60), await today(-5 * 60));
+    const startedAt = await today(-2 * 60);
+    const { rows } = await db.query<{ id: string }>(
+      `INSERT INTO employee_shifts
+         (employee_id, business_id, location_id, business_date, started_at)
+       VALUES ($1, $2, NULL, $3::timestamptz::date, $3)
+       RETURNING id`,
+      [employeeId, businessId, startedAt],
+    );
+
+    const options = await dbLib.withTenant(businessId, () =>
+      shiftOrders.listRecentShiftOptions(mainId),
+    );
+    expect(options.map((option) => option.id)).toEqual([rows[0].id, older]);
+    expect(options[0].employeeName).toBe("نگار سلطانی");
+    expect(options[0].endedAt).toBeNull();
+  });
+
+  it("lists a finished shift's own closed orders, bounded by when it ended", async () => {
+    const shift = await insertShift(mainId, await today(-6 * 60), await today(-4 * 60));
+    await insertOrder(mainId, {
+      openedAt: await today(-7 * 60),
+      closedAt: await today(-6 * 60 - 1),
+    });
+    const during = await insertOrder(mainId, {
+      openedAt: await today(-6 * 60),
+      closedAt: await today(-5 * 60),
+    });
+    await insertOrder(mainId, {
+      openedAt: await today(-4 * 60),
+      closedAt: await today(-3 * 60),
+    });
+
+    expect(await closedDuring(shift)).toEqual([during]);
+  });
+
+  it("runs a still-open shift up to now rather than cutting it short", async () => {
+    const shift = await insertShift(mainId, await today(-2 * 60), null);
+    const settled = await insertOrder(mainId, {
+      openedAt: await today(-90),
+      closedAt: await today(-60),
+    });
+
+    expect(await closedDuring(shift)).toEqual([settled]);
+  });
+
+  it("does not offer — or report on — another branch's shift", async () => {
+    const foreign = await insertShift(
+      otherId,
+      await today(-3 * 60),
+      null,
+      await seedEmployee(),
+    );
+    await insertOrder(otherId, {
+      openedAt: await today(-2 * 60),
+      closedAt: await today(-60),
+    });
+
+    const options = await dbLib.withTenant(businessId, () =>
+      shiftOrders.listRecentShiftOptions(mainId),
+    );
+    expect(options.map((option) => option.id)).not.toContain(foreign);
+    expect(await closedDuring(foreign)).toEqual([]);
   });
 });
