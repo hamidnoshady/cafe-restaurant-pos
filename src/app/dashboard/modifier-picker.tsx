@@ -1,10 +1,24 @@
 "use client";
 
-import { useState } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { useMemo, useState } from "react";
+import { CheckIcon } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { toPersianDigits } from "@/lib/digits";
 import { formatToman } from "@/lib/money";
-import { inputClass, PrimaryButton, SecondaryButton } from "./ui";
+import {
+  formatModifierDelta,
+  isModifierGroupSatisfied,
+  linePriceBreakdown,
+  modifierGroupProgressLabel,
+  modifierGroupRuleLabel,
+} from "@/lib/modifier-display";
+import { MODIFIER_TONE, type ModifierTone } from "./modifier-badges";
+import { inputClass } from "./ui";
 
 export interface ModifierGroupWithModifiers {
   id: string;
@@ -14,86 +28,266 @@ export interface ModifierGroupWithModifiers {
   modifiers: { id: string; name: string; price_delta: string | number }[];
 }
 
-/** Modal for picking modifiers (respecting each group's min/max select) before adding an item to a cart/order. */
+/**
+ * Modal for picking add-ons (respecting each group's min/max select) before an
+ * item goes into a cart or an open order.
+ *
+ * Add-ons change what the customer pays, so the picker states the money at
+ * every step: each option carries its own delta, each group states whether it
+ * is required, and the footer shows base price → add-ons → unit price → line
+ * total *before* the item is committed. `itemPrice` is what makes that footer
+ * possible; without it the picker still works and simply shows the add-on
+ * total on its own.
+ */
 export function ModifierPicker({
   itemName,
+  itemPrice,
+  quantity = 1,
   groups,
+  tone = "brand",
   onCancel,
   onConfirm,
 }: {
   itemName: string;
+  /** Menu price of one unit, integer Rial. Omitted when the caller has no price at hand. */
+  itemPrice?: number;
+  /** How many units this selection will add — makes the footer show the real line total. */
+  quantity?: number;
   groups: ModifierGroupWithModifiers[];
+  tone?: ModifierTone;
   onCancel: () => void;
   onConfirm: (modifierIds: string[], note: string) => void;
 }) {
   const [selected, setSelected] = useState<Record<string, string[]>>({});
   const [note, setNote] = useState("");
+  const palette = MODIFIER_TONE[tone];
 
   function toggle(group: ModifierGroupWithModifiers, modifierId: string) {
     setSelected((prev) => {
       const current = prev[group.id] ?? [];
       if (group.max_select === 1) {
-        return { ...prev, [group.id]: current.includes(modifierId) ? [] : [modifierId] };
+        return {
+          ...prev,
+          [group.id]: current.includes(modifierId) ? [] : [modifierId],
+        };
       }
       if (current.includes(modifierId)) {
-        return { ...prev, [group.id]: current.filter((id) => id !== modifierId) };
+        return {
+          ...prev,
+          [group.id]: current.filter((id) => id !== modifierId),
+        };
       }
       if (current.length >= group.max_select) return prev;
       return { ...prev, [group.id]: [...current, modifierId] };
     });
   }
 
-  const canConfirm = groups.every((g) => {
-    const n = (selected[g.id] ?? []).length;
-    return n >= g.min_select && n <= g.max_select;
+  const chosen = useMemo(
+    () =>
+      groups.flatMap((group) =>
+        (selected[group.id] ?? []).flatMap((id) => {
+          const modifier = group.modifiers.find((m) => m.id === id);
+          return modifier
+            ? [
+                {
+                  name: modifier.name,
+                  priceDelta: Number(modifier.price_delta),
+                },
+              ]
+            : [];
+        }),
+      ),
+    [groups, selected],
+  );
+
+  const breakdown = linePriceBreakdown({
+    unitPrice: itemPrice ?? 0,
+    modifierDeltas: chosen.map((modifier) => modifier.priceDelta),
+    quantity,
   });
+
+  const canConfirm = groups.every((group) =>
+    isModifierGroupSatisfied(
+      (selected[group.id] ?? []).length,
+      group.min_select,
+      group.max_select,
+    ),
+  );
 
   return (
     <Dialog open onOpenChange={(open) => !open && onCancel()}>
-      <DialogContent className="max-h-[80vh] max-w-md overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>{itemName}</DialogTitle>
-        </DialogHeader>
-        {groups.map((g) => (
-          <div key={g.id} className="mb-4">
-            <p className="mb-2 text-sm font-medium text-foreground">
-              {g.name}{" "}
-              <span className="text-xs text-muted-foreground">
-                (انتخاب {toPersianDigits(g.min_select)} تا {toPersianDigits(g.max_select)})
+      <DialogContent className="flex max-h-[88vh] max-w-lg flex-col gap-0 overflow-hidden p-0 sm:max-w-lg">
+        <DialogHeader className="border-b border-border px-5 py-4">
+          <DialogTitle className="text-lg">{itemName}</DialogTitle>
+          {itemPrice !== undefined ? (
+            <p className="mt-1 text-sm text-muted-foreground">
+              قیمت پایه:{" "}
+              <span className={`font-bold ${palette.accent}`}>
+                {formatToman(itemPrice)}
               </span>
             </p>
-            <div className="flex flex-wrap gap-2">
-              {g.modifiers.map((m) => {
-                const isOn = (selected[g.id] ?? []).includes(m.id);
-                return (
-                  <button
-                    key={m.id}
-                    type="button"
-                    onClick={() => toggle(g, m.id)}
-                    className={`rounded-full border px-3 py-1.5 text-xs transition-colors active:scale-95 ${
-                      isOn
-                        ? "border-primary bg-primary/5 text-primary"
-                        : "border-input text-muted-foreground hover:border-primary/50 hover:text-foreground"
+          ) : null}
+        </DialogHeader>
+
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
+          {groups.map((group) => {
+            const groupSelection = selected[group.id] ?? [];
+            const satisfied = isModifierGroupSatisfied(
+              groupSelection.length,
+              group.min_select,
+              group.max_select,
+            );
+            return (
+              <fieldset
+                key={group.id}
+                className="rounded-xl border border-border p-3"
+              >
+                <legend className="flex flex-wrap items-center gap-2 px-1">
+                  <span className="text-sm font-bold text-foreground">
+                    {group.name}
+                  </span>
+                  <span
+                    className={`inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-bold ${
+                      group.min_select > 0 && !satisfied
+                        ? "bg-destructive/10 text-destructive"
+                        : `${palette.surface} border ${palette.accent}`
                     }`}
                   >
-                    {m.name}
-                    {Number(m.price_delta) !== 0 ? ` (${formatToman(Number(m.price_delta))})` : ""}
-                  </button>
-                );
-              })}
-            </div>
+                    {modifierGroupRuleLabel(group.min_select, group.max_select)}
+                  </span>
+                </legend>
+                <p className="mb-2 mt-1 px-1 text-[11px] text-muted-foreground">
+                  {modifierGroupProgressLabel(
+                    groupSelection.length,
+                    group.max_select,
+                  )}
+                </p>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {group.modifiers.map((modifier) => {
+                    const isOn = groupSelection.includes(modifier.id);
+                    const atCeiling =
+                      !isOn && groupSelection.length >= group.max_select;
+                    const delta = Number(modifier.price_delta);
+                    return (
+                      <button
+                        key={modifier.id}
+                        type="button"
+                        aria-pressed={isOn}
+                        disabled={atCeiling}
+                        onClick={() => toggle(group, modifier.id)}
+                        className={`flex min-h-14 items-center justify-between gap-2 rounded-xl border px-3 py-2 text-start transition duration-150 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 disabled:opacity-45 motion-reduce:transition-none ${
+                          isOn ? palette.optionSelected : palette.option
+                        }`}
+                      >
+                        <span className="flex min-w-0 items-center gap-2">
+                          <span
+                            className={`flex size-5 shrink-0 items-center justify-center rounded-md border ${
+                              isOn
+                                ? "border-current bg-current/10"
+                                : "border-input"
+                            }`}
+                            aria-hidden="true"
+                          >
+                            {isOn ? <CheckIcon className="size-3.5" /> : null}
+                          </span>
+                          <span className="truncate text-sm font-bold">
+                            {modifier.name}
+                          </span>
+                        </span>
+                        <span
+                          className={`shrink-0 text-xs font-bold ${
+                            isOn ? "" : palette.chipPrice
+                          }`}
+                        >
+                          {formatModifierDelta(delta)}
+                        </span>
+                      </button>
+                    );
+                  })}
+                  {group.modifiers.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">
+                      افزودنی فعالی در این گروه ثبت نشده است.
+                    </p>
+                  ) : null}
+                </div>
+              </fieldset>
+            );
+          })}
+
+          <label className="block text-sm">
+            <span className="mb-1.5 block font-medium text-foreground">
+              یادداشت{" "}
+              <span className="font-normal text-muted-foreground">
+                (اختیاری)
+              </span>
+            </span>
+            <input
+              className={inputClass}
+              value={note}
+              onChange={(event) => setNote(event.target.value)}
+              placeholder="مثلاً: بدون شکر"
+            />
+          </label>
+        </div>
+
+        <div className="border-t border-border px-5 py-4">
+          {itemPrice !== undefined ? (
+            <dl
+              className={`mb-3 space-y-1 rounded-xl border p-3 text-sm ${palette.surface}`}
+            >
+              <div className="flex justify-between text-muted-foreground">
+                <dt>قیمت پایه</dt>
+                <dd>{formatToman(breakdown.base)}</dd>
+              </div>
+              <div className="flex justify-between text-muted-foreground">
+                <dt>
+                  افزودنی‌ها{" "}
+                  {chosen.length > 0
+                    ? `(${toPersianDigits(chosen.length)} مورد)`
+                    : ""}
+                </dt>
+                <dd className={chosen.length > 0 ? palette.accent : ""}>
+                  {formatModifierDelta(breakdown.addOns)}
+                </dd>
+              </div>
+              <div className="flex justify-between border-t border-current/10 pt-1 text-base font-bold text-foreground">
+                <dt>قیمت هر واحد</dt>
+                <dd>{formatToman(breakdown.unit)}</dd>
+              </div>
+              {quantity > 1 ? (
+                <div className="flex justify-between text-muted-foreground">
+                  <dt>{toPersianDigits(quantity)} واحد</dt>
+                  <dd>{formatToman(breakdown.total)}</dd>
+                </div>
+              ) : null}
+            </dl>
+          ) : null}
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onCancel}
+              className="min-h-12 shrink-0 rounded-xl border border-input px-4 text-sm font-semibold text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45"
+            >
+              انصراف
+            </button>
+            <button
+              type="button"
+              disabled={!canConfirm}
+              onClick={() =>
+                onConfirm(
+                  groups.flatMap((group) => selected[group.id] ?? []),
+                  note.trim(),
+                )
+              }
+              className={`min-h-12 flex-1 rounded-xl px-4 text-sm font-bold transition duration-200 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 disabled:opacity-50 motion-reduce:transition-none ${palette.cta}`}
+            >
+              {canConfirm
+                ? itemPrice !== undefined
+                  ? `افزودن — ${formatToman(breakdown.total)}`
+                  : "افزودن"
+                : "ابتدا گروه‌های الزامی را انتخاب کنید"}
+            </button>
           </div>
-        ))}
-        <input className={`${inputClass} mb-4`} value={note} onChange={(e) => setNote(e.target.value)} placeholder="یادداشت (اختیاری)" />
-        <div className="flex justify-end gap-2">
-          <SecondaryButton onClick={onCancel}>انصراف</SecondaryButton>
-          <PrimaryButton
-            type="button"
-            disabled={!canConfirm}
-            onClick={() => onConfirm(groups.flatMap((g) => selected[g.id] ?? []), note.trim())}
-          >
-            افزودن
-          </PrimaryButton>
         </div>
       </DialogContent>
     </Dialog>

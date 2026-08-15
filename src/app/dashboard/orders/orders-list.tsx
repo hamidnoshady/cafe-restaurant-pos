@@ -6,6 +6,11 @@ import { RefreshCwIcon, SearchIcon, ShoppingBagIcon } from "lucide-react";
 import { toPersianDigits } from "@/lib/digits";
 import { formatToman } from "@/lib/money";
 import { formatQueueLabel } from "@/lib/orders";
+import {
+  linePriceBreakdown,
+  type DisplayModifier,
+} from "@/lib/modifier-display";
+import { ModifierBadges } from "../modifier-badges";
 import { useRealtime } from "../use-realtime";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { api } from "../ui";
@@ -27,9 +32,18 @@ interface OpenOrder {
 interface OrderItem {
   id: string;
   name_snapshot: string;
+  unit_price: string | number;
   quantity: number;
   status: string;
   note: string | null;
+}
+
+/** An add-on snapshot as the order API returns it, priced at the moment of sale. */
+interface OrderModifier {
+  id: string;
+  order_item_id: string;
+  name_snapshot: string;
+  price_delta: string | number;
 }
 
 interface DetailedOrder extends OpenOrder {
@@ -42,6 +56,7 @@ interface DetailedOrder extends OpenOrder {
 interface OrderDetailsResponse {
   order: DetailedOrder;
   items: OrderItem[];
+  modifiers: OrderModifier[];
 }
 
 const STATUS_LABELS: Record<OrderStatus, string> = {
@@ -182,6 +197,15 @@ function OrderDetailsPanel({
     (count, item) => count + item.quantity,
     0,
   );
+  const addOnsByItem = new Map<string, DisplayModifier[]>();
+  for (const modifier of selectedDetail?.modifiers ?? []) {
+    const current = addOnsByItem.get(modifier.order_item_id) ?? [];
+    current.push({
+      name: modifier.name_snapshot,
+      priceDelta: Number(modifier.price_delta),
+    });
+    addOnsByItem.set(modifier.order_item_id, current);
+  }
   const elapsed = elapsedLabel(order.opened_at);
 
   return (
@@ -281,27 +305,53 @@ function OrderDetailsPanel({
               ) : null}
             </div>
             {selectedDetail && activeItems.length > 0 ? (
-              <ul className="space-y-3">
-                {activeItems.slice(0, 5).map((item) => (
-                  <li
-                    key={item.id}
-                    className="flex items-start justify-between gap-3 text-sm"
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate font-medium text-[#252522]">
-                        {item.name_snapshot}
-                      </p>
+              <ul className="space-y-2">
+                {activeItems.slice(0, 5).map((item) => {
+                  const addOns = addOnsByItem.get(item.id) ?? [];
+                  const breakdown = linePriceBreakdown({
+                    unitPrice: Number(item.unit_price),
+                    modifierDeltas: addOns.map((addOn) => addOn.priceDelta),
+                    quantity: item.quantity,
+                  });
+                  return (
+                    <li
+                      key={item.id}
+                      className={
+                        "rounded-xl border p-2.5 text-sm " +
+                        (addOns.length > 0
+                          ? "border-[#F2D097] bg-[#FFFCF5]"
+                          : "border-[#EAE8E2] bg-[#FCFCFA]")
+                      }
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate font-bold text-[#252522]">
+                            {item.name_snapshot}
+                            <span className="ms-1 text-xs font-semibold text-[#77756F]">
+                              × {toPersianDigits(item.quantity)}
+                            </span>
+                          </p>
+                          <p className="mt-0.5 text-[11px] text-[#77756F]">
+                            {formatToman(breakdown.unit)} هر واحد
+                          </p>
+                        </div>
+                        <span className="shrink-0 text-xs font-bold text-[#B97905]">
+                          {formatToman(breakdown.total)}
+                        </span>
+                      </div>
+                      <ModifierBadges
+                        modifiers={addOns}
+                        tone="amber"
+                        className="mt-2"
+                      />
                       {item.note ? (
-                        <p className="mt-0.5 line-clamp-1 text-xs text-[#77756F]">
-                          {item.note}
+                        <p className="mt-2 line-clamp-2 text-[11px] text-[#77756F]">
+                          یادداشت: {item.note}
                         </p>
                       ) : null}
-                    </div>
-                    <span className="shrink-0 text-xs text-[#77756F]">
-                      × {toPersianDigits(item.quantity)}
-                    </span>
-                  </li>
-                ))}
+                    </li>
+                  );
+                })}
                 {activeItems.length > 5 ? (
                   <li className="text-xs text-[#77756F]">
                     و {toPersianDigits(activeItems.length - 5)} قلم دیگر
