@@ -157,9 +157,16 @@ function maybeSweep(now: number) {
 }
 
 function clientIp(request: NextRequest): string {
+  const ip = (request as any).ip;
+  if (ip) return ip;
+  const realIp = request.headers.get("x-real-ip");
+  if (realIp) return realIp;
   const forwarded = request.headers.get("x-forwarded-for");
-  if (forwarded) return forwarded.split(",")[0].trim();
-  return request.headers.get("x-real-ip") ?? "unknown";
+  if (forwarded) {
+    const parts = forwarded.split(",");
+    return parts[parts.length - 1].trim();
+  }
+  return "unknown";
 }
 
 function rateLimited(retryAfterMs: number): NextResponse {

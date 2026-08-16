@@ -22,12 +22,27 @@ export async function POST(request: NextRequest) {
   }
 
   const code = body.code?.trim();
-  if (!code) return NextResponse.json({ error: "missing_fields" }, { status: 400 });
+  if (!code)
+    return NextResponse.json({ error: "missing_fields" }, { status: 400 });
 
+  const ip = (request as any).ip;
+  const realIp = request.headers.get("x-real-ip");
   const forwarded = request.headers.get("x-forwarded-for");
-  const clientIp = forwarded ? forwarded.split(",")[0].trim() : request.headers.get("x-real-ip");
 
-  const result = await redeemPairingCode(code, clientIp);
+  let clientIp = "unknown";
+  if (ip) {
+    clientIp = ip;
+  } else if (realIp) {
+    clientIp = realIp;
+  } else if (forwarded) {
+    const parts = forwarded.split(",");
+    clientIp = parts[parts.length - 1].trim();
+  }
+
+  const result = await redeemPairingCode(
+    code,
+    clientIp === "unknown" ? null : clientIp,
+  );
   if (!result.ok) {
     const status = {
       code_not_found: 404,
