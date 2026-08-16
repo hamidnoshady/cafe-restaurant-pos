@@ -49,24 +49,46 @@ export function PinPad({
       </div>
       <div className="grid grid-cols-3 gap-2">
         {["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((d) => (
-          <PadButton key={d} label={toPersianDigits(d)} onClick={() => press(d)} />
+          <PadButton
+            key={d}
+            label={toPersianDigits(d)}
+            onClick={() => press(d)}
+          />
         ))}
-        <PadButton label="پاک" onClick={() => setPin("")} muted />
+        <PadButton
+          label="پاک"
+          ariaLabel="پاک کردن"
+          onClick={() => setPin("")}
+          muted
+        />
         <PadButton label={toPersianDigits("0")} onClick={() => press("0")} />
-        <PadButton label="⌫" onClick={() => setPin((p) => p.slice(0, -1))} muted />
+        <PadButton
+          label="⌫"
+          ariaLabel="حذف یک رقم"
+          onClick={() => setPin((p) => p.slice(0, -1))}
+          muted
+        />
       </div>
-      {error && <p className="mt-3 text-center text-sm text-destructive">{error}</p>}
-      {busy && <p className="mt-3 text-center text-sm text-muted-foreground">در حال بررسی…</p>}
+      {error && (
+        <p className="mt-3 text-center text-sm text-destructive">{error}</p>
+      )}
+      {busy && (
+        <p className="mt-3 text-center text-sm text-muted-foreground">
+          در حال بررسی…
+        </p>
+      )}
     </div>
   );
 }
 
 function PadButton({
   label,
+  ariaLabel,
   onClick,
   muted = false,
 }: {
   label: string;
+  ariaLabel?: string;
   onClick: () => void;
   muted?: boolean;
 }) {
@@ -74,8 +96,11 @@ function PadButton({
     <button
       type="button"
       onClick={onClick}
-      className={`rounded-lg py-3 text-lg font-semibold transition active:scale-95 ${
-        muted ? "bg-muted text-muted-foreground hover:bg-muted-foreground/20" : "bg-muted hover:bg-primary/10"
+      aria-label={ariaLabel}
+      className={`rounded-lg py-3 text-lg font-semibold transition outline-none focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-95 ${
+        muted
+          ? "bg-muted text-muted-foreground hover:bg-muted-foreground/20"
+          : "bg-muted hover:bg-primary/10"
       }`}
     >
       {label}
