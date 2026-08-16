@@ -35,6 +35,7 @@ const PIN_ROLES = ["cashier", "waiter", "kitchen"] as const;
 const PERMISSION_LABELS: Record<string, string> = {
   "orders.create": "ثبت سفارش",
   "orders.void": "ابطال سفارش",
+  "orders.amend_closed": "ویرایش یا حذف سفارش بسته‌شده",
   "orders.discount": "اعمال تخفیف",
   "payments.take": "دریافت وجه",
   "payments.refund": "بازپرداخت",

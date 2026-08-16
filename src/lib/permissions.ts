@@ -23,6 +23,13 @@ export const PERMISSIONS = {
   // Point of sale
   ordersCreate: "orders.create",
   ordersVoid: "orders.void",
+  /**
+   * Editing or removing an order that has already been paid for. Deliberately
+   * separate from `orders.void`, which only reaches an *open* order nobody has
+   * settled: this one reverses posted revenue, VAT, COGS and stock, so it is a
+   * back-office privilege rather than a till one.
+   */
+  ordersAmendClosed: "orders.amend_closed",
   ordersDiscount: "orders.discount",
   paymentsTake: "payments.take",
   paymentsRefund: "payments.refund",
@@ -82,7 +89,7 @@ export function isOwnerOnlyPermission(permission: Permission): boolean {
 }
 
 const {
-  ordersCreate, ordersVoid, ordersDiscount, paymentsTake, paymentsRefund,
+  ordersCreate, ordersVoid, ordersAmendClosed, ordersDiscount, paymentsTake, paymentsRefund,
   tablesManage, reservationsManage, kitchenView, deliveryManage,
   menuView, menuEdit,
   inventoryView, inventoryAdjust, purchasesManage,
@@ -101,7 +108,7 @@ const {
  */
 const ROLE_PRESETS: Record<Exclude<Role, "owner">, Permission[]> = {
   manager: [
-    ordersCreate, ordersVoid, ordersDiscount, paymentsTake, paymentsRefund,
+    ordersCreate, ordersVoid, ordersAmendClosed, ordersDiscount, paymentsTake, paymentsRefund,
     tablesManage, reservationsManage, kitchenView, deliveryManage,
     menuView, menuEdit,
     inventoryView, inventoryAdjust, purchasesManage,

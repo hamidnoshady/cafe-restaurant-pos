@@ -433,6 +433,32 @@ waste, trial balance) becomes a suite an accountant can actually close a year on
 - **Chart-of-accounts customisation** and **VAT/tax reporting** (output vs. input VAT, net
   payable position).
 
+### Correcting a closed order
+
+An order that has already been paid for can still be edited or removed — from its detail page
+(`/dashboard/orders/{id}`), behind the `orders.amend_closed` permission (owner and manager by
+default) — and the correction is a real one, not a cosmetic change to `orders.total`:
+
+- Everything the checkout posted is reversed at its **own recorded values**: the revenue, VAT,
+  tip and platform-commission entry and the COGS entry are mirrored line for line, the exact
+  inventory consumption is put back at the cost it left at (cancelling any negative layer it
+  opened), the A/R balance a credit sale created is cleared, and the payment is cancelled.
+- An **edit** then re-posts the corrected bill in its place — fresh consumption, fresh revenue
+  and COGS, fresh settlement (optionally through a different tender). A **removal** stops after
+  the reversal and sets the order to `voided`, which is what drops it out of every order-derived
+  report — they all filter on `status = 'completed'`.
+- Both are dated on **the day the order was sold**, not the day of the correction, so the sale
+  disappears from (or changes on) the day it belongs to instead of leaving yesterday untouched
+  and dropping a mystery entry into today. A locked or soft-closed fiscal period therefore
+  refuses the amendment (migration 0024's trigger) rather than silently moving it.
+- Every amendment records a mandatory reason, a before/after snapshot of the bill, and an
+  `audit_log` row. An order that already has a customer return standing against it is refused —
+  reverse the return first.
+
+The line-level immutability guards (migration 0014) are **not** relaxed for this: an amendment
+takes the same `FOR UPDATE` lock and announces itself with `app.order_amendment` for the length
+of its transaction. Grep for that setting to audit every place a settled order's lines may move.
+
 ## Feature Gating & Platform Hardening (Phase 17)
 
 With many businesses on one deployment, this phase is what makes it safe to run for paying

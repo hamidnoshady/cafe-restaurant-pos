@@ -441,7 +441,10 @@ function OrderDetailsPanel({
               href={`/dashboard/orders/${order.id}`}
               className="flex min-h-12 w-full items-center justify-center rounded-xl bg-[#E9A11B] px-4 text-sm font-bold text-[#252522] transition duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 active:scale-[0.98] xl:min-h-[52px] motion-reduce:transition-none"
             >
-              جزئیات و پیگیری سفارش
+              {/* A closed order can still be corrected — editing or removing it
+                  reverses its accounting — and the detail page is where that
+                  lives, so the label says so rather than promising only "track". */}
+              {closed ? "جزئیات و اصلاح سفارش" : "جزئیات و پیگیری سفارش"}
             </Link>
           </div>
         </>
