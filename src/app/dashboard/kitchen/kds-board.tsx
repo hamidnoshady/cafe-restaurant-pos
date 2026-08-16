@@ -505,7 +505,10 @@ export function KdsBoard() {
     return byItem;
   }, [modifiers]);
 
-  const tickets = useMemo<Ticket[]>(() => {
+  // ⚡ Bolt: Separate static ticket grouping from time-dependent priority scoring.
+  // Grouping and Date parsing is expensive and only needs to run when `items` change,
+  // not every 15 seconds when `now` ticks.
+  const groupedTickets = useMemo(() => {
     const groups = new Map<string, TicketItem[]>();
     for (const item of items) {
       const key = item.table_session_id ?? item.order_id;
@@ -514,32 +517,49 @@ export function KdsBoard() {
       groups.set(key, current);
     }
 
-    return [...groups.entries()]
-      .map(([key, ticketItems]) => {
-        const first = ticketItems[0];
-        const earliestSentAt = Math.min(
-          ...ticketItems.map((item) => new Date(item.sent_to_kitchen_at).getTime()),
+    return [...groups.entries()].map(([key, ticketItems]) => {
+      const first = ticketItems[0];
+      const earliestSentAt = Math.min(
+        ...ticketItems.map((item) => new Date(item.sent_to_kitchen_at).getTime()),
+      );
+      const status: TicketStatus = ticketItems.some((item) => item.status === "sent")
+        ? "sent"
+        : ticketItems.some((item) => item.status === "preparing")
+          ? "preparing"
+          : "ready";
+      return {
+        key,
+        earliestSentAt,
+        status,
+        items: ticketItems,
+        orderNumber: first.order_number,
+        orderType: first.order_type,
+        tableName: first.table_name,
+      };
+    });
+  }, [items]);
+
+  const tickets = useMemo<Ticket[]>(() => {
+    return groupedTickets
+      .map((group) => {
+        const priority = priorityForKitchenTicket(
+          { status: group.status, sentAt: group.earliestSentAt },
+          now,
         );
-        const status = ticketItems.some((item) => item.status === "sent")
-          ? "sent"
-          : ticketItems.some((item) => item.status === "preparing")
-            ? "preparing"
-            : "ready";
-        const priority = priorityForKitchenTicket({ status, sentAt: earliestSentAt }, now);
         return {
-          key,
+          key: group.key,
           earliestSentAt: priority.sentAtMs,
-          items: ticketItems,
-          orderNumber: first.order_number,
-          orderType: first.order_type,
-          tableName: first.table_name,
+          items: group.items,
+          orderNumber: group.orderNumber,
+          orderType: group.orderType,
+          tableName: group.tableName,
           priority,
         };
       })
       .sort((left, right) =>
         compareKitchenTicketPriority(left.priority, right.priority),
       );
-  }, [items, now]);
+  }, [groupedTickets, now]);
 
   const visibleTickets = useMemo(
     () =>
