@@ -12,3 +12,7 @@
 **Vulnerability:** A hardcoded `NextResponse.next()` bypass was incorrectly placed before the `PLATFORM_SESSION_COOKIE` verification logic for any path starting with `/api/platform`.
 **Learning:** Early returns in authentication middleware functions bypass critical security checks, allowing unauthenticated requests to access super-admin platform routes.
 **Prevention:** Always verify token and establish session before returning `NextResponse.next()` for protected API route prefixes.
+## 2025-02-28 - Platform Audit Silently Failing
+**Vulnerability:** Audit log insertions failing silently because `try-catch` swallowed the error.
+**Learning:** For a secure audit trail, logging failures must be loud. If an audit log insertion fails, the overall transaction/request must fail to prevent actions from occurring without a trace.
+**Prevention:** Remove `try-catch` blocks around critical audit logging statements. Let exceptions propagate to abort the transaction.

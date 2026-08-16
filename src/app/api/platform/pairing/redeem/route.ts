@@ -24,8 +24,15 @@ export async function POST(request: NextRequest) {
   const code = body.code?.trim();
   if (!code) return NextResponse.json({ error: "missing_fields" }, { status: 400 });
 
+  const edgeIp = (request as any).ip;
+  const realIp = request.headers.get("x-real-ip") ?? edgeIp;
   const forwarded = request.headers.get("x-forwarded-for");
-  const clientIp = forwarded ? forwarded.split(",")[0].trim() : request.headers.get("x-real-ip");
+
+  let clientIp = realIp;
+  if (!clientIp && forwarded) {
+    const parts = forwarded.split(",");
+    clientIp = parts[parts.length - 1].trim();
+  }
 
   const result = await redeemPairingCode(code, clientIp);
   if (!result.ok) {
