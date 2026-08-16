@@ -1,6 +1,6 @@
 {
   "name": "cafe-pos-desktop",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "private": true,
   "author": "Cafe POS",
   "description": "Standalone Windows installer for the Cafe/Restaurant POS — no Docker, no Docker Desktop, no manual database setup.",
