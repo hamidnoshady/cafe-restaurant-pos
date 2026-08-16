@@ -1254,7 +1254,7 @@ export function PosScreen() {
                     <div className="mt-2 flex items-center gap-2">
                       <button
                         type="button"
-                        aria-label="کاهش تعداد"
+                        aria-label={"کاهش تعداد " + l.name}
                         onClick={() => setQty(l.key, l.quantity - 1)}
                         className="flex size-12 items-center justify-center rounded-lg bg-muted text-lg text-muted-foreground transition-colors hover:bg-muted-foreground/20 hover:text-foreground active:scale-95"
                       >
@@ -1265,7 +1265,7 @@ export function PosScreen() {
                       </span>
                       <button
                         type="button"
-                        aria-label="افزایش تعداد"
+                        aria-label={"افزایش تعداد " + l.name}
                         onClick={() => setQty(l.key, l.quantity + 1)}
                         className="flex size-12 items-center justify-center rounded-lg bg-muted text-lg text-muted-foreground transition-colors hover:bg-muted-foreground/20 hover:text-foreground active:scale-95"
                       >
@@ -1273,6 +1273,7 @@ export function PosScreen() {
                       </button>
                       <button
                         type="button"
+                        aria-label={"حذف " + l.name}
                         onClick={() => removeLine(l.key)}
                         className="ms-auto px-2 py-1 text-sm text-destructive hover:underline"
                       >

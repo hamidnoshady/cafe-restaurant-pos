@@ -5,3 +5,7 @@
 ## 2024-05-18 - Native tooltips for icon-only buttons
 **Learning:** Even when `aria-label` is present for screen readers, sighted keyboard and mouse users benefit from native tooltips on icon-only buttons (like the theme toggle) to quickly understand their function without clicking.
 **Action:** Always add a `title` attribute matching the `aria-label` on icon-only buttons, especially in global navigation areas.
+
+## 2025-02-18 - [Add aria-labels to cart quantity and remove buttons]
+**Learning:** Screen readers need context when navigating by buttons. A list of identical "حذف" (Delete), "+" and "-" buttons without descriptive aria-labels makes it impossible to know *what* is being deleted or adjusted without navigating to the surrounding text.
+**Action:** Always append the item name to the `aria-label` for repeated buttons in lists or carts (e.g. `aria-label={"حذف " + item.name}`). This is a standard pattern for screen readers.
