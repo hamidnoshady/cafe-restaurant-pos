@@ -433,6 +433,46 @@ waste, trial balance) becomes a suite an accountant can actually close a year on
 - **Chart-of-accounts customisation** and **VAT/tax reporting** (output vs. input VAT, net
   payable position).
 
+### Correcting a closed order
+
+An order that has already been paid for can still be edited or removed — from its detail page
+(`/dashboard/orders/{id}`), behind the `orders.amend_closed` permission (owner and manager by
+default) — and the correction is a real one, not a cosmetic change to `orders.total`:
+
+- Everything the checkout posted is reversed at its **own recorded values**: the revenue, VAT,
+  tip and platform-commission entry and the COGS entry are mirrored line for line, the exact
+  inventory consumption is put back at the cost it left at (cancelling any negative layer it
+  opened), the A/R balance a credit sale created is cleared, and the payment is cancelled.
+- An **edit** then re-posts the corrected bill in its place — fresh consumption, fresh revenue
+  and COGS, fresh settlement (optionally through a different tender). A **removal** stops after
+  the reversal and sets the order to `voided`, which is what drops it out of every order-derived
+  report — they all filter on `status = 'completed'`.
+- Both are dated on **the day the order was sold**, not the day of the correction — the journal
+  entries *and* the stock movements, so the two ledgers agree about which day the goods moved.
+  A locked or soft-closed fiscal period therefore refuses the amendment (migration 0024's
+  trigger) rather than silently moving it, and a business pushing daily summaries to a central
+  server (Phase 9) has its push high-water mark wound back to the amended day so central
+  converges on the correction instead of keeping the stale figures.
+- Every amendment records a mandatory reason, a before/after snapshot of the bill, and an
+  `audit_log` row. An order that already has a customer return standing against it is refused —
+  reverse the return first.
+
+The line-level immutability guards (migration 0014) are **not** relaxed for this: an amendment
+takes the same `FOR UPDATE` lock and announces itself with `app.order_amendment` for the length
+of its transaction. Grep for that setting to audit every place a settled order's lines may move.
+
+Two things it deliberately does **not** do, both of which matter when correcting an old order:
+
+- **Sales made after it are not re-costed.** Under FIFO the restored stock re-enters the queue
+  at the original order's own position, so its cost basis is exact — but sales that consumed
+  layers in the meantime keep the COGS they were posted at. Correcting those would mean
+  re-costing a chain of later sales, which this does not attempt.
+- **It does not move cash.** Reversing a week-old cash sale takes the money out of the *books*,
+  not out of the drawer, so a shift that was already counted and reconciled that day will no
+  longer agree with the count recorded then. When the customer actually got money back, a
+  customer return (`/api/orders/[id]/returns`) is the more faithful record — an amendment says
+  the sale never should have been rung up that way.
+
 ## Feature Gating & Platform Hardening (Phase 17)
 
 With many businesses on one deployment, this phase is what makes it safe to run for paying

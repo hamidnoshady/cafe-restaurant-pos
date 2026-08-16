@@ -38,6 +38,13 @@ export async function consumeInventoryExact(
     wasteReason?: string | null;
     createdBy: string | null;
     inventoryEventId: string;
+    /**
+     * When the movement happened, defaulting to now. A closed-order amendment
+     * (order-amendment-service.ts) replays a consumption for a sale that
+     * happened on an earlier day and passes that day, so the stock ledger and
+     * the back-dated inventory GL account agree about which day it moved on.
+     */
+    occurredAt?: string | null;
   },
 ): Promise<ExactConsumptionResult> {
   const quantity = positiveQuantityText(input.quantity);
@@ -92,8 +99,8 @@ export async function consumeInventoryExact(
       await client.query(
         `INSERT INTO stock_movements
            (location_id,inventory_item_id,type,quantity,unit_cost,cost_value_rial,
-            source_type,source_id,note,waste_reason,created_by,inventory_event_id)
-         VALUES($1,$2,$3,-$4::numeric,$5,$6,$7,$8,$9,$10,$11,$12)`,
+            source_type,source_id,note,waste_reason,created_by,inventory_event_id,occurred_at)
+         VALUES($1,$2,$3,-$4::numeric,$5,$6,$7,$8,$9,$10,$11,$12,COALESCE($13::timestamptz,now()))`,
         [
           input.locationId,
           input.inventoryItemId,
@@ -107,6 +114,7 @@ export async function consumeInventoryExact(
           input.wasteReason ?? null,
           input.createdBy,
           input.inventoryEventId,
+          input.occurredAt ?? null,
         ],
       );
       postedCost += rialBigInt(value);
@@ -119,8 +127,8 @@ export async function consumeInventoryExact(
       await client.query(
         `INSERT INTO stock_movements
            (location_id,inventory_item_id,type,quantity,unit_cost,cost_value_rial,
-            source_type,source_id,note,waste_reason,created_by,inventory_event_id)
-         VALUES($1,$2,$3,-$4::numeric,$5,$6,$7,$8,$9,$10,$11,$12)`,
+            source_type,source_id,note,waste_reason,created_by,inventory_event_id,occurred_at)
+         VALUES($1,$2,$3,-$4::numeric,$5,$6,$7,$8,$9,$10,$11,$12,COALESCE($13::timestamptz,now()))`,
         [
           input.locationId,
           input.inventoryItemId,
@@ -134,6 +142,7 @@ export async function consumeInventoryExact(
           input.wasteReason ?? null,
           input.createdBy,
           input.inventoryEventId,
+          input.occurredAt ?? null,
         ],
       );
     }
@@ -164,8 +173,8 @@ export async function consumeInventoryExact(
     await client.query(
       `INSERT INTO stock_movements
          (location_id,inventory_item_id,type,quantity,unit_cost,cost_value_rial,
-          source_type,source_id,note,waste_reason,created_by,inventory_event_id)
-       VALUES($1,$2,$3,-$4::numeric,$5,$6,$7,$8,$9,$10,$11,$12)`,
+          source_type,source_id,note,waste_reason,created_by,inventory_event_id,occurred_at)
+       VALUES($1,$2,$3,-$4::numeric,$5,$6,$7,$8,$9,$10,$11,$12,COALESCE($13::timestamptz,now()))`,
       [
         input.locationId,
         input.inventoryItemId,
@@ -179,6 +188,7 @@ export async function consumeInventoryExact(
         input.wasteReason ?? null,
         input.createdBy,
         input.inventoryEventId,
+        input.occurredAt ?? null,
       ],
     );
   }

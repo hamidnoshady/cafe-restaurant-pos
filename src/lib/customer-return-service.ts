@@ -9,6 +9,7 @@ import {
   type RialText,
 } from "./inventory-exact";
 import { getCostingMethod } from "./inventory-service";
+import { liveSaleInventoryEventId } from "./order-amendment-service";
 import { postExactCustomerRefundEntry, postExactOperationalInventoryEntry } from "./ledger-service";
 import { WELL_KNOWN_CODES } from "./coa-template";
 
@@ -73,6 +74,10 @@ export async function createCustomerReturn(
     [params.businessId, params.locationId, returnId, params.createdBy, `customer-return:${params.idempotencyKey}`],
   );
   const method = await getCostingMethod(params.businessId, client);
+  // The sale's COGS is read off the consumption event that currently stands for
+  // this order — after a closed-order amendment that is the replayed
+  // consumption, not the reversed original, and both wear `source_type='order'`.
+  const saleEventId = await liveSaleInventoryEventId(client, params.businessId, params.orderId);
   let recovered = 0n;
 
   for (const line of [...params.lines].sort((a, b) => a.orderItemId.localeCompare(b.orderItemId))) {
@@ -101,7 +106,8 @@ export async function createCustomerReturn(
              FROM order_item_inventory_snapshots s JOIN order_items oi ON oi.id=s.order_item_id
             WHERE oi.order_id=$1 AND oi.status<>'voided' AND s.inventory_item_id=$2) sold_qty,
           (SELECT COALESCE(sum(sm.cost_value_rial),0)::text FROM stock_movements sm
-            WHERE sm.source_type='order' AND sm.source_id=$1 AND sm.inventory_item_id=$2 AND sm.type='sale') sold_value,
+            WHERE sm.source_type='order' AND sm.source_id=$1 AND sm.inventory_item_id=$2 AND sm.type='sale'
+              AND ($4::uuid IS NULL OR sm.inventory_event_id=$4)) sold_value,
           COALESCE((SELECT sum(a.quantity)::text
              FROM customer_return_inventory_allocations a
              JOIN customer_return_lines rl ON rl.id=a.customer_return_line_id
@@ -112,7 +118,7 @@ export async function createCustomerReturn(
              JOIN customer_return_lines rl ON rl.id=a.customer_return_line_id
              JOIN customer_returns r ON r.id=rl.customer_return_id
             WHERE r.order_id=$1 AND rl.order_item_id=$3 AND a.inventory_item_id=$2),'0') prior_value`,
-        [params.orderId, snapshot.inventory_item_id, line.orderItemId],
+        [params.orderId, snapshot.inventory_item_id, line.orderItemId, saleEventId],
       );
       const basis = basisRows[0];
       if (!basis.sold_qty) throw new Error("historical_cogs_unavailable");

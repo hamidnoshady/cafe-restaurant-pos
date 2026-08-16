@@ -14,6 +14,7 @@ import { apiOrQueue } from "../../offline-queue";
 import { api, ErrorBox, errorMessage, InfoBox, inputClass, PrimaryButton, SecondaryButton } from "../../ui";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { firstPrinter, useBusinessInfo, usePrinters } from "../../use-printers";
+import { ClosedOrderAmendment } from "./closed-order-amendment";
 
 const PAYMENT_METHODS: { value: "cash" | "card" | "card_to_card" | "credit" | "snappfood"; label: string }[] = [
   { value: "cash", label: "نقدی" },
@@ -78,7 +79,16 @@ interface MenuData {
 
 const STATUS_LABELS: Record<string, string> = { open: "باز", held: "نگه‌داشته", completed: "تکمیل‌شده", voided: "باطل‌شده" };
 
-export function OrderDetail({ orderId, canEdit }: { orderId: string; canEdit: boolean }) {
+export function OrderDetail({
+  orderId,
+  canEdit,
+  canAmendClosed = false,
+}: {
+  orderId: string;
+  canEdit: boolean;
+  /** may edit/remove an order that has already been paid for — a separate, back-office permission */
+  canAmendClosed?: boolean;
+}) {
   const [order, setOrder] = useState<OrderRow | null>(null);
   const [items, setItems] = useState<OrderItemRow[]>([]);
   const [modifiers, setModifiers] = useState<ModifierRow[]>([]);
@@ -307,6 +317,7 @@ export function OrderDetail({ orderId, canEdit }: { orderId: string; canEdit: bo
   const isOpen = order.status === "open";
   const editable = canEdit && isOpen;
   const activeItems = menu?.items.filter((i) => i.is_active) ?? [];
+  const amendable = canAmendClosed && order.status === "completed";
   /** How much of the subtotal came from add-ons — the number a customer disputes most often. */
   const addOnTotal = items
     .filter((it) => it.status !== "voided")
@@ -590,6 +601,22 @@ export function OrderDetail({ orderId, canEdit }: { orderId: string; canEdit: bo
           </div>
         ) : null}
       </section>
+
+      {amendable ? (
+        <ClosedOrderAmendment
+          orderId={orderId}
+          items={items.map((it) => ({
+            id: it.id,
+            name: it.name_snapshot,
+            quantity: it.quantity,
+            status: it.status,
+          }))}
+          menuItems={activeItems.map((item) => ({ id: item.id, name: item.name }))}
+          discountType={order.discount_type}
+          discountValue={order.discount_value === null ? null : Number(order.discount_value)}
+          onDone={load}
+        />
+      ) : null}
 
       {pickerItem ? (
         <ModifierPicker

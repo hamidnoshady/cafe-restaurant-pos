@@ -310,6 +310,16 @@ export async function postExactCogsEntry(
     createdBy: string | null;
     totalCost: RialText;
     inventoryEventId: string;
+    /**
+     * Identity and date of the posting. Default to the order itself, today —
+     * a closed-order amendment (order-amendment-service.ts) re-posts the
+     * corrected sale under its own identity, on the original's date, so it
+     * neither collides with the entry it replaced nor moves the sale into the
+     * month the correction was made in.
+     */
+    sourceType?: string;
+    sourceId?: string;
+    entryDate?: string | null;
   },
 ): Promise<string | null> {
   const accounts = await accountIdsByCode(client, params.businessId, [
@@ -320,9 +330,10 @@ export async function postExactCogsEntry(
   return postExactJournalEntry(client, {
     businessId: params.businessId,
     locationId: params.locationId,
+    entryDate: params.entryDate ?? null,
     memo: "Cost of goods sold",
-    sourceType: "order",
-    sourceId: params.orderId,
+    sourceType: params.sourceType ?? "order",
+    sourceId: params.sourceId ?? params.orderId,
     createdBy: params.createdBy,
     postingKind: "cogs",
     inventoryEventId: params.inventoryEventId,
@@ -363,6 +374,14 @@ export async function postExactOrderPaymentEntry(
      * defaults to "0".
      */
     platformCommission?: RialText;
+    /**
+     * Identity and date of the posting, defaulting to the order itself, today.
+     * A closed-order amendment re-posts the corrected sale under its own
+     * identity on the original's date — see postExactCogsEntry's note.
+     */
+    sourceType?: string;
+    sourceId?: string;
+    entryDate?: string | null;
   },
 ): Promise<string | null> {
   const tip = rialBigInt(params.tip ?? ("0" as RialText));
@@ -415,9 +434,10 @@ export async function postExactOrderPaymentEntry(
   return postExactJournalEntry(client, {
     businessId: params.businessId,
     locationId: params.locationId,
+    entryDate: params.entryDate ?? null,
     memo: "Order payment",
-    sourceType: "order",
-    sourceId: params.orderId,
+    sourceType: params.sourceType ?? "order",
+    sourceId: params.sourceId ?? params.orderId,
     createdBy: params.createdBy,
     postingKind: "revenue",
     inventoryEventId: params.inventoryEventId,
@@ -437,6 +457,72 @@ export async function postExactOrderPaymentEntry(
         : []),
     ],
   });
+}
+
+/**
+ * Posts the exact mirror of an already-posted entry — every line's debit and
+ * credit swapped — and marks the original reversed.
+ *
+ * Reading the original's own lines rather than rebuilding them from the source
+ * document is the point: an order payment's lines depend on its channel, its
+ * tip, its platform commission and its settlement method, and a reversal built
+ * from today's settings would silently diverge from what was actually posted.
+ * Copying the lines cannot.
+ *
+ * The reversal carries its *own* source identity (an amendment, a correction)
+ * so it never collides with the original under the
+ * `(business_id, source_type, source_id, posting_kind)` uniqueness index, and
+ * so re-posting the corrected document can reuse the ordinary posting kinds.
+ */
+export async function postExactMirrorEntry(
+  client: PoolClient,
+  params: {
+    businessId: string;
+    locationId: string | null;
+    /** the entry being undone */
+    originalEntryId: string;
+    /** identity of the reversal itself */
+    sourceType: string;
+    sourceId: string;
+    postingKind: string;
+    memo: string;
+    createdBy: string | null;
+    /** ISO date; defaults to today. Amendments pass the original's own date. */
+    entryDate?: string | null;
+    inventoryEventId?: string | null;
+  },
+): Promise<string | null> {
+  const { rows: lines } = await client.query<{ account_id: string; debit: string; credit: string }>(
+    "SELECT account_id, debit::text, credit::text FROM journal_lines WHERE entry_id=$1 ORDER BY id",
+    [params.originalEntryId],
+  );
+  const entryId = await postExactJournalEntry(client, {
+    businessId: params.businessId,
+    locationId: params.locationId,
+    entryDate: params.entryDate ?? null,
+    memo: params.memo,
+    sourceType: params.sourceType,
+    sourceId: params.sourceId,
+    createdBy: params.createdBy,
+    postingKind: params.postingKind,
+    inventoryEventId: params.inventoryEventId ?? null,
+    lines: lines.map((line) => ({
+      accountId: line.account_id,
+      debit: line.credit as RialText,
+      credit: line.debit as RialText,
+    })),
+  });
+  if (entryId) {
+    await client.query("UPDATE journal_entries SET reverses_entry_id=$2 WHERE id=$1", [
+      entryId,
+      params.originalEntryId,
+    ]);
+  }
+  await client.query(
+    "UPDATE journal_entries SET reversed_at=now(), reversed_by=$2 WHERE id=$1 AND reversed_at IS NULL",
+    [params.originalEntryId, params.createdBy],
+  );
+  return entryId;
 }
 
 export async function postExactOperationalInventoryEntry(

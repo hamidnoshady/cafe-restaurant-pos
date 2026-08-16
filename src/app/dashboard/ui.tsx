@@ -67,6 +67,13 @@ export function errorMessage(code: string | undefined): string {
     invalid_discount: "مقدار تخفیف معتبر نیست.",
     order_not_found: "سفارش پیدا نشد.",
     order_not_open: "این سفارش دیگر باز نیست و قابل ویرایش نیست.",
+    order_not_completed: "فقط سفارش تسویه‌شده را می‌توان اصلاح یا حذف کرد.",
+    order_has_returns: "برای این سفارش مرجوعی مشتری ثبت شده است؛ ابتدا مرجوعی را برگشت بزنید.",
+    reason_required: "ثبت دلیل اصلاح الزامی است.",
+    reason_too_long: "دلیل اصلاح بیش از حد طولانی است.",
+    duplicate_item: "یک قلم دوبار در فهرست اصلاح آمده است.",
+    consumption_layer_settled: "کسری موجودی این فروش با خرید یا شمارش بعدی تسویه شده و برگشت دقیق آن ممکن نیست.",
+    consumption_reversal_inconsistent: "برگشت موجودی این فروش با ارزش ثبت‌شدهٔ آن هم‌خوانی ندارد.",
     item_already_voided: "این قلم قبلاً باطل شده است.",
     not_found: "پیدا نشد.",
     // Phase 3 — tables, sessions, reservations

@@ -28,8 +28,14 @@ import {
 } from "./plan-limits";
 import type { PoolClient } from "pg";
 
-/** Capture the recipe plus modifier deltas as an immutable per-unit snapshot. */
-async function captureInventorySnapshot(
+/**
+ * Capture the recipe plus modifier deltas as an immutable per-unit snapshot.
+ *
+ * Exported for order-amendment-service.ts: a line added to an already-closed
+ * order has to be snapshotted the same way an intake line is, or the replayed
+ * consumption would fall back to today's recipe for it.
+ */
+export async function captureInventorySnapshot(
   client: PoolClient,
   orderItemId: string,
   menuItemId: string,

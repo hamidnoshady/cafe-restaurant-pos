@@ -33,6 +33,8 @@ const ACTION_LABELS: Record<string, string> = {
   "team.invitation_accepted": "پذیرش دعوت",
   "device.paired": "ثبت دستگاه",
   "device.revoked": "حذف دستگاه",
+  "order.amended": "ویرایش سفارش بسته‌شده",
+  "order.voided_after_close": "حذف سفارش بسته‌شده",
   "shift.opened": "شروع شیفت",
   "shift.closed": "پایان شیفت",
   "branch.created": "ایجاد شعبه",
@@ -51,6 +53,7 @@ const ENTITY_LABELS: Record<string, string> = {
   team: "تیم",
   device: "دستگاه",
   shift: "شیفت",
+  order: "سفارش",
   location: "شعبه",
   account: "حساب",
 };

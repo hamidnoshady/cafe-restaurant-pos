@@ -133,6 +133,12 @@ export async function deductForOrder(
   orderId: string,
   createdBy: string | null,
   inventoryEventId: string,
+  /**
+   * When the sale happened, defaulting to now. A closed-order amendment
+   * replays the consumption for a sale made on an earlier day and passes that
+   * day, so the stock ledger agrees with the back-dated ledger entries.
+   */
+  occurredAt?: string | null,
 ): Promise<{ totalCost: RialText }> {
   const { rows: items } = await client.query<{ id: string; menu_item_id: string | null; quantity: number }>(
     "SELECT id, menu_item_id, quantity FROM order_items WHERE order_id = $1 AND status != 'voided'",
@@ -221,6 +227,7 @@ export async function deductForOrder(
       sourceId: orderId,
       createdBy,
       inventoryEventId,
+      occurredAt,
     });
     totalCost += rialBigInt(result.postedCost);
   }
