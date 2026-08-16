@@ -3,7 +3,7 @@ import { requireRole, withTenantScope } from "@/lib/auth";
 import { type CartItemInput } from "@/lib/order-cart";
 import { createOrder } from "@/lib/order-mutations";
 import { listOrders, listOrdersClosedSince } from "@/lib/order-read-service";
-import { branchClosedOrdersWindow } from "@/lib/shift-service";
+import { branchClosedOrdersWindow, type ClosedOrdersWindow } from "@/lib/shift-service";
 import { listRecentShiftOptions } from "@/lib/shift-orders-service";
 import type { DiscountInput } from "@/lib/orders";
 import { resolveActiveLocation } from "@/lib/setup-state";
@@ -21,7 +21,10 @@ import { broadcast } from "@/lib/realtime";
  * The default window is today's business day at the branch, widened to a
  * still-running shift that began earlier (see branchClosedOrdersWindow);
  * `shiftStartedAt` is reported alongside so the screen can name which of the
- * two it is showing.
+ * two it is showing. A branch that has configured a business day (روز کاری)
+ * gets that day's window instead, reported as `businessDay` so the screen can
+ * say which trading day — and whether management has already closed it —
+ * rather than calling it "today".
  *
  * An owner or manager may instead ask for one shift by id (`&shiftId=`), and
  * gets the branch's recent shifts back as that picker's options — reviewing a
@@ -52,8 +55,8 @@ export const GET = withTenantScope(async (request: NextRequest) => {
     ? (shifts.find((shift) => shift.id === requestedShiftId) ?? null)
     : null;
 
-  const window = selectedShift
-    ? { since: selectedShift.startedAt, shiftStartedAt: selectedShift.startedAt }
+  const window: ClosedOrdersWindow = selectedShift
+    ? { since: selectedShift.startedAt, shiftStartedAt: selectedShift.startedAt, businessDay: null }
     : await branchClosedOrdersWindow(location.id);
   const closedOrders = await listOrdersClosedSince(location.id, window.since, {
     until: selectedShift?.endedAt ?? null,
@@ -64,6 +67,9 @@ export const GET = withTenantScope(async (request: NextRequest) => {
     closedOrders,
     closedSince: window.since,
     shiftStartedAt: window.shiftStartedAt,
+    // Null unless the branch has a business day configured — the screen then
+    // labels its window by that day instead of by "today"/the open shift.
+    businessDay: window.businessDay,
     shifts,
     selectedShift,
   });

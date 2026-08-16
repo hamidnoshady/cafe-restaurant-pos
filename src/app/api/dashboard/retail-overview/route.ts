@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
+import { getBusinessDayStatus } from "@/lib/business-day-service";
 import { query } from "@/lib/db";
 import { getBusinessIndustry } from "@/lib/industry-guard";
 import { industryProfile } from "@/lib/industry-profile";
@@ -39,17 +40,20 @@ export const GET = withTenantScope(async () => {
     });
   }
 
-  // "Today" in the branch's own timezone, not the server's: a shop closing at
-  // 23:00 Tehran time must see that sale on today's figure.
+  // "Today" is the branch's business day (روز کاری, migration 0076), which for a
+  // shop that has configured none is its calendar day in its own timezone — what
+  // this always read, and why a shop closing at 23:00 Tehran time still sees that
+  // sale on today's figure. A late-trading shop that has configured one gets its
+  // whole service on one figure instead of a total that resets at midnight.
+  const businessDay = await getBusinessDayStatus(location.id);
   const { rows: todayRows } = await query<{ invoice_count: string; total: string }>(
     `SELECT count(*) AS invoice_count, COALESCE(SUM(total), 0)::text AS total
        FROM orders
       WHERE location_id = $1
         AND type = 'retail'
         AND status = 'completed'
-        AND (closed_at AT TIME ZONE (SELECT timezone FROM locations WHERE id = $1))::date
-            = (now() AT TIME ZONE (SELECT timezone FROM locations WHERE id = $1))::date`,
-    [location.id],
+        AND closed_at >= $2::timestamptz`,
+    [location.id, businessDay?.windowStart ?? new Date().toISOString()],
   );
 
   // What is sellable right now, across whichever of the three item shapes this
@@ -114,5 +118,6 @@ export const GET = withTenantScope(async () => {
     },
     goldPrices,
     openRepairs,
+    businessDay,
   });
 });

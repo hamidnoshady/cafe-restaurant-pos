@@ -17,6 +17,7 @@ import { PricingSettings } from "./pricing-settings";
 import { PrinterSettings } from "./printer-settings";
 import { SecurityCenterSettings } from "./security-center-settings";
 import { ServerSyncSettings } from "./server-sync-settings";
+import { BusinessDaySettings } from "./business-day-settings";
 import { ShiftHistorySettings } from "./shift-history-settings";
 import { TaxSettings } from "./tax-settings";
 
@@ -75,7 +76,12 @@ export function SettingsManager({ tabs, features, currentUserId, isOwner }: Sett
       {activeTab === "branch-management" ? <BranchManagementSettings features={features} /> : null}
       {activeTab === "server-sync" ? <ServerSyncSettings /> : null}
       {activeTab === "devices" ? <DeviceSettings /> : null}
-      {activeTab === "shifts" ? <ShiftHistorySettings /> : null}
+      {activeTab === "shifts" ? (
+        <div className="space-y-6">
+          <BusinessDaySettings />
+          <ShiftHistorySettings />
+        </div>
+      ) : null}
       {activeTab === "audit-log" ? <AuditLogSettings /> : null}
       {activeTab === "security-center" ? <SecurityCenterSettings /> : null}
       {activeTab === "backup" ? <BackupManager isOwner={isOwner} /> : null}

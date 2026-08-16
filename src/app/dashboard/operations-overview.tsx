@@ -13,6 +13,7 @@ import {
   ShoppingCartIcon,
   type LucideIcon,
 } from "lucide-react";
+import { businessDayHours, formatStartTime } from "@/lib/business-day";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import { formatTomanText } from "@/lib/money";
@@ -33,6 +34,17 @@ interface OverviewData {
     averageOrderValue: string;
   };
   hourly: { hour: number; revenue: string }[];
+  /**
+   * The branch's trading day (روز کاری). Null for a branch that has not
+   * configured one — then "today" here means the calendar day, exactly as it
+   * always did, and nothing below changes.
+   */
+  businessDay: {
+    enabled: boolean;
+    startMinutes: number | null;
+    businessDate: string;
+    manuallyClosed: boolean;
+  } | null;
   activeOrderCount: number;
   activeOrders: {
     id: string;
@@ -45,7 +57,8 @@ interface OverviewData {
   }[];
 }
 
-const CHART_HOURS = Array.from({ length: 24 }, (_, hour) => hour);
+/** Which of the axis's 24 slots get a printed label. */
+const CHART_LABEL_SLOTS = [0, 4, 8, 12, 16, 20, 23];
 const SKELETON_BAR_HEIGHTS = [28, 42, 55, 74, 88, 81, 67, 52, 45];
 
 const ORDER_STATUS: Record<KitchenStatus, { label: string; className: string }> = {
@@ -227,20 +240,24 @@ function SalesTrendChart({
   hourly,
   cumulative,
   reducedMotion,
+  startMinutes,
 }: {
   hourly: OverviewData["hourly"];
   cumulative: boolean;
   reducedMotion: boolean;
+  /** The branch's business-day start, so the axis runs in trading order rather than 00→23. */
+  startMinutes: number | null;
 }) {
+  const hours = useMemo(() => businessDayHours(startMinutes), [startMinutes]);
   const values = useMemo(() => {
     const revenueByHour = new Map(hourly.map((point) => [point.hour, numberValue(point.revenue)]));
     let runningTotal = 0;
-    return CHART_HOURS.map((hour) => {
+    return hours.map((hour) => {
       const revenue = revenueByHour.get(hour) ?? 0;
       runningTotal += revenue;
       return { hour, value: cumulative ? runningTotal : revenue };
     });
-  }, [cumulative, hourly]);
+  }, [cumulative, hourly, hours]);
 
   const width = 960;
   const height = 180;
@@ -260,7 +277,7 @@ function SalesTrendChart({
     };
   });
   const path = points.map((point, index) => `${index === 0 ? "M" : "L"}${point.x} ${point.y}`).join(" ");
-  const labelHours = [0, 4, 8, 12, 16, 20, 23];
+  const labelHours = CHART_LABEL_SLOTS.map((slot) => hours[slot]);
 
   return (
     <div className="ops-data-resolve pt-3" role="img" aria-label={cumulative ? "روند تجمعی فروش امروز" : "روند ساعتی فروش امروز"}>
@@ -481,6 +498,20 @@ export function OperationsOverview({
   const showOrders = data !== null && stage === "orders";
   const syncLabel = data === null ? "در حال دریافت داده‌ها" : isRefreshing ? "داده‌ها در حال به‌روزرسانی است" : "به‌روزرسانی شد";
   const roleLabel = role === "manager" ? "مدیر شیفت" : role === "owner" ? "مالک" : role === "cashier" ? "صندوقدار" : "گارسون";
+  // With a business day configured the heading has to name *that* day: at 01:00
+  // on an 18:00→18:00 day these figures are still the previous date's service,
+  // and printing today's calendar date over them is the confusion the whole
+  // feature exists to remove.
+  const businessDay = data?.businessDay ?? null;
+  const dayLabel =
+    businessDay?.enabled && businessDay.businessDate
+      ? toPersianDigits(formatJalali(businessDay.businessDate, { withMonthName: true }))
+      : today;
+  const businessDayNote =
+    businessDay?.enabled && businessDay.startMinutes !== null
+      ? `روز کاری از ساعت ${toPersianDigits(formatStartTime(businessDay.startMinutes))}` +
+        (businessDay.manuallyClosed ? " · بسته‌شده" : "")
+      : null;
 
   return (
     <section className="w-full" aria-labelledby="operations-heading">
@@ -491,7 +522,7 @@ export function OperationsOverview({
             <p className="text-2xl font-bold tracking-[-0.03em] text-[#252522]">نمای کلی عملیات امروز</p>
             <span className="rounded-full bg-[#F7F6F2] px-2.5 py-1 text-xs font-medium text-[#77756F]">{roleLabel}</span>
           </div>
-          <p className="mt-2 flex items-center gap-1.5 text-sm text-[#77756F]"><CalendarDaysIcon className="size-4" aria-hidden="true" />{today}</p>
+          <p className="mt-2 flex items-center gap-1.5 text-sm text-[#77756F]"><CalendarDaysIcon className="size-4" aria-hidden="true" />{dayLabel}{businessDayNote ? <span className="rounded-full bg-[#F7F6F2] px-2 py-0.5 text-xs text-[#77756F]">{businessDayNote}</span> : null}</p>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
           <div className="flex min-h-11 items-center gap-2 rounded-xl border border-[#EAE8E2] bg-[#FCFCFA] px-3 text-sm font-medium text-[#252522]">
@@ -528,13 +559,13 @@ export function OperationsOverview({
 
       <section className="mb-5 overflow-hidden rounded-2xl border border-[#EAE8E2] bg-white p-4 shadow-[0_1px_2px_rgba(37,37,34,0.03)] sm:p-5" aria-labelledby="sales-trend-heading">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div><h2 id="sales-trend-heading" className="font-semibold text-[#252522]">روند فروش امروز</h2><p className="mt-1 text-xs text-[#77756F]">فروش‌های تکمیل‌شده به تفکیک ساعت</p></div>
+          <div><h2 id="sales-trend-heading" className="font-semibold text-[#252522]">روند فروش امروز</h2><p className="mt-1 text-xs text-[#77756F]">فروش‌های تکمیل‌شده به تفکیک ساعت{businessDayNote ? ` — ${businessDayNote}` : ""}</p></div>
           <div className="inline-flex min-h-11 w-fit rounded-xl border border-[#EAE8E2] bg-[#FCFCFA] p-1" role="group" aria-label="نمایش روند فروش">
             <button type="button" onClick={() => setCumulative(false)} aria-pressed={!cumulative} className={`min-h-9 rounded-lg px-3 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 active:scale-[0.98] ${!cumulative ? "bg-white text-[#252522] shadow-[0_1px_2px_rgba(37,37,34,0.05)]" : "text-[#77756F]"}`}>ساعتی</button>
             <button type="button" onClick={() => setCumulative(true)} aria-pressed={cumulative} className={`min-h-9 rounded-lg px-3 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 active:scale-[0.98] ${cumulative ? "bg-white text-[#252522] shadow-[0_1px_2px_rgba(37,37,34,0.05)]" : "text-[#77756F]"}`}>تجمعی</button>
           </div>
         </div>
-        {showChart ? <SalesTrendChart key={cumulative ? "cumulative" : "hourly"} hourly={data.hourly} cumulative={cumulative} reducedMotion={reducedMotion} /> : <SalesTrendSkeleton />}
+        {showChart ? <SalesTrendChart key={cumulative ? "cumulative" : "hourly"} hourly={data.hourly} cumulative={cumulative} reducedMotion={reducedMotion} startMinutes={data.businessDay?.enabled ? data.businessDay.startMinutes : null} /> : <SalesTrendSkeleton />}
       </section>
 
       <section className="rounded-2xl border border-[#EAE8E2] bg-white p-4 shadow-[0_1px_2px_rgba(37,37,34,0.03)] sm:p-5" aria-labelledby="active-orders-heading">
