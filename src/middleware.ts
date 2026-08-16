@@ -184,9 +184,18 @@ function maybeSweep(now: number) {
 }
 
 function clientIp(request: NextRequest): string {
+  // Next.js `NextRequest.ip` exists in Edge runtime middleware/routes.
+  // We typecast since it might not be in the base TS definitions depending on version.
+  const edgeIp = (request as any).ip;
+  const realIp = request.headers.get("x-real-ip") ?? edgeIp;
+  if (realIp) return realIp;
+
   const forwarded = request.headers.get("x-forwarded-for");
-  if (forwarded) return forwarded.split(",")[0].trim();
-  return request.headers.get("x-real-ip") ?? "unknown";
+  if (forwarded) {
+    const parts = forwarded.split(",");
+    return parts[parts.length - 1].trim();
+  }
+  return "unknown";
 }
 
 function rateLimited(retryAfterMs: number): NextResponse {
