@@ -10,3 +10,6 @@
 ## 2024-03-24 - Expensive Regex String Normalizations in Hot Loops
 **Learning:** In the POS screen, string normalization (handling Arabic/Persian digits and diacritics via multiple `.replace()` with Regexes) is called inside `searchPosMenuItems`. Since this search runs over hundreds of items on every keystroke, the string allocations and regex executions become a noticeable performance bottleneck, causing typing lag.
 **Action:** Memoize pure string manipulation functions (like `normalizePosSearchText`) using a simple `Map` with a max-size eviction strategy when they are used inside hot loops like search filters.
+## 2025-01-20 - Expensive Date Parsing in Hot Loops
+**Learning:** In the kitchen dashboard screen, `tickets` array grouping by `order_id` and string to date parsing through `new Date(item.sent_to_kitchen_at).getTime()` for calculating the ticket's `earliestSentAt` was tied to a `now` value updating every 15 seconds.
+**Action:** Separate static data operations (like grouping, filtering, or date parsing) into a distinct `useMemo` that dependes solely on the original items array, so they do not get recalculated on every tick.
