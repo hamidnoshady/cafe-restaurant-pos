@@ -11,6 +11,7 @@ import {
 } from "@/lib/ledger-service";
 import { getOnlinePlatformsConfig } from "@/lib/online-platforms-service";
 import { lockOpenOrder } from "@/lib/order-lock";
+import { paymentFailureFor } from "@/lib/order-payment-errors";
 import { rialBigInt, rialText, type RialText } from "@/lib/inventory-exact";
 
 const PAYMENT_METHODS = ["cash", "card", "card_to_card", "online", "credit", "snappfood"] as const;
@@ -163,6 +164,11 @@ export const POST = withTenantScope(async (request: NextRequest, context: { para
     if (err instanceof MissingLedgerAccountError) {
       return NextResponse.json({ error: "ledger_account_missing", code: err.code }, { status: 409 });
     }
+    // A locked period, a negative ingredient requirement or a costing conflict
+    // is a condition someone can go and fix; only an unrecognised fault stays a
+    // 500, so it still surfaces as a bug rather than as advice to retry.
+    const failure = paymentFailureFor(err);
+    if (failure) return NextResponse.json({ error: failure.error }, { status: failure.status });
     throw err;
   } finally {
     client.release();
