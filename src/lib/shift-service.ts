@@ -10,6 +10,7 @@
  * window), the same join v_shift_reconciliation (Phase 8) already does per
  * business-day — no new column on orders, no change to order-service.ts.
  */
+import { getBusinessDayStatus, type BusinessDayStatus } from "./business-day-service";
 import { getPool, query } from "./db";
 import { reconcileCash } from "./shift";
 
@@ -154,10 +155,11 @@ const SHIFT_COLUMNS =
  * Opens a new shift for `employeeId`, copying location/device from the
  * session that's opening it (`sessionId` — the caller's own
  * `session.employeeSessionId`) so a shift never needs its own device-token
- * resolution. `businessDate` is bucketed by that location's timezone the
- * same way every reporting view already buckets a business day (Phase 8) —
- * computed once at open time and stored, not recomputed later, so a shift
- * that runs past local midnight stays on the day it started.
+ * resolution. `businessDate` is bucketed by `app_business_date` (migration
+ * 0076), the same rule every reporting view now uses — the branch's timezone,
+ * offset by its configured business-day start where it has one — computed once
+ * at open time and stored, not recomputed later, so a shift that runs past
+ * local midnight stays on the day it started.
  *
  * A session only carries a location when the employee has a default branch
  * assigned (users.location_id, copied at PIN/WebAuthn login) or signed in from
@@ -179,7 +181,7 @@ export async function openShift(
       `INSERT INTO employee_shifts
          (employee_id, business_id, location_id, session_id, device_id, opening_float, business_date)
        SELECT $1, $2, coalesce(s.location_id, $5::uuid), s.id, s.device_id, $4,
-              (now() AT TIME ZONE coalesce(l.timezone, 'UTC'))::date
+              app_business_date(now(), l.timezone, l.business_day_start_minutes)
          FROM employee_sessions s
          LEFT JOIN locations l ON l.id = coalesce(s.location_id, $5::uuid)
         WHERE s.id = $3 AND s.business_id = $2
@@ -215,6 +217,8 @@ export interface ClosedOrdersWindow {
   since: string;
   /** When the branch's running shift began, or null when nobody is clocked in. */
   shiftStartedAt: string | null;
+  /** The branch's trading day as of now — null when it has no business day configured. */
+  businessDay: BusinessDayStatus | null;
 }
 
 /**
@@ -239,29 +243,43 @@ export interface ClosedOrdersWindow {
  * exactly the empty list this function exists to prevent. Reads stay tenant-
  * scoped by RLS, and the orders themselves are always filtered by branch, so
  * the only thing such a row can affect is where the window starts.
+ *
+ * All of that is the *calendar-day* branch of this function, and it is left
+ * exactly as it was. A branch that has configured a business day (روز کاری,
+ * migration 0076) takes the other branch, where the trading day is authoritative
+ * and the employee-shift widening is deliberately not applied: the business day
+ * already keeps a night service that crosses midnight whole — which is the only
+ * thing that widening was ever compensating for — and honouring an employee who
+ * clocked in before the day started, or forgot to clock out last night, would
+ * pull the *previous* business day's sales back into this one's list. A manual
+ * close moves the start later still, so the screen goes to zero at the cash-up
+ * rather than at the next day's start time.
  */
 export async function branchClosedOrdersWindow(locationId: string): Promise<ClosedOrdersWindow> {
-  const { rows } = await query<{ shift_started_at: Date | null; day_started_at: Date }>(
-    `SELECT (
-              SELECT min(s.started_at)
-                FROM employee_shifts s
-               WHERE s.ended_at IS NULL
-                 AND (s.location_id = l.id OR s.location_id IS NULL)
-            ) AS shift_started_at,
-            date_trunc('day', now() AT TIME ZONE l.timezone) AT TIME ZONE l.timezone
-              AS day_started_at
-       FROM locations l
-      WHERE l.id = $1`,
-    [locationId],
-  );
+  // getBusinessDayStatus already carries where the day started (local midnight
+  // for a branch with none configured, which is what this used to compute for
+  // itself), so the only thing left to look up here is the open shift.
+  const [{ rows }, businessDay] = await Promise.all([
+    query<{ shift_started_at: Date | null }>(
+      `SELECT min(s.started_at) AS shift_started_at
+         FROM employee_shifts s
+        WHERE s.ended_at IS NULL
+          AND (s.location_id = $1 OR s.location_id IS NULL)`,
+      [locationId],
+    ),
+    getBusinessDayStatus(locationId),
+  ]);
 
-  const dayStartedAt = rows[0]?.day_started_at ?? new Date();
   const shiftStartedAt = rows[0]?.shift_started_at ?? null;
+  const shiftStartedAtIso = shiftStartedAt ? shiftStartedAt.toISOString() : null;
+
+  if (businessDay?.enabled) {
+    return { since: businessDay.windowStart, shiftStartedAt: shiftStartedAtIso, businessDay };
+  }
+
+  const dayStartedAt = businessDay ? new Date(businessDay.scheduledStart) : new Date();
   const since = shiftStartedAt && shiftStartedAt < dayStartedAt ? shiftStartedAt : dayStartedAt;
-  return {
-    since: since.toISOString(),
-    shiftStartedAt: shiftStartedAt ? shiftStartedAt.toISOString() : null,
-  };
+  return { since: since.toISOString(), shiftStartedAt: shiftStartedAtIso, businessDay: null };
 }
 
 export interface CloseShiftResult {

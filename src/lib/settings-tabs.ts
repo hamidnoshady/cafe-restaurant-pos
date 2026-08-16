@@ -152,8 +152,8 @@ export const SETTINGS_TABS: SettingsTab[] = [
   },
   {
     key: "shifts",
-    label: "شیفت‌ها",
-    description: "تاریخچهٔ ورود/خروج کارکنان و تطبیق صندوق هر شیفت",
+    label: "شیفت‌ها و روز کاری",
+    description: "ساعت شروع روز کاری شعبه، بستن روز، و تاریخچهٔ ورود/خروج کارکنان و تطبیق صندوق هر شیفت",
     requiredAnyPermission: [PERMISSIONS.teamManage],
   },
   {

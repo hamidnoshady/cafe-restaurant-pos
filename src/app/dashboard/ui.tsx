@@ -50,6 +50,12 @@ export function errorMessage(code: string | undefined): string {
     session_required: "برای شروع شیفت باید دوباره وارد شوید.",
     shift_already_open: "شیفتی از قبل باز است.",
     no_active_shift: "شیفت بازی برای پایان دادن پیدا نشد.",
+    // روز کاری (business day)
+    invalid_start_time: "ساعت شروع روز کاری معتبر نیست؛ به شکل ۱۸:۰۰ وارد کنید.",
+    location_not_found: "شعبه پیدا نشد.",
+    business_day_not_configured: "برای این شعبه روز کاری تعریف نشده است.",
+    business_day_already_closed: "روز کاری جاری قبلاً بسته شده است.",
+    business_day_not_closed: "روز کاری جاری بسته نشده است.",
     category_exists: "دسته‌ای با این نام وجود دارد.",
     category_not_found: "دسته پیدا نشد.",
     item_not_found: "آیتم پیدا نشد.",

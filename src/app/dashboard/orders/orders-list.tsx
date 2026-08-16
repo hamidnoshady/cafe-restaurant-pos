@@ -71,6 +71,19 @@ const STATUS_LABELS: Record<OrderStatus, string> = {
   voided: "باطل‌شده",
 };
 
+/**
+ * The branch's trading day as the orders route reports it. Absent (null) for a
+ * branch with no business day configured, which keeps this screen's original
+ * calendar-day-plus-open-shift window untouched.
+ */
+interface BusinessDayWindow {
+  enabled: boolean;
+  businessDate: string;
+  /** Where the closed list starts: the day's start, or a manual close inside it. */
+  windowStart: string;
+  manuallyClosed: boolean;
+}
+
 /** One of the branch's recent shifts — only owners/managers are sent these. */
 interface ShiftOption {
   id: string;
@@ -472,6 +485,14 @@ export function OrdersList({
   const [closedOrders, setClosedOrders] = useState<OrderRow[]>([]);
   /** null = nobody is clocked in, so the closed list covers the business day instead of a shift. */
   const [shiftStartedAt, setShiftStartedAt] = useState<string | null>(null);
+  /**
+   * The branch's trading day (روز کاری), when it has one configured. It, not the
+   * calendar day, is then what "the current window" means here: a service running
+   * 18:00→03:00 keeps one list across midnight, and the list only goes back to
+   * empty when the next business day starts — or the moment management closes
+   * the day by hand.
+   */
+  const [businessDay, setBusinessDay] = useState<BusinessDayWindow | null>(null);
   /** Empty for roles that may not review other people's shifts — the picker hides itself. */
   const [shifts, setShifts] = useState<ShiftOption[]>([]);
   /** "" = the default window (this shift, or today). Otherwise the shift being reviewed. */
@@ -502,6 +523,7 @@ export function OrdersList({
         closedOrders?: OrderRow[];
         closedSince?: string | null;
         shiftStartedAt?: string | null;
+        businessDay?: BusinessDayWindow | null;
         shifts?: ShiftOption[];
         selectedShift?: ShiftOption | null;
         error?: string;
@@ -513,6 +535,7 @@ export function OrdersList({
         setOrders(data.orders);
         setClosedOrders(data.closedOrders ?? []);
         setShiftStartedAt(data.shiftStartedAt ?? null);
+        setBusinessDay(data.businessDay ?? null);
         setShifts(data.shifts ?? []);
         // A shift the branch no longer lists (revoked, or another branch's) is
         // answered with the default window — follow the server rather than
@@ -860,7 +883,14 @@ export function OrdersList({
               className="min-h-10 min-w-0 flex-1 border-0 bg-transparent text-sm text-[#252522] outline-none"
               ariaLabel="مرور سفارش‌های بسته‌شدهٔ یک شیفت"
               options={[
-                { value: "", label: shiftStartedAt ? "شیفت جاری" : "امروز" },
+                {
+                  value: "",
+                  label: businessDay?.enabled
+                    ? "روز کاری جاری"
+                    : shiftStartedAt
+                      ? "شیفت جاری"
+                      : "امروز",
+                },
                 ...shifts.map((shift) => ({
                   value: shift.id,
                   label: shiftOptionLabel(shift),
@@ -926,9 +956,13 @@ export function OrdersList({
             >
               {reviewedShift
                 ? `سفارش‌های بسته‌شدهٔ شیفت ${reviewedShift.employeeName} نمایش داده می‌شوند؛ صف بازِ بالا همچنان لحظه‌ای است.`
-                : shiftStartedAt
-                  ? `سفارش‌های بسته‌شده از شروع شیفت (ساعت ${orderTimeLabel(shiftStartedAt)}) نمایش داده می‌شوند.`
-                  : "سفارش‌های بسته‌شدهٔ امروز نمایش داده می‌شوند؛ با شروع شیفت، فهرست از زمان شیفت شمرده می‌شود."}
+                : businessDay?.enabled
+                  ? businessDay.manuallyClosed
+                    ? `روز کاری قبلی ساعت ${orderTimeLabel(businessDay.windowStart)} بسته شد؛ سفارش‌های بسته‌شده از همان لحظه نمایش داده می‌شوند.`
+                    : `سفارش‌های بسته‌شدهٔ روز کاری جاری، از ساعت ${orderTimeLabel(businessDay.windowStart)}، نمایش داده می‌شوند.`
+                  : shiftStartedAt
+                    ? `سفارش‌های بسته‌شده از شروع شیفت (ساعت ${orderTimeLabel(shiftStartedAt)}) نمایش داده می‌شوند.`
+                    : "سفارش‌های بسته‌شدهٔ امروز نمایش داده می‌شوند؛ با شروع شیفت، فهرست از زمان شیفت شمرده می‌شود."}
             </p>
           ) : null}
 

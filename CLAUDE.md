@@ -88,6 +88,23 @@ Three rules follow for the database side:
   `server.ts`, scripts — has no session to derive a tenant from, so it enumerates businesses
   bypassed and then wraps each one's work in `withTenant(businessId, …)`.
 
+## The business day — read before writing a day-bucketed query
+
+Since migration 0076, "which day did this happen on" is
+`app_business_date(ts, tz, start_minutes)`, not `(ts AT TIME ZONE l.timezone)::date`. A branch may
+start its trading day at any time (`locations.business_day_start_minutes`, NULL = the calendar day,
+which is what the function returns for it), so a café working 18:00→03:00 keeps one service on one
+date instead of splitting it at midnight. See the "The business day" section of
+[README.md](README.md).
+
+- **A new day-bucketed view or query uses the function.** Writing the timezone cast by hand
+  reintroduces the split for every branch that configured a business day, and puts that screen out of
+  step with every other one.
+- **Don't derive a "today" window in a route.** `getBusinessDayStatus` (`src/lib/business-day-service.ts`)
+  already answers it, including a manual close; the pure half is `src/lib/business-day.ts`.
+- **Manual closes are display-only, by decision.** They move the live window, never a report's
+  bucket — don't "fix" reports to honour them.
+
 ## Pull requests — check in until merged, not just at open
 
 Every PR from work in this repo gets watched through to a terminal state, not just opened

@@ -248,7 +248,42 @@ More one-time setup, but proven in production:
 - **Digits** are stored as Latin numerals; Persian digits are display-only (`src/lib/digits.ts`).
 - **Multi-location:** every tenant-scoped table carries `location_id` (business-scoped tables like `users`, `accounts`, `customers` carry `business_id` and a nullable `location_id`). Since Phase 14 a business may have several active branches; `resolveActiveLocation` (`src/lib/setup-state.ts`) is what every route resolves the caller's current branch through, validated against their branch assignment (`src/lib/location-access.ts`).
 - **Multi-business:** `businesses` is the tenant, and isolation between tenants is enforced by Postgres row-level security — see below.
+- **Business day:** what "a day" means is `app_business_date(ts, tz, start_minutes)` (migration 0076), never a bare `(ts AT TIME ZONE tz)::date` — see below.
 - Migrations are forward-only numbered SQL files in `migrations/`, applied by `scripts/migrate.ts` (tracked in `schema_migrations`).
+
+## The business day (روز کاری)
+
+A branch's trading day does not have to start at local midnight. `locations.business_day_start_minutes`
+is the minutes after midnight at which it begins, or `NULL` for "not configured" — the default, and
+what every branch had before this existed. A café working 18:00→03:00 sets 18:00 and gets business
+days running 18:00 → 18:00, so its whole service is one day with one date; on the calendar day it was
+two, the dashboard zeroed at midnight with the till still open, and the evening landed on two report
+rows.
+
+**Three rules follow.**
+
+- **Never bucket a day inline.** Anything that asks "which day did this happen on" goes through
+  `app_business_date(ts, tz, start_minutes)`, and anything that asks "when did the current day start /
+  end" through `app_business_day_start` / `app_business_day_end`. A hand-written
+  `(closed_at AT TIME ZONE l.timezone)::date` is the bug this replaced: it silently re-splits a night
+  service, and it disagrees with every other screen. With `start_minutes` NULL these functions *are*
+  the calendar day, so there is no reason to reach past them.
+- **The app layer never re-derives the window.** `getBusinessDayStatus` (`src/lib/business-day-service.ts`)
+  is the single answer to "what day is it at this branch, and where do the live counters start" —
+  the dashboard KPIs, the orders screen and the settings panel all read it. The pure rules it applies
+  (parsing the setting, the chart's hour order, how a manual close interacts with the schedule) are in
+  `src/lib/business-day.ts` and unit-tested there.
+- **Closing the day moves the screens, never the books.** «بستن روز کاری» records a
+  `business_day_closures` row, which starts the live window later so the dashboard and orders list go
+  to zero at the cash-up instead of at the next start time. Reports are deliberately *not* derived from
+  it: a sale rung after a close is still filed under the business day it happened in. That is what makes
+  the close reversible and safe — no button can move money between report rows. A closure also expires
+  on its own once the next business day begins, so there is no state to clean up.
+
+The setting is per branch, optional, and management-facing: تنظیمات ← «شیفت‌ها و روز کاری».
+Changing the start time re-buckets the branch's reporting history (the views derive each row's date
+from the current setting rather than from a stored column), which is deliberate — it means "this is how
+our day works", not "from today onwards" — and is audited.
 
 ## Multi-business tenancy (Phase 12, Phase 23)
 
