@@ -12,6 +12,7 @@
  * exists on a business's own origin, which is what makes it host-scoped.
  */
 import { useState } from "react";
+import { Loader2Icon } from "lucide-react";
 
 interface DirectoryEntry {
   name: string;
@@ -123,7 +124,13 @@ export function BusinessDirectory() {
               disabled={busy}
               className="w-full rounded-lg bg-primary py-2.5 font-semibold text-primary-foreground transition hover:bg-primary/85 disabled:opacity-50"
             >
-              {busy ? "در حال بررسی…" : "نمایش کسب‌وکارها"}
+              {busy ? (
+                <span className="flex items-center justify-center gap-2">
+                  <Loader2Icon className="size-4 animate-spin" /> در حال بررسی…
+                </span>
+              ) : (
+                "نمایش کسب‌وکارها"
+              )}
             </button>
           </form>
         )}

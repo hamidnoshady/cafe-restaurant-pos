@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Loader2Icon } from "lucide-react";
 import { browserSupportsWebAuthn, startAuthentication } from "@simplewebauthn/browser";
 import { PinPad } from "@/components/auth/pin-pad";
 import { toPersianDigits } from "@/lib/digits";
@@ -121,7 +122,13 @@ function PasswordForm() {
         disabled={busy}
         className="w-full rounded-lg bg-primary py-2.5 font-semibold text-primary-foreground transition hover:bg-primary/85 disabled:opacity-50"
       >
-        {busy ? "در حال ورود…" : "ورود"}
+        {busy ? (
+          <span className="flex items-center justify-center gap-2">
+            <Loader2Icon className="size-4 animate-spin" /> در حال ورود…
+          </span>
+        ) : (
+          "ورود"
+        )}
       </button>
     </form>
   );
