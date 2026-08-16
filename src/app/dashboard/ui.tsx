@@ -95,6 +95,10 @@ export function errorMessage(code: string | undefined): string {
     agent_unreachable: "دستگاه چاپ در دسترس نیست. اتصال چاپگر محلی را بررسی کنید.",
     // Phase 7 — ledger
     ledger_account_missing: "یکی از حساب‌های مورد نیاز سیستم در سرفصل حساب‌ها یافت نشد. سرفصل حساب‌ها را بررسی کنید.",
+    fiscal_period_locked: "دورهٔ مالی این تاریخ بسته شده و ثبت سند در آن ممکن نیست.",
+    fiscal_period_soft_closed: "دورهٔ مالی این تاریخ نیمه‌بسته است؛ فقط مالک یا حسابدار می‌تواند در آن سند ثبت کند.",
+    negative_ingredient_requirement: "یکی از افزودنی‌ها مقدار مادهٔ اولیه را منفی می‌کند. دستور پخت آن افزودنی را اصلاح کنید.",
+    inventory_costing_conflict: "بهای مواد اولیهٔ این سفارش قابل محاسبه نیست. قیمت خرید و موجودی موادی که این سفارش مصرف می‌کند را بررسی کنید.",
     // Phase 11 — delivery
     address_required: "برای سفارش ارسالی، آدرس الزامی است.",
     invalid_delivery_fee: "هزینهٔ ارسال معتبر نیست.",
