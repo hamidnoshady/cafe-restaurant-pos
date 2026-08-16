@@ -52,19 +52,24 @@ export function PinPad({
           <PadButton
             key={d}
             label={toPersianDigits(d)}
+            ariaLabel={toPersianDigits(d)}
             onClick={() => press(d)}
           />
         ))}
         <PadButton
           label="پاک"
-          ariaLabel="پاک کردن"
+          ariaLabel="پاک کردن همه"
           onClick={() => setPin("")}
           muted
         />
-        <PadButton label={toPersianDigits("0")} onClick={() => press("0")} />
+        <PadButton
+          label={toPersianDigits("0")}
+          ariaLabel={toPersianDigits("0")}
+          onClick={() => press("0")}
+        />
         <PadButton
           label="⌫"
-          ariaLabel="حذف یک رقم"
+          ariaLabel="پاک کردن یک رقم"
           onClick={() => setPin((p) => p.slice(0, -1))}
           muted
         />
