@@ -141,9 +141,11 @@ export async function requirePlatformCapability(capability: PlatformCapability):
 /**
  * Append a row to `platform_audit_log`. Every privileged cross-tenant action
  * flows through here; the console's whole accountability story is that no
- * write happens without one of these. Best-effort by design — a failed audit
- * insert must not mask the fact that the action itself succeeded or failed, so
- * callers `await` it inside the same request but it never throws.
+ * write happens without one of these.
+ *
+ * Security Hardening (Phase 24): Audit log failures must be loud. If we cannot
+ * record who did what, the action itself must fail rather than proceeding
+ * silently.
  */
 export async function platformAudit(entry: {
   adminId: string;
@@ -153,21 +155,17 @@ export async function platformAudit(entry: {
   entityId?: string | null;
   payload?: Record<string, unknown> | null;
 }): Promise<void> {
-  try {
-    await query(
-      `INSERT INTO platform_audit_log
-         (platform_admin_id, business_id, action, entity, entity_id, payload)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [
-        entry.adminId,
-        entry.businessId ?? null,
-        entry.action,
-        entry.entity ?? null,
-        entry.entityId ?? null,
-        entry.payload ? JSON.stringify(entry.payload) : null,
-      ],
-    );
-  } catch (err) {
-    console.error("platform_audit_log insert failed:", err);
-  }
+  await query(
+    `INSERT INTO platform_audit_log
+       (platform_admin_id, business_id, action, entity, entity_id, payload)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [
+      entry.adminId,
+      entry.businessId ?? null,
+      entry.action,
+      entry.entity ?? null,
+      entry.entityId ?? null,
+      entry.payload ? JSON.stringify(entry.payload) : null,
+    ],
+  );
 }
