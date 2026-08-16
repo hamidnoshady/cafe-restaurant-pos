@@ -25,9 +25,22 @@
  * figures (shiftCashSummary counts only completed orders, by closed_at), so
  * the two are not expected to tie out — see the doc comment on `total` in
  * shift-orders.ts.
+ *
+ * Each order is read whole — its add-on snapshots by name, its notes and void
+ * reasons, its money breakdown, and its payments — so the review answers "why
+ * was this order this much?" without sending the reader to the orders screen.
+ * Everything comes from the immutable *_snapshot columns written at the sale,
+ * never from today's menu, so a renamed or repriced add-on still reads the way
+ * it was sold.
  */
 import { query } from "./db";
-import { groupShiftOrders, type ShiftOrder, type ShiftOrderItemInput } from "./shift-orders";
+import {
+  groupShiftOrders,
+  type ShiftOrder,
+  type ShiftOrderItemInput,
+  type ShiftOrderModifier,
+  type ShiftOrderPaymentInput,
+} from "./shift-orders";
 
 export interface ShiftOption {
   id: string;
@@ -89,15 +102,41 @@ interface ShiftOrderItemRow extends Record<string, unknown> {
   type: string;
   status: string;
   table_name: string | null;
+  guest_count: number | null;
+  customer_name: string | null;
   opened_at: Date;
+  closed_at: Date | null;
+  opened_by_name: string | null;
+  closed_by_name: string | null;
+  order_note: string | null;
+  voided_reason: string | null;
+  amended_at: Date | null;
+  subtotal: string;
+  discount: string;
+  discount_type: string | null;
+  discount_value: string | null;
+  service_charge: string;
+  tax: string;
+  tip_amount: string;
   order_total: string;
   item_id: string | null;
   item_name: string | null;
   quantity: number | null;
   unit_price: string | null;
-  modifier_deltas: string[] | null;
+  /** [{ name, price_delta }] in selection order — json rather than two parallel arrays so a name can never drift off its price. */
+  modifiers: { name: string; price_delta: string | number }[] | null;
   item_status: string | null;
   note: string | null;
+  void_reason: string | null;
+}
+
+interface ShiftOrderPaymentRow extends Record<string, unknown> {
+  order_id: string;
+  method: string;
+  amount: string;
+  reference: string | null;
+  received_at: Date;
+  received_by_name: string | null;
 }
 
 /**
@@ -118,26 +157,56 @@ export async function getShiftOrdersReport(
   const shift = index === -1 ? undefined : shifts[index];
   if (!shift) return null;
 
-  const { rows } = await query<ShiftOrderItemRow>(
-    `SELECT o.id AS order_id, o.order_number, o.type, o.status, dt.name AS table_name,
-            o.opened_at, o.total AS order_total,
-            oi.id AS item_id, oi.name_snapshot AS item_name, oi.quantity, oi.unit_price,
-            oi.status AS item_status, oi.note,
-            coalesce(m.deltas, '{}') AS modifier_deltas
-       FROM orders o
-       LEFT JOIN dining_tables dt ON dt.id = o.table_id
-       LEFT JOIN order_items oi ON oi.order_id = o.id
-       LEFT JOIN LATERAL (
-         SELECT array_agg(oim.price_delta) AS deltas
-           FROM order_item_modifiers oim
-          WHERE oim.order_item_id = oi.id
-       ) m ON true
-      WHERE o.location_id = $1
-        AND o.opened_at >= $2
-        AND o.opened_at <= coalesce($3::timestamptz, now())
-      ORDER BY o.opened_at DESC, o.id DESC, oi.created_at`,
-    [locationId, shift.startedAt, shift.endedAt],
-  );
+  const window = [locationId, shift.startedAt, shift.endedAt];
+
+  // Two reads rather than one: an order can carry more than one payment row —
+  // a refund, or the re-settlement a closed-order amendment writes — so
+  // joining payments beside the items would multiply every line by every
+  // payment. They are stitched back together by groupShiftOrders.
+  const [{ rows }, { rows: paymentRows }] = await Promise.all([
+    query<ShiftOrderItemRow>(
+      `SELECT o.id AS order_id, o.order_number, o.type, o.status, dt.name AS table_name,
+              o.guest_count, c.name AS customer_name,
+              o.opened_at, o.closed_at, ou.full_name AS opened_by_name, cu.full_name AS closed_by_name,
+              o.note AS order_note, o.voided_reason, o.amended_at,
+              o.subtotal, o.discount, o.discount_type, o.discount_value,
+              o.service_charge, o.tax, o.tip_amount, o.total AS order_total,
+              oi.id AS item_id, oi.name_snapshot AS item_name, oi.quantity, oi.unit_price,
+              oi.status AS item_status, oi.note, oi.void_reason,
+              m.modifiers
+         FROM orders o
+         LEFT JOIN dining_tables dt ON dt.id = o.table_id
+         LEFT JOIN customers c ON c.id = o.customer_id
+         LEFT JOIN users ou ON ou.id = o.opened_by
+         LEFT JOIN users cu ON cu.id = o.closed_by
+         LEFT JOIN order_items oi ON oi.order_id = o.id
+         LEFT JOIN LATERAL (
+           SELECT json_agg(
+                    json_build_object('name', oim.name_snapshot, 'price_delta', oim.price_delta)
+                    ORDER BY oim.name_snapshot
+                  ) AS modifiers
+             FROM order_item_modifiers oim
+            WHERE oim.order_item_id = oi.id
+         ) m ON true
+        WHERE o.location_id = $1
+          AND o.opened_at >= $2
+          AND o.opened_at <= coalesce($3::timestamptz, now())
+        ORDER BY o.opened_at DESC, o.id DESC, oi.created_at`,
+      window,
+    ),
+    query<ShiftOrderPaymentRow>(
+      `SELECT p.order_id, p.method, p.amount, p.reference, p.received_at,
+              u.full_name AS received_by_name
+         FROM payments p
+         JOIN orders o ON o.id = p.order_id
+         LEFT JOIN users u ON u.id = p.received_by
+        WHERE o.location_id = $1
+          AND o.opened_at >= $2
+          AND o.opened_at <= coalesce($3::timestamptz, now())
+        ORDER BY p.received_at`,
+      window,
+    ),
+  ]);
 
   const inputs: ShiftOrderItemInput[] = rows.map((row) => ({
     orderId: row.order_id,
@@ -145,20 +214,50 @@ export async function getShiftOrdersReport(
     type: row.type as ShiftOrderItemInput["type"],
     status: row.status,
     tableName: row.table_name,
+    guestCount: row.guest_count === null ? null : Number(row.guest_count),
+    customerName: row.customer_name,
     openedAt: row.opened_at.toISOString(),
+    closedAt: row.closed_at ? row.closed_at.toISOString() : null,
+    openedByName: row.opened_by_name,
+    closedByName: row.closed_by_name,
+    orderNote: row.order_note,
+    voidedReason: row.voided_reason,
+    amendedAt: row.amended_at ? row.amended_at.toISOString() : null,
+    subtotal: Number(row.subtotal),
+    discount: Number(row.discount),
+    discountType: (row.discount_type as ShiftOrderItemInput["discountType"]) ?? null,
+    discountValue: row.discount_value === null ? null : Number(row.discount_value),
+    serviceCharge: Number(row.service_charge),
+    tax: Number(row.tax),
+    tipAmount: Number(row.tip_amount ?? 0),
     orderTotal: Number(row.order_total),
     itemId: row.item_id,
     itemName: row.item_name,
     quantity: Number(row.quantity ?? 0),
     unitPrice: Number(row.unit_price ?? 0),
-    modifierDeltas: (row.modifier_deltas ?? []).map(Number),
+    modifiers: (row.modifiers ?? []).map(
+      (modifier): ShiftOrderModifier => ({
+        name: modifier.name,
+        priceDelta: Number(modifier.price_delta),
+      }),
+    ),
     itemStatus: row.item_status,
     note: row.note,
+    voidReason: row.void_reason,
+  }));
+
+  const payments: ShiftOrderPaymentInput[] = paymentRows.map((row) => ({
+    orderId: row.order_id,
+    method: row.method,
+    amount: Number(row.amount),
+    reference: row.reference,
+    receivedAt: row.received_at.toISOString(),
+    receivedByName: row.received_by_name,
   }));
 
   return {
     shift,
     shifts,
-    orders: groupShiftOrders(inputs),
+    orders: groupShiftOrders(inputs, payments),
   };
 }
