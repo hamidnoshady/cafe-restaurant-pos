@@ -470,6 +470,10 @@ export async function amendClosedOrder(
       params.orderId,
       params.actorId,
       replayEventId,
+      // The corrected sale happened on the day the order was sold, so its
+      // consumption is dated there too — the stock ledger and the back-dated
+      // COGS entry have to agree about which day the goods moved.
+      order.closed_at,
     );
     replayedCost = consumed.totalCost;
 
@@ -518,6 +522,20 @@ export async function amendClosedOrder(
       );
     }
   }
+
+  // Phase 9's central rollup re-pushes only the last couple of days
+  // (RESEND_OVERLAP_DAYS), so a correction to an older day would never reach a
+  // central server on its own. Winding the push high-water mark back to the
+  // amended day puts it in the next push window; the ingest side is an
+  // idempotent per-day upsert, so the day simply converges.
+  await client.query(
+    `UPDATE settings
+        SET value = jsonb_set(value, '{lastSuccessDay}', to_jsonb($2::text)), updated_at = now()
+      WHERE business_id = $1 AND location_id IS NULL AND key = 'rollup.sync_state'
+        AND value->>'lastSuccessDay' IS NOT NULL
+        AND value->>'lastSuccessDay' > $2`,
+    [params.businessId, entryDate],
+  );
 
   const afterSnapshot = await snapshotOrder(client, params.orderId);
   await client.query(

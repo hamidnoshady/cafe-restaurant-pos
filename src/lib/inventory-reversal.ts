@@ -41,13 +41,15 @@ export async function insertMovement(
     sourceId: string;
     createdBy: string | null;
     inventoryEventId: string;
+    /** when the movement happened, defaulting to now — a reversal passes the original document's own date */
+    occurredAt?: string | null;
   },
 ): Promise<void> {
   await client.query(
     `INSERT INTO stock_movements
        (location_id, inventory_item_id, type, quantity, unit_cost, cost_value_rial,
-        source_type, source_id, created_by, inventory_event_id)
-     VALUES($1,$2,'adjustment',$3,$4,$5,$6,$7,$8,$9)`,
+        source_type, source_id, created_by, inventory_event_id, occurred_at)
+     VALUES($1,$2,'adjustment',$3,$4,$5,$6,$7,$8,$9,COALESCE($10::timestamptz,now()))`,
     [
       params.locationId,
       params.inventoryItemId,
@@ -58,6 +60,7 @@ export async function insertMovement(
       params.sourceId,
       params.createdBy,
       params.inventoryEventId,
+      params.occurredAt ?? null,
     ],
   );
 }
@@ -193,6 +196,13 @@ export async function reverseConsumedInventory(
     sourceType: string;
     sourceId: string;
     reversalEventId: string;
+    /**
+     * The original document's own timestamp. It positions a restored FIFO lot
+     * (so the stock re-enters the queue where it left it) *and* dates the
+     * reversing movements, so an amendment to an old sale corrects the stock
+     * ledger on the day of that sale rather than only from today onwards —
+     * matching where its ledger entries land.
+     */
     receivedAt: string;
     createdBy: string | null;
     method: CostingMethod;
@@ -235,6 +245,7 @@ export async function reverseConsumedInventory(
       sourceId: params.sourceId,
       createdBy: params.createdBy,
       inventoryEventId: params.reversalEventId,
+      occurredAt: params.receivedAt,
     });
 
     const positiveQuantity = quantity.minus(cancelled.quantity);

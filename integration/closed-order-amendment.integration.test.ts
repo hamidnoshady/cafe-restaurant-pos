@@ -230,7 +230,17 @@ async function sellOrder(options: {
       `UPDATE orders SET status = 'completed', closed_at = $2::timestamptz, tip_amount = $3 WHERE id = $1`,
       [orderId, `${options.soldOn}T11:00:00Z`, options.tip ?? 0],
     );
-    const { totalCost } = await inventoryService.deductForOrder(client, biz.id, biz.locationId, orderId, null, eventId);
+    // A sale made a week ago recorded its stock movements on that day, so the
+    // fixture dates them there too rather than at test-run time.
+    const { totalCost } = await inventoryService.deductForOrder(
+      client,
+      biz.id,
+      biz.locationId,
+      orderId,
+      null,
+      eventId,
+      `${options.soldOn}T11:00:00Z`,
+    );
     await ledgerService.postExactOrderPaymentEntry(client, {
       businessId: biz.id,
       locationId: biz.locationId,
@@ -315,6 +325,22 @@ async function stockValue(): Promise<number> {
     [biz.inventoryItemId],
   );
   return Number(rows[0].value);
+}
+
+/**
+ * Net stock movement caused by orders on one calendar day, by the movement's
+ * own date — the opening purchase the fixture books is excluded, so this is
+ * exactly what the sale and its correction did to the stock ledger.
+ */
+async function stockMovedOn(day: string): Promise<number> {
+  const { rows } = await db.query<{ quantity: string }>(
+    `SELECT COALESCE(sum(quantity), 0)::text AS quantity
+       FROM stock_movements
+      WHERE inventory_item_id = $1 AND occurred_at::date = $2::date
+        AND source_type IN ('order', 'order_amendment')`,
+    [biz.inventoryItemId, day],
+  );
+  return Number(rows[0].quantity);
 }
 
 async function netPaid(orderId: string): Promise<number> {
@@ -602,6 +628,51 @@ describe("editing a closed order", () => {
     expect(await accountBalance("4330", "2026-04-10")).toBe(-130_000); // 100,000 item + 30,000 fee
     expect(await accountBalance("1100", "2026-04-10")).toBe(140_000);
     expect(await netPaid(order.id)).toBe(140_000);
+  });
+
+  it("corrects the stock ledger on the day of the sale, not the day of the correction", async () => {
+    const order = await sellOrder({
+      lines: [{ menuItemId: biz.menuItemId, quantity: 3 }],
+      method: "cash",
+      soldOn: "2026-05-04",
+    });
+    expect(await stockMovedOn("2026-05-04")).toBe(-30);
+
+    await amend(order.id, {
+      kind: "edit",
+      reason: "یک فنجان سرو نشده بود",
+      lines: [{ orderItemId: order.itemIds[0], quantity: 2 }],
+    });
+
+    // Reversal (+30) and replay (−20) are both dated on the sale's own day, so
+    // the stock ledger agrees with the back-dated inventory/COGS entries rather
+    // than showing the sale last week and its correction today.
+    expect(await stockMovedOn("2026-05-04")).toBe(-20);
+    expect(await stockMovedOn(new Date().toISOString().slice(0, 10))).toBe(0);
+  });
+
+  it("winds the central rollup back so the amended day is re-pushed", async () => {
+    const order = await sellOrder({
+      lines: [{ menuItemId: biz.menuItemId, quantity: 1 }],
+      method: "cash",
+      soldOn: "2026-05-05",
+    });
+    // A location that has already pushed everything up to today would otherwise
+    // never re-send a day this old (RESEND_OVERLAP_DAYS = 2).
+    await db.query(
+      `INSERT INTO settings (business_id, location_id, key, value)
+       VALUES ($1, NULL, 'rollup.sync_state', $2::jsonb)`,
+      [biz.id, JSON.stringify({ lastAttemptAt: null, lastSuccessAt: null, lastSuccessDay: "2026-05-20", lastError: null })],
+    );
+
+    await amend(order.id, { kind: "void", reason: "باطل شد" });
+
+    const { rows } = await db.query<{ day: string }>(
+      `SELECT value->>'lastSuccessDay' AS day FROM settings
+        WHERE business_id = $1 AND key = 'rollup.sync_state'`,
+      [biz.id],
+    );
+    expect(rows[0].day).toBe("2026-05-05");
   });
 
   it("still refuses a line change made outside an amendment", async () => {
