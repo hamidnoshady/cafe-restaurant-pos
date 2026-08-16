@@ -10,6 +10,7 @@ import { getPool, query } from "./db";
 import { createDeliveryForOrder } from "./delivery-service";
 import {
   resolveCartItems,
+  resolveLineModifiers,
   validateItemShape,
   type CartItemInput,
 } from "./order-cart";
@@ -385,6 +386,211 @@ export async function addItemsToOrder(
     const totals = await recomputeOrderTotals(client, input.orderId, discount);
     await client.query("COMMIT");
     return { ok: true, data: { totals } };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+const MAX_LINE_QTY = 50;
+
+/**
+ * Why the old line is voided rather than edited, in the audit trail itself.
+ * Shown to staff on the order, so it is Persian like every other void reason.
+ */
+export const MODIFIERS_SUPERSEDED_REASON = "جایگزین شد — ویرایش افزودنی‌ها";
+
+export interface UpdateOrderItemInput {
+  locationId: string;
+  orderId: string;
+  orderItemId: string;
+  /** Every field is optional; each present one is applied, all inside one transaction. */
+  quantity?: number;
+  /** `null` clears the line's note. */
+  note?: string | null;
+  /** The line's add-ons after the edit — a full replacement, not a delta. */
+  modifierIds?: string[];
+  /** Voiding wins over every other field, since a voided line has nothing left to edit. */
+  void?: { reason?: string | null };
+}
+
+/**
+ * Same validation + transaction as PATCH /api/orders/[id]/items/[itemId]:
+ * re-quantify, re-note, re-pick add-ons, or void one line of an order that is
+ * still open.
+ *
+ * Re-picking add-ons is the reason this outgrew the route handler, and it is
+ * done by *superseding* the line — voiding it and writing a replacement in
+ * the same transaction — rather than by editing it in place. That is not a
+ * detail of convenience: what a line consumes is captured once, per line, in
+ * `order_item_inventory_snapshots`, and those rows are immutable by database
+ * trigger ("create an explicit correction", migration 0013) precisely so the
+ * ingredients behind a sale cannot be silently rewritten after the kitchen
+ * has been told about them. Deduction at payment then skips voided lines
+ * (inventory-service.ts), so the superseded line costs nothing and the
+ * replacement carries a fresh, correct snapshot.
+ *
+ * The replacement keeps the quoted `unit_price` of the line it replaces — the
+ * guest was quoted that price and only the add-ons changed — and goes to the
+ * kitchen as a new 'sent' line, which is exactly right: the pass has to hear
+ * that the bandari now comes with bread.
+ */
+export async function updateOrderItem(input: UpdateOrderItemInput): Promise<
+  MutationResult<{
+    totals: OrderTotals;
+    voided: boolean;
+    /** Set when add-ons were re-picked: the id of the line that replaced the edited one. */
+    replacementItemId: string | null;
+  }>
+> {
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const locked = await lockOpenOrder(client, input.locationId, input.orderId);
+    if (!locked.ok) {
+      await client.query("ROLLBACK");
+      return locked;
+    }
+    const { rows: itemRows } = await client.query<{
+      id: string;
+      status: string;
+      menu_item_id: string | null;
+      name_snapshot: string;
+      unit_price: string;
+      quantity: number;
+      note: string | null;
+    }>(
+      `SELECT id, status, menu_item_id, name_snapshot, unit_price, quantity, note
+         FROM order_items WHERE id = $1 AND order_id = $2`,
+      [input.orderItemId, input.orderId],
+    );
+    const item = itemRows[0];
+    if (!item) {
+      await client.query("ROLLBACK");
+      return { ok: false, error: "item_not_found", status: 404 };
+    }
+    if (item.status === "voided") {
+      await client.query("ROLLBACK");
+      return { ok: false, error: "item_already_voided", status: 409 };
+    }
+
+    const discount: DiscountInput = locked.order.discount_type
+      ? {
+          type: locked.order.discount_type,
+          value: Number(locked.order.discount_value ?? 0),
+        }
+      : { type: null };
+
+    let quantity = item.quantity;
+    if (input.quantity !== undefined) {
+      quantity = Number(input.quantity);
+      if (
+        !Number.isInteger(quantity) ||
+        quantity <= 0 ||
+        quantity > MAX_LINE_QTY
+      ) {
+        await client.query("ROLLBACK");
+        return { ok: false, error: "invalid_item", status: 400 };
+      }
+    }
+    const note =
+      input.note !== undefined ? input.note?.trim() || null : item.note;
+
+    let replacementItemId: string | null = null;
+
+    if (input.void) {
+      await client.query(
+        "UPDATE order_items SET status = 'voided', void_reason = $2 WHERE id = $1",
+        [input.orderItemId, input.void.reason?.trim() || null],
+      );
+    } else if (input.modifierIds !== undefined) {
+      // A line whose menu item has since been deleted has nothing to validate
+      // a new selection against, so its add-ons stay as sold.
+      if (!item.menu_item_id) {
+        await client.query("ROLLBACK");
+        return { ok: false, error: "item_not_found", status: 404 };
+      }
+      const selection = await resolveLineModifiers(
+        input.locationId,
+        item.menu_item_id,
+        input.modifierIds,
+        client,
+      );
+      if (!selection.ok) {
+        await client.query("ROLLBACK");
+        return selection;
+      }
+
+      await client.query(
+        "UPDATE order_items SET status = 'voided', void_reason = $2 WHERE id = $1",
+        [input.orderItemId, MODIFIERS_SUPERSEDED_REASON],
+      );
+      const { rows: replacement } = await client.query<{ id: string }>(
+        `INSERT INTO order_items (location_id, order_id, menu_item_id, name_snapshot, unit_price, quantity, note, status, sent_to_kitchen_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'sent', now()) RETURNING id`,
+        [
+          input.locationId,
+          input.orderId,
+          item.menu_item_id,
+          item.name_snapshot,
+          item.unit_price,
+          quantity,
+          note,
+        ],
+      );
+      replacementItemId = replacement[0].id;
+
+      if (selection.modifiers.length > 0) {
+        await client.query(
+          `INSERT INTO order_item_modifiers (order_item_id, modifier_id, name_snapshot, price_delta)
+           SELECT $1, * FROM UNNEST($2::uuid[], $3::text[], $4::bigint[])`,
+          [
+            replacementItemId,
+            selection.modifiers.map((modifier) => modifier.id),
+            selection.modifiers.map((modifier) => modifier.name),
+            selection.modifiers.map((modifier) => modifier.priceDelta),
+          ],
+        );
+      }
+      try {
+        await captureInventorySnapshot(
+          client,
+          replacementItemId,
+          item.menu_item_id,
+          selection.modifiers.map((modifier) => modifier.id),
+        );
+      } catch (snapshotError) {
+        if (
+          snapshotError instanceof Error &&
+          snapshotError.message === "negative_ingredient_requirement"
+        ) {
+          await client.query("ROLLBACK");
+          return {
+            ok: false,
+            error: "negative_ingredient_requirement",
+            status: 400,
+          };
+        }
+        throw snapshotError;
+      }
+    } else if (input.quantity !== undefined || input.note !== undefined) {
+      await client.query(
+        "UPDATE order_items SET quantity = $2, note = $3 WHERE id = $1",
+        [input.orderItemId, quantity, note],
+      );
+    } else {
+      await client.query("ROLLBACK");
+      return { ok: false, error: "bad_request", status: 400 };
+    }
+
+    const totals = await recomputeOrderTotals(client, input.orderId, discount);
+    await client.query("COMMIT");
+    return {
+      ok: true,
+      data: { totals, voided: Boolean(input.void), replacementItemId },
+    };
   } catch (err) {
     await client.query("ROLLBACK");
     throw err;

@@ -13,7 +13,7 @@ import { useEffect, useMemo, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
 import { formatToman } from "@/lib/money";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import { api, ErrorBox, errorMessage, InfoBox, inputClass, PrimaryButton, SecondaryButton } from "../../ui";
+import { api, ErrorBox, errorMessage, InfoBox, inputClass, PrimaryButton, SecondaryButton } from "../ui";
 
 const METHODS = [
   { value: "", label: "همان روش قبلی" },

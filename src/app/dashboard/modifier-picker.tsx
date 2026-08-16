@@ -28,6 +28,23 @@ export interface ModifierGroupWithModifiers {
   modifiers: { id: string; name: string; price_delta: string | number }[];
 }
 
+/** Buckets already-chosen add-on ids back into their groups, honouring each group's max_select. */
+function initialSelection(
+  groups: ModifierGroupWithModifiers[],
+  modifierIds: string[],
+): Record<string, string[]> {
+  const chosen = new Set(modifierIds);
+  const selection: Record<string, string[]> = {};
+  for (const group of groups) {
+    const picked = group.modifiers
+      .filter((modifier) => chosen.has(modifier.id))
+      .map((modifier) => modifier.id)
+      .slice(0, group.max_select);
+    if (picked.length > 0) selection[group.id] = picked;
+  }
+  return selection;
+}
+
 /**
  * Modal for picking add-ons (respecting each group's min/max select) before an
  * item goes into a cart or an open order.
@@ -45,6 +62,9 @@ export function ModifierPicker({
   quantity = 1,
   groups,
   tone = "brand",
+  initialModifierIds,
+  initialNote = "",
+  confirmLabel,
   onCancel,
   onConfirm,
 }: {
@@ -55,11 +75,23 @@ export function ModifierPicker({
   quantity?: number;
   groups: ModifierGroupWithModifiers[];
   tone?: ModifierTone;
+  /**
+   * Add-ons already on the line, for re-picking rather than first picking (an
+   * open order's line). Ids that no longer belong to one of `groups` are
+   * dropped — the picker can only ever hand back a selection it displayed.
+   */
+  initialModifierIds?: string[];
+  /** The line's existing note, edited alongside its add-ons. */
+  initialNote?: string;
+  /** Overrides the default «افزودن» wording when this is an edit, not an add. */
+  confirmLabel?: string;
   onCancel: () => void;
   onConfirm: (modifierIds: string[], note: string) => void;
 }) {
-  const [selected, setSelected] = useState<Record<string, string[]>>({});
-  const [note, setNote] = useState("");
+  const [selected, setSelected] = useState<Record<string, string[]>>(() =>
+    initialSelection(groups, initialModifierIds ?? []),
+  );
+  const [note, setNote] = useState(initialNote);
   const palette = MODIFIER_TONE[tone];
 
   function toggle(group: ModifierGroupWithModifiers, modifierId: string) {
@@ -283,8 +315,8 @@ export function ModifierPicker({
             >
               {canConfirm
                 ? itemPrice !== undefined
-                  ? `افزودن — ${formatToman(breakdown.total)}`
-                  : "افزودن"
+                  ? `${confirmLabel ?? "افزودن"} — ${formatToman(breakdown.total)}`
+                  : (confirmLabel ?? "افزودن")
                 : "ابتدا گروه‌های الزامی را انتخاب کنید"}
             </button>
           </div>

@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, useDeferredValue } from "react";
 import { RefreshCwIcon, SearchIcon, ShoppingBagIcon } from "lucide-react";
 import { toPersianDigits } from "@/lib/digits";
@@ -16,6 +15,7 @@ import { useRealtime } from "../use-realtime";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { JalaliDatePicker } from "../jalali-date-picker";
 import { api } from "../ui";
+import { OrderDetailModal } from "./order-detail-modal";
 
 type OrderStatus = "open" | "held" | "completed" | "voided";
 type OrderType = "dine_in" | "takeaway" | "delivery";
@@ -208,12 +208,14 @@ function OrderDetailsPanel({
   isLoading,
   error,
   onRetry,
+  onOpenDetail,
 }: {
   selectedOrder: OrderRow | null;
   detail: OrderDetailsResponse | null;
   isLoading: boolean;
   error: string;
   onRetry: () => void;
+  onOpenDetail: (orderId: string) => void;
 }) {
   if (!selectedOrder) {
     return (
@@ -437,15 +439,16 @@ function OrderDetailsPanel({
                   ? `از زمان ثبت: ${elapsed}`
                   : `ثبت‌شده در ${orderDateLabel(order.opened_at)}`}
             </p>
-            <Link
-              href={`/dashboard/orders/${order.id}`}
+            <button
+              type="button"
+              onClick={() => onOpenDetail(order.id)}
               className="flex min-h-12 w-full items-center justify-center rounded-xl bg-[#E9A11B] px-4 text-sm font-bold text-[#252522] transition duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 active:scale-[0.98] xl:min-h-[52px] motion-reduce:transition-none"
             >
               {/* A closed order can still be corrected — editing or removing it
-                  reverses its accounting — and the detail page is where that
+                  reverses its accounting — and the detail dialog is where that
                   lives, so the label says so rather than promising only "track". */}
               {closed ? "جزئیات و اصلاح سفارش" : "جزئیات و پیگیری سفارش"}
-            </Link>
+            </button>
           </div>
         </>
       )}
@@ -453,7 +456,18 @@ function OrderDetailsPanel({
   );
 }
 
-export function OrdersList() {
+export function OrdersList({
+  canEdit,
+  canAmendClosed = false,
+  initialOrderId = null,
+}: {
+  /** May work an open order — add lines, discount it, take payment. */
+  canEdit: boolean;
+  /** May edit or remove an order that has already been paid for. */
+  canAmendClosed?: boolean;
+  /** `?order=<id>` from the URL: the dialog opens on it once, on first render. */
+  initialOrderId?: string | null;
+}) {
   const [orders, setOrders] = useState<OrderRow[] | null>(null);
   const [closedOrders, setClosedOrders] = useState<OrderRow[]>([]);
   /** null = nobody is clocked in, so the closed list covers the business day instead of a shift. */
@@ -465,7 +479,10 @@ export function OrdersList() {
   const [initialLoading, setInitialLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [loadError, setLoadError] = useState("");
-  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(initialOrderId);
+  /** The order whose dialog is open — independent of which row is highlighted. */
+  const [detailOrderId, setDetailOrderId] = useState<string | null>(initialOrderId);
+  const [detailOpen, setDetailOpen] = useState(Boolean(initialOrderId));
   const [detail, setDetail] = useState<OrderDetailsResponse | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState("");
@@ -662,6 +679,35 @@ export function OrdersList() {
       dateFilter ||
       shiftFilter,
   );
+
+  /**
+   * The open dialog is reflected in `?order=<id>` so the address bar still
+   * names what is on screen — refreshing, or sending the link to a colleague,
+   * lands on the same order (that is also where /dashboard/orders/[id]
+   * redirects to). `history.replaceState` rather than a router push: opening a
+   * dialog should not add a step to the back button, and the queue behind it
+   * must not re-render mid-service.
+   */
+  const syncDetailUrl = useCallback((orderId: string | null) => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    if (orderId) url.searchParams.set("order", orderId);
+    else url.searchParams.delete("order");
+    window.history.replaceState(null, "", url.toString());
+  }, []);
+
+  function openDetail(orderId: string) {
+    setSelectedOrderId(orderId);
+    setDetailOrderId(orderId);
+    setDetailOpen(true);
+    syncDetailUrl(orderId);
+  }
+
+  function closeDetail() {
+    setDetailOpen(false);
+    syncDetailUrl(null);
+    void load();
+  }
 
   function clearFilters() {
     setSearchQuery("");
@@ -1002,8 +1048,18 @@ export function OrdersList() {
           isLoading={detailLoading}
           error={detailError}
           onRetry={() => setDetailRefreshToken((token) => token + 1)}
+          onOpenDetail={openDetail}
         />
       </div>
+
+      <OrderDetailModal
+        orderId={detailOrderId}
+        open={detailOpen}
+        onOpenChange={(next) => (next ? setDetailOpen(true) : closeDetail())}
+        canEdit={canEdit}
+        canAmendClosed={canAmendClosed}
+        onChanged={() => void load()}
+      />
     </div>
   );
 }

@@ -108,7 +108,9 @@ export async function getOrderDetail(locationId: string, id: string): Promise<Or
       [id],
     ),
     query(
-      "SELECT oim.id, oim.order_item_id, oim.name_snapshot, oim.price_delta FROM order_item_modifiers oim JOIN order_items oi ON oi.id = oim.order_item_id WHERE oi.order_id = $1",
+      // modifier_id rides along so an open order's line can be re-opened in the
+      // add-on picker with its current selection already ticked.
+      "SELECT oim.id, oim.order_item_id, oim.modifier_id, oim.name_snapshot, oim.price_delta FROM order_item_modifiers oim JOIN order_items oi ON oi.id = oim.order_item_id WHERE oi.order_id = $1",
       [id],
     ),
   ]);
