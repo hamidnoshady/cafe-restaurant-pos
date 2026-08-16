@@ -1,0 +1,3 @@
+## 2026-08-11 - PinPad Screen Reader Support
+**Learning:** The custom 4-digit PinPad component (used for login and lock screens) lacked critical context for screen reader users. The "PIN entered" dots had no programmatic association, the Backspace icon was read literally as "⌫" (or ignored), and status/error messages weren't proactively announced when changed.
+**Action:** Always wrap custom progress indicators in `role="progressbar"` with dynamic `aria-valuenow`. Use `role="alert"` for errors and `role="status"` for non-error updates (like "verifying..."). Explicitly assign `aria-label` to custom keypad buttons, especially for symbols like "⌫" -> "پاک کردن آخرین رقم". Ensure all custom buttons receive `focus-visible` ring styling for keyboard navigation clarity.
