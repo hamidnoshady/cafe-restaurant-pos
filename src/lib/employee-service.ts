@@ -925,7 +925,12 @@ export async function resolveLoginBusinessId(body: {
     const parsed = parseHost(body.host, rootDomain());
     if (parsed.kind !== "business") return { businessId: null, error: "unknown_business" };
     const business = await resolveBusinessByLabel(parsed.label);
-    if (!business || business.status !== "active") {
+    // An alias host (a business's old name after a rename) must not mint a
+    // session for the same reason /api/auth/login refuses it: the session
+    // would name the *current* subdomain on a cookie scoped to the old host,
+    // which middleware then rejects on the next request. The canonical host
+    // is where the login family runs; aliases only forward there.
+    if (!business || business.status !== "active" || business.viaAlias) {
       return { businessId: null, error: "unknown_business" };
     }
     return { businessId: business.businessId, error: null };

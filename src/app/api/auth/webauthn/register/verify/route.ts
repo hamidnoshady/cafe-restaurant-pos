@@ -45,7 +45,11 @@ export const POST = withTenantScope(async (request: NextRequest) => {
       deviceId,
       // Each business registers from its own origin, so the accepted origin is
       // this request's rather than a fixed one — see expectedOriginsFor.
-      expectedOriginsFor(requestHost(request.headers), request.headers.get("x-forwarded-proto")),
+      expectedOriginsFor(
+        requestHost(request.headers),
+        request.headers.get("x-forwarded-proto"),
+        request.nextUrl.protocol,
+      ),
     );
     return NextResponse.json({ credential });
   } catch (err) {

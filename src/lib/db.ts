@@ -162,6 +162,12 @@ export async function withTenant<T>(
  *     `business_subdomain_aliases`, returning the business's identity and
  *     nothing else about it.
  *
+ *   - **impersonation-handoff** — redeeming the one-time token the console
+ *     mints on admin.{root} so the browser can mint its impersonation session
+ *     on the business's own origin (Phase 23 follow-up). The caller has no
+ *     session on that origin yet — the token is what creates the first one —
+ *     the same identify-the-tenant-first shape as login and accept-invite.
+ *
  *   - **first-run** — `hasAnyUser()`: whether this install has been claimed by
  *     anyone at all. Install-wide by definition and asked before a tenant
  *     exists (it is what decides whether one should be created), so there is no

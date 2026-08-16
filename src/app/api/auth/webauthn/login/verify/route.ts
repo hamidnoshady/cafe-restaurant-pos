@@ -76,7 +76,11 @@ export async function POST(request: NextRequest) {
       body.challengeToken!,
       // The ceremony happened on this business's own origin, which no fixed
       // WEBAUTHN_ORIGIN list can enumerate — see expectedOriginsFor.
-      expectedOriginsFor(requestHost(request.headers), request.headers.get("x-forwarded-proto")),
+      expectedOriginsFor(
+        requestHost(request.headers),
+        request.headers.get("x-forwarded-proto"),
+        request.nextUrl.protocol,
+      ),
     );
     if (!result) {
       // Phase 20 Wave 7 — same visibility pin-login's failure path just

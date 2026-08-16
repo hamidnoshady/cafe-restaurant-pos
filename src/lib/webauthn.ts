@@ -85,10 +85,18 @@ export function expectedOrigin(): string | string[] {
  * as "unknown" and is dropped, and the names inside it are ones the deployment
  * owns and holds a certificate for. The host is kept verbatim (port included)
  * because a browser's origin carries the port it was actually served on.
+ *
+ * The scheme comes from `x-forwarded-proto` when a terminating proxy set it,
+ * and from `fallbackProto` (the request's own scheme) otherwise — never
+ * assumed to be HTTPS. Hard-coding https was a bug on plain-HTTP origins
+ * (local dev over localtest.me, an HTTP-only staging box): the derived origin
+ * could never match the browser's, so every ceremony there failed
+ * verification.
  */
 export function expectedOriginsFor(
   hostHeader: string | null | undefined,
   forwardedProto: string | null | undefined,
+  fallbackProto: string,
 ): string | string[] {
   const configured = expectedOrigin();
   const base = Array.isArray(configured) ? configured : [configured];
@@ -97,7 +105,7 @@ export function expectedOriginsFor(
   const host = (hostHeader ?? "").trim().toLowerCase().replace(/\.$/, "");
   if (!root || !host || parseHost(host, root).kind === "unknown") return configured;
 
-  const derived = `${preferredProto(forwardedProto, "https")}://${host}`;
+  const derived = `${preferredProto(forwardedProto, fallbackProto)}://${host}`;
   return base.includes(derived) ? configured : [...base, derived];
 }
 

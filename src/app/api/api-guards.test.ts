@@ -66,6 +66,10 @@ const PUBLIC_ROUTES: Record<string, string> = {
   "auth/accept-invite":
     "invitation exchange — the invitee has no session and no membership of the inviting " +
     "business yet; the single-use token is the credential",
+  "auth/impersonate-handoff":
+    "credential exchange (Phase 23 follow-up) — the console's short-lived single-use handoff " +
+    "token is the credential; the caller has no session on the business's origin yet by " +
+    "definition, since the token exists precisely to mint the first one there",
   "rollup/ingest": "server-to-server — authenticated by a per-location bearer token, not a session",
   "server-sync/pull":
     "server-to-server — authenticated by a per-business bearer token (server_sync_tokens), " +

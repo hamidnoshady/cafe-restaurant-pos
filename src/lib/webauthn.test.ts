@@ -62,40 +62,52 @@ describe("expectedOriginsFor", () => {
     // business is a database row — so it is derived from the request instead.
     process.env.ROOT_DOMAIN = "ac.eshobe.com";
     process.env.WEBAUTHN_ORIGIN = "https://ac.eshobe.com";
-    expect(expectedOriginsFor("biz1.ac.eshobe.com", "https")).toEqual([
+    expect(expectedOriginsFor("biz1.ac.eshobe.com", "https", "http:")).toEqual([
       "https://ac.eshobe.com",
       "https://biz1.ac.eshobe.com",
     ]);
   });
 
-  it("keeps the port, because the browser's origin carries it", () => {
+  it("keeps the port and the request's own scheme, because the browser's origin carries both", () => {
     process.env.ROOT_DOMAIN = "localtest.me";
     process.env.WEBAUTHN_ORIGIN = "http://localhost:3000";
-    expect(expectedOriginsFor("acme.localtest.me:3000", null)).toEqual([
+    // No x-forwarded-proto means no terminating proxy, so the request's own
+    // scheme is the one the browser saw. Deriving https here would make the
+    // origin unmatchable and fail every ceremony over plain HTTP.
+    expect(expectedOriginsFor("acme.localtest.me:3000", null, "http:")).toEqual([
       "http://localhost:3000",
-      "https://acme.localtest.me:3000",
+      "http://acme.localtest.me:3000",
+    ]);
+  });
+
+  it("still trusts a proxy's x-forwarded-proto over the request's own scheme", () => {
+    process.env.ROOT_DOMAIN = "ac.eshobe.com";
+    process.env.WEBAUTHN_ORIGIN = "https://ac.eshobe.com";
+    expect(expectedOriginsFor("biz1.ac.eshobe.com", "https", "http:")).toEqual([
+      "https://ac.eshobe.com",
+      "https://biz1.ac.eshobe.com",
     ]);
   });
 
   it("drops a host that is not under ROOT_DOMAIN, so a forged Host cannot widen it", () => {
     process.env.ROOT_DOMAIN = "ac.eshobe.com";
     process.env.WEBAUTHN_ORIGIN = "https://ac.eshobe.com";
-    expect(expectedOriginsFor("evil.example.com", "https")).toEqual(["https://ac.eshobe.com"]);
+    expect(expectedOriginsFor("evil.example.com", "https", "http:")).toEqual(["https://ac.eshobe.com"]);
     // Suffix-shaped but not a subdomain, and one level too deep: both unknown.
-    expect(expectedOriginsFor("evilac.eshobe.com", "https")).toEqual(["https://ac.eshobe.com"]);
-    expect(expectedOriginsFor("a.biz1.ac.eshobe.com", "https")).toEqual(["https://ac.eshobe.com"]);
+    expect(expectedOriginsFor("evilac.eshobe.com", "https", "http:")).toEqual(["https://ac.eshobe.com"]);
+    expect(expectedOriginsFor("a.biz1.ac.eshobe.com", "https", "http:")).toEqual(["https://ac.eshobe.com"]);
   });
 
   it("does not repeat an origin already configured", () => {
     process.env.ROOT_DOMAIN = "ac.eshobe.com";
     process.env.WEBAUTHN_ORIGIN = "https://biz1.ac.eshobe.com";
-    expect(expectedOriginsFor("biz1.ac.eshobe.com", "https")).toEqual(["https://biz1.ac.eshobe.com"]);
+    expect(expectedOriginsFor("biz1.ac.eshobe.com", "https", "http:")).toEqual(["https://biz1.ac.eshobe.com"]);
   });
 
   it("falls back to the configured origins with no root domain", () => {
     delete process.env.ROOT_DOMAIN;
     process.env.WEBAUTHN_ORIGIN = "http://localhost:3000";
-    expect(expectedOriginsFor("acme.localtest.me:3000", null)).toEqual(["http://localhost:3000"]);
+    expect(expectedOriginsFor("acme.localtest.me:3000", null, "http:")).toEqual(["http://localhost:3000"]);
   });
 });
 
