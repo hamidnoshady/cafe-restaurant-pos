@@ -209,6 +209,16 @@ function ItemRow({
           {item.sku ? (
             <span className="text-xs text-muted-foreground">({item.sku})</span>
           ) : null}
+          {/*
+            Not editable here, by design: the flag is set when a production
+            formula names this item as its output, so a checkbox could only
+            ever contradict the formulas that actually exist.
+          */}
+          {item.is_produced ? (
+            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[0.7rem] font-medium text-amber-950">
+              ساخت داخلی
+            </span>
+          ) : null}
           {!item.is_active ? <span className="sr-only">غیرفعال</span> : null}
         </div>
 

@@ -264,6 +264,41 @@ More one-time setup, but proven in production:
 - **Business day:** what "a day" means is `app_business_date(ts, tz, start_minutes)` (migration 0076), never a bare `(ts AT TIME ZONE tz)::date` — see below.
 - Migrations are forward-only numbered SQL files in `migrations/`, applied by `scripts/migrate.ts` (tracked in `schema_migrations`).
 
+## In-house production (تولید داخلی, Phase 29)
+
+Some menu items are **made**, not just assembled. A whole cake is built from raw materials once,
+yields 8 slices, and each slice is then sold through its own serving recipe (one slice + chocolate
+sauce). The recipe model on its own is one level deep and cannot express that: put the cake's
+materials in the per-slice recipe and every sale deducts a whole cake; leave them out and the cake
+has no cost.
+
+`/dashboard/inventory` ← «تولید» adds the missing middle step, for the minority of items that need
+it. A **فرمول تولید** says what one batch consumes and how much it yields; a **سند تولید** records
+an actual batch, taking the materials out of stock and putting the product in.
+
+**The one thing to know before touching this.** The produced good is an **ordinary
+`inventory_items` row**, flagged `is_produced`, with its own base unit («برش») and its own
+`avg_cost` — not a parallel model. That is why nothing else needed changing: serving recipes,
+sale-time deduction, FIFO/weighted-average costing, stock counts, waste, low-stock alerts,
+suggested pricing and cost drift all already work per inventory item. Don't reintroduce a second
+notion of "a thing we make".
+
+- **Cost is spread over the *actual* yield.** A tray that came out as 15 slices instead of 16 cost
+  the same to make, so each slice cost more. The run's `output_quantity` is what happened, not what
+  the formula promised.
+- **Conversion cost is optional and is a *contra*-expense.** Labour and overhead entered on a run
+  are capitalised into the product (`1310` WIP → `1300`), crediting `5180`. The baker's wage is
+  already booked to `5200`; crediting `5180` nets against it so it isn't counted twice, and the
+  cost re-emerges as COGS when the cake sells. `5180` is deliberately not in `COST_OF_SALES_CODES`.
+- **`1310` is a wash account.** A run issues and completes in one transaction, so WIP is always
+  zero at rest — asserted by `integration/production-runs.integration.test.ts`.
+- **A run is never edited, only reversed**, and reversal is refused once the batch has been sold
+  (`production_output_consumed`) — the same posture stock counts take.
+- **Nesting is supported** (sponge base → cake → slice); a cycle is refused.
+- `is_produced` is **derived** from a formula naming the item as its output, not a checkbox.
+
+See [docs/phases/Phase-29-In-House-Production.md](docs/phases/Phase-29-In-House-Production.md).
+
 ## The business day (روز کاری)
 
 A branch's trading day does not have to start at local midnight. `locations.business_day_start_minutes`
