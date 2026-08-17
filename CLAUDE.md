@@ -219,7 +219,9 @@ and the only thing the ledger sees. See the "Payment ways" section of [README.md
 - `wordpress-plugin/pos-accounting-connector/` — the WordPress/WooCommerce plugin (PHP,
   no build step, not part of the Next.js app). Its signing string must stay byte-identical
   to `plugin-link.ts`'s; `plugin-link.test.ts` pins the expected value on the TS side, so
-  change both or neither.
+  change both or neither. **Every change to the plugin bumps its version** — the `Version:`
+  header and `POS_CONNECTOR_VERSION` in `pos-accounting-connector.php`, plus the `Stable
+  tag` and a Changelog entry in `readme.txt` — so WordPress sites can tell an update apart.
 - `electron/` — the standalone (no-Docker) desktop installer. `main.js` bundles a real
   PostgreSQL 16 (`embedded-postgres`) and runs `server.ts`/`scripts/migrate.ts` unmodified as
   child processes — see `docs/standalone-desktop-app.md`. Separate `package.json` from the
