@@ -344,6 +344,40 @@ export async function postExactCogsEntry(
   });
 }
 
+/**
+ * Which account a settlement debits. The keys are the `payment_method` enum —
+ * a business's own payment ways (migration 0091) each declare one of these, so
+ * naming a new way never reaches the ledger.
+ */
+const SETTLEMENT_DEBIT_CODES: Record<string, string | undefined> = {
+  cash: WELL_KNOWN_CODES.cash,
+  card: WELL_KNOWN_CODES.bankClearing,
+  card_to_card: WELL_KNOWN_CODES.bankClearing,
+  online: WELL_KNOWN_CODES.bankClearing,
+  credit: WELL_KNOWN_CODES.accountsReceivable,
+  snappfood: WELL_KNOWN_CODES.platformReceivable,
+};
+
+/**
+ * One debit line per *account*, not per tender: two card-family ways in one
+ * split both land in bank clearing, and an entry with the same account twice
+ * on the same side is legal but reads as a duplicate on every report that
+ * groups by account. Insertion order is kept so the receipt and the entry list
+ * the tenders in the order the cashier took them.
+ */
+function mergeTendersBySettlement(
+  tenders: readonly { settlement: string; amount: bigint }[],
+): { settlement: string; amount: bigint }[] {
+  const merged: { settlement: string; amount: bigint }[] = [];
+  for (const tender of tenders) {
+    const code = SETTLEMENT_DEBIT_CODES[tender.settlement];
+    const existing = merged.find((other) => code !== undefined && SETTLEMENT_DEBIT_CODES[other.settlement] === code);
+    if (existing) existing.amount += tender.amount;
+    else merged.push({ ...tender });
+  }
+  return merged;
+}
+
 export async function postExactOrderPaymentEntry(
   client: PoolClient,
   params: {
@@ -351,7 +385,20 @@ export async function postExactOrderPaymentEntry(
     locationId: string;
     orderId: string;
     createdBy: string | null;
-    method: string;
+    /**
+     * The single way the whole bill was settled. Kept for every caller that
+     * has one — an amendment re-posting a corrected sale, a retail invoice —
+     * and mutually exclusive with `tenders`, which is what a split bill sends.
+     */
+    method?: string;
+    /**
+     * A bill settled across several ways (migration 0091): ۲۰۰٬۰۰۰ نقدی plus
+     * ۳۰۰٬۰۰۰ کارت‌خوان is two tenders, one debit line each, against the one
+     * revenue credit. They must add up to `amount` + `tip` — the entry is the
+     * proof the money arrived, so a split that doesn't cover the bill is a
+     * caller bug, not something to post half of.
+     */
+    tenders?: readonly { settlement: string; amount: RialText }[];
     amount: RialText;
     tax: RialText;
     inventoryEventId: string;
@@ -388,7 +435,34 @@ export async function postExactOrderPaymentEntry(
   if (tip < 0n) throw new Error("negative_tip");
   const commission = rialBigInt(params.platformCommission ?? ("0" as RialText));
   if (commission < 0n) throw new Error("negative_commission");
-  if (commission > 0n && params.method !== "snappfood") {
+
+  // What actually changed hands: the bill plus the tip. Whether that arrived
+  // as one tender or five, the credit side below is identical — which is the
+  // reason a split bill is one entry with several debit lines rather than
+  // several entries, each re-crediting the same revenue.
+  const totalCollected = rialBigInt(params.amount) + tip;
+  // A zero-total order (everything on it was comped or voided) collects
+  // nothing, and has no debit line to post — postExactJournalEntry drops the
+  // whole entry once the credits are zero too. It reaches here rather than
+  // being refused because completing such an order is legitimate.
+  const tenders =
+    totalCollected === 0n
+      ? []
+      : mergeTendersBySettlement(
+          params.tenders?.length
+            ? params.tenders.map((tender) => ({ settlement: tender.settlement, amount: rialBigInt(tender.amount) }))
+            : [{ settlement: params.method ?? "", amount: totalCollected }],
+        );
+  for (const tender of tenders) {
+    if (!SETTLEMENT_DEBIT_CODES[tender.settlement]) {
+      throw new Error(`unknown_payment_method: ${tender.settlement}`);
+    }
+    if (tender.amount <= 0n) throw new Error("invalid_tender_amount");
+  }
+  if (tenders.reduce((sum, tender) => sum + tender.amount, 0n) !== totalCollected) {
+    throw new Error("tender_total_mismatch");
+  }
+  if (commission > 0n && !tenders.some((tender) => tender.settlement === "snappfood")) {
     throw new Error("commission_requires_platform_method");
   }
 
@@ -405,21 +479,10 @@ export async function postExactOrderPaymentEntry(
   // never uses tips (or removed the account while customizing its chart)
   // shouldn't have every ordinary, tip-free sale start failing.
   if (tip > 0n) codes.push(WELL_KNOWN_CODES.tipsPayable);
-  if (params.method === "snappfood") codes.push(WELL_KNOWN_CODES.platformReceivable);
+  if (tenders.some((tender) => tender.settlement === "snappfood")) codes.push(WELL_KNOWN_CODES.platformReceivable);
   if (commission > 0n) codes.push(WELL_KNOWN_CODES.platformCommissionExpense);
   const accounts = await accountIdsByCode(client, params.businessId, codes);
 
-  const debitCode =
-    params.method === "cash"
-      ? WELL_KNOWN_CODES.cash
-      : params.method === "credit"
-        ? WELL_KNOWN_CODES.accountsReceivable
-        : params.method === "snappfood"
-          ? WELL_KNOWN_CODES.platformReceivable
-          : WELL_KNOWN_CODES.bankClearing;
-  if (!["cash", "card", "card_to_card", "online", "credit", "snappfood"].includes(params.method)) {
-    throw new Error(`unknown_payment_method: ${params.method}`);
-  }
   const revenue = rialBigInt(params.amount) - rialBigInt(params.tax);
   if (revenue < 0n) throw new Error("tax_exceeds_payment");
   const revenueCode = revenueAccountCodeForOrderChannel(params.orderChannel, {
@@ -428,9 +491,6 @@ export async function postExactOrderPaymentEntry(
     deliveryRevenue: WELL_KNOWN_CODES.deliveryRevenue,
   });
   const zero = "0" as RialText;
-  const totalCollected = rialBigInt(params.amount) + tip;
-  // SnapFood never hands over the commission slice — the receivable is net of it.
-  const netReceivable = (totalCollected - commission).toString() as RialText;
   return postExactJournalEntry(client, {
     businessId: params.businessId,
     locationId: params.locationId,
@@ -442,7 +502,13 @@ export async function postExactOrderPaymentEntry(
     postingKind: "revenue",
     inventoryEventId: params.inventoryEventId,
     lines: [
-      { accountId: accounts.get(debitCode)!, debit: netReceivable, credit: zero },
+      ...tenders.map((tender) => ({
+        accountId: accounts.get(SETTLEMENT_DEBIT_CODES[tender.settlement]!)!,
+        // SnapFood never hands over the commission slice — the receivable is
+        // net of it, and the expense line below is the other half of that.
+        debit: (tender.settlement === "snappfood" ? tender.amount - commission : tender.amount).toString() as RialText,
+        credit: zero,
+      })),
       ...(commission > 0n
         ? [{ accountId: accounts.get(WELL_KNOWN_CODES.platformCommissionExpense)!, debit: commission.toString() as RialText, credit: zero }]
         : []),

@@ -73,6 +73,13 @@ export const WELL_KNOWN_CODES = {
   // SnapFood settles on its own schedule). See migrations/0060.
   platformReceivable: "1230",
   inventory: "1300",
+  // Phase 29 — in-house production. A wash account: a production run debits it
+  // with the materials it issued and the conversion cost it absorbed, then
+  // credits the whole lot straight back out as finished goods, so it is zero
+  // the moment the run's transaction commits. It exists so the transformation
+  // is legible in the ledger rather than being one inventory→inventory entry
+  // that says nothing about what happened.
+  workInProgress: "1310",
   inventoryInTransit: "1350",
   nrvAllowance: "1390",
   accountsPayable: "2100",
@@ -115,6 +122,17 @@ export const WELL_KNOWN_CODES = {
   commissionExpense: "5210",
   inventoryCountExpense: "5160",
   inventoryWriteDownExpense: "5170",
+  // Phase 29 — labour/overhead a production run capitalises into the cost of
+  // what it made. A CONTRA-expense, and that is the whole point: the baker's
+  // wage is already an expense (5200) and the oven's gas already an expense
+  // (5400), so absorbing that effort into the cake's cost must not book it a
+  // second time. Absorbing CREDITS this account, which nets against those in
+  // the P&L; the cost then re-emerges as COGS when the cake is sold, which is
+  // the period it belongs to. Deliberately *not* in COST_OF_SALES_CODES below
+  // — it offsets the overhead it capitalised, so it belongs beside that
+  // overhead, not inside gross profit (where it would overstate margin in the
+  // baking period and understate it at sale).
+  appliedConversionCost: "5180",
   inventoryCountGain: "4910",
   // Phase 22 Wave 4 — cost of using a third-party online-ordering platform
   // (e.g. a delivery marketplace's cut of the sale). Settled via the manual-
@@ -201,6 +219,7 @@ export const FNB_COA_TEMPLATE: TemplateAccount[] = [
   { code: "1220", name: "مالیات بر ارزش افزوده خرید (قابل استرداد)", type: "asset", parentCode: "1000" },
   { code: "1230", name: "مطالبات از پلتفرم‌های سفارش آنلاین", type: "asset", parentCode: "1000" },
   { code: "1300", name: "موجودی مواد و کالا", type: "asset", parentCode: "1000" },
+  { code: "1310", name: "کالای در جریان ساخت", type: "asset", parentCode: "1000" },
   { code: "1350", name: "موجودی در راه", type: "asset", parentCode: "1000" },
   { code: "1390", name: "ذخیره کاهش ارزش موجودی", type: "asset", parentCode: "1000", isContra: true },
   { code: "1400", name: "پیش‌پرداخت‌ها", type: "asset", parentCode: "1000" },
@@ -237,6 +256,7 @@ export const FNB_COA_TEMPLATE: TemplateAccount[] = [
   { code: "5150", name: "ضایعات مواد", type: "expense", parentCode: "5000" },
   { code: "5160", name: "هزینه کسری و مغایرت شمارش", type: "expense", parentCode: "5000" },
   { code: "5170", name: "هزینه کاهش ارزش موجودی", type: "expense", parentCode: "5000" },
+  { code: "5180", name: "هزینهٔ تبدیل جذب‌شده در تولید", type: "expense", parentCode: "5000", isContra: true },
   { code: "5200", name: "حقوق و دستمزد", type: "expense", parentCode: "5000" },
   { code: "5210", name: "پورسانت فروش", type: "expense", parentCode: "5000" },
   { code: "5300", name: "اجاره", type: "expense", parentCode: "5000" },

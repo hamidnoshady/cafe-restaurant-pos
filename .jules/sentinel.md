@@ -22,3 +22,7 @@
 **Vulnerability:** Extracted IP address from `x-forwarded-for` header by blindly taking the left-most value, which is spoofable and bypasses rate limits.
 **Learning:** `x-forwarded-for` headers can be manipulated by clients. When splitting this header, the real IP is appended by trusted proxies on the right side. Taking the left-most value allows attackers to spoof their IP simply by supplying an arbitrary IP in the header.
 **Prevention:** Prefer extracting IP from `request.ip` or `x-real-ip`. If using `x-forwarded-for`, always take the right-most value to prevent IP spoofing, or properly validate against known trusted proxy IP addresses.
+## 2026-08-17 - [Secure Randomness in Barcode Generation]
+**Vulnerability:** Weak random number generation using `Math.random()` for generating internal barcode payload numbers.
+**Learning:** `Math.random()` does not provide cryptographically secure entropy, making internal barcode values predictable and increasing the likelihood of collisions.
+**Prevention:** Use `randomInt()` from `node:crypto` for numeric values (and `crypto.randomUUID()` for string identifiers) instead of `Math.random()` for operations requiring unique and unpredictable values.

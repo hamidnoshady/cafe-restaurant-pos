@@ -74,6 +74,13 @@ export interface ShiftOrderItemInput {
 export interface ShiftOrderPaymentInput {
   orderId: string;
   method: string;
+  /**
+   * The name the business gave the payment way (migration 0091) — «پوز ملت»
+   * rather than the settlement's generic «کارت‌خوان». Null on payments taken
+   * before the business named its ways, and on the ones no way owns (a
+   * refund, an amendment's adjusting row), where `method` is all there is.
+   */
+  methodName: string | null;
   amount: Rial;
   reference: string | null;
   receivedAt: string;
@@ -215,6 +222,7 @@ export function groupShiftOrders(
     if (!order) continue;
     order.payments.push({
       method: payment.method,
+      methodName: payment.methodName,
       amount: payment.amount,
       reference: payment.reference,
       receivedAt: payment.receivedAt,

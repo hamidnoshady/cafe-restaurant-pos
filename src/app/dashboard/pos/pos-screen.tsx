@@ -9,14 +9,11 @@ import {
   useDeferredValue,
 } from "react";
 import {
-  BanknoteIcon,
   CheckIcon,
-  CreditCardIcon,
   ReceiptTextIcon,
   RefreshCwIcon,
   SearchIcon,
   ShoppingBagIcon,
-  SmartphoneIcon,
   WifiIcon,
   WifiOffIcon,
 } from "lucide-react";
@@ -33,6 +30,16 @@ import { toPersianDigits } from "@/lib/digits";
 import type { KitchenTicketData } from "@/lib/kitchen-ticket-template";
 import type { ReceiptData } from "@/lib/receipt-template";
 import { formatToman, tomanToRial } from "@/lib/money";
+import {
+  draftOpensDrawer,
+  draftReceiptPayments,
+  emptyPaymentDraft,
+  methodOf,
+  paymentDraftBody,
+  type PaymentDraft,
+  type PaymentDraftBody,
+} from "@/lib/payment-draft";
+import { PaymentWays, usePaymentMethods } from "../payment-ways";
 import {
   computeOrderTotals,
   formatQueueLabel,
@@ -143,13 +150,6 @@ interface CartUiLine {
 }
 
 type OrderType = "dine_in" | "takeaway" | "delivery";
-type PaymentMethod = "cash" | "card" | "snappfood";
-
-const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
-  cash: "نقدی",
-  card: "کارت‌خوان",
-  snappfood: "اسنپ‌فود",
-};
 type CheckoutIntent = "order" | "payment";
 
 interface CheckoutResult {
@@ -197,7 +197,17 @@ export function PosScreen() {
   const [reviewOpen, setReviewOpen] = useState(false);
   const [tablePickerOpen, setTablePickerOpen] = useState(false);
   const [checkoutIntent, setCheckoutIntent] = useState<CheckoutIntent>("order");
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
+  // The ways this business takes money, in its own order — no longer three
+  // hard-coded buttons. `paymentDraft` is what the cashier has chosen,
+  // including a split across several of them (src/lib/payment-draft.ts).
+  const { methods: paymentMethods } = usePaymentMethods();
+  const [paymentDraft, setPaymentDraft] = useState<PaymentDraft>(() => emptyPaymentDraft([]));
+  // The ways arrive after the first render, so the draft starts pointing at
+  // nothing; this settles it on the business's first way once they land (and
+  // again if a way the draft was holding gets retired mid-shift).
+  useEffect(() => {
+    setPaymentDraft((draft) => (methodOf(paymentMethods, draft.methodId) ? draft : emptyPaymentDraft(paymentMethods)));
+  }, [paymentMethods]);
   const [tipInput, setTipInput] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -550,6 +560,24 @@ export function PosScreen() {
     if (orderType === "delivery" && !deliveryAddress.trim())
       return setError("برای سفارش ارسالی آدرس الزامی است.");
 
+    // How the money is being taken is settled *before* the order is created:
+    // a split that doesn't add up would otherwise leave an open order behind
+    // and a cashier wondering which of the two things failed.
+    let paymentBody: PaymentDraftBody[] = [];
+    if (intent === "payment") {
+      const built = paymentDraftBody(paymentDraft, paymentMethods, totals.total);
+      if (!built.ok) return setError(errorMessage(built.error));
+      if (
+        built.value.some(
+          (tender) => methodOf(paymentMethods, tender.methodId)?.settlement === "credit",
+        ) &&
+        !customer
+      ) {
+        return setError(errorMessage("customer_required"));
+      }
+      paymentBody = built.value;
+    }
+
     submissionInFlight.current = true;
     setBusy(true);
     const orderBody = {
@@ -635,7 +663,8 @@ export function PosScreen() {
             {
               method: "POST",
               body: JSON.stringify({
-                method: paymentMethod,
+                payments: paymentBody,
+                customerId: customer?.id ?? undefined,
                 tipAmount: tipNum,
               }),
             },
@@ -713,10 +742,12 @@ export function PosScreen() {
           tax: totals.tax,
           total: totals.total,
           tip: tipNum,
-          paymentMethod,
+          payments: draftReceiptPayments(paymentDraft, paymentMethods, totals.total),
         };
         void printReceipt(receiptPrinter.connection, receipt);
-        if (paymentMethod === "cash")
+        // Any cash in the split opens the drawer — a bill half paid in notes
+        // still needs somewhere to put them.
+        if (draftOpensDrawer(paymentDraft, paymentMethods))
           void kickDrawer(receiptPrinter.connection);
       }
     }
@@ -747,7 +778,7 @@ export function PosScreen() {
     setDeliveryFee("");
     setDeliveryCourierId("");
     setCheckoutIntent("order");
-    setPaymentMethod("cash");
+    setPaymentDraft(emptyPaymentDraft(paymentMethods));
     setTipInput("");
     setCartSheetOpen(false);
     setBusy(false);
@@ -1337,50 +1368,14 @@ export function PosScreen() {
           </dl>
 
           <div className="mt-4">
-            <p className="mb-2 text-xs font-bold text-[#5E5B55]">
-              روش دریافت وجه
-            </p>
-            <div className="grid grid-cols-3 gap-2">
-              <button
-                type="button"
-                onClick={() => setPaymentMethod("cash")}
-                className={
-                  "flex min-h-14 items-center justify-center gap-2 rounded-xl border text-sm font-bold transition duration-200 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 motion-reduce:transition-none " +
-                  (paymentMethod === "cash"
-                    ? "border-[#F2D097] bg-[#FFF1D8] text-[#9B6700]"
-                    : "border-[#EAE8E2] text-[#5E5B55] hover:bg-[#FCFCFA]")
-                }
-              >
-                <BanknoteIcon className="size-4" aria-hidden="true" />
-                نقدی
-              </button>
-              <button
-                type="button"
-                onClick={() => setPaymentMethod("card")}
-                className={
-                  "flex min-h-14 items-center justify-center gap-2 rounded-xl border text-sm font-bold transition duration-200 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 motion-reduce:transition-none " +
-                  (paymentMethod === "card"
-                    ? "border-[#F2D097] bg-[#FFF1D8] text-[#9B6700]"
-                    : "border-[#EAE8E2] text-[#5E5B55] hover:bg-[#FCFCFA]")
-                }
-              >
-                <CreditCardIcon className="size-4" aria-hidden="true" />
-                کارت‌خوان
-              </button>
-              <button
-                type="button"
-                onClick={() => setPaymentMethod("snappfood")}
-                className={
-                  "flex min-h-14 items-center justify-center gap-2 rounded-xl border text-sm font-bold transition duration-200 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 motion-reduce:transition-none " +
-                  (paymentMethod === "snappfood"
-                    ? "border-[#F2D097] bg-[#FFF1D8] text-[#9B6700]"
-                    : "border-[#EAE8E2] text-[#5E5B55] hover:bg-[#FCFCFA]")
-                }
-              >
-                <SmartphoneIcon className="size-4" aria-hidden="true" />
-                اسنپ‌فود
-              </button>
-            </div>
+            <PaymentWays
+              methods={paymentMethods}
+              draft={paymentDraft}
+              onChange={setPaymentDraft}
+              due={totals.total}
+              disabled={busy}
+              idPrefix="pos"
+            />
             <label
               htmlFor="pos-tip"
               className="mt-2 block text-xs font-bold text-[#5E5B55]"
@@ -1408,7 +1403,9 @@ export function PosScreen() {
               className="mt-3 flex min-h-14 w-full items-center justify-center gap-2 rounded-xl bg-[#E9A11B] px-4 text-sm font-bold text-[#252522] transition duration-200 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 disabled:opacity-55 motion-reduce:transition-none"
             >
               <ReceiptTextIcon className="size-5" aria-hidden="true" />
-              دریافت {PAYMENT_METHOD_LABELS[paymentMethod]} و تکمیل
+              {paymentDraft.split
+                ? "دریافت تقسیمی و تکمیل"
+                : `دریافت ${methodOf(paymentMethods, paymentDraft.methodId)?.name ?? "وجه"} و تکمیل`}
             </button>
             <button
               type="button"
@@ -1699,50 +1696,14 @@ export function PosScreen() {
                 />
               ) : null}
               <div className="mt-4">
-                <p className="mb-2 text-xs font-bold text-[#5E5B55]">
-                  روش دریافت وجه
-                </p>
-                <div className="grid grid-cols-3 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setPaymentMethod("cash")}
-                    className={
-                      "flex min-h-14 items-center justify-center gap-2 rounded-xl border text-sm font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 " +
-                      (paymentMethod === "cash"
-                        ? "border-[#F2D097] bg-[#FFF1D8] text-[#9B6700]"
-                        : "border-[#EAE8E2] text-[#5E5B55]")
-                    }
-                  >
-                    <BanknoteIcon className="size-4" aria-hidden="true" />
-                    نقدی
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPaymentMethod("card")}
-                    className={
-                      "flex min-h-14 items-center justify-center gap-2 rounded-xl border text-sm font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 " +
-                      (paymentMethod === "card"
-                        ? "border-[#F2D097] bg-[#FFF1D8] text-[#9B6700]"
-                        : "border-[#EAE8E2] text-[#5E5B55]")
-                    }
-                  >
-                    <CreditCardIcon className="size-4" aria-hidden="true" />
-                    کارت‌خوان
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPaymentMethod("snappfood")}
-                    className={
-                      "flex min-h-14 items-center justify-center gap-2 rounded-xl border text-sm font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 " +
-                      (paymentMethod === "snappfood"
-                        ? "border-[#F2D097] bg-[#FFF1D8] text-[#9B6700]"
-                        : "border-[#EAE8E2] text-[#5E5B55]")
-                    }
-                  >
-                    <SmartphoneIcon className="size-4" aria-hidden="true" />
-                    اسنپ‌فود
-                  </button>
-                </div>
+                <PaymentWays
+                  methods={paymentMethods}
+                  draft={paymentDraft}
+                  onChange={setPaymentDraft}
+                  due={totals.total}
+                  disabled={busy}
+                  idPrefix="pos-mobile"
+                />
                 <label
                   htmlFor="pos-mobile-tip"
                   className="mt-2 block text-xs font-bold text-[#5E5B55]"
@@ -1780,7 +1741,9 @@ export function PosScreen() {
               className="flex min-h-14 w-full items-center justify-center gap-2 rounded-xl bg-[#E9A11B] px-4 text-sm font-bold text-[#252522] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 disabled:opacity-55"
             >
               <ReceiptTextIcon className="size-5" aria-hidden="true" />
-              دریافت {PAYMENT_METHOD_LABELS[paymentMethod]} و تکمیل
+              {paymentDraft.split
+                ? "دریافت تقسیمی و تکمیل"
+                : `دریافت ${methodOf(paymentMethods, paymentDraft.methodId)?.name ?? "وجه"} و تکمیل`}
             </button>
             <button
               type="button"
@@ -1869,12 +1832,19 @@ export function PosScreen() {
                     value={formatModifierDelta(cartAddOnTotal)}
                   />
                 ) : null}
-                {checkoutIntent === "payment" ? (
-                  <Row
-                    label="روش پرداخت"
-                    value={PAYMENT_METHOD_LABELS[paymentMethod]}
-                  />
-                ) : null}
+                {checkoutIntent === "payment"
+                  ? draftReceiptPayments(paymentDraft, paymentMethods, totals.total).map((payment, index) => (
+                      <Row
+                        key={`${payment.label}-${index}`}
+                        label={index === 0 ? "روش پرداخت" : ""}
+                        value={
+                          paymentDraft.split
+                            ? `${payment.label} — ${formatToman(payment.amount)}`
+                            : payment.label
+                        }
+                      />
+                    ))
+                  : null}
                 <Row
                   label="مبلغ قابل پرداخت"
                   value={formatToman(totals.total)}

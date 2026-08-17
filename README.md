@@ -262,7 +262,80 @@ More one-time setup, but proven in production:
 - **Multi-location:** every tenant-scoped table carries `location_id` (business-scoped tables like `users`, `accounts`, `customers` carry `business_id` and a nullable `location_id`). Since Phase 14 a business may have several active branches; `resolveActiveLocation` (`src/lib/setup-state.ts`) is what every route resolves the caller's current branch through, validated against their branch assignment (`src/lib/location-access.ts`).
 - **Multi-business:** `businesses` is the tenant, and isolation between tenants is enforced by Postgres row-level security — see below.
 - **Business day:** what "a day" means is `app_business_date(ts, tz, start_minutes)` (migration 0076), never a bare `(ts AT TIME ZONE tz)::date` — see below.
+- **Payment ways:** how a business takes money is rows in `payment_methods`, not the `payment_method` enum — see below.
 - Migrations are forward-only numbered SQL files in `migrations/`, applied by `scripts/migrate.ts` (tracked in `schema_migrations`).
+
+## Payment ways, and splitting a bill (روش‌های پرداخت)
+
+A business names its own ways of taking money and orders them the way its cashiers reach for them
+(«روش‌های پرداخت» under تنظیمات → `payment_methods`, migration 0091). «کارت‌خوان» can become «پوز
+بانک ملت», a second terminal can sit beside it, and a wallet the shop accepts can be added outright.
+The same list, in the same order, is what the POS, the order dialog, the closed-order amendment and
+the retail invoice screen offer — `GET /api/payment-methods` is the one source.
+
+One bill can be settled across several of them: ۲۰۰٬۰۰۰ نقدی plus ۳۰۰٬۰۰۰ کارت‌خوان is one checkout
+that writes one `payments` row per slice and one journal entry with a debit line per slice.
+
+Four rules carry this, and each of them is load-bearing:
+
+- **A way's `name` is the business's; its `settlement` is the ledger's.** Every way declares which
+  of the `payment_method` enum values it behaves like, and that is what decides the account the
+  money debits (cash box / bank clearing / receivable / platform receivable). Naming a new way
+  therefore never reaches the ledger, and `settlement` is refused once the way has taken money —
+  changing it would re-describe payments already posted. Deactivate and add instead.
+- **A split settles the bill in full.** The slices must add up to the total, to the Rial
+  (`validateTenders` in `src/lib/payment-methods.ts`). There is still no partial payment and no
+  balance left open; a cash overshoot is change handed back, not a larger payment (`changeDue`).
+  One slice may leave its amount open and take whatever is left — «۲۰۰٬۰۰۰ نقدی، بقیه با کارت» —
+  which is also how an ordinary one-way sale is expressed, and what keeps a checkout from failing
+  when the till's idea of the total is slightly behind the server's.
+- **`payments` rows record the bill; the tip rides on top.** That was always true and stays true
+  now that there can be several rows — `orders.tip_amount` holds the tip, and the posting folds it
+  into the first slice that actually collected money (`tendersWithTip`; a `credit` slice is passed
+  over, since a tip is not put on a tab). The closed-order amendment's re-plan and a refund's
+  ceiling both read that sum, so don't "fix" it by adding the tip into the rows.
+- **A retired way stays on its old payments.** Deleting is only ever allowed for a way the business
+  added and never used; everything else deactivates, and `payments.payment_method_id` keeps naming
+  it on every receipt and shift report that already went out.
+
+Splitting is the **order** path (`POST /api/orders/[id]/pay`). The retail industries' invoice posts
+through the domain-event engine per line, which settles a sale one way, so that screen picks a way
+from the same list and narrows it with `ledgerSettlementFor`.
+
+## In-house production (تولید داخلی, Phase 29)
+
+Some menu items are **made**, not just assembled. A whole cake is built from raw materials once,
+yields 8 slices, and each slice is then sold through its own serving recipe (one slice + chocolate
+sauce). The recipe model on its own is one level deep and cannot express that: put the cake's
+materials in the per-slice recipe and every sale deducts a whole cake; leave them out and the cake
+has no cost.
+
+`/dashboard/inventory` ← «تولید» adds the missing middle step, for the minority of items that need
+it. A **فرمول تولید** says what one batch consumes and how much it yields; a **سند تولید** records
+an actual batch, taking the materials out of stock and putting the product in.
+
+**The one thing to know before touching this.** The produced good is an **ordinary
+`inventory_items` row**, flagged `is_produced`, with its own base unit («برش») and its own
+`avg_cost` — not a parallel model. That is why nothing else needed changing: serving recipes,
+sale-time deduction, FIFO/weighted-average costing, stock counts, waste, low-stock alerts,
+suggested pricing and cost drift all already work per inventory item. Don't reintroduce a second
+notion of "a thing we make".
+
+- **Cost is spread over the *actual* yield.** A tray that came out as 15 slices instead of 16 cost
+  the same to make, so each slice cost more. The run's `output_quantity` is what happened, not what
+  the formula promised.
+- **Conversion cost is optional and is a *contra*-expense.** Labour and overhead entered on a run
+  are capitalised into the product (`1310` WIP → `1300`), crediting `5180`. The baker's wage is
+  already booked to `5200`; crediting `5180` nets against it so it isn't counted twice, and the
+  cost re-emerges as COGS when the cake sells. `5180` is deliberately not in `COST_OF_SALES_CODES`.
+- **`1310` is a wash account.** A run issues and completes in one transaction, so WIP is always
+  zero at rest — asserted by `integration/production-runs.integration.test.ts`.
+- **A run is never edited, only reversed**, and reversal is refused once the batch has been sold
+  (`production_output_consumed`) — the same posture stock counts take.
+- **Nesting is supported** (sponge base → cake → slice); a cycle is refused.
+- `is_produced` is **derived** from a formula naming the item as its output, not a checkbox.
+
+See [docs/phases/Phase-29-In-House-Production.md](docs/phases/Phase-29-In-House-Production.md).
 
 ## The business day (روز کاری)
 
