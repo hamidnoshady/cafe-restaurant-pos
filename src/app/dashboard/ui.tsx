@@ -102,6 +102,16 @@ const ERROR_MESSAGES: Record<string, string> = {
     no_tables: "حداقل یک میز لازم است.",
     // Phase 5 — offline queue, payments, hardware
     invalid_payment_method: "روش پرداخت نامعتبر است.",
+    // Splitting a bill across payment ways (migration 0091).
+    no_payment: "روش دریافت وجه انتخاب نشده است.",
+    payment_total_mismatch: "مجموع مبالغ روش‌های پرداخت باید دقیقاً برابر مبلغ فاکتور باشد.",
+    too_many_tenders: "تعداد روش‌های پرداخت یک فاکتور بیش از حد مجاز است.",
+    payment_reference_required: "برای این روش پرداخت، شمارهٔ پیگیری الزامی است.",
+    invalid_settlement: "نحوهٔ تسویه نامعتبر است.",
+    builtin_payment_method: "روش‌های پیش‌فرض حذف نمی‌شوند؛ می‌توانید آن‌ها را غیرفعال کنید.",
+    builtin_settlement_locked: "نحوهٔ تسویهٔ روش‌های پیش‌فرض قابل تغییر نیست.",
+    payment_method_in_use: "با این روش پرداخت قبلاً وجهی دریافت شده است؛ به‌جای حذف، آن را غیرفعال کنید.",
+    payment_method_not_found: "روش پرداخت پیدا نشد.",
     conflict: "این تغییر با یک عملیات دیگر تداخل دارد و باید دستی بررسی شود.",
     printer_not_found: "چاپگر پیدا نشد.",
     agent_unreachable: "دستگاه چاپ در دسترس نیست. اتصال چاپگر محلی را بررسی کنید.",

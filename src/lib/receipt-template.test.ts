@@ -19,6 +19,33 @@ const baseData: ReceiptData = {
 };
 
 describe("renderReceiptHtml", () => {
+  it("prints one row per tender when the bill was split", () => {
+    const html = renderReceiptHtml({
+      ...baseData,
+      payments: [
+        { label: "نقدی", amount: 145_000 },
+        { label: "کارت‌خوان", amount: 200_000 },
+      ],
+    });
+    expect(html).toContain("نقدی");
+    expect(html).toContain("کارت‌خوان");
+    // ۱۴٬۵۰۰ and ۲۰٬۰۰۰ Toman — the two slices, each shown with its own amount.
+    expect(html).toContain("۱۴٬۵۰۰");
+    expect(html).toContain("۲۰٬۰۰۰");
+    // The split replaces the single method line rather than printing beside it.
+    expect(html).not.toContain("روش پرداخت");
+  });
+
+  it("keeps the single «روش پرداخت» line when nothing was split", () => {
+    expect(renderReceiptHtml(baseData)).toContain("روش پرداخت");
+  });
+
+  it("escapes a payment way named with HTML", () => {
+    const html = renderReceiptHtml({ ...baseData, payments: [{ label: "<script>x</script>", amount: 345_000 }] });
+    expect(html).not.toContain("<script>x</script>");
+    expect(html).toContain("&lt;script&gt;");
+  });
+
   it("is a full RTL Persian HTML document", () => {
     const html = renderReceiptHtml(baseData);
     expect(html).toContain('dir="rtl"');

@@ -13,6 +13,7 @@ import { BusinessSettings } from "./business-settings";
 import { DeviceSettings } from "./device-settings";
 import { MenuSettings } from "./menu-settings";
 import { OnlinePlatformsSettings } from "./online-platforms-settings";
+import { PaymentMethodsSettings } from "./payment-methods-settings";
 import { PricingSettings } from "./pricing-settings";
 import { PrinterSettings } from "./printer-settings";
 import { SecurityCenterSettings } from "./security-center-settings";
@@ -69,6 +70,7 @@ export function SettingsManager({ tabs, features, currentUserId, isOwner }: Sett
       {activeTab === "tax" ? <TaxSettings /> : null}
       {activeTab === "pricing" ? <PricingSettings /> : null}
       {activeTab === "online-platforms" ? <OnlinePlatformsSettings /> : null}
+      {activeTab === "payment-methods" ? <PaymentMethodsSettings /> : null}
       {activeTab === "accounts" ? <AccountsSettings /> : null}
       {activeTab === "team" ? <TeamManager currentUserId={currentUserId} /> : null}
       {activeTab === "menu" ? <MenuSettings /> : null}

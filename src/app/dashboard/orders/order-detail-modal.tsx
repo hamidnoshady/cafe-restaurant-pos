@@ -26,14 +26,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   BanknoteIcon,
-  CreditCardIcon,
   MinusIcon,
   PencilIcon,
   PlusIcon,
   PrinterIcon,
-  ReceiptTextIcon,
   Trash2Icon,
-  WalletIcon,
   XIcon,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -47,6 +44,15 @@ import {
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { toPersianDigits } from "@/lib/digits";
 import { formatToman, parseToRial } from "@/lib/money";
+import {
+  draftNeedsCustomer,
+  draftOpensDrawer,
+  draftReceiptPayments,
+  emptyPaymentDraft,
+  paymentDraftBody,
+  type PaymentDraft,
+} from "@/lib/payment-draft";
+import { PaymentWays, usePaymentMethods } from "../payment-ways";
 import { formatQueueLabel } from "@/lib/orders";
 import { kickDrawer, printReceipt } from "@/lib/print-agent-client";
 import type { ReceiptData } from "@/lib/receipt-template";
@@ -83,18 +89,6 @@ import {
  */
 const LINE_GRID =
   "md:grid md:grid-cols-[minmax(0,1fr)_8.5rem_9rem_2.75rem] md:gap-3";
-
-const PAYMENT_METHODS: {
-  value: "cash" | "card" | "card_to_card" | "credit" | "snappfood";
-  label: string;
-  icon: typeof BanknoteIcon;
-}[] = [
-  { value: "cash", label: "نقدی", icon: BanknoteIcon },
-  { value: "card", label: "کارت‌خوان", icon: CreditCardIcon },
-  { value: "card_to_card", label: "کارت‌به‌کارت", icon: WalletIcon },
-  { value: "credit", label: "نسیه", icon: ReceiptTextIcon },
-  { value: "snappfood", label: "اسنپ‌فود", icon: ReceiptTextIcon },
-];
 
 /** The same chips the dashboard overview and the queue use, so a status reads alike everywhere. */
 const STATUS_CHIP: Record<string, { label: string; className: string }> = {
@@ -253,9 +247,19 @@ export function OrderDetailModal({
     "",
   );
   const [discountValue, setDiscountValue] = useState("");
-  const [payMethod, setPayMethod] = useState<
-    "cash" | "card" | "card_to_card" | "credit" | "snappfood"
-  >("cash");
+  // The business's own payment ways, and what the cashier has chosen — a
+  // single way or a split across several (src/lib/payment-draft.ts). Shared
+  // with the POS through <PaymentWays>, so the two checkouts stay identical.
+  const { methods: paymentMethods } = usePaymentMethods();
+  const [paymentDraft, setPaymentDraft] = useState<PaymentDraft>(() => emptyPaymentDraft([]));
+  const needsCustomer = draftNeedsCustomer(paymentDraft, paymentMethods);
+  // The ways land a render or two after the dialog opens, so the draft starts
+  // pointing at nothing; this settles it on the first way once they arrive.
+  useEffect(() => {
+    setPaymentDraft((draft) =>
+      paymentMethods.some((method) => method.id === draft.methodId) ? draft : emptyPaymentDraft(paymentMethods),
+    );
+  }, [paymentMethods]);
   const [tipInput, setTipInput] = useState("");
   const [paying, setPaying] = useState(false);
   const [customerQuery, setCustomerQuery] = useState("");
@@ -307,7 +311,7 @@ export function OrderDetailModal({
     setSelectedCustomer(null);
     setCustomerQuery("");
     setShowNewCustomer(false);
-    setPayMethod("cash");
+    setPaymentDraft(emptyPaymentDraft(paymentMethods));
     void load();
   }, [load, open]);
 
@@ -317,7 +321,7 @@ export function OrderDetailModal({
   }, [menu, open]);
 
   useEffect(() => {
-    if (payMethod !== "credit" || selectedCustomer) {
+    if (!needsCustomer || selectedCustomer) {
       setCustomerResults([]);
       return;
     }
@@ -327,7 +331,7 @@ export function OrderDetailModal({
       ).then(({ ok, data }) => ok && setCustomerResults(data.customers));
     }, 250);
     return () => clearTimeout(timer);
-  }, [payMethod, customerQuery, selectedCustomer]);
+  }, [needsCustomer, customerQuery, selectedCustomer]);
 
   const addOnsByItem = useMemo(() => {
     const map = new Map<
@@ -529,7 +533,7 @@ export function OrderDetailModal({
   }
 
   /** The receipt for this order as it stands — shared by checkout and reprint. */
-  function buildReceipt(tipAmount: number, method: string): ReceiptData | null {
+  function buildReceipt(tipAmount: number, payments: { label: string; amount: number }[]): ReceiptData | null {
     if (!order) return null;
     return {
       business: {
@@ -563,7 +567,7 @@ export function OrderDetailModal({
       tax: Number(order.tax),
       total: Number(order.total),
       tip: tipAmount,
-      paymentMethod: method,
+      payments,
     };
   }
 
@@ -574,7 +578,10 @@ export function OrderDetailModal({
       setError("چاپگر رسید تنظیم نشده است.");
       return;
     }
-    const receipt = buildReceipt(Number(order?.tip_amount ?? 0), payMethod);
+    const receipt = buildReceipt(
+      Number(order?.tip_amount ?? 0),
+      draftReceiptPayments(paymentDraft, paymentMethods, Number(order?.total ?? 0)),
+    );
     if (!receipt) return;
     void printReceipt(receiptPrinter.connection, receipt);
     toast.success("رسید برای چاپ ارسال شد");
@@ -591,9 +598,12 @@ export function OrderDetailModal({
    */
   async function pay() {
     if (!order) return;
-    if (payMethod === "credit" && !selectedCustomer) {
+    if (needsCustomer && !selectedCustomer) {
       return setError(errorMessage("customer_required"));
     }
+    const total = Number(order.total);
+    const built = paymentDraftBody(paymentDraft, paymentMethods, total);
+    if (!built.ok) return setError(errorMessage(built.error));
     let tipAmount = 0;
     if (tipInput.trim()) {
       try {
@@ -609,7 +619,7 @@ export function OrderDetailModal({
       {
         method: "POST",
         body: JSON.stringify({
-          method: payMethod,
+          payments: built.value,
           customerId: selectedCustomer?.id,
           tipAmount,
         }),
@@ -623,10 +633,11 @@ export function OrderDetailModal({
 
     const receiptPrinter = firstPrinter(printers, "receipt");
     if (receiptPrinter) {
-      const receipt = buildReceipt(tipAmount, payMethod);
+      const receipt = buildReceipt(tipAmount, draftReceiptPayments(paymentDraft, paymentMethods, total));
       if (receipt) {
         void printReceipt(receiptPrinter.connection, receipt);
-        if (payMethod === "cash") void kickDrawer(receiptPrinter.connection);
+        // Any cash slice opens the drawer, not just an all-cash bill.
+        if (draftOpensDrawer(paymentDraft, paymentMethods)) void kickDrawer(receiptPrinter.connection);
       }
     }
     setTipInput("");
@@ -1262,42 +1273,21 @@ export function OrderDetailModal({
                         <h3 className="mb-3 font-semibold text-[#252522]">
                           دریافت وجه و تکمیل سفارش
                         </h3>
-                        <p className="mb-2 text-xs font-medium text-[#77756F]">
-                          روش دریافت وجه
-                        </p>
-                        <div className="mb-3 grid grid-cols-2 gap-2">
-                          {PAYMENT_METHODS.map((method, index) => {
-                            const Icon = method.icon;
-                            const selected = payMethod === method.value;
-                            // An odd tail would otherwise leave a gap beside it.
-                            const spans =
-                              index === PAYMENT_METHODS.length - 1 &&
-                              PAYMENT_METHODS.length % 2 === 1;
-                            return (
-                              <button
-                                key={method.value}
-                                type="button"
-                                aria-pressed={selected}
-                                onClick={() => {
-                                  setPayMethod(method.value);
-                                  if (method.value !== "credit") {
-                                    setSelectedCustomer(null);
-                                    setCustomerQuery("");
-                                  }
-                                }}
-                                className={`flex min-h-14 items-center justify-center gap-2 rounded-xl border text-sm font-bold transition duration-200 active:scale-[0.98] ${FOCUS} motion-reduce:transition-none ${
-                                  spans ? "col-span-2" : ""
-                                } ${
-                                  selected
-                                    ? "border-[#F2D097] bg-[#FFF1D8] text-[#9B6700]"
-                                    : "border-[#EAE8E2] bg-white text-[#5E5B55] hover:bg-[#FCFCFA]"
-                                }`}
-                              >
-                                <Icon className="size-4" aria-hidden="true" />
-                                {method.label}
-                              </button>
-                            );
-                          })}
+                        <div className="mb-3">
+                          <PaymentWays
+                            methods={paymentMethods}
+                            draft={paymentDraft}
+                            onChange={(draft) => {
+                              setPaymentDraft(draft);
+                              if (!draftNeedsCustomer(draft, paymentMethods)) {
+                                setSelectedCustomer(null);
+                                setCustomerQuery("");
+                              }
+                            }}
+                            due={Number(order.total)}
+                            disabled={paying}
+                            idPrefix="order"
+                          />
                         </div>
 
                         <label className="mb-3 block">
@@ -1319,7 +1309,7 @@ export function OrderDetailModal({
                           />
                         </label>
 
-                        {payMethod === "credit" ? (
+                        {needsCustomer ? (
                           <div className="mb-3 rounded-xl border border-[#EAE8E2] bg-[#FCFCFA] p-3">
                             {selectedCustomer ? (
                               <div className="flex items-center justify-between gap-2">
@@ -1407,7 +1397,8 @@ export function OrderDetailModal({
                           onClick={pay}
                           disabled={
                             paying ||
-                            (payMethod === "credit" && !selectedCustomer)
+                            paymentMethods.length === 0 ||
+                            (needsCustomer && !selectedCustomer)
                           }
                           className={PRIMARY_BUTTON}
                         >

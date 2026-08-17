@@ -14,7 +14,9 @@ import { MinusIcon, PlusIcon } from "lucide-react";
 import { toPersianDigits } from "@/lib/digits";
 import { formatToman } from "@/lib/money";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import type { PaymentMethodView } from "@/lib/payment-methods";
 import { api, errorMessage } from "../ui";
+import { usePaymentMethods } from "../payment-ways";
 import {
   DANGER_BUTTON,
   OPS_INPUT,
@@ -23,15 +25,22 @@ import {
   STEPPER_BUTTON,
 } from "./ops-styles";
 
-const METHODS = [
-  { value: "", label: "همان روش قبلی" },
-  { value: "cash", label: "نقدی" },
-  { value: "card", label: "کارت‌خوان" },
-  { value: "card_to_card", label: "کارت‌به‌کارت" },
-  { value: "online", label: "آنلاین" },
-  { value: "credit", label: "نسیه" },
-  { value: "snappfood", label: "اسنپ‌فود" },
-];
+/**
+ * The ways the amendment can restate a settled bill as.
+ *
+ * An amendment re-posts the corrected sale as settled *one* way (it is a
+ * restatement, not a new split), so the options are the business's payment
+ * ways collapsed to the settlements behind them — two card terminals are one
+ * choice here, named after the first of them.
+ */
+function amendmentMethodOptions(methods: readonly PaymentMethodView[]) {
+  const options = [{ value: "", label: "همان روش قبلی" }];
+  for (const method of methods) {
+    if (options.some((option) => option.value === method.settlement)) continue;
+    options.push({ value: method.settlement, label: method.name });
+  }
+  return options;
+}
 
 const KIND_LABELS: Record<string, string> = { edit: "ویرایش", void: "حذف" };
 
@@ -93,6 +102,7 @@ export function ClosedOrderAmendment({
     initialDiscountValue ? String(initialDiscountValue) : "",
   );
   const [method, setMethod] = useState("");
+  const { methods: paymentMethods } = usePaymentMethods();
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -393,7 +403,7 @@ export function ClosedOrderAmendment({
                 onChange={setMethod}
                 ariaLabel="روش تسویه"
                 className={OPS_INPUT}
-                options={METHODS}
+                options={amendmentMethodOptions(paymentMethods)}
               />
             </div>
           </div>

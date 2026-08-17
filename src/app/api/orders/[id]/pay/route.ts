@@ -13,12 +13,28 @@ import { getOnlinePlatformsConfig } from "@/lib/online-platforms-service";
 import { lockOpenOrder } from "@/lib/order-lock";
 import { paymentFailureFor } from "@/lib/order-payment-errors";
 import { rialBigInt, rialText, type RialText } from "@/lib/inventory-exact";
+import { tendersWithTip, validateTenders, type ResolvedTender } from "@/lib/payment-methods";
+import { listPaymentMethods } from "@/lib/payment-methods-service";
 
-const PAYMENT_METHODS = ["cash", "card", "card_to_card", "online", "credit", "snappfood"] as const;
-type PaymentMethod = (typeof PAYMENT_METHODS)[number];
+interface PayTenderBody {
+  /** `payment_methods.id` — the way the cashier tapped. */
+  methodId?: string;
+  /** The way's code (`cash`, `card`, …) — accepted so a caller that knows only the built-in names can still pay. */
+  method?: string;
+  amount?: number;
+  reference?: string;
+}
 
 interface PayBody {
+  /**
+   * A bill split across payment ways (migration 0091): ۲۰۰٬۰۰۰ نقدی plus
+   * ۳۰۰٬۰۰۰ کارت‌خوان. The slices must add up to the order total plus the tip
+   * — see validateTenders for why that is exact rather than "at least".
+   */
+  payments?: PayTenderBody[];
+  /** The single-way form, still sent by the amendment screen and by older clients. */
   method?: string;
+  methodId?: string;
   reference?: string;
   customerId?: string;
   /** A tip collected alongside the bill (issue #160 §4), in whole Rial — added on top of the order total, never part of revenue. */
@@ -30,11 +46,15 @@ interface PayBody {
  * "payment completion" trigger Phase 5's cash-drawer/receipt exit criteria
  * hook into — nothing in the app reached order status 'completed' before
  * this (the table-session `close` action just frees the table; see
- * src/lib/table-session-service.ts's closeSession comment). v1 keeps this
- * simple: one full payment per order, no split/partial payments — a
- * dine-in table session's "split the bill" flow (Phase 3,
- * /api/table-sessions/[id]/split) computes shares for display, but each
- * share is still collected as its own order-level payment.
+ * src/lib/table-session-service.ts's closeSession comment). Since migration
+ * 0091 one order may be settled across several payment ways at once — ۲۰۰٬۰۰۰
+ * نقدی plus ۳۰۰٬۰۰۰ کارت‌خوان is one checkout, one `payments` row per slice,
+ * and one journal entry with a debit line per slice. What has not changed is
+ * that a checkout settles the bill *in full*: the slices must add up to the
+ * total plus the tip, so there is still no partial payment and no balance left
+ * open. (A dine-in table session's "split the bill" flow (Phase 3,
+ * /api/table-sessions/[id]/split) is a different thing again: it cuts one
+ * table's bill into several orders, each of which is then paid here.)
  *
  * This is also the inventory deduction trigger (Phase 6): completing an
  * order is the one place order_items become immutable (they can only be
@@ -66,21 +86,49 @@ export const POST = withTenantScope(async (request: NextRequest, context: { para
   } catch {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
-  const method = body.method as PaymentMethod;
-  if (!PAYMENT_METHODS.includes(method)) {
-    return NextResponse.json({ error: "invalid_payment_method" }, { status: 400 });
-  }
   const customerId = body.customerId?.trim() || null;
-  if (method === "credit" && !customerId) {
-    return NextResponse.json({ error: "customer_required" }, { status: 400 });
-  }
   const tipAmount = body.tipAmount ?? 0;
   if (!Number.isSafeInteger(tipAmount) || tipAmount < 0) {
     return NextResponse.json({ error: "invalid_tip_amount" }, { status: 400 });
   }
 
+  // One shape from here down: the single-method body is just a split of one
+  // slice whose amount is "whatever is owed", so nothing below this line has
+  // to know which form the client sent.
+  const rawTenders: PayTenderBody[] = body.payments?.length
+    ? body.payments
+    : [{ methodId: body.methodId, method: body.method, reference: body.reference }];
+  if (!Array.isArray(rawTenders) || rawTenders.length === 0) {
+    return NextResponse.json({ error: "no_payment" }, { status: 400 });
+  }
+
+  // Resolving each slice against the business's *active* ways is what stops a
+  // caller paying by a way that belongs to another tenant, or by one this
+  // business retired — the id alone proves nothing.
+  const available = await listPaymentMethods(session.businessId);
+  const byId = new Map(available.map((paymentMethod) => [paymentMethod.id, paymentMethod]));
+  const byCode = new Map(available.map((paymentMethod) => [paymentMethod.code, paymentMethod]));
+  const resolvedWays = rawTenders.map((tender) =>
+    tender.methodId ? byId.get(tender.methodId) : tender.method ? byCode.get(tender.method) : undefined,
+  );
+  if (resolvedWays.some((way) => !way)) {
+    return NextResponse.json({ error: "invalid_payment_method" }, { status: 400 });
+  }
+  const ways = resolvedWays as NonNullable<(typeof resolvedWays)[number]>[];
+  const missingReference = ways.findIndex(
+    (way, index) => way.requiresReference && !rawTenders[index].reference?.trim(),
+  );
+  if (missingReference >= 0) {
+    return NextResponse.json({ error: "payment_reference_required" }, { status: 400 });
+  }
+  if (ways.some((way) => way.settlement === "credit") && !customerId) {
+    return NextResponse.json({ error: "customer_required" }, { status: 400 });
+  }
+
   const client = await getPool().connect();
   let total = "0" as RialText;
+  /** The slices actually recorded — read after the transaction, for the response. */
+  let paid: ResolvedTender[] = [];
   try {
     await client.query("BEGIN");
     const locked = await lockOpenOrder(client, location.id, id);
@@ -107,11 +155,39 @@ export const POST = withTenantScope(async (request: NextRequest, context: { para
        RETURNING id`, [session.businessId,location.id,id,session.sub,id]);
     const inventoryEventId = eventRows[0].id;
     total = rialText(order.total);
-    if (rialBigInt(total) > 0n) {
+    // The tenders cover the bill. A tip is *not* part of it: `payments` rows
+    // have always recorded the bill alone (orders.tip_amount holds the tip,
+    // and the ledger debits it on top), and every downstream reader — the
+    // closed-order amendment's re-plan, a refund's ceiling — depends on that
+    // still being true now that there can be several rows. `tendersWithTip`
+    // is where the tip rejoins the money for the posting.
+    const due = Number(rialBigInt(total));
+    let tenders: ResolvedTender[] = [];
+    if (due > 0) {
+      const validated = validateTenders(
+        ways.map((way, index) => ({
+          methodId: way.id,
+          settlement: way.settlement,
+          // A slice with no amount takes whatever is left — the whole bill when
+          // it is the only one (the shape every caller sent before splitting
+          // existed), and the remainder on a split. See TenderInput.amount.
+          amount: rawTenders[index].amount,
+          reference: rawTenders[index].reference,
+        })),
+        { due, hasCustomer: Boolean(customerId) },
+      );
+      if (!validated.ok) {
+        await client.query("ROLLBACK");
+        return NextResponse.json({ error: validated.error }, { status: 400 });
+      }
+      tenders = validated.value;
+    }
+    paid = tenders;
+    for (const tender of tenders) {
       await client.query(
-        `INSERT INTO payments (location_id, order_id, method, amount, reference, received_by)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [location.id, id, method, total, body.reference?.trim() || null, session.sub],
+        `INSERT INTO payments (location_id, order_id, method, amount, reference, received_by, payment_method_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [location.id, id, tender.settlement, String(tender.amount), tender.reference, session.sub, tender.methodId],
       );
     }
     const { rowCount: completed } = await client.query(
@@ -128,11 +204,17 @@ export const POST = withTenantScope(async (request: NextRequest, context: { para
     // The commission % lives in settings (it varies by SnapFood contract,
     // per issue #160 §4) — resolved here to a Rial amount, same shape as
     // tipAmount, so the ledger layer never has to know about % or settings.
+    // On a split, the commission is taken from the SnapFood slice alone —
+    // the cash the customer handed over at the door is not SnapFood's to
+    // keep a percentage of.
     let platformCommission = "0" as RialText;
-    if (method === "snappfood") {
+    const platformAmount = tenders
+      .filter((tender) => tender.settlement === "snappfood")
+      .reduce((sum, tender) => sum + tender.amount, 0);
+    if (platformAmount > 0) {
       const { snappfood } = await getOnlinePlatformsConfig(session.businessId);
       if (snappfood) {
-        const commissionRial = BigInt(Math.round(Number(rialBigInt(total)) * (snappfood.commissionPercent / 100)));
+        const commissionRial = BigInt(Math.round(platformAmount * (snappfood.commissionPercent / 100)));
         platformCommission = rialText(commissionRial.toString());
       }
     }
@@ -141,7 +223,10 @@ export const POST = withTenantScope(async (request: NextRequest, context: { para
       locationId: location.id,
       orderId: id,
       createdBy: session.sub,
-      method,
+      tenders: tendersWithTip(tenders, tipAmount).map((tender) => ({
+        settlement: tender.settlement,
+        amount: rialText(String(tender.amount)),
+      })),
       amount: total,
       tax: rialText(order.tax),
       inventoryEventId,
@@ -175,5 +260,19 @@ export const POST = withTenantScope(async (request: NextRequest, context: { para
   }
 
   broadcast(location.id, { type: "order.updated", orderId: id });
-  return NextResponse.json({ ok: true, amount: total, method, tipAmount });
+  return NextResponse.json({
+    ok: true,
+    amount: total,
+    // `method` is the settlement of the first slice — kept so a client written
+    // against the single-payment response (which is every client that doesn't
+    // split) reads the same field it always did.
+    method: paid[0]?.settlement ?? null,
+    payments: paid.map((tender) => ({
+      methodId: tender.methodId,
+      method: tender.settlement,
+      amount: tender.amount,
+      reference: tender.reference,
+    })),
+    tipAmount,
+  });
 });

@@ -262,7 +262,45 @@ More one-time setup, but proven in production:
 - **Multi-location:** every tenant-scoped table carries `location_id` (business-scoped tables like `users`, `accounts`, `customers` carry `business_id` and a nullable `location_id`). Since Phase 14 a business may have several active branches; `resolveActiveLocation` (`src/lib/setup-state.ts`) is what every route resolves the caller's current branch through, validated against their branch assignment (`src/lib/location-access.ts`).
 - **Multi-business:** `businesses` is the tenant, and isolation between tenants is enforced by Postgres row-level security — see below.
 - **Business day:** what "a day" means is `app_business_date(ts, tz, start_minutes)` (migration 0076), never a bare `(ts AT TIME ZONE tz)::date` — see below.
+- **Payment ways:** how a business takes money is rows in `payment_methods`, not the `payment_method` enum — see below.
 - Migrations are forward-only numbered SQL files in `migrations/`, applied by `scripts/migrate.ts` (tracked in `schema_migrations`).
+
+## Payment ways, and splitting a bill (روش‌های پرداخت)
+
+A business names its own ways of taking money and orders them the way its cashiers reach for them
+(«روش‌های پرداخت» under تنظیمات → `payment_methods`, migration 0091). «کارت‌خوان» can become «پوز
+بانک ملت», a second terminal can sit beside it, and a wallet the shop accepts can be added outright.
+The same list, in the same order, is what the POS, the order dialog, the closed-order amendment and
+the retail invoice screen offer — `GET /api/payment-methods` is the one source.
+
+One bill can be settled across several of them: ۲۰۰٬۰۰۰ نقدی plus ۳۰۰٬۰۰۰ کارت‌خوان is one checkout
+that writes one `payments` row per slice and one journal entry with a debit line per slice.
+
+Four rules carry this, and each of them is load-bearing:
+
+- **A way's `name` is the business's; its `settlement` is the ledger's.** Every way declares which
+  of the `payment_method` enum values it behaves like, and that is what decides the account the
+  money debits (cash box / bank clearing / receivable / platform receivable). Naming a new way
+  therefore never reaches the ledger, and `settlement` is refused once the way has taken money —
+  changing it would re-describe payments already posted. Deactivate and add instead.
+- **A split settles the bill in full.** The slices must add up to the total, to the Rial
+  (`validateTenders` in `src/lib/payment-methods.ts`). There is still no partial payment and no
+  balance left open; a cash overshoot is change handed back, not a larger payment (`changeDue`).
+  One slice may leave its amount open and take whatever is left — «۲۰۰٬۰۰۰ نقدی، بقیه با کارت» —
+  which is also how an ordinary one-way sale is expressed, and what keeps a checkout from failing
+  when the till's idea of the total is slightly behind the server's.
+- **`payments` rows record the bill; the tip rides on top.** That was always true and stays true
+  now that there can be several rows — `orders.tip_amount` holds the tip, and the posting folds it
+  into the first slice that actually collected money (`tendersWithTip`; a `credit` slice is passed
+  over, since a tip is not put on a tab). The closed-order amendment's re-plan and a refund's
+  ceiling both read that sum, so don't "fix" it by adding the tip into the rows.
+- **A retired way stays on its old payments.** Deleting is only ever allowed for a way the business
+  added and never used; everything else deactivates, and `payments.payment_method_id` keeps naming
+  it on every receipt and shift report that already went out.
+
+Splitting is the **order** path (`POST /api/orders/[id]/pay`). The retail industries' invoice posts
+through the domain-event engine per line, which settles a sale one way, so that screen picks a way
+from the same list and narrows it with `ledgerSettlementFor`.
 
 ## In-house production (تولید داخلی, Phase 29)
 

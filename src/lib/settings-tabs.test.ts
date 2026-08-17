@@ -14,6 +14,7 @@ describe("visibleSettingsTabs", () => {
       "tax",
       "pricing",
       "online-platforms",
+      "payment-methods",
       "menu",
       "printers",
       "devices",
