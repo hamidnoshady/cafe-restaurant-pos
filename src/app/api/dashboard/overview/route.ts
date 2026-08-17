@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
+import { getBusinessDayStatus, type BusinessDayStatus } from "@/lib/business-day-service";
 import { query } from "@/lib/db";
 import { resolveActiveLocation } from "@/lib/setup-state";
 
@@ -37,6 +38,15 @@ interface ActiveOrderRow extends Record<string, unknown> {
  * The shift-manager overview deliberately reads only completed sales and the
  * currently active branch. It adds a dashboard-specific read model without
  * changing the established orders or reports API contracts.
+ *
+ * "Today" is the branch's business day, not its calendar day (روز کاری,
+ * migration 0076). For a branch with none configured the two are the same thing
+ * and these figures are unchanged; for one trading 18:00→03:00 it is the
+ * difference between a KPI row that survives the service and one that drops to
+ * zero at midnight with the till still open. The window runs from
+ * `businessDay.windowStart` — the day's start, or a later manual close — with no
+ * upper bound, so a sale rung after an early cash-up lands in the fresh figures
+ * rather than nowhere.
  */
 export const GET = withTenantScope(async () => {
   const { session, error } = await requireRole("owner", "manager", "cashier", "waiter");
@@ -53,6 +63,7 @@ export const GET = withTenantScope(async () => {
       hourly: [],
       activeOrderCount: 0,
       activeOrders: [],
+      businessDay: null as BusinessDayStatus | null,
     });
   }
 
@@ -66,6 +77,9 @@ export const GET = withTenantScope(async () => {
   const context = contextRows[0];
   if (!context) return NextResponse.json({ error: "no_location" }, { status: 409 });
 
+  const businessDay = await getBusinessDayStatus(location.id);
+  const windowStart = businessDay?.windowStart ?? new Date().toISOString();
+
   const [salesResult, hourlyResult, activeOrderResult] = await Promise.all([
     query<SalesRow>(
       `SELECT
@@ -76,21 +90,21 @@ export const GET = withTenantScope(async () => {
         WHERE o.location_id = $1
           AND o.status = 'completed'
           AND o.closed_at IS NOT NULL
-          AND (o.closed_at AT TIME ZONE $2)::date = (now() AT TIME ZONE $2)::date`,
-      [location.id, context.timezone],
+          AND o.closed_at >= $2::timestamptz`,
+      [location.id, windowStart],
     ),
     query<HourlyRow>(
       `SELECT
-          extract(hour FROM (o.closed_at AT TIME ZONE $2))::integer AS hour,
+          extract(hour FROM (o.closed_at AT TIME ZONE $3))::integer AS hour,
           coalesce(sum(o.total), 0)::text AS revenue
          FROM orders o
         WHERE o.location_id = $1
           AND o.status = 'completed'
           AND o.closed_at IS NOT NULL
-          AND (o.closed_at AT TIME ZONE $2)::date = (now() AT TIME ZONE $2)::date
+          AND o.closed_at >= $2::timestamptz
         GROUP BY 1
         ORDER BY 1`,
-      [location.id, context.timezone],
+      [location.id, windowStart, context.timezone],
     ),
     query<ActiveOrderRow>(
       `SELECT
@@ -141,5 +155,6 @@ export const GET = withTenantScope(async () => {
     hourly: hourlyResult.rows.map((row) => ({ hour: Number(row.hour), revenue: row.revenue })),
     activeOrderCount: Number(activeOrderResult.rows[0]?.active_order_count ?? 0),
     activeOrders,
+    businessDay,
   });
 });

@@ -5,6 +5,12 @@
  */
 import { query } from "./db";
 import type { PoolClient } from "pg";
+import {
+  resolveModifierSelection,
+  type ModifierGroupRule,
+  type SelectableModifier,
+  type SelectedModifier,
+} from "./order-line-modifiers";
 import type { CartLine } from "./orders";
 
 export interface CartItemInput {
@@ -67,10 +73,7 @@ export async function resolveCartItems(
   }
 
   const modifierIds = [...new Set(items.flatMap((i) => i.modifierIds ?? []))];
-  const modifierMap = new Map<
-    string,
-    { id: string; group_id: string; name: string; price_delta: string; is_active: boolean }
-  >();
+  const modifierMap = new Map<string, SelectableModifier>();
   const allowedGroupsByItem = new Map<string, Set<string>>();
   if (modifierIds.length > 0) {
     const { rows: modifiers } = await execute<{
@@ -107,27 +110,14 @@ export async function resolveCartItems(
   for (const it of items) {
     const mi = menuItemMap.get(it.menuItemId!)!;
     const quantity = Number(it.quantity);
-    const modifierIdsForItem = it.modifierIds ?? [];
-    const allowedGroups = allowedGroupsByItem.get(it.menuItemId!) ?? new Set<string>();
-    const selectedByGroup = new Map<string, number>();
-    const modifiers: { id: string; name: string; priceDelta: number }[] = [];
-
-    for (const modId of modifierIdsForItem) {
-      const mod = modifierMap.get(modId);
-      if (!mod || !mod.is_active || !allowedGroups.has(mod.group_id)) {
-        return { ok: false, error: "invalid_modifier", status: 400 };
-      }
-      selectedByGroup.set(mod.group_id, (selectedByGroup.get(mod.group_id) ?? 0) + 1);
-      modifiers.push({ id: mod.id, name: mod.name, priceDelta: Number(mod.price_delta) });
-    }
-    for (const groupId of allowedGroups) {
-      const group = groupMap.get(groupId);
-      if (!group) continue;
-      const n = selectedByGroup.get(groupId) ?? 0;
-      if (n < group.min_select || n > group.max_select) {
-        return { ok: false, error: "invalid_modifier_selection", status: 400 };
-      }
-    }
+    const selection = resolveModifierSelection({
+      modifierIds: it.modifierIds ?? [],
+      modifiersById: modifierMap,
+      allowedGroupIds: allowedGroupsByItem.get(it.menuItemId!) ?? new Set<string>(),
+      groupsById: groupMap,
+    });
+    if (!selection.ok) return selection;
+    const { modifiers } = selection;
 
     cartLines.push({
       unitPrice: Number(mi.price),
@@ -146,4 +136,57 @@ export async function resolveCartItems(
   }
 
   return { ok: true, cartLines, preparedItems };
+}
+
+export type ResolveLineModifiersResult =
+  | { ok: true; modifiers: SelectedModifier[] }
+  | { ok: false; error: string; status: number };
+
+/**
+ * Re-prices the add-ons of a single line that is already on an open order —
+ * the counterpart of `resolveCartItems` for
+ * PATCH /api/orders/[id]/items/[itemId], where the menu item is fixed and
+ * only the selection changes.
+ *
+ * Runs the same rule (`resolveModifierSelection`) against the same three
+ * tables, so an add-on that could not have been chosen at intake cannot be
+ * bolted on afterwards either.
+ */
+export async function resolveLineModifiers(
+  locationId: string,
+  menuItemId: string,
+  modifierIds: string[],
+  client?: PoolClient,
+): Promise<ResolveLineModifiersResult> {
+  const execute = async <T extends Record<string, unknown>>(text: string, params?: unknown[]) =>
+    client ? client.query<T>(text, params as never) : query<T>(text, params);
+
+  const uniqueIds = [...new Set(modifierIds)];
+  if (uniqueIds.length !== modifierIds.length) {
+    return { ok: false, error: "invalid_modifier", status: 400 };
+  }
+
+  const [{ rows: links }, { rows: modifiers }, { rows: groups }] = await Promise.all([
+    execute<{ modifier_group_id: string }>(
+      "SELECT modifier_group_id FROM menu_item_modifier_groups WHERE menu_item_id = $1",
+      [menuItemId],
+    ),
+    uniqueIds.length > 0
+      ? execute<SelectableModifier & Record<string, unknown>>(
+          "SELECT id, group_id, name, price_delta, is_active FROM modifiers WHERE location_id = $1 AND id = ANY($2::uuid[])",
+          [locationId, uniqueIds],
+        )
+      : Promise.resolve({ rows: [] as SelectableModifier[] }),
+    execute<ModifierGroupRule & Record<string, unknown>>(
+      "SELECT id, min_select, max_select FROM modifier_groups WHERE location_id = $1",
+      [locationId],
+    ),
+  ]);
+
+  return resolveModifierSelection({
+    modifierIds,
+    modifiersById: new Map(modifiers.map((modifier) => [modifier.id, modifier])),
+    allowedGroupIds: new Set(links.map((link) => link.modifier_group_id)),
+    groupsById: new Map(groups.map((group) => [group.id, group])),
+  });
 }

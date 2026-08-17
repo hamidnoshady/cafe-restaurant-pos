@@ -16,6 +16,7 @@ import {
   ORDER_ITEM_STATUS_LABELS,
   ticketAgeMinutes,
 } from "@/lib/order-item-status";
+import { type KitchenQueueStatus } from "@/lib/kitchen-priority";
 import { apiOrQueue, useOfflineQueue } from "../offline-queue";
 import { useRealtime } from "../use-realtime";
 import { api, errorMessage } from "../ui";
@@ -505,7 +506,10 @@ export function KdsBoard() {
     return byItem;
   }, [modifiers]);
 
-  const tickets = useMemo<Ticket[]>(() => {
+  // Performance Optimization: Separate expensive static data operations (grouping, date parsing)
+  // from interval-driven time updates. `ticketGroups` only recalculates when `items` changes,
+  // avoiding O(N) grouping and string-to-date parsing on every 15s `now` tick.
+  const ticketGroups = useMemo(() => {
     const groups = new Map<string, TicketItem[]>();
     for (const item of items) {
       const key = item.table_session_id ?? item.order_id;
@@ -514,18 +518,33 @@ export function KdsBoard() {
       groups.set(key, current);
     }
 
-    return [...groups.entries()]
-      .map(([key, ticketItems]) => {
+    return [...groups.entries()].map(([key, ticketItems]) => {
+      const earliestSentAt = Math.min(
+        ...ticketItems.map((item) => new Date(item.sent_to_kitchen_at).getTime()),
+      );
+      const status = ticketItems.some((item) => item.status === "sent")
+        ? "sent"
+        : ticketItems.some((item) => item.status === "preparing")
+          ? "preparing"
+          : "ready";
+
+      return {
+        key,
+        ticketItems,
+        earliestSentAt,
+        status,
+      };
+    });
+  }, [items]);
+
+  const tickets = useMemo<Ticket[]>(() => {
+    return ticketGroups
+      .map(({ key, ticketItems, earliestSentAt, status }) => {
         const first = ticketItems[0];
-        const earliestSentAt = Math.min(
-          ...ticketItems.map((item) => new Date(item.sent_to_kitchen_at).getTime()),
+        const priority = priorityForKitchenTicket(
+          { status: status as KitchenQueueStatus, sentAt: earliestSentAt },
+          now,
         );
-        const status = ticketItems.some((item) => item.status === "sent")
-          ? "sent"
-          : ticketItems.some((item) => item.status === "preparing")
-            ? "preparing"
-            : "ready";
-        const priority = priorityForKitchenTicket({ status, sentAt: earliestSentAt }, now);
         return {
           key,
           earliestSentAt: priority.sentAtMs,
@@ -539,7 +558,7 @@ export function KdsBoard() {
       .sort((left, right) =>
         compareKitchenTicketPriority(left.priority, right.priority),
       );
-  }, [items, now]);
+  }, [ticketGroups, now]);
 
   const visibleTickets = useMemo(
     () =>

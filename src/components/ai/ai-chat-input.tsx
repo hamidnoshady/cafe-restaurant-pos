@@ -108,7 +108,7 @@ export function AiChatInput({
           size="icon"
           onClick={() => void prepareSend()}
           disabled={busy || estimating || Boolean(pending) || !input.trim()}
-          aria-label="نمایش برآورد هزینه"
+          aria-label="ارسال پیام"
         >
           {estimating ? (
             <Loader2Icon className="animate-spin" />

@@ -59,12 +59,18 @@ export interface ReceiptLine {
   } | null;
 }
 
-const PAYMENT_METHOD_LABELS: Record<string, string> = {
+/**
+ * How a `payment_method` reads to a person. Exported because the receipt is
+ * not the only surface that names a tender — the shift order review shows one
+ * too, and the two must not drift apart.
+ */
+export const PAYMENT_METHOD_LABELS: Record<string, string> = {
   cash: "نقدی",
   card: "کارت‌خوان",
   card_to_card: "کارت‌به‌کارت",
   online: "پرداخت آنلاین",
   credit: "نسیه",
+  snappfood: "اسنپ‌فود",
 };
 
 const CONDITION_GRADE_LABELS: Record<string, string> = {

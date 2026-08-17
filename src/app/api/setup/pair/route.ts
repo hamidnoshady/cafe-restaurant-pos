@@ -1,11 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { SESSION_COOKIE, sessionCookieOptions, signSession } from "@/lib/auth";
+import { classifyConnectionCode, normalizeServerAddress } from "@/lib/connection-code";
 import { applyPairingSnapshot } from "@/lib/pairing-apply";
 import { validateSnapshot } from "@/lib/pairing-snapshot";
 import { hasAnyUser } from "@/lib/setup-state";
 
 /** How long to wait on the online server before calling it unreachable. */
 const REDEEM_TIMEOUT_MS = 30_000;
+
+/**
+ * Where to redeem, in order.
+ *
+ * The host-neutral path first, because that is the one that answers on the
+ * business origin an owner copies out of their address bar; the original
+ * /api/platform path second, so this desktop build still pairs against a cloud
+ * server that predates it. See src/lib/pairing-redeem.ts.
+ */
+const REDEEM_PATHS = ["/api/pairing/redeem", "/api/platform/pairing/redeem"];
 
 const PASSTHROUGH_ERRORS = new Set([
   "code_not_found",
@@ -38,29 +49,54 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
 
-  const remoteUrl = body.remoteUrl?.trim().replace(/\/+$/, "") ?? "";
   const code = body.code?.trim() ?? "";
-  if (!remoteUrl || !code) return NextResponse.json({ error: "missing_fields" }, { status: 400 });
-  if (!/^https?:\/\/.+/.test(remoteUrl)) {
-    return NextResponse.json({ error: "invalid_url" }, { status: 400 });
+  // The address is accepted in whatever form it was copied — a bare hostname,
+  // a full dashboard URL with a path, Persian digits from a Persian keyboard —
+  // because the natural gesture is to copy the address bar of the cloud
+  // account the owner is signed into. See connection-code.ts.
+  const address = normalizeServerAddress(body.remoteUrl ?? "");
+  if (!address.ok) {
+    return NextResponse.json(
+      { error: address.error === "missing_address" ? "missing_fields" : "invalid_url" },
+      { status: 400 },
+    );
+  }
+  const remoteUrl = address.url;
+  if (!code) return NextResponse.json({ error: "missing_fields" }, { status: 400 });
+
+  // Name the credential mix-up before spending a round trip on it: the owner
+  // who pastes a `POS1-…` server-sync token here has been told, until now,
+  // only that their "code is not valid".
+  const kind = classifyConnectionCode(code);
+  if (kind !== "pairing_code") {
+    return NextResponse.json({ error: `code_${kind}` }, { status: 400 });
   }
 
-  let remoteResponse: Response;
-  try {
-    remoteResponse = await fetch(`${remoteUrl}/api/platform/pairing/redeem`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code }),
-      signal: AbortSignal.timeout(REDEEM_TIMEOUT_MS),
-    });
-  } catch {
-    return NextResponse.json({ error: "remote_unreachable" }, { status: 502 });
+  // Try the host-neutral URL, then the legacy one. A 404/405 means *this
+  // server* does not serve that path (an older cloud build), which is the only
+  // condition worth falling back on — a real redemption failure comes back as
+  // one of the PASSTHROUGH_ERRORS and is reported as itself.
+  let remoteResponse: Response | null = null;
+  let payload: { snapshot?: unknown; error?: string } = {};
+  for (const path of REDEEM_PATHS) {
+    try {
+      remoteResponse = await fetch(`${remoteUrl}${path}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code }),
+        signal: AbortSignal.timeout(REDEEM_TIMEOUT_MS),
+      });
+    } catch {
+      return NextResponse.json({ error: "remote_unreachable" }, { status: 502 });
+    }
+    payload = (await remoteResponse.json().catch(() => ({}))) as { snapshot?: unknown; error?: string };
+    if (remoteResponse.status !== 404 && remoteResponse.status !== 405) break;
+    // A 404 carrying a redemption error is the *code* not being found, not the
+    // route — stop and report it rather than retrying against the legacy path.
+    if (payload.error && PASSTHROUGH_ERRORS.has(payload.error)) break;
   }
 
-  const payload = (await remoteResponse.json().catch(() => ({}))) as {
-    snapshot?: unknown;
-    error?: string;
-  };
+  if (!remoteResponse) return NextResponse.json({ error: "remote_unreachable" }, { status: 502 });
 
   if (!remoteResponse.ok) {
     if (payload.error && PASSTHROUGH_ERRORS.has(payload.error)) {

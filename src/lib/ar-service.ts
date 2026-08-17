@@ -59,7 +59,8 @@ async function arLines(businessId: string, accountId: string): Promise<ArLineRow
             jl.debit, jl.credit
        FROM journal_lines jl
        JOIN journal_entries je ON je.id = jl.entry_id
-       LEFT JOIN orders o ON je.source_type = 'order' AND o.id = je.source_id
+       LEFT JOIN order_amendments am ON je.source_type = 'order_amendment' AND am.id = je.source_id
+       LEFT JOIN orders o ON o.id = CASE WHEN je.source_type = 'order' THEN je.source_id ELSE am.order_id END
        LEFT JOIN ar_receipts r ON je.source_type = 'ar_receipt' AND r.id = je.source_id
        LEFT JOIN customers c ON c.id = COALESCE(o.customer_id, r.customer_id)
       WHERE je.business_id = $1 AND jl.account_id = $2
@@ -118,7 +119,15 @@ export async function getCustomerStatement(businessId: string, customerId: strin
     const debit = Number(l.debit);
     const credit = Number(l.credit);
     balance += debit - credit;
-    const type = l.source_type === "order" ? "invoice" : l.source_type === "ar_receipt" ? "receipt" : "other";
+    // A closed-order amendment posts against the order it corrects, so its
+    // reversal and re-posting belong on the customer's statement as that
+    // order's own activity rather than as an unexplained "other".
+    const type =
+      l.source_type === "order" || l.source_type === "order_amendment"
+        ? "invoice"
+        : l.source_type === "ar_receipt"
+          ? "receipt"
+          : "other";
     const description =
       type === "invoice" && l.order_number != null
         ? `سفارش #${l.order_number}`

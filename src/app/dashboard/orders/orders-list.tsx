@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, useDeferredValue } from "react";
 import { RefreshCwIcon, SearchIcon, ShoppingBagIcon } from "lucide-react";
 import { toPersianDigits } from "@/lib/digits";
@@ -16,6 +15,7 @@ import { useRealtime } from "../use-realtime";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { JalaliDatePicker } from "../jalali-date-picker";
 import { api } from "../ui";
+import { OrderDetailModal } from "./order-detail-modal";
 
 type OrderStatus = "open" | "held" | "completed" | "voided";
 type OrderType = "dine_in" | "takeaway" | "delivery";
@@ -70,6 +70,21 @@ const STATUS_LABELS: Record<OrderStatus, string> = {
   completed: "تکمیل‌شده",
   voided: "باطل‌شده",
 };
+
+/**
+ * The branch's trading day as the orders route reports it. Absent (null) for a
+ * branch with no business day configured, which keeps this screen's original
+ * calendar-day-plus-open-shift window untouched.
+ */
+interface BusinessDayWindow {
+  enabled: boolean;
+  businessDate: string;
+  /** Where the closed list starts: the day's start, or whatever ended the night early. */
+  windowStart: string;
+  /** "shift" = the cashier cashed up, "manual" = «بستن روز کاری», null = still running. */
+  closedBy: "manual" | "shift" | null;
+  manuallyClosed: boolean;
+}
 
 /** One of the branch's recent shifts — only owners/managers are sent these. */
 interface ShiftOption {
@@ -208,12 +223,14 @@ function OrderDetailsPanel({
   isLoading,
   error,
   onRetry,
+  onOpenDetail,
 }: {
   selectedOrder: OrderRow | null;
   detail: OrderDetailsResponse | null;
   isLoading: boolean;
   error: string;
   onRetry: () => void;
+  onOpenDetail: (orderId: string) => void;
 }) {
   if (!selectedOrder) {
     return (
@@ -437,12 +454,16 @@ function OrderDetailsPanel({
                   ? `از زمان ثبت: ${elapsed}`
                   : `ثبت‌شده در ${orderDateLabel(order.opened_at)}`}
             </p>
-            <Link
-              href={`/dashboard/orders/${order.id}`}
+            <button
+              type="button"
+              onClick={() => onOpenDetail(order.id)}
               className="flex min-h-12 w-full items-center justify-center rounded-xl bg-[#E9A11B] px-4 text-sm font-bold text-[#252522] transition duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 active:scale-[0.98] xl:min-h-[52px] motion-reduce:transition-none"
             >
-              جزئیات و پیگیری سفارش
-            </Link>
+              {/* A closed order can still be corrected — editing or removing it
+                  reverses its accounting — and the detail dialog is where that
+                  lives, so the label says so rather than promising only "track". */}
+              {closed ? "جزئیات و اصلاح سفارش" : "جزئیات و پیگیری سفارش"}
+            </button>
           </div>
         </>
       )}
@@ -450,11 +471,30 @@ function OrderDetailsPanel({
   );
 }
 
-export function OrdersList() {
+export function OrdersList({
+  canEdit,
+  canAmendClosed = false,
+  initialOrderId = null,
+}: {
+  /** May work an open order — add lines, discount it, take payment. */
+  canEdit: boolean;
+  /** May edit or remove an order that has already been paid for. */
+  canAmendClosed?: boolean;
+  /** `?order=<id>` from the URL: the dialog opens on it once, on first render. */
+  initialOrderId?: string | null;
+}) {
   const [orders, setOrders] = useState<OrderRow[] | null>(null);
   const [closedOrders, setClosedOrders] = useState<OrderRow[]>([]);
   /** null = nobody is clocked in, so the closed list covers the business day instead of a shift. */
   const [shiftStartedAt, setShiftStartedAt] = useState<string | null>(null);
+  /**
+   * The branch's trading day (روز کاری), when it has one configured. It, not the
+   * calendar day, is then what "the current window" means here: a service running
+   * 18:00→03:00 keeps one list across midnight, and the list only goes back to
+   * empty when the next business day starts — or the moment management closes
+   * the day by hand.
+   */
+  const [businessDay, setBusinessDay] = useState<BusinessDayWindow | null>(null);
   /** Empty for roles that may not review other people's shifts — the picker hides itself. */
   const [shifts, setShifts] = useState<ShiftOption[]>([]);
   /** "" = the default window (this shift, or today). Otherwise the shift being reviewed. */
@@ -462,7 +502,10 @@ export function OrdersList() {
   const [initialLoading, setInitialLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [loadError, setLoadError] = useState("");
-  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(initialOrderId);
+  /** The order whose dialog is open — independent of which row is highlighted. */
+  const [detailOrderId, setDetailOrderId] = useState<string | null>(initialOrderId);
+  const [detailOpen, setDetailOpen] = useState(Boolean(initialOrderId));
   const [detail, setDetail] = useState<OrderDetailsResponse | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState("");
@@ -482,6 +525,7 @@ export function OrdersList() {
         closedOrders?: OrderRow[];
         closedSince?: string | null;
         shiftStartedAt?: string | null;
+        businessDay?: BusinessDayWindow | null;
         shifts?: ShiftOption[];
         selectedShift?: ShiftOption | null;
         error?: string;
@@ -493,6 +537,7 @@ export function OrdersList() {
         setOrders(data.orders);
         setClosedOrders(data.closedOrders ?? []);
         setShiftStartedAt(data.shiftStartedAt ?? null);
+        setBusinessDay(data.businessDay ?? null);
         setShifts(data.shifts ?? []);
         // A shift the branch no longer lists (revoked, or another branch's) is
         // answered with the default window — follow the server rather than
@@ -660,6 +705,35 @@ export function OrdersList() {
       shiftFilter,
   );
 
+  /**
+   * The open dialog is reflected in `?order=<id>` so the address bar still
+   * names what is on screen — refreshing, or sending the link to a colleague,
+   * lands on the same order (that is also where /dashboard/orders/[id]
+   * redirects to). `history.replaceState` rather than a router push: opening a
+   * dialog should not add a step to the back button, and the queue behind it
+   * must not re-render mid-service.
+   */
+  const syncDetailUrl = useCallback((orderId: string | null) => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    if (orderId) url.searchParams.set("order", orderId);
+    else url.searchParams.delete("order");
+    window.history.replaceState(null, "", url.toString());
+  }, []);
+
+  function openDetail(orderId: string) {
+    setSelectedOrderId(orderId);
+    setDetailOrderId(orderId);
+    setDetailOpen(true);
+    syncDetailUrl(orderId);
+  }
+
+  function closeDetail() {
+    setDetailOpen(false);
+    syncDetailUrl(null);
+    void load();
+  }
+
   function clearFilters() {
     setSearchQuery("");
     setStatusFilter("all");
@@ -811,7 +885,14 @@ export function OrdersList() {
               className="min-h-10 min-w-0 flex-1 border-0 bg-transparent text-sm text-[#252522] outline-none"
               ariaLabel="مرور سفارش‌های بسته‌شدهٔ یک شیفت"
               options={[
-                { value: "", label: shiftStartedAt ? "شیفت جاری" : "امروز" },
+                {
+                  value: "",
+                  label: businessDay?.enabled
+                    ? "روز کاری جاری"
+                    : shiftStartedAt
+                      ? "شیفت جاری"
+                      : "امروز",
+                },
                 ...shifts.map((shift) => ({
                   value: shift.id,
                   label: shiftOptionLabel(shift),
@@ -877,9 +958,15 @@ export function OrdersList() {
             >
               {reviewedShift
                 ? `سفارش‌های بسته‌شدهٔ شیفت ${reviewedShift.employeeName} نمایش داده می‌شوند؛ صف بازِ بالا همچنان لحظه‌ای است.`
-                : shiftStartedAt
-                  ? `سفارش‌های بسته‌شده از شروع شیفت (ساعت ${orderTimeLabel(shiftStartedAt)}) نمایش داده می‌شوند.`
-                  : "سفارش‌های بسته‌شدهٔ امروز نمایش داده می‌شوند؛ با شروع شیفت، فهرست از زمان شیفت شمرده می‌شود."}
+                : businessDay?.enabled
+                  ? businessDay.closedBy === "shift"
+                    ? `شیفت ساعت ${orderTimeLabel(businessDay.windowStart)} بسته شد؛ فهرست برای شیفت بعدی از همان لحظه شمرده می‌شود. سفارش‌های شیفت قبل در گزارش‌ها باقی است.`
+                    : businessDay.closedBy === "manual"
+                      ? `روز کاری ساعت ${orderTimeLabel(businessDay.windowStart)} بسته شد؛ فهرست از همان لحظه شمرده می‌شود.`
+                      : `سفارش‌های بسته‌شدهٔ روز کاری جاری، از ساعت ${orderTimeLabel(businessDay.windowStart)}، نمایش داده می‌شوند.`
+                  : shiftStartedAt
+                    ? `سفارش‌های بسته‌شده از شروع شیفت (ساعت ${orderTimeLabel(shiftStartedAt)}) نمایش داده می‌شوند.`
+                    : "سفارش‌های بسته‌شدهٔ امروز نمایش داده می‌شوند؛ با شروع شیفت، فهرست از زمان شیفت شمرده می‌شود."}
             </p>
           ) : null}
 
@@ -999,8 +1086,18 @@ export function OrdersList() {
           isLoading={detailLoading}
           error={detailError}
           onRetry={() => setDetailRefreshToken((token) => token + 1)}
+          onOpenDetail={openDetail}
         />
       </div>
+
+      <OrderDetailModal
+        orderId={detailOrderId}
+        open={detailOpen}
+        onOpenChange={(next) => (next ? setDetailOpen(true) : closeDetail())}
+        canEdit={canEdit}
+        canAmendClosed={canAmendClosed}
+        onChanged={() => void load()}
+      />
     </div>
   );
 }

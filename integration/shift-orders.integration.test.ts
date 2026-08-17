@@ -15,7 +15,12 @@
  *      leaking that branch's orders — the isolation the route relies on
  *      instead of re-validating the id itself;
  *   5. window edges: an order opened before the shift started, or after it
- *      ended, is not the shift's.
+ *      ended, is not the shift's;
+ *   6. an order is reported *whole* — its add-on snapshots by name and price,
+ *      its notes and void reasons, its money breakdown, and its payments —
+ *      since that is the point of the review, and payments are read by their
+ *      own query so an order carrying more than one of them (a refund, or the
+ *      re-settlement an amendment writes) cannot fan its lines out.
  */
 import { randomUUID } from "node:crypto";
 import { Client } from "pg";
@@ -85,28 +90,118 @@ async function insertShift(
   return rows[0].id;
 }
 
+interface SeedLine {
+  name: string;
+  quantity?: number;
+  unitPrice?: number;
+  status?: string;
+  note?: string | null;
+  voidReason?: string | null;
+  modifiers?: { name: string; priceDelta: number }[];
+}
+
 /** One order with a single line, opened at `openedAt`. Returns its id. */
 async function insertOrder(
   locationId: string,
   openedAt: string,
-  opts: { orderNumber: number; total: number; itemName: string; quantity?: number; unitPrice?: number },
+  opts: {
+    orderNumber: number;
+    total: number;
+    itemName: string;
+    quantity?: number;
+    unitPrice?: number;
+    /** Replaces the single `itemName` line when given — for orders that need add-ons or a void. */
+    lines?: SeedLine[];
+    money?: {
+      subtotal?: number;
+      discount?: number;
+      discountType?: "percent" | "amount";
+      discountValue?: number;
+      serviceCharge?: number;
+      tax?: number;
+      tipAmount?: number;
+    };
+    guestCount?: number;
+    note?: string | null;
+    payments?: { method: string; amount: number; reference?: string | null; receivedAt?: string }[];
+  },
 ): Promise<string> {
   // orders/order_items scope by location_id, not business_id (migration 0001).
   // Lines may only be added while the order is still open (the order_not_open
   // guard, migration 0036), so close it afterwards the way the app does.
+  const money = opts.money ?? {};
   const { rows } = await db.query<{ id: string }>(
-    `INSERT INTO orders (location_id, order_number, type, status, total, opened_at)
-     VALUES ($1, $2, 'dine_in', 'open', $3, $4)
+    `INSERT INTO orders (location_id, order_number, type, status, total, opened_at,
+                         subtotal, discount, discount_type, discount_value,
+                         service_charge, tax, tip_amount, guest_count, note, opened_by)
+     VALUES ($1, $2, 'dine_in', 'open', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
      RETURNING id`,
-    [locationId, opts.orderNumber, opts.total, openedAt],
+    [
+      locationId,
+      opts.orderNumber,
+      opts.total,
+      openedAt,
+      money.subtotal ?? 0,
+      money.discount ?? 0,
+      money.discountType ?? null,
+      money.discountValue ?? null,
+      money.serviceCharge ?? 0,
+      money.tax ?? 0,
+      money.tipAmount ?? 0,
+      opts.guestCount ?? null,
+      opts.note ?? null,
+      employeeId,
+    ],
   );
   const orderId = rows[0].id;
+
+  const lines: SeedLine[] = opts.lines ?? [
+    { name: opts.itemName, quantity: opts.quantity, unitPrice: opts.unitPrice ?? opts.total },
+  ];
+  for (const line of lines) {
+    const { rows: itemRows } = await db.query<{ id: string }>(
+      `INSERT INTO order_items (location_id, order_id, name_snapshot, quantity, unit_price, status, note, void_reason)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+      [
+        locationId,
+        orderId,
+        line.name,
+        line.quantity ?? 1,
+        line.unitPrice ?? opts.total,
+        line.status ?? "served",
+        line.note ?? null,
+        line.voidReason ?? null,
+      ],
+    );
+    for (const modifier of line.modifiers ?? []) {
+      await db.query(
+        `INSERT INTO order_item_modifiers (order_item_id, name_snapshot, price_delta)
+         VALUES ($1, $2, $3)`,
+        [itemRows[0].id, modifier.name, modifier.priceDelta],
+      );
+    }
+  }
+
+  for (const payment of opts.payments ?? []) {
+    await db.query(
+      `INSERT INTO payments (location_id, order_id, method, amount, reference, received_by, received_at)
+       VALUES ($1, $2, $3::payment_method, $4, $5, $6, $7)`,
+      [
+        locationId,
+        orderId,
+        payment.method,
+        payment.amount,
+        payment.reference ?? null,
+        employeeId,
+        payment.receivedAt ?? openedAt,
+      ],
+    );
+  }
+
   await db.query(
-    `INSERT INTO order_items (location_id, order_id, name_snapshot, quantity, unit_price, status)
-     VALUES ($1, $2, $3, $4, $5, 'served')`,
-    [locationId, orderId, opts.itemName, opts.quantity ?? 1, opts.unitPrice ?? opts.total],
+    "UPDATE orders SET status = 'completed', closed_at = $2, closed_by = $3 WHERE id = $1",
+    [orderId, openedAt, employeeId],
   );
-  await db.query("UPDATE orders SET status = 'completed', closed_at = $2 WHERE id = $1", [orderId, openedAt]);
   return orderId;
 }
 
@@ -149,6 +244,8 @@ beforeEach(async () => {
   // Orders go first, reopened: the order_not_open guard (migration 0036) rejects
   // deleting a closed order's lines, including the cascade from businesses.
   await db.query("UPDATE orders SET status = 'open'");
+  await db.query("DELETE FROM payments");
+  await db.query("DELETE FROM order_item_modifiers");
   await db.query("DELETE FROM order_items");
   await db.query("DELETE FROM orders");
   await db.query("DELETE FROM businesses");
@@ -271,5 +368,155 @@ describe("getShiftOrdersReport", () => {
 
     const report = await asBusiness(() => shiftOrders.getShiftOrdersReport(mainId, shift));
     expect(report!.orders.map((o) => o.orderNumber)).toEqual([2]);
+  });
+
+  it("reports a line's add-ons by name and price, with its note and unit price", async () => {
+    const shift = await insertShift(mainId, "2026-08-11T06:00:00Z", null);
+    await insertOrder(mainId, "2026-08-11T08:00:00Z", {
+      orderNumber: 1,
+      total: 1_300_000,
+      itemName: "لاته",
+      lines: [
+        {
+          name: "لاته",
+          quantity: 2,
+          unitPrice: 600_000,
+          note: "کم‌شیر",
+          modifiers: [
+            { name: "شات اضافه", priceDelta: 50_000 },
+            { name: "شیر بادام", priceDelta: 30_000 },
+          ],
+        },
+      ],
+    });
+
+    const report = await asBusiness(() => shiftOrders.getShiftOrdersReport(mainId, shift));
+    const line = report!.orders[0]!.lines[0]!;
+    expect(line.modifiers).toEqual([
+      { name: "شات اضافه", priceDelta: 50_000 },
+      { name: "شیر بادام", priceDelta: 30_000 },
+    ]);
+    expect(line.unitPrice).toBe(600_000);
+    expect(line.addOnsPerUnit).toBe(80_000);
+    // (600_000 + 80_000) × 2
+    expect(line.amount).toBe(1_360_000);
+    expect(line.note).toBe("کم‌شیر");
+    expect(report!.orders[0]!.addOnTotal).toBe(160_000);
+  });
+
+  it("keeps a voided line with the reason it was voided, out of the counted totals", async () => {
+    const shift = await insertShift(mainId, "2026-08-11T06:00:00Z", null);
+    await insertOrder(mainId, "2026-08-11T08:00:00Z", {
+      orderNumber: 1,
+      total: 600_000,
+      itemName: "لاته",
+      lines: [
+        { name: "لاته", quantity: 1, unitPrice: 600_000 },
+        {
+          name: "کیک",
+          quantity: 2,
+          unitPrice: 400_000,
+          status: "voided",
+          voidReason: "اشتباه صندوق‌دار",
+          modifiers: [{ name: "خامه", priceDelta: 50_000 }],
+        },
+      ],
+    });
+
+    const report = await asBusiness(() => shiftOrders.getShiftOrdersReport(mainId, shift));
+    const order = report!.orders[0]!;
+    const voided = order.lines.find((l) => l.voided)!;
+    expect(voided.voidReason).toBe("اشتباه صندوق‌دار");
+    expect(voided.modifiers.map((m) => m.name)).toEqual(["خامه"]);
+    expect(order.itemCount).toBe(1);
+    expect(order.addOnTotal).toBe(0);
+  });
+
+  it("carries the order's money breakdown and its facts", async () => {
+    const shift = await insertShift(mainId, "2026-08-11T06:00:00Z", null);
+    await insertOrder(mainId, "2026-08-11T08:00:00Z", {
+      orderNumber: 1,
+      total: 2_040_000,
+      itemName: "لاته",
+      guestCount: 3,
+      note: "تولد",
+      money: {
+        subtotal: 2_000_000,
+        discount: 200_000,
+        discountType: "percent",
+        discountValue: 10,
+        serviceCharge: 100_000,
+        tax: 90_000,
+        tipAmount: 50_000,
+      },
+    });
+
+    const report = await asBusiness(() => shiftOrders.getShiftOrdersReport(mainId, shift));
+    expect(report!.orders[0]).toMatchObject({
+      subtotal: 2_000_000,
+      discount: 200_000,
+      discountType: "percent",
+      discountValue: 10,
+      serviceCharge: 100_000,
+      tax: 90_000,
+      tipAmount: 50_000,
+      guestCount: 3,
+      note: "تولد",
+      openedByName: "شیدا کاشانی",
+      closedByName: "شیدا کاشانی",
+    });
+    expect(report!.orders[0]!.closedAt).not.toBeNull();
+  });
+
+  // `uq_payments_one_positive_per_order` (migration 0014, narrowed by 0075)
+  // allows only one *live* positive row, so a second payment row is a refund
+  // or an amendment's re-settlement — the reason payments are a query of their
+  // own rather than a third join.
+  it("reports every payment row of an order without duplicating its lines", async () => {
+    const shift = await insertShift(mainId, "2026-08-11T06:00:00Z", null);
+    await insertOrder(mainId, "2026-08-11T08:00:00Z", {
+      orderNumber: 1,
+      total: 1_000_000,
+      itemName: "لاته",
+      lines: [
+        { name: "لاته", quantity: 1, unitPrice: 600_000 },
+        { name: "کیک", quantity: 1, unitPrice: 400_000 },
+      ],
+      payments: [
+        { method: "card", amount: 1_000_000, reference: "TRM-77", receivedAt: "2026-08-11T08:10:00Z" },
+        { method: "cash", amount: -400_000, receivedAt: "2026-08-11T08:20:00Z" },
+      ],
+    });
+
+    const report = await asBusiness(() => shiftOrders.getShiftOrdersReport(mainId, shift));
+    const order = report!.orders[0]!;
+    expect(order.lines).toHaveLength(2);
+    expect(order.payments.map((p) => [p.method, p.amount])).toEqual([
+      ["card", 1_000_000],
+      ["cash", -400_000],
+    ]);
+    expect(order.payments[0]!.reference).toBe("TRM-77");
+    expect(order.payments[0]!.receivedByName).toBe("شیدا کاشانی");
+  });
+
+  it("does not attach a payment made against another shift's order", async () => {
+    await insertShift(mainId, "2026-08-10T06:00:00Z", "2026-08-10T14:00:00Z");
+    const current = await insertShift(mainId, "2026-08-11T06:00:00Z", null);
+    await insertOrder(mainId, "2026-08-10T08:00:00Z", {
+      orderNumber: 1,
+      total: 500_000,
+      itemName: "چای",
+      payments: [{ method: "cash", amount: 500_000 }],
+    });
+    await insertOrder(mainId, "2026-08-11T08:00:00Z", {
+      orderNumber: 2,
+      total: 900_000,
+      itemName: "اسپرسو",
+      payments: [{ method: "card", amount: 900_000 }],
+    });
+
+    const report = await asBusiness(() => shiftOrders.getShiftOrdersReport(mainId, current));
+    expect(report!.orders).toHaveLength(1);
+    expect(report!.orders[0]!.payments.map((p) => p.method)).toEqual(["card"]);
   });
 });

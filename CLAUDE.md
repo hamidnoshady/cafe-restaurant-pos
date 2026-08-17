@@ -81,12 +81,34 @@ Three rules follow for the database side:
   its business before any tenant is chosen (the same shape as login); resolving a public API bearer
   key to its business/location before a tenant has been selected; a narrow write to the global
   `platform_users` table on behalf of an already-verified in-business membership (e.g.
-  a password reset); and re-checking a PIN login's `employee_sessions` row before a tenant scope
+  a password reset); re-checking a PIN login's `employee_sessions` row before a tenant scope
   has been entered for the request (the same shape as the impersonation-grant re-check it sits
-  next to in `getSession()`). Anything else is a new hole — think hard before adding one.
+  next to in `getSession()`); and resolving an inbound WooCommerce connection — by the delivery's
+  connection id (webhook) or by the WordPress plugin's link-token hash — to the business its store
+  belongs to. Anything else is a new hole — think hard before adding one.
 - **Background work must scope itself.** Anything running outside a request — the ticks in
   `server.ts`, scripts — has no session to derive a tenant from, so it enumerates businesses
   bypassed and then wraps each one's work in `withTenant(businessId, …)`.
+
+## The business day — read before writing a day-bucketed query
+
+Since migration 0076, "which day did this happen on" is
+`app_business_date(ts, tz, start_minutes)`, not `(ts AT TIME ZONE l.timezone)::date`. A branch may
+start its trading day at any time (`locations.business_day_start_minutes`, NULL = the calendar day,
+which is what the function returns for it), so a café working 18:00→03:00 keeps one service on one
+date instead of splitting it at midnight. See the "The business day" section of
+[README.md](README.md).
+
+- **A new day-bucketed view or query uses the function.** Writing the timezone cast by hand
+  reintroduces the split for every branch that configured a business day, and puts that screen out of
+  step with every other one.
+- **Don't derive a "today" window in a route.** `getBusinessDayStatus` (`src/lib/business-day-service.ts`)
+  already answers it, including a manual close; the pure half is `src/lib/business-day.ts`.
+- **The night ends at the cash-up.** The live window starts at the branch's last
+  `employee_shifts.ended_at` once nobody is clocked in (a handover doesn't count); «بستن روز کاری» is
+  the override for branches that don't clock in. A start time alone can only say when a day begins.
+- **Ending a day is display-only, by decision.** A cash-up or a manual close moves the live window,
+  never a report's bucket — don't "fix" reports to honour them.
 
 ## Pull requests — check in until merged, not just at open
 
@@ -154,6 +176,25 @@ and left:
   role provisioning, perf benchmarks, …) rather than through a route handler; some run inside
   the running container itself (e.g. `check-app-update.ts`, invoked via `docker compose exec`
   by the on-site launcher — see the README's "On-site deployment" section).
+- **Connections (Phase 28)** — everything a business connects *to* lives behind one hub,
+  `/dashboard/connections` (`src/lib/connection-kinds.ts`), with three kinds: the desktop
+  install, a WooCommerce store, and developer API keys for `/api/v1`. The page is
+  deliberately **not** feature-gated — its tabs have three different entitlements and one
+  (desktop pairing) has none — so gate a new tab, never the hub. Two rules carry the
+  history: a desktop install is claimed with a **pairing code** issued by the Owner from
+  their own dashboard (`/api/connections/desktop`), *not* with the `POS1-…` server-sync
+  token, and the address handed to the desktop is **this request's own origin**, never
+  `PLATFORM_BASE_URL` — the same "ask the host" rule Phase 23 states for login. A
+  WooCommerce store connects in one of two `link_mode`s: the original `rest_api`
+  (consumer keys, app calls store) or `plugin`, where the WordPress plugin in
+  `wordpress-plugin/` does all the calling and authenticates with a link token plus an
+  HMAC envelope over timestamp, nonce and body (`src/lib/integrations/plugin-link.ts`).
+  Both modes feed one ingest path (`applyIngestEvent`) and one outbox — in plugin mode
+  the app fills that queue but must never drain it.
+- `wordpress-plugin/pos-accounting-connector/` — the WordPress/WooCommerce plugin (PHP,
+  no build step, not part of the Next.js app). Its signing string must stay byte-identical
+  to `plugin-link.ts`'s; `plugin-link.test.ts` pins the expected value on the TS side, so
+  change both or neither.
 - `electron/` — the standalone (no-Docker) desktop installer. `main.js` bundles a real
   PostgreSQL 16 (`embedded-postgres`) and runs `server.ts`/`scripts/migrate.ts` unmodified as
   child processes — see `docs/standalone-desktop-app.md`. Separate `package.json` from the

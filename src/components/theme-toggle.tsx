@@ -18,6 +18,7 @@ export function ThemeToggle() {
       size="icon"
       type="button"
       aria-label="تغییر حالت روشن/تاریک"
+      title="تغییر حالت روشن/تاریک"
       onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
     >
       {mounted && resolvedTheme === "dark" ? <SunIcon /> : <MoonIcon />}

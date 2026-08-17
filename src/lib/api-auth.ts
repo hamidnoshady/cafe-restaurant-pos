@@ -11,10 +11,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { isFeatureEnabled } from "./features";
 import { query, withoutTenantScope } from "./db";
 import { parseApiScopes, type ApiScope } from "./api-scopes";
+import { API_KEY_PREFIX } from "./api-key-format";
 import { businessScope, NO_SCOPE, runInTenantScope } from "./tenant-context";
 
-export const API_KEY_PREFIX = "posk_live_";
-const API_KEY_DISPLAY_PREFIX_LENGTH = 16;
+// Re-exported so every existing importer keeps its single import site; the
+// definitions live in api-key-format.ts because client code needs them and
+// cannot follow this file's node:crypto/pg imports.
+export { API_KEY_PREFIX, apiKeyDisplayPrefix } from "./api-key-format";
 const MUTATING_API_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 export interface ApiKeyAuthentication {
@@ -34,11 +37,6 @@ type ApiKeyRow = {
 /** Generates a production API secret. Only hashApiKey(secret) is ever stored. */
 export function createApiKey(): string {
   return API_KEY_PREFIX + randomBytes(32).toString("base64url");
-}
-
-/** The non-secret identifier safe to persist and show in the dashboard. */
-export function apiKeyDisplayPrefix(secret: string): string {
-  return secret.slice(0, API_KEY_DISPLAY_PREFIX_LENGTH);
 }
 
 /** SHA-256 matches server-sync's indexed token-hash storage pattern. */

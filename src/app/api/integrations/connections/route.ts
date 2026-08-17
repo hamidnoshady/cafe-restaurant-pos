@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
 import { resolveActiveLocation } from "@/lib/setup-state";
-import { createConnection, listConnections } from "@/lib/integrations/connections-service";
+import { createConnection, listConnections, type LinkMode } from "@/lib/integrations/connections-service";
 import type { WooCurrencyUnit } from "@/lib/integrations/woo-money";
 
 export const GET = withTenantScope(async () => {
@@ -14,6 +14,8 @@ export const GET = withTenantScope(async () => {
 interface CreateBody {
   name?: string;
   baseUrl?: string;
+  /** "plugin" to connect through the WordPress plugin; anything else is the REST/consumer-key shape. */
+  linkMode?: LinkMode;
   consumerKey?: string;
   consumerSecret?: string;
   currencyUnit?: WooCurrencyUnit;
@@ -42,6 +44,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   const result = await createConnection(session.businessId, session.sub, {
     name: body.name ?? "",
     baseUrl: body.baseUrl ?? "",
+    linkMode: body.linkMode === "plugin" ? "plugin" : "rest_api",
     consumerKey: body.consumerKey ?? "",
     consumerSecret: body.consumerSecret ?? "",
     currencyUnit: body.currencyUnit ?? "toman",
@@ -54,5 +57,14 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   });
 
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
-  return NextResponse.json({ connection: result.connection, webhookSecret: result.webhookSecret }, { status: 201 });
+
+  // Both secrets exist only in this response — the webhook secret the store
+  // signs its deliveries with (REST mode) and the link token the plugin
+  // authenticates with. Never cached, never retrievable afterwards.
+  const response = NextResponse.json(
+    { connection: result.connection, webhookSecret: result.webhookSecret, linkToken: result.linkToken ?? null },
+    { status: 201 },
+  );
+  response.headers.set("Cache-Control", "no-store");
+  return response;
 });

@@ -136,6 +136,13 @@ export async function withTenant<T>(
  *     delivery (keyed on the connection id in its URL) to the business its
  *     store belongs to, before that business can be known any other way
  *     (Phase 23);
+ *   - **woocommerce-plugin-auth** — the same lookup for the other way a store
+ *     connects: resolving the WordPress plugin's link token to the connection,
+ *     and therefore the business, that issued it. Keyed on a token hash rather
+ *     than a URL id, which makes it the same shape as server-sync-auth and
+ *     api-key-auth; the request's HMAC envelope is verified inside the same
+ *     bypass, because the token it is verified against is what the lookup
+ *     returns;
  *   - **identity** — a narrow write to the global identity table
  *     (`platform_users`, which carries no `business_id` to scope by) on
  *     behalf of a membership already verified to belong to the caller's own

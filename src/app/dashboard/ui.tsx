@@ -50,6 +50,12 @@ export function errorMessage(code: string | undefined): string {
     session_required: "برای شروع شیفت باید دوباره وارد شوید.",
     shift_already_open: "شیفتی از قبل باز است.",
     no_active_shift: "شیفت بازی برای پایان دادن پیدا نشد.",
+    // روز کاری (business day)
+    invalid_start_time: "ساعت شروع روز کاری معتبر نیست؛ به شکل ۱۸:۰۰ وارد کنید.",
+    location_not_found: "شعبه پیدا نشد.",
+    business_day_not_configured: "برای این شعبه روز کاری تعریف نشده است.",
+    business_day_already_closed: "روز کاری جاری قبلاً بسته شده است.",
+    business_day_not_closed: "روز کاری جاری بسته نشده است.",
     category_exists: "دسته‌ای با این نام وجود دارد.",
     category_not_found: "دسته پیدا نشد.",
     item_not_found: "آیتم پیدا نشد.",
@@ -67,6 +73,13 @@ export function errorMessage(code: string | undefined): string {
     invalid_discount: "مقدار تخفیف معتبر نیست.",
     order_not_found: "سفارش پیدا نشد.",
     order_not_open: "این سفارش دیگر باز نیست و قابل ویرایش نیست.",
+    order_not_completed: "فقط سفارش تسویه‌شده را می‌توان اصلاح یا حذف کرد.",
+    order_has_returns: "برای این سفارش مرجوعی مشتری ثبت شده است؛ ابتدا مرجوعی را برگشت بزنید.",
+    reason_required: "ثبت دلیل اصلاح الزامی است.",
+    reason_too_long: "دلیل اصلاح بیش از حد طولانی است.",
+    duplicate_item: "یک قلم دوبار در فهرست اصلاح آمده است.",
+    consumption_layer_settled: "کسری موجودی این فروش با خرید یا شمارش بعدی تسویه شده و برگشت دقیق آن ممکن نیست.",
+    consumption_reversal_inconsistent: "برگشت موجودی این فروش با ارزش ثبت‌شدهٔ آن هم‌خوانی ندارد.",
     item_already_voided: "این قلم قبلاً باطل شده است.",
     not_found: "پیدا نشد.",
     // Phase 3 — tables, sessions, reservations
@@ -169,6 +182,19 @@ export function errorMessage(code: string | undefined): string {
     bad_checksum: "توکن معتبر نیست؛ یک نویسه اشتباه تایپ یا جابه‌جا شده است.",
     // Phase 23 Wave 2 — deployment role
     central_server: "این سرور، سرور مرکزی است و تنظیمات اتصال برای آن معنا ندارد.",
+    // Phase 28 — the connections hub. Three connections, three vocabularies of
+    // failure; the ones a person can act on are named here rather than falling
+    // through to «خطای غیرمنتظره».
+    not_central_server: "این نصب محلی است و کد اتصال صادر نمی‌کند؛ کد را از حساب ابری بگیرید.",
+    code_not_found: "این کد پیدا نشد یا دیگر معتبر نیست.",
+    api_key_not_found: "این کلید پیدا نشد یا قبلاً باطل شده است.",
+    invalid_scopes: "حداقل یک دسترسی را برای کلید انتخاب کنید.",
+    invalid_expiry: "مدت اعتبار کلید معتبر نیست.",
+    invalid_base_url: "آدرس فروشگاه معتبر نیست.",
+    missing_credentials: "کلیدهای REST ووکامرس را وارد کنید.",
+    invalid_currency_unit: "واحد قیمت فروشگاه معتبر نیست.",
+    not_plugin_mode: "این اتصال از نوع «افزونهٔ وردپرس» نیست، پس توکن افزونه ندارد.",
+    plugin_never_connected: "افزونهٔ وردپرس هنوز به این سامانه وصل نشده است.",
   };
   return map[code ?? ""] ?? "خطای غیرمنتظره. دوباره تلاش کنید.";
 }

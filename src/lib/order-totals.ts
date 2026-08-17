@@ -54,7 +54,16 @@ export async function recomputeOrderTotals(
   // Phase 27 Wave 6 — promotions are evaluated by the shared engine over the
   // F&B cart exactly as over a retail cart.
   const promotions = businessId ? await listPromotions(businessId, false, client) : [];
-  const totals = computeOrderTotals(lines, discount, 0, promotions);
+
+  // A delivery order's flat fee rides on service_charge and is part of the
+  // total the customer pays (see order-mutations.ts), so a recompute has to
+  // carry it — computing without it would quietly knock the fee off the bill
+  // the first time an item or the discount changed.
+  const { rows: header } = await client.query<{ service_charge: string }>(
+    "SELECT service_charge::text FROM orders WHERE id = $1",
+    [orderId],
+  );
+  const totals = computeOrderTotals(lines, discount, Number(header[0]?.service_charge ?? 0), promotions);
 
   await client.query(
     `UPDATE orders SET subtotal = $2, discount = $3, discount_type = $4, discount_value = $5,

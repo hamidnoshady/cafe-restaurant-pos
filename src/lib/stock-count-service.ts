@@ -22,6 +22,7 @@ import type { PoolClient } from "pg";
 import { applyStockAdjustmentExact } from "./inventory-adjustment-exact";
 import { quantityText, rialText } from "./inventory-exact";
 import type { CostingMethod } from "./inventory-costing";
+import { adjustCarryingValue, insertLot, insertMovement } from "./inventory-reversal";
 import { getCostingMethod } from "./inventory-service";
 import {
   postExactNegativeSettlementEntry,
@@ -55,104 +56,6 @@ export interface StockCountDetail {
   lines: StockCountDetailLine[];
 }
 
-function unitCostFromValue(value: bigint, quantity: Decimal): string {
-  if (quantity.eq(0)) return "0";
-  return new Decimal(value.toString())
-    .div(quantity)
-    .toDecimalPlaces(9, Decimal.ROUND_HALF_UP)
-    .toFixed();
-}
-
-async function insertMovement(
-  client: PoolClient,
-  params: {
-    locationId: string;
-    inventoryItemId: string;
-    quantity: Decimal;
-    value: bigint;
-    sourceType: string;
-    sourceId: string;
-    createdBy: string | null;
-    inventoryEventId: string;
-  },
-): Promise<void> {
-  await client.query(
-    `INSERT INTO stock_movements
-       (location_id, inventory_item_id, type, quantity, unit_cost, cost_value_rial,
-        source_type, source_id, created_by, inventory_event_id)
-     VALUES($1,$2,'adjustment',$3,$4,$5,$6,$7,$8,$9)`,
-    [
-      params.locationId,
-      params.inventoryItemId,
-      params.quantity.toFixed(),
-      unitCostFromValue(params.value, params.quantity.abs()),
-      params.value.toString(),
-      params.sourceType,
-      params.sourceId,
-      params.createdBy,
-      params.inventoryEventId,
-    ],
-  );
-}
-
-async function adjustCarryingValue(
-  client: PoolClient,
-  params: { inventoryItemId: string; deltaRial: bigint },
-): Promise<void> {
-  const { rows } = await client.query<{ carrying: string; physical: string }>(
-    `SELECT COALESCE(carrying_value_rial,0)::text carrying,
-            COALESCE((SELECT sum(quantity) FROM stock_movements WHERE inventory_item_id=$1),0)::text physical
-       FROM inventory_items WHERE id=$1 FOR UPDATE`,
-    [params.inventoryItemId],
-  );
-  const carrying = BigInt(rows[0]?.carrying ?? "0");
-  const physical = new Decimal(rows[0]?.physical ?? "0");
-  const next = carrying + params.deltaRial;
-  const average = physical.eq(0)
-    ? "0"
-    : new Decimal(next.toString())
-        .div(physical)
-        .toDecimalPlaces(9, Decimal.ROUND_HALF_UP)
-        .toFixed();
-  await client.query("UPDATE inventory_items SET carrying_value_rial=$2, avg_cost=$3 WHERE id=$1", [
-    params.inventoryItemId,
-    next.toString(),
-    average,
-  ]);
-}
-
-async function insertLot(
-  client: PoolClient,
-  params: {
-    locationId: string;
-    inventoryItemId: string;
-    quantity: Decimal;
-    value: bigint;
-    receivedAt: string;
-    sourceType: string;
-    sourceId: string;
-    inventoryEventId: string;
-  },
-): Promise<void> {
-  const quantity = params.quantity.toFixed();
-  await client.query(
-    `INSERT INTO inventory_lots
-       (location_id, inventory_item_id, remaining_qty, unit_cost, source_type, source_id,
-        received_at, inventory_event_id, original_quantity, original_value_rial, remaining_value_rial)
-     VALUES($1,$2,$3,$4,$5,$6,$7,$8,$3,$9,$9)`,
-    [
-      params.locationId,
-      params.inventoryItemId,
-      quantity,
-      unitCostFromValue(params.value, params.quantity),
-      params.sourceType,
-      params.sourceId,
-      params.receivedAt,
-      params.inventoryEventId,
-      params.value.toString(),
-    ],
-  );
-}
 
 /**
  * Undoes one stock-count line's variance at its original recorded value.

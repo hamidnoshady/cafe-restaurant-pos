@@ -13,6 +13,8 @@
  * already notes there's no till/shift entity in the schema). Wiring those needs a
  * schema decision first, not just another read tool.
  */
+import { businessToday } from "./business-day-service";
+import { shiftIsoDate } from "./business-day";
 import { query } from "./db";
 import { WELL_KNOWN_CODES } from "./coa-template";
 import { STANDARD_REPORTS } from "./reports";
@@ -65,17 +67,28 @@ function cap<T>(rows: T[], limit = 50): T[] {
   return rows.slice(0, limit);
 }
 
-function isoDate(d: Date): string {
-  return d.toISOString().slice(0, 10);
-}
-
-/** Default lookback window for tools that accept an optional date range. */
-function defaultRange(args: Record<string, unknown>, days = 30): { dateFrom: string; dateTo: string } {
-  const dateTo = typeof args.dateTo === "string" ? args.dateTo : isoDate(new Date());
-  const dateFrom =
-    typeof args.dateFrom === "string"
-      ? args.dateFrom
-      : isoDate(new Date(Date.now() - days * 24 * 60 * 60 * 1000));
+/**
+ * Default lookback window for tools that accept an optional date range.
+ *
+ * Anchored on the business's own business date, not on `new Date()`. Both of
+ * this function's earlier assumptions were wrong for a Tehran evening: the UTC
+ * date rolls over at 03:30 local, so "today" became tomorrow for the last hours
+ * of every night; and a branch trading past midnight files those hours under
+ * the previous business day anyway. Since every view these tools read is
+ * bucketed by `app_business_date`, asking for a range in anything else means
+ * the assistant quietly answers about the wrong day.
+ */
+async function defaultRange(
+  businessId: string,
+  args: Record<string, unknown>,
+  days = 30,
+): Promise<{ dateFrom: string; dateTo: string }> {
+  const hasFrom = typeof args.dateFrom === "string";
+  const hasTo = typeof args.dateTo === "string";
+  // Only pay for the lookup when the caller left a bound open.
+  const today = hasFrom && hasTo ? "" : await businessToday(businessId);
+  const dateTo = hasTo ? (args.dateTo as string) : today;
+  const dateFrom = hasFrom ? (args.dateFrom as string) : shiftIsoDate(today, -(days - 1));
   return { dateFrom, dateTo };
 }
 
@@ -84,7 +97,7 @@ function defaultRange(args: Record<string, unknown>, days = 30): { dateFrom: str
 // ---------------------------------------------------------------------------
 
 async function menuPerformance(businessId: string, args: Record<string, unknown>) {
-  const { dateFrom, dateTo } = defaultRange(args);
+  const { dateFrom, dateTo } = await defaultRange(businessId, args);
   const { rows: sold } = await query<{
     menu_item_id: string;
     item_name: string;
@@ -135,7 +148,7 @@ async function menuPerformance(businessId: string, args: Record<string, unknown>
 }
 
 async function voidPattern(businessId: string, args: Record<string, unknown>) {
-  const { dateFrom, dateTo } = defaultRange(args);
+  const { dateFrom, dateTo } = await defaultRange(businessId, args);
   const { rows: byItem } = await query<{ name_snapshot: string; void_count: string }>(
     `SELECT oi.name_snapshot, count(*)::text AS void_count
        FROM order_items oi
@@ -212,7 +225,7 @@ async function stockValuation(businessId: string) {
 }
 
 async function supplierPerformance(businessId: string, args: Record<string, unknown>) {
-  const { dateFrom, dateTo } = defaultRange(args, 90);
+  const { dateFrom, dateTo } = await defaultRange(businessId, args, 90);
   const { rows } = await query<{
     supplier_id: string | null;
     supplier_name: string | null;
@@ -292,7 +305,7 @@ async function reservationConflicts(businessId: string) {
 }
 
 async function tableTurnoverRate(businessId: string, args: Record<string, unknown>) {
-  const { dateFrom, dateTo } = defaultRange(args);
+  const { dateFrom, dateTo } = await defaultRange(businessId, args);
   const { rows } = await query<{
     table_id: string | null;
     table_name: string | null;
@@ -329,7 +342,7 @@ async function tableTurnoverRate(businessId: string, args: Record<string, unknow
 // ---------------------------------------------------------------------------
 
 async function courierPerformance(businessId: string, args: Record<string, unknown>) {
-  const { dateFrom, dateTo } = defaultRange(args);
+  const { dateFrom, dateTo } = await defaultRange(businessId, args);
   const { rows } = await query<{
     courier_id: string | null;
     courier_name: string | null;
@@ -500,7 +513,7 @@ async function apUpcoming(businessId: string) {
 // ---------------------------------------------------------------------------
 
 async function branchComparison(businessId: string, args: Record<string, unknown>) {
-  const { dateFrom, dateTo } = defaultRange(args);
+  const { dateFrom, dateTo } = await defaultRange(businessId, args);
   const branches = await listBranches(businessId);
 
   const { rows: sales } = await query<{
@@ -546,8 +559,10 @@ async function forecastDemand(businessId: string, args: Record<string, unknown>)
     ? Math.min(Math.max(1, Number(args.horizonDays)), 30)
     : 7;
   const lookbackDays = 28;
-  const dateFrom = isoDate(new Date(Date.now() - lookbackDays * 24 * 60 * 60 * 1000));
-  const dateTo = isoDate(new Date());
+  // Same reason as defaultRange: the views this averages over are bucketed by
+  // business date, so the window has to be expressed in them too.
+  const dateTo = await businessToday(businessId);
+  const dateFrom = shiftIsoDate(dateTo, -(lookbackDays - 1));
   const menuItemId = typeof args.menuItemId === "string" ? args.menuItemId : null;
 
   const disclaimer = "این یک تخمین است، نه یک پیش‌بینی قطعی — بر اساس میانگین فروش ۲۸ روز گذشته محاسبه شده است.";
