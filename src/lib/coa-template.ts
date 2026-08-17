@@ -82,6 +82,17 @@ export const WELL_KNOWN_CODES = {
   // not revenue. See migrations/0059_tip_capture.sql for the product
   // decisions this rests on.
   tipsPayable: "2400",
+  // Phase 27 Wave 5 — store credit is a real liability (owed to a customer),
+  // posted through the domain-event engine; a customer's credit balance is
+  // reconstructed from the ledger, never a mutable column.
+  storeCreditPayable: "2410",
+  // Phase 27 Wave 6 — gift cards are a liability too: issuing one credits it,
+  // redeeming it debits it; the card's value is never a balance column.
+  giftCardPayable: "2420",
+  // Phase 27 Wave 9 — jewelry: the customer-deposit liability (layaway and
+  // custom orders) and the gold-account (حساب طلایی) liability.
+  layawayDeposit: "2430",
+  goldCustomerAccount: "2450",
   openingEquity: "3900",
   historicalInventoryReconciliationEquity: "3950",
   retainedEarnings: "3800",
@@ -99,6 +110,9 @@ export const WELL_KNOWN_CODES = {
   cogs: "5100",
   wasteExpense: "5150",
   salariesExpense: "5200",
+  // Phase 27 Wave 7 — sales-staff commission, posted as a payroll liability
+  // (Debit this, Credit salariesPayable) through the domain-event engine.
+  commissionExpense: "5210",
   inventoryCountExpense: "5160",
   inventoryWriteDownExpense: "5170",
   inventoryCountGain: "4910",
@@ -147,6 +161,20 @@ export const WELL_KNOWN_CODES = {
   accessoryInventory: "1340",
   accessorySalesRevenue: "4560",
   accessoryCogs: "5140",
+  // Phase 27 Wave 1 — cosmetics & toiletries (COSMETICS_COA_TEMPLATE below).
+  // Same three-account finished-goods shape as watch/accessories, plus a
+  // fourth account for the two non-COGS ways cosmetics stock leaves the shelf
+  // (expired write-offs in Wave 2, tester/sample stock in Wave 3).
+  cosmeticInventory: "1350",
+  cosmeticSalesRevenue: "4570",
+  cosmeticCogs: "5150",
+  cosmeticExpiredAndTester: "5160",
+  // Phase 27 Wave 8 — the retail trades' in-transit account for inter-branch
+  // transfers. F&B's 1350 (inventoryInTransit) is the same code cosmetics
+  // uses for its *own* inventory, so the retail trades get their own 1360
+  // rather than sharing a code that would make a cosmetics transfer post to
+  // itself and zero out.
+  retailInventoryInTransit: "1360",
 } as const;
 
 /**
@@ -184,6 +212,8 @@ export const FNB_COA_TEMPLATE: TemplateAccount[] = [
   { code: "2200", name: "مالیات بر ارزش افزوده پرداختنی", type: "liability", parentCode: "2000" },
   { code: "2300", name: "حقوق پرداختنی", type: "liability", parentCode: "2000" },
   { code: "2400", name: "انعام پرداختنی", type: "liability", parentCode: "2000" },
+  { code: "2410", name: "اعتبار فروشگاهی", type: "liability", parentCode: "2000" },
+  { code: "2420", name: "کارت هدیه", type: "liability", parentCode: "2000" },
 
   { code: "3000", name: "حقوق صاحبان سرمایه", type: "equity" },
   { code: "3100", name: "سرمایه", type: "equity", parentCode: "3000" },
@@ -208,6 +238,7 @@ export const FNB_COA_TEMPLATE: TemplateAccount[] = [
   { code: "5160", name: "هزینه کسری و مغایرت شمارش", type: "expense", parentCode: "5000" },
   { code: "5170", name: "هزینه کاهش ارزش موجودی", type: "expense", parentCode: "5000" },
   { code: "5200", name: "حقوق و دستمزد", type: "expense", parentCode: "5000" },
+  { code: "5210", name: "پورسانت فروش", type: "expense", parentCode: "5000" },
   { code: "5300", name: "اجاره", type: "expense", parentCode: "5000" },
   { code: "5400", name: "آب، برق و گاز", type: "expense", parentCode: "5000" },
   { code: "5500", name: "ملزومات مصرفی", type: "expense", parentCode: "5000" },
@@ -235,6 +266,7 @@ export const JEWELRY_COA_TEMPLATE: TemplateAccount[] = [
   { code: "1200", name: "حساب‌های دریافتنی", type: "asset", parentCode: "1000" },
   { code: "1220", name: "مالیات بر ارزش افزوده خرید (قابل استرداد)", type: "asset", parentCode: "1000" },
   { code: "1320", name: "موجودی طلا و جواهر", type: "asset", parentCode: "1000" },
+  { code: "1360", name: "کالای در راه", type: "asset", parentCode: "1000" },
   { code: "1400", name: "پیش‌پرداخت‌ها", type: "asset", parentCode: "1000" },
   { code: "1500", name: "اثاثه و تجهیزات", type: "asset", parentCode: "1000" },
 
@@ -242,6 +274,11 @@ export const JEWELRY_COA_TEMPLATE: TemplateAccount[] = [
   { code: "2100", name: "حساب‌های پرداختنی", type: "liability", parentCode: "2000" },
   { code: "2110", name: "پرداختنی به امانت‌گذاران", type: "liability", parentCode: "2000" },
   { code: "2200", name: "مالیات بر ارزش افزوده پرداختنی", type: "liability", parentCode: "2000" },
+  { code: "2300", name: "حقوق پرداختنی", type: "liability", parentCode: "2000" },
+  { code: "2410", name: "اعتبار فروشگاهی", type: "liability", parentCode: "2000" },
+  { code: "2420", name: "کارت هدیه", type: "liability", parentCode: "2000" },
+  { code: "2430", name: "پیش‌دریافت مشتری", type: "liability", parentCode: "2000" },
+  { code: "2450", name: "حساب طلایی مشتریان", type: "liability", parentCode: "2000" },
 
   { code: "3000", name: "حقوق صاحبان سرمایه", type: "equity" },
   { code: "3100", name: "سرمایه", type: "equity", parentCode: "3000" },
@@ -252,10 +289,14 @@ export const JEWELRY_COA_TEMPLATE: TemplateAccount[] = [
   { code: "4500", name: "فروش طلا (ارزش فلز)", type: "revenue", parentCode: "4000" },
   { code: "4600", name: "درآمد اجرت و سود", type: "revenue", parentCode: "4000" },
   { code: "4700", name: "درآمد کارمزد فروش امانی", type: "revenue", parentCode: "4000" },
+  { code: "4800", name: "درآمد تعمیرات", type: "revenue", parentCode: "4000" },
   { code: "4900", name: "سایر درآمدها", type: "revenue", parentCode: "4000" },
+  { code: "4400", name: "برگشت از فروش", type: "revenue", parentCode: "4000", isContra: true },
 
   { code: "5000", name: "هزینه‌ها", type: "expense" },
   { code: "5110", name: "بهای تمام‌شده طلای فروخته‌شده", type: "expense", parentCode: "5000" },
+  { code: "5130", name: "بهای قطعات مصرفی تعمیرات", type: "expense", parentCode: "5000" },
+  { code: "5210", name: "پورسانت فروش", type: "expense", parentCode: "5000" },
   { code: "5300", name: "اجاره", type: "expense", parentCode: "5000" },
   { code: "5400", name: "آب، برق و گاز", type: "expense", parentCode: "5000" },
   { code: "5600", name: "بازاریابی و تبلیغات", type: "expense", parentCode: "5000" },
@@ -277,12 +318,16 @@ export const WATCH_COA_TEMPLATE: TemplateAccount[] = [
   { code: "1200", name: "حساب‌های دریافتنی", type: "asset", parentCode: "1000" },
   { code: "1220", name: "مالیات بر ارزش افزوده خرید (قابل استرداد)", type: "asset", parentCode: "1000" },
   { code: "1330", name: "موجودی ساعت و قطعات", type: "asset", parentCode: "1000" },
+  { code: "1360", name: "کالای در راه", type: "asset", parentCode: "1000" },
   { code: "1400", name: "پیش‌پرداخت‌ها", type: "asset", parentCode: "1000" },
   { code: "1500", name: "اثاثه و تجهیزات", type: "asset", parentCode: "1000" },
 
   { code: "2000", name: "بدهی‌ها", type: "liability" },
   { code: "2100", name: "حساب‌های پرداختنی", type: "liability", parentCode: "2000" },
   { code: "2200", name: "مالیات بر ارزش افزوده پرداختنی", type: "liability", parentCode: "2000" },
+  { code: "2300", name: "حقوق پرداختنی", type: "liability", parentCode: "2000" },
+  { code: "2410", name: "اعتبار فروشگاهی", type: "liability", parentCode: "2000" },
+  { code: "2420", name: "کارت هدیه", type: "liability", parentCode: "2000" },
 
   { code: "3000", name: "حقوق صاحبان سرمایه", type: "equity" },
   { code: "3100", name: "سرمایه", type: "equity", parentCode: "3000" },
@@ -293,9 +338,11 @@ export const WATCH_COA_TEMPLATE: TemplateAccount[] = [
   { code: "4550", name: "فروش ساعت", type: "revenue", parentCode: "4000" },
   { code: "4800", name: "درآمد تعمیرات", type: "revenue", parentCode: "4000" },
   { code: "4900", name: "سایر درآمدها", type: "revenue", parentCode: "4000" },
+  { code: "4400", name: "برگشت از فروش", type: "revenue", parentCode: "4000", isContra: true },
 
   { code: "5000", name: "هزینه‌ها", type: "expense" },
   { code: "5120", name: "بهای تمام‌شده ساعت فروخته‌شده", type: "expense", parentCode: "5000" },
+  { code: "5210", name: "پورسانت فروش", type: "expense", parentCode: "5000" },
   { code: "5130", name: "بهای قطعات مصرفی تعمیرات", type: "expense", parentCode: "5000" },
   { code: "5300", name: "اجاره", type: "expense", parentCode: "5000" },
   { code: "5400", name: "آب، برق و گاز", type: "expense", parentCode: "5000" },
@@ -318,12 +365,16 @@ export const ACCESSORIES_COA_TEMPLATE: TemplateAccount[] = [
   { code: "1200", name: "حساب‌های دریافتنی", type: "asset", parentCode: "1000" },
   { code: "1220", name: "مالیات بر ارزش افزوده خرید (قابل استرداد)", type: "asset", parentCode: "1000" },
   { code: "1340", name: "موجودی بدلیجات", type: "asset", parentCode: "1000" },
+  { code: "1360", name: "کالای در راه", type: "asset", parentCode: "1000" },
   { code: "1400", name: "پیش‌پرداخت‌ها", type: "asset", parentCode: "1000" },
   { code: "1500", name: "اثاثه و تجهیزات", type: "asset", parentCode: "1000" },
 
   { code: "2000", name: "بدهی‌ها", type: "liability" },
   { code: "2100", name: "حساب‌های پرداختنی", type: "liability", parentCode: "2000" },
   { code: "2200", name: "مالیات بر ارزش افزوده پرداختنی", type: "liability", parentCode: "2000" },
+  { code: "2300", name: "حقوق پرداختنی", type: "liability", parentCode: "2000" },
+  { code: "2410", name: "اعتبار فروشگاهی", type: "liability", parentCode: "2000" },
+  { code: "2420", name: "کارت هدیه", type: "liability", parentCode: "2000" },
 
   { code: "3000", name: "حقوق صاحبان سرمایه", type: "equity" },
   { code: "3100", name: "سرمایه", type: "equity", parentCode: "3000" },
@@ -333,9 +384,58 @@ export const ACCESSORIES_COA_TEMPLATE: TemplateAccount[] = [
   { code: "4000", name: "درآمدها", type: "revenue" },
   { code: "4560", name: "فروش بدلیجات", type: "revenue", parentCode: "4000" },
   { code: "4900", name: "سایر درآمدها", type: "revenue", parentCode: "4000" },
+  { code: "4400", name: "برگشت از فروش", type: "revenue", parentCode: "4000", isContra: true },
 
   { code: "5000", name: "هزینه‌ها", type: "expense" },
   { code: "5140", name: "بهای تمام‌شده بدلیجات فروخته‌شده", type: "expense", parentCode: "5000" },
+  { code: "5210", name: "پورسانت فروش", type: "expense", parentCode: "5000" },
+  { code: "5300", name: "اجاره", type: "expense", parentCode: "5000" },
+  { code: "5400", name: "آب، برق و گاز", type: "expense", parentCode: "5000" },
+  { code: "5600", name: "بازاریابی و تبلیغات", type: "expense", parentCode: "5000" },
+  { code: "5900", name: "سایر هزینه‌ها", type: "expense", parentCode: "5000" },
+];
+
+/**
+ * Phase 27 Wave 1 — cosmetics & toiletries (آرایشی و بهداشتی) chart of
+ * accounts. Mirrors ACCESSORIES_COA_TEMPLATE's structure — every generic
+ * account (cash, bank, AR, AP, VAT) is reused unchanged — and swaps the
+ * inventory/revenue/COGS triple for the cosmetics one, plus 5160 (کالای
+ * منقضی و تستر), the expense account Waves 2 and 3 post expiry write-offs
+ * and tester/sample consumption to.
+ */
+export const COSMETICS_COA_TEMPLATE: TemplateAccount[] = [
+  { code: "1000", name: "دارایی‌ها", type: "asset" },
+  { code: "1100", name: "صندوق", type: "asset", parentCode: "1000" },
+  { code: "1110", name: "بانک", type: "asset", parentCode: "1000" },
+  { code: "1120", name: "کارت‌خوان (در راه)", type: "asset", parentCode: "1000" },
+  { code: "1200", name: "حساب‌های دریافتنی", type: "asset", parentCode: "1000" },
+  { code: "1220", name: "مالیات بر ارزش افزوده خرید (قابل استرداد)", type: "asset", parentCode: "1000" },
+  { code: "1350", name: "موجودی کالای آرایشی و بهداشتی", type: "asset", parentCode: "1000" },
+  { code: "1360", name: "کالای در راه", type: "asset", parentCode: "1000" },
+  { code: "1400", name: "پیش‌پرداخت‌ها", type: "asset", parentCode: "1000" },
+  { code: "1500", name: "اثاثه و تجهیزات", type: "asset", parentCode: "1000" },
+
+  { code: "2000", name: "بدهی‌ها", type: "liability" },
+  { code: "2100", name: "حساب‌های پرداختنی", type: "liability", parentCode: "2000" },
+  { code: "2200", name: "مالیات بر ارزش افزوده پرداختنی", type: "liability", parentCode: "2000" },
+  { code: "2300", name: "حقوق پرداختنی", type: "liability", parentCode: "2000" },
+  { code: "2410", name: "اعتبار فروشگاهی", type: "liability", parentCode: "2000" },
+  { code: "2420", name: "کارت هدیه", type: "liability", parentCode: "2000" },
+
+  { code: "3000", name: "حقوق صاحبان سرمایه", type: "equity" },
+  { code: "3100", name: "سرمایه", type: "equity", parentCode: "3000" },
+  { code: "3800", name: "سود (زیان) انباشته", type: "equity", parentCode: "3000" },
+  { code: "3900", name: "تراز افتتاحیه", type: "equity", parentCode: "3000" },
+
+  { code: "4000", name: "درآمدها", type: "revenue" },
+  { code: "4570", name: "فروش لوازم آرایشی و بهداشتی", type: "revenue", parentCode: "4000" },
+  { code: "4900", name: "سایر درآمدها", type: "revenue", parentCode: "4000" },
+  { code: "4400", name: "برگشت از فروش", type: "revenue", parentCode: "4000", isContra: true },
+
+  { code: "5000", name: "هزینه‌ها", type: "expense" },
+  { code: "5150", name: "بهای تمام‌شده کالای آرایشی و بهداشتی فروخته‌شده", type: "expense", parentCode: "5000" },
+  { code: "5210", name: "پورسانت فروش", type: "expense", parentCode: "5000" },
+  { code: "5160", name: "کالای منقضی و تستر", type: "expense", parentCode: "5000" },
   { code: "5300", name: "اجاره", type: "expense", parentCode: "5000" },
   { code: "5400", name: "آب، برق و گاز", type: "expense", parentCode: "5000" },
   { code: "5600", name: "بازاریابی و تبلیغات", type: "expense", parentCode: "5000" },
@@ -360,6 +460,8 @@ export function coaTemplateForIndustry(industry: Industry): readonly TemplateAcc
       return WATCH_COA_TEMPLATE;
     case "accessories":
       return ACCESSORIES_COA_TEMPLATE;
+    case "cosmetics":
+      return COSMETICS_COA_TEMPLATE;
     case "food_service":
       return FNB_COA_TEMPLATE;
   }

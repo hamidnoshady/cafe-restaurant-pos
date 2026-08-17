@@ -39,6 +39,9 @@ export const MODULE_KEYS = [
   "orders",
   "pos",
   "customers",
+  "loyalty",
+  "promotions",
+  "commission",
   "tables",
   "waiter",
   "kitchen",
@@ -49,6 +52,8 @@ export const MODULE_KEYS = [
   "jewelry",
   "watch",
   "accessories",
+  "cosmetics",
+  "stock",
   "ledger",
   "integrations",
   "reports",
@@ -76,6 +81,17 @@ export type SalesModel =
   /** Retail: lines are priced onto an invoice and settled in one go (Wave 3). */
   | "retail_invoice";
 
+/**
+ * Phase 27 — a finer-grained switch than a ModuleKey: a capability lives
+ * *inside* a trade's own module (or inside the POS it already has), so it has
+ * no page or API prefix of its own and no nav entry to hide. Read by the UI
+ * and by the trade's service layer; the routes are already gated by
+ * `requireIndustryForApi`, which is the stricter check, so a capability is
+ * never a third guard axis.
+ */
+export const CAPABILITY_KEYS = ["batch_expiry", "barcode", "repairs"] as const;
+export type CapabilityKey = (typeof CAPABILITY_KEYS)[number];
+
 export interface IndustryProfile {
   /** Sidebar brand block, in place of the hardcoded «کافه و رستوران». */
   brandTitle: string;
@@ -92,6 +108,11 @@ export interface IndustryProfile {
    * industry default, not a prohibition.
    */
   defaultDisabledFeatures: readonly string[];
+  /**
+   * Phase 27 — capabilities this trade has, switched on from this one place
+   * rather than from an `if (industry === …)` in the app. See CAPABILITY_KEYS.
+   */
+  capabilities: readonly CapabilityKey[];
 }
 
 /** F&B's wording is the base: every other industry overrides only what it must. */
@@ -131,6 +152,9 @@ const FOOD_SERVICE_MODULES: readonly ModuleKey[] = [
 const CORE_MODULES: readonly ModuleKey[] = [
   "dashboard",
   "customers",
+  "loyalty",
+  "promotions",
+  "commission",
   "ledger",
   "integrations",
   "reports",
@@ -152,6 +176,12 @@ const CORE_MODULES: readonly ModuleKey[] = [
  */
 const SELLING_MODULES: readonly ModuleKey[] = ["orders", "pos"];
 
+/**
+ * Phase 27 Wave 8 — purchasing/returns/transfers on the `items` model and the
+ * reorder/low-stock reports. Retail-only: F&B's equivalent is `inventory`.
+ */
+const RETAIL_STOCK_MODULES: readonly ModuleKey[] = ["stock"];
+
 export const INDUSTRY_PROFILES: Record<Industry, IndustryProfile> = {
   food_service: {
     brandTitle: "کافه و رستوران",
@@ -160,11 +190,12 @@ export const INDUSTRY_PROFILES: Record<Industry, IndustryProfile> = {
     labels: {},
     salesModel: "order_ticket",
     defaultDisabledFeatures: [],
+    capabilities: [],
   },
   jewelry: {
     brandTitle: "طلا و جواهر",
     brandSubtitle: "مدیریت خرید، فروش و موجودی",
-    modules: [...CORE_MODULES, "pos", "jewelry"],
+    modules: [...CORE_MODULES, "pos", "jewelry", ...RETAIL_STOCK_MODULES],
     labels: RETAIL_LABELS,
     salesModel: "retail_invoice",
     // `inventory` is F&B's recipe-costed raw-material store
@@ -173,22 +204,36 @@ export const INDUSTRY_PROFILES: Record<Industry, IndustryProfile> = {
     // `reservations` gates tables and the floor plan, which have no meaning in
     // a shop.
     defaultDisabledFeatures: ["inventory", "reservations", "delivery"],
+    // `repairs` (Wave 10): repair_tickets is already generic (item_description,
+    // nullable serial_id), so a jeweller uses the same workflow a watch shop does.
+    capabilities: ["barcode", "repairs"],
   },
   watch: {
     brandTitle: "ساعت",
     brandSubtitle: "مدیریت فروش، گارانتی و تعمیرات",
-    modules: [...CORE_MODULES, "pos", "watch"],
+    modules: [...CORE_MODULES, "pos", "watch", ...RETAIL_STOCK_MODULES],
     labels: RETAIL_LABELS,
     salesModel: "retail_invoice",
     defaultDisabledFeatures: ["inventory", "reservations", "delivery"],
+    capabilities: ["barcode", "repairs"],
   },
   accessories: {
     brandTitle: "بدلیجات",
     brandSubtitle: "مدیریت تنوع‌ها، موجودی و فروش",
-    modules: [...CORE_MODULES, "pos", "accessories"],
+    modules: [...CORE_MODULES, "pos", "accessories", ...RETAIL_STOCK_MODULES],
     labels: RETAIL_LABELS,
     salesModel: "retail_invoice",
     defaultDisabledFeatures: ["inventory", "reservations", "delivery"],
+    capabilities: ["barcode"],
+  },
+  cosmetics: {
+    brandTitle: "آرایشی و بهداشتی",
+    brandSubtitle: "مدیریت برند، بچ و تاریخ انقضا",
+    modules: [...CORE_MODULES, "pos", "cosmetics", ...RETAIL_STOCK_MODULES],
+    labels: RETAIL_LABELS,
+    salesModel: "retail_invoice",
+    defaultDisabledFeatures: ["inventory", "reservations", "delivery"],
+    capabilities: ["batch_expiry", "barcode"],
   },
 };
 
@@ -199,6 +244,11 @@ export function industryProfile(industry: Industry): IndustryProfile {
 /** Whether this industry has a module at all — the question nav, pages and API guards all ask. */
 export function hasModule(industry: Industry, module: ModuleKey): boolean {
   return INDUSTRY_PROFILES[industry].modules.includes(module);
+}
+
+/** Whether this trade has a Phase 27 capability switched on (batch expiry, barcode, repairs, …). */
+export function hasCapability(industry: Industry, capability: CapabilityKey): boolean {
+  return INDUSTRY_PROFILES[industry].capabilities.includes(capability);
 }
 
 /** This industry's word for something, falling back to F&B's when it has no opinion. */
@@ -224,6 +274,11 @@ export const PAGE_MODULE_PREFIXES: readonly (readonly [string, ModuleKey])[] = [
   ["/dashboard/jewelry", "jewelry"],
   ["/dashboard/watch", "watch"],
   ["/dashboard/accessories", "accessories"],
+  ["/dashboard/cosmetics", "cosmetics"],
+  ["/dashboard/loyalty", "loyalty"],
+  ["/dashboard/promotions", "promotions"],
+  ["/dashboard/commission", "commission"],
+  ["/dashboard/stock", "stock"],
 ];
 
 /**
@@ -247,6 +302,10 @@ const API_MODULE_PREFIXES: readonly (readonly [string, ModuleKey])[] = [
   ["/api/deliveries", "delivery"],
   ["/api/couriers", "delivery"],
   ["/api/inventory", "inventory"],
+  ["/api/loyalty", "loyalty"],
+  ["/api/promotions", "promotions"],
+  ["/api/commission", "commission"],
+  ["/api/stock", "stock"],
 ];
 
 export function moduleForApiPath(pathname: string): ModuleKey | null {

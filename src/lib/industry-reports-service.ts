@@ -318,13 +318,16 @@ export interface VariantSalesRow {
 /**
  * Which variants actually sell, read straight off the sale events rather
  * than off any per-item counter — so it can never disagree with the
- * postings those same events produced.
+ * postings those same events produced. `eventPrefix` names which trade's
+ * sale events to read (`accessory.*` or `cosmetic.*`) — one implementation,
+ * because a variant sale is a variant sale whichever fungible trade wrote it.
  */
 export async function variantSalesAnalysis(
   businessId: string,
   locationId: string,
-  options: { from?: string; to?: string } = {},
+  options: { from?: string; to?: string; eventPrefix?: string } = {},
 ): Promise<VariantSalesRow[]> {
+  const prefix = options.eventPrefix ?? "accessory";
   const { rows } = await query<{
     item_id: string;
     item_name: string;
@@ -340,7 +343,7 @@ export async function variantSalesAnalysis(
                SUM((e.payload->>'net')::numeric)      AS net_revenue
           FROM domain_events e
          WHERE e.business_id = $1 AND e.location_id = $2
-           AND e.event_type = 'accessory.sale_revenue'
+           AND e.event_type = $5 || '.sale_revenue'
            AND ($3::date IS NULL OR e.created_at >= $3::date)
            AND ($4::date IS NULL OR e.created_at < ($4::date + 1))
          GROUP BY e.source_id
@@ -348,7 +351,7 @@ export async function variantSalesAnalysis(
         SELECT e.source_id AS item_id, SUM((e.payload->>'cost')::numeric) AS cogs
           FROM domain_events e
          WHERE e.business_id = $1 AND e.location_id = $2
-           AND e.event_type = 'accessory.sale_cogs'
+           AND e.event_type = $5 || '.sale_cogs'
            AND ($3::date IS NULL OR e.created_at >= $3::date)
            AND ($4::date IS NULL OR e.created_at < ($4::date + 1))
          GROUP BY e.source_id
@@ -367,7 +370,7 @@ export async function variantSalesAnalysis(
         LEFT JOIN items p ON p.id = i.parent_item_id
         LEFT JOIN cost c ON c.item_id = i.id
        ORDER BY r.net_revenue DESC`,
-    [businessId, locationId, options.from ?? null, options.to ?? null],
+    [businessId, locationId, options.from ?? null, options.to ?? null, prefix],
   );
 
   return rows.map((r) => {
@@ -378,6 +381,79 @@ export async function variantSalesAnalysis(
       itemName: r.item_name,
       parentName: r.parent_name,
       attributes: r.attributes ?? [],
+      quantitySold: r.quantity_sold,
+      netRevenue,
+      cogs,
+      margin: netRevenue - cogs,
+    };
+  });
+}
+
+export interface BrandSalesRow {
+  brandId: string | null;
+  brandName: string | null;
+  quantitySold: string;
+  netRevenue: number;
+  cogs: number;
+  margin: number;
+}
+
+/**
+ * Phase 27 Wave 3 — sell-through by برند, read off the same sale events the
+ * variant analysis reads, joined to the item's brand. An item with no brand
+ * is grouped under «بدون برند» (brandId null) so nothing silently vanishes.
+ */
+export async function brandSalesAnalysis(
+  businessId: string,
+  locationId: string,
+  options: { from?: string; to?: string; eventPrefix?: string } = {},
+): Promise<BrandSalesRow[]> {
+  const prefix = options.eventPrefix ?? "cosmetic";
+  const { rows } = await query<{
+    brand_id: string | null;
+    brand_name: string | null;
+    quantity_sold: string;
+    net_revenue: string;
+    cogs: string;
+  }>(
+    `WITH revenue AS (
+        SELECT e.source_id AS item_id,
+               SUM((e.payload->>'quantity')::numeric) AS quantity_sold,
+               SUM((e.payload->>'net')::numeric)      AS net_revenue
+          FROM domain_events e
+         WHERE e.business_id = $1 AND e.location_id = $2
+           AND e.event_type = $5 || '.sale_revenue'
+           AND ($3::date IS NULL OR e.created_at >= $3::date)
+           AND ($4::date IS NULL OR e.created_at < ($4::date + 1))
+         GROUP BY e.source_id
+      ), cost AS (
+        SELECT e.source_id AS item_id, SUM((e.payload->>'cost')::numeric) AS cogs
+          FROM domain_events e
+         WHERE e.business_id = $1 AND e.location_id = $2
+           AND e.event_type = $5 || '.sale_cogs'
+           AND ($3::date IS NULL OR e.created_at >= $3::date)
+           AND ($4::date IS NULL OR e.created_at < ($4::date + 1))
+         GROUP BY e.source_id
+      )
+      SELECT i.brand_id, br.name AS brand_name,
+             COALESCE(SUM(r.quantity_sold), 0)::text AS quantity_sold,
+             COALESCE(SUM(r.net_revenue), 0)::text   AS net_revenue,
+             COALESCE(SUM(c.cogs), 0)::text          AS cogs
+        FROM revenue r
+        JOIN items i ON i.id = r.item_id
+        LEFT JOIN item_brands br ON br.id = i.brand_id
+        LEFT JOIN cost c ON c.item_id = i.id
+       GROUP BY i.brand_id, br.name
+       ORDER BY net_revenue DESC`,
+    [businessId, locationId, options.from ?? null, options.to ?? null, prefix],
+  );
+
+  return rows.map((r) => {
+    const netRevenue = Number(r.net_revenue);
+    const cogs = Number(r.cogs);
+    return {
+      brandId: r.brand_id,
+      brandName: r.brand_name,
       quantitySold: r.quantity_sold,
       netRevenue,
       cogs,

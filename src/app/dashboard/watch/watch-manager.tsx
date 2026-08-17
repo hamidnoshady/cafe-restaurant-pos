@@ -6,6 +6,7 @@ import { IndustryManagerShell, type Runner } from "../industry-manager-shell";
 import { UnitsSection } from "./units-section";
 import { RepairsSection } from "./repairs-section";
 import { ReportsSection } from "./reports-section";
+import { RemindersSection } from "./reminders-section";
 
 export type SerialStatus = "in_stock" | "reserved" | "sold" | "in_repair";
 export type RepairStatus = "received" | "in_progress" | "ready" | "closed" | "cancelled";
@@ -54,6 +55,11 @@ export interface RepairTicket {
   underWarranty: boolean;
   laborCharge: number;
   vatPercent: number;
+  /** Phase 27 Wave 10 — the estimate the customer must approve before work starts. */
+  estimatedTotalRial: number;
+  estimatedLaborRial: number;
+  estimatedPartsRial: number;
+  estimateApprovedAt: string | null;
   closedAt: string | null;
   createdAt: string;
 }
@@ -66,9 +72,26 @@ export interface RepairPart {
   charge: number;
 }
 
+export type ServiceReminderState = "overdue" | "due";
+
+export interface ServiceReminder {
+  serialId: string;
+  serialNumber: string;
+  itemName: string;
+  customerName: string | null;
+  referenceDate: string;
+  state: ServiceReminderState;
+}
+
+export const SERVICE_REMINDER_STATE_LABELS: Record<ServiceReminderState, string> = {
+  overdue: "گذشته از موعد",
+  due: "نزدیک موعد",
+};
+
 const TABS = [
   { key: "units", label: "دستگاه‌ها" },
   { key: "repairs", label: "تعمیرات" },
+  { key: "reminders", label: "یادآوری سرویس" },
   { key: "reports", label: "گزارش‌ها" },
 ] as const;
 type TabKey = (typeof TABS)[number]["key"];
@@ -90,6 +113,7 @@ export function WatchManager() {
   const [models, setModels] = useState<WatchModel[]>([]);
   const [units, setUnits] = useState<SerialUnit[]>([]);
   const [tickets, setTickets] = useState<RepairTicket[]>([]);
+  const [reminders, setReminders] = useState<ServiceReminder[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState<TabKey>("units");
@@ -117,6 +141,13 @@ export function WatchManager() {
   }, []);
   useEffect(loadTickets, [loadTickets]);
 
+  const loadReminders = useCallback(() => {
+    api<{ reminders: ServiceReminder[] }>("/api/watch/reminders").then(({ ok, data }) => {
+      if (ok) setReminders(data.reminders);
+    });
+  }, []);
+  useEffect(loadReminders, [loadReminders]);
+
   const run: Runner = async (fn) => {
     setBusy(true);
     setError("");
@@ -129,6 +160,7 @@ export function WatchManager() {
     loadModels();
     loadUnits();
     loadTickets();
+    loadReminders();
     return true;
   };
 
@@ -147,6 +179,7 @@ export function WatchManager() {
       {tab === "repairs" ? (
         <RepairsSection tickets={tickets} units={units} busy={busy} run={run} />
       ) : null}
+      {tab === "reminders" ? <RemindersSection reminders={reminders} /> : null}
       {tab === "reports" ? <ReportsSection /> : null}
     </IndustryManagerShell>
   );

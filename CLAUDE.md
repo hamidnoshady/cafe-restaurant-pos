@@ -128,15 +128,21 @@ and left:
   changeable there afterwards (additively and audited — see Phase 25's doc for why that is safe).
   That choice selects its chart of accounts (`coaTemplateForIndustry`), its setup-wizard steps
   (`wizardStepsForIndustry`), and — since Phase 25 — **which modules it has at all, what they are
-  called, and how it sells**, all from one place: `src/lib/industry-profile.ts`. Prefer adding to
+  called, and how it sells**, all from one place: `src/lib/industry-profile.ts`. Since Phase 27 the
+  profile also carries a per-trade `capabilities` field for finer-grained switches (`barcode`,
+  `batch_expiry`, `repairs`). Prefer adding to
   that profile over adding an `if (industry === …)` anywhere else. A module the trade does not have
   is refused at the API guard (`moduleForApiPath` in `withTenantScope`), not merely hidden from the
   nav — the same discipline `features.ts` follows. The retail industries sell through a multi-line
   invoice (`retail-invoice-service.ts`) that is an `orders` row settled by Phase 21's own sell
-  services, so no posting rule is duplicated. `food_service` is the original F&B app; `jewelry`/`watch`/`accessories` build on a
+  services, so no posting rule is duplicated. There are **five** trades: `food_service` is the original F&B app;
+  `jewelry`/`watch`/`accessories`/`cosmetics` build on a
   parallel `items`/`item_serials`/`item_weight_attributes`/`item_stock` model and post through the
   domain-event engine (`src/lib/posting-engine.ts` + each industry's `*-posting-rules.ts`) rather
-  than hand-written ledger functions. **F&B's `menu_items`/`inventory_items`/recipes are never
+  than hand-written ledger functions. Cosmetics adds `item_batches` on top (batch/lot number, expiry,
+  sold first-expired-first-out via `src/lib/fefo.ts`); every trade shares one promotion engine
+  (`src/lib/promotions.ts`) and one loyalty engine (`src/lib/loyalty-service.ts`). **F&B's
+  `menu_items`/`inventory_items`/recipes are never
   migrated onto that model, by decision** — see the phase doc's "Revised" scope note before assuming
   otherwise. Industry-gated pages and routes use `src/lib/industry-guard.ts`, the industry-keyed
   counterpart of `features.ts`.

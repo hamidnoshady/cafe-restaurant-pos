@@ -8,6 +8,7 @@
  */
 import type { PrinterConnection } from "./printer-connection";
 import type { KitchenTicketData } from "./kitchen-ticket-template";
+import type { LabelData } from "./label-template";
 import type { ReceiptData } from "./receipt-template";
 
 function agentBaseUrl(): string {
@@ -48,6 +49,10 @@ export function printReceipt(connection: PrinterConnection, receipt: ReceiptData
 
 export function printKitchenTicket(connection: PrinterConnection, ticket: KitchenTicketData) {
   return callAgent("/print/kitchen-ticket", { connection, ticket });
+}
+
+export function printLabel(connection: PrinterConnection, label: LabelData) {
+  return callAgent("/print/label", { connection, label });
 }
 
 export function testPrint(connection: PrinterConnection, kind: "receipt" | "kitchen") {

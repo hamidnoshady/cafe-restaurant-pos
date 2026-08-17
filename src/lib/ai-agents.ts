@@ -12,6 +12,7 @@ export const AI_AGENT_KEYS = [
   "sales_analyzer",
   "receivables_follow_up",
   "reconciliation_assistant",
+  "service_reminders",
 ] as const;
 
 export type AiAgentKey = (typeof AI_AGENT_KEYS)[number];
@@ -43,6 +44,11 @@ export const AI_AGENT_DEFINITIONS: AiAgentDefinition[] = [
     key: "reconciliation_assistant",
     title: "دستیار مغایرت‌گیری",
     description: "مغایرت صندوق پایان شیفت و ردیف‌های بانکی تطبیق‌نشده را هشدار می‌دهد.",
+  },
+  {
+    key: "service_reminders",
+    title: "یادآور سرویس ساعت",
+    description: "برای ساعت‌های فروخته‌شده‌ای که موعد سرویس‌شان رسیده پیش‌نویس یادآوری آماده می‌کند؛ هیچ پیامی خودکار ارسال نمی‌شود.",
   },
 ];
 
@@ -110,6 +116,7 @@ export const AGENT_RUN_KIND: Record<AiAgentKey, AiProactiveRunKind> = {
   reconciliation_assistant: "daily_digest",
   sales_analyzer: "weekly_digest",
   receivables_follow_up: "customer_debt_drafts",
+  service_reminders: "service_reminder_drafts",
 };
 
 export type AiAgentTaskStatus = "done" | "pending";

@@ -24,6 +24,7 @@ import {
 } from "./accessories";
 import { getItem } from "./items-service";
 import { emitDomainEvent } from "./posting-engine";
+import type { RialText } from "./inventory-exact";
 import type { SettlementMethod } from "./ledger";
 // Side-effect import: registers the accessory.* posting rules with the engine.
 import "./accessories-posting-rules";
@@ -148,6 +149,8 @@ export interface SellAccessoryResult {
   breakdown: AccessorySalePriceBreakdown;
   revenueEntryId: string | null;
   cogsEntryId: string | null;
+  /** The COGS this sale posted, Rial — the same number the commission margin basis uses. */
+  cost: RialText;
 }
 
 /**
@@ -225,11 +228,11 @@ export async function sellAccessoryUnits(
   });
 
   await client.query(
-    `UPDATE item_stock SET quantity = quantity - $2, updated_at = now() WHERE item_id = $1`,
+    `UPDATE item_stock SET quantity = quantity - $2, last_sold_at = now(), updated_at = now() WHERE item_id = $1`,
     [input.itemId, input.quantity],
   );
 
-  return { breakdown, revenueEntryId, cogsEntryId };
+  return { breakdown, revenueEntryId, cogsEntryId, cost };
 }
 
 export interface VariantSummary {

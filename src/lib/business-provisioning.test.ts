@@ -69,7 +69,7 @@ describe("validateProvisionBody", () => {
   });
 
   it("accepts an explicit, enabled industry", () => {
-    for (const industry of ["food_service", "jewelry", "watch", "accessories"]) {
+    for (const industry of ["food_service", "jewelry", "watch", "accessories", "cosmetics"]) {
       expect(validateProvisionBody({ ...VALID, industry }).input?.industry, industry).toBe(industry);
     }
   });
@@ -111,7 +111,7 @@ describe("validateProvisionBody", () => {
     expect(validateProvisionBody(VALID).input?.subdomain).toBeUndefined();
   });
 
-  it("offers every industry Phase 21 named, now that all four waves have shipped", () => {
+  it("offers every industry the platform names, now that all five trades have shipped", () => {
     // Until Wave 6 this asserted the opposite for watch/accessories — that a
     // real-but-not-yet-built industry is rejected with industry_not_available.
     // The gate itself is unchanged (the validator still checks

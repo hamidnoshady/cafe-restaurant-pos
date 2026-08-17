@@ -45,6 +45,12 @@ export interface RepairTicket {
   underWarranty: boolean;
   laborCharge: number;
   vatPercent: number;
+  /** Phase 27 Wave 10 — the estimate the customer must approve before work starts. */
+  estimatedTotalRial: number;
+  estimatedLaborRial: number;
+  estimatedPartsRial: number;
+  estimatedAt: string | null;
+  estimateApprovedAt: string | null;
   closedAt: string | null;
   createdAt: string;
 }
@@ -71,6 +77,11 @@ interface TicketRow extends Record<string, unknown> {
   under_warranty: boolean;
   labor_charge: string;
   vat_percent: string;
+  estimated_total_rial: string;
+  estimated_labor_rial: string;
+  estimated_parts_rial: string;
+  estimated_at: string | null;
+  estimate_approved_at: string | null;
   closed_at: string | null;
   created_at: string;
 }
@@ -88,6 +99,11 @@ function mapTicket(row: TicketRow): RepairTicket {
     underWarranty: row.under_warranty,
     laborCharge: Number(row.labor_charge),
     vatPercent: Number(row.vat_percent),
+    estimatedTotalRial: Number(row.estimated_total_rial),
+    estimatedLaborRial: Number(row.estimated_labor_rial),
+    estimatedPartsRial: Number(row.estimated_parts_rial),
+    estimatedAt: row.estimated_at,
+    estimateApprovedAt: row.estimate_approved_at,
     closedAt: row.closed_at,
     createdAt: row.created_at,
   };
@@ -316,6 +332,13 @@ export async function setRepairStatus(id: string, status: RepairStatus): Promise
   const error = validateRepairStatusTransition(ticket.status, status);
   if (error) throw new Error(error);
 
+  // Phase 27 Wave 10 — work must not start (received → in_progress) until the
+  // customer has approved the estimate. A ticket with no estimate at all is
+  // untouched: pre-estimate behaviour is unchanged (acceptance criterion 6).
+  if (status === "in_progress" && ticket.estimatedTotalRial > 0 && !ticket.estimateApprovedAt) {
+    throw new Error("این تیکت برآورد هزینه دارد و هنوز تأیید مشتری را نگرفته است.");
+  }
+
   const { rows } = await query<TicketRow>(
     `UPDATE repair_tickets SET status = $2, updated_at = now() WHERE id = $1 RETURNING *`,
     [id, status],
@@ -364,6 +387,11 @@ export async function closeRepairTicket(
   const ticket = mapTicket(ticketRows[0]);
   if (ticket.status === "closed") throw new Error("این تیکت قبلاً بسته شده است.");
   if (ticket.status === "cancelled") throw new Error("تیکت لغوشده را نمی‌توان بست.");
+  // Phase 27 Wave 10 — an estimate the customer has not approved means the
+  // shop must not start (and therefore cannot close) the job.
+  if (ticket.estimatedTotalRial > 0 && !ticket.estimateApprovedAt) {
+    throw new Error("این تیکت برآورد هزینه دارد و هنوز تأیید مشتری را نگرفته است.");
+  }
 
   const { rows: partRows } = await client.query<{ charge_total: string | null }>(
     `SELECT SUM(charge)::text AS charge_total FROM repair_ticket_parts WHERE ticket_id = $1`,

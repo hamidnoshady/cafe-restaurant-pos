@@ -6,9 +6,11 @@ import {
   labelFor,
   moduleForApiPath,
   moduleForPagePath,
+  hasCapability,
   INDUSTRY_PROFILES,
   MODULE_KEYS,
   PAGE_MODULE_PREFIXES,
+  CAPABILITY_KEYS,
   type LabelKey,
   type ModuleKey,
 } from "./industry-profile";
@@ -21,7 +23,7 @@ const LABEL_KEYS: LabelKey[] = [
   "catalogueItem",
 ];
 
-const RETAIL_INDUSTRIES: Industry[] = ["jewelry", "watch", "accessories"];
+const RETAIL_INDUSTRIES: Industry[] = ["jewelry", "watch", "accessories", "cosmetics"];
 
 describe("INDUSTRY_PROFILES", () => {
   it("covers every industry the app can create", () => {
@@ -58,7 +60,15 @@ describe("module sets", () => {
     // the café, which is the only industry that was ever complete.
     const modules = industryProfile("food_service").modules;
     for (const module of MODULE_KEYS) {
-      if (module === "jewelry" || module === "watch" || module === "accessories") continue;
+      // Retail-only: the four industry pages, and `stock` (F&B's equivalent is `inventory`).
+      if (
+        module === "jewelry" ||
+        module === "watch" ||
+        module === "accessories" ||
+        module === "cosmetics" ||
+        module === "stock"
+      )
+        continue;
       expect(modules, module).toContain(module);
     }
   });
@@ -79,7 +89,7 @@ describe("module sets", () => {
         expect(hasModule(industry, other as ModuleKey), `${industry} sees ${other}`).toBe(false);
       }
     }
-    // F&B has none of the three.
+    // F&B has none of the retail industry pages.
     for (const other of RETAIL_INDUSTRIES) {
       expect(hasModule("food_service", other as ModuleKey), `food_service sees ${other}`).toBe(false);
     }
@@ -138,6 +148,26 @@ describe("labelFor", () => {
     for (const industry of RETAIL_INDUSTRIES) {
       for (const key of LABEL_KEYS) {
         expect(labelFor(industry, key), `${industry}/${key}`).not.toContain("منو");
+      }
+    }
+  });
+});
+
+describe("capabilities", () => {
+  it("names only declared capabilities", () => {
+    for (const industry of INDUSTRIES) {
+      for (const capability of industryProfile(industry).capabilities) {
+        expect(CAPABILITY_KEYS, `${industry}/${capability}`).toContain(capability);
+      }
+    }
+  });
+
+  it("hasCapability reflects the profile", () => {
+    for (const industry of INDUSTRIES) {
+      for (const capability of CAPABILITY_KEYS) {
+        expect(hasCapability(industry, capability), `${industry}/${capability}`).toBe(
+          industryProfile(industry).capabilities.includes(capability),
+        );
       }
     }
   });

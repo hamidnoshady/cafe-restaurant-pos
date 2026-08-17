@@ -6,6 +6,7 @@ import {
   dueProactiveRuns,
   localBusinessClock,
   proactivePeriodKey,
+  serviceReminderDraft,
   shiftIsoDate,
 } from "./ai-proactive";
 
@@ -20,6 +21,7 @@ describe("proactive AI scheduling", () => {
     expect(dueProactiveRuns(settings, { dateKey: "2026-08-01", hour: 8, weekday: 6 })).toEqual([
       "daily_digest",
       "customer_debt_drafts",
+      "service_reminder_drafts",
       "weekly_digest",
     ]);
     expect(proactivePeriodKey("weekly_digest", { dateKey: "2026-08-01", hour: 8, weekday: 6 })).toBe("2026-08-01:weekly");
@@ -43,6 +45,13 @@ describe("proactive AI scheduling", () => {
     const draft = debtFollowUpDraft("مریم", 125_000);
     expect(draft).toContain("مریم");
     expect(draft).toContain("۱۲٬۵۰۰ تومان");
+    expect(draft).not.toContain("ارسال شد");
+  });
+
+  it("builds a shop-facing service reminder that never claims to have sent anything", () => {
+    const draft = serviceReminderDraft("ساعت مچی", "S-1001", "2026-09-01");
+    expect(draft).toContain("ساعت مچی — S-1001");
+    expect(draft).toContain("2026-09-01");
     expect(draft).not.toContain("ارسال شد");
   });
 });

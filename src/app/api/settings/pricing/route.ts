@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requirePermission, withTenantScope } from "@/lib/auth";
 import { PERMISSIONS } from "@/lib/permissions";
-import { getPricingConfig, setPricingConfig } from "@/lib/pricing-service";
+import { DEFAULT_COST_DRIFT_THRESHOLD_PERCENT, getPricingConfig, setPricingConfig } from "@/lib/pricing-service";
 
 /** Business-wide default target margin for cost-plus pricing suggestions (menu items may override it individually). */
 export const GET = withTenantScope(async () => {
@@ -22,7 +22,7 @@ export const PUT = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requirePermission(PERMISSIONS.settingsManage);
   if (error) return error;
 
-  let body: { defaultMarginPercent?: unknown; fallbackOverheadPercent?: unknown };
+  let body: { defaultMarginPercent?: unknown; fallbackOverheadPercent?: unknown; costDriftThresholdPercent?: unknown };
   try {
     body = await request.json();
   } catch {
@@ -35,9 +35,16 @@ export const PUT = withTenantScope(async (request: NextRequest) => {
   const fallbackOverheadPercent = parsePercent(body.fallbackOverheadPercent, 1000);
   if (!fallbackOverheadPercent.ok) return NextResponse.json({ error: "invalid_overhead" }, { status: 400 });
 
+  const drift = body.costDriftThresholdPercent ?? DEFAULT_COST_DRIFT_THRESHOLD_PERCENT;
+  const costDriftThresholdPercent = Number(drift);
+  if (!Number.isFinite(costDriftThresholdPercent) || costDriftThresholdPercent < 0) {
+    return NextResponse.json({ error: "invalid_drift_threshold" }, { status: 400 });
+  }
+
   await setPricingConfig(session.businessId, {
     defaultMarginPercent: defaultMarginPercent.value,
     fallbackOverheadPercent: fallbackOverheadPercent.value,
+    costDriftThresholdPercent,
   });
   return NextResponse.json({ ok: true });
 });

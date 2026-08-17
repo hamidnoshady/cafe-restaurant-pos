@@ -10,21 +10,31 @@
  */
 import type { PoolClient } from "pg";
 import { computeOrderTotals, type CartLine, type DiscountInput, type OrderTotals } from "./orders";
+import { listPromotions } from "./promotions-service";
 
 export async function recomputeOrderTotals(
   client: PoolClient,
   orderId: string,
   discount: DiscountInput,
 ): Promise<OrderTotals> {
+  const { rows: orderRows } = await client.query<{ business_id: string }>(
+    `SELECT business_id FROM orders WHERE id = $1`,
+    [orderId],
+  );
+  const businessId = orderRows[0]?.business_id;
+
   const { rows } = await client.query<{
     unit_price: string;
     quantity: number;
     tax_rate: string;
     mod_deltas: string[] | null;
+    menu_item_id: string | null;
+    category_id: string | null;
   }>(
     `SELECT oi.unit_price, oi.quantity, COALESCE(mc.tax_rate, 0) AS tax_rate,
             ARRAY(SELECT price_delta FROM order_item_modifiers oim
-                   WHERE oim.order_item_id = oi.id) AS mod_deltas
+                   WHERE oim.order_item_id = oi.id) AS mod_deltas,
+            oi.menu_item_id, mc.id AS category_id
        FROM order_items oi
        LEFT JOIN menu_items mi ON mi.id = oi.menu_item_id
        LEFT JOIN menu_categories mc ON mc.id = mi.category_id
@@ -37,8 +47,14 @@ export async function recomputeOrderTotals(
     quantity: r.quantity,
     modifierDeltas: (r.mod_deltas ?? []).map(Number),
     taxRatePercent: Number(r.tax_rate),
+    id: r.menu_item_id ?? undefined,
+    categoryId: r.category_id,
   }));
-  const totals = computeOrderTotals(lines, discount);
+
+  // Phase 27 Wave 6 — promotions are evaluated by the shared engine over the
+  // F&B cart exactly as over a retail cart.
+  const promotions = businessId ? await listPromotions(businessId, false, client) : [];
+  const totals = computeOrderTotals(lines, discount, 0, promotions);
 
   await client.query(
     `UPDATE orders SET subtotal = $2, discount = $3, discount_type = $4, discount_value = $5,

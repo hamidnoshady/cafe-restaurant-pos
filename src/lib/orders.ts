@@ -8,6 +8,7 @@
  * sum(line discounts) === order discount exactly.
  */
 import type { Rial } from "./money";
+import { evaluatePromotions, type Promotion } from "./promotions";
 
 export interface CartLine {
   /** menu item price at time of sale, Rial */
@@ -17,6 +18,10 @@ export interface CartLine {
   modifierDeltas: Rial[];
   /** the menu item's category tax rate, percent (0-100) */
   taxRatePercent: number;
+  /** The sellable thing's id, for Phase 27 promotion scope matching (menu_item_id). */
+  id?: string;
+  /** The menu item's category id, for promotion scope matching. */
+  categoryId?: string | null;
 }
 
 export type DiscountInput = { type: "percent" | "amount"; value: number } | { type: null; value?: number };
@@ -55,26 +60,45 @@ export function computeOrderTotals(
   lines: CartLine[],
   discount: DiscountInput,
   serviceCharge: Rial = 0,
+  promotions: Promotion[] = [],
+  now: Date = new Date(),
 ): OrderTotals {
   const lineSubtotals = lines.map(computeLineSubtotal);
   const subtotal = lineSubtotals.reduce((a, b) => a + b, 0);
-  const discountAmount = computeDiscountAmount(subtotal, discount);
+
+  // Phase 27 Wave 6 — the shared promotion engine runs over the F&B cart
+  // exactly as it runs over a retail cart, so one set of rules produces one
+  // answer. Lines without an id (a snapshot with no menu item) match nothing.
+  const promotionItems = lines.map((line, i) => ({
+    id: line.id ?? "",
+    categoryId: line.categoryId ?? null,
+    gross: lineSubtotals[i],
+    quantity: line.quantity,
+  }));
+  const promotionResult = evaluatePromotions(promotionItems, promotions, now);
+
+  const manualDiscountAmount = computeDiscountAmount(subtotal, discount);
+  const remainingAfterPromotions = Math.max(0, subtotal - promotionResult.totalDiscount);
+  const discountAmount = Math.min(manualDiscountAmount, remainingAfterPromotions);
 
   let allocatedDiscount = 0;
   const lineResults: LineTotal[] = lines.map((line, i) => {
     const lineSubtotal = lineSubtotals[i];
     const isLast = i === lines.length - 1;
     const share = subtotal > 0 ? lineSubtotal / subtotal : 0;
-    const lineDiscount = isLast ? discountAmount - allocatedDiscount : Math.round(discountAmount * share);
-    allocatedDiscount += lineDiscount;
+    const manualShare = isLast ? discountAmount - allocatedDiscount : Math.round(discountAmount * share);
+    allocatedDiscount += manualShare;
+    // Promotion discount plus the manual share, never more than the line's gross.
+    const lineDiscount = Math.min(lineSubtotal, promotionResult.lineDiscounts[i] + manualShare);
     const taxableBase = lineSubtotal - lineDiscount;
     const lineTax = Math.round((taxableBase * line.taxRatePercent) / 100);
     return { lineSubtotal, lineDiscount, lineTax, lineTotal: taxableBase + lineTax };
   });
 
   const tax = lineResults.reduce((a, l) => a + l.lineTax, 0);
-  const total = subtotal - discountAmount + tax + serviceCharge;
-  return { subtotal, discount: discountAmount, tax, total, lines: lineResults };
+  const totalDiscount = lineResults.reduce((a, l) => a + l.lineDiscount, 0);
+  const total = subtotal - totalDiscount + tax + serviceCharge;
+  return { subtotal, discount: totalDiscount, tax, total, lines: lineResults };
 }
 
 /** Cashier-facing queue/order label. Takeaway gets a "T-" prefix, delivery a "D-", dine-in a plain "#". */

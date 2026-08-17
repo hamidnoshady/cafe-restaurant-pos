@@ -22,8 +22,9 @@ import { formatToman, parseToRial } from "@/lib/money";
 import { normalizePosSearchText } from "@/lib/pos-selection";
 import { computeGoldSalePrice, type MakingChargeType } from "@/lib/gold-pricing";
 import { computeAccessorySalePrice } from "@/lib/accessories";
+import { computeCosmeticSalePrice } from "@/lib/cosmetics";
 import { computeWatchSalePrice } from "@/lib/watch-pricing";
-import { labelFor } from "@/lib/industry-profile";
+import { hasCapability, labelFor } from "@/lib/industry-profile";
 import type { Industry } from "@/lib/industries";
 import { Button } from "@/components/ui/button";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -63,6 +64,9 @@ interface Variant {
   sku: string | null;
   kind: string;
   quantity: string;
+  /** Cosmetics batch-tracked items: the sellable (non-expired) quantity. */
+  sellableQuantity?: string;
+  tracking?: string;
   unitPrice: number | null;
 }
 
@@ -85,7 +89,7 @@ interface CartLine {
   key: string;
   label: string;
   /** Discriminates which payload shape goes to the API. */
-  payload: Record<string, unknown> & { kind: "gold" | "watch" | "accessory" };
+  payload: Record<string, unknown> & { kind: "gold" | "watch" | "accessory" | "cosmetic" };
   net: number;
   vat: number;
   total: number;
@@ -157,6 +161,13 @@ export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
     if (industry === "accessories") {
       requests.push(
         api<{ items?: Variant[] }>("/api/accessories/items").then(({ ok, data }) => {
+          if (ok) setVariants(data.items ?? []);
+        }),
+      );
+    }
+    if (industry === "cosmetics") {
+      requests.push(
+        api<{ items?: Variant[] }>("/api/cosmetics/items").then(({ ok, data }) => {
           if (ok) setVariants(data.items ?? []);
         }),
       );
@@ -246,11 +257,22 @@ export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem] xl:grid-cols-[minmax(0,1fr)_26rem]">
         <div className="min-w-0 space-y-4">
+          {hasCapability(industry, "barcode") ? (
+            <BarcodeScanField
+              industry={industry}
+              variants={variants}
+              weightItems={weightItems}
+              prices={prices}
+              units={units}
+              onAdd={addLine}
+            />
+          ) : null}
           {industry === "jewelry" ? (
             <GoldLineForm items={weightItems} prices={prices} onAdd={addLine} />
           ) : null}
           {industry === "watch" ? <WatchLineForm units={units} onAdd={addLine} /> : null}
           {industry === "accessories" ? <AccessoryLineForm variants={variants} onAdd={addLine} /> : null}
+          {industry === "cosmetics" ? <CosmeticsLineForm variants={variants} onAdd={addLine} /> : null}
 
           <RecentInvoices invoices={invoices} loading={loading} />
         </div>
@@ -371,6 +393,170 @@ function Panel({ title, hint, children }: { title: string; hint: string; childre
       <p className="mt-1 text-xs leading-5 text-muted-foreground">{hint}</p>
       <div className="mt-4">{children}</div>
     </section>
+  );
+}
+
+/**
+ * Phase 27 Wave 4 — scan-to-add. A handheld scanner types the code and presses
+ * Enter; this resolves it to exactly one sellable thing and appends the line
+ * (or, for a watch, which has no catalogue price, surfaces the unit so the
+ * one remaining input — the agreed price — is entered by hand). Ambiguity is
+ * surfaced, never silently guessed.
+ */
+function BarcodeScanField({
+  industry,
+  variants,
+  weightItems,
+  prices,
+  units,
+  onAdd,
+}: {
+  industry: Industry;
+  variants: Variant[];
+  weightItems: WeightItem[];
+  prices: GoldPrice[];
+  units: SerialUnit[];
+  onAdd: (line: CartLine) => void;
+}) {
+  const [code, setCode] = useState("");
+  const [scanBusy, setScanBusy] = useState(false);
+  const [scanError, setScanError] = useState("");
+
+  async function resolve(rawCode: string) {
+    const needle = rawCode.trim();
+    if (!needle) return;
+    setScanBusy(true);
+    setScanError("");
+    const { ok, data } = await api<{
+      matches?: { itemId: string; serialId?: string | null; itemName: string; kind: string; tracking: string }[];
+      message?: string;
+    }>(`/api/barcodes/lookup?code=${encodeURIComponent(needle)}`);
+    setScanBusy(false);
+    setCode("");
+    if (!ok) {
+      setScanError(data.message ?? "بارکد خوانده نشد.");
+      return;
+    }
+    const matches = data.matches ?? [];
+    if (matches.length === 0) {
+      setScanError("بارکدی با این کد یافت نشد.");
+      return;
+    }
+    if (matches.length > 1) {
+      setScanError("این بارکد به بیش از یک کالا اشاره دارد؛ کالا را دستی انتخاب کنید.");
+      return;
+    }
+    const match = matches[0];
+
+    if (industry === "cosmetics" || industry === "accessories") {
+      const variant = variants.find((v) => v.id === match.itemId);
+      if (!variant || !variant.unitPrice) {
+        setScanError("این کالا قیمت یا موجودی ندارد؛ از فرم کالا استفاده کنید.");
+        return;
+      }
+      try {
+        const breakdown =
+          industry === "cosmetics"
+            ? computeCosmeticSalePrice({ unitPrice: variant.unitPrice, quantity: "1", discount: 0, vatPercent: 9 })
+            : computeAccessorySalePrice({ unitPrice: variant.unitPrice, quantity: "1", discount: 0, vatPercent: 9 });
+        onAdd({
+          key: newKey(),
+          label: variant.name,
+          payload: {
+            kind: industry === "cosmetics" ? "cosmetic" : "accessory",
+            itemId: variant.id,
+            quantity: "1",
+            discount: 0,
+            vatPercent: 9,
+          },
+          net: Number(breakdown.net),
+          vat: Number(breakdown.vat),
+          total: Number(breakdown.total),
+        });
+        return;
+      } catch (err) {
+        setScanError(err instanceof Error ? err.message : "افزودن کالا ناموفق بود.");
+        return;
+      }
+    }
+
+    if (industry === "jewelry") {
+      const item = weightItems.find((i) => i.id === match.itemId);
+      const rate = item
+        ? prices.filter((p) => p.purity === item.purity).sort((a, b) => b.priceDate.localeCompare(a.priceDate))[0]
+        : null;
+      if (!item || !rate) {
+        setScanError("نرخ روز برای این قطعه ثبت نشده است؛ از فرم کالا استفاده کنید.");
+        return;
+      }
+      try {
+        // The same defaults the gold form seeds (7% اجرت، 7% سود، 9% مالیات) —
+        // the cashier still sees the breakdown in the cart before settling.
+        const breakdown = computeGoldSalePrice({
+          netWeight: item.netWeight,
+          pricePerGram: rate.pricePerGram,
+          makingCharge: { type: "percent", value: 7 },
+          profitPercent: 7,
+          vatPercent: 9,
+        });
+        const metalValue = Number(breakdown.metalValue);
+        const makingCharge = Number(breakdown.makingCharge);
+        const profit = Number(breakdown.profit);
+        onAdd({
+          key: newKey(),
+          label: `${item.name} (${formatQuantity(item.netWeight)} گرم، ${PURITY_LABELS[item.purity]})`,
+          payload: {
+            kind: "gold",
+            itemId: item.id,
+            makingChargeType: "percent",
+            makingChargeValue: 7,
+            profitPercent: 7,
+            vatPercent: 9,
+          },
+          net: metalValue + makingCharge + profit,
+          vat: Number(breakdown.vat),
+          total: Number(breakdown.total),
+          parts: { metalValue, makingCharge, profit },
+        });
+        return;
+      } catch (err) {
+        setScanError(err instanceof Error ? err.message : "افزودن کالا ناموفق بود.");
+        return;
+      }
+    }
+
+    if (industry === "watch") {
+      const serial = match.serialId
+        ? units.find((u) => u.id === match.serialId)
+        : units.filter((u) => u.itemId === match.itemId && u.status === "in_stock")[0];
+      if (!serial) {
+        setScanError("دستگاه با این بارکد موجود نیست.");
+        return;
+      }
+      // A watch has no catalogue price — it is agreed per sale — so the scan
+      // names the unit and the cashier enters the one figure the scan cannot.
+      setScanError(`دستگاه «${serial.itemName} — ${serial.serialNumber}» شناسایی شد؛ قیمت را در فرم دستگاه وارد کنید.`);
+      return;
+    }
+  }
+
+  return (
+    <Panel title="بارکدخوان" hint="بارکد را اسکن کنید؛ کالا بدون لمس کیبورد به فاکتور اضافه می‌شود.">
+      <input
+        className={inputClass}
+        dir="ltr"
+        value={code}
+        disabled={scanBusy}
+        autoFocus
+        placeholder="اسکن بارکد…"
+        onChange={(e) => setCode(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") void resolve(code);
+        }}
+      />
+      {scanBusy ? <p className="mt-2 text-xs text-muted-foreground">در حال جستجو…</p> : null}
+      {scanError ? <p className="mt-2 text-xs leading-5 text-rose-700">{scanError}</p> : null}
+    </Panel>
   );
 }
 
@@ -726,6 +912,122 @@ function AccessoryLineForm({ variants, onAdd }: { variants: Variant[]; onAdd: (l
             label: `${variant.name} × ${formatQuantity(quantity)}`,
             payload: {
               kind: "accessory",
+              itemId: variant.id,
+              quantity,
+              unitPrice: unitPrice.trim() ? effectivePrice : undefined,
+              discount: discountRial,
+              vatPercent: Number(vatPercent),
+            },
+            net: preview.net,
+            vat: preview.vat,
+            total: preview.total,
+          });
+          setItemId("");
+          setQuantity("1");
+          setUnitPrice("");
+          setDiscount("");
+        }}
+      >
+        <PlusIcon aria-hidden="true" className="size-4" />
+        افزودن به فاکتور
+      </Button>
+    </Panel>
+  );
+}
+
+/** A cosmetics line: a quantity of one variant, at its standard price unless overridden — the same shape as an accessories line, posted through the cosmetics sell path. */
+function CosmeticsLineForm({ variants, onAdd }: { variants: Variant[]; onAdd: (line: CartLine) => void }) {
+  const [itemId, setItemId] = useState("");
+  const [quantity, setQuantity] = useState("1");
+  const [unitPrice, setUnitPrice] = useState("");
+  const [discount, setDiscount] = useState("");
+  const [vatPercent, setVatPercent] = useState("9");
+
+  const sellable = useMemo(
+    () =>
+      variants.filter(
+        (v) => v.kind !== "variant_parent" && Number(v.sellableQuantity ?? v.quantity) > 0,
+      ),
+    [variants],
+  );
+  const variant = sellable.find((v) => v.id === itemId) ?? null;
+
+  const effectivePrice = unitPrice.trim() ? parseToRial(unitPrice, "toman") : (variant?.unitPrice ?? 0);
+  const discountRial = discount.trim() ? parseToRial(discount, "toman") : 0;
+
+  let preview: { net: number; vat: number; total: number } | null = null;
+  if (variant && effectivePrice > 0 && quantity.trim()) {
+    try {
+      const breakdown = computeCosmeticSalePrice({
+        unitPrice: effectivePrice,
+        quantity,
+        discount: discountRial,
+        vatPercent: Number(vatPercent),
+      });
+      preview = {
+        net: Number(breakdown.net),
+        vat: Number(breakdown.vat),
+        total: Number(breakdown.total),
+      };
+    } catch {
+      preview = null;
+    }
+  }
+
+  return (
+    <Panel title="افزودن کالا" hint="از هر تنوع به تعداد دلخواه؛ قیمت پیش‌فرض همان قیمت ثبت‌شدهٔ تنوع است.">
+      <Field label="کالا">
+        <SearchableSelect
+          value={itemId}
+          onChange={setItemId}
+          ariaLabel="انتخاب کالا"
+          options={[
+            { value: "", label: "انتخاب کنید" },
+            ...sellable.map((v) => ({
+              value: v.id,
+              label: `${v.parentName ? `${v.parentName} — ` : ""}${v.name} (موجودی ${formatQuantity(v.sellableQuantity ?? v.quantity)})`,
+            })),
+          ]}
+        />
+      </Field>
+      <div className="grid gap-x-4 sm:grid-cols-2">
+        <Field label="تعداد">
+          <input className={inputClass} dir="ltr" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
+        </Field>
+        <Field
+          label="قیمت واحد (تومان)"
+          hint={variant?.unitPrice ? `قیمت ثبت‌شده: ${formatToman(variant.unitPrice)}` : undefined}
+        >
+          <input
+            className={inputClass}
+            dir="ltr"
+            value={unitPrice}
+            onChange={(e) => setUnitPrice(e.target.value)}
+            placeholder="خالی = قیمت ثبت‌شده"
+          />
+        </Field>
+        <Field label="تخفیف (تومان)">
+          <input className={inputClass} dir="ltr" value={discount} onChange={(e) => setDiscount(e.target.value)} />
+        </Field>
+        <Field label="درصد مالیات">
+          <input className={inputClass} dir="ltr" value={vatPercent} onChange={(e) => setVatPercent(e.target.value)} />
+        </Field>
+      </div>
+      {preview ? (
+        <p className="mb-3 text-xs leading-6 text-muted-foreground">
+          خالص {formatToman(preview.net)} · مالیات {formatToman(preview.vat)} —{" "}
+          <b className="text-stone-900">{formatToman(preview.total)}</b>
+        </p>
+      ) : null}
+      <Button
+        disabled={!variant || !preview}
+        onClick={() => {
+          if (!variant || !preview) return;
+          onAdd({
+            key: newKey(),
+            label: `${variant.name} × ${formatQuantity(quantity)}`,
+            payload: {
+              kind: "cosmetic",
               itemId: variant.id,
               quantity,
               unitPrice: unitPrice.trim() ? effectivePrice : undefined,

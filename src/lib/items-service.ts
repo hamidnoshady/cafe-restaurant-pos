@@ -28,7 +28,7 @@ import {
   type WeightItemStatus,
 } from "./items";
 import { validateStone, validateWeightAttributes, type Purity, type StoneInput } from "./gold";
-import { validateSerialUnitCost, validateWarrantyMonths } from "./watch";
+import { validateSerialUnitCost, validateServiceIntervalMonths, validateWarrantyMonths } from "./watch";
 
 export interface Item {
   id: string;
@@ -39,6 +39,13 @@ export interface Item {
   kind: ItemKind;
   tracking: ItemTracking;
   isActive: boolean;
+  /** Phase 27 Wave 3 — the brand this item is sold under, for filters/reports and (Wave 7) commission scope. */
+  brandId: string | null;
+  /** Phase 27 Wave 10 — how often this model should be serviced (months); null = no service reminder. */
+  serviceIntervalMonths: number | null;
+  /** Phase 27 Wave 11 — merchandising tags for sell-through reporting. */
+  collection: string | null;
+  season: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -72,6 +79,10 @@ interface ItemRow extends Record<string, unknown> {
   kind: ItemKind;
   tracking: ItemTracking;
   is_active: boolean;
+  brand_id: string | null;
+  service_interval_months: number | null;
+  collection: string | null;
+  season: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -86,6 +97,10 @@ function mapItem(row: ItemRow): Item {
     kind: row.kind,
     tracking: row.tracking,
     isActive: row.is_active,
+    brandId: row.brand_id,
+    serviceIntervalMonths: row.service_interval_months,
+    collection: row.collection,
+    season: row.season,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -98,6 +113,8 @@ export interface CreateItemInput {
   kind?: ItemKind;
   tracking?: ItemTracking;
   parentItemId?: string | null;
+  /** Phase 27 Wave 10 — service interval in months; null = no reminder. */
+  serviceIntervalMonths?: number | null;
 }
 
 /** Creates a `simple` (default) item, or a bare `variant_parent` with no attributes of its own — use createVariantChild for its children. */
@@ -109,11 +126,21 @@ export async function createItem(input: CreateItemInput): Promise<Item> {
   }
   const error = validateItemKindParent(kind, parentItemId);
   if (error) throw new Error(error);
+  const intervalError = validateServiceIntervalMonths(input.serviceIntervalMonths);
+  if (intervalError) throw new Error(intervalError);
 
   const { rows } = await query<ItemRow>(
-    `INSERT INTO items (location_id, parent_item_id, name, sku, kind, tracking)
-     VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-    [input.locationId, parentItemId, input.name, input.sku ?? null, kind, input.tracking ?? "none"],
+    `INSERT INTO items (location_id, parent_item_id, name, sku, kind, tracking, service_interval_months)
+     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+    [
+      input.locationId,
+      parentItemId,
+      input.name,
+      input.sku ?? null,
+      kind,
+      input.tracking ?? "none",
+      input.serviceIntervalMonths ?? null,
+    ],
   );
   return mapItem(rows[0]);
 }

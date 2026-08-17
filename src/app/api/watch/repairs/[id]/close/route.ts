@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
 import { getPool } from "@/lib/db";
-import { requireIndustryForApi } from "@/lib/industry-guard";
+import { requireCapabilityForApi } from "@/lib/industry-guard";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { closeRepairTicket, getRepairTicket } from "@/lib/repairs-service";
 import { MissingLedgerAccountError } from "@/lib/ledger-service";
@@ -13,8 +13,8 @@ const PAYMENT_METHODS: SettlementMethod[] = ["cash", "bank", "credit"];
 export const POST = withTenantScope(async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
-  const industryError = await requireIndustryForApi(session, "watch");
-  if (industryError) return industryError;
+  const capabilityError = await requireCapabilityForApi(session, "repairs");
+  if (capabilityError) return capabilityError;
   const { id } = await context.params;
 
   const location = await resolveActiveLocation(session);

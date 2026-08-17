@@ -28,8 +28,13 @@
 import type { PoolClient } from "pg";
 import { sellWeightedItem } from "./gold-sales-service";
 import { sellSerializedUnit } from "./watch-sales-service";
-import { sellAccessoryUnits } from "./accessories-service";
+import { getStock, sellAccessoryUnits } from "./accessories-service";
+import { sellCosmeticUnits } from "./cosmetics-service";
 import { getItem } from "./items-service";
+import { accrueCommissionForLine } from "./commission-service";
+import { earnPoints } from "./loyalty-service";
+import { evaluatePromotions, type AppliedPromotion, type PromotionItem } from "./promotions";
+import { listPromotions } from "./promotions-service";
 import { rialBigInt, rialText, type RialText } from "./inventory-exact";
 import type { MakingChargeType } from "./gold-pricing";
 import type { SettlementMethod } from "./ledger";
@@ -64,6 +69,14 @@ export type RetailInvoiceLineInput =
       unitPrice?: number;
       discount?: number;
       vatPercent: number;
+    }
+  | {
+      kind: "cosmetic";
+      itemId: string;
+      quantity: string;
+      unitPrice?: number;
+      discount?: number;
+      vatPercent: number;
     };
 
 export interface CreateRetailInvoiceInput {
@@ -90,6 +103,9 @@ export interface RetailInvoiceLine {
   metalValue?: RialText;
   makingCharge?: RialText;
   profit?: RialText;
+  /** Cosmetics batch-tracked lines only: the lot numbers consumed and the earliest expiry. */
+  batchNumbers?: string[];
+  expiryDate?: string | null;
 }
 
 export interface RetailInvoice {
@@ -108,6 +124,7 @@ const LINE_KINDS_BY_INDUSTRY: Record<Industry, readonly RetailInvoiceLineInput["
   jewelry: ["gold"],
   watch: ["watch"],
   accessories: ["accessory"],
+  cosmetics: ["cosmetic"],
 };
 
 export class RetailInvoiceError extends Error {}
@@ -166,8 +183,29 @@ export async function createRetailInvoice(
 
   const lines: RetailInvoiceLine[] = [];
 
-  for (const line of input.lines) {
-    const settled = await settleLine(client, input, line);
+  // Phase 27 Wave 6 — the shared promotion engine, evaluated over the retail
+  // cart exactly as order-totals.ts evaluates it over an F&B cart. Promotions
+  // apply to the fungible catalogue lines (accessories/cosmetics), where a
+  // per-line discount already exists; a gold piece or a watch is individually
+  // priced and negotiated, so it never carries a campaign discount.
+  const promotion = await retailPromotionDiscounts(client, input);
+  const promotionDiscounts = promotion.discounts;
+
+  // Phase 27 Wave 13 — record which promotions fired (and how much they took
+  // off) so the effectiveness report can rank campaigns. Same transaction, so
+  // the invoice and its applications can never be half-committed.
+  for (const applied of promotion.applied) {
+    if (applied.amount <= 0) continue;
+    await client.query(
+      `INSERT INTO promotion_applications (business_id, location_id, promotion_id, source_type, source_id, discount_rial)
+       VALUES ($1, $2, $3, 'order', $4, $5)`,
+      [input.businessId, input.locationId, applied.promotionId, orderId, applied.amount],
+    );
+  }
+
+  for (let lineIndex = 0; lineIndex < input.lines.length; lineIndex++) {
+    const line = input.lines[lineIndex];
+    const settled = await settleLine(client, input, line, promotionDiscounts[lineIndex] ?? 0);
 
     const { rows: itemRows } = await client.query<{ id: string }>(
       `INSERT INTO order_items
@@ -204,7 +242,30 @@ export async function createRetailInvoice(
       metalValue: settled.metalValue,
       makingCharge: settled.makingCharge,
       profit: settled.profit,
+      batchNumbers: settled.batchNumbers,
+      expiryDate: settled.expiryDate,
     });
+
+    // Phase 27 Wave 7 — the selling employee (the invoice's `created_by`)
+    // accrues commission on this line per their rules, in the same
+    // transaction, so the accrual and its payroll-liability posting can never
+    // be half-committed. No employee or no matching rule accrues nothing.
+    if (input.createdBy) {
+      await accrueCommissionForLine(client, {
+        businessId: input.businessId,
+        locationId: input.locationId,
+        employeeId: input.createdBy,
+        sourceType: "order_item",
+        sourceId: itemRows[0].id,
+        line: {
+          net: Number(settled.net),
+          cost: settled.cost != null ? Number(settled.cost) : null,
+          itemId: settled.itemId,
+          brandId: settled.brandId ?? null,
+        },
+        createdBy: input.createdBy,
+      });
+    }
   }
 
   const subtotal = sum(lines.map((l) => l.net));
@@ -243,6 +304,21 @@ export async function createRetailInvoice(
     ],
   );
 
+  // Phase 27 Wave 5 — a retail sale to a known customer earns loyalty points
+  // per the business's default program, in the same transaction, so the
+  // invoice and its points can never be half-committed. A business with no
+  // program earns nothing.
+  if (input.customerId) {
+    await earnPoints(client, {
+      businessId: input.businessId,
+      customerId: input.customerId,
+      amountRial: total,
+      sourceType: "retail_invoice",
+      sourceId: orderId,
+      createdBy: input.createdBy ?? null,
+    });
+  }
+
   return { orderId, orderNumber, lines, subtotal, discount: rialText("0"), tax, total };
 }
 
@@ -253,9 +329,67 @@ interface SettledLine {
   net: RialText;
   vat: RialText;
   total: RialText;
+  /** The COGS this line's sale posted, Rial — the commission margin basis. */
+  cost?: RialText;
+  brandId?: string | null;
   metalValue?: RialText;
   makingCharge?: RialText;
   profit?: RialText;
+  batchNumbers?: string[];
+  expiryDate?: string | null;
+}
+
+/**
+ * Evaluate the business's active promotions over the invoice's fungible
+ * (accessory/cosmetic) lines and return one discount amount per input line,
+ * in input order. The engine is the same pure function the F&B path calls.
+ */
+async function retailPromotionDiscounts(
+  client: PoolClient,
+  input: CreateRetailInvoiceInput,
+): Promise<{ discounts: number[]; applied: AppliedPromotion[] }> {
+  const discounts = input.lines.map(() => 0);
+  const promotions = await listPromotions(input.businessId, false, client);
+  if (promotions.length === 0) return { discounts, applied: [] };
+
+  const items: PromotionItem[] = [];
+  const indexes: number[] = [];
+  const itemIds: string[] = [];
+
+  for (let i = 0; i < input.lines.length; i++) {
+    const line = input.lines[i];
+    if (line.kind !== "accessory" && line.kind !== "cosmetic") continue;
+    itemIds.push(line.itemId);
+    indexes.push(i);
+  }
+
+  if (itemIds.length === 0) return { discounts, applied: [] };
+
+  // Brand is a scope axis (Wave 3), fetched in one round trip.
+  const { rows: brandRows } = await client.query<{ item_id: string; brand_id: string | null }>(
+    `SELECT id AS item_id, brand_id FROM items WHERE id = ANY($1::uuid[])`,
+    [itemIds],
+  );
+  const brandById = new Map(brandRows.map((r) => [r.item_id, r.brand_id]));
+
+  for (let n = 0; n < indexes.length; n++) {
+    const lineIndex = indexes[n];
+    const line = input.lines[lineIndex] as Extract<RetailInvoiceLineInput, { kind: "accessory" | "cosmetic" }>;
+    const stock = await getStock(line.itemId, client);
+    const unitPrice = line.unitPrice ?? stock?.unitPrice ?? 0;
+    items.push({
+      id: line.itemId,
+      brandId: brandById.get(line.itemId) ?? null,
+      gross: Math.round(unitPrice * Number(line.quantity)),
+      quantity: Number(line.quantity),
+    });
+  }
+
+  const result = evaluatePromotions(items, promotions, new Date());
+  result.lineDiscounts.forEach((amount, itemIndex) => {
+    discounts[indexes[itemIndex]] = amount;
+  });
+  return { discounts, applied: result.applied };
 }
 
 /**
@@ -268,13 +402,14 @@ async function settleLine(
   client: PoolClient,
   input: CreateRetailInvoiceInput,
   line: RetailInvoiceLineInput,
+  promotionDiscount: number,
 ): Promise<SettledLine> {
   if (line.kind === "gold") {
     const item = await getItem(line.itemId);
     if (!item || item.locationId !== input.locationId) {
       throw new RetailInvoiceError("کالا یافت نشد.");
     }
-    const { breakdown } = await sellWeightedItem(client, {
+    const { breakdown, cost } = await sellWeightedItem(client, {
       businessId: input.businessId,
       locationId: input.locationId,
       itemId: line.itemId,
@@ -298,6 +433,8 @@ async function settleLine(
       net,
       vat: breakdown.vat,
       total: breakdown.total,
+      cost,
+      brandId: item.brandId,
       metalValue: breakdown.metalValue,
       makingCharge: breakdown.makingCharge,
       profit: breakdown.profit,
@@ -305,20 +442,20 @@ async function settleLine(
   }
 
   if (line.kind === "watch") {
-    const { rows } = await client.query<{ item_id: string; serial_number: string; name: string }>(
-      `SELECT s.item_id, s.serial_number, i.name
+    const { rows } = await client.query<{ item_id: string; serial_number: string; name: string; brand_id: string | null }>(
+      `SELECT s.item_id, s.serial_number, i.name, i.brand_id
          FROM item_serials s JOIN items i ON i.id = s.item_id
         WHERE s.id = $1 AND i.location_id = $2`,
       [line.serialId, input.locationId],
     );
     if (!rows[0]) throw new RetailInvoiceError("دستگاه یافت نشد.");
 
-    const { breakdown } = await sellSerializedUnit(client, {
+    const { breakdown, cost } = await sellSerializedUnit(client, {
       businessId: input.businessId,
       locationId: input.locationId,
       serialId: line.serialId,
       price: line.price,
-      discount: line.discount,
+      discount: (line.discount ?? 0) + promotionDiscount,
       vatPercent: line.vatPercent,
       paymentMethod: input.paymentMethod,
       warrantyMonths: line.warrantyMonths,
@@ -332,6 +469,8 @@ async function settleLine(
       net: breakdown.net,
       vat: breakdown.vat,
       total: breakdown.total,
+      cost,
+      brandId: rows[0].brand_id,
     };
   }
 
@@ -339,17 +478,36 @@ async function settleLine(
   if (!item || item.locationId !== input.locationId) {
     throw new RetailInvoiceError("کالا یافت نشد.");
   }
-  const { breakdown } = await sellAccessoryUnits(client, {
-    businessId: input.businessId,
-    locationId: input.locationId,
-    itemId: line.itemId,
-    quantity: line.quantity,
-    unitPrice: line.unitPrice,
-    discount: line.discount,
-    vatPercent: line.vatPercent,
-    paymentMethod: input.paymentMethod,
-    createdBy: input.createdBy ?? null,
-  });
+
+  // Cosmetics and accessories share the same item_stock model, but each sells
+  // through its own service so its own posting rules (and accounts) run.
+  const cosmeticSale =
+    line.kind === "cosmetic"
+      ? await sellCosmeticUnits(client, {
+          businessId: input.businessId,
+          locationId: input.locationId,
+          itemId: line.itemId,
+          quantity: line.quantity,
+          unitPrice: line.unitPrice,
+          discount: (line.discount ?? 0) + promotionDiscount,
+          vatPercent: line.vatPercent,
+          paymentMethod: input.paymentMethod,
+          createdBy: input.createdBy ?? null,
+        })
+      : null;
+  const { breakdown, cost } = cosmeticSale
+    ? cosmeticSale
+    : await sellAccessoryUnits(client, {
+          businessId: input.businessId,
+          locationId: input.locationId,
+          itemId: line.itemId,
+          quantity: line.quantity,
+          unitPrice: line.unitPrice,
+          discount: (line.discount ?? 0) + promotionDiscount,
+          vatPercent: line.vatPercent,
+          paymentMethod: input.paymentMethod,
+          createdBy: input.createdBy ?? null,
+        });
   return {
     itemId: line.itemId,
     name: item.name,
@@ -357,5 +515,9 @@ async function settleLine(
     net: breakdown.net,
     vat: breakdown.vat,
     total: breakdown.total,
+    cost,
+    brandId: item.brandId,
+    batchNumbers: cosmeticSale?.batchNumbers,
+    expiryDate: cosmeticSale?.expiryDate,
   };
 }

@@ -13,12 +13,19 @@ export interface Customer extends Record<string, unknown> {
   phone: string | null;
   address?: string | null;
   notes?: string | null;
+  email?: string | null;
+  birthday?: string | null;
+  tags?: string[];
+  marketingConsent?: boolean;
+  smsConsent?: boolean;
   isActive?: boolean;
   createdAt?: string;
   updatedAt?: string;
 }
 
-const DIRECTORY_COLUMNS = `id, name, phone, address, notes,
+const DIRECTORY_COLUMNS = `id, name, phone, address, notes, email,
+       birthday::text AS "birthday", tags, marketing_consent AS "marketingConsent",
+       sms_consent AS "smsConsent",
        is_active AS "isActive", created_at AS "createdAt", updated_at AS "updatedAt"`;
 
 /** Name/phone search for the checkout picker, active customers only, newest first, capped at 20. */
@@ -78,15 +85,35 @@ export async function listCustomers(
   return { customers: rows, total };
 }
 
-export async function createCustomer(
-  businessId: string,
-  input: { name: string; phone?: string | null; address?: string | null; notes?: string | null },
-): Promise<Customer> {
+export interface CreateCustomerInput {
+  name: string;
+  phone?: string | null;
+  address?: string | null;
+  notes?: string | null;
+  email?: string | null;
+  birthday?: string | null;
+  tags?: string[];
+  marketingConsent?: boolean;
+  smsConsent?: boolean;
+}
+
+export async function createCustomer(businessId: string, input: CreateCustomerInput): Promise<Customer> {
   const { rows } = await query<Customer>(
-    `INSERT INTO customers (business_id, name, phone, address, notes)
-     VALUES ($1, $2, $3, $4, $5)
+    `INSERT INTO customers (business_id, name, phone, address, notes, email, birthday, tags, marketing_consent, sms_consent)
+     VALUES ($1, $2, $3, $4, $5, $6, $7::date, $8, $9, $10)
      RETURNING ${DIRECTORY_COLUMNS}`,
-    [businessId, input.name.trim(), input.phone?.trim() || null, input.address?.trim() || null, input.notes?.trim() || null],
+    [
+      businessId,
+      input.name.trim(),
+      input.phone?.trim() || null,
+      input.address?.trim() || null,
+      input.notes?.trim() || null,
+      input.email?.trim() || null,
+      input.birthday ?? null,
+      input.tags ?? [],
+      input.marketingConsent ?? false,
+      input.smsConsent ?? false,
+    ],
   );
   return rows[0];
 }
@@ -104,6 +131,11 @@ export interface UpdateCustomerInput {
   phone?: string | null;
   address?: string | null;
   notes?: string | null;
+  email?: string | null;
+  birthday?: string | null;
+  tags?: string[];
+  marketingConsent?: boolean;
+  smsConsent?: boolean;
   isActive?: boolean;
 }
 
@@ -125,6 +157,11 @@ export async function updateCustomer(
   if (input.phone !== undefined) add("phone", input.phone?.trim() || null);
   if (input.address !== undefined) add("address", input.address?.trim() || null);
   if (input.notes !== undefined) add("notes", input.notes?.trim() || null);
+  if (input.email !== undefined) add("email", input.email?.trim() || null);
+  if (input.birthday !== undefined) add("birthday", input.birthday ?? null);
+  if (input.tags !== undefined) add("tags", input.tags);
+  if (input.marketingConsent !== undefined) add("marketing_consent", input.marketingConsent);
+  if (input.smsConsent !== undefined) add("sms_consent", input.smsConsent);
   if (input.isActive !== undefined) add("is_active", input.isActive);
   if (sets.length === 0) return getCustomer(businessId, id);
 
@@ -156,13 +193,17 @@ export async function removeCustomer(businessId: string, id: string): Promise<Re
   );
   if (!existsRows[0]) return "not_found";
 
-  const { rows: refRows } = await query<{ has_orders: boolean; has_receipts: boolean }>(
+  const { rows: refRows } = await query<{ has_orders: boolean; has_receipts: boolean; has_points: boolean }>(
     `SELECT
        EXISTS (SELECT 1 FROM orders WHERE business_id = $1 AND customer_id = $2) AS has_orders,
-       EXISTS (SELECT 1 FROM ar_receipts WHERE business_id = $1 AND customer_id = $2) AS has_receipts`,
+       EXISTS (SELECT 1 FROM ar_receipts WHERE business_id = $1 AND customer_id = $2) AS has_receipts,
+       EXISTS (SELECT 1 FROM customer_points WHERE business_id = $1 AND customer_id = $2) AS has_points`,
     [businessId, id],
   );
-  const hasHistory = refRows[0]?.has_orders || refRows[0]?.has_receipts;
+  // A customer with points (or store credit, which is only ever created for a
+  // customer with points history) must be archived, never hard-deleted — the
+  // same ON DELETE RESTRICT discipline ar_receipts has.
+  const hasHistory = refRows[0]?.has_orders || refRows[0]?.has_receipts || refRows[0]?.has_points;
 
   if (hasHistory) {
     await query(`UPDATE customers SET is_active = false, updated_at = now() WHERE business_id = $1 AND id = $2`, [

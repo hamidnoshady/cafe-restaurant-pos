@@ -36,6 +36,7 @@
  * formula, different meaning); Credit `vatPayable` for VAT, unchanged.
  */
 import Decimal from "decimal.js";
+import type { PoolClient } from "pg";
 import { WELL_KNOWN_CODES } from "./coa-template";
 import { rialBigInt, rialText, roundRial, type RialText } from "./inventory-exact";
 import { accountIdsByCode } from "./ledger-service";
@@ -143,17 +144,34 @@ interface GoldSaleCogsPayload {
   unitCostPerGram: string;
 }
 
-registerPostingRule("gold.sale_cogs", async (event, client): Promise<PostingResult | null> => {
-  const payload = event.payload as unknown as GoldSaleCogsPayload;
-  const metalCost = new Decimal(payload.netWeight).times(payload.unitCostPerGram);
+/**
+ * A sold gold piece's cost basis: metal cost (net weight × unit cost per
+ * gram) plus the sum of its stone cost add-ons — the single source of truth
+ * for the COGS posting *and* the commission margin basis, so the two can
+ * never disagree.
+ */
+export async function goldSoldCost(
+  client: PoolClient,
+  input: { itemId: string; netWeight: string; unitCostPerGram: string },
+): Promise<RialText> {
+  const metalCost = new Decimal(input.netWeight).times(input.unitCostPerGram);
 
   const { rows: stoneRows } = await client.query<{ total: string | null }>(
     `SELECT SUM(cost)::text AS total FROM item_stones WHERE item_id = $1`,
-    [payload.itemId],
+    [input.itemId],
   );
   const stoneCost = new Decimal(stoneRows[0]?.total ?? 0);
 
-  const cost = roundRial(metalCost.plus(stoneCost));
+  return roundRial(metalCost.plus(stoneCost));
+}
+
+registerPostingRule("gold.sale_cogs", async (event, client): Promise<PostingResult | null> => {
+  const payload = event.payload as unknown as GoldSaleCogsPayload;
+  const cost = await goldSoldCost(client, {
+    itemId: payload.itemId,
+    netWeight: payload.netWeight,
+    unitCostPerGram: payload.unitCostPerGram,
+  });
   if (rialBigInt(cost) === 0n) return null;
 
   const accounts = await accountIdsByCode(client, event.businessId, [

@@ -114,9 +114,60 @@ describe("retail invoice fields (Phase 25)", () => {
     expect(html).toContain("خانم رضایی");
   });
 
+  it("prints a batch-tracked line's batch and expiry under the line", () => {
+    const html = renderReceiptHtml({
+      ...baseData,
+      orderTypeLabel: "فاکتور فروش",
+      lines: [
+        {
+          name: "شامپو ضد شوره",
+          quantity: 2,
+          lineTotal: 900_000,
+          batch: { batchNumber: "LOT-1042", expiryDate: "2027-03-01" },
+        },
+        {
+          name: "کرم مرطوب‌کننده",
+          quantity: 1,
+          lineTotal: 600_000,
+        },
+      ],
+    });
+    expect(html).toContain("بچ");
+    expect(html).toContain("LOT-1042");
+    expect(html).toContain("انقضا");
+  });
+
+  it("prints a pre-owned unit's condition grade and box/papers state under the line", () => {
+    const html = renderReceiptHtml({
+      ...baseData,
+      orderTypeLabel: "فاکتور فروش",
+      lines: [
+        {
+          name: "ساعت مچی — S-1001",
+          quantity: 1,
+          lineTotal: 30_000_000,
+          serialProvenance: { conditionGrade: "good", boxAndPapers: true },
+        },
+        {
+          name: "ساعت مچی — S-1002",
+          quantity: 1,
+          lineTotal: 25_000_000,
+          serialProvenance: { conditionGrade: "like_new", boxAndPapers: false },
+        },
+      ],
+    });
+    expect(html).toContain("دست‌دوم");
+    expect(html).toContain("خوب");
+    expect(html).toContain("در حد نو");
+    expect(html).toContain("همراه جعبه و مدارک");
+    expect(html).toContain("بدون جعبه و مدارک");
+  });
+
   it("leaves an ordinary caf\u00e9 receipt exactly as it was", () => {
     const html = renderReceiptHtml(baseData);
     expect(html).not.toContain("اجرت");
     expect(html).not.toContain("مشتری");
+    expect(html).not.toContain("بچ");
+    expect(html).not.toContain("دست‌دوم");
   });
 });

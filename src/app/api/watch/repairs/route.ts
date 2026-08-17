@@ -1,15 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
-import { requireIndustryForApi } from "@/lib/industry-guard";
+import { requireCapabilityForApi } from "@/lib/industry-guard";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { createRepairTicket, listRepairTickets } from "@/lib/repairs-service";
 import { REPAIR_STATUSES, type RepairStatus } from "@/lib/watch";
 
+// Wave 10: repair_tickets is a shared module — a jewelry business repairing a
+// clasp raises the same ticket a watch shop does, so the guard is the
+// `repairs` capability (both trades have it) rather than `industry === watch`.
 export const GET = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
-  const industryError = await requireIndustryForApi(session, "watch");
-  if (industryError) return industryError;
+  const capabilityError = await requireCapabilityForApi(session, "repairs");
+  if (capabilityError) return capabilityError;
 
   const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ tickets: [] });
@@ -27,8 +30,8 @@ export const GET = withTenantScope(async (request: NextRequest) => {
 export const POST = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
-  const industryError = await requireIndustryForApi(session, "watch");
-  if (industryError) return industryError;
+  const capabilityError = await requireCapabilityForApi(session, "repairs");
+  if (capabilityError) return capabilityError;
 
   let body: {
     itemDescription?: string;

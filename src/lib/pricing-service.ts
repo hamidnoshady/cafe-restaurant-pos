@@ -13,8 +13,12 @@ import { getSetting, setSetting, SETTING_KEYS } from "./settings";
 import { getProfitAndLoss } from "./reports-service";
 import { addDays } from "./rollup";
 import { computeSuggestedPrice } from "./pricing";
+import { recipeCostDrift } from "./cost-drift";
 
 const OVERHEAD_LOOKBACK_DAYS = 30;
+
+/** The default drift threshold, used only until an owner sets their own. */
+export const DEFAULT_COST_DRIFT_THRESHOLD_PERCENT = 20;
 
 export interface PricingConfig {
   /** Business-wide target gross margin (%), applied to any item without its own override. Null until an owner sets one. */
@@ -27,6 +31,8 @@ export interface PricingConfig {
    * by yet. Ignored the moment the ledger-derived rate becomes available.
    */
   fallbackOverheadPercent: number | null;
+  /** Phase 27 Wave 12 — flag a recipe whose ingredient cost rose this many percent or more. Optional: absent = the default. */
+  costDriftThresholdPercent?: number;
 }
 
 export async function getPricingConfig(businessId: string): Promise<PricingConfig> {
@@ -34,6 +40,7 @@ export async function getPricingConfig(businessId: string): Promise<PricingConfi
   return {
     defaultMarginPercent: stored?.defaultMarginPercent ?? null,
     fallbackOverheadPercent: stored?.fallbackOverheadPercent ?? null,
+    costDriftThresholdPercent: stored?.costDriftThresholdPercent ?? DEFAULT_COST_DRIFT_THRESHOLD_PERCENT,
   };
 }
 
@@ -100,4 +107,68 @@ export async function getSuggestedPrice(businessId: string, menuItemId: string):
     suggestedPrice: hasRecipe ? suggestedPrice : null,
     currentPrice: Number(item.price),
   };
+}
+
+export interface MenuCostDriftRow {
+  menuItemId: string;
+  name: string;
+  currentCost: number;
+  referenceCost: number;
+  price: number;
+  costChangePercent: number;
+  oldMarginPercent: number;
+  newMarginPercent: number;
+}
+
+/**
+ * Phase 27 Wave 12 — menu items whose ingredient cost has risen past the
+ * business's threshold since they were priced. The reference cost is the
+ * material cost the current price implies at the item's target margin (or
+ * the business default), so no price-history snapshot is required.
+ */
+export async function listMenuCostDrift(businessId: string, locationId: string): Promise<MenuCostDriftRow[]> {
+  const config = await getPricingConfig(businessId);
+  const { rows } = await query<{
+    menu_item_id: string;
+    name: string;
+    price: string;
+    target_margin_percent: string | null;
+    current_cost: string;
+  }>(
+    `SELECT mi.id AS menu_item_id, mi.name, mi.price::text,
+            mi.target_margin_percent::text,
+            COALESCE(SUM(ing.quantity * ii.avg_cost), 0)::text AS current_cost
+       FROM menu_items mi
+       LEFT JOIN menu_item_ingredients ing ON ing.menu_item_id = mi.id
+       LEFT JOIN inventory_items ii ON ii.id = ing.inventory_item_id
+      WHERE mi.location_id = $1 AND mi.is_active
+      GROUP BY mi.id, mi.name, mi.price, mi.target_margin_percent`,
+    [locationId],
+  );
+
+  const marginPercent = (itemMargin: number | null) => itemMargin ?? config.defaultMarginPercent ?? 0;
+  const out: MenuCostDriftRow[] = [];
+  for (const r of rows) {
+    const price = Number(r.price);
+    const currentCost = Math.round(Number(r.current_cost));
+    const referenceCost = Math.round(price * (1 - marginPercent(Number(r.target_margin_percent)) / 100));
+    const drift = recipeCostDrift({
+      currentCost,
+      referenceCost,
+      price,
+      thresholdPercent: config.costDriftThresholdPercent ?? DEFAULT_COST_DRIFT_THRESHOLD_PERCENT,
+    });
+    if (!drift.drifted) continue;
+    out.push({
+      menuItemId: r.menu_item_id,
+      name: r.name,
+      currentCost,
+      referenceCost,
+      price,
+      costChangePercent: Math.round(drift.costChangePercent),
+      oldMarginPercent: Math.round(drift.oldMarginPercent),
+      newMarginPercent: Math.round(drift.newMarginPercent),
+    });
+  }
+  return out.sort((a, b) => b.costChangePercent - a.costChangePercent);
 }

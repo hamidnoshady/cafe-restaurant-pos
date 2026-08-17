@@ -15,7 +15,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { BarChart3Icon, GemIcon, PackageIcon, ReceiptTextIcon, WrenchIcon } from "lucide-react";
+import { AlertTriangleIcon, BarChart3Icon, GemIcon, PackageIcon, ReceiptTextIcon, WrenchIcon } from "lucide-react";
 import { formatPersianNumber, toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import { formatToman } from "@/lib/money";
@@ -29,6 +29,21 @@ interface RetailOverview {
   openRepairs: number;
 }
 
+interface NearExpiryRow {
+  itemName: string;
+  parentName: string | null;
+  batchNumber: string;
+  expiryDate: string | null;
+  quantity: string;
+  bucket: "expired" | "under30" | "under90";
+}
+
+const EXPIRY_BUCKET_LABELS: Record<NearExpiryRow["bucket"], string> = {
+  expired: "منقضی",
+  under30: "زیر ۳۰ روز",
+  under90: "زیر ۹۰ روز",
+};
+
 const PURITY_LABELS: Record<string, string> = {
   "18": "۱۸ عیار",
   "21": "۲۱ عیار",
@@ -37,17 +52,29 @@ const PURITY_LABELS: Record<string, string> = {
 
 export function RetailOverview({ industry }: { industry: Industry }) {
   const [data, setData] = useState<RetailOverview | null>(null);
+  const [nearExpiry, setNearExpiry] = useState<NearExpiryRow[]>([]);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await fetch("/api/dashboard/retail-overview", { cache: "no-store" });
-      if (response.ok) setData((await response.json()) as RetailOverview);
+      const requests: Promise<void>[] = [
+        fetch("/api/dashboard/retail-overview", { cache: "no-store" }).then(async (response) => {
+          if (response.ok) setData((await response.json()) as RetailOverview);
+        }),
+      ];
+      if (industry === "cosmetics") {
+        requests.push(
+          fetch("/api/cosmetics/reports/near-expiry", { cache: "no-store" }).then(async (response) => {
+            if (response.ok) setNearExpiry(((await response.json()) as { rows: NearExpiryRow[] }).rows);
+          }),
+        );
+      }
+      await Promise.all(requests);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [industry]);
 
   useEffect(() => {
     void load();
@@ -99,6 +126,52 @@ export function RetailOverview({ industry }: { industry: Industry }) {
           />
         )}
       </div>
+
+      {industry === "cosmetics" ? (
+        <section className="mb-5 rounded-2xl border border-[#EAE8E2] bg-white p-4 sm:p-5">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <h2 className="flex items-center gap-2 font-semibold text-[#252522]">
+              <AlertTriangleIcon aria-hidden="true" className="size-4" />
+              بچ‌های نزدیک به انقضا
+            </h2>
+            <Link href="/dashboard/cosmetics" className="text-sm font-semibold text-[#8C5B00] hover:underline">
+              مدیریت کالاها ←
+            </Link>
+          </div>
+          {loading ? (
+            <p className="text-sm text-[#77756F]">در حال بارگذاری…</p>
+          ) : nearExpiry.length === 0 ? (
+            <p className="rounded-xl border border-dashed border-[#EAE8E2] px-3 py-6 text-center text-sm text-[#77756F]">
+              هیچ بچی منقضی یا نزدیک به انقضا نیست.
+            </p>
+          ) : (
+            <ul className="divide-y divide-[#EAE8E2]">
+              {nearExpiry.slice(0, 10).map((row) => (
+                <li key={`${row.batchNumber}-${row.itemName}`} className="flex items-center justify-between gap-3 py-2.5 text-sm">
+                  <div className="min-w-0">
+                    <span className="font-medium text-[#252522]">{row.itemName}</span>
+                    <span className="mr-2 text-xs text-[#77756F]">
+                      بچ {row.batchNumber}
+                      {row.expiryDate ? ` · انقضا ${toPersianDigits(formatJalali(row.expiryDate))}` : ""}
+                    </span>
+                  </div>
+                  <span
+                    className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${
+                      row.bucket === "expired"
+                        ? "bg-rose-100 text-rose-800"
+                        : row.bucket === "under30"
+                          ? "bg-amber-100 text-amber-900"
+                          : "bg-stone-100 text-stone-700"
+                    }`}
+                  >
+                    {EXPIRY_BUCKET_LABELS[row.bucket]}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      ) : null}
 
       {industry === "jewelry" ? (
         <section className="mb-5 rounded-2xl border border-[#EAE8E2] bg-white p-4 sm:p-5">

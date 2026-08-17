@@ -16,6 +16,7 @@ import {
   dueProactiveRuns,
   localBusinessClock,
   proactivePeriodKey,
+  serviceReminderDraft,
   shiftIsoDate,
   type AiProactiveRunKind,
   type AiProactiveSettings,
@@ -34,6 +35,7 @@ import { runReadTool } from "./ai-tools";
 import { listCustomerBalances, UNKNOWN_CUSTOMER_KEY } from "./ar-service";
 import { query, withTenant, withoutTenantScope } from "./db";
 import { isFeatureEnabled } from "./features";
+import { serviceDueDate } from "./watch";
 import {
   AGENT_RUN_KIND,
   AI_AGENT_KEYS,
@@ -648,6 +650,89 @@ async function runDebtDrafts(businessId: string, clock: LocalBusinessClock): Pro
   }
 }
 
+/**
+ * Wave 10 — a shop-facing nudge that a sold watch is due for service, on the
+ * same daily cadence as debt drafts and with the same local-only discipline:
+ * a draft row in the tenant DB, never a sent message. Watch-only (the query
+ * is over serialized sold units), so other trades claim nothing.
+ */
+async function runServiceReminderDrafts(businessId: string, clock: LocalBusinessClock): Promise<boolean> {
+  const kind: AiProactiveRunKind = "service_reminder_drafts";
+  const claim = await claimRun(businessId, kind, proactivePeriodKey(kind, clock));
+  if (!claim) return false;
+  try {
+    const { rows } = await query<{
+      industry: string;
+    }>("SELECT industry FROM businesses WHERE id = $1", [businessId]);
+    if (rows[0]?.industry !== "watch") {
+      await finishRun({
+        businessId,
+        runId: claim.id,
+        status: "completed",
+        content: "این کسب‌وکار ساعت‌فروشی نیست؛ یادآور سرویس اجرا نشد.",
+      });
+      return false;
+    }
+
+    const todayIso = clock.dateKey;
+    const { rows: serials } = await query<{
+      serial_id: string;
+      serial_number: string;
+      item_name: string;
+      sold_at: string | null;
+      service_interval_months: number | null;
+    }>(
+      `SELECT s.id AS serial_id, s.serial_number, i.name AS item_name,
+              s.sold_at::text AS sold_at, i.service_interval_months
+         FROM item_serials s
+         JOIN items i ON i.id = s.item_id
+        WHERE i.location_id IN (SELECT id FROM locations WHERE business_id = $1)
+          AND s.status = 'sold' AND s.sold_at IS NOT NULL`,
+      [businessId],
+    );
+
+    let created = 0;
+    for (const row of serials) {
+      const dueDate = serviceDueDate(row.sold_at, row.service_interval_months);
+      if (!dueDate) continue;
+      const { rowCount } = await query(
+        `INSERT INTO ai_proactive_drafts
+           (business_id, kind, customer_name, amount_rial, period_key, source_ref, content)
+         VALUES ($1, 'service_reminder', $2, NULL, $3, $4, $5)
+         ON CONFLICT (business_id, period_key, source_ref)
+           WHERE kind = 'service_reminder' DO NOTHING`,
+        [
+          businessId,
+          `${row.item_name} — ${row.serial_number}`,
+          claim.periodKey,
+          row.serial_id,
+          serviceReminderDraft(row.item_name, row.serial_number, dueDate),
+        ],
+      );
+      if ((rowCount ?? 0) > 0) created += 1;
+    }
+    await finishRun({
+      businessId,
+      runId: claim.id,
+      status: "completed",
+      content:
+        created > 0
+          ? `${created} پیش‌نویس یادآوری سرویس ایجاد شد؛ هیچ پیامی ارسال نشده است.`
+          : "ساعت فروخته‌شده‌ای با موعد سرویس نزدیک یا گذشته وجود ندارد.",
+      facts: { eligibleSerials: serials.length, createdDrafts: created, autoSent: false },
+    });
+    return created > 0;
+  } catch (error) {
+    await finishRun({
+      businessId,
+      runId: claim.id,
+      status: "failed",
+      error: errorText(error),
+    }).catch((finishError) => console.error("proactive service reminder run could not be marked failed", finishError));
+    throw error;
+  }
+}
+
 async function runBusinessProactiveJobs(
   businessId: string,
   now: Date,
@@ -670,6 +755,11 @@ async function runBusinessProactiveJobs(
         // key unclaimed so enabling it later the same day can still run.
         if (!agentSettings.receivables_follow_up.enabled) continue;
         if (await runDebtDrafts(businessId, clock)) completed += 1;
+        continue;
+      }
+      if (kind === "service_reminder_drafts") {
+        if (!agentSettings.service_reminders.enabled) continue;
+        if (await runServiceReminderDrafts(businessId, clock)) completed += 1;
         continue;
       }
       if (!aiConfig) continue;

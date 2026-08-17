@@ -25,6 +25,7 @@ let dbLib: typeof import("../src/lib/db");
 let itemsService: typeof import("../src/lib/items-service");
 let watchSales: typeof import("../src/lib/watch-sales-service");
 let repairs: typeof import("../src/lib/repairs-service");
+let watchCrm: typeof import("../src/lib/watch-crm-service");
 
 const biz = { id: "", locationId: "" };
 const acct = {
@@ -67,6 +68,7 @@ beforeAll(async () => {
   itemsService = await import("../src/lib/items-service");
   watchSales = await import("../src/lib/watch-sales-service");
   repairs = await import("../src/lib/repairs-service");
+  watchCrm = await import("../src/lib/watch-crm-service");
 
   db = new Client({ connectionString: urlFor(databaseName) });
   await db.connect();
@@ -512,5 +514,148 @@ describe("repair tickets", () => {
     });
     await repairs.setRepairStatus(ticket.id, "cancelled");
     expect((await itemsService.getSerial(serial.id))?.status).toBe("in_stock");
+  });
+});
+
+/** Phase 27 Wave 10 — service reminders, pre-owned provenance, repair estimates. */
+describe("Wave 10 — watch flagship", () => {
+  it("lists a watch sold 23 months ago with a 24-month interval as due, and one sold last week as not", async () => {
+    const due = await itemsService.createItem({
+      locationId: biz.locationId,
+      name: "کوارتز ۲۴ ماهه",
+      tracking: "serial",
+      serviceIntervalMonths: 24,
+    });
+    const dueSerial = await itemsService.addSerial(due.id, `SN-DUE-${randomUUID().slice(0, 6)}`, {
+      unitCost: 10_000_000,
+      warrantyMonths: 0,
+    });
+    await withTransaction((client) =>
+      watchSales.sellSerializedUnit(client, {
+        businessId: biz.id,
+        locationId: biz.locationId,
+        serialId: dueSerial.id,
+        price: 20_000_000,
+        vatPercent: 9,
+        paymentMethod: "cash",
+        // ~23 months before 2026-08-01, with a 24-month interval the unit is
+        // due on 2026-08-20 — inside the 30-day lead window.
+        saleDate: "2024-08-20",
+      }),
+    );
+
+    const fresh = await itemsService.createItem({
+      locationId: biz.locationId,
+      name: "ساعت تازه",
+      tracking: "serial",
+      serviceIntervalMonths: 24,
+    });
+    const freshSerial = await itemsService.addSerial(fresh.id, `SN-FRESH-${randomUUID().slice(0, 6)}`, {
+      unitCost: 10_000_000,
+      warrantyMonths: 0,
+    });
+    await withTransaction((client) =>
+      watchSales.sellSerializedUnit(client, {
+        businessId: biz.id,
+        locationId: biz.locationId,
+        serialId: freshSerial.id,
+        price: 20_000_000,
+        vatPercent: 9,
+        paymentMethod: "cash",
+        saleDate: "2026-07-25", // a week before 2026-08-01
+      }),
+    );
+
+    const reminders = await watchCrm.serviceReminders(biz.locationId, "2026-08-01", 30);
+    expect(reminders.map((r) => r.serialId)).toEqual([dueSerial.id]);
+    expect(reminders[0]?.state).toBe("due");
+    expect(reminders[0]?.referenceDate).toBe("2026-08-20");
+  });
+
+  it("records a pre-owned intake's condition grade and box/papers state on the serial", async () => {
+    const { serial } = await makeWatchUnit();
+    await watchCrm.recordPreOwnedIntake(serial.id, { conditionGrade: "good", boxAndPapers: true });
+
+    const stored = await db.query<{ condition_grade: string; box_and_papers: boolean; pre_owned: boolean }>(
+      "SELECT condition_grade, box_and_papers, pre_owned FROM item_serials WHERE id = $1",
+      [serial.id],
+    );
+    expect(stored.rows[0]).toEqual({ condition_grade: "good", box_and_papers: true, pre_owned: true });
+  });
+
+  it("refuses to move a ticket to in_progress, or close it, before the estimate is approved", async () => {
+    const ticket = await repairs.createRepairTicket({
+      locationId: biz.locationId,
+      itemDescription: "دستبند",
+      laborCharge: 1_000_000,
+      vatPercent: 0,
+    });
+
+    await watchCrm.setRepairEstimate(ticket.id, { laborRial: 1_000_000, partsRial: 500_000 });
+    await expect(repairs.setRepairStatus(ticket.id, "in_progress")).rejects.toThrow(/تأیید مشتری/);
+    await expect(
+      withTransaction((client) =>
+        repairs.closeRepairTicket(client, {
+          businessId: biz.id,
+          ticketId: ticket.id,
+          paymentMethod: "cash",
+        }),
+      ),
+    ).rejects.toThrow(/تأیید مشتری/);
+
+    const approved = await watchCrm.approveRepairEstimate(ticket.id);
+    expect(approved.approvedAt).not.toBeNull();
+    expect(approved.estimatedTotalRial).toBe(1_500_000);
+
+    await repairs.addRepairPart(ticket.id, {
+      description: "بند",
+      quantity: "1",
+      unitCost: 300_000,
+      charge: 500_000,
+    });
+    await repairs.setRepairStatus(ticket.id, "in_progress");
+    await repairs.setRepairStatus(ticket.id, "ready");
+    const result = await withTransaction((client) =>
+      repairs.closeRepairTicket(client, {
+        businessId: biz.id,
+        ticketId: ticket.id,
+        paymentMethod: "cash",
+      }),
+    );
+    // labor 1,000,000 + parts 500,000 — the bill matches the approved estimate.
+    expect(result.breakdown.total).toBe("1500000");
+  });
+
+  it("renders the printable estimate with labour and parts broken out", async () => {
+    const ticket = await repairs.createRepairTicket({
+      locationId: biz.locationId,
+      itemDescription: "ساعت مچی",
+    });
+    await watchCrm.setRepairEstimate(ticket.id, { laborRial: 900_000, partsRial: 600_000 });
+
+    const text = await watchCrm.repairEstimateText(ticket.id, "2026-08-01");
+    expect(text).toContain("اجرت");
+    expect(text).toContain("قطعات");
+    expect(text).toContain("برآورد کل");
+    expect(text).toContain("امضای تأیید مشتری");
+  });
+
+  it("leaves a pre-estimate ticket fully usable — the estimate step is optional", async () => {
+    const ticket = await repairs.createRepairTicket({
+      locationId: biz.locationId,
+      itemDescription: "ساعت قدیمی",
+      laborCharge: 1_000_000,
+    });
+    // No estimate set: the workflow behaves exactly as before Wave 10.
+    await repairs.setRepairStatus(ticket.id, "in_progress");
+    await repairs.setRepairStatus(ticket.id, "ready");
+    const result = await withTransaction((client) =>
+      repairs.closeRepairTicket(client, {
+        businessId: biz.id,
+        ticketId: ticket.id,
+        paymentMethod: "cash",
+      }),
+    );
+    expect(result.breakdown.total).toBe("1000000");
   });
 });

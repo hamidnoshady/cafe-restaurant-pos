@@ -221,6 +221,9 @@ describe("prompts and tools", () => {
       "get_vat_liability",
       "get_branch_comparison",
       "forecast_demand",
+      "get_near_expiry_items",
+      "get_staff_commission",
+      "get_repurchase_candidates",
     ];
     const dash = toolDefinitions("dashboard").map((t) => t.function.name);
     const wiz = toolDefinitions("wizard").map((t) => t.function.name);
@@ -239,6 +242,20 @@ describe("prompts and tools", () => {
     expect(prompt).toContain("get_menu_performance");
     expect(prompt).toContain("get_vat_liability");
     expect(prompt).toContain("forecast_demand");
+  });
+
+  it("Phase 27 Wave 13 adds the close-out read tools to dashboard mode only", () => {
+    const dash = toolDefinitions("dashboard").map((t) => t.function.name);
+    const wiz = toolDefinitions("wizard").map((t) => t.function.name);
+    for (const name of ["get_near_expiry_items", "get_staff_commission", "get_repurchase_candidates"]) {
+      expect(dash).toContain(name);
+      expect(wiz).not.toContain(name);
+    }
+
+    const prompt = buildSystemPrompt({ mode: "dashboard" });
+    expect(prompt).toContain("get_near_expiry_items");
+    expect(prompt).toContain("get_staff_commission");
+    expect(prompt).toContain("get_repurchase_candidates");
   });
 });
 

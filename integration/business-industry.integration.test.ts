@@ -86,7 +86,7 @@ afterAll(async () => {
 let seq = 0;
 
 /** Provision the way the console does: a named industry and a seeded chart of accounts. */
-async function provision(industry: "food_service" | "jewelry" | "watch" | "accessories") {
+async function provision(industry: "food_service" | "jewelry" | "watch" | "accessories" | "cosmetics") {
   seq += 1;
   return provisioning.provisionBusiness({
     businessName: `کسب‌وکار ${industry} ${seq}`,
@@ -130,6 +130,17 @@ describe("provisioning with an industry", () => {
     }
     expect(codes.sort()).toEqual(
       [...coaTemplateForIndustry("jewelry")].map((a) => a.code).sort(),
+    );
+  });
+
+  it("seeds the cosmetics chart of accounts for a cosmetics business", async () => {
+    const { businessId } = await provision("cosmetics");
+    const codes = await accountCodes(businessId);
+    for (const code of ["1350", "4570", "5150", "5160"]) {
+      expect(codes, `cosmetics account ${code}`).toContain(code);
+    }
+    expect(codes.sort()).toEqual(
+      [...coaTemplateForIndustry("cosmetics")].map((a) => a.code).sort(),
     );
   });
 

@@ -181,8 +181,9 @@ function MetaItem({ label, children }: { label: string; children: React.ReactNod
 }
 
 function TicketRow({ ticket, busy, run }: { ticket: RepairTicket; busy: boolean; run: Runner }) {
-  const [panel, setPanel] = useState<"parts" | "close" | null>(null);
-  const toggle = (next: "parts" | "close") => setPanel((current) => (current === next ? null : next));
+  const [panel, setPanel] = useState<"parts" | "close" | "estimate" | null>(null);
+  const toggle = (next: "parts" | "close" | "estimate") =>
+    setPanel((current) => (current === next ? null : next));
   const isOpen = ticket.status !== "closed" && ticket.status !== "cancelled";
 
   return (
@@ -244,6 +245,18 @@ function TicketRow({ ticket, busy, run }: { ticket: RepairTicket; busy: boolean;
           {isOpen ? (
             <Button
               type="button"
+              variant="outline"
+              size="sm"
+              className={secondaryActionClass}
+              disabled={busy}
+              onClick={() => toggle("estimate")}
+            >
+              برآورد
+            </Button>
+          ) : null}
+          {isOpen ? (
+            <Button
+              type="button"
               size="sm"
               className="min-h-[44px] border border-amber-300 px-3 text-xs font-semibold focus-visible:ring-amber-400/30"
               disabled={busy}
@@ -259,6 +272,7 @@ function TicketRow({ ticket, busy, run }: { ticket: RepairTicket; busy: boolean;
       {panel === "close" ? (
         <ClosePanel ticket={ticket} busy={busy} run={run} onDone={() => setPanel(null)} />
       ) : null}
+      {panel === "estimate" ? <EstimatePanel ticket={ticket} busy={busy} run={run} /> : null}
     </li>
   );
 }
@@ -387,6 +401,101 @@ function PartsPanel({ ticket, busy, run }: { ticket: RepairTicket; busy: boolean
           </div>
         </form>
       ) : null}
+    </PanelShell>
+  );
+}
+
+function EstimatePanel({ ticket, busy, run }: { ticket: RepairTicket; busy: boolean; run: Runner }) {
+  const [laborRial, setLaborRial] = useState(String(ticket.estimatedLaborRial));
+  const [partsRial, setPartsRial] = useState(String(ticket.estimatedPartsRial));
+
+  const hasEstimate = ticket.estimatedTotalRial > 0;
+  const approved = Boolean(ticket.estimateApprovedAt);
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    const ok = await run(() =>
+      api(`/api/watch/repairs/${ticket.id}/estimate`, {
+        method: "PUT",
+        body: JSON.stringify({ laborRial: Number(laborRial || 0), partsRial: Number(partsRial || 0) }),
+      }),
+    );
+    if (ok) {
+      setLaborRial("");
+      setPartsRial("");
+    }
+  }
+
+  return (
+    <PanelShell>
+      <p className="mb-3 text-xs leading-5 text-muted-foreground">
+        برآورد هزینه باید پیش از شروع کار (در حال تعمیر) به تأیید مشتری برسد؛ با ثبت برآورد جدید، تأیید قبلی پاک می‌شود.
+      </p>
+      {hasEstimate ? (
+        <div className="mb-3 rounded-lg bg-white/70 p-3 text-xs text-stone-700">
+          <p>
+            اجرت {formatToman(ticket.estimatedLaborRial)} · قطعات {formatToman(ticket.estimatedPartsRial)} · کل{" "}
+            {formatToman(ticket.estimatedTotalRial)}
+          </p>
+          <p className="mt-1">
+            {approved ? (
+              <span className="font-semibold text-emerald-700">تأیید مشتری ثبت شده است.</span>
+            ) : (
+              <span className="font-semibold text-amber-700">هنوز تأیید نشده است.</span>
+            )}
+          </p>
+        </div>
+      ) : null}
+
+      <form onSubmit={save} className="grid min-w-0 gap-3 sm:grid-cols-2">
+        <Field label="اجرت (ریال)">
+          <input
+            className={watchInputClass}
+            dir="ltr"
+            inputMode="numeric"
+            value={laborRial}
+            onChange={(e) => setLaborRial(e.target.value)}
+          />
+        </Field>
+        <Field label="قطعات (ریال)">
+          <input
+            className={watchInputClass}
+            dir="ltr"
+            inputMode="numeric"
+            value={partsRial}
+            onChange={(e) => setPartsRial(e.target.value)}
+          />
+        </Field>
+        <div className="flex flex-wrap gap-2 sm:col-span-2">
+          <Button type="submit" disabled={busy} size="sm" className="min-h-[44px] border border-amber-300 px-5 font-semibold">
+            ثبت برآورد
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className={secondaryActionClass}
+            disabled={busy || !hasEstimate || approved}
+            onClick={() =>
+              run(() => api(`/api/watch/repairs/${ticket.id}/estimate`, { method: "POST" }))
+            }
+          >
+            تأیید مشتری
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className={secondaryActionClass}
+            disabled={busy || !hasEstimate}
+            onClick={() => {
+              window.open(`/api/watch/repairs/${ticket.id}/estimate/print`, "_blank");
+            }}
+          >
+            چاپ برآورد
+          </Button>
+        </div>
+      </form>
     </PanelShell>
   );
 }
