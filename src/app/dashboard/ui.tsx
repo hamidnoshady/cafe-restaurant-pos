@@ -23,8 +23,7 @@ export async function api<T = Record<string, unknown>>(
 }
 
 /** Persian messages for the API's error codes. */
-export function errorMessage(code: string | undefined): string {
-  const map: Record<string, string> = {
+const ERROR_MESSAGES: Record<string, string> = {
     unauthorized: "وارد نشده‌اید.",
     forbidden: "دسترسی مجاز نیست.",
     bad_request: "درخواست نامعتبر بود.",
@@ -195,8 +194,30 @@ export function errorMessage(code: string | undefined): string {
     invalid_currency_unit: "واحد قیمت فروشگاه معتبر نیست.",
     not_plugin_mode: "این اتصال از نوع «افزونهٔ وردپرس» نیست، پس توکن افزونه ندارد.",
     plugin_never_connected: "افزونهٔ وردپرس هنوز به این سامانه وصل نشده است.",
-  };
-  return map[code ?? ""] ?? "خطای غیرمنتظره. دوباره تلاش کنید.";
+    // Errors the connection routes and the auth/isolation middleware can
+    // return but that had no Persian string, so they fell through to the
+    // generic «خطای غیرمنتظره» instead of naming what actually failed.
+    invalid_name: "نام فروشگاه باید بین ۱ تا ۱۲۰ نویسه باشد.",
+    wrong_origin: "این آدرس با نشست فعلی شما همخوانی ندارد؛ دوباره از آدرس خود کسب‌وکار وارد شوید.",
+    rate_limited: "تعداد درخواست‌ها بیش از حد مجاز است؛ چند لحظه بعد دوباره تلاش کنید.",
+    module_unavailable: "این بخش برای نوع کسب‌وکار شما فعال نیست.",
+    impersonation_read_only: "در حالت مشاهدهٔ فقط‌خواندنی امکان تغییر وجود ندارد.",
+};
+
+export function errorMessage(code: string | undefined): string {
+  return ERROR_MESSAGES[code ?? ""] ?? "خطای غیرمنتظره. دوباره تلاش کنید.";
+}
+
+/**
+ * The mapped Persian message, or the raw code/message the server sent when it
+ * is not in the map. Callers with a real error to show use this instead of
+ * `errorMessage`, whose generic fallback would otherwise swallow the actual
+ * reason (an unmapped code, or a free-text failure like a WooCommerce
+ * connection error) behind «خطای غیرمنتظره».
+ */
+export function errorMessageOrRaw(code: string | undefined): string {
+  if (!code) return "";
+  return ERROR_MESSAGES[code] ?? code;
 }
 
 export function ErrorBox({ children }: { children: React.ReactNode }) {
