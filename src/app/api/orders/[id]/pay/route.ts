@@ -183,11 +183,16 @@ export const POST = withTenantScope(async (request: NextRequest, context: { para
       tenders = validated.value;
     }
     paid = tenders;
-    for (const tender of tenders) {
+    // `settlement_seq` numbers the slices *within* this checkout (migration
+    // 0092). One checkout writing three of them is 1, 2, 3; a second, concurrent
+    // checkout of the same bill starts again at 1 and is refused by the unique
+    // index — which is how "one live settlement per order" survives a bill that
+    // is now several rows.
+    for (const [index, tender] of tenders.entries()) {
       await client.query(
-        `INSERT INTO payments (location_id, order_id, method, amount, reference, received_by, payment_method_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [location.id, id, tender.settlement, String(tender.amount), tender.reference, session.sub, tender.methodId],
+        `INSERT INTO payments (location_id, order_id, method, amount, reference, received_by, payment_method_id, settlement_seq)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [location.id, id, tender.settlement, String(tender.amount), tender.reference, session.sub, tender.methodId, index + 1],
       );
     }
     const { rowCount: completed } = await client.query(

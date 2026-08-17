@@ -401,3 +401,57 @@ describe("payment ways", () => {
     expect(await dbLib.withTenant(biz.id, () => paymentMethodsService.deletePaymentMethod(biz.id, added.id))).toBe(true);
   });
 });
+
+/**
+ * The rows themselves, against the real table.
+ *
+ * Everything above this point tests the arithmetic and the ways; none of it
+ * writes two live `payments` rows for one order, which is exactly how migration
+ * 0091 shipped with `uq_payments_one_positive_per_order` still forbidding the
+ * second slice of every split. Migration 0092 re-expressed that index as "one
+ * live *settlement* per order" — these two tests are what would have caught it.
+ */
+describe("payments rows for a split bill", () => {
+  let nextOrderNumber = 9000;
+
+  async function openOrder(): Promise<string> {
+    const { rows } = await db.query<{ id: string }>(
+      `INSERT INTO orders (location_id, order_number, type, status, subtotal, discount, tax, total)
+       VALUES ($1, $2, 'dine_in', 'open', 500000, 0, 0, 500000)
+       RETURNING id`,
+      [biz.locationId, ++nextOrderNumber],
+    );
+    return rows[0].id;
+  }
+
+  it("accepts one checkout's several slices", async () => {
+    const orderId = await openOrder();
+    await db.query(
+      `INSERT INTO payments (location_id, order_id, method, amount, settlement_seq)
+       VALUES ($1, $2, 'cash', 200000, 1), ($1, $2, 'card', 300000, 2)`,
+      [biz.locationId, orderId],
+    );
+    const { rows } = await db.query<{ count: string }>(
+      "SELECT count(*)::text AS count FROM payments WHERE order_id = $1",
+      [orderId],
+    );
+    expect(rows[0].count).toBe("2");
+  });
+
+  it("still refuses a second, concurrent settlement of the same bill", async () => {
+    const orderId = await openOrder();
+    await db.query(
+      `INSERT INTO payments (location_id, order_id, method, amount, settlement_seq)
+       VALUES ($1, $2, 'cash', 200000, 1), ($1, $2, 'card', 300000, 2)`,
+      [biz.locationId, orderId],
+    );
+    // A rival checkout numbers its own slices from 1 and collides on the first.
+    await expect(
+      db.query(
+        `INSERT INTO payments (location_id, order_id, method, amount, settlement_seq)
+         VALUES ($1, $2, 'cash', 500000, 1)`,
+        [biz.locationId, orderId],
+      ),
+    ).rejects.toThrow(/uq_payments_one_positive_per_order/);
+  });
+});

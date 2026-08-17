@@ -15,6 +15,7 @@ import { useRealtime } from "../use-realtime";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { JalaliDatePicker } from "../jalali-date-picker";
 import { api } from "../ui";
+import { BackdatedOrderPanel } from "./backdated-order-panel";
 import { OrderDetailModal } from "./order-detail-modal";
 
 type OrderStatus = "open" | "held" | "completed" | "voided";
@@ -474,15 +475,24 @@ function OrderDetailsPanel({
 export function OrdersList({
   canEdit,
   canAmendClosed = false,
+  canBackdate = false,
   initialOrderId = null,
 }: {
   /** May work an open order — add lines, discount it, take payment. */
   canEdit: boolean;
   /** May edit or remove an order that has already been paid for. */
   canAmendClosed?: boolean;
+  /** May record a sale that already happened — see backdated-order-panel.tsx. */
+  canBackdate?: boolean;
   /** `?order=<id>` from the URL: the dialog opens on it once, on first render. */
   initialOrderId?: string | null;
 }) {
+  /**
+   * The back-dating form is a panel on this screen rather than a page of its
+   * own: it is the same subject (this branch's sales), reached from the same
+   * place, and closed again the moment the paper receipts are typed in.
+   */
+  const [showBackdated, setShowBackdated] = useState(false);
   const [orders, setOrders] = useState<OrderRow[] | null>(null);
   const [closedOrders, setClosedOrders] = useState<OrderRow[]>([]);
   /** null = nobody is clocked in, so the closed list covers the business day instead of a shift. */
@@ -772,6 +782,16 @@ export function OrdersList({
                   ? ` · ${toPersianDigits(closedOrders.length)} بسته‌شده`
                   : "")}
           </span>
+          {canBackdate && (
+            <button
+              type="button"
+              onClick={() => setShowBackdated((open) => !open)}
+              aria-expanded={showBackdated}
+              className="flex min-h-12 items-center gap-2 rounded-xl border border-[#EAE8E2] bg-white px-3 text-xs font-bold text-[#5E5B55] transition duration-200 hover:bg-[#FCFCFA] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 active:scale-[0.98] xl:min-h-[52px] motion-reduce:transition-none"
+            >
+              {showBackdated ? "بستن فرم گذشته" : "ثبت سفارش گذشته"}
+            </button>
+          )}
           <button
             type="button"
             onClick={() => void load()}
@@ -791,6 +811,12 @@ export function OrdersList({
           </button>
         </div>
       </header>
+
+      {canBackdate && showBackdated ? (
+        <div className="mb-3">
+          <BackdatedOrderPanel />
+        </div>
+      ) : null}
 
       {loadError && orders ? (
         <div
