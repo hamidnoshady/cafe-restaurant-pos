@@ -176,6 +176,19 @@ export function errorMessage(code: string | undefined): string {
     bad_checksum: "توکن معتبر نیست؛ یک نویسه اشتباه تایپ یا جابه‌جا شده است.",
     // Phase 23 Wave 2 — deployment role
     central_server: "این سرور، سرور مرکزی است و تنظیمات اتصال برای آن معنا ندارد.",
+    // Phase 28 — the connections hub. Three connections, three vocabularies of
+    // failure; the ones a person can act on are named here rather than falling
+    // through to «خطای غیرمنتظره».
+    not_central_server: "این نصب محلی است و کد اتصال صادر نمی‌کند؛ کد را از حساب ابری بگیرید.",
+    code_not_found: "این کد پیدا نشد یا دیگر معتبر نیست.",
+    api_key_not_found: "این کلید پیدا نشد یا قبلاً باطل شده است.",
+    invalid_scopes: "حداقل یک دسترسی را برای کلید انتخاب کنید.",
+    invalid_expiry: "مدت اعتبار کلید معتبر نیست.",
+    invalid_base_url: "آدرس فروشگاه معتبر نیست.",
+    missing_credentials: "کلیدهای REST ووکامرس را وارد کنید.",
+    invalid_currency_unit: "واحد قیمت فروشگاه معتبر نیست.",
+    not_plugin_mode: "این اتصال از نوع «افزونهٔ وردپرس» نیست، پس توکن افزونه ندارد.",
+    plugin_never_connected: "افزونهٔ وردپرس هنوز به این سامانه وصل نشده است.",
   };
   return map[code ?? ""] ?? "خطای غیرمنتظره. دوباره تلاش کنید.";
 }

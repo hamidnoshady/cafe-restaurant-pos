@@ -68,12 +68,20 @@ function toSummary(row: CodeRow, now: Date): PairingCodeSummary {
  * had. The partial unique index enforces one-live-per-business, so revoking
  * first is not a nicety — it is what makes re-issuing possible at all.
  *
- * Runs under the caller's platform scope (the route wraps it in
- * `withPlatformScope`), so no extra bypass is taken here.
+ * Runs under whichever scope the caller already established: the console wraps
+ * it in `withPlatformScope`, and the owner's own «اتصال دستگاه» panel wraps it
+ * in the ordinary tenant scope (`withTenantScope`), where RLS's `WITH CHECK`
+ * confines the insert to the caller's business without needing a bypass.
+ *
+ * `issuedBy` is a `platform_users.id` and is nullable in the schema, so an
+ * owner issuing their own code passes `session.platformUserId` — which is null
+ * for a PIN-only staff login, and null is the honest value there rather than a
+ * borrowed identity. (Only Owners reach this, and Owners are password logins,
+ * so in practice it is set.)
  */
 export async function issuePairingCode(
   businessId: string,
-  issuedBy: string,
+  issuedBy: string | null,
 ): Promise<{ code: string; summary: PairingCodeSummary } | { error: "no_location" }> {
   const { rows: locationRows } = await query<{ id: string }>(
     `SELECT id FROM locations WHERE business_id = $1 AND is_active ORDER BY created_at LIMIT 1`,

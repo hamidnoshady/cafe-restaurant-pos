@@ -55,7 +55,11 @@ function navItemsFor(industry: Industry): NavItem[] {
     { label: INDUSTRY_LABELS.watch, module: "watch", href: "/dashboard/watch", roles: ["owner", "manager"] },
     { label: INDUSTRY_LABELS.accessories, module: "accessories", href: "/dashboard/accessories", roles: ["owner", "manager"] },
     { label: "حسابداری", module: "ledger", href: "/dashboard/ledger", roles: ["owner", "manager", "accountant"], flag: "ledger" },
-    { label: "فروشگاه آنلاین", module: "integrations", href: "/dashboard/integrations", roles: ["owner", "manager"], flag: "integrations" },
+    // Not flag-gated, unlike the WooCommerce page it replaced: the hub's three
+    // tabs have three different entitlements and one — connecting the desktop
+    // app — is not an entitlement at all, so gating the entry would hide the
+    // free connection behind the paid ones. Each tab locks itself.
+    { label: "اتصال‌ها", module: "integrations", href: "/dashboard/connections", roles: ["owner", "manager"] },
     { label: "گزارش‌ها", module: "reports", href: "/dashboard/reports", roles: ["owner", "manager", "accountant"], flag: "reporting" },
     { label: "دستیار هوشمند", module: "ai", href: "/dashboard/ai", roles: ["owner", "manager"], flag: "ai_assistant" },
     { label: "تنظیمات", module: "settings", href: "/dashboard/settings" },

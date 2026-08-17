@@ -55,6 +55,12 @@ const PUBLIC_PATHS = [
   // database, so there is no session to require. The one-time code in the body
   // is the credential, and the route refuses once any user exists.
   "/api/setup/pair",
+  // The cloud side of that same exchange, on whatever origin the owner copied.
+  // The twin under /api/platform is unchanged, but everything with that prefix
+  // is moved to the console's host — and since an owner now issues a desktop
+  // code from their *own* dashboard, the address they hand the desktop app is
+  // their business origin. See src/lib/pairing-redeem.ts.
+  "/api/pairing/redeem",
   // Phase 12: self-service business registration creates the tenant a session
   // would otherwise be scoped to, so it cannot require one. Refuses with 403
   // unless ALLOW_PUBLIC_SIGNUP is set.
@@ -83,6 +89,12 @@ const PUBLIC_PATHS = [
   // signature, not a tenant session — the handler authenticates the delivery
   // against the connection's webhook secret before resolving its business.
   "/api/integrations/woocommerce/webhook",
+  // The other way a store connects: the WordPress plugin authenticates every
+  // call with a bearer link token plus an HMAC envelope over timestamp, nonce
+  // and body (src/lib/integrations/plugin-link.ts), never a tenant session.
+  // Prefix-matched so the whole /ping, /handshake, /events, /jobs family is
+  // reachable pre-session.
+  "/api/integrations/wordpress",
   // Phase 23: the apex host's "which business?" router. It verifies a password
   // but mints nothing — the whole point is that no session exists on the apex —
   // so like every other credential exchange it cannot require one.
@@ -229,9 +241,10 @@ const AUTH_RATE_LIMITED_PATHS = [
   // the per-IP bucket rather than going unlimited.
   "/api/auth/impersonate-handoff",
   // A pairing code is a 12-character credential submitted without a session,
-  // and /api/setup/pair forwards one; both belong in the same per-IP bucket as
-  // every other credential exchange rather than going unlimited.
+  // and /api/setup/pair forwards one; all three belong in the same per-IP
+  // bucket as every other credential exchange rather than going unlimited.
   "/api/platform/pairing/redeem",
+  "/api/pairing/redeem",
   "/api/setup/pair",
 ];
 
@@ -241,6 +254,17 @@ const SYNC_TOKEN_RATE_LIMITED_PATHS = [
   "/api/server-sync/push",
   "/api/server-sync/pull",
 ];
+
+/**
+ * The WordPress plugin channel shares that bucket, and shares it *by prefix*
+ * rather than by an exact route list: it is a family of five endpoints one
+ * caller cycles through on every scheduled run, and a compromised WordPress
+ * install is exactly the runaway client the per-token bucket exists to
+ * contain.
+ */
+function isPluginChannelPath(pathname: string): boolean {
+  return pathname === "/api/integrations/wordpress" || pathname.startsWith("/api/integrations/wordpress/");
+}
 
 /** All public API routes share one per-key bucket; this must stay prefix-based, not an exact route list. */
 function isPublicApiPath(pathname: string): boolean {
@@ -263,7 +287,7 @@ function handleRateLimits(
     if (!result.allowed) return rateLimited(result.retryAfterMs);
   }
 
-  if (SYNC_TOKEN_RATE_LIMITED_PATHS.includes(pathname)) {
+  if (SYNC_TOKEN_RATE_LIMITED_PATHS.includes(pathname) || isPluginChannelPath(pathname)) {
     const authHeader = request.headers.get("authorization");
     const key = authHeader
       ? `token:${hashKey(authHeader)}`
