@@ -79,8 +79,10 @@ const STATUS_LABELS: Record<OrderStatus, string> = {
 interface BusinessDayWindow {
   enabled: boolean;
   businessDate: string;
-  /** Where the closed list starts: the day's start, or a manual close inside it. */
+  /** Where the closed list starts: the day's start, or whatever ended the night early. */
   windowStart: string;
+  /** "shift" = the cashier cashed up, "manual" = «بستن روز کاری», null = still running. */
+  closedBy: "manual" | "shift" | null;
   manuallyClosed: boolean;
 }
 
@@ -957,9 +959,11 @@ export function OrdersList({
               {reviewedShift
                 ? `سفارش‌های بسته‌شدهٔ شیفت ${reviewedShift.employeeName} نمایش داده می‌شوند؛ صف بازِ بالا همچنان لحظه‌ای است.`
                 : businessDay?.enabled
-                  ? businessDay.manuallyClosed
-                    ? `روز کاری قبلی ساعت ${orderTimeLabel(businessDay.windowStart)} بسته شد؛ سفارش‌های بسته‌شده از همان لحظه نمایش داده می‌شوند.`
-                    : `سفارش‌های بسته‌شدهٔ روز کاری جاری، از ساعت ${orderTimeLabel(businessDay.windowStart)}، نمایش داده می‌شوند.`
+                  ? businessDay.closedBy === "shift"
+                    ? `شیفت ساعت ${orderTimeLabel(businessDay.windowStart)} بسته شد؛ فهرست برای شیفت بعدی از همان لحظه شمرده می‌شود. سفارش‌های شیفت قبل در گزارش‌ها باقی است.`
+                    : businessDay.closedBy === "manual"
+                      ? `روز کاری ساعت ${orderTimeLabel(businessDay.windowStart)} بسته شد؛ فهرست از همان لحظه شمرده می‌شود.`
+                      : `سفارش‌های بسته‌شدهٔ روز کاری جاری، از ساعت ${orderTimeLabel(businessDay.windowStart)}، نمایش داده می‌شوند.`
                   : shiftStartedAt
                     ? `سفارش‌های بسته‌شده از شروع شیفت (ساعت ${orderTimeLabel(shiftStartedAt)}) نمایش داده می‌شوند.`
                     : "سفارش‌های بسته‌شدهٔ امروز نمایش داده می‌شوند؛ با شروع شیفت، فهرست از زمان شیفت شمرده می‌شود."}

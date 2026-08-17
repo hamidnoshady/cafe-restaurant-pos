@@ -43,6 +43,8 @@ interface OverviewData {
     enabled: boolean;
     startMinutes: number | null;
     businessDate: string;
+    /** "shift" = the cashier cashed up, "manual" = «بستن روز کاری», null = still running. */
+    closedBy: "manual" | "shift" | null;
     manuallyClosed: boolean;
   } | null;
   activeOrderCount: number;
@@ -510,7 +512,11 @@ export function OperationsOverview({
   const businessDayNote =
     businessDay?.enabled && businessDay.startMinutes !== null
       ? `روز کاری از ساعت ${toPersianDigits(formatStartTime(businessDay.startMinutes))}` +
-        (businessDay.manuallyClosed ? " · بسته‌شده" : "")
+        (businessDay.closedBy === "shift"
+          ? " · شیفت بسته شده"
+          : businessDay.closedBy === "manual"
+            ? " · بسته‌شده"
+            : "")
       : null;
 
   return (

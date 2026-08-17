@@ -16,7 +16,11 @@
  * reporting views compute the other way anyway.
  */
 import { getPool, query } from "./db";
-import { isValidStartMinutes, resolveLiveWindow } from "./business-day";
+import {
+  isValidStartMinutes,
+  resolveLiveWindow,
+  type LiveWindowCloseReason,
+} from "./business-day";
 
 export class BusinessDayError extends Error {
   status: number;
@@ -52,12 +56,20 @@ export interface BusinessDayStatus {
   /** When that day began and when it ends on its own, as ISO instants. */
   scheduledStart: string;
   scheduledEnd: string;
-  /** Where the live counters start: the scheduled start, or a manual close inside the current day. */
+  /**
+   * Where the live counters start: the scheduled start, or — once the branch has
+   * finished its night — the cash-up or manual close that ended it.
+   */
   windowStart: string;
+  /** How the night was ended early ("shift" = the cashier's cash-up), or null while it runs. */
+  closedBy: LiveWindowCloseReason | null;
   manuallyClosed: boolean;
   /** The branch's most recent manual close, whether or not it still holds the window. */
   lastClosedAt: string | null;
   lastClosedByName: string | null;
+  /** The branch's most recent shift cash-up, and whether anyone is still clocked in. */
+  lastShiftEndedAt: string | null;
+  hasOpenShift: boolean;
 }
 
 interface StatusRow extends Record<string, unknown> {
@@ -68,6 +80,8 @@ interface StatusRow extends Record<string, unknown> {
   scheduled_end: Date;
   last_closed_at: Date | null;
   last_closed_by_name: string | null;
+  last_shift_ended_at: Date | null;
+  has_open_shift: boolean | null;
 }
 
 /**
@@ -85,7 +99,9 @@ export async function getBusinessDayStatus(
             app_business_day_start(now(), l.timezone, l.business_day_start_minutes) AS scheduled_start,
             app_business_day_end(now(), l.timezone, l.business_day_start_minutes)   AS scheduled_end,
             c.closed_at                                                             AS last_closed_at,
-            u.full_name                                                             AS last_closed_by_name
+            u.full_name                                                             AS last_closed_by_name,
+            s.last_shift_ended_at,
+            s.has_open_shift
        FROM locations l
        LEFT JOIN LATERAL (
          SELECT closed_at, closed_by
@@ -95,6 +111,17 @@ export async function getBusinessDayStatus(
           LIMIT 1
        ) c ON true
        LEFT JOIN users u ON u.id = c.closed_by
+       -- The branch's till state. A shift with no branch of its own counts for
+       -- it, the same rule listRecentShiftOptions and branchClosedOrdersWindow
+       -- already apply: a shift only records a branch when the session that
+       -- opened it had one, and dropping those rows here would mean a
+       -- single-branch business never registered its own cash-up.
+       LEFT JOIN LATERAL (
+         SELECT max(es.ended_at)          AS last_shift_ended_at,
+                bool_or(es.ended_at IS NULL) AS has_open_shift
+           FROM employee_shifts es
+          WHERE es.location_id = l.id OR es.location_id IS NULL
+       ) s ON true
       WHERE l.id = $1`,
     [locationId],
   );
@@ -108,11 +135,17 @@ export async function getBusinessDayStatus(
   const lastClosedAt = row.last_closed_at
     ? row.last_closed_at.toISOString()
     : null;
-  const { windowStart, manuallyClosed } = resolveLiveWindow({
+  const lastShiftEndedAt = row.last_shift_ended_at
+    ? row.last_shift_ended_at.toISOString()
+    : null;
+  const hasOpenShift = row.has_open_shift === true;
+  const { windowStart, closedBy, manuallyClosed } = resolveLiveWindow({
     enabled,
     scheduledStart,
     scheduledEnd,
     lastClosedAt,
+    lastShiftEndedAt,
+    hasOpenShift,
   });
 
   return {
@@ -124,9 +157,12 @@ export async function getBusinessDayStatus(
     scheduledStart,
     scheduledEnd,
     windowStart,
+    closedBy,
     manuallyClosed,
     lastClosedAt,
     lastClosedByName: row.last_closed_by_name,
+    lastShiftEndedAt,
+    hasOpenShift,
   };
 }
 

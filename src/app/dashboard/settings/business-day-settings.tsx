@@ -29,9 +29,13 @@ interface BusinessDayStatus {
   scheduledStart: string;
   scheduledEnd: string;
   windowStart: string;
+  /** "shift" = the cashier cashed up, "manual" = «بستن روز کاری», null = still running. */
+  closedBy: "manual" | "shift" | null;
   manuallyClosed: boolean;
   lastClosedAt: string | null;
   lastClosedByName: string | null;
+  lastShiftEndedAt: string | null;
+  hasOpenShift: boolean;
 }
 
 interface Closure {
@@ -177,13 +181,17 @@ export function BusinessDaySettings() {
                 <p className="mt-1 text-xs text-muted-foreground">
                   آمار داشبورد و سفارش‌ها از {formatMoment(status.windowStart)}{" "}
                   شمرده می‌شود
-                  {status.manuallyClosed
-                    ? ` (روز به‌صورت دستی بسته شده${
-                        status.lastClosedByName
-                          ? ` توسط ${status.lastClosedByName}`
-                          : ""
-                      })`
-                    : ""}
+                  {status.closedBy === "shift"
+                    ? " (شیفت بسته شده؛ کار شب تمام شده است)"
+                    : status.closedBy === "manual"
+                      ? ` (روز به‌صورت دستی بسته شده${
+                          status.lastClosedByName
+                            ? ` توسط ${status.lastClosedByName}`
+                            : ""
+                        })`
+                      : status.hasOpenShift
+                        ? " (شیفت باز است)"
+                        : ""}
                   .
                 </p>
               </>
@@ -236,9 +244,11 @@ export function BusinessDaySettings() {
             <div className="mt-6 border-t border-border pt-5">
               <h3 className="mb-1 text-sm font-semibold">بستن دستی روز کاری</h3>
               <p className="mb-3 text-xs text-muted-foreground">
-                وقتی صندوق را زودتر از ساعت شروع روز بعد بستید، با این دکمه روز
-                کاری جاری تمام می‌شود و داشبورد و فهرست سفارش‌ها بلافاصله برای
-                شیفت بعدی صفر می‌شوند. گزارش‌ها دست‌نخورده می‌مانند و هر فروشی
+                معمولاً به این دکمه نیازی نیست: وقتی صندوق‌دار شیفتش را می‌بندد
+                و کسی دیگر در شعبه شیفت باز ندارد، همان بستن شیفت پایانِ کار شب
+                حساب می‌شود و داشبورد و فهرست سفارش‌ها خودبه‌خود برای شیفت بعد
+                صفر می‌شوند. این دکمه برای شعبه‌ای است که کارکنانش شیفت ثبت
+                نمی‌کنند. در هر دو حالت گزارش‌ها دست‌نخورده می‌مانند و هر فروشی
                 در روز کاری خودش باقی است.
               </p>
               {status.manuallyClosed ? (

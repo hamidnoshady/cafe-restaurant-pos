@@ -99,57 +99,86 @@ describe("resolveLiveWindow", () => {
   // An 18:00→18:00 business day, and a cash-up at 03:00 inside it.
   const scheduledStart = "2026-08-16T14:30:00.000Z"; // 18:00 Tehran, 16 Aug
   const scheduledEnd = "2026-08-17T14:30:00.000Z"; // 18:00 Tehran, 17 Aug
-  const closedAtThreeAm = "2026-08-16T23:30:00.000Z"; // 03:00 Tehran, 17 Aug
+  const threeAm = "2026-08-16T23:30:00.000Z"; // 03:00 Tehran, 17 Aug
+  const tenPm = "2026-08-16T18:30:00.000Z"; // 22:00 Tehran, 16 Aug
 
-  it("starts at the scheduled start when the day has not been closed by hand", () => {
-    expect(
-      resolveLiveWindow({ enabled: true, scheduledStart, scheduledEnd, lastClosedAt: null }),
-    ).toEqual({ windowStart: scheduledStart, manuallyClosed: false });
+  const base = {
+    enabled: true,
+    scheduledStart,
+    scheduledEnd,
+    lastClosedAt: null,
+    lastShiftEndedAt: null,
+    hasOpenShift: false,
+  };
+
+  it("starts at the scheduled start while the night is still running", () => {
+    expect(resolveLiveWindow(base)).toEqual({
+      windowStart: scheduledStart,
+      closedBy: null,
+      manuallyClosed: false,
+    });
   });
 
-  it("moves to the close, so the screens go to zero the moment the day is cashed up", () => {
+  it("ends the night at the cash-up, so the board is zero for the rest of the day", () => {
+    // The case that shipped wrong: at 11:00 the next morning the service is
+    // long over, but on the clock alone the 18:00→18:00 day is still running.
     expect(
-      resolveLiveWindow({
-        enabled: true,
-        scheduledStart,
-        scheduledEnd,
-        lastClosedAt: closedAtThreeAm,
-      }),
-    ).toEqual({ windowStart: closedAtThreeAm, manuallyClosed: true });
+      resolveLiveWindow({ ...base, lastShiftEndedAt: threeAm, hasOpenShift: false }),
+    ).toEqual({ windowStart: threeAm, closedBy: "shift", manuallyClosed: false });
   });
 
-  it("expires the close when the next business day starts on its own", () => {
-    // Same closure, now read during the *following* day: 18:00 has come round.
+  it("treats a cash-up with someone still clocked in as a handover, not the end", () => {
+    expect(
+      resolveLiveWindow({ ...base, lastShiftEndedAt: tenPm, hasOpenShift: true }),
+    ).toEqual({ windowStart: scheduledStart, closedBy: null, manuallyClosed: false });
+  });
+
+  it("still honours the manual close, for a branch whose staff never clock in", () => {
+    expect(resolveLiveWindow({ ...base, lastClosedAt: threeAm })).toEqual({
+      windowStart: threeAm,
+      closedBy: "manual",
+      manuallyClosed: true,
+    });
+  });
+
+  it("takes the later of a cash-up and a manual close", () => {
+    expect(
+      resolveLiveWindow({ ...base, lastClosedAt: tenPm, lastShiftEndedAt: threeAm }),
+    ).toEqual({ windowStart: threeAm, closedBy: "shift", manuallyClosed: false });
+
+    expect(
+      resolveLiveWindow({ ...base, lastClosedAt: threeAm, lastShiftEndedAt: tenPm }),
+    ).toEqual({ windowStart: threeAm, closedBy: "manual", manuallyClosed: true });
+  });
+
+  it("expires both when the next business day starts on its own", () => {
+    // Same closes, read during the *following* day: 18:00 has come round.
     expect(
       resolveLiveWindow({
-        enabled: true,
+        ...base,
         scheduledStart: scheduledEnd,
         scheduledEnd: "2026-08-18T14:30:00.000Z",
-        lastClosedAt: closedAtThreeAm,
+        lastClosedAt: threeAm,
+        lastShiftEndedAt: threeAm,
       }),
-    ).toEqual({ windowStart: scheduledEnd, manuallyClosed: false });
+    ).toEqual({ windowStart: scheduledEnd, closedBy: null, manuallyClosed: false });
   });
 
-  it("ignores a closure recorded before the current day began", () => {
+  it("ignores a cash-up from before the current day began", () => {
     expect(
-      resolveLiveWindow({
-        enabled: true,
-        scheduledStart,
-        scheduledEnd,
-        lastClosedAt: "2026-08-09T23:30:00.000Z",
-      }),
-    ).toEqual({ windowStart: scheduledStart, manuallyClosed: false });
+      resolveLiveWindow({ ...base, lastShiftEndedAt: "2026-08-09T23:30:00.000Z" }),
+    ).toEqual({ windowStart: scheduledStart, closedBy: null, manuallyClosed: false });
   });
 
-  it("ignores closures entirely for a branch with no business day configured", () => {
+  it("ignores all of it for a branch with no business day configured", () => {
     expect(
       resolveLiveWindow({
+        ...base,
         enabled: false,
-        scheduledStart,
-        scheduledEnd,
-        lastClosedAt: closedAtThreeAm,
+        lastClosedAt: threeAm,
+        lastShiftEndedAt: threeAm,
       }),
-    ).toEqual({ windowStart: scheduledStart, manuallyClosed: false });
+    ).toEqual({ windowStart: scheduledStart, closedBy: null, manuallyClosed: false });
   });
 });
 
