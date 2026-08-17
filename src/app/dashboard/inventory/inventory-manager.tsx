@@ -5,6 +5,7 @@ import { formatQuantity } from "@/lib/digits";
 import { api, ErrorBox } from "../ui";
 import { useRealtime } from "../use-realtime";
 import { ItemsSection } from "./items-section";
+import { ProductionSection } from "./production-section";
 import { RecipesSection } from "./recipes-section";
 import { SuppliersSection } from "./suppliers-section";
 import { PurchasesSection } from "./purchases-section";
@@ -22,6 +23,8 @@ export interface InventoryItem {
   purchase_unit: string | null;
   purchase_unit_factor: string | number;
   is_active: boolean;
+  /** Made in-house through a production formula rather than bought (Phase 29). */
+  is_produced: boolean;
   stock: number;
 }
 export interface Supplier {
@@ -72,6 +75,7 @@ interface LowStockItem {
 
 const TABS = [
   { key: "items", label: "اقلام انبار" },
+  { key: "production", label: "تولید" },
   { key: "recipes", label: "دستورالعمل مصرف" },
   { key: "suppliers", label: "تأمین‌کنندگان" },
   { key: "purchases", label: "خرید" },
@@ -190,6 +194,9 @@ export function InventoryManager() {
         {tab === "items" ? (
           <ItemsSection items={data.items} busy={busy} run={run} />
         ) : null}
+        {tab === "production" ? (
+          <ProductionSection items={data.items} busy={busy} run={run} />
+        ) : null}
         {tab === "recipes" ? (
           <RecipesSection
             items={data.items}
@@ -247,6 +254,25 @@ function errorMessage(code: string | undefined): string {
     purchase_received_cannot_edit:
       "خرید دریافت‌شده قابل ویرایش نیست؛ برای اصلاح از برگشت به تأمین‌کننده استفاده کنید.",
     purchase_cancelled_cannot_edit: "خرید لغوشده قابل ویرایش نیست.",
+    // Phase 29 — production
+    output_item_not_found: "قلم انبارِ محصول پیدا نشد.",
+    formula_name_taken: "فرمولی با این نام قبلاً ثبت شده است.",
+    formula_not_found: "فرمول تولید پیدا نشد.",
+    formula_inactive: "این فرمول غیرفعال است و امکان ثبت تولید با آن نیست.",
+    formula_has_no_inputs: "برای این فرمول هنوز ماده‌ای ثبت نشده است.",
+    formula_cycle:
+      "این ماده خودش (به‌طور مستقیم یا غیرمستقیم) از همین محصول ساخته می‌شود و حلقه ایجاد می‌کند.",
+    invalid_yield: "مقدار تولید معتبر نیست.",
+    invalid_batches: "تعداد بار پخت معتبر نیست.",
+    invalid_conversion_cost: "هزینهٔ تبدیل معتبر نیست.",
+    run_not_found: "سند تولید پیدا نشد.",
+    run_not_reversible: "این سند تولید قابل برگشت نیست.",
+    already_reversed: "این سند تولید قبلاً برگشت خورده است.",
+    production_output_consumed:
+      "بخشی از محصول این تولید فروخته یا مصرف شده است؛ برای اصلاح از ضایعات یا شمارش انبار استفاده کنید.",
+    consumption_layer_settled:
+      "کسری یکی از مواد این تولید با خرید بعدی تسویه شده است و برگشت آن ممکن نیست.",
+    production_reversal_inconsistent: "برگشت این تولید با ارقام ثبت‌شده هم‌خوان نیست.",
     no_location: "شعبه‌ای ثبت نشده است.",
     unauthorized: "وارد نشده‌اید.",
     forbidden: "دسترسی مجاز نیست.",

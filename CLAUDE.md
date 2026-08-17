@@ -168,6 +168,16 @@ and left:
   migrated onto that model, by decision** — see the phase doc's "Revised" scope note before assuming
   otherwise. Industry-gated pages and routes use `src/lib/industry-guard.ts`, the industry-keyed
   counterpart of `features.ts`.
+- **In-house production (Phase 29)** — some F&B items are *made*, not assembled: a cake is built
+  from raw materials once, yields 8 slices, and each slice is sold through its own serving recipe.
+  A formula (`production_formulas`) and a run (`production_runs`) sit between the two, under the
+  «تولید» tab of `/dashboard/inventory` and `/api/inventory/production/*` — so they inherit the
+  `inventory` flag and F&B module with **no new gating**. The load-bearing rule: **the produced good
+  is an ordinary `inventory_items` row** flagged `is_produced`, which is why recipes, costing,
+  sale-time deduction, stock counts, pricing and cost drift all needed no change. Don't build a
+  second model for "a thing we make". A run's cost is spread over the *actual* yield, its optional
+  conversion cost is capitalised through a WIP wash account (`1310`) crediting a **contra**-expense
+  (`5180`, so the wage in `5200` isn't counted twice), and it is corrected by reversal, never edited.
 - `src/lib/*.ts` — framework-free logic (money, dates, digits, order totals, …); these are
   what `*.test.ts` files cover. `src/lib/db.ts` and files that call `query()`/`getPool()`
   are the DB-touching exception and aren't unit-tested directly.

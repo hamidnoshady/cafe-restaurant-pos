@@ -191,8 +191,12 @@ export async function reverseConsumedInventory(
     locationId: string;
     /** the inventory_events row whose movements are being undone */
     consumptionEventId: string;
-    /** stock_movements.type of the movements to undo — 'sale' for an order, 'adjustment' for a count */
-    movementType: "sale" | "waste" | "adjustment";
+    /**
+     * stock_movements.type of the movements to undo — 'sale' for an order,
+     * 'adjustment' for a count, 'production_consume' for the materials a
+     * production run issued.
+     */
+    movementType: "sale" | "waste" | "adjustment" | "production_consume";
     sourceType: string;
     sourceId: string;
     reversalEventId: string;

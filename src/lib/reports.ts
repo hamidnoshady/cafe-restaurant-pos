@@ -300,6 +300,31 @@ export const REPORT_VIEWS: Record<string, ReportViewDef> = {
       { key: "cost", label: "بهای ضایعات", column: "cost", aggregations: ["sum", "avg"] },
     ],
   },
+  // Phase 29 — in-house production. One row per run. Every additive column is
+  // signed, so a reversal nets its original out and a period total is simply a
+  // sum; `unit_cost` is a rate rather than a quantity, so only `avg` makes
+  // sense on it and it stays positive on a reversal.
+  v_production_summary: {
+    label: "گزارش تولید",
+    dateColumn: "production_date",
+    dimensions: [
+      { key: "day", label: "روز", dateTrunc: "day" },
+      { key: "week", label: "هفته", dateTrunc: "week" },
+      { key: "month", label: "ماه", dateTrunc: "month" },
+      { key: "product", label: "محصول", columns: ["output_inventory_item_id", "output_item_name"] },
+      { key: "formula", label: "فرمول", columns: ["formula_id", "formula_name"] },
+    ],
+    metrics: [
+      { key: "quantity", label: "مقدار تولید", column: "quantity", aggregations: ["sum", "avg"] },
+      { key: "material_cost", label: "بهای مواد", column: "material_cost", aggregations: ["sum", "avg"] },
+      { key: "conversion_cost", label: "هزینهٔ تبدیل", column: "conversion_cost", aggregations: ["sum", "avg"] },
+      { key: "total_cost", label: "بهای تمام‌شده", column: "total_cost", aggregations: ["sum", "avg"] },
+      { key: "unit_cost", label: "بهای هر واحد", column: "unit_cost", aggregations: ["avg"] },
+      // Positive means the batches came out short of what their formulas
+      // promised — the direction that costs money.
+      { key: "yield_variance", label: "انحراف مقدار", column: "yield_variance", aggregations: ["sum", "avg"] },
+    ],
+  },
   // Purchase-line grain (migration 0063): one row per line, so "how much of
   // this item did we buy" and "what did we spend with this supplier" are both
   // answerable. `purchase_count` is count(DISTINCT purchase_id) precisely
@@ -636,6 +661,22 @@ export const STANDARD_REPORTS: StandardReportDef[] = [
     defaultChart: {
       chartType: "pie",
       config: { view: "v_waste_summary", metric: "cost", aggregation: "sum", dimension: "reason" },
+    },
+  },
+  {
+    key: "production_by_product",
+    label: "تولید به تفکیک محصول",
+    view: "v_production_summary",
+    defaultChart: {
+      chartType: "bar",
+      config: {
+        view: "v_production_summary",
+        metric: "total_cost",
+        aggregation: "sum",
+        dimension: "product",
+        sort: { by: "metric", dir: "desc" },
+        limit: 10,
+      },
     },
   },
   {

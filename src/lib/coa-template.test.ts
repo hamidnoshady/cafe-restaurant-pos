@@ -4,6 +4,7 @@ import {
   ACCOUNT_LEVELS,
   coaTemplateForIndustry,
   COSMETICS_COA_TEMPLATE,
+  COST_OF_SALES_CODES,
   FNB_COA_TEMPLATE,
   JEWELRY_COA_TEMPLATE,
   nextAccountLevel,
@@ -212,9 +213,17 @@ describe("normalBalanceForType", () => {
 });
 
 describe("contra accounts in the F&B template", () => {
-  it("marks sales returns, the NRV allowance, and accumulated depreciation as contra, and nothing else", () => {
+  it("marks sales returns, the NRV allowance, accumulated depreciation and applied conversion cost as contra, and nothing else", () => {
     const contraCodes = FNB_COA_TEMPLATE.filter((a) => a.isContra).map((a) => a.code);
-    expect(contraCodes.sort()).toEqual(["1390", "1510", "4400"]);
+    expect(contraCodes.sort()).toEqual(["1390", "1510", "4400", "5180"]);
+  });
+
+  it("keeps applied conversion cost out of cost of sales", () => {
+    // 5180 offsets the wages/utilities a production run capitalised, both of
+    // which sit outside gross profit. Counting it as cost of sales would
+    // overstate margin in the period a batch was made and understate it in the
+    // period it sold — the exact distortion capitalising the cost avoids.
+    expect(COST_OF_SALES_CODES).not.toContain(WELL_KNOWN_CODES.appliedConversionCost);
   });
 });
 

@@ -123,7 +123,9 @@ function MenuItemRecipeCard({
                   { value: "", label: "قلم انبار را انتخاب کنید…" },
                   ...activeItems.map((i) => ({
                     value: i.id,
-                    label: `${i.name} (${i.unit})`,
+                    // A produced item (a cake made in-house) sits in the same
+                    // list as the raw materials, so it is marked to be findable.
+                    label: `${i.name} (${i.unit})${i.is_produced ? " — ساخت داخلی" : ""}`,
                     searchString: [i.name, i.sku, i.unit].filter(Boolean).join(" "),
                   })),
                 ]}
@@ -240,7 +242,9 @@ function ModifierRecipeCard({
                   { value: "", label: "قلم انبار را انتخاب کنید…" },
                   ...activeItems.map((i) => ({
                     value: i.id,
-                    label: `${i.name} (${i.unit})`,
+                    // A produced item (a cake made in-house) sits in the same
+                    // list as the raw materials, so it is marked to be findable.
+                    label: `${i.name} (${i.unit})${i.is_produced ? " — ساخت داخلی" : ""}`,
                     searchString: [i.name, i.sku, i.unit].filter(Boolean).join(" "),
                   })),
                 ]}
