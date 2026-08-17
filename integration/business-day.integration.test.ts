@@ -24,7 +24,12 @@
  *   9. the business day is per branch: configuring one leaves the other alone;
  *  10. `businessToday` — the business-wide date the cross-server rollup and the
  *      AI assistant's default range anchor on — follows the same rule, instead
- *      of the calendar day it used to name.
+ *      of the calendar day it used to name;
+ *  11. the cash-up ends the night: once the branch's last shift is closed the
+ *      live window starts there, so the board is zero for the rest of the day
+ *      instead of showing last night's takings until 18:00 comes round — the
+ *      bug this feature shipped with — while a cash-up with a colleague still
+ *      clocked in is treated as a handover and changes nothing.
  */
 import { randomUUID } from "node:crypto";
 import { Client } from "pg";
@@ -82,6 +87,35 @@ async function setStart(
     "UPDATE locations SET business_day_start_minutes = $2 WHERE id = $1",
     [locationId, startMinutes],
   );
+}
+
+/** A user plus its employees row — employee_shifts.employee_id references employees (migration 0042). */
+async function seedEmployee(): Promise<string> {
+  const { rows } = await db.query<{ id: string }>(
+    `INSERT INTO users (business_id, role, full_name, email, pin_hash)
+     VALUES ($1, 'cashier', 'صندوق‌دار', $2, 'x') RETURNING id`,
+    [businessId, `cashier-${randomUUID().slice(0, 8)}@example.com`],
+  );
+  const id = rows[0].id;
+  await db.query("INSERT INTO employees (id, business_id) VALUES ($1, $2)", [id, businessId]);
+  return id;
+}
+
+/** A shift on the branch, already closed unless `endedAt` is null. */
+async function insertShift(
+  locationId: string | null,
+  startedAt: Date,
+  endedAt: Date | null,
+): Promise<string> {
+  const employee = await seedEmployee();
+  const { rows } = await db.query<{ id: string }>(
+    `INSERT INTO employee_shifts
+       (employee_id, business_id, location_id, business_date, started_at, ended_at)
+     VALUES ($1, $2, $3, $4::timestamptz::date, $4, $5)
+     RETURNING id`,
+    [employee, businessId, locationId, startedAt, endedAt],
+  );
+  return rows[0].id;
 }
 
 async function insertOrder(
@@ -491,5 +525,104 @@ describe("the business-wide date other sections anchor on", () => {
       await rollup.getBusinessToday(businessId),
     ]);
     expect(rollupToday).toBe(wide);
+  });
+});
+
+describe("the cash-up is what ends the night", () => {
+  /**
+   * The bug this feature shipped with, reported from a real deployment: at
+   * 11:23 the next morning the dashboard still showed the previous night's
+   * eleven orders, because on the clock alone an 18:00→18:00 business day was
+   * still running. Nothing about a start time can say "the service is over" —
+   * the cashier closing the till can.
+   */
+  async function status(locationId: string) {
+    return dbLib.withTenant(businessId, () => businessDay.getBusinessDayStatus(locationId));
+  }
+
+  it("zeroes the live window once the branch's last shift is closed", async () => {
+    await setStart(mainId, SIX_PM);
+    const open = (await status(mainId))!;
+    const dayStart = Date.parse(open.scheduledStart);
+
+    await insertOrder(mainId, new Date(dayStart + 60 * 60 * 1000));
+    expect(await closedInWindow(mainId)).toHaveLength(1);
+
+    // The cashier works the night and cashes up an hour ago.
+    const cashUp = new Date(Date.now() - 60 * 60 * 1000);
+    await insertShift(mainId, new Date(dayStart + 30 * 60 * 1000), cashUp);
+
+    const after = (await status(mainId))!;
+    expect(after.closedBy).toBe("shift");
+    expect(after.windowStart).toBe(cashUp.toISOString());
+    expect(after.hasOpenShift).toBe(false);
+    // The morning after: the board is empty, which is the whole point.
+    expect(await closedInWindow(mainId)).toEqual([]);
+  });
+
+  it("leaves the night running when a colleague is still clocked in", async () => {
+    await setStart(mainId, SIX_PM);
+    const open = (await status(mainId))!;
+    const dayStart = Date.parse(open.scheduledStart);
+    await insertOrder(mainId, new Date(dayStart + 60 * 60 * 1000));
+
+    // A handover: one cashier out, the next already on the floor.
+    await insertShift(mainId, new Date(dayStart), new Date(Date.now() - 60 * 60 * 1000));
+    await insertShift(mainId, new Date(Date.now() - 90 * 60 * 1000), null);
+
+    const after = (await status(mainId))!;
+    expect(after.hasOpenShift).toBe(true);
+    expect(after.closedBy).toBeNull();
+    expect(after.windowStart).toBe(after.scheduledStart);
+    expect(await closedInWindow(mainId)).toHaveLength(1);
+  });
+
+  it("keeps every pre-cash-up sale in the reports", async () => {
+    await setStart(mainId, SIX_PM);
+    const open = (await status(mainId))!;
+    const dayStart = Date.parse(open.scheduledStart);
+    await insertOrder(mainId, new Date(dayStart + 60 * 60 * 1000));
+    await insertShift(mainId, new Date(dayStart), new Date(Date.now() - 60 * 60 * 1000));
+
+    // Zero on screen, untouched in the books: closing the till resets a view,
+    // it never moves money between report rows.
+    expect(await closedInWindow(mainId)).toEqual([]);
+    expect(await salesByDay(mainId)).toEqual({ [open.businessDate]: 1 });
+  });
+
+  it("ignores a cash-up from a previous business day", async () => {
+    await setStart(mainId, SIX_PM);
+    const open = (await status(mainId))!;
+    const dayStart = Date.parse(open.scheduledStart);
+    await insertShift(
+      mainId,
+      new Date(dayStart - 26 * 60 * 60 * 1000),
+      new Date(dayStart - 20 * 60 * 60 * 1000),
+    );
+
+    const after = (await status(mainId))!;
+    expect(after.closedBy).toBeNull();
+    expect(after.windowStart).toBe(after.scheduledStart);
+  });
+
+  it("counts a shift with no branch of its own, as the rest of the app does", async () => {
+    await setStart(mainId, SIX_PM);
+    const open = (await status(mainId))!;
+    const cashUp = new Date(Date.now() - 60 * 60 * 1000);
+    await insertShift(null, new Date(Date.parse(open.scheduledStart)), cashUp);
+
+    const after = (await status(mainId))!;
+    expect(after.closedBy).toBe("shift");
+    expect(after.windowStart).toBe(cashUp.toISOString());
+  });
+
+  it("changes nothing for a branch with no business day configured", async () => {
+    const open = (await status(mainId))!;
+    await insertShift(mainId, new Date(Date.now() - 6 * 60 * 60 * 1000), new Date(Date.now() - 60_000));
+
+    const after = (await status(mainId))!;
+    expect(after.enabled).toBe(false);
+    expect(after.closedBy).toBeNull();
+    expect(after.windowStart).toBe(open.scheduledStart);
   });
 });

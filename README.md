@@ -286,12 +286,17 @@ rows.
   the dashboard KPIs, the orders screen and the settings panel all read it. The pure rules it applies
   (parsing the setting, the chart's hour order, how a manual close interacts with the schedule) are in
   `src/lib/business-day.ts` and unit-tested there.
-- **Closing the day moves the screens, never the books.** «بستن روز کاری» records a
-  `business_day_closures` row, which starts the live window later so the dashboard and orders list go
-  to zero at the cash-up instead of at the next start time. Reports are deliberately *not* derived from
-  it: a sale rung after a close is still filed under the business day it happened in. That is what makes
-  the close reversible and safe — no button can move money between report rows. A closure also expires
-  on its own once the next business day begins, so there is no state to clean up.
+- **The cash-up is what ends the night, not the clock.** A start time alone says when a day *begins*;
+  nothing in it can say the service is over, so an 18:00→18:00 branch would sit all morning looking at
+  last night's takings. The branch already announces the end through a function that has existed since
+  Phase 20 — the cashier closing their shift — so the live window starts at the branch's most recent
+  `employee_shifts.ended_at`, and only while **nobody** is still clocked in: a cash-up with a colleague
+  on the floor is a handover mid-service, not the end of it. «بستن روز کاری» remains the override for a
+  branch whose staff never clock in, and the later of the two wins.
+- **Ending the night moves the screens, never the books.** Whichever ended it, reports are deliberately
+  *not* derived from it: a sale rung afterwards is still filed under the business day it happened in.
+  That is what makes it safe — no cash-up and no button can move money between report rows. Both also
+  expire on their own once the next business day begins, so there is no state to clean up.
 
 **What follows the business day.** The reporting views (sales, menu items, modifiers, shift
 reconciliation, staff performance, waste, delivery, courier); the dashboard KPIs and sales-trend

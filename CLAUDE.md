@@ -104,8 +104,11 @@ date instead of splitting it at midnight. See the "The business day" section of
   step with every other one.
 - **Don't derive a "today" window in a route.** `getBusinessDayStatus` (`src/lib/business-day-service.ts`)
   already answers it, including a manual close; the pure half is `src/lib/business-day.ts`.
-- **Manual closes are display-only, by decision.** They move the live window, never a report's
-  bucket — don't "fix" reports to honour them.
+- **The night ends at the cash-up.** The live window starts at the branch's last
+  `employee_shifts.ended_at` once nobody is clocked in (a handover doesn't count); «بستن روز کاری» is
+  the override for branches that don't clock in. A start time alone can only say when a day begins.
+- **Ending a day is display-only, by decision.** A cash-up or a manual close moves the live window,
+  never a report's bucket — don't "fix" reports to honour them.
 
 ## Pull requests — check in until merged, not just at open
 

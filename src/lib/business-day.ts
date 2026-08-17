@@ -86,51 +86,96 @@ export function businessDayHours(startMinutes: number | null): number[] {
 }
 
 export interface LiveWindowInput {
-  /** False when the branch has no business day configured — closures are then ignored entirely. */
+  /** False when the branch has no business day configured — closes are then ignored entirely. */
   enabled: boolean;
   /** When the business day now in progress began, as an ISO instant. */
   scheduledStart: string;
   /** When it ends on its own, as an ISO instant. */
   scheduledEnd: string;
-  /** The branch's most recent manual close, if it has ever had one. */
+  /** The branch's most recent manual «بستن روز کاری», if it has ever had one. */
   lastClosedAt: string | null;
+  /** The branch's most recent shift cash-up (`employee_shifts.ended_at`). */
+  lastShiftEndedAt: string | null;
+  /** True while anyone is still clocked in at the branch — then a cash-up is a handover, not the end of the night. */
+  hasOpenShift: boolean;
 }
+
+/** Why the live counters were reset before the business day's own end. */
+export type LiveWindowCloseReason = "manual" | "shift";
 
 export interface LiveWindow {
   /** Where the dashboard KPIs and the orders screen's closed list start counting from. */
   windowStart: string;
-  /** True while a manual close is holding the live window open past the scheduled start. */
+  /** How the day was ended early, or null while it is still running normally. */
+  closedBy: LiveWindowCloseReason | null;
+  /** True while a manual close is holding the live window past the scheduled start. */
   manuallyClosed: boolean;
 }
 
 /**
- * Where the *live* counters start: normally the scheduled start of the
- * business day in progress, but a later manual close wins until the next
- * business day begins on its own.
+ * Where the *live* counters start: the scheduled start of the business day in
+ * progress, unless the branch has already finished its night, in which case
+ * the moment it finished.
  *
- * That "until the next one begins" is what makes closures self-expiring: a
- * close recorded at 03:00 sits inside the 18:00→18:00 day it ended, so it
- * holds the window; once 18:00 comes round the scheduled start is later than
- * it and the branch starts the new day at zero with nothing to clean up. A
- * closure from last week can never win.
+ * A business day that runs 18:00→18:00 is the right *reporting* bucket — one
+ * service, one date, whatever the clock does at midnight — but it is the wrong
+ * thing to put on a dashboard all day. A café whose service ends at 03:00 spent
+ * the next fifteen hours looking at last night's takings, because on the clock
+ * alone the day it belongs to was still running. Nothing about a start time can
+ * tell you the night is over.
+ *
+ * The branch already says so, through a function that has existed since Phase
+ * 20: the cashier closes their shift at the cash-up. So the night ends when the
+ * till does — the branch's most recent `employee_shifts.ended_at`, and only
+ * while *nobody* is still clocked in, because a cash-up with a colleague still
+ * on the floor is a handover in the middle of the service rather than the end
+ * of it. That guard is what keeps a shift change from blanking the board
+ * mid-service.
+ *
+ * The manual «بستن روز کاری» stays as the override for a branch whose staff do
+ * not clock in at all, and the later of the two wins. Both are bounded by the
+ * business day they sit in, which is what makes them self-expiring: a cash-up
+ * at 03:00 holds the window until 18:00 starts the next day on its own, and a
+ * close from last week can never win.
  *
  * Reports are deliberately *not* derived from this — a sale rung after a close
  * still belongs to the business day it happened in (see migration 0076) — so
- * closing the day early can only ever reset what is on screen, never move
+ * ending the night early can only ever reset what is on screen, never move
  * money between report rows.
  */
 export function resolveLiveWindow(input: LiveWindowInput): LiveWindow {
-  const { enabled, scheduledStart, scheduledEnd, lastClosedAt } = input;
-  if (!enabled || !lastClosedAt) {
-    return { windowStart: scheduledStart, manuallyClosed: false };
+  const { enabled, scheduledStart, scheduledEnd, lastClosedAt, lastShiftEndedAt, hasOpenShift } =
+    input;
+  if (!enabled) {
+    return { windowStart: scheduledStart, closedBy: null, manuallyClosed: false };
   }
-  const closed = Date.parse(lastClosedAt);
+
   const start = Date.parse(scheduledStart);
   const end = Date.parse(scheduledEnd);
-  const withinCurrentDay = closed >= start && closed < end;
-  return withinCurrentDay
-    ? { windowStart: lastClosedAt, manuallyClosed: true }
-    : { windowStart: scheduledStart, manuallyClosed: false };
+  const withinCurrentDay = (iso: string | null): boolean => {
+    if (!iso) return false;
+    const at = Date.parse(iso);
+    return at >= start && at < end;
+  };
+
+  const candidates: { at: string; reason: LiveWindowCloseReason }[] = [];
+  if (withinCurrentDay(lastClosedAt)) {
+    candidates.push({ at: lastClosedAt!, reason: "manual" });
+  }
+  // Only once the floor is empty: see the doc comment above on handovers.
+  if (!hasOpenShift && withinCurrentDay(lastShiftEndedAt)) {
+    candidates.push({ at: lastShiftEndedAt!, reason: "shift" });
+  }
+  if (candidates.length === 0) {
+    return { windowStart: scheduledStart, closedBy: null, manuallyClosed: false };
+  }
+
+  const latest = candidates.reduce((a, b) => (Date.parse(b.at) > Date.parse(a.at) ? b : a));
+  return {
+    windowStart: latest.at,
+    closedBy: latest.reason,
+    manuallyClosed: latest.reason === "manual",
+  };
 }
 
 
