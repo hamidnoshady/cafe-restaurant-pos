@@ -21,7 +21,10 @@
  *   8. a branch that has configured no business day behaves exactly as it did
  *      before this feature existed, calendar day and open-shift widening
  *      included;
- *   9. the business day is per branch: configuring one leaves the other alone.
+ *   9. the business day is per branch: configuring one leaves the other alone;
+ *  10. `businessToday` — the business-wide date the cross-server rollup and the
+ *      AI assistant's default range anchor on — follows the same rule, instead
+ *      of the calendar day it used to name.
  */
 import { randomUUID } from "node:crypto";
 import { Client } from "pg";
@@ -41,6 +44,7 @@ let databaseName: string;
 let db: Client;
 
 let businessDay: typeof import("../src/lib/business-day-service");
+let rollup: typeof import("../src/lib/rollup-service");
 let orderRead: typeof import("../src/lib/order-read-service");
 let shiftService: typeof import("../src/lib/shift-service");
 let dbLib: typeof import("../src/lib/db");
@@ -140,6 +144,7 @@ beforeAll(async () => {
 
   process.env.DATABASE_URL = urlFor(databaseName);
   businessDay = await import("../src/lib/business-day-service");
+  rollup = await import("../src/lib/rollup-service");
   orderRead = await import("../src/lib/order-read-service");
   shiftService = await import("../src/lib/shift-service");
   dbLib = await import("../src/lib/db");
@@ -432,5 +437,59 @@ describe("the live window the dashboard and orders screen read", () => {
     );
     expect(window.since).toBe(rows[0].at.toISOString());
     expect(window.businessDay).toBeNull();
+  });
+});
+
+describe("the business-wide date other sections anchor on", () => {
+  /**
+   * `businessToday` is what the cross-server rollup and the AI assistant reach
+   * for when they have a business but no particular branch. It used to be the
+   * calendar day even where the reporting views it feeds had already moved on
+   * to business days, so the two named different days for a third of every
+   * night service.
+   */
+  it("matches the primary branch's own business day", async () => {
+    await setStart(mainId, SIX_PM);
+
+    const [wide, branch] = await dbLib.withTenant(businessId, async () => [
+      await businessDay.businessToday(businessId),
+      await businessDay.getBusinessDayStatus(mainId),
+    ]);
+    expect(wide).toBe(branch!.businessDate);
+  });
+
+  it("is the calendar day for a business that configured none", async () => {
+    const { rows } = await db.query<{ today: string }>(
+      "SELECT (now() AT TIME ZONE $1)::date::text AS today",
+      [TEHRAN],
+    );
+    const wide = await dbLib.withTenant(businessId, () => businessDay.businessToday(businessId));
+    expect(wide).toBe(rows[0].today);
+  });
+
+  it("takes the oldest active branch, the same one the rollup takes its timezone from", async () => {
+    // Only the *other* branch is configured, so a wrong pick would show up here.
+    await setStart(otherId, SIX_PM);
+    const { rows } = await db.query<{ today: string }>(
+      "SELECT (now() AT TIME ZONE $1)::date::text AS today",
+      [TEHRAN],
+    );
+    const wide = await dbLib.withTenant(businessId, () => businessDay.businessToday(businessId));
+    expect(wide).toBe(rows[0].today);
+  });
+
+  it("still answers for a business with no active branch at all", async () => {
+    await db.query("UPDATE locations SET is_active = false WHERE business_id = $1", [businessId]);
+    const wide = await dbLib.withTenant(businessId, () => businessDay.businessToday(businessId));
+    expect(wide).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  it("is what the rollup's getBusinessToday now reports", async () => {
+    await setStart(mainId, SIX_PM);
+    const [wide, rollupToday] = await dbLib.withTenant(businessId, async () => [
+      await businessDay.businessToday(businessId),
+      await rollup.getBusinessToday(businessId),
+    ]);
+    expect(rollupToday).toBe(wide);
   });
 });

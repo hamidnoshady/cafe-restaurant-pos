@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { JalaliDatePicker } from "../jalali-date-picker";
+import { BusinessDayRangePresets } from "./business-day-range";
 import { ErrorBox, Field, inputClass } from "../ui";
 import { ChartPreview, DataTable } from "./chart-preview";
 import { ExportButtons } from "./export-buttons";
@@ -300,6 +301,16 @@ export function ReportBuilderSection() {
                   />
                 </label>
               </div>
+              <BusinessDayRangePresets
+                onSelect={(range) => {
+                  setDateFrom(range.dateFrom);
+                  setDateTo(range.dateTo);
+                }}
+                onClear={() => {
+                  setDateFrom("");
+                  setDateTo("");
+                }}
+              />
             </fieldset>
           ) : null}
 

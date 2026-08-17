@@ -280,6 +280,20 @@ rows.
   the close reversible and safe — no button can move money between report rows. A closure also expires
   on its own once the next business day begins, so there is no state to clean up.
 
+**What follows the business day.** The reporting views (sales, menu items, modifiers, shift
+reconciliation, staff performance, waste, delivery, courier); the dashboard KPIs and sales-trend
+chart; the orders screen's closed-order window; `employee_shifts.business_date`; the reports
+screens' quick ranges («روز کاری جاری» و…), which anchor on the branch's current business date
+rather than on the browser's calendar; the cross-server rollup's `getBusinessToday`; the AI
+assistant's default date ranges; and the default date on a new purchase.
+
+**What deliberately does not.** Accounting entry dates — journal entries, expenses, payroll,
+AR/AP — still default to `CURRENT_DATE`. Those are fiscal dates governed by fiscal periods and
+closing entries, and re-dating them by trading day is an accounting policy decision rather than a
+display one; raise it as its own change if a business wants it. Reservations stay on the calendar
+day, since a customer books a calendar date. Purchase *reporting* (`v_purchase_expense`) likewise
+keeps its own user-entered `purchase_date`.
+
 The setting is per branch, optional, and management-facing: تنظیمات ← «شیفت‌ها و روز کاری».
 Changing the start time re-buckets the branch's reporting history (the views derive each row's date
 from the current setting rather than from a stored column), which is deliberate — it means "this is how

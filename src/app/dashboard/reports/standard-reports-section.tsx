@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { SparklesIcon } from "lucide-react";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { JalaliDatePicker } from "../jalali-date-picker";
+import { BusinessDayRangePresets } from "./business-day-range";
 import { inputClass } from "../ui";
 import { ChartPreview, DataTable } from "./chart-preview";
 import { ExportButtons } from "./export-buttons";
@@ -269,6 +270,21 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
                         />
                       </label>
                     </>
+                  ) : null}
+
+                  {hasDateColumn || LEDGER_KEYS.has(selected.key) ? (
+                    <div className="sm:col-span-2 xl:col-span-3">
+                      <BusinessDayRangePresets
+                        onSelect={(range) => {
+                          setDateFrom(range.dateFrom);
+                          setDateTo(range.dateTo);
+                        }}
+                        onClear={() => {
+                          setDateFrom("");
+                          setDateTo("");
+                        }}
+                      />
+                    </div>
                   ) : null}
 
                   {selected.chartType ? (

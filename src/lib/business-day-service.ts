@@ -289,3 +289,36 @@ export async function listBusinessDayClosures(
     note: row.note,
   }));
 }
+
+
+/**
+ * The business's current business date, from its primary active branch — the
+ * business-wide counterpart of `getBusinessDayStatus`, for the callers that
+ * have a business but no particular branch in hand (the cross-server rollup,
+ * the AI assistant's default date range).
+ *
+ * "Primary" is the oldest active branch, which is the same branch the rollup
+ * has always taken its timezone from; a business whose branches keep different
+ * hours gets that one's trading day, exactly as it already got that one's
+ * timezone. Falls back to Asia/Tehran and the calendar day when a business has
+ * no active branch at all, so a caller always gets a usable date.
+ */
+export async function businessToday(businessId: string): Promise<string> {
+  const { rows } = await query<{ today: string }>(
+    `SELECT app_business_date(
+              now(),
+              coalesce(l.timezone, 'Asia/Tehran'),
+              l.business_day_start_minutes
+            )::text AS today
+       FROM (SELECT 1) one
+       LEFT JOIN LATERAL (
+         SELECT timezone, business_day_start_minutes
+           FROM locations
+          WHERE business_id = $1 AND is_active
+          ORDER BY created_at
+          LIMIT 1
+       ) l ON true`,
+    [businessId],
+  );
+  return rows[0].today;
+}

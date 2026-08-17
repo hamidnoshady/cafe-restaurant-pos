@@ -132,3 +132,62 @@ export function resolveLiveWindow(input: LiveWindowInput): LiveWindow {
     ? { windowStart: lastClosedAt, manuallyClosed: true }
     : { windowStart: scheduledStart, manuallyClosed: false };
 }
+
+
+/**
+ * Plain calendar arithmetic on a `YYYY-MM-DD` business date — no timezone
+ * involved, because a business date is already the answer to "which day", not
+ * an instant. Returns the input unchanged if it is not a date this understands,
+ * so a caller can never turn a bad value into a confidently wrong range.
+ */
+export function shiftIsoDate(iso: string, days: number): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!match) return iso;
+  const shifted = new Date(
+    Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]) + days),
+  );
+  return shifted.toISOString().slice(0, 10);
+}
+
+/**
+ * The quick ranges the reports screen offers, expressed in *business* dates.
+ *
+ * This is the half of the feature reports were missing. Every report buckets on
+ * `app_business_date` now, but the date pickers above them are a calendar: at
+ * 01:00 during an 18:00→18:00 service, picking "today" off that calendar asks
+ * for tomorrow's business day and returns an empty report, while the service
+ * the user is standing in is filed under yesterday's date. Anchoring the
+ * presets on the branch's current business date — which the server reports —
+ * removes the need for anyone to work that out.
+ */
+export type BusinessDateRangePreset =
+  | "current_day"
+  | "previous_day"
+  | "last_7_days"
+  | "last_30_days";
+
+export interface BusinessDateRange {
+  dateFrom: string;
+  dateTo: string;
+}
+
+export function businessDateRange(
+  preset: BusinessDateRangePreset,
+  currentBusinessDate: string,
+): BusinessDateRange {
+  const today = currentBusinessDate;
+  switch (preset) {
+    case "current_day":
+      return { dateFrom: today, dateTo: today };
+    case "previous_day": {
+      const yesterday = shiftIsoDate(today, -1);
+      return { dateFrom: yesterday, dateTo: yesterday };
+    }
+    // Inclusive of the current business day, so "۷ روز اخیر" is seven days of
+    // trading and not six plus a partial one.
+    case "last_7_days":
+      return { dateFrom: shiftIsoDate(today, -6), dateTo: today };
+    case "last_30_days":
+      return { dateFrom: shiftIsoDate(today, -29), dateTo: today };
+  }
+}

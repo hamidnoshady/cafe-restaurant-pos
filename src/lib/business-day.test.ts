@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  businessDateRange,
   businessDayHours,
   formatStartTime,
   isValidStartMinutes,
   parseStartTime,
   resolveLiveWindow,
+  shiftIsoDate,
 } from "./business-day";
 
 describe("isValidStartMinutes", () => {
@@ -148,5 +150,64 @@ describe("resolveLiveWindow", () => {
         lastClosedAt: closedAtThreeAm,
       }),
     ).toEqual({ windowStart: scheduledStart, manuallyClosed: false });
+  });
+});
+
+describe("shiftIsoDate", () => {
+  it("moves a business date by whole days", () => {
+    expect(shiftIsoDate("2026-08-16", 1)).toBe("2026-08-17");
+    expect(shiftIsoDate("2026-08-16", -1)).toBe("2026-08-15");
+    expect(shiftIsoDate("2026-08-16", 0)).toBe("2026-08-16");
+  });
+
+  it("crosses month and year boundaries", () => {
+    expect(shiftIsoDate("2026-08-31", 1)).toBe("2026-09-01");
+    expect(shiftIsoDate("2026-01-01", -1)).toBe("2025-12-31");
+    expect(shiftIsoDate("2026-03-01", -1)).toBe("2026-02-28");
+    expect(shiftIsoDate("2024-03-01", -1)).toBe("2024-02-29");
+  });
+
+  it("returns a value it does not understand unchanged, rather than guessing", () => {
+    expect(shiftIsoDate("", -1)).toBe("");
+    expect(shiftIsoDate("2026-08", -1)).toBe("2026-08");
+    expect(shiftIsoDate("not a date", -1)).toBe("not a date");
+  });
+});
+
+describe("businessDateRange", () => {
+  // The business day in progress at 01:00 of an 18:00→18:00 service: the
+  // calendar says the 17th, the trading day is still the 16th.
+  const today = "2026-08-16";
+
+  it("asks for the business day in progress, not the calendar date", () => {
+    expect(businessDateRange("current_day", today)).toEqual({
+      dateFrom: "2026-08-16",
+      dateTo: "2026-08-16",
+    });
+  });
+
+  it("reads the previous business day as a single whole day", () => {
+    expect(businessDateRange("previous_day", today)).toEqual({
+      dateFrom: "2026-08-15",
+      dateTo: "2026-08-15",
+    });
+  });
+
+  it("counts the current business day inside the rolling windows", () => {
+    expect(businessDateRange("last_7_days", today)).toEqual({
+      dateFrom: "2026-08-10",
+      dateTo: "2026-08-16",
+    });
+    expect(businessDateRange("last_30_days", today)).toEqual({
+      dateFrom: "2026-07-18",
+      dateTo: "2026-08-16",
+    });
+  });
+
+  it("never produces a backwards range", () => {
+    for (const preset of ["current_day", "previous_day", "last_7_days", "last_30_days"] as const) {
+      const { dateFrom, dateTo } = businessDateRange(preset, today);
+      expect(dateFrom <= dateTo).toBe(true);
+    }
   });
 });

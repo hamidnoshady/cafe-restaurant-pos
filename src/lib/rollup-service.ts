@@ -10,6 +10,7 @@
  *    the only thing stored), ingest pushes idempotently, and serve the
  *    Owner's cross-location overview.
  */
+import { businessToday } from "./business-day-service";
 import { getPool, query, withTenant, withoutTenantScope } from "./db";
 import { WELL_KNOWN_CODES } from "./coa-template";
 import { getSetting, setSetting, SETTING_KEYS } from "./settings";
@@ -283,16 +284,19 @@ export async function runRollupSyncTick(): Promise<void> {
   }
 }
 
-/** Today's business day in the business's own timezone (its primary location's, Tehran fallback). */
+/**
+ * Today's business day in the business's own timezone (its primary location's,
+ * Tehran fallback).
+ *
+ * This said "business day" and computed the calendar day, which for a branch
+ * trading past midnight named the wrong day for a third of every service — the
+ * rollup would mark a day "today" that its own reporting views had already
+ * filed under yesterday. Delegated to `businessToday` so it is the same rule
+ * the views bucket on; for a business with no business day configured that is
+ * the calendar day this always returned.
+ */
 export async function getBusinessToday(businessId: string): Promise<string> {
-  const { rows } = await query<{ today: string }>(
-    `SELECT (now() AT TIME ZONE coalesce(
-              (SELECT timezone FROM locations
-                WHERE business_id = $1 AND is_active ORDER BY created_at LIMIT 1),
-              'Asia/Tehran'))::date::text AS today`,
-    [businessId],
-  );
-  return rows[0].today;
+  return businessToday(businessId);
 }
 
 // ---------------------------------------------------------------------------
