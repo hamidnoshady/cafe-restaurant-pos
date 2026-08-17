@@ -30,6 +30,13 @@ export const PERMISSIONS = {
    * back-office privilege rather than a till one.
    */
   ordersAmendClosed: "orders.amend_closed",
+  /**
+   * Recording a sale that already happened — the evening the POS was down, the
+   * week before the install. Separate from `orders.create` because it writes
+   * revenue, VAT, COGS and stock into a day that is already reported on, which
+   * is a back-office act rather than a till one.
+   */
+  ordersBackdate: "orders.backdate",
   ordersDiscount: "orders.discount",
   paymentsTake: "payments.take",
   paymentsRefund: "payments.refund",
@@ -89,7 +96,7 @@ export function isOwnerOnlyPermission(permission: Permission): boolean {
 }
 
 const {
-  ordersCreate, ordersVoid, ordersAmendClosed, ordersDiscount, paymentsTake, paymentsRefund,
+  ordersCreate, ordersVoid, ordersAmendClosed, ordersBackdate, ordersDiscount, paymentsTake, paymentsRefund,
   tablesManage, reservationsManage, kitchenView, deliveryManage,
   menuView, menuEdit,
   inventoryView, inventoryAdjust, purchasesManage,
@@ -108,7 +115,7 @@ const {
  */
 const ROLE_PRESETS: Record<Exclude<Role, "owner">, Permission[]> = {
   manager: [
-    ordersCreate, ordersVoid, ordersAmendClosed, ordersDiscount, paymentsTake, paymentsRefund,
+    ordersCreate, ordersVoid, ordersAmendClosed, ordersBackdate, ordersDiscount, paymentsTake, paymentsRefund,
     tablesManage, reservationsManage, kitchenView, deliveryManage,
     menuView, menuEdit,
     inventoryView, inventoryAdjust, purchasesManage,

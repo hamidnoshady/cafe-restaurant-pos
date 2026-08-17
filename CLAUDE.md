@@ -104,6 +104,14 @@ date instead of splitting it at midnight. See the "The business day" section of
   step with every other one.
 - **Don't derive a "today" window in a route.** `getBusinessDayStatus` (`src/lib/business-day-service.ts`)
   already answers it, including a manual close; the pure half is `src/lib/business-day.ts`.
+- **A sale may be recorded after the fact.** «ثبت سفارش گذشته» (`/api/orders/backdated`,
+  `src/lib/backdated-order-service.ts`) writes an *ordinary* `orders` row whose `opened_at`,
+  `closed_at`, `payments.received_at`, `stock_movements.occurred_at` and `journal_entries.entry_date`
+  are all the instant the sale happened — which is why reports, COGS, costing and the fiscal-period
+  lock needed no special case. Don't build a second model for "a sale we typed in late"; the
+  `backdated_orders` row records only what the order cannot say (who, why, and when it was actually
+  entered). The day and time are the *branch's* wall clock, resolved server-side — never the
+  browser's.
 - **The night ends at the cash-up.** The live window starts at the branch's last
   `employee_shifts.ended_at` once nobody is clocked in (a handover doesn't count); «بستن روز کاری» is
   the override for branches that don't clock in. A start time alone can only say when a day begins.
