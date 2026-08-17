@@ -111,11 +111,16 @@ export const POST = withTenantScope(async (request: NextRequest) => {
     await client.query("BEGIN");
     // No date entered means today *at the branch*, not at the server — the
     // column's CURRENT_DATE default would be the wrong day for the hours the
-    // two disagree (up to 03:30 in Asia/Tehran on a UTC server).
+    // two disagree (up to 03:30 in Asia/Tehran on a UTC server) — and "today"
+    // is the branch's business day, so a delivery signed for at 01:00 during a
+    // night service is dated the day that service belongs to rather than the
+    // one the wall clock had just rolled into. Still only a default: the date
+    // is the user's to set.
     const { rows: purchaseRows } = await client.query<{ id: string }>(
       `INSERT INTO purchases (location_id, supplier_id, status, total, note, purchase_date, created_by)
        VALUES ($1, $2, 'draft', $3, $4,
-               COALESCE($5::date, (now() AT TIME ZONE (SELECT timezone FROM locations WHERE id = $1))::date),
+               COALESCE($5::date, (SELECT app_business_date(now(), l.timezone, l.business_day_start_minutes)
+                                     FROM locations l WHERE l.id = $1)),
                $6) RETURNING id`,
       [location.id, body.supplierId || null, total, body.note?.trim() || null, purchaseDate, session.sub],
     );
