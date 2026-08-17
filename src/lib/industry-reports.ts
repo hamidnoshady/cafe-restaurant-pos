@@ -84,3 +84,210 @@ export interface ConsignorBalanceInput {
 export function consignorBalance(input: ConsignorBalanceInput): number {
   return input.owed - input.paid;
 }
+
+export type ExpiryBucket = "expired" | "under30" | "under90" | "ok";
+
+export const EXPIRY_BUCKET_LABELS: Record<ExpiryBucket, string> = {
+  expired: "منقضی",
+  under30: "زیر ۳۰ روز",
+  under90: "زیر ۹۰ روز",
+  ok: "سالم",
+};
+
+/**
+ * Phase 27 Wave 2 — which near-expiry bucket an expiry date falls in on
+ * `today`: منقضی / زیر ۳۰ روز / زیر ۹۰ روز / سالم. The same bucketing shape
+ * `warrantyState` uses, so the near-expiry home-page widget and the report
+ * share one classifier. A null expiry is always `ok`.
+ */
+export function expiryBucket(
+  expiryDate: string | null,
+  today: string,
+  thresholds: { under30?: number; under90?: number } = {},
+): ExpiryBucket {
+  if (!expiryDate) return "ok";
+  const now = Date.parse(`${today}T00:00:00Z`);
+  const expiry = Date.parse(`${expiryDate}T00:00:00Z`);
+  const daysLeft = Math.floor((expiry - now) / 86_400_000);
+  if (daysLeft < 0) return "expired";
+  if (daysLeft <= (thresholds.under30 ?? 30)) return "under30";
+  if (daysLeft <= (thresholds.under90 ?? 90)) return "under90";
+  return "ok";
+}
+
+export type StockVelocityClass = "fast" | "slow" | "dead";
+
+export const STOCK_VELOCITY_LABELS: Record<StockVelocityClass, string> = {
+  fast: "پرفروش",
+  slow: "کم‌فروش",
+  dead: "راکد",
+};
+
+/**
+ * Phase 27 Wave 11 — the named thresholds for fast/slow/dead-stock
+ * classification. Kept as constants (not magic numbers in a query) so the
+ * markdown planner, the report and the test all read the same numbers.
+ */
+export const STOCK_VELOCITY_THRESHOLDS = {
+  /** Sold within this many days → fast regardless of total volume. */
+  fastDays: 30,
+  /** No sale for this many days (or never sold) → dead. */
+  deadDays: 90,
+  /** Units sold in the trailing window that rescue a slow-recent item back to fast. */
+  fastMinUnits: 5,
+} as const;
+
+export interface StockVelocityInput {
+  /** Units sold in the trailing window (e.g. the last 90 days). */
+  unitsSold: number;
+  /** Days since the last sale, or null when the item has never sold. */
+  daysSinceLastSale: number | null;
+}
+
+/**
+ * Fast / slow / dead over sales velocity and recency. A never-sold item is
+ * dead (the shop bought it and it never moved); a recent sale is fast; in
+ * between, enough units sold still counts as fast and the rest are slow.
+ */
+export function stockVelocityClass(input: StockVelocityInput): StockVelocityClass {
+  if (input.daysSinceLastSale == null) return "dead";
+  if (input.daysSinceLastSale >= STOCK_VELOCITY_THRESHOLDS.deadDays) return "dead";
+  if (input.daysSinceLastSale <= STOCK_VELOCITY_THRESHOLDS.fastDays) return "fast";
+  return input.unitsSold >= STOCK_VELOCITY_THRESHOLDS.fastMinUnits ? "fast" : "slow";
+}
+
+// ---------------------------------------------------------------------------
+// Phase 27 Wave 13 — the per-trade report pack's pure half.
+
+/** One signed loyalty-points ledger row (`customer_points.points`). */
+export interface LoyaltyPointsRow {
+  /** Signed: positive = earned, negative = redeemed. */
+  points: number;
+  /** The ledger's source_type, e.g. `sale` vs `loyalty_points_redemption`. */
+  sourceType: string;
+}
+
+export interface LoyaltyRedemptionSummary {
+  earnedPoints: number;
+  /** Positive count of points redeemed (the absolute value of negative rows). */
+  redeemedPoints: number;
+  redemptionCount: number;
+  netPoints: number;
+}
+
+/**
+ * Collapse a points ledger into the four numbers the loyalty report shows:
+ * what was earned, what was redeemed, how many redemption events there were,
+ * and the net. Redemption value in Rial is derived by the caller from the
+ * program's point_value_rial — it is not a property of the ledger itself.
+ */
+export function loyaltyRedemptionSummary(rows: LoyaltyPointsRow[]): LoyaltyRedemptionSummary {
+  let earnedPoints = 0;
+  let redeemedPoints = 0;
+  let redemptionCount = 0;
+  for (const row of rows) {
+    if (row.points >= 0) {
+      earnedPoints += row.points;
+    } else {
+      redeemedPoints += -row.points;
+      if (row.sourceType === "loyalty_points_redemption") redemptionCount += 1;
+    }
+  }
+  return { earnedPoints, redeemedPoints, redemptionCount, netPoints: earnedPoints - redeemedPoints };
+}
+
+/** One application of a promotion to a sale — promotion id and the Rial it took off. */
+export interface PromotionApplicationRow {
+  promotionId: string;
+  discountRial: number;
+}
+
+export interface PromotionEffectivenessRow {
+  promotionId: string;
+  applications: number;
+  totalDiscountRial: number;
+}
+
+export interface PromotionEffectiveness {
+  rows: PromotionEffectivenessRow[];
+  totalApplications: number;
+  totalDiscountRial: number;
+}
+
+/**
+ * Sum per-promotion applications and discount so the promotions report can
+ * rank campaigns by how often they fired and how much they cost. Order is the
+ * input order; callers sort by whatever axis they are ranking on.
+ */
+export function promotionEffectiveness(rows: PromotionApplicationRow[]): PromotionEffectiveness {
+  const byPromotion = new Map<string, PromotionEffectivenessRow>();
+  let totalApplications = 0;
+  let totalDiscountRial = 0;
+  for (const row of rows) {
+    const existing = byPromotion.get(row.promotionId) ?? {
+      promotionId: row.promotionId,
+      applications: 0,
+      totalDiscountRial: 0,
+    };
+    existing.applications += 1;
+    existing.totalDiscountRial += row.discountRial;
+    totalApplications += 1;
+    totalDiscountRial += row.discountRial;
+    byPromotion.set(row.promotionId, existing);
+  }
+  return {
+    rows: [...byPromotion.values()],
+    totalApplications,
+    totalDiscountRial,
+  };
+}
+
+/** A layaway plan as the report reads it (already mapped from `layaway_plans`). */
+export interface LayawayBookRow {
+  planNumber: number;
+  status: "open" | "completed" | "cancelled";
+  totalValueRial: number;
+  paidRial: number;
+  grams: string;
+}
+
+export interface LayawayBook {
+  openCount: number;
+  openValueRial: number;
+  openPaidRial: number;
+  /** What open plans still owe: Σ(total − paid). */
+  openOutstandingRial: number;
+  completedCount: number;
+  totalGrams: string;
+}
+
+/**
+ * The layaway book: how many plans are open, the Rial still owed on them, and
+ * the total grams on the books — the jeweller's receivables position at a
+ * glance. Completed/cancelled plans contribute only to the count.
+ */
+export function layawayBook(rows: LayawayBookRow[]): LayawayBook {
+  let openCount = 0;
+  let openValueRial = 0;
+  let openPaidRial = 0;
+  let completedCount = 0;
+  let grams = new Decimal(0);
+  for (const row of rows) {
+    grams = grams.plus(row.grams);
+    if (row.status === "open") {
+      openCount += 1;
+      openValueRial += row.totalValueRial;
+      openPaidRial += row.paidRial;
+    } else if (row.status === "completed") {
+      completedCount += 1;
+    }
+  }
+  return {
+    openCount,
+    openValueRial,
+    openPaidRial,
+    openOutstandingRial: openValueRial - openPaidRial,
+    completedCount,
+    totalGrams: grams.toString(),
+  };
+}

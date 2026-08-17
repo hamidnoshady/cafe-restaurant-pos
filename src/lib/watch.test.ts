@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   addMonthsToIsoDate,
   isWarrantyActive,
+  serviceDueDate,
   validateRepairPart,
   validateRepairStatusTransition,
   validateSerialUnitCost,
+  validateServiceIntervalMonths,
   validateWarrantyMonths,
 } from "./watch";
 
@@ -123,5 +125,32 @@ describe("validateRepairPart", () => {
     expect(validateRepairPart({ ...valid, quantity: "0" }).length).toBe(1);
     expect(validateRepairPart({ ...valid, unitCost: -1 }).length).toBe(1);
     expect(validateRepairPart({ ...valid, charge: 1.5 }).length).toBe(1);
+  });
+});
+
+describe("serviceDueDate", () => {
+  it("is the sale date plus the model's service interval", () => {
+    expect(serviceDueDate("2024-09-01", 24)).toBe("2026-09-01");
+  });
+
+  it("is null when there is no sale date or no interval — no reminder", () => {
+    expect(serviceDueDate(null, 24)).toBeNull();
+    expect(serviceDueDate("2024-09-01", null)).toBeNull();
+    expect(serviceDueDate("2024-09-01", 0)).toBeNull();
+  });
+});
+
+describe("validateServiceIntervalMonths", () => {
+  it("accepts a sensible interval and an absent one", () => {
+    expect(validateServiceIntervalMonths(24)).toBeNull();
+    expect(validateServiceIntervalMonths(null)).toBeNull();
+    expect(validateServiceIntervalMonths(undefined)).toBeNull();
+  });
+
+  it("rejects zero, negative, fractional, and absurd intervals", () => {
+    expect(validateServiceIntervalMonths(0)).not.toBeNull();
+    expect(validateServiceIntervalMonths(-1)).not.toBeNull();
+    expect(validateServiceIntervalMonths(1.5)).not.toBeNull();
+    expect(validateServiceIntervalMonths(200)).not.toBeNull();
   });
 });

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole, type SessionPayload, withTenantScope } from "@/lib/auth";
-import { requireIndustryForApi } from "@/lib/industry-guard";
+import { requireCapabilityForApi } from "@/lib/industry-guard";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import {
   getRepairTicket,
@@ -21,8 +21,8 @@ async function ownedTicket(session: SessionPayload, id: string) {
 export const GET = withTenantScope(async (_request: NextRequest, context: { params: Promise<{ id: string }> }) => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
-  const industryError = await requireIndustryForApi(session, "watch");
-  if (industryError) return industryError;
+  const capabilityError = await requireCapabilityForApi(session, "repairs");
+  if (capabilityError) return capabilityError;
   const { id } = await context.params;
 
   const ticket = await ownedTicket(session, id);
@@ -36,8 +36,8 @@ export const GET = withTenantScope(async (_request: NextRequest, context: { para
 export const PATCH = withTenantScope(async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
-  const industryError = await requireIndustryForApi(session, "watch");
-  if (industryError) return industryError;
+  const capabilityError = await requireCapabilityForApi(session, "repairs");
+  if (capabilityError) return capabilityError;
   const { id } = await context.params;
 
   const ticket = await ownedTicket(session, id);

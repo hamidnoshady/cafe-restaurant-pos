@@ -17,10 +17,13 @@ export function VariantsSection({
   items,
   busy,
   run,
+  apiBase = "/api/accessories",
 }: {
   items: VariantRow[];
   busy: boolean;
   run: Runner;
+  /** The trade's own items API prefix — cosmetics reuses this same board with its own routes. */
+  apiBase?: string;
 }) {
   const families = items.filter((i) => i.kind === "variant_parent");
 
@@ -34,7 +37,7 @@ export function VariantsSection({
     e.preventDefault();
     if (!familyName.trim()) return;
     const ok = await run(() =>
-      api("/api/accessories/items", { method: "POST", body: JSON.stringify({ name: familyName }) }),
+      api(`${apiBase}/items`, { method: "POST", body: JSON.stringify({ name: familyName }) }),
     );
     if (ok) setFamilyName("");
   }
@@ -43,7 +46,7 @@ export function VariantsSection({
     e.preventDefault();
     if (!parentItemId || !variantName.trim()) return;
     const ok = await run(() =>
-      api("/api/accessories/items", {
+      api(`${apiBase}/items`, {
         method: "POST",
         body: JSON.stringify({
           name: variantName,
@@ -77,7 +80,7 @@ export function VariantsSection({
 
         <ul className="divide-y divide-stone-200/80">
           {items.map((item) => (
-            <VariantRowView key={item.id} item={item} busy={busy} run={run} />
+            <VariantRowView key={item.id} item={item} busy={busy} run={run} apiBase={apiBase} />
           ))}
           {items.length === 0 ? (
             <li className="px-4 py-5 text-sm text-muted-foreground sm:px-5">کالایی ثبت نشده است.</li>
@@ -201,7 +204,17 @@ function MetaItem({ label, children }: { label: string; children: React.ReactNod
   );
 }
 
-function VariantRowView({ item, busy, run }: { item: VariantRow; busy: boolean; run: Runner }) {
+function VariantRowView({
+  item,
+  busy,
+  run,
+  apiBase,
+}: {
+  item: VariantRow;
+  busy: boolean;
+  run: Runner;
+  apiBase: string;
+}) {
   const [panel, setPanel] = useState<"stock" | null>(null);
   const toggle = (next: "stock") => setPanel((current) => (current === next ? null : next));
   const isFamily = item.kind === "variant_parent";
@@ -270,7 +283,7 @@ function VariantRowView({ item, busy, run }: { item: VariantRow; busy: boolean; 
       </div>
 
       {panel === "stock" ? (
-        <StockPanel item={item} busy={busy} run={run} onDone={() => setPanel(null)} />
+        <StockPanel item={item} busy={busy} run={run} apiBase={apiBase} onDone={() => setPanel(null)} />
       ) : null}
     </li>
   );
@@ -284,11 +297,13 @@ function StockPanel({
   item,
   busy,
   run,
+  apiBase,
   onDone,
 }: {
   item: VariantRow;
   busy: boolean;
   run: Runner;
+  apiBase: string;
   onDone: () => void;
 }) {
   const [quantity, setQuantity] = useState("");
@@ -298,7 +313,7 @@ function StockPanel({
   async function save(e: React.FormEvent) {
     e.preventDefault();
     const ok = await run(() =>
-      api(`/api/accessories/items/${item.id}/stock`, {
+      api(`${apiBase}/items/${item.id}/stock`, {
         method: "POST",
         body: JSON.stringify({
           quantity: quantity.trim() || undefined,

@@ -8,10 +8,10 @@
  */
 
 export type ItemKind = "simple" | "variant_parent" | "variant_child";
-export type ItemTracking = "none" | "serial" | "weight";
+export type ItemTracking = "none" | "serial" | "weight" | "batch";
 
 export const ITEM_KINDS: ItemKind[] = ["simple", "variant_parent", "variant_child"];
-export const ITEM_TRACKINGS: ItemTracking[] = ["none", "serial", "weight"];
+export const ITEM_TRACKINGS: ItemTracking[] = ["none", "serial", "weight", "batch"];
 
 export interface VariantAttributeInput {
   name: string;

@@ -19,6 +19,7 @@
  * because it is the request that knows *who* acted and which business they
  * acted for; the item services take neither.
  */
+import type { PoolClient } from "pg";
 import { getPool } from "./db";
 import { recordDomainEvent } from "./posting-engine";
 
@@ -30,6 +31,10 @@ export const ITEM_AUDIT_EVENTS = [
   "item.consigned",
   "item.stock_received",
   "item.price_changed",
+  "item.batch_received",
+  "item.profile_changed",
+  "item.merchandising_bulk_update",
+  "item.markdown_applied",
 ] as const;
 export type ItemAuditEvent = (typeof ITEM_AUDIT_EVENTS)[number];
 
@@ -49,10 +54,29 @@ export interface RecordItemEventInput {
  * response. (Sales and repairs are the opposite — their events carry
  * postings, so they run inside the caller's transaction and fail with it.)
  */
-export async function recordItemEvent(input: RecordItemEventInput): Promise<void> {
-  const client = await getPool().connect();
+export async function recordItemEvent(input: RecordItemEventInput, client?: PoolClient): Promise<void> {
+  // An optional caller-supplied client lets a bulk edit record its audit
+  // trail inside the same transaction as the edit, so they roll back together.
+  if (client) {
+    try {
+      await recordDomainEvent(client, {
+        businessId: input.businessId,
+        locationId: input.locationId,
+        eventType: input.eventType,
+        payload: { itemId: input.itemId, ...(input.payload ?? {}) },
+        sourceType: "item_audit",
+        sourceId: input.itemId,
+        createdBy: input.createdBy ?? null,
+      });
+    } catch {
+      // Deliberately swallowed — see the doc comment above.
+    }
+    return;
+  }
+
+  const ownClient = await getPool().connect();
   try {
-    await recordDomainEvent(client, {
+    await recordDomainEvent(ownClient, {
       businessId: input.businessId,
       locationId: input.locationId,
       eventType: input.eventType,
@@ -64,6 +88,6 @@ export async function recordItemEvent(input: RecordItemEventInput): Promise<void
   } catch {
     // Deliberately swallowed — see the doc comment above.
   } finally {
-    client.release();
+    ownClient.release();
   }
 }

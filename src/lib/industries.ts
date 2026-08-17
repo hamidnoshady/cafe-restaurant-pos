@@ -9,17 +9,30 @@
  * separate lock step the way inventory costing does.
  */
 
-export const INDUSTRIES = ["food_service", "jewelry", "watch", "accessories"] as const;
+export const INDUSTRIES = [
+  "food_service",
+  "jewelry",
+  "watch",
+  "accessories",
+  "cosmetics",
+] as const;
 export type Industry = (typeof INDUSTRIES)[number];
 
 /** Which industries the setup UI actually offers a new business, vs. reserved for a later wave. */
-export const ENABLED_INDUSTRIES: Industry[] = ["food_service", "jewelry", "watch", "accessories"];
+export const ENABLED_INDUSTRIES: Industry[] = [
+  "food_service",
+  "jewelry",
+  "watch",
+  "accessories",
+  "cosmetics",
+];
 
 export const INDUSTRY_LABELS: Record<Industry, string> = {
   food_service: "کافه و رستوران",
   jewelry: "طلا و جواهر",
   watch: "ساعت",
   accessories: "بدلیجات",
+  cosmetics: "آرایشی و بهداشتی",
 };
 
 export function isIndustry(value: string): value is Industry {

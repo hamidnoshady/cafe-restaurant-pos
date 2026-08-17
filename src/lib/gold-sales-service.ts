@@ -27,7 +27,9 @@ import { getConsignment } from "./consignment-service";
 import { emitDomainEvent } from "./posting-engine";
 import type { RialText } from "./inventory-exact";
 import type { SettlementMethod } from "./ledger";
-// Side-effect import: registers the gold.* posting rules with the engine.
+// Side-effect import registers the gold.* posting rules; goldSoldCost is the
+// shared cost-basis helper the COGS rule and the commission margin basis both use.
+import { goldSoldCost } from "./gold-posting-rules";
 import "./gold-posting-rules";
 
 export interface SellWeightedItemInput {
@@ -49,6 +51,8 @@ export interface SellWeightedItemResult {
   cogsEntryId: string | null;
   /** Whether this sale posted as a consignment (امانی) settlement rather than an owned-inventory sale. */
   consigned: boolean;
+  /** The COGS this sale posted (metal + stones), Rial; 0 for a consignment, which has none. */
+  cost: RialText;
 }
 
 export async function sellWeightedItem(
@@ -82,6 +86,16 @@ export async function sellWeightedItem(
     profitPercent: input.profitPercent,
     vatPercent: input.vatPercent,
   });
+
+  // A consigned piece has no owned COGS; an owned piece's cost is the same
+  // metal + stone basis the COGS posting rule uses (goldSoldCost).
+  const cost: RialText = consignment
+    ? ("0" as RialText)
+    : await goldSoldCost(client, {
+        itemId: input.itemId,
+        netWeight: weightAttrs.netWeight,
+        unitCostPerGram: weightAttrs.unitCostPerGram ?? "0",
+      });
 
   let revenueEntryId: string | null;
   let cogsEntryId: string | null = null;
@@ -143,5 +157,5 @@ export async function sellWeightedItem(
 
   await setWeightItemStatus(input.itemId, "sold", client);
 
-  return { breakdown, revenueEntryId, cogsEntryId, consigned: Boolean(consignment) };
+  return { breakdown, revenueEntryId, cogsEntryId, consigned: Boolean(consignment), cost };
 }

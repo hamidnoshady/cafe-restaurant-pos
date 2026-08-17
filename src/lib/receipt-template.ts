@@ -37,6 +37,26 @@ export interface ReceiptLine {
     makingCharge: Rial;
     profit: Rial;
   } | null;
+  /**
+   * Phase 27 Wave 2 — a batch-tracked line's lot number and expiry date,
+   * printed under the line the way the gold breakdown is. Absent on lines
+   * without batch tracking, which is every line in a café and most retail
+   * lines.
+   */
+  batch?: {
+    batchNumber: string;
+    expiryDate?: string | null;
+  } | null;
+  /**
+   * Phase 27 Wave 10 — a pre-owned serialized unit's provenance, printed so
+   * the customer buying a used piece sees exactly what was recorded at
+   * intake: the condition grade and whether box and papers came with it.
+   * Absent on new units and every non-serial line.
+   */
+  serialProvenance?: {
+    conditionGrade?: string | null;
+    boxAndPapers: boolean;
+  } | null;
 }
 
 /**
@@ -51,6 +71,14 @@ export const PAYMENT_METHOD_LABELS: Record<string, string> = {
   online: "پرداخت آنلاین",
   credit: "نسیه",
   snappfood: "اسنپ‌فود",
+};
+
+const CONDITION_GRADE_LABELS: Record<string, string> = {
+  new: "نو",
+  like_new: "در حد نو",
+  good: "خوب",
+  fair: "متوسط",
+  poor: "ضعیف",
 };
 
 export interface ReceiptData {
@@ -95,6 +123,16 @@ export function renderReceiptHtml(data: ReceiptData, opts: { paperWidthMm?: Pape
           ` · اجرت ${formatToman(l.goldBreakdown.makingCharge, { withUnit: false })}` +
           ` · سود ${formatToman(l.goldBreakdown.profit, { withUnit: false })}</div>`
         : "";
+      const batchRow = l.batch
+        ? `<div class="mods">بچ ${escapeHtml(l.batch.batchNumber)}` +
+          (l.batch.expiryDate ? ` · انقضا ${toPersianDigits(formatJalali(l.batch.expiryDate))}` : "") +
+          `</div>`
+        : "";
+      const provenanceRow = l.serialProvenance
+        ? `<div class="mods">دست‌دوم · وضعیت ${CONDITION_GRADE_LABELS[l.serialProvenance.conditionGrade ?? ""] ?? escapeHtml(l.serialProvenance.conditionGrade ?? "")}` +
+          (l.serialProvenance.boxAndPapers ? " · همراه جعبه و مدارک" : " · بدون جعبه و مدارک") +
+          `</div>`
+        : "";
       return `
         <div class="line">
           <div class="line-main">
@@ -104,6 +142,8 @@ export function renderReceiptHtml(data: ReceiptData, opts: { paperWidthMm?: Pape
           </div>
           ${modRow}
           ${goldRow}
+          ${batchRow}
+          ${provenanceRow}
         </div>`;
     })
     .join("");

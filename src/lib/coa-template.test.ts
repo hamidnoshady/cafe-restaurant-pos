@@ -3,6 +3,7 @@ import {
   ACCESSORIES_COA_TEMPLATE,
   ACCOUNT_LEVELS,
   coaTemplateForIndustry,
+  COSMETICS_COA_TEMPLATE,
   FNB_COA_TEMPLATE,
   JEWELRY_COA_TEMPLATE,
   nextAccountLevel,
@@ -33,6 +34,13 @@ const OTHER_INDUSTRY_KEYS = new Set([
   "accessoryInventory",
   "accessorySalesRevenue",
   "accessoryCogs",
+  "cosmeticInventory",
+  "cosmeticSalesRevenue",
+  "cosmeticCogs",
+  "cosmeticExpiredAndTester",
+  "retailInventoryInTransit",
+  "layawayDeposit",
+  "goldCustomerAccount",
 ]);
 
 describe("FNB_COA_TEMPLATE", () => {
@@ -125,12 +133,41 @@ describe("ACCESSORIES_COA_TEMPLATE", () => {
   });
 });
 
+describe("COSMETICS_COA_TEMPLATE", () => {
+  it("is itself valid", () => {
+    expect(validateAccounts(COSMETICS_COA_TEMPLATE)).toEqual([]);
+  });
+
+  it("contains the well-known accounts cosmetic sale posting relies on", () => {
+    const codes = new Set(COSMETICS_COA_TEMPLATE.map((a) => a.code));
+    for (const code of [
+      WELL_KNOWN_CODES.cash,
+      WELL_KNOWN_CODES.bankClearing,
+      WELL_KNOWN_CODES.accountsReceivable,
+      WELL_KNOWN_CODES.vatPayable,
+      WELL_KNOWN_CODES.cosmeticInventory,
+      WELL_KNOWN_CODES.cosmeticSalesRevenue,
+      WELL_KNOWN_CODES.cosmeticCogs,
+      WELL_KNOWN_CODES.cosmeticExpiredAndTester,
+    ]) {
+      expect(codes.has(code)).toBe(true);
+    }
+  });
+
+  it("carries none of F&B's menu/recipe-shaped accounts", () => {
+    const codes = new Set(COSMETICS_COA_TEMPLATE.map((a) => a.code));
+    expect(codes.has(WELL_KNOWN_CODES.inventory)).toBe(false);
+    expect(codes.has(WELL_KNOWN_CODES.cogs)).toBe(false);
+  });
+});
+
 describe("coaTemplateForIndustry", () => {
   it("gives each industry its own template", () => {
     expect(coaTemplateForIndustry("food_service")).toBe(FNB_COA_TEMPLATE);
     expect(coaTemplateForIndustry("jewelry")).toBe(JEWELRY_COA_TEMPLATE);
     expect(coaTemplateForIndustry("watch")).toBe(WATCH_COA_TEMPLATE);
     expect(coaTemplateForIndustry("accessories")).toBe(ACCESSORIES_COA_TEMPLATE);
+    expect(coaTemplateForIndustry("cosmetics")).toBe(COSMETICS_COA_TEMPLATE);
   });
 });
 

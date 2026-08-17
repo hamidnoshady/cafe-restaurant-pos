@@ -11,7 +11,11 @@ export const DEFAULT_PROACTIVE_HOUR = 8;
 /** Saturday, using JavaScript's 0=Sunday weekday convention. */
 export const DEFAULT_PROACTIVE_WEEKDAY = 6;
 
-export type AiProactiveRunKind = "daily_digest" | "weekly_digest" | "customer_debt_drafts";
+export type AiProactiveRunKind =
+  | "daily_digest"
+  | "weekly_digest"
+  | "customer_debt_drafts"
+  | "service_reminder_drafts";
 
 export interface AiProactiveSettings {
   enabled: boolean;
@@ -78,7 +82,7 @@ export function dueProactiveRuns(
   clock: LocalBusinessClock,
 ): AiProactiveRunKind[] {
   if (!settings.enabled || clock.hour < settings.dailyDigestHour) return [];
-  const runs: AiProactiveRunKind[] = ["daily_digest", "customer_debt_drafts"];
+  const runs: AiProactiveRunKind[] = ["daily_digest", "customer_debt_drafts", "service_reminder_drafts"];
   if (clock.weekday === settings.weeklyDigestWeekday) runs.push("weekly_digest");
   return runs;
 }
@@ -119,5 +123,16 @@ export function debtFollowUpDraft(customerName: string, balanceRial: number): st
     `سلام ${customerName} عزیز،`,
     `یادآوری دوستانه: ماندهٔ حساب شما نزد ما ${toman} تومان است.`,
     "لطفاً در فرصت مناسب وضعیت پرداخت را با ما هماهنگ کنید. سپاسگزاریم.",
+  ].join("\n");
+}
+
+/**
+ * A local-only, never-auto-sent shop-facing nudge that a sold watch is due
+ * for service — the Wave 10 reminder that rides the existing job runner.
+ */
+export function serviceReminderDraft(itemName: string, serialNumber: string, dueDate: string): string {
+  return [
+    `یادآوری سرویس: «${itemName} — ${serialNumber}» موعد سرویس آن ${dueDate} است.`,
+    "با مشتری تماس بگیرید و زمان سرویس را هماهنگ کنید. هیچ پیامی خودکار ارسال نشده است.",
   ].join("\n");
 }

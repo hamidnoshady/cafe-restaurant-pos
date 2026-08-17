@@ -10,6 +10,7 @@
  *   GET  /health
  *   POST /print/receipt        { connection, receipt: ReceiptData }
  *   POST /print/kitchen-ticket { connection, ticket: KitchenTicketData }
+ *   POST /print/label          { connection, label: LabelData }
  *   POST /print/test           { connection, kind: "receipt" | "kitchen" }
  *   POST /drawer/kick          { connection }
  */
@@ -20,6 +21,7 @@ import {
   packMonochromeRaster,
 } from "../src/lib/escpos";
 import { renderKitchenTicketHtml, type KitchenTicketData } from "../src/lib/kitchen-ticket-template";
+import { renderLabelHtml, type LabelData } from "../src/lib/label-template";
 import {
   isValidPrinterConnection,
   resolvedPaperWidthMm,
@@ -123,6 +125,12 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       const ticket = body.ticket as KitchenTicketData;
       const html = renderKitchenTicketHtml(ticket, { paperWidthMm: resolvedPaperWidthMm(connection!) });
       await printHtml(connection!, html);
+      return send(res, 200, { ok: true });
+    }
+
+    if (req.url === "/print/label") {
+      const label = body.label as LabelData;
+      await printHtml(connection!, renderLabelHtml(label));
       return send(res, 200, { ok: true });
     }
 

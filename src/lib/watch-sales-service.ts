@@ -18,7 +18,7 @@ import { computeWatchSalePrice, type WatchSalePriceBreakdown } from "./watch-pri
 import { addMonthsToIsoDate, validateWarrantyMonths } from "./watch";
 import { getItem } from "./items-service";
 import { emitDomainEvent } from "./posting-engine";
-import { rialText } from "./inventory-exact";
+import { rialText, type RialText } from "./inventory-exact";
 import type { SettlementMethod } from "./ledger";
 // Side-effect import: registers the watch.* posting rules with the engine.
 import "./watch-posting-rules";
@@ -51,6 +51,8 @@ export interface SellSerializedUnitResult {
   revenueEntryId: string | null;
   cogsEntryId: string | null;
   warranty: SerialWarranty | null;
+  /** The COGS this sale posted, Rial — the unit's recorded cost basis. */
+  cost: RialText;
 }
 
 interface SerialLookupRow {
@@ -152,7 +154,7 @@ export async function sellSerializedUnit(
     warranty = { serialId: serial.id, months: warrantyMonths, startDate: saleDate, endDate };
   }
 
-  return { breakdown, revenueEntryId, cogsEntryId, warranty };
+  return { breakdown, revenueEntryId, cogsEntryId, warranty, cost: rialText(serial.unit_cost) };
 }
 
 export interface SerialUnitSummary {

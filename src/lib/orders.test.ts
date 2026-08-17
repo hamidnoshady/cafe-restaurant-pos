@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { computeDiscountAmount, computeLineSubtotal, computeOrderTotals, formatQueueLabel } from "./orders";
+import type { Promotion } from "./promotions";
 
 describe("computeLineSubtotal", () => {
   it("multiplies (unit price + modifiers) by quantity", () => {
@@ -90,6 +91,29 @@ describe("computeOrderTotals", () => {
   it("handles an empty cart", () => {
     const totals = computeOrderTotals([], { type: null });
     expect(totals).toMatchObject({ subtotal: 0, discount: 0, tax: 0, total: 0, lines: [] });
+  });
+
+  it("applies a happy-hour promotion inside its window and not outside it, through the same engine as retail", () => {
+    const happyHour: Promotion = {
+      id: "happy-hour",
+      kind: "percent",
+      value: 20,
+      itemIds: ["coffee"],
+      timeFrom: "16:00",
+      timeTo: "18:00",
+      priority: 10,
+      stacking: "exclusive",
+    };
+    const lines = [{ unitPrice: 100_000, quantity: 1, modifierDeltas: [], taxRatePercent: 0, id: "coffee" }];
+    const at = (iso: string) => new Date(iso);
+
+    const inWindow = computeOrderTotals(lines, { type: null }, 0, [happyHour], at("2026-08-16T17:00:00"));
+    expect(inWindow.discount).toBe(20_000);
+    expect(inWindow.total).toBe(80_000);
+
+    const outOfWindow = computeOrderTotals(lines, { type: null }, 0, [happyHour], at("2026-08-16T18:00:00"));
+    expect(outOfWindow.discount).toBe(0);
+    expect(outOfWindow.total).toBe(100_000);
   });
 });
 

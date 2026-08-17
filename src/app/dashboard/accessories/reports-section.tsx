@@ -16,14 +16,14 @@ interface VariantSalesRow {
   margin: number;
 }
 
-export function ReportsSection() {
+export function ReportsSection({ apiBase = "/api/accessories" }: { apiBase?: string }) {
   const [rows, setRows] = useState<VariantSalesRow[] | null>(null);
 
   const load = useCallback(() => {
-    api<{ rows: VariantSalesRow[] }>("/api/accessories/reports").then(({ ok, data }) => {
+    api<{ rows: VariantSalesRow[] }>(`${apiBase}/reports`).then(({ ok, data }) => {
       if (ok) setRows(data.rows);
     });
-  }, []);
+  }, [apiBase]);
   useEffect(load, [load]);
 
   if (!rows) return <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>;

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { FileBarChart2Icon, HandCoinsIcon, Loader2Icon, ScaleIcon, TrendingUpIcon, type LucideIcon } from "lucide-react";
+import { AlarmClockIcon, FileBarChart2Icon, HandCoinsIcon, Loader2Icon, ScaleIcon, TrendingUpIcon, type LucideIcon } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Switch } from "@/components/ui/switch";
@@ -29,6 +29,7 @@ const AGENT_ICONS: Record<AiAgentKey, LucideIcon> = {
   sales_analyzer: TrendingUpIcon,
   receivables_follow_up: HandCoinsIcon,
   reconciliation_assistant: ScaleIcon,
+  service_reminders: AlarmClockIcon,
 };
 
 const STATUS_LABEL: Record<AgentOverviewEntry["status"], string> = {

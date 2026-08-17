@@ -14,7 +14,7 @@ import { NextResponse } from "next/server";
 import type { SessionPayload } from "./auth";
 import { query, withTenant } from "./db";
 import type { Industry } from "./industries";
-import { hasModule, type ModuleKey } from "./industry-profile";
+import { hasCapability, hasModule, type CapabilityKey, type ModuleKey } from "./industry-profile";
 
 /**
  * Scoped with `withTenant` for the same reason `effectiveFeatures` is (see its
@@ -74,4 +74,22 @@ export async function isModuleEnabled(businessId: string, module: ModuleKey): Pr
 /** Called from a gated dashboard page's server component; redirects away if this industry has no such module. */
 export async function requireModuleForPage(businessId: string, module: ModuleKey): Promise<void> {
   if (!(await isModuleEnabled(businessId, module))) redirect("/dashboard");
+}
+
+/**
+ * Phase 27 — the capability half of the same idea, for routes a trade has
+ * only if its profile says so (`barcode`, `repairs`, …). A capability is not
+ * a third guard axis (see industry-profile.ts): it gates routes that live
+ * *inside* a shared module — `/api/barcodes/*`, which every retail trade
+ * uses — where `requireIndustryForApi`'s exact-match check cannot apply.
+ */
+export async function requireCapabilityForApi(
+  session: SessionPayload,
+  capability: CapabilityKey,
+): Promise<NextResponse | null> {
+  const industry = await getBusinessIndustry(session.businessId);
+  if (!industry || !hasCapability(industry, capability)) {
+    return NextResponse.json({ error: "capability_unavailable" }, { status: 403 });
+  }
+  return null;
 }

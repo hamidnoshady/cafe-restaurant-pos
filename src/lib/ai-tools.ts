@@ -32,10 +32,23 @@ import { listBranches } from "./branch-service";
 import { getCustomer } from "./customers-service";
 import { computeSessionBill } from "./table-session-service";
 import { evenSplit } from "./table-sessions";
+import { nearExpiryBatches } from "./cosmetics-service";
+import { staffCommissionReport } from "./commission-service";
+import { customersDueForRepurchase } from "./loyalty-service";
+import { getBusinessIndustry } from "./industry-guard";
 
 export interface ToolResult {
   ok: boolean;
   data: unknown;
+}
+
+/** The business's primary (oldest active) location — the same shape businessTimezone uses for a per-tenant default. */
+async function primaryLocationId(businessId: string): Promise<string | null> {
+  const { rows } = await query<{ id: string }>(
+    `SELECT id FROM locations WHERE business_id = $1 AND is_active ORDER BY created_at LIMIT 1`,
+    [businessId],
+  );
+  return rows[0]?.id ?? null;
 }
 
 /**
@@ -886,6 +899,29 @@ export async function runReadTool(
         ? { ok: true, data: await floorBillSplitPreview(floorScope, args) }
         : { ok: false, data: { error: "این ابزار فقط برای دستیار صندوق/گارسون مجاز است." } };
 
+    case "get_near_expiry_items": {
+      const industry = await getBusinessIndustry(businessId);
+      if (industry !== "cosmetics") {
+        return { ok: false, data: { error: "این ابزار فقط برای کسب‌وکارهای آرایشی و بهداشتی در دسترس است." } };
+      }
+      const locationId = await primaryLocationId(businessId);
+      if (!locationId) return { ok: true, data: [] };
+      return { ok: true, data: await nearExpiryBatches(locationId) };
+    }
+
+    case "get_staff_commission": {
+      const dateFrom = typeof args.dateFrom === "string" ? args.dateFrom : undefined;
+      const dateTo = typeof args.dateTo === "string" ? args.dateTo : undefined;
+      return { ok: true, data: await staffCommissionReport(businessId, { from: dateFrom, to: dateTo }) };
+    }
+
+    case "get_repurchase_candidates": {
+      const locationId = await primaryLocationId(businessId);
+      if (!locationId) return { ok: true, data: [] };
+      const today = new Date().toISOString().slice(0, 10);
+      return { ok: true, data: await customersDueForRepurchase(businessId, locationId, today) };
+    }
+
     default:
       return { ok: false, data: { error: `ابزار ناشناخته: ${name}` } };
   }
@@ -913,4 +949,7 @@ export const READ_TOOL_NAMES = new Set([
   "forecast_demand",
   "get_menu_item_details",
   "get_bill_split_preview",
+  "get_near_expiry_items",
+  "get_staff_commission",
+  "get_repurchase_candidates",
 ]);

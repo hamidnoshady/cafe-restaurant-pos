@@ -119,6 +119,50 @@ export interface RepairPartInput {
   charge: number;
 }
 
+export type ConditionGrade = "new" | "like_new" | "good" | "fair" | "poor";
+export const CONDITION_GRADES: ConditionGrade[] = ["new", "like_new", "good", "fair", "poor"];
+
+/** Mirrors item_serials.condition_grade's CHECK — free only for a pre-owned intake. */
+export function validateConditionGrade(grade: string | null | undefined): string | null {
+  if (grade == null) return null;
+  if (!(CONDITION_GRADES as string[]).includes(grade)) return "درجه وضعیت کالای دست‌دوم نامعتبر است.";
+  return null;
+}
+
+/** Mirrors items.service_interval_months' CHECK — NULL means no service reminder for this model. */
+export function validateServiceIntervalMonths(months: number | null | undefined): string | null {
+  if (months == null) return null;
+  if (!Number.isInteger(months) || months <= 0 || months > 120) {
+    return "فاصلهٔ سرویس باید عددی صحیح بین ۱ تا ۱۲۰ ماه باشد.";
+  }
+  return null;
+}
+
+/**
+ * When a sold unit next comes due for service: its sale date plus the
+ * model's service interval. No interval means no reminder (null).
+ */
+export function serviceDueDate(soldAtIso: string | null, intervalMonths: number | null): string | null {
+  if (!soldAtIso || !intervalMonths) return null;
+  return addMonthsToIsoDate(soldAtIso, intervalMonths);
+}
+
+export type ServiceReminderState = "overdue" | "due" | "ok";
+
+/**
+ * A service/battery reminder derived from a reference date (the warranty end,
+ * or the sale date). Due within `leadDays`, overdue once past, ok otherwise.
+ */
+export function serviceReminderState(referenceDate: string, todayIso: string, leadDays: number): ServiceReminderState {
+  const ref = Date.parse(`${referenceDate}T00:00:00Z`);
+  const today = Date.parse(`${todayIso}T00:00:00Z`);
+  if (Number.isNaN(ref) || Number.isNaN(today)) return "ok";
+  const daysLeft = Math.floor((ref - today) / 86_400_000);
+  if (daysLeft < 0) return "overdue";
+  if (daysLeft <= leadDays) return "due";
+  return "ok";
+}
+
 /** Mirrors repair_ticket_parts' own CHECK constraints. */
 export function validateRepairPart(input: RepairPartInput): string[] {
   const errors: string[] = [];

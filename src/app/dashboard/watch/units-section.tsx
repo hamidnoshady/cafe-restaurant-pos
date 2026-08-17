@@ -40,6 +40,7 @@ export function UnitsSection({
 }) {
   const [modelName, setModelName] = useState("");
   const [modelSku, setModelSku] = useState("");
+  const [serviceIntervalMonths, setServiceIntervalMonths] = useState("");
   const [itemId, setItemId] = useState("");
   const [serialNumber, setSerialNumber] = useState("");
   const [unitCost, setUnitCost] = useState("");
@@ -51,12 +52,17 @@ export function UnitsSection({
     const ok = await run(() =>
       api("/api/watch/items", {
         method: "POST",
-        body: JSON.stringify({ name: modelName, sku: modelSku.trim() || null }),
+        body: JSON.stringify({
+          name: modelName,
+          sku: modelSku.trim() || null,
+          serviceIntervalMonths: serviceIntervalMonths.trim() ? Number(serviceIntervalMonths) : null,
+        }),
       }),
     );
     if (ok) {
       setModelName("");
       setModelSku("");
+      setServiceIntervalMonths("");
     }
   }
 
@@ -126,6 +132,16 @@ export function UnitsSection({
                 className={watchInputClass}
                 value={modelSku}
                 onChange={(e) => setModelSku(e.target.value)}
+                placeholder="اختیاری"
+              />
+            </Field>
+            <Field label="فاصلهٔ سرویس (ماه)" hint="باطری کوارتز ~۲۴، موتور اتوماتیک ۳۶ تا ۶۰. خالی = بدون یادآوری.">
+              <input
+                className={watchInputClass}
+                dir="ltr"
+                inputMode="numeric"
+                value={serviceIntervalMonths}
+                onChange={(e) => setServiceIntervalMonths(e.target.value)}
                 placeholder="اختیاری"
               />
             </Field>
@@ -204,9 +220,17 @@ function MetaItem({ label, children }: { label: string; children: React.ReactNod
   );
 }
 
+const CONDITION_GRADE_OPTIONS = [
+  { value: "new", label: "نو" },
+  { value: "like_new", label: "در حد نو" },
+  { value: "good", label: "خوب" },
+  { value: "fair", label: "متوسط" },
+  { value: "poor", label: "ضعیف" },
+] as const;
+
 function UnitRow({ unit, busy, run }: { unit: SerialUnit; busy: boolean; run: Runner }) {
-  const [panel, setPanel] = useState<"cost" | "audit" | null>(null);
-  const toggle = (next: "cost" | "audit") =>
+  const [panel, setPanel] = useState<"cost" | "audit" | "preowned" | null>(null);
+  const toggle = (next: "cost" | "audit" | "preowned") =>
     setPanel((current) => (current === next ? null : next));
 
   return (
@@ -261,6 +285,18 @@ function UnitRow({ unit, busy, run }: { unit: SerialUnit; busy: boolean; run: Ru
             تاریخچه
           </Button>
           {unit.status === "in_stock" ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className={secondaryActionClass}
+              disabled={busy}
+              onClick={() => toggle("preowned")}
+            >
+              ثبت دست‌دوم
+            </Button>
+          ) : null}
+          {unit.status === "in_stock" ? (
             // Selling happens on the invoice screen, the only place a sale
             // becomes a document (Phase 25 Wave 3). This page manages the
             // catalogue; it no longer offers a parallel way to sell one unit
@@ -279,12 +315,72 @@ function UnitRow({ unit, busy, run }: { unit: SerialUnit; busy: boolean; run: Ru
         <CostPanel unit={unit} busy={busy} run={run} onDone={() => setPanel(null)} />
       ) : null}
       {panel === "audit" ? <ItemAuditPanel itemId={unit.itemId} /> : null}
+      {panel === "preowned" ? (
+        <PreOwnedPanel unit={unit} busy={busy} run={run} onDone={() => setPanel(null)} />
+      ) : null}
     </li>
   );
 }
 
 function PanelShell({ children }: { children: React.ReactNode }) {
   return <div className="rounded-xl bg-amber-50/60 p-3 sm:p-4">{children}</div>;
+}
+
+function PreOwnedPanel({
+  unit,
+  busy,
+  run,
+  onDone,
+}: {
+  unit: SerialUnit;
+  busy: boolean;
+  run: Runner;
+  onDone: () => void;
+}) {
+  const [conditionGrade, setConditionGrade] = useState("good");
+  const [boxAndPapers, setBoxAndPapers] = useState(false);
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    const ok = await run(() =>
+      api(`/api/watch/units/${unit.id}/pre-owned`, {
+        method: "POST",
+        body: JSON.stringify({ conditionGrade, boxAndPapers }),
+      }),
+    );
+    if (ok) onDone();
+  }
+
+  return (
+    <PanelShell>
+      <form onSubmit={save} className="grid min-w-0 gap-3 sm:grid-cols-2">
+        <Field label="درجه وضعیت">
+          <SearchableSelect
+            className={watchInputClass}
+            value={conditionGrade}
+            onChange={setConditionGrade}
+            options={CONDITION_GRADE_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+          />
+        </Field>
+        <div className="flex items-end pb-1">
+          <label className="flex cursor-pointer items-center gap-2 text-sm text-stone-700">
+            <input
+              type="checkbox"
+              className="size-4 rounded border-stone-300 text-amber-500 focus:ring-amber-400/30"
+              checked={boxAndPapers}
+              onChange={(e) => setBoxAndPapers(e.target.checked)}
+            />
+            همراه جعبه و مدارک
+          </label>
+        </div>
+        <div className="sm:col-span-2">
+          <Button type="submit" disabled={busy} size="sm" className="min-h-[44px] border border-amber-300 px-5 font-semibold">
+            ثبت دست‌دوم
+          </Button>
+        </div>
+      </form>
+    </PanelShell>
+  );
 }
 
 function CostPanel({

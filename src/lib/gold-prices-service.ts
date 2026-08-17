@@ -14,6 +14,8 @@ export interface GoldPrice {
   purity: Purity;
   priceDate: string;
   pricePerGram: number;
+  /** Phase 27 Wave 9 — the day's buy-back rate (Rial/gram); null = no buy-backs today. */
+  buyPricePerGram: number | null;
   source: "manual" | "external";
   createdBy: string | null;
   createdAt: string;
@@ -29,6 +31,7 @@ interface GoldPriceRow extends Record<string, unknown> {
   // ar-service.ts) -- converted to a plain number in mapGoldPrice, safely
   // within Number's precision for a per-gram Rial price.
   price_per_gram: string;
+  buy_price_per_gram: string | null;
   source: "manual" | "external";
   created_by: string | null;
   created_at: string;
@@ -42,6 +45,7 @@ function mapGoldPrice(row: GoldPriceRow): GoldPrice {
     purity: row.purity,
     priceDate: row.price_date,
     pricePerGram: Number(row.price_per_gram),
+    buyPricePerGram: row.buy_price_per_gram == null ? null : Number(row.buy_price_per_gram),
     source: row.source,
     createdBy: row.created_by,
     createdAt: row.created_at,
@@ -53,6 +57,8 @@ export interface RecordGoldPriceInput {
   businessId: string;
   purity: string;
   pricePerGram: number;
+  /** Phase 27 Wave 9 — the day's buy-back rate; omit to leave buy-backs closed today. */
+  buyPricePerGram?: number | null;
   priceDate?: string;
   source?: "manual" | "external";
   createdBy?: string | null;
@@ -64,10 +70,12 @@ export async function recordGoldPrice(input: RecordGoldPriceInput): Promise<Gold
   if (errors.length > 0) throw new Error(errors.join("؛ "));
 
   const { rows } = await query<GoldPriceRow>(
-    `INSERT INTO gold_prices (business_id, purity, price_date, price_per_gram, source, created_by)
-     VALUES ($1, $2, COALESCE($3, CURRENT_DATE), $4, $5, $6)
+    `INSERT INTO gold_prices (business_id, purity, price_date, price_per_gram, buy_price_per_gram, source, created_by)
+     VALUES ($1, $2, COALESCE($3, CURRENT_DATE), $4, $5, $6, $7)
      ON CONFLICT (business_id, purity, price_date) DO UPDATE
-       SET price_per_gram = EXCLUDED.price_per_gram, source = EXCLUDED.source,
+       SET price_per_gram = EXCLUDED.price_per_gram,
+           buy_price_per_gram = EXCLUDED.buy_price_per_gram,
+           source = EXCLUDED.source,
            created_by = EXCLUDED.created_by, updated_at = now()
      RETURNING *`,
     [
@@ -75,6 +83,7 @@ export async function recordGoldPrice(input: RecordGoldPriceInput): Promise<Gold
       input.purity,
       input.priceDate ?? null,
       input.pricePerGram,
+      input.buyPricePerGram ?? null,
       input.source ?? "manual",
       input.createdBy ?? null,
     ],

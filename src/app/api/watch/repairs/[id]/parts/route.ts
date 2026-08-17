@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
-import { requireIndustryForApi } from "@/lib/industry-guard";
+import { requireCapabilityForApi } from "@/lib/industry-guard";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { addRepairPart, getRepairTicket } from "@/lib/repairs-service";
 
@@ -8,8 +8,8 @@ import { addRepairPart, getRepairTicket } from "@/lib/repairs-service";
 export const POST = withTenantScope(async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
-  const industryError = await requireIndustryForApi(session, "watch");
-  if (industryError) return industryError;
+  const capabilityError = await requireCapabilityForApi(session, "repairs");
+  if (capabilityError) return capabilityError;
   const { id } = await context.params;
 
   const location = await resolveActiveLocation(session);

@@ -24,7 +24,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   const industryError = await requireIndustryForApi(session, "watch");
   if (industryError) return industryError;
 
-  let body: { name?: string; sku?: string | null };
+  let body: { name?: string; sku?: string | null; serviceIntervalMonths?: number | null };
   try {
     body = await request.json();
   } catch {
@@ -37,11 +37,17 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
 
-  const item = await createItem({
-    locationId: location.id,
-    name,
-    sku: body.sku?.trim() || null,
-    tracking: "serial",
-  });
-  return NextResponse.json({ ok: true, item });
+  try {
+    const item = await createItem({
+      locationId: location.id,
+      name,
+      sku: body.sku?.trim() || null,
+      tracking: "serial",
+      serviceIntervalMonths:
+        body.serviceIntervalMonths == null ? null : Number(body.serviceIntervalMonths),
+    });
+    return NextResponse.json({ ok: true, item });
+  } catch (err) {
+    return NextResponse.json({ error: "validation_failed", message: (err as Error).message }, { status: 400 });
+  }
 });

@@ -1,6 +1,6 @@
 # Phase 27 — Cosmetics & toiletries, and a specialized identity for every trade
 
-## Status: designed — all thirteen waves specified, implementation not started
+## Status: complete — all thirteen waves shipped
 
 Tracked by GitHub issue [#261](https://github.com/hamidnoshady/cafe-restaurant-pos/issues/261),
 with one sub-issue per wave: [#262](https://github.com/hamidnoshady/cafe-restaurant-pos/issues/262),
@@ -325,6 +325,41 @@ worlds — plus reorder points and a low-stock / dead-stock report per trade.
 8. A watch shop gets a due-for-service list and can print a repair estimate for customer approval.
 9. An F&B business is unchanged except for the features Wave 12 adds.
 10. `integration/tenant-isolation.integration.test.ts` passes with every new table present.
+
+## Where each exit criterion is satisfied
+
+| # | Criterion | Where in code |
+|---|---|---|
+| 1 | Cosmetics provisions as a first-class trade with its own COA and no café module | `migrations/0077_cosmetics_industry.sql` (industry CHECK re-added with `cosmetics`); `src/lib/industries.ts` (`INDUSTRIES`, `ENABLED_INDUSTRIES`, labels); `src/lib/coa-template.ts` (`COSMETICS_COA_TEMPLATE` + `coaTemplateForIndustry` case); `src/lib/industry-profile.ts` (`cosmetics` profile: `CORE_MODULES + "pos" + "cosmetics"`, retail labels, `salesModel: "retail_invoice"`, café modules absent); `integration/business-industry.integration.test.ts` |
+| 2 | Batch receipt, expired-sale refusal, FEFO selling, near-expiry list | `migrations/0078_item_batches.sql` (`item_batches` + `items.tracking = 'batch'`); `src/lib/fefo.ts` + `fefo.test.ts` (first-expired-first-out); `src/lib/cosmetics-service.ts` (`receiveBatch`, `sellCosmeticUnits` refuse expired, `nearExpiryBatches`); `src/lib/industry-reports.ts` (`expiryBucket`); `src/app/api/cosmetics/items/[id]/batches/route.ts` and `src/app/api/cosmetics/reports/near-expiry/route.ts`; `integration/merchandising.integration.test.ts` (expiry-ordering acceptance) |
+| 3 | Barcode scan-to-invoice and shelf-label printing for every barcode-capable trade | `migrations/0080_item_barcodes.sql`; `src/lib/item-barcodes-service.ts`; `src/lib/label-template.ts` + `label-template.test.ts`; `src/app/api/barcodes/`; `src/app/dashboard/pos/retail-invoice-screen.tsx` (scan branch); capability `barcode` in `src/lib/industry-profile.ts` |
+| 4 | Loyalty points + store credit as a real liability | `migrations/0081_loyalty.sql` (`customers` fields, `loyalty_programs`, signed `customer_points`, store-credit account 2410); `src/lib/loyalty-service.ts` (`earnPoints`, `redeemPoints`, `issueStoreCredit`, `useStoreCredit`); `src/lib/loyalty-posting-rules.ts` (2410 posted via the engine); `integration/loyalty.integration.test.ts` |
+| 5 | One promotion engine for F&B orders and retail invoices | `src/lib/promotions.ts` + `promotions.test.ts` (pure engine: percent/amount/bundle/buy-x-get-y, date/day/time windows, priority/stacking); `src/lib/order-totals.ts` (F&B caller); `src/lib/retail-invoice-service.ts` (retail caller, `retailPromotionDiscounts`); `src/lib/orders.test.ts` (happy-hour/time-of-day) |
+| 6 | Commission accrual in the ledger and a per-staff report | `migrations/0083_staff_commission.sql` (`commission_rules`, signed `commission_accruals`); `src/lib/commission-service.ts` (`accrueCommissionForLine`, `staffCommissionReport`); `src/lib/commission-posting-rules.ts` (5210/2300); `src/app/api/commission/report/route.ts`; `integration/commission.integration.test.ts` |
+| 7 | Jewelry layaway (grams), gold buy-back and a printable gold account | `migrations/0085_jewelry_flagship.sql` (`layaway_plans` denominated in grams, `gold_prices.buy_price_per_gram`, signed `gold_account_movements`, `custom_order_tickets`); `src/lib/gold-buyback.ts` + `gold-buyback.test.ts`; `src/lib/jewelry-flagship-service.ts` (`openLayaway`/`payLayaway`/`completeLayaway`, `buyBackGold`, `goldAccountStatement`); `src/app/api/jewelry/{layaway,buy-back,gold-account}/`; `integration/jewelry-flagship.integration.test.ts` |
+| 8 | Watch due-for-service list and a printed repair estimate | `migrations/0086_watch_service.sql` (`items.service_interval_months`, serial `condition_grade`/`box_and_papers`, `repair_tickets` estimate columns) + `0087_service_reminder_drafts.sql`; `src/lib/watch.ts` (`nextServiceDueDate`); `src/lib/watch-crm-service.ts` (`serviceReminders`, `setRepairEstimate`/`approveRepairEstimate`, `repairEstimateText`); `src/lib/repair-estimate.ts` + test; `src/app/api/watch/reminders/route.ts` and `src/app/api/watch/repairs/[id]/estimate/`; `integration/watch.integration.test.ts` |
+| 9 | F&B unchanged except Wave 12's features | `src/lib/promotions.ts` (happy-hour over the shared engine, no second discount path); `src/lib/cost-drift.ts` + test and `src/lib/pricing-service.ts` (`listCostDrift`); `src/lib/fnb-reports-service.ts` (waste analytics over existing `inventory_events`); `src/app/api/inventory/waste/analytics/route.ts` and `src/app/api/reports/cost-drift/route.ts`; `integration/fnb-wave12.integration.test.ts` |
+| 10 | Tenant-isolation test passes with every new table | Every Wave 1–13 migration adds its RLS policy in the same file (Shape 1 business_id, or `app_owns_location`/parent-walk for location-scoped and child tables); `integration/tenant-isolation.integration.test.ts` enumerates tables and fails closed on any missing policy |
+
+## Known follow-ups
+
+- **F&B promotion-application recording.** The Wave 13 effectiveness report is
+  fed by `promotion_applications` (migration 0089), which the retail invoice
+  path writes on every settled line. The F&B path evaluates the same engine
+  but folds the discount into the order total without recording *which*
+  campaign fired, so the report under-counts café campaigns until the order
+  settlement path is taught to write the same rows.
+- **A promotions dashboard UI.** The engine, posting rules, API routes and
+  report are built; the per-trade dashboard surfaces the settings page but not
+  the new effectiveness ranking.
+- **Service reminders are a read-only due list**, not yet a customer-facing
+  SMS/email send. The `ai-proactive` run kind exists and drafts the message;
+  actually dispatching it needs a channel decision.
+- **Gold-account statements are printable** but not yet batched into a
+  month-end document pack alongside consignor statements.
+- **No external gold-price feed, weight-based FIFO for bulk gold, or coin
+  (per-unit) pricing** — still Phase 21's open product decisions, unchanged by
+  this phase.
 
 ## Verification
 
