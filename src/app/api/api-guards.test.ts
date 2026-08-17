@@ -98,6 +98,22 @@ const PUBLIC_ROUTES: Record<string, string> = {
   "setup/pair":
     "first-run only — claims an existing online business on an empty install and refuses with " +
     "409 as soon as any user exists, exactly like setup/bootstrap",
+  "setup/pair/test":
+    "first-run only — probes whether a typed address reaches a POS server at all, so a wrong " +
+    "address is separable from a wrong code before the one-time code is spent; refuses with 409 " +
+    "as soon as any user exists, exactly like setup/pair itself",
+  "pairing/redeem":
+    "the host-neutral twin of platform/pairing/redeem, session-less for the identical reason — " +
+    "it exists because middleware moves everything under /api/platform to the console's host, " +
+    "and an owner now issues a desktop code from their own business origin (src/lib/pairing-redeem.ts)",
+  "integrations/wordpress/ping":
+    "the WordPress plugin channel — authenticated by a bearer link token plus an HMAC envelope " +
+    "over timestamp, nonce and body (src/lib/integrations/plugin-link.ts), never a tenant session; " +
+    "the token is what resolves the connection and therefore the business",
+  "integrations/wordpress/handshake": "WordPress plugin channel — see integrations/wordpress/ping",
+  "integrations/wordpress/events": "WordPress plugin channel — see integrations/wordpress/ping",
+  "integrations/wordpress/jobs": "WordPress plugin channel — see integrations/wordpress/ping",
+  "integrations/wordpress/jobs/ack": "WordPress plugin channel — see integrations/wordpress/ping",
   "integrations/woocommerce/webhook/[connectionId]":
     "Phase 23 (issue #118) — WooCommerce delivers webhooks to this URL with an HMAC-SHA256 " +
     "signature authenticated against the connection's webhook secret (webhook-ingest-service.ts), " +

@@ -81,9 +81,11 @@ Three rules follow for the database side:
   its business before any tenant is chosen (the same shape as login); resolving a public API bearer
   key to its business/location before a tenant has been selected; a narrow write to the global
   `platform_users` table on behalf of an already-verified in-business membership (e.g.
-  a password reset); and re-checking a PIN login's `employee_sessions` row before a tenant scope
+  a password reset); re-checking a PIN login's `employee_sessions` row before a tenant scope
   has been entered for the request (the same shape as the impersonation-grant re-check it sits
-  next to in `getSession()`). Anything else is a new hole — think hard before adding one.
+  next to in `getSession()`); and resolving an inbound WooCommerce connection — by the delivery's
+  connection id (webhook) or by the WordPress plugin's link-token hash — to the business its store
+  belongs to. Anything else is a new hole — think hard before adding one.
 - **Background work must scope itself.** Anything running outside a request — the ticks in
   `server.ts`, scripts — has no session to derive a tenant from, so it enumerates businesses
   bypassed and then wraps each one's work in `withTenant(businessId, …)`.
@@ -165,6 +167,25 @@ and left:
   role provisioning, perf benchmarks, …) rather than through a route handler; some run inside
   the running container itself (e.g. `check-app-update.ts`, invoked via `docker compose exec`
   by the on-site launcher — see the README's "On-site deployment" section).
+- **Connections (Phase 28)** — everything a business connects *to* lives behind one hub,
+  `/dashboard/connections` (`src/lib/connection-kinds.ts`), with three kinds: the desktop
+  install, a WooCommerce store, and developer API keys for `/api/v1`. The page is
+  deliberately **not** feature-gated — its tabs have three different entitlements and one
+  (desktop pairing) has none — so gate a new tab, never the hub. Two rules carry the
+  history: a desktop install is claimed with a **pairing code** issued by the Owner from
+  their own dashboard (`/api/connections/desktop`), *not* with the `POS1-…` server-sync
+  token, and the address handed to the desktop is **this request's own origin**, never
+  `PLATFORM_BASE_URL` — the same "ask the host" rule Phase 23 states for login. A
+  WooCommerce store connects in one of two `link_mode`s: the original `rest_api`
+  (consumer keys, app calls store) or `plugin`, where the WordPress plugin in
+  `wordpress-plugin/` does all the calling and authenticates with a link token plus an
+  HMAC envelope over timestamp, nonce and body (`src/lib/integrations/plugin-link.ts`).
+  Both modes feed one ingest path (`applyIngestEvent`) and one outbox — in plugin mode
+  the app fills that queue but must never drain it.
+- `wordpress-plugin/pos-accounting-connector/` — the WordPress/WooCommerce plugin (PHP,
+  no build step, not part of the Next.js app). Its signing string must stay byte-identical
+  to `plugin-link.ts`'s; `plugin-link.test.ts` pins the expected value on the TS side, so
+  change both or neither.
 - `electron/` — the standalone (no-Docker) desktop installer. `main.js` bundles a real
   PostgreSQL 16 (`embedded-postgres`) and runs `server.ts`/`scripts/migrate.ts` unmodified as
   child processes — see `docs/standalone-desktop-app.md`. Separate `package.json` from the

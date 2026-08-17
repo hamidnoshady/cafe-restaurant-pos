@@ -8,7 +8,7 @@
  * created category-less and can be filed later by hand.
  */
 import { query } from "../db";
-import { getConnection, wooClientFor } from "./connections-service";
+import { getConnection, wooClientFor, type ConnectionRow } from "./connections-service";
 import { listMappings, localIdForRemote, upsertMapping } from "./mapping-service";
 import { wooAmountToRial } from "./woo-money";
 import { writeIntegrationAudit } from "./audit";
@@ -32,6 +32,73 @@ export interface SyncOutcome {
   total: number;
 }
 
+/** The branch this connection writes into, resolved once per sync. */
+export async function connectionLocationId(connection: ConnectionRow): Promise<string> {
+  return resolveLocationId(connection.business_id, connection.location_id);
+}
+
+/**
+ * One WooCommerce product -> one local `menu_items` row.
+ *
+ * Split out of `syncProducts` because there are now two ways a product
+ * arrives: pulled by the app over REST, or pushed by the WordPress plugin as
+ * an event. Both must land identically — same price conversion, same mapping
+ * row, same create-vs-update decision — so both call this rather than each
+ * carrying its own copy of the rule.
+ */
+export async function upsertProductFromWoo(
+  connection: ConnectionRow,
+  locationId: string,
+  product: WooProduct,
+): Promise<"created" | "updated"> {
+  const businessId = connection.business_id;
+  const price = wooAmountToRial(product.regular_price || product.price || "0", connection.currency_unit);
+  const existing = await localIdForRemote(businessId, connection.id, "product", String(product.id));
+  if (existing) {
+    await query(
+      `UPDATE menu_items SET name = $3, sku = $4, price = $5, updated_at = now()
+        WHERE id = $1 AND location_id = $2`,
+      [existing, locationId, product.name, product.sku || null, price.toString()],
+    );
+    return "updated";
+  }
+  const { rows } = await query<{ id: string }>(
+    `INSERT INTO menu_items (location_id, name, sku, price)
+     VALUES ($1, $2, $3, $4) RETURNING id`,
+    [locationId, product.name, product.sku || null, price.toString()],
+  );
+  await upsertMapping(businessId, connection.id, "product", String(product.id), rows[0].id);
+  return "created";
+}
+
+/** One WooCommerce customer -> one local `customers` row. Same two-callers reasoning as above. */
+export async function upsertCustomerFromWoo(
+  connection: ConnectionRow,
+  customer: WooCustomer,
+): Promise<"created" | "updated"> {
+  const businessId = connection.business_id;
+  const name =
+    `${customer.first_name ?? ""} ${customer.last_name ?? ""}`.trim() || customer.email || `Customer #${customer.id}`;
+  const phone = customer.billing?.phone?.trim() || null;
+  const address = customer.billing?.address_1?.trim() || null;
+  const existing = await localIdForRemote(businessId, connection.id, "customer", String(customer.id));
+  if (existing) {
+    await query(
+      `UPDATE customers SET name = $3, phone = $4, address = $5, updated_at = now()
+        WHERE id = $1 AND business_id = $2`,
+      [existing, businessId, name, phone, address],
+    );
+    return "updated";
+  }
+  const { rows } = await query<{ id: string }>(
+    `INSERT INTO customers (business_id, name, phone, address)
+     VALUES ($1, $2, $3, $4) RETURNING id`,
+    [businessId, name, phone, address],
+  );
+  await upsertMapping(businessId, connection.id, "customer", String(customer.id), rows[0].id);
+  return "created";
+}
+
 export async function syncProducts(businessId: string, connectionId: string): Promise<SyncOutcome> {
   const connection = await getConnection(businessId, connectionId);
   if (!connection) throw new Error("not_found");
@@ -47,24 +114,8 @@ export async function syncProducts(businessId: string, connectionId: string): Pr
     const products: WooProduct[] = await client.listProducts({ per_page: PER_PAGE, page });
     total += products.length;
     for (const product of products) {
-      const price = wooAmountToRial(product.regular_price || product.price || "0", connection.currency_unit);
-      const existing = await localIdForRemote(businessId, connectionId, "product", String(product.id));
-      if (existing) {
-        await query(
-          `UPDATE menu_items SET name = $3, sku = $4, price = $5, updated_at = now()
-            WHERE id = $1 AND location_id = $2`,
-          [existing, locationId, product.name, product.sku || null, price.toString()],
-        );
-        updated += 1;
-      } else {
-        const { rows } = await query<{ id: string }>(
-          `INSERT INTO menu_items (location_id, name, sku, price)
-           VALUES ($1, $2, $3, $4) RETURNING id`,
-          [locationId, product.name, product.sku || null, price.toString()],
-        );
-        await upsertMapping(businessId, connectionId, "product", String(product.id), rows[0].id);
-        created += 1;
-      }
+      if ((await upsertProductFromWoo(connection, locationId, product)) === "created") created += 1;
+      else updated += 1;
     }
     if (products.length < PER_PAGE) break;
     page += 1;
@@ -98,26 +149,8 @@ export async function syncCustomers(businessId: string, connectionId: string): P
     const customers: WooCustomer[] = await client.listCustomers({ per_page: PER_PAGE, page });
     total += customers.length;
     for (const customer of customers) {
-      const name = `${customer.first_name ?? ""} ${customer.last_name ?? ""}`.trim() || customer.email || `Customer #${customer.id}`;
-      const phone = customer.billing?.phone?.trim() || null;
-      const address = customer.billing?.address_1?.trim() || null;
-      const existing = await localIdForRemote(businessId, connectionId, "customer", String(customer.id));
-      if (existing) {
-        await query(
-          `UPDATE customers SET name = $3, phone = $4, address = $5, updated_at = now()
-            WHERE id = $1 AND business_id = $2`,
-          [existing, businessId, name, phone, address],
-        );
-        updated += 1;
-      } else {
-        const { rows } = await query<{ id: string }>(
-          `INSERT INTO customers (business_id, name, phone, address)
-           VALUES ($1, $2, $3, $4) RETURNING id`,
-          [businessId, name, phone, address],
-        );
-        await upsertMapping(businessId, connectionId, "customer", String(customer.id), rows[0].id);
-        created += 1;
-      }
+      if ((await upsertCustomerFromWoo(connection, customer)) === "created") created += 1;
+      else updated += 1;
     }
     if (customers.length < PER_PAGE) break;
     page += 1;

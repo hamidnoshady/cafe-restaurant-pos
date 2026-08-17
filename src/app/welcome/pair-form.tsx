@@ -2,30 +2,93 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-
-const DEFAULT_REMOTE_URL = "https://pos.eshobe.com";
+import { classifyConnectionCode, normalizeServerAddress } from "@/lib/connection-code";
 
 /** Every failure this flow can produce, in the owner's language. */
 const ERROR_MESSAGES: Record<string, string> = {
-  code_not_found: "کد اتصال معتبر نیست.",
-  code_expired: "این کد منقضی شده است. از پشتیبانی کد جدید بخواهید.",
-  code_already_redeemed: "این کد قبلاً استفاده شده است.",
-  code_revoked: "این کد لغو شده است. از پشتیبانی کد جدید بخواهید.",
-  remote_unreachable: "سرور آنلاین در دسترس نیست. اتصال اینترنت را بررسی کنید.",
+  code_not_found: "این کد در سرور بالا پیدا نشد. مطمئن شوید کد را از همان حساب ابری کپی کرده‌اید.",
+  code_expired: "این کد منقضی شده است. در پنل ابری یک کد تازه بسازید.",
+  code_already_redeemed: "این کد قبلاً استفاده شده است. در پنل ابری کد تازه بسازید.",
+  code_revoked: "این کد لغو شده است. در پنل ابری کد تازه بسازید.",
+  remote_unreachable: "سرور ابری در این آدرس پاسخ نداد. آدرس و اتصال اینترنت را بررسی کنید.",
+  not_a_pos_server: "این آدرس به سامانهٔ فروش شما نمی‌رسد. آدرسی را وارد کنید که با آن وارد پنل ابری می‌شوید.",
+  remote_not_initialized: "این آدرس هنوز کسب‌وکاری روی آن ساخته نشده است.",
   snapshot_invalid: "داده‌های دریافتی معتبر نیستند. با پشتیبانی تماس بگیرید.",
   missing_fields: "آدرس سرور و کد اتصال را وارد کنید.",
   invalid_url: "آدرس سرور معتبر نیست.",
+  // The three shapes classifyConnectionCode can report back from the server,
+  // for a value that reached it despite the client-side check below.
+  code_sync_token: "این مقدار یک «توکن همگام‌سازی» است، نه کد اتصال دسکتاپ.",
+  code_api_key: "این مقدار یک کلید API توسعه‌دهنده است، نه کد اتصال دسکتاپ.",
+  code_bad_length: "کد اتصال باید ۱۲ نویسه باشد (مثل ABCD-EFGH-JKLM).",
+  code_bad_charset: "کد اتصال شامل نویسه‌های نامعتبر است.",
+  code_empty: "کد اتصال را وارد کنید.",
 };
+
+/**
+ * What to say about a pasted value *before* spending the code on a round trip.
+ *
+ * The `sync_token` case is the whole reason this exists: «ساخت توکن» in the
+ * cloud dashboard's sync tab mints a `POS1-…` token for the server-to-server
+ * channel, and it was the only generator an owner could find, so it is what
+ * they pasted here — and all the app said was that the code was invalid. It
+ * now says which credential this is and where the right one lives.
+ */
+const CODE_HINTS: Record<string, string> = {
+  sync_token:
+    "این یک «توکن همگام‌سازی سرور» است (POS1-…)، نه کد اتصال دسکتاپ. در پنل ابری به بخش «اتصال‌ها → برنامه دسکتاپ» بروید و «ساخت کد اتصال» را بزنید.",
+  api_key: "این یک کلید API توسعه‌دهنده است (posk_live_…)، نه کد اتصال دسکتاپ.",
+  bad_length: "کد اتصال ۱۲ نویسه است و معمولاً به شکل ABCD-EFGH-JKLM نمایش داده می‌شود.",
+  bad_charset: "این کد نویسه‌های نامعتبر دارد. آن را دوباره از پنل ابری کپی کنید.",
+};
+
+type ProbeState = { kind: "idle" } | { kind: "ok"; url: string } | { kind: "error"; text: string };
 
 export function PairForm({ onBack }: { onBack: () => void }) {
   const router = useRouter();
-  const [remoteUrl, setRemoteUrl] = useState(DEFAULT_REMOTE_URL);
+  // Deliberately empty rather than pre-filled with a platform address: since
+  // Phase 23 every business is served from its own origin, so there is no
+  // address that is right for everyone — and a wrong pre-filled one reads as
+  // an instruction. The right value is the one in the owner's address bar
+  // when they are signed into the cloud panel, which the panel also shows
+  // them next to the code.
+  const [remoteUrl, setRemoteUrl] = useState("");
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [probing, setProbing] = useState(false);
+  const [probe, setProbe] = useState<ProbeState>({ kind: "idle" });
+
+  const codeKind = classifyConnectionCode(code);
+  const codeHint = CODE_HINTS[codeKind];
+  const addressPreview = normalizeServerAddress(remoteUrl);
+
+  async function testConnection() {
+    setProbing(true);
+    setError("");
+    setProbe({ kind: "idle" });
+    try {
+      const res = await fetch("/api/setup/pair/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ remoteUrl }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { ok?: boolean; url?: string; error?: string };
+      if (res.ok && data.ok) setProbe({ kind: "ok", url: data.url ?? "" });
+      else setProbe({ kind: "error", text: ERROR_MESSAGES[data.error ?? ""] ?? "آزمایش اتصال ناموفق بود." });
+    } catch {
+      setProbe({ kind: "error", text: ERROR_MESSAGES.remote_unreachable });
+    } finally {
+      setProbing(false);
+    }
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (codeKind !== "pairing_code") {
+      setError(codeHint ?? ERROR_MESSAGES.code_empty);
+      return;
+    }
     setBusy(true);
     setError("");
 
@@ -63,8 +126,9 @@ export function PairForm({ onBack }: { onBack: () => void }) {
         ← بازگشت
       </button>
       <h1 className="mb-1 text-2xl font-bold">اتصال به پلتفرم آنلاین</h1>
-      <p className="mb-6 text-sm text-muted-foreground">
-        کد اتصال یک‌بارمصرفی است که پشتیبانی برای کسب‌وکار شما صادر می‌کند.
+      <p className="mb-4 text-sm text-muted-foreground">
+        هر دو مقدار زیر را از حساب ابری خودتان بردارید: وارد پنل ابری شوید، به «اتصال‌ها → برنامه دسکتاپ» بروید،
+        آدرس نمایش‌داده‌شده را کپی کنید و دکمهٔ «ساخت کد اتصال» را بزنید.
       </p>
 
       {error ? (
@@ -80,9 +144,37 @@ export function PairForm({ onBack }: { onBack: () => void }) {
             className="w-full rounded-lg border border-input px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-ring/30"
             dir="ltr"
             value={remoteUrl}
-            onChange={(e) => setRemoteUrl(e.target.value)}
+            onChange={(e) => {
+              setRemoteUrl(e.target.value);
+              setProbe({ kind: "idle" });
+            }}
+            placeholder="mycafe.example.com"
             required
           />
+          <span className="mt-1 block text-xs text-muted-foreground">
+            همان آدرسی که با آن وارد پنل ابری می‌شوید. کپی‌کردن نوار آدرس مرورگر هم کافی است.
+          </span>
+          <div className="mt-2 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={testConnection}
+              disabled={probing || !remoteUrl.trim()}
+              className="rounded-lg border border-input px-3 py-1.5 text-xs font-medium hover:border-primary disabled:opacity-50"
+            >
+              {probing ? "در حال آزمایش…" : "آزمایش اتصال"}
+            </button>
+            {probe.kind === "ok" ? (
+              <span className="text-xs text-emerald-600" dir="ltr">
+                ✓ {probe.url}
+              </span>
+            ) : null}
+            {probe.kind === "error" ? <span className="text-xs text-destructive">{probe.text}</span> : null}
+            {probe.kind === "idle" && addressPreview.ok && addressPreview.url !== remoteUrl.trim() ? (
+              <span className="text-xs text-muted-foreground" dir="ltr">
+                {addressPreview.url}
+              </span>
+            ) : null}
+          </div>
         </label>
         <label className="block">
           <span className="mb-1 block text-sm font-medium text-foreground">کد اتصال *</span>
@@ -95,10 +187,11 @@ export function PairForm({ onBack }: { onBack: () => void }) {
             autoComplete="off"
             required
           />
+          {codeHint ? <span className="mt-1 block text-xs text-destructive">{codeHint}</span> : null}
         </label>
         <button
           type="submit"
-          disabled={busy}
+          disabled={busy || codeKind !== "pairing_code"}
           className="w-full rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/85 disabled:opacity-50"
         >
           {busy ? "در حال دریافت تنظیمات…" : "اتصال و دریافت تنظیمات"}

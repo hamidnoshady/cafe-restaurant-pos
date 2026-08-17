@@ -221,7 +221,14 @@ export async function runWooCommerceSyncTick(): Promise<void> {
       if (connection.push_stock || connection.push_prices) {
         await refreshOutboxForConnection(connection);
       }
-      await drainOutbox(connection);
+      // Filling the queue is the same in both link modes — it only reads local
+      // stock and prices. Draining is not: in plugin mode the WordPress plugin
+      // pulls these rows and applies them itself (there are no REST credentials
+      // here to call the store with), so this side must leave them alone or it
+      // would immediately dead-letter every job the plugin was about to take.
+      if (connection.link_mode === "rest_api") {
+        await drainOutbox(connection);
+      }
     });
   }
 }

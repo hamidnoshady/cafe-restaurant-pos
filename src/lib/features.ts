@@ -105,6 +105,9 @@ export const PAGE_FEATURE_PREFIXES: [string, string][] = [
   ["/dashboard/backup", "backup"],
   ["/dashboard/ai", "ai_assistant"],
   ["/dashboard/integrations", "integrations"],
+  // `/dashboard/connections` is deliberately absent: the hub carries three
+  // connections with three different entitlements (and one with none), so it
+  // gates each tab rather than the page. See src/lib/connection-kinds.ts.
 ];
 
 export function featureForPagePath(pathname: string): string | null {

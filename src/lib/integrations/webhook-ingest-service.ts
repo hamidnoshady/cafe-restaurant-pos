@@ -30,7 +30,8 @@ import {
 } from "./webhook-signature";
 import { wooAmountToRial } from "./woo-money";
 import { writeIntegrationAudit } from "./audit";
-import type { WooOrder, WooRefund } from "./woocommerce-client";
+import { connectionLocationId, upsertCustomerFromWoo, upsertProductFromWoo } from "./sync-service";
+import type { WooCustomer, WooOrder, WooProduct, WooRefund } from "./woocommerce-client";
 
 const zero = "0" as RialText;
 
@@ -77,7 +78,26 @@ interface WebhookEvent {
   payload: Record<string, unknown>;
 }
 
-async function processWebhookEvent(connection: ConnectionRow, event: WebhookEvent): Promise<NextResponse> {
+/** What one event did, in the form both doors report it. */
+type IngestOutcome =
+  | { status: "processed" }
+  | { status: "duplicate" }
+  | { status: "failed"; error: string };
+
+/**
+ * The single ingest path, shared by both ways a store reaches this app: a
+ * WooCommerce webhook delivery (authenticated by its HMAC) and a WordPress
+ * plugin push (authenticated by its signed envelope). Everything either one
+ * produces — the inbox row, the dedup, the order, the payment, the journal
+ * entry — comes from here, so the two doors cannot drift into recording a sale
+ * two different ways.
+ *
+ * Idempotency has two layers: the inbox's UNIQUE (connection_id, delivery_id)
+ * dedups a replayed delivery, and integration_mappings' UNIQUE
+ * (connection_id, entity_type, remote_id) means an `order.updated`/`restored`
+ * that arrives after `order.created` is a no-op at the order level too.
+ */
+async function applyIngestEvent(connection: ConnectionRow, event: WebhookEvent): Promise<IngestOutcome> {
   const businessId = connection.business_id;
   const remoteId = event.payload?.id != null ? String(event.payload.id) : "";
 
@@ -96,7 +116,7 @@ async function processWebhookEvent(connection: ConnectionRow, event: WebhookEven
         WHERE connection_id = $1 AND delivery_id = $2`,
       [connection.id, event.deliveryId],
     );
-    return NextResponse.json({ ok: true, duplicate: true }, { status: 200 });
+    return { status: "duplicate" };
   }
   const inboxId = inserted[0].id;
 
@@ -107,17 +127,75 @@ async function processWebhookEvent(connection: ConnectionRow, event: WebhookEven
       }
     } else if (event.topic.endsWith("refund.created")) {
       await ingestRefund(connection, event.payload as unknown as WooRefund, inboxId);
+    } else if (event.topic.endsWith("product.created") || event.topic.endsWith("product.updated")) {
+      // In REST mode a product event is only a hint — the app pulls the
+      // catalogue itself — but a plugin push is the *only* way the catalogue
+      // ever arrives, so it is applied here for both. Applying it twice is
+      // harmless: upsertProductFromWoo is keyed on the mapping row.
+      if (connection.sync_products) {
+        await upsertProductFromWoo(
+          connection,
+          await connectionLocationId(connection),
+          event.payload as unknown as WooProduct,
+        );
+      }
+    } else if (event.topic.endsWith("customer.created") || event.topic.endsWith("customer.updated")) {
+      if (connection.sync_customers) {
+        await upsertCustomerFromWoo(connection, event.payload as unknown as WooCustomer);
+      }
     }
-    // Any other topic (product.updated, …) is acknowledged and left for a
-    // future pull-based sync — we never want a re-delivery storm for an event
-    // we don't handle yet.
+    // Any other topic is acknowledged and left alone — we never want a
+    // re-delivery storm for an event we don't handle yet.
     await query(`UPDATE integration_webhook_events SET status = 'processed', processed_at = now() WHERE id = $1`, [inboxId]);
-    return NextResponse.json({ ok: true }, { status: 200 });
+    return { status: "processed" };
   } catch (err) {
     const message = (err as Error).message;
     await query(`UPDATE integration_webhook_events SET status = 'failed', error = $2 WHERE id = $1`, [inboxId, message]);
-    return NextResponse.json({ ok: false, error: message }, { status: 500 });
+    return { status: "failed", error: message };
   }
+}
+
+async function processWebhookEvent(connection: ConnectionRow, event: WebhookEvent): Promise<NextResponse> {
+  const outcome = await applyIngestEvent(connection, event);
+  if (outcome.status === "duplicate") return NextResponse.json({ ok: true, duplicate: true }, { status: 200 });
+  if (outcome.status === "failed") return NextResponse.json({ ok: false, error: outcome.error }, { status: 500 });
+  return NextResponse.json({ ok: true }, { status: 200 });
+}
+
+/** One event as the WordPress plugin sends it. */
+export interface PluginEventInput {
+  topic?: string;
+  /** The plugin's own idempotency key, generated once per event and reused across retries. */
+  deliveryId?: string;
+  payload?: Record<string, unknown>;
+}
+
+/**
+ * Apply one plugin-pushed event and report what happened to *that* event.
+ *
+ * Unlike a webhook, a plugin push is a batch: the caller needs a per-event
+ * answer so one malformed order does not force it to re-send ninety-nine good
+ * ones. A failure is reported, not thrown, for the same reason — the batch
+ * continues, and the plugin re-sends only what failed.
+ *
+ * Must be called inside the connection's tenant scope; plugin-service.ts's
+ * `pluginPushEvents` establishes it once for the whole batch.
+ */
+export async function ingestPluginEvent(
+  connection: ConnectionRow,
+  event: PluginEventInput,
+): Promise<{ deliveryId: string; status: string; error?: string }> {
+  const deliveryId = event.deliveryId?.trim() || `plugin-${randomUUID()}`;
+  const topic = event.topic?.trim() ?? "";
+  if (!topic) return { deliveryId, status: "failed", error: "missing_topic" };
+  if (!event.payload || typeof event.payload !== "object") {
+    return { deliveryId, status: "failed", error: "missing_payload" };
+  }
+
+  const outcome = await applyIngestEvent(connection, { topic, deliveryId, payload: event.payload });
+  return outcome.status === "failed"
+    ? { deliveryId, status: "failed", error: outcome.error }
+    : { deliveryId, status: outcome.status };
 }
 
 /** The branch an integration writes to: the connection's own, else the primary. */
