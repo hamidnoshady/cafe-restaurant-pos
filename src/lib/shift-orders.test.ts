@@ -45,6 +45,7 @@ function payment(over: Partial<ShiftOrderPaymentInput> = {}): ShiftOrderPaymentI
   return {
     orderId: "o1",
     method: "cash",
+    methodName: "نقدی",
     amount: 2_150_000,
     reference: null,
     receivedAt: "2026-08-11T12:10:00.000Z",
@@ -54,6 +55,20 @@ function payment(over: Partial<ShiftOrderPaymentInput> = {}): ShiftOrderPaymentI
 }
 
 describe("groupShiftOrders", () => {
+  it("keeps every slice of a split payment, in the order it was taken", () => {
+    const orders = groupShiftOrders(
+      [row({ itemId: "i1" })],
+      [
+        payment({ amount: 1_000_000, methodName: "نقدی" }),
+        payment({ method: "card", methodName: "پوز ملت", amount: 1_150_000 }),
+      ],
+    );
+    expect(orders[0].payments.map((p) => [p.methodName, p.amount])).toEqual([
+      ["نقدی", 1_000_000],
+      ["پوز ملت", 1_150_000],
+    ]);
+  });
+
   it("collapses the join into one entry per order, preserving row order", () => {
     const orders = groupShiftOrders([
       row({ itemId: "i1" }),

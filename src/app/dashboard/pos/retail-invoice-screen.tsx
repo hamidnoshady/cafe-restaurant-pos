@@ -28,7 +28,9 @@ import { hasCapability, labelFor } from "@/lib/industry-profile";
 import type { Industry } from "@/lib/industries";
 import { Button } from "@/components/ui/button";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { ledgerSettlementFor } from "@/lib/payment-methods";
 import { api, ErrorBox, Field, inputClass } from "../ui";
+import { usePaymentMethods } from "../payment-ways";
 
 type Purity = "18" | "21" | "24";
 
@@ -97,11 +99,6 @@ interface CartLine {
   parts?: { metalValue: number; makingCharge: number; profit: number };
 }
 
-const PAYMENT_METHODS: { value: string; label: string }[] = [
-  { value: "cash", label: "نقدی" },
-  { value: "bank", label: "کارت‌خوان" },
-  { value: "credit", label: "نسیه" },
-];
 
 const PURITY_LABELS: Record<Purity, string> = {
   "18": "۱۸ عیار",
@@ -123,7 +120,17 @@ export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
 
   const [lines, setLines] = useState<CartLine[]>([]);
   const [customerId, setCustomerId] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState("cash");
+  // The business's own payment ways (migration 0091) rather than three fixed
+  // buttons — so a shop that renamed «کارت‌خوان» to «پوز ملت» reads its own
+  // name here too. A retail invoice still settles *one* way: it posts through
+  // the domain-event engine per line, which knows one destination per sale,
+  // so `ledgerSettlementFor` narrows the chosen way to what that engine
+  // understands. Splitting a bill is the order path's (see PaymentWays).
+  const { methods: paymentWays } = usePaymentMethods();
+  const settlementWays = paymentWays.filter((way) => ledgerSettlementFor(way.settlement) !== null);
+  const [paymentWayId, setPaymentWayId] = useState("");
+  const selectedWay = settlementWays.find((way) => way.id === paymentWayId) ?? settlementWays[0];
+  const paymentMethod = selectedWay ? (ledgerSettlementFor(selectedWay.settlement) ?? "cash") : "cash";
   const [note, setNote] = useState("");
 
   const [loading, setLoading] = useState(true);
@@ -342,18 +349,18 @@ export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
               </Field>
               <Field label="روش پرداخت">
                 <div className="flex flex-wrap gap-2">
-                  {PAYMENT_METHODS.map((method) => (
+                  {settlementWays.map((way) => (
                     <button
-                      key={method.value}
+                      key={way.id}
                       type="button"
-                      onClick={() => setPaymentMethod(method.value)}
+                      onClick={() => setPaymentWayId(way.id)}
                       className={`min-h-11 flex-1 rounded-xl border px-3 text-sm transition-colors ${
-                        paymentMethod === method.value
+                        selectedWay?.id === way.id
                           ? "border-amber-500 bg-amber-50 font-medium text-amber-900"
                           : "border-stone-200 text-stone-700 hover:border-amber-300"
                       }`}
                     >
-                      {method.label}
+                      {way.name}
                     </button>
                   ))}
                 </div>

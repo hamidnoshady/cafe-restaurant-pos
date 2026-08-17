@@ -26,6 +26,7 @@ import { SETTING_KEYS } from "./settings";
 import { coaTemplateForIndustry, nextAccountLevel, type AccountLevel, type TemplateAccount } from "./coa-template";
 import { ENABLED_INDUSTRIES, INDUSTRIES, type Industry } from "./industries";
 import { industryProfile } from "./industry-profile";
+import { seedPaymentMethods } from "./payment-methods-service";
 
 export interface ProvisionBusinessInput {
   businessName: string;
@@ -323,6 +324,12 @@ export async function provisionBusiness(
       if (input.seedChartOfAccounts) {
         await seedChartOfAccounts(client, businessId, input.industry ?? "food_service");
       }
+
+      // The payment ways the till offers (migration 0091), in the same
+      // transaction as the business itself: a shop that exists but cannot say
+      // «نقدی» cannot take money. Seeded rather than implied so the owner can
+      // rename and reorder them from day one.
+      await seedPaymentMethods(client, businessId, input.industry ?? "food_service");
 
       // Phase 25 — features this trade has no use for start off, in the same
       // transaction that creates the business so there is never a window where

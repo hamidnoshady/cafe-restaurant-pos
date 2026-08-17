@@ -109,14 +109,28 @@ export function revenueAccountCodeForOrderChannel(channel: OrderChannel, codes: 
 /**
  * Order paid → Debit Cash/Bank-Clearing/Accounts-Receivable (by method) /
  * Credit Sales Revenue (amount net of tax) + Tax Payable.
+ *
+ * A bill split across several ways (migration 0091) passes `tenders` instead
+ * of `method`: one debit line per way, against the one revenue credit. The
+ * tenders have to add up to `amount` — a split that doesn't cover the bill has
+ * no correct entry to post, so it produces none rather than an unbalanced one.
  */
 export function buildOrderPaymentLines(
   accounts: OrderPaymentAccounts,
-  payment: { method: string; amount: Rial; tax: Rial },
+  payment: { method?: string; tenders?: readonly { method: string; amount: Rial }[]; amount: Rial; tax: Rial },
 ): JournalLine[] {
   if (payment.amount <= 0) return [];
+  const tenders = payment.tenders?.length
+    ? payment.tenders
+    : [{ method: payment.method ?? "", amount: payment.amount }];
+  if (tenders.some((tender) => tender.amount <= 0)) return [];
+  if (tenders.reduce((sum, tender) => sum + tender.amount, 0) !== payment.amount) return [];
   const revenue = payment.amount - payment.tax;
-  const lines: JournalLine[] = [{ accountId: paymentDebitAccount(accounts, payment.method), debit: payment.amount, credit: 0 }];
+  const lines: JournalLine[] = tenders.map((tender) => ({
+    accountId: paymentDebitAccount(accounts, tender.method),
+    debit: tender.amount,
+    credit: 0,
+  }));
   if (revenue > 0) lines.push({ accountId: accounts.salesRevenue, debit: 0, credit: revenue });
   if (payment.tax > 0) lines.push({ accountId: accounts.vatPayable, debit: 0, credit: payment.tax });
   return lines;

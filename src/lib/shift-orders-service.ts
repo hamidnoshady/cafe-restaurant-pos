@@ -133,6 +133,7 @@ interface ShiftOrderItemRow extends Record<string, unknown> {
 interface ShiftOrderPaymentRow extends Record<string, unknown> {
   order_id: string;
   method: string;
+  method_name: string | null;
   amount: string;
   reference: string | null;
   received_at: Date;
@@ -195,11 +196,12 @@ export async function getShiftOrdersReport(
       window,
     ),
     query<ShiftOrderPaymentRow>(
-      `SELECT p.order_id, p.method, p.amount, p.reference, p.received_at,
+      `SELECT p.order_id, p.method, pm.name AS method_name, p.amount, p.reference, p.received_at,
               u.full_name AS received_by_name
          FROM payments p
          JOIN orders o ON o.id = p.order_id
          LEFT JOIN users u ON u.id = p.received_by
+         LEFT JOIN payment_methods pm ON pm.id = p.payment_method_id
         WHERE o.location_id = $1
           AND o.opened_at >= $2
           AND o.opened_at <= coalesce($3::timestamptz, now())
@@ -249,6 +251,7 @@ export async function getShiftOrdersReport(
   const payments: ShiftOrderPaymentInput[] = paymentRows.map((row) => ({
     orderId: row.order_id,
     method: row.method,
+    methodName: row.method_name,
     amount: Number(row.amount),
     reference: row.reference,
     receivedAt: row.received_at.toISOString(),

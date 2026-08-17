@@ -116,6 +116,50 @@ describe("buildOrderPaymentLines", () => {
   it("returns nothing for a zero-amount order", () => {
     expect(buildOrderPaymentLines(ORDER_ACCOUNTS, { method: "cash", amount: 0, tax: 0 })).toEqual([]);
   });
+
+  it("splits a bill across tenders: one debit line each, one revenue credit", () => {
+    const lines = buildOrderPaymentLines(ORDER_ACCOUNTS, {
+      tenders: [
+        { method: "cash", amount: 40_000 },
+        { method: "card", amount: 70_000 },
+      ],
+      amount: 110_000,
+      tax: 10_000,
+    });
+    expect(checkBalance(lines).balanced).toBe(true);
+    expect(lines).toEqual([
+      { accountId: "cash", debit: 40_000, credit: 0 },
+      { accountId: "bank", debit: 70_000, credit: 0 },
+      { accountId: "revenue", debit: 0, credit: 100_000 },
+      { accountId: "vat", debit: 0, credit: 10_000 },
+    ]);
+  });
+
+  it("posts nothing for a split that does not add up to the bill", () => {
+    expect(
+      buildOrderPaymentLines(ORDER_ACCOUNTS, {
+        tenders: [
+          { method: "cash", amount: 40_000 },
+          { method: "card", amount: 50_000 },
+        ],
+        amount: 110_000,
+        tax: 0,
+      }),
+    ).toEqual([]);
+  });
+
+  it("posts nothing for a split holding a zero or negative slice", () => {
+    expect(
+      buildOrderPaymentLines(ORDER_ACCOUNTS, {
+        tenders: [
+          { method: "cash", amount: 110_000 },
+          { method: "card", amount: 0 },
+        ],
+        amount: 110_000,
+        tax: 0,
+      }),
+    ).toEqual([]);
+  });
 });
 
 describe("revenueAccountCodeForOrderChannel", () => {

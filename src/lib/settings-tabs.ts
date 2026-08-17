@@ -8,6 +8,7 @@ export const SETTINGS_TAB_KEYS = [
   "tax",
   "pricing",
   "online-platforms",
+  "payment-methods",
   "accounts",
   "team",
   "menu",
@@ -102,6 +103,12 @@ export const SETTINGS_TABS: SettingsTab[] = [
     // SnapFood is food delivery; the commission account and the whole tab are
     // meaningless outside F&B.
     module: "delivery",
+  },
+  {
+    key: "payment-methods",
+    label: "روش‌های پرداخت",
+    description: "روش‌های دریافت وجه، ترتیب نمایش آن‌ها در صندوق، و تقسیم مبلغ بین چند روش",
+    requiredAnyPermission: [PERMISSIONS.settingsManage],
   },
   {
     key: "accounts",

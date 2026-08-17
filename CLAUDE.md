@@ -127,6 +127,21 @@ and left:
 4. A PR isn't done at "opened" or even at "CI green" if review is still pending — keep
    checking in until it's actually merged or closed. Stop immediately if asked to.
 
+## Payment ways — read before touching how money is taken
+
+Since migration 0091 a business's ways of taking money are **rows in `payment_methods`**, named and
+ordered by the business, and one bill can be split across several of them (`payments` gets one row
+per slice). The `payment_method` enum did not go away — it is now the *settlement* a way declares,
+and the only thing the ledger sees. See the "Payment ways" section of [README.md](README.md).
+
+- **Don't hard-code a payment list in a screen.** `GET /api/payment-methods` is the source, and
+  `<PaymentWays>` (`src/app/dashboard/payment-ways.tsx`) is the picker; the arithmetic of a split
+  lives in `src/lib/payment-draft.ts`, not in a component.
+- **Don't add the tip into the `payments` rows.** They record the bill; `tendersWithTip` folds the
+  tip into the posting only. The closed-order amendment and refund ceilings depend on that.
+- **A split posts one entry, not one per slice** — `postExactOrderPaymentEntry` takes `tenders` and
+  builds a debit line per settlement against a single revenue credit.
+
 ## Repository layout
 
 - `src/app/api/**/route.ts` — route handlers. Every handler starts with a guard
