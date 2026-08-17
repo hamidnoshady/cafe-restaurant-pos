@@ -14,7 +14,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { useFeatureLocked } from "@/components/feature-lock";
-import { InfoBox, api, errorMessage } from "../ui";
+import { InfoBox, api, errorMessageOrRaw } from "../ui";
 
 type LinkMode = "rest_api" | "plugin";
 
@@ -153,7 +153,7 @@ export function WooCommercePanel() {
     });
     setBusy(null);
     if (!ok) {
-      setMessage({ kind: "error", text: errorMessage(data.error) || data.error || "عملیات ناموفق بود." });
+      setMessage({ kind: "error", text: errorMessageOrRaw(data.error) || "عملیات ناموفق بود." });
       await load();
       return null;
     }
@@ -285,6 +285,7 @@ export function WooCommercePanel() {
             <option value="rial">واحد قیمت فروشگاه: ریال</option>
           </select>
           <button
+            type="button"
             className="rounded-md bg-stone-900 px-4 py-2 text-sm text-white disabled:opacity-50"
             onClick={createConnection}
             disabled={busy !== null}
@@ -350,6 +351,7 @@ export function WooCommercePanel() {
 
                 <div className="mt-2 flex flex-wrap gap-2 text-xs">
                   <button
+                    type="button"
                     className="rounded-md border px-2 py-1"
                     onClick={() => call(`/api/integrations/connections/${c.id}/test`)}
                     disabled={busy !== null}
@@ -357,6 +359,7 @@ export function WooCommercePanel() {
                     تست اتصال
                   </button>
                   <button
+                    type="button"
                     className="rounded-md border px-2 py-1"
                     onClick={() => call(`/api/integrations/connections/${c.id}/sync/products`)}
                     disabled={busy !== null}
@@ -364,6 +367,7 @@ export function WooCommercePanel() {
                     همگام‌سازی محصولات
                   </button>
                   <button
+                    type="button"
                     className="rounded-md border px-2 py-1"
                     onClick={() => call(`/api/integrations/connections/${c.id}/sync/customers`)}
                     disabled={busy !== null}
@@ -371,6 +375,7 @@ export function WooCommercePanel() {
                     همگام‌سازی مشتریان
                   </button>
                   <button
+                    type="button"
                     className="rounded-md border px-2 py-1"
                     onClick={() => call(`/api/integrations/connections/${c.id}/sync/inventory`)}
                     disabled={busy !== null}
@@ -378,6 +383,7 @@ export function WooCommercePanel() {
                     ارسال موجودی و قیمت
                   </button>
                   <button
+                    type="button"
                     className="rounded-md border px-2 py-1"
                     onClick={() => call(`/api/integrations/connections/${c.id}/reconcile`)}
                     disabled={busy !== null}
@@ -386,6 +392,7 @@ export function WooCommercePanel() {
                   </button>
                   {c.linkMode === "plugin" ? (
                     <button
+                      type="button"
                       className="rounded-md border px-2 py-1"
                       onClick={() => rotateToken(c.id)}
                       disabled={busy !== null}
@@ -394,6 +401,7 @@ export function WooCommercePanel() {
                     </button>
                   ) : null}
                   <button
+                    type="button"
                     className="rounded-md border px-2 py-1"
                     onClick={() =>
                       call(`/api/integrations/connections/${c.id}`, "PATCH", {
@@ -404,10 +412,16 @@ export function WooCommercePanel() {
                   >
                     {c.status === "active" ? "توقف" : "فعال‌سازی"}
                   </button>
-                  <button className="rounded-md border px-2 py-1" onClick={() => void loadAudit(c.id)} disabled={busy !== null}>
+                  <button
+                    type="button"
+                    className="rounded-md border px-2 py-1"
+                    onClick={() => void loadAudit(c.id)}
+                    disabled={busy !== null}
+                  >
                     گزارش رویدادها
                   </button>
                   <button
+                    type="button"
                     className="rounded-md border border-red-200 px-2 py-1 text-red-700"
                     onClick={() => call(`/api/integrations/connections/${c.id}`, "DELETE")}
                     disabled={busy !== null}
