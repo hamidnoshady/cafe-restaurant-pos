@@ -18,7 +18,7 @@ export async function recomputeOrderTotals(
   discount: DiscountInput,
 ): Promise<OrderTotals> {
   const { rows: orderRows } = await client.query<{ business_id: string }>(
-    `SELECT business_id FROM orders WHERE id = $1`,
+    `SELECT l.business_id FROM orders o JOIN locations l ON l.id = o.location_id WHERE o.id = $1`,
     [orderId],
   );
   const businessId = orderRows[0]?.business_id;
