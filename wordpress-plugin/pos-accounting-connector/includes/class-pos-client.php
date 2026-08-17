@@ -83,7 +83,10 @@ class POS_Connector_Client {
 		// The body is serialised exactly once and both signed and sent as that
 		// same string. Re-encoding before sending would be the classic way to
 		// produce a signature over something other than what was transmitted.
-		$body      = wp_json_encode( $payload );
+		// An empty PHP array would otherwise serialise to `[]`, but the app's
+		// plugin-route.ts expects a JSON *object* — and the ping and pull-jobs
+		// calls send no payload at all — so those must be `{}`.
+		$body      = wp_json_encode( $payload ? $payload : new stdClass() );
 		$timestamp = (string) (int) round( microtime( true ) * 1000 );
 		$nonce     = $this->nonce();
 		$signature = hash_hmac( 'sha256', self::signing_string( $timestamp, $nonce, $body ), $this->token );
