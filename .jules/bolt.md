@@ -13,3 +13,6 @@
 ## 2025-01-20 - Expensive Date Parsing in Hot Loops
 **Learning:** In the kitchen dashboard screen, `tickets` array grouping by `order_id` and string to date parsing through `new Date(item.sent_to_kitchen_at).getTime()` for calculating the ticket's `earliestSentAt` was tied to a `now` value updating every 15 seconds.
 **Action:** Separate static data operations (like grouping, filtering, or date parsing) into a distinct `useMemo` that dependes solely on the original items array, so they do not get recalculated on every tick.
+## 2024-05-18 - Repeated O(n) filtering inside useMemo
+**Learning:** Avoid executing O(n) algorithms (like `Array.filter` or `new Map(Array.map)`) inside a `useMemo` that also depends on frequently changing states (like a `deferredSearchQuery` on keystrokes).
+**Action:** Extract the static O(n) array transformations into their own, independent `useMemo` hooks that only re-compute when the base source data changes, reusing these pre-computed results in downstream search hooks.
