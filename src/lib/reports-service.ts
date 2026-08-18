@@ -16,7 +16,14 @@ import {
   type ChartType,
 } from "./reports";
 import { addDays } from "./rollup";
-import { COST_OF_SALES_CODES, WELL_KNOWN_CODES, type AccountType, type NormalBalance } from "./coa-template";
+import {
+  costOfSalesCodesForIndustry,
+  isNonCurrentCode,
+  WELL_KNOWN_CODES,
+  type AccountType,
+  type NormalBalance,
+} from "./coa-template";
+import { getBusinessIndustry } from "./industry-guard";
 import type { Role } from "./auth";
 
 export interface ReportRow extends Record<string, unknown> {
@@ -171,21 +178,20 @@ export interface ProfitAndLoss {
   operatingExpenses: number;
 }
 
-const COST_OF_SALES_CODE_SET = new Set(COST_OF_SALES_CODES);
-
 /** P&L for a date range, traced directly from the Phase 7 ledger (v_ledger_by_account, revenue/expense accounts only). */
 export async function getProfitAndLoss(
   businessId: string,
   filters: DateRangeFilters = {},
   locationId?: string,
 ): Promise<ProfitAndLoss> {
-  const rows = await ledgerAccountTotals(
-    businessId,
-    ["revenue", "expense"],
-    filters.dateTo,
-    filters.dateFrom,
-    locationId,
-  );
+  const [rows, industry] = await Promise.all([
+    ledgerAccountTotals(businessId, ["revenue", "expense"], filters.dateTo, filters.dateFrom, locationId),
+    getBusinessIndustry(businessId),
+  ]);
+  // Which expense codes are cost of sales depends on what the business sells —
+  // a jeweller's COGS is 5110, not F&B's 5100. An unknown business falls back
+  // to F&B, the same default every other industry lookup in the app uses.
+  const costOfSalesCodes = new Set(costOfSalesCodesForIndustry(industry ?? "food_service"));
   const revenue: PnlLine[] = [];
   const expenses: PnlLine[] = [];
   for (const r of rows) {
@@ -200,7 +206,7 @@ export async function getProfitAndLoss(
   const totalRevenue = revenue.reduce((s, l) => s + l.amount, 0);
   const totalExpenses = expenses.reduce((s, l) => s + l.amount, 0);
   const costOfSales = expenses
-    .filter((l) => COST_OF_SALES_CODE_SET.has(l.accountCode))
+    .filter((l) => costOfSalesCodes.has(l.accountCode))
     .reduce((s, l) => s + l.amount, 0);
   const laborCost = expenses
     .filter((l) => l.accountCode === WELL_KNOWN_CODES.salariesExpense)
@@ -312,6 +318,17 @@ export interface BalanceSheet {
   totalLiabilities: number;
   totalEquity: number;
   balanced: boolean;
+  /**
+   * The جاری/غیرجاری split a classified balance sheet is read by — fixed assets
+   * and borrowings apart from everything that turns over within the year. Sub-
+   * totals only: `assets`/`liabilities` still list every line once, and
+   * `currentAssets + nonCurrentAssets === totalAssets` by construction
+   * (`isNonCurrentCode` partitions, it doesn't filter).
+   */
+  currentAssets: number;
+  nonCurrentAssets: number;
+  currentLiabilities: number;
+  nonCurrentLiabilities: number;
 }
 
 /**
@@ -356,6 +373,11 @@ export async function getBalanceSheet(
   const totalLiabilities = liabilities.reduce((s, l) => s + l.amount, 0);
   const totalEquity = equity.reduce((s, l) => s + l.amount, 0) + retainedEarnings;
 
+  const sumWhere = (lines: PnlLine[], type: AccountType, nonCurrent: boolean) =>
+    lines
+      .filter((l) => isNonCurrentCode(type, l.accountCode) === nonCurrent)
+      .reduce((s, l) => s + l.amount, 0);
+
   return {
     assets,
     liabilities,
@@ -365,6 +387,10 @@ export async function getBalanceSheet(
     totalLiabilities,
     totalEquity,
     balanced: totalAssets === totalLiabilities + totalEquity,
+    currentAssets: sumWhere(assets, "asset", false),
+    nonCurrentAssets: sumWhere(assets, "asset", true),
+    currentLiabilities: sumWhere(liabilities, "liability", false),
+    nonCurrentLiabilities: sumWhere(liabilities, "liability", true),
   };
 }
 
@@ -372,8 +398,19 @@ export async function getBalanceSheet(
 // Cash flow (direct method, by posting source)
 // ---------------------------------------------------------------------------
 
-/** "Cash and cash equivalents" for this statement: the two accounts the system itself auto-posts cash movements to. A business's own plain "bank" account (template code 1110) isn't included — nothing auto-posts to it today, so there's nothing to reconcile it against yet. */
-const CASH_EQUIVALENT_CODES = [WELL_KNOWN_CODES.cash, WELL_KNOWN_CODES.bankClearing];
+/**
+ * "Cash and cash equivalents" for this statement: the accounts the system itself
+ * posts cash movements to.
+ *
+ * The plain bank account (1110) joined the list in Phase 30. It used to be
+ * excluded because nothing auto-posted to it — but a cheque clears *into the
+ * bank*, not into `bankClearing` (which means "card money on its way from the
+ * PSP"), so cheque clearances and presentations land there now. Leaving it out
+ * would drop every cheque that cleared out of the cash-flow statement, which is
+ * a worse answer than the one a business with stray manual entries against 1110
+ * used to get.
+ */
+const CASH_EQUIVALENT_CODES = [WELL_KNOWN_CODES.cash, WELL_KNOWN_CODES.bank, WELL_KNOWN_CODES.bankClearing];
 
 const SOURCE_TYPE_LABELS: Record<string, string> = {
   order: "دریافت از سفارش‌ها",
@@ -385,6 +422,7 @@ const SOURCE_TYPE_LABELS: Record<string, string> = {
   expense: "هزینه‌های عملیاتی",
   payroll_accrual: "تعهد حقوق و دستمزد",
   payroll_payment: "پرداخت حقوق و دستمزد",
+  cheque: "چک",
 };
 
 export interface CashFlowLine {

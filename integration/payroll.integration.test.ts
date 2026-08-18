@@ -21,6 +21,7 @@ let db: Client;
 let dbLib: typeof import("../src/lib/db");
 let payrollService: typeof import("../src/lib/payroll-service");
 let fiscalService: typeof import("../src/lib/fiscal-periods-service");
+let provisioning: typeof import("../src/lib/business-provisioning");
 
 const biz = { id: "" };
 const acct = { cash: "", salariesExpense: "", salariesPayable: "" };
@@ -56,6 +57,7 @@ beforeAll(async () => {
   dbLib = await import("../src/lib/db");
   payrollService = await import("../src/lib/payroll-service");
   fiscalService = await import("../src/lib/fiscal-periods-service");
+  provisioning = await import("../src/lib/business-provisioning");
 
   db = new Client({ connectionString: urlFor(databaseName) });
   await db.connect();
@@ -278,4 +280,63 @@ describe("payPayroll", () => {
       payrollService.payPayroll({ businessId: biz.id, locationId: null, runId: run.id, method: "cash", actorId: owner.id }),
     ).rejects.toThrow("already_paid");
   });
+});
+
+/**
+ * Payroll is not an F&B feature: `industry-profile.ts` puts `ledger` in
+ * CORE_MODULES, so /dashboard/ledger → «حقوق و دستمزد» is offered to a jeweller
+ * and a cosmetics shop exactly as it is to a café. Their seeded charts, though,
+ * were written as "the generic accounts plus this trade's inventory/revenue/COGS
+ * triple" and never picked up 5200 — so every one of those businesses got
+ * `ledger_account_missing: 5200` the first time it ran payroll.
+ *
+ * This seeds from the real template rather than hand-inserting the accounts,
+ * which is the whole point: hand-inserting is what let the gap hide.
+ */
+describe("payroll for a business that is not a café", () => {
+  it.each(["jewelry", "watch", "accessories", "cosmetics"] as const)(
+    "accrues against the %s template's own chart",
+    async (industry) => {
+      const bizRow = await db.query<{ id: string }>(
+        "INSERT INTO businesses (name, slug, industry) VALUES ($1, $2, $3) RETURNING id",
+        [`${industry} Co`, `${industry}-${randomUUID().slice(0, 8)}`, industry],
+      );
+      const businessId = bizRow.rows[0].id;
+
+      await db.query(
+        `INSERT INTO users (business_id, role, full_name, pin_hash, monthly_wage)
+         VALUES ($1, 'cashier', 'Staff', 'x', 25000000)`,
+        [businessId],
+      );
+
+      const client = await dbLib.getPool().connect();
+      try {
+        await provisioning.seedChartOfAccounts(client, businessId, industry);
+      } finally {
+        client.release();
+      }
+
+      const run = await payrollService.accruePayroll({
+        businessId,
+        locationId: null,
+        periodLabel: "مرداد ۱۴۰۴",
+        createdBy: null,
+      });
+      expect(run.totalAmount).toBe(25_000_000);
+
+      // And it landed in the right two accounts, not merely "somewhere".
+      const { rows } = await db.query<{ code: string; debit: string; credit: string }>(
+        `SELECT a.code, jl.debit::text AS debit, jl.credit::text AS credit
+           FROM journal_lines jl
+           JOIN journal_entries je ON je.id = jl.entry_id
+           JOIN accounts a ON a.id = jl.account_id
+          WHERE je.business_id = $1 AND je.source_type = 'payroll_accrual'
+          ORDER BY a.code`,
+        [businessId],
+      );
+      expect(rows.map((r) => r.code)).toEqual(["2300", "5200"]);
+      expect(Number(rows.find((r) => r.code === "5200")!.debit)).toBe(25_000_000);
+      expect(Number(rows.find((r) => r.code === "2300")!.credit)).toBe(25_000_000);
+    },
+  );
 });

@@ -22,6 +22,7 @@ let db: Client;
 let dbLib: typeof import("../src/lib/db");
 let fixedAssetsService: typeof import("../src/lib/fixed-assets-service");
 let fiscalService: typeof import("../src/lib/fiscal-periods-service");
+let provisioning: typeof import("../src/lib/business-provisioning");
 
 const biz = { id: "", locationId: "" };
 const acct = { depreciationExpense: "", accumulatedDepreciation: "" };
@@ -56,6 +57,7 @@ beforeAll(async () => {
   dbLib = await import("../src/lib/db");
   fixedAssetsService = await import("../src/lib/fixed-assets-service");
   fiscalService = await import("../src/lib/fiscal-periods-service");
+  provisioning = await import("../src/lib/business-provisioning");
 
   db = new Client({ connectionString: urlFor(databaseName) });
   await db.connect();
@@ -296,4 +298,71 @@ describe("deleteFixedAsset", () => {
     });
     await expect(fixedAssetsService.deleteFixedAsset(biz.id, asset.id)).rejects.toThrow("fixed_asset_has_depreciation");
   });
+});
+
+/**
+ * Depreciation is offered to every trade (`ledger` is a CORE_MODULE), but only
+ * F&B's seeded chart had either side of the entry: the four retail templates
+ * carried «اثاثه و تجهیزات» with no 1510 under it and no 5700 to debit, so a
+ * jewellery or cosmetics shop got `ledger_account_missing` the first time it ran
+ * a month's depreciation.
+ *
+ * Seeded from the real template on purpose — hand-inserting the two accounts,
+ * as the fixture above does, is exactly what let the gap go unnoticed.
+ */
+describe("depreciation for a business that is not a café", () => {
+  it.each(["jewelry", "watch", "accessories", "cosmetics"] as const)(
+    "posts against the %s template's own chart",
+    async (industry) => {
+      const bizRow = await db.query<{ id: string }>(
+        "INSERT INTO businesses (name, slug, industry) VALUES ($1, $2, $3) RETURNING id",
+        [`${industry} Co`, `${industry}-${randomUUID().slice(0, 8)}`, industry],
+      );
+      const businessId = bizRow.rows[0].id;
+      const locRow = await db.query<{ id: string }>(
+        `INSERT INTO locations (business_id, name) VALUES ($1, 'Main') RETURNING id`,
+        [businessId],
+      );
+
+      const client = await dbLib.getPool().connect();
+      try {
+        await provisioning.seedChartOfAccounts(client, businessId, industry);
+      } finally {
+        client.release();
+      }
+
+      const asset = await fixedAssetsService.createFixedAsset({
+        businessId,
+        locationId: locRow.rows[0].id,
+        name: "ویترین",
+        acquisitionDate: "2025-01-01",
+        cost: 120_000_000,
+        salvageValue: 0,
+        usefulLifeMonths: 60,
+        createdBy: null,
+      });
+
+      await fixedAssetsService.postDepreciation({
+        businessId,
+        locationId: locRow.rows[0].id,
+        fixedAssetId: asset.id,
+        periodLabel: "بهمن ۱۴۰۳",
+        createdBy: null,
+      });
+
+      const { rows } = await db.query<{ code: string; debit: string; credit: string }>(
+        `SELECT a.code, jl.debit::text AS debit, jl.credit::text AS credit
+           FROM journal_lines jl
+           JOIN journal_entries je ON je.id = jl.entry_id
+           JOIN accounts a ON a.id = jl.account_id
+          WHERE je.business_id = $1
+          ORDER BY a.code`,
+        [businessId],
+      );
+      expect(rows.map((r) => r.code)).toEqual(["1510", "5700"]);
+      expect(Number(rows.find((r) => r.code === "5700")!.debit)).toBe(2_000_000);
+      expect(Number(rows.find((r) => r.code === "1510")!.credit)).toBe(2_000_000);
+      expect(asset.cost).toBe(120_000_000);
+    },
+  );
 });

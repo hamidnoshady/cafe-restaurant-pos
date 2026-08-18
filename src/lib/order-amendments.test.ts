@@ -78,7 +78,7 @@ describe("validateAmendment", () => {
     expect(cleared.ok && cleared.value.tipAmount).toBe(0);
   });
 
-  it("rejects a payment method the till cannot take", () => {
+  it("rejects a payment method the till cannot take — چک is a real settlement class, and still not one of them", () => {
     expect(validateAmendment(edit({ paymentMethod: "cheque" }))).toEqual({
       ok: false,
       error: "invalid_payment_method",

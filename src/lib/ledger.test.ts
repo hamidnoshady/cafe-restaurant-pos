@@ -14,6 +14,7 @@ const ORDER_ACCOUNTS = {
   cash: "cash",
   bankClearing: "bank",
   accountsReceivable: "ar",
+  chequesOnHand: "cheques",
   salesRevenue: "revenue",
   vatPayable: "vat",
 };

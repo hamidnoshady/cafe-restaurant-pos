@@ -6,6 +6,7 @@ import {
   CalculatorIcon,
   CircleIcon,
   ClipboardListIcon,
+  ScrollTextIcon,
   UsersIcon,
 } from "lucide-react";
 import { api, ErrorBox } from "../ui";
@@ -15,6 +16,7 @@ import { ManualEntrySection } from "./manual-entry-section";
 import { FiscalPeriodsSection } from "./fiscal-periods-section";
 import { ArSection } from "./ar-section";
 import { ApSection } from "./ap-section";
+import { ChequesSection } from "./cheques-section";
 import { ReconciliationSection } from "./reconciliation-section";
 import { ChartOfAccountsSection } from "./chart-of-accounts-section";
 import { ExpenseSection } from "./expense-section";
@@ -39,6 +41,7 @@ const TABS = [
   { key: "fiscal-periods", label: "دوره‌های مالی", icon: CalendarDaysIcon },
   { key: "ar", label: "حساب‌های دریافتنی", icon: UsersIcon },
   { key: "ap", label: "حساب‌های پرداختنی", icon: UsersIcon },
+  { key: "cheques", label: "چک‌ها", icon: ScrollTextIcon },
   { key: "reconciliation", label: "تطبیق بانکی", icon: CircleIcon },
   { key: "chart-of-accounts", label: "سرفصل حساب‌ها", icon: CalculatorIcon },
   { key: "payroll", label: "حقوق و دستمزد", icon: UsersIcon },
@@ -111,6 +114,7 @@ export function LedgerManager({ role }: { role: string }) {
           {tab === "fiscal-periods" ? <FiscalPeriodsSection busy={busy} run={run} /> : null}
           {tab === "ar" ? <ArSection busy={busy} run={run} /> : null}
           {tab === "ap" ? <ApSection busy={busy} run={run} /> : null}
+          {tab === "cheques" ? <ChequesSection busy={busy} run={run} /> : null}
           {tab === "reconciliation" ? <ReconciliationSection busy={busy} run={run} /> : null}
           {tab === "chart-of-accounts" ? <ChartOfAccountsSection busy={busy} run={run} /> : null}
           {tab === "payroll" ? <PayrollSection busy={busy} run={run} refreshKey={refreshKey} /> : null}
@@ -179,6 +183,17 @@ function errorMessage(code: string | undefined): string {
     // Phase 16 — AP subledger
     supplier_required: "انتخاب تأمین‌کننده الزامی است.",
     supplier_not_found: "تأمین‌کننده انتخاب‌شده معتبر نیست.",
+    // Phase 30 — cheques
+    invalid_direction: "نوع چک معتبر نیست.",
+    invalid_action: "این عملیات روی چک تعریف نشده است.",
+    invalid_cheque_transition: "این تغییر وضعیت برای چک ممکن نیست؛ ممکن است وضعیت چک را کسی دیگر تغییر داده باشد.",
+    cheque_not_found: "چک پیدا نشد.",
+    duplicate_cheque: "چکی با همین شماره و بانک (یا همین شناسه صیاد) قبلاً ثبت شده است.",
+    invalid_sayad_id: "شناسه صیاد باید ۱۶ رقم باشد.",
+    serial_number_required: "شماره چک الزامی است.",
+    bank_name_required: "نام بانک الزامی است.",
+    counterparty_name_required: "نام صاحب چک الزامی است.",
+    due_date_required: "تاریخ سررسید الزامی است.",
     // Phase 16 — bank & cash reconciliation
     invalid_account: "حساب انتخاب‌شده معتبر نیست.",
     statement_date_required: "تاریخ صورتحساب الزامی است.",

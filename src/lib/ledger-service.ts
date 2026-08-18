@@ -355,6 +355,9 @@ const SETTLEMENT_DEBIT_CODES: Record<string, string | undefined> = {
   card_to_card: WELL_KNOWN_CODES.bankClearing,
   online: WELL_KNOWN_CODES.bankClearing,
   credit: WELL_KNOWN_CODES.accountsReceivable,
+  // Not cash and not a card: a cheque sits in چک‌های نزد صندوق until it clears,
+  // and the checkout writes the `cheques` row that says which cheque it is.
+  cheque: WELL_KNOWN_CODES.chequesOnHand,
   snappfood: WELL_KNOWN_CODES.platformReceivable,
 };
 
@@ -718,6 +721,7 @@ export async function postOrderPaymentEntry(
     WELL_KNOWN_CODES.cash,
     WELL_KNOWN_CODES.bankClearing,
     WELL_KNOWN_CODES.accountsReceivable,
+    WELL_KNOWN_CODES.chequesOnHand,
     WELL_KNOWN_CODES.salesRevenue,
     WELL_KNOWN_CODES.vatPayable,
   ]);
@@ -726,6 +730,7 @@ export async function postOrderPaymentEntry(
       cash: accounts.get(WELL_KNOWN_CODES.cash)!,
       bankClearing: accounts.get(WELL_KNOWN_CODES.bankClearing)!,
       accountsReceivable: accounts.get(WELL_KNOWN_CODES.accountsReceivable)!,
+      chequesOnHand: accounts.get(WELL_KNOWN_CODES.chequesOnHand)!,
       salesRevenue: accounts.get(WELL_KNOWN_CODES.salesRevenue)!,
       vatPayable: accounts.get(WELL_KNOWN_CODES.vatPayable)!,
     },

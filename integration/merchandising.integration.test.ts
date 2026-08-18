@@ -23,6 +23,7 @@ let dbLib: typeof import("../src/lib/db");
 let itemsService: typeof import("../src/lib/items-service");
 let accessories: typeof import("../src/lib/accessories-service");
 let merch: typeof import("../src/lib/merchandising-service");
+let provisioning: typeof import("../src/lib/business-provisioning");
 
 const biz = { id: "", locationId: "" };
 const acct = { inventory: "", writeDownExpense: "" };
@@ -55,6 +56,7 @@ beforeAll(async () => {
   itemsService = await import("../src/lib/items-service");
   accessories = await import("../src/lib/accessories-service");
   merch = await import("../src/lib/merchandising-service");
+  provisioning = await import("../src/lib/business-provisioning");
 
   db = new Client({ connectionString: urlFor(databaseName) });
   await db.connect();
@@ -95,13 +97,21 @@ beforeEach(async () => {
   );
   biz.locationId = locRow.rows[0].id;
 
+  // Seeded from the real cosmetics template, not hand-inserted. Hand-inserting
+  // 5170 here is what hid the fact that the template didn't contain it — a
+  // markdown posted fine in CI and failed with `ledger_account_missing` in an
+  // actual cosmetics shop.
+  const client = await dbLib.getPool().connect();
+  try {
+    await provisioning.seedChartOfAccounts(client, biz.id, "cosmetics");
+  } finally {
+    client.release();
+  }
   const accounts = await db.query<{ id: string; code: string }>(
-    `INSERT INTO accounts (business_id, code, name, type)
-     VALUES ($1, '1350', 'Cosmetic inventory', 'asset'),
-            ($1, '5170', 'Inventory write-down', 'expense')
-     RETURNING id, code`,
+    `SELECT id, code FROM accounts WHERE business_id = $1 AND code IN ('1350', '5170')`,
     [biz.id],
   );
+  expect(accounts.rows).toHaveLength(2);
   for (const row of accounts.rows) {
     if (row.code === "1350") acct.inventory = row.id;
     if (row.code === "5170") acct.writeDownExpense = row.id;
