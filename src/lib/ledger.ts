@@ -62,6 +62,7 @@ export interface OrderPaymentAccounts {
   cash: string;
   bankClearing: string;
   accountsReceivable: string;
+  chequesOnHand: string;
   salesRevenue: string;
   vatPayable: string;
 }
@@ -76,6 +77,8 @@ function paymentDebitAccount(accounts: OrderPaymentAccounts, method: string): st
       return accounts.bankClearing;
     case "credit":
       return accounts.accountsReceivable;
+    case "cheque":
+      return accounts.chequesOnHand;
     default:
       throw new Error(`unknown_payment_method: ${method}`);
   }

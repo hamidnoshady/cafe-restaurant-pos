@@ -68,6 +68,7 @@ export const PAYMENT_METHOD_LABELS: Record<string, string> = {
   cash: "نقدی",
   card: "کارت‌خوان",
   card_to_card: "کارت‌به‌کارت",
+  cheque: "چک",
   online: "پرداخت آنلاین",
   credit: "نسیه",
   snappfood: "اسنپ‌فود",

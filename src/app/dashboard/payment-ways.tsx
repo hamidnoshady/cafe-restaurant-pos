@@ -7,7 +7,7 @@
  * in both places (see src/lib/payment-draft.ts for the arithmetic).
  */
 import { useCallback, useEffect, useState } from "react";
-import { BanknoteIcon, CreditCardIcon, PlusIcon, ReceiptTextIcon, SmartphoneIcon, WalletIcon, XIcon } from "lucide-react";
+import { BanknoteIcon, CreditCardIcon, PlusIcon, ReceiptTextIcon, ScrollTextIcon, SmartphoneIcon, WalletIcon, XIcon } from "lucide-react";
 import { formatToman } from "@/lib/money";
 import {
   draftRemaining,
@@ -24,6 +24,7 @@ const SETTLEMENT_ICONS: Record<PaymentSettlement, typeof BanknoteIcon> = {
   card_to_card: WalletIcon,
   online: SmartphoneIcon,
   credit: ReceiptTextIcon,
+  cheque: ScrollTextIcon,
   snappfood: SmartphoneIcon,
 };
 

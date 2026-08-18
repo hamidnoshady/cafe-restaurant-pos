@@ -256,3 +256,87 @@ describe("getAccountStatement", () => {
     expect(statement!.closingBalance).toBe(0);
   });
 });
+
+/**
+ * `COST_OF_SALES_CODES` used to be one flat list naming only F&B's codes, and
+ * `getProfitAndLoss` filtered against it for every business. A jeweller's COGS
+ * (5110) therefore fell into operating expense and their gross profit came out
+ * equal to total revenue — the report was not wrong by a little, it was reporting
+ * a shop with no cost of goods at all.
+ */
+describe("getProfitAndLoss for a business that is not a café", () => {
+  it("counts the jewellery shop's own cost of goods sold", async () => {
+    const bizRow = await db.query<{ id: string }>(
+      "INSERT INTO businesses (name, slug, industry) VALUES ('Gold Co', $1, 'jewelry') RETURNING id",
+      [`gold-${randomUUID().slice(0, 8)}`],
+    );
+    const jeweller = bizRow.rows[0].id;
+    const accounts = await db.query<{ id: string; code: string }>(
+      `INSERT INTO accounts (business_id, code, name, type)
+       VALUES ($1, '1100', 'Cash', 'asset'), ($1, '4500', 'Gold sales', 'revenue'),
+              ($1, '5110', 'Gold COGS', 'expense'), ($1, '5300', 'Rent', 'expense')
+       RETURNING id, code`,
+      [jeweller],
+    );
+    const byCode = Object.fromEntries(accounts.rows.map((r) => [r.code, r.id]));
+
+    const entry = await db.query<{ id: string }>(
+      `INSERT INTO journal_entries (business_id, entry_date, memo, source_type)
+       VALUES ($1, '2025-04-01', 'sale', 'manual') RETURNING id`,
+      [jeweller],
+    );
+    await db.query(
+      `INSERT INTO journal_lines (entry_id, account_id, debit, credit) VALUES
+         ($1, $2, 1000000, 0), ($1, $3, 0, 1000000),
+         ($1, $4, 600000, 0), ($1, $2, 0, 600000),
+         ($1, $5, 100000, 0), ($1, $2, 0, 100000)`,
+      [entry.rows[0].id, byCode["1100"], byCode["4500"], byCode["5110"], byCode["5300"]],
+    );
+
+    const pnl = await reportsService.getProfitAndLoss(jeweller, {
+      dateFrom: "2025-04-01",
+      dateTo: "2025-04-30",
+    });
+    expect(pnl.totalRevenue).toBe(1_000_000);
+    expect(pnl.costOfSales).toBe(600_000);
+    expect(pnl.grossProfit).toBe(400_000);
+    expect(pnl.operatingExpenses).toBe(100_000);
+  });
+});
+
+describe("getBalanceSheet's جاری/غیرجاری split", () => {
+  it("puts fixed assets and borrowings on the non-current side and everything else on the current one", async () => {
+    const accounts = await db.query<{ id: string; code: string }>(
+      `INSERT INTO accounts (business_id, code, name, type)
+       VALUES ($1, '1500', 'Equipment', 'asset'), ($1, '2100', 'AP', 'liability'),
+              ($1, '2500', 'Borrowings', 'liability')
+       RETURNING id, code`,
+      [biz.id],
+    );
+    const byCode = Object.fromEntries(accounts.rows.map((r) => [r.code, r.id]));
+
+    // Cash 400 + equipment 600, funded by AP 200, borrowings 800.
+    const entry = await db.query<{ id: string }>(
+      `INSERT INTO journal_entries (business_id, entry_date, memo, source_type)
+       VALUES ($1, '2025-04-01', 'opening', 'manual') RETURNING id`,
+      [biz.id],
+    );
+    await db.query(
+      `INSERT INTO journal_lines (entry_id, account_id, debit, credit) VALUES
+         ($1, $2, 400000, 0), ($1, $3, 600000, 0),
+         ($1, $4, 0, 200000), ($1, $5, 0, 800000)`,
+      [entry.rows[0].id, acct.cash, byCode["1500"], byCode["2100"], byCode["2500"]],
+    );
+
+    const sheet = await reportsService.getBalanceSheet(biz.id, "2025-04-30");
+    expect(sheet.nonCurrentAssets).toBe(600_000);
+    expect(sheet.currentAssets).toBe(400_000);
+    expect(sheet.nonCurrentLiabilities).toBe(800_000);
+    expect(sheet.currentLiabilities).toBe(200_000);
+    // The split partitions rather than filters: nothing is counted twice, and
+    // nothing goes missing.
+    expect(sheet.currentAssets + sheet.nonCurrentAssets).toBe(sheet.totalAssets);
+    expect(sheet.currentLiabilities + sheet.nonCurrentLiabilities).toBe(sheet.totalLiabilities);
+    expect(sheet.balanced).toBe(true);
+  });
+});

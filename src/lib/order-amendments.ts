@@ -14,6 +14,15 @@
 export const AMENDMENT_KINDS = ["edit", "void"] as const;
 export type AmendmentKind = (typeof AMENDMENT_KINDS)[number];
 
+/**
+ * The ways an amendment may re-settle a bill.
+ *
+ * `cheque` is a settlement class (migration 0096) but is deliberately absent:
+ * the till does not take cheques in any of its forms. A cheque needs a serial,
+ * a bank and a due date that no tender slot can hold, and a shift reconciles
+ * `gross_total` against exactly four method buckets. Cheques are recorded in the
+ * register instead — see src/lib/payment-methods.ts's CUSTOM_PAYMENT_SETTLEMENTS.
+ */
 export const AMENDMENT_PAYMENT_METHODS = [
   "cash",
   "card",

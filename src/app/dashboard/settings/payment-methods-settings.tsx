@@ -13,6 +13,7 @@ const SETTLEMENT_LABELS: Record<PaymentSettlement, string> = {
   card_to_card: "کارت‌به‌کارت — به بانک در راه (۱۰۲۰)",
   online: "درگاه آنلاین — به بانک در راه (۱۰۲۰)",
   credit: "نسیه — به حساب‌های دریافتنی (۱۳۰۰)",
+  cheque: "چک — به چک‌های نزد صندوق (۱۲۴۱)",
   snappfood: "اسنپ‌فود — به مطالبات از پلتفرم",
 };
 

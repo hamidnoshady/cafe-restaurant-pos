@@ -1,0 +1,21 @@
+-- `cheque` as a settlement class.
+--
+-- A cheque is a way money arrives, so `payment_method` — the enum behind both
+-- `payments.method` and `payment_methods.settlement` — needs the value. What it
+-- names is the account a cheque lands in: چک‌های نزد صندوق (1241), a receivable
+-- that stays on the books until the cheque clears, not cash and not a card.
+--
+-- Note what this migration deliberately does NOT do: seed a «چک» payment way.
+-- A cheque is not a tender the till can take. It has a serial number, a bank, a
+-- due date and a life of its own, and a checkout that accepted one would leave
+-- 1241 holding a balance no register could explain — and the bill's total in a
+-- shift's `gross_total` with no method bucket accounting for it. Cheques are
+-- recorded in the register instead (/dashboard/ledger → «چک‌ها»), where they
+-- settle the customer's or supplier's account. `CUSTOM_PAYMENT_SETTLEMENTS`
+-- (src/lib/payment-methods.ts) excludes `cheque` for the same reason, so nobody
+-- can mint a way around it either.
+--
+-- The enum value is added on its own because Postgres refuses to *use* a value
+-- inside the transaction that added it, and scripts/migrate.ts wraps each file
+-- in BEGIN/COMMIT. Migration 0060 split 'snappfood' the same way.
+ALTER TYPE payment_method ADD VALUE 'cheque';

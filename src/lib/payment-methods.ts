@@ -23,7 +23,7 @@ import type { Rial } from "./money";
  * The settlement classes — the `payment_method` enum, which is also the set of
  * debit accounts the order-payment posting knows how to reach.
  */
-export const PAYMENT_SETTLEMENTS = ["cash", "card", "card_to_card", "online", "credit", "snappfood"] as const;
+export const PAYMENT_SETTLEMENTS = ["cash", "card", "card_to_card", "online", "credit", "cheque", "snappfood"] as const;
 
 export type PaymentSettlement = (typeof PAYMENT_SETTLEMENTS)[number];
 
@@ -38,9 +38,18 @@ export function isPaymentSettlement(value: unknown): value is PaymentSettlement 
  * driven by one business-wide contract percentage (issue #160 §4), so a second
  * way settling as SnapFood would silently claim the same contract's rate. The
  * built-in stays; nobody gets to mint another.
+ *
+ * `cheque` is missing for a different reason (Phase 30). A cheque is not a
+ * tender the till can take: it has a serial, a bank, a due date and a life of
+ * its own, and settling a bill with one would leave چک‌های نزد صندوق holding a
+ * balance no register could explain — and the bill's total sitting in a shift's
+ * `gross_total` with no method bucket accounting for it. A cheque is recorded in
+ * the register instead (`/dashboard/ledger` → «چک‌ها»), where it settles the
+ * customer's or supplier's account; the settlement class exists so the ledger
+ * knows which account that is, not so a checkout can offer it.
  */
 export const CUSTOM_PAYMENT_SETTLEMENTS = PAYMENT_SETTLEMENTS.filter(
-  (method) => method !== "snappfood",
+  (method) => method !== "snappfood" && method !== "cheque",
 ) as readonly PaymentSettlement[];
 
 export interface PaymentMethodDefaults {
@@ -85,8 +94,10 @@ export function builtinPaymentMethodsFor(industry: string): PaymentMethodDefault
  *
  * Those paths settle a sale one way and know three destinations, so this is a
  * narrowing, not a translation: everything card-shaped is "bank" to them.
- * Returns null for a way they have no account for — SnapFood, which only a
- * food-service business has, and which never reaches a retail invoice.
+ * Returns null for a way that cannot settle an invoice: SnapFood, which only a
+ * food-service business has an account for and which never reaches a retail
+ * invoice, and `cheque`, which is recorded in the register instead of at a
+ * checkout (see CUSTOM_PAYMENT_SETTLEMENTS above).
  */
 export function ledgerSettlementFor(settlement: PaymentSettlement): "cash" | "bank" | "credit" | null {
   switch (settlement) {
@@ -98,6 +109,12 @@ export function ledgerSettlementFor(settlement: PaymentSettlement): "cash" | "ba
       return "bank";
     case "credit":
       return "credit";
+    // A cheque is not a tender: it is recorded in the register, where it
+    // settles the account rather than the invoice. Returning null keeps it out
+    // of the invoice screen's way picker — the same thing this already does for
+    // SnapFood — rather than posting it as cash, bank or credit, none of which
+    // it is.
+    case "cheque":
     case "snappfood":
       return null;
   }
