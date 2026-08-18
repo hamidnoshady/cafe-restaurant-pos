@@ -17,11 +17,26 @@ describe("resolveDeploymentRole", () => {
       role: "site",
       source: "explicit",
     });
+    expect(resolveDeploymentRole({ DEPLOYMENT_ROLE: "site", ROOT_DOMAIN: "app.eshobe.com" })).toEqual({
+      role: "site",
+      source: "explicit",
+    });
   });
 
   it("infers central from REMOTE_SYNC_TOKEN or POS_DOMAIN, matching the pre-Phase-21 behaviour", () => {
     expect(resolveDeploymentRole({ REMOTE_SYNC_TOKEN: "secret" })).toEqual({ role: "central", source: "inferred" });
     expect(resolveDeploymentRole({ POS_DOMAIN: "pos.eshobe.com" })).toEqual({ role: "central", source: "inferred" });
+  });
+
+  it("infers central from ROOT_DOMAIN, so a cloud deploy with per-business subdomains is never a site", () => {
+    expect(resolveDeploymentRole({ ROOT_DOMAIN: "app.eshobe.com" })).toEqual({
+      role: "central",
+      source: "inferred",
+    });
+    expect(resolveDeploymentRole({ ROOT_DOMAIN: "ac.eshobe.com" })).toEqual({
+      role: "central",
+      source: "inferred",
+    });
   });
 
   it("infers site when nothing points at a central server", () => {
@@ -39,6 +54,7 @@ describe("resolveDeploymentRole", () => {
 
   it("does not read an empty env var as present", () => {
     expect(resolveDeploymentRole({ REMOTE_SYNC_TOKEN: "", POS_DOMAIN: "  " }).role).toBe("site");
+    expect(resolveDeploymentRole({ REMOTE_SYNC_TOKEN: "", POS_DOMAIN: "  ", ROOT_DOMAIN: "   " }).role).toBe("site");
   });
 });
 
@@ -50,6 +66,16 @@ describe("resolvePlatformBaseUrl", () => {
 
   it("falls back to POS_DOMAIN over https", () => {
     expect(resolvePlatformBaseUrl({ POS_DOMAIN: "pos.eshobe.com" })).toBe("https://pos.eshobe.com");
+  });
+
+  it("falls back to ROOT_DOMAIN when it is the only name the deployment declares", () => {
+    expect(resolvePlatformBaseUrl({ ROOT_DOMAIN: "app.eshobe.com" })).toBe("https://app.eshobe.com");
+  });
+
+  it("prefers POS_DOMAIN over ROOT_DOMAIN when both are set", () => {
+    expect(resolvePlatformBaseUrl({ POS_DOMAIN: "pos.eshobe.com", ROOT_DOMAIN: "app.eshobe.com" })).toBe(
+      "https://pos.eshobe.com",
+    );
   });
 
   it("tolerates a POS_DOMAIN that was set with a scheme or a trailing slash anyway", () => {
@@ -65,6 +91,7 @@ describe("resolvePlatformBaseUrl", () => {
   it("returns null when neither is set — the normal state on an unpaired site", () => {
     expect(resolvePlatformBaseUrl({})).toBe(null);
     expect(resolvePlatformBaseUrl({ PLATFORM_BASE_URL: "  " })).toBe(null);
+    expect(resolvePlatformBaseUrl({ POS_DOMAIN: "  ", ROOT_DOMAIN: "   " })).toBe(null);
   });
 });
 
@@ -72,6 +99,9 @@ describe("describeDeploymentRole", () => {
   it("reports the role, where it came from, and the platform URL when there is one", () => {
     expect(describeDeploymentRole({ DEPLOYMENT_ROLE: "central", POS_DOMAIN: "pos.eshobe.com" })).toBe(
       "> deployment role: central (explicit), platform https://pos.eshobe.com",
+    );
+    expect(describeDeploymentRole({ ROOT_DOMAIN: "app.eshobe.com" })).toBe(
+      "> deployment role: central (inferred), platform https://app.eshobe.com",
     );
     expect(describeDeploymentRole({})).toBe("> deployment role: site (inferred)");
   });

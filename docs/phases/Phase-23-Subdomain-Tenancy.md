@@ -135,11 +135,13 @@ canonical-form storage.
 
 ## Decisions
 
-- **Unset infers exactly what the code inferred before.** `central` if `REMOTE_SYNC_TOKEN` or
-  `POS_DOMAIN` is set, else `site` — so no existing deployment changes behaviour on upgrade. An
-  unrecognised value is treated as unset rather than throwing: refusing to boot over a typo'd env
-  var is a worse failure than falling back to the behaviour the install already had. `server.ts`
-  logs the decision *and its source*, because inference is exactly when an operator needs to see it.
+- **Unset infers from the environment.** `central` if `REMOTE_SYNC_TOKEN`, `POS_DOMAIN` or
+  `ROOT_DOMAIN` is set, else `site`. `ROOT_DOMAIN` joined the list after the Wave 5 cutover, when a
+  cloud deployment served per-business subdomains and declared no other central-server hint — before
+  that the inference was `REMOTE_SYNC_TOKEN` or `POS_DOMAIN` only. An unrecognised value is treated
+  as unset rather than throwing: refusing to boot over a typo'd env var is a worse failure than
+  falling back to the behaviour the install already had. `server.ts` logs the decision *and its
+  source*, because inference is exactly when an operator needs to see it.
 - **`getPairedSite` is singular, not a list.** `server_sync_tokens` is keyed by `business_id`
   (migration 0033), so one paired install per business is the design, and `setServerSyncConfig`
   replaces the row rather than appending. A list would have implied a model the schema does not have.
