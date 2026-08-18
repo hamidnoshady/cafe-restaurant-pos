@@ -370,10 +370,21 @@ rows.
   *not* derived from it: a sale rung afterwards is still filed under the business day it happened in.
   That is what makes it safe — no cash-up and no button can move money between report rows. Both also
   expire on their own once the next business day begins, so there is no state to clean up.
+- **A bill belongs to the shift that opened it.** Every shift-scoped order read buckets on
+  `orders.opened_at`, never on `closed_at` — one predicate, `ORDER_OPENED_IN_WINDOW`
+  (`src/lib/order-read-service.ts`), shared by the orders screen's settled list and the
+  «سفارش‌های شیفت» report so the two cannot disagree. A table opened at 23:30 and finally paid at 08:00
+  is one sale, and it is the *night* shift's: that shift seated the guests and rang the items in. So a
+  carried-over bill stays in its own shift's list and report however late it is settled, and the shift
+  that merely took the last payment is never shown a sale it did not make. Keyed on `closed_at` it did
+  both wrong at once — it vanished from the shift that opened it and inflated the one that closed it.
+  The still-open queue is unbounded by time either way, so a carried-over table is always settleable;
+  it simply files itself back under its own shift once it is.
 
 **What follows the business day.** The reporting views (sales, menu items, modifiers, shift
 reconciliation, staff performance, waste, delivery, courier); the dashboard KPIs and sales-trend
-chart; the orders screen's closed-order window; `employee_shifts.business_date`; the reports
+chart; the orders screen's settled-order window (whose *contents* are then bucketed by
+`opened_at`, per the rule above); `employee_shifts.business_date`; the reports
 screens' quick ranges («روز کاری جاری» و…), which anchor on the branch's current business date
 rather than on the browser's calendar; the cross-server rollup's `getBusinessToday`; the AI
 assistant's default date ranges; and the default date on a new purchase.

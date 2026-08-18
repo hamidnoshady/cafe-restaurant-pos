@@ -124,6 +124,12 @@ async function insertOrder(
     guestCount?: number;
     note?: string | null;
     payments?: { method: string; amount: number; reference?: string | null; receivedAt?: string }[];
+    /**
+     * When the bill was actually settled. Defaults to `openedAt` — most fixtures
+     * do not care — but a bill carried across a cash-up is precisely one that
+     * closes long after it opened, so that case has to be able to say so.
+     */
+    closedAt?: string;
   },
 ): Promise<string> {
   // orders/order_items scope by location_id, not business_id (migration 0001).
@@ -200,7 +206,7 @@ async function insertOrder(
 
   await db.query(
     "UPDATE orders SET status = 'completed', closed_at = $2, closed_by = $3 WHERE id = $1",
-    [orderId, openedAt, employeeId],
+    [orderId, opts.closedAt ?? openedAt, employeeId],
   );
   return orderId;
 }
@@ -297,6 +303,39 @@ describe("getShiftOrdersReport", () => {
     expect(report!.shift.id).toBe(current);
     expect(report!.orders.map((o) => o.orderNumber)).toEqual([2]);
     expect(report!.orders[0]!.lines.map((l) => l.name)).toEqual(["اسپرسو"]);
+  });
+
+  /**
+   * The bill nobody could settle before the cash-up. It belongs to the shift
+   * that opened it — that is the shift that seated the guests and rang the
+   * items in — so it stays in that shift's review however much later the money
+   * arrives, and the shift that merely took the last payment is not shown a
+   * sale it did not make. The orders screen buckets by the same rule
+   * (`ORDER_OPENED_IN_WINDOW`), so the two screens cannot disagree.
+   */
+  it("keeps a bill with the shift that opened it, not the one that settled it", async () => {
+    const previous = await insertShift(mainId, "2026-08-10T06:00:00Z", "2026-08-10T14:00:00Z");
+    const current = await insertShift(mainId, "2026-08-10T14:00:01Z", null);
+
+    await insertOrder(mainId, "2026-08-10T13:30:00Z", {
+      orderNumber: 1,
+      total: 500_000,
+      itemName: "چای",
+      // Settled an hour into the next shift, long after this one was cashed up.
+      closedAt: "2026-08-10T15:00:00Z",
+    });
+    await insertOrder(mainId, "2026-08-10T16:00:00Z", {
+      orderNumber: 2,
+      total: 900_000,
+      itemName: "اسپرسو",
+    });
+
+    const [previousReport, currentReport] = await asBusiness(async () => [
+      await shiftOrders.getShiftOrdersReport(mainId, previous),
+      await shiftOrders.getShiftOrdersReport(mainId, current),
+    ]);
+    expect(previousReport!.orders.map((o) => o.orderNumber)).toEqual([1]);
+    expect(currentReport!.orders.map((o) => o.orderNumber)).toEqual([2]);
   });
 
   it("reports an earlier shift's own orders when one is named", async () => {

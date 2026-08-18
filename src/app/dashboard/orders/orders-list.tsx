@@ -106,7 +106,7 @@ function shiftOptionLabel(shift: ShiftOption): string {
   return `${shift.employeeName} · ${start} تا ${end}`;
 }
 
-/** Closed = it left the queue. The pair `listOrdersClosedSince` reads back. */
+/** Closed = it left the queue. The pair `listSettledOrdersInWindow` reads back. */
 const CLOSED_STATUSES: OrderStatus[] = ["completed", "voided"];
 
 function isClosed(order: OrderRow): boolean {
@@ -993,6 +993,10 @@ export function OrdersList({
                   : shiftStartedAt
                     ? `سفارش‌های بسته‌شده از شروع شیفت (ساعت ${orderTimeLabel(shiftStartedAt)}) نمایش داده می‌شوند.`
                     : "سفارش‌های بسته‌شدهٔ امروز نمایش داده می‌شوند؛ با شروع شیفت، فهرست از زمان شیفت شمرده می‌شود."}
+              {" "}
+              هر سفارش به شیفتی تعلق دارد که در آن <b className="font-bold">باز</b> شده است، نه شیفتی
+              که در آن تسویه شده؛ پس صورت‌حساب جامانده از شیفت پیشین، هر زمان که بسته شود، در فهرست و
+              گزارش همان شیفت می‌ماند و به این فهرست افزوده نمی‌شود.
             </p>
           ) : null}
 

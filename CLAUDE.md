@@ -115,6 +115,15 @@ date instead of splitting it at midnight. See the "The business day" section of
 - **The night ends at the cash-up.** The live window starts at the branch's last
   `employee_shifts.ended_at` once nobody is clocked in (a handover doesn't count); «بستن روز کاری» is
   the override for branches that don't clock in. A start time alone can only say when a day begins.
+- **A bill belongs to the shift/day it was *opened* in, not the one that settled it.** Every
+  shift-scoped order read shares one predicate — `ORDER_OPENED_IN_WINDOW`
+  (`src/lib/order-read-service.ts`) — so the orders screen's settled list and the «سفارش‌های شیفت»
+  report can't disagree. A table opened at 23:30 and paid at 08:00 stays the *night* shift's sale: it
+  keeps showing in that shift's list however late it closes, and the shift that took the last payment
+  is not credited with it. Don't reach for `closed_at` to bucket a shift — that is the bug this
+  replaced, and it got both halves wrong at once. Shift *cash* figures are a separate question and stay
+  on `closed_by`/`closed_at` on purpose: `shiftCashSummary` answers "what is in this employee's till",
+  so the drawer count reconciles against money they actually held.
 - **Ending a day is display-only, by decision.** A cash-up or a manual close moves the live window,
   never a report's bucket — don't "fix" reports to honour them.
 
