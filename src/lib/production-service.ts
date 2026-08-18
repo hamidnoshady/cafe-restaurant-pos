@@ -193,7 +193,7 @@ export async function listRuns(locationId: string, limit = 100): Promise<Product
             r.output_inventory_item_id, oi.name AS output_item_name, oi.unit AS output_unit,
             r.batches::text, (f.output_quantity * r.batches)::text AS expected_quantity,
             r.output_quantity::text, r.material_cost_rial::text, r.conversion_cost_rial::text,
-            r.total_cost_rial::text, r.note, r.produced_at, u.name AS produced_by_name,
+            r.total_cost_rial::text, r.note, r.produced_at, u.full_name AS produced_by_name,
             (r.reversal_of IS NOT NULL) AS is_reversal,
             rev.id AS reversed_by_run_id
        FROM production_runs r

@@ -13,12 +13,43 @@ export interface ListOrdersOptions {
   limit?: number;
 }
 
-/** The summary shape both order lists return, so the two can never disagree on columns. */
+/**
+ * The summary shape both order lists return, so the two can never disagree on
+ * columns.
+ *
+ * The customer rides along with the table: `orders.customer_id` is set at the
+ * till, by the credit checkout, and by a backdated sale, and "whose order is
+ * this" is a question every order list is asked — the shift report
+ * (shift-orders-service.ts) has always answered it, and the orders screen
+ * reading the same rows should not be the one screen that cannot. Joined
+ * `LEFT`, because most walk-in sales carry no customer at all.
+ */
 const ORDER_SUMMARY_SELECT =
   "SELECT o.id, o.order_number, o.type, o.status, o.table_id, dt.name AS table_name, " +
+  "o.customer_id, c.name AS customer_name, c.phone AS customer_phone, " +
   "o.guest_count, o.subtotal, o.discount, o.discount_type, o.discount_value, " +
   "o.service_charge, o.tax, o.total, o.note, o.opened_at, o.closed_at, o.voided_reason " +
-  "FROM orders o LEFT JOIN dining_tables dt ON dt.id = o.table_id";
+  "FROM orders o LEFT JOIN dining_tables dt ON dt.id = o.table_id " +
+  "LEFT JOIN customers c ON c.id = o.customer_id";
+
+/**
+ * Drops the customer's name and phone from an order row.
+ *
+ * The dashboard's orders screen needs both, and both order lists read through
+ * `ORDER_SUMMARY_SELECT`, so they now come back on every read. What a public
+ * API key may see is a separate question: `orders.read` was never a grant over
+ * the customer directory, there is no customers scope to check one against
+ * (src/lib/api-scopes.ts), and widening a published payload with someone's
+ * phone number is not something adding a column to a dashboard should do. So
+ * `/api/v1/orders` keeps returning exactly what it returned before — the
+ * `customer_id` it always carried, and nothing more about the person behind it.
+ */
+export function withoutCustomerContact<T extends Record<string, unknown>>(
+  order: T,
+): Omit<T, "customer_name" | "customer_phone"> {
+  const { customer_name: _name, customer_phone: _phone, ...rest } = order;
+  return rest;
+}
 
 /**
  * Reads order summaries from exactly one branch. Branch-level isolation is
@@ -138,7 +169,10 @@ export interface OrderDetail {
 /** Fetches one order and its immutable line/modifier snapshots from one branch. */
 export async function getOrderDetail(locationId: string, id: string): Promise<OrderDetail | null> {
   const { rows: orders } = await query<Record<string, unknown>>(
-    "SELECT o.*, dt.name AS table_name FROM orders o LEFT JOIN dining_tables dt ON dt.id = o.table_id WHERE o.id = $1 AND o.location_id = $2",
+    "SELECT o.*, dt.name AS table_name, c.name AS customer_name, c.phone AS customer_phone " +
+      "FROM orders o LEFT JOIN dining_tables dt ON dt.id = o.table_id " +
+      "LEFT JOIN customers c ON c.id = o.customer_id " +
+      "WHERE o.id = $1 AND o.location_id = $2",
     [id, locationId],
   );
   const order = orders[0];

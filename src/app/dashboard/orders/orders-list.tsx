@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, useDeferredValue } from "react";
-import { RefreshCwIcon, SearchIcon, ShoppingBagIcon } from "lucide-react";
+import { RefreshCwIcon, SearchIcon, ShoppingBagIcon, UserIcon } from "lucide-react";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali, isoDateInTimeZone } from "@/lib/jalali";
 import { formatToman } from "@/lib/money";
@@ -28,6 +28,10 @@ interface OrderRow {
   type: OrderType;
   status: OrderStatus;
   table_name: string | null;
+  /** Whom the sale is attributed to — null for the walk-in that most orders are. */
+  customer_id: string | null;
+  customer_name: string | null;
+  customer_phone: string | null;
   guest_count: number | null;
   total: string | number;
   opened_at: string;
@@ -351,6 +355,20 @@ function OrderDetailsPanel({
                 </dd>
               </div>
             ) : null}
+            {order.customer_name ? (
+              <div className="col-span-2 rounded-xl bg-[#FCFCFA] p-3">
+                <dt className="text-[11px] text-[#77756F]">مشتری</dt>
+                <dd className="mt-1 truncate text-sm font-bold text-[#252522]">
+                  {order.customer_name}
+                  {order.customer_phone ? (
+                    <span className="font-normal text-[#77756F]">
+                      {" · "}
+                      {toPersianDigits(order.customer_phone)}
+                    </span>
+                  ) : null}
+                </dd>
+              </div>
+            ) : null}
             <div className="rounded-xl bg-[#FCFCFA] p-3">
               <dt className="text-[11px] text-[#77756F]">زمان ثبت</dt>
               <dd className="mt-1 text-sm font-bold text-[#252522]">
@@ -628,6 +646,8 @@ export function OrdersList({
         formatQueueLabel(order.type, order.order_number),
         TYPE_LABELS[order.type],
         order.table_name ?? "",
+        order.customer_name ?? "",
+        order.customer_phone ?? "",
       ]
         .join(" ")
         .toLocaleLowerCase("fa");
@@ -1086,6 +1106,19 @@ export function OrdersList({
                           {STATUS_LABELS[order.status]}
                         </span>
                       </div>
+                      {/* The customer gets its own line rather than a slot on
+                          the muted meta line below: "whose order is this" is
+                          read at a glance off this list, and a name folded in
+                          among the type, table and timings is not. */}
+                      {order.customer_name ? (
+                        <p className="mt-1 flex items-center gap-1 text-sm font-bold text-[#252522]">
+                          <UserIcon
+                            className="size-3.5 shrink-0 text-[#9B6700]"
+                            aria-hidden="true"
+                          />
+                          <span className="truncate">{order.customer_name}</span>
+                        </p>
+                      ) : null}
                       <p className="mt-1 truncate text-xs text-[#77756F]">
                         {TYPE_LABELS[order.type]}
                         {order.table_name ? ` · ${order.table_name}` : ""}

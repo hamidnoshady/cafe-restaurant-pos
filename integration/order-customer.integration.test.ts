@@ -13,7 +13,10 @@
  *   2. omitting one leaves customer_id NULL — a walk-in sale stays anonymous;
  *   3. another business's customer is refused with `customer_not_found`, and
  *      no order row is left behind;
- *   4. an id that exists nowhere is refused the same way.
+ *   4. an id that exists nowhere is refused the same way;
+ *   5. and — the point of storing it at all — every order read hands the
+ *      customer's *name* back, so the orders screen can show whose bill it is
+ *      without a second round trip per row.
  */
 import { randomUUID } from "node:crypto";
 import { Client } from "pg";
@@ -29,6 +32,7 @@ let databaseName: string;
 let db: Client;
 let dbLib: typeof import("../src/lib/db");
 let orderMutations: typeof import("../src/lib/order-mutations");
+let orderReads: typeof import("../src/lib/order-read-service");
 
 function urlFor(database: string): string {
   const url = new URL(rootDatabaseUrl!);
@@ -115,6 +119,7 @@ beforeAll(async () => {
   process.env.DATABASE_URL = urlFor(databaseName);
   dbLib = await import("../src/lib/db");
   orderMutations = await import("../src/lib/order-mutations");
+  orderReads = await import("../src/lib/order-read-service");
 
   db = new Client({ connectionString: urlFor(databaseName) });
   await db.connect();
@@ -180,5 +185,67 @@ describe("orders created with a customer", () => {
     const result = await takeaway(shop, randomUUID());
     expect(result).toMatchObject({ ok: false, error: "customer_not_found", status: 404 });
     expect(await orderCount(shop.locationId)).toBe(0);
+  });
+});
+
+/**
+ * Storing `customer_id` is only half of it: the orders screen shows a name, not
+ * a uuid, and it renders straight from these two reads. The join lives in
+ * `ORDER_SUMMARY_SELECT`, shared by the open queue and the settled list, so one
+ * missing column would blank the name on both at once.
+ */
+describe("order reads carry the customer's name", () => {
+  it("names the customer on the open queue, the settled list and the detail", async () => {
+    const shop = await createShop();
+    const customerId = await createCustomer(shop.businessId, "مهسا رضایی");
+
+    const result = await takeaway(shop, customerId);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const open = await dbLib.withTenant(shop.businessId, () =>
+      orderReads.listOrders(shop.locationId, { status: "open" }),
+    );
+    expect(open).toHaveLength(1);
+    expect(open[0]).toMatchObject({
+      customer_id: customerId,
+      customer_name: "مهسا رضایی",
+      customer_phone: "09120000000",
+    });
+
+    const detail = await dbLib.withTenant(shop.businessId, () =>
+      orderReads.getOrderDetail(shop.locationId, result.data.id),
+    );
+    expect(detail?.order).toMatchObject({
+      customer_name: "مهسا رضایی",
+      customer_phone: "09120000000",
+    });
+
+    // Settle it, then read it back off the window the orders screen uses: the
+    // name has to survive the move from the queue to the settled list.
+    const closedAt = new Date();
+    await db.query(
+      "UPDATE orders SET status = 'completed', closed_at = $2 WHERE id = $1",
+      [result.data.id, closedAt],
+    );
+    const settled = await dbLib.withTenant(shop.businessId, () =>
+      orderReads.listSettledOrdersInWindow(shop.locationId, new Date(closedAt.getTime() - 60_000)),
+    );
+    expect(settled).toHaveLength(1);
+    expect(settled[0]).toMatchObject({ customer_name: "مهسا رضایی" });
+  });
+
+  it("leaves the name null for a walk-in rather than dropping the row", async () => {
+    const shop = await createShop();
+
+    const result = await takeaway(shop);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const open = await dbLib.withTenant(shop.businessId, () =>
+      orderReads.listOrders(shop.locationId, { status: "open" }),
+    );
+    expect(open).toHaveLength(1);
+    expect(open[0]).toMatchObject({ customer_id: null, customer_name: null });
   });
 });
