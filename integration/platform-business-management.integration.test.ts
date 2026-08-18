@@ -28,6 +28,8 @@ interface SeededBusiness {
   platformUserId: string;
   name: string;
   slug: string;
+  /** The host label the tenant is served from (Phase 23) — defaulted by migration 0066. */
+  subdomain: string;
 }
 
 function urlFor(database: string): string {
@@ -88,13 +90,14 @@ async function seedBusiness(name: string, slug: string): Promise<SeededBusiness>
   );
   const platformUserId = identity.rows[0].id;
 
-  const business = await db.query<{ id: string }>(
+  const business = await db.query<{ id: string; subdomain: string }>(
     `INSERT INTO businesses (name, slug, plan, timezone)
      VALUES ($1, $2, 'business', 'Asia/Tehran')
-     RETURNING id`,
+     RETURNING id, subdomain::text AS subdomain`,
     [name, slug],
   );
   const businessId = business.rows[0].id;
+  const subdomain = business.rows[0].subdomain;
 
   const location = await db.query<{ id: string }>(
     `INSERT INTO locations (business_id, name, address, phone)
@@ -182,7 +185,7 @@ async function seedBusiness(name: string, slug: string): Promise<SeededBusiness>
     [businessId],
   );
 
-  return { id: businessId, locationId, ownerId, platformUserId, name, slug };
+  return { id: businessId, locationId, ownerId, platformUserId, name, slug, subdomain };
 }
 
 beforeEach(async () => {
@@ -247,8 +250,10 @@ describe("resetBusiness", () => {
       plan: string;
       timezone: string;
       status: string;
+      subdomain: string;
     }>(
-      `SELECT id, name, slug::text AS slug, plan, timezone, status::text AS status
+      `SELECT id, name, slug::text AS slug, plan, timezone, status::text AS status,
+              subdomain::text AS subdomain
          FROM businesses
         WHERE id = $1`,
       [target.id],
@@ -261,6 +266,11 @@ describe("resetBusiness", () => {
         plan: "business",
         timezone: "Asia/Tehran",
         status: "active",
+        // The tenant's origin since Phase 23. A reset re-inserts the business
+        // row, and the column defaults to a random 'biz-<random>' — so leaving
+        // it out of the insert moved the tenant to a host nobody had been told
+        // about, locking the Owner out of their own bookmark.
+        subdomain: target.subdomain,
       },
     ]);
 

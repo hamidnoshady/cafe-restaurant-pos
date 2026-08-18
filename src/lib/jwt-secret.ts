@@ -17,7 +17,15 @@
 const PLACEHOLDER = "change-me-in-production";
 const MIN_SECRET_LENGTH = 32;
 
-/** `context` names what's being signed, only for the one-time dev-fallback warning's wording (e.g. "sessions", "platform sessions"). */
+/**
+ * `context` names what is being signed — "sessions", "platform sessions",
+ * "webauthn ceremony challenges" — and is reported in the error. It used to
+ * exist only for the wording of a dev-fallback warning; when that fallback was
+ * removed the parameter was left behind unused, so all three call sites were
+ * carefully labelling themselves into a message that threw the label away. The
+ * failure that reaches a developer is "JWT_SECRET must be set", with no
+ * indication of which key was being resolved or how to produce one.
+ */
 export function getJwtSecret(context: string): Uint8Array {
   const secret = process.env.JWT_SECRET;
   const isProduction = process.env.NODE_ENV === "production";
@@ -26,13 +34,15 @@ export function getJwtSecret(context: string): Uint8Array {
     if (isProduction && secret.length < MIN_SECRET_LENGTH) {
       throw new Error(
         `JWT_SECRET is only ${secret.length} characters — at least ${MIN_SECRET_LENGTH} are required in ` +
-          "production (e.g. `openssl rand -hex 32`).",
+          `production to sign ${context} (e.g. \`openssl rand -hex 32\`).`,
       );
     }
     return new TextEncoder().encode(secret);
   }
 
   throw new Error(
-    "JWT_SECRET must be set to a real secret."
+    `JWT_SECRET must be set to a real secret before signing ${context} — it is ` +
+      `either unset or still the "${PLACEHOLDER}" placeholder from .env.example. ` +
+      "Generate one with `openssl rand -hex 32`.",
   );
 }

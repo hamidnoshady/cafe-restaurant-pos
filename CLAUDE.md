@@ -35,14 +35,24 @@ it (see `src/lib/orders.test.ts` for the pattern: pure functions, integer-Rial f
 DB). If you changed the schema, add a new forward-only `migrations/NNNN_name.sql` file —
 never edit an already-applied migration.
 
-## CI (`.github/workflows/deploy.yml`)
+## CI (`.github/workflows/test.yml`)
 
-GitHub Actions, which replaced the old CircleCI pipeline. On every push to `main` and every
-PR against it:
+GitHub Actions, which replaced the old CircleCI pipeline. One job, on every push to `main` and
+every PR against it:
 
-- **`test`** — `postgres:16` service, `npm ci`, `npm run db:migrate` (twice, to prove reruns
-  are a no-op), `npm run test:db`, `npx tsc --noEmit`, `npm test`.
-- **`build-and-push`** — builds the production image and pushes it to GHCR.
+- **`test`** ("type check, unit tests, integration tests, build") — `postgres:16` service,
+  `npm ci`, `npm run db:migrate` (twice, to prove reruns are a no-op), `npm run test:db`,
+  `npx tsc --noEmit`, `npm test`, `npm run build`. It sets `JWT_SECRET` itself, because vitest
+  does not read `.env`.
+
+The workflow is deliberately test-only: **no image build, no registry push, no deploy.** This
+gate exists to keep `main` green and to mirror the local checklist above step for step.
+
+Note that this leaves a real gap, so don't assume an image exists for a given commit: the
+self-update path (`src/lib/app-update.ts`, `scripts/check-app-update.ts`, `/platform/updates`)
+and the pull-based compose files (`docker-compose.local.yml`, `docker-compose.srv1.yml`) all
+expect `ghcr.io/hamidnoshady/cafe-restaurant-pos:sha-<short-sha>` images that nothing in this
+repo publishes. Those images are produced outside CI today.
 
 Treat a red CI run as blocking. Re-diagnose and push a fix rather than working around it or
 declaring the task done with CI failing.
