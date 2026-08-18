@@ -20,6 +20,7 @@ export interface DeploymentEnv {
   DEPLOYMENT_ROLE?: string;
   REMOTE_SYNC_TOKEN?: string;
   POS_DOMAIN?: string;
+  ROOT_DOMAIN?: string;
   PLATFORM_BASE_URL?: string;
 }
 
@@ -32,37 +33,42 @@ export interface ResolvedDeploymentRole {
 /**
  * Pure resolution.
  *
- * An unset (or unrecognised) DEPLOYMENT_ROLE infers exactly what the code
- * inferred before this file existed, so no deployment changes behaviour on
- * upgrade: a central server is one that has a REMOTE_SYNC_TOKEN to accept
- * pushes with, or a POS_DOMAIN it serves the platform on. Everything else is
- * a site. An unrecognised value is treated as unset rather than throwing —
- * refusing to boot over a typo'd env var would be a worse failure than
- * falling back to the behaviour the install already had.
+ * An unset (or unrecognised) DEPLOYMENT_ROLE infers the role from the
+ * environment: a central server is one that has a REMOTE_SYNC_TOKEN to accept
+ * pushes with, a POS_DOMAIN it serves the platform on, or a ROOT_DOMAIN it
+ * serves per-business subdomains on (Phase 23's cutover — a deployment with a
+ * root domain *is* the platform, whatever other hints are absent). Everything
+ * else is a site. An unrecognised value is treated as unset rather than
+ * throwing — refusing to boot over a typo'd env var would be a worse failure
+ * than falling back to the behaviour the install already had.
  */
 export function resolveDeploymentRole(env: DeploymentEnv): ResolvedDeploymentRole {
   const declared = env.DEPLOYMENT_ROLE?.trim().toLowerCase();
   if (declared === "central" || declared === "site") return { role: declared, source: "explicit" };
 
-  const inferred = env.REMOTE_SYNC_TOKEN?.trim() || env.POS_DOMAIN?.trim() ? "central" : "site";
+  const inferred =
+    env.REMOTE_SYNC_TOKEN?.trim() || env.POS_DOMAIN?.trim() || env.ROOT_DOMAIN?.trim()
+      ? "central"
+      : "site";
   return { role: inferred, source: "inferred" };
 }
 
 /**
  * Pure resolution of the platform's own base URL: PLATFORM_BASE_URL when it
- * is set to something usable, otherwise derived from POS_DOMAIN (which is
- * always served over TLS — it is what Traefik holds the certificate for).
- * Returns null when neither is set, which is the normal state on a site that
- * has not been paired yet.
+ * is set to something usable, otherwise derived from POS_DOMAIN, or from
+ * ROOT_DOMAIN when that is the only name the deployment declares (the zone
+ * per-business origins hang off). Either way it is served over TLS. Returns
+ * null when none is set, which is the normal state on a site that has not
+ * been paired yet.
  */
 export function resolvePlatformBaseUrl(env: DeploymentEnv): string | null {
   const explicit = env.PLATFORM_BASE_URL?.trim();
   if (explicit && /^https?:\/\//.test(explicit)) return explicit.replace(/\/+$/, "");
 
-  const domain = env.POS_DOMAIN?.trim().replace(/^https?:\/\//, "").replace(/\/+$/, "");
-  if (domain) return `https://${domain}`;
-
-  return null;
+  const raw = env.POS_DOMAIN?.trim() || env.ROOT_DOMAIN?.trim();
+  if (!raw) return null;
+  const domain = raw.replace(/^https?:\/\//, "").replace(/\/+$/, "");
+  return `https://${domain}`;
 }
 
 // `as DeploymentEnv`: process.env is typed as a bare string index signature
