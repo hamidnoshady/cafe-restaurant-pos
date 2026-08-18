@@ -201,12 +201,18 @@ export function PosScreen() {
   // hard-coded buttons. `paymentDraft` is what the cashier has chosen,
   // including a split across several of them (src/lib/payment-draft.ts).
   const { methods: paymentMethods } = usePaymentMethods();
-  const [paymentDraft, setPaymentDraft] = useState<PaymentDraft>(() => emptyPaymentDraft([]));
+  const [paymentDraft, setPaymentDraft] = useState<PaymentDraft>(() =>
+    emptyPaymentDraft([]),
+  );
   // The ways arrive after the first render, so the draft starts pointing at
   // nothing; this settles it on the business's first way once they land (and
   // again if a way the draft was holding gets retired mid-shift).
   useEffect(() => {
-    setPaymentDraft((draft) => (methodOf(paymentMethods, draft.methodId) ? draft : emptyPaymentDraft(paymentMethods)));
+    setPaymentDraft((draft) =>
+      methodOf(paymentMethods, draft.methodId)
+        ? draft
+        : emptyPaymentDraft(paymentMethods),
+    );
   }, [paymentMethods]);
   const [tipInput, setTipInput] = useState("");
   const [error, setError] = useState("");
@@ -290,24 +296,37 @@ export function PosScreen() {
     () => menu?.categories.filter((category) => category.is_active) ?? [],
     [menu],
   );
+
+  // ⚡ Bolt: Separate static data operations (filtering and map creation) into distinct useMemo
+  // so they are not recalculated on every search query tick.
+  const posItems = useMemo(
+    () =>
+      menu?.items.filter(
+        (item): item is Item & { category_id: string } =>
+          item.category_id !== null,
+      ) ?? [],
+    [menu],
+  );
+
+  const itemsById = useMemo(
+    () => new Map(menu?.items.map((item) => [item.id, item]) ?? []),
+    [menu],
+  );
+
   const visibleProducts = useMemo(() => {
     if (!menu) return [];
     const searchResults = searchPosMenuItems({
       categories: menu.categories,
-      items: menu.items.filter(
-        (item): item is Item & { category_id: string } =>
-          item.category_id !== null,
-      ),
+      items: posItems,
       selectedCategoryId: activeCategory,
       // ⚡ Bolt: Use deferredSearchQuery to prevent typing lag during expensive menu searches
       query: deferredSearchQuery,
     });
-    const itemsById = new Map(menu.items.map((item) => [item.id, item]));
     return searchResults.flatMap((result) => {
       const item = itemsById.get(result.id);
       return item ? [{ item, categoryLabel: result.categoryLabel }] : [];
     });
-  }, [activeCategory, menu, deferredSearchQuery]);
+  }, [activeCategory, menu, deferredSearchQuery, posItems, itemsById]);
 
   useEffect(() => {
     setSearchActiveIndex((index) =>
@@ -565,11 +584,16 @@ export function PosScreen() {
     // and a cashier wondering which of the two things failed.
     let paymentBody: PaymentDraftBody[] = [];
     if (intent === "payment") {
-      const built = paymentDraftBody(paymentDraft, paymentMethods, totals.total);
+      const built = paymentDraftBody(
+        paymentDraft,
+        paymentMethods,
+        totals.total,
+      );
       if (!built.ok) return setError(errorMessage(built.error));
       if (
         built.value.some(
-          (tender) => methodOf(paymentMethods, tender.methodId)?.settlement === "credit",
+          (tender) =>
+            methodOf(paymentMethods, tender.methodId)?.settlement === "credit",
         ) &&
         !customer
       ) {
@@ -742,7 +766,11 @@ export function PosScreen() {
           tax: totals.tax,
           total: totals.total,
           tip: tipNum,
-          payments: draftReceiptPayments(paymentDraft, paymentMethods, totals.total),
+          payments: draftReceiptPayments(
+            paymentDraft,
+            paymentMethods,
+            totals.total,
+          ),
         };
         void printReceipt(receiptPrinter.connection, receipt);
         // Any cash in the split opens the drawer — a bill half paid in notes
@@ -919,19 +947,15 @@ export function PosScreen() {
                   if (searchQuery !== deferredSearchQuery) {
                     const immediateSearchResults = searchPosMenuItems({
                       categories: menu?.categories ?? [],
-                      items:
-                        menu?.items.filter(
-                          (item): item is Item & { category_id: string } =>
-                            item.category_id !== null,
-                        ) ?? [],
+                      // ⚡ Bolt: Re-use precomputed items array
+                      items: posItems,
                       selectedCategoryId: activeCategory,
                       query: searchQuery,
                     });
-                    const itemsById = new Map(
-                      menu?.items.map((item) => [item.id, item]) ?? [],
-                    );
+
                     currentResults = immediateSearchResults.flatMap(
                       (result) => {
+                        // ⚡ Bolt: Re-use precomputed items map
                         const item = itemsById.get(result.id);
                         return item
                           ? [{ item, categoryLabel: result.categoryLabel }]
@@ -1833,7 +1857,11 @@ export function PosScreen() {
                   />
                 ) : null}
                 {checkoutIntent === "payment"
-                  ? draftReceiptPayments(paymentDraft, paymentMethods, totals.total).map((payment, index) => (
+                  ? draftReceiptPayments(
+                      paymentDraft,
+                      paymentMethods,
+                      totals.total,
+                    ).map((payment, index) => (
                       <Row
                         key={`${payment.label}-${index}`}
                         label={index === 0 ? "روش پرداخت" : ""}
