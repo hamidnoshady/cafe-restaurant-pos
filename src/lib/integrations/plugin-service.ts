@@ -217,6 +217,15 @@ export async function pluginPushEvents(
     for (const event of events) {
       results.push(await ingestPluginEvent(connection, event));
     }
+    // Real inbound sync: the plugin delivered a batch, so "آخرین همگام‌سازی"
+    // has something true to show. Only the REST-mode paths write last_sync_at
+    // today; without this, plugin-mode connections stay "—" forever even
+    // while orders and products keep arriving.
+    await query(
+      `UPDATE integration_connections SET last_sync_at = now(), updated_at = now()
+        WHERE id = $1 AND business_id = $2`,
+      [connection.id, connection.business_id],
+    );
     return NextResponse.json({ ok: true, results });
   });
 }
@@ -329,6 +338,15 @@ export async function pluginAckJobs(
           error: message,
         });
       }
+    }
+    // Outbound sync happened: the plugin applied at least one leased job, so
+    // mark the connection as having synced (see pluginPushEvents for why).
+    if (done + failed > 0) {
+      await query(
+        `UPDATE integration_connections SET last_sync_at = now(), updated_at = now()
+          WHERE id = $1 AND business_id = $2`,
+        [connection.id, connection.business_id],
+      );
     }
     return NextResponse.json({ ok: true, done, failed });
   });
