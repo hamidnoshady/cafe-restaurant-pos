@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
 import { type CartItemInput } from "@/lib/order-cart";
 import { createOrder } from "@/lib/order-mutations";
-import { listOrders, listOrdersClosedSince } from "@/lib/order-read-service";
+import { listOrders, listSettledOrdersInWindow } from "@/lib/order-read-service";
 import { branchClosedOrdersWindow, type ClosedOrdersWindow } from "@/lib/shift-service";
 import { listRecentShiftOptions } from "@/lib/shift-orders-service";
 import type { DiscountInput } from "@/lib/orders";
@@ -12,11 +12,19 @@ import { broadcast } from "@/lib/realtime";
 /**
  * Open orders for the cashier's "current orders" list.
  *
- * `?scope=shift` additionally returns the orders *closed* over the branch's
- * current window (`closedOrders`, newest close first) plus the window itself,
- * for the orders screen — a closed order is otherwise invisible the moment it
- * is paid. Only that screen asks for it, so the POS and waiter panels, which
- * poll this route for their queue, keep paying for one query.
+ * `?scope=shift` additionally returns the orders already settled in the
+ * branch's current window (`closedOrders`, newest close first) plus the window
+ * itself, for the orders screen — a closed order is otherwise invisible the
+ * moment it is paid. Only that screen asks for it, so the POS and waiter
+ * panels, which poll this route for their queue, keep paying for one query.
+ *
+ * Which orders those are is decided by when each was *opened*, not when it was
+ * paid (see `listSettledOrdersInWindow`): a bill this shift opened stays in this
+ * list however late it is settled, and a bill carried over from an earlier shift
+ * or an already-closed day is left with the shift that opened it rather than
+ * counted here a second time. The still-open queue above is unbounded either
+ * way, so a carried-over table is always settleable — it simply files itself
+ * back under its own shift once it is.
  *
  * The default window is today's business day at the branch, widened to a
  * still-running shift that began earlier (see branchClosedOrdersWindow);
@@ -58,7 +66,7 @@ export const GET = withTenantScope(async (request: NextRequest) => {
   const window: ClosedOrdersWindow = selectedShift
     ? { since: selectedShift.startedAt, shiftStartedAt: selectedShift.startedAt, businessDay: null }
     : await branchClosedOrdersWindow(location.id);
-  const closedOrders = await listOrdersClosedSince(location.id, window.since, {
+  const closedOrders = await listSettledOrdersInWindow(location.id, window.since, {
     until: selectedShift?.endedAt ?? null,
   });
 

@@ -142,7 +142,7 @@ async function insertOrder(
 async function closedInWindow(locationId: string): Promise<number[]> {
   return dbLib.withTenant(businessId, async () => {
     const { since } = await shiftService.branchClosedOrdersWindow(locationId);
-    const rows = await orderRead.listOrdersClosedSince(locationId, since);
+    const rows = await orderRead.listSettledOrdersInWindow(locationId, since);
     return rows.map((row) =>
       Number((row as { order_number: string }).order_number),
     );

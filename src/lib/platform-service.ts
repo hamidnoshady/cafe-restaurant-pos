@@ -529,8 +529,17 @@ export async function resetBusiness(businessId: string): Promise<void> {
         plan: string;
         timezone: string;
         industry: string;
+        subdomain: string;
       }>(
-        `SELECT id, name, slug::text AS slug, plan, timezone, industry
+        // `subdomain` is as load-bearing here as `slug`: since Phase 23 it *is*
+        // the tenant's origin, and the column defaults to a random
+        // 'biz-<random>' (migration 0066). Re-inserting without it therefore
+        // does not keep the old host — it silently mints a new one, and because
+        // middleware compares the host's label against the session's
+        // businessSubdomain claim and fails closed, everyone is locked out of
+        // the address they had bookmarked with nothing to explain why.
+        `SELECT id, name, slug::text AS slug, plan, timezone, industry,
+                subdomain::text AS subdomain
            FROM businesses
           WHERE id = $1
           FOR UPDATE`,
@@ -569,9 +578,17 @@ export async function resetBusiness(businessId: string): Promise<void> {
 
       await client.query(
         `INSERT INTO businesses
-           (id, name, slug, status, plan, timezone, industry, suspended_at, archived_at)
-         VALUES ($1, $2, $3, 'active', $4, $5, $6, NULL, NULL)`,
-        [business.id, business.name, business.slug, business.plan, business.timezone, business.industry],
+           (id, name, slug, subdomain, status, plan, timezone, industry, suspended_at, archived_at)
+         VALUES ($1, $2, $3, $4, 'active', $5, $6, $7, NULL, NULL)`,
+        [
+          business.id,
+          business.name,
+          business.slug,
+          business.subdomain,
+          business.plan,
+          business.timezone,
+          business.industry,
+        ],
       );
 
       const { rows: locationRows } = await client.query<{ id: string }>(
