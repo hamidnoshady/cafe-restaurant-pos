@@ -1085,8 +1085,17 @@ export function OrdersList({
                   <button
                     key={order.id}
                     type="button"
-                    onClick={() => setSelectedOrderId(order.id)}
+                    /*
+                      One tap, one order. Selecting the row used to only fill the
+                      summary panel, and reaching the order itself — its lines,
+                      its payment, its corrections — meant finding the panel's
+                      button afterwards. The card is the order, so it opens it;
+                      the panel keeps showing whatever was opened last, which is
+                      what it is still good for once the dialog is dismissed.
+                    */
+                    onClick={() => openDetail(order.id)}
                     aria-pressed={isSelected}
+                    aria-haspopup="dialog"
                     className={`flex min-h-[76px] w-full items-center justify-between gap-3 px-4 py-3 text-start transition duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#E9A11B]/45 active:scale-[0.995] md:min-h-[82px] xl:min-h-[88px] motion-reduce:transition-none ${
                       isSelected
                         ? "bg-[#FFF9EE]"

@@ -15,12 +15,19 @@ import { listSelectableTables, type PosTable } from "@/lib/pos-selection";
 import { inputClass } from "../ui";
 
 /**
- * Asked for at the moment an in-person sale is closed — the cashier presses
- * "pay" or "open order" with no table chosen and answers the question here
- * instead of being sent back to the cart with an error. Confirming hands the
- * chosen table (and the guest count, which is only ever asked alongside it)
- * back to the POS, which carries straight on into the checkout it was already
+ * The one place a table is chosen, on every device.
+ *
+ * It is reached two ways, and `intent` is which: `"select"` when the cashier
+ * opens it from the cart to seat the order up front, and `"order"`/`"payment"`
+ * when they pressed one of the two close-the-sale buttons with no table picked
+ * and are answering the question here instead of being sent back with an error.
+ * Confirming hands the chosen table (and the guest count, which is only ever
+ * asked alongside it) back to the POS, which carries on into whatever it was
  * headed for.
+ *
+ * The cart panel and the mobile sheet used to draw their own flat grids of every
+ * table instead — no search, no capacity, no occupied state, and two more places
+ * for the three to drift apart.
  */
 export function TablePickerDialog({
   open,
@@ -37,7 +44,7 @@ export function TablePickerDialog({
   occupiedTableIds: Iterable<string>;
   selectedTableId: string;
   guestCount: string;
-  intent: "order" | "payment";
+  intent: "order" | "payment" | "select";
   onCancel: () => void;
   onConfirm: (tableId: string, guestCount: string) => void;
 }) {
@@ -73,7 +80,9 @@ export function TablePickerDialog({
           <DialogDescription>
             {intent === "payment"
               ? "برای سفارش حضوری پیش از دریافت وجه، میز را انتخاب کنید."
-              : "برای ثبت سفارش حضوری، میز را انتخاب کنید."}
+              : intent === "order"
+                ? "برای ثبت سفارش حضوری، میز را انتخاب کنید."
+                : "میز این سفارش را انتخاب کنید. میزهای دارای سفارش باز، اشغال نشان داده می‌شوند."}
           </DialogDescription>
         </DialogHeader>
 
@@ -178,7 +187,11 @@ export function TablePickerDialog({
             onClick={() => onConfirm(draftTableId, draftGuestCount)}
             className="min-h-12 rounded-xl bg-[#E9A11B] px-4 text-sm font-bold text-[#252522] transition duration-200 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 disabled:opacity-55 motion-reduce:transition-none"
           >
-            {intent === "payment" ? "ادامه و دریافت وجه" : "ادامه و ثبت سفارش"}
+            {intent === "payment"
+              ? "ادامه و دریافت وجه"
+              : intent === "order"
+                ? "ادامه و ثبت سفارش"
+                : "ثبت میز"}
           </button>
         </DialogFooter>
       </DialogContent>

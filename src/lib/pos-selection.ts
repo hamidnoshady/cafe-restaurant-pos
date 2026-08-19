@@ -200,3 +200,70 @@ export function listSelectableTables({
     )
     .map((table) => ({ ...table, occupied: occupied.has(table.id) }));
 }
+
+// ---------------------------------------------------------------------------
+// The cart, and what still stands between it and a sale
+// ---------------------------------------------------------------------------
+
+export type PosCartLineQuantity = {
+  menuItemId: string;
+  quantity: number;
+};
+
+/**
+ * How many of each menu item the cart currently holds, summed across lines.
+ *
+ * One product can sit on several lines — two lattes with different add-ons or
+ * notes are deliberately not merged (see `addToCart`) — so a product tile that
+ * wants to say "۳ در سبد" has to add them up rather than find "the" line.
+ */
+export function cartQuantitiesByItem(
+  lines: readonly PosCartLineQuantity[],
+): Map<string, number> {
+  const totals = new Map<string, number>();
+  for (const line of lines) {
+    totals.set(line.menuItemId, (totals.get(line.menuItemId) ?? 0) + line.quantity);
+  }
+  return totals;
+}
+
+export type PosCheckoutRequirement =
+  | "empty_cart"
+  | "table_required"
+  | "delivery_address_required";
+
+export type PosCheckoutGateInput = {
+  orderType: string;
+  tableId: string;
+  deliveryAddress: string;
+  lineCount: number;
+};
+
+/**
+ * The first thing still missing before this cart can become an order, or null
+ * when nothing is.
+ *
+ * There is one of these rather than a check per button because the till used to
+ * disagree with itself: both actions were enabled whenever the cart had a line,
+ * so a delivery order with no address was accepted by the buttons, carried
+ * through the table prompt and the review dialog, and only refused by `submit()`
+ * at the last press — three screens after the field that was actually empty. The
+ * caller now labels its own button with what this returns, so the answer is on
+ * screen before the cashier commits to anything.
+ *
+ * Order matters: an empty cart is reported first because the other two are not
+ * yet worth asking about, and the table is asked for before the address because
+ * only one of the two can apply to any given order type.
+ */
+export function missingCheckoutRequirement({
+  orderType,
+  tableId,
+  deliveryAddress,
+  lineCount,
+}: PosCheckoutGateInput): PosCheckoutRequirement | null {
+  if (lineCount <= 0) return "empty_cart";
+  if (requiresTableSelection({ orderType, tableId })) return "table_required";
+  if (orderType === "delivery" && deliveryAddress.trim() === "")
+    return "delivery_address_required";
+  return null;
+}

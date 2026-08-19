@@ -10,10 +10,14 @@ import {
 } from "react";
 import {
   CheckIcon,
+  MinusIcon,
+  PlusIcon,
   ReceiptTextIcon,
   RefreshCwIcon,
   SearchIcon,
   ShoppingBagIcon,
+  SlidersHorizontalIcon,
+  UsersIcon,
   WifiIcon,
   WifiOffIcon,
 } from "lucide-react";
@@ -52,9 +56,12 @@ import {
   printReceipt,
 } from "@/lib/print-agent-client";
 import {
+  cartQuantitiesByItem,
   isGlobalCashierShortcutEligible,
+  missingCheckoutRequirement,
   requiresTableSelection,
   searchPosMenuItems,
+  type PosCheckoutRequirement,
 } from "@/lib/pos-selection";
 import {
   formatModifierDelta,
@@ -196,7 +203,21 @@ export function PosScreen() {
   const [cartSheetOpen, setCartSheetOpen] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [tablePickerOpen, setTablePickerOpen] = useState(false);
+  /**
+   * Why the table prompt is up. `"select"` is the cashier seating the order from
+   * the cart before ringing anything in; the other two mean they pressed a
+   * close-the-sale button without a table and the prompt is standing in the way
+   * of that checkout — which is what decides where confirming it goes next.
+   */
+  const [tablePickerMode, setTablePickerMode] =
+    useState<"order" | "payment" | "select">("select");
   const [checkoutIntent, setCheckoutIntent] = useState<CheckoutIntent>("order");
+  /**
+   * The product tile that was last added to, flashed for a moment so a tap on a
+   * grid of near-identical tiles is visibly acknowledged. Purely cosmetic: the
+   * count badge on the tile is the durable feedback.
+   */
+  const [flashItemId, setFlashItemId] = useState<string | null>(null);
   // The ways this business takes money, in its own order — no longer three
   // hard-coded buttons. `paymentDraft` is what the cashier has chosen,
   // including a split across several of them (src/lib/payment-draft.ts).
@@ -342,25 +363,17 @@ export function PosScreen() {
   }, [searchActiveIndex, visibleProducts]);
 
   /**
-   * The one way into the checkout, whichever button (or shortcut) starts it: an
-   * in-person sale with no table yet is asked for one first and continues into
-   * the same review dialog afterwards, rather than being rejected there.
+   * `startCheckout` closes over the whole cart, so it is a plain function that
+   * this render rebuilds; the global shortcut below reads it through a ref
+   * rather than resubscribing its listener on every keystroke.
    */
-  const startCheckout = useCallback(
-    (intent: CheckoutIntent) => {
-      setError("");
-      setCheckoutIntent(intent);
-      if (requiresTableSelection({ orderType, tableId })) {
-        setTablePickerOpen(true);
-        return;
-      }
-      setReviewOpen(true);
-    },
-    [orderType, tableId],
-  );
+  const startCheckoutRef = useRef<(intent: CheckoutIntent) => void>(() => {});
 
+  // `result` counts as an overlay in its own right: an order opened in one tap
+  // shows its confirmation without ever setting `reviewOpen`, and "/" must not
+  // reach the product search behind it.
   const hasOpenOverlay = Boolean(
-    pickerItem || reviewOpen || tablePickerOpen || cartSheetOpen,
+    pickerItem || reviewOpen || tablePickerOpen || cartSheetOpen || result,
   );
   useEffect(() => {
     function handleGlobalShortcut(event: KeyboardEvent) {
@@ -401,19 +414,13 @@ export function PosScreen() {
         cart.length > 0
       ) {
         event.preventDefault();
-        startCheckout(checkoutIntent);
+        startCheckoutRef.current(checkoutIntent);
       }
     }
 
     window.addEventListener("keydown", handleGlobalShortcut);
     return () => window.removeEventListener("keydown", handleGlobalShortcut);
-  }, [
-    activeCategories,
-    cart.length,
-    checkoutIntent,
-    hasOpenOverlay,
-    startCheckout,
-  ]);
+  }, [activeCategories, cart.length, checkoutIntent, hasOpenOverlay]);
 
   const attachedGroups = useCallback(
     (itemId: string): (ModifierGroup & { modifiers: Modifier[] })[] => {
@@ -439,7 +446,13 @@ export function PosScreen() {
     );
   }
 
-  function addToCart(item: Item, selectedModifierIds: string[], note: string) {
+  function addToCart(
+    item: Item,
+    selectedModifierIds: string[],
+    note: string,
+    quantity = 1,
+  ) {
+    const units = Math.max(1, Math.round(quantity));
     const modifiers: DisplayModifier[] = selectedModifierIds.map((id) => {
       const modifier = menu!.modifiers.find((m) => m.id === id)!;
       return { name: modifier.name, priceDelta: Number(modifier.price_delta) };
@@ -455,7 +468,7 @@ export function PosScreen() {
       );
       if (existing) {
         return prev.map((l) =>
-          l.key === existing.key ? { ...l, quantity: l.quantity + 1 } : l,
+          l.key === existing.key ? { ...l, quantity: l.quantity + units } : l,
         );
       }
       const line: CartUiLine = {
@@ -463,7 +476,7 @@ export function PosScreen() {
         menuItemId: item.id,
         name: item.name,
         unitPrice: Number(item.price),
-        quantity: 1,
+        quantity: units,
         taxRatePercent: categoryTaxRate(item.category_id),
         modifierIds,
         modifiers,
@@ -471,8 +484,57 @@ export function PosScreen() {
       };
       return [...prev, line];
     });
+    flashItem(item.id);
   }
 
+  function flashItem(itemId: string) {
+    setFlashItemId(itemId);
+    window.setTimeout(
+      () => setFlashItemId((current) => (current === itemId ? null : current)),
+      450,
+    );
+  }
+
+  /**
+   * The − / + on a product tile, so a count can be corrected without opening the
+   * cart at all — the step that used to mean "open the sheet, find the line,
+   * press +" on a phone.
+   *
+   * It moves the *last* line for that product, which is the one the cashier just
+   * touched. Earlier lines of the same product exist only when they carry
+   * different add-ons or a different note, and those stay where they are: the
+   * tile deliberately cannot rewrite a customised line it does not show.
+   */
+  function stepItemQuantity(itemId: string, delta: 1 | -1) {
+    setCart((prev) => {
+      for (let index = prev.length - 1; index >= 0; index -= 1) {
+        if (prev[index].menuItemId !== itemId) continue;
+        const line = prev[index];
+        const next = line.quantity + delta;
+        if (next <= 0) return prev.filter((l) => l.key !== line.key);
+        return prev.map((l) =>
+          l.key === line.key ? { ...l, quantity: next } : l,
+        );
+      }
+      return prev;
+    });
+    if (delta === 1) flashItem(itemId);
+  }
+
+  /**
+   * Switching the order type drops what no longer applies, so a table chosen for
+   * a dine-in sale cannot ride along on a takeaway. The guest count goes with it:
+   * the two are only ever asked for together.
+   */
+  function changeOrderType(next: OrderType) {
+    setOrderType(next);
+    if (next !== "dine_in") {
+      setTableId("");
+      setGuestCount("");
+    }
+  }
+
+  /** Tapping a tile: straight into the cart, or into the picker when the item has add-ons to answer for. */
   function pickItem(item: Item) {
     const groups = attachedGroups(item.id);
     if (groups.length === 0) {
@@ -514,6 +576,23 @@ export function PosScreen() {
   const cartItemCount = useMemo(
     () => cart.reduce((count, line) => count + line.quantity, 0),
     [cart],
+  );
+  /** How many of each product the cart holds, for the count badge on its tile. */
+  const cartCountsByItem = useMemo(() => cartQuantitiesByItem(cart), [cart]);
+  /**
+   * What is still missing, named before the cashier commits to anything. The two
+   * close-the-sale buttons label themselves with it instead of sitting enabled
+   * and failing three screens later.
+   */
+  const blocker = useMemo(
+    () =>
+      missingCheckoutRequirement({
+        orderType,
+        tableId,
+        deliveryAddress,
+        lineCount: cart.length,
+      }),
+    [cart.length, deliveryAddress, orderType, tableId],
   );
   const cartAddOnTotal = useMemo(
     () =>
@@ -570,14 +649,21 @@ export function PosScreen() {
     );
   }
 
-  async function submit(intent: CheckoutIntent = "order") {
+  async function submit(intent: CheckoutIntent = "order"): Promise<boolean> {
     if (busy || submissionInFlight.current) return false;
     setError("");
-    if (cart.length === 0) return setError("سبد خرید خالی است.");
-    if (orderType === "dine_in" && !tableId)
-      return setError("انتخاب میز الزامی است.");
-    if (orderType === "delivery" && !deliveryAddress.trim())
-      return setError("برای سفارش ارسالی آدرس الزامی است.");
+    if (cart.length === 0) {
+      setError("سبد خرید خالی است.");
+      return false;
+    }
+    if (orderType === "dine_in" && !tableId) {
+      setError("انتخاب میز الزامی است.");
+      return false;
+    }
+    if (orderType === "delivery" && !deliveryAddress.trim()) {
+      setError("برای سفارش ارسالی آدرس الزامی است.");
+      return false;
+    }
 
     // How the money is being taken is settled *before* the order is created:
     // a split that doesn't add up would otherwise leave an open order behind
@@ -589,7 +675,10 @@ export function PosScreen() {
         paymentMethods,
         totals.total,
       );
-      if (!built.ok) return setError(errorMessage(built.error));
+      if (!built.ok) {
+        setError(errorMessage(built.error));
+        return false;
+      }
       if (
         built.value.some(
           (tender) =>
@@ -597,7 +686,8 @@ export function PosScreen() {
         ) &&
         !customer
       ) {
-        return setError(errorMessage("customer_required"));
+        setError(errorMessage("customer_required"));
+        return false;
       }
       paymentBody = built.value;
     }
@@ -815,6 +905,34 @@ export function PosScreen() {
     return true;
   }
 
+  /**
+   * The one way into the checkout, whichever button (or shortcut) starts it.
+   *
+   * Two things happen here rather than at the last press. An in-person sale with
+   * no table yet is asked for one and carries on afterwards instead of being
+   * rejected. And opening a tab goes straight through: «ثبت سفارش باز» creates an
+   * order that is fully editable, re-priced and voidable from the orders screen,
+   * so a confirmation in front of it only asked the cashier to approve something
+   * they can undo — while «دریافت وجه» keeps its review, because that is the press
+   * that moves money. Either way the confirmation *after* the fact still shows
+   * what was created.
+   */
+  function startCheckout(intent: CheckoutIntent) {
+    setError("");
+    setCheckoutIntent(intent);
+    if (requiresTableSelection({ orderType, tableId })) {
+      setTablePickerMode(intent);
+      setTablePickerOpen(true);
+      return;
+    }
+    if (intent === "order") {
+      void submit("order");
+      return;
+    }
+    setReviewOpen(true);
+  }
+  startCheckoutRef.current = startCheckout;
+
   if (!menu)
     return (
       <PosLoadingState
@@ -1007,53 +1125,115 @@ export function PosScreen() {
         <div
           id="pos-product-results"
           role="listbox"
-          className="grid flex-1 auto-rows-min grid-cols-2 content-start gap-2.5 overflow-y-auto p-3 sm:grid-cols-3 md:grid-cols-3 md:p-4 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6"
+          /*
+            Sized by the space the tiles actually get, not by the viewport. Fixed
+            per-breakpoint column counts kept being wrong here because two other
+            things eat the width first — the sidebar from `md` up and the 23–25rem
+            cart panel beside it — so a 1024px laptop had ~370px for what the
+            breakpoint thought was a four-column grid, and every tile truncated
+            its category and its price. `auto-fill` with a 10rem floor asks the
+            container instead: two columns on a phone, two beside the panel on a
+            laptop, five on a wide till, with no breakpoint to keep in sync.
+          */
+          className="grid flex-1 auto-rows-min grid-cols-[repeat(auto-fill,minmax(9rem,1fr))] content-start gap-2.5 overflow-y-auto p-3 md:p-4"
         >
-          {visibleProducts.map(({ item, categoryLabel }, index) => (
-            <button
-              key={item.id}
-              id={"pos-product-" + item.id}
-              type="button"
-              role="option"
-              aria-selected={index === searchActiveIndex}
-              onClick={() => pickItem(item)}
-              className={
-                "group flex min-h-28 touch-manipulation flex-col items-stretch justify-between rounded-2xl border p-3 text-start transition duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 active:scale-[0.98] md:min-h-32 lg:min-h-36 motion-reduce:transition-none " +
-                (index === searchActiveIndex
-                  ? "border-[#E9A11B] bg-[#FFF9EE] ring-1 ring-[#E9A11B]/25"
-                  : "border-[#EAE8E2] bg-white hover:border-[#F2D097] hover:bg-[#FCFCFA]")
-              }
-              aria-label={"افزودن " + item.name + " به سفارش"}
-            >
-              <div className="flex items-start justify-between gap-2">
-                <span className="line-clamp-2 text-sm font-bold leading-6 text-[#252522]">
-                  {item.name}
-                </span>
-                <span
-                  className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-[#FCFCFA] text-xs font-bold text-[#9B6700]"
-                  aria-hidden="true"
+          {visibleProducts.map(({ item, categoryLabel }, index) => {
+            const inCart = cartCountsByItem.get(item.id) ?? 0;
+            const active = index === searchActiveIndex;
+            return (
+              /*
+                A tile is three controls in one frame, so it can no longer be a
+                single <button>: tapping it adds one, «تنظیم» opens the picker for
+                add-ons, a note and a count, and once the product is in the cart a
+                − / + strip corrects that count in place. That strip is the step
+                the walkthrough was missing — the quantity used to be reachable
+                only from the cart, which on a phone meant opening the sheet.
+              */
+              <div
+                key={item.id}
+                role="presentation"
+                className={
+                  "group relative flex touch-manipulation flex-col overflow-hidden rounded-2xl border transition duration-200 motion-reduce:transition-none " +
+                  (active
+                    ? "border-[#E9A11B] bg-[#FFF9EE] ring-1 ring-[#E9A11B]/25"
+                    : inCart > 0
+                      ? "border-[#F2D097] bg-[#FFFCF5]"
+                      : "border-[#EAE8E2] bg-white hover:border-[#F2D097] hover:bg-[#FCFCFA]") +
+                  (flashItemId === item.id
+                    ? " ring-2 ring-[#E9A11B] ring-offset-1"
+                    : "")
+                }
+              >
+                <button
+                  id={"pos-product-" + item.id}
+                  type="button"
+                  role="option"
+                  aria-selected={active}
+                  onClick={() => pickItem(item)}
+                  className="flex min-h-28 flex-1 flex-col items-stretch justify-between p-3 text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#E9A11B]/45 active:scale-[0.99] md:min-h-32 lg:min-h-36"
+                  aria-label={
+                    "افزودن " +
+                    item.name +
+                    " به سفارش" +
+                    (inCart > 0
+                      ? "؛ " + toPersianDigits(inCart) + " عدد در سبد"
+                      : "")
+                  }
                 >
-                  {categoryLabel.slice(0, 1)}
-                </span>
-              </div>
-              <div className="mt-3 flex items-end justify-between gap-2">
-                <div className="min-w-0">
-                  <span className="block truncate text-xs text-[#77756F]">
-                    {categoryLabel}
+                  {/*
+                    Name, category and price each own a full row. They used to
+                    share it with a 40px badge, which at the widths a tile
+                    actually gets beside the cart panel meant «نوشیدنی گ…» and a
+                    wrapped price on every card. The count lives in the strip
+                    below instead, where it is also adjustable.
+                  */}
+                  <span className="line-clamp-2 pe-8 text-sm font-bold leading-6 text-[#252522]">
+                    {item.name}
                   </span>
-                  <span className="mt-1 block text-sm font-bold text-[#B97905]">
-                    {formatToman(Number(item.price))}
-                  </span>
-                </div>
-                <span
-                  className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[#FFF1D8] text-lg font-bold text-[#9B6700]"
-                  aria-hidden="true"
+                  <div className="mt-3">
+                    <span className="block truncate text-xs text-[#77756F]">
+                      {categoryLabel}
+                    </span>
+                    <span className="mt-1 block text-base font-bold text-[#B97905]">
+                      {formatToman(Number(item.price))}
+                    </span>
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPickerItem(item)}
+                  className="absolute end-2 top-2 flex size-9 items-center justify-center rounded-lg text-[#9B6700] transition-colors hover:bg-[#FFF1D8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45"
+                  aria-label={"تعداد، افزودنی و یادداشت برای " + item.name}
+                  title="تعداد، افزودنی و یادداشت"
                 >
-                  +
-                </span>
+                  <SlidersHorizontalIcon className="size-4" aria-hidden="true" />
+                </button>
+                {inCart > 0 ? (
+                  <div className="flex items-center justify-between gap-1 border-t border-[#F2D097] bg-white/70 px-1.5 py-1">
+                    <button
+                      type="button"
+                      onClick={() => stepItemQuantity(item.id, -1)}
+                      className="flex size-11 items-center justify-center rounded-lg text-[#5E5B55] transition-colors hover:bg-[#FFF1D8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45"
+                      aria-label={"کاهش تعداد " + item.name}
+                    >
+                      <MinusIcon className="size-4" aria-hidden="true" />
+                    </button>
+                    <span className="text-sm font-bold text-[#252522]">
+                      {toPersianDigits(inCart)}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => stepItemQuantity(item.id, 1)}
+                      className="flex size-11 items-center justify-center rounded-lg text-[#9B6700] transition-colors hover:bg-[#FFF1D8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45"
+                      aria-label={"افزایش تعداد " + item.name}
+                    >
+                      <PlusIcon className="size-4" aria-hidden="true" />
+                    </button>
+                  </div>
+                ) : null}
               </div>
-            </button>
-          ))}
+            );
+          })}
           {visibleProducts.length === 0 ? (
             <div className="col-span-full flex min-h-48 flex-col items-center justify-center rounded-2xl border border-dashed border-[#EAE8E2] bg-[#FCFCFA] p-4 text-center">
               <SearchIcon
@@ -1080,84 +1260,23 @@ export function PosScreen() {
       <div className="hidden max-h-[46dvh] w-full shrink-0 flex-col overflow-y-auto rounded-2xl border border-[#EAE8E2] bg-white shadow-[0_1px_3px_rgba(37,37,34,0.03)] md:flex md:max-h-none md:w-[23rem] xl:w-[25rem]">
         <div className="shrink-0 border-b border-[#EAE8E2] p-4">
           <ErrorBox>{error}</ErrorBox>
-          <div className="mb-3 grid grid-cols-3 gap-2 text-sm font-medium">
-            <button
-              type="button"
-              onClick={() => {
-                setOrderType("dine_in");
-              }}
-              className={`rounded-lg py-3 transition-colors ${orderType === "dine_in" ? "bg-[#FFF1D8] text-[#9B6700] shadow-none" : "bg-muted hover:text-foreground"}`}
-            >
-              حضوری
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setOrderType("takeaway");
-                setTableId("");
-              }}
-              className={`rounded-lg py-3 transition-colors ${orderType === "takeaway" ? "bg-[#FFF1D8] text-[#9B6700] shadow-none" : "bg-muted hover:text-foreground"}`}
-            >
-              بیرون‌بر
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setOrderType("delivery");
-                setTableId("");
-              }}
-              className={`rounded-lg py-3 transition-colors ${orderType === "delivery" ? "bg-[#FFF1D8] text-[#9B6700] shadow-none" : "bg-muted hover:text-foreground"}`}
-            >
-              ارسالی
-            </button>
-          </div>
+          <OrderTypeTabs value={orderType} onChange={changeOrderType} />
           {orderType === "dine_in" ? (
-            <>
-              <div className="flex flex-wrap gap-2">
-                {tables.map((t) => {
-                  const occupied = occupiedTableIds.has(t.id);
-                  return (
-                    <button
-                      key={t.id}
-                      type="button"
-                      disabled={occupied}
-                      onClick={() => setTableId(t.id)}
-                      className={`rounded-lg border px-4 py-2.5 text-sm font-medium ${
-                        tableId === t.id
-                          ? "border-[#E9A11B] bg-[#FFF1D8] text-[#9B6700]"
-                          : occupied
-                            ? "border-border bg-muted text-muted-foreground/60"
-                            : "border-input text-muted-foreground hover:border-[#E9A11B]/60"
-                      }`}
-                    >
-                      {t.name}
-                    </button>
-                  );
-                })}
-                {tables.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">
-                    میزی ثبت نشده است.
-                  </p>
-                ) : null}
-              </div>
-              <label
-                className="mt-3 block text-xs font-semibold text-[#5E5B55]"
-                htmlFor="pos-guest-count"
-              >
-                تعداد مهمان
-                <input
-                  id="pos-guest-count"
-                  className={
-                    inputClass + " mt-1 min-h-11 border-[#EAE8E2] bg-[#FCFCFA]"
-                  }
-                  dir="ltr"
-                  inputMode="numeric"
-                  value={guestCount}
-                  onChange={(event) => setGuestCount(event.target.value)}
-                  placeholder="اختیاری"
-                />
-              </label>
-            </>
+            <TableField
+              tableName={
+                tables.find((table) => table.id === tableId)?.name ?? null
+              }
+              guestCount={guestCount}
+              hasTables={tables.length > 0}
+              onOpen={() => {
+                setTablePickerMode("select");
+                setTablePickerOpen(true);
+              }}
+              onClear={() => {
+                setTableId("");
+                setGuestCount("");
+              }}
+            />
           ) : null}
           {orderType === "delivery" ? (
             <div className="space-y-3">
@@ -1244,9 +1363,21 @@ export function PosScreen() {
           />
         </div>
 
-        <div className="min-h-40 flex-1 overflow-y-auto p-4">
+        {/*
+          The lines grow; the column around them scrolls. This used to be a
+          `flex-1` scroll box with a 10rem floor, which on a laptop meant the
+          cart — the one part of the panel that changes with every tap — was the
+          smallest region on screen: a two-line order showed one line, with the
+          second hidden in a scroll box nothing pointed at, while the payment
+          block below kept its 300px. `shrink-0` is what makes it grow instead of
+          being squeezed into the leftovers. The footer is sticky, so a long cart
+          never pushes the pay button out of reach.
+        */}
+        <div className="shrink-0 p-4">
           {cart.length === 0 ? (
-            <p className="text-sm text-muted-foreground">سبد خالی است.</p>
+            <p className="rounded-xl border border-dashed border-[#EAE8E2] bg-[#FCFCFA] p-4 text-center text-sm text-[#77756F]">
+              سبد خالی است. از فهرست محصولات، آیتم‌ها را اضافه کنید.
+            </p>
           ) : (
             <ul className="space-y-2.5">
               {cart.map((l) => {
@@ -1391,72 +1522,61 @@ export function PosScreen() {
             <Row label="جمع کل" value={formatToman(totals.total)} bold />
           </dl>
 
-          <div className="mt-4">
-            <PaymentWays
-              methods={paymentMethods}
-              draft={paymentDraft}
-              onChange={setPaymentDraft}
-              due={totals.total}
-              disabled={busy}
-              idPrefix="pos"
-            />
-            <label
-              htmlFor="pos-tip"
-              className="mt-2 block text-xs font-bold text-[#5E5B55]"
-            >
-              انعام{" "}
-              <span className="font-normal text-[#8B8A85]">
-                (اختیاری، تومان)
-              </span>
-            </label>
-            <input
-              id="pos-tip"
-              className={
-                inputClass + " mt-1 min-h-11 border-[#EAE8E2] bg-[#FCFCFA]"
-              }
-              dir="ltr"
-              inputMode="numeric"
-              value={tipInput}
-              onChange={(event) => setTipInput(event.target.value)}
-              placeholder="۰"
-            />
-            <button
-              type="button"
-              onClick={() => startCheckout("payment")}
-              disabled={busy || cart.length === 0}
-              className="mt-3 flex min-h-14 w-full items-center justify-center gap-2 rounded-xl bg-[#E9A11B] px-4 text-sm font-bold text-[#252522] transition duration-200 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 disabled:opacity-55 motion-reduce:transition-none"
-            >
-              <ReceiptTextIcon className="size-5" aria-hidden="true" />
-              {paymentDraft.split
-                ? "دریافت تقسیمی و تکمیل"
-                : `دریافت ${methodOf(paymentMethods, paymentDraft.methodId)?.name ?? "وجه"} و تکمیل`}
-            </button>
-            <button
-              type="button"
-              onClick={() => startCheckout("order")}
-              disabled={busy || cart.length === 0}
-              className="mt-2 min-h-12 w-full rounded-xl border border-[#EAE8E2] bg-white px-4 text-sm font-semibold text-[#5E5B55] transition duration-200 hover:bg-[#FCFCFA] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 disabled:opacity-55 motion-reduce:transition-none"
-            >
-              ثبت سفارش باز
-            </button>
-          </div>
+          {/*
+            How the money is taken is asked in the payment step, not here. Six
+            payment ways plus a tip field held ~300px of the panel at all times —
+            on a laptop that is what squeezed the cart down to a single visible
+            line — and every one of those controls only matters once the cashier
+            has decided to settle. Pressing «دریافت وجه» is where they are now.
+          */}
+          <CheckoutActions
+            blocker={blocker}
+            busy={busy}
+            onPay={() => startCheckout("payment")}
+            onOpenOrder={() => startCheckout("order")}
+          />
         </div>
       </div>
 
+      {/*
+        The phone's one-line summary of where the order stands: what is in it,
+        what it comes to, and which table or type it is for. It stays visible over
+        the product grid so the cashier never has to open the sheet to check —
+        opening it is now only for the order's details and the payment.
+      */}
       <div className="sticky bottom-20 z-20 md:hidden">
         <button
           type="button"
           onClick={() => setCartSheetOpen(true)}
-          className="flex min-h-14 w-full items-center justify-between rounded-2xl bg-[#E9A11B] px-4 text-sm font-bold text-[#252522] shadow-[0_8px_20px_rgba(233,161,27,0.22)] transition duration-200 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 motion-reduce:transition-none"
-          aria-label={`باز کردن سبد خرید؛ ${toPersianDigits(cart.length)} قلم، ${formatToman(totals.total)}`}
+          className={
+            "flex min-h-14 w-full items-center justify-between gap-3 rounded-2xl px-4 text-sm font-bold shadow-[0_8px_20px_rgba(233,161,27,0.22)] transition duration-200 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 motion-reduce:transition-none " +
+            (cart.length === 0
+              ? "border border-[#EAE8E2] bg-white text-[#5E5B55] shadow-none"
+              : "bg-[#E9A11B] text-[#252522]")
+          }
+          aria-label={
+            cart.length === 0
+              ? "باز کردن سبد خرید؛ سبد خالی است"
+              : `باز کردن سبد خرید؛ ${toPersianDigits(cartItemCount)} قلم، ${formatToman(totals.total)}`
+          }
         >
-          <span>
-            {toPersianDigits(
-              cart.reduce((count, line) => count + line.quantity, 0),
-            )}{" "}
-            قلم در سبد
+          <span className="flex min-w-0 items-center gap-2">
+            <ShoppingBagIcon className="size-5 shrink-0" aria-hidden="true" />
+            <span className="min-w-0 truncate text-start">
+              {cart.length === 0
+                ? "سبد خالی است"
+                : `${toPersianDigits(cartItemCount)} قلم در سبد`}
+              <span className="block truncate text-[11px] font-normal opacity-80">
+                {orderType === "dine_in"
+                  ? (tables.find((table) => table.id === tableId)?.name ??
+                    "میز انتخاب نشده")
+                  : orderType === "takeaway"
+                    ? "بیرون‌بر"
+                    : "ارسالی"}
+              </span>
+            </span>
           </span>
-          <span>{formatToman(totals.total)}</span>
+          <span className="shrink-0">{formatToman(totals.total)}</span>
         </button>
       </div>
 
@@ -1479,42 +1599,23 @@ export function PosScreen() {
           */}
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
             <div className="border-b border-border p-4">
-              <div className="grid grid-cols-3 gap-2 text-sm font-medium">
-                {(["dine_in", "takeaway", "delivery"] as const).map((type) => (
-                  <button
-                    key={type}
-                    type="button"
-                    onClick={() => {
-                      setOrderType(type);
-                      if (type !== "dine_in") setTableId("");
-                    }}
-                    className={`min-h-11 rounded-lg px-2 ${orderType === type ? "bg-primary text-primary-foreground" : "bg-muted"}`}
-                  >
-                    {type === "dine_in"
-                      ? "حضوری"
-                      : type === "takeaway"
-                        ? "بیرون‌بر"
-                        : "ارسالی"}
-                  </button>
-                ))}
-              </div>
+              <OrderTypeTabs value={orderType} onChange={changeOrderType} />
               {orderType === "dine_in" ? (
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {tables.map((table) => {
-                    const occupied = occupiedTableIds.has(table.id);
-                    return (
-                      <button
-                        key={table.id}
-                        type="button"
-                        disabled={occupied}
-                        onClick={() => setTableId(table.id)}
-                        className={`min-h-11 rounded-lg border px-3 text-sm ${tableId === table.id ? "border-[#E9A11B] bg-[#FFF1D8] text-[#9B6700]" : "border-input"}`}
-                      >
-                        {table.name}
-                      </button>
-                    );
-                  })}
-                </div>
+                <TableField
+                  tableName={
+                    tables.find((table) => table.id === tableId)?.name ?? null
+                  }
+                  guestCount={guestCount}
+                  hasTables={tables.length > 0}
+                  onOpen={() => {
+                    setTablePickerMode("select");
+                    setTablePickerOpen(true);
+                  }}
+                  onClear={() => {
+                    setTableId("");
+                    setGuestCount("");
+                  }}
+                />
               ) : null}
               {orderType === "delivery" ? (
                 <div className="mt-3 space-y-3">
@@ -1719,36 +1820,6 @@ export function PosScreen() {
                   value={formatModifierDelta(cartAddOnTotal)}
                 />
               ) : null}
-              <div className="mt-4">
-                <PaymentWays
-                  methods={paymentMethods}
-                  draft={paymentDraft}
-                  onChange={setPaymentDraft}
-                  due={totals.total}
-                  disabled={busy}
-                  idPrefix="pos-mobile"
-                />
-                <label
-                  htmlFor="pos-mobile-tip"
-                  className="mt-2 block text-xs font-bold text-[#5E5B55]"
-                >
-                  انعام{" "}
-                  <span className="font-normal text-[#8B8A85]">
-                    (اختیاری، تومان)
-                  </span>
-                </label>
-                <input
-                  id="pos-mobile-tip"
-                  className={
-                    inputClass + " mt-1 min-h-11 border-[#EAE8E2] bg-[#FCFCFA]"
-                  }
-                  dir="ltr"
-                  inputMode="numeric"
-                  value={tipInput}
-                  onChange={(event) => setTipInput(event.target.value)}
-                  placeholder="۰"
-                />
-              </div>
             </div>
           </div>
           <div className="shrink-0 border-t border-border bg-card p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
@@ -1758,25 +1829,12 @@ export function PosScreen() {
                 {formatToman(totals.total)}
               </span>
             </div>
-            <button
-              type="button"
-              onClick={() => startCheckout("payment")}
-              disabled={busy || cart.length === 0}
-              className="flex min-h-14 w-full items-center justify-center gap-2 rounded-xl bg-[#E9A11B] px-4 text-sm font-bold text-[#252522] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 disabled:opacity-55"
-            >
-              <ReceiptTextIcon className="size-5" aria-hidden="true" />
-              {paymentDraft.split
-                ? "دریافت تقسیمی و تکمیل"
-                : `دریافت ${methodOf(paymentMethods, paymentDraft.methodId)?.name ?? "وجه"} و تکمیل`}
-            </button>
-            <button
-              type="button"
-              onClick={() => startCheckout("order")}
-              disabled={busy || cart.length === 0}
-              className="mt-2 min-h-12 w-full rounded-xl border border-[#EAE8E2] bg-white px-4 text-sm font-semibold text-[#5E5B55] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 disabled:opacity-55"
-            >
-              ثبت سفارش باز
-            </button>
+            <CheckoutActions
+              blocker={blocker}
+              busy={busy}
+              onPay={() => startCheckout("payment")}
+              onOpenOrder={() => startCheckout("order")}
+            />
           </div>
         </SheetContent>
       </Sheet>
@@ -1788,7 +1846,7 @@ export function PosScreen() {
         the POS behind it is already empty by then.
       */}
       <Dialog
-        open={reviewOpen}
+        open={reviewOpen || result !== null}
         onOpenChange={(open) => (open ? setReviewOpen(true) : closeCheckout())}
       >
         <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-md">
@@ -1856,23 +1914,6 @@ export function PosScreen() {
                     value={formatModifierDelta(cartAddOnTotal)}
                   />
                 ) : null}
-                {checkoutIntent === "payment"
-                  ? draftReceiptPayments(
-                      paymentDraft,
-                      paymentMethods,
-                      totals.total,
-                    ).map((payment, index) => (
-                      <Row
-                        key={`${payment.label}-${index}`}
-                        label={index === 0 ? "روش پرداخت" : ""}
-                        value={
-                          paymentDraft.split
-                            ? `${payment.label} — ${formatToman(payment.amount)}`
-                            : payment.label
-                        }
-                      />
-                    ))
-                  : null}
                 <Row
                   label="مبلغ قابل پرداخت"
                   value={formatToman(totals.total)}
@@ -1889,6 +1930,44 @@ export function PosScreen() {
                   </>
                 ) : null}
               </dl>
+              {/*
+                The payment step, in the dialog that *is* the payment step. The
+                cart panel used to carry these permanently, whether or not the
+                cashier was settling; here they are asked for once, next to the
+                amount they apply to.
+              */}
+              {checkoutIntent === "payment" ? (
+                <section aria-label="روش دریافت وجه">
+                  <PaymentWays
+                    methods={paymentMethods}
+                    draft={paymentDraft}
+                    onChange={setPaymentDraft}
+                    due={totals.total}
+                    disabled={busy}
+                    idPrefix="pos-checkout"
+                  />
+                  <label
+                    htmlFor="pos-checkout-tip"
+                    className="mt-3 block text-xs font-bold text-[#5E5B55]"
+                  >
+                    انعام{" "}
+                    <span className="font-normal text-[#8B8A85]">
+                      (اختیاری، تومان)
+                    </span>
+                  </label>
+                  <input
+                    id="pos-checkout-tip"
+                    className={
+                      inputClass + " mt-1 min-h-11 border-[#EAE8E2] bg-[#FCFCFA]"
+                    }
+                    dir="ltr"
+                    inputMode="numeric"
+                    value={tipInput}
+                    onChange={(event) => setTipInput(event.target.value)}
+                    placeholder="۰"
+                  />
+                </section>
+              ) : null}
               <DialogFooter>
                 <button
                   type="button"
@@ -1922,12 +2001,20 @@ export function PosScreen() {
         occupiedTableIds={occupiedTableIds}
         selectedTableId={tableId}
         guestCount={guestCount}
-        intent={checkoutIntent}
+        intent={tablePickerMode}
         onCancel={() => setTablePickerOpen(false)}
         onConfirm={(chosenTableId, chosenGuestCount) => {
           setTableId(chosenTableId);
           setGuestCount(chosenGuestCount);
           setTablePickerOpen(false);
+          // Seating the order from the cart stops here; answering the prompt a
+          // close-the-sale button raised carries on into that checkout, with the
+          // table it was waiting for.
+          if (tablePickerMode === "select") return;
+          if (tablePickerMode === "order") {
+            void submit("order");
+            return;
+          }
           setReviewOpen(true);
         }}
       />
@@ -1935,11 +2022,12 @@ export function PosScreen() {
         <ModifierPicker
           itemName={pickerItem.name}
           itemPrice={Number(pickerItem.price)}
+          selectQuantity
           groups={attachedGroups(pickerItem.id)}
           tone="amber"
           onCancel={() => setPickerItem(null)}
-          onConfirm={(modifierIds, note) => {
-            addToCart(pickerItem, modifierIds, note);
+          onConfirm={(modifierIds, note, quantity) => {
+            addToCart(pickerItem, modifierIds, note, quantity);
             setPickerItem(null);
           }}
         />
@@ -2171,6 +2259,183 @@ function PosLoadingState({
         </aside>
       </div>
     </div>
+  );
+}
+
+const ORDER_TYPE_TABS: { value: OrderType; label: string }[] = [
+  { value: "dine_in", label: "حضوری" },
+  { value: "takeaway", label: "بیرون‌بر" },
+  { value: "delivery", label: "ارسالی" },
+];
+
+/**
+ * Where the order is going, as one control on every device.
+ *
+ * The cart panel wrote out three buttons by hand and the mobile sheet mapped
+ * over the same three with a different palette — the phone's selected tab came
+ * out in the theme's teal while every other selected thing in the till is amber.
+ */
+function OrderTypeTabs({
+  value,
+  onChange,
+}: {
+  value: OrderType;
+  onChange: (next: OrderType) => void;
+}) {
+  return (
+    <div
+      className="mb-3 grid grid-cols-3 gap-2 text-sm font-medium"
+      role="group"
+      aria-label="نوع سفارش"
+    >
+      {ORDER_TYPE_TABS.map((tab) => (
+        <button
+          key={tab.value}
+          type="button"
+          aria-pressed={value === tab.value}
+          onClick={() => onChange(tab.value)}
+          className={`min-h-12 rounded-lg px-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 ${
+            value === tab.value
+              ? "bg-[#FFF1D8] font-bold text-[#9B6700]"
+              : "bg-muted text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          {tab.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Which table this in-person sale is on, as one control on every device.
+ *
+ * The cart panel and the mobile sheet each used to draw their own flat grid of
+ * every table — no search, no capacity, no "this one already has an order", and
+ * two more places for the three table surfaces to disagree. Both now show the
+ * chosen table and hand the choosing to `TablePickerDialog`, which is also what
+ * the checkout raises when the question is still open.
+ */
+function TableField({
+  tableName,
+  guestCount,
+  hasTables,
+  onOpen,
+  onClear,
+}: {
+  tableName: string | null;
+  guestCount: string;
+  hasTables: boolean;
+  onOpen: () => void;
+  onClear: () => void;
+}) {
+  if (!hasTables) {
+    return (
+      <p className="mt-3 rounded-xl border border-dashed border-[#EAE8E2] bg-[#FCFCFA] p-3 text-xs leading-5 text-[#77756F]">
+        هنوز میزی ثبت نشده است. از بخش میزها میز اضافه کنید یا نوع سفارش را به
+        بیرون‌بر تغییر دهید.
+      </p>
+    );
+  }
+
+  return (
+    <div className="mt-3">
+      <span className="block text-xs font-semibold text-[#5E5B55]">میز</span>
+      {tableName ? (
+        <div className="mt-1 flex items-center gap-2 rounded-xl border border-[#F2D097] bg-[#FFF9EE] p-2 ps-3">
+          <UsersIcon
+            className="size-4 shrink-0 text-[#9B6700]"
+            aria-hidden="true"
+          />
+          <span className="min-w-0 flex-1 truncate text-sm font-bold text-[#252522]">
+            {tableName}
+            {guestCount.trim() ? (
+              <span className="font-normal text-[#77756F]">
+                {" · "}
+                {toPersianDigits(guestCount.trim())} نفر
+              </span>
+            ) : null}
+          </span>
+          <button
+            type="button"
+            onClick={onOpen}
+            className="min-h-11 shrink-0 rounded-lg px-2 text-xs font-bold text-[#9B6700] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45"
+          >
+            تغییر
+          </button>
+          <button
+            type="button"
+            onClick={onClear}
+            className="min-h-11 shrink-0 rounded-lg px-2 text-xs font-semibold text-[#77756F] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45"
+          >
+            حذف
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={onOpen}
+          className="mt-1 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-dashed border-[#E9A11B]/60 bg-[#FFF9EE] px-3 text-sm font-bold text-[#9B6700] transition-colors hover:bg-[#FFF1D8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45"
+        >
+          <UsersIcon className="size-4" aria-hidden="true" />
+          انتخاب میز
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** What each unmet requirement says on the button that is waiting for it. */
+const BLOCKER_LABELS: Record<PosCheckoutRequirement, string> = {
+  empty_cart: "ابتدا آیتمی به سبد اضافه کنید",
+  table_required: "انتخاب میز و ادامه",
+  delivery_address_required: "آدرس تحویل را وارد کنید",
+};
+
+/**
+ * The end of the walkthrough: keep the order open, or take the money now.
+ *
+ * Both buttons live here so the cart panel and the mobile sheet can never offer
+ * different wording or a different disabled rule — they used to be two copies.
+ * A missing table is *not* a reason to disable: pressing through opens the table
+ * prompt and carries on into the checkout that raised it, which is the whole
+ * point of asking at the moment of closing rather than up front.
+ */
+function CheckoutActions({
+  blocker,
+  busy,
+  onPay,
+  onOpenOrder,
+}: {
+  blocker: PosCheckoutRequirement | null;
+  busy: boolean;
+  onPay: () => void;
+  onOpenOrder: () => void;
+}) {
+  const stopped =
+    blocker === "empty_cart" || blocker === "delivery_address_required";
+  const disabled = busy || stopped;
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={onPay}
+        disabled={disabled}
+        className="mt-3 flex min-h-14 w-full items-center justify-center gap-2 rounded-xl bg-[#E9A11B] px-4 text-sm font-bold text-[#252522] transition duration-200 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 disabled:opacity-55 motion-reduce:transition-none"
+      >
+        <ReceiptTextIcon className="size-5" aria-hidden="true" />
+        {blocker ? BLOCKER_LABELS[blocker] : "دریافت وجه و تکمیل"}
+      </button>
+      <button
+        type="button"
+        onClick={onOpenOrder}
+        disabled={disabled}
+        className="mt-2 min-h-12 w-full rounded-xl border border-[#EAE8E2] bg-white px-4 text-sm font-semibold text-[#5E5B55] transition duration-200 hover:bg-[#FCFCFA] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 disabled:opacity-55 motion-reduce:transition-none"
+      >
+        {busy ? "در حال ثبت…" : "ثبت سفارش باز (بدون دریافت وجه)"}
+      </button>
+    </>
   );
 }
 
