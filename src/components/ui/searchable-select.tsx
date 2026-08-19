@@ -68,14 +68,24 @@ export function SearchableSelect({
   const inputRef = React.useRef<HTMLInputElement>(null);
 
   const selected = options.find((o) => o.value === value);
+
+  // ⚡ Bolt: Extract expensive string normalizations out of the hot filtering loop.
+  // This computes regexes once per options array instead of O(N) times per keystroke.
+  const normalizedOptions = React.useMemo(() => {
+    return options.map((o) => ({
+      option: o,
+      normalizedStr: normalizePosSearchText(o.searchString ?? o.label),
+    }));
+  }, [options]);
+
   const filtered = React.useMemo(() => {
     const q = normalizePosSearchText(deferredQuery);
     return q
-      ? options.filter((o) =>
-          normalizePosSearchText(o.searchString ?? o.label).includes(q),
-        )
+      ? normalizedOptions
+          .filter((no) => no.normalizedStr.includes(q))
+          .map((no) => no.option)
       : options;
-  }, [options, deferredQuery]);
+  }, [options, normalizedOptions, deferredQuery]);
 
   const notifyQuery = React.useRef(onQueryChange);
   notifyQuery.current = onQueryChange;
@@ -145,6 +155,18 @@ export function SearchableSelect({
                     setActiveIndex((i) => Math.max(i - 1, 0));
                   } else if (e.key === "Enter") {
                     e.preventDefault();
+                    // ⚡ Bolt: Handle fast-input race condition (e.g. barcode scanner).
+                    // If deferred filter hasn't caught up, perform a synchronous exact match.
+                    if (query !== deferredQuery) {
+                      const exactQuery = normalizePosSearchText(query);
+                      const exactMatch = normalizedOptions.find(
+                        (no) => no.normalizedStr === exactQuery
+                      );
+                      if (exactMatch) {
+                        select(exactMatch.option);
+                        return;
+                      }
+                    }
                     const option = filtered[activeIndex];
                     if (option) select(option);
                   }
