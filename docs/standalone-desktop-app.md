@@ -184,9 +184,10 @@ problem and makes the script a no-op.
    you distribute it).
 2. Double-click it. If Windows SmartScreen warns about an unknown publisher
    (see "Unsigned" above), choose **More info → Run anyway**.
-3. The installer creates a desktop icon and Start-menu entry (per-user
-   install, no admin rights required) and finishes in seconds — it's just
-   copying files, no Docker image to build or pull.
+3. The installer runs a normal wizard — you can pick the install directory, keep
+   the desktop and Start-menu shortcuts, and launch the app when it finishes
+   (per-user install, no admin rights required). It's just copying files, no
+   Docker image to build or pull.
 4. Launch **Cafe POS** from the desktop icon. The **first** launch takes a
    little longer (initializing the database); every launch after that is
    fast.
