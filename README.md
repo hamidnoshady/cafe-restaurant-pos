@@ -482,6 +482,22 @@ scales with how many businesses' concurrent write transactions one deployment ex
 serve — several busy cafés sharing one host need more headroom than a single one. See
 `src/lib/pool-config.ts`.
 
+**Surviving a database blip** (`DB_CONNECT_ATTEMPTS`, default 4). The app reaches Postgres by
+*name* over a container network, so every new pool connection starts with a DNS lookup against
+the container runtime's resolver — and that resolver drops queries under load and goes away
+entirely while the network is reconfigured or the database container is replaced. Node reports
+it as `getaddrinfo EAI_AGAIN <host>`, and node-postgres has no retry of its own, so one dropped
+lookup used to fail whatever page or background tick asked for a connection at that instant.
+`src/lib/db-retry.ts` retries the **checkout** — never a statement already in flight, which is
+what makes it safe to repeat — backing off 100ms/300ms/900ms, and only for failures that mean
+"couldn't reach it" (a rejected password or a missing database still fails at once). The pool
+also holds connections open for a minute with TCP keepalive, so an idle deployment isn't
+re-resolving the host every ten seconds; a checkout that can't connect gives up after 30s
+(`DB_CONNECT_TIMEOUT_MS`) rather than hanging on the resolver's full budget; and an
+idle-client error is logged instead of taking the process down with it. When a lookup keeps failing, one line per minute names the host and
+says what to check: the app and Postgres containers must share a network, and the host in
+`DATABASE_URL` must be the database service's name on it.
+
 **Docker deployments (`docker-entrypoint.sh`) do this for you.** Every shipped compose file
 (`docker-compose.komodo.yml`, `docker-compose.local.yml`, `docker-compose.srv1.yml`) hands the
 app container one Postgres superuser — the same one that runs migrations — because asking
