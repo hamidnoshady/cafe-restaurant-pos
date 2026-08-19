@@ -6,7 +6,12 @@ import {
   scopeSettings,
   type TenantScope,
 } from "./tenant-context";
-import { poolMax } from "./pool-config";
+import { connectTimeoutMs, poolMax } from "./pool-config";
+import {
+  describeConnectFailure,
+  isRetryableConnectError,
+  withConnectRetry,
+} from "./db-retry";
 
 // Reuse the pool across Next.js dev-server hot reloads.
 const globalForPg = globalThis as unknown as { pgPool?: Pool };
@@ -38,38 +43,110 @@ function installTenantScoping(pool: Pool): Pool {
     );
   };
 
+  /**
+   * One checkout: take a connection and stamp the caller's scope onto it.
+   *
+   * Both halves are retried together by `checkout` below, which is safe
+   * precisely because nothing else has run on this connection yet — the scope
+   * statement is an idempotent `set_config`, and a checkout that never
+   * connected never reached the server at all.
+   */
+  const rawCheckout = async (scope: TenantScope): Promise<PoolClient> => {
+    const client = await (rawConnect as () => Promise<PoolClient>)();
+    try {
+      await applyScope(client, scope);
+      return client;
+    } catch (err) {
+      client.release(err as Error);
+      throw err;
+    }
+  };
+
+  const checkout = (scope: TenantScope): Promise<PoolClient> =>
+    withConnectRetry(() => rawCheckout(scope), {
+      onRetry: (err, attempt, delay) =>
+        console.warn(
+          `postgres checkout failed (attempt ${attempt}), retrying in ${delay}ms: ` +
+            describeConnectFailure(err, process.env.DATABASE_URL),
+        ),
+    }).catch((err: unknown) => {
+      noteUnreachableDatabase(err);
+      throw err;
+    });
+
   function scopedConnect(this: Pool, callback?: unknown): unknown {
     // Captured here, before any awaiting, so the scope is the caller's even if
     // the checkout has to queue behind a busy pool.
     const scope = getTenantScope();
 
+    // `pool.query()` — which is how `query()` below, and therefore most of the
+    // app, reaches the database — calls `connect` in its callback form, so the
+    // retry has to cover this branch too, not just the promise one.
     if (typeof callback === "function") {
       const cb = callback as (err?: Error, client?: PoolClient, done?: (r?: unknown) => void) => void;
-      (rawConnect as (c: typeof cb) => void)((err, client, done) => {
-        if (err || !client) return cb(err, client, done);
-        applyScope(client, scope).then(
-          () => cb(undefined, client, done),
-          (scopeErr: Error) => {
-            done?.(scopeErr);
-            cb(scopeErr);
-          },
-        );
-      });
+      checkout(scope).then(
+        (client) => cb(undefined, client, (err?: unknown) => client.release(err as Error | undefined)),
+        (err: Error) => cb(err),
+      );
       return undefined;
     }
 
-    return (rawConnect as () => Promise<PoolClient>)().then(async (client) => {
-      try {
-        await applyScope(client, scope);
-        return client;
-      } catch (err) {
-        client.release(err as Error);
-        throw err;
-      }
-    });
+    return checkout(scope);
   }
 
   pool.connect = scopedConnect as typeof pool.connect;
+  return pool;
+}
+
+/**
+ * Say once — not once per failed request — what an unreachable database means.
+ *
+ * A resolver blip fails every in-flight page and every background tick at the
+ * same instant, so the raw `getaddrinfo EAI_AGAIN <host>` stack arrives a dozen
+ * times over and says nothing about what to do about it. This adds one
+ * actionable line per minute alongside them; the errors themselves still
+ * propagate untouched, so callers keep seeing the real `code`.
+ */
+let lastUnreachableNoteAt = 0;
+function noteUnreachableDatabase(err: unknown): void {
+  if (!isRetryableConnectError(err)) return;
+  const now = Date.now();
+  if (now - lastUnreachableNoteAt < 60_000) return;
+  lastUnreachableNoteAt = now;
+  console.error(describeConnectFailure(err, process.env.DATABASE_URL));
+}
+
+function createPool(connectionString: string): Pool {
+  const pool = new Pool({
+    connectionString,
+    // Tenant-scoped work pins a connection for the length of a transaction, so
+    // the pool needs a little more headroom than it did single-tenant. See
+    // pool-config.ts: DB_POOL_MAX overrides the default of 20, which is
+    // preserved for anyone who doesn't set it.
+    max: poolMax(),
+    // Every *new* connection costs a DNS lookup against the container runtime's
+    // resolver, and that resolver is the part that flakes (see db-retry.ts). pg
+    // would otherwise drop an idle connection after 10s and re-resolve the host
+    // on the next request, turning a mostly-idle deployment into a steady
+    // stream of lookups — each one a chance to fail. Hold connections open
+    // instead, and keep the socket alive so a NAT/bridge doesn't cut it.
+    keepAlive: true,
+    idleTimeoutMillis: 60_000,
+    // Without a ceiling, a dropped DNS query leaves the checkout hanging for
+    // the OS resolver's full budget with the request waiting behind it. See
+    // pool-config.ts for why the default is as generous as it is.
+    connectionTimeoutMillis: connectTimeoutMs(),
+  });
+
+  // node-postgres emits this for a connection that failed while sitting idle in
+  // the pool — the database restarted, the network dropped underneath it. It
+  // belongs to no caller, and an EventEmitter 'error' with nobody listening
+  // takes the whole process down with it: that is how a database blip became an
+  // app restart. Log it and let the pool discard the client.
+  pool.on("error", (err) => {
+    console.error("postgres idle client error:", describeConnectFailure(err, connectionString));
+  });
+
   return pool;
 }
 
@@ -79,11 +156,7 @@ export function getPool(): Pool {
     if (!connectionString) {
       throw new Error("DATABASE_URL is not set");
     }
-    // Tenant-scoped work pins a connection for the length of a transaction, so
-    // the pool needs a little more headroom than it did single-tenant. See
-    // pool-config.ts: DB_POOL_MAX overrides the default of 20, which is
-    // preserved for anyone who doesn't set it.
-    globalForPg.pgPool = installTenantScoping(new Pool({ connectionString, max: poolMax() }));
+    globalForPg.pgPool = installTenantScoping(createPool(connectionString));
   }
   return globalForPg.pgPool;
 }

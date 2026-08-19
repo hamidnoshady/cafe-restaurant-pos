@@ -12,3 +12,18 @@ export function poolMax(): number {
   const raw = Number(process.env.DB_POOL_MAX);
   return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 20;
 }
+
+/**
+ * How long a checkout may wait before pg gives up on it (`connectionTimeoutMillis`).
+ *
+ * Zero — pg's default — means "wait forever", which is the wrong answer when
+ * the wait is a DNS lookup the container runtime's resolver has silently
+ * dropped: the request hangs for the OS resolver's full budget with nothing to
+ * show for it (see db-retry.ts). The ceiling is deliberately far above any
+ * realistic pool queue wait, so it bounds a hung *connection* without failing a
+ * request that is merely queued behind busy transactions.
+ */
+export function connectTimeoutMs(): number {
+  const raw = Number(process.env.DB_CONNECT_TIMEOUT_MS);
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 30_000;
+}
