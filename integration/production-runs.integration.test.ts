@@ -14,7 +14,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { runMigrations } from "../scripts/migrate";
 import { consumeInventoryExact } from "../src/lib/inventory-consumption-exact";
 import { positiveQuantityText, rialText } from "../src/lib/inventory-exact";
-import { recordProductionRun, reverseProductionRun } from "../src/lib/production-service";
+import { listRuns, recordProductionRun, reverseProductionRun } from "../src/lib/production-service";
 
 const configuredUrl = process.env.DATABASE_URL;
 if (!configuredUrl) throw new Error("DATABASE_URL is required for database integration tests");
@@ -690,5 +690,71 @@ describe("weighted-average costing", () => {
 
     await client.query("ROLLBACK");
     await client.end();
+  });
+});
+
+/**
+ * The «تولیدهای اخیر» list under the «تولید» tab, read the way the route reads
+ * it. Worth its own case even though it is "just a SELECT": the screen renders
+ * whatever `GET /api/inventory/production/runs` returns and silently shows the
+ * empty state when the call fails, so a broken column here is invisible from
+ * the UI — a run posts, the stock and the ledger move, and the list still says
+ * "هنوز تولیدی ثبت نشده است". Runs through the pool rather than this file's
+ * own client, because that is what the route does.
+ */
+describe("listing recent runs", () => {
+  it("returns the run, its formula, its output and who produced it", async () => {
+    const client = await connect();
+    await client.query("BEGIN");
+    const fixture = await seed(client);
+
+    const { rows: user } = await client.query<{ id: string }>(
+      `INSERT INTO users(business_id,location_id,role,full_name,pin_hash)
+       VALUES($1,$2,'manager','سرآشپز','x') RETURNING id`,
+      [fixture.businessId, fixture.locationId],
+    );
+
+    const run = await recordProductionRun(client as never, {
+      businessId: fixture.businessId,
+      locationId: fixture.locationId,
+      formulaId: fixture.formulaId,
+      batches: positiveQuantityText("1"),
+      outputQuantity: null,
+      conversionCostRial: rialText("200000"),
+      note: "پخت صبح",
+      createdBy: user[0].id,
+    });
+    // Committed on purpose: the pooled read below is a different connection.
+    await client.query("COMMIT");
+    await client.end();
+
+    const previousUrl = process.env.DATABASE_URL;
+    process.env.DATABASE_URL = databaseUrl;
+    const db = await import("../src/lib/db");
+    try {
+      const runs = await db.withTenant(
+        fixture.businessId,
+        () => listRuns(fixture.locationId),
+        { locationId: fixture.locationId },
+      );
+      expect(runs).toHaveLength(1);
+      expect(runs[0]).toMatchObject({
+        id: run.id,
+        formulaName: "تولید کیک شکلاتی",
+        outputItemName: "کیک شکلاتی (برش)",
+        outputUnit: "برش",
+        // 500g flour @1000 + 300g sugar @500 = 650,000, plus 200,000 labour.
+        materialCostRial: "650000",
+        totalCostRial: "850000",
+        expectedQuantity: "8.000000000000000000",
+        note: "پخت صبح",
+        producedByName: "سرآشپز",
+        isReversal: false,
+        reversedByRunId: null,
+      });
+    } finally {
+      await db.getPool().end().catch(() => {});
+      process.env.DATABASE_URL = previousUrl;
+    }
   });
 });

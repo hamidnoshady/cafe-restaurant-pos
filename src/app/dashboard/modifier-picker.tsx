@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CheckIcon } from "lucide-react";
+import { CheckIcon, MinusIcon, PlusIcon } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -60,6 +60,7 @@ export function ModifierPicker({
   itemName,
   itemPrice,
   quantity = 1,
+  selectQuantity = false,
   groups,
   tone = "brand",
   initialModifierIds,
@@ -73,6 +74,14 @@ export function ModifierPicker({
   itemPrice?: number;
   /** How many units this selection will add — makes the footer show the real line total. */
   quantity?: number;
+  /**
+   * Lets the picker set the count as well as the add-ons, and hands it back as
+   * the third argument to `onConfirm`. On for the till, where "three of these,
+   * no sugar" is one decision and used to take three separate taps plus a trip
+   * to the cart; off for callers that are re-picking the add-ons of a line whose
+   * quantity is already settled elsewhere.
+   */
+  selectQuantity?: boolean;
   groups: ModifierGroupWithModifiers[];
   tone?: ModifierTone;
   /**
@@ -86,12 +95,16 @@ export function ModifierPicker({
   /** Overrides the default «افزودن» wording when this is an edit, not an add. */
   confirmLabel?: string;
   onCancel: () => void;
-  onConfirm: (modifierIds: string[], note: string) => void;
+  onConfirm: (modifierIds: string[], note: string, quantity: number) => void;
 }) {
   const [selected, setSelected] = useState<Record<string, string[]>>(() =>
     initialSelection(groups, initialModifierIds ?? []),
   );
   const [note, setNote] = useState(initialNote);
+  // Only meaningful when `selectQuantity` is on; otherwise the prop is the
+  // count and this never moves off it.
+  const [count, setCount] = useState(() => Math.max(1, Math.round(quantity)));
+  const effectiveQuantity = selectQuantity ? count : quantity;
   const palette = MODIFIER_TONE[tone];
 
   function toggle(group: ModifierGroupWithModifiers, modifierId: string) {
@@ -135,7 +148,7 @@ export function ModifierPicker({
   const breakdown = linePriceBreakdown({
     unitPrice: itemPrice ?? 0,
     modifierDeltas: chosen.map((modifier) => modifier.priceDelta),
-    quantity,
+    quantity: effectiveQuantity,
   });
 
   const canConfirm = groups.every((group) =>
@@ -246,6 +259,55 @@ export function ModifierPicker({
             );
           })}
 
+          {selectQuantity ? (
+            <div className="rounded-xl border border-border p-3">
+              <p className="mb-2 px-1 text-sm font-bold text-foreground">تعداد</p>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  aria-label="کاهش تعداد"
+                  disabled={count <= 1}
+                  onClick={() => setCount((value) => Math.max(1, value - 1))}
+                  className="flex size-14 shrink-0 items-center justify-center rounded-xl border border-input text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 disabled:opacity-40"
+                >
+                  <MinusIcon className="size-5" aria-hidden="true" />
+                </button>
+                <span
+                  className="min-w-14 text-center text-2xl font-bold text-foreground"
+                  aria-live="polite"
+                >
+                  {toPersianDigits(count)}
+                </span>
+                <button
+                  type="button"
+                  aria-label="افزایش تعداد"
+                  onClick={() => setCount((value) => value + 1)}
+                  className="flex size-14 shrink-0 items-center justify-center rounded-xl border border-input text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45"
+                >
+                  <PlusIcon className="size-5" aria-hidden="true" />
+                </button>
+                {/* The counts a café actually rings up, one tap instead of five. */}
+                <div className="ms-auto flex flex-wrap justify-end gap-1.5">
+                  {[2, 3, 4, 5].map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      aria-pressed={count === preset}
+                      onClick={() => setCount(preset)}
+                      className={`min-h-11 min-w-11 rounded-xl border px-2 text-sm font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 ${
+                        count === preset
+                          ? palette.optionSelected
+                          : "border-input text-muted-foreground hover:bg-muted"
+                      }`}
+                    >
+                      {toPersianDigits(preset)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : null}
+
           <label className="block text-sm">
             <span className="mb-1.5 block font-medium text-foreground">
               یادداشت{" "}
@@ -286,9 +348,9 @@ export function ModifierPicker({
                 <dt>قیمت هر واحد</dt>
                 <dd>{formatToman(breakdown.unit)}</dd>
               </div>
-              {quantity > 1 ? (
+              {effectiveQuantity > 1 ? (
                 <div className="flex justify-between text-muted-foreground">
-                  <dt>{toPersianDigits(quantity)} واحد</dt>
+                  <dt>{toPersianDigits(effectiveQuantity)} واحد</dt>
                   <dd>{formatToman(breakdown.total)}</dd>
                 </div>
               ) : null}
@@ -309,6 +371,7 @@ export function ModifierPicker({
                 onConfirm(
                   groups.flatMap((group) => selected[group.id] ?? []),
                   note.trim(),
+                  effectiveQuantity,
                 )
               }
               className={`min-h-12 flex-1 rounded-xl px-4 text-sm font-bold transition duration-200 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 disabled:opacity-50 motion-reduce:transition-none ${palette.cta}`}

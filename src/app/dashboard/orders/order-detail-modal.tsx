@@ -31,6 +31,7 @@ import {
   PlusIcon,
   PrinterIcon,
   Trash2Icon,
+  UserIcon,
   XIcon,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -128,6 +129,10 @@ interface OrderRow {
   type: "dine_in" | "takeaway" | "delivery";
   status: "open" | "held" | "completed" | "voided";
   table_name: string | null;
+  /** Whom the sale is attributed to — set at the till, by a credit checkout, or by a backdated sale. */
+  customer_id: string | null;
+  customer_name: string | null;
+  customer_phone: string | null;
   guest_count: number | null;
   subtotal: string | number;
   discount: string | number;
@@ -287,6 +292,23 @@ export function OrderDetailModal({
     setOrder(data.order);
     setItems(data.items);
     setModifiers(data.modifiers);
+    // An order that already names a customer keeps naming them: the credit
+    // checkout below re-uses this selection instead of making the cashier
+    // search the directory again for a customer the order already has.
+    // Only when nothing is picked yet — `load()` also runs after an item edit,
+    // and must not throw away a pick the cashier just made mid-checkout. The
+    // open-effect below clears it, so each fresh dialog starts from the order.
+    setSelectedCustomer(
+      (current) =>
+        current ??
+        (data.order.customer_id && data.order.customer_name
+          ? {
+              id: data.order.customer_id,
+              name: data.order.customer_name,
+              phone: data.order.customer_phone,
+            }
+          : null),
+    );
     setDiscountType(data.order.discount_type ?? "");
     setDiscountValue(
       data.order.discount_value ? String(data.order.discount_value) : "",
@@ -836,6 +858,15 @@ export function OrderDetailModal({
                       {statusChip.label}
                     </span>
                   ) : null}
+                  {/* Beside the order number rather than only down in the facts
+                      list: on a phone the facts are a scroll away, and whose
+                      bill this is belongs with what bill it is. */}
+                  {order?.customer_name ? (
+                    <span className="inline-flex min-h-7 max-w-full items-center gap-1 rounded-full border border-[#F2D097] bg-[#FFF9EE] px-2.5 text-xs font-bold text-[#9B6700]">
+                      <UserIcon className="size-3.5 shrink-0" aria-hidden="true" />
+                      <span className="truncate">{order.customer_name}</span>
+                    </span>
+                  ) : null}
                 </div>
                 <DialogDescription className="mt-1 text-xs text-[#77756F]">
                   {order ? (
@@ -1141,6 +1172,16 @@ export function OrderDetailModal({
                         />
                         {order.table_name ? (
                           <Fact label="میز" value={order.table_name} />
+                        ) : null}
+                        {order.customer_name ? (
+                          <Fact
+                            label="مشتری"
+                            value={
+                              order.customer_phone
+                                ? `${order.customer_name} · ${toPersianDigits(order.customer_phone)}`
+                                : order.customer_name
+                            }
+                          />
                         ) : null}
                         {order.guest_count ? (
                           <Fact

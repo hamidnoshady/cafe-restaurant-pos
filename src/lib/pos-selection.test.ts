@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  cartQuantitiesByItem,
   isGlobalCashierShortcutEligible,
   listSelectableTables,
+  missingCheckoutRequirement,
   normalizePosSearchText,
   requiresTableSelection,
   searchPosMenuItems,
@@ -157,5 +159,61 @@ describe("POS selection helpers", () => {
         query: "انبار طبقهٔ دوم",
       }),
     ).toEqual([]);
+  });
+
+  /**
+   * A product tile says how many of itself are in the cart, and one product can
+   * sit on several lines: two lattes with different add-ons are deliberately not
+   * merged, so the badge is a sum rather than a lookup.
+   */
+  it("sums a product's quantity across every line it sits on", () => {
+    const totals = cartQuantitiesByItem([
+      { menuItemId: "latte", quantity: 2 },
+      { menuItemId: "tea", quantity: 1 },
+      { menuItemId: "latte", quantity: 3 },
+    ]);
+    expect(totals.get("latte")).toBe(5);
+    expect(totals.get("tea")).toBe(1);
+    expect(totals.get("cola")).toBeUndefined();
+  });
+
+  it("counts nothing for an empty cart", () => {
+    expect(cartQuantitiesByItem([]).size).toBe(0);
+  });
+
+  /**
+   * The delivery case is the one this exists for: the buttons used to be enabled
+   * on any non-empty cart, so an order with no address was refused only by the
+   * final press, three screens past the empty field.
+   */
+  it("names what is still missing, in the order the cashier can act on it", () => {
+    const base = { orderType: "delivery", tableId: "", deliveryAddress: "", lineCount: 0 };
+    expect(missingCheckoutRequirement(base)).toBe("empty_cart");
+    expect(missingCheckoutRequirement({ ...base, lineCount: 2 })).toBe(
+      "delivery_address_required",
+    );
+    expect(
+      missingCheckoutRequirement({ ...base, lineCount: 2, deliveryAddress: "  " }),
+    ).toBe("delivery_address_required");
+    expect(
+      missingCheckoutRequirement({
+        ...base,
+        lineCount: 2,
+        deliveryAddress: "خیابان ولیعصر",
+      }),
+    ).toBeNull();
+  });
+
+  it("asks an in-person sale for its table, and lets every other type through", () => {
+    const cart = { deliveryAddress: "", lineCount: 1 };
+    expect(
+      missingCheckoutRequirement({ ...cart, orderType: "dine_in", tableId: "" }),
+    ).toBe("table_required");
+    expect(
+      missingCheckoutRequirement({ ...cart, orderType: "dine_in", tableId: "t1" }),
+    ).toBeNull();
+    expect(
+      missingCheckoutRequirement({ ...cart, orderType: "takeaway", tableId: "" }),
+    ).toBeNull();
   });
 });

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { ORDER_OPENED_IN_WINDOW, isOrderStatus } from "./order-read-service";
+import {
+  ORDER_OPENED_IN_WINDOW,
+  isOrderStatus,
+  withoutCustomerContact,
+} from "./order-read-service";
 
 describe("order-read-service", () => {
   describe("isOrderStatus", () => {
@@ -36,6 +40,39 @@ describe("order-read-service", () => {
     it("leaves a live window open-ended rather than clamping it to now()", () => {
       expect(ORDER_OPENED_IN_WINDOW).toContain("$3::timestamptz IS NULL");
       expect(ORDER_OPENED_IN_WINDOW).not.toContain("now()");
+    });
+  });
+
+  /**
+   * The reads themselves are DB-touching and covered by
+   * integration/order-customer.integration.test.ts; this is the one pure part.
+   * `ORDER_SUMMARY_SELECT` now joins the customer so the orders screen can show
+   * whose bill it is, and both order lists share it — including the two the
+   * public API serves. An `orders.read` key was never a grant over the customer
+   * directory, so this projection is what keeps that payload where it was.
+   */
+  describe("withoutCustomerContact", () => {
+    it("drops the name and phone but keeps customer_id and everything else", () => {
+      expect(
+        withoutCustomerContact({
+          id: "order-1",
+          order_number: 12,
+          customer_id: "customer-1",
+          customer_name: "مهسا رضایی",
+          customer_phone: "09120000000",
+          total: "1200000",
+        }),
+      ).toEqual({
+        id: "order-1",
+        order_number: 12,
+        customer_id: "customer-1",
+        total: "1200000",
+      });
+    });
+
+    it("leaves a row that never had them untouched", () => {
+      const row = { id: "order-2", customer_id: null, total: "0" };
+      expect(withoutCustomerContact(row)).toEqual(row);
     });
   });
 });
