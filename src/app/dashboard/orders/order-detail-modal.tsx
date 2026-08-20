@@ -128,6 +128,7 @@ interface OrderRow {
   order_number: number;
   type: "dine_in" | "takeaway" | "delivery";
   status: "open" | "held" | "completed" | "voided";
+  table_id: string | null;
   table_name: string | null;
   /** Whom the sale is attributed to — set at the till, by a credit checkout, or by a backdated sale. */
   customer_id: string | null;
@@ -272,6 +273,8 @@ export function OrderDetailModal({
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(
     null,
   );
+  const [tables, setTables] = useState<{ id: string; name: string; status: string }[]>([]);
+  const [selectedTableId, setSelectedTableId] = useState("");
   const [showNewCustomer, setShowNewCustomer] = useState(false);
   const [newCustomerPhone, setNewCustomerPhone] = useState("");
   const printers = usePrinters();
@@ -290,6 +293,7 @@ export function OrderDetailModal({
       return;
     }
     setOrder(data.order);
+    setSelectedTableId(data.order.table_id ?? "");
     setItems(data.items);
     setModifiers(data.modifiers);
     // An order that already names a customer keeps naming them: the credit
@@ -335,6 +339,9 @@ export function OrderDetailModal({
     setShowNewCustomer(false);
     setPaymentDraft(emptyPaymentDraft(paymentMethods));
     void load();
+    void api<{ tables: { id: string; name: string; status: string }[] }>("/api/tables").then(({ ok, data }) => {
+      if (ok) setTables(data.tables);
+    });
   }, [load, open]);
 
   useEffect(() => {
@@ -371,6 +378,26 @@ export function OrderDetailModal({
     }
     return map;
   }, [modifiers]);
+
+  async function saveOrderCustomer(customerId: string | null) {
+    const saved = await run(() =>
+      api(`/api/orders/${orderId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ customerId }),
+      }),
+    );
+    if (saved) setInfo(customerId ? "مشتری سفارش ذخیره شد." : "مشتری سفارش حذف شد.");
+  }
+
+  async function saveOrderTable(tableId: string) {
+    const saved = await run(() =>
+      api(`/api/orders/${orderId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ tableId }),
+      }),
+    );
+    if (saved) setSelectedTableId(tableId);
+  }
 
   async function createCustomer() {
     const name = customerQuery.trim();
@@ -1203,6 +1230,9 @@ export function OrderDetailModal({
                             value={timeLabel(order.closed_at)}
                           />
                         ) : null}
+                        {order.customer_name ? (
+                          <Fact label="مشتری" value={order.customer_name} />
+                        ) : null}
                         {Number(order.tip_amount ?? 0) > 0 ? (
                           <Fact
                             label="انعام"
@@ -1211,6 +1241,78 @@ export function OrderDetailModal({
                         ) : null}
                       </dl>
                     </section>
+
+                    {editable && order.type === "dine_in" ? (
+                      <section className={`${CARD} p-4`} aria-label="تعیین میز">
+                        <h3 className="mb-2 font-semibold text-[#252522]">تعیین میز</h3>
+                        <p className="mb-2 text-xs text-[#77756F]">میز را از صف سفارش‌ها تعیین کنید؛ لازم نیست هنگام افزودن آیتم انتخاب شود.</p>
+                        <SearchableSelect
+                          value={selectedTableId}
+                          onChange={(value) => void saveOrderTable(value)}
+                          ariaLabel="تعیین میز سفارش"
+                          className={OPS_INPUT}
+                          options={[
+                            { value: "", label: "بدون میز" },
+                            ...tables
+                              .filter((table) => table.status === "free" || table.id === selectedTableId)
+                              .map((table) => ({ value: table.id, label: table.name })),
+                          ]}
+                        />
+                      </section>
+                    ) : null}
+
+                    {editable ? (
+                      <section className={`${CARD} p-4`} aria-label="مشتری سفارش">
+                        <div className="flex items-center justify-between gap-2">
+                          <h3 className="font-semibold text-[#252522]">مشتری سفارش</h3>
+                          <span className="text-xs text-[#77756F]">اختیاری</span>
+                        </div>
+                        {selectedCustomer ? (
+                          <div className="mt-3 flex items-center gap-2">
+                            <span className="min-w-0 flex-1 truncate rounded-xl bg-[#FCFCFA] px-3 py-2.5 text-sm text-[#252522]">
+                              {selectedCustomer.name}{selectedCustomer.phone ? ` — ${toPersianDigits(selectedCustomer.phone)}` : ""}
+                            </span>
+                            <button type="button" onClick={() => { setSelectedCustomer(null); void saveOrderCustomer(null); }} className={`${SECONDARY_BUTTON} shrink-0`}>
+                              حذف
+                            </button>
+                          </div>
+                        ) : (
+                          <>
+                            <input
+                              className={`${OPS_INPUT} mt-3`}
+                              placeholder="جستجوی نام یا شماره…"
+                              value={customerQuery}
+                              onChange={(event) => setCustomerQuery(event.target.value)}
+                            />
+                            {customerResults.length > 0 ? (
+                              <ul className="mt-2 max-h-44 overscroll-contain overflow-y-auto rounded-xl border border-[#EAE8E2] bg-white" onWheel={(event) => event.stopPropagation()}>
+                                {customerResults.map((candidate) => (
+                                  <li key={candidate.id}>
+                                    <button type="button" onClick={() => setSelectedCustomer(candidate)} className={`min-h-12 w-full px-3 text-start text-sm ${FOCUS}`}>
+                                      {candidate.name}{candidate.phone ? ` — ${toPersianDigits(candidate.phone)}` : ""}
+                                    </button>
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : null}
+                            {customerQuery.trim() && !showNewCustomer ? (
+                              <button type="button" onClick={() => setShowNewCustomer(true)} className={`mt-2 min-h-11 text-xs font-bold text-[#9B6700] ${FOCUS}`}>
+                                + مشتری جدید «{customerQuery.trim()}»
+                              </button>
+                            ) : null}
+                            {showNewCustomer ? (
+                              <div className="mt-2 flex flex-col gap-2">
+                                <input className={`${OPS_INPUT} bg-white`} dir="ltr" placeholder="شماره تماس (اختیاری)" value={newCustomerPhone} onChange={(event) => setNewCustomerPhone(event.target.value)} />
+                                <button type="button" onClick={createCustomer} disabled={!customerQuery.trim()} className={`${SECONDARY_BUTTON} min-h-12 w-full`}>ثبت مشتری</button>
+                              </div>
+                            ) : null}
+                          </>
+                        )}
+                        {selectedCustomer ? (
+                          <button type="button" onClick={() => void saveOrderCustomer(selectedCustomer.id)} disabled={busy} className={`${PRIMARY_BUTTON} mt-3 w-full`}>ذخیرهٔ مشتری سفارش</button>
+                        ) : null}
+                      </section>
+                    ) : null}
 
                     <section className={`${CARD} p-4`} aria-label="مبلغ سفارش">
                       {editable ? (

@@ -92,9 +92,6 @@ export const POST = withTenantScope(async (request: NextRequest, context: { para
     return NextResponse.json({ error: "invalid_tip_amount" }, { status: 400 });
   }
 
-  // One shape from here down: the single-method body is just a split of one
-  // slice whose amount is "whatever is owed", so nothing below this line has
-  // to know which form the client sent.
   const rawTenders: PayTenderBody[] = body.payments?.length
     ? body.payments
     : [{ methodId: body.methodId, method: body.method, reference: body.reference }];
@@ -102,9 +99,6 @@ export const POST = withTenantScope(async (request: NextRequest, context: { para
     return NextResponse.json({ error: "no_payment" }, { status: 400 });
   }
 
-  // Resolving each slice against the business's *active* ways is what stops a
-  // caller paying by a way that belongs to another tenant, or by one this
-  // business retired — the id alone proves nothing.
   const available = await listPaymentMethods(session.businessId);
   const byId = new Map(available.map((paymentMethod) => [paymentMethod.id, paymentMethod]));
   const byCode = new Map(available.map((paymentMethod) => [paymentMethod.code, paymentMethod]));
@@ -127,7 +121,6 @@ export const POST = withTenantScope(async (request: NextRequest, context: { para
 
   const client = await getPool().connect();
   let total = "0" as RialText;
-  /** The slices actually recorded — read after the transaction, for the response. */
   let paid: ResolvedTender[] = [];
   try {
     await client.query("BEGIN");
@@ -148,19 +141,15 @@ export const POST = withTenantScope(async (request: NextRequest, context: { para
       }
       await client.query(`UPDATE orders SET customer_id = $1 WHERE id = $2`, [customerId, id]);
     }
-    const { rows: eventRows } = await client.query<{id:string}>(
+    const { rows: eventRows } = await client.query<{ id: string }>(
       `INSERT INTO inventory_events
        (business_id,location_id,event_type,source_type,source_id,created_by,idempotency_key,costing_version)
        VALUES($1,$2,'sale_consumption','order',$3,$4,'order-payment:' || $5,2)
-       RETURNING id`, [session.businessId,location.id,id,session.sub,id]);
+       RETURNING id`,
+      [session.businessId, location.id, id, session.sub, id],
+    );
     const inventoryEventId = eventRows[0].id;
     total = rialText(order.total);
-    // The tenders cover the bill. A tip is *not* part of it: `payments` rows
-    // have always recorded the bill alone (orders.tip_amount holds the tip,
-    // and the ledger debits it on top), and every downstream reader — the
-    // closed-order amendment's re-plan, a refund's ceiling — depends on that
-    // still being true now that there can be several rows. `tendersWithTip`
-    // is where the tip rejoins the money for the posting.
     const due = Number(rialBigInt(total));
     let tenders: ResolvedTender[] = [];
     if (due > 0) {
@@ -168,9 +157,6 @@ export const POST = withTenantScope(async (request: NextRequest, context: { para
         ways.map((way, index) => ({
           methodId: way.id,
           settlement: way.settlement,
-          // A slice with no amount takes whatever is left — the whole bill when
-          // it is the only one (the shape every caller sent before splitting
-          // existed), and the remainder on a split. See TenderInput.amount.
           amount: rawTenders[index].amount,
           reference: rawTenders[index].reference,
         })),
@@ -183,11 +169,6 @@ export const POST = withTenantScope(async (request: NextRequest, context: { para
       tenders = validated.value;
     }
     paid = tenders;
-    // `settlement_seq` numbers the slices *within* this checkout (migration
-    // 0092). One checkout writing three of them is 1, 2, 3; a second, concurrent
-    // checkout of the same bill starts again at 1 and is refused by the unique
-    // index — which is how "one live settlement per order" survives a bill that
-    // is now several rows.
     for (const [index, tender] of tenders.entries()) {
       await client.query(
         `INSERT INTO payments (location_id, order_id, method, amount, reference, received_by, payment_method_id, settlement_seq)
@@ -206,12 +187,6 @@ export const POST = withTenantScope(async (request: NextRequest, context: { para
       return NextResponse.json({ error: "order_not_open" }, { status: 409 });
     }
     const { totalCost } = await deductForOrder(client, session.businessId, location.id, id, session.sub, inventoryEventId);
-    // The commission % lives in settings (it varies by SnapFood contract,
-    // per issue #160 §4) — resolved here to a Rial amount, same shape as
-    // tipAmount, so the ledger layer never has to know about % or settings.
-    // On a split, the commission is taken from the SnapFood slice alone —
-    // the cash the customer handed over at the door is not SnapFood's to
-    // keep a percentage of.
     let platformCommission = "0" as RialText;
     const platformAmount = tenders
       .filter((tender) => tender.settlement === "snappfood")
@@ -254,9 +229,6 @@ export const POST = withTenantScope(async (request: NextRequest, context: { para
     if (err instanceof MissingLedgerAccountError) {
       return NextResponse.json({ error: "ledger_account_missing", code: err.code }, { status: 409 });
     }
-    // A locked period, a negative ingredient requirement or a costing conflict
-    // is a condition someone can go and fix; only an unrecognised fault stays a
-    // 500, so it still surfaces as a bug rather than as advice to retry.
     const failure = paymentFailureFor(err);
     if (failure) return NextResponse.json({ error: failure.error }, { status: failure.status });
     throw err;
@@ -268,9 +240,6 @@ export const POST = withTenantScope(async (request: NextRequest, context: { para
   return NextResponse.json({
     ok: true,
     amount: total,
-    // `method` is the settlement of the first slice — kept so a client written
-    // against the single-payment response (which is every client that doesn't
-    // split) reads the same field it always did.
     method: paid[0]?.settlement ?? null,
     payments: paid.map((tender) => ({
       methodId: tender.methodId,
