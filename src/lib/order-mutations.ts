@@ -150,20 +150,18 @@ export async function createOrder(
       return { ok: false, error: "customer_not_found", status: 404 };
   }
 
-  let tableId: string | null = null;
-  if (input.type === "dine_in") {
-    tableId = input.tableId ?? null;
-    if (!tableId) return { ok: false, error: "table_required", status: 400 };
+  // A dine-in order may be started before seating. The order-progress screen
+  // assigns it to a table once the guest is seated; takeaway/delivery remain
+  // table-less as before.
+  const tableId = input.type === "dine_in" ? input.tableId ?? null : null;
+  if (tableId) {
     const { rows: table } = await query<{ id: string; status: string }>(
       "SELECT id, status FROM dining_tables WHERE id = $1 AND location_id = $2 AND is_active",
       [tableId, input.locationId],
     );
     if (table.length === 0)
       return { ok: false, error: "table_not_found", status: 404 };
-    if (
-      table[0].status === "cleaning" ||
-      table[0].status === "out_of_service"
-    ) {
+    if (table[0].status === "cleaning" || table[0].status === "out_of_service") {
       return { ok: false, error: "table_unavailable", status: 409 };
     }
   }

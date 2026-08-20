@@ -46,7 +46,6 @@ import {
 } from "@/lib/print-agent-client";
 import {
   isGlobalCashierShortcutEligible,
-  requiresTableSelection,
   searchPosMenuItems,
 } from "@/lib/pos-selection";
 import {
@@ -57,7 +56,6 @@ import {
 } from "@/lib/modifier-display";
 import { ModifierBadges } from "../modifier-badges";
 import { ModifierPicker } from "../modifier-picker";
-import { TablePickerDialog } from "./table-picker-dialog";
 import {
   SearchableSelect,
   type SelectOption,
@@ -103,15 +101,6 @@ interface MenuData {
   modifierGroups: ModifierGroup[];
   modifiers: Modifier[];
   itemModifierGroups: ItemGroupLink[];
-}
-interface Table {
-  id: string;
-  name: string;
-  capacity: number;
-}
-interface OpenOrder {
-  id: string;
-  table_id: string | null;
 }
 interface Courier {
   id: string;
@@ -170,8 +159,6 @@ export function PosScreen() {
   const [initialLoading, setInitialLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [loadError, setLoadError] = useState("");
-  const [tables, setTables] = useState<Table[]>([]);
-  const [openOrders, setOpenOrders] = useState<OpenOrder[]>([]);
   const [couriers, setCouriers] = useState<Courier[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [customerQuery, setCustomerQuery] = useState("");
@@ -182,7 +169,6 @@ export function PosScreen() {
   const [searchActiveIndex, setSearchActiveIndex] = useState(0);
   const [cart, setCart] = useState<CartUiLine[]>([]);
   const [orderType, setOrderType] = useState<OrderType>("dine_in");
-  const [tableId, setTableId] = useState("");
   const [guestCount, setGuestCount] = useState("");
   const [deliveryAddress, setDeliveryAddress] = useState("");
   const [deliveryPhone, setDeliveryPhone] = useState("");
@@ -195,7 +181,6 @@ export function PosScreen() {
   const [pickerItem, setPickerItem] = useState<Item | null>(null);
   const [cartSheetOpen, setCartSheetOpen] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
-  const [tablePickerOpen, setTablePickerOpen] = useState(false);
   const [checkoutIntent, setCheckoutIntent] = useState<CheckoutIntent>("order");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
   const [tipInput, setTipInput] = useState("");
@@ -212,11 +197,9 @@ export function PosScreen() {
     setIsRefreshing(true);
     Promise.all([
       api<MenuData>("/api/menu"),
-      api<{ tables: Table[] }>("/api/tables"),
-      api<{ orders: OpenOrder[] }>("/api/orders"),
       api<{ couriers: Courier[] }>("/api/couriers"),
     ])
-      .then(([menuRes, tablesRes, ordersRes, couriersRes]) => {
+      .then(([menuRes, couriersRes]) => {
         if (menuRes.ok) {
           setMenu(menuRes.data);
           setActiveCategory(
@@ -227,11 +210,9 @@ export function PosScreen() {
               "",
           );
         }
-        if (tablesRes.ok) setTables(tablesRes.data.tables);
-        if (ordersRes.ok) setOpenOrders(ordersRes.data.orders);
         if (couriersRes.ok) setCouriers(couriersRes.data.couriers);
         setLoadError(
-          !menuRes.ok || !tablesRes.ok || !ordersRes.ok || !couriersRes.ok
+          !menuRes.ok || !couriersRes.ok
             ? "بخشی از اطلاعات صندوق به‌روز نشد. داده‌های موجود حفظ شده‌اند."
             : "",
         );
@@ -267,15 +248,6 @@ export function PosScreen() {
     return () => clearTimeout(timer);
   }, [customerQuery]);
 
-  const occupiedTableIds = useMemo(
-    () =>
-      new Set(
-        openOrders
-          .map((o) => o.table_id)
-          .filter((id): id is string => Boolean(id)),
-      ),
-    [openOrders],
-  );
   const activeCategories = useMemo(
     () => menu?.categories.filter((category) => category.is_active) ?? [],
     [menu],
@@ -321,18 +293,12 @@ export function PosScreen() {
     (intent: CheckoutIntent) => {
       setError("");
       setCheckoutIntent(intent);
-      if (requiresTableSelection({ orderType, tableId })) {
-        setTablePickerOpen(true);
-        return;
-      }
       setReviewOpen(true);
     },
-    [orderType, tableId],
+    [],
   );
 
-  const hasOpenOverlay = Boolean(
-    pickerItem || reviewOpen || tablePickerOpen || cartSheetOpen,
-  );
+  const hasOpenOverlay = Boolean(pickerItem || reviewOpen || cartSheetOpen);
   useEffect(() => {
     function handleGlobalShortcut(event: KeyboardEvent) {
       const eligible = isGlobalCashierShortcutEligible({
@@ -545,8 +511,6 @@ export function PosScreen() {
     if (busy || submissionInFlight.current) return false;
     setError("");
     if (cart.length === 0) return setError("سبد خرید خالی است.");
-    if (orderType === "dine_in" && !tableId)
-      return setError("انتخاب میز الزامی است.");
     if (orderType === "delivery" && !deliveryAddress.trim())
       return setError("برای سفارش ارسالی آدرس الزامی است.");
 
@@ -554,7 +518,7 @@ export function PosScreen() {
     setBusy(true);
     const orderBody = {
       type: orderType,
-      tableId: orderType === "dine_in" ? tableId : undefined,
+      // Dine-in orders are assigned to a table from order progress after seating.
       customerId: customer?.id ?? undefined,
       guestCount: guestCount ? Number(guestCount) : undefined,
       discount: discountType
@@ -656,11 +620,7 @@ export function PosScreen() {
 
     const kitchenPrinter = firstPrinter(printers, "kitchen");
     if (!creation.queued && kitchenPrinter) {
-      const tableName =
-        orderType === "dine_in"
-          ? tables.find((table) => table.id === tableId)?.name
-          : undefined;
-      const label = orderType === "dine_in" ? tableName || "میز" : typeLabel;
+      const label = typeLabel;
       const ticket: KitchenTicketData = {
         label,
         orderTypeLabel: label,
@@ -678,10 +638,7 @@ export function PosScreen() {
     if (paid) {
       const receiptPrinter = firstPrinter(printers, "receipt");
       if (receiptPrinter) {
-        const tableName =
-          orderType === "dine_in"
-            ? tables.find((table) => table.id === tableId)?.name
-            : null;
+        const tableName = null;
         const receipt: ReceiptData = {
           business: {
             name: business.name,
@@ -724,10 +681,7 @@ export function PosScreen() {
     setResult({
       orderNumber,
       type: orderType,
-      tableName:
-        orderType === "dine_in"
-          ? (tables.find((table) => table.id === tableId)?.name ?? null)
-          : null,
+      tableName: null,
       total: totals.total,
       queued: creation.queued,
       paid,
@@ -736,7 +690,6 @@ export function PosScreen() {
       lines: cart,
     });
     setCart([]);
-    setTableId("");
     setGuestCount("");
     setCustomer(null);
     setCustomerQuery("");
@@ -1039,7 +992,6 @@ export function PosScreen() {
               type="button"
               onClick={() => {
                 setOrderType("takeaway");
-                setTableId("");
               }}
               className={`rounded-lg py-3 transition-colors ${orderType === "takeaway" ? "bg-[#FFF1D8] text-[#9B6700] shadow-none" : "bg-muted hover:text-foreground"}`}
             >
@@ -1049,7 +1001,6 @@ export function PosScreen() {
               type="button"
               onClick={() => {
                 setOrderType("delivery");
-                setTableId("");
               }}
               className={`rounded-lg py-3 transition-colors ${orderType === "delivery" ? "bg-[#FFF1D8] text-[#9B6700] shadow-none" : "bg-muted hover:text-foreground"}`}
             >
@@ -1057,52 +1008,18 @@ export function PosScreen() {
             </button>
           </div>
           {orderType === "dine_in" ? (
-            <>
-              <div className="flex flex-wrap gap-2">
-                {tables.map((t) => {
-                  const occupied = occupiedTableIds.has(t.id);
-                  return (
-                    <button
-                      key={t.id}
-                      type="button"
-                      disabled={occupied}
-                      onClick={() => setTableId(t.id)}
-                      className={`rounded-lg border px-4 py-2.5 text-sm font-medium ${
-                        tableId === t.id
-                          ? "border-[#E9A11B] bg-[#FFF1D8] text-[#9B6700]"
-                          : occupied
-                            ? "border-border bg-muted text-muted-foreground/60"
-                            : "border-input text-muted-foreground hover:border-[#E9A11B]/60"
-                      }`}
-                    >
-                      {t.name}
-                    </button>
-                  );
-                })}
-                {tables.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">
-                    میزی ثبت نشده است.
-                  </p>
-                ) : null}
-              </div>
-              <label
-                className="mt-3 block text-xs font-semibold text-[#5E5B55]"
-                htmlFor="pos-guest-count"
-              >
-                تعداد مهمان
-                <input
-                  id="pos-guest-count"
-                  className={
-                    inputClass + " mt-1 min-h-11 border-[#EAE8E2] bg-[#FCFCFA]"
-                  }
-                  dir="ltr"
-                  inputMode="numeric"
-                  value={guestCount}
-                  onChange={(event) => setGuestCount(event.target.value)}
-                  placeholder="اختیاری"
-                />
-              </label>
-            </>
+            <label className="mt-3 block text-xs font-semibold text-[#5E5B55]" htmlFor="pos-guest-count">
+              تعداد مهمان
+              <input
+                id="pos-guest-count"
+                className={inputClass + " mt-1 min-h-11 border-[#EAE8E2] bg-[#FCFCFA]"}
+                dir="ltr"
+                inputMode="numeric"
+                value={guestCount}
+                onChange={(event) => setGuestCount(event.target.value)}
+                placeholder="اختیاری"
+              />
+            </label>
           ) : null}
           {orderType === "delivery" ? (
             <div className="space-y-3">
@@ -1448,14 +1365,7 @@ export function PosScreen() {
             <SheetTitle>سبد خرید</SheetTitle>
             <ErrorBox>{error}</ErrorBox>
           </div>
-          {/*
-            One scroll region for the sheet, not three. The order type, the
-            table grid and the payment block each used to hold a fixed slice
-            of a 90dvh sheet, which left the item list a sliver to scroll in
-            on a phone — the taller the intake form, the less of the cart was
-            visible. Only the title and the two actions stay pinned now;
-            everything between them scrolls as one.
-          */}
+          {/* One scroll region keeps the cart usable on short phone screens. */}
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
             <div className="border-b border-border p-4">
               <div className="grid grid-cols-3 gap-2 text-sm font-medium">
@@ -1465,7 +1375,6 @@ export function PosScreen() {
                     type="button"
                     onClick={() => {
                       setOrderType(type);
-                      if (type !== "dine_in") setTableId("");
                     }}
                     className={`min-h-11 rounded-lg px-2 ${orderType === type ? "bg-primary text-primary-foreground" : "bg-muted"}`}
                   >
@@ -1478,22 +1387,18 @@ export function PosScreen() {
                 ))}
               </div>
               {orderType === "dine_in" ? (
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {tables.map((table) => {
-                    const occupied = occupiedTableIds.has(table.id);
-                    return (
-                      <button
-                        key={table.id}
-                        type="button"
-                        disabled={occupied}
-                        onClick={() => setTableId(table.id)}
-                        className={`min-h-11 rounded-lg border px-3 text-sm ${tableId === table.id ? "border-[#E9A11B] bg-[#FFF1D8] text-[#9B6700]" : "border-input"}`}
-                      >
-                        {table.name}
-                      </button>
-                    );
-                  })}
-                </div>
+                <label className="mt-3 block text-xs font-semibold text-[#5E5B55]" htmlFor="pos-mobile-guest-count">
+                  تعداد مهمان
+                  <input
+                    id="pos-mobile-guest-count"
+                    className={inputClass + " mt-1 min-h-11 border-[#EAE8E2] bg-[#FCFCFA]"}
+                    dir="ltr"
+                    inputMode="numeric"
+                    value={guestCount}
+                    onChange={(event) => setGuestCount(event.target.value)}
+                    placeholder="اختیاری"
+                  />
+                </label>
               ) : null}
               {orderType === "delivery" ? (
                 <div className="mt-3 space-y-3">
@@ -1844,13 +1749,7 @@ export function PosScreen() {
                   }
                 />
                 {orderType === "dine_in" ? (
-                  <Row
-                    label="میز"
-                    value={
-                      tables.find((table) => table.id === tableId)?.name ??
-                      "انتخاب نشده"
-                    }
-                  />
+                  <Row label="میز" value="بعداً در صف سفارش تعیین می‌شود" />
                 ) : null}
                 {orderType === "delivery" ? (
                   <Row
@@ -1918,21 +1817,6 @@ export function PosScreen() {
           )}
         </DialogContent>
       </Dialog>
-      <TablePickerDialog
-        open={tablePickerOpen}
-        tables={tables}
-        occupiedTableIds={occupiedTableIds}
-        selectedTableId={tableId}
-        guestCount={guestCount}
-        intent={checkoutIntent}
-        onCancel={() => setTablePickerOpen(false)}
-        onConfirm={(chosenTableId, chosenGuestCount) => {
-          setTableId(chosenTableId);
-          setGuestCount(chosenGuestCount);
-          setTablePickerOpen(false);
-          setReviewOpen(true);
-        }}
-      />
       {pickerItem ? (
         <ModifierPicker
           itemName={pickerItem.name}

@@ -157,10 +157,9 @@ export function SearchableSelect({
           </div>
           <ul
             role="listbox"
-            className="max-h-64 overflow-y-auto p-1"
-            onMouseDown={
-              (e) => e.preventDefault() /* keep input focused on scroll */
-            }
+            className="max-h-[min(18rem,50dvh)] overscroll-contain overflow-y-auto p-1 touch-pan-y"
+            onWheel={(event) => event.stopPropagation()}
+            onTouchMove={(event) => event.stopPropagation()}
           >
             {filtered.length === 0 ? (
               <li className="px-2.5 py-2 text-sm text-muted-foreground">
@@ -179,7 +178,7 @@ export function SearchableSelect({
                       onMouseEnter={() => setActiveIndex(i)}
                       onClick={() => select(option)}
                       className={cn(
-                        "flex w-full items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-sm text-start outline-none",
+                        "flex min-h-11 w-full items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-sm text-start outline-none",
                         isActive && "bg-accent text-accent-foreground",
                       )}
                     >

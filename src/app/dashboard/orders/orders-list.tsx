@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, useDeferredValue } from "react";
-import { RefreshCwIcon, SearchIcon, ShoppingBagIcon } from "lucide-react";
+import { InfoIcon, RefreshCwIcon, SearchIcon, ShoppingBagIcon } from "lucide-react";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali, isoDateInTimeZone } from "@/lib/jalali";
 import { formatToman } from "@/lib/money";
@@ -952,22 +952,25 @@ export function OrdersList({
           </div>
 
           {orders ? (
-            <p
-              className="border-b border-[#EAE8E2] bg-[#FCFCFA] px-4 py-2 text-[11px] leading-5 text-[#77756F]"
-              role="status"
-            >
-              {reviewedShift
-                ? `سفارش‌های بسته‌شدهٔ شیفت ${reviewedShift.employeeName} نمایش داده می‌شوند؛ صف بازِ بالا همچنان لحظه‌ای است.`
-                : businessDay?.enabled
-                  ? businessDay.closedBy === "shift"
-                    ? `شیفت ساعت ${orderTimeLabel(businessDay.windowStart)} بسته شد؛ فهرست برای شیفت بعدی از همان لحظه شمرده می‌شود. سفارش‌های شیفت قبل در گزارش‌ها باقی است.`
-                    : businessDay.closedBy === "manual"
-                      ? `روز کاری ساعت ${orderTimeLabel(businessDay.windowStart)} بسته شد؛ فهرست از همان لحظه شمرده می‌شود.`
-                      : `سفارش‌های بسته‌شدهٔ روز کاری جاری، از ساعت ${orderTimeLabel(businessDay.windowStart)}، نمایش داده می‌شوند.`
-                  : shiftStartedAt
-                    ? `سفارش‌های بسته‌شده از شروع شیفت (ساعت ${orderTimeLabel(shiftStartedAt)}) نمایش داده می‌شوند.`
-                    : "سفارش‌های بسته‌شدهٔ امروز نمایش داده می‌شوند؛ با شروع شیفت، فهرست از زمان شیفت شمرده می‌شود."}
-            </p>
+            <div className="flex items-center gap-2 border-b border-[#EAE8E2] bg-[#FCFCFA] px-4 py-2 text-[11px] text-[#77756F]" role="status">
+              <span title="راهنمای بازه سفارش‌ها" className="inline-flex shrink-0" aria-label="راهنمای بازه سفارش‌ها">
+                <InfoIcon className="size-4 text-[#9B6700]" aria-hidden="true" />
+              </span>
+              <span>بازه سفارش‌ها</span>
+              <span className="sr-only">
+                {reviewedShift
+                  ? `سفارش‌های بسته‌شدهٔ شیفت ${reviewedShift.employeeName} نمایش داده می‌شوند؛ صف بازِ بالا لحظه‌ای است.`
+                  : businessDay?.enabled
+                    ? businessDay.closedBy === "shift"
+                      ? `شیفت ساعت ${orderTimeLabel(businessDay.windowStart)} بسته شد.`
+                      : businessDay.closedBy === "manual"
+                        ? `روز کاری ساعت ${orderTimeLabel(businessDay.windowStart)} بسته شد.`
+                        : `سفارش‌های بسته‌شدهٔ روز کاری جاری از ساعت ${orderTimeLabel(businessDay.windowStart)} نمایش داده می‌شوند.`
+                    : shiftStartedAt
+                      ? `سفارش‌های بسته‌شده از شروع شیفت در ساعت ${orderTimeLabel(shiftStartedAt)} نمایش داده می‌شوند.`
+                      : "سفارش‌های بسته‌شدهٔ امروز نمایش داده می‌شوند."}
+              </span>
+            </div>
           ) : null}
 
           {initialLoading && !orders ? (

@@ -36,6 +36,16 @@ export const GET = withTenantScope(async (_request: NextRequest, context: { para
     [id],
   );
 
+  const { rows: guests } = await query(
+    `SELECT tsc.guest_number AS "guestNumber", tsc.customer_id AS "customerId",
+            c.name AS "customerName", c.phone AS "customerPhone"
+       FROM table_session_customers tsc
+       JOIN customers c ON c.id = tsc.customer_id
+      WHERE tsc.session_id = $1
+      ORDER BY tsc.guest_number`,
+    [id],
+  );
+
   const { rows: orders } = await query(
     `SELECT id, order_number, status, subtotal, discount, tax, total, opened_at
        FROM orders WHERE table_session_id = $1 ORDER BY opened_at`,
@@ -44,13 +54,14 @@ export const GET = withTenantScope(async (_request: NextRequest, context: { para
 
   const bill = await computeSessionBill(id);
 
-  return NextResponse.json({ session: sessions[0], tables, orders, bill });
+  return NextResponse.json({ session: sessions[0], tables, guests, orders, bill });
 });
 
 interface PatchBody {
-  action?: "request_bill" | "close" | "merge" | "set_note";
+  action?: "request_bill" | "close" | "merge" | "set_note" | "set_guests";
   tableId?: string; // for merge
   note?: string; // for set_note
+  customerIds?: (string | null)[]; // 1-based guest order; null leaves a guest anonymous
 }
 
 /** Session lifecycle actions. */
@@ -81,7 +92,38 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
-    if (body.action === "request_bill") {
+    if (body.action === "set_guests") {
+      const customerIds = body.customerIds ?? [];
+      if (customerIds.length > 50 || new Set(customerIds.filter(Boolean)).size !== customerIds.filter(Boolean).length) {
+        throw Object.assign(new Error("invalid_guests"), { code: "invalid_guests", status: 400 });
+      }
+      const { rows: sessionRows } = await client.query<{ party_size: number | null }>(
+        `SELECT party_size FROM table_sessions WHERE id = $1 AND location_id = $2 AND status = 'open' FOR UPDATE`,
+        [id, location.id],
+      );
+      if (sessionRows.length === 0) throw Object.assign(new Error("session_not_found"), { code: "session_not_found", status: 404 });
+      const partySize = Math.max(1, customerIds.length, Number(sessionRows[0].party_size ?? 0));
+      const selectedCustomerIds = customerIds.filter((value): value is string => Boolean(value));
+      if (selectedCustomerIds.length > 0) {
+        const { rows: ownedCustomers } = await client.query<{ id: string }>(
+          `SELECT id FROM customers WHERE business_id = $1 AND is_active AND id = ANY($2::uuid[])`,
+          [session.businessId, selectedCustomerIds],
+        );
+        if (ownedCustomers.length !== selectedCustomerIds.length) {
+          throw Object.assign(new Error("customer_not_found"), { code: "customer_not_found", status: 404 });
+        }
+      }
+      await client.query(`DELETE FROM table_session_customers WHERE session_id = $1`, [id]);
+      for (const [index, customerId] of customerIds.entries()) {
+        if (!customerId) continue;
+        await client.query(
+          `INSERT INTO table_session_customers (business_id, location_id, session_id, guest_number, customer_id)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [session.businessId, location.id, id, index + 1, customerId],
+        );
+      }
+      await client.query(`UPDATE table_sessions SET party_size = $2 WHERE id = $1`, [id, partySize]);
+    } else if (body.action === "request_bill") {
       await requestBill(client, location.id, id);
     } else if (body.action === "close") {
       await closeSession(client, location.id, id, session.sub);

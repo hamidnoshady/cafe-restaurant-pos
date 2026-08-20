@@ -96,7 +96,7 @@ export interface OrderDetail {
 /** Fetches one order and its immutable line/modifier snapshots from one branch. */
 export async function getOrderDetail(locationId: string, id: string): Promise<OrderDetail | null> {
   const { rows: orders } = await query<Record<string, unknown>>(
-    "SELECT o.*, dt.name AS table_name FROM orders o LEFT JOIN dining_tables dt ON dt.id = o.table_id WHERE o.id = $1 AND o.location_id = $2",
+    "SELECT o.*, dt.name AS table_name, c.name AS customer_name, c.phone AS customer_phone FROM orders o LEFT JOIN dining_tables dt ON dt.id = o.table_id LEFT JOIN customers c ON c.id = o.customer_id WHERE o.id = $1 AND o.location_id = $2",
     [id, locationId],
   );
   const order = orders[0];

@@ -3,19 +3,13 @@ import { requireRole, withTenantScope } from "@/lib/auth";
 import { getPool, query } from "@/lib/db";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { broadcast } from "@/lib/realtime";
-import { deductForOrder } from "@/lib/inventory-service";
-import {
-  MissingLedgerAccountError,
-  postExactCogsEntry,
-  postExactOrderPaymentEntry,
-} from "@/lib/ledger-service";
-import { getOnlinePlatformsConfig } from "@/lib/online-platforms-service";
-import { lockOpenOrder } from "@/lib/order-lock";
 import { paymentFailureFor } from "@/lib/order-payment-errors";
-import { rialBigInt, rialText, type RialText } from "@/lib/inventory-exact";
-
-const PAYMENT_METHODS = ["cash", "card", "card_to_card", "online", "credit", "snappfood"] as const;
-type PaymentMethod = (typeof PAYMENT_METHODS)[number];
+import {
+  completeOrderPayment,
+  PAYMENT_METHODS,
+  paymentErrorDetails,
+  type PaymentMethod,
+} from "@/lib/payment-service";
 
 interface PayBody {
   method?: string;
@@ -80,93 +74,26 @@ export const POST = withTenantScope(async (request: NextRequest, context: { para
   }
 
   const client = await getPool().connect();
-  let total = "0" as RialText;
+  let total = "0";
   try {
     await client.query("BEGIN");
-    const locked = await lockOpenOrder(client, location.id, id);
-    if (!locked.ok) {
-      await client.query("ROLLBACK");
-      return NextResponse.json({ error: locked.error }, { status: locked.status });
-    }
-    const order = locked.order;
-    if (customerId) {
-      const { rowCount: customerOwned } = await client.query(
-        `SELECT 1 FROM customers WHERE id = $1 AND business_id = $2`,
-        [customerId, session.businessId],
-      );
-      if (customerOwned !== 1) {
-        await client.query("ROLLBACK");
-        return NextResponse.json({ error: "customer_not_found" }, { status: 404 });
-      }
-      await client.query(`UPDATE orders SET customer_id = $1 WHERE id = $2`, [customerId, id]);
-    }
-    const { rows: eventRows } = await client.query<{id:string}>(
-      `INSERT INTO inventory_events
-       (business_id,location_id,event_type,source_type,source_id,created_by,idempotency_key,costing_version)
-       VALUES($1,$2,'sale_consumption','order',$3,$4,'order-payment:' || $5,2)
-       RETURNING id`, [session.businessId,location.id,id,session.sub,id]);
-    const inventoryEventId = eventRows[0].id;
-    total = rialText(order.total);
-    if (rialBigInt(total) > 0n) {
-      await client.query(
-        `INSERT INTO payments (location_id, order_id, method, amount, reference, received_by)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [location.id, id, method, total, body.reference?.trim() || null, session.sub],
-      );
-    }
-    const { rowCount: completed } = await client.query(
-      `UPDATE orders SET status = 'completed', closed_by = $2, closed_at = now(), tip_amount = $3
-        WHERE id = $1 AND status = 'open'
-        RETURNING id`,
-      [id, session.sub, tipAmount],
-    );
-    if (completed !== 1) {
-      await client.query("ROLLBACK");
-      return NextResponse.json({ error: "order_not_open" }, { status: 409 });
-    }
-    const { totalCost } = await deductForOrder(client, session.businessId, location.id, id, session.sub, inventoryEventId);
-    // The commission % lives in settings (it varies by SnapFood contract,
-    // per issue #160 §4) — resolved here to a Rial amount, same shape as
-    // tipAmount, so the ledger layer never has to know about % or settings.
-    let platformCommission = "0" as RialText;
-    if (method === "snappfood") {
-      const { snappfood } = await getOnlinePlatformsConfig(session.businessId);
-      if (snappfood) {
-        const commissionRial = BigInt(Math.round(Number(rialBigInt(total)) * (snappfood.commissionPercent / 100)));
-        platformCommission = rialText(commissionRial.toString());
-      }
-    }
-    await postExactOrderPaymentEntry(client, {
+    const result = await completeOrderPayment({
+      client,
       businessId: session.businessId,
       locationId: location.id,
       orderId: id,
-      createdBy: session.sub,
       method,
-      amount: total,
-      tax: rialText(order.tax),
-      inventoryEventId,
-      orderChannel: order.type,
-      tip: rialText(String(tipAmount)),
-      platformCommission,
+      reference: body.reference,
+      customerId,
+      tipAmount,
+      receivedBy: session.sub,
     });
-    await postExactCogsEntry(client, {
-      businessId: session.businessId,
-      locationId: location.id,
-      orderId: id,
-      createdBy: session.sub,
-      totalCost,
-      inventoryEventId,
-    });
-    await client.query("UPDATE inventory_events SET posting_status='posted' WHERE id=$1", [inventoryEventId]);
+    total = result.amount;
     await client.query("COMMIT");
   } catch (err) {
     await client.query("ROLLBACK");
-    if (err instanceof MissingLedgerAccountError) {
-      return NextResponse.json({ error: "ledger_account_missing", code: err.code }, { status: 409 });
-    }
-    // A locked period, a negative ingredient requirement or a costing conflict
-    // is a condition someone can go and fix; only an unrecognised fault stays a
-    // 500, so it still surfaces as a bug rather than as advice to retry.
+    const details = paymentErrorDetails(err);
+    if (details) return NextResponse.json({ error: details.error }, { status: details.status });
     const failure = paymentFailureFor(err);
     if (failure) return NextResponse.json({ error: failure.error }, { status: failure.status });
     throw err;

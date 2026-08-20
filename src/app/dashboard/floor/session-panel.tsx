@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
+import { BanknoteIcon, CreditCardIcon, UsersIcon } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toPersianDigits } from "@/lib/digits";
 import { formatToman } from "@/lib/money";
@@ -27,8 +28,22 @@ interface SessionDetail {
     total: number | string;
     opened_at: string;
   }[];
+  guests: {
+    guestNumber: number;
+    customerId: string;
+    customerName: string;
+    customerPhone: string | null;
+  }[];
   bill: { total: number; lines: { orderItemId: string; orderId: string; name: string; amount: number }[] };
 }
+
+interface Customer {
+  id: string;
+  name: string;
+  phone: string | null;
+}
+
+type PaymentMethod = "cash" | "card" | "card_to_card" | "snappfood";
 
 export function SessionPanel({
   sessionId,
@@ -51,8 +66,9 @@ export function SessionPanel({
     const tRes = await api<{ tables: { id: string; name: string; status: string }[] }>("/api/tables");
     if (tRes.ok) setFreeTables(tRes.data.tables.filter((t) => t.status === "free"));
   }, [sessionId]);
+
   useEffect(() => {
-    load();
+    void load();
   }, [load]);
 
   async function action(body: object) {
@@ -78,7 +94,7 @@ export function SessionPanel({
 
   return (
     <div className="mt-4 border-t border-border pt-4">
-      <div className="mb-2 flex items-baseline justify-between">
+      <div className="mb-2 flex items-baseline justify-between gap-2">
         <h3 className="font-bold">نشست میز</h3>
         <span className="text-xs text-muted-foreground">
           {session.party_size ? `${toPersianDigits(session.party_size)} نفر` : "—"}
@@ -86,7 +102,7 @@ export function SessionPanel({
         </span>
       </div>
       {tables.length > 1 ? (
-        <p className="mb-2 text-xs text-muted-foreground">میزهای ادغام‌شده: {tables.map((t) => t.name).join("، ")}</p>
+        <p className="mb-2 text-xs text-muted-foreground">میزها: {tables.map((t) => t.name).join("، ")}</p>
       ) : null}
 
       <div className="mb-3 rounded-lg bg-muted/50 p-3 text-sm">
@@ -95,11 +111,8 @@ export function SessionPanel({
         ) : (
           <ul className="space-y-1">
             {orders.map((o) => (
-              <li key={o.id} className="flex justify-between">
-                <span className="text-muted-foreground">
-                  سفارش #{toPersianDigits(o.order_number)}
-                  {o.status === "voided" ? " (باطل)" : ""}
-                </span>
+              <li key={o.id} className="flex justify-between gap-2">
+                <span className="text-muted-foreground">سفارش #{toPersianDigits(o.order_number)}{o.status === "voided" ? " (باطل)" : ""}</span>
                 <span>{formatToman(Number(o.total))}</span>
               </li>
             ))}
@@ -113,23 +126,19 @@ export function SessionPanel({
 
       <div className="flex flex-wrap gap-2">
         {!session.bill_requested_at ? (
-          <SecondaryButton onClick={() => action({ action: "request_bill" })} disabled={busy}>
-            درخواست صورتحساب
-          </SecondaryButton>
+          <SecondaryButton onClick={() => void action({ action: "request_bill" })} disabled={busy}>درخواست صورتحساب</SecondaryButton>
         ) : (
           <span className="rounded-lg bg-purple-50 px-3 py-2 text-xs text-purple-700 dark:bg-purple-950 dark:text-purple-300">صورتحساب درخواست شد</span>
         )}
-        <SecondaryButton onClick={() => setShowSplit(true)} disabled={busy || bill.total <= 0}>
-          تقسیم صورتحساب
-        </SecondaryButton>
+        <SecondaryButton onClick={() => setShowSplit(true)} disabled={busy || bill.total <= 0}>تقسیم صورتحساب</SecondaryButton>
         <PrimaryButton
           type="button"
           onClick={async () => {
-            if (await action({ action: "close" })) toast.success("میز تسویه و بسته شد");
+            if (await action({ action: "close" })) toast.success("میز بسته شد");
           }}
           disabled={busy}
         >
-          بستن میز (تسویه)
+          بستن میز
         </PrimaryButton>
       </div>
 
@@ -138,21 +147,20 @@ export function SessionPanel({
           className={`${inputClass} py-1 text-xs`}
           value={mergeTableId}
           onChange={setMergeTableId}
-          options={[
-            { value: "", label: "ادغام با میز آزاد…" },
-            ...freeTables.map((t) => ({ value: t.id, label: t.name })),
-          ]}
+          options={[{ value: "", label: "ادغام با میز آزاد…" }, ...freeTables.map((t) => ({ value: t.id, label: t.name }))]}
         />
-        <SecondaryButton
-          onClick={() => mergeTableId && action({ action: "merge", tableId: mergeTableId })}
-          disabled={busy || !mergeTableId}
-        >
-          ادغام
-        </SecondaryButton>
+        <SecondaryButton onClick={() => mergeTableId && void action({ action: "merge", tableId: mergeTableId })} disabled={busy || !mergeTableId}>ادغام</SecondaryButton>
       </div>
 
       {showSplit ? (
-        <SplitDialog sessionId={sessionId} bill={bill} onClose={() => setShowSplit(false)} setError={setError} />
+        <SplitDialog
+          sessionId={sessionId}
+          bill={bill}
+          initialGuests={detail.guests}
+          onClose={() => setShowSplit(false)}
+          onChanged={onChange}
+          setError={setError}
+        />
       ) : null}
     </div>
   );
@@ -161,132 +169,193 @@ export function SessionPanel({
 function SplitDialog({
   sessionId,
   bill,
+  initialGuests,
   onClose,
+  onChanged,
   setError,
 }: {
   sessionId: string;
   bill: SessionDetail["bill"];
+  initialGuests: SessionDetail["guests"];
   onClose: () => void;
+  onChanged: () => void;
   setError: (s: string) => void;
 }) {
   const [mode, setMode] = useState<"even" | "itemized">("even");
-  const [guests, setGuests] = useState("2");
+  const [guests, setGuests] = useState(String(Math.max(2, initialGuests.length || 2)));
+  const [customerIds, setCustomerIds] = useState<(string | null)[]>(() => {
+    const count = Math.max(2, initialGuests.length || 2);
+    return Array.from({ length: count }, (_, index) => initialGuests[index]?.customerId ?? null);
+  });
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [customerQuery, setCustomerQuery] = useState("");
   const [assignments, setAssignments] = useState<Record<string, number>>({});
   const [shares, setShares] = useState<number[] | null>(null);
+  const [shareCustomerNames, setShareCustomerNames] = useState<string[]>([]);
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
   const [busy, setBusy] = useState(false);
 
   const guestCount = Math.max(1, Math.min(50, Number(guests) || 1));
+  const customerOptions = [
+    { value: "", label: "بدون مشتری" },
+    ...customers.map((customer) => ({
+      value: customer.id,
+      label: customer.phone ? `${customer.name} — ${toPersianDigits(customer.phone)}` : customer.name,
+      searchString: `${customer.name} ${customer.phone ?? ""}`,
+    })),
+  ];
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      void api<{ customers: Customer[] }>(`/api/customers?q=${encodeURIComponent(customerQuery)}`).then(({ ok, data }) => {
+        if (ok) setCustomers(data.customers);
+      });
+    }, customerQuery.trim() ? 200 : 0);
+    return () => clearTimeout(timer);
+  }, [customerQuery]);
+
+  function setGuestCount(value: string) {
+    setGuests(value);
+    const count = Math.max(1, Math.min(50, Number(value) || 1));
+    setCustomerIds((previous) => Array.from({ length: count }, (_, index) => previous[index] ?? null));
+    setShares(null);
+  }
+
+  async function saveGuests() {
+    const ids = Array.from({ length: guestCount }, (_, index) => customerIds[index] ?? null);
+    const result = await api<{ error?: string }>(`/api/table-sessions/${sessionId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ action: "set_guests", customerIds: ids }),
+    });
+    if (!result.ok) {
+      setError(errorMessage(result.data.error));
+      return false;
+    }
+    return true;
+  }
 
   async function compute() {
     setBusy(true);
     setError("");
     setShares(null);
+    if (!(await saveGuests())) {
+      setBusy(false);
+      return;
+    }
     const res = await api<{ error?: string; shares?: number[] }>(`/api/table-sessions/${sessionId}/split`, {
       method: "POST",
-      body: JSON.stringify({
-        mode,
-        guests: guestCount,
-        assignments: mode === "itemized" ? assignments : undefined,
-      }),
+      body: JSON.stringify({ mode, guests: guestCount, assignments: mode === "itemized" ? assignments : undefined }),
     });
     setBusy(false);
     if (!res.ok) return setError(errorMessage(res.data.error));
     setShares(res.data.shares ?? null);
+    const names = customerIds.map((id, index) => {
+      const customer = customers.find((item) => item.id === id);
+      return customer?.name ?? initialGuests.find((guest) => guest.customerId === id)?.customerName ?? `مهمان ${toPersianDigits(index + 1)}`;
+    });
+    setShareCustomerNames(names);
+  }
+
+  async function payAll() {
+    setBusy(true);
+    setError("");
+    if (!(await saveGuests())) {
+      setBusy(false);
+      return;
+    }
+    const payerCustomerId = customerIds.find((id): id is string => Boolean(id)) ?? null;
+    const result = await api<{ error?: string }>(`/api/table-sessions/${sessionId}/pay`, {
+      method: "POST",
+      body: JSON.stringify({ method: paymentMethod, customerId: payerCustomerId }),
+    });
+    setBusy(false);
+    if (!result.ok) return setError(errorMessage(result.data.error));
+    onChanged();
+    onClose();
+    toast.success("کل صورتحساب با یک پرداخت ثبت شد");
   }
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-lg">
-        <DialogHeader>
-          <DialogTitle>تقسیم صورتحساب</DialogTitle>
-        </DialogHeader>
+      <DialogContent className="max-h-[92dvh] max-w-lg overflow-y-auto">
+        <DialogHeader><DialogTitle>تقسیم صورتحساب و مشتری‌ها</DialogTitle></DialogHeader>
 
-        <div className="mb-4 flex gap-1 rounded-lg bg-muted p-1 text-sm">
-          <button
-            type="button"
-            onClick={() => {
-              setMode("even");
-              setShares(null);
-            }}
-            className={`flex-1 rounded-md py-1.5 ${mode === "even" ? "bg-card shadow-sm" : "text-muted-foreground"}`}
-          >
-            تقسیم مساوی
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setMode("itemized");
-              setShares(null);
-            }}
-            className={`flex-1 rounded-md py-1.5 ${mode === "itemized" ? "bg-card shadow-sm" : "text-muted-foreground"}`}
-          >
-            به تفکیک اقلام
-          </button>
-        </div>
+        <section className="rounded-xl border border-[#EAE8E2] bg-[#FCFCFA] p-3" aria-label="مشتری‌های میز">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <h3 className="text-sm font-bold">مشتری‌های این میز</h3>
+            <UsersIcon className="size-4 text-[#9B6700]" aria-hidden="true" />
+          </div>
+          <label className="mb-3 flex items-center gap-2 text-sm">
+            <span className="shrink-0">تعداد نفر</span>
+            <input className={`${inputClass} w-24`} inputMode="numeric" dir="ltr" value={guests} onChange={(event) => setGuestCount(event.target.value)} />
+          </label>
+          <div className="space-y-2">
+            {Array.from({ length: guestCount }, (_, index) => (
+              <div key={index} className="flex items-center gap-2">
+                <span className="w-16 shrink-0 text-xs text-muted-foreground">مهمان {toPersianDigits(index + 1)}</span>
+                <SearchableSelect
+                  className={`${inputClass} min-h-11 flex-1`}
+                  value={customerIds[index] ?? ""}
+                  onChange={(value) => setCustomerIds((previous) => previous.map((current, itemIndex) => itemIndex === index ? value || null : current))}
+                  onQueryChange={setCustomerQuery}
+                  options={customerOptions}
+                  ariaLabel={`مشتری مهمان ${index + 1}`}
+                  searchPlaceholder="جستجوی نام یا شماره…"
+                  placeholder="بدون مشتری"
+                />
+              </div>
+            ))}
+          </div>
+        </section>
 
-        <div className="mb-4 flex items-center gap-2 text-sm">
-          <span>تعداد مهمان:</span>
-          <input
-            className={`${inputClass} w-24`}
-            inputMode="numeric"
-            dir="ltr"
-            value={guests}
-            onChange={(e) => setGuests(e.target.value)}
-          />
+        <div className="flex gap-1 rounded-lg bg-muted p-1 text-sm">
+          <button type="button" onClick={() => { setMode("even"); setShares(null); }} className={`min-h-11 flex-1 rounded-md ${mode === "even" ? "bg-card shadow-sm" : "text-muted-foreground"}`}>تقسیم مساوی</button>
+          <button type="button" onClick={() => { setMode("itemized"); setShares(null); }} className={`min-h-11 flex-1 rounded-md ${mode === "itemized" ? "bg-card shadow-sm" : "text-muted-foreground"}`}>به تفکیک اقلام</button>
         </div>
 
         {mode === "itemized" ? (
-          <div className="mb-4 max-h-56 space-y-1 overflow-y-auto rounded-lg border border-border p-2 text-sm">
-            {bill.lines.map((l) => (
-              <div key={l.orderItemId} className="flex items-center justify-between gap-2">
-                <span className="flex-1 truncate">
-                  {l.name} <span className="text-xs text-muted-foreground">{formatToman(l.amount)}</span>
-                </span>
+          <div className="max-h-56 space-y-1 overflow-y-auto overscroll-contain rounded-lg border border-border p-2 text-sm">
+            {bill.lines.map((line) => (
+              <div key={line.orderItemId} className="flex items-center justify-between gap-2">
+                <span className="min-w-0 flex-1 truncate">{line.name} <span className="text-xs text-muted-foreground">{formatToman(line.amount)}</span></span>
                 <SearchableSelect
                   className={`${inputClass} w-28 py-1 text-xs`}
-                  value={assignments[l.orderItemId]?.toString() ?? ""}
-                  onChange={(value) =>
-                    setAssignments((prev) => {
-                      const next = { ...prev };
-                      if (value === "") delete next[l.orderItemId];
-                      else next[l.orderItemId] = Number(value);
-                      return next;
-                    })
-                  }
-                  options={[
-                    { value: "", label: "مشترک" },
-                    ...Array.from({ length: guestCount }, (_, i) => ({
-                      value: String(i),
-                      label: `مهمان ${toPersianDigits(i + 1)}`,
-                    })),
-                  ]}
+                  value={assignments[line.orderItemId]?.toString() ?? ""}
+                  onChange={(value) => setAssignments((previous) => {
+                    const next = { ...previous };
+                    if (value === "") delete next[line.orderItemId]; else next[line.orderItemId] = Number(value);
+                    return next;
+                  })}
+                  options={[{ value: "", label: "مشترک" }, ...Array.from({ length: guestCount }, (_, index) => ({ value: String(index), label: `مهمان ${toPersianDigits(index + 1)}` }))]}
                 />
               </div>
             ))}
           </div>
         ) : null}
 
-        <PrimaryButton type="button" onClick={compute} disabled={busy}>
-          محاسبهٔ سهم‌ها
-        </PrimaryButton>
+        <PrimaryButton type="button" onClick={() => void compute()} disabled={busy}>محاسبه سهم‌ها</PrimaryButton>
 
         {shares ? (
-          <div className="mt-4 rounded-lg bg-muted/50 p-3 text-sm">
-            <p className="mb-2 font-semibold">سهم هر مهمان:</p>
+          <div className="rounded-lg bg-muted/50 p-3 text-sm">
+            <p className="mb-2 font-semibold">سهم هر مشتری:</p>
             <ul className="space-y-1">
-              {shares.map((s, i) => (
-                <li key={i} className="flex justify-between">
-                  <span>مهمان {toPersianDigits(i + 1)}</span>
-                  <span className="font-medium">{formatToman(s)}</span>
-                </li>
+              {shares.map((share, index) => (
+                <li key={index} className="flex justify-between gap-2"><span>{shareCustomerNames[index] ?? `مهمان ${toPersianDigits(index + 1)}`}</span><span className="font-medium">{formatToman(share)}</span></li>
               ))}
             </ul>
-            <div className="mt-2 flex justify-between border-t border-border pt-2 font-bold">
-              <span>جمع</span>
-              <span>{formatToman(shares.reduce((a, b) => a + b, 0))}</span>
-            </div>
+            <div className="mt-2 flex justify-between border-t border-border pt-2 font-bold"><span>جمع</span><span>{formatToman(shares.reduce((a, b) => a + b, 0))}</span></div>
           </div>
         ) : null}
+
+        <section className="border-t border-border pt-3" aria-label="پرداخت یکجای صورتحساب">
+          <p className="mb-2 text-xs font-semibold text-muted-foreground">پرداخت کل با یک پرداخت</p>
+          <div className="mb-2 grid grid-cols-3 gap-2">
+            <button type="button" onClick={() => setPaymentMethod("cash")} className={`flex min-h-12 items-center justify-center gap-1 rounded-lg border text-xs font-bold ${paymentMethod === "cash" ? "border-[#E9A11B] bg-[#FFF1D8] text-[#9B6700]" : "border-border"}`}><BanknoteIcon className="size-4" aria-hidden="true" />نقدی</button>
+            <button type="button" onClick={() => setPaymentMethod("card")} className={`flex min-h-12 items-center justify-center gap-1 rounded-lg border text-xs font-bold ${paymentMethod === "card" ? "border-[#E9A11B] bg-[#FFF1D8] text-[#9B6700]" : "border-border"}`}><CreditCardIcon className="size-4" aria-hidden="true" />کارت</button>
+            <button type="button" onClick={() => setPaymentMethod("card_to_card")} className={`flex min-h-12 items-center justify-center rounded-lg border text-xs font-bold ${paymentMethod === "card_to_card" ? "border-[#E9A11B] bg-[#FFF1D8] text-[#9B6700]" : "border-border"}`}>کارت‌به‌کارت</button>
+          </div>
+          <PrimaryButton type="button" onClick={() => void payAll()} disabled={busy || bill.total <= 0}>پرداخت کل {formatToman(bill.total)}</PrimaryButton>
+        </section>
       </DialogContent>
     </Dialog>
   );
