@@ -16,3 +16,6 @@
 ## 2024-05-18 - Repeated O(n) filtering inside useMemo
 **Learning:** Avoid executing O(n) algorithms (like `Array.filter` or `new Map(Array.map)`) inside a `useMemo` that also depends on frequently changing states (like a `deferredSearchQuery` on keystrokes).
 **Action:** Extract the static O(n) array transformations into their own, independent `useMemo` hooks that only re-compute when the base source data changes, reusing these pre-computed results in downstream search hooks.
+## 2024-08-19 - Repeated String Normalization in Hot loops
+**Learning:** `normalizePosSearchText` performs expensive regex and replacements. Calling it inside `useMemo` on hundreds of items per keystroke during filtering can slow down rendering and block the main thread.
+**Action:** Extract the normalized option strings into a separate `useMemo` that only re-computes when the source array updates, and reuse those strings inside the deferred filtering loop.

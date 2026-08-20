@@ -15,7 +15,7 @@
  * computes a ledger amount; the totals shown are the ones the server will
  * confirm back.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useDeferredValue } from "react";
 import { PlusIcon, RefreshCwIcon, Trash2Icon } from "lucide-react";
 import { formatPersianNumber, formatQuantity, toPersianDigits } from "@/lib/digits";
 import { formatToman, parseToRial } from "@/lib/money";
@@ -590,11 +590,24 @@ function GoldLineForm({
   const [search, setSearch] = useState("");
 
   const inStock = useMemo(() => items.filter((i) => i.status === "in_stock"), [items]);
+  const deferredSearch = useDeferredValue(search);
+
+  // ⚡ Bolt: Extract expensive string normalization out of the hot filter loop
+  // that runs on every keystroke.
+  const normalizedInStock = useMemo(() => {
+    return inStock.map((i) => ({
+      item: i,
+      normalizedStr: normalizePosSearchText(`${i.name} ${i.sku ?? ""}`),
+    }));
+  }, [inStock]);
+
   const filtered = useMemo(() => {
-    const needle = normalizePosSearchText(search);
+    const needle = normalizePosSearchText(deferredSearch);
     if (!needle) return inStock;
-    return inStock.filter((i) => normalizePosSearchText(`${i.name} ${i.sku ?? ""}`).includes(needle));
-  }, [inStock, search]);
+    return normalizedInStock
+      .filter((ni) => ni.normalizedStr.includes(needle))
+      .map((ni) => ni.item);
+  }, [inStock, normalizedInStock, deferredSearch]);
 
   const item = inStock.find((i) => i.id === itemId) ?? null;
   // The rate the server will use: the most recent one recorded for this purity.
