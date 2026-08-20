@@ -205,9 +205,25 @@ function clientIp(request: NextRequest): string {
   const forwarded = request.headers.get("x-forwarded-for");
   if (forwarded) {
     const parts = forwarded.split(",");
+    for (let i = parts.length - 1; i >= 0; i--) {
+      const ip = parts[i].trim();
+      if (!isPrivateIp(ip)) return ip;
+    }
     return parts[parts.length - 1].trim();
   }
   return "unknown";
+}
+
+function isPrivateIp(ip: string): boolean {
+  return (
+    ip.startsWith("10.") ||
+    ip.startsWith("192.168.") ||
+    ip.startsWith("127.") ||
+    /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(ip) ||
+    ip === "::1" ||
+    ip.toLowerCase().startsWith("fc00:") ||
+    ip.toLowerCase().startsWith("fe80:")
+  );
 }
 
 function rateLimited(retryAfterMs: number): NextResponse {
