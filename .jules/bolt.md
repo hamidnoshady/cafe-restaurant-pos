@@ -19,3 +19,6 @@
 ## 2024-08-19 - Repeated String Normalization in Hot loops
 **Learning:** `normalizePosSearchText` performs expensive regex and replacements. Calling it inside `useMemo` on hundreds of items per keystroke during filtering can slow down rendering and block the main thread.
 **Action:** Extract the normalized option strings into a separate `useMemo` that only re-computes when the source array updates, and reuse those strings inside the deferred filtering loop.
+## 2024-11-28 - Extract O(n) String Normalizations from Hot Filtering Loops
+**Learning:** `searchInventoryItems` performs O(N) regex `.replace()` string normalizations. When called inside a functional React component rendering cycle (like inside a `useMemo` filter hook that depends on a `deferredQuery` for search fields), the string allocations and regex replacements block the main thread and cause noticeable input lag as the user types.
+**Action:** Created `useInventorySearch` hook. It uses one `useMemo` to pre-compute the normalized option strings every time the items array changes (which happens rarely), and then returns a second `useMemo` that filters these strings using a lightweight `.includes()` query check (which executes fast per keystroke). This minimizes blocking per-keystroke operations in list filtering components.

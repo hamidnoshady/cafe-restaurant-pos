@@ -4,7 +4,7 @@ import { useDeferredValue, useMemo, useState } from "react";
 import { SearchIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatQuantity } from "@/lib/digits";
-import { searchInventoryItems } from "@/lib/inventory-search";
+import { useInventorySearch } from "@/lib/inventory-search";
 import { formatToman } from "@/lib/money";
 import { api, Field, inputClass } from "../ui";
 import type { InventoryItem, Runner } from "./inventory-manager";
@@ -29,10 +29,7 @@ export function ItemsSection({
   const [purchaseFactor, setPurchaseFactor] = useState("1");
   const [query, setQuery] = useState("");
   const deferredQuery = useDeferredValue(query);
-  const visibleItems = useMemo(
-    () => searchInventoryItems(items, deferredQuery),
-    [items, deferredQuery],
-  );
+  const visibleItems = useInventorySearch(items, deferredQuery);
 
   async function add(e: React.FormEvent) {
     e.preventDefault();
