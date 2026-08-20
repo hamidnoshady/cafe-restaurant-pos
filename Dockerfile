@@ -38,9 +38,8 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
 
-# Which "sha-<short-hash>" tag this image was published as (see
-# .github/workflows/deploy.yml), baked in at build time so the running
-# process can report its own version — the self-update check (app-update.ts)
+# Which "sha-<short-hash>" tag this image was published as, baked in at build
+# time so the running process can report its own version — the self-update check (app-update.ts)
 # compares this against what a paired café laptop is running. Defaults to
 # "unknown" for a local `docker build` with no --build-arg, which the update
 # check treats as "nothing to compare, never offer an update".

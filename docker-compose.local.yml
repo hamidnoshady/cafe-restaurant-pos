@@ -22,9 +22,11 @@
 #      + shared token (see docs/server-sync.md) — this is also what lets the
 #      self-update check find a newer version.
 #
-# The app service below runs the prebuilt image CI already publishes
-# (.github/workflows/deploy.yml), not a local build: a café laptop shouldn't
-# need the source tree, npm, or a build toolchain, just Docker. Pin
+# The app service below runs a prebuilt image from GHCR, not a local build: a
+# café laptop shouldn't need the source tree, npm, or a build toolchain, just
+# Docker. Note that this repo's CI does not publish that image — it is
+# test-only (.github/workflows/test.yml) — so the tag you pin has to have been
+# built and pushed separately. Pin
 # POS_IMAGE_TAG to a release (e.g. v1.4.2) rather than the default :latest
 # once you're past initial setup, so this laptop only moves versions when you
 # choose to, not on every merge to main.

@@ -249,8 +249,10 @@ Manually:
 
 - A dedicated فاکتورها history *page* (with filters and a detail view) would be better than the
   recent-invoices panel once shops have volume; the panel is what Wave 3 shipped.
-- `resetBusiness` (`platform-service.ts`) re-inserts a business without its `subdomain`, so a
-  factory reset silently moves the tenant to a fresh `biz-*` host. Pre-existing, unrelated to this
-  phase, and worth its own fix.
-- `CLAUDE.md` names the CI workflow `.github/workflows/deploy.yml`; it is actually
-  `.github/workflows/test.yml`.
+- ~~`resetBusiness` (`platform-service.ts`) re-inserts a business without its `subdomain`, so a
+  factory reset silently moves the tenant to a fresh `biz-*` host.~~ Fixed — the reset now carries
+  the subdomain through, and `platform-business-management.integration.test.ts` asserts the host
+  survives a reset.
+- ~~`CLAUDE.md` names the CI workflow `.github/workflows/deploy.yml`; it is actually
+  `.github/workflows/test.yml`.~~ Fixed, along with the same stale reference in `Dockerfile` and
+  `docker-compose.local.yml`.

@@ -64,6 +64,11 @@ export function normalBalanceForType(type: AccountType): NormalBalance {
  */
 export const WELL_KNOWN_CODES = {
   cash: "1100",
+  // The business's own bank account. Well-known since Phase 30: a cheque clears
+  // *into the bank*, not into `bankClearing` — that one means "card money on its
+  // way from the PSP" and posting a cheque there would misname it. Adding it
+  // here is also what stops it being archived out from under that posting.
+  bank: "1110",
   bankClearing: "1120",
   accountsReceivable: "1200",
   supplierReceivable: "1210",
@@ -73,6 +78,13 @@ export const WELL_KNOWN_CODES = {
   // SnapFood settles on its own schedule). See migrations/0060.
   platformReceivable: "1230",
   inventory: "1300",
+  // Phase 29 — in-house production. A wash account: a production run debits it
+  // with the materials it issued and the conversion cost it absorbed, then
+  // credits the whole lot straight back out as finished goods, so it is zero
+  // the moment the run's transaction commits. It exists so the transformation
+  // is legible in the ledger rather than being one inventory→inventory entry
+  // that says nothing about what happened.
+  workInProgress: "1310",
   inventoryInTransit: "1350",
   nrvAllowance: "1390",
   accountsPayable: "2100",
@@ -115,6 +127,17 @@ export const WELL_KNOWN_CODES = {
   commissionExpense: "5210",
   inventoryCountExpense: "5160",
   inventoryWriteDownExpense: "5170",
+  // Phase 29 — labour/overhead a production run capitalises into the cost of
+  // what it made. A CONTRA-expense, and that is the whole point: the baker's
+  // wage is already an expense (5200) and the oven's gas already an expense
+  // (5400), so absorbing that effort into the cake's cost must not book it a
+  // second time. Absorbing CREDITS this account, which nets against those in
+  // the P&L; the cost then re-emerges as COGS when the cake is sold, which is
+  // the period it belongs to. Deliberately *not* in any industry's cost-of-sales
+  // list below — it offsets the overhead it capitalised, so it belongs beside that
+  // overhead, not inside gross profit (where it would overstate margin in the
+  // baking period and understate it at sale).
+  appliedConversionCost: "5180",
   inventoryCountGain: "4910",
   // Phase 22 Wave 4 — cost of using a third-party online-ordering platform
   // (e.g. a delivery marketplace's cut of the sale). Settled via the manual-
@@ -175,20 +198,170 @@ export const WELL_KNOWN_CODES = {
   // rather than sharing a code that would make a cosmetics transfer post to
   // itself and zero out.
   retailInventoryInTransit: "1360",
+  // Phase 30 — cheques. اسناد دریافتنی/پرداختنی, one معین per place a cheque can
+  // be, because "where is that cheque right now" is the question the register
+  // exists to answer and a single balance cannot.
+  //
+  // There is deliberately no «چک‌های واگذارشده» account: an endorsed cheque is
+  // contingent, not an asset the shop still holds, and carrying it would need an
+  // unbalanced memo pair. Endorsement posts Debit accountsPayable / Credit
+  // chequesOnHand and the contingency lives as a *status* on the `cheques` row,
+  // so a later bounce is a real entry (Debit chequesReturned / Credit
+  // accountsPayable) rather than the unwinding of a memo. See
+  // docs/phases/Phase-30-Cheque-Management.md.
+  chequesReceivable: "1240",
+  chequesOnHand: "1241",
+  chequesInCollection: "1242",
+  chequesReturned: "1244",
+  chequesPayable: "2120",
+  chequesIssued: "2121",
+  chequesIssuedReturned: "2122",
+  bouncedChequeExpense: "5860",
 } as const;
 
 /**
- * Well-known expense codes that are cost of sales (material cost + inventory
+ * The expense codes that are cost of sales (material cost + inventory
  * shrinkage), not overhead — the "by function" split (COGS vs. SG&A) a
- * multi-step income statement needs for gross profit. Labor (`salariesExpense`)
- * is tracked separately since COGS + labor = "prime cost", the standard F&B
- * management metric; everything else in `type='expense'` is operating expense.
+ * multi-step income statement needs for gross profit. Labor
+ * (`salariesExpense`) is tracked separately since COGS + labor = "prime cost",
+ * the standard F&B management metric; everything else in `type='expense'` is
+ * operating expense.
+ *
+ * Keyed by industry, because a flat list is silently wrong for four of the five
+ * trades: it named only F&B's codes, so a jeweller's 5110, a watch shop's 5120
+ * and an accessories shop's 5140 fell into operating expense and their
+ * `grossProfit` came out equal to total revenue. Cosmetics happened to work,
+ * and only because its COGS is 5150 — the code F&B uses for waste.
+ *
+ * `appliedConversionCost` (5180) stays out of every list on purpose: it offsets
+ * the overhead a production run capitalised, so it belongs beside that overhead
+ * rather than inside gross profit. See its note in WELL_KNOWN_CODES.
  */
-export const COST_OF_SALES_CODES: readonly string[] = [
-  WELL_KNOWN_CODES.cogs,
-  WELL_KNOWN_CODES.wasteExpense,
-  WELL_KNOWN_CODES.inventoryCountExpense,
-  WELL_KNOWN_CODES.inventoryWriteDownExpense,
+const COST_OF_SALES_CODES_BY_INDUSTRY: Record<Industry, readonly string[]> = {
+  food_service: [
+    WELL_KNOWN_CODES.cogs,
+    WELL_KNOWN_CODES.wasteExpense,
+    WELL_KNOWN_CODES.inventoryCountExpense,
+    WELL_KNOWN_CODES.inventoryWriteDownExpense,
+  ],
+  jewelry: [
+    WELL_KNOWN_CODES.goldCogs,
+    WELL_KNOWN_CODES.repairPartsExpense,
+    WELL_KNOWN_CODES.inventoryWriteDownExpense,
+  ],
+  watch: [
+    WELL_KNOWN_CODES.watchCogs,
+    WELL_KNOWN_CODES.repairPartsExpense,
+    WELL_KNOWN_CODES.inventoryWriteDownExpense,
+  ],
+  accessories: [WELL_KNOWN_CODES.accessoryCogs, WELL_KNOWN_CODES.inventoryWriteDownExpense],
+  cosmetics: [
+    WELL_KNOWN_CODES.cosmeticCogs,
+    WELL_KNOWN_CODES.cosmeticExpiredAndTester,
+    WELL_KNOWN_CODES.inventoryWriteDownExpense,
+  ],
+};
+
+export function costOfSalesCodesForIndustry(industry: Industry): readonly string[] {
+  return COST_OF_SALES_CODES_BY_INDUSTRY[industry];
+}
+
+/**
+ * Whether an account code is non-current, for the balance sheet's
+ * جاری/غیرجاری split. Decided by code range rather than by a flag on the
+ * account, because the ranges are the convention the templates already follow
+ * and a business that adds its own account under 1500/2500 means the same
+ * thing by it:
+ *
+ *   * assets 1500–1599 — اثاثه و تجهیزات and its accumulated depreciation;
+ *   * liabilities 2500 and up — تسهیلات و وام پرداختنی.
+ *
+ * Everything else is current. Equity is neither, and asking about it is a
+ * caller's mistake rather than a third answer, so it returns false.
+ */
+export function isNonCurrentCode(type: AccountType, code: string): boolean {
+  const numeric = Number.parseInt(code, 10);
+  if (!Number.isFinite(numeric)) return false;
+  if (type === "asset") return numeric >= 1500 && numeric <= 1599;
+  if (type === "liability") return numeric >= 2500;
+  return false;
+}
+
+/**
+ * Headings every trade needs, whatever it sells — spread into all five
+ * templates rather than copied into each, so "every business gets these" is
+ * true by construction. The four retail templates drifting from F&B's is
+ * exactly what left a jeweller unable to run payroll (no 5200 to debit) or
+ * monthly depreciation (no 1510/5700) at all, while the pages offering both
+ * are core to every industry (`industry-profile.ts`'s CORE_MODULES).
+ */
+const SHARED_ASSET_ACCOUNTS: TemplateAccount[] = [
+  { code: "1130", name: "تنخواه", type: "asset", parentCode: "1000" },
+  // Cheques received. One کل with a معین per place the cheque can be: still in
+  // the drawer, handed to the bank for collection, or dishonoured. An endorsed
+  // cheque has no account here on purpose — see the `chequesOnHand` note in
+  // WELL_KNOWN_CODES.
+  { code: "1240", name: "اسناد دریافتنی", type: "asset", parentCode: "1000" },
+  { code: "1241", name: "چک‌های نزد صندوق", type: "asset", parentCode: "1240" },
+  { code: "1242", name: "چک‌های در جریان وصول", type: "asset", parentCode: "1240" },
+  { code: "1244", name: "چک‌های برگشتی", type: "asset", parentCode: "1240" },
+];
+
+const SHARED_LIABILITY_ACCOUNTS: TemplateAccount[] = [
+  // Cheques we wrote: outstanding until presented, and a place for one of ours
+  // that bounced.
+  { code: "2120", name: "اسناد پرداختنی", type: "liability", parentCode: "2000" },
+  { code: "2121", name: "چک‌های صادرشده در جریان", type: "liability", parentCode: "2120" },
+  { code: "2122", name: "چک‌های پرداختنی برگشتی", type: "liability", parentCode: "2120" },
+  { code: "2430", name: "پیش‌دریافت از مشتری", type: "liability", parentCode: "2000" },
+  // Payroll withholdings. `accruePayroll` posts gross wages today (5200/2300);
+  // these are the headings the deductions belong in when it learns to split
+  // them, and the ones a manual payroll entry needs meanwhile.
+  { code: "2460", name: "بیمه پرداختنی", type: "liability", parentCode: "2300" },
+  { code: "2470", name: "مالیات حقوق پرداختنی", type: "liability", parentCode: "2300" },
+  { code: "2480", name: "مالیات بر درآمد (عملکرد) پرداختنی", type: "liability", parentCode: "2000" },
+  // Non-current, and the reason `isNonCurrentCode` treats 2500+ as such.
+  { code: "2500", name: "تسهیلات و وام پرداختنی", type: "liability", parentCode: "2000" },
+];
+
+const SHARED_EQUITY_ACCOUNTS: TemplateAccount[] = [
+  { code: "3200", name: "برداشت مالک", type: "equity", parentCode: "3000", isContra: true },
+];
+
+const SHARED_REVENUE_ACCOUNTS: TemplateAccount[] = [
+  // Contra-revenue. Order payment credits revenue *net* of the discount
+  // (postExactOrderPaymentEntry), so nothing posts here yet — it exists so a
+  // business recording a discount by hand has somewhere honest to put it.
+  { code: "4350", name: "تخفیفات فروش", type: "revenue", parentCode: "4000", isContra: true },
+  { code: "4920", name: "سود فروش دارایی ثابت", type: "revenue", parentCode: "4000" },
+];
+
+const SHARED_EXPENSE_ACCOUNTS: TemplateAccount[] = [
+  { code: "5750", name: "زیان فروش دارایی ثابت", type: "expense", parentCode: "5000" },
+  { code: "5800", name: "کارمزد بانکی و درگاه پرداخت", type: "expense", parentCode: "5000" },
+  { code: "5810", name: "کسری و اضافه صندوق", type: "expense", parentCode: "5000" },
+  { code: "5850", name: "هزینه مالی (سود تسهیلات)", type: "expense", parentCode: "5000" },
+  { code: "5860", name: "هزینه چک برگشتی و جرایم بانکی", type: "expense", parentCode: "5000" },
+  { code: "5950", name: "هزینه مالیات بر درآمد", type: "expense", parentCode: "5000" },
+];
+
+/**
+ * The generic accounts the four retail templates were missing. F&B has carried
+ * all six since Phase 22; the retail charts were written as "generic accounts
+ * plus this trade's inventory/revenue/COGS triple" and never picked them up,
+ * which is what made payroll, depreciation and a markdown fail with
+ * `ledger_account_missing` in a jewellery, watch, accessories or cosmetics shop.
+ */
+const RETAIL_ASSET_ACCOUNTS: TemplateAccount[] = [
+  { code: "1210", name: "دریافتنی از تأمین‌کننده", type: "asset", parentCode: "1000" },
+  { code: "1510", name: "استهلاک انباشته", type: "asset", parentCode: "1500", isContra: true },
+];
+
+const RETAIL_EXPENSE_ACCOUNTS: TemplateAccount[] = [
+  { code: "5170", name: "هزینه کاهش ارزش موجودی", type: "expense", parentCode: "5000" },
+  { code: "5200", name: "حقوق و دستمزد", type: "expense", parentCode: "5000" },
+  { code: "5500", name: "ملزومات مصرفی", type: "expense", parentCode: "5000" },
+  { code: "5700", name: "هزینه استهلاک", type: "expense", parentCode: "5000" },
 ];
 
 export const FNB_COA_TEMPLATE: TemplateAccount[] = [
@@ -201,11 +374,14 @@ export const FNB_COA_TEMPLATE: TemplateAccount[] = [
   { code: "1220", name: "مالیات بر ارزش افزوده خرید (قابل استرداد)", type: "asset", parentCode: "1000" },
   { code: "1230", name: "مطالبات از پلتفرم‌های سفارش آنلاین", type: "asset", parentCode: "1000" },
   { code: "1300", name: "موجودی مواد و کالا", type: "asset", parentCode: "1000" },
+  { code: "1310", name: "کالای در جریان ساخت", type: "asset", parentCode: "1000" },
   { code: "1350", name: "موجودی در راه", type: "asset", parentCode: "1000" },
   { code: "1390", name: "ذخیره کاهش ارزش موجودی", type: "asset", parentCode: "1000", isContra: true },
   { code: "1400", name: "پیش‌پرداخت‌ها", type: "asset", parentCode: "1000" },
   { code: "1500", name: "اثاثه و تجهیزات", type: "asset", parentCode: "1000" },
   { code: "1510", name: "استهلاک انباشته", type: "asset", parentCode: "1500", isContra: true },
+
+  ...SHARED_ASSET_ACCOUNTS,
 
   { code: "2000", name: "بدهی‌ها", type: "liability" },
   { code: "2100", name: "حساب‌های پرداختنی", type: "liability", parentCode: "2000" },
@@ -215,11 +391,15 @@ export const FNB_COA_TEMPLATE: TemplateAccount[] = [
   { code: "2410", name: "اعتبار فروشگاهی", type: "liability", parentCode: "2000" },
   { code: "2420", name: "کارت هدیه", type: "liability", parentCode: "2000" },
 
+  ...SHARED_LIABILITY_ACCOUNTS,
+
   { code: "3000", name: "حقوق صاحبان سرمایه", type: "equity" },
   { code: "3100", name: "سرمایه", type: "equity", parentCode: "3000" },
   { code: "3800", name: "سود (زیان) انباشته", type: "equity", parentCode: "3000" },
   { code: "3900", name: "تراز افتتاحیه", type: "equity", parentCode: "3000" },
   { code: "3950", name: "حقوق تطبیق تاریخی موجودی", type: "equity", parentCode: "3000" },
+
+  ...SHARED_EQUITY_ACCOUNTS,
 
   { code: "4000", name: "درآمدها", type: "revenue" },
   { code: "4100", name: "فروش غذا", type: "revenue", parentCode: "4000" },
@@ -228,15 +408,19 @@ export const FNB_COA_TEMPLATE: TemplateAccount[] = [
   { code: "4310", name: "فروش حضوری (سالن)", type: "revenue", parentCode: "4000" },
   { code: "4320", name: "فروش بیرون‌بر", type: "revenue", parentCode: "4000" },
   { code: "4330", name: "فروش ارسالی", type: "revenue", parentCode: "4000" },
+  { code: "4360", name: "درآمد حق سرویس", type: "revenue", parentCode: "4000" },
   { code: "4400", name: "برگشت از فروش", type: "revenue", parentCode: "4000", isContra: true },
   { code: "4900", name: "سایر درآمدها", type: "revenue", parentCode: "4000" },
   { code: "4910", name: "درآمد اضافه شمارش موجودی", type: "revenue", parentCode: "4000" },
+
+  ...SHARED_REVENUE_ACCOUNTS,
 
   { code: "5000", name: "هزینه‌ها", type: "expense" },
   { code: "5100", name: "بهای تمام‌شده مواد", type: "expense", parentCode: "5000" },
   { code: "5150", name: "ضایعات مواد", type: "expense", parentCode: "5000" },
   { code: "5160", name: "هزینه کسری و مغایرت شمارش", type: "expense", parentCode: "5000" },
   { code: "5170", name: "هزینه کاهش ارزش موجودی", type: "expense", parentCode: "5000" },
+  { code: "5180", name: "هزینهٔ تبدیل جذب‌شده در تولید", type: "expense", parentCode: "5000", isContra: true },
   { code: "5200", name: "حقوق و دستمزد", type: "expense", parentCode: "5000" },
   { code: "5210", name: "پورسانت فروش", type: "expense", parentCode: "5000" },
   { code: "5300", name: "اجاره", type: "expense", parentCode: "5000" },
@@ -246,6 +430,7 @@ export const FNB_COA_TEMPLATE: TemplateAccount[] = [
   { code: "5650", name: "کارمزد پلتفرم‌های سفارش آنلاین", type: "expense", parentCode: "5000" },
   { code: "5700", name: "هزینه استهلاک", type: "expense", parentCode: "5000" },
   { code: "5900", name: "سایر هزینه‌ها", type: "expense", parentCode: "5000" },
+  ...SHARED_EXPENSE_ACCOUNTS,
 ];
 
 /**
@@ -270,6 +455,9 @@ export const JEWELRY_COA_TEMPLATE: TemplateAccount[] = [
   { code: "1400", name: "پیش‌پرداخت‌ها", type: "asset", parentCode: "1000" },
   { code: "1500", name: "اثاثه و تجهیزات", type: "asset", parentCode: "1000" },
 
+  ...RETAIL_ASSET_ACCOUNTS,
+  ...SHARED_ASSET_ACCOUNTS,
+
   { code: "2000", name: "بدهی‌ها", type: "liability" },
   { code: "2100", name: "حساب‌های پرداختنی", type: "liability", parentCode: "2000" },
   { code: "2110", name: "پرداختنی به امانت‌گذاران", type: "liability", parentCode: "2000" },
@@ -277,13 +465,16 @@ export const JEWELRY_COA_TEMPLATE: TemplateAccount[] = [
   { code: "2300", name: "حقوق پرداختنی", type: "liability", parentCode: "2000" },
   { code: "2410", name: "اعتبار فروشگاهی", type: "liability", parentCode: "2000" },
   { code: "2420", name: "کارت هدیه", type: "liability", parentCode: "2000" },
-  { code: "2430", name: "پیش‌دریافت مشتری", type: "liability", parentCode: "2000" },
   { code: "2450", name: "حساب طلایی مشتریان", type: "liability", parentCode: "2000" },
+
+  ...SHARED_LIABILITY_ACCOUNTS,
 
   { code: "3000", name: "حقوق صاحبان سرمایه", type: "equity" },
   { code: "3100", name: "سرمایه", type: "equity", parentCode: "3000" },
   { code: "3800", name: "سود (زیان) انباشته", type: "equity", parentCode: "3000" },
   { code: "3900", name: "تراز افتتاحیه", type: "equity", parentCode: "3000" },
+
+  ...SHARED_EQUITY_ACCOUNTS,
 
   { code: "4000", name: "درآمدها", type: "revenue" },
   { code: "4500", name: "فروش طلا (ارزش فلز)", type: "revenue", parentCode: "4000" },
@@ -293,6 +484,8 @@ export const JEWELRY_COA_TEMPLATE: TemplateAccount[] = [
   { code: "4900", name: "سایر درآمدها", type: "revenue", parentCode: "4000" },
   { code: "4400", name: "برگشت از فروش", type: "revenue", parentCode: "4000", isContra: true },
 
+  ...SHARED_REVENUE_ACCOUNTS,
+
   { code: "5000", name: "هزینه‌ها", type: "expense" },
   { code: "5110", name: "بهای تمام‌شده طلای فروخته‌شده", type: "expense", parentCode: "5000" },
   { code: "5130", name: "بهای قطعات مصرفی تعمیرات", type: "expense", parentCode: "5000" },
@@ -301,6 +494,8 @@ export const JEWELRY_COA_TEMPLATE: TemplateAccount[] = [
   { code: "5400", name: "آب، برق و گاز", type: "expense", parentCode: "5000" },
   { code: "5600", name: "بازاریابی و تبلیغات", type: "expense", parentCode: "5000" },
   { code: "5900", name: "سایر هزینه‌ها", type: "expense", parentCode: "5000" },
+  ...RETAIL_EXPENSE_ACCOUNTS,
+  ...SHARED_EXPENSE_ACCOUNTS,
 ];
 
 /**
@@ -322,6 +517,9 @@ export const WATCH_COA_TEMPLATE: TemplateAccount[] = [
   { code: "1400", name: "پیش‌پرداخت‌ها", type: "asset", parentCode: "1000" },
   { code: "1500", name: "اثاثه و تجهیزات", type: "asset", parentCode: "1000" },
 
+  ...RETAIL_ASSET_ACCOUNTS,
+  ...SHARED_ASSET_ACCOUNTS,
+
   { code: "2000", name: "بدهی‌ها", type: "liability" },
   { code: "2100", name: "حساب‌های پرداختنی", type: "liability", parentCode: "2000" },
   { code: "2200", name: "مالیات بر ارزش افزوده پرداختنی", type: "liability", parentCode: "2000" },
@@ -329,16 +527,22 @@ export const WATCH_COA_TEMPLATE: TemplateAccount[] = [
   { code: "2410", name: "اعتبار فروشگاهی", type: "liability", parentCode: "2000" },
   { code: "2420", name: "کارت هدیه", type: "liability", parentCode: "2000" },
 
+  ...SHARED_LIABILITY_ACCOUNTS,
+
   { code: "3000", name: "حقوق صاحبان سرمایه", type: "equity" },
   { code: "3100", name: "سرمایه", type: "equity", parentCode: "3000" },
   { code: "3800", name: "سود (زیان) انباشته", type: "equity", parentCode: "3000" },
   { code: "3900", name: "تراز افتتاحیه", type: "equity", parentCode: "3000" },
+
+  ...SHARED_EQUITY_ACCOUNTS,
 
   { code: "4000", name: "درآمدها", type: "revenue" },
   { code: "4550", name: "فروش ساعت", type: "revenue", parentCode: "4000" },
   { code: "4800", name: "درآمد تعمیرات", type: "revenue", parentCode: "4000" },
   { code: "4900", name: "سایر درآمدها", type: "revenue", parentCode: "4000" },
   { code: "4400", name: "برگشت از فروش", type: "revenue", parentCode: "4000", isContra: true },
+
+  ...SHARED_REVENUE_ACCOUNTS,
 
   { code: "5000", name: "هزینه‌ها", type: "expense" },
   { code: "5120", name: "بهای تمام‌شده ساعت فروخته‌شده", type: "expense", parentCode: "5000" },
@@ -348,6 +552,8 @@ export const WATCH_COA_TEMPLATE: TemplateAccount[] = [
   { code: "5400", name: "آب، برق و گاز", type: "expense", parentCode: "5000" },
   { code: "5600", name: "بازاریابی و تبلیغات", type: "expense", parentCode: "5000" },
   { code: "5900", name: "سایر هزینه‌ها", type: "expense", parentCode: "5000" },
+  ...RETAIL_EXPENSE_ACCOUNTS,
+  ...SHARED_EXPENSE_ACCOUNTS,
 ];
 
 /**
@@ -369,6 +575,9 @@ export const ACCESSORIES_COA_TEMPLATE: TemplateAccount[] = [
   { code: "1400", name: "پیش‌پرداخت‌ها", type: "asset", parentCode: "1000" },
   { code: "1500", name: "اثاثه و تجهیزات", type: "asset", parentCode: "1000" },
 
+  ...RETAIL_ASSET_ACCOUNTS,
+  ...SHARED_ASSET_ACCOUNTS,
+
   { code: "2000", name: "بدهی‌ها", type: "liability" },
   { code: "2100", name: "حساب‌های پرداختنی", type: "liability", parentCode: "2000" },
   { code: "2200", name: "مالیات بر ارزش افزوده پرداختنی", type: "liability", parentCode: "2000" },
@@ -376,15 +585,21 @@ export const ACCESSORIES_COA_TEMPLATE: TemplateAccount[] = [
   { code: "2410", name: "اعتبار فروشگاهی", type: "liability", parentCode: "2000" },
   { code: "2420", name: "کارت هدیه", type: "liability", parentCode: "2000" },
 
+  ...SHARED_LIABILITY_ACCOUNTS,
+
   { code: "3000", name: "حقوق صاحبان سرمایه", type: "equity" },
   { code: "3100", name: "سرمایه", type: "equity", parentCode: "3000" },
   { code: "3800", name: "سود (زیان) انباشته", type: "equity", parentCode: "3000" },
   { code: "3900", name: "تراز افتتاحیه", type: "equity", parentCode: "3000" },
 
+  ...SHARED_EQUITY_ACCOUNTS,
+
   { code: "4000", name: "درآمدها", type: "revenue" },
   { code: "4560", name: "فروش بدلیجات", type: "revenue", parentCode: "4000" },
   { code: "4900", name: "سایر درآمدها", type: "revenue", parentCode: "4000" },
   { code: "4400", name: "برگشت از فروش", type: "revenue", parentCode: "4000", isContra: true },
+
+  ...SHARED_REVENUE_ACCOUNTS,
 
   { code: "5000", name: "هزینه‌ها", type: "expense" },
   { code: "5140", name: "بهای تمام‌شده بدلیجات فروخته‌شده", type: "expense", parentCode: "5000" },
@@ -393,6 +608,8 @@ export const ACCESSORIES_COA_TEMPLATE: TemplateAccount[] = [
   { code: "5400", name: "آب، برق و گاز", type: "expense", parentCode: "5000" },
   { code: "5600", name: "بازاریابی و تبلیغات", type: "expense", parentCode: "5000" },
   { code: "5900", name: "سایر هزینه‌ها", type: "expense", parentCode: "5000" },
+  ...RETAIL_EXPENSE_ACCOUNTS,
+  ...SHARED_EXPENSE_ACCOUNTS,
 ];
 
 /**
@@ -415,6 +632,9 @@ export const COSMETICS_COA_TEMPLATE: TemplateAccount[] = [
   { code: "1400", name: "پیش‌پرداخت‌ها", type: "asset", parentCode: "1000" },
   { code: "1500", name: "اثاثه و تجهیزات", type: "asset", parentCode: "1000" },
 
+  ...RETAIL_ASSET_ACCOUNTS,
+  ...SHARED_ASSET_ACCOUNTS,
+
   { code: "2000", name: "بدهی‌ها", type: "liability" },
   { code: "2100", name: "حساب‌های پرداختنی", type: "liability", parentCode: "2000" },
   { code: "2200", name: "مالیات بر ارزش افزوده پرداختنی", type: "liability", parentCode: "2000" },
@@ -422,15 +642,21 @@ export const COSMETICS_COA_TEMPLATE: TemplateAccount[] = [
   { code: "2410", name: "اعتبار فروشگاهی", type: "liability", parentCode: "2000" },
   { code: "2420", name: "کارت هدیه", type: "liability", parentCode: "2000" },
 
+  ...SHARED_LIABILITY_ACCOUNTS,
+
   { code: "3000", name: "حقوق صاحبان سرمایه", type: "equity" },
   { code: "3100", name: "سرمایه", type: "equity", parentCode: "3000" },
   { code: "3800", name: "سود (زیان) انباشته", type: "equity", parentCode: "3000" },
   { code: "3900", name: "تراز افتتاحیه", type: "equity", parentCode: "3000" },
 
+  ...SHARED_EQUITY_ACCOUNTS,
+
   { code: "4000", name: "درآمدها", type: "revenue" },
   { code: "4570", name: "فروش لوازم آرایشی و بهداشتی", type: "revenue", parentCode: "4000" },
   { code: "4900", name: "سایر درآمدها", type: "revenue", parentCode: "4000" },
   { code: "4400", name: "برگشت از فروش", type: "revenue", parentCode: "4000", isContra: true },
+
+  ...SHARED_REVENUE_ACCOUNTS,
 
   { code: "5000", name: "هزینه‌ها", type: "expense" },
   { code: "5150", name: "بهای تمام‌شده کالای آرایشی و بهداشتی فروخته‌شده", type: "expense", parentCode: "5000" },
@@ -440,6 +666,8 @@ export const COSMETICS_COA_TEMPLATE: TemplateAccount[] = [
   { code: "5400", name: "آب، برق و گاز", type: "expense", parentCode: "5000" },
   { code: "5600", name: "بازاریابی و تبلیغات", type: "expense", parentCode: "5000" },
   { code: "5900", name: "سایر هزینه‌ها", type: "expense", parentCode: "5000" },
+  ...RETAIL_EXPENSE_ACCOUNTS,
+  ...SHARED_EXPENSE_ACCOUNTS,
 ];
 
 export const ACCOUNT_TYPES: AccountType[] = ["asset", "liability", "equity", "revenue", "expense"];

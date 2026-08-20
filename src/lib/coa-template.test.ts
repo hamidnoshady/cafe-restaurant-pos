@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
+import { INDUSTRIES, type Industry } from "./industries";
 import {
   ACCESSORIES_COA_TEMPLATE,
   ACCOUNT_LEVELS,
   coaTemplateForIndustry,
   COSMETICS_COA_TEMPLATE,
+  costOfSalesCodesForIndustry,
   FNB_COA_TEMPLATE,
   JEWELRY_COA_TEMPLATE,
+  isNonCurrentCode,
   nextAccountLevel,
   WATCH_COA_TEMPLATE,
   normalBalanceForType,
@@ -14,148 +17,144 @@ import {
   type AccountType,
 } from "./coa-template";
 
-// Phase 21 Wave 3: WELL_KNOWN_CODES now spans more than one industry's
-// template (jewelry's gold-specific accounts alongside F&B's), so "every
-// well-known code" is no longer one flat list every template must contain —
-// each template only needs the subset its own industry's posting paths use.
-// Waves 5/6 add watch's and accessories' own codes on the same footing.
-const OTHER_INDUSTRY_KEYS = new Set([
-  "goldInventory",
-  "goldSalesRevenue",
-  "makingChargeRevenue",
-  "goldCogs",
-  "consignmentPayable",
-  "consignmentCommissionRevenue",
-  "watchInventory",
-  "watchSalesRevenue",
-  "watchCogs",
-  "repairServiceRevenue",
-  "repairPartsExpense",
-  "accessoryInventory",
-  "accessorySalesRevenue",
-  "accessoryCogs",
-  "cosmeticInventory",
-  "cosmeticSalesRevenue",
-  "cosmeticCogs",
-  "cosmeticExpiredAndTester",
-  "retailInventoryInTransit",
-  "layawayDeposit",
-  "goldCustomerAccount",
-]);
+/**
+ * The accounts every template must carry, whatever the business sells.
+ *
+ * This list is the guard that was missing. `WELL_KNOWN_CODES` spans five
+ * industries, so "every template contains every well-known code" was never the
+ * rule — but the per-template assertions that replaced it named only each
+ * trade's own three accounts, and nothing checked the accounts a *shared*
+ * feature needs. The four retail templates therefore drifted: payroll
+ * (`salariesExpense`), depreciation (`accumulatedDepreciation`/
+ * `depreciationExpense`), a markdown (`inventoryWriteDownExpense`) and a
+ * supplier return (`supplierReceivable`) all post from pages every industry
+ * has, against accounts only F&B's chart contained, and failed with
+ * `ledger_account_missing` in a real jewellery or cosmetics shop.
+ */
+const CORE_REQUIRED_CODES: readonly string[] = [
+  WELL_KNOWN_CODES.cash,
+  WELL_KNOWN_CODES.bankClearing,
+  WELL_KNOWN_CODES.accountsReceivable,
+  WELL_KNOWN_CODES.supplierReceivable,
+  WELL_KNOWN_CODES.vatReceivable,
+  WELL_KNOWN_CODES.accountsPayable,
+  WELL_KNOWN_CODES.vatPayable,
+  WELL_KNOWN_CODES.salariesPayable,
+  WELL_KNOWN_CODES.salariesExpense,
+  WELL_KNOWN_CODES.commissionExpense,
+  WELL_KNOWN_CODES.accumulatedDepreciation,
+  WELL_KNOWN_CODES.depreciationExpense,
+  WELL_KNOWN_CODES.inventoryWriteDownExpense,
+  WELL_KNOWN_CODES.salesReturns,
+  WELL_KNOWN_CODES.storeCreditPayable,
+  WELL_KNOWN_CODES.giftCardPayable,
+  WELL_KNOWN_CODES.openingEquity,
+  WELL_KNOWN_CODES.retainedEarnings,
+  // Phase 30 — the cheque registers, on every chart because taking or writing
+  // a cheque is not something one trade does and the others don't.
+  WELL_KNOWN_CODES.chequesReceivable,
+  WELL_KNOWN_CODES.chequesOnHand,
+  WELL_KNOWN_CODES.chequesInCollection,
+  WELL_KNOWN_CODES.chequesReturned,
+  WELL_KNOWN_CODES.chequesPayable,
+  WELL_KNOWN_CODES.chequesIssued,
+  WELL_KNOWN_CODES.chequesIssuedReturned,
+  WELL_KNOWN_CODES.bouncedChequeExpense,
+];
 
-describe("FNB_COA_TEMPLATE", () => {
+/** Each trade's own accounts, on top of the core every chart shares. */
+const TRADE_REQUIRED_CODES: Record<Industry, readonly string[]> = {
+  food_service: [
+    WELL_KNOWN_CODES.inventory,
+    WELL_KNOWN_CODES.cogs,
+    WELL_KNOWN_CODES.wasteExpense,
+    WELL_KNOWN_CODES.inventoryCountExpense,
+    WELL_KNOWN_CODES.inventoryCountGain,
+    WELL_KNOWN_CODES.workInProgress,
+    WELL_KNOWN_CODES.appliedConversionCost,
+    WELL_KNOWN_CODES.inventoryInTransit,
+    WELL_KNOWN_CODES.nrvAllowance,
+    WELL_KNOWN_CODES.tipsPayable,
+    WELL_KNOWN_CODES.platformReceivable,
+    WELL_KNOWN_CODES.platformCommissionExpense,
+    WELL_KNOWN_CODES.dineInRevenue,
+    WELL_KNOWN_CODES.takeawayRevenue,
+    WELL_KNOWN_CODES.deliveryRevenue,
+  ],
+  jewelry: [
+    WELL_KNOWN_CODES.goldInventory,
+    WELL_KNOWN_CODES.goldSalesRevenue,
+    WELL_KNOWN_CODES.makingChargeRevenue,
+    WELL_KNOWN_CODES.goldCogs,
+    WELL_KNOWN_CODES.consignmentPayable,
+    WELL_KNOWN_CODES.consignmentCommissionRevenue,
+    WELL_KNOWN_CODES.layawayDeposit,
+    WELL_KNOWN_CODES.goldCustomerAccount,
+    WELL_KNOWN_CODES.repairServiceRevenue,
+    WELL_KNOWN_CODES.repairPartsExpense,
+    WELL_KNOWN_CODES.retailInventoryInTransit,
+  ],
+  watch: [
+    WELL_KNOWN_CODES.watchInventory,
+    WELL_KNOWN_CODES.watchSalesRevenue,
+    WELL_KNOWN_CODES.watchCogs,
+    WELL_KNOWN_CODES.repairServiceRevenue,
+    WELL_KNOWN_CODES.repairPartsExpense,
+    WELL_KNOWN_CODES.retailInventoryInTransit,
+  ],
+  accessories: [
+    WELL_KNOWN_CODES.accessoryInventory,
+    WELL_KNOWN_CODES.accessorySalesRevenue,
+    WELL_KNOWN_CODES.accessoryCogs,
+    WELL_KNOWN_CODES.retailInventoryInTransit,
+  ],
+  cosmetics: [
+    WELL_KNOWN_CODES.cosmeticInventory,
+    WELL_KNOWN_CODES.cosmeticSalesRevenue,
+    WELL_KNOWN_CODES.cosmeticCogs,
+    WELL_KNOWN_CODES.cosmeticExpiredAndTester,
+    WELL_KNOWN_CODES.retailInventoryInTransit,
+  ],
+};
+
+describe.each(INDUSTRIES)("%s chart of accounts", (industry) => {
+  const template = coaTemplateForIndustry(industry);
+  const codes = new Set(template.map((a) => a.code));
+
   it("is itself valid", () => {
-    expect(validateAccounts(FNB_COA_TEMPLATE)).toEqual([]);
+    expect(validateAccounts([...template])).toEqual([]);
   });
 
-  it("contains the well-known accounts other steps rely on", () => {
-    const codes = new Set(FNB_COA_TEMPLATE.map((a) => a.code));
-    for (const [key, code] of Object.entries(WELL_KNOWN_CODES)) {
-      if (OTHER_INDUSTRY_KEYS.has(key)) continue;
-      expect(codes.has(code)).toBe(true);
+  it("carries every account a cross-industry feature posts to", () => {
+    expect([...CORE_REQUIRED_CODES].filter((code) => !codes.has(code))).toEqual([]);
+  });
+
+  it("carries its own trade's accounts", () => {
+    expect([...TRADE_REQUIRED_CODES[industry]].filter((code) => !codes.has(code))).toEqual([]);
+  });
+
+  it("carries every account its own cost-of-sales list names", () => {
+    expect([...costOfSalesCodesForIndustry(industry)].filter((code) => !codes.has(code))).toEqual([]);
+  });
+
+  it("gives every cheque معین the right parent", () => {
+    const parentOf = (code: string) => template.find((a) => a.code === code)?.parentCode;
+    for (const code of [
+      WELL_KNOWN_CODES.chequesOnHand,
+      WELL_KNOWN_CODES.chequesInCollection,
+      WELL_KNOWN_CODES.chequesReturned,
+    ]) {
+      expect(parentOf(code)).toBe(WELL_KNOWN_CODES.chequesReceivable);
+    }
+    for (const code of [WELL_KNOWN_CODES.chequesIssued, WELL_KNOWN_CODES.chequesIssuedReturned]) {
+      expect(parentOf(code)).toBe(WELL_KNOWN_CODES.chequesPayable);
     }
   });
 });
 
-describe("JEWELRY_COA_TEMPLATE", () => {
-  it("is itself valid", () => {
-    expect(validateAccounts(JEWELRY_COA_TEMPLATE)).toEqual([]);
-  });
-
-  it("contains the well-known accounts gold-sale posting relies on", () => {
-    const codes = new Set(JEWELRY_COA_TEMPLATE.map((a) => a.code));
-    for (const code of [
-      WELL_KNOWN_CODES.cash,
-      WELL_KNOWN_CODES.bankClearing,
-      WELL_KNOWN_CODES.accountsReceivable,
-      WELL_KNOWN_CODES.vatReceivable,
-      WELL_KNOWN_CODES.accountsPayable,
-      WELL_KNOWN_CODES.vatPayable,
-      WELL_KNOWN_CODES.goldInventory,
-      WELL_KNOWN_CODES.goldSalesRevenue,
-      WELL_KNOWN_CODES.makingChargeRevenue,
-      WELL_KNOWN_CODES.goldCogs,
-      WELL_KNOWN_CODES.consignmentPayable,
-      WELL_KNOWN_CODES.consignmentCommissionRevenue,
-    ]) {
-      expect(codes.has(code)).toBe(true);
-    }
-  });
-});
-
-describe("WATCH_COA_TEMPLATE", () => {
-  it("is itself valid", () => {
-    expect(validateAccounts(WATCH_COA_TEMPLATE)).toEqual([]);
-  });
-
-  it("contains the well-known accounts watch sale and repair posting rely on", () => {
-    const codes = new Set(WATCH_COA_TEMPLATE.map((a) => a.code));
-    for (const code of [
-      WELL_KNOWN_CODES.cash,
-      WELL_KNOWN_CODES.bankClearing,
-      WELL_KNOWN_CODES.accountsReceivable,
-      WELL_KNOWN_CODES.vatPayable,
-      WELL_KNOWN_CODES.watchInventory,
-      WELL_KNOWN_CODES.watchSalesRevenue,
-      WELL_KNOWN_CODES.watchCogs,
-      WELL_KNOWN_CODES.repairServiceRevenue,
-      WELL_KNOWN_CODES.repairPartsExpense,
-    ]) {
-      expect(codes.has(code)).toBe(true);
-    }
-  });
-
-  it("carries none of F&B's menu/recipe-shaped accounts", () => {
-    const codes = new Set(WATCH_COA_TEMPLATE.map((a) => a.code));
-    expect(codes.has(WELL_KNOWN_CODES.inventory)).toBe(false);
-    expect(codes.has(WELL_KNOWN_CODES.cogs)).toBe(false);
-  });
-});
-
-describe("ACCESSORIES_COA_TEMPLATE", () => {
-  it("is itself valid", () => {
-    expect(validateAccounts(ACCESSORIES_COA_TEMPLATE)).toEqual([]);
-  });
-
-  it("contains the well-known accounts accessory sale posting relies on", () => {
-    const codes = new Set(ACCESSORIES_COA_TEMPLATE.map((a) => a.code));
-    for (const code of [
-      WELL_KNOWN_CODES.cash,
-      WELL_KNOWN_CODES.bankClearing,
-      WELL_KNOWN_CODES.accountsReceivable,
-      WELL_KNOWN_CODES.vatPayable,
-      WELL_KNOWN_CODES.accessoryInventory,
-      WELL_KNOWN_CODES.accessorySalesRevenue,
-      WELL_KNOWN_CODES.accessoryCogs,
-    ]) {
-      expect(codes.has(code)).toBe(true);
-    }
-  });
-});
-
-describe("COSMETICS_COA_TEMPLATE", () => {
-  it("is itself valid", () => {
-    expect(validateAccounts(COSMETICS_COA_TEMPLATE)).toEqual([]);
-  });
-
-  it("contains the well-known accounts cosmetic sale posting relies on", () => {
-    const codes = new Set(COSMETICS_COA_TEMPLATE.map((a) => a.code));
-    for (const code of [
-      WELL_KNOWN_CODES.cash,
-      WELL_KNOWN_CODES.bankClearing,
-      WELL_KNOWN_CODES.accountsReceivable,
-      WELL_KNOWN_CODES.vatPayable,
-      WELL_KNOWN_CODES.cosmeticInventory,
-      WELL_KNOWN_CODES.cosmeticSalesRevenue,
-      WELL_KNOWN_CODES.cosmeticCogs,
-      WELL_KNOWN_CODES.cosmeticExpiredAndTester,
-    ]) {
-      expect(codes.has(code)).toBe(true);
-    }
-  });
-
-  it("carries none of F&B's menu/recipe-shaped accounts", () => {
-    const codes = new Set(COSMETICS_COA_TEMPLATE.map((a) => a.code));
+describe("the retail templates carry no F&B recipe-shaped accounts", () => {
+  it.each(["jewelry", "watch", "accessories", "cosmetics"] as const)("%s", (industry) => {
+    const codes = new Set(coaTemplateForIndustry(industry).map((a) => a.code));
     expect(codes.has(WELL_KNOWN_CODES.inventory)).toBe(false);
     expect(codes.has(WELL_KNOWN_CODES.cogs)).toBe(false);
   });
@@ -212,9 +211,26 @@ describe("normalBalanceForType", () => {
 });
 
 describe("contra accounts in the F&B template", () => {
-  it("marks sales returns, the NRV allowance, and accumulated depreciation as contra, and nothing else", () => {
+  it("marks every reducing account as contra, and nothing else", () => {
     const contraCodes = FNB_COA_TEMPLATE.filter((a) => a.isContra).map((a) => a.code);
-    expect(contraCodes.sort()).toEqual(["1390", "1510", "4400"]);
+    expect(contraCodes.sort()).toEqual([
+      "1390", // ذخیره کاهش ارزش موجودی
+      "1510", // استهلاک انباشته
+      "3200", // برداشت مالک
+      "4350", // تخفیفات فروش
+      "4400", // برگشت از فروش
+      "5180", // هزینهٔ تبدیل جذب‌شده در تولید
+    ]);
+  });
+
+  it("keeps applied conversion cost out of cost of sales", () => {
+    // 5180 offsets the wages/utilities a production run capitalised, both of
+    // which sit outside gross profit. Counting it as cost of sales would
+    // overstate margin in the period a batch was made and understate it in the
+    // period it sold — the exact distortion capitalising the cost avoids.
+    for (const industry of INDUSTRIES) {
+      expect(costOfSalesCodesForIndustry(industry)).not.toContain(WELL_KNOWN_CODES.appliedConversionCost);
+    }
   });
 });
 
@@ -234,5 +250,75 @@ describe("validateAccounts", () => {
 
   it("rejects an empty list", () => {
     expect(validateAccounts([]).length).toBeGreaterThan(0);
+  });
+});
+
+describe("isNonCurrentCode", () => {
+  it("treats the fixed-asset range as non-current", () => {
+    expect(isNonCurrentCode("asset", "1500")).toBe(true);
+    expect(isNonCurrentCode("asset", "1510")).toBe(true);
+    expect(isNonCurrentCode("asset", "1599")).toBe(true);
+  });
+
+  it("treats everything else on the asset side as current", () => {
+    for (const code of ["1100", "1240", "1300", "1400", "1600"]) {
+      expect(isNonCurrentCode("asset", code)).toBe(false);
+    }
+  });
+
+  it("treats borrowings as non-current and the rest of the liabilities as current", () => {
+    expect(isNonCurrentCode("liability", "2500")).toBe(true);
+    expect(isNonCurrentCode("liability", "2600")).toBe(true);
+    for (const code of ["2100", "2120", "2300", "2480"]) {
+      expect(isNonCurrentCode("liability", code)).toBe(false);
+    }
+  });
+
+  it("says no for equity, revenue and expense — the split is a balance-sheet question", () => {
+    expect(isNonCurrentCode("equity", "3100")).toBe(false);
+    expect(isNonCurrentCode("revenue", "4300")).toBe(false);
+    expect(isNonCurrentCode("expense", "5900")).toBe(false);
+  });
+
+  it("says no for a code that isn't a number", () => {
+    expect(isNonCurrentCode("asset", "")).toBe(false);
+    expect(isNonCurrentCode("asset", "abc")).toBe(false);
+  });
+
+  it("partitions each template's assets and liabilities without dropping a line", () => {
+    for (const industry of INDUSTRIES) {
+      const template = coaTemplateForIndustry(industry);
+      for (const type of ["asset", "liability"] as const) {
+        const lines = template.filter((a) => a.type === type);
+        const current = lines.filter((a) => !isNonCurrentCode(type, a.code));
+        const nonCurrent = lines.filter((a) => isNonCurrentCode(type, a.code));
+        expect(current.length + nonCurrent.length).toBe(lines.length);
+      }
+    }
+  });
+});
+
+describe("costOfSalesCodesForIndustry", () => {
+  it("names each trade's own cost of goods sold", () => {
+    expect(costOfSalesCodesForIndustry("food_service")).toContain(WELL_KNOWN_CODES.cogs);
+    expect(costOfSalesCodesForIndustry("jewelry")).toContain(WELL_KNOWN_CODES.goldCogs);
+    expect(costOfSalesCodesForIndustry("watch")).toContain(WELL_KNOWN_CODES.watchCogs);
+    expect(costOfSalesCodesForIndustry("accessories")).toContain(WELL_KNOWN_CODES.accessoryCogs);
+    expect(costOfSalesCodesForIndustry("cosmetics")).toContain(WELL_KNOWN_CODES.cosmeticCogs);
+  });
+
+  it("never lands a trade's cost of sales in another trade's list", () => {
+    // 5150 is F&B's waste account and cosmetics' COGS; 5160 is F&B's count
+    // shortage and cosmetics' expired/tester. The lists are per-industry
+    // precisely so those two codes can mean different things.
+    expect(costOfSalesCodesForIndustry("jewelry")).not.toContain(WELL_KNOWN_CODES.cogs);
+    expect(costOfSalesCodesForIndustry("watch")).not.toContain(WELL_KNOWN_CODES.goldCogs);
+    expect(costOfSalesCodesForIndustry("accessories")).not.toContain(WELL_KNOWN_CODES.wasteExpense);
+  });
+
+  it("answers for every industry", () => {
+    for (const industry of INDUSTRIES) {
+      expect(costOfSalesCodesForIndustry(industry).length).toBeGreaterThan(0);
+    }
   });
 });

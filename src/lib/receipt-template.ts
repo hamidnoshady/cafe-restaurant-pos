@@ -68,6 +68,7 @@ export const PAYMENT_METHOD_LABELS: Record<string, string> = {
   cash: "نقدی",
   card: "کارت‌خوان",
   card_to_card: "کارت‌به‌کارت",
+  cheque: "چک",
   online: "پرداخت آنلاین",
   credit: "نسیه",
   snappfood: "اسنپ‌فود",
@@ -98,6 +99,14 @@ export interface ReceiptData {
   /** A tip collected alongside the bill (issue #160 §4) — on top of `total`, not part of it. */
   tip?: Rial;
   paymentMethod?: string | null;
+  /**
+   * A bill settled across several ways (migration 0091), each with the name
+   * the business gave it. Printed one row per slice in place of the single
+   * «روش پرداخت» line, because "نقدی ۲۰۰٬۰۰۰ / کارت‌خوان ۳۰۰٬۰۰۰" is exactly
+   * the thing a customer comes back to the counter to check. A single-way sale
+   * can pass this too — one row reads no worse than the old line.
+   */
+  payments?: { label: string; amount: Rial }[] | null;
   cashierName?: string | null;
 }
 
@@ -156,9 +165,16 @@ export function renderReceiptHtml(data: ReceiptData, opts: { paperWidthMm?: Pape
     data.tax > 0
       ? `<div class="totals-row"><span>مالیات</span><span>${formatToman(data.tax, { withUnit: false })}</span></div>`
       : "";
-  const paymentRow = data.paymentMethod
-    ? `<div class="totals-row"><span>روش پرداخت</span><span>${PAYMENT_METHOD_LABELS[data.paymentMethod] ?? data.paymentMethod}</span></div>`
-    : "";
+  const paymentRow = data.payments?.length
+    ? data.payments
+        .map(
+          (payment) =>
+            `<div class="totals-row"><span>${escapeHtml(payment.label)}</span><span>${formatToman(payment.amount, { withUnit: false })}</span></div>`,
+        )
+        .join("")
+    : data.paymentMethod
+      ? `<div class="totals-row"><span>روش پرداخت</span><span>${escapeHtml(PAYMENT_METHOD_LABELS[data.paymentMethod] ?? data.paymentMethod)}</span></div>`
+      : "";
   const tipRow =
     data.tip && data.tip > 0
       ? `<div class="totals-row"><span>انعام</span><span>${formatToman(data.tip, { withUnit: false })}</span></div>`

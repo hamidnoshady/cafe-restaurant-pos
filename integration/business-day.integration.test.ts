@@ -142,7 +142,7 @@ async function insertOrder(
 async function closedInWindow(locationId: string): Promise<number[]> {
   return dbLib.withTenant(businessId, async () => {
     const { since } = await shiftService.branchClosedOrdersWindow(locationId);
-    const rows = await orderRead.listOrdersClosedSince(locationId, since);
+    const rows = await orderRead.listSettledOrdersInWindow(locationId, since);
     return rows.map((row) =>
       Number((row as { order_number: string }).order_number),
     );
@@ -540,17 +540,39 @@ describe("the cash-up is what ends the night", () => {
     return dbLib.withTenant(businessId, () => businessDay.getBusinessDayStatus(locationId));
   }
 
+  /**
+   * A sale, and the cash-up that came after it, both inside the service that is
+   * running right now.
+   *
+   * Pinning either end to a fixed hour — "a sale an hour into the day", "a
+   * cash-up an hour ago" — only holds when the suite happens to run well into
+   * the night. Run it between 18:00 and 20:00 Tehran and "an hour ago" lands
+   * *before* the sale it is supposed to have followed, which inverts the very
+   * ordering these tests are about and fails them for two hours out of every
+   * day. Splitting the elapsed part of the day keeps the sequence
+   * `day start → sale → cash-up → now` true at every hour of the clock.
+   */
+  function nightSoFar(dayStart: number): { sale: Date; cashUp: Date } {
+    // Clamped only so the two instants stay distinct if the day began
+    // milliseconds ago; at any real hour `elapsed` is the whole service.
+    const elapsed = Math.max(Date.now() - dayStart, 4);
+    return {
+      sale: new Date(dayStart + Math.floor(elapsed / 4)),
+      cashUp: new Date(dayStart + Math.floor(elapsed / 2)),
+    };
+  }
+
   it("zeroes the live window once the branch's last shift is closed", async () => {
     await setStart(mainId, SIX_PM);
     const open = (await status(mainId))!;
     const dayStart = Date.parse(open.scheduledStart);
+    const { sale, cashUp } = nightSoFar(dayStart);
 
-    await insertOrder(mainId, new Date(dayStart + 60 * 60 * 1000));
+    await insertOrder(mainId, sale);
     expect(await closedInWindow(mainId)).toHaveLength(1);
 
-    // The cashier works the night and cashes up an hour ago.
-    const cashUp = new Date(Date.now() - 60 * 60 * 1000);
-    await insertShift(mainId, new Date(dayStart + 30 * 60 * 1000), cashUp);
+    // The cashier works the night and cashes up after that sale.
+    await insertShift(mainId, new Date(dayStart), cashUp);
 
     const after = (await status(mainId))!;
     expect(after.closedBy).toBe("shift");
@@ -564,11 +586,12 @@ describe("the cash-up is what ends the night", () => {
     await setStart(mainId, SIX_PM);
     const open = (await status(mainId))!;
     const dayStart = Date.parse(open.scheduledStart);
-    await insertOrder(mainId, new Date(dayStart + 60 * 60 * 1000));
+    const { sale, cashUp } = nightSoFar(dayStart);
+    await insertOrder(mainId, sale);
 
     // A handover: one cashier out, the next already on the floor.
-    await insertShift(mainId, new Date(dayStart), new Date(Date.now() - 60 * 60 * 1000));
-    await insertShift(mainId, new Date(Date.now() - 90 * 60 * 1000), null);
+    await insertShift(mainId, new Date(dayStart), cashUp);
+    await insertShift(mainId, cashUp, null);
 
     const after = (await status(mainId))!;
     expect(after.hasOpenShift).toBe(true);
@@ -581,8 +604,9 @@ describe("the cash-up is what ends the night", () => {
     await setStart(mainId, SIX_PM);
     const open = (await status(mainId))!;
     const dayStart = Date.parse(open.scheduledStart);
-    await insertOrder(mainId, new Date(dayStart + 60 * 60 * 1000));
-    await insertShift(mainId, new Date(dayStart), new Date(Date.now() - 60 * 60 * 1000));
+    const { sale, cashUp } = nightSoFar(dayStart);
+    await insertOrder(mainId, sale);
+    await insertShift(mainId, new Date(dayStart), cashUp);
 
     // Zero on screen, untouched in the books: closing the till resets a view,
     // it never moves money between report rows.
@@ -608,8 +632,9 @@ describe("the cash-up is what ends the night", () => {
   it("counts a shift with no branch of its own, as the rest of the app does", async () => {
     await setStart(mainId, SIX_PM);
     const open = (await status(mainId))!;
-    const cashUp = new Date(Date.now() - 60 * 60 * 1000);
-    await insertShift(null, new Date(Date.parse(open.scheduledStart)), cashUp);
+    const dayStart = Date.parse(open.scheduledStart);
+    const { cashUp } = nightSoFar(dayStart);
+    await insertShift(null, new Date(dayStart), cashUp);
 
     const after = (await status(mainId))!;
     expect(after.closedBy).toBe("shift");

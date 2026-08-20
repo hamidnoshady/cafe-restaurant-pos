@@ -30,11 +30,13 @@ export default async function OrdersPage({
     { locationId: session.locationId, userId: session.sub },
   );
   const member = rows[0];
-  const canAmendClosed = member
-    ? effectivePermissions(member.role, parseOverrides(member.permissions)).has(
-        PERMISSIONS.ordersAmendClosed,
-      )
-    : false;
+  const permissions = member
+    ? effectivePermissions(member.role, parseOverrides(member.permissions))
+    : null;
+  const canAmendClosed = permissions?.has(PERMISSIONS.ordersAmendClosed) ?? false;
+  // Recording a sale that already happened is its own permission again — see
+  // permissions.ts. Nothing about the till's edit rights implies it.
+  const canBackdate = permissions?.has(PERMISSIONS.ordersBackdate) ?? false;
 
   const { order } = await searchParams;
 
@@ -42,6 +44,7 @@ export default async function OrdersPage({
     <OrdersList
       canEdit={["owner", "manager", "cashier"].includes(session.role)}
       canAmendClosed={canAmendClosed}
+      canBackdate={canBackdate}
       initialOrderId={order ?? null}
     />
   );

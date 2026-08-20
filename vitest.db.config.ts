@@ -9,6 +9,7 @@ export default defineConfig({
   },
   test: {
     include: ["integration/**/*.test.ts"],
+    setupFiles: ["./vitest.setup.ts"],
     fileParallelism: false,
     maxWorkers: 1,
     testTimeout: 30_000,

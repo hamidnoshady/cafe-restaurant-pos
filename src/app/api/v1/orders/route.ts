@@ -3,7 +3,7 @@ import { withApiKeyScope } from "@/lib/api-auth";
 import { API_SCOPES, requireApiScope } from "@/lib/api-scopes";
 import { type CartItemInput } from "@/lib/order-cart";
 import { createOrder } from "@/lib/order-mutations";
-import { isOrderStatus, listOrders } from "@/lib/order-read-service";
+import { isOrderStatus, listOrders, withoutCustomerContact } from "@/lib/order-read-service";
 import type { DiscountInput } from "@/lib/orders";
 import { broadcast } from "@/lib/realtime";
 
@@ -31,7 +31,7 @@ export const GET = withApiKeyScope(async (apiKey, request: NextRequest) => {
   if (limit === null) return NextResponse.json({ error: "invalid_limit" }, { status: 400 });
 
   const orders = await listOrders(apiKey.locationId, { status: rawStatus ?? undefined, limit });
-  return NextResponse.json({ orders });
+  return NextResponse.json({ orders: orders.map(withoutCustomerContact) });
 });
 
 interface CreateOrderBody {

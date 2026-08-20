@@ -361,9 +361,9 @@ describe("buildReportQuery", () => {
 });
 
 describe("STANDARD_REPORTS", () => {
-  it("has 17 pre-built reports with unique keys", () => {
-    expect(STANDARD_REPORTS).toHaveLength(17);
-    expect(new Set(STANDARD_REPORTS.map((r) => r.key)).size).toBe(17);
+  it("has 18 pre-built reports with unique keys", () => {
+    expect(STANDARD_REPORTS).toHaveLength(18);
+    expect(new Set(STANDARD_REPORTS.map((r) => r.key)).size).toBe(18);
   });
 
   it("every non-null view is a whitelisted reporting view", () => {

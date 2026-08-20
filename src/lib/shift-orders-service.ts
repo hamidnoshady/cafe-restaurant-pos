@@ -4,8 +4,8 @@
  * shift-orders.ts and is covered by shift-orders.test.ts).
  *
  * The default shift is the most recently started one at the branch, open or
- * closed, and its window is [started_at, coalesce(ended_at, now())] — the
- * same expression listShifts' LATERAL join already uses. Deliberately *not*
+ * closed, and its window is [started_at, ended_at] with a running shift's end
+ * left open (`ORDER_OPENED_IN_WINDOW`). Deliberately *not*
  * "the newest shift with ended_at IS NULL": that would make the report go
  * blank the moment someone clocks out, and it would silently widen to
  * yesterday's window if an employee forgot to clock out. Taking the newest
@@ -21,10 +21,18 @@
  *
  * Orders are the ones *opened* inside that window, at any status: a shift
  * review is about the work that came in during the shift, including what is
- * still open, held, or was voided. That is a wider net than the shift's cash
- * figures (shiftCashSummary counts only completed orders, by closed_at), so
- * the two are not expected to tie out — see the doc comment on `total` in
- * shift-orders.ts.
+ * still open, held, or was voided. That rule — `ORDER_OPENED_IN_WINDOW`, now
+ * shared with the orders screen's settled list — is why a bill the shift opened
+ * and could not close stays this shift's bill however late it is finally
+ * settled, and why the shift that takes that last payment is not credited with
+ * a sale it did not make.
+ *
+ * It is a wider net than the shift's *cash* figures, which are deliberately a
+ * different question: `shiftCashSummary` answers "what is in this employee's
+ * till" (orders they closed, so the drawer count reconciles against money they
+ * actually held), not "what did this shift sell". The two are not expected to
+ * tie out on a night that carried a bill over — see the doc comment on `total`
+ * in shift-orders.ts.
  *
  * Each order is read whole — its add-on snapshots by name, its notes and void
  * reasons, its money breakdown, and its payments — so the review answers "why
@@ -34,6 +42,7 @@
  * it was sold.
  */
 import { query } from "./db";
+import { ORDER_OPENED_IN_WINDOW } from "./order-read-service";
 import {
   groupShiftOrders,
   type ShiftOrder,
@@ -133,6 +142,7 @@ interface ShiftOrderItemRow extends Record<string, unknown> {
 interface ShiftOrderPaymentRow extends Record<string, unknown> {
   order_id: string;
   method: string;
+  method_name: string | null;
   amount: string;
   reference: string | null;
   received_at: Date;
@@ -189,20 +199,19 @@ export async function getShiftOrdersReport(
             WHERE oim.order_item_id = oi.id
          ) m ON true
         WHERE o.location_id = $1
-          AND o.opened_at >= $2
-          AND o.opened_at <= coalesce($3::timestamptz, now())
+          AND ${ORDER_OPENED_IN_WINDOW}
         ORDER BY o.opened_at DESC, o.id DESC, oi.created_at`,
       window,
     ),
     query<ShiftOrderPaymentRow>(
-      `SELECT p.order_id, p.method, p.amount, p.reference, p.received_at,
+      `SELECT p.order_id, p.method, pm.name AS method_name, p.amount, p.reference, p.received_at,
               u.full_name AS received_by_name
          FROM payments p
          JOIN orders o ON o.id = p.order_id
          LEFT JOIN users u ON u.id = p.received_by
+         LEFT JOIN payment_methods pm ON pm.id = p.payment_method_id
         WHERE o.location_id = $1
-          AND o.opened_at >= $2
-          AND o.opened_at <= coalesce($3::timestamptz, now())
+          AND ${ORDER_OPENED_IN_WINDOW}
         ORDER BY p.received_at`,
       window,
     ),
@@ -249,6 +258,7 @@ export async function getShiftOrdersReport(
   const payments: ShiftOrderPaymentInput[] = paymentRows.map((row) => ({
     orderId: row.order_id,
     method: row.method,
+    methodName: row.method_name,
     amount: Number(row.amount),
     reference: row.reference,
     receivedAt: row.received_at.toISOString(),

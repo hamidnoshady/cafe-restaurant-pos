@@ -7,6 +7,8 @@
  * codes are minted from a retried candidate payload so the generator stays
  * pure (src/lib/barcode.ts) and only this service ever consults the database.
  */
+import { randomInt } from "node:crypto";
+
 import { query } from "./db";
 import {
   classifyBarcode,
@@ -94,7 +96,7 @@ export async function assignBarcode(
 /** Mint an internal code that is free at this branch, retrying the payload on the rare collision. */
 async function mintUniqueInternalCode(locationId: string): Promise<string> {
   for (let attempt = 0; attempt < 20; attempt++) {
-    const payload = internalPayloadFromNumber(Math.floor(Math.random() * 100_000_000_000));
+    const payload = internalPayloadFromNumber(randomInt(100_000_000_000));
     const code = internalBarcodeForPayload(payload);
     const { rows } = await query<{ id: string }>(
       `SELECT id FROM item_barcodes WHERE location_id = $1 AND code = $2`,

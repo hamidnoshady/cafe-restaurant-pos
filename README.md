@@ -262,7 +262,80 @@ More one-time setup, but proven in production:
 - **Multi-location:** every tenant-scoped table carries `location_id` (business-scoped tables like `users`, `accounts`, `customers` carry `business_id` and a nullable `location_id`). Since Phase 14 a business may have several active branches; `resolveActiveLocation` (`src/lib/setup-state.ts`) is what every route resolves the caller's current branch through, validated against their branch assignment (`src/lib/location-access.ts`).
 - **Multi-business:** `businesses` is the tenant, and isolation between tenants is enforced by Postgres row-level security — see below.
 - **Business day:** what "a day" means is `app_business_date(ts, tz, start_minutes)` (migration 0076), never a bare `(ts AT TIME ZONE tz)::date` — see below.
+- **Payment ways:** how a business takes money is rows in `payment_methods`, not the `payment_method` enum — see below.
 - Migrations are forward-only numbered SQL files in `migrations/`, applied by `scripts/migrate.ts` (tracked in `schema_migrations`).
+
+## Payment ways, and splitting a bill (روش‌های پرداخت)
+
+A business names its own ways of taking money and orders them the way its cashiers reach for them
+(«روش‌های پرداخت» under تنظیمات → `payment_methods`, migration 0091). «کارت‌خوان» can become «پوز
+بانک ملت», a second terminal can sit beside it, and a wallet the shop accepts can be added outright.
+The same list, in the same order, is what the POS, the order dialog, the closed-order amendment and
+the retail invoice screen offer — `GET /api/payment-methods` is the one source.
+
+One bill can be settled across several of them: ۲۰۰٬۰۰۰ نقدی plus ۳۰۰٬۰۰۰ کارت‌خوان is one checkout
+that writes one `payments` row per slice and one journal entry with a debit line per slice.
+
+Four rules carry this, and each of them is load-bearing:
+
+- **A way's `name` is the business's; its `settlement` is the ledger's.** Every way declares which
+  of the `payment_method` enum values it behaves like, and that is what decides the account the
+  money debits (cash box / bank clearing / receivable / platform receivable). Naming a new way
+  therefore never reaches the ledger, and `settlement` is refused once the way has taken money —
+  changing it would re-describe payments already posted. Deactivate and add instead.
+- **A split settles the bill in full.** The slices must add up to the total, to the Rial
+  (`validateTenders` in `src/lib/payment-methods.ts`). There is still no partial payment and no
+  balance left open; a cash overshoot is change handed back, not a larger payment (`changeDue`).
+  One slice may leave its amount open and take whatever is left — «۲۰۰٬۰۰۰ نقدی، بقیه با کارت» —
+  which is also how an ordinary one-way sale is expressed, and what keeps a checkout from failing
+  when the till's idea of the total is slightly behind the server's.
+- **`payments` rows record the bill; the tip rides on top.** That was always true and stays true
+  now that there can be several rows — `orders.tip_amount` holds the tip, and the posting folds it
+  into the first slice that actually collected money (`tendersWithTip`; a `credit` slice is passed
+  over, since a tip is not put on a tab). The closed-order amendment's re-plan and a refund's
+  ceiling both read that sum, so don't "fix" it by adding the tip into the rows.
+- **A retired way stays on its old payments.** Deleting is only ever allowed for a way the business
+  added and never used; everything else deactivates, and `payments.payment_method_id` keeps naming
+  it on every receipt and shift report that already went out.
+
+Splitting is the **order** path (`POST /api/orders/[id]/pay`). The retail industries' invoice posts
+through the domain-event engine per line, which settles a sale one way, so that screen picks a way
+from the same list and narrows it with `ledgerSettlementFor`.
+
+## In-house production (تولید داخلی, Phase 29)
+
+Some menu items are **made**, not just assembled. A whole cake is built from raw materials once,
+yields 8 slices, and each slice is then sold through its own serving recipe (one slice + chocolate
+sauce). The recipe model on its own is one level deep and cannot express that: put the cake's
+materials in the per-slice recipe and every sale deducts a whole cake; leave them out and the cake
+has no cost.
+
+`/dashboard/inventory` ← «تولید» adds the missing middle step, for the minority of items that need
+it. A **فرمول تولید** says what one batch consumes and how much it yields; a **سند تولید** records
+an actual batch, taking the materials out of stock and putting the product in.
+
+**The one thing to know before touching this.** The produced good is an **ordinary
+`inventory_items` row**, flagged `is_produced`, with its own base unit («برش») and its own
+`avg_cost` — not a parallel model. That is why nothing else needed changing: serving recipes,
+sale-time deduction, FIFO/weighted-average costing, stock counts, waste, low-stock alerts,
+suggested pricing and cost drift all already work per inventory item. Don't reintroduce a second
+notion of "a thing we make".
+
+- **Cost is spread over the *actual* yield.** A tray that came out as 15 slices instead of 16 cost
+  the same to make, so each slice cost more. The run's `output_quantity` is what happened, not what
+  the formula promised.
+- **Conversion cost is optional and is a *contra*-expense.** Labour and overhead entered on a run
+  are capitalised into the product (`1310` WIP → `1300`), crediting `5180`. The baker's wage is
+  already booked to `5200`; crediting `5180` nets against it so it isn't counted twice, and the
+  cost re-emerges as COGS when the cake sells. `5180` is deliberately not in `COST_OF_SALES_CODES`.
+- **`1310` is a wash account.** A run issues and completes in one transaction, so WIP is always
+  zero at rest — asserted by `integration/production-runs.integration.test.ts`.
+- **A run is never edited, only reversed**, and reversal is refused once the batch has been sold
+  (`production_output_consumed`) — the same posture stock counts take.
+- **Nesting is supported** (sponge base → cake → slice); a cycle is refused.
+- `is_produced` is **derived** from a formula naming the item as its output, not a checkbox.
+
+See [docs/phases/Phase-29-In-House-Production.md](docs/phases/Phase-29-In-House-Production.md).
 
 ## The business day (روز کاری)
 
@@ -297,10 +370,21 @@ rows.
   *not* derived from it: a sale rung afterwards is still filed under the business day it happened in.
   That is what makes it safe — no cash-up and no button can move money between report rows. Both also
   expire on their own once the next business day begins, so there is no state to clean up.
+- **A bill belongs to the shift that opened it.** Every shift-scoped order read buckets on
+  `orders.opened_at`, never on `closed_at` — one predicate, `ORDER_OPENED_IN_WINDOW`
+  (`src/lib/order-read-service.ts`), shared by the orders screen's settled list and the
+  «سفارش‌های شیفت» report so the two cannot disagree. A table opened at 23:30 and finally paid at 08:00
+  is one sale, and it is the *night* shift's: that shift seated the guests and rang the items in. So a
+  carried-over bill stays in its own shift's list and report however late it is settled, and the shift
+  that merely took the last payment is never shown a sale it did not make. Keyed on `closed_at` it did
+  both wrong at once — it vanished from the shift that opened it and inflated the one that closed it.
+  The still-open queue is unbounded by time either way, so a carried-over table is always settleable;
+  it simply files itself back under its own shift once it is.
 
 **What follows the business day.** The reporting views (sales, menu items, modifiers, shift
 reconciliation, staff performance, waste, delivery, courier); the dashboard KPIs and sales-trend
-chart; the orders screen's closed-order window; `employee_shifts.business_date`; the reports
+chart; the orders screen's settled-order window (whose *contents* are then bucketed by
+`opened_at`, per the rule above); `employee_shifts.business_date`; the reports
 screens' quick ranges («روز کاری جاری» و…), which anchor on the branch's current business date
 rather than on the browser's calendar; the cross-server rollup's `getBusinessToday`; the AI
 assistant's default date ranges; and the default date on a new purchase.
@@ -397,6 +481,22 @@ the policies are proven in CI regardless of how the local database is set up.
 scales with how many businesses' concurrent write transactions one deployment expects to
 serve — several busy cafés sharing one host need more headroom than a single one. See
 `src/lib/pool-config.ts`.
+
+**Surviving a database blip** (`DB_CONNECT_ATTEMPTS`, default 4). The app reaches Postgres by
+*name* over a container network, so every new pool connection starts with a DNS lookup against
+the container runtime's resolver — and that resolver drops queries under load and goes away
+entirely while the network is reconfigured or the database container is replaced. Node reports
+it as `getaddrinfo EAI_AGAIN <host>`, and node-postgres has no retry of its own, so one dropped
+lookup used to fail whatever page or background tick asked for a connection at that instant.
+`src/lib/db-retry.ts` retries the **checkout** — never a statement already in flight, which is
+what makes it safe to repeat — backing off 100ms/300ms/900ms, and only for failures that mean
+"couldn't reach it" (a rejected password or a missing database still fails at once). The pool
+also holds connections open for a minute with TCP keepalive, so an idle deployment isn't
+re-resolving the host every ten seconds; a checkout that can't connect gives up after 30s
+(`DB_CONNECT_TIMEOUT_MS`) rather than hanging on the resolver's full budget; and an
+idle-client error is logged instead of taking the process down with it. When a lookup keeps failing, one line per minute names the host and
+says what to check: the app and Postgres containers must share a network, and the host in
+`DATABASE_URL` must be the database service's name on it.
 
 **Docker deployments (`docker-entrypoint.sh`) do this for you.** Every shipped compose file
 (`docker-compose.komodo.yml`, `docker-compose.local.yml`, `docker-compose.srv1.yml`) hands the
@@ -539,6 +639,49 @@ Two things it deliberately does **not** do, both of which matter when correcting
   longer agree with the count recorded then. When the customer actually got money back, a
   customer return (`/api/orders/[id]/returns`) is the more faithful record — an amendment says
   the sale never should have been rung up that way.
+
+### Recording a past sale (ثبت سفارش گذشته)
+
+Two things happen to every café eventually: an evening when the POS was down and the bills were
+written on paper, and the week of trading that predates the install. Both leave real sales with
+no row. «ثبت سفارش گذشته» — a panel on `/dashboard/orders`, behind the `orders.backdate`
+permission (owner and manager by default) — is where they get typed in.
+
+A back-dated order is **an ordinary `orders` row**, not a second kind of sale. What differs is
+that every timestamp it writes is the instant the sale happened rather than `now()`:
+
+- `orders.opened_at` / `closed_at` and `payments.received_at`, so every day-bucketed report
+  (which reads `app_business_date(o.closed_at, …)`) files it under the trading day it belongs
+  to — including for a branch whose day starts at 18:00, where an after-midnight sale stays on
+  the previous date;
+- `stock_movements.occurred_at`, so the stock ledger agrees with the sales ledger about when the
+  goods moved; and
+- `journal_entries.entry_date`, which also puts the posting under migration 0024's
+  fiscal-period lock **for the back-dated month**. A closed or soft-closed period refuses the
+  sale (`fiscal_period_locked`) rather than quietly absorbing it into the current one.
+
+The day and time are entered as the **branch's** wall clock and resolved server-side against its
+timezone (`instantInTimeZone`), so a till whose clock is set to the wrong country cannot shift a
+sale — by hours, or by a whole trading day. A sale dated in the future is refused; so is one more
+than a year old, which is overwhelmingly a mistyped Jalali year rather than a real sale.
+
+Three things are deliberately **not** back-dated:
+
+- **The order number**, which comes off the branch's ordinary counter. Numbers are the sequence
+  bills were issued in, not a second date.
+- **The table.** A back-dated dine-in sale carries `type = 'dine_in'` as a channel label but never
+  a `table_id` — occupying table 4 tonight because of a bill from last Tuesday is a lie the floor
+  screen cannot correct.
+- **`backdated_orders.created_at`**, which is when it was actually typed in. That row (migration
+  0093) also carries the actor and a mandatory reason, alongside an `audit_log` entry — a sale
+  entered days late is the same shape as one invented days late, so the *why* is recorded next to
+  it. As with an amendment, a business pushing daily summaries to a central server (Phase 9) has
+  its push high-water mark wound back to the back-dated day so central converges.
+
+**Not covered:** retail invoices (jewelry/watch/accessories/cosmetics). Their sale posts through
+each industry's own sell service and posting rules rather than through `postExactOrderPaymentEntry`,
+so back-dating them means threading an `occurredAt` through four sell services, their serial/FEFO
+stock layers, and the commission and loyalty accruals — a separate piece of work, not a flag.
 
 ## Feature Gating & Platform Hardening (Phase 17)
 

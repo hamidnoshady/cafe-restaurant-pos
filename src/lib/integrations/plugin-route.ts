@@ -39,8 +39,15 @@ export function pluginRoute(handler: PluginRouteHandler) {
     if (rawBody.trim()) {
       try {
         const parsed = JSON.parse(rawBody);
-        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) body = parsed;
-        else return NextResponse.json({ error: "invalid_json" }, { status: 400 });
+        if (parsed && typeof parsed === "object") {
+          // A top-level JSON array is accepted as an empty body. PHP's
+          // wp_json_encode renders an empty array as `[]`, and plugins older
+          // than 1.0.1 send exactly that for calls with no payload (ping,
+          // pull-jobs), so rejecting it would keep those plugins dead-ended.
+          body = Array.isArray(parsed) ? {} : parsed;
+        } else {
+          return NextResponse.json({ error: "invalid_json" }, { status: 400 });
+        }
       } catch {
         return NextResponse.json({ error: "invalid_json" }, { status: 400 });
       }

@@ -35,14 +35,24 @@ it (see `src/lib/orders.test.ts` for the pattern: pure functions, integer-Rial f
 DB). If you changed the schema, add a new forward-only `migrations/NNNN_name.sql` file —
 never edit an already-applied migration.
 
-## CI (`.github/workflows/deploy.yml`)
+## CI (`.github/workflows/test.yml`)
 
-GitHub Actions, which replaced the old CircleCI pipeline. On every push to `main` and every
-PR against it:
+GitHub Actions, which replaced the old CircleCI pipeline. One job, on every push to `main` and
+every PR against it:
 
-- **`test`** — `postgres:16` service, `npm ci`, `npm run db:migrate` (twice, to prove reruns
-  are a no-op), `npm run test:db`, `npx tsc --noEmit`, `npm test`.
-- **`build-and-push`** — builds the production image and pushes it to GHCR.
+- **`test`** ("type check, unit tests, integration tests, build") — `postgres:16` service,
+  `npm ci`, `npm run db:migrate` (twice, to prove reruns are a no-op), `npm run test:db`,
+  `npx tsc --noEmit`, `npm test`, `npm run build`. It sets `JWT_SECRET` itself, because vitest
+  does not read `.env`.
+
+The workflow is deliberately test-only: **no image build, no registry push, no deploy.** This
+gate exists to keep `main` green and to mirror the local checklist above step for step.
+
+Note that this leaves a real gap, so don't assume an image exists for a given commit: the
+self-update path (`src/lib/app-update.ts`, `scripts/check-app-update.ts`, `/platform/updates`)
+and the pull-based compose files (`docker-compose.local.yml`, `docker-compose.srv1.yml`) all
+expect `ghcr.io/hamidnoshady/cafe-restaurant-pos:sha-<short-sha>` images that nothing in this
+repo publishes. Those images are produced outside CI today.
 
 Treat a red CI run as blocking. Re-diagnose and push a fix rather than working around it or
 declaring the task done with CI failing.
@@ -104,9 +114,26 @@ date instead of splitting it at midnight. See the "The business day" section of
   step with every other one.
 - **Don't derive a "today" window in a route.** `getBusinessDayStatus` (`src/lib/business-day-service.ts`)
   already answers it, including a manual close; the pure half is `src/lib/business-day.ts`.
+- **A sale may be recorded after the fact.** «ثبت سفارش گذشته» (`/api/orders/backdated`,
+  `src/lib/backdated-order-service.ts`) writes an *ordinary* `orders` row whose `opened_at`,
+  `closed_at`, `payments.received_at`, `stock_movements.occurred_at` and `journal_entries.entry_date`
+  are all the instant the sale happened — which is why reports, COGS, costing and the fiscal-period
+  lock needed no special case. Don't build a second model for "a sale we typed in late"; the
+  `backdated_orders` row records only what the order cannot say (who, why, and when it was actually
+  entered). The day and time are the *branch's* wall clock, resolved server-side — never the
+  browser's.
 - **The night ends at the cash-up.** The live window starts at the branch's last
   `employee_shifts.ended_at` once nobody is clocked in (a handover doesn't count); «بستن روز کاری» is
   the override for branches that don't clock in. A start time alone can only say when a day begins.
+- **A bill belongs to the shift/day it was *opened* in, not the one that settled it.** Every
+  shift-scoped order read shares one predicate — `ORDER_OPENED_IN_WINDOW`
+  (`src/lib/order-read-service.ts`) — so the orders screen's settled list and the «سفارش‌های شیفت»
+  report can't disagree. A table opened at 23:30 and paid at 08:00 stays the *night* shift's sale: it
+  keeps showing in that shift's list however late it closes, and the shift that took the last payment
+  is not credited with it. Don't reach for `closed_at` to bucket a shift — that is the bug this
+  replaced, and it got both halves wrong at once. Shift *cash* figures are a separate question and stay
+  on `closed_by`/`closed_at` on purpose: `shiftCashSummary` answers "what is in this employee's till",
+  so the drawer count reconciles against money they actually held.
 - **Ending a day is display-only, by decision.** A cash-up or a manual close moves the live window,
   never a report's bucket — don't "fix" reports to honour them.
 
@@ -126,6 +153,21 @@ and left:
    anything actionable, and re-arm silently if nothing changed.
 4. A PR isn't done at "opened" or even at "CI green" if review is still pending — keep
    checking in until it's actually merged or closed. Stop immediately if asked to.
+
+## Payment ways — read before touching how money is taken
+
+Since migration 0091 a business's ways of taking money are **rows in `payment_methods`**, named and
+ordered by the business, and one bill can be split across several of them (`payments` gets one row
+per slice). The `payment_method` enum did not go away — it is now the *settlement* a way declares,
+and the only thing the ledger sees. See the "Payment ways" section of [README.md](README.md).
+
+- **Don't hard-code a payment list in a screen.** `GET /api/payment-methods` is the source, and
+  `<PaymentWays>` (`src/app/dashboard/payment-ways.tsx`) is the picker; the arithmetic of a split
+  lives in `src/lib/payment-draft.ts`, not in a component.
+- **Don't add the tip into the `payments` rows.** They record the bill; `tendersWithTip` folds the
+  tip into the posting only. The closed-order amendment and refund ceilings depend on that.
+- **A split posts one entry, not one per slice** — `postExactOrderPaymentEntry` takes `tenders` and
+  builds a debit line per settlement against a single revenue credit.
 
 ## Repository layout
 
@@ -168,6 +210,16 @@ and left:
   migrated onto that model, by decision** — see the phase doc's "Revised" scope note before assuming
   otherwise. Industry-gated pages and routes use `src/lib/industry-guard.ts`, the industry-keyed
   counterpart of `features.ts`.
+- **In-house production (Phase 29)** — some F&B items are *made*, not assembled: a cake is built
+  from raw materials once, yields 8 slices, and each slice is sold through its own serving recipe.
+  A formula (`production_formulas`) and a run (`production_runs`) sit between the two, under the
+  «تولید» tab of `/dashboard/inventory` and `/api/inventory/production/*` — so they inherit the
+  `inventory` flag and F&B module with **no new gating**. The load-bearing rule: **the produced good
+  is an ordinary `inventory_items` row** flagged `is_produced`, which is why recipes, costing,
+  sale-time deduction, stock counts, pricing and cost drift all needed no change. Don't build a
+  second model for "a thing we make". A run's cost is spread over the *actual* yield, its optional
+  conversion cost is capitalised through a WIP wash account (`1310`) crediting a **contra**-expense
+  (`5180`, so the wage in `5200` isn't counted twice), and it is corrected by reversal, never edited.
 - `src/lib/*.ts` — framework-free logic (money, dates, digits, order totals, …); these are
   what `*.test.ts` files cover. `src/lib/db.ts` and files that call `query()`/`getPool()`
   are the DB-touching exception and aren't unit-tested directly.
@@ -194,7 +246,9 @@ and left:
 - `wordpress-plugin/pos-accounting-connector/` — the WordPress/WooCommerce plugin (PHP,
   no build step, not part of the Next.js app). Its signing string must stay byte-identical
   to `plugin-link.ts`'s; `plugin-link.test.ts` pins the expected value on the TS side, so
-  change both or neither.
+  change both or neither. **Every change to the plugin bumps its version** — the `Version:`
+  header and `POS_CONNECTOR_VERSION` in `pos-accounting-connector.php`, plus the `Stable
+  tag` and a Changelog entry in `readme.txt` — so WordPress sites can tell an update apart.
 - `electron/` — the standalone (no-Docker) desktop installer. `main.js` bundles a real
   PostgreSQL 16 (`embedded-postgres`) and runs `server.ts`/`scripts/migrate.ts` unmodified as
   child processes — see `docs/standalone-desktop-app.md`. Separate `package.json` from the

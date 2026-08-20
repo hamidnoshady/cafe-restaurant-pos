@@ -274,7 +274,7 @@ function OrderCard({ order }: { order: ShiftOrder }) {
                     className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 text-xs text-[#5E5B55]"
                   >
                     <span className="min-w-0 font-semibold text-[#252522]">
-                      {PAYMENT_METHOD_LABELS[payment.method] ?? payment.method}
+                      {payment.methodName ?? PAYMENT_METHOD_LABELS[payment.method] ?? payment.method}
                       <span className="ms-2 font-normal text-[#77756F]">
                         {toPersianDigits(timeLabel(payment.receivedAt))}
                         {payment.receivedByName ? ` · ${payment.receivedByName}` : ""}

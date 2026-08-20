@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, useDeferredValue } from "react";
-import { InfoIcon, RefreshCwIcon, SearchIcon, ShoppingBagIcon } from "lucide-react";
+import { InfoIcon, RefreshCwIcon, SearchIcon, ShoppingBagIcon, UserIcon } from "lucide-react";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali, isoDateInTimeZone } from "@/lib/jalali";
 import { formatToman } from "@/lib/money";
@@ -15,6 +15,7 @@ import { useRealtime } from "../use-realtime";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { JalaliDatePicker } from "../jalali-date-picker";
 import { api } from "../ui";
+import { BackdatedOrderPanel } from "./backdated-order-panel";
 import { OrderDetailModal } from "./order-detail-modal";
 
 type OrderStatus = "open" | "held" | "completed" | "voided";
@@ -27,6 +28,10 @@ interface OrderRow {
   type: OrderType;
   status: OrderStatus;
   table_name: string | null;
+  /** Whom the sale is attributed to — null for the walk-in that most orders are. */
+  customer_id: string | null;
+  customer_name: string | null;
+  customer_phone: string | null;
   guest_count: number | null;
   total: string | number;
   opened_at: string;
@@ -105,7 +110,7 @@ function shiftOptionLabel(shift: ShiftOption): string {
   return `${shift.employeeName} · ${start} تا ${end}`;
 }
 
-/** Closed = it left the queue. The pair `listOrdersClosedSince` reads back. */
+/** Closed = it left the queue. The pair `listSettledOrdersInWindow` reads back. */
 const CLOSED_STATUSES: OrderStatus[] = ["completed", "voided"];
 
 function isClosed(order: OrderRow): boolean {
@@ -350,6 +355,20 @@ function OrderDetailsPanel({
                 </dd>
               </div>
             ) : null}
+            {order.customer_name ? (
+              <div className="col-span-2 rounded-xl bg-[#FCFCFA] p-3">
+                <dt className="text-[11px] text-[#77756F]">مشتری</dt>
+                <dd className="mt-1 truncate text-sm font-bold text-[#252522]">
+                  {order.customer_name}
+                  {order.customer_phone ? (
+                    <span className="font-normal text-[#77756F]">
+                      {" · "}
+                      {toPersianDigits(order.customer_phone)}
+                    </span>
+                  ) : null}
+                </dd>
+              </div>
+            ) : null}
             <div className="rounded-xl bg-[#FCFCFA] p-3">
               <dt className="text-[11px] text-[#77756F]">زمان ثبت</dt>
               <dd className="mt-1 text-sm font-bold text-[#252522]">
@@ -474,15 +493,24 @@ function OrderDetailsPanel({
 export function OrdersList({
   canEdit,
   canAmendClosed = false,
+  canBackdate = false,
   initialOrderId = null,
 }: {
   /** May work an open order — add lines, discount it, take payment. */
   canEdit: boolean;
   /** May edit or remove an order that has already been paid for. */
   canAmendClosed?: boolean;
+  /** May record a sale that already happened — see backdated-order-panel.tsx. */
+  canBackdate?: boolean;
   /** `?order=<id>` from the URL: the dialog opens on it once, on first render. */
   initialOrderId?: string | null;
 }) {
+  /**
+   * The back-dating form is a panel on this screen rather than a page of its
+   * own: it is the same subject (this branch's sales), reached from the same
+   * place, and closed again the moment the paper receipts are typed in.
+   */
+  const [showBackdated, setShowBackdated] = useState(false);
   const [orders, setOrders] = useState<OrderRow[] | null>(null);
   const [closedOrders, setClosedOrders] = useState<OrderRow[]>([]);
   /** null = nobody is clocked in, so the closed list covers the business day instead of a shift. */
@@ -618,6 +646,8 @@ export function OrdersList({
         formatQueueLabel(order.type, order.order_number),
         TYPE_LABELS[order.type],
         order.table_name ?? "",
+        order.customer_name ?? "",
+        order.customer_phone ?? "",
       ]
         .join(" ")
         .toLocaleLowerCase("fa");
@@ -772,6 +802,16 @@ export function OrdersList({
                   ? ` · ${toPersianDigits(closedOrders.length)} بسته‌شده`
                   : "")}
           </span>
+          {canBackdate && (
+            <button
+              type="button"
+              onClick={() => setShowBackdated((open) => !open)}
+              aria-expanded={showBackdated}
+              className="flex min-h-12 items-center gap-2 rounded-xl border border-[#EAE8E2] bg-white px-3 text-xs font-bold text-[#5E5B55] transition duration-200 hover:bg-[#FCFCFA] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 active:scale-[0.98] xl:min-h-[52px] motion-reduce:transition-none"
+            >
+              {showBackdated ? "بستن فرم گذشته" : "ثبت سفارش گذشته"}
+            </button>
+          )}
           <button
             type="button"
             onClick={() => void load()}
@@ -791,6 +831,12 @@ export function OrdersList({
           </button>
         </div>
       </header>
+
+      {canBackdate && showBackdated ? (
+        <div className="mb-3">
+          <BackdatedOrderPanel />
+        </div>
+      ) : null}
 
       {loadError && orders ? (
         <div
@@ -1038,8 +1084,17 @@ export function OrdersList({
                   <button
                     key={order.id}
                     type="button"
-                    onClick={() => setSelectedOrderId(order.id)}
+                    /*
+                      One tap, one order. Selecting the row used to only fill the
+                      summary panel, and reaching the order itself — its lines,
+                      its payment, its corrections — meant finding the panel's
+                      button afterwards. The card is the order, so it opens it;
+                      the panel keeps showing whatever was opened last, which is
+                      what it is still good for once the dialog is dismissed.
+                    */
+                    onClick={() => openDetail(order.id)}
                     aria-pressed={isSelected}
+                    aria-haspopup="dialog"
                     className={`flex min-h-[76px] w-full items-center justify-between gap-3 px-4 py-3 text-start transition duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#E9A11B]/45 active:scale-[0.995] md:min-h-[82px] xl:min-h-[88px] motion-reduce:transition-none ${
                       isSelected
                         ? "bg-[#FFF9EE]"
@@ -1059,6 +1114,19 @@ export function OrdersList({
                           {STATUS_LABELS[order.status]}
                         </span>
                       </div>
+                      {/* The customer gets its own line rather than a slot on
+                          the muted meta line below: "whose order is this" is
+                          read at a glance off this list, and a name folded in
+                          among the type, table and timings is not. */}
+                      {order.customer_name ? (
+                        <p className="mt-1 flex items-center gap-1 text-sm font-bold text-[#252522]">
+                          <UserIcon
+                            className="size-3.5 shrink-0 text-[#9B6700]"
+                            aria-hidden="true"
+                          />
+                          <span className="truncate">{order.customer_name}</span>
+                        </p>
+                      ) : null}
                       <p className="mt-1 truncate text-xs text-[#77756F]">
                         {TYPE_LABELS[order.type]}
                         {order.table_name ? ` · ${order.table_name}` : ""}

@@ -22,9 +22,10 @@ let db: Client;
 let dbLib: typeof import("../src/lib/db");
 let stockService: typeof import("../src/lib/retail-stock-service");
 let itemsService: typeof import("../src/lib/items-service");
+let provisioning: typeof import("../src/lib/business-provisioning");
 
 const biz = { id: "", locationId: "", otherLocationId: "" };
-const acct = { inventory: "", inTransit: "", ap: "" };
+const acct = { inventory: "", inTransit: "", ap: "", supplierReceivable: "" };
 const item = { id: "", otherId: "" };
 
 function urlFor(database: string): string {
@@ -56,6 +57,7 @@ beforeAll(async () => {
   dbLib = await import("../src/lib/db");
   stockService = await import("../src/lib/retail-stock-service");
   itemsService = await import("../src/lib/items-service");
+  provisioning = await import("../src/lib/business-provisioning");
 
   db = new Client({ connectionString: urlFor(databaseName) });
   await db.connect();
@@ -104,18 +106,25 @@ beforeEach(async () => {
   biz.locationId = locRow.rows[0].id;
   biz.otherLocationId = locRow.rows[1].id;
 
+  // Seeded from the real cosmetics template rather than hand-inserted: a
+  // supplier return settled as a receivable needs 1210, which the template did
+  // not carry until Phase 30, and hand-inserting the accounts is what kept that
+  // gap invisible here.
+  const client = await dbLib.getPool().connect();
+  try {
+    await provisioning.seedChartOfAccounts(client, biz.id, "cosmetics");
+  } finally {
+    client.release();
+  }
   const accounts = await db.query<{ id: string; code: string }>(
-    `INSERT INTO accounts (business_id, code, name, type)
-     VALUES ($1, '1350', 'Cosmetic inventory', 'asset'),
-            ($1, '1360', 'In transit', 'asset'),
-            ($1, '2100', 'Accounts payable', 'liability')
-     RETURNING id, code`,
+    `SELECT id, code FROM accounts WHERE business_id = $1 AND code IN ('1350', '1360', '2100', '1210')`,
     [biz.id],
   );
   for (const row of accounts.rows) {
     if (row.code === "1350") acct.inventory = row.id;
     if (row.code === "1360") acct.inTransit = row.id;
     if (row.code === "2100") acct.ap = row.id;
+    if (row.code === "1210") acct.supplierReceivable = row.id;
   }
 
   const source = await itemsService.createItem({ locationId: biz.locationId, name: "کرم ضدآفتاب", tracking: "none" });
@@ -217,6 +226,45 @@ describe("supplier returns", () => {
     expect(lines).toEqual([
       { account_id: acct.ap, debit: "200000", credit: "0" },
       { account_id: acct.inventory, debit: "0", credit: "200000" },
+    ]);
+  });
+
+  it("settles as a receivable from the supplier when that is how it was agreed", async () => {
+    // The other settlement `RETURN_DEBIT_CODE` offers, and the one that needed
+    // «دریافتنی از تأمین‌کننده» (1210) — an account the four retail templates did
+    // not carry until Phase 30, so this posting could only ever have failed with
+    // `ledger_account_missing` in a real shop.
+    expect(acct.supplierReceivable).not.toBe("");
+
+    await withClient((client) =>
+      stockService.receiveItemPurchase(client, {
+        businessId: biz.id,
+        locationId: biz.locationId,
+        lines: [{ itemId: item.id, quantity: "10", unitCost: 50_000 }],
+      }),
+    );
+
+    await withClient((client) =>
+      stockService.createItemSupplierReturn(client, {
+        businessId: biz.id,
+        locationId: biz.locationId,
+        settlementMethod: "supplier_receivable",
+        reason: "کالای معیوب",
+        idempotencyKey: randomUUID(),
+        lines: [{ itemId: item.id, quantity: "2" }],
+      }),
+    );
+
+    const entry = await db.query<{ entry_id: string }>(
+      "SELECT entry_id FROM domain_events WHERE event_type = 'retail.supplier_return'",
+    );
+    const { rows: lines } = await db.query<{ account_id: string; debit: string; credit: string }>(
+      "SELECT account_id, debit, credit FROM journal_lines WHERE entry_id = $1 ORDER BY debit DESC",
+      [entry.rows[0].entry_id],
+    );
+    expect(lines).toEqual([
+      { account_id: acct.supplierReceivable, debit: "100000", credit: "0" },
+      { account_id: acct.inventory, debit: "0", credit: "100000" },
     ]);
   });
 });

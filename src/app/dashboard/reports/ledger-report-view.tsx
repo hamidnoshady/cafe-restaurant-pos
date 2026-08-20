@@ -3,6 +3,7 @@
 import { useState, type ReactNode } from "react";
 import { formatToman } from "@/lib/money";
 import { formatPersianNumber } from "@/lib/digits";
+import { isNonCurrentCode } from "@/lib/coa-template";
 import { DrillDownPanel, type DrillDownTarget } from "./drill-down-panel";
 
 interface PnlLine {
@@ -33,6 +34,10 @@ export interface BalanceSheet {
   totalLiabilities: number;
   totalEquity: number;
   balanced: boolean;
+  currentAssets: number;
+  nonCurrentAssets: number;
+  currentLiabilities: number;
+  nonCurrentLiabilities: number;
 }
 
 export interface CashFlowLine {
@@ -582,26 +587,59 @@ export function BalanceSheetView({
       ]
     : undefined;
 
+  // The جاری/غیرجاری split. Non-current groups are rendered only when they have
+  // lines, so a business with no fixed assets and no borrowings still reads as
+  // the flat sheet it effectively is.
+  const split = (lines: PnlLine[], type: "asset" | "liability", nonCurrent: boolean) =>
+    lines.filter((l) => isNonCurrentCode(type, l.accountCode) === nonCurrent);
+
+  const currentAssetLines = split(current.assets, "asset", false);
+  const nonCurrentAssetLines = split(current.assets, "asset", true);
+  const currentLiabilityLines = split(current.liabilities, "liability", false);
+  const nonCurrentLiabilityLines = split(current.liabilities, "liability", true);
+
   return (
     <div>
       <Section
-        heading="دارایی‌ها"
-        lines={current.assets}
-        previousLines={previous?.assets}
-        total={current.totalAssets}
-        previousTotal={previous?.totalAssets}
-        totalLabel="جمع دارایی‌ها"
+        heading="دارایی‌های جاری"
+        lines={currentAssetLines}
+        previousLines={previous ? split(previous.assets, "asset", false) : undefined}
+        total={current.currentAssets}
+        previousTotal={previous?.currentAssets}
+        totalLabel="جمع دارایی‌های جاری"
         drill={drill}
       />
+      {nonCurrentAssetLines.length > 0 ? (
+        <Section
+          heading="دارایی‌های غیرجاری"
+          lines={nonCurrentAssetLines}
+          previousLines={previous ? split(previous.assets, "asset", true) : undefined}
+          total={current.nonCurrentAssets}
+          previousTotal={previous?.nonCurrentAssets}
+          totalLabel="جمع دارایی‌های غیرجاری"
+          drill={drill}
+        />
+      ) : null}
       <Section
-        heading="بدهی‌ها"
-        lines={current.liabilities}
-        previousLines={previous?.liabilities}
-        total={current.totalLiabilities}
-        previousTotal={previous?.totalLiabilities}
-        totalLabel="جمع بدهی‌ها"
+        heading="بدهی‌های جاری"
+        lines={currentLiabilityLines}
+        previousLines={previous ? split(previous.liabilities, "liability", false) : undefined}
+        total={current.currentLiabilities}
+        previousTotal={previous?.currentLiabilities}
+        totalLabel="جمع بدهی‌های جاری"
         drill={drill}
       />
+      {nonCurrentLiabilityLines.length > 0 ? (
+        <Section
+          heading="بدهی‌های غیرجاری"
+          lines={nonCurrentLiabilityLines}
+          previousLines={previous ? split(previous.liabilities, "liability", true) : undefined}
+          total={current.nonCurrentLiabilities}
+          previousTotal={previous?.nonCurrentLiabilities}
+          totalLabel="جمع بدهی‌های غیرجاری"
+          drill={drill}
+        />
+      ) : null}
       <Section
         heading="حقوق صاحبان سرمایه"
         lines={equityLines}
@@ -612,7 +650,20 @@ export function BalanceSheetView({
         drill={drill}
       />
 
-      <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#DEDAD2] bg-[#FCFBF8] p-4">
+      <dl className="mt-5 grid gap-3 rounded-xl border border-[#DEDAD2] bg-[#FCFBF8] p-4 sm:grid-cols-3">
+        {[
+          ["جمع دارایی‌ها", current.totalAssets],
+          ["جمع بدهی‌ها", current.totalLiabilities],
+          ["جمع حقوق صاحبان سرمایه", current.totalEquity],
+        ].map(([label, amount]) => (
+          <div key={label as string} className="flex items-center justify-between gap-3 sm:flex-col sm:items-start sm:gap-1">
+            <dt className="text-xs text-[#77756F]">{label}</dt>
+            <dd className="tabular-nums font-bold text-[#252522]">{formatToman(amount as number)}</dd>
+          </div>
+        ))}
+      </dl>
+
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#DEDAD2] bg-[#FCFBF8] p-4">
         <span className="font-bold text-[#252522]">وضعیت تراز</span>
         <span
           className={

@@ -31,7 +31,14 @@ export async function consumeInventoryExact(
     businessId: string;
     inventoryItemId: string;
     quantity: QuantityText;
-    type: "sale" | "waste" | "adjustment";
+    /**
+     * `production_consume` (Phase 29) is raw material leaving the store to be
+     * made into something else. It consumes on exactly the same terms as a
+     * sale — including opening a *priced* negative layer when the material has
+     * run short — and is a distinct movement type only so that "what did we
+     * bake" and "what did we sell" stay separable in the stock ledger.
+     */
+    type: "sale" | "waste" | "adjustment" | "production_consume";
     sourceType: string;
     sourceId: string | null;
     note?: string | null;

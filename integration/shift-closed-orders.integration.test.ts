@@ -1,8 +1,13 @@
 /**
  * "Closed this shift" on the orders screen, against a real database — both
  * halves are DB-touching (`branchShiftStartedAt` in shift-service.ts,
- * `listOrdersClosedSince` in order-read-service.ts) and so are not unit tested
+ * `listSettledOrdersInWindow` in order-read-service.ts) and so are not unit tested
  * directly, per repo convention.
+ *
+ * The list is bucketed by when an order was *opened*, not when it was paid, so
+ * a bill carried across a cash-up stays with the shift that opened it. Cases 9
+ * and 10 below are that rule from both ends; everything before them is the
+ * window itself, unchanged.
  *
  * What GET /api/orders?scope=shift promises, and what this pins down:
  *   1. with nobody clocked in the window is still today's business day — the
@@ -21,7 +26,12 @@
  *   7. another branch's closed orders are never listed;
  *   8. the shift picker an owner/manager gets: the branch's shifts as options,
  *      one shift's own closed orders bounded by its end, and no foreign
- *      branch's shift among the options.
+ *      branch's shift among the options;
+ *   9. a bill opened before the window and settled inside it is *not* listed —
+ *      the new shift is not credited with a sale it did not make;
+ *  10. a bill opened inside a shift and settled after that shift ended *is*
+ *      listed for it — the other half of the same rule, and the reason the two
+ *      cannot be expressed as one bound on `closed_at`.
  */
 import { randomUUID } from "node:crypto";
 import { Client } from "pg";
@@ -118,7 +128,7 @@ async function insertOrder(
 async function closedThisShift(locationId: string): Promise<number[]> {
   return dbLib.withTenant(businessId, async () => {
     const { since } = await shiftService.branchClosedOrdersWindow(locationId);
-    const rows = await orderRead.listOrdersClosedSince(locationId, since);
+    const rows = await orderRead.listSettledOrdersInWindow(locationId, since);
     return rows.map((row) => Number((row as { order_number: string }).order_number));
   });
 }
@@ -325,6 +335,37 @@ describe("the branch's closed orders", () => {
 
     expect(await closedThisShift(mainId)).toEqual([]);
   });
+
+  /**
+   * The carried-over table: last night's bill that nobody could settle before
+   * the shift ended, finally paid this morning. It is last night's sale — that
+   * shift seated the guests and rang the items in — so this morning's list must
+   * not show it, even though the payment landed here. Keyed on `closed_at` it
+   * appeared in both, and inflated whichever shift happened to take the money.
+   */
+  it("leaves a bill opened before the window with the shift that opened it", async () => {
+    const carriedOver = await insertOrder(mainId, {
+      openedAt: await today(-3 * 60), // 21:00 last night
+      closedAt: await today(8 * 60), // settled at 08:00 today
+    });
+    const todays = await insertOrder(mainId, {
+      openedAt: await today(9 * 60),
+      closedAt: await today(10 * 60),
+    });
+
+    const listed = await closedThisShift(mainId);
+    expect(listed).not.toContain(carriedOver);
+    expect(listed).toEqual([todays]);
+  });
+
+  it("still lists a bill this window opened, however long it sat open", async () => {
+    const lingering = await insertOrder(mainId, {
+      openedAt: await today(30),
+      closedAt: await today(23 * 60),
+    });
+
+    expect(await closedThisShift(mainId)).toEqual([lingering]);
+  });
 });
 
 describe("reviewing one shift (the owner's picker)", () => {
@@ -334,7 +375,7 @@ describe("reviewing one shift (the owner's picker)", () => {
       const options = await shiftOrders.listRecentShiftOptions(mainId);
       const shift = options.find((option) => option.id === shiftId);
       if (!shift) return [];
-      const rows = await orderRead.listOrdersClosedSince(mainId, shift.startedAt, {
+      const rows = await orderRead.listSettledOrdersInWindow(mainId, shift.startedAt, {
         until: shift.endedAt,
       });
       return rows.map((row) => Number((row as { order_number: string }).order_number));
@@ -371,7 +412,7 @@ describe("reviewing one shift (the owner's picker)", () => {
       closedAt: await today(-5 * 60),
     });
     await insertOrder(mainId, {
-      openedAt: await today(-4 * 60),
+      openedAt: await today(-4 * 60 + 1),
       closedAt: await today(-3 * 60),
     });
 
@@ -386,6 +427,39 @@ describe("reviewing one shift (the owner's picker)", () => {
     });
 
     expect(await closedDuring(shift)).toEqual([settled]);
+  });
+
+  /**
+   * The same bill from the previous shift's side — the half that makes the
+   * order recoverable rather than merely hidden. Bounding `closed_at` by the
+   * shift's end used to drop it from here too, so a bill carried over belonged
+   * to no shift's list at all: it vanished from the one that opened it and
+   * surfaced under one that never saw the guests.
+   */
+  it("keeps a bill the shift opened but could not close, settled after it ended", async () => {
+    const shift = await insertShift(mainId, await today(-6 * 60), await today(-4 * 60));
+    const carriedOver = await insertOrder(mainId, {
+      openedAt: await today(-5 * 60),
+      closedAt: await today(-60), // long after the shift was cashed up
+    });
+
+    expect(await closedDuring(shift)).toEqual([carriedOver]);
+  });
+
+  it("does not credit the next shift with the bill the previous one opened", async () => {
+    const previous = await insertShift(mainId, await today(-6 * 60), await today(-4 * 60));
+    const next = await insertShift(mainId, await today(-4 * 60 + 1), null);
+    const carriedOver = await insertOrder(mainId, {
+      openedAt: await today(-5 * 60),
+      closedAt: await today(-3 * 60), // paid during `next`
+    });
+    const ownWork = await insertOrder(mainId, {
+      openedAt: await today(-2 * 60),
+      closedAt: await today(-90),
+    });
+
+    expect(await closedDuring(previous)).toEqual([carriedOver]);
+    expect(await closedDuring(next)).toEqual([ownWork]);
   });
 
   it("does not offer — or report on — another branch's shift", async () => {
