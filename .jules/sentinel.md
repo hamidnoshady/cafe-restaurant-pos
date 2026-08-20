@@ -26,3 +26,7 @@
 **Vulnerability:** Weak random number generation using `Math.random()` for generating internal barcode payload numbers.
 **Learning:** `Math.random()` does not provide cryptographically secure entropy, making internal barcode values predictable and increasing the likelihood of collisions.
 **Prevention:** Use `randomInt()` from `node:crypto` for numeric values (and `crypto.randomUUID()` for string identifiers) instead of `Math.random()` for operations requiring unique and unpredictable values.
+## 2026-08-20 - Prevent X-Forwarded-For IP Spoofing
+**Vulnerability:** IP spoofing via X-Forwarded-For header by trusting the left-most or right-most IP.
+**Learning:** In multi-proxy setups without explicit trusted proxies, the right-most IP might erroneously target an internal proxy, but blindly trusting the left-most IP introduces a critical spoofing vulnerability. If an attacker sends a crafted header, the spoofed IP is picked.
+**Prevention:** Parse X-Forwarded-For from right to left, checking against private/local network ranges, and select the first public IP.
