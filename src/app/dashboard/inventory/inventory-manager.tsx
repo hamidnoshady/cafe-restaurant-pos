@@ -252,7 +252,13 @@ function errorMessage(code: string | undefined): string {
     purchase_received_cannot_delete:
       "خرید دریافت‌شده برای حفظ موجودی و اسناد حسابداری قابل حذف نیست.",
     purchase_received_cannot_edit:
-      "خرید دریافت‌شده قابل ویرایش نیست؛ برای اصلاح از برگشت به تأمین‌کننده استفاده کنید.",
+      "خرید دریافت‌شده قابل ویرایش نیست؛ برای اصلاح از «برگشت به تأمین‌کننده» استفاده کنید.",
+    invalid_supplier_return: "اطلاعات برگشت به تأمین‌کننده کامل نیست.",
+    received_purchase_not_found: "خرید دریافت‌شده پیدا نشد.",
+    supplier_return_purchase_item_not_found: "قلم انتخاب‌شده متعلق به این خرید نیست.",
+    supplier_return_lot_required: "برای این قلم، لایهٔ موجودی معتبر پیدا نشد.",
+    supplier_return_lot_not_found: "موجودی قابل برگشت برای این قلم پیدا نشد.",
+    quantity_underflow: "مقدار برگشت از موجودی باقی‌مانده بیشتر است.",
     purchase_cancelled_cannot_edit: "خرید لغوشده قابل ویرایش نیست.",
     // Phase 29 — production
     output_item_not_found: "قلم انبارِ محصول پیدا نشد.",
