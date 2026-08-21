@@ -13,7 +13,16 @@ import { RetailInvoiceScreen } from "./retail-invoice-screen";
  * entry rather than another `if` — and so role guards, the offline banner and
  * the print wiring stay in one place. F&B's screen is untouched.
  */
-export default async function PosPage() {
+export default async function PosPage({
+  searchParams,
+}: {
+  /**
+   * `?table=<id>` starts the sale already seated at that table — how «مهمان جدید
+   * روی این میز» on an order's detail sends a friend at a busy table to the till
+   * for their own, separate bill.
+   */
+  searchParams: Promise<{ table?: string }>;
+}) {
   const session = await getSession();
   if (!session) redirect("/login");
   await requireModuleForPage(session.businessId, "pos");
@@ -23,5 +32,6 @@ export default async function PosPage() {
   if (industryProfile(industry).salesModel === "retail_invoice") {
     return <RetailInvoiceScreen industry={industry} />;
   }
-  return <PosScreen />;
+  const { table } = await searchParams;
+  return <PosScreen initialTableId={table ?? null} />;
 }

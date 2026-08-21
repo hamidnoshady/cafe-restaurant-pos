@@ -148,16 +148,23 @@ export type PosTable = {
   id: string;
   name: string;
   capacity: number;
+  /** `dining_tables.status`: free | seated | bill_requested | cleaning | out_of_service. */
+  status?: string;
 };
 
 export type PosTableChoice = PosTable & {
-  /** True when an open order already sits on the table, so it can't take another. */
+  /**
+   * Guests are already seated here. The table can still take another order —
+   * friends sharing a table with separate bills are one party, several
+   * invoices — so this only labels the choice, it doesn't refuse it.
+   */
   occupied: boolean;
+  /** Being cleaned or out of service: `createOrder` refuses it, so the picker does too. */
+  unavailable: boolean;
 };
 
 export type PosTableListInput = {
   tables: PosTable[];
-  occupiedTableIds: Iterable<string>;
   query: string;
 };
 
@@ -181,16 +188,32 @@ export function requiresTableSelection({
 }
 
 /**
+ * Guests are already sitting at this table. It can still take another order —
+ * see `listSelectableTables` — so this labels a choice, it never refuses one.
+ */
+export function isTableOccupied(status?: string): boolean {
+  return status === "seated" || status === "bill_requested";
+}
+
+/** Being cleaned or out of service: `createOrder` refuses it, so the picker does too. */
+export function isTableUnavailable(status?: string): boolean {
+  return status === "cleaning" || status === "out_of_service";
+}
+
+/**
  * The tables offered by that prompt, in the order they were registered — a
- * cashier reads the list as their floor plan, so an occupied table stays in
- * place and is marked rather than filtered out or sorted away.
+ * cashier reads the list as their floor plan, so a table that is already
+ * seated stays in place and is marked rather than filtered out or sorted away.
+ *
+ * Seated is *not* unavailable: a second order on an occupied table is how a
+ * party splits its bill (each order is its own invoice, settled and printed on
+ * its own, all sharing the table's one session). Only a table being cleaned or
+ * out of service is refused, because `createOrder` refuses it too.
  */
 export function listSelectableTables({
   tables,
-  occupiedTableIds,
   query,
 }: PosTableListInput): PosTableChoice[] {
-  const occupied = new Set(occupiedTableIds);
   const normalizedQuery = normalizePosSearchText(query);
   return tables
     .filter(
@@ -198,7 +221,11 @@ export function listSelectableTables({
         !normalizedQuery ||
         normalizePosSearchText(table.name).includes(normalizedQuery),
     )
-    .map((table) => ({ ...table, occupied: occupied.has(table.id) }));
+    .map((table) => ({
+      ...table,
+      occupied: isTableOccupied(table.status),
+      unavailable: isTableUnavailable(table.status),
+    }));
 }
 
 // ---------------------------------------------------------------------------

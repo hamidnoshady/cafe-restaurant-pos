@@ -24,6 +24,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import {
   BanknoteIcon,
   MinusIcon,
@@ -64,6 +65,7 @@ import {
   type DisplayModifier,
 } from "@/lib/modifier-display";
 import { ModifierBadges } from "../modifier-badges";
+import { isTableOccupied, isTableUnavailable } from "@/lib/pos-selection";
 import {
   ModifierPicker,
   type ModifierGroupWithModifiers,
@@ -350,7 +352,7 @@ export function OrderDetailModal({
   }, [menu, open]);
 
   useEffect(() => {
-    if (!needsCustomer || selectedCustomer) {
+    if (selectedCustomer) {
       setCustomerResults([]);
       return;
     }
@@ -360,7 +362,7 @@ export function OrderDetailModal({
       ).then(({ ok, data }) => ok && setCustomerResults(data.customers));
     }, 250);
     return () => clearTimeout(timer);
-  }, [needsCustomer, customerQuery, selectedCustomer]);
+  }, [customerQuery, selectedCustomer]);
 
   const addOnsByItem = useMemo(() => {
     const map = new Map<
@@ -1230,9 +1232,6 @@ export function OrderDetailModal({
                             value={timeLabel(order.closed_at)}
                           />
                         ) : null}
-                        {order.customer_name ? (
-                          <Fact label="مشتری" value={order.customer_name} />
-                        ) : null}
                         {Number(order.tip_amount ?? 0) > 0 ? (
                           <Fact
                             label="انعام"
@@ -1245,7 +1244,14 @@ export function OrderDetailModal({
                     {editable && order.type === "dine_in" ? (
                       <section className={`${CARD} p-4`} aria-label="تعیین میز">
                         <h3 className="mb-2 font-semibold text-[#252522]">تعیین میز</h3>
-                        <p className="mb-2 text-xs text-[#77756F]">میز را از صف سفارش‌ها تعیین کنید؛ لازم نیست هنگام افزودن آیتم انتخاب شود.</p>
+                        {/*
+                          A seated table is offered too: moving a bill onto a
+                          table that already has guests is how friends sitting
+                          together keep separate invoices. Only a table being
+                          cleaned or out of service is left out — PATCH refuses
+                          those, so offering them would only produce an error.
+                        */}
+                        <p className="mb-2 text-xs text-[#77756F]">میز این سفارش را می‌توانید تغییر دهید. میزی که مهمان دارد هم قابل انتخاب است؛ هر سفارش صورت‌حساب جدای خودش را دارد.</p>
                         <SearchableSelect
                           value={selectedTableId}
                           onChange={(value) => void saveOrderTable(value)}
@@ -1254,10 +1260,42 @@ export function OrderDetailModal({
                           options={[
                             { value: "", label: "بدون میز" },
                             ...tables
-                              .filter((table) => table.status === "free" || table.id === selectedTableId)
-                              .map((table) => ({ value: table.id, label: table.name })),
+                              .filter(
+                                (table) =>
+                                  !isTableUnavailable(table.status) ||
+                                  table.id === selectedTableId,
+                              )
+                              .map((table) => ({
+                                value: table.id,
+                                label: isTableOccupied(table.status)
+                                  ? `${table.name} — مهمان دارد`
+                                  : table.name,
+                              })),
                           ]}
                         />
+                      </section>
+                    ) : null}
+
+                    {/*
+                      A friend joining a table that is already busy gets their
+                      own bill, not extra lines on this one. Their order is rung
+                      at the till like any other — `createOrder` cannot make an
+                      empty order to add items to later — so this hands the POS
+                      the table and lets it do the rest; the table's one session
+                      ties the two bills to the same visit.
+                    */}
+                    {editable && order.type === "dine_in" && order.table_id ? (
+                      <section className={`${CARD} p-4`} aria-label="مهمان جدید روی این میز">
+                        <h3 className="mb-2 font-semibold text-[#252522]">مهمان جدید روی این میز</h3>
+                        <p className="mb-3 text-xs text-[#77756F]">
+                          برای مهمانی که تازه به {order.table_name ?? "این میز"} اضافه شده، سفارش جداگانه ثبت کنید: صورت‌حساب، تخفیف، تسویه و چاپ آن کاملاً مستقل از این سفارش است. مشتری‌اش را در صندوق انتخاب می‌کنید.
+                        </p>
+                        <Link
+                          href={`/dashboard/pos?table=${encodeURIComponent(order.table_id)}`}
+                          className={`${SECONDARY_BUTTON} flex min-h-12 w-full items-center justify-center`}
+                        >
+                          سفارش جدا برای مهمان جدید
+                        </Link>
                       </section>
                     ) : null}
 

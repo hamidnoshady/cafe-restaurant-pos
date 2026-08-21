@@ -29,9 +29,9 @@ const items = [
 ];
 
 const tables = [
-  { id: "t1", name: "میز ۱", capacity: 2 },
-  { id: "t2", name: "میز ۲", capacity: 4 },
-  { id: "b1", name: "بار ۱", capacity: 1 },
+  { id: "t1", name: "میز ۱", capacity: 2, status: "seated" },
+  { id: "t2", name: "میز ۲", capacity: 4, status: "free" },
+  { id: "b1", name: "بار ۱", capacity: 1, status: "cleaning" },
 ];
 
 describe("POS selection helpers", () => {
@@ -129,33 +129,62 @@ describe("POS selection helpers", () => {
     );
   });
 
-  it("marks occupied tables instead of hiding them, keeping registration order", () => {
-    expect(
-      listSelectableTables({ tables, occupiedTableIds: ["t1"], query: "" }),
-    ).toEqual([
-      { id: "t1", name: "میز ۱", capacity: 2, occupied: true },
-      { id: "t2", name: "میز ۲", capacity: 4, occupied: false },
-      { id: "b1", name: "بار ۱", capacity: 1, occupied: false },
+  /**
+   * A seated table stays offered: a friend joining a busy table is a second,
+   * separate bill on it. Only cleaning / out-of-service is refused, matching
+   * what createOrder refuses server-side.
+   */
+  it("offers a seated table as a separate bill, and refuses only an unavailable one", () => {
+    expect(listSelectableTables({ tables, query: "" })).toEqual([
+      {
+        id: "t1",
+        name: "میز ۱",
+        capacity: 2,
+        status: "seated",
+        occupied: true,
+        unavailable: false,
+      },
+      {
+        id: "t2",
+        name: "میز ۲",
+        capacity: 4,
+        status: "free",
+        occupied: false,
+        unavailable: false,
+      },
+      {
+        id: "b1",
+        name: "بار ۱",
+        capacity: 1,
+        status: "cleaning",
+        occupied: false,
+        unavailable: true,
+      },
     ]);
+  });
+
+  it("counts a table waiting for its bill as occupied, not as unavailable", () => {
+    const [table] = listSelectableTables({
+      tables: [{ id: "t9", name: "میز ۹", capacity: 2, status: "bill_requested" }],
+      query: "",
+    });
+    expect(table.occupied).toBe(true);
+    expect(table.unavailable).toBe(false);
   });
 
   it("filters the table prompt by normalized name, so Latin digits and Arabic letters still match", () => {
     expect(
       listSelectableTables({
         tables,
-        occupiedTableIds: [],
         query: "ميز 2",
       }).map((table) => table.id),
     ).toEqual(["t2"]);
     expect(
-      listSelectableTables({ tables, occupiedTableIds: [], query: "بار" }).map(
-        (table) => table.id,
-      ),
+      listSelectableTables({ tables, query: "بار" }).map((table) => table.id),
     ).toEqual(["b1"]);
     expect(
       listSelectableTables({
         tables,
-        occupiedTableIds: [],
         query: "انبار طبقهٔ دوم",
       }),
     ).toEqual([]);

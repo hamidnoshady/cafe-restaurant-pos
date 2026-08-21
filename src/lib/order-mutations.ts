@@ -150,9 +150,12 @@ export async function createOrder(
       return { ok: false, error: "customer_not_found", status: 404 };
   }
 
-  // A dine-in order may be started before seating. The order-progress screen
-  // assigns it to a table once the guest is seated; takeaway/delivery remain
-  // table-less as before.
+  // The till asks for the table before it places a dine-in order, but a table
+  // is still optional here: a backdated sale or a queue-first workflow assigns
+  // one afterwards from the order-progress screen. Takeaway/delivery remain
+  // table-less as before. An already-seated table is accepted — a second order
+  // on it is a party splitting its bill, and `ensureSessionForTable` below
+  // joins the table's open session rather than opening a second one.
   const tableId = input.type === "dine_in" ? input.tableId ?? null : null;
   if (tableId) {
     const { rows: table } = await query<{ id: string; status: string }>(
