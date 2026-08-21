@@ -1,6 +1,6 @@
 {
   "name": "cafe-pos-desktop",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "private": true,
   "author": "Cafe POS",
   "description": "Standalone Windows installer for the Cafe/Restaurant POS — no Docker, no Docker Desktop, no manual database setup.",
@@ -28,11 +28,18 @@
       "icon": "../windows/cafe-pos.ico"
     },
     "nsis": {
-      "oneClick": true,
+      "oneClick": false,
       "perMachine": false,
-      "allowToChangeInstallationDirectory": false,
+      "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
+      "createStartMenuShortcut": true,
+      "shortcutName": "Cafe POS",
+      "menuCategory": "Cafe POS",
+      "installerIcon": "../windows/cafe-pos.ico",
+      "uninstallerIcon": "../windows/cafe-pos.ico",
+      "installerHeaderIcon": "../windows/cafe-pos.ico",
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false
     },
     "extraResources": [
       { "from": "../.next", "to": "app/.next" },
