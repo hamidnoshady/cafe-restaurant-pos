@@ -57,8 +57,12 @@ import {
 import {
   cartQuantitiesByItem,
   isGlobalCashierShortcutEligible,
+  isTableOccupied,
+  missingCheckoutRequirement,
+  requiresTableSelection,
   searchPosMenuItems,
   type PosCheckoutRequirement,
+  type PosTable,
 } from "@/lib/pos-selection";
 import {
   formatModifierDelta,
@@ -68,6 +72,7 @@ import {
 } from "@/lib/modifier-display";
 import { ModifierBadges } from "../modifier-badges";
 import { ModifierPicker } from "../modifier-picker";
+import { TablePickerDialog } from "./table-picker-dialog";
 import {
   SearchableSelect,
   type SelectOption,
@@ -159,11 +164,12 @@ interface CheckoutResult {
   lines: CartUiLine[];
 }
 
-export function PosScreen() {
+export function PosScreen({ initialTableId }: { initialTableId?: string | null }) {
   const [menu, setMenu] = useState<MenuData | null>(null);
   const [initialLoading, setInitialLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [loadError, setLoadError] = useState("");
+  const [tables, setTables] = useState<PosTable[]>([]);
   const [couriers, setCouriers] = useState<Courier[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [customerQuery, setCustomerQuery] = useState("");
@@ -174,6 +180,21 @@ export function PosScreen() {
   const [searchActiveIndex, setSearchActiveIndex] = useState(0);
   const [cart, setCart] = useState<CartUiLine[]>([]);
   const [orderType, setOrderType] = useState<OrderType>("dine_in");
+  /**
+   * `?table=<id>` seats this sale before a single item is rung — that is how
+   * «مهمان جدید روی این میز» on an order's detail hands a friend at an already
+   * busy table their own, separate bill.
+   */
+  const [tableId, setTableId] = useState(initialTableId ?? "");
+  /**
+   * Which checkout the table prompt is standing in front of, or null when it is
+   * closed: `"select"` when the cashier opened it from the cart themselves,
+   * `"order"`/`"payment"` when they pressed a close-the-sale button with no
+   * table yet and confirming should carry straight on into it.
+   */
+  const [tablePickerFor, setTablePickerFor] = useState<
+    CheckoutIntent | "select" | null
+  >(null);
   const [guestCount, setGuestCount] = useState("");
   const [deliveryAddress, setDeliveryAddress] = useState("");
   const [deliveryPhone, setDeliveryPhone] = useState("");
@@ -224,9 +245,10 @@ export function PosScreen() {
     setIsRefreshing(true);
     Promise.all([
       api<MenuData>("/api/menu"),
+      api<{ tables: PosTable[] }>("/api/tables"),
       api<{ couriers: Courier[] }>("/api/couriers"),
     ])
-      .then(([menuRes, couriersRes]) => {
+      .then(([menuRes, tablesRes, couriersRes]) => {
         if (menuRes.ok) {
           setMenu(menuRes.data);
           setActiveCategory(
@@ -237,9 +259,10 @@ export function PosScreen() {
               "",
           );
         }
+        if (tablesRes.ok) setTables(tablesRes.data.tables);
         if (couriersRes.ok) setCouriers(couriersRes.data.couriers);
         setLoadError(
-          !menuRes.ok || !couriersRes.ok
+          !menuRes.ok || !tablesRes.ok || !couriersRes.ok
             ? "بخشی از اطلاعات صندوق به‌روز نشد. داده‌های موجود حفظ شده‌اند."
             : "",
         );
@@ -334,7 +357,9 @@ export function PosScreen() {
   // `result` counts as an overlay in its own right: an order opened in one tap
   // shows its confirmation without ever setting `reviewOpen`, and "/" must not
   // reach the product search behind it.
-  const hasOpenOverlay = Boolean(pickerItem || reviewOpen || cartSheetOpen || result);
+  const hasOpenOverlay = Boolean(
+    pickerItem || reviewOpen || cartSheetOpen || result || tablePickerFor,
+  );
   useEffect(() => {
     function handleGlobalShortcut(event: KeyboardEvent) {
       const eligible = isGlobalCashierShortcutEligible({
@@ -488,7 +513,10 @@ export function PosScreen() {
    */
   function changeOrderType(next: OrderType) {
     setOrderType(next);
-    if (next !== "dine_in") setGuestCount("");
+    if (next !== "dine_in") {
+      setTableId("");
+      setGuestCount("");
+    }
   }
 
   /** Tapping a tile: straight into the cart, or into the picker when the item has add-ons to answer for. */
@@ -541,13 +569,28 @@ export function PosScreen() {
    * close-the-sale buttons label themselves with it instead of sitting enabled
    * and failing three screens later.
    */
-  const blocker = useMemo<PosCheckoutRequirement | null>(() => {
-    if (cart.length === 0) return "empty_cart";
-    if (orderType === "delivery" && !deliveryAddress.trim()) {
-      return "delivery_address_required";
-    }
-    return null;
-  }, [cart.length, deliveryAddress, orderType]);
+  const blocker = useMemo<PosCheckoutRequirement | null>(
+    () =>
+      missingCheckoutRequirement({
+        orderType,
+        tableId,
+        deliveryAddress,
+        lineCount: cart.length,
+      }),
+    [cart.length, deliveryAddress, orderType, tableId],
+  );
+  /** The chosen table, once it is one this branch still has. */
+  const selectedTable = useMemo(
+    () => tables.find((table) => table.id === tableId) ?? null,
+    [tableId, tables],
+  );
+  /**
+   * A table arriving by `?table=` may not be in the list yet (it is still
+   * loading) or at all — the sale is still seated, so say so rather than
+   * claiming no table was chosen.
+   */
+  const tableLabel =
+    selectedTable?.name ?? (tableId ? "میز انتخاب‌شده" : "میزی انتخاب نشده");
   const cartAddOnTotal = useMemo(
     () =>
       cart.reduce(
@@ -603,11 +646,25 @@ export function PosScreen() {
     );
   }
 
-  async function submit(intent: CheckoutIntent = "order"): Promise<boolean> {
+  /**
+   * `overrides` is how the table prompt places an order with the table that was
+   * just chosen in it: confirming the prompt sets the state *and* submits in the
+   * same tick, and the state this closure captured is still the old one.
+   */
+  async function submit(
+    intent: CheckoutIntent = "order",
+    overrides?: { tableId?: string; guestCount?: string },
+  ): Promise<boolean> {
     if (busy || submissionInFlight.current) return false;
     setError("");
+    const effectiveTableId = overrides?.tableId ?? tableId;
+    const effectiveGuestCount = overrides?.guestCount ?? guestCount;
     if (cart.length === 0) {
       setError("سبد خرید خالی است.");
+      return false;
+    }
+    if (requiresTableSelection({ orderType, tableId: effectiveTableId })) {
+      setError("برای سفارش حضوری، میز را انتخاب کنید.");
       return false;
     }
     if (orderType === "delivery" && !deliveryAddress.trim()) {
@@ -646,9 +703,9 @@ export function PosScreen() {
     setBusy(true);
     const orderBody = {
       type: orderType,
-      // Dine-in orders are assigned to a table from order progress after seating.
+      tableId: orderType === "dine_in" ? effectiveTableId : undefined,
       customerId: customer?.id ?? undefined,
-      guestCount: guestCount ? Number(guestCount) : undefined,
+      guestCount: effectiveGuestCount ? Number(effectiveGuestCount) : undefined,
       discount: discountType
         ? { type: discountType, value: Number(discountValue) || 0 }
         : undefined,
@@ -674,6 +731,10 @@ export function PosScreen() {
         : orderType === "takeaway"
           ? "بیرون‌بر"
           : "ارسالی";
+    const tableName =
+      orderType === "dine_in"
+        ? (tables.find((table) => table.id === effectiveTableId)?.name ?? null)
+        : null;
 
     let creation: {
       ok: boolean;
@@ -749,10 +810,12 @@ export function PosScreen() {
 
     const kitchenPrinter = firstPrinter(printers, "kitchen");
     if (!creation.queued && kitchenPrinter) {
-      const label = typeLabel;
+      // The big line on a kitchen ticket is the table when there is one — that
+      // is what the runner carries the tray to.
+      const label = tableName ?? typeLabel;
       const ticket: KitchenTicketData = {
         label,
-        orderTypeLabel: label,
+        orderTypeLabel: typeLabel,
         sentAt: new Date().toISOString(),
         lines: cart.map((line) => ({
           name: line.name,
@@ -767,7 +830,6 @@ export function PosScreen() {
     if (paid) {
       const receiptPrinter = firstPrinter(printers, "receipt");
       if (receiptPrinter) {
-        const tableName = null;
         const receipt: ReceiptData = {
           business: {
             name: business.name,
@@ -816,7 +878,7 @@ export function PosScreen() {
     setResult({
       orderNumber,
       type: orderType,
-      tableName: null,
+      tableName,
       total: totals.total,
       queued: creation.queued,
       paid,
@@ -825,6 +887,7 @@ export function PosScreen() {
       lines: cart,
     });
     setCart([]);
+    setTableId("");
     setGuestCount("");
     setCustomer(null);
     setCustomerQuery("");
@@ -859,6 +922,10 @@ export function PosScreen() {
   function startCheckout(intent: CheckoutIntent) {
     setError("");
     setCheckoutIntent(intent);
+    if (requiresTableSelection({ orderType, tableId })) {
+      setTablePickerFor(intent);
+      return;
+    }
     if (intent === "order") {
       void submit("order");
       return;
@@ -1196,18 +1263,26 @@ export function PosScreen() {
           <ErrorBox>{error}</ErrorBox>
           <OrderTypeTabs value={orderType} onChange={changeOrderType} />
           {orderType === "dine_in" ? (
-            <label className="mt-3 block text-xs font-semibold text-[#5E5B55]" htmlFor="pos-guest-count">
-              تعداد مهمان
-              <input
-                id="pos-guest-count"
-                className={inputClass + " mt-1 min-h-11 border-[#EAE8E2] bg-[#FCFCFA]"}
-                dir="ltr"
-                inputMode="numeric"
-                value={guestCount}
-                onChange={(event) => setGuestCount(event.target.value)}
-                placeholder="اختیاری"
+            <>
+              <TableField
+                label={tableLabel}
+                chosen={tableId !== ""}
+                occupied={isTableOccupied(selectedTable?.status)}
+                onPick={() => setTablePickerFor("select")}
               />
-            </label>
+              <label className="mt-3 block text-xs font-semibold text-[#5E5B55]" htmlFor="pos-guest-count">
+                تعداد مهمان
+                <input
+                  id="pos-guest-count"
+                  className={inputClass + " mt-1 min-h-11 border-[#EAE8E2] bg-[#FCFCFA]"}
+                  dir="ltr"
+                  inputMode="numeric"
+                  value={guestCount}
+                  onChange={(event) => setGuestCount(event.target.value)}
+                  placeholder="اختیاری"
+                />
+              </label>
+            </>
           ) : null}
           {orderType === "delivery" ? (
             <div className="space-y-3">
@@ -1499,7 +1574,7 @@ export function PosScreen() {
                 : `${toPersianDigits(cartItemCount)} قلم در سبد`}
               <span className="block truncate text-[11px] font-normal opacity-80">
                 {orderType === "dine_in"
-                  ? "حضوری — میز از صف سفارش تعیین می‌شود"
+                  ? "حضوری — " + tableLabel
                   : orderType === "takeaway"
                     ? "بیرون‌بر"
                     : "ارسالی"}
@@ -1524,18 +1599,26 @@ export function PosScreen() {
             <div className="border-b border-border p-4">
               <OrderTypeTabs value={orderType} onChange={changeOrderType} />
               {orderType === "dine_in" ? (
-                <label className="mt-3 block text-xs font-semibold text-[#5E5B55]" htmlFor="pos-mobile-guest-count">
-                  تعداد مهمان
-                  <input
-                    id="pos-mobile-guest-count"
-                    className={inputClass + " mt-1 min-h-11 border-[#EAE8E2] bg-[#FCFCFA]"}
-                    dir="ltr"
-                    inputMode="numeric"
-                    value={guestCount}
-                    onChange={(event) => setGuestCount(event.target.value)}
-                    placeholder="اختیاری"
+                <>
+                  <TableField
+                    label={tableLabel}
+                    chosen={tableId !== ""}
+                    occupied={isTableOccupied(selectedTable?.status)}
+                    onPick={() => setTablePickerFor("select")}
                   />
-                </label>
+                  <label className="mt-3 block text-xs font-semibold text-[#5E5B55]" htmlFor="pos-mobile-guest-count">
+                    تعداد مهمان
+                    <input
+                      id="pos-mobile-guest-count"
+                      className={inputClass + " mt-1 min-h-11 border-[#EAE8E2] bg-[#FCFCFA]"}
+                      dir="ltr"
+                      inputMode="numeric"
+                      value={guestCount}
+                      onChange={(event) => setGuestCount(event.target.value)}
+                      placeholder="اختیاری"
+                    />
+                  </label>
+                </>
               ) : null}
               {orderType === "delivery" ? (
                 <div className="mt-3 space-y-3">
@@ -1809,7 +1892,7 @@ export function PosScreen() {
                   }
                 />
                 {orderType === "dine_in" ? (
-                  <Row label="میز" value="بعداً در صف سفارش تعیین می‌شود" />
+                  <Row label="میز" value={tableLabel} />
                 ) : null}
                 {orderType === "delivery" ? (
                   <Row
@@ -1923,6 +2006,35 @@ export function PosScreen() {
           }}
         />
       ) : null}
+      {/*
+        Choosing the table is the last question of a dine-in sale, so confirming
+        it carries straight on into whatever asked: «ثبت سفارش باز» places the
+        order right there, «دریافت وجه» opens its review. The chosen table is
+        passed to submit() rather than read back from state, which this tick has
+        not yet re-rendered with.
+      */}
+      <TablePickerDialog
+        open={tablePickerFor !== null}
+        intent={tablePickerFor ?? "select"}
+        tables={tables}
+        selectedTableId={tableId}
+        guestCount={guestCount}
+        onCancel={() => setTablePickerFor(null)}
+        onConfirm={(chosenTableId, chosenGuestCount) => {
+          setTableId(chosenTableId);
+          setGuestCount(chosenGuestCount);
+          const pending = tablePickerFor;
+          setTablePickerFor(null);
+          if (pending === "order") {
+            void submit("order", {
+              tableId: chosenTableId,
+              guestCount: chosenGuestCount,
+            });
+          } else if (pending === "payment") {
+            setReviewOpen(true);
+          }
+        }}
+      />
     </div>
   );
 }
@@ -2210,8 +2322,8 @@ const BLOCKER_LABELS: Record<PosCheckoutRequirement, string> = {
  *
  * Both buttons live here so the cart panel and the mobile sheet can never offer
  * different wording or a different disabled rule — they used to be two copies.
- * A dine-in order is intentionally allowed to continue without a table; staff
- * assign it later from the order-progress screen.
+ * A missing table does *not* disable them: it relabels them, and the press opens
+ * the table prompt and then carries on into the checkout it interrupted.
  */
 function CheckoutActions({
   blocker,
@@ -2248,6 +2360,50 @@ function CheckoutActions({
         {busy ? "در حال ثبت…" : "ثبت سفارش باز (بدون دریافت وجه)"}
       </button>
     </>
+  );
+}
+
+/**
+ * Which table this sale is for, in the desktop panel and the mobile sheet alike.
+ * The row states the answer so it can be read without reopening anything, and a
+ * press hands the question to the one picker — this deliberately draws no grid
+ * of its own, which is how the two used to drift apart.
+ */
+function TableField({
+  label,
+  chosen,
+  occupied,
+  onPick,
+}: {
+  label: string;
+  chosen: boolean;
+  occupied: boolean;
+  onPick: () => void;
+}) {
+  return (
+    <div className="mt-3">
+      <span className="block text-xs font-semibold text-[#5E5B55]">میز</span>
+      <button
+        type="button"
+        onClick={onPick}
+        className={
+          "mt-1 flex min-h-11 w-full items-center justify-between gap-2 rounded-lg border px-3 text-sm font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 " +
+          (chosen
+            ? "border-[#E9A11B] bg-[#FFF1D8] text-[#9B6700]"
+            : "border-[#EAE8E2] bg-[#FCFCFA] text-[#77756F] hover:border-[#E9A11B]/60")
+        }
+      >
+        <span className="min-w-0 truncate">{label}</span>
+        <span className="shrink-0 text-xs font-semibold text-[#9B6700]">
+          {chosen ? "تغییر میز" : "انتخاب میز"}
+        </span>
+      </button>
+      {occupied ? (
+        <p className="mt-1 text-[11px] text-[#77756F]">
+          این میز مهمان دارد؛ این سفارش صورت‌حساب جداگانهٔ خودش را می‌گیرد.
+        </p>
+      ) : null}
+    </div>
   );
 }
 

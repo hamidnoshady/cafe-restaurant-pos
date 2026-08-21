@@ -28,11 +28,15 @@ import { inputClass } from "../ui";
  * The cart panel and the mobile sheet used to draw their own flat grids of every
  * table instead — no search, no capacity, no occupied state, and two more places
  * for the three to drift apart.
+ *
+ * An already-seated table is offered, not greyed out: friends at one table who
+ * want separate bills are one party and several invoices, so the second order is
+ * the point rather than a mistake to block. Only a table the server itself would
+ * refuse — being cleaned, out of service — is unselectable here.
  */
 export function TablePickerDialog({
   open,
   tables,
-  occupiedTableIds,
   selectedTableId,
   guestCount,
   intent,
@@ -41,7 +45,6 @@ export function TablePickerDialog({
 }: {
   open: boolean;
   tables: PosTable[];
-  occupiedTableIds: Iterable<string>;
   selectedTableId: string;
   guestCount: string;
   intent: "order" | "payment" | "select";
@@ -62,10 +65,10 @@ export function TablePickerDialog({
   }, [open, selectedTableId, guestCount]);
 
   const choices = useMemo(
-    () => listSelectableTables({ tables, occupiedTableIds, query }),
-    [tables, occupiedTableIds, query],
+    () => listSelectableTables({ tables, query }),
+    [tables, query],
   );
-  const freeCount = choices.filter((table) => !table.occupied).length;
+  const chosen = choices.find((table) => table.id === draftTableId);
 
   return (
     <Dialog
@@ -82,7 +85,7 @@ export function TablePickerDialog({
               ? "برای سفارش حضوری پیش از دریافت وجه، میز را انتخاب کنید."
               : intent === "order"
                 ? "برای ثبت سفارش حضوری، میز را انتخاب کنید."
-                : "میز این سفارش را انتخاب کنید. میزهای دارای سفارش باز، اشغال نشان داده می‌شوند."}
+                : "میز این سفارش را انتخاب کنید. میز اشغال را هم می‌توانید انتخاب کنید؛ سفارش جدید صورت‌حساب جدا دارد."}
           </DialogDescription>
         </DialogHeader>
 
@@ -119,22 +122,24 @@ export function TablePickerDialog({
                 <li key={table.id}>
                   <button
                     type="button"
-                    disabled={table.occupied}
+                    disabled={table.unavailable}
                     aria-pressed={draftTableId === table.id}
                     onClick={() => setDraftTableId(table.id)}
                     className={
                       "flex min-h-16 w-full flex-col items-center justify-center gap-1 rounded-xl border px-2 text-sm font-bold transition duration-200 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 disabled:cursor-not-allowed motion-reduce:transition-none " +
                       (draftTableId === table.id
                         ? "border-[#E9A11B] bg-[#FFF1D8] text-[#9B6700]"
-                        : table.occupied
+                        : table.unavailable
                           ? "border-[#EAE8E2] bg-[#F5F4F1] text-[#B9B6AE]"
                           : "border-[#EAE8E2] text-[#5E5B55] hover:border-[#E9A11B]/60 hover:bg-[#FCFCFA]")
                     }
                   >
                     <span className="truncate">{table.name}</span>
                     <span className="flex items-center gap-1 text-xs font-normal">
-                      {table.occupied ? (
-                        "اشغال"
+                      {table.unavailable ? (
+                        "در دسترس نیست"
+                      ) : table.occupied ? (
+                        "صورت‌حساب جدا"
                       ) : (
                         <>
                           <UsersIcon className="size-3" aria-hidden="true" />
@@ -146,10 +151,10 @@ export function TablePickerDialog({
                 </li>
               ))}
             </ul>
-            {freeCount === 0 ? (
+            {chosen?.occupied ? (
               <p className="text-xs text-[#77756F]">
-                همهٔ میزهای این فهرست سفارش باز دارند. برای افزودن به سفارش یک
-                میز، آن را از بخش سفارش‌ها باز کنید.
+                این میز مهمان دارد. این سفارش، صورت‌حساب جداگانهٔ خودش را
+                می‌گیرد و مستقل تسویه و چاپ می‌شود.
               </p>
             ) : null}
             <label
@@ -183,7 +188,7 @@ export function TablePickerDialog({
           </button>
           <button
             type="button"
-            disabled={!draftTableId}
+            disabled={!draftTableId || chosen?.unavailable === true}
             onClick={() => onConfirm(draftTableId, draftGuestCount)}
             className="min-h-12 rounded-xl bg-[#E9A11B] px-4 text-sm font-bold text-[#252522] transition duration-200 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 disabled:opacity-55 motion-reduce:transition-none"
           >
