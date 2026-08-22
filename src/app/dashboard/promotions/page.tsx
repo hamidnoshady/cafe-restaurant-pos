@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { formatPersianNumber, toPersianDigits } from "@/lib/digits";
-import { formatToman, parseToRial } from "@/lib/money";
+import { useMoney } from "@/components/money/money-context";
 import { formatJalali } from "@/lib/jalali";
 import { api, ErrorBox, Field, inputClass } from "../ui";
 
@@ -39,6 +39,7 @@ function Panel({ title, children }: { title: string; children: React.ReactNode }
 }
 
 export default function PromotionsPage() {
+  const money = useMoney();
   const [promotions, setPromotions] = useState<PromotionRow[]>([]);
   const [error, setError] = useState("");
   const [done, setDone] = useState("");
@@ -100,7 +101,7 @@ export default function PromotionsPage() {
                     )}
                   </div>
                   <span className="shrink-0 text-xs text-muted-foreground">
-                    {p.kind === "percent" ? `${formatPersianNumber(p.value)}٪` : formatToman(p.value)}
+                    {p.kind === "percent" ? `${formatPersianNumber(p.value)}٪` : money.format(p.value)}
                   </span>
                 </li>
               ))}
@@ -113,6 +114,7 @@ export default function PromotionsPage() {
 }
 
 function PromotionForm({ onSaved, onError }: { onSaved: (m: string) => void; onError: (m: string) => void }) {
+  const money = useMoney();
   const [name, setName] = useState("");
   const [kind, setKind] = useState("percent");
   const [value, setValue] = useState("");
@@ -135,7 +137,7 @@ function PromotionForm({ onSaved, onError }: { onSaved: (m: string) => void; onE
       body: JSON.stringify({
         name,
         kind,
-        value: kind === "percent" ? Number(value) : parseToRial(value, "toman"),
+        value: kind === "percent" ? Number(value) : money.parse(value),
         minQuantity: minQuantity.trim() ? Number(minQuantity) : null,
         priority: Number(priority) || 0,
         stacking,
@@ -171,7 +173,7 @@ function PromotionForm({ onSaved, onError }: { onSaved: (m: string) => void; onE
               ))}
             </select>
           </Field>
-          <Field label={kind === "percent" ? "درصد" : "مبلغ (تومان)"}>
+          <Field label={kind === "percent" ? "درصد" : `مبلغ (${money.unitLabel})`}>
             <input className={inputClass} dir="ltr" value={value} onChange={(e) => setValue(e.target.value)} />
           </Field>
         </div>
@@ -216,6 +218,7 @@ function PromotionForm({ onSaved, onError }: { onSaved: (m: string) => void; onE
 }
 
 function GiftCardPanel({ onChanged, onError }: { onChanged: (m: string) => void; onError: (m: string) => void }) {
+  const money = useMoney();
   const [code, setCode] = useState("");
   const [issueValue, setIssueValue] = useState("");
   const [redeemCode, setRedeemCode] = useState("");
@@ -229,7 +232,7 @@ function GiftCardPanel({ onChanged, onError }: { onChanged: (m: string) => void;
     onError("");
     const { ok, data } = await api<{ error?: string; message?: string }>("/api/promotions/gift-cards", {
       method: "POST",
-      body: JSON.stringify({ code, initialValue: parseToRial(issueValue, "toman") }),
+      body: JSON.stringify({ code, initialValue: money.parse(issueValue) }),
     });
     setBusy(false);
     if (!ok) onError(data.message ?? "صدور کارت هدیه ناموفق بود.");
@@ -252,7 +255,7 @@ function GiftCardPanel({ onChanged, onError }: { onChanged: (m: string) => void;
     onError("");
     const { ok, data } = await api<{ error?: string; message?: string; balance?: number }>("/api/promotions/gift-cards/redeem", {
       method: "POST",
-      body: JSON.stringify({ code: redeemCode, amount: parseToRial(redeemValue, "toman") }),
+      body: JSON.stringify({ code: redeemCode, amount: money.parse(redeemValue) }),
     });
     setBusy(false);
     if (!ok) onError(data.message ?? "مصرف کارت هدیه ناموفق بود.");
@@ -269,7 +272,7 @@ function GiftCardPanel({ onChanged, onError }: { onChanged: (m: string) => void;
         <Field label="کد کارت جدید">
           <input className={inputClass} dir="ltr" value={code} onChange={(e) => setCode(e.target.value)} />
         </Field>
-        <Field label="ارزش (تومان)">
+        <Field label={`ارزش (${money.unitLabel})`}>
           <input className={inputClass} dir="ltr" value={issueValue} onChange={(e) => setIssueValue(e.target.value)} />
         </Field>
         <Button type="button" disabled={busy} onClick={() => void issue()} className="min-h-11">
@@ -281,7 +284,7 @@ function GiftCardPanel({ onChanged, onError }: { onChanged: (m: string) => void;
         <Field label="کد کارت">
           <input className={inputClass} dir="ltr" value={redeemCode} onChange={(e) => setRedeemCode(e.target.value)} />
         </Field>
-        <Field label="مبلغ مصرف (تومان)">
+        <Field label={`مبلغ مصرف (${money.unitLabel})`}>
           <input className={inputClass} dir="ltr" value={redeemValue} onChange={(e) => setRedeemValue(e.target.value)} />
         </Field>
         <Button type="button" variant="outline" disabled={busy} onClick={() => void check()} className="min-h-11">
@@ -291,7 +294,7 @@ function GiftCardPanel({ onChanged, onError }: { onChanged: (m: string) => void;
       <Button type="button" disabled={busy || !redeemCode.trim() || !redeemValue.trim()} onClick={() => void redeem()} className="min-h-11 w-full">
         مصرف کارت
       </Button>
-      {balance != null ? <p className="text-xs text-muted-foreground">ماندهٔ کارت: {formatToman(balance)}</p> : null}
+      {balance != null ? <p className="text-xs text-muted-foreground">ماندهٔ کارت: {money.format(balance)}</p> : null}
       <p className="text-xs leading-5 text-muted-foreground">
         کارت هدیه یک بدهی واقعی (حساب ۲۴۲۰) است؛ صدور آن را بستانکار و مصرف آن را بدهکار می‌کند و هرگز درآمد را دوباره ثبت نمی‌کند.
       </p>

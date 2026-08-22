@@ -2,9 +2,11 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import Decimal from "decimal.js";
 import { Button } from "@/components/ui/button";
 import { formatPersianNumber, formatQuantity } from "@/lib/digits";
-import { formatToman } from "@/lib/money";
+import type { MoneyUnit } from "@/lib/money";
+import { useMoney } from "@/components/money/money-context";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { api, Field, inputClass } from "../ui";
 import { ItemAuditPanel } from "../item-audit-panel";
@@ -29,8 +31,34 @@ const STATUS_BADGE_CLASS: Record<WeightItem["status"], string> = {
   sold: "bg-stone-200 text-stone-600",
 };
 
-function formatRialPerGram(value: string): string {
-  return `${formatPersianNumber(Math.round(Number(value)))} ریال`;
+/** Rial-per-gram text → the per-gram number shown in the input for the chosen unit. */
+function rialPerGramToInputText(value: string | null | undefined, unit: MoneyUnit): string {
+  if (value == null || value === "") return "";
+  try {
+    return unit === "rial" ? value : new Decimal(value).div(10).toString();
+  } catch {
+    return "";
+  }
+}
+
+/** Per-gram input text in the chosen unit → Rial-per-gram text (exact decimal shift). */
+function inputPerGramToRialText(value: string, unit: MoneyUnit): string {
+  if (!value.trim()) return "";
+  try {
+    return unit === "rial" ? value : new Decimal(value).times(10).toString();
+  } catch {
+    return "";
+  }
+}
+
+function formatPerGram(value: string, unit: MoneyUnit): string {
+  try {
+    const inUnit = unit === "rial" ? new Decimal(value) : new Decimal(value).div(10);
+    const rounded = inUnit.toDecimalPlaces(0, Decimal.ROUND_HALF_UP).toNumber();
+    return `${formatPersianNumber(rounded)} ${unit === "rial" ? "ریال" : "تومان"}`;
+  } catch {
+    return "تعیین نشده";
+  }
 }
 
 export function ItemsSection({
@@ -46,6 +74,7 @@ export function ItemsSection({
   busy: boolean;
   run: Runner;
 }) {
+  const money = useMoney();
   const [name, setName] = useState("");
   const [sku, setSku] = useState("");
   const [purity, setPurity] = useState<Purity>("18");
@@ -65,7 +94,7 @@ export function ItemsSection({
           purity,
           grossWeight,
           netWeight,
-          unitCostPerGram: unitCostPerGram.trim() || null,
+          unitCostPerGram: inputPerGramToRialText(unitCostPerGram, money.unit) || null,
         }),
       }),
     );
@@ -156,7 +185,7 @@ export function ItemsSection({
                 required
               />
             </Field>
-            <Field label="بهای تمام‌شده هر گرم (ریال)" hint="اگر هنوز مشخص نیست، خالی بگذارید.">
+            <Field label={`بهای تمام‌شده هر گرم (${money.unitLabel})`} hint="اگر هنوز مشخص نیست، خالی بگذارید.">
               <input
                 className={jewelryInputClass}
                 dir="ltr"
@@ -194,6 +223,7 @@ function ItemRow({
   busy: boolean;
   run: Runner;
 }) {
+  const money = useMoney();
   const [openPanel, setOpenPanel] = useState<Panel | null>(null);
   const toggle = (panel: Panel) => setOpenPanel((current) => (current === panel ? null : panel));
 
@@ -220,9 +250,9 @@ function ItemRow({
               {formatQuantity(item.netWeight)} / {formatQuantity(item.grossWeight)} گرم
             </MetaItem>
             <MetaItem label="بهای هر گرم">
-              {item.unitCostPerGram ? formatRialPerGram(item.unitCostPerGram) : "تعیین نشده"}
+              {item.unitCostPerGram ? formatPerGram(item.unitCostPerGram, money.unit) : "تعیین نشده"}
             </MetaItem>
-            {item.stoneCost > 0 ? <MetaItem label="بهای سنگ‌ها">{formatToman(item.stoneCost)}</MetaItem> : null}
+            {item.stoneCost > 0 ? <MetaItem label="بهای سنگ‌ها">{money.format(item.stoneCost)}</MetaItem> : null}
           </dl>
         </div>
 
@@ -320,9 +350,10 @@ function CostPanel({
   run: Runner;
   onDone: () => void;
 }) {
+  const money = useMoney();
   const [grossWeight, setGrossWeight] = useState(item.grossWeight);
   const [netWeight, setNetWeight] = useState(item.netWeight);
-  const [unitCostPerGram, setUnitCostPerGram] = useState(item.unitCostPerGram ?? "");
+  const [unitCostPerGram, setUnitCostPerGram] = useState(rialPerGramToInputText(item.unitCostPerGram, money.unit));
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
@@ -332,7 +363,7 @@ function CostPanel({
         body: JSON.stringify({
           grossWeight,
           netWeight,
-          unitCostPerGram: unitCostPerGram.trim() || null,
+          unitCostPerGram: inputPerGramToRialText(unitCostPerGram, money.unit) || null,
         }),
       }),
     );
@@ -362,7 +393,7 @@ function CostPanel({
             required
           />
         </Field>
-        <Field label="بهای هر گرم (ریال)">
+        <Field label={`بهای هر گرم (${money.unitLabel})`}>
           <input
             className={jewelryInputClass}
             dir="ltr"
@@ -383,6 +414,7 @@ function CostPanel({
 }
 
 function StonesPanel({ item, busy, run }: { item: WeightItem; busy: boolean; run: Runner }) {
+  const money = useMoney();
   const [stones, setStones] = useState<ItemStone[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [stoneType, setStoneType] = useState("");
@@ -404,7 +436,7 @@ function StonesPanel({ item, busy, run }: { item: WeightItem; busy: boolean; run
     const ok = await run(() =>
       api(`/api/jewelry/items/${item.id}/stones`, {
         method: "POST",
-        body: JSON.stringify({ stoneType, carat, cost: Number(cost) }),
+        body: JSON.stringify({ stoneType, carat, cost: money.fromInput(Math.max(0, Math.round(Number(cost)))) }),
       }),
     );
     if (ok) {
@@ -429,7 +461,7 @@ function StonesPanel({ item, busy, run }: { item: WeightItem; busy: boolean; run
           {(stones ?? []).map((s) => (
             <li key={s.id} className="flex items-center justify-between gap-2 rounded-lg bg-white px-3 py-2 text-xs">
               <span>
-                {s.stoneType} · {formatQuantity(s.carat)} قیراط · {formatToman(s.cost)}
+                {s.stoneType} · {formatQuantity(s.carat)} قیراط · {money.format(s.cost)}
               </span>
               <Button
                 type="button"
@@ -463,7 +495,7 @@ function StonesPanel({ item, busy, run }: { item: WeightItem; busy: boolean; run
               onChange={(e) => setCarat(e.target.value)}
             />
           </Field>
-          <Field label="بها (ریال)">
+          <Field label={`بها (${money.unitLabel})`}>
             <input
               className={jewelryInputClass}
               dir="ltr"

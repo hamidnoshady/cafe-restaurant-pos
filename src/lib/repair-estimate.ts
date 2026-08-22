@@ -5,7 +5,7 @@
  * before work starts, so it renders as plain text — the same shape the
  * receipt pipeline prints — rather than only living in the dashboard.
  */
-import { formatToman } from "./money";
+import { formatMoney, type MoneyUnit } from "./money";
 import { toPersianDigits } from "./digits";
 import { formatJalali } from "./jalali";
 
@@ -20,6 +20,8 @@ export interface RepairEstimateInput {
   estimatedTotalRial: number;
   todayIso: string;
   customerName?: string | null;
+  /** The business's display unit; defaults to Toman for callers that don't know it. */
+  unit?: MoneyUnit;
 }
 
 /**
@@ -29,6 +31,7 @@ export interface RepairEstimateInput {
  * cost, not a bare total.
  */
 export function renderRepairEstimate(input: RepairEstimateInput): string {
+  const unit = input.unit ?? "toman";
   const lines = [
     "───── برآورد هزینهٔ تعمیر ─────",
     `شماره: ${toPersianDigits(String(input.ticketNumber))}`,
@@ -38,9 +41,9 @@ export function renderRepairEstimate(input: RepairEstimateInput): string {
   if (input.customerName) lines.push(`مشتری: ${input.customerName}`);
   lines.push(`تاریخ: ${toPersianDigits(formatJalali(input.todayIso))}`);
   lines.push("");
-  lines.push(`اجرت: ${formatToman(input.laborCharge)}`);
-  lines.push(`قطعات: ${formatToman(input.partsCharge)}`);
-  lines.push(`برآورد کل: ${formatToman(input.estimatedTotalRial)}`);
+  lines.push(`اجرت: ${formatMoney(input.laborCharge, unit)}`);
+  lines.push(`قطعات: ${formatMoney(input.partsCharge, unit)}`);
+  lines.push(`برآورد کل: ${formatMoney(input.estimatedTotalRial, unit)}`);
   lines.push("");
   lines.push("امضای تأیید مشتری: ____________");
   lines.push("پس از تأیید، کار شروع می‌شود.");

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { formatPersianNumber, formatQuantity, toPersianDigits } from "@/lib/digits";
-import { formatToman } from "@/lib/money";
+import { useMoney } from "@/components/money/money-context";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { api, Field, inputClass } from "../ui";
 import {
@@ -47,6 +47,7 @@ export function RepairsSection({
   busy: boolean;
   run: Runner;
 }) {
+  const money = useMoney();
   const [itemDescription, setItemDescription] = useState("");
   const [reportedIssue, setReportedIssue] = useState("");
   const [serialId, setSerialId] = useState("");
@@ -63,7 +64,7 @@ export function RepairsSection({
           itemDescription,
           reportedIssue: reportedIssue.trim() || null,
           serialId: serialId || null,
-          laborCharge: Number(laborCharge || 0),
+          laborCharge: money.fromInput(Math.max(0, Math.round(Number(laborCharge || 0)))),
           vatPercent: Number(vatPercent || 0),
         }),
       }),
@@ -138,7 +139,7 @@ export function RepairsSection({
                 placeholder="بدون سریال"
               />
             </Field>
-            <Field label="اجرت تعمیر (ریال)">
+            <Field label={`اجرت تعمیر (${money.unitLabel})`}>
               <input
                 className={watchInputClass}
                 dir="ltr"
@@ -181,6 +182,7 @@ function MetaItem({ label, children }: { label: string; children: React.ReactNod
 }
 
 function TicketRow({ ticket, busy, run }: { ticket: RepairTicket; busy: boolean; run: Runner }) {
+  const money = useMoney();
   const [panel, setPanel] = useState<"parts" | "close" | "estimate" | null>(null);
   const toggle = (next: "parts" | "close" | "estimate") =>
     setPanel((current) => (current === next ? null : next));
@@ -206,7 +208,7 @@ function TicketRow({ ticket, busy, run }: { ticket: RepairTicket; busy: boolean;
 
           <dl className="mt-3 grid min-w-0 gap-x-5 gap-y-2 text-xs text-stone-600 sm:grid-cols-2 xl:grid-cols-4">
             {ticket.reportedIssue ? <MetaItem label="ایراد اعلامی">{ticket.reportedIssue}</MetaItem> : null}
-            <MetaItem label="اجرت">{formatToman(ticket.laborCharge)}</MetaItem>
+            <MetaItem label="اجرت">{money.format(ticket.laborCharge)}</MetaItem>
             <MetaItem label="مالیات">{toPersianDigits(String(ticket.vatPercent))}٪</MetaItem>
           </dl>
         </div>
@@ -282,6 +284,7 @@ function PanelShell({ children }: { children: React.ReactNode }) {
 }
 
 function PartsPanel({ ticket, busy, run }: { ticket: RepairTicket; busy: boolean; run: Runner }) {
+  const money = useMoney();
   const [parts, setParts] = useState<RepairPart[]>([]);
   const [loading, setLoading] = useState(true);
   const [description, setDescription] = useState("");
@@ -309,8 +312,8 @@ function PartsPanel({ ticket, busy, run }: { ticket: RepairTicket; busy: boolean
         body: JSON.stringify({
           description,
           quantity: quantity || "1",
-          unitCost: Number(unitCost || 0),
-          charge: Number(charge || 0),
+          unitCost: money.fromInput(Math.max(0, Math.round(Number(unitCost || 0)))),
+          charge: money.fromInput(Math.max(0, Math.round(Number(charge || 0)))),
         }),
       }),
     );
@@ -333,8 +336,8 @@ function PartsPanel({ ticket, busy, run }: { ticket: RepairTicket; busy: boolean
         {parts.map((part) => (
           <li key={part.id} className="flex items-center justify-between gap-3 text-xs text-stone-700">
             <span className="min-w-0 break-words">
-              {part.description} × {formatQuantity(part.quantity)} — بهای تمام‌شده {formatToman(part.unitCost)} / دریافتی{" "}
-              {formatToman(part.charge)}
+              {part.description} × {formatQuantity(part.quantity)} — بهای تمام‌شده {money.format(part.unitCost)} / دریافتی{" "}
+              {money.format(part.charge)}
             </span>
             {isOpen ? (
               <Button
@@ -376,7 +379,7 @@ function PartsPanel({ ticket, busy, run }: { ticket: RepairTicket; busy: boolean
               onChange={(e) => setQuantity(e.target.value)}
             />
           </Field>
-          <Field label="بهای تمام‌شده (ریال)">
+          <Field label={`بهای تمام‌شده (${money.unitLabel})`}>
             <input
               className={watchInputClass}
               dir="ltr"
@@ -385,7 +388,7 @@ function PartsPanel({ ticket, busy, run }: { ticket: RepairTicket; busy: boolean
               onChange={(e) => setUnitCost(e.target.value)}
             />
           </Field>
-          <Field label="دریافتی از مشتری (ریال)" hint="در گارانتی صفر بگذارید.">
+          <Field label={`دریافتی از مشتری (${money.unitLabel})`} hint="در گارانتی صفر بگذارید.">
             <input
               className={watchInputClass}
               dir="ltr"
@@ -406,8 +409,9 @@ function PartsPanel({ ticket, busy, run }: { ticket: RepairTicket; busy: boolean
 }
 
 function EstimatePanel({ ticket, busy, run }: { ticket: RepairTicket; busy: boolean; run: Runner }) {
-  const [laborRial, setLaborRial] = useState(String(ticket.estimatedLaborRial));
-  const [partsRial, setPartsRial] = useState(String(ticket.estimatedPartsRial));
+  const money = useMoney();
+  const [labor, setLabor] = useState(String(money.toInput(ticket.estimatedLaborRial)));
+  const [parts, setParts] = useState(String(money.toInput(ticket.estimatedPartsRial)));
 
   const hasEstimate = ticket.estimatedTotalRial > 0;
   const approved = Boolean(ticket.estimateApprovedAt);
@@ -417,12 +421,15 @@ function EstimatePanel({ ticket, busy, run }: { ticket: RepairTicket; busy: bool
     const ok = await run(() =>
       api(`/api/watch/repairs/${ticket.id}/estimate`, {
         method: "PUT",
-        body: JSON.stringify({ laborRial: Number(laborRial || 0), partsRial: Number(partsRial || 0) }),
+        body: JSON.stringify({
+          laborRial: money.fromInput(Math.max(0, Math.round(Number(labor || 0)))),
+          partsRial: money.fromInput(Math.max(0, Math.round(Number(parts || 0)))),
+        }),
       }),
     );
     if (ok) {
-      setLaborRial("");
-      setPartsRial("");
+      setLabor("");
+      setParts("");
     }
   }
 
@@ -434,8 +441,8 @@ function EstimatePanel({ ticket, busy, run }: { ticket: RepairTicket; busy: bool
       {hasEstimate ? (
         <div className="mb-3 rounded-lg bg-white/70 p-3 text-xs text-stone-700">
           <p>
-            اجرت {formatToman(ticket.estimatedLaborRial)} · قطعات {formatToman(ticket.estimatedPartsRial)} · کل{" "}
-            {formatToman(ticket.estimatedTotalRial)}
+            اجرت {money.format(ticket.estimatedLaborRial)} · قطعات {money.format(ticket.estimatedPartsRial)} · کل{" "}
+            {money.format(ticket.estimatedTotalRial)}
           </p>
           <p className="mt-1">
             {approved ? (
@@ -448,22 +455,22 @@ function EstimatePanel({ ticket, busy, run }: { ticket: RepairTicket; busy: bool
       ) : null}
 
       <form onSubmit={save} className="grid min-w-0 gap-3 sm:grid-cols-2">
-        <Field label="اجرت (ریال)">
+        <Field label={`اجرت (${money.unitLabel})`}>
           <input
             className={watchInputClass}
             dir="ltr"
             inputMode="numeric"
-            value={laborRial}
-            onChange={(e) => setLaborRial(e.target.value)}
+            value={labor}
+            onChange={(e) => setLabor(e.target.value)}
           />
         </Field>
-        <Field label="قطعات (ریال)">
+        <Field label={`قطعات (${money.unitLabel})`}>
           <input
             className={watchInputClass}
             dir="ltr"
             inputMode="numeric"
-            value={partsRial}
-            onChange={(e) => setPartsRial(e.target.value)}
+            value={parts}
+            onChange={(e) => setParts(e.target.value)}
           />
         </Field>
         <div className="flex flex-wrap gap-2 sm:col-span-2">
@@ -511,7 +518,8 @@ function ClosePanel({
   run: Runner;
   onDone: () => void;
 }) {
-  const [laborCharge, setLaborCharge] = useState(String(ticket.laborCharge));
+  const money = useMoney();
+  const [laborCharge, setLaborCharge] = useState(String(money.toInput(ticket.laborCharge)));
   const [vatPercent, setVatPercent] = useState(String(ticket.vatPercent));
   const [paymentMethod, setPaymentMethod] = useState("cash");
 
@@ -521,7 +529,7 @@ function ClosePanel({
       api(`/api/watch/repairs/${ticket.id}`, {
         method: "PATCH",
         body: JSON.stringify({
-          laborCharge: Number(laborCharge || 0),
+          laborCharge: money.fromInput(Math.max(0, Math.round(Number(laborCharge || 0)))),
           vatPercent: Number(vatPercent || 0),
         }),
       }),
@@ -539,7 +547,7 @@ function ClosePanel({
   return (
     <PanelShell>
       <form onSubmit={close} className="grid min-w-0 gap-3 sm:grid-cols-3">
-        <Field label="اجرت تعمیر (ریال)">
+        <Field label={`اجرت تعمیر (${money.unitLabel})`}>
           <input
             className={watchInputClass}
             dir="ltr"

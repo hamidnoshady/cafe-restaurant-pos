@@ -9,7 +9,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2Icon, MessageSquarePlusIcon, SendIcon, SparklesIcon } from "lucide-react";
-import { formatToman } from "@/lib/money";
+import { useMoney } from "@/components/money/money-context";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useFeatureLocked } from "@/components/feature-lock";
@@ -36,6 +36,7 @@ export function AiChatHub() {
   const locked = useFeatureLocked();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const money = useMoney();
   const [tab, setTab] = useState<HubTab>(searchParams.get("tab") === "settings" ? "settings" : "chat");
   const [conversationsKey, setConversationsKey] = useState(0);
   const [todayTasks, setTodayTasks] = useState<AgentTodayTask[] | null>(null);
@@ -195,11 +196,11 @@ export function AiChatHub() {
               {pending ? (
                 <div className="mb-2 rounded-xl border border-primary/25 bg-primary/5 p-3 text-xs">
                   <p className="font-semibold text-foreground">
-                    برآورد هزینه: {formatToman(pending.estimate.estimatedCostRial)}
+                    برآورد هزینه: {money.format(pending.estimate.estimatedCostRial)}
                   </p>
                   <p className="mt-1 leading-5 text-muted-foreground">
                     بر پایهٔ {pending.estimate.assumedToolRounds} نوبت پاسخ/ابزار محاسبه شده است. حداکثر رزرو این
-                    درخواست: {formatToman(pending.estimate.maximumReservationRial)}؛ مبلغ نهایی بر اساس مصرف واقعی
+                    درخواست: {money.format(pending.estimate.maximumReservationRial)}؛ مبلغ نهایی بر اساس مصرف واقعی
                     تسویه می‌شود.
                   </p>
                   <div className="mt-2 flex gap-2">

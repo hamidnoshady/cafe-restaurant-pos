@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { formatQuantity, toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
-import { formatToman } from "@/lib/money";
+import { useMoney } from "@/components/money/money-context";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { api, Field, inputClass } from "../ui";
 
@@ -34,6 +34,7 @@ const BUCKET_LABELS: Record<NearExpiryRow["bucket"], string> = {
 };
 
 export function BatchesSection() {
+  const money = useMoney();
   const [items, setItems] = useState<BatchItem[]>([]);
   const [nearExpiry, setNearExpiry] = useState<NearExpiryRow[]>([]);
   const [itemId, setItemId] = useState("");
@@ -68,7 +69,7 @@ export function BatchesSection() {
         batchNumber: batchNumber.trim(),
         expiryDate: expiryDate.trim() || null,
         quantity: quantity.trim() || "0",
-        unitCost: Number(unitCost || 0),
+        unitCost: money.fromInput(Math.max(0, Math.round(Number(unitCost || 0)))),
       }),
     });
     setBusy(false);
@@ -170,7 +171,7 @@ export function BatchesSection() {
             <Field label="تعداد">
               <input className={accInputClass} value={quantity} onChange={(e) => setQuantity(e.target.value)} dir="ltr" inputMode="decimal" />
             </Field>
-            <Field label="بهای تمام‌شده هر واحد (ریال)">
+            <Field label={`بهای تمام‌شده هر واحد (${money.unitLabel})`}>
               <input className={accInputClass} value={unitCost} onChange={(e) => setUnitCost(e.target.value)} dir="ltr" inputMode="numeric" />
             </Field>
             {error ? <p className="text-xs text-rose-700">{error}</p> : null}

@@ -32,7 +32,7 @@ import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { toPersianDigits } from "@/lib/digits";
 import type { KitchenTicketData } from "@/lib/kitchen-ticket-template";
 import type { ReceiptData } from "@/lib/receipt-template";
-import { formatToman, tomanToRial } from "@/lib/money";
+import { useMoney } from "@/components/money/money-context";
 import {
   draftOpensDrawer,
   draftReceiptPayments,
@@ -237,6 +237,7 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
   const [result, setResult] = useState<CheckoutResult | null>(null);
   const printers = usePrinters();
   const business = useBusinessInfo();
+  const money = useMoney();
   const { isOnline, pendingCount } = useOfflineQueue();
   const searchInputRef = useRef<HTMLInputElement>(null);
   const submissionInFlight = useRef(false);
@@ -541,10 +542,20 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
   }
 
   // ⚡ Bolt: Memoize cart computations to prevent jank on frequent state changes (e.g., search typing)
+  // The discount amount is entered in the business's display unit (like every
+  // other money input in this screen) but `computeOrderTotals` works in Rial,
+  // so convert it here — the same boundary `feeNum`/`tipNum` below use. Percent
+  // stays a percent.
   const discount: DiscountInput = useMemo(
     () =>
       discountType
-        ? { type: discountType, value: Number(discountValue) || 0 }
+        ? {
+            type: discountType,
+            value:
+              discountType === "amount"
+                ? money.fromInput(Math.max(0, Math.round(Number(discountValue) || 0)))
+                : Number(discountValue) || 0,
+          }
         : { type: null },
     [discountType, discountValue],
   );
@@ -608,9 +619,9 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
   // Fee/tip are entered in Toman (like menu prices) but stored/sent in Rial.
   const feeNum =
     orderType === "delivery"
-      ? tomanToRial(Math.max(0, Math.round(Number(deliveryFee) || 0)))
+      ? money.fromInput(Math.max(0, Math.round(Number(deliveryFee) || 0)))
       : 0;
-  const tipNum = tomanToRial(Math.max(0, Math.round(Number(tipInput) || 0)));
+  const tipNum = money.fromInput(Math.max(0, Math.round(Number(tipInput) || 0)));
   const totals = useMemo(
     () => computeOrderTotals(cartLines, discount, feeNum),
     [cartLines, discount, feeNum],
@@ -681,6 +692,7 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
         paymentDraft,
         paymentMethods,
         totals.total,
+        money.unit,
       );
       if (!built.ok) {
         setError(errorMessage(built.error));
@@ -707,7 +719,13 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
       customerId: customer?.id ?? undefined,
       guestCount: effectiveGuestCount ? Number(effectiveGuestCount) : undefined,
       discount: discountType
-        ? { type: discountType, value: Number(discountValue) || 0 }
+        ? {
+            type: discountType,
+            value:
+              discountType === "amount"
+                ? money.fromInput(Math.max(0, Math.round(Number(discountValue) || 0)))
+                : Number(discountValue) || 0,
+          }
         : undefined,
       items: cart.map((line) => ({
         menuItemId: line.menuItemId,
@@ -865,6 +883,7 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
             paymentDraft,
             paymentMethods,
             totals.total,
+            money.unit,
           ),
         };
         void printReceipt(receiptPrinter.connection, receipt);
@@ -1196,7 +1215,7 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
                       {categoryLabel}
                     </span>
                     <span className="mt-1 block text-base font-bold text-[#B97905]">
-                      {formatToman(Number(item.price))}
+                      {money.format(Number(item.price))}
                     </span>
                   </div>
                 </button>
@@ -1337,7 +1356,7 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
                     inputMode="numeric"
                     value={deliveryFee}
                     onChange={(event) => setDeliveryFee(event.target.value)}
-                    placeholder="تومان"
+                    placeholder={money.unitLabel}
                   />
                 </label>
               </div>
@@ -1410,26 +1429,27 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
                         <p className="mt-0.5 text-xs text-[#77756F]">
                           {l.modifiers.length > 0 ? (
                             <>
-                              {formatToman(l.unitPrice, { withUnit: false })}
+                              {money.format(l.unitPrice, { withUnit: false })}
                               {" + "}
                               <span className="font-bold text-[#B97905]">
                                 {formatModifierDelta(line.addOns, {
                                   withUnit: false,
+                                  unit: money.unit,
                                 })}
                               </span>
                               {" = "}
                               <span className="font-bold text-[#252522]">
-                                {formatToman(line.unit)}
+                                {money.format(line.unit)}
                               </span>{" "}
                               هر واحد
                             </>
                           ) : (
-                            formatToman(l.unitPrice) + " هر واحد"
+                            money.format(l.unitPrice) + " هر واحد"
                           )}
                         </p>
                       </div>
                       <p className="shrink-0 font-bold text-[#B97905]">
-                        {formatToman(line.total)}
+                        {money.format(line.total)}
                       </p>
                     </div>
                     <ModifierBadges
@@ -1503,29 +1523,29 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
                 inputMode="numeric"
                 value={discountValue}
                 onChange={(e) => setDiscountValue(e.target.value)}
-                placeholder={discountType === "percent" ? "درصد" : "تومان"}
+                placeholder={discountType === "percent" ? "درصد" : money.unit === "rial" ? "ریال" : "تومان"}
               />
             ) : null}
           </div>
 
           <dl className="mb-3 space-y-1 text-sm">
-            <Row label="جمع جزء" value={formatToman(totals.subtotal)} />
+            <Row label="جمع جزء" value={money.format(totals.subtotal)} />
             {cartAddOnTotal !== 0 ? (
               <Row
                 label="از این مبلغ، افزودنی‌ها"
-                value={formatModifierDelta(cartAddOnTotal)}
+                value={formatModifierDelta(cartAddOnTotal, { unit: money.unit })}
               />
             ) : null}
             {totals.discount > 0 ? (
-              <Row label="تخفیف" value={`- ${formatToman(totals.discount)}`} />
+              <Row label="تخفیف" value={`- ${money.format(totals.discount)}`} />
             ) : null}
             {totals.tax > 0 ? (
-              <Row label="مالیات" value={formatToman(totals.tax)} />
+              <Row label="مالیات" value={money.format(totals.tax)} />
             ) : null}
             {feeNum > 0 ? (
-              <Row label="هزینهٔ ارسال" value={formatToman(feeNum)} />
+              <Row label="هزینهٔ ارسال" value={money.format(feeNum)} />
             ) : null}
-            <Row label="جمع کل" value={formatToman(totals.total)} bold />
+            <Row label="جمع کل" value={money.format(totals.total)} bold />
           </dl>
 
           {/*
@@ -1563,7 +1583,7 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
           aria-label={
             cart.length === 0
               ? "باز کردن سبد خرید؛ سبد خالی است"
-              : `باز کردن سبد خرید؛ ${toPersianDigits(cartItemCount)} قلم، ${formatToman(totals.total)}`
+              : `باز کردن سبد خرید؛ ${toPersianDigits(cartItemCount)} قلم، ${money.format(totals.total)}`
           }
         >
           <span className="flex min-w-0 items-center gap-2">
@@ -1581,7 +1601,7 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
               </span>
             </span>
           </span>
-          <span className="shrink-0">{formatToman(totals.total)}</span>
+          <span className="shrink-0">{money.format(totals.total)}</span>
         </button>
       </div>
 
@@ -1677,7 +1697,7 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
                         inputMode="numeric"
                         value={deliveryFee}
                         onChange={(event) => setDeliveryFee(event.target.value)}
-                        placeholder="تومان"
+                        placeholder={money.unitLabel}
                       />
                     </label>
                   </div>
@@ -1740,11 +1760,11 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
                               {line.name}
                             </p>
                             <p className="mt-0.5 text-xs text-[#77756F]">
-                              {formatToman(breakdown.unit)} هر واحد
+                              {money.format(breakdown.unit)} هر واحد
                             </p>
                           </div>
                           <p className="shrink-0 text-sm font-bold text-[#B97905]">
-                            {formatToman(breakdown.total)}
+                            {money.format(breakdown.total)}
                           </p>
                         </div>
                         <ModifierBadges
@@ -1812,7 +1832,7 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
                     inputMode="numeric"
                     value={discountValue}
                     onChange={(event) => setDiscountValue(event.target.value)}
-                    placeholder={discountType === "percent" ? "درصد" : "تومان"}
+                    placeholder={discountType === "percent" ? "درصد" : money.unit === "rial" ? "ریال" : "تومان"}
                     aria-label="مقدار تخفیف"
                   />
                 ) : null}
@@ -1820,7 +1840,7 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
               {cartAddOnTotal !== 0 ? (
                 <Row
                   label="از این مبلغ، افزودنی‌ها"
-                  value={formatModifierDelta(cartAddOnTotal)}
+                  value={formatModifierDelta(cartAddOnTotal, { unit: money.unit })}
                 />
               ) : null}
             </div>
@@ -1829,7 +1849,7 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
             <div className="mb-3 flex items-center justify-between">
               <span className="text-xs font-bold text-[#5E5B55]">جمع کل</span>
               <span className="text-base font-bold text-[#252522]">
-                {formatToman(totals.total)}
+                {money.format(totals.total)}
               </span>
             </div>
             <CheckoutActions
@@ -1908,20 +1928,20 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
                 {cartAddOnTotal !== 0 ? (
                   <Row
                     label="افزودنی‌ها"
-                    value={formatModifierDelta(cartAddOnTotal)}
+                    value={formatModifierDelta(cartAddOnTotal, { unit: money.unit })}
                   />
                 ) : null}
                 <Row
                   label="مبلغ قابل پرداخت"
-                  value={formatToman(totals.total)}
+                  value={money.format(totals.total)}
                   bold
                 />
                 {checkoutIntent === "payment" && tipNum > 0 ? (
                   <>
-                    <Row label="انعام" value={formatToman(tipNum)} />
+                    <Row label="انعام" value={money.format(tipNum)} />
                     <Row
                       label="مبلغ دریافتی"
-                      value={formatToman(totals.total + tipNum)}
+                      value={money.format(totals.total + tipNum)}
                       bold
                     />
                   </>
@@ -2041,6 +2061,7 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
 
 /** One cart line as it reads in the review dialog and in the confirmation: what it is, its add-ons, and what it costs. */
 function CheckoutLineRow({ line }: { line: CartUiLine }) {
+  const money = useMoney();
   const breakdown = linePriceBreakdown({
     unitPrice: line.unitPrice,
     modifierDeltas: line.modifiers.map((modifier) => modifier.priceDelta),
@@ -2064,11 +2085,11 @@ function CheckoutLineRow({ line }: { line: CartUiLine }) {
             </span>
           </p>
           <p className="mt-0.5 text-[11px] text-[#77756F]">
-            {formatToman(breakdown.unit)} هر واحد
+            {money.format(breakdown.unit)} هر واحد
           </p>
         </div>
         <p className="shrink-0 text-sm font-bold text-[#B97905]">
-          {formatToman(breakdown.total)}
+          {money.format(breakdown.total)}
         </p>
       </div>
       <ModifierBadges
@@ -2095,6 +2116,7 @@ function CheckoutConfirmation({
   result: CheckoutResult;
   onDone: () => void;
 }) {
+  const money = useMoney();
   const settled = result.paid && !result.queued;
   return (
     <>
@@ -2157,7 +2179,7 @@ function CheckoutConfirmation({
               : "ارسالی"}
         </p>
         <p className="mt-2 text-lg font-bold text-[#B97905]">
-          {formatToman(result.total)}
+          {money.format(result.total)}
         </p>
       </div>
 

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
-import { formatToman } from "@/lib/money";
+import { useMoney } from "@/components/money/money-context";
 import { api } from "../ui";
 
 interface ApStatementLine {
@@ -32,6 +32,7 @@ export function ApStatementPanel({
   supplierName: string;
   onClose: () => void;
 }) {
+  const money = useMoney();
   const [lines, setLines] = useState<ApStatementLine[] | null>(null);
 
   useEffect(() => {
@@ -86,9 +87,9 @@ export function ApStatementPanel({
                       <td className="whitespace-nowrap px-3 py-3 text-muted-foreground">{toPersianDigits(formatJalali(l.date))}</td>
                       <td className="px-3 py-3 text-muted-foreground">{TYPE_LABELS[l.type]}</td>
                       <td className="px-3 py-3">{l.description}</td>
-                      <td className="whitespace-nowrap px-3 py-3 tabular-nums">{l.debit ? formatToman(l.debit) : "—"}</td>
-                      <td className="whitespace-nowrap px-3 py-3 tabular-nums">{l.credit ? formatToman(l.credit) : "—"}</td>
-                      <td className="whitespace-nowrap px-3 py-3 font-semibold tabular-nums">{formatToman(l.balance)}</td>
+                      <td className="whitespace-nowrap px-3 py-3 tabular-nums">{l.debit ? money.format(l.debit) : "—"}</td>
+                      <td className="whitespace-nowrap px-3 py-3 tabular-nums">{l.credit ? money.format(l.credit) : "—"}</td>
+                      <td className="whitespace-nowrap px-3 py-3 font-semibold tabular-nums">{money.format(l.balance)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -108,15 +109,15 @@ export function ApStatementPanel({
                   <dl className="mt-3 grid grid-cols-3 gap-2 border-t border-border pt-3 text-sm">
                     <div>
                       <dt className="text-xs text-muted-foreground">بدهکار</dt>
-                      <dd className="mt-1 whitespace-nowrap font-semibold tabular-nums">{l.debit ? formatToman(l.debit) : "—"}</dd>
+                      <dd className="mt-1 whitespace-nowrap font-semibold tabular-nums">{l.debit ? money.format(l.debit) : "—"}</dd>
                     </div>
                     <div>
                       <dt className="text-xs text-muted-foreground">بستانکار</dt>
-                      <dd className="mt-1 whitespace-nowrap font-semibold tabular-nums">{l.credit ? formatToman(l.credit) : "—"}</dd>
+                      <dd className="mt-1 whitespace-nowrap font-semibold tabular-nums">{l.credit ? money.format(l.credit) : "—"}</dd>
                     </div>
                     <div>
                       <dt className="text-xs text-muted-foreground">مانده</dt>
-                      <dd className="mt-1 whitespace-nowrap font-bold tabular-nums">{formatToman(l.balance)}</dd>
+                      <dd className="mt-1 whitespace-nowrap font-bold tabular-nums">{money.format(l.balance)}</dd>
                     </div>
                   </dl>
                 </article>

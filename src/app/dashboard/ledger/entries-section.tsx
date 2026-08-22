@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { formatToman } from "@/lib/money";
+import { useMoney } from "@/components/money/money-context";
 import { formatJalali } from "@/lib/jalali";
 import { api, SecondaryButton } from "../ui";
 import type { Runner } from "./ledger-manager";
@@ -38,6 +38,7 @@ const SOURCE_LABELS: Record<string, string> = {
 };
 
 export function EntriesSection({ refreshKey, busy, run }: { refreshKey: number; busy: boolean; run: Runner }) {
+  const money = useMoney();
   const [entries, setEntries] = useState<JournalEntryRow[] | null>(null);
 
   useEffect(() => {
@@ -108,8 +109,8 @@ export function EntriesSection({ refreshKey, busy, run }: { refreshKey: number; 
                       {e.lines.map((l, i) => (
                         <tr key={i} className="border-b border-border last:border-b-0">
                           <td className="py-3 pe-3 text-muted-foreground">{l.account_code} {l.account_name}</td>
-                          <td className="whitespace-nowrap py-3 pe-3">{Number(l.debit) !== 0 ? formatToman(Number(l.debit)) : "—"}</td>
-                          <td className="whitespace-nowrap py-3">{Number(l.credit) !== 0 ? formatToman(Number(l.credit)) : "—"}</td>
+                          <td className="whitespace-nowrap py-3 pe-3">{Number(l.debit) !== 0 ? money.format(Number(l.debit)) : "—"}</td>
+                          <td className="whitespace-nowrap py-3">{Number(l.credit) !== 0 ? money.format(Number(l.credit)) : "—"}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -121,8 +122,8 @@ export function EntriesSection({ refreshKey, busy, run }: { refreshKey: number; 
                     <div key={i} className="rounded-xl border border-[#EEECE7] bg-[#FCFBF8] p-3">
                       <p className="text-sm font-semibold">{l.account_code} {l.account_name}</p>
                       <dl className="mt-2 grid grid-cols-2 gap-2 text-sm">
-                        <div><dt className="text-xs text-muted-foreground">بدهکار</dt><dd className="mt-1 font-semibold">{Number(l.debit) !== 0 ? formatToman(Number(l.debit)) : "—"}</dd></div>
-                        <div><dt className="text-xs text-muted-foreground">بستانکار</dt><dd className="mt-1 font-semibold">{Number(l.credit) !== 0 ? formatToman(Number(l.credit)) : "—"}</dd></div>
+                        <div><dt className="text-xs text-muted-foreground">بدهکار</dt><dd className="mt-1 font-semibold">{Number(l.debit) !== 0 ? money.format(Number(l.debit)) : "—"}</dd></div>
+                        <div><dt className="text-xs text-muted-foreground">بستانکار</dt><dd className="mt-1 font-semibold">{Number(l.credit) !== 0 ? money.format(Number(l.credit)) : "—"}</dd></div>
                       </dl>
                     </div>
                   ))}

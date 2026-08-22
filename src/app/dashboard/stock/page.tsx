@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { formatPersianNumber } from "@/lib/digits";
-import { formatToman } from "@/lib/money";
+import { useMoney } from "@/components/money/money-context";
 import { api, ErrorBox, Field, inputClass } from "../ui";
 
 interface StockItem {
@@ -50,6 +50,7 @@ function Panel({ title, children }: { title: string; children: React.ReactNode }
 }
 
 export default function StockPage() {
+  const money = useMoney();
   const [items, setItems] = useState<StockItem[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [purchases, setPurchases] = useState<PurchaseRow[]>([]);
@@ -125,7 +126,7 @@ export default function StockPage() {
               {dead.map((r) => (
                 <li key={r.itemId} className="flex items-center justify-between gap-3 py-2">
                   <span className="font-medium text-stone-950">{r.itemName}</span>
-                  <span className="text-xs text-muted-foreground">{formatToman(r.valueRial ?? 0)}</span>
+                  <span className="text-xs text-muted-foreground">{money.format(r.valueRial ?? 0)}</span>
                 </li>
               ))}
             </ul>
@@ -143,7 +144,7 @@ export default function StockPage() {
                 <li key={p.id} className="flex items-center justify-between gap-3 py-2">
                   <span className="font-medium text-stone-950">{p.supplierName ?? "بدون تأمین‌کننده"}</span>
                   <span className="text-xs text-muted-foreground">
-                    {formatPersianNumber(p.lineCount)} قلم · {formatToman(p.total)}
+                    {formatPersianNumber(p.lineCount)} قلم · {money.format(p.total)}
                   </span>
                 </li>
               ))}
@@ -166,6 +167,7 @@ function PurchaseForm({
   onDone: (m: string) => void;
   onError: (m: string) => void;
 }) {
+  const money = useMoney();
   const [supplierId, setSupplierId] = useState("");
   const [itemId, setItemId] = useState("");
   const [quantity, setQuantity] = useState("1");
@@ -178,7 +180,7 @@ function PurchaseForm({
     if (!itemId || !quantity.trim() || !unitCost.trim()) return;
     setLines((prev) => [
       ...prev,
-      { itemId, quantity, unitCost: Number(unitCost), expiryDate: expiry || null },
+      { itemId, quantity, unitCost: money.fromInput(Math.max(0, Math.round(Number(unitCost)))), expiryDate: expiry || null },
     ]);
     setItemId("");
     setQuantity("1");
@@ -231,7 +233,7 @@ function PurchaseForm({
           <Button type="button" variant="outline" onClick={addLine} className="min-h-11">+</Button>
         </div>
         <div className="grid grid-cols-2 gap-2">
-          <Field label="بهای هر واحد (تومان)">
+          <Field label={`بهای هر واحد (${money.unitLabel})`}>
             <input className={inputClass} dir="ltr" inputMode="numeric" value={unitCost} onChange={(e) => setUnitCost(e.target.value)} />
           </Field>
           <Field label="انقضا (اختیاری، میلادی)">

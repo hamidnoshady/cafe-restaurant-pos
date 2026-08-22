@@ -12,7 +12,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { formatJalali } from "@/lib/jalali";
 import { toPersianDigits } from "@/lib/digits";
-import { formatToman, parseToRial } from "@/lib/money";
+import { useMoney } from "@/components/money/money-context";
 import { ErrorBox, Field, InfoBox, PrimaryButton, api, errorMessage, inputClass } from "./ui";
 
 interface Shift {
@@ -87,6 +87,7 @@ function ShiftModal({
   onClose: () => void;
   onChanged: () => Promise<void>;
 }) {
+  const money = useMoney();
   const [amount, setAmount] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -98,7 +99,7 @@ function ShiftModal({
     let openingFloat: number | undefined;
     if (amount.trim()) {
       try {
-        openingFloat = parseToRial(amount, "toman");
+        openingFloat = money.parse(amount);
       } catch {
         setBusy(false);
         setError(errorMessage("invalid_amount"));
@@ -124,7 +125,7 @@ function ShiftModal({
     let closingFloat: number | undefined;
     if (amount.trim()) {
       try {
-        closingFloat = parseToRial(amount, "toman");
+        closingFloat = money.parse(amount);
       } catch {
         setBusy(false);
         setError(errorMessage("invalid_amount"));
@@ -163,7 +164,7 @@ function ShiftModal({
             شیفت پایان یافت. اختلاف صندوق:{" "}
             {result.variance === 0
               ? "بدون اختلاف"
-              : `${result.variance > 0 ? "+" : ""}${toPersianDigits(formatToman(result.variance, { withUnit: false }))} تومان`}
+              : `${result.variance > 0 ? "+" : ""}${money.format(result.variance)}`}
           </InfoBox>
         ) : (
           <>
@@ -171,7 +172,7 @@ function ShiftModal({
               <p className="mb-3 text-xs text-muted-foreground">
                 شروع شیفت: {toPersianDigits(formatJalali(shift.startedAt, { withMonthName: true, withTime: true }))}
                 {shift.openingFloat !== null
-                  ? ` · موجودی اول: ${toPersianDigits(formatToman(shift.openingFloat))}`
+                  ? ` · موجودی اول: ${money.format(shift.openingFloat)}`
                   : ""}
               </p>
             )}

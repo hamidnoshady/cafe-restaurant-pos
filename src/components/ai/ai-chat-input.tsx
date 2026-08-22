@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Loader2Icon, SendIcon } from "lucide-react";
-import { formatToman } from "@/lib/money";
+import { useMoney } from "@/components/money/money-context";
 import { Button } from "@/components/ui/button";
 import { AiAttachmentChip, AiComposerTools } from "./ai-composer-tools";
 import type { ChatAttachment, PendingTurn, AssistantMode } from "./use-ai-chat";
@@ -42,17 +42,18 @@ export function AiChatInput({
   cancelPending,
   startStream,
 }: AiChatInputProps) {
+  const money = useMoney();
   return (
     <div className="border-t p-2">
       {pending ? (
         <div className="mb-2 rounded-xl border border-primary/25 bg-primary/5 p-2.5 text-xs">
           <p className="font-semibold text-foreground">
-            برآورد هزینه: {formatToman(pending.estimate.estimatedCostRial)}
+            برآورد هزینه: {money.format(pending.estimate.estimatedCostRial)}
           </p>
           <p className="mt-1 leading-5 text-muted-foreground">
             بر پایهٔ {pending.estimate.assumedToolRounds} نوبت پاسخ/ابزار محاسبه
             شده است. حداکثر رزرو این درخواست:{" "}
-            {formatToman(pending.estimate.maximumReservationRial)}؛ مبلغ نهایی
+            {money.format(pending.estimate.maximumReservationRial)}؛ مبلغ نهایی
             بر اساس مصرف واقعی تسویه می‌شود.
           </p>
           <div className="mt-2 flex gap-2">

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { formatQuantity, toPersianDigits } from "@/lib/digits";
-import { formatToman } from "@/lib/money";
+import { useMoney } from "@/components/money/money-context";
 import { formatJalali } from "@/lib/jalali";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { api, Field, inputClass } from "../ui";
@@ -41,6 +41,7 @@ interface ConsignorSummary {
 }
 
 export function ReportsSection({ busy, run }: { busy: boolean; run: Runner }) {
+  const money = useMoney();
   const [reconciliation, setReconciliation] = useState<ReconciliationRow[]>([]);
   const [counts, setCounts] = useState<WeightCount[]>([]);
   const [summaries, setSummaries] = useState<ConsignorSummary[]>([]);
@@ -237,6 +238,7 @@ function ConsignorStatementRow({
   run: Runner;
   onPaid: () => void;
 }) {
+  const money = useMoney();
   const [open, setOpen] = useState(false);
   const [amount, setAmount] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("cash");
@@ -247,7 +249,7 @@ function ConsignorStatementRow({
     const ok = await run(() =>
       api(`/api/jewelry/consignors/${summary.consignorId}/payout`, {
         method: "POST",
-        body: JSON.stringify({ amount: Number(amount), paymentMethod }),
+        body: JSON.stringify({ amount: money.fromInput(Math.max(0, Math.round(Number(amount)))), paymentMethod }),
       }),
     );
     if (ok) {
@@ -263,12 +265,12 @@ function ConsignorStatementRow({
         <div className="min-w-0">
           <h3 className="font-semibold text-stone-950">{summary.name}</h3>
           <p className="mt-1 text-xs text-muted-foreground">
-            {toPersianDigits(String(summary.itemsOnHand))} قطعه نزد فروشگاه — فروش‌شده {formatToman(summary.totalOwed)} /
-            پرداخت‌شده {formatToman(summary.totalPaid)}
+            {toPersianDigits(String(summary.itemsOnHand))} قطعه نزد فروشگاه — فروش‌شده {money.format(summary.totalOwed)} /
+            پرداخت‌شده {money.format(summary.totalPaid)}
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <span className="text-sm font-semibold text-stone-950">مانده {formatToman(summary.balance)}</span>
+          <span className="text-sm font-semibold text-stone-950">مانده {money.format(summary.balance)}</span>
           {summary.balance > 0 ? (
             <Button
               type="button"
@@ -287,7 +289,7 @@ function ConsignorStatementRow({
       {open ? (
         <div className="rounded-xl bg-amber-50/60 p-3 sm:p-4">
           <form onSubmit={pay} className="grid min-w-0 gap-3 sm:grid-cols-3">
-            <Field label="مبلغ (ریال)">
+            <Field label={`مبلغ (${money.unitLabel})`}>
               <input
                 className={jewelryInputClass}
                 dir="ltr"
