@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Decimal from "decimal.js";
-import { formatQuantity, toPersianDigits } from "@/lib/digits";
+import { formatQuantity } from "@/lib/digits";
 import { useMoney } from "@/components/money/money-context";
 import { formatJalali } from "@/lib/jalali";
 import { JalaliDatePicker } from "../jalali-date-picker";
@@ -35,6 +35,7 @@ interface PurchaseDetailItem {
   quantity: string | number;
   unit_cost: string | number;
   extended_cost: string | number;
+  inventory_lot_id: string | null;
 }
 
 interface PurchaseDetail {
@@ -128,6 +129,10 @@ export function PurchasesSection({
   const [editPurchaseDate, setEditPurchaseDate] = useState("");
   const [editNote, setEditNote] = useState("");
   const [editLines, setEditLines] = useState<DraftLine[]>([]);
+  const [returning, setReturning] = useState(false);
+  const [returnReason, setReturnReason] = useState("");
+  const [returnSettlement, setReturnSettlement] = useState<"accounts_payable" | "cash" | "bank" | "supplier_receivable">("accounts_payable");
+  const [returnQuantities, setReturnQuantities] = useState<Record<string, string>>({});
 
   const loadPurchases = useCallback(() => {
     const params = new URLSearchParams();
@@ -151,6 +156,7 @@ export function PurchasesSection({
 
   function toggleExpanded(id: string) {
     setEditing(false);
+    setReturning(false);
     if (expandedId === id) {
       setExpandedId(null);
       setDetail(null);
@@ -277,6 +283,42 @@ export function PurchasesSection({
     if (ok) {
       loadPurchases();
       if (expandedId === id) loadDetail(id);
+    }
+  }
+
+  function startReturning() {
+    if (!detail) return;
+    setReturnReason("");
+    setReturnSettlement("accounts_payable");
+    setReturnQuantities(Object.fromEntries(detail.items.map((it) => [it.id, ""])));
+    setReturning(true);
+  }
+
+  async function submitReturn(e: React.FormEvent) {
+    e.preventDefault();
+    if (!expandedId || !returnReason.trim() || !detail) return;
+    const lines = detail.items
+      .map((it) => ({
+        purchaseItemId: it.id,
+        inventoryLotId: it.inventory_lot_id,
+        quantity: returnQuantities[it.id]?.trim() ?? "",
+      }))
+      .filter((line) => line.quantity);
+    if (lines.length === 0) return;
+    const ok = await run(() => api(`/api/inventory/supplier-returns`, {
+      method: "POST",
+      body: JSON.stringify({
+        purchaseId: expandedId,
+        settlementMethod: returnSettlement,
+        reason: returnReason,
+        idempotencyKey: `${expandedId}-${Date.now()}`,
+        lines,
+      }),
+    }));
+    if (ok) {
+      setReturning(false);
+      loadDetail(expandedId);
+      loadPurchases();
     }
   }
 
@@ -419,13 +461,13 @@ export function PurchasesSection({
           {(purchases ?? []).map((p) => {
             const isExpanded = expandedId === p.id;
             return (
-              <li key={p.id} className="min-w-0 px-4 py-3 text-sm">
+              <li key={p.id} className="min-w-0 px-3 py-4 text-sm sm:px-4">
                 <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <span className="min-w-0 break-words">
                     {p.supplier_name ?? "بدون تأمین‌کننده"} — {money.formatText(String(p.total))} —{" "}
                     <span className="text-xs text-muted-foreground">{formatJalali(p.purchase_date)}</span>
                   </span>
-                  <div className="flex flex-wrap items-end gap-2">
+                  <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-end">
                     <span className="text-xs">{STATUS_LABELS[p.status]}</span>
                     {p.status !== "cancelled" ? (
                       <SecondaryButton onClick={() => toggleExpanded(p.id)}>
@@ -541,7 +583,7 @@ export function PurchasesSection({
                                     {formatQuantity(it.quantity)} {it.unit}
                                   </td>
                                   <td className="whitespace-nowrap py-2 pe-3 text-muted-foreground">
-                                    {toPersianDigits(new Decimal(String(it.unit_cost)).div(10).toFixed(2))} تومان
+                                    {money.formatText(String(it.unit_cost))}
                                   </td>
                                   <td className="whitespace-nowrap py-2">{money.formatText(String(it.extended_cost))}</td>
                                 </tr>
@@ -573,15 +615,54 @@ export function PurchasesSection({
                           </div>
                         </dl>
 
+                        {returning ? (
+                          <form onSubmit={submitReturn} className="mt-4 space-y-3 rounded-xl border border-amber-200 bg-amber-50/60 p-3">
+                            <p className="text-sm font-semibold">برگشت کالا به تأمین‌کننده</p>
+                            <p className="text-xs text-muted-foreground">مقدار برگشتی را در واحد پایه وارد کنید. قیمت‌ها در سیستم به ریال ذخیره می‌شوند و اینجا به تومان نمایش داده می‌شوند.</p>
+                            <div className="space-y-2">
+                              {detail.items.map((it) => (
+                                <div key={it.id} className="grid gap-2 sm:grid-cols-[1fr_9rem] sm:items-end">
+                                  <span className="text-sm">{it.inventory_item_name} <span className="text-xs text-muted-foreground">({formatQuantity(it.quantity)} {it.unit})</span></span>
+                                  <Field label={`مقدار برگشت (${it.unit})`}>
+                                    <input className={inputClass} dir="ltr" inputMode="decimal" value={returnQuantities[it.id] ?? ""} onChange={(e) => setReturnQuantities((prev) => ({ ...prev, [it.id]: e.target.value }))} />
+                                  </Field>
+                                </div>
+                              ))}
+                            </div>
+                            <div className="grid gap-3 sm:grid-cols-2">
+                              <Field label="روش تسویه">
+                                <SearchableSelect value={returnSettlement} onChange={(v) => setReturnSettlement(v as typeof returnSettlement)} options={[
+                                  { value: "accounts_payable", label: "کاهش بدهی تأمین‌کننده" },
+                                  { value: "cash", label: "نقدی" },
+                                  { value: "bank", label: "بانکی" },
+                                  { value: "supplier_receivable", label: "طلب از تأمین‌کننده" },
+                                ]} />
+                              </Field>
+                              <Field label="دلیل برگشت">
+                                <input className={inputClass} value={returnReason} onChange={(e) => setReturnReason(e.target.value)} placeholder="مثلاً کالای معیوب" required />
+                              </Field>
+                            </div>
+                            <div className="flex flex-col gap-2 sm:flex-row">
+                              <PrimaryButton disabled={busy}>ثبت برگشت</PrimaryButton>
+                              <SecondaryButton onClick={() => setReturning(false)}>انصراف</SecondaryButton>
+                            </div>
+                          </form>
+                        ) : null}
+
                         <div className="mt-3 flex flex-wrap items-center gap-2">
                           {isEditable(p.status) ? (
                             <SecondaryButton disabled={busy} onClick={() => startEditing(p.purchase_date)}>
                               ویرایش
                             </SecondaryButton>
                           ) : (
-                            <p className="text-xs text-muted-foreground">
-                              خرید دریافت‌شده قابل ویرایش نیست؛ برای اصلاح از برگشت به تأمین‌کننده استفاده کنید.
-                            </p>
+                            <>
+                              <SecondaryButton disabled={busy} onClick={startReturning}>
+                                برگشت به تأمین‌کننده
+                              </SecondaryButton>
+                              <p className="text-xs text-muted-foreground">
+                                خرید دریافت‌شده قابل ویرایش نیست؛ برای اصلاح از «برگشت به تأمین‌کننده» استفاده کنید.
+                              </p>
+                            </>
                           )}
                         </div>
                       </>

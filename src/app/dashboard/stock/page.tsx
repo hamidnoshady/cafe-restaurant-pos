@@ -234,7 +234,7 @@ function PurchaseForm({
         </div>
         <div className="grid grid-cols-2 gap-2">
           <Field label={`بهای هر واحد (${money.unitLabel})`}>
-            <input className={inputClass} dir="ltr" value={unitCost} onChange={(e) => setUnitCost(e.target.value)} />
+            <input className={inputClass} dir="ltr" inputMode="numeric" value={unitCost} onChange={(e) => setUnitCost(e.target.value)} />
           </Field>
           <Field label="انقضا (اختیاری، میلادی)">
             <input className={inputClass} dir="ltr" type="date" value={expiry} onChange={(e) => setExpiry(e.target.value)} />
