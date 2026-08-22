@@ -8,7 +8,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { BanknoteIcon, CreditCardIcon, PlusIcon, ReceiptTextIcon, ScrollTextIcon, SmartphoneIcon, WalletIcon, XIcon } from "lucide-react";
-import { formatToman } from "@/lib/money";
+import { useMoney } from "@/components/money/money-context";
 import {
   draftRemaining,
   newDraftRow,
@@ -76,7 +76,8 @@ export interface PaymentWaysProps {
 }
 
 export function PaymentWays({ methods, draft, onChange, due, disabled, idPrefix = "pay" }: PaymentWaysProps) {
-  const remaining = draftRemaining(draft, due);
+  const money = useMoney();
+  const remaining = draftRemaining(draft, due, money.unit);
 
   /**
    * Tapping a way while splitting *adds* it, pre-filled with whatever is still
@@ -88,7 +89,7 @@ export function PaymentWays({ methods, draft, onChange, due, disabled, idPrefix 
       onChange({ ...draft, methodId, rows: [newDraftRow(methodId)] });
       return;
     }
-    const prefill = remaining > 0 ? String(Math.round(remaining / 10)) : "";
+    const prefill = remaining > 0 ? String(money.toInput(remaining)) : "";
     onChange({ ...draft, rows: [...draft.rows, newDraftRow(methodId, prefill)] });
   }
 
@@ -100,7 +101,7 @@ export function PaymentWays({ methods, draft, onChange, due, disabled, idPrefix 
       onChange({ split: false, methodId, rows: [newDraftRow(methodId)] });
       return;
     }
-    const prefill = due > 0 ? String(Math.round(due / 10)) : "";
+    const prefill = due > 0 ? String(money.toInput(due)) : "";
     onChange({ ...draft, split: true, rows: [newDraftRow(draft.methodId, prefill)] });
   }
 
@@ -177,7 +178,7 @@ export function PaymentWays({ methods, draft, onChange, due, disabled, idPrefix 
                     value={row.amount}
                     disabled={disabled}
                     onChange={(event) => patchRow(row.key, { amount: event.target.value })}
-                    placeholder="تومان"
+                    placeholder={money.unit === "rial" ? "ریال" : "تومان"}
                     aria-label={`مبلغ ${method?.name ?? ""}`}
                   />
                   <button
@@ -210,13 +211,13 @@ export function PaymentWays({ methods, draft, onChange, due, disabled, idPrefix 
               {remaining > 0 ? "باقی‌مانده" : remaining < 0 ? "مازاد (بازگشت به مشتری)" : "تسویه شد"}
             </span>
             <span className={remaining === 0 ? "text-[#2E7D32]" : "text-[#B3261E]"}>
-              {formatToman(Math.abs(remaining))}
+              {money.format(Math.abs(remaining))}
             </span>
           </div>
           {draft.rows.length > 0 && remaining > 0 ? (
             <p className="flex items-center gap-1 text-[11px] text-[#8B8A85]">
               <PlusIcon className="size-3" aria-hidden="true" />
-              روش دیگری را از بالا بزنید تا {formatToman(remaining)} باقی‌مانده با آن دریافت شود.
+              روش دیگری را از بالا بزنید تا {money.format(remaining)} باقی‌مانده با آن دریافت شود.
             </p>
           ) : null}
         </div>

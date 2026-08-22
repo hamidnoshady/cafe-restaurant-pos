@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { formatQuantity, toPersianDigits } from "@/lib/digits";
-import { formatToman } from "@/lib/money";
+import { useMoney } from "@/components/money/money-context";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { api, Field, inputClass } from "../ui";
 import type { Runner, VariantRow } from "./accessories-manager";
@@ -215,6 +215,7 @@ function VariantRowView({
   run: Runner;
   apiBase: string;
 }) {
+  const money = useMoney();
   const [panel, setPanel] = useState<"stock" | null>(null);
   const toggle = (next: "stock") => setPanel((current) => (current === next ? null : next));
   const isFamily = item.kind === "variant_parent";
@@ -245,10 +246,10 @@ function VariantRowView({
             <dl className="mt-3 grid min-w-0 gap-x-5 gap-y-2 text-xs text-stone-600 sm:grid-cols-2 xl:grid-cols-4">
               <MetaItem label="موجودی">{formatQuantity(item.quantity)}</MetaItem>
               <MetaItem label="بهای تمام‌شده هر واحد">
-                {item.unitCost != null ? formatToman(item.unitCost) : "تعیین نشده"}
+                {item.unitCost != null ? money.format(item.unitCost) : "تعیین نشده"}
               </MetaItem>
               <MetaItem label="قیمت فروش">
-                {item.unitPrice != null ? formatToman(item.unitPrice) : "تعیین نشده"}
+                {item.unitPrice != null ? money.format(item.unitPrice) : "تعیین نشده"}
               </MetaItem>
             </dl>
           ) : null}
@@ -306,9 +307,10 @@ function StockPanel({
   apiBase: string;
   onDone: () => void;
 }) {
+  const money = useMoney();
   const [quantity, setQuantity] = useState("");
   const [unitCost, setUnitCost] = useState("");
-  const [unitPrice, setUnitPrice] = useState(item.unitPrice != null ? String(item.unitPrice) : "");
+  const [unitPrice, setUnitPrice] = useState(item.unitPrice != null ? String(money.toInput(item.unitPrice)) : "");
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
@@ -317,8 +319,8 @@ function StockPanel({
         method: "POST",
         body: JSON.stringify({
           quantity: quantity.trim() || undefined,
-          unitCost: quantity.trim() ? Number(unitCost || 0) : undefined,
-          unitPrice: unitPrice.trim() ? Number(unitPrice) : undefined,
+          unitCost: quantity.trim() ? money.fromInput(Math.max(0, Math.round(Number(unitCost || 0)))) : undefined,
+          unitPrice: unitPrice.trim() ? money.fromInput(Math.max(0, Math.round(Number(unitPrice || 0)))) : undefined,
         }),
       }),
     );
@@ -337,7 +339,7 @@ function StockPanel({
             onChange={(e) => setQuantity(e.target.value)}
           />
         </Field>
-        <Field label="بهای تمام‌شده هر واحد (ریال)">
+        <Field label={`بهای تمام‌شده هر واحد (${money.unitLabel})`}>
           <input
             className={accInputClass}
             dir="ltr"
@@ -346,7 +348,7 @@ function StockPanel({
             onChange={(e) => setUnitCost(e.target.value)}
           />
         </Field>
-        <Field label="قیمت فروش هر واحد (ریال)">
+        <Field label={`قیمت فروش هر واحد (${money.unitLabel})`}>
           <input
             className={accInputClass}
             dir="ltr"

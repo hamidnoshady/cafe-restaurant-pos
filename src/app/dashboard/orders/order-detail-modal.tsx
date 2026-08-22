@@ -45,7 +45,7 @@ import {
 } from "@/components/ui/dialog";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { toPersianDigits } from "@/lib/digits";
-import { formatToman, parseToRial } from "@/lib/money";
+import { useMoney } from "@/components/money/money-context";
 import {
   draftNeedsCustomer,
   draftOpensDrawer,
@@ -281,6 +281,7 @@ export function OrderDetailModal({
   const [newCustomerPhone, setNewCustomerPhone] = useState("");
   const printers = usePrinters();
   const business = useBusinessInfo();
+  const money = useMoney();
 
   const load = useCallback(async () => {
     if (!orderId) return;
@@ -316,8 +317,16 @@ export function OrderDetailModal({
           : null),
     );
     setDiscountType(data.order.discount_type ?? "");
+    // `discount_value` is stored in Rial for an `amount` discount; the input
+    // below is Toman, so present it back in Toman and re-convert on save.
     setDiscountValue(
-      data.order.discount_value ? String(data.order.discount_value) : "",
+      data.order.discount_value
+        ? String(
+            data.order.discount_type === "amount"
+              ? money.toInput(Number(data.order.discount_value))
+              : data.order.discount_value,
+          )
+        : "",
     );
     setNoteDraft(data.order.note ?? "");
   }, [orderId]);
@@ -536,7 +545,13 @@ export function OrderDetailModal({
         method: "PATCH",
         body: JSON.stringify({
           discount: discountType
-            ? { type: discountType, value: Number(discountValue) || 0 }
+            ? {
+                type: discountType,
+                value:
+                  discountType === "amount"
+                    ? money.fromInput(Math.max(0, Math.round(Number(discountValue) || 0)))
+                    : Number(discountValue) || 0,
+              }
             : { type: null },
         }),
       }),
@@ -631,7 +646,7 @@ export function OrderDetailModal({
     }
     const receipt = buildReceipt(
       Number(order?.tip_amount ?? 0),
-      draftReceiptPayments(paymentDraft, paymentMethods, Number(order?.total ?? 0)),
+      draftReceiptPayments(paymentDraft, paymentMethods, Number(order?.total ?? 0), money.unit),
     );
     if (!receipt) return;
     void printReceipt(receiptPrinter.connection, receipt);
@@ -653,12 +668,12 @@ export function OrderDetailModal({
       return setError(errorMessage("customer_required"));
     }
     const total = Number(order.total);
-    const built = paymentDraftBody(paymentDraft, paymentMethods, total);
+    const built = paymentDraftBody(paymentDraft, paymentMethods, total, money.unit);
     if (!built.ok) return setError(errorMessage(built.error));
     let tipAmount = 0;
     if (tipInput.trim()) {
       try {
-        tipAmount = parseToRial(tipInput, "toman");
+        tipAmount = money.parse(tipInput);
       } catch {
         return setError(errorMessage("invalid_tip_amount"));
       }
@@ -684,7 +699,7 @@ export function OrderDetailModal({
 
     const receiptPrinter = firstPrinter(printers, "receipt");
     if (receiptPrinter) {
-      const receipt = buildReceipt(tipAmount, draftReceiptPayments(paymentDraft, paymentMethods, total));
+      const receipt = buildReceipt(tipAmount, draftReceiptPayments(paymentDraft, paymentMethods, total, money.unit));
       if (receipt) {
         void printReceipt(receiptPrinter.connection, receipt);
         // Any cash slice opens the drawer, not just an all-cash bill.
@@ -752,13 +767,14 @@ export function OrderDetailModal({
             {it.name_snapshot}
           </p>
           <p className="mt-1 text-xs text-[#77756F]">
-            {formatToman(breakdown.unit)} هر واحد
+            {money.format(breakdown.unit)} هر واحد
             {addOns.length > 0 ? (
               <span className="text-[#B97905]">
                 {" "}
                 — شامل{" "}
                 {formatModifierDelta(breakdown.addOns, {
                   withUnit: false,
+                  unit: money.unit,
                 })}{" "}
                 افزودنی
               </span>
@@ -808,7 +824,7 @@ export function OrderDetailModal({
         <p
           className={`col-start-2 row-start-1 justify-self-end whitespace-nowrap text-sm font-bold tabular-nums md:col-start-3 md:justify-self-stretch md:text-end ${voided ? "text-[#8B8A85] line-through" : "text-[#252522]"}`}
         >
-          {formatToman(breakdown.total)}
+          {money.format(breakdown.total)}
         </p>
 
         <div className="col-start-1 row-start-2 flex items-center gap-1.5 md:col-start-2 md:row-start-1">
@@ -1235,7 +1251,7 @@ export function OrderDetailModal({
                         {Number(order.tip_amount ?? 0) > 0 ? (
                           <Fact
                             label="انعام"
-                            value={formatToman(Number(order.tip_amount))}
+                            value={money.format(Number(order.tip_amount))}
                           />
                         ) : null}
                       </dl>
@@ -1388,7 +1404,7 @@ export function OrderDetailModal({
                                     setDiscountValue(event.target.value)
                                   }
                                   placeholder={
-                                    discountType === "percent" ? "٪" : "تومان"
+                                    discountType === "percent" ? "٪" : money.unitLabel
                                   }
                                 />
                               ) : null}
@@ -1408,31 +1424,31 @@ export function OrderDetailModal({
                       <dl className="space-y-2">
                         <Row
                           label="جمع جزء"
-                          value={formatToman(Number(order.subtotal))}
+                          value={money.format(Number(order.subtotal))}
                         />
                         {addOnTotal !== 0 ? (
                           <Row
                             label="از این مبلغ، افزودنی‌ها"
-                            value={formatModifierDelta(addOnTotal)}
+                            value={formatModifierDelta(addOnTotal, { unit: money.unit })}
                             accent
                           />
                         ) : null}
                         {Number(order.discount) > 0 ? (
                           <Row
                             label="تخفیف"
-                            value={`- ${formatToman(Number(order.discount))}`}
+                            value={`- ${money.format(Number(order.discount))}`}
                           />
                         ) : null}
                         {Number(order.service_charge ?? 0) > 0 ? (
                           <Row
                             label="هزینهٔ ارسال"
-                            value={formatToman(Number(order.service_charge))}
+                            value={money.format(Number(order.service_charge))}
                           />
                         ) : null}
                         {Number(order.tax) > 0 ? (
                           <Row
                             label="مالیات"
-                            value={formatToman(Number(order.tax))}
+                            value={money.format(Number(order.tax))}
                           />
                         ) : null}
                         <div className="mt-1 flex items-center justify-between gap-3 rounded-xl border border-[#F2D097] bg-[#FFF9EE] px-3 py-2.5">
@@ -1440,7 +1456,7 @@ export function OrderDetailModal({
                             جمع کل
                           </dt>
                           <dd className="text-base font-bold tabular-nums text-[#B97905]">
-                            {formatToman(Number(order.total))}
+                            {money.format(Number(order.total))}
                           </dd>
                         </div>
                       </dl>
@@ -1586,7 +1602,7 @@ export function OrderDetailModal({
                           <BanknoteIcon className="size-4" aria-hidden="true" />
                           {paying
                             ? "در حال ثبت پرداخت…"
-                            : `دریافت ${formatToman(Number(order.total))} و تکمیل`}
+                            : `دریافت ${money.format(Number(order.total))} و تکمیل`}
                         </button>
                       </section>
                     ) : null}
@@ -1636,7 +1652,7 @@ export function OrderDetailModal({
                 </span>
               </div>
               <span className="text-base font-bold tabular-nums text-[#B97905]">
-                {formatToman(Number(order.total))}
+                {money.format(Number(order.total))}
               </span>
             </div>
           ) : null}

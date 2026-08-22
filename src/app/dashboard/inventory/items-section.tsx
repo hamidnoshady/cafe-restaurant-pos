@@ -5,7 +5,7 @@ import { SearchIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatQuantity } from "@/lib/digits";
 import { useInventorySearch } from "@/lib/inventory-search";
-import { formatToman } from "@/lib/money";
+import { useMoney } from "@/components/money/money-context";
 import { api, Field, inputClass } from "../ui";
 import type { InventoryItem, Runner } from "./inventory-manager";
 
@@ -179,6 +179,7 @@ function ItemRow({
   busy: boolean;
   run: Runner;
 }) {
+  const money = useMoney();
   const [editing, setEditing] = useState(false);
   const reorderLevel =
     item.reorder_level === null ? null : Number(item.reorder_level);
@@ -236,7 +237,7 @@ function ItemRow({
             {formatQuantity(item.stock)} {item.unit}
           </MetaItem>
           <MetaItem label="میانگین بها">
-            {formatToman(Number(item.avg_cost))}
+            {money.format(Number(item.avg_cost))}
           </MetaItem>
         </dl>
       </div>

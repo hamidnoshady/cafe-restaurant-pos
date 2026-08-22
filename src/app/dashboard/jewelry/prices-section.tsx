@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { formatToman } from "@/lib/money";
+import { useMoney } from "@/components/money/money-context";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -12,6 +12,7 @@ import { PURITY_LABELS, type GoldPriceRow, type Purity, type Runner } from "./je
 const jewelryInputClass = `${inputClass} min-h-[52px] !border-stone-200 !bg-white shadow-none placeholder:text-stone-400 focus-visible:border-amber-500 focus-visible:ring-amber-400/30`;
 
 export function PricesSection({ prices, busy, run }: { prices: GoldPriceRow[]; busy: boolean; run: Runner }) {
+  const money = useMoney();
   const [purity, setPurity] = useState<Purity>("18");
   const [pricePerGram, setPricePerGram] = useState("");
 
@@ -21,7 +22,7 @@ export function PricesSection({ prices, busy, run }: { prices: GoldPriceRow[]; b
     const ok = await run(() =>
       api("/api/jewelry/prices", {
         method: "POST",
-        body: JSON.stringify({ purity, pricePerGram: Number(pricePerGram) }),
+        body: JSON.stringify({ purity, pricePerGram: money.fromInput(Math.max(1, Math.round(Number(pricePerGram)))) }),
       }),
     );
     if (ok) setPricePerGram("");
@@ -52,7 +53,7 @@ export function PricesSection({ prices, busy, run }: { prices: GoldPriceRow[]; b
                   {p.source === "external" ? " · دریافتی از سرویس بیرونی" : " · ثبت دستی"}
                 </p>
               </div>
-              <p className="font-semibold text-stone-950">{formatToman(p.pricePerGram)} / گرم</p>
+              <p className="font-semibold text-stone-950">{money.format(p.pricePerGram)} / گرم</p>
             </li>
           ))}
           {prices.length === 0 ? (
@@ -64,7 +65,7 @@ export function PricesSection({ prices, busy, run }: { prices: GoldPriceRow[]; b
       <aside className="order-1 min-w-0 md:order-2">
         <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-[0_1px_2px_rgb(41_37_36/0.035)] md:sticky md:top-4 sm:p-5">
           <h2 className="font-semibold text-stone-950">ثبت نرخ امروز</h2>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">نرخ هر گرم طلا (ریال) برای هر عیار جداگانه ثبت می‌شود.</p>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">نرخ هر گرم طلا ({money.unitLabel}) برای هر عیار جداگانه ثبت می‌شود.</p>
 
           <form onSubmit={record} className="mt-4">
             <Field label="عیار">
@@ -78,14 +79,14 @@ export function PricesSection({ prices, busy, run }: { prices: GoldPriceRow[]; b
                 }))}
               />
             </Field>
-            <Field label="قیمت هر گرم (ریال)">
+            <Field label={`قیمت هر گرم (${money.unitLabel})`}>
               <input
                 className={jewelryInputClass}
                 dir="ltr"
                 inputMode="numeric"
                 value={pricePerGram}
                 onChange={(e) => setPricePerGram(e.target.value)}
-                placeholder={toPersianDigits("مثلاً 45000000")}
+                placeholder={toPersianDigits("مثلاً 4500000")}
                 required
               />
             </Field>

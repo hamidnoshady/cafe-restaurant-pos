@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
 import { query } from "@/lib/db";
+import { getSetting, SETTING_KEYS } from "@/lib/settings";
 import { getPrimaryLocation } from "@/lib/setup-state";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
@@ -50,6 +51,8 @@ function periodLabel(dateFrom?: string, dateTo?: string): string {
 export const POST = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireRole("owner", "manager", "accountant");
   if (error) return error;
+  const prefs = await getSetting<{ currencyDisplay?: "toman" | "rial" }>(session.businessId, SETTING_KEYS.businessPrefs);
+  const unit = prefs?.currencyDisplay === "rial" ? "rial" : "toman";
 
   let body: ExportBody;
   try {
@@ -97,6 +100,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
         ],
         grandTotalLabel: "سود (زیان) خالص",
         grandTotalAmount: report.netIncome,
+        unit,
       });
       return fileResponse(await renderHtmlToPdf(html), "application/pdf", `${title}.pdf`);
     }
@@ -126,6 +130,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
         ],
         grandTotalLabel: "بدهی‌ها + حقوق صاحبان سرمایه",
         grandTotalAmount: report.totalLiabilities + report.totalEquity,
+        unit,
       });
       return fileResponse(await renderHtmlToPdf(html), "application/pdf", `${title}.pdf`);
     }
@@ -155,6 +160,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
         ],
         grandTotalLabel: "موجودی پایان دوره",
         grandTotalAmount: report.closingCash,
+        unit,
       });
       return fileResponse(await renderHtmlToPdf(html), "application/pdf", `${title}.pdf`);
     }

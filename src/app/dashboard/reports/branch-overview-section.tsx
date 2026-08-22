@@ -10,7 +10,8 @@
  */
 import { useEffect, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
-import { formatToman } from "@/lib/money";
+import { formatMoney, type MoneyUnit } from "@/lib/money";
+import { useMoney } from "@/components/money/money-context";
 import { ErrorBox, api, errorMessage } from "../ui";
 
 interface BranchRow {
@@ -31,11 +32,12 @@ interface Overview {
   consolidated: Omit<BranchRow, "locationId" | "locationName" | "isActive">;
 }
 
-function money(value: number): string {
-  return toPersianDigits(formatToman(value));
+function money(value: number, unit: MoneyUnit = "toman"): string {
+  return toPersianDigits(formatMoney(value, unit));
 }
 
 function BranchMetrics({ branch }: { branch: BranchRow }) {
+  const moneyApi = useMoney();
   return (
     <dl className="grid grid-cols-2 gap-3">
       <div>
@@ -47,25 +49,25 @@ function BranchMetrics({ branch }: { branch: BranchRow }) {
       <div>
         <dt className="text-xs text-[#77756F]">فروش ناخالص</dt>
         <dd className="mt-1 font-bold tabular-nums text-[#252522]">
-          {money(branch.subtotal)}
+          {money(branch.subtotal, moneyApi.unit)}
         </dd>
       </div>
       <div>
         <dt className="text-xs text-[#77756F]">بهای تمام‌شده</dt>
         <dd className="mt-1 font-bold tabular-nums text-[#252522]">
-          {money(branch.cogs)}
+          {money(branch.cogs, moneyApi.unit)}
         </dd>
       </div>
       <div>
         <dt className="text-xs text-[#77756F]">ضایعات</dt>
         <dd className="mt-1 font-bold tabular-nums text-[#252522]">
-          {money(branch.wasteCost)}
+          {money(branch.wasteCost, moneyApi.unit)}
         </dd>
       </div>
       <div className="col-span-2 border-t border-[#F0EEE9] pt-3">
         <dt className="text-xs text-[#77756F]">فروش خالص</dt>
         <dd className="mt-1 text-base font-bold tabular-nums text-[#252522]">
-          {money(branch.total)}
+          {money(branch.total, moneyApi.unit)}
         </dd>
       </div>
     </dl>
@@ -73,6 +75,7 @@ function BranchMetrics({ branch }: { branch: BranchRow }) {
 }
 
 export function BranchOverviewSection() {
+  const moneyApi = useMoney();
   const [data, setData] = useState<Overview | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -195,16 +198,16 @@ export function BranchOverviewSection() {
                   {toPersianDigits(String(branch.orderCount))}
                 </td>
                 <td className="px-4 py-4 tabular-nums text-[#252522]">
-                  {money(branch.subtotal)}
+                  {money(branch.subtotal, moneyApi.unit)}
                 </td>
                 <td className="px-4 py-4 tabular-nums text-[#252522]">
-                  {money(branch.cogs)}
+                  {money(branch.cogs, moneyApi.unit)}
                 </td>
                 <td className="px-4 py-4 tabular-nums text-[#252522]">
-                  {money(branch.wasteCost)}
+                  {money(branch.wasteCost, moneyApi.unit)}
                 </td>
                 <td className="px-4 py-4 font-bold tabular-nums text-[#252522]">
-                  {money(branch.total)}
+                  {money(branch.total, moneyApi.unit)}
                 </td>
               </tr>
             ))}
@@ -218,16 +221,16 @@ export function BranchOverviewSection() {
                 {toPersianDigits(String(data.consolidated.orderCount))}
               </td>
               <td className="px-4 py-4 tabular-nums">
-                {money(data.consolidated.subtotal)}
+                {money(data.consolidated.subtotal, moneyApi.unit)}
               </td>
               <td className="px-4 py-4 tabular-nums">
-                {money(data.consolidated.cogs)}
+                {money(data.consolidated.cogs, moneyApi.unit)}
               </td>
               <td className="px-4 py-4 tabular-nums">
-                {money(data.consolidated.wasteCost)}
+                {money(data.consolidated.wasteCost, moneyApi.unit)}
               </td>
               <td className="px-4 py-4 tabular-nums">
-                {money(data.consolidated.total)}
+                {money(data.consolidated.total, moneyApi.unit)}
               </td>
             </tr>
           </tfoot>

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { formatPersianNumber } from "@/lib/digits";
-import { formatToman, parseToRial } from "@/lib/money";
+import { useMoney } from "@/components/money/money-context";
 import { api, ErrorBox, Field, inputClass } from "../ui";
 
 interface CommissionRuleRow {
@@ -48,6 +48,7 @@ function Panel({ title, children }: { title: string; children: React.ReactNode }
 }
 
 export default function CommissionPage() {
+  const money = useMoney();
   const [rules, setRules] = useState<CommissionRuleRow[]>([]);
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [report, setReport] = useState<ReportRow[]>([]);
@@ -100,10 +101,10 @@ export default function CommissionPage() {
                       {formatPersianNumber(i + 1)}. {r.employeeName}
                     </span>
                     <span className="mr-2 text-xs text-muted-foreground">
-                      {formatPersianNumber(r.lineCount)} خط · مبنا {formatToman(r.basisAmount)}
+                      {formatPersianNumber(r.lineCount)} خط · مبنا {money.format(r.basisAmount)}
                     </span>
                   </div>
-                  <span className="shrink-0 font-semibold text-emerald-700">{formatToman(r.amount)}</span>
+                  <span className="shrink-0 font-semibold text-emerald-700">{money.format(r.amount)}</span>
                 </li>
               ))}
             </ul>
@@ -124,7 +125,7 @@ export default function CommissionPage() {
                   <div className="min-w-0">
                     <span className="font-medium text-stone-950">{r.employeeName ?? "نامشخص"}</span>
                     <span className="mr-2 text-xs text-muted-foreground">
-                      {r.kind === "percent" ? `${formatPersianNumber(r.value)}٪` : formatToman(r.value)} ·{" "}
+                      {r.kind === "percent" ? `${formatPersianNumber(r.value)}٪` : money.format(r.value)} ·{" "}
                       {BASIS_LABELS[r.basis]} · اولویت {formatPersianNumber(r.priority)}
                     </span>
                   </div>
@@ -150,6 +151,7 @@ function RuleForm({
   onSaved: (m: string) => void;
   onError: (m: string) => void;
 }) {
+  const money = useMoney();
   const [employeeId, setEmployeeId] = useState("");
   const [kind, setKind] = useState<"percent" | "fixed">("percent");
   const [basis, setBasis] = useState<"net" | "margin">("net");
@@ -168,7 +170,7 @@ function RuleForm({
         employeeId,
         kind,
         basis,
-        value: kind === "percent" ? Number(value) : parseToRial(value, "toman"),
+        value: kind === "percent" ? Number(value) : money.parse(value),
         priority: Number(priority) || 0,
       }),
     });
@@ -197,10 +199,10 @@ function RuleForm({
           <Field label="نوع">
             <select className={inputClass} value={kind} onChange={(e) => setKind(e.target.value as "percent" | "fixed")}>
               <option value="percent">درصدی</option>
-              <option value="fixed">مبلغ ثابت (تومان)</option>
+              <option value="fixed">مبلغ ثابت ({money.unitLabel})</option>
             </select>
           </Field>
-          <Field label={kind === "percent" ? "درصد" : "مبلغ (تومان)"}>
+          <Field label={kind === "percent" ? "درصد" : `مبلغ (${money.unitLabel})`}>
             <input className={inputClass} dir="ltr" value={value} onChange={(e) => setValue(e.target.value)} required />
           </Field>
         </div>

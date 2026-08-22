@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { formatToman } from "@/lib/money";
+import { useMoney } from "@/components/money/money-context";
 import { JalaliDatePicker } from "../jalali-date-picker";
 import { api } from "../ui";
 
@@ -23,6 +23,7 @@ interface VatReport {
  * movements, not a new place to enter anything.
  */
 export function VatReportSection({ refreshKey }: { refreshKey: number }) {
+  const money = useMoney();
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [report, setReport] = useState<VatReport | null>(null);
@@ -65,18 +66,18 @@ export function VatReportSection({ refreshKey }: { refreshKey: number }) {
           <div className="grid gap-3 sm:grid-cols-3">
             <article className="rounded-xl border border-border bg-[#FFFEFC] p-4">
               <p className="text-sm text-muted-foreground">مالیات ستانده (فروش)</p>
-              <p className="mt-2 text-xl font-bold tabular-nums">{formatToman(report.outputVat)}</p>
+              <p className="mt-2 text-xl font-bold tabular-nums">{money.format(report.outputVat)}</p>
             </article>
             <article className="rounded-xl border border-border bg-[#FFFEFC] p-4">
               <p className="text-sm text-muted-foreground">مالیات پرداختی (خرید)</p>
-              <p className="mt-2 text-xl font-bold tabular-nums">{formatToman(report.inputVat)}</p>
+              <p className="mt-2 text-xl font-bold tabular-nums">{money.format(report.inputVat)}</p>
             </article>
             <article className="rounded-xl border border-border bg-[#FFFEFC] p-4">
               <p className="text-sm text-muted-foreground">
                 {report.netPayable >= 0 ? "خالص قابل پرداخت" : "خالص قابل استرداد"}
               </p>
               <p className={"mt-2 text-xl font-bold tabular-nums " + (report.netPayable >= 0 ? "" : "text-emerald-700")}>
-                {formatToman(Math.abs(report.netPayable))}
+                {money.format(Math.abs(report.netPayable))}
               </p>
             </article>
           </div>
@@ -87,11 +88,11 @@ export function VatReportSection({ refreshKey }: { refreshKey: number }) {
             <dl className="mt-3 grid gap-3 sm:grid-cols-2">
               <div className="rounded-xl border border-border bg-[#FCFBF8] p-4">
                 <dt className="text-sm text-muted-foreground">مالیات بر ارزش افزوده پرداختنی</dt>
-                <dd className="mt-2 text-lg font-bold tabular-nums">{formatToman(report.vatPayableBalance)}</dd>
+                <dd className="mt-2 text-lg font-bold tabular-nums">{money.format(report.vatPayableBalance)}</dd>
               </div>
               <div className="rounded-xl border border-border bg-[#FCFBF8] p-4">
                 <dt className="text-sm text-muted-foreground">مالیات بر ارزش افزوده خرید (قابل استرداد)</dt>
-                <dd className="mt-2 text-lg font-bold tabular-nums">{formatToman(report.vatReceivableBalance)}</dd>
+                <dd className="mt-2 text-lg font-bold tabular-nums">{money.format(report.vatReceivableBalance)}</dd>
               </div>
             </dl>
           </section>

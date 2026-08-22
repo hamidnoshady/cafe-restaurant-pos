@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { toPersianDigits } from "@/lib/digits";
-import { formatToman, parseToRial } from "@/lib/money";
+import { useMoney } from "@/components/money/money-context";
 import {
   api,
   ErrorBox,
@@ -38,6 +38,7 @@ export default function MenuStep() {
   // jewelry business landing here belongs at whatever step actually
   // follows it in their flow.
   const available = steps.some((s) => s.id === "menu");
+  const money = useMoney();
   const [categories, setCategories] = useState<Category[]>([]);
   const [items, setItems] = useState<Item[]>([]);
   const [error, setError] = useState("");
@@ -86,7 +87,7 @@ export default function MenuStep() {
     setError("");
     let price: number;
     try {
-      price = parseToRial(itemPrice, "toman");
+      price = money.parse(itemPrice);
     } catch {
       setBusy(false);
       return setError("قیمت معتبر نیست.");
@@ -216,7 +217,7 @@ export default function MenuStep() {
               inputMode="numeric"
               value={itemPrice}
               onChange={(e) => setItemPrice(e.target.value)}
-              placeholder="قیمت (تومان)"
+              placeholder={`قیمت (${money.unitLabel})`}
               required
             />
           </div>
@@ -243,7 +244,7 @@ export default function MenuStep() {
                     .map((i) => (
                       <li key={i.id} className="flex justify-between px-4 py-2 text-sm">
                         <span>{i.name}</span>
-                        <span className="text-muted-foreground">{formatToman(Number(i.price))}</span>
+                        <span className="text-muted-foreground">{money.format(Number(i.price))}</span>
                       </li>
                     ))}
                 </ul>

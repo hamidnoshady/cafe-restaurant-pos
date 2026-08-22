@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { formatToman } from "@/lib/money";
+import { useMoney } from "@/components/money/money-context";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { printLabel } from "@/lib/print-agent-client";
 import { labelFieldsForTrade, type LabelData } from "@/lib/label-template";
@@ -317,6 +317,7 @@ function TesterPanel({
   setError: (v: string) => void;
   onDone: (m: string) => void;
 }) {
+  const money = useMoney();
   const [itemId, setItemId] = useState("");
   const selected = items.find((i) => i.id === itemId);
 
@@ -345,7 +346,7 @@ function TesterPanel({
           options={items.map((i) => ({
             value: i.id,
             label: `${i.parentName ? `${i.parentName} — ` : ""}${i.name}${
-              i.unitCost != null ? ` (بها ${formatToman(i.unitCost)})` : ""
+              i.unitCost != null ? ` (بها ${money.format(i.unitCost)})` : ""
             }`,
           }))}
           placeholder="انتخاب کالا"
@@ -381,6 +382,7 @@ function BarcodesPanel({
   setError: (v: string) => void;
   onDone: (m: string) => void;
 }) {
+  const money = useMoney();
   const [itemId, setItemId] = useState("");
   const [manualCode, setManualCode] = useState("");
   const [barcodes, setBarcodes] = useState<BarcodeRow[]>([]);
@@ -431,12 +433,16 @@ function BarcodesPanel({
       businessName: businessInfo.name || "فروشگاه",
       itemName: selected.name,
       code,
-      fields: labelFieldsForTrade("cosmetics", {
-        name: selected.name,
-        price: selected.unitPrice,
-        shade,
-        expiryDate: expiry,
-      }),
+      fields: labelFieldsForTrade(
+        "cosmetics",
+        {
+          name: selected.name,
+          price: selected.unitPrice,
+          shade,
+          expiryDate: expiry,
+        },
+        money.unit,
+      ),
     };
     printLabel(printer.connection, label).then((res) => {
       if (res.ok) onDone("لیبل چاپ شد.");

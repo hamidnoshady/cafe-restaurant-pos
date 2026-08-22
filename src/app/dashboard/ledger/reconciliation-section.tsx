@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
-import { formatToman, parseToRial, rialToToman } from "@/lib/money";
+import { useMoney } from "@/components/money/money-context";
 import { api, ErrorBox, errorMessage, inputClass, PrimaryButton } from "../ui";
 import { JalaliDatePicker } from "../jalali-date-picker";
 
@@ -54,6 +54,7 @@ const SOURCE_TYPE_LABELS: Record<string, string> = {
 };
 
 export function ReconciliationSection({ busy, run }: { busy: boolean; run: (fn: () => Promise<{ ok: boolean; data: { error?: string } }>) => Promise<boolean> }) {
+  const money = useMoney();
   const [accountCode, setAccountCode] = useState<AccountCode>("cash");
   const [history, setHistory] = useState<ReconciliationSummary[] | null>(null);
   const [detail, setDetail] = useState<ReconciliationDetail | null>(null);
@@ -89,7 +90,7 @@ export function ReconciliationSection({ busy, run }: { busy: boolean; run: (fn: 
     if (!statementDate) return setError(errorMessage("statement_date_required"));
     let rial: number;
     try {
-      rial = parseToRial(statementBalance || "0", "toman");
+      rial = money.parse(statementBalance || "0");
     } catch {
       return setError(errorMessage("invalid_amount"));
     }
@@ -165,7 +166,7 @@ export function ReconciliationSection({ busy, run }: { busy: boolean; run: (fn: 
                 <JalaliDatePicker value={statementDate} onChange={setStatementDate} placeholder="تاریخ" />
               </label>
               <label className="block">
-                <span className="mb-1.5 block text-sm font-medium">مانده صورتحساب (تومان)</span>
+                <span className="mb-1.5 block text-sm font-medium">مانده صورتحساب ({money.unitLabel})</span>
                 <input className={inputClass} dir="ltr" inputMode="numeric" value={statementBalance} onChange={(e) => setStatementBalance(e.target.value)} placeholder="۰" />
               </label>
             </div>
@@ -178,10 +179,10 @@ export function ReconciliationSection({ busy, run }: { busy: boolean; run: (fn: 
         ) : (
           <div className="mt-5 space-y-4">
             <dl className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <div className="rounded-xl border border-[#EEECE7] bg-[#FCFBF8] p-3"><dt className="text-xs text-muted-foreground">مانده صورتحساب</dt><dd className="mt-1 font-bold">{formatToman(detail.statementBalance)}</dd></div>
-              <div className="rounded-xl border border-[#EEECE7] bg-[#FCFBF8] p-3"><dt className="text-xs text-muted-foreground">مانده اول دوره</dt><dd className="mt-1 font-bold">{formatToman(detail.openingBalance)}</dd></div>
-              <div className="rounded-xl border border-[#EEECE7] bg-[#FCFBF8] p-3"><dt className="text-xs text-muted-foreground">جمع اقلام تطبیق‌شده</dt><dd className="mt-1 font-bold">{formatToman(detail.clearedTotal)}</dd></div>
-              <div className="rounded-xl border border-[#EEECE7] bg-[#FCFBF8] p-3"><dt className="text-xs text-muted-foreground">مغایرت</dt><dd className={`mt-1 font-bold ${detail.difference === 0 ? "text-emerald-700" : "text-destructive"}`}>{formatToman(detail.difference)}</dd></div>
+              <div className="rounded-xl border border-[#EEECE7] bg-[#FCFBF8] p-3"><dt className="text-xs text-muted-foreground">مانده صورتحساب</dt><dd className="mt-1 font-bold">{money.format(detail.statementBalance)}</dd></div>
+              <div className="rounded-xl border border-[#EEECE7] bg-[#FCFBF8] p-3"><dt className="text-xs text-muted-foreground">مانده اول دوره</dt><dd className="mt-1 font-bold">{money.format(detail.openingBalance)}</dd></div>
+              <div className="rounded-xl border border-[#EEECE7] bg-[#FCFBF8] p-3"><dt className="text-xs text-muted-foreground">جمع اقلام تطبیق‌شده</dt><dd className="mt-1 font-bold">{money.format(detail.clearedTotal)}</dd></div>
+              <div className="rounded-xl border border-[#EEECE7] bg-[#FCFBF8] p-3"><dt className="text-xs text-muted-foreground">مغایرت</dt><dd className={`mt-1 font-bold ${detail.difference === 0 ? "text-emerald-700" : "text-destructive"}`}>{money.format(detail.difference)}</dd></div>
             </dl>
 
             {detail.lines.length === 0 ? (
@@ -198,8 +199,8 @@ export function ReconciliationSection({ busy, run }: { busy: boolean; run: (fn: 
                           <td className="whitespace-nowrap py-3 pe-3 text-muted-foreground">{toPersianDigits(formatJalali(l.entryDate))}</td>
                           <td className="py-3 pe-3 text-muted-foreground">{(l.sourceType && SOURCE_TYPE_LABELS[l.sourceType]) ?? l.sourceType ?? "—"}</td>
                           <td className="py-3 pe-3">{l.memo ?? "—"}</td>
-                          <td className="whitespace-nowrap py-3 pe-3">{l.debit ? formatToman(l.debit) : "—"}</td>
-                          <td className="whitespace-nowrap py-3">{l.credit ? formatToman(l.credit) : "—"}</td>
+                          <td className="whitespace-nowrap py-3 pe-3">{l.debit ? money.format(l.debit) : "—"}</td>
+                          <td className="whitespace-nowrap py-3">{l.credit ? money.format(l.credit) : "—"}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -213,7 +214,7 @@ export function ReconciliationSection({ busy, run }: { busy: boolean; run: (fn: 
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap justify-between gap-2"><h3 className="text-sm">{l.memo ?? "—"}</h3><span className="text-xs text-muted-foreground">{toPersianDigits(formatJalali(l.entryDate))}</span></div>
                           <p className="mt-1 text-xs text-muted-foreground">{(l.sourceType && SOURCE_TYPE_LABELS[l.sourceType]) ?? l.sourceType ?? "—"}</p>
-                          <dl className="mt-3 grid grid-cols-2 gap-2 border-t border-[#F0EEE9] pt-3 text-sm"><div><dt className="text-xs text-muted-foreground">بدهکار</dt><dd className="mt-1 font-semibold">{l.debit ? formatToman(l.debit) : "—"}</dd></div><div><dt className="text-xs text-muted-foreground">بستانکار</dt><dd className="mt-1 font-semibold">{l.credit ? formatToman(l.credit) : "—"}</dd></div></dl>
+                          <dl className="mt-3 grid grid-cols-2 gap-2 border-t border-[#F0EEE9] pt-3 text-sm"><div><dt className="text-xs text-muted-foreground">بدهکار</dt><dd className="mt-1 font-semibold">{l.debit ? money.format(l.debit) : "—"}</dd></div><div><dt className="text-xs text-muted-foreground">بستانکار</dt><dd className="mt-1 font-semibold">{l.credit ? money.format(l.credit) : "—"}</dd></div></dl>
                         </div>
                       </div>
                     </label>
@@ -237,7 +238,7 @@ export function ReconciliationSection({ busy, run }: { busy: boolean; run: (fn: 
             {history.filter((r) => r.status === "completed").map((r) => (
               <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
                 <span>{toPersianDigits(formatJalali(r.statementDate))}</span>
-                <span className="font-bold">{formatToman(r.statementBalance)}</span>
+                <span className="font-bold">{money.format(r.statementBalance)}</span>
               </li>
             ))}
           </ul>

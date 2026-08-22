@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { toPersianDigits } from "@/lib/digits";
-import { formatToman, parseToRial } from "@/lib/money";
+import { useMoney } from "@/components/money/money-context";
 import {
   api,
   ErrorBox,
@@ -55,6 +55,7 @@ export default function OpeningStep() {
   // "costing_not_set". Jewelry's own stock is entered through
   // /dashboard/jewelry, not here.
   const showInventorySection = industry === "food_service";
+  const money = useMoney();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [openingEntry, setOpeningEntry] = useState<OpeningResponse["openingEntry"]>(null);
   const [existingInventory, setExistingInventory] = useState<OpeningResponse["inventoryItems"]>([]);
@@ -82,7 +83,7 @@ export default function OpeningStep() {
   function parseTomanSafe(s: string): number | null {
     if (!s.trim()) return 0;
     try {
-      const v = parseToRial(s, "toman");
+      const v = money.parse(s);
       return v >= 0 ? v : null;
     } catch {
       return null;
@@ -110,7 +111,7 @@ export default function OpeningStep() {
     });
     setBusy(false);
     if (!ok) return setError(errorMessage(data.error));
-    setNotice(`شمارش ثبت شد — ارزش کل: ${formatToman(data.totalValue ?? 0)}.`);
+    setNotice(`شمارش ثبت شد — ارزش کل: ${money.format(data.totalValue ?? 0)}.`);
     setInvRows([{ ...emptyInvRow }]);
     load();
   }
@@ -165,7 +166,7 @@ export default function OpeningStep() {
         <section className="mb-8 rounded-xl border border-border p-4">
           <h2 className="mb-1 font-semibold">۱) شمارش اولیهٔ انبار</h2>
           <p className="mb-3 text-sm text-muted-foreground">
-            هر قلم با مقدار شمارش‌شده و بهای هر واحد (تومان). با اولین ثبت، روش قیمت‌گذاری قفل می‌شود.
+            هر قلم با مقدار شمارش‌شده و بهای هر واحد ({money.unitLabel}). با اولین ثبت، روش قیمت‌گذاری قفل می‌شود.
           </p>
           {existingInventory.length > 0 ? (
             <p className="mb-3 text-xs text-muted-foreground">
@@ -206,7 +207,7 @@ export default function OpeningStep() {
                   className={inputClass}
                   dir="ltr"
                   inputMode="numeric"
-                  placeholder="بهای واحد (تومان)"
+                  placeholder={`بهای واحد (${money.unitLabel})`}
                   value={r.unitCost}
                   onChange={(e) => setInvRows((rs) => rs.map((x, j) => (j === i ? { ...x, unitCost: e.target.value } : x)))}
                 />
@@ -241,7 +242,7 @@ export default function OpeningStep() {
 
         {openingEntry ? (
           <InfoBox>
-            سند افتتاحیه قبلاً ثبت شده است (جمع: {formatToman(Number(openingEntry.total))}).
+            سند افتتاحیه قبلاً ثبت شده است (جمع: {money.format(Number(openingEntry.total))}).
           </InfoBox>
         ) : (
           <>
@@ -274,7 +275,7 @@ export default function OpeningStep() {
                     className={inputClass}
                     dir="ltr"
                     inputMode="numeric"
-                    placeholder="مبلغ (تومان)"
+                    placeholder={`مبلغ (${money.unitLabel})`}
                     value={r.amount}
                     onChange={(e) => setBalRows((rs) => rs.map((x, j) => (j === i ? { ...x, amount: e.target.value } : x)))}
                   />
@@ -291,15 +292,15 @@ export default function OpeningStep() {
 
             <div className="mt-3 flex flex-wrap items-center gap-4 text-sm">
               <span>
-                جمع بدهکار: <b>{formatToman(balTotals.debit)}</b>
+                جمع بدهکار: <b>{money.format(balTotals.debit)}</b>
               </span>
               <span>
-                جمع بستانکار: <b>{formatToman(balTotals.credit)}</b>
+                جمع بستانکار: <b>{money.format(balTotals.credit)}</b>
               </span>
               <span className={balTotals.debit === balTotals.credit ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"}>
                 {balTotals.debit === balTotals.credit
                   ? "تراز است ✓"
-                  : `اختلاف: ${formatToman(Math.abs(balTotals.debit - balTotals.credit))}`}
+                  : `اختلاف: ${money.format(Math.abs(balTotals.debit - balTotals.credit))}`}
               </span>
             </div>
 

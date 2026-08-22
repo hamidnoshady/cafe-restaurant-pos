@@ -16,7 +16,8 @@ import {
 import { businessDayHours, formatStartTime } from "@/lib/business-day";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
-import { formatTomanText } from "@/lib/money";
+import { formatMoneyText, type MoneyUnit } from "@/lib/money";
+import { useMoney } from "@/components/money/money-context";
 import { BranchSwitcher } from "./branch-switcher";
 import { useRealtime } from "./use-realtime";
 
@@ -87,11 +88,11 @@ function formatNumber(value: number): string {
   return toPersianDigits(Math.round(value).toLocaleString("en-US"));
 }
 
-function formatMoney(value: number): string {
+function formatMoney(value: number, unit: MoneyUnit = "toman"): string {
   try {
-    return formatTomanText(String(Math.round(value)));
+    return formatMoneyText(String(Math.round(value)), unit);
   } catch {
-    return "۰ تومان";
+    return unit === "rial" ? "۰ ریال" : "۰ تومان";
   }
 }
 
@@ -182,6 +183,7 @@ function KpiCard({
   entryDelay: number;
   className?: string;
 }) {
+  const moneyApi = useMoney();
   const displayed = useCountUp(numberValue(value), animateNumber && !loading, reducedMotion);
 
   return (
@@ -201,7 +203,7 @@ function KpiCard({
           ) : (
             <div className="ops-data-resolve">
               <p className="mt-2 text-[1.65rem] font-bold leading-tight tracking-[-0.03em] text-[#252522] sm:text-2xl">
-                {money ? formatMoney(displayed) : formatNumber(displayed)}
+                {money ? formatMoney(displayed, moneyApi.unit) : formatNumber(displayed)}
               </p>
               <p className="mt-2 text-xs text-[#77756F]">{hint}</p>
             </div>
@@ -250,6 +252,7 @@ function SalesTrendChart({
   /** The branch's business-day start, so the axis runs in trading order rather than 00→23. */
   startMinutes: number | null;
 }) {
+  const moneyApi = useMoney();
   const hours = useMemo(() => businessDayHours(startMinutes), [startMinutes]);
   const values = useMemo(() => {
     const revenueByHour = new Map(hourly.map((point) => [point.hour, numberValue(point.revenue)]));
@@ -320,7 +323,7 @@ function SalesTrendChart({
         </div>
       </div>
       <p className="sr-only">
-        {cumulative ? "جمع فروش تجمعی" : "فروش ساعتی"}: {formatMoney(values.at(-1)?.value ?? 0)}
+        {cumulative ? "جمع فروش تجمعی" : "فروش ساعتی"}: {formatMoney(values.at(-1)?.value ?? 0, moneyApi.unit)}
       </p>
     </div>
   );

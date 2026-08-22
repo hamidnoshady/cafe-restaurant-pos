@@ -10,7 +10,7 @@
  * sees the same wording everywhere.
  */
 import { toPersianDigits } from "./digits";
-import { formatToman } from "./money";
+import { formatMoney, type MoneyUnit } from "./money";
 
 /** The minimum an add-on needs to be rendered: what it is and what it costs. */
 export interface DisplayModifier {
@@ -26,12 +26,12 @@ export interface DisplayModifier {
  */
 export function formatModifierDelta(
   priceDelta: number,
-  opts: { withUnit?: boolean } = {},
+  opts: { withUnit?: boolean; unit?: MoneyUnit } = {},
 ): string {
-  const { withUnit = true } = opts;
+  const { withUnit = true, unit = "toman" } = opts;
   if (priceDelta === 0) return "رایگان";
   const sign = priceDelta > 0 ? "+" : "−";
-  return sign + formatToman(Math.abs(priceDelta), { withUnit });
+  return sign + formatMoney(Math.abs(priceDelta), unit, { withUnit });
 }
 
 export function sumModifierDeltas(deltas: number[]): number {

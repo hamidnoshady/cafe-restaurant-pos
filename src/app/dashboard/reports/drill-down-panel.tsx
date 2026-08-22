@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
-import { formatToman } from "@/lib/money";
+import { useMoney } from "@/components/money/money-context";
 import { api } from "../ui";
 
 interface DrillDownLine {
@@ -37,6 +37,7 @@ export interface DrillDownTarget {
  * account's amount in a statement, opened by clicking that line.
  */
 export function DrillDownPanel({ target, onClose }: { target: DrillDownTarget; onClose: () => void }) {
+  const money = useMoney();
   const [lines, setLines] = useState<DrillDownLine[] | null>(null);
 
   useEffect(() => {
@@ -85,8 +86,8 @@ export function DrillDownPanel({ target, onClose }: { target: DrillDownTarget; o
                   <td className="py-1.5 pe-3 text-muted-foreground">
                     {(l.sourceType && SOURCE_TYPE_LABELS[l.sourceType]) ?? l.sourceType ?? "—"}
                   </td>
-                  <td className="py-1.5 pe-3 tabular-nums">{l.debit ? formatToman(l.debit) : "—"}</td>
-                  <td className="py-1.5 tabular-nums">{l.credit ? formatToman(l.credit) : "—"}</td>
+                  <td className="py-1.5 pe-3 tabular-nums">{l.debit ? money.format(l.debit) : "—"}</td>
+                  <td className="py-1.5 tabular-nums">{l.credit ? money.format(l.credit) : "—"}</td>
                 </tr>
               ))}
             </tbody>
