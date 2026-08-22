@@ -10,7 +10,7 @@
  */
 import { toPersianDigits } from "./digits";
 import { formatJalali } from "./jalali";
-import { formatToman, type Rial } from "./money";
+import { formatMoney, type MoneyUnit, type Rial } from "./money";
 
 export type LabelTrade = "jewelry" | "watch" | "accessories" | "cosmetics";
 
@@ -41,10 +41,14 @@ export interface LabelField {
 }
 
 /** The fields a trade's label carries, in display order. */
-export function labelFieldsForTrade(trade: LabelTrade, item: LabelItem): LabelField[] {
+export function labelFieldsForTrade(
+  trade: LabelTrade,
+  item: LabelItem,
+  unit: MoneyUnit = "toman",
+): LabelField[] {
   const fields: LabelField[] = [];
   if (item.price != null) {
-    fields.push({ label: "قیمت", value: formatToman(item.price, { withUnit: false }) });
+    fields.push({ label: "قیمت", value: formatMoney(item.price, unit, { withUnit: false }) });
   }
   switch (trade) {
     case "cosmetics":

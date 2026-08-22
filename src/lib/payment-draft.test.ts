@@ -61,6 +61,10 @@ describe("draftRowRial", () => {
     expect(draftRowRial(newDraftRow("cash", "200,000"))).toBe(2_000_000);
   });
 
+  it("reads Rial when the business chose Rial", () => {
+    expect(draftRowRial(newDraftRow("cash", "200000"), "rial")).toBe(200_000);
+  });
+
   it("is null while the box is empty, junk, zero or negative", () => {
     expect(draftRowRial(newDraftRow("cash", ""))).toBeNull();
     expect(draftRowRial(newDraftRow("cash", "  "))).toBeNull();
@@ -152,6 +156,20 @@ describe("paymentDraftBody", () => {
     expect(paymentDraftBody(withReference, METHODS, DUE)).toEqual({
       ok: true,
       value: [{ methodId: "transfer", amount: undefined, reference: "5541" }],
+    });
+  });
+
+  it("prices slices in Rial when the business chose Rial", () => {
+    const draft = split([
+      { methodId: "cash", amount: "300000" },
+      { methodId: "card", amount: "200000" },
+    ]);
+    expect(paymentDraftBody(draft, METHODS, 500_000, "rial")).toEqual({
+      ok: true,
+      value: [
+        { methodId: "cash", amount: 300_000, reference: undefined },
+        { methodId: "card", amount: undefined, reference: undefined },
+      ],
     });
   });
 

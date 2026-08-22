@@ -20,6 +20,7 @@ import {
   type ServiceReminderState,
 } from "./watch";
 import { renderRepairEstimate } from "./repair-estimate";
+import type { MoneyUnit } from "./money";
 
 export interface ServiceReminderRow {
   serialId: string;
@@ -182,7 +183,11 @@ interface EstimateRow extends Record<string, unknown> {
 }
 
 /** Renders the printable estimate for a ticket's current estimate. */
-export async function repairEstimateText(ticketId: string, todayIso: string): Promise<string> {
+export async function repairEstimateText(
+  ticketId: string,
+  todayIso: string,
+  unit: MoneyUnit = "toman",
+): Promise<string> {
   const { rows } = await query<EstimateRow>(
     `SELECT t.ticket_number::text AS ticket_number, t.item_description, t.reported_issue,
             t.estimated_labor_rial::text AS estimated_labor_rial,
@@ -202,5 +207,6 @@ export async function repairEstimateText(ticketId: string, todayIso: string): Pr
     estimatedTotalRial: Number(rows[0].estimated_total_rial),
     customerName: rows[0].customer_name,
     todayIso,
+    unit,
   });
 }

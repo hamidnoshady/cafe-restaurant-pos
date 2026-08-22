@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { formatQuantity } from "@/lib/digits";
-import { formatToman } from "@/lib/money";
+import { useMoney } from "@/components/money/money-context";
 import { formatJalali } from "@/lib/jalali";
 import { api, Field, inputClass, PrimaryButton } from "../ui";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -29,6 +29,7 @@ const REASON_LABELS: Record<string, string> = {
 };
 
 export function WasteSection({ items, busy, run }: { items: InventoryItem[]; busy: boolean; run: Runner }) {
+  const money = useMoney();
   const [entries, setEntries] = useState<WasteEntry[] | null>(null);
   const [inventoryItemId, setInventoryItemId] = useState("");
   const [quantity, setQuantity] = useState("");
@@ -120,7 +121,7 @@ export function WasteSection({ items, busy, run }: { items: InventoryItem[]; bus
                 {e.inventory_item_name} — {formatQuantity(e.quantity)} {e.unit} ({REASON_LABELS[e.waste_reason] ?? e.waste_reason})
               </span>
               <span className="text-xs text-muted-foreground">
-                {formatToman(Number(e.quantity) * Number(e.unit_cost))} — {formatJalali(e.occurred_at)}
+                {money.format(Number(e.quantity) * Number(e.unit_cost))} — {formatJalali(e.occurred_at)}
               </span>
             </li>
           ))}

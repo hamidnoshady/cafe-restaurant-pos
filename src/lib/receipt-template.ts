@@ -10,7 +10,7 @@
  */
 import { toPersianDigits } from "./digits";
 import { formatJalali } from "./jalali";
-import { formatToman, type Rial } from "./money";
+import { formatMoney, type MoneyUnit, type Rial } from "./money";
 
 export interface ReceiptBusinessInfo {
   name: string;
@@ -108,6 +108,8 @@ export interface ReceiptData {
    */
   payments?: { label: string; amount: Rial }[] | null;
   cashierName?: string | null;
+  /** The business's display unit; defaults to Toman for callers that don't know it. */
+  unit?: MoneyUnit;
 }
 
 function escapeHtml(s: string): string {
@@ -120,6 +122,7 @@ export type PaperWidthMm = keyof typeof PAPER_WIDTH_PRESETS;
 
 export function renderReceiptHtml(data: ReceiptData, opts: { paperWidthMm?: PaperWidthMm } = {}): string {
   const widthPx = PAPER_WIDTH_PRESETS[opts.paperWidthMm ?? 80];
+  const fmt = (rial: Rial, fmtOpts: { withUnit?: boolean } = {}) => formatMoney(rial, data.unit ?? "toman", fmtOpts);
   const dateLabel = toPersianDigits(formatJalali(data.issuedAt, { withMonthName: true }));
 
   const lineRows = data.lines
@@ -128,9 +131,9 @@ export function renderReceiptHtml(data: ReceiptData, opts: { paperWidthMm?: Pape
         ? `<div class="mods">${escapeHtml(l.modifiersLabel)}</div>`
         : "";
       const goldRow = l.goldBreakdown
-        ? `<div class="mods">طلا ${formatToman(l.goldBreakdown.metalValue, { withUnit: false })}` +
-          ` · اجرت ${formatToman(l.goldBreakdown.makingCharge, { withUnit: false })}` +
-          ` · سود ${formatToman(l.goldBreakdown.profit, { withUnit: false })}</div>`
+        ? `<div class="mods">طلا ${fmt(l.goldBreakdown.metalValue, { withUnit: false })}` +
+          ` · اجرت ${fmt(l.goldBreakdown.makingCharge, { withUnit: false })}` +
+          ` · سود ${fmt(l.goldBreakdown.profit, { withUnit: false })}</div>`
         : "";
       const batchRow = l.batch
         ? `<div class="mods">بچ ${escapeHtml(l.batch.batchNumber)}` +
@@ -147,7 +150,7 @@ export function renderReceiptHtml(data: ReceiptData, opts: { paperWidthMm?: Pape
           <div class="line-main">
             <span class="qty">${toPersianDigits(l.quantity)}×</span>
             <span class="name">${escapeHtml(l.name)}</span>
-            <span class="amount">${formatToman(l.lineTotal, { withUnit: false })}</span>
+            <span class="amount">${fmt(l.lineTotal, { withUnit: false })}</span>
           </div>
           ${modRow}
           ${goldRow}
@@ -159,17 +162,17 @@ export function renderReceiptHtml(data: ReceiptData, opts: { paperWidthMm?: Pape
 
   const discountRow =
     data.discount > 0
-      ? `<div class="totals-row"><span>تخفیف</span><span>-${formatToman(data.discount, { withUnit: false })}</span></div>`
+      ? `<div class="totals-row"><span>تخفیف</span><span>-${fmt(data.discount, { withUnit: false })}</span></div>`
       : "";
   const taxRow =
     data.tax > 0
-      ? `<div class="totals-row"><span>مالیات</span><span>${formatToman(data.tax, { withUnit: false })}</span></div>`
+      ? `<div class="totals-row"><span>مالیات</span><span>${fmt(data.tax, { withUnit: false })}</span></div>`
       : "";
   const paymentRow = data.payments?.length
     ? data.payments
         .map(
           (payment) =>
-            `<div class="totals-row"><span>${escapeHtml(payment.label)}</span><span>${formatToman(payment.amount, { withUnit: false })}</span></div>`,
+            `<div class="totals-row"><span>${escapeHtml(payment.label)}</span><span>${fmt(payment.amount, { withUnit: false })}</span></div>`,
         )
         .join("")
     : data.paymentMethod
@@ -177,11 +180,11 @@ export function renderReceiptHtml(data: ReceiptData, opts: { paperWidthMm?: Pape
       : "";
   const tipRow =
     data.tip && data.tip > 0
-      ? `<div class="totals-row"><span>انعام</span><span>${formatToman(data.tip, { withUnit: false })}</span></div>`
+      ? `<div class="totals-row"><span>انعام</span><span>${fmt(data.tip, { withUnit: false })}</span></div>`
       : "";
   const receivedRow =
     data.tip && data.tip > 0
-      ? `<div class="grand-total"><span>مبلغ دریافتی</span><span>${formatToman(data.total + data.tip)}</span></div>`
+      ? `<div class="grand-total"><span>مبلغ دریافتی</span><span>${fmt(data.total + data.tip)}</span></div>`
       : "";
 
   return `<!doctype html>
@@ -231,10 +234,10 @@ export function renderReceiptHtml(data: ReceiptData, opts: { paperWidthMm?: Pape
   ${lineRows}
 
   <div class="divider"></div>
-  <div class="totals-row"><span>جمع جزء</span><span>${formatToman(data.subtotal, { withUnit: false })}</span></div>
+  <div class="totals-row"><span>جمع جزء</span><span>${fmt(data.subtotal, { withUnit: false })}</span></div>
   ${discountRow}
   ${taxRow}
-  <div class="grand-total"><span>جمع کل</span><span>${formatToman(data.total)}</span></div>
+  <div class="grand-total"><span>جمع کل</span><span>${fmt(data.total)}</span></div>
   ${tipRow}
   ${receivedRow}
   ${paymentRow}

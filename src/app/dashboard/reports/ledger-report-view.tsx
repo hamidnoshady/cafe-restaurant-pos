@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { formatToman } from "@/lib/money";
+import { useMoney } from "@/components/money/money-context";
 import { formatPersianNumber } from "@/lib/digits";
 import { isNonCurrentCode } from "@/lib/coa-template";
 import { DrillDownPanel, type DrillDownTarget } from "./drill-down-panel";
@@ -138,6 +138,7 @@ function Section({
   totalLabel: string;
   drill?: DrillContext;
 }) {
+  const money = useMoney();
   const showPrevious = previousLines !== undefined;
 
   return (
@@ -195,12 +196,12 @@ function Section({
                       <ReportLineName line={line} drill={drill} />
                     </td>
                     <td className="px-4 py-3.5 text-end tabular-nums font-medium text-[#252522]">
-                      {formatToman(line.amount)}
+                      {money.format(line.amount)}
                     </td>
                     {showPrevious ? (
                       <td className="px-4 py-3.5 text-end tabular-nums text-[#77756F]">
                         {previousValue !== null
-                          ? formatToman(previousValue)
+                          ? money.format(previousValue)
                           : "—"}
                       </td>
                     ) : null}
@@ -224,11 +225,11 @@ function Section({
                   {totalLabel}
                 </th>
                 <td className="px-4 py-3.5 text-end tabular-nums">
-                  {formatToman(total)}
+                  {money.format(total)}
                 </td>
                 {showPrevious ? (
                   <td className="px-4 py-3.5 text-end tabular-nums text-[#77756F]">
-                    {previousTotal != null ? formatToman(previousTotal) : "—"}
+                    {previousTotal != null ? money.format(previousTotal) : "—"}
                   </td>
                 ) : null}
               </tr>
@@ -259,7 +260,7 @@ function Section({
                 <div className="flex items-center justify-between gap-3">
                   <dt className="text-xs text-[#77756F]">مبلغ</dt>
                   <dd className="tabular-nums font-bold text-[#252522]">
-                    {formatToman(line.amount)}
+                    {money.format(line.amount)}
                   </dd>
                 </div>
                 {showPrevious ? (
@@ -267,7 +268,7 @@ function Section({
                     <dt className="text-xs text-[#77756F]">دورهٔ قبل</dt>
                     <dd className="tabular-nums text-[#5E5B55]">
                       {previousValue !== null
-                        ? formatToman(previousValue)
+                        ? money.format(previousValue)
                         : "—"}
                     </dd>
                   </div>
@@ -285,14 +286,14 @@ function Section({
           <div className="flex items-center justify-between gap-3">
             <dt className="text-sm font-bold text-[#252522]">{totalLabel}</dt>
             <dd className="tabular-nums font-bold text-[#252522]">
-              {formatToman(total)}
+              {money.format(total)}
             </dd>
           </div>
           {showPrevious ? (
             <div className="mt-2 flex items-center justify-between gap-3 border-t border-[#E8E4DD] pt-2">
               <dt className="text-xs text-[#77756F]">دورهٔ قبل</dt>
               <dd className="tabular-nums text-[#77756F]">
-                {previousTotal != null ? formatToman(previousTotal) : "—"}
+                {previousTotal != null ? money.format(previousTotal) : "—"}
               </dd>
             </div>
           ) : null}
@@ -311,6 +312,7 @@ function SummaryStat({
   value: number;
   previous?: number | null;
 }) {
+  const money = useMoney();
   return (
     <div className="rounded-xl border border-[#EEECE7] bg-[#FFFEFC] p-4">
       <dt className="text-sm text-[#77756F]">{label}</dt>
@@ -321,11 +323,11 @@ function SummaryStat({
             : "mt-2 font-bold tabular-nums text-[#252522]"
         }
       >
-        {formatToman(value)}
+        {money.format(value)}
       </dd>
       {previous != null ? (
         <p className="mt-1 text-xs text-[#77756F]">
-          دورهٔ قبل: {formatToman(previous)}
+          دورهٔ قبل: {money.format(previous)}
         </p>
       ) : null}
     </div>
@@ -346,6 +348,7 @@ function formatPct(value: number | null): string {
  * see the "compare" checkbox gating in standard-reports-section.tsx.
  */
 export function FoodCostVarianceView({ report }: { report: FoodCostVariance }) {
+  const money = useMoney();
   return (
     <div>
       <section className="border-b border-[#F0EEE9] pb-5">
@@ -373,8 +376,8 @@ export function FoodCostVarianceView({ report }: { report: FoodCostVariance }) {
                     <td className="px-4 py-3.5 text-end tabular-nums text-[#5E5B55]">
                       {formatPersianNumber(item.unitsSold)}
                     </td>
-                    <td className="px-4 py-3.5 text-end tabular-nums text-[#252522]">{formatToman(item.revenue)}</td>
-                    <td className="px-4 py-3.5 text-end tabular-nums text-[#252522]">{formatToman(item.theoreticalCost)}</td>
+                    <td className="px-4 py-3.5 text-end tabular-nums text-[#252522]">{money.format(item.revenue)}</td>
+                    <td className="px-4 py-3.5 text-end tabular-nums text-[#252522]">{money.format(item.theoreticalCost)}</td>
                     <td className="px-4 py-3.5 text-end tabular-nums font-medium text-[#252522]">
                       {formatPct(item.foodCostPct)}
                     </td>
@@ -403,11 +406,11 @@ export function FoodCostVarianceView({ report }: { report: FoodCostVariance }) {
                 </div>
                 <div>
                   <dt className="text-xs text-[#77756F]">درآمد</dt>
-                  <dd className="tabular-nums text-[#252522]">{formatToman(item.revenue)}</dd>
+                  <dd className="tabular-nums text-[#252522]">{money.format(item.revenue)}</dd>
                 </div>
                 <div>
                   <dt className="text-xs text-[#77756F]">بهای نظری</dt>
-                  <dd className="tabular-nums text-[#252522]">{formatToman(item.theoreticalCost)}</dd>
+                  <dd className="tabular-nums text-[#252522]">{money.format(item.theoreticalCost)}</dd>
                 </div>
                 <div>
                   <dt className="text-xs text-[#77756F]">درصد بهای غذا</dt>
@@ -478,6 +481,7 @@ export function ProfitAndLossView({
   dateFrom?: string;
   dateTo?: string;
 }) {
+  const money = useMoney();
   const current = isComparison(report) ? report.current : report;
   const previous = isComparison(report) ? report.previous : null;
   const { drill, panel } = useDrillDown(dateFrom, dateTo);
@@ -537,7 +541,7 @@ export function ProfitAndLossView({
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
             {previous ? (
               <span className="text-sm text-[#77756F]">
-                دورهٔ قبل: {formatToman(previous.netIncome)}
+                دورهٔ قبل: {money.format(previous.netIncome)}
               </span>
             ) : null}
             <dd
@@ -547,7 +551,7 @@ export function ProfitAndLossView({
                   : "text-lg font-bold tabular-nums text-[#252522]"
               }
             >
-              {formatToman(current.netIncome)}
+              {money.format(current.netIncome)}
             </dd>
           </div>
         </div>
@@ -564,6 +568,7 @@ export function BalanceSheetView({
   report: BalanceSheet | Comparison<BalanceSheet>;
   dateTo?: string;
 }) {
+  const money = useMoney();
   const current = isComparison(report) ? report.current : report;
   const previous = isComparison(report) ? report.previous : null;
   const { drill, panel } = useDrillDown(undefined, dateTo);
@@ -658,7 +663,7 @@ export function BalanceSheetView({
         ].map(([label, amount]) => (
           <div key={label as string} className="flex items-center justify-between gap-3 sm:flex-col sm:items-start sm:gap-1">
             <dt className="text-xs text-[#77756F]">{label}</dt>
-            <dd className="tabular-nums font-bold text-[#252522]">{formatToman(amount as number)}</dd>
+            <dd className="tabular-nums font-bold text-[#252522]">{money.format(amount as number)}</dd>
           </div>
         ))}
       </dl>
@@ -693,6 +698,7 @@ export function CashFlowView({
 }: {
   report: CashFlow | Comparison<CashFlow>;
 }) {
+  const money = useMoney();
   const current = isComparison(report) ? report.current : report;
   const previous = isComparison(report) ? report.previous : null;
 
@@ -748,12 +754,12 @@ export function CashFlowView({
                         {line.label}
                       </td>
                       <td className="px-4 py-3.5 text-end tabular-nums font-medium text-[#252522]">
-                        {formatToman(line.amount)}
+                        {money.format(line.amount)}
                       </td>
                       {previous ? (
                         <td className="px-4 py-3.5 text-end tabular-nums text-[#77756F]">
                           {previousValue !== null
-                            ? formatToman(previousValue)
+                            ? money.format(previousValue)
                             : "—"}
                         </td>
                       ) : null}
@@ -791,7 +797,7 @@ export function CashFlowView({
                   <div className="flex items-center justify-between gap-3">
                     <dt className="text-xs text-[#77756F]">مبلغ</dt>
                     <dd className="tabular-nums font-bold text-[#252522]">
-                      {formatToman(line.amount)}
+                      {money.format(line.amount)}
                     </dd>
                   </div>
                   {previous ? (
@@ -799,7 +805,7 @@ export function CashFlowView({
                       <dt className="text-xs text-[#77756F]">دورهٔ قبل</dt>
                       <dd className="tabular-nums text-[#5E5B55]">
                         {previousValue !== null
-                          ? formatToman(previousValue)
+                          ? money.format(previousValue)
                           : "—"}
                       </dd>
                     </div>
@@ -820,13 +826,13 @@ export function CashFlowView({
         <div className="flex items-center justify-between gap-3 text-sm">
           <dt className="text-[#77756F]">موجودی ابتدای دوره</dt>
           <dd className="tabular-nums font-semibold text-[#252522]">
-            {formatToman(current.openingCash)}
+            {money.format(current.openingCash)}
           </dd>
         </div>
         <div className="flex items-center justify-between gap-3 text-sm">
           <dt className="text-[#77756F]">موجودی پایان دوره</dt>
           <dd className="tabular-nums font-semibold text-[#252522]">
-            {formatToman(current.closingCash)}
+            {money.format(current.closingCash)}
           </dd>
         </div>
         <div className="flex items-center justify-between gap-3 border-t border-[#DEDAD2] pt-3">
@@ -838,7 +844,7 @@ export function CashFlowView({
                 : "font-bold tabular-nums text-[#252522]"
             }
           >
-            {formatToman(current.netChange)}
+            {money.format(current.netChange)}
           </dd>
         </div>
       </dl>

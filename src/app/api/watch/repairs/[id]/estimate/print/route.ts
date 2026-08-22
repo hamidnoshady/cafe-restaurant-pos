@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
 import { requireCapabilityForApi } from "@/lib/industry-guard";
 import { resolveActiveLocation } from "@/lib/setup-state";
+import { getSetting, SETTING_KEYS } from "@/lib/settings";
 import { getRepairTicket } from "@/lib/repairs-service";
 import { repairEstimateText } from "@/lib/watch-crm-service";
 
@@ -20,7 +21,12 @@ export const GET = withTenantScope(async (_request: NextRequest, context: { para
   }
 
   try {
-    const text = await repairEstimateText(id, new Date().toISOString().slice(0, 10));
+    const prefs = await getSetting<{ currencyDisplay?: "toman" | "rial" }>(session.businessId, SETTING_KEYS.businessPrefs);
+    const text = await repairEstimateText(
+      id,
+      new Date().toISOString().slice(0, 10),
+      prefs?.currencyDisplay === "rial" ? "rial" : "toman",
+    );
     return new NextResponse(text, { headers: { "Content-Type": "text/plain; charset=utf-8" } });
   } catch (err) {
     return NextResponse.json({ error: "validation_failed", message: (err as Error).message }, { status: 400 });

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Decimal from "decimal.js";
 import { formatQuantity, toPersianDigits } from "@/lib/digits";
-import { formatTomanText, parseToRialText } from "@/lib/money";
+import { useMoney } from "@/components/money/money-context";
 import { formatJalali } from "@/lib/jalali";
 import { JalaliDatePicker } from "../jalali-date-picker";
 import { api, Field, inputClass, PrimaryButton, SecondaryButton } from "../ui";
@@ -49,7 +49,7 @@ interface DraftLine {
   /**
    * What this line held when the edit form opened: the exact stored Rial value
    * and the Toman text rendered from it. The form edits Toman, but Toman is a
-   * lossy view of Rial (formatTomanText floors by 10), so a line the user never
+   * lossy view of Rial (formatMoneyText floors by 10 in the Toman display), so a line the user never
    * touched is written back from `rial` verbatim rather than re-parsed — saving
    * an untouched purchase must not silently round its own amounts.
    * Unset on the create form, which has no prior value.
@@ -103,6 +103,7 @@ export function PurchasesSection({
   busy: boolean;
   run: Runner;
 }) {
+  const money = useMoney();
   const [purchases, setPurchases] = useState<Purchase[] | null>(null);
   const [supplierId, setSupplierId] = useState("");
   const [purchaseDate, setPurchaseDate] = useState("");
@@ -174,7 +175,7 @@ export function PurchasesSection({
       detail.items.map((it) => {
         const rial = String(it.extended_cost);
         // Stored in Rial; the form edits Toman, the same unit the create form uses.
-        const text = formatTomanText(rial, { withUnit: false });
+        const text = money.formatText(rial, { withUnit: false });
         return {
           inventoryItemId: it.inventory_item_id,
           purchaseQty: toPurchaseQty(it.quantity, it.purchase_unit_factor),
@@ -210,7 +211,7 @@ export function PurchasesSection({
           totalCostRial = l.original.rial;
         } else {
           try {
-            totalCostRial = parseToRialText(l.totalCost || "0", "toman");
+            totalCostRial = money.parseText(l.totalCost || "0");
           } catch {
             totalCostRial = "";
           }
@@ -321,7 +322,7 @@ export function PurchasesSection({
               onChange={(e) => onChange(i, { purchaseQty: e.target.value })}
             />
           </Field>
-          <Field label="مبلغ کل (تومان)">
+          <Field label={`مبلغ کل (${money.unitLabel})`}>
             <input
               className={inputClass}
               dir="ltr"
@@ -421,7 +422,7 @@ export function PurchasesSection({
               <li key={p.id} className="min-w-0 px-4 py-3 text-sm">
                 <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <span className="min-w-0 break-words">
-                    {p.supplier_name ?? "بدون تأمین‌کننده"} — {formatTomanText(String(p.total))} —{" "}
+                    {p.supplier_name ?? "بدون تأمین‌کننده"} — {money.formatText(String(p.total))} —{" "}
                     <span className="text-xs text-muted-foreground">{formatJalali(p.purchase_date)}</span>
                   </span>
                   <div className="flex flex-wrap items-end gap-2">
@@ -540,9 +541,9 @@ export function PurchasesSection({
                                     {formatQuantity(it.quantity)} {it.unit}
                                   </td>
                                   <td className="whitespace-nowrap py-2 pe-3 text-muted-foreground">
-                                    {toPersianDigits(new Decimal(String(it.unit_cost)).toFixed(2))} ریال
+                                    {toPersianDigits(new Decimal(String(it.unit_cost)).div(10).toFixed(2))} تومان
                                   </td>
-                                  <td className="whitespace-nowrap py-2">{formatTomanText(String(it.extended_cost))}</td>
+                                  <td className="whitespace-nowrap py-2">{money.formatText(String(it.extended_cost))}</td>
                                 </tr>
                               ))}
                             </tbody>

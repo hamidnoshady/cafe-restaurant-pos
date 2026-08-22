@@ -11,7 +11,7 @@
  */
 import { toPersianDigits } from "./digits";
 import { formatJalali, formatShiftWindow } from "./jalali";
-import { formatToman } from "./money";
+import { formatMoney, type MoneyUnit } from "./money";
 
 export interface ReportPdfBusinessInfo {
   name: string;
@@ -129,16 +129,19 @@ export interface ReportPdfLedgerData {
   sections: ReportPdfLedgerSection[];
   grandTotalLabel: string;
   grandTotalAmount: number;
+  /** The business's display unit; defaults to Toman for callers that don't know it. */
+  unit?: MoneyUnit;
 }
 
 /** Structured account-type rollup — P&L and Balance Sheet (each account type is its own section, not a flat row list). */
 export function renderReportLedgerHtml(data: ReportPdfLedgerData): string {
+  const fmt = (amount: number) => formatMoney(amount, data.unit ?? "toman");
   const sectionsHtml = data.sections
     .map((section) => {
       const rows = section.rows
         .map(
           (r) =>
-            `<tr><td>${escapeHtml(r.code)}</td><td>${escapeHtml(r.name)}</td><td>${formatToman(r.amount)}</td></tr>`,
+            `<tr><td>${escapeHtml(r.code)}</td><td>${escapeHtml(r.name)}</td><td>${fmt(r.amount)}</td></tr>`,
         )
         .join("");
       return `
@@ -147,7 +150,7 @@ export function renderReportLedgerHtml(data: ReportPdfLedgerData): string {
           <thead><tr><th>کد</th><th>حساب</th><th>مبلغ</th></tr></thead>
           <tbody>
             ${rows || `<tr><td colspan="3">بدون سطر</td></tr>`}
-            <tr class="totals-row"><td colspan="2">${escapeHtml(section.totalLabel)}</td><td>${formatToman(section.totalAmount)}</td></tr>
+            <tr class="totals-row"><td colspan="2">${escapeHtml(section.totalLabel)}</td><td>${fmt(section.totalAmount)}</td></tr>
           </tbody>
         </table>`;
     })
@@ -162,7 +165,7 @@ export function renderReportLedgerHtml(data: ReportPdfLedgerData): string {
   ${sectionsHtml}
   <table>
     <tbody>
-      <tr class="totals-row"><td>${escapeHtml(data.grandTotalLabel)}</td><td>${formatToman(data.grandTotalAmount)}</td></tr>
+      <tr class="totals-row"><td>${escapeHtml(data.grandTotalLabel)}</td><td>${fmt(data.grandTotalAmount)}</td></tr>
     </tbody>
   </table>
   <footer>تولید شده در ${toPersianDigits(formatJalali(data.generatedAt, { withMonthName: true }))}</footer>

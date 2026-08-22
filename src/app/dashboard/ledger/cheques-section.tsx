@@ -14,7 +14,7 @@
  */
 import { useEffect, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
-import { formatToman, parseToRial, rialToToman } from "@/lib/money";
+import { useMoney } from "@/components/money/money-context";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   availableActions,
@@ -80,6 +80,7 @@ export function ChequesSection({
   busy: boolean;
   run: (fn: () => Promise<{ ok: boolean; data: { error?: string } }>) => Promise<boolean>;
 }) {
+  const money = useMoney();
   const [direction, setDirection] = useState<ChequeDirection>("receivable");
   const [cheques, setCheques] = useState<Cheque[] | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -179,7 +180,7 @@ export function ChequesSection({
                       </p>
                     </div>
                     <div className="text-end">
-                      <p className="tabular-nums font-bold text-[#252522]">{formatToman(cheque.amount)}</p>
+                      <p className="tabular-nums font-bold text-[#252522]">{money.format(cheque.amount)}</p>
                       <span className={`mt-1 inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${STATUS_CLASS[cheque.status]}`}>
                         {STATUS_LABELS[cheque.status]}
                       </span>
@@ -259,6 +260,7 @@ function ChequeForm({
   onCancel: () => void;
   onSubmit: (body: Record<string, unknown>) => void;
 }) {
+  const money = useMoney();
   const [serialNumber, setSerialNumber] = useState("");
   const [sayadId, setSayadId] = useState("");
   const [bankName, setBankName] = useState("");
@@ -279,7 +281,7 @@ function ChequeForm({
           serialNumber,
           sayadId: sayadId || undefined,
           bankName,
-          amount: parseToRial(amount),
+          amount: money.parse(amount),
           dueDate,
           // The name printed on the cheque, which need not be the account it
           // settles — a customer may hand over a cheque written by someone else.
@@ -302,7 +304,7 @@ function ChequeForm({
         <input className={inputClass} value={sayadId} onChange={(e) => setSayadId(e.target.value)} inputMode="numeric" />
       </label>
       <label className="grid gap-1 text-sm">
-        <span>مبلغ (تومان)</span>
+        <span>مبلغ ({money.unitLabel})</span>
         <input className={inputClass} value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="numeric" required />
       </label>
       <label className="grid gap-1 text-sm">
@@ -354,13 +356,14 @@ function EndorseDialog({
   onConfirm: (supplierId: string, occurredOn: string | undefined) => void;
   onError: (message: string) => void;
 }) {
+  const money = useMoney();
   const [supplierId, setSupplierId] = useState("");
   const [occurredOn, setOccurredOn] = useState("");
 
   return (
     <div className="rounded-2xl bg-card p-4 shadow-sm sm:p-5">
       <h3 className="font-semibold text-[#252522]">
-        ظهرنویسی چک {toPersianDigits(cheque.serialNumber)} — {formatToman(cheque.amount)}
+        ظهرنویسی چک {toPersianDigits(cheque.serialNumber)} — {money.format(cheque.amount)}
       </h3>
       <p className="mt-1 text-sm text-muted-foreground">
         چک به تأمین‌کننده واگذار می‌شود و بدهی او به همین مبلغ کم می‌شود. اگر چک برگشت بخورد، بدهی دوباره برمی‌گردد.

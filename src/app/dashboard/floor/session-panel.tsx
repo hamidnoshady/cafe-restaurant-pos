@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { BanknoteIcon, CreditCardIcon, UsersIcon } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toPersianDigits } from "@/lib/digits";
-import { formatToman } from "@/lib/money";
+import { useMoney } from "@/components/money/money-context";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { api, errorMessage, inputClass, PrimaryButton, SecondaryButton } from "../ui";
 
@@ -54,6 +54,7 @@ export function SessionPanel({
   onChange: () => void;
   setError: (s: string) => void;
 }) {
+  const money = useMoney();
   const [detail, setDetail] = useState<SessionDetail | null>(null);
   const [freeTables, setFreeTables] = useState<{ id: string; name: string }[]>([]);
   const [mergeTableId, setMergeTableId] = useState("");
@@ -113,14 +114,14 @@ export function SessionPanel({
             {orders.map((o) => (
               <li key={o.id} className="flex justify-between gap-2">
                 <span className="text-muted-foreground">سفارش #{toPersianDigits(o.order_number)}{o.status === "voided" ? " (باطل)" : ""}</span>
-                <span>{formatToman(Number(o.total))}</span>
+                <span>{money.format(Number(o.total))}</span>
               </li>
             ))}
           </ul>
         )}
         <div className="mt-2 flex justify-between border-t border-border pt-2 font-bold">
           <span>جمع صورتحساب</span>
-          <span>{formatToman(bill.total)}</span>
+          <span>{money.format(bill.total)}</span>
         </div>
       </div>
 
@@ -181,6 +182,7 @@ function SplitDialog({
   onChanged: () => void;
   setError: (s: string) => void;
 }) {
+  const money = useMoney();
   const [mode, setMode] = useState<"even" | "itemized">("even");
   const [guests, setGuests] = useState(String(Math.max(2, initialGuests.length || 2)));
   const [customerIds, setCustomerIds] = useState<(string | null)[]>(() => {
@@ -317,7 +319,7 @@ function SplitDialog({
           <div className="max-h-56 space-y-1 overflow-y-auto overscroll-contain rounded-lg border border-border p-2 text-sm">
             {bill.lines.map((line) => (
               <div key={line.orderItemId} className="flex items-center justify-between gap-2">
-                <span className="min-w-0 flex-1 truncate">{line.name} <span className="text-xs text-muted-foreground">{formatToman(line.amount)}</span></span>
+                <span className="min-w-0 flex-1 truncate">{line.name} <span className="text-xs text-muted-foreground">{money.format(line.amount)}</span></span>
                 <SearchableSelect
                   className={`${inputClass} w-28 py-1 text-xs`}
                   value={assignments[line.orderItemId]?.toString() ?? ""}
@@ -340,10 +342,10 @@ function SplitDialog({
             <p className="mb-2 font-semibold">سهم هر مشتری:</p>
             <ul className="space-y-1">
               {shares.map((share, index) => (
-                <li key={index} className="flex justify-between gap-2"><span>{shareCustomerNames[index] ?? `مهمان ${toPersianDigits(index + 1)}`}</span><span className="font-medium">{formatToman(share)}</span></li>
+                <li key={index} className="flex justify-between gap-2"><span>{shareCustomerNames[index] ?? `مهمان ${toPersianDigits(index + 1)}`}</span><span className="font-medium">{money.format(share)}</span></li>
               ))}
             </ul>
-            <div className="mt-2 flex justify-between border-t border-border pt-2 font-bold"><span>جمع</span><span>{formatToman(shares.reduce((a, b) => a + b, 0))}</span></div>
+            <div className="mt-2 flex justify-between border-t border-border pt-2 font-bold"><span>جمع</span><span>{money.format(shares.reduce((a, b) => a + b, 0))}</span></div>
           </div>
         ) : null}
 
@@ -354,7 +356,7 @@ function SplitDialog({
             <button type="button" onClick={() => setPaymentMethod("card")} className={`flex min-h-12 items-center justify-center gap-1 rounded-lg border text-xs font-bold ${paymentMethod === "card" ? "border-[#E9A11B] bg-[#FFF1D8] text-[#9B6700]" : "border-border"}`}><CreditCardIcon className="size-4" aria-hidden="true" />کارت</button>
             <button type="button" onClick={() => setPaymentMethod("card_to_card")} className={`flex min-h-12 items-center justify-center rounded-lg border text-xs font-bold ${paymentMethod === "card_to_card" ? "border-[#E9A11B] bg-[#FFF1D8] text-[#9B6700]" : "border-border"}`}>کارت‌به‌کارت</button>
           </div>
-          <PrimaryButton type="button" onClick={() => void payAll()} disabled={busy || bill.total <= 0}>پرداخت کل {formatToman(bill.total)}</PrimaryButton>
+          <PrimaryButton type="button" onClick={() => void payAll()} disabled={busy || bill.total <= 0}>پرداخت کل {money.format(bill.total)}</PrimaryButton>
         </section>
       </DialogContent>
     </Dialog>

@@ -20,7 +20,7 @@ import {
   type DeliveryStatus,
 } from "@/lib/delivery";
 import { toPersianDigits } from "@/lib/digits";
-import { formatToman } from "@/lib/money";
+import { useMoney } from "@/components/money/money-context";
 import { formatQueueLabel } from "@/lib/orders";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { api, ErrorBox, errorMessage, inputClass } from "../ui";
@@ -160,6 +160,7 @@ function DeliveryCard({
   onAssign: (deliveryId: string, courierId: string) => void;
   onTransition: (deliveryId: string, status: DeliveryStatus) => void;
 }) {
+  const money = useMoney();
   const isTerminal =
     delivery.status === "delivered" || delivery.status === "failed";
   const canDispatch =
@@ -200,11 +201,11 @@ function DeliveryCard({
             <DeliveryStatusBadge status={delivery.status} />
             <div className="text-end sm:mt-2">
               <p className="text-sm font-semibold text-[#36342F]">
-                {formatToman(Number(delivery.order_total))}
+                {money.format(Number(delivery.order_total))}
               </p>
               {Number(delivery.fee) > 0 ? (
                 <p className="mt-1 text-xs text-[#77756F]">
-                  ارسال: {formatToman(Number(delivery.fee))}
+                  ارسال: {money.format(Number(delivery.fee))}
                 </p>
               ) : null}
             </div>

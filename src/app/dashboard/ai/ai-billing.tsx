@@ -5,7 +5,7 @@ import { Loader2Icon, SparklesIcon } from "lucide-react";
 import { toast } from "sonner";
 import { creditUnitsForRial } from "@/lib/ai-billing";
 import { formatPersianNumber } from "@/lib/digits";
-import { formatToman } from "@/lib/money";
+import { useMoney } from "@/components/money/money-context";
 import { Button } from "@/components/ui/button";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useFeatureLocked } from "@/components/feature-lock";
@@ -57,6 +57,7 @@ function formatDate(value: string) {
 }
 
 export function AiBillingDashboard() {
+  const money = useMoney();
   const [data, setData] = useState<Data | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedPackageId, setSelectedPackageId] = useState("");
@@ -151,7 +152,7 @@ export function AiBillingDashboard() {
             <SparklesIcon className="size-5" />
             <p className="font-semibold">اعتبار قابل استفاده</p>
           </div>
-          <p className="mt-3 text-2xl font-bold">{formatToman(data.billing.balanceRial)}</p>
+          <p className="mt-3 text-2xl font-bold">{money.format(data.billing.balanceRial)}</p>
           <p className="mt-1 text-sm text-muted-foreground">
             {data.creditUnitRial > 0
               ? formatPersianNumber(credits) + " اعتبار نمایش‌داده‌شده"
@@ -164,7 +165,7 @@ export function AiBillingDashboard() {
             <>
               <p className="mt-3 text-lg font-bold">{data.billing.subscriptionPlan.name}</p>
               <p className="mt-1 text-sm text-muted-foreground">
-                {formatToman(data.billing.subscriptionPlan.monthlyCreditRial)} اعتبار ماهانه
+                {money.format(data.billing.subscriptionPlan.monthlyCreditRial)} اعتبار ماهانه
               </p>
               <p className="mt-2 text-xs text-muted-foreground">
                 {"تمدید بعدی: " + (data.billing.subscriptionRenewsAt ? formatDate(data.billing.subscriptionRenewsAt) : "—")}
@@ -192,7 +193,7 @@ export function AiBillingDashboard() {
                 onChange={setSelectedPackageId}
                 options={data.packages.map((pkg) => ({
                   value: pkg.id,
-                  label: `${pkg.name} — ${formatToman(pkg.priceRial)}`,
+                  label: `${pkg.name} — ${money.format(pkg.priceRial)}`,
                 }))}
               />
             </label>
@@ -215,7 +216,7 @@ export function AiBillingDashboard() {
         )}
         {selected ? (
           <p className="mt-3 text-xs text-muted-foreground">
-            با تأیید این بسته، {formatToman(selected.creditAmountRial)} اعتبار به ماندهٔ شما افزوده می‌شود.
+            با تأیید این بسته، {money.format(selected.creditAmountRial)} اعتبار به ماندهٔ شما افزوده می‌شود.
           </p>
         ) : null}
       </section>
@@ -243,7 +244,7 @@ export function AiBillingDashboard() {
                     </p>
                   </div>
                   <span className={displayAmount < 0 ? "font-semibold text-rose-600 dark:text-rose-300" : "font-semibold text-emerald-600 dark:text-emerald-300"}>
-                    {displayAmount < 0 ? "−" : "+"}{formatToman(Math.abs(displayAmount))}
+                    {displayAmount < 0 ? "−" : "+"}{money.format(Math.abs(displayAmount))}
                   </span>
                 </li>
               );

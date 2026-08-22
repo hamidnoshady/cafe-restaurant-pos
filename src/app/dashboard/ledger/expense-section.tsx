@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
-import { formatToman, parseToRial } from "@/lib/money";
+import { useMoney } from "@/components/money/money-context";
 import { JalaliDatePicker } from "../jalali-date-picker";
 import { api, inputClass, PrimaryButton } from "../ui";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -44,6 +44,7 @@ export function ExpenseSection({
   const expenseAccounts = accounts.filter((a) => a.type === "expense");
   const paymentAccounts = accounts.filter((a) => a.type === "asset");
 
+  const money = useMoney();
   const [accountId, setAccountId] = useState("");
   const [paymentAccountId, setPaymentAccountId] = useState("");
   const [amount, setAmount] = useState("");
@@ -63,7 +64,7 @@ export function ExpenseSection({
     if (!accountId || !paymentAccountId || !amount.trim() || !memo.trim()) return;
     let rial: number;
     try {
-      rial = parseToRial(amount, "toman");
+      rial = money.parse(amount);
     } catch {
       return;
     }
@@ -123,7 +124,7 @@ export function ExpenseSection({
             />
           </label>
           <label className="block">
-            <span className="mb-1.5 block text-sm font-medium">مبلغ (تومان)</span>
+            <span className="mb-1.5 block text-sm font-medium">مبلغ ({money.unitLabel})</span>
             <input className={inputClass} dir="ltr" inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="۰" />
           </label>
           <label className="block">
@@ -181,7 +182,7 @@ export function ExpenseSection({
                       <td className="py-3 pe-3">{e.memo}</td>
                       <td className="py-3 pe-3 text-muted-foreground">{e.vendor ?? "—"}</td>
                       <td className="py-3 pe-3 text-muted-foreground">{e.paymentAccountCode} {e.paymentAccountName}</td>
-                      <td className="whitespace-nowrap py-3 font-semibold">{formatToman(e.amount)}</td>
+                      <td className="whitespace-nowrap py-3 font-semibold">{money.format(e.amount)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -195,7 +196,7 @@ export function ExpenseSection({
                       <h3 className="truncate">{e.accountCode} {e.accountName}</h3>
                       <p className="mt-1 text-xs text-muted-foreground">{toPersianDigits(formatJalali(e.expenseDate))}</p>
                     </div>
-                    <span className="whitespace-nowrap font-bold">{formatToman(e.amount)}</span>
+                    <span className="whitespace-nowrap font-bold">{money.format(e.amount)}</span>
                   </div>
                   <p className="mt-3 text-sm">{e.memo}</p>
                   <dl className="mt-3 grid grid-cols-2 gap-2 border-t border-[#F0EEE9] pt-3 text-xs">

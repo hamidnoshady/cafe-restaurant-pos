@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { formatToman } from "@/lib/money";
+import { useMoney } from "@/components/money/money-context";
 import { api } from "../ui";
 
 interface TrialBalanceRow {
@@ -29,6 +29,7 @@ const TYPE_LABELS: Record<TrialBalanceRow["type"], string> = {
 };
 
 export function TrialBalanceSection({ refreshKey }: { refreshKey: number }) {
+  const money = useMoney();
   const [data, setData] = useState<TrialBalanceData | null>(null);
 
   useEffect(() => {
@@ -105,10 +106,10 @@ export function TrialBalanceSection({ refreshKey }: { refreshKey: number }) {
                   <td className="px-4 py-4 font-semibold text-[#252522]">{a.name}</td>
                   <td className="px-4 py-4 text-[#77756F]">{TYPE_LABELS[a.type]}</td>
                   <td className="whitespace-nowrap px-4 py-4 font-medium text-[#252522]">
-                    {formatToman(Number(a.debit))}
+                    {money.format(Number(a.debit))}
                   </td>
                   <td className="whitespace-nowrap px-4 py-4 font-medium text-[#252522]">
-                    {formatToman(Number(a.credit))}
+                    {money.format(Number(a.credit))}
                   </td>
                 </tr>
               ))}
@@ -125,8 +126,8 @@ export function TrialBalanceSection({ refreshKey }: { refreshKey: number }) {
                 <th scope="row" className="px-4 py-4 text-start font-bold" colSpan={3}>
                   جمع کل
                 </th>
-                <td className="whitespace-nowrap px-4 py-4 font-bold">{formatToman(data.totalDebit)}</td>
-                <td className="whitespace-nowrap px-4 py-4 font-bold">{formatToman(data.totalCredit)}</td>
+                <td className="whitespace-nowrap px-4 py-4 font-bold">{money.format(data.totalDebit)}</td>
+                <td className="whitespace-nowrap px-4 py-4 font-bold">{money.format(data.totalCredit)}</td>
               </tr>
             </tfoot>
           </table>
@@ -149,13 +150,13 @@ export function TrialBalanceSection({ refreshKey }: { refreshKey: number }) {
               <div className="rounded-lg bg-[#FCFBF8] px-3 py-2.5">
                 <dt className="text-xs text-[#77756F]">بدهکار</dt>
                 <dd className="mt-1 whitespace-nowrap text-sm font-bold text-[#252522]">
-                  {formatToman(Number(a.debit))}
+                  {money.format(Number(a.debit))}
                 </dd>
               </div>
               <div className="rounded-lg bg-[#FCFBF8] px-3 py-2.5">
                 <dt className="text-xs text-[#77756F]">بستانکار</dt>
                 <dd className="mt-1 whitespace-nowrap text-sm font-bold text-[#252522]">
-                  {formatToman(Number(a.credit))}
+                  {money.format(Number(a.credit))}
                 </dd>
               </div>
             </dl>
@@ -169,11 +170,11 @@ export function TrialBalanceSection({ refreshKey }: { refreshKey: number }) {
         <dl className="grid grid-cols-2 gap-3 rounded-xl border border-[#DEDAD2] bg-[#FCFBF8] p-4">
           <div>
             <dt className="text-xs font-medium text-[#77756F]">جمع کل بدهکار</dt>
-            <dd className="mt-1 whitespace-nowrap text-sm font-bold text-[#252522]">{formatToman(data.totalDebit)}</dd>
+            <dd className="mt-1 whitespace-nowrap text-sm font-bold text-[#252522]">{money.format(data.totalDebit)}</dd>
           </div>
           <div>
             <dt className="text-xs font-medium text-[#77756F]">جمع کل بستانکار</dt>
-            <dd className="mt-1 whitespace-nowrap text-sm font-bold text-[#252522]">{formatToman(data.totalCredit)}</dd>
+            <dd className="mt-1 whitespace-nowrap text-sm font-bold text-[#252522]">{money.format(data.totalCredit)}</dd>
           </div>
         </dl>
       </div>

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { formatQuantity } from "@/lib/digits";
-import { formatToman } from "@/lib/money";
+import { useMoney } from "@/components/money/money-context";
 import { api } from "../ui";
 
 interface VariantSalesRow {
@@ -17,6 +17,7 @@ interface VariantSalesRow {
 }
 
 export function ReportsSection({ apiBase = "/api/accessories" }: { apiBase?: string }) {
+  const money = useMoney();
   const [rows, setRows] = useState<VariantSalesRow[] | null>(null);
 
   const load = useCallback(() => {
@@ -60,9 +61,9 @@ export function ReportsSection({ apiBase = "/api/accessories" }: { apiBase?: str
               </div>
             </div>
             <div className="text-xs text-stone-600">
-              فروش {formatQuantity(row.quantitySold)} عدد — درآمد {formatToman(row.netRevenue)} / بهای تمام‌شده{" "}
-              {formatToman(row.cogs)}
-              <span className="ms-2 font-semibold text-stone-950">حاشیه {formatToman(row.margin)}</span>
+              فروش {formatQuantity(row.quantitySold)} عدد — درآمد {money.format(row.netRevenue)} / بهای تمام‌شده{" "}
+              {money.format(row.cogs)}
+              <span className="ms-2 font-semibold text-stone-950">حاشیه {money.format(row.margin)}</span>
             </div>
           </li>
         ))}

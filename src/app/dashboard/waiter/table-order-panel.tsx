@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { toPersianDigits } from "@/lib/digits";
 import type { KitchenTicketData } from "@/lib/kitchen-ticket-template";
-import { formatToman } from "@/lib/money";
+import { useMoney } from "@/components/money/money-context";
 import {
   ORDER_ITEM_STATUS_LABELS,
   type OrderItemStatus,
@@ -116,6 +116,7 @@ export function TableOrderPanel({
   onBack: () => void;
   onChanged: () => void;
 }) {
+  const money = useMoney();
   const [menu, setMenu] = useState<MenuData | null>(null);
   const [activeCategory, setActiveCategory] = useState("");
   const [orderItems, setOrderItems] = useState<OrderItem[]>([]);
@@ -416,7 +417,7 @@ export function TableOrderPanel({
                       >
                         <span className="text-sm font-medium">{item.name}</span>
                         <span className="mt-1 text-xs text-muted-foreground">
-                          {formatToman(Number(item.price))}
+                          {money.format(Number(item.price))}
                         </span>
                       </button>
                     ))}
