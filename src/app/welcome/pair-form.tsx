@@ -2,16 +2,24 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { classifyConnectionCode, normalizeServerAddress } from "@/lib/connection-code";
+import { Loader2Icon } from "lucide-react";
+import {
+  classifyConnectionCode,
+  normalizeServerAddress,
+} from "@/lib/connection-code";
 
 /** Every failure this flow can produce, in the owner's language. */
 const ERROR_MESSAGES: Record<string, string> = {
-  code_not_found: "این کد در سرور بالا پیدا نشد. مطمئن شوید کد را از همان حساب ابری کپی کرده‌اید.",
+  code_not_found:
+    "این کد در سرور بالا پیدا نشد. مطمئن شوید کد را از همان حساب ابری کپی کرده‌اید.",
   code_expired: "این کد منقضی شده است. در پنل ابری یک کد تازه بسازید.",
-  code_already_redeemed: "این کد قبلاً استفاده شده است. در پنل ابری کد تازه بسازید.",
+  code_already_redeemed:
+    "این کد قبلاً استفاده شده است. در پنل ابری کد تازه بسازید.",
   code_revoked: "این کد لغو شده است. در پنل ابری کد تازه بسازید.",
-  remote_unreachable: "سرور ابری در این آدرس پاسخ نداد. آدرس و اتصال اینترنت را بررسی کنید.",
-  not_a_pos_server: "این آدرس به سامانهٔ فروش شما نمی‌رسد. آدرسی را وارد کنید که با آن وارد پنل ابری می‌شوید.",
+  remote_unreachable:
+    "سرور ابری در این آدرس پاسخ نداد. آدرس و اتصال اینترنت را بررسی کنید.",
+  not_a_pos_server:
+    "این آدرس به سامانهٔ فروش شما نمی‌رسد. آدرسی را وارد کنید که با آن وارد پنل ابری می‌شوید.",
   remote_not_initialized: "این آدرس هنوز کسب‌وکاری روی آن ساخته نشده است.",
   snapshot_invalid: "داده‌های دریافتی معتبر نیستند. با پشتیبانی تماس بگیرید.",
   missing_fields: "آدرس سرور و کد اتصال را وارد کنید.",
@@ -38,11 +46,16 @@ const CODE_HINTS: Record<string, string> = {
   sync_token:
     "این یک «توکن همگام‌سازی سرور» است (POS1-…)، نه کد اتصال دسکتاپ. در پنل ابری به بخش «اتصال‌ها → برنامه دسکتاپ» بروید و «ساخت کد اتصال» را بزنید.",
   api_key: "این یک کلید API توسعه‌دهنده است (posk_live_…)، نه کد اتصال دسکتاپ.",
-  bad_length: "کد اتصال ۱۲ نویسه است و معمولاً به شکل ABCD-EFGH-JKLM نمایش داده می‌شود.",
-  bad_charset: "این کد نویسه‌های نامعتبر دارد. آن را دوباره از پنل ابری کپی کنید.",
+  bad_length:
+    "کد اتصال ۱۲ نویسه است و معمولاً به شکل ABCD-EFGH-JKLM نمایش داده می‌شود.",
+  bad_charset:
+    "این کد نویسه‌های نامعتبر دارد. آن را دوباره از پنل ابری کپی کنید.",
 };
 
-type ProbeState = { kind: "idle" } | { kind: "ok"; url: string } | { kind: "error"; text: string };
+type ProbeState =
+  | { kind: "idle" }
+  | { kind: "ok"; url: string }
+  | { kind: "error"; text: string };
 
 export function PairForm({ onBack }: { onBack: () => void }) {
   const router = useRouter();
@@ -73,9 +86,17 @@ export function PairForm({ onBack }: { onBack: () => void }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ remoteUrl }),
       });
-      const data = (await res.json().catch(() => ({}))) as { ok?: boolean; url?: string; error?: string };
+      const data = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        url?: string;
+        error?: string;
+      };
       if (res.ok && data.ok) setProbe({ kind: "ok", url: data.url ?? "" });
-      else setProbe({ kind: "error", text: ERROR_MESSAGES[data.error ?? ""] ?? "آزمایش اتصال ناموفق بود." });
+      else
+        setProbe({
+          kind: "error",
+          text: ERROR_MESSAGES[data.error ?? ""] ?? "آزمایش اتصال ناموفق بود.",
+        });
     } catch {
       setProbe({ kind: "error", text: ERROR_MESSAGES.remote_unreachable });
     } finally {
@@ -113,7 +134,9 @@ export function PairForm({ onBack }: { onBack: () => void }) {
       router.replace("/login");
       return;
     }
-    setError(ERROR_MESSAGES[data.error ?? ""] ?? "اتصال انجام نشد. دوباره تلاش کنید.");
+    setError(
+      ERROR_MESSAGES[data.error ?? ""] ?? "اتصال انجام نشد. دوباره تلاش کنید.",
+    );
   }
 
   return (
@@ -127,8 +150,9 @@ export function PairForm({ onBack }: { onBack: () => void }) {
       </button>
       <h1 className="mb-1 text-2xl font-bold">اتصال به پلتفرم آنلاین</h1>
       <p className="mb-4 text-sm text-muted-foreground">
-        هر دو مقدار زیر را از حساب ابری خودتان بردارید: وارد پنل ابری شوید، به «اتصال‌ها → برنامه دسکتاپ» بروید،
-        آدرس نمایش‌داده‌شده را کپی کنید و دکمهٔ «ساخت کد اتصال» را بزنید.
+        هر دو مقدار زیر را از حساب ابری خودتان بردارید: وارد پنل ابری شوید، به
+        «اتصال‌ها → برنامه دسکتاپ» بروید، آدرس نمایش‌داده‌شده را کپی کنید و
+        دکمهٔ «ساخت کد اتصال» را بزنید.
       </p>
 
       {error ? (
@@ -139,7 +163,9 @@ export function PairForm({ onBack }: { onBack: () => void }) {
 
       <form onSubmit={submit} className="space-y-4">
         <label className="block">
-          <span className="mb-1 block text-sm font-medium text-foreground">آدرس سرور *</span>
+          <span className="mb-1 block text-sm font-medium text-foreground">
+            آدرس سرور *
+          </span>
           <input
             className="w-full rounded-lg border border-input px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-ring/30"
             dir="ltr"
@@ -152,24 +178,36 @@ export function PairForm({ onBack }: { onBack: () => void }) {
             required
           />
           <span className="mt-1 block text-xs text-muted-foreground">
-            همان آدرسی که با آن وارد پنل ابری می‌شوید. کپی‌کردن نوار آدرس مرورگر هم کافی است.
+            همان آدرسی که با آن وارد پنل ابری می‌شوید. کپی‌کردن نوار آدرس مرورگر
+            هم کافی است.
           </span>
           <div className="mt-2 flex items-center gap-2">
             <button
               type="button"
               onClick={testConnection}
               disabled={probing || !remoteUrl.trim()}
-              className="rounded-lg border border-input px-3 py-1.5 text-xs font-medium hover:border-primary disabled:opacity-50"
+              className="rounded-lg border border-input px-3 py-1.5 text-xs font-medium hover:border-primary disabled:opacity-50 flex items-center justify-center gap-1.5"
             >
-              {probing ? "در حال آزمایش…" : "آزمایش اتصال"}
+              {probing ? (
+                <>
+                  <Loader2Icon className="size-3.5 animate-spin" /> در حال
+                  آزمایش…
+                </>
+              ) : (
+                "آزمایش اتصال"
+              )}
             </button>
             {probe.kind === "ok" ? (
               <span className="text-xs text-emerald-600" dir="ltr">
                 ✓ {probe.url}
               </span>
             ) : null}
-            {probe.kind === "error" ? <span className="text-xs text-destructive">{probe.text}</span> : null}
-            {probe.kind === "idle" && addressPreview.ok && addressPreview.url !== remoteUrl.trim() ? (
+            {probe.kind === "error" ? (
+              <span className="text-xs text-destructive">{probe.text}</span>
+            ) : null}
+            {probe.kind === "idle" &&
+            addressPreview.ok &&
+            addressPreview.url !== remoteUrl.trim() ? (
               <span className="text-xs text-muted-foreground" dir="ltr">
                 {addressPreview.url}
               </span>
@@ -177,7 +215,9 @@ export function PairForm({ onBack }: { onBack: () => void }) {
           </div>
         </label>
         <label className="block">
-          <span className="mb-1 block text-sm font-medium text-foreground">کد اتصال *</span>
+          <span className="mb-1 block text-sm font-medium text-foreground">
+            کد اتصال *
+          </span>
           <input
             className="w-full rounded-lg border border-input px-3 py-2 text-center font-mono text-lg tracking-widest outline-none focus:border-primary focus:ring-2 focus:ring-ring/30"
             dir="ltr"
@@ -187,14 +227,25 @@ export function PairForm({ onBack }: { onBack: () => void }) {
             autoComplete="off"
             required
           />
-          {codeHint ? <span className="mt-1 block text-xs text-destructive">{codeHint}</span> : null}
+          {codeHint ? (
+            <span className="mt-1 block text-xs text-destructive">
+              {codeHint}
+            </span>
+          ) : null}
         </label>
         <button
           type="submit"
           disabled={busy || codeKind !== "pairing_code"}
           className="w-full rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/85 disabled:opacity-50"
         >
-          {busy ? "در حال دریافت تنظیمات…" : "اتصال و دریافت تنظیمات"}
+          {busy ? (
+            <span className="flex items-center justify-center gap-2">
+              <Loader2Icon className="size-4 animate-spin" /> در حال دریافت
+              تنظیمات…
+            </span>
+          ) : (
+            "اتصال و دریافت تنظیمات"
+          )}
         </button>
       </form>
     </div>
