@@ -583,7 +583,8 @@ export function PurchasesSection({
                                     {formatQuantity(it.quantity)} {it.unit}
                                   </td>
                                   <td className="whitespace-nowrap py-2 pe-3 text-muted-foreground">
-                                    {money.formatText(String(it.unit_cost))}
+                                    {/* unit_cost is numeric(24,9); formatText only accepts integer Rial. */}
+                                    {money.formatText(new Decimal(String(it.unit_cost)).toFixed(0))}
                                   </td>
                                   <td className="whitespace-nowrap py-2">{money.formatText(String(it.extended_cost))}</td>
                                 </tr>
