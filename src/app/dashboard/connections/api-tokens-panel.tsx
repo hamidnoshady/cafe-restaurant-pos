@@ -15,7 +15,9 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { useFeatureLocked } from "@/components/feature-lock";
-import { api, errorMessage } from "../ui";
+import { Button } from "@/components/ui/button";
+import { SectionCard, StatusBadge } from "../page-chrome";
+import { api, ErrorBox, errorMessage, InfoBox, inputClass } from "../ui";
 
 interface ApiKeySummary {
   id: string;
@@ -139,17 +141,8 @@ export function ApiTokensPanel() {
 
   return (
     <div className="space-y-6">
-      {message ? (
-        <div
-          className={`rounded-lg border p-3 text-sm ${
-            message.kind === "ok"
-              ? "border-emerald-300 bg-emerald-50 text-emerald-800"
-              : "border-red-300 bg-red-50 text-red-800"
-          }`}
-        >
-          {message.text}
-        </div>
-      ) : null}
+      {message?.kind === "ok" ? <InfoBox>{message.text}</InfoBox> : null}
+      {message?.kind === "error" ? <ErrorBox>{message.text}</ErrorBox> : null}
 
       {secret ? (
         <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm">
@@ -160,21 +153,21 @@ export function ApiTokensPanel() {
           <code dir="ltr" className="mt-2 block select-all break-all rounded-lg bg-white/70 p-2 font-mono text-amber-900">
             {secret}
           </code>
-          <button
+          <Button
             type="button"
-            className="mt-2 rounded-md bg-amber-600 px-3 py-1 text-xs text-white"
+            size="sm"
+            className="mt-2 bg-amber-600 text-white hover:bg-amber-700"
             onClick={() => {
               void navigator.clipboard.writeText(secret).catch(() => undefined);
               setSecret(null);
             }}
           >
             کپی و بستن
-          </button>
+          </Button>
         </div>
       ) : null}
 
-      <section className="rounded-xl border bg-card p-4">
-        <h2 className="mb-1 text-base font-semibold">ساخت کلید جدید</h2>
+      <SectionCard title="ساخت کلید جدید">
         <p className="mb-3 text-xs leading-5 text-muted-foreground">
           هر کلید فقط همان دسترسی‌هایی را دارد که اینجا انتخاب می‌کنید و به شعبهٔ فعال شما محدود است. برای هر
           برنامه یک کلید جدا بسازید تا در صورت نیاز بتوانید فقط همان را باطل کنید.
@@ -182,13 +175,13 @@ export function ApiTokensPanel() {
 
         <div className="grid gap-3 sm:grid-cols-2">
           <input
-            className="rounded-md border p-2 text-sm"
+            className={inputClass}
             placeholder="نام کلید (مثلاً اپلیکیشن باشگاه مشتریان)"
             value={name}
             onChange={(e) => setName(e.target.value)}
           />
           <input
-            className="rounded-md border p-2 text-sm"
+            className={inputClass}
             dir="ltr"
             type="number"
             min={1}
@@ -206,8 +199,11 @@ export function ApiTokensPanel() {
                 key={scope}
                 type="button"
                 onClick={() => toggleScope(scope)}
-                className={`rounded-lg border px-3 py-1.5 text-xs ${
-                  selected.includes(scope) ? "border-stone-900 bg-stone-900 text-white" : "border-stone-200"
+                aria-pressed={selected.includes(scope)}
+                className={`min-h-9 rounded-lg border px-3 text-xs font-medium transition-colors ${
+                  selected.includes(scope)
+                    ? "border-amber-200 bg-amber-100 text-amber-950"
+                    : "border-stone-200 text-stone-600 hover:bg-stone-50"
                 }`}
               >
                 {SCOPE_LABELS[scope] ?? scope}
@@ -216,17 +212,17 @@ export function ApiTokensPanel() {
           </div>
         </fieldset>
 
-        <button
-          className="mt-4 rounded-md bg-stone-900 px-4 py-2 text-sm text-white disabled:opacity-50"
+        <Button
+          type="button"
+          className="mt-4"
           onClick={create}
           disabled={busy || !name.trim() || selected.length === 0}
         >
           {busy ? "در حال ساخت…" : "ساخت کلید"}
-        </button>
-      </section>
+        </Button>
+      </SectionCard>
 
-      <section className="rounded-xl border bg-card p-4">
-        <h2 className="mb-3 text-base font-semibold">کلیدهای موجود</h2>
+      <SectionCard title="کلیدهای موجود">
         {loading ? (
           <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>
         ) : keys.length === 0 ? (
@@ -234,27 +230,26 @@ export function ApiTokensPanel() {
         ) : (
           <ul className="space-y-2">
             {keys.map((key) => (
-              <li key={key.id} className="rounded-lg border p-3 text-sm">
+              <li key={key.id} className="rounded-xl border border-stone-200/80 p-3 text-sm">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-semibold">{key.name}</span>
                   <code dir="ltr" className="rounded bg-stone-100 px-2 py-0.5 font-mono text-xs">
                     {key.keyPrefix}…
                   </code>
-                  <span
-                    className={`rounded-full px-2 py-0.5 text-xs ${
-                      key.status === "active" ? "bg-emerald-100 text-emerald-800" : "bg-stone-200 text-stone-600"
-                    }`}
-                  >
+                  <StatusBadge tone={key.status === "active" ? "positive" : "neutral"}>
                     {key.status === "active" ? "فعال" : "باطل‌شده"}
-                  </span>
+                  </StatusBadge>
                   {key.status === "active" ? (
-                    <button
-                      className="rounded-md border border-red-200 px-2 py-1 text-xs text-red-700"
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="xs"
+                      className="text-destructive hover:bg-destructive/10 hover:text-destructive"
                       onClick={() => revoke(key.id)}
                       disabled={busy}
                     >
                       باطل‌کردن
-                    </button>
+                    </Button>
                   ) : null}
                 </div>
                 <div className="mt-1 flex flex-wrap gap-2 text-xs text-muted-foreground">
@@ -273,10 +268,9 @@ export function ApiTokensPanel() {
             ))}
           </ul>
         )}
-      </section>
+      </SectionCard>
 
-      <section className="rounded-xl border bg-card p-4">
-        <h2 className="mb-2 text-base font-semibold">راهنمای استفاده</h2>
+      <SectionCard title="راهنمای استفاده">
         <p className="mb-2 text-xs leading-6 text-muted-foreground">
           کلید را در سرآیند <code dir="ltr">Authorization</code> بفرستید. آدرس پایه، همین دامنه است.
         </p>
@@ -284,7 +278,7 @@ export function ApiTokensPanel() {
 {`curl -H "Authorization: Bearer posk_live_..." \\
      ${typeof window !== "undefined" ? window.location.origin : "https://your-domain"}/api/v1/orders`}
         </pre>
-      </section>
+      </SectionCard>
     </div>
   );
 }

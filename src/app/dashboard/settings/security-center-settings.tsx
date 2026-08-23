@@ -22,6 +22,8 @@ import { formatJalali } from "@/lib/jalali";
 import { toPersianDigits } from "@/lib/digits";
 import { credentialKindFromId, credentialKindLabel } from "@/lib/audit";
 import { ErrorBox, InfoBox, api, errorMessage } from "../ui";
+import { SectionCard } from "../page-chrome";
+import { Button } from "@/components/ui/button";
 
 interface ActiveSession {
   id: string;
@@ -126,8 +128,7 @@ export function SecurityCenterSettings() {
 
   return (
     <div className="space-y-6">
-      <section className="rounded-2xl bg-card p-5 shadow-sm">
-        <h2 className="mb-1 font-semibold">کارمندان قفل‌شده</h2>
+      <SectionCard title="کارمندان قفل‌شده">
         <p className="mb-4 text-sm text-muted-foreground">
           به‌دلیل تلاش‌های ناموفق مکرر، ورود این کارکنان موقتاً مسدود شده است.
         </p>
@@ -148,22 +149,23 @@ export function SecurityCenterSettings() {
                     {formatTime(entry.lockedUntil)}
                   </p>
                 </div>
-                <button
+                <Button
                   type="button"
+                  variant="ghost"
+                  size="xs"
+                  className="shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
                   onClick={() => clearLockout(entry.employeeId)}
                   disabled={busyId === entry.employeeId}
-                  className="shrink-0 text-xs text-destructive hover:underline disabled:opacity-50"
                 >
                   رفع قفل
-                </button>
+                </Button>
               </div>
             ))}
           </div>
         )}
-      </section>
+      </SectionCard>
 
-      <section className="rounded-2xl bg-card p-5 shadow-sm">
-        <h2 className="mb-1 font-semibold">نشست‌های فعال</h2>
+      <SectionCard title="نشست‌های فعال">
         <p className="mb-4 text-sm text-muted-foreground">
           کارکنانی که هم‌اکنون وارد سیستم هستند. پایان‌دادن به یک نشست بلافاصله اثر می‌کند.
         </p>
@@ -190,22 +192,23 @@ export function SecurityCenterSettings() {
                     {formatTime(entry.lastSeenAt ?? entry.issuedAt)}
                   </p>
                 </div>
-                <button
+                <Button
                   type="button"
+                  variant="ghost"
+                  size="xs"
+                  className="shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
                   onClick={() => endSession(entry.id)}
                   disabled={busyId === entry.id}
-                  className="shrink-0 text-xs text-destructive hover:underline disabled:opacity-50"
                 >
                   پایان نشست
-                </button>
+                </Button>
               </div>
             ))}
           </div>
         )}
-      </section>
+      </SectionCard>
 
-      <section className="rounded-2xl bg-card p-5 shadow-sm">
-        <h2 className="mb-1 font-semibold">تلاش‌های ورود ناموفق</h2>
+      <SectionCard title="تلاش‌های ورود ناموفق">
         <p className="mb-4 text-sm text-muted-foreground">
           آخرین پین‌های نادرست یا احرازهویت‌های بیومتریک ناموفق.
         </p>
@@ -227,7 +230,7 @@ export function SecurityCenterSettings() {
             ))}
           </div>
         )}
-      </section>
+      </SectionCard>
     </div>
   );
 }

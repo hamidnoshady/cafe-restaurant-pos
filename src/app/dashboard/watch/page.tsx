@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { requireIndustryForPage } from "@/lib/industry-guard";
+import { PageHeader, PageShell } from "../page-chrome";
 import { WatchManager } from "./watch-manager";
 
 export default async function WatchPage() {
@@ -10,14 +11,12 @@ export default async function WatchPage() {
   await requireIndustryForPage(session.businessId, "watch");
 
   return (
-    <div className="mx-auto w-full max-w-[1600px]">
-      <header className="mb-5 border-b border-stone-200/80 pb-5 sm:mb-6 sm:pb-6">
-        <h1 className="text-2xl font-bold tracking-tight text-stone-950 sm:text-[1.7rem]">ساعت</h1>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
-          مدل‌ها و دستگاه‌های سریال‌دار، فروش با گارانتی، و تیکت‌های تعمیر.
-        </p>
-      </header>
+    <PageShell>
+      <PageHeader
+        title="ساعت"
+        description="مدل‌ها و دستگاه‌های سریال‌دار، فروش با گارانتی، و تیکت‌های تعمیر."
+      />
       <WatchManager />
-    </div>
+    </PageShell>
   );
 }

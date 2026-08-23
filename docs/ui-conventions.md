@@ -1,0 +1,111 @@
+# UI conventions — the dashboard's design language
+
+**Every new page and panel under `src/app/dashboard/**` is built from
+[`src/app/dashboard/page-chrome.tsx`](../src/app/dashboard/page-chrome.tsx). Do not
+re-derive its classes, and do not invent a second spelling of a shape it already has.**
+
+That file *is* this document's normative half: the classes live there, so a change to the
+shared look is one edit and a new screen cannot drift by accident. What follows is why each
+piece exists and how to reach for it.
+
+## Where the language came from
+
+The look was set by the newest screens — Phase 25/27/29's `inventory`, `jewelry`, `watch`,
+`accessories`, `cosmetics`: a warm stone canvas, one 1600px column, an underlined page
+header, amber-accented tab pills tall enough to hit on a tablet, and `rounded-2xl` section
+cards on a one-pixel warm shadow.
+
+Everything written before that settled had its own header spacing, its own tab style and its
+own card border. Three different tab dialects and five different page headers coexisted, so
+moving between two screens of the same product looked like moving between two products.
+`page-chrome.tsx` ended that by making the shared pieces components instead of conventions.
+
+## The primitives
+
+| Use | Instead of |
+| --- | --- |
+| `<PageShell>` | `<div className="mx-auto w-full max-w-[1600px]">` |
+| `<PageHeader title description actions>` | a hand-rolled `<header>` with an `<h1>` |
+| `<SectionCard title description actions footer flush>` | `<section className="rounded-2xl …">` |
+| `cardClass` | restating the card's border/shadow on a bespoke layout |
+| `<TabBar>` + `<TabPanel>` | a row of `<button>`s styling their own active state |
+| `<EmptyState>` | `<p className="rounded-xl border border-dashed …">` |
+| `<StatusBadge tone>` | a `rounded-full` span with hand-picked tone classes |
+
+Notes that are easy to get wrong:
+
+- **A titled card always draws a divider under its header.** One rule, both card shapes.
+  Pass `flush` when the body is an edge-to-edge list or table so its dividers reach the card's
+  edges; otherwise the body gets the standard `p-4 sm:p-5`.
+- **`cardClass` is for bespoke *layout*, not bespoke *skin*.** A chat panel that fills a fixed
+  height or a canvas that scrolls composes `cn("flex h-… flex-col", cardClass)`. If all you
+  need is padding and a title, that's `SectionCard`.
+- **`PageShell` accepts a `className` width override** — `max-w-[1100px]` for a narrow
+  single-column form page. Use it for a real content-width decision, not to avoid the shell.
+- **`TabBar`'s pills are `aria-pressed`, not `role="tab"`**, because the panel below is a plain
+  region rather than a tabpanel widget. `TabPanel` is separate so a manager can put an error
+  box between the strip and the panel.
+
+## Controls, text and forms
+
+- **Buttons are `<Button>`** from `src/components/ui/button.tsx`. Sizes: `default` (h-10),
+  `sm`, `lg`, `xs` for a row action, `icon-sm`/`icon-xs` for an icon-only one. A destructive
+  row action is `variant="ghost"` plus
+  `className="text-destructive hover:bg-destructive/10 hover:text-destructive"`. Never a raw
+  `<button>` with its own padding and border.
+  - `PrimaryButton`/`SecondaryButton` in `src/app/dashboard/ui.tsx` are the **full-width form
+    submit** pair. In a card header or a toolbar use `<Button>` directly — `PrimaryButton`
+    carries `w-full` and will stretch.
+- **Inputs use `inputClass`** and are labelled by `<Field>`, both from
+  `src/app/dashboard/ui.tsx`. A `<select>` takes `inputClass` too; a long list of options is
+  `<SearchableSelect>` from `src/components/ui/searchable-select.tsx`.
+- **Messages are `<ErrorBox>` and `<InfoBox>`** (also `ui.tsx`) — not a bare `<p>` in red or a
+  hand-rolled tinted div. Both already carry their own bottom margin.
+- **A pressed/selected chip is amber**: `border-amber-200 bg-amber-100 text-amber-950`, with
+  `aria-pressed` on the button. Never `bg-stone-900 text-white` and never a teal fill.
+
+## Colour
+
+- **Neutrals are the warm stone scale.** `border-stone-200/80` for a hairline,
+  `text-stone-950` for a heading, `text-muted-foreground` for supporting copy, `bg-stone-50/60`
+  for a footer wash. The `--border`/`--input`/`--muted`/`--accent` tokens in
+  `src/app/globals.css` are tuned to that same warmth, so `border-border` and `bg-muted` are
+  also correct — a cool `gray-*`/`slate-*`/`zinc-*` class is not.
+- **Amber is selection and emphasis** — the active tab, a pressed chip, a focus ring
+  (`focus-visible:ring-3 focus-visible:ring-amber-400/40`), a warning banner.
+- **Teal (`--primary`) is the brand accent**, and stays where it is: filled `<Button>`s,
+  links, the today cell in a date picker. Don't repaint it amber, and don't introduce a third
+  accent.
+- **Shadows are warm and small.** `shadow-[0_1px_2px_rgb(41_37_36/0.035)]` is the card shadow
+  (that's what `cardClass` carries). Never `shadow-sm`/`shadow-md` on a card — they are cooler
+  and heavier than the rest of the app — and never a `rgb(15 23 42 / …)` shadow.
+
+## What is deliberately *not* covered
+
+- **Full-screen operational surfaces keep their own compact chrome**: POS
+  (`pos/pos-screen.tsx`), the orders queue, the floor plan, the kitchen display, reservations.
+  Their headers are icon-led and dense on purpose because they are read at arm's length at a
+  counter — they use the same palette but not `PageHeader`.
+- **`src/app/platform/**` is a separate realm** with its own `ui.tsx`, internally consistent.
+  Leave it alone; it is the super-admin console, not a tenant screen.
+- **`src/components/ui/*` is shadcn's** generated layer. Change a token or a variant there,
+  never a one-off class at a call site.
+- **Dark mode is not supported in the dashboard.** Enough screens hardcode light warm values
+  that `dark:` variants only make things worse. Don't add them piecemeal; making dark mode work
+  is its own piece of work.
+
+## Reviewing a change
+
+These greps should each return nothing new under `src/app/dashboard/`:
+
+```bash
+grep -rn 'shadow-sm\|shadow-md' src/app/dashboard/ && echo "card shadow drifted"
+```
+
+```bash
+grep -rn 'mx-auto w-full max-w-\[' src/app/dashboard/ --include='*.tsx' | grep -v page-chrome && echo "page shell hand-rolled instead of PageShell"
+```
+
+```bash
+grep -rn '<h1' src/app/dashboard/ --include='page.tsx' && echo "page header bypassed PageHeader"
+```

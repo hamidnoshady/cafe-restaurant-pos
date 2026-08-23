@@ -126,7 +126,7 @@ export function ChequesSection({
     <section className="space-y-4">
       <ErrorBox>{error}</ErrorBox>
 
-      <div className="rounded-2xl bg-card p-4 shadow-sm sm:p-5">
+      <div className="rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-4 sm:p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <p className="text-xs font-semibold text-[#9B6700]">اسناد دریافتنی و پرداختنی</p>
@@ -361,7 +361,7 @@ function EndorseDialog({
   const [occurredOn, setOccurredOn] = useState("");
 
   return (
-    <div className="rounded-2xl bg-card p-4 shadow-sm sm:p-5">
+    <div className="rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-4 sm:p-5">
       <h3 className="font-semibold text-[#252522]">
         ظهرنویسی چک {toPersianDigits(cheque.serialNumber)} — {money.format(cheque.amount)}
       </h3>

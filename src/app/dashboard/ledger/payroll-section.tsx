@@ -103,7 +103,7 @@ export function PayrollSection({ busy, run, refreshKey }: { busy: boolean; run: 
 
   if (!staff || !runs) {
     return (
-      <section aria-live="polite" className="rounded-2xl bg-card px-5 py-6 text-sm text-muted-foreground shadow-sm">
+      <section aria-live="polite" className="rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card px-5 py-6 text-sm text-muted-foreground">
         در حال بارگذاری…
       </section>
     );
@@ -111,7 +111,7 @@ export function PayrollSection({ busy, run, refreshKey }: { busy: boolean; run: 
 
   return (
     <div className="space-y-5">
-      <section aria-labelledby="payroll-wages-heading" className="rounded-2xl bg-card p-4 shadow-sm sm:p-5">
+      <section aria-labelledby="payroll-wages-heading" className="rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-4 sm:p-5">
         <header className="mb-5 border-b border-border pb-4">
           <p className="text-xs font-semibold text-[#9B6700]">تنظیمات حقوق</p>
           <h2 id="payroll-wages-heading" className="mt-1 text-lg font-bold">حقوق ماهانه کارکنان</h2>
@@ -159,7 +159,7 @@ export function PayrollSection({ busy, run, refreshKey }: { busy: boolean; run: 
         )}
       </section>
 
-      <section aria-labelledby="payroll-accrual-heading" className="rounded-2xl bg-card p-4 shadow-sm sm:p-5">
+      <section aria-labelledby="payroll-accrual-heading" className="rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-4 sm:p-5">
         <header className="mb-5 border-b border-border pb-4">
           <p className="text-xs font-semibold text-[#9B6700]">ثبت دوره</p>
           <h2 id="payroll-accrual-heading" className="mt-1 text-lg font-bold">تعهد حقوق و دستمزد جدید</h2>
@@ -186,7 +186,7 @@ export function PayrollSection({ busy, run, refreshKey }: { busy: boolean; run: 
         </form>
       </section>
 
-      <section aria-labelledby="payroll-history-heading" className="rounded-2xl bg-card p-4 shadow-sm sm:p-5">
+      <section aria-labelledby="payroll-history-heading" className="rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-4 sm:p-5">
         <header className="mb-5 border-b border-border pb-4">
           <p className="text-xs font-semibold text-[#9B6700]">سوابق</p>
           <h2 id="payroll-history-heading" className="mt-1 text-lg font-bold">تاریخچه حقوق و دستمزد</h2>

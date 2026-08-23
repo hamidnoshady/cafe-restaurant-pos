@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { requireIndustryForPage } from "@/lib/industry-guard";
+import { PageHeader, PageShell } from "../page-chrome";
 import { JewelryManager } from "./jewelry-manager";
 
 export default async function JewelryPage() {
@@ -10,16 +11,12 @@ export default async function JewelryPage() {
   await requireIndustryForPage(session.businessId, "jewelry");
 
   return (
-    <div className="mx-auto w-full max-w-[1600px]">
-      <header className="mb-5 border-b border-stone-200/80 pb-5 sm:mb-6 sm:pb-6">
-        <h1 className="text-2xl font-bold tracking-tight text-stone-950 sm:text-[1.7rem]">
-          طلا و جواهر
-        </h1>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
-          کالاهای وزنی، نرخ روز طلا، امانت‌گذاران و فروش قطعات طلا.
-        </p>
-      </header>
+    <PageShell>
+      <PageHeader
+        title="طلا و جواهر"
+        description="کالاهای وزنی، نرخ روز طلا، امانت‌گذاران و فروش قطعات طلا."
+      />
       <JewelryManager />
-    </div>
+    </PageShell>
   );
 }

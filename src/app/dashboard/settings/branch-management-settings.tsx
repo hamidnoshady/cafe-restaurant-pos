@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { BranchesManager } from "../branches/branches-manager";
 import { LocationsManager } from "../locations/locations-manager";
+import { TabBar, TabPanel } from "../page-chrome";
 
 type BranchManagementTabKey = "branches" | "sync";
 type BranchFeatureKey = "multi_location" | "offline_mode";
@@ -54,51 +55,26 @@ export function BranchManagementSettings({ features }: BranchManagementSettingsP
   const activeTab = availableTabKeys.includes(tab) ? tab : firstTab;
 
   return (
-    <section className="space-y-6">
+    <section className="min-w-0 space-y-4 sm:space-y-5">
       <header>
-        <h2 className="text-lg font-semibold">مدیریت شعب</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
+        <h2 className="font-semibold text-stone-950">مدیریت شعب</h2>
+        <p className="mt-1 text-sm leading-6 text-muted-foreground">
           ساختار شعب کسب‌وکار و همگام‌سازی داده‌های شعب را از یک بخش مدیریت کنید.
         </p>
       </header>
 
-      <div
-        className="flex flex-wrap gap-2 border-b border-border pb-2"
-        role="tablist"
-        aria-label="بخش‌های مدیریت شعب"
-      >
-        {availableTabs.map((item) => {
-          const selected = activeTab === item.key;
-          return (
-            <button
-              key={item.key}
-              id={`branch-management-tab-${item.key}`}
-              type="button"
-              role="tab"
-              aria-selected={selected}
-              aria-controls={`branch-management-panel-${item.key}`}
-              onClick={() => setTab(item.key)}
-              className={
-                "rounded-lg px-3 py-1.5 text-sm " +
-                (selected
-                  ? "bg-primary/10 font-semibold text-primary"
-                  : "text-muted-foreground hover:bg-muted")
-              }
-            >
-              {item.label}
-            </button>
-          );
-        })}
-      </div>
+      <TabBar
+        idPrefix="branch-management"
+        label="بخش‌های مدیریت شعب"
+        tabs={availableTabs}
+        active={activeTab}
+        onChange={setTab}
+      />
 
-      <div
-        id={`branch-management-panel-${activeTab}`}
-        role="tabpanel"
-        aria-labelledby={`branch-management-tab-${activeTab}`}
-      >
+      <TabPanel idPrefix="branch-management" active={activeTab}>
         {activeTab === "branches" ? <BranchesManager /> : null}
         {activeTab === "sync" ? <LocationsManager /> : null}
-      </div>
+      </TabPanel>
     </section>
   );
 }

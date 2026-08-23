@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ACCOUNT_TYPES, FNB_COA_TEMPLATE, type AccountType, type TemplateAccount } from "@/lib/coa-template";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ErrorBox, InfoBox, PrimaryButton, SecondaryButton, api, errorMessage, inputClass } from "../ui";
+import { SectionCard } from "../page-chrome";
 
 const TYPE_LABELS: Record<AccountType, string> = {
   asset: "دارایی",
@@ -102,8 +103,7 @@ export function AccountsSettings() {
       <ErrorBox>{error}</ErrorBox>
       {saved ? <InfoBox>سرفصل حساب‌ها ذخیره شد.</InfoBox> : null}
 
-      <section className="rounded-2xl bg-card p-5 shadow-sm">
-        <h2 className="mb-1 font-semibold">سرفصل حساب‌ها</h2>
+      <SectionCard title="سرفصل حساب‌ها">
         <p className="mb-4 text-sm text-muted-foreground">
           ساختار حساب‌های مالی را اینجا نگه‌داری کنید. اگر اسناد حسابداری ثبت شده باشند، برای حفظ یکپارچگی دیگر جایگزین‌کردن ساختار ممکن نیست.
         </p>
@@ -116,7 +116,7 @@ export function AccountsSettings() {
 
         <div className="space-y-3">
           {accounts.map((account, index) => (
-            <div key={`${account.code}-${index}`} className="grid gap-2 rounded-xl border border-border p-3 md:grid-cols-[7rem_1fr_9rem_1fr_auto]">
+            <div key={`${account.code}-${index}`} className="grid gap-2 rounded-xl border border-stone-200/80 p-3 md:grid-cols-[7rem_1fr_9rem_1fr_auto]">
               <input className={inputClass} dir="ltr" value={account.code} onChange={(e) => change(index, { code: e.target.value })} placeholder="کد" aria-label="کد حساب" />
               <input className={inputClass} value={account.name} onChange={(e) => change(index, { name: e.target.value })} placeholder="نام حساب" aria-label="نام حساب" />
               <SearchableSelect
@@ -142,7 +142,7 @@ export function AccountsSettings() {
           ))}
         </div>
         {accounts.length === 0 ? <p className="mt-4 text-sm text-muted-foreground">حداقل یک سرفصل اضافه کنید.</p> : null}
-      </section>
+      </SectionCard>
 
       <div className="max-w-xs">
         <PrimaryButton onClick={save} type="button" disabled={saving}>{saving ? "در حال ذخیره…" : "ذخیرهٔ سرفصل‌ها"}</PrimaryButton>

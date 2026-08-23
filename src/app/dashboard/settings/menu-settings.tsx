@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
 import { MenuManager } from "../menu/menu-manager";
 import { ErrorBox, InfoBox, SecondaryButton, api, errorMessage } from "../ui";
+import { SectionCard } from "../page-chrome";
 
 interface ImportPreview {
   items: number;
@@ -56,8 +57,7 @@ export function MenuSettings() {
 
   return (
     <div className="min-w-0 space-y-8">
-      <section className="min-w-0 rounded-2xl bg-card p-5 shadow-sm">
-        <h2 className="mb-1 font-semibold">ورود گروهی منو</h2>
+      <SectionCard title="ورود گروهی منو">
         <p className="mb-4 text-sm text-muted-foreground">
           ابتدا پیش‌نمایش را ببینید، سپس ورود را تأیید کنید. فایل‌های CSV و XLSX پذیرفته می‌شوند و قیمت‌ها به تومان هستند.
         </p>
@@ -91,7 +91,7 @@ export function MenuSettings() {
         <ErrorBox>{error}</ErrorBox>
         {success ? <InfoBox>{success}</InfoBox> : null}
         {preview ? (
-          <div className="mt-4 rounded-xl border border-border p-4">
+          <div className="mt-4 rounded-xl border border-stone-200/80 p-4">
             <h3 className="mb-2 text-sm font-semibold">نتیجهٔ پیش‌نمایش</h3>
             <p className="text-sm text-muted-foreground">
               {toPersianDigits(preview.items)} آیتم در {toPersianDigits(preview.categories)} دسته، {toPersianDigits(preview.modifierGroups)} گروه افزودنی و {toPersianDigits(preview.modifiers)} افزودنی پیدا شد.
@@ -103,7 +103,7 @@ export function MenuSettings() {
             ) : <p className="mt-3 text-sm text-primary">فایل آمادهٔ ورود است.</p>}
           </div>
         ) : null}
-      </section>
+      </SectionCard>
 
       <section>
         <div className="mb-4">

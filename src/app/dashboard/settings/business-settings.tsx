@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ErrorBox, Field, InfoBox, PrimaryButton, api, errorMessage, inputClass } from "../ui";
+import { SectionCard } from "../page-chrome";
 
 interface BusinessState {
   business: { name: string } | null;
@@ -112,8 +113,7 @@ export function BusinessSettings() {
       <ErrorBox>{error}</ErrorBox>
       {saved ? <InfoBox>اطلاعات کسب‌وکار ذخیره شد.</InfoBox> : null}
 
-      <section className="rounded-2xl bg-card p-5 shadow-sm">
-        <h2 className="mb-1 font-semibold">هویت کسب‌وکار</h2>
+      <SectionCard title="هویت کسب‌وکار">
         <p className="mb-4 text-sm text-muted-foreground">نامی که در داشبورد و رسید مشتری نمایش داده می‌شود.</p>
         <div className="grid gap-x-4 sm:grid-cols-2">
           <Field label="نام کسب‌وکار">
@@ -142,10 +142,9 @@ export function BusinessSettings() {
             />
           </Field>
         </div>
-      </section>
+      </SectionCard>
 
-      <section className="rounded-2xl bg-card p-5 shadow-sm">
-        <h2 className="mb-1 font-semibold">شعبهٔ فعال</h2>
+      <SectionCard title="شعبهٔ فعال">
         <p className="mb-4 text-sm text-muted-foreground">این اطلاعات برای شعبه‌ای که اکنون انتخاب شده است استفاده می‌شود.</p>
         <div className="grid gap-x-4 sm:grid-cols-2">
           <Field label="نام شعبه">
@@ -158,13 +157,12 @@ export function BusinessSettings() {
         <Field label="نشانی">
           <textarea className={`${inputClass} min-h-24 py-2`} value={form.address} onChange={(e) => change("address", e.target.value)} />
         </Field>
-      </section>
+      </SectionCard>
 
-      <section className="rounded-2xl bg-card p-5 shadow-sm">
-        <h2 className="mb-1 font-semibold">متن پایین رسید</h2>
+      <SectionCard title="متن پایین رسید">
         <p className="mb-4 text-sm text-muted-foreground">مثلاً پیام تشکر، شرایط مرجوعی یا راه ارتباطی.</p>
         <textarea className={`${inputClass} min-h-24 py-2`} value={form.receiptFooter} onChange={(e) => change("receiptFooter", e.target.value)} placeholder="از خرید شما متشکریم" />
-      </section>
+      </SectionCard>
 
       <div className="max-w-xs">
         <PrimaryButton disabled={saving}>{saving ? "در حال ذخیره…" : "ذخیرهٔ اطلاعات"}</PrimaryButton>

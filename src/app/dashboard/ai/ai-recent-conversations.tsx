@@ -5,6 +5,7 @@ import { Loader2Icon, MessageSquareIcon } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useFeatureLocked } from "@/components/feature-lock";
+import { cardClass } from "../page-chrome";
 
 interface ConversationSummary {
   id: string;
@@ -58,9 +59,9 @@ export function AiRecentConversations({
   }, [refreshKey, locked]);
 
   return (
-    <section className="flex flex-1 flex-col overflow-hidden rounded-2xl border bg-card">
-      <header className="border-b px-3 py-2.5">
-        <p className="text-sm font-semibold">گفتگوهای اخیر</p>
+    <section className={cn("flex flex-1 flex-col overflow-hidden", cardClass)}>
+      <header className="border-b border-stone-200/80 px-3 py-2.5">
+        <p className="text-sm font-semibold text-stone-950">گفتگوهای اخیر</p>
       </header>
       <div className="max-h-[50vh] overflow-y-auto p-1.5 lg:max-h-none">
         {items === null ? (

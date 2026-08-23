@@ -20,6 +20,8 @@ import { toPersianDigits } from "@/lib/digits";
 import { formatStartTime } from "@/lib/business-day";
 import { formatJalali } from "@/lib/jalali";
 import { ErrorBox, InfoBox, api, errorMessage, inputClass } from "../ui";
+import { SectionCard } from "../page-chrome";
+import { Button } from "@/components/ui/button";
 
 interface BusinessDayStatus {
   timeZone: string;
@@ -145,10 +147,7 @@ export function BusinessDaySettings() {
     );
 
   return (
-    <section className="rounded-2xl bg-card p-5 shadow-sm">
-      <h2 className="mb-1 font-semibold">
-        روز کاری{locationName ? ` — ${locationName}` : ""}
-      </h2>
+    <SectionCard title={`روز کاری${locationName ? ` — ${locationName}` : ""}`}>
       <p className="mb-4 text-sm text-muted-foreground">
         اگر کار شعبه از شب تا بامداد ادامه دارد، ساعت شروع روز کاری را تعیین
         کنید تا کل یک سرویس — مثلاً ۱۸:۰۰ تا ۰۳:۰۰ بامداد — یک روز کاری واحد
@@ -215,23 +214,13 @@ export function BusinessDaySettings() {
                 onChange={(event) => setStartTime(event.target.value)}
               />
             </label>
-            <button
-              type="button"
-              onClick={save}
-              disabled={busy}
-              className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/85 disabled:opacity-50"
-            >
+            <Button type="button" onClick={save} disabled={busy}>
               {status.enabled ? "ذخیرهٔ ساعت شروع" : "فعال‌سازی روز کاری"}
-            </button>
+            </Button>
             {status.enabled ? (
-              <button
-                type="button"
-                onClick={disable}
-                disabled={busy}
-                className="rounded-lg border border-input px-4 py-2 text-sm transition hover:bg-muted disabled:opacity-50"
-              >
+              <Button type="button" variant="outline" onClick={disable} disabled={busy}>
                 غیرفعال‌کردن
-              </button>
+              </Button>
             ) : null}
           </div>
 
@@ -241,7 +230,7 @@ export function BusinessDaySettings() {
           </p>
 
           {status.enabled && canManage ? (
-            <div className="mt-6 border-t border-border pt-5">
+            <div className="mt-6 border-t border-stone-200/80 pt-5">
               <h3 className="mb-1 text-sm font-semibold">بستن دستی روز کاری</h3>
               <p className="mb-3 text-xs text-muted-foreground">
                 معمولاً به این دکمه نیازی نیست: وقتی صندوق‌دار شیفتش را می‌بندد
@@ -252,23 +241,13 @@ export function BusinessDaySettings() {
                 در روز کاری خودش باقی است.
               </p>
               {status.manuallyClosed ? (
-                <button
-                  type="button"
-                  onClick={reopenDay}
-                  disabled={busy}
-                  className="rounded-lg border border-input px-4 py-2 text-sm transition hover:bg-muted disabled:opacity-50"
-                >
+                <Button type="button" variant="outline" onClick={reopenDay} disabled={busy}>
                   بازکردن دوبارهٔ روز کاری
-                </button>
+                </Button>
               ) : (
-                <button
-                  type="button"
-                  onClick={closeDay}
-                  disabled={busy}
-                  className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/85 disabled:opacity-50"
-                >
+                <Button type="button" onClick={closeDay} disabled={busy}>
                   بستن روز کاری
-                </button>
+                </Button>
               )}
 
               {closures.length > 0 ? (
@@ -294,6 +273,6 @@ export function BusinessDaySettings() {
           ) : null}
         </>
       ) : null}
-    </section>
+    </SectionCard>
   );
 }

@@ -6,6 +6,7 @@ import type { Industry } from "@/lib/industries";
 import { labelFor } from "@/lib/industry-profile";
 import { effectivePermissions, parseOverrides } from "@/lib/permissions";
 import { visibleSettingsTabs } from "@/lib/settings-tabs";
+import { PageHeader, PageShell } from "../page-chrome";
 import { SettingsManager } from "./settings-manager";
 
 export default async function SettingsPage() {
@@ -40,15 +41,12 @@ export default async function SettingsPage() {
   if (tabs.length === 0) redirect("/dashboard");
 
   return (
-    <div className="mx-auto max-w-6xl">
-      <header className="mb-6">
-        <h1 className="text-2xl font-bold">تنظیمات</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          مدیریت اطلاعات کسب‌وکار، امور مالی، دسترسی‌ها، {labelFor(industry, "catalogue")} و تجهیزات. بخش‌هایی که مجوزشان را
-          ندارید نمایش داده نمی‌شوند.
-        </p>
-      </header>
+    <PageShell>
+      <PageHeader
+        title="تنظیمات"
+        description={`مدیریت اطلاعات کسب‌وکار، امور مالی، دسترسی‌ها، ${labelFor(industry, "catalogue")} و تجهیزات. بخش‌هایی که مجوزشان را ندارید نمایش داده نمی‌شوند.`}
+      />
       <SettingsManager tabs={tabs} features={features} currentUserId={session.sub} isOwner={member.role === "owner"} />
-    </div>
+    </PageShell>
   );
 }

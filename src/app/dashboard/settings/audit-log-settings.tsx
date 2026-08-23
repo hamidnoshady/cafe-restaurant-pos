@@ -13,6 +13,7 @@ import { formatJalali } from "@/lib/jalali";
 import { toPersianDigits } from "@/lib/digits";
 import { auditActionLabel, auditEntityLabel, credentialKindLabel, type CredentialKind } from "@/lib/audit";
 import { ErrorBox, api, errorMessage } from "../ui";
+import { SectionCard } from "../page-chrome";
 
 interface AuditEntry {
   id: number;
@@ -68,8 +69,7 @@ export function AuditLogSettings() {
 
   return (
     <div className="space-y-6">
-      <section className="rounded-2xl bg-card p-5 shadow-sm">
-        <h2 className="mb-1 font-semibold">گزارش حسابرسی</h2>
+      <SectionCard title="گزارش حسابرسی">
         <p className="mb-4 text-sm text-muted-foreground">
           رویدادهای امنیتی کسب‌وکار: ورود کارکنان، تغییر اعتبارنامه، ثبت/حذف دستگاه و شروع/پایان شیفت.
         </p>
@@ -81,11 +81,12 @@ export function AuditLogSettings() {
               key={filter.value}
               type="button"
               onClick={() => setEntity(filter.value)}
+              aria-pressed={entity === filter.value}
               className={
-                "rounded-lg px-3 py-1.5 text-xs " +
+                "min-h-9 rounded-lg border px-3 text-xs font-medium transition-colors " +
                 (entity === filter.value
-                  ? "bg-primary/10 font-semibold text-primary"
-                  : "text-muted-foreground hover:bg-muted")
+                  ? "border-amber-200 bg-amber-100 text-amber-950"
+                  : "border-stone-200/80 text-stone-600 hover:bg-stone-50")
               }
             >
               {filter.label}
@@ -115,7 +116,7 @@ export function AuditLogSettings() {
             ))}
           </div>
         )}
-      </section>
+      </SectionCard>
     </div>
   );
 }

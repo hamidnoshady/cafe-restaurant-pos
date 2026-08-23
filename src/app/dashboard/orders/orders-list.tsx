@@ -12,6 +12,7 @@ import {
 } from "@/lib/modifier-display";
 import { ModifierBadges } from "../modifier-badges";
 import { useRealtime } from "../use-realtime";
+import { PageShell } from "../page-chrome";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { JalaliDatePicker } from "../jalali-date-picker";
 import { api } from "../ui";
@@ -776,7 +777,7 @@ export function OrdersList({
   }
 
   return (
-    <div className="mx-auto w-full max-w-[1600px]" dir="rtl">
+    <PageShell>
       <header className="mb-3 flex flex-col gap-3 rounded-2xl border border-[#EAE8E2] bg-white p-3 shadow-[0_1px_3px_rgba(37,37,34,0.03)] sm:p-4 md:flex-row md:items-center md:justify-between">
         <div className="flex min-w-0 items-center gap-3">
           <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-[#FFF1D8] text-[#9B6700]">
@@ -1171,6 +1172,6 @@ export function OrdersList({
         canAmendClosed={canAmendClosed}
         onChanged={() => void load()}
       />
-    </div>
+    </PageShell>
   );
 }

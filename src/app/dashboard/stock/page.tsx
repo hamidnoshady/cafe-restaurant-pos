@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { formatPersianNumber } from "@/lib/digits";
 import { useMoney } from "@/components/money/money-context";
 import { api, ErrorBox, Field, inputClass } from "../ui";
+import { PageHeader, PageShell, SectionCard } from "../page-chrome";
 
 interface StockItem {
   id: string;
@@ -40,15 +41,6 @@ interface ReportRow {
   valueRial?: number;
 }
 
-function Panel({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section className="rounded-2xl border border-stone-200 bg-white p-4 shadow-[0_1px_2px_rgb(41_37_36/0.035)] sm:p-5">
-      <h2 className="font-semibold text-stone-950">{title}</h2>
-      <div className="mt-4 space-y-3">{children}</div>
-    </section>
-  );
-}
-
 export default function StockPage() {
   const money = useMoney();
   const [items, setItems] = useState<StockItem[]>([]);
@@ -77,13 +69,11 @@ export default function StockPage() {
   useEffect(load, [load]);
 
   return (
-    <div className="mx-auto w-full max-w-[1100px]">
-      <header className="mb-5 border-b border-stone-200/80 pb-4">
-        <h1 className="text-2xl font-bold tracking-tight text-stone-950">خرید و انبار</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          خرید، برگشت به تأمین‌کننده، انتقال بین شعبه‌ها و گزارش کمبود/راکد موجودی.
-        </p>
-      </header>
+    <PageShell className="max-w-[1100px]">
+      <PageHeader
+        title="خرید و انبار"
+        description="خرید، برگشت به تأمین‌کننده، انتقال بین شعبه‌ها و گزارش کمبود/راکد موجودی."
+      />
 
       <ErrorBox>{error}</ErrorBox>
       {done ? <p className="mb-3 text-xs text-emerald-700">{done}</p> : null}
@@ -102,7 +92,7 @@ export default function StockPage() {
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
-        <Panel title="کمبود موجودی (زیر نقطهٔ سفارش)">
+        <SectionCard title="کمبود موجودی (زیر نقطهٔ سفارش)" bodyClassName="space-y-3">
           {low.length === 0 ? (
             <p className="rounded-xl border border-dashed border-stone-200 px-3 py-6 text-center text-sm text-muted-foreground">چیزی زیر نقطهٔ سفارش نیست.</p>
           ) : (
@@ -117,8 +107,8 @@ export default function StockPage() {
               ))}
             </ul>
           )}
-        </Panel>
-        <Panel title="کالای راکد (۹۰ روز بدون فروش)">
+        </SectionCard>
+        <SectionCard title="کالای راکد (۹۰ روز بدون فروش)" bodyClassName="space-y-3">
           {dead.length === 0 ? (
             <p className="rounded-xl border border-dashed border-stone-200 px-3 py-6 text-center text-sm text-muted-foreground">کالای راکدی نیست.</p>
           ) : (
@@ -131,11 +121,11 @@ export default function StockPage() {
               ))}
             </ul>
           )}
-        </Panel>
+        </SectionCard>
       </div>
 
       <div className="mt-4">
-        <Panel title="خریدهای اخیر">
+        <SectionCard title="خریدهای اخیر" bodyClassName="space-y-3">
           {purchases.length === 0 ? (
             <p className="rounded-xl border border-dashed border-stone-200 px-3 py-6 text-center text-sm text-muted-foreground">هنوز خریدی ثبت نشده است.</p>
           ) : (
@@ -150,9 +140,9 @@ export default function StockPage() {
               ))}
             </ul>
           )}
-        </Panel>
+        </SectionCard>
       </div>
-    </div>
+    </PageShell>
   );
 }
 
@@ -208,7 +198,7 @@ function PurchaseForm({
   const itemName = (id: string) => items.find((i) => i.id === id)?.name ?? id;
 
   return (
-    <Panel title="دریافت خرید">
+    <SectionCard title="دریافت خرید" bodyClassName="space-y-3">
       <div className="grid gap-2">
         <Field label="تأمین‌کننده">
           <select className={inputClass} value={supplierId} onChange={(e) => setSupplierId(e.target.value)}>
@@ -251,7 +241,7 @@ function PurchaseForm({
           ثبت خرید
         </Button>
       </div>
-    </Panel>
+    </SectionCard>
   );
 }
 
@@ -288,7 +278,7 @@ function ReturnForm({
   }
 
   return (
-    <Panel title="برگشت به تأمین‌کننده">
+    <SectionCard title="برگشت به تأمین‌کننده" bodyClassName="space-y-3">
       <div className="grid gap-2">
         <Field label="کالا">
           <select className={inputClass} value={itemId} onChange={(e) => setItemId(e.target.value)}>
@@ -310,6 +300,6 @@ function ReturnForm({
           ثبت برگشت
         </Button>
       </div>
-    </Panel>
+    </SectionCard>
   );
 }

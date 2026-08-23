@@ -17,6 +17,7 @@ import { useMoney } from "@/components/money/money-context";
 import { TABLE_STATUS_LABELS, type TableStatus } from "@/lib/table-sessions";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useRealtime } from "../use-realtime";
+import { PageShell } from "../page-chrome";
 import {
   api,
   ErrorBox,
@@ -179,7 +180,7 @@ export function FloorPlan({ canEdit }: { canEdit: boolean }) {
   }
 
   return (
-    <div className="mx-auto w-full max-w-[1600px]" dir="rtl">
+    <PageShell>
       <header className={`mb-3 ${SURFACE} overflow-hidden`}>
         <div className="flex flex-col gap-3 p-3 sm:p-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex min-w-0 items-center gap-3">
@@ -378,7 +379,7 @@ export function FloorPlan({ canEdit }: { canEdit: boolean }) {
           </aside>
         </div>
       )}
-    </div>
+    </PageShell>
   );
 }
 

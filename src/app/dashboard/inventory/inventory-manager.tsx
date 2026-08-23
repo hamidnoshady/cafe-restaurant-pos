@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { formatQuantity } from "@/lib/digits";
+import { TabBar, TabPanel } from "../page-chrome";
 import { api, ErrorBox } from "../ui";
 import { useRealtime } from "../use-realtime";
 import { ItemsSection } from "./items-section";
@@ -157,40 +158,9 @@ export function InventoryManager() {
         </div>
       ) : null}
 
-      <nav
-        aria-label="بخش‌های انبار"
-        className="rounded-2xl border border-stone-200/80 bg-white p-2 shadow-[0_1px_2px_rgb(41_37_36/0.03)]"
-      >
-        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
-          {TABS.map((t) => {
-            const isActive = tab === t.key;
-            return (
-              <button
-                key={t.key}
-                id={`inventory-tab-${t.key}`}
-                type="button"
-                aria-pressed={isActive}
-                aria-controls="inventory-tabpanel"
-                onClick={() => setTab(t.key)}
-                className={`min-h-[52px] rounded-xl border px-3 text-center text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-amber-400/40 sm:px-4 ${
-                  isActive
-                    ? "border-amber-200 bg-amber-100 text-amber-950 shadow-[0_1px_2px_rgb(120_53_15/0.08)]"
-                    : "border-transparent bg-transparent text-stone-600 hover:border-stone-200 hover:bg-stone-50 hover:text-stone-950"
-                }`}
-              >
-                {t.label}
-              </button>
-            );
-          })}
-        </div>
-      </nav>
+      <TabBar idPrefix="inventory" label="بخش‌های انبار" tabs={TABS} active={tab} onChange={setTab} />
 
-      <div
-        id="inventory-tabpanel"
-        role="region"
-        aria-labelledby={`inventory-tab-${tab}`}
-        className="min-w-0"
-      >
+      <TabPanel idPrefix="inventory" active={tab}>
         {tab === "items" ? (
           <ItemsSection items={data.items} busy={busy} run={run} />
         ) : null}
@@ -225,7 +195,7 @@ export function InventoryManager() {
         {tab === "counts" ? (
           <StockCountsSection items={data.items} busy={busy} run={run} />
         ) : null}
-      </div>
+      </TabPanel>
     </div>
   );
 }

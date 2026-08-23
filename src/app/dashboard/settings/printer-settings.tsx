@@ -5,6 +5,7 @@ import { kickDrawer, testPrint } from "@/lib/print-agent-client";
 import type { PrinterConnection } from "@/lib/printer-connection";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ErrorBox, Field, InfoBox, PrimaryButton, SecondaryButton, api, errorMessage, inputClass } from "../ui";
+import { SectionCard } from "../page-chrome";
 
 interface Printer {
   id: string;
@@ -138,11 +139,10 @@ export function PrinterSettings() {
       <ErrorBox>{error}</ErrorBox>
       {notice ? <InfoBox>{notice}</InfoBox> : null}
 
-      <section className="rounded-2xl bg-card p-5 shadow-sm">
-        <h2 className="mb-1 font-semibold">افزودن چاپگر</h2>
+      <SectionCard title="افزودن چاپگر">
         <p className="mb-4 text-sm text-muted-foreground">چاپگرهای رسید و آشپزخانه را به شعبهٔ فعال وصل کنید. عامل چاپ محلی باید روی دستگاه صندوق اجرا باشد.</p>
         <PrinterForm value={draft} onChange={setDraft} onSubmit={create} submitLabel="افزودن چاپگر" busy={busy} />
-      </section>
+      </SectionCard>
 
       <section className="space-y-4">
         <div>
@@ -209,13 +209,13 @@ function PrinterCard({ printer, busy, onSave, onDelete, onAgentAction }: { print
   }, [printer]);
 
   return (
-    <div className="rounded-2xl bg-card p-5 shadow-sm">
+    <SectionCard>
       <PrinterForm value={value} onChange={setValue} onSubmit={(event) => { event.preventDefault(); void onSave(printer, value); }} submitLabel="ذخیرهٔ چاپگر" busy={busy} />
-      <div className="mt-4 flex flex-wrap gap-2 border-t border-border pt-4">
+      <div className="mt-4 flex flex-wrap gap-2 border-t border-stone-200/80 pt-4">
         <SecondaryButton disabled={busy} onClick={() => void onAgentAction({ ...printer, kind: value.kind, connection: { ...printer.connection, ip: value.ip, port: Number(value.port), paperWidthMm: Number(value.paperWidthMm) as 58 | 80 } }, "print")}>چاپ آزمایشی</SecondaryButton>
         {value.kind === "receipt" ? <SecondaryButton disabled={busy} onClick={() => void onAgentAction({ ...printer, kind: value.kind, connection: { ...printer.connection, ip: value.ip, port: Number(value.port), paperWidthMm: Number(value.paperWidthMm) as 58 | 80 } }, "drawer")}>آزمایش کشوی پول</SecondaryButton> : null}
         <SecondaryButton disabled={busy} onClick={() => void onDelete(printer)}>حذف چاپگر</SecondaryButton>
       </div>
-    </div>
+    </SectionCard>
   );
 }

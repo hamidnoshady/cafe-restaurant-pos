@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { toLatinDigits } from "@/lib/digits";
 import { ErrorBox, Field, InfoBox, PrimaryButton, api, errorMessage, inputClass } from "../ui";
+import { SectionCard } from "../page-chrome";
 
 interface PricingResponse {
   pricing: { defaultMarginPercent: number | null; fallbackOverheadPercent: number | null };
@@ -80,8 +81,7 @@ export function PricingSettings() {
       <ErrorBox>{error}</ErrorBox>
       {saved ? <InfoBox>تنظیمات قیمت‌گذاری ذخیره شد.</InfoBox> : null}
 
-      <section className="rounded-2xl bg-card p-5 shadow-sm">
-        <h2 className="mb-1 font-semibold">هدف حاشیه سود پیش‌فرض</h2>
+      <SectionCard title="هدف حاشیه سود پیش‌فرض">
         <p className="mb-4 text-sm text-muted-foreground">
           این درصد برای پیشنهاد قیمت هر آیتم منو استفاده می‌شود (بهای مواد + سربار عملیاتی، تقسیم بر باقیمانده پس از این
           حاشیه سود از قیمت فروش) مگر آنکه آن آیتم مقدار اختصاصی خودش را داشته باشد. خالی بگذارید تا تا زمان تعیین این
@@ -105,10 +105,9 @@ export function PricingSettings() {
             </div>
           </Field>
         </div>
-      </section>
+      </SectionCard>
 
-      <section className="rounded-2xl bg-card p-5 shadow-sm">
-        <h2 className="mb-1 font-semibold">سربار برآوردی برای کسب‌وکار تازه</h2>
+      <SectionCard title="سربار برآوردی برای کسب‌وکار تازه">
         <p className="mb-4 text-sm text-muted-foreground">
           سربار (اجاره، آب و برق، حقوق) در حالت عادی خودکار و از روی ۳۰ روز اخیر دفتر حسابداری محاسبه می‌شود. تا وقتی
           فروش کافی برای این محاسبه ثبت نشده — مثلاً در روزهای اول کسب‌وکار — این عدد به‌جای آن استفاده می‌شود. به‌محض
@@ -132,7 +131,7 @@ export function PricingSettings() {
             </div>
           </Field>
         </div>
-      </section>
+      </SectionCard>
 
       <div className="max-w-xs">
         <PrimaryButton disabled={saving}>{saving ? "در حال ذخیره…" : "ذخیرهٔ قیمت‌گذاری"}</PrimaryButton>
