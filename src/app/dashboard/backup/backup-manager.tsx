@@ -1,10 +1,14 @@
 "use client";
 
 /**
- * Backup dashboard (Phase 10). Two cards:
+ * Backup dashboard (Phase 10). Four cards:
  *  1. Status — health badges, last successful local/cloud backup, a manual
  *     «پشتیبان‌گیری هم‌اکنون» button, and the recent run history.
- *  2. Settings (Owner only) — schedule/retention plus the cloud target.
+ *  2. Restore (Owner only) — the counterpart of 1: verify a stored artifact
+ *     into a scratch database, then replace the live one with it after an
+ *     explicit confirmation. Hidden unless the install holds one business.
+ *  3. Export (Owner only) — this business's own data, as SQL or xlsx.
+ *  4. Settings (Owner only) — schedule/retention plus the cloud target.
  *     Secrets are write-only: the server never echoes them back, an empty
  *     field on save means "keep the stored value".
  */
@@ -14,7 +18,7 @@ import { formatJalali } from "@/lib/jalali";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ErrorBox, Field, InfoBox, PrimaryButton, api, inputClass } from "../ui";
 import { Button } from "@/components/ui/button";
-import { SectionCard, StatusBadge } from "../page-chrome";
+import { EmptyState, SectionCard, StatusBadge } from "../page-chrome";
 
 interface Health {
   enabled: boolean;
@@ -61,6 +65,27 @@ interface ConfigForm {
   cloud: CloudForm;
 }
 
+interface RestoreArtifact {
+  key: string;
+  kind: "local" | "cloud";
+  sizeBytes: number | null;
+  startedAt: string;
+  exists: boolean;
+}
+
+interface RestoreSummary {
+  source: string;
+  migrations: number;
+  latestMigration: string;
+  tables: { name: string; rows: number }[];
+}
+
+interface RestoreView {
+  allowed: boolean;
+  local: RestoreArtifact[];
+  cloud: RestoreArtifact[];
+}
+
 const ALERT_LABELS: Record<string, string> = {
   ok: "سالم",
   disabled: "پشتیبان‌گیری خودکار غیرفعال است",
@@ -83,6 +108,32 @@ const CONFIG_ERRORS: Record<string, string> = {
   invalid_directory: "مسیر پوشهٔ پشتیبان‌گیری نامعتبر است.",
   cloud_backup_unavailable_local: "در نصب محلی، پشتیبان‌گیری ابری در دسترس نیست.",
 };
+
+const RESTORE_ERRORS: Record<string, string> = {
+  restore_busy: "یک بازگردانی دیگر در حال اجراست؛ کمی بعد دوباره تلاش کنید.",
+  restore_not_available:
+    "بازگردانی کل پایگاه‌داده روی این نصب در دسترس نیست، زیرا دادهٔ بیش از یک کسب‌وکار را نگه می‌دارد.",
+  artifact_not_found: "این فایل دیگر روی دیسک نیست (احتمالاً توسط نگهداری نسخه‌ها حذف شده است).",
+  cloud_not_configured: "اطلاعات فضای ابری برای دانلود پیکربندی نشده است.",
+  passphrase_required: "عبارت عبور رمزنگاری ذخیره نشده است و نمی‌توان نسخهٔ ابری را باز کرد.",
+  missing_artifact: "نسخهٔ پشتیبان انتخاب نشده است.",
+  download_failed: "دریافت نسخهٔ پشتیبان از فضای ابری ناموفق بود:",
+  decrypt_failed: "رمزگشایی نسخهٔ پشتیبان ناموفق بود — عبارت عبور را بررسی کنید:",
+};
+
+function restoreErrorMessage(code: string): string {
+  if (!code) return "بازگردانی ناموفق بود.";
+  // download_failed:… / decrypt_failed:… carry the underlying reason after the colon.
+  const sep = code.indexOf(":");
+  if (sep !== -1) {
+    const prefix = code.slice(0, sep);
+    const detail = code.slice(sep + 1);
+    if (prefix === "download_failed" || prefix === "decrypt_failed") {
+      return `${RESTORE_ERRORS[prefix]} ${detail}`;
+    }
+  }
+  return RESTORE_ERRORS[code] ?? code;
+}
 
 function formatTime(iso: string | null): string {
   if (!iso) return "هرگز";
@@ -126,9 +177,259 @@ export function BackupManager({ isOwner }: { isOwner: boolean }) {
   return (
     <div className="space-y-6">
       <StatusCard health={health} runs={runs} onChanged={loadStatus} />
+      {isOwner ? <RestoreCard onChanged={loadStatus} /> : null}
       {isOwner ? <ExportCard /> : null}
       {isOwner ? <SettingsCard onSaved={loadStatus} /> : null}
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Restore (Owner only) — verify into a scratch DB, then apply on confirmation
+// ---------------------------------------------------------------------------
+
+/** The source toggle's two pills — a pressed chip is amber (docs/ui-conventions.md). */
+function SourcePill({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`min-h-9 rounded-lg border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-amber-400/40 ${
+        active
+          ? "border-amber-200 bg-amber-100 text-amber-950"
+          : "border-transparent text-stone-600 hover:bg-stone-50 hover:text-stone-950"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function RestoreCard({ onChanged }: { onChanged: () => void }) {
+  const [view, setView] = useState<RestoreView | null>(null);
+  const [source, setSource] = useState<"local" | "cloud">("local");
+  /** The artifact key a request is running for, and which of the two it is. */
+  const [busy, setBusy] = useState<string | null>(null);
+  const [busyAction, setBusyAction] = useState<"verify" | "apply" | null>(null);
+  const [verify, setVerify] = useState<{ key: string; summary: RestoreSummary } | null>(null);
+  const [confirmKey, setConfirmKey] = useState<string | null>(null);
+  const [confirmed, setConfirmed] = useState(false);
+  const [done, setDone] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    const res = await api<RestoreView>("/api/backup/restore");
+    if (res.ok) setView(res.data);
+    setError(null);
+    setVerify(null);
+    setConfirmKey(null);
+    setConfirmed(false);
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const artifacts = (source === "local" ? view?.local : view?.cloud) ?? [];
+
+  // A whole-database restore replaces every business on the install, so the
+  // server only offers it when there is exactly one. Elsewhere the card is a
+  // capability this install doesn't have — gone, not explained, the same way a
+  // feature flag hides what a business hasn't bought.
+  if (view && !view.allowed) return null;
+
+  function pickSource(next: "local" | "cloud") {
+    setSource(next);
+    setConfirmKey(null);
+    setConfirmed(false);
+    setVerify(null);
+  }
+
+  async function run(key: string, apply: boolean) {
+    setBusy(key);
+    setBusyAction(apply ? "apply" : "verify");
+    setError(null);
+    setVerify(null);
+    setDone(false);
+    const res = await api<{ status?: string; summary?: RestoreSummary; error?: string }>(
+      "/api/backup/restore",
+      { method: "POST", body: JSON.stringify({ source, artifact: key, apply }) },
+    );
+    setBusy(null);
+    setBusyAction(null);
+    if (!res.ok || res.data.status === "failed") {
+      setError(restoreErrorMessage(res.data.error ?? ""));
+      return;
+    }
+    if (res.data.status === "verified" && res.data.summary) {
+      setVerify({ key, summary: res.data.summary });
+    } else if (res.data.status === "applied") {
+      setDone(true);
+      onChanged();
+      load();
+    }
+  }
+
+  return (
+    <SectionCard
+      title="بازگردانی پشتیبان"
+      description="کل پایگاه‌دادهٔ این نصب را از یک نسخهٔ پشتیبان محلی یا ابری بازگردانی کنید. هر بازگردانی ابتدا در یک پایگاه‌دادهٔ موقت بررسی می‌شود و بدون تأیید شما چیزی تغییر نمی‌کند."
+      actions={
+        view?.allowed ? (
+          <div
+            role="group"
+            aria-label="منبع بازگردانی"
+            className="flex gap-1 rounded-xl border border-stone-200/80 bg-stone-50/60 p-1"
+          >
+            <SourcePill active={source === "local"} onClick={() => pickSource("local")}>
+              محلی
+            </SourcePill>
+            <SourcePill active={source === "cloud"} onClick={() => pickSource("cloud")}>
+              ابری
+            </SourcePill>
+          </div>
+        ) : null
+      }
+    >
+      {error ? <ErrorBox>{error}</ErrorBox> : null}
+      {verify ? (
+        <InfoBox>
+          بررسی <code dir="ltr">{verify.summary.source}</code> موفق بود —{" "}
+          {toPersianDigits(String(verify.summary.migrations))} مهاجرت (آخرین:{" "}
+          <code dir="ltr">{verify.summary.latestMigration}</code>) و جدول‌های اصلی:{" "}
+          {verify.summary.tables
+            .map((t) => `${t.name}: ${toPersianDigits(String(t.rows))}`)
+            .join(" · ")}
+          . این نسخه برای بازگردانی آماده است.
+        </InfoBox>
+      ) : null}
+      {done ? (
+        <InfoBox>
+          بازگردانی انجام شد. داده‌های ثبت‌شده پس از زمان این پشتیبان از بین رفتند؛ برنامه را دوباره
+          راه‌اندازی کنید تا با پایگاه‌دادهٔ بازگردانی‌شده هماهنگ شود و در صورت نیاز دوباره وارد شوید.
+        </InfoBox>
+      ) : null}
+
+      {!view ? (
+        <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>
+      ) : artifacts.length === 0 ? (
+        <EmptyState>نسخهٔ پشتیبان {source === "local" ? "محلی" : "ابری"} موفقی یافت نشد.</EmptyState>
+      ) : (
+        <ul className="space-y-2">
+          {artifacts.map((artifact) => {
+            const isBusy = busy === artifact.key;
+            return (
+              <li
+                key={artifact.key}
+                className="rounded-xl border border-stone-200/80 p-3 sm:p-3.5"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p
+                      dir="ltr"
+                      title={artifact.key}
+                      className="truncate text-start font-mono text-xs text-stone-950"
+                    >
+                      {artifact.key}
+                    </p>
+                    <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                      <span>
+                        {formatTime(artifact.startedAt)}
+                        {artifact.sizeBytes !== null ? ` · ${formatSize(artifact.sizeBytes)}` : ""}
+                      </span>
+                      {!artifact.exists ? (
+                        <StatusBadge tone="neutral">حذف‌شده توسط نگهداری نسخه‌ها</StatusBadge>
+                      ) : null}
+                      {verify?.key === artifact.key ? (
+                        <StatusBadge tone="positive">بررسی‌شده و آماده</StatusBadge>
+                      ) : null}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={isBusy || !artifact.exists}
+                      onClick={() => void run(artifact.key, false)}
+                    >
+                      {isBusy && busyAction === "verify" ? "در حال بررسی…" : "بررسی"}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                      disabled={isBusy || !artifact.exists}
+                      onClick={() => {
+                        setConfirmKey(confirmKey === artifact.key ? null : artifact.key);
+                        setConfirmed(false);
+                      }}
+                    >
+                      بازگردانی
+                    </Button>
+                  </div>
+                </div>
+
+                {isBusy && busyAction === "apply" ? (
+                  <p className="mt-3 rounded-lg border border-amber-500/25 bg-amber-500/[0.075] px-3 py-2 text-xs text-amber-800">
+                    در حال بازگردانی — پایگاه‌داده به‌طور موقت از دسترس خارج است.
+                  </p>
+                ) : null}
+
+                {confirmKey === artifact.key ? (
+                  <div className="mt-3 space-y-3 rounded-xl border border-destructive/25 bg-destructive/[0.055] p-3">
+                    <p className="text-xs leading-5 text-destructive">
+                      بازگردانی، پایگاه‌دادهٔ فعلی را با محتوای این پشتیبان جایگزین می‌کند؛ هر
+                      داده‌ای که پس از زمان آن ثبت شده (سفارش‌ها، موجودی، اسناد و تنظیمات) از بین
+                      می‌رود. ابتدا همان بررسی اولیه انجام می‌شود و اگر فایل معتبر نباشد، چیزی تغییر
+                      نمی‌کند.
+                    </p>
+                    <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-stone-950">
+                      <input
+                        type="checkbox"
+                        checked={confirmed}
+                        onChange={(e) => setConfirmed(e.target.checked)}
+                        className="size-4"
+                      />
+                      می‌فهمم که داده‌های پس از این پشتیبان حذف می‌شود.
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        size="sm"
+                        disabled={!confirmed || isBusy}
+                        onClick={() => void run(artifact.key, true)}
+                      >
+                        {isBusy && busyAction === "apply" ? "در حال بازگردانی…" : "بازگردانی نهایی"}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setConfirmKey(null)}
+                      >
+                        انصراف
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </SectionCard>
   );
 }
 

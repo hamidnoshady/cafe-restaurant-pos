@@ -255,6 +255,14 @@ export async function withTenant<T>(
  *     forever, which is the failure mode this reason exists to prevent rather
  *     than a convenience. Returns a boolean about the install, never a row.
  *
+ *   - **single-tenant-check** — `restoreAvailable()`: whether this install
+ *     holds exactly one business. The same shape as `first-run` — a `count(*)`
+ *     about the *install*, which no tenant scope can express, since the whole
+ *     question is "is there more than one tenant here". It gates a
+ *     whole-database restore, which replaces every business on the install, so
+ *     scoped it would answer 1 on a shared server and green-light the one
+ *     operation that must never run there. Returns a boolean, never a row.
+ *
  * Every call is a hole in the isolation boundary, so keep them few, keep them
  * short, and never let one wrap a request body that also handles tenant data.
  */

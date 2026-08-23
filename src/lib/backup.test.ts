@@ -10,6 +10,7 @@ import {
   isBackupDue,
   isBackupStale,
   isEncryptedBackup,
+  isPlainArtifactName,
   latestSlotBefore,
   makeArtifactName,
   parseArtifactTimestamp,
@@ -333,5 +334,29 @@ describe("dumpDatabaseUrl", () => {
 
   it("throws when neither is set", () => {
     expect(() => dumpDatabaseUrl({})).toThrow(/BACKUP_DATABASE_URL|DATABASE_URL/);
+  });
+});
+
+describe("isPlainArtifactName", () => {
+  it("accepts the names the backup runner actually produces", () => {
+    expect(isPlainArtifactName(makeArtifactName(new Date("2026-07-21T03:30:05Z")))).toBe(true);
+    expect(isPlainArtifactName("pos-backup-20260721-033005.dump.enc")).toBe(true);
+  });
+
+  it("rejects anything that could escape the backup directory", () => {
+    // The restore route takes this straight from the request body, so a
+    // traversal here would read (and try to restore) an arbitrary file.
+    for (const attempt of [
+      "../../.env",
+      "..\\..\\.env",
+      "/etc/passwd",
+      "D:\\secrets\\dump",
+      "sub/pos-backup-20260721-033005.dump",
+      "..",
+      ".",
+      "",
+    ]) {
+      expect(isPlainArtifactName(attempt)).toBe(false);
+    }
   });
 });

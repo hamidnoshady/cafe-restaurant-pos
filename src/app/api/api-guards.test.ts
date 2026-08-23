@@ -273,11 +273,13 @@ describe("back-office/financial surfaces exclude floor roles", () => {
     }
   });
 
-  it("backup config and export are Owner-only; run/status allow Owner/Manager (Phase 10/17 access decisions)", () => {
+  it("backup config, export and restore are Owner-only; run/status allow Owner/Manager (Phase 10/17 access decisions)", () => {
     // export (Phase 17) hands the browser literally all of a business's data —
     // a materially higher bar than "backup now", so it joins config as Owner-only
-    // rather than Owner/Manager.
-    const OWNER_ONLY = new Set(["backup/config", "backup/export"]);
+    // rather than Owner/Manager. restore (whole-database, only offered on a
+    // single-business install) is at least as destructive as export, so it is
+    // Owner-only for the same reason.
+    const OWNER_ONLY = new Set(["backup/config", "backup/export", "backup/restore"]);
     for (const [key, src] of sources) {
       if (!key.startsWith("backup")) continue;
       const calls = requireRoleCalls(src);
