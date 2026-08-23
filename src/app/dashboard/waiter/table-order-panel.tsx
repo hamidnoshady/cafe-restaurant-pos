@@ -443,8 +443,9 @@ export function TableOrderPanel({
                           <span className="flex items-center gap-2">
                             <button
                               type="button"
+                              aria-label={"کاهش تعداد " + l.name}
                               onClick={() => setQty(l.key, l.quantity - 1)}
-                              className="size-6 rounded bg-muted"
+                              className="flex size-6 items-center justify-center rounded bg-muted transition-colors hover:bg-muted-foreground/20 hover:text-foreground active:scale-95 focus-visible:ring-3 focus-visible:ring-ring/50 outline-none"
                             >
                               −
                             </button>
@@ -453,8 +454,9 @@ export function TableOrderPanel({
                             </span>
                             <button
                               type="button"
+                              aria-label={"افزایش تعداد " + l.name}
                               onClick={() => setQty(l.key, l.quantity + 1)}
-                              className="size-6 rounded bg-muted"
+                              className="flex size-6 items-center justify-center rounded bg-muted transition-colors hover:bg-muted-foreground/20 hover:text-foreground active:scale-95 focus-visible:ring-3 focus-visible:ring-ring/50 outline-none"
                             >
                               +
                             </button>
