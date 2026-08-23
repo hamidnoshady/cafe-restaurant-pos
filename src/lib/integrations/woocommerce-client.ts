@@ -15,15 +15,53 @@ export interface WooCredentials {
   consumerSecret: string;
 }
 
+export interface WooProductAttribute {
+  id: number;
+  name: string;
+  position: number;
+  visible: boolean;
+  variation: boolean;
+  options: string[];
+}
+
+export interface WooProductImage {
+  id: number;
+  src: string;
+  alt: string;
+  position: number;
+}
+
+export interface WooProductCategory {
+  id: number;
+  name: string;
+  slug: string;
+}
+
+export interface WooVariationAttribute {
+  name: string;
+  option: string;
+}
+
 export interface WooProduct {
   id: number;
+  type: string;
   name: string;
   sku: string;
   price: string;
   regular_price: string;
+  sale_price?: string;
   manage_stock: boolean;
   stock_quantity: number | null;
+  stock_status: string;
   status: string;
+  description?: string;
+  short_description?: string;
+  permalink?: string;
+  parent_id?: number;
+  attributes?: WooProductAttribute[];
+  variation_attributes?: WooVariationAttribute[];
+  categories?: WooProductCategory[];
+  images?: WooProductImage[];
 }
 
 export interface WooCustomer {

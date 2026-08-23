@@ -11,6 +11,7 @@
  * drains due events to the store with retry/backoff/dead-lettering.
  */
 import { query, withoutTenantScope, withTenant } from "../db";
+import { getBusinessIndustry } from "../industry-guard";
 import { getConnection, wooClientFor } from "./connections-service";
 import { listMappings, setLastPushedPayload } from "./mapping-service";
 import { rialToWooAmount } from "./woo-money";
@@ -63,14 +64,33 @@ interface DesiredState {
 
 /** What should currently be pushed for one mapped product. */
 async function desiredState(connection: ConnectionRow, locationId: string, localId: string): Promise<DesiredState> {
-  const { rows } = await query<{ price: string }>(
-    `SELECT price FROM menu_items WHERE id = $1 AND location_id = $2`,
+  const industry = await getBusinessIndustry(connection.business_id);
+
+  if (industry === "food_service") {
+    const { rows } = await query<{ price: string }>(
+      `SELECT price FROM menu_items WHERE id = $1 AND location_id = $2`,
+      [localId, locationId],
+    );
+    if (!rows[0]) return { stock: null, priceRial: null };
+    return {
+      stock: connection.push_stock ? await sellableStock(locationId, localId) : null,
+      priceRial: connection.push_prices ? BigInt(rows[0].price) : null,
+    };
+  }
+
+  // Retail: read the item_stock row directly — no recipe-based sellable stock.
+  const { rows } = await query<{ quantity: string; unit_price: string | null }>(
+    `SELECT s.quantity::text, s.unit_price::text
+       FROM items i
+       JOIN item_stock s ON s.item_id = i.id
+      WHERE i.id = $1 AND i.location_id = $2
+        AND i.kind <> 'variant_parent'`,
     [localId, locationId],
   );
   if (!rows[0]) return { stock: null, priceRial: null };
   return {
-    stock: connection.push_stock ? await sellableStock(locationId, localId) : null,
-    priceRial: connection.push_prices ? BigInt(rows[0].price) : null,
+    stock: connection.push_stock ? Number(rows[0].quantity) : null,
+    priceRial: connection.push_prices && rows[0].unit_price ? BigInt(rows[0].unit_price) : null,
   };
 }
 
@@ -199,12 +219,24 @@ async function localPriceRial(connection: ConnectionRow, remoteId: string): Prom
       WHERE business_id = $1 AND connection_id = $2 AND entity_type = 'product' AND remote_id = $3`,
     [connection.business_id, connection.id, remoteId],
   );
-  const locationId = await resolveLocationId(connection);
-  const { rows: item } = await query<{ price: string }>(
-    `SELECT price FROM menu_items WHERE id = $1 AND location_id = $2`,
-    [rows[0]?.local_id, locationId],
+  const localId = rows[0]?.local_id;
+  if (!localId) return "0";
+
+  const industry = await getBusinessIndustry(connection.business_id);
+  if (industry === "food_service") {
+    const locationId = await resolveLocationId(connection);
+    const { rows: item } = await query<{ price: string }>(
+      `SELECT price FROM menu_items WHERE id = $1 AND location_id = $2`,
+      [localId, locationId],
+    );
+    return item[0]?.price ?? "0";
+  }
+
+  const { rows: item } = await query<{ unit_price: string | null }>(
+    `SELECT s.unit_price::text FROM item_stock s WHERE s.item_id = $1`,
+    [localId],
   );
-  return item[0]?.price ?? "0";
+  return item[0]?.unit_price ?? "0";
 }
 
 /** The background tick: enumerate connections, then scope each business's work. */

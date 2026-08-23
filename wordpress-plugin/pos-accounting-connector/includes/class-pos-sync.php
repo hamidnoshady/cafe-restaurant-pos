@@ -195,17 +195,105 @@ class POS_Connector_Sync {
 		);
 	}
 
+	/**
+	 * One product or variation's full identity, enough for the app to build an
+	 * `items` row (retail) or a `menu_items` row (F&B) from it.
+	 *
+	 * A variable product's children are NOT embedded here — get_variation_ids
+	 * during an export async-calls get_product for each child, so embedding
+	 * them in the parent payload would (a) risk a timeout for a product with
+	 * 100 SKU and (b) produce stale children when `woocommerce_update_product`
+	 * fires only for the parent. Instead, the export loop enqueues a separate
+	 * `product.variation` event for each child, and `product.updated` on a
+	 * variable parent only carries the parent-level fields (name, sku,
+	 * attributes) the app already needs to create `variant_parent` items.
+	 */
 	public static function product_payload( $product ) {
-		return array(
+		$type         = $product->get_type();
+		$parent_id    = $product->get_parent_id();
+		$description  = $product->get_description();
+		$short_desc   = $product->get_short_description();
+		$stock_status = $product->get_stock_status();
+
+		// Attributes: the named options a variable product defines (parent) and
+		// the concrete selections a variation picks (child). Standard shapes
+		// from WooCommerce's own REST API, which the app's TS types mirror.
+		$attributes = array();
+		foreach ( $product->get_attributes() as $attr ) {
+			$attributes[] = array(
+				'id'        => $attr->get_id(),
+				'name'      => $attr->get_name(),
+				'position'  => $attr->get_position(),
+				'visible'   => (bool) $attr->get_visible(),
+				'variation' => (bool) $attr->get_variation(),
+				'options'   => $attr->get_options(),
+			);
+		}
+
+		// Categories: a flat array of {id, name, slug} triples.
+		$categories = array();
+		foreach ( wp_get_post_terms( $product->get_id(), 'product_cat' ) as $term ) {
+			$categories[] = array(
+				'id'   => $term->term_id,
+				'name' => $term->name,
+				'slug' => $term->slug,
+			);
+		}
+
+		// Images: the main image plus gallery, each as {id, src, alt}.
+		$images = array();
+		$image_id = $product->get_image_id();
+		if ( $image_id ) {
+			$src = wp_get_attachment_url( $image_id );
+			$alt = get_post_meta( $image_id, '_wp_attachment_image_alt', true );
+			$images[] = array( 'id' => $image_id, 'src' => $src ? $src : '', 'alt' => $alt ? $alt : '', 'position' => 0 );
+		}
+		foreach ( $product->get_gallery_image_ids() as $idx => $gallery_id ) {
+			$src = wp_get_attachment_url( $gallery_id );
+			$alt = get_post_meta( $gallery_id, '_wp_attachment_image_alt', true );
+			$images[] = array( 'id' => $gallery_id, 'src' => $src ? $src : '', 'alt' => $alt ? $alt : '', 'position' => $idx + 1 );
+		}
+
+		// Variation-specific fields, only present when $type === 'variation'.
+		$variation_attributes = array();
+		if ( 'variation' === $type ) {
+			foreach ( $product->get_variation_attributes() as $key => $value ) {
+				$variation_attributes[] = array(
+					'name'  => wc_attribute_label( str_replace( 'attribute_', '', $key ) ),
+					'option' => $value,
+				);
+			}
+		}
+
+		$payload = array(
 			'id'             => $product->get_id(),
+			'type'           => $type,
 			'name'           => $product->get_name(),
 			'sku'            => $product->get_sku(),
 			'price'          => (string) $product->get_price(),
 			'regular_price'  => (string) $product->get_regular_price(),
+			'sale_price'     => (string) $product->get_sale_price(),
 			'stock_quantity' => $product->get_stock_quantity(),
 			'manage_stock'   => (bool) $product->get_manage_stock(),
+			'stock_status'   => $stock_status,
 			'status'         => $product->get_status(),
+			'description'    => $description,
+			'short_description' => $short_desc,
+			'permalink'      => get_permalink( $product->get_id() ),
+			'attributes'      => $attributes,
+			'categories'      => $categories,
+			'images'          => $images,
 		);
+
+		if ( $parent_id ) {
+			$payload['parent_id'] = $parent_id;
+		}
+
+		if ( 'variation' === $type && ! empty( $variation_attributes ) ) {
+			$payload['variation_attributes'] = $variation_attributes;
+		}
+
+		return $payload;
 	}
 
 	public static function customer_payload( $customer ) {
@@ -463,8 +551,15 @@ class POS_Connector_Sync {
 	 * a single product edit uses. Queued rather than posted directly, so it
 	 * inherits the queue's batching and retry instead of trying to push a
 	 * thousand products inside one cron run.
+	 *
+	 * Simple and variable-parent products are queried first, then variations
+	 * separately — `wc_get_products` does not return variations unless
+	 * explicitly asked with `type=>'variation'`, and a variable product's
+	 * children are the sellable units (each with its own stock, price and SKU)
+	 * that a missing variation query would silently skip.
 	 */
 	private static function export_products() {
+		// Pass 1: simple and variable-parent products.
 		$page = 1;
 		do {
 			$products = wc_get_products(
@@ -472,6 +567,7 @@ class POS_Connector_Sync {
 					'limit'  => 100,
 					'page'   => $page,
 					'status' => 'publish',
+					'type'   => array( 'simple', 'variable' ),
 					'return' => 'objects',
 				)
 			);
@@ -480,6 +576,24 @@ class POS_Connector_Sync {
 			}
 			++$page;
 		} while ( count( $products ) === 100 );
+
+		// Pass 2: variations — the sellable children under variable products.
+		$page = 1;
+		do {
+			$variations = wc_get_products(
+				array(
+					'limit'  => 100,
+					'page'   => $page,
+					'status' => 'publish',
+					'type'   => 'variation',
+					'return' => 'objects',
+				)
+			);
+			foreach ( $variations as $variation ) {
+				POS_Connector_Queue::enqueue( 'product.updated', $variation->get_id(), self::product_payload( $variation ) );
+			}
+			++$page;
+		} while ( count( $variations ) === 100 );
 
 		POS_Connector_Log::info( 'export', 'محصولات در صف ارسال قرار گرفتند.' );
 	}

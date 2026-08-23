@@ -4,7 +4,7 @@ Tags: woocommerce, accounting, pos, sync, erp
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 1.0.1
+Stable tag: 1.0.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -49,6 +49,13 @@ HMAC-SHA256 روی متن دقیق درخواست است. توکن فقط برا
 از دست نمی‌رود.
 
 == Changelog ==
+
+= 1.0.2 =
+* پشتیبانی کامل از محصولات متغیر (variable) و تنوع‌ها (variations): همگام‌سازی
+  محصول متغیر اکنون تنوع‌های فرزند را نیز شامل می‌شود.
+* ارسال فیلدهای کامل محصول (نوع، ویژگی‌ها، تنوع‌ها، گروه‌بندی، تصاویر) به
+  سامانهٔ حسابداری.
+* رفع مشکل عدم دریافت محصول در سامانه برای فروشگاه‌های خرده‌فروشی (retail).
 
 = 1.0.1 =
 * رفع خطای «invalid_json» در «آزمایش اتصال» و همگام‌سازی: درخواست‌های بدون محتوا
