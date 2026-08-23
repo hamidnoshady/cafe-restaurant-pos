@@ -9,7 +9,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { toPersianDigits } from "@/lib/digits";
-import { formatToman } from "@/lib/money";
+import { useMoney } from "@/components/money/money-context";
 import {
   formatModifierDelta,
   isModifierGroupSatisfied,
@@ -97,6 +97,7 @@ export function ModifierPicker({
   onCancel: () => void;
   onConfirm: (modifierIds: string[], note: string, quantity: number) => void;
 }) {
+  const money = useMoney();
   const [selected, setSelected] = useState<Record<string, string[]>>(() =>
     initialSelection(groups, initialModifierIds ?? []),
   );
@@ -168,7 +169,7 @@ export function ModifierPicker({
             <p className="mt-1 text-sm text-muted-foreground">
               قیمت پایه:{" "}
               <span className={`font-bold ${palette.accent}`}>
-                {formatToman(itemPrice)}
+                {money.format(itemPrice)}
               </span>
             </p>
           ) : null}
@@ -331,7 +332,7 @@ export function ModifierPicker({
             >
               <div className="flex justify-between text-muted-foreground">
                 <dt>قیمت پایه</dt>
-                <dd>{formatToman(breakdown.base)}</dd>
+                <dd>{money.format(breakdown.base)}</dd>
               </div>
               <div className="flex justify-between text-muted-foreground">
                 <dt>
@@ -346,12 +347,12 @@ export function ModifierPicker({
               </div>
               <div className="flex justify-between border-t border-current/10 pt-1 text-base font-bold text-foreground">
                 <dt>قیمت هر واحد</dt>
-                <dd>{formatToman(breakdown.unit)}</dd>
+                <dd>{money.format(breakdown.unit)}</dd>
               </div>
               {effectiveQuantity > 1 ? (
                 <div className="flex justify-between text-muted-foreground">
                   <dt>{toPersianDigits(effectiveQuantity)} واحد</dt>
-                  <dd>{formatToman(breakdown.total)}</dd>
+                  <dd>{money.format(breakdown.total)}</dd>
                 </div>
               ) : null}
             </dl>
@@ -378,7 +379,7 @@ export function ModifierPicker({
             >
               {canConfirm
                 ? itemPrice !== undefined
-                  ? `${confirmLabel ?? "افزودن"} — ${formatToman(breakdown.total)}`
+                  ? `${confirmLabel ?? "افزودن"} — ${money.format(breakdown.total)}`
                   : (confirmLabel ?? "افزودن")
                 : "ابتدا گروه‌های الزامی را انتخاب کنید"}
             </button>

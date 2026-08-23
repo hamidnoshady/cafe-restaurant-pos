@@ -18,7 +18,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
-import { formatToman } from "@/lib/money";
+import { useMoney } from "@/components/money/money-context";
 import { JalaliDatePicker } from "../jalali-date-picker";
 import { api, errorMessage } from "../ui";
 import { CARD, DANGER_BUTTON, OPS_INPUT, PRIMARY_BUTTON, SECONDARY_BUTTON, STEPPER_BUTTON } from "./ops-styles";
@@ -71,6 +71,7 @@ const ERRORS: Record<string, string> = {
 };
 
 export function BackdatedOrderPanel() {
+  const money = useMoney();
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
   const [entries, setEntries] = useState<BackdatedEntry[]>([]);
@@ -162,7 +163,7 @@ export function BackdatedOrderPanel() {
       return;
     }
     setInfo(
-      `فاکتور شمارهٔ ${toPersianDigits(data.orderNumber ?? 0)} به مبلغ ${formatToman(
+      `فاکتور شمارهٔ ${toPersianDigits(data.orderNumber ?? 0)} به مبلغ ${money.format(
         Number(data.total ?? 0),
       )} روی روز کاری ${toPersianDigits(formatJalali(data.entryDate ?? ""))} ثبت شد.`,
     );
@@ -259,7 +260,7 @@ export function BackdatedOrderPanel() {
                     className="flex items-center gap-2 rounded-xl border border-[#EAE8E2] bg-[#FCFCFA] p-2"
                   >
                     <span className="min-w-0 flex-1 truncate text-sm text-[#252522]">{item?.name ?? "—"}</span>
-                    <span className="text-xs text-[#8D8A82]">{formatToman(Number(item?.price ?? 0))}</span>
+                    <span className="text-xs text-[#8D8A82]">{money.format(Number(item?.price ?? 0))}</span>
                     <button
                       type="button"
                       aria-label="کاهش تعداد"
@@ -337,7 +338,7 @@ export function BackdatedOrderPanel() {
 
         {lines.length > 0 && (
           <p className="mt-3 text-xs text-[#5E5B55]">
-            جمع اقلام پیش از مالیات و تخفیف: <b>{formatToman(estimate)}</b>
+            جمع اقلام پیش از مالیات و تخفیف: <b>{money.format(estimate)}</b>
           </p>
         )}
 
@@ -372,7 +373,7 @@ export function BackdatedOrderPanel() {
               <li key={entry.id} className="rounded-xl border border-[#EAE8E2] bg-[#FCFCFA] p-3 text-xs">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="font-bold text-[#252522]">
-                    فاکتور {toPersianDigits(entry.orderNumber)} — {formatToman(entry.total)}
+                    فاکتور {toPersianDigits(entry.orderNumber)} — {money.format(entry.total)}
                   </span>
                   <span className="text-[#5E5B55]">
                     روز کاری {toPersianDigits(formatJalali(entry.entryDate))}

@@ -18,7 +18,7 @@
 import { useCallback, useEffect, useMemo, useState, useDeferredValue } from "react";
 import { PlusIcon, RefreshCwIcon, Trash2Icon } from "lucide-react";
 import { formatPersianNumber, formatQuantity, toPersianDigits } from "@/lib/digits";
-import { formatToman, parseToRial } from "@/lib/money";
+import { useMoney } from "@/components/money/money-context";
 import { normalizePosSearchText } from "@/lib/pos-selection";
 import { computeGoldSalePrice, type MakingChargeType } from "@/lib/gold-pricing";
 import { computeAccessorySalePrice } from "@/lib/accessories";
@@ -112,6 +112,7 @@ function newKey(): string {
 }
 
 export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
+  const money = useMoney();
   const [weightItems, setWeightItems] = useState<WeightItem[]>([]);
   const [prices, setPrices] = useState<GoldPrice[]>([]);
   const [units, setUnits] = useState<SerialUnit[]>([]);
@@ -255,7 +256,7 @@ export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
       <ErrorBox>{error}</ErrorBox>
       {done ? (
         <div className="mb-4 rounded-xl border border-emerald-300/60 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
-          فاکتور شمارهٔ {toPersianDigits(done.orderNumber)} به مبلغ {formatToman(done.total)} ثبت شد.
+          فاکتور شمارهٔ {toPersianDigits(done.orderNumber)} به مبلغ {money.format(done.total)} ثبت شد.
         </div>
       ) : null}
 
@@ -298,17 +299,17 @@ export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
                         <p className="truncate text-sm font-medium text-stone-950">{line.label}</p>
                         {line.parts ? (
                           <p className="mt-0.5 text-[11px] leading-5 text-muted-foreground">
-                            طلا {formatToman(line.parts.metalValue)} · اجرت{" "}
-                            {formatToman(line.parts.makingCharge)} · سود {formatToman(line.parts.profit)}
+                            طلا {money.format(line.parts.metalValue)} · اجرت{" "}
+                            {money.format(line.parts.makingCharge)} · سود {money.format(line.parts.profit)}
                           </p>
                         ) : null}
                         <p className="mt-0.5 text-xs text-muted-foreground">
-                          مالیات {formatToman(line.vat)}
+                          مالیات {money.format(line.vat)}
                         </p>
                       </div>
                       <div className="flex shrink-0 flex-col items-end gap-1">
                         <span className="text-sm font-semibold text-stone-950">
-                          {formatToman(line.total)}
+                          {money.format(line.total)}
                         </span>
                         <button
                           type="button"
@@ -327,9 +328,9 @@ export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
             )}
 
             <dl className="mt-4 space-y-1.5 border-t border-stone-200/80 pt-4 text-sm">
-              <Row label="جمع جزء" value={formatToman(totals.net)} />
-              <Row label="مالیات" value={formatToman(totals.vat)} />
-              <Row label="جمع کل" value={formatToman(totals.total)} strong />
+              <Row label="جمع جزء" value={money.format(totals.net)} />
+              <Row label="مالیات" value={money.format(totals.vat)} />
+              <Row label="جمع کل" value={money.format(totals.total)} strong />
             </dl>
 
             <div className="mt-4">
@@ -579,6 +580,7 @@ function GoldLineForm({
   prices: GoldPrice[];
   onAdd: (line: CartLine) => void;
 }) {
+  const money = useMoney();
   const [itemId, setItemId] = useState("");
   const [makingChargeType, setMakingChargeType] = useState<MakingChargeType>("percent");
   const [makingChargeValue, setMakingChargeValue] = useState("7");
@@ -619,7 +621,13 @@ function GoldLineForm({
       const breakdown = computeGoldSalePrice({
         netWeight: item.netWeight,
         pricePerGram: rate.pricePerGram,
-        makingCharge: { type: makingChargeType, value: Number(makingChargeValue) },
+        makingCharge: {
+          type: makingChargeType,
+          value:
+            makingChargeType === "fixed"
+              ? money.fromInput(Math.max(0, Math.round(Number(makingChargeValue))))
+              : Number(makingChargeValue),
+        },
         profitPercent: Number(profitPercent),
         vatPercent: Number(vatPercent),
       });
@@ -673,7 +681,7 @@ function GoldLineForm({
             onChange={(e) => setMakingChargeType(e.target.value as MakingChargeType)}
           >
             <option value="percent">درصدی</option>
-            <option value="fixed">مبلغ ثابت (ریال)</option>
+            <option value="fixed">مبلغ ثابت ({money.unitLabel})</option>
           </select>
         </Field>
         <Field label="مقدار اجرت">
@@ -712,9 +720,9 @@ function GoldLineForm({
       ) : null}
       {preview ? (
         <p className="mb-3 text-xs leading-6 text-muted-foreground">
-          طلا {formatToman(preview.parts!.metalValue)} · اجرت {formatToman(preview.parts!.makingCharge)} · سود{" "}
-          {formatToman(preview.parts!.profit)} · مالیات {formatToman(preview.vat)} —{" "}
-          <b className="text-stone-900">{formatToman(preview.total)}</b>
+          طلا {money.format(preview.parts!.metalValue)} · اجرت {money.format(preview.parts!.makingCharge)} · سود{" "}
+          {money.format(preview.parts!.profit)} · مالیات {money.format(preview.vat)} —{" "}
+          <b className="text-stone-900">{money.format(preview.total)}</b>
         </p>
       ) : null}
 
@@ -729,7 +737,10 @@ function GoldLineForm({
               kind: "gold",
               itemId: item.id,
               makingChargeType,
-              makingChargeValue: Number(makingChargeValue),
+              makingChargeValue:
+                makingChargeType === "fixed"
+                  ? money.fromInput(Math.max(0, Math.round(Number(makingChargeValue))))
+                  : Number(makingChargeValue),
               profitPercent: Number(profitPercent),
               vatPercent: Number(vatPercent),
             },
@@ -750,6 +761,7 @@ function GoldLineForm({
 
 /** A watch line: one serialised unit at an agreed price. Selling it starts its warranty. */
 function WatchLineForm({ units, onAdd }: { units: SerialUnit[]; onAdd: (line: CartLine) => void }) {
+  const money = useMoney();
   const [serialId, setSerialId] = useState("");
   const [price, setPrice] = useState("");
   const [discount, setDiscount] = useState("");
@@ -758,8 +770,8 @@ function WatchLineForm({ units, onAdd }: { units: SerialUnit[]; onAdd: (line: Ca
   const inStock = useMemo(() => units.filter((u) => u.status === "in_stock"), [units]);
   const unit = inStock.find((u) => u.id === serialId) ?? null;
 
-  const priceRial = price.trim() ? parseToRial(price, "toman") : 0;
-  const discountRial = discount.trim() ? parseToRial(discount, "toman") : 0;
+  const priceRial = price.trim() ? money.parse(price) : 0;
+  const discountRial = discount.trim() ? money.parse(discount) : 0;
 
   let preview: { net: number; vat: number; total: number } | null = null;
   if (unit && priceRial > 0) {
@@ -793,10 +805,10 @@ function WatchLineForm({ units, onAdd }: { units: SerialUnit[]; onAdd: (line: Ca
         />
       </Field>
       <div className="grid gap-x-4 sm:grid-cols-3">
-        <Field label="قیمت (تومان)">
+        <Field label={`قیمت (${money.unitLabel})`}>
           <input className={inputClass} dir="ltr" value={price} onChange={(e) => setPrice(e.target.value)} />
         </Field>
-        <Field label="تخفیف (تومان)">
+        <Field label={`تخفیف (${money.unitLabel})`}>
           <input className={inputClass} dir="ltr" value={discount} onChange={(e) => setDiscount(e.target.value)} />
         </Field>
         <Field label="درصد مالیات">
@@ -805,8 +817,8 @@ function WatchLineForm({ units, onAdd }: { units: SerialUnit[]; onAdd: (line: Ca
       </div>
       {preview ? (
         <p className="mb-3 text-xs leading-6 text-muted-foreground">
-          خالص {formatToman(preview.net)} · مالیات {formatToman(preview.vat)} —{" "}
-          <b className="text-stone-900">{formatToman(preview.total)}</b>
+          خالص {money.format(preview.net)} · مالیات {money.format(preview.vat)} —{" "}
+          <b className="text-stone-900">{money.format(preview.total)}</b>
         </p>
       ) : null}
       <Button
@@ -841,6 +853,7 @@ function WatchLineForm({ units, onAdd }: { units: SerialUnit[]; onAdd: (line: Ca
 
 /** An accessories line: a quantity of one variant, at its standard price unless overridden. */
 function AccessoryLineForm({ variants, onAdd }: { variants: Variant[]; onAdd: (line: CartLine) => void }) {
+  const money = useMoney();
   const [itemId, setItemId] = useState("");
   const [quantity, setQuantity] = useState("1");
   const [unitPrice, setUnitPrice] = useState("");
@@ -853,8 +866,8 @@ function AccessoryLineForm({ variants, onAdd }: { variants: Variant[]; onAdd: (l
   );
   const variant = sellable.find((v) => v.id === itemId) ?? null;
 
-  const effectivePrice = unitPrice.trim() ? parseToRial(unitPrice, "toman") : (variant?.unitPrice ?? 0);
-  const discountRial = discount.trim() ? parseToRial(discount, "toman") : 0;
+  const effectivePrice = unitPrice.trim() ? money.parse(unitPrice) : (variant?.unitPrice ?? 0);
+  const discountRial = discount.trim() ? money.parse(discount) : 0;
 
   let preview: { net: number; vat: number; total: number } | null = null;
   if (variant && effectivePrice > 0 && quantity.trim()) {
@@ -896,8 +909,8 @@ function AccessoryLineForm({ variants, onAdd }: { variants: Variant[]; onAdd: (l
           <input className={inputClass} dir="ltr" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
         </Field>
         <Field
-          label="قیمت واحد (تومان)"
-          hint={variant?.unitPrice ? `قیمت ثبت‌شده: ${formatToman(variant.unitPrice)}` : undefined}
+          label={`قیمت واحد (${money.unitLabel})`}
+          hint={variant?.unitPrice ? `قیمت ثبت‌شده: ${money.format(variant.unitPrice)}` : undefined}
         >
           <input
             className={inputClass}
@@ -907,7 +920,7 @@ function AccessoryLineForm({ variants, onAdd }: { variants: Variant[]; onAdd: (l
             placeholder="خالی = قیمت ثبت‌شده"
           />
         </Field>
-        <Field label="تخفیف (تومان)">
+        <Field label={`تخفیف (${money.unitLabel})`}>
           <input className={inputClass} dir="ltr" value={discount} onChange={(e) => setDiscount(e.target.value)} />
         </Field>
         <Field label="درصد مالیات">
@@ -916,8 +929,8 @@ function AccessoryLineForm({ variants, onAdd }: { variants: Variant[]; onAdd: (l
       </div>
       {preview ? (
         <p className="mb-3 text-xs leading-6 text-muted-foreground">
-          خالص {formatToman(preview.net)} · مالیات {formatToman(preview.vat)} —{" "}
-          <b className="text-stone-900">{formatToman(preview.total)}</b>
+          خالص {money.format(preview.net)} · مالیات {money.format(preview.vat)} —{" "}
+          <b className="text-stone-900">{money.format(preview.total)}</b>
         </p>
       ) : null}
       <Button
@@ -954,6 +967,7 @@ function AccessoryLineForm({ variants, onAdd }: { variants: Variant[]; onAdd: (l
 
 /** A cosmetics line: a quantity of one variant, at its standard price unless overridden — the same shape as an accessories line, posted through the cosmetics sell path. */
 function CosmeticsLineForm({ variants, onAdd }: { variants: Variant[]; onAdd: (line: CartLine) => void }) {
+  const money = useMoney();
   const [itemId, setItemId] = useState("");
   const [quantity, setQuantity] = useState("1");
   const [unitPrice, setUnitPrice] = useState("");
@@ -969,8 +983,8 @@ function CosmeticsLineForm({ variants, onAdd }: { variants: Variant[]; onAdd: (l
   );
   const variant = sellable.find((v) => v.id === itemId) ?? null;
 
-  const effectivePrice = unitPrice.trim() ? parseToRial(unitPrice, "toman") : (variant?.unitPrice ?? 0);
-  const discountRial = discount.trim() ? parseToRial(discount, "toman") : 0;
+  const effectivePrice = unitPrice.trim() ? money.parse(unitPrice) : (variant?.unitPrice ?? 0);
+  const discountRial = discount.trim() ? money.parse(discount) : 0;
 
   let preview: { net: number; vat: number; total: number } | null = null;
   if (variant && effectivePrice > 0 && quantity.trim()) {
@@ -1012,8 +1026,8 @@ function CosmeticsLineForm({ variants, onAdd }: { variants: Variant[]; onAdd: (l
           <input className={inputClass} dir="ltr" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
         </Field>
         <Field
-          label="قیمت واحد (تومان)"
-          hint={variant?.unitPrice ? `قیمت ثبت‌شده: ${formatToman(variant.unitPrice)}` : undefined}
+          label={`قیمت واحد (${money.unitLabel})`}
+          hint={variant?.unitPrice ? `قیمت ثبت‌شده: ${money.format(variant.unitPrice)}` : undefined}
         >
           <input
             className={inputClass}
@@ -1023,7 +1037,7 @@ function CosmeticsLineForm({ variants, onAdd }: { variants: Variant[]; onAdd: (l
             placeholder="خالی = قیمت ثبت‌شده"
           />
         </Field>
-        <Field label="تخفیف (تومان)">
+        <Field label={`تخفیف (${money.unitLabel})`}>
           <input className={inputClass} dir="ltr" value={discount} onChange={(e) => setDiscount(e.target.value)} />
         </Field>
         <Field label="درصد مالیات">
@@ -1032,8 +1046,8 @@ function CosmeticsLineForm({ variants, onAdd }: { variants: Variant[]; onAdd: (l
       </div>
       {preview ? (
         <p className="mb-3 text-xs leading-6 text-muted-foreground">
-          خالص {formatToman(preview.net)} · مالیات {formatToman(preview.vat)} —{" "}
-          <b className="text-stone-900">{formatToman(preview.total)}</b>
+          خالص {money.format(preview.net)} · مالیات {money.format(preview.vat)} —{" "}
+          <b className="text-stone-900">{money.format(preview.total)}</b>
         </p>
       ) : null}
       <Button
@@ -1074,6 +1088,7 @@ function CosmeticsLineForm({ variants, onAdd }: { variants: Variant[]; onAdd: (l
  * invoice is settled the moment it is written and would never appear there.
  */
 function RecentInvoices({ invoices, loading }: { invoices: InvoiceSummary[]; loading: boolean }) {
+  const money = useMoney();
   return (
     <Panel title="فاکتورهای اخیر" hint="آخرین فاکتورهای ثبت‌شده در این شعبه.">
       {loading ? (
@@ -1095,7 +1110,7 @@ function RecentInvoices({ invoices, loading }: { invoices: InvoiceSummary[]; loa
                   {formatPersianNumber(invoice.lineCount)} قلم
                 </span>
               </div>
-              <span className="shrink-0 font-semibold text-stone-900">{formatToman(invoice.total)}</span>
+              <span className="shrink-0 font-semibold text-stone-900">{money.format(invoice.total)}</span>
             </li>
           ))}
         </ul>

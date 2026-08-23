@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
-import { formatToman } from "@/lib/money";
+import { useMoney } from "@/components/money/money-context";
 import { TABLE_STATUS_LABELS, type TableStatus } from "@/lib/table-sessions";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useRealtime } from "../use-realtime";
@@ -464,6 +464,7 @@ function Canvas({
   onMove: (id: string, x: number, y: number) => void;
   onPersistMove: (id: string, x: number, y: number) => void;
 }) {
+  const money = useMoney();
   const canvasRef = useRef<HTMLDivElement>(null);
   const drag = useRef<{
     id: string;
@@ -626,7 +627,7 @@ function Canvas({
               ) : null}
               {!compact && t.session_id ? (
                 <span className="mt-0.5 max-w-full truncate text-[10px] font-bold">
-                  {formatToman(total)}
+                  {money.format(total)}
                 </span>
               ) : null}
               {!compact && reserved && t.status === "free" ? (

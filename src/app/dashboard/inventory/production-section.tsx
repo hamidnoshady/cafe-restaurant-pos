@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { formatQuantity, toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
-import { formatToman, parseToRial, rialToToman } from "@/lib/money";
+import { useMoney } from "@/components/money/money-context";
 import { expectedMaterialCost, productionUnitCost } from "@/lib/production";
 import { quantityText, rialText } from "@/lib/inventory-exact";
 import { api, Field, inputClass, PrimaryButton, SecondaryButton } from "../ui";
@@ -113,6 +113,7 @@ function FormulaCard({
   busy: boolean;
   run: Runner;
 }) {
+  const money = useMoney();
   const [formulaId, setFormulaId] = useState("");
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
@@ -151,7 +152,7 @@ function FormulaCard({
     let conversionCostRial = "0";
     if (conversionCost.trim()) {
       try {
-        conversionCostRial = String(parseToRial(conversionCost, "toman"));
+        conversionCostRial = String(money.parse(conversionCost));
       } catch {
         return;
       }
@@ -257,7 +258,7 @@ function FormulaCard({
               required
             />
           </Field>
-          <Field label="هزینهٔ تبدیل هر بار پخت (تومان)" hint="دستمزد و سربار؛ اختیاری">
+          <Field label={`هزینهٔ تبدیل هر بار پخت (${money.unitLabel})`} hint="دستمزد و سربار؛ اختیاری">
             <input
               className={productionInputClass}
               dir="ltr"
@@ -282,9 +283,9 @@ function FormulaCard({
             </p>
             {estimate ? (
               <p className="mt-1 text-xs leading-5">
-                بهای تخمینی مواد: {formatToman(estimate.material)} + هزینهٔ تبدیل:{" "}
-                {formatToman(Number(selected.conversionCostRial))} ← هر {selected.outputUnit} حدود{" "}
-                {formatToman(Math.round(Number(estimate.unit)))}
+                بهای تخمینی مواد: {money.format(estimate.material)} + هزینهٔ تبدیل:{" "}
+                {money.format(Number(selected.conversionCostRial))} ← هر {selected.outputUnit} حدود{" "}
+                {money.format(Math.round(Number(estimate.unit)))}
               </p>
             ) : null}
           </div>
@@ -368,6 +369,7 @@ function RunCard({
   busy: boolean;
   run: Runner;
 }) {
+  const money = useMoney();
   const [formulaId, setFormulaId] = useState("");
   const [batches, setBatches] = useState("1");
   const [outputQuantity, setOutputQuantity] = useState("");
@@ -385,7 +387,7 @@ function RunCard({
     if (!formula) return;
     const count = Number(batches) || 1;
     setOutputQuantity(String(Number(formula.outputQuantity) * count));
-    setConversionCost(String(rialToToman(Number(formula.conversionCostRial) * count)));
+    setConversionCost(String(money.toInput(Number(formula.conversionCostRial) * count)));
   }
 
   function changeBatches(value: string) {
@@ -393,7 +395,7 @@ function RunCard({
     const count = Number(value);
     if (!selected || !Number.isFinite(count) || count <= 0) return;
     setOutputQuantity(String(Number(selected.outputQuantity) * count));
-    setConversionCost(String(rialToToman(Number(selected.conversionCostRial) * count)));
+    setConversionCost(String(money.toInput(Number(selected.conversionCostRial) * count)));
   }
 
   async function submit(e: React.FormEvent) {
@@ -402,7 +404,7 @@ function RunCard({
     let conversionCostRial: string | null = null;
     if (conversionCost.trim()) {
       try {
-        conversionCostRial = String(parseToRial(conversionCost, "toman"));
+        conversionCostRial = String(money.parse(conversionCost));
       } catch {
         return;
       }
@@ -471,7 +473,7 @@ function RunCard({
             placeholder="مطابق فرمول"
           />
         </Field>
-        <Field label="هزینهٔ تبدیل (تومان)" hint="دستمزد و سربار این بار پخت">
+        <Field label={`هزینهٔ تبدیل (${money.unitLabel})`} hint="دستمزد و سربار این بار پخت">
           <input
             className={productionInputClass}
             dir="ltr"
@@ -508,6 +510,7 @@ function RunCard({
 }
 
 function RunRow({ item, busy, run }: { item: Run; busy: boolean; run: Runner }) {
+  const money = useMoney();
   const shortfall = Number(item.expectedQuantity) - Number(item.outputQuantity);
 
   return (
@@ -520,9 +523,9 @@ function RunRow({ item, busy, run }: { item: Run; busy: boolean; run: Runner }) 
         <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
           {toPersianDigits(formatJalali(item.producedAt, { withMonthName: true }))}
           {" · "}
-          مواد {formatToman(Number(item.materialCostRial))} + تبدیل{" "}
-          {formatToman(Number(item.conversionCostRial))} ← هر {item.outputUnit}{" "}
-          {formatToman(Math.round(Number(item.unitCostRial)))}
+          مواد {money.format(Number(item.materialCostRial))} + تبدیل{" "}
+          {money.format(Number(item.conversionCostRial))} ← هر {item.outputUnit}{" "}
+          {money.format(Math.round(Number(item.unitCostRial)))}
           {!item.isReversal && shortfall > 0
             ? ` · ${formatQuantity(shortfall)} ${item.outputUnit} کمتر از فرمول`
             : ""}

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { formatPersianNumber, toPersianDigits } from "@/lib/digits";
-import { formatToman } from "@/lib/money";
+import { useMoney } from "@/components/money/money-context";
 import { formatJalali } from "@/lib/jalali";
 import { REPAIR_STATUS_LABELS, type RepairStatus } from "./watch-manager";
 import { api } from "../ui";
@@ -54,6 +54,7 @@ interface ReportPayload {
 }
 
 export function ReportsSection() {
+  const money = useMoney();
   const [data, setData] = useState<ReportPayload | null>(null);
 
   const load = useCallback(() => {
@@ -122,15 +123,15 @@ export function ReportsSection() {
           <dl className="mt-3 grid gap-x-5 gap-y-2 text-xs text-stone-600 sm:grid-cols-3">
             <div>
               <dt className="text-stone-500">درآمد تعمیرات</dt>
-              <dd className="mt-0.5 font-medium text-stone-700">{formatToman(data.repairs.totals.revenue)}</dd>
+              <dd className="mt-0.5 font-medium text-stone-700">{money.format(data.repairs.totals.revenue)}</dd>
             </div>
             <div>
               <dt className="text-stone-500">بهای قطعات</dt>
-              <dd className="mt-0.5 font-medium text-stone-700">{formatToman(data.repairs.totals.partsCost)}</dd>
+              <dd className="mt-0.5 font-medium text-stone-700">{money.format(data.repairs.totals.partsCost)}</dd>
             </div>
             <div>
               <dt className="text-stone-500">حاشیه</dt>
-              <dd className="mt-0.5 font-medium text-stone-700">{formatToman(data.repairs.totals.margin)}</dd>
+              <dd className="mt-0.5 font-medium text-stone-700">{money.format(data.repairs.totals.margin)}</dd>
             </div>
           </dl>
         </div>
@@ -147,8 +148,8 @@ export function ReportsSection() {
                 ) : null}
               </span>
               <span className="text-stone-600">
-                {REPAIR_STATUS_LABELS[row.status]} — دریافتی {formatToman(row.net)} / بهای قطعات{" "}
-                {formatToman(row.partsCost)}
+                {REPAIR_STATUS_LABELS[row.status]} — دریافتی {money.format(row.net)} / بهای قطعات{" "}
+                {money.format(row.partsCost)}
               </span>
             </li>
           ))}

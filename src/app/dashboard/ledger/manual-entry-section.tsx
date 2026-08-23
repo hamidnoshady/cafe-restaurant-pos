@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
-import { formatToman, parseToRial } from "@/lib/money";
+import { useMoney } from "@/components/money/money-context";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { JalaliDatePicker } from "../jalali-date-picker";
 import { api, errorMessage, inputClass, PrimaryButton, SecondaryButton } from "../ui";
@@ -53,6 +53,7 @@ export function ManualEntrySection({
   run: Runner;
   refreshKey: number;
 }) {
+  const money = useMoney();
   const [memo, setMemo] = useState("");
   const [entryDate, setEntryDate] = useState("");
   const [lines, setLines] = useState<DraftLineInput[]>([{ ...EMPTY_LINE, side: "debit" }, { ...EMPTY_LINE, side: "credit" }]);
@@ -80,7 +81,7 @@ export function ManualEntrySection({
   for (const l of lines) {
     let rial = 0;
     try {
-      rial = parseToRial(l.amount || "0", "toman");
+      rial = money.parse(l.amount || "0");
     } catch {
       rial = 0;
     }
@@ -97,7 +98,7 @@ export function ManualEntrySection({
       .map((l) => {
         let rial = 0;
         try {
-          rial = parseToRial(l.amount, "toman");
+          rial = money.parse(l.amount);
         } catch {
           rial = 0;
         }
@@ -181,7 +182,7 @@ export function ManualEntrySection({
                     />
                   </label>
                   <label className="block">
-                    <span className="mb-1.5 block text-sm font-medium">مبلغ (تومان)</span>
+                    <span className="mb-1.5 block text-sm font-medium">مبلغ ({money.unitLabel})</span>
                     <input
                       className={inputClass}
                       dir="ltr"
@@ -203,11 +204,11 @@ export function ManualEntrySection({
             <dl className="grid gap-3 text-sm sm:grid-cols-3">
               <div>
                 <dt className="text-muted-foreground">جمع بدهکار</dt>
-                <dd className="mt-1 font-bold">{totalDebit.toLocaleString("en-US")} ریال</dd>
+                <dd className="mt-1 font-bold">{money.format(totalDebit)}</dd>
               </div>
               <div>
                 <dt className="text-muted-foreground">جمع بستانکار</dt>
-                <dd className="mt-1 font-bold">{totalCredit.toLocaleString("en-US")} ریال</dd>
+                <dd className="mt-1 font-bold">{money.format(totalCredit)}</dd>
               </div>
               <div>
                 <dt className="text-muted-foreground">وضعیت سند</dt>
@@ -258,8 +259,8 @@ export function ManualEntrySection({
                   {d.lines.map((l, i) => (
                     <div key={i} className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-3 border-t border-[#F0EEE9] pt-2 text-sm">
                       <span className="min-w-0 text-muted-foreground">{l.accountCode} {l.accountName}</span>
-                      <span className="whitespace-nowrap">{l.debit ? formatToman(l.debit) : "—"}</span>
-                      <span className="whitespace-nowrap">{l.credit ? formatToman(l.credit) : "—"}</span>
+                      <span className="whitespace-nowrap">{l.debit ? money.format(l.debit) : "—"}</span>
+                      <span className="whitespace-nowrap">{l.credit ? money.format(l.credit) : "—"}</span>
                     </div>
                   ))}
                 </div>

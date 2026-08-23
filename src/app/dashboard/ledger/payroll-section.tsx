@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
-import { formatToman, parseToRial, rialToToman } from "@/lib/money";
+import { useMoney } from "@/components/money/money-context";
 import { JalaliDatePicker } from "../jalali-date-picker";
 import { api, errorMessage, inputClass, PrimaryButton, SecondaryButton } from "../ui";
 import type { Runner } from "./ledger-manager";
@@ -39,6 +39,7 @@ interface PayrollRun {
  * this phase's ledger surfaces, which managers can otherwise post to freely.
  */
 export function PayrollSection({ busy, run, refreshKey }: { busy: boolean; run: Runner; refreshKey: number }) {
+  const money = useMoney();
   const [staff, setStaff] = useState<StaffWage[] | null>(null);
   const [runs, setRuns] = useState<PayrollRun[] | null>(null);
   const [wageInputs, setWageInputs] = useState<Record<string, string>>({});
@@ -51,7 +52,7 @@ export function PayrollSection({ busy, run, refreshKey }: { busy: boolean; run: 
       if (ok) {
         setStaff(data.staff);
         setWageInputs(
-          Object.fromEntries(data.staff.map((s) => [s.id, s.monthlyWage != null ? String(rialToToman(s.monthlyWage)) : ""])),
+          Object.fromEntries(data.staff.map((s) => [s.id, s.monthlyWage != null ? String(money.toInput(s.monthlyWage)) : ""])),
         );
       }
     });
@@ -68,7 +69,7 @@ export function PayrollSection({ busy, run, refreshKey }: { busy: boolean; run: 
     let rial: number | null = null;
     if (raw.trim()) {
       try {
-        rial = parseToRial(raw, "toman");
+        rial = money.parse(raw);
       } catch {
         return setLocalError("مبلغ حقوق معتبر نیست.");
       }
@@ -136,14 +137,14 @@ export function PayrollSection({ busy, run, refreshKey }: { busy: boolean; run: 
                   <p className="mt-1 font-semibold">{s.fullName}</p>
                 </div>
                 <label className="block text-sm font-medium">
-                  <span className="mb-1.5 block text-xs text-muted-foreground">حقوق ماهانه (تومان)</span>
+                  <span className="mb-1.5 block text-xs text-muted-foreground">حقوق ماهانه ({money.unitLabel})</span>
                   <input
                     className={inputClass + " w-full"}
                     dir="ltr"
                     inputMode="numeric"
                     value={wageInputs[s.id] ?? ""}
                     onChange={(e) => setWageInputs((prev) => ({ ...prev, [s.id]: e.target.value }))}
-                    placeholder="حقوق ماهانه (تومان)"
+                    placeholder={`حقوق ماهانه (${money.unitLabel})`}
                     aria-label={"حقوق ماهانه " + s.fullName}
                   />
                 </label>
@@ -205,7 +206,7 @@ export function PayrollSection({ busy, run, refreshKey }: { busy: boolean; run: 
                     <p className="mt-1 text-xs text-muted-foreground">{toPersianDigits(formatJalali(r.accrualDate))}</p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-bold tabular-nums">{formatToman(r.totalAmount)}</span>
+                    <span className="font-bold tabular-nums">{money.format(r.totalAmount)}</span>
                     <span className={"rounded-full px-2.5 py-1 text-xs font-semibold " + (r.status === "paid" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800")}>
                       {r.status === "paid" ? "پرداخت‌شده" : "تعهدشده"}
                     </span>
@@ -216,7 +217,7 @@ export function PayrollSection({ busy, run, refreshKey }: { busy: boolean; run: 
                   {r.lines.map((l, i) => (
                     <div key={i} className="flex items-center justify-between gap-3 rounded-lg bg-[#FCFBF8] px-3 py-2.5 text-sm">
                       <span className="min-w-0 truncate text-muted-foreground">{l.fullName ?? "—"}</span>
-                      <span className="shrink-0 font-semibold tabular-nums">{formatToman(l.amount)}</span>
+                      <span className="shrink-0 font-semibold tabular-nums">{money.format(l.amount)}</span>
                     </div>
                   ))}
                 </div>

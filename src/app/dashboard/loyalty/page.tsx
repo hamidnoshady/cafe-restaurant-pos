@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { formatPersianNumber, toPersianDigits } from "@/lib/digits";
-import { formatToman, parseToRial } from "@/lib/money";
+import { useMoney } from "@/components/money/money-context";
 import { formatJalali } from "@/lib/jalali";
 import { EmptyState, PageHeader, PageShell, SectionCard } from "../page-chrome";
 import { api, ErrorBox, Field, InfoBox, inputClass } from "../ui";
@@ -126,9 +126,10 @@ function ProgramsPanel({
   onSaved: (m: string) => void;
   onError: (m: string) => void;
 }) {
+  const money = useMoney();
   const [name, setName] = useState("");
   const [earn, setEarn] = useState("1");
-  const [value, setValue] = useState("1000");
+  const [value, setValue] = useState("100");
   const [expiry, setExpiry] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -142,7 +143,7 @@ function ProgramsPanel({
       body: JSON.stringify({
         name,
         earnPointsPer100000: Number(earn) || 1,
-        pointValueRial: Number(value) || 1000,
+        pointValueRial: money.fromInput(Math.max(0, Math.round(Number(value) || 0))) || 1000,
         pointsExpiryDays: expiry.trim() ? Number(expiry) : null,
         isDefault: programs.length === 0,
       }),
@@ -165,7 +166,7 @@ function ProgramsPanel({
               {p.isDefault ? <span className="mr-2 text-xs text-amber-700">(پیش‌فرض)</span> : null}
             </span>
             <span className="text-xs text-muted-foreground">
-              {formatPersianNumber(p.earnPointsPer100000)} امتیاز / ۱۰٬۰۰۰ تومان · هر امتیاز {formatToman(p.pointValueRial)}
+              {formatPersianNumber(p.earnPointsPer100000)} امتیاز / ۱۰٬۰۰۰ تومان · هر امتیاز {money.format(p.pointValueRial)}
             </span>
           </li>
         ))}
@@ -179,7 +180,7 @@ function ProgramsPanel({
           <Field label="امتیاز / ۱۰ هزار تومان">
             <input className={inputClass} dir="ltr" value={earn} onChange={(e) => setEarn(e.target.value)} />
           </Field>
-          <Field label="ارزش هر امتیاز (ریال)">
+          <Field label={`ارزش هر امتیاز (${money.unitLabel})`}>
             <input className={inputClass} dir="ltr" value={value} onChange={(e) => setValue(e.target.value)} />
           </Field>
           <Field label="انقضای امتیاز (روز)">
@@ -211,6 +212,7 @@ function CustomerPanel({
   onChanged: (m: string) => void;
   onError: (m: string) => void;
 }) {
+  const money = useMoney();
   const [points, setPoints] = useState("");
   const [credit, setCredit] = useState("");
   const [creditAction, setCreditAction] = useState<"issue" | "use">("issue");
@@ -238,7 +240,7 @@ function CustomerPanel({
     onError("");
     const { ok, data } = await api<{ error?: string; message?: string }>(`/api/loyalty/customers/${customerId}/store-credit`, {
       method: "POST",
-      body: JSON.stringify({ action: creditAction, amount: parseToRial(credit, "toman") }),
+      body: JSON.stringify({ action: creditAction, amount: money.parse(credit) }),
     });
     setBusy(false);
     if (!ok) onError(data.message ?? "عملیات اعتبار ناموفق بود.");
@@ -265,7 +267,7 @@ function CustomerPanel({
             <span className="text-muted-foreground">امتیاز:</span> <b>{formatPersianNumber(balance.points)}</b>
           </div>
           <div>
-            <span className="text-muted-foreground">اعتبار:</span> <b>{formatToman(balance.storeCredit)}</b>
+            <span className="text-muted-foreground">اعتبار:</span> <b>{money.format(balance.storeCredit)}</b>
           </div>
         </div>
       ) : null}
@@ -280,7 +282,7 @@ function CustomerPanel({
       </div>
 
       <div className="grid grid-cols-[1fr_auto] items-end gap-2">
-        <Field label="اعتبار فروشگاهی (تومان)">
+        <Field label={`اعتبار فروشگاهی (${money.unitLabel})`}>
           <input className={inputClass} dir="ltr" value={credit} onChange={(e) => setCredit(e.target.value)} />
         </Field>
         <div className="flex flex-col gap-1">

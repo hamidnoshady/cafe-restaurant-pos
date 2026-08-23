@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
-import { formatToman, parseToRial } from "@/lib/money";
+import { useMoney } from "@/components/money/money-context";
 import { JalaliDatePicker } from "../jalali-date-picker";
 import { api, errorMessage, inputClass, PrimaryButton, SecondaryButton } from "../ui";
 
@@ -39,6 +39,7 @@ function label(code: string | undefined): string {
  * "record, then post" split payroll's accrual/payment already uses.
  */
 export function FixedAssetsSection({ busy, refreshKey }: { busy: boolean; refreshKey: number }) {
+  const money = useMoney();
   const [assets, setAssets] = useState<FixedAssetRow[] | null>(null);
   const [localError, setLocalError] = useState("");
 
@@ -66,8 +67,8 @@ export function FixedAssetsSection({ busy, refreshKey }: { busy: boolean; refres
     let costRial: number;
     let salvageRial: number;
     try {
-      costRial = parseToRial(cost, "toman");
-      salvageRial = salvageValue.trim() ? parseToRial(salvageValue, "toman") : 0;
+      costRial = money.parse(cost);
+      salvageRial = salvageValue.trim() ? money.parse(salvageValue) : 0;
     } catch {
       return;
     }
@@ -135,11 +136,11 @@ export function FixedAssetsSection({ busy, refreshKey }: { busy: boolean; refres
             <input className={inputClass} dir="ltr" inputMode="numeric" value={usefulLifeMonths} onChange={(e) => setUsefulLifeMonths(e.target.value)} placeholder="۶۰" />
           </label>
           <label className="block">
-            <span className="mb-1.5 block text-sm font-medium">بهای تمام‌شده (تومان)</span>
+            <span className="mb-1.5 block text-sm font-medium">بهای تمام‌شده ({money.unitLabel})</span>
             <input className={inputClass} dir="ltr" inputMode="numeric" value={cost} onChange={(e) => setCost(e.target.value)} placeholder="۰" />
           </label>
           <label className="block">
-            <span className="mb-1.5 block text-sm font-medium">ارزش اسقاط (تومان) <span className="font-normal text-muted-foreground">(اختیاری)</span></span>
+            <span className="mb-1.5 block text-sm font-medium">ارزش اسقاط ({money.unitLabel}) <span className="font-normal text-muted-foreground">(اختیاری)</span></span>
             <input className={inputClass} dir="ltr" inputMode="numeric" value={salvageValue} onChange={(e) => setSalvageValue(e.target.value)} placeholder="۰" />
           </label>
           <div className="md:col-span-2 xl:col-span-3">
@@ -184,10 +185,10 @@ export function FixedAssetsSection({ busy, refreshKey }: { busy: boolean; refres
                   </div>
                 </div>
                 <dl className="mt-3 grid grid-cols-2 gap-2 border-t border-[#F0EEE9] pt-3 text-sm sm:grid-cols-4">
-                  <div><dt className="text-xs text-muted-foreground">بهای تمام‌شده</dt><dd className="mt-1 tabular-nums">{formatToman(a.cost)}</dd></div>
-                  <div><dt className="text-xs text-muted-foreground">ارزش اسقاط</dt><dd className="mt-1 tabular-nums">{formatToman(a.salvageValue)}</dd></div>
-                  <div><dt className="text-xs text-muted-foreground">استهلاک انباشته</dt><dd className="mt-1 tabular-nums">{formatToman(a.accumulatedDepreciation)}</dd></div>
-                  <div><dt className="text-xs text-muted-foreground">ارزش دفتری</dt><dd className="mt-1 font-semibold tabular-nums">{formatToman(a.bookValue)}</dd></div>
+                  <div><dt className="text-xs text-muted-foreground">بهای تمام‌شده</dt><dd className="mt-1 tabular-nums">{money.format(a.cost)}</dd></div>
+                  <div><dt className="text-xs text-muted-foreground">ارزش اسقاط</dt><dd className="mt-1 tabular-nums">{money.format(a.salvageValue)}</dd></div>
+                  <div><dt className="text-xs text-muted-foreground">استهلاک انباشته</dt><dd className="mt-1 tabular-nums">{money.format(a.accumulatedDepreciation)}</dd></div>
+                  <div><dt className="text-xs text-muted-foreground">ارزش دفتری</dt><dd className="mt-1 font-semibold tabular-nums">{money.format(a.bookValue)}</dd></div>
                 </dl>
 
                 {depreciating === a.id ? (

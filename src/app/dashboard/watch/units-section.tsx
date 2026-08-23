@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { toPersianDigits } from "@/lib/digits";
-import { formatToman } from "@/lib/money";
+import { useMoney } from "@/components/money/money-context";
 import { formatJalali } from "@/lib/jalali";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { api, Field, inputClass } from "../ui";
@@ -38,6 +38,7 @@ export function UnitsSection({
   busy: boolean;
   run: Runner;
 }) {
+  const money = useMoney();
   const [modelName, setModelName] = useState("");
   const [modelSku, setModelSku] = useState("");
   const [serviceIntervalMonths, setServiceIntervalMonths] = useState("");
@@ -75,7 +76,7 @@ export function UnitsSection({
         body: JSON.stringify({
           itemId,
           serialNumber,
-          unitCost: unitCost.trim() ? Number(unitCost) : null,
+          unitCost: unitCost.trim() ? money.fromInput(Math.max(0, Math.round(Number(unitCost)))) : null,
           warrantyMonths: Number(warrantyMonths || 0),
         }),
       }),
@@ -177,7 +178,7 @@ export function UnitsSection({
                 required
               />
             </Field>
-            <Field label="بهای تمام‌شده (ریال)" hint="اگر هنوز مشخص نیست، خالی بگذارید.">
+            <Field label={`بهای تمام‌شده (${money.unitLabel})`} hint="اگر هنوز مشخص نیست، خالی بگذارید.">
               <input
                 className={watchInputClass}
                 dir="ltr"
@@ -229,6 +230,7 @@ const CONDITION_GRADE_OPTIONS = [
 ] as const;
 
 function UnitRow({ unit, busy, run }: { unit: SerialUnit; busy: boolean; run: Runner }) {
+  const money = useMoney();
   const [panel, setPanel] = useState<"cost" | "audit" | "preowned" | null>(null);
   const toggle = (next: "cost" | "audit" | "preowned") =>
     setPanel((current) => (current === next ? null : next));
@@ -249,7 +251,7 @@ function UnitRow({ unit, busy, run }: { unit: SerialUnit; busy: boolean; run: Ru
 
           <dl className="mt-3 grid min-w-0 gap-x-5 gap-y-2 text-xs text-stone-600 sm:grid-cols-2 xl:grid-cols-4">
             <MetaItem label="بهای تمام‌شده">
-              {unit.unitCost ? formatToman(unit.unitCost) : "تعیین نشده"}
+              {unit.unitCost ? money.format(unit.unitCost) : "تعیین نشده"}
             </MetaItem>
             <MetaItem label="گارانتی">{toPersianDigits(String(unit.warrantyMonths))} ماه</MetaItem>
             {unit.soldAt ? (
@@ -394,7 +396,8 @@ function CostPanel({
   run: Runner;
   onDone: () => void;
 }) {
-  const [unitCost, setUnitCost] = useState(unit.unitCost ? String(unit.unitCost) : "");
+  const money = useMoney();
+  const [unitCost, setUnitCost] = useState(unit.unitCost ? String(money.toInput(unit.unitCost)) : "");
   const [warrantyMonths, setWarrantyMonths] = useState(String(unit.warrantyMonths));
 
   async function save(e: React.FormEvent) {
@@ -403,7 +406,7 @@ function CostPanel({
       api(`/api/watch/units/${unit.id}`, {
         method: "PATCH",
         body: JSON.stringify({
-          unitCost: unitCost.trim() ? Number(unitCost) : null,
+          unitCost: unitCost.trim() ? money.fromInput(Math.max(0, Math.round(Number(unitCost)))) : null,
           warrantyMonths: Number(warrantyMonths || 0),
         }),
       }),
@@ -414,7 +417,7 @@ function CostPanel({
   return (
     <PanelShell>
       <form onSubmit={save} className="grid min-w-0 gap-3 sm:grid-cols-3">
-        <Field label="بهای تمام‌شده (ریال)">
+        <Field label={`بهای تمام‌شده (${money.unitLabel})`}>
           <input
             className={watchInputClass}
             dir="ltr"

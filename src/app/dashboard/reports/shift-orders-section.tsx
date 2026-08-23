@@ -5,7 +5,7 @@ import { ChevronDownIcon, RefreshCwIcon, ShoppingBagIcon } from "lucide-react";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
-import { formatToman } from "@/lib/money";
+import { useMoney } from "@/components/money/money-context";
 import { formatModifierDelta, linePriceBreakdown } from "@/lib/modifier-display";
 import { formatQueueLabel } from "@/lib/orders";
 import { PAYMENT_METHOD_LABELS } from "@/lib/receipt-template";
@@ -97,6 +97,7 @@ function OrderFacts({ order }: { order: ShiftOrder }) {
  * identically wherever it is shown.
  */
 function LineRow({ line }: { line: ShiftOrderLine }) {
+  const money = useMoney();
   const breakdown = linePriceBreakdown({
     unitPrice: line.unitPrice,
     modifierDeltas: line.modifiers.map((modifier) => modifier.priceDelta),
@@ -110,9 +111,9 @@ function LineRow({ line }: { line: ShiftOrderLine }) {
         {line.voided ? <span className="ms-2 text-[11px] font-bold text-[#9E4437]">باطل‌شده</span> : null}
         <ModifierBadges modifiers={line.modifiers} tone="amber" className="mt-1.5" />
         <p className="mt-1 text-[11px] tabular-nums text-[#77756F]">
-          {`هر واحد: ${formatToman(breakdown.base)}`}
+          {`هر واحد: ${money.format(breakdown.base)}`}
           {breakdown.addOns !== 0
-            ? ` ${formatModifierDelta(breakdown.addOns, { withUnit: false })} = ${formatToman(breakdown.unit)}`
+            ? ` ${formatModifierDelta(breakdown.addOns, { withUnit: false, unit: money.unit })} = ${money.format(breakdown.unit)}`
             : ""}
         </p>
         {line.note ? <p className="mt-1 text-xs text-[#77756F]">یادداشت: {line.note}</p> : null}
@@ -121,7 +122,7 @@ function LineRow({ line }: { line: ShiftOrderLine }) {
         ) : null}
       </td>
       <td className="py-2 pe-3 tabular-nums text-[#5E5B55]">×{toPersianDigits(line.quantity)}</td>
-      <td className="py-2 tabular-nums text-[#5E5B55]">{formatToman(line.amount)}</td>
+      <td className="py-2 tabular-nums text-[#5E5B55]">{money.format(line.amount)}</td>
     </tr>
   );
 }
@@ -164,21 +165,22 @@ function Row({ label, value, accent = false }: { label: string; value: string; a
  * lines long.
  */
 function MoneySummary({ order }: { order: ShiftOrder }) {
+  const money = useMoney();
   return (
     <dl className="space-y-1.5 rounded-xl border border-[#F0EEE9] bg-white px-3 py-2.5">
-      <Row label="جمع جزء" value={formatToman(order.subtotal)} />
+      <Row label="جمع جزء" value={money.format(order.subtotal)} />
       {order.addOnTotal !== 0 ? (
-        <Row label="از این مبلغ، افزودنی‌ها" value={formatModifierDelta(order.addOnTotal)} accent />
+        <Row label="از این مبلغ، افزودنی‌ها" value={formatModifierDelta(order.addOnTotal, { unit: money.unit })} accent />
       ) : null}
       {order.discount > 0 ? (
-        <Row label={discountLabel(order)} value={`- ${formatToman(order.discount)}`} />
+        <Row label={discountLabel(order)} value={`- ${money.format(order.discount)}`} />
       ) : null}
-      {order.serviceCharge > 0 ? <Row label="هزینهٔ ارسال" value={formatToman(order.serviceCharge)} /> : null}
-      {order.tax > 0 ? <Row label="مالیات" value={formatToman(order.tax)} /> : null}
-      {order.tipAmount > 0 ? <Row label="انعام" value={formatToman(order.tipAmount)} /> : null}
+      {order.serviceCharge > 0 ? <Row label="هزینهٔ ارسال" value={money.format(order.serviceCharge)} /> : null}
+      {order.tax > 0 ? <Row label="مالیات" value={money.format(order.tax)} /> : null}
+      {order.tipAmount > 0 ? <Row label="انعام" value={money.format(order.tipAmount)} /> : null}
       <div className="mt-1 flex items-center justify-between gap-3 rounded-lg border border-[#F2D097] bg-[#FFF9EE] px-2.5 py-2">
         <dt className="text-xs font-bold text-[#252522]">جمع کل</dt>
-        <dd className="text-sm font-bold tabular-nums text-[#B97905]">{formatToman(order.total)}</dd>
+        <dd className="text-sm font-bold tabular-nums text-[#B97905]">{money.format(order.total)}</dd>
       </div>
     </dl>
   );
@@ -203,6 +205,7 @@ function NotePanel({ label, value, danger = false }: { label: string; value: str
  * voided, the money breakdown, and how it was tendered.
  */
 function OrderCard({ order }: { order: ShiftOrder }) {
+  const money = useMoney();
   const [expanded, setExpanded] = useState(false);
   const panelId = `shift-order-lines-${order.id}`;
   const liveLines = order.lines.filter((line) => !line.voided);
@@ -239,7 +242,7 @@ function OrderCard({ order }: { order: ShiftOrder }) {
             </p>
           </div>
         </div>
-        <span className="shrink-0 text-sm font-bold text-[#B97905]">{formatToman(order.total)}</span>
+        <span className="shrink-0 text-sm font-bold text-[#B97905]">{money.format(order.total)}</span>
       </button>
 
       {expanded ? (
@@ -282,7 +285,7 @@ function OrderCard({ order }: { order: ShiftOrder }) {
                       </span>
                     </span>
                     <span className="shrink-0 font-bold tabular-nums text-[#B97905]">
-                      {formatToman(payment.amount)}
+                      {money.format(payment.amount)}
                     </span>
                   </li>
                 ))}

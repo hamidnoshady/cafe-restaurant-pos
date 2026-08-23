@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState, useDeferredValue } from "react";
 import { toPersianDigits } from "@/lib/digits";
-import { formatToman, parseToRial, rialToToman } from "@/lib/money";
+import { useMoney } from "@/components/money/money-context";
 import {
   api,
   ErrorBox,
@@ -204,6 +204,7 @@ function ItemSection({
   busy: boolean;
   run: Runner;
 }) {
+  const money = useMoney();
   const [categoryId, setCategoryId] = useState("");
   const [name, setName] = useState("");
   const [price, setPrice] = useState("");
@@ -226,7 +227,7 @@ function ItemSection({
     e.preventDefault();
     let priceRial: number;
     try {
-      priceRial = parseToRial(price, "toman");
+      priceRial = money.parse(price);
     } catch {
       return;
     }
@@ -274,7 +275,7 @@ function ItemSection({
             required
           />
         </Field>
-        <Field label="قیمت (تومان)">
+        <Field label={`قیمت (${money.unitLabel})`}>
           <input
             className={inputClass}
             dir="ltr"
@@ -360,6 +361,7 @@ function ItemRow({
   busy: boolean;
   run: Runner;
 }) {
+  const money = useMoney();
   const [expanded, setExpanded] = useState(false);
   const [pricingOpen, setPricingOpen] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -391,7 +393,7 @@ function ItemRow({
         </span>
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-muted-foreground">
-            {formatToman(Number(item.price))}
+            {money.format(Number(item.price))}
           </span>
           <SecondaryButton disabled={busy} onClick={() => setEditing(true)}>
             ویرایش
@@ -495,9 +497,10 @@ function EditItemRow({
   run: Runner;
   onDone: () => void;
 }) {
+  const money = useMoney();
   const [categoryId, setCategoryId] = useState(item.category_id ?? "");
   const [name, setName] = useState(item.name);
-  const [price, setPrice] = useState(String(rialToToman(Number(item.price))));
+  const [price, setPrice] = useState(String(money.toInput(Number(item.price))));
   const selectableCategories = categories.filter(
     (category) => category.is_active || category.id === item.category_id,
   );
@@ -506,7 +509,7 @@ function EditItemRow({
     event.preventDefault();
     let priceRial: number;
     try {
-      priceRial = parseToRial(price, "toman");
+      priceRial = money.parse(price);
     } catch {
       return;
     }
@@ -547,7 +550,7 @@ function EditItemRow({
             required
           />
         </Field>
-        <Field label="قیمت (تومان)">
+        <Field label={`قیمت (${money.unitLabel})`}>
           <input
             className={inputClass}
             dir="ltr"
@@ -580,6 +583,7 @@ function PricingPanel({
   busy: boolean;
   run: Runner;
 }) {
+  const money = useMoney();
   const [suggestion, setSuggestion] = useState<SuggestedPrice | null>(null);
   const [loading, setLoading] = useState(true);
   const [marginInput, setMarginInput] = useState(
@@ -644,7 +648,7 @@ function PricingPanel({
           ) : (
             <div className="grid grid-cols-2 gap-x-4 gap-y-1 sm:grid-cols-4">
               <span className="text-muted-foreground">
-                بهای مواد: {formatToman(suggestion.materialCost)}
+                بهای مواد: {money.format(suggestion.materialCost)}
               </span>
               <span className="text-muted-foreground">
                 سربار:{" "}
@@ -657,7 +661,7 @@ function PricingPanel({
                   : "بدون داده"}
               </span>
               <span className="text-muted-foreground">
-                بهای تمام‌شده: {formatToman(suggestion.loadedCost)}
+                بهای تمام‌شده: {money.format(suggestion.loadedCost)}
               </span>
               <span className="text-muted-foreground">
                 حاشیه سود:{" "}
@@ -672,7 +676,7 @@ function PricingPanel({
           {suggestion.hasRecipe && suggestion.suggestedPrice != null ? (
             <div className="flex flex-col gap-2 rounded-md bg-card px-2 py-1.5 sm:flex-row sm:items-center sm:justify-between">
               <span className="font-medium">
-                قیمت پیشنهادی: {formatToman(suggestion.suggestedPrice)}
+                قیمت پیشنهادی: {money.format(suggestion.suggestedPrice)}
               </span>
               <SecondaryButton disabled={busy} onClick={applySuggestedPrice}>
                 اعمال قیمت
@@ -815,6 +819,7 @@ function ModifierGroupRow({
   busy: boolean;
   run: Runner;
 }) {
+  const money = useMoney();
   const [modifierName, setModifierName] = useState("");
   const [modifierDelta, setModifierDelta] = useState("0");
   const [editing, setEditing] = useState(false);
@@ -826,7 +831,7 @@ function ModifierGroupRow({
     if (!modifierName.trim()) return;
     let deltaRial: number;
     try {
-      deltaRial = parseToRial(modifierDelta || "0", "toman");
+      deltaRial = money.parse(modifierDelta || "0");
     } catch {
       return;
     }
@@ -984,7 +989,7 @@ function ModifierGroupRow({
             onChange={(e) => setModifierName(e.target.value)}
           />
         </Field>
-        <Field label="مبلغ اضافه (تومان)">
+        <Field label={`مبلغ اضافه (${money.unitLabel})`}>
           <input
             className={inputClass}
             dir="ltr"
@@ -1014,6 +1019,7 @@ function ModifierRow({
   busy: boolean;
   run: Runner;
 }) {
+  const money = useMoney();
   const [editing, setEditing] = useState(false);
 
   if (editing) {
@@ -1037,7 +1043,7 @@ function ModifierRow({
       </span>
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-muted-foreground">
-          {formatToman(Number(modifier.price_delta))}
+          {money.format(Number(modifier.price_delta))}
         </span>
         <SecondaryButton disabled={busy} onClick={() => setEditing(true)}>
           ویرایش
@@ -1089,10 +1095,11 @@ function EditModifierRow({
   run: Runner;
   onDone: () => void;
 }) {
+  const money = useMoney();
   const [groupId, setGroupId] = useState(modifier.group_id);
   const [name, setName] = useState(modifier.name);
   const [delta, setDelta] = useState(
-    String(rialToToman(Number(modifier.price_delta))),
+    String(money.toInput(Number(modifier.price_delta))),
   );
   const moved = groupId !== modifier.group_id;
 
@@ -1100,7 +1107,7 @@ function EditModifierRow({
     event.preventDefault();
     let deltaRial: number;
     try {
-      deltaRial = parseToRial(delta, "toman");
+      deltaRial = money.parse(delta);
     } catch {
       return;
     }
@@ -1138,7 +1145,7 @@ function EditModifierRow({
             required
           />
         </Field>
-        <Field label="مبلغ اضافه (تومان)">
+        <Field label={`مبلغ اضافه (${money.unitLabel})`}>
           <input
             className={inputClass}
             dir="ltr"

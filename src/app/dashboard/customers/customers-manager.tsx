@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
-import { formatToman } from "@/lib/money";
+import { useMoney } from "@/components/money/money-context";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -39,6 +39,7 @@ export function CustomersManager({ role }: { role: string }) {
   // directory but don't see accounting figures.
   const canSeeLedger = role === "owner" || role === "manager" || role === "accountant";
 
+  const money = useMoney();
   const [customers, setCustomers] = useState<Customer[] | null>(null);
   const [total, setTotal] = useState(0);
   const [balances, setBalances] = useState<Record<string, number>>({});
@@ -190,7 +191,7 @@ export function CustomersManager({ role }: { role: string }) {
                     <td className="py-2 pe-3 text-muted-foreground">{c.address || "—"}</td>
                     {canSeeLedger ? (
                       <td className="py-2 pe-3 tabular-nums font-semibold">
-                        {balances[c.id] ? formatToman(balances[c.id]) : "—"}
+                        {balances[c.id] ? money.format(balances[c.id]) : "—"}
                       </td>
                     ) : null}
                     <td className="py-2 pe-3">

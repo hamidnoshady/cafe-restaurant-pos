@@ -2,6 +2,8 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { getBusinessIndustry } from "@/lib/industry-guard";
 import { industryProfile, labelFor } from "@/lib/industry-profile";
+import { getSetting, SETTING_KEYS } from "@/lib/settings";
+import { MoneyProvider } from "@/components/money/money-context";
 import { StepNav } from "./step-nav";
 import { SetupAssistant } from "./setup-assistant";
 import { SetupIndustryProvider } from "./industry-context";
@@ -15,9 +17,15 @@ export default async function SetupLayout({
   if (session.role !== "owner" && session.role !== "manager") redirect("/dashboard");
   if (await isSetupComplete(session.businessId)) redirect("/dashboard/settings");
   const industry = (await getBusinessIndustry(session.businessId)) ?? "food_service";
+  const prefs = await getSetting<{ currencyDisplay?: "toman" | "rial" }>(
+    session.businessId,
+    SETTING_KEYS.businessPrefs,
+  );
+  const currencyDisplay = prefs?.currencyDisplay === "rial" ? "rial" : "toman";
 
   return (
     <SetupIndustryProvider industry={industry}>
+      <MoneyProvider unit={currencyDisplay}>
       <div className="mx-auto flex min-h-screen max-w-5xl gap-6 p-4 sm:p-6">
         <aside className="hidden w-60 shrink-0 sm:block">
           <div className="sticky top-6 rounded-2xl bg-card p-4 shadow-sm">
@@ -39,9 +47,10 @@ export default async function SetupLayout({
             <StepNav />
           </div>
         </aside>
-        <main className="min-w-0 flex-1 rounded-2xl bg-card p-6 shadow-sm">{children}</main>
-        <SetupAssistant />
-      </div>
+          <main className="min-w-0 flex-1 rounded-2xl bg-card p-6 shadow-sm">{children}</main>
+          <SetupAssistant />
+        </div>
+      </MoneyProvider>
     </SetupIndustryProvider>
   );
 }

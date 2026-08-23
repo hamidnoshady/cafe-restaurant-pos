@@ -10,7 +10,7 @@ import {
 import { PlusIcon, SearchIcon, XIcon } from "lucide-react";
 import { formatQuantity, toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
-import { formatTomanText } from "@/lib/money";
+import { useMoney } from "@/components/money/money-context";
 import { useInventorySearch } from "@/lib/inventory-search";
 import { api, errorMessage, Field, inputClass, PrimaryButton } from "../ui";
 import type { InventoryItem, Runner } from "./inventory-manager";
@@ -235,6 +235,7 @@ function StockCountModal({
   onClose: () => void;
   onChanged: () => void;
 }) {
+  const money = useMoney();
   const [detail, setDetail] = useState<CountDetail | null>(null);
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [note, setNote] = useState("");
@@ -459,7 +460,7 @@ function StockCountModal({
                           <span>
                             ارزش اختلاف:{" "}
                             <span className="font-medium text-foreground">
-                              {formatTomanText(l.varianceValue)}
+                              {money.formatText(l.varianceValue)}
                             </span>
                           </span>
                         ) : null}

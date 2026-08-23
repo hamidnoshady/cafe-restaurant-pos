@@ -12,7 +12,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { formatJalali } from "@/lib/jalali";
 import { toPersianDigits } from "@/lib/digits";
-import { formatToman, parseToRial } from "@/lib/money";
+import { formatMoney, type MoneyUnit } from "@/lib/money";
+import { useMoney } from "@/components/money/money-context";
 import { ErrorBox, InfoBox, api, errorMessage, inputClass } from "../ui";
 import { SectionCard } from "../page-chrome";
 import { Button } from "@/components/ui/button";
@@ -33,17 +34,18 @@ function formatTime(iso: string | null): string {
   return toPersianDigits(formatJalali(iso, { withMonthName: true, withTime: true }));
 }
 
-function formatFloat(value: number | null): string {
-  return value === null ? "—" : toPersianDigits(formatToman(value));
+function formatFloat(value: number | null, unit: MoneyUnit = "toman"): string {
+  return value === null ? "—" : toPersianDigits(formatMoney(value, unit));
 }
 
-function formatVariance(variance: number): string {
-  const amount = toPersianDigits(formatToman(Math.abs(variance)));
+function formatVariance(variance: number, unit: MoneyUnit = "toman"): string {
+  const amount = toPersianDigits(formatMoney(Math.abs(variance), unit));
   if (variance === 0) return `بدون کسری/اضافه`;
   return variance > 0 ? `${amount} اضافه` : `${amount} کسری`;
 }
 
 export function ShiftHistorySettings() {
+  const money = useMoney();
   const [shifts, setShifts] = useState<Shift[] | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -71,7 +73,7 @@ export function ShiftHistorySettings() {
     let closingFloat: number | undefined;
     if (closingAmount.trim()) {
       try {
-        closingFloat = parseToRial(closingAmount, "toman");
+        closingFloat = money.parse(closingAmount);
       } catch {
         setBusy(false);
         setError(errorMessage("invalid_amount"));
@@ -116,10 +118,10 @@ export function ShiftHistorySettings() {
                     <p className="text-xs text-muted-foreground">
                       {formatTime(shift.startedAt)} تا {formatTime(shift.endedAt)}
                       {" · موجودی اول: "}
-                      {formatFloat(shift.openingFloat)}
+                      {formatFloat(shift.openingFloat, money.unit)}
                       {" · موجودی آخر: "}
-                      {formatFloat(shift.closingFloat)}
-                      {shift.reconciliation ? ` · تطبیق: ${formatVariance(shift.reconciliation.variance)}` : ""}
+                      {formatFloat(shift.closingFloat, money.unit)}
+                      {shift.reconciliation ? ` · تطبیق: ${formatVariance(shift.reconciliation.variance, money.unit)}` : ""}
                     </p>
                   </div>
                   {!shift.endedAt && closingId !== shift.id && (

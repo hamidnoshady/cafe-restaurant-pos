@@ -12,7 +12,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
-import { formatToman } from "@/lib/money";
+import { useMoney } from "@/components/money/money-context";
 import { JalaliDatePicker } from "../jalali-date-picker";
 import { BarChart } from "../charts";
 import { ErrorBox, Field, InfoBox, PrimaryButton, SecondaryButton, api, inputClass } from "../ui";
@@ -109,6 +109,7 @@ export function LocationsManager() {
 // ---------------------------------------------------------------------------
 
 function ComparisonCard() {
+  const money = useMoney();
   const [overview, setOverview] = useState<Overview | null>(null);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -179,12 +180,12 @@ function ComparisonCard() {
                 {overview.locations.map((l) => (
                   <tr key={l.id} className="border-b last:border-0">
                     <td className="py-2 font-medium">{l.name}</td>
-                    <td className="py-2 tabular-nums">{formatToman(l.total, { withUnit: false })}</td>
+                    <td className="py-2 tabular-nums">{money.format(l.total, { withUnit: false })}</td>
                     <td className="py-2 tabular-nums">{toPersianDigits(l.orderCount)}</td>
-                    <td className="py-2 tabular-nums">{formatToman(l.cogs, { withUnit: false })}</td>
-                    <td className="py-2 tabular-nums">{formatToman(l.wasteCost, { withUnit: false })}</td>
-                    <td className="py-2 tabular-nums">{formatToman(l.cashTotal, { withUnit: false })}</td>
-                    <td className="py-2 tabular-nums">{formatToman(l.cardTotal, { withUnit: false })}</td>
+                    <td className="py-2 tabular-nums">{money.format(l.cogs, { withUnit: false })}</td>
+                    <td className="py-2 tabular-nums">{money.format(l.wasteCost, { withUnit: false })}</td>
+                    <td className="py-2 tabular-nums">{money.format(l.cashTotal, { withUnit: false })}</td>
+                    <td className="py-2 tabular-nums">{money.format(l.cardTotal, { withUnit: false })}</td>
                     <td className="py-2">
                       <StaleBadge stale={l.stale} />
                     </td>
@@ -195,7 +196,7 @@ function ComparisonCard() {
           </div>
 
           <div>
-            <h3 className="mb-2 text-sm font-medium text-muted-foreground">فروش دوره به تفکیک شعبه (تومان)</h3>
+            <h3 className="mb-2 text-sm font-medium text-muted-foreground">فروش دوره به تفکیک شعبه ({money.unitLabel})</h3>
             <BarChart
               data={overview.locations.map((l) => ({ label: l.name, value: Math.trunc(l.total / 10) }))}
             />
@@ -215,7 +216,7 @@ function ComparisonCard() {
                         <li key={s.staffId} className="flex items-center justify-between gap-2 text-xs">
                           <span className="truncate">{s.staffName}</span>
                           <span className="shrink-0 tabular-nums text-muted-foreground">
-                            {toPersianDigits(s.orderCount)} سفارش · {formatToman(s.revenue, { withUnit: false })}
+                            {toPersianDigits(s.orderCount)} سفارش · {money.format(s.revenue, { withUnit: false })}
                           </span>
                         </li>
                       ))}

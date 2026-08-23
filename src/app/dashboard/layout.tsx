@@ -5,8 +5,10 @@ import { effectiveFeatures, isLockableFeature } from "@/lib/features";
 import { INDUSTRY_LABELS, type Industry } from "@/lib/industries";
 import { hasModule, industryProfile, labelFor } from "@/lib/industry-profile";
 import { effectivePermissions, parseOverrides, PERMISSIONS, type Permission } from "@/lib/permissions";
+import { getSetting, SETTING_KEYS } from "@/lib/settings";
 import { visibleSettingsTabs } from "@/lib/settings-tabs";
 import { AiAssistant } from "@/components/ai/ai-assistant";
+import { MoneyProvider } from "@/components/money/money-context";
 import { LockProvider } from "./lock-screen";
 import { OfflineBanner } from "./offline-banner";
 import { DashboardSidebar, type NavItem } from "./dashboard-sidebar";
@@ -123,7 +125,7 @@ export default async function DashboardLayout({
   // doc comment in src/lib/auth.ts. Without this, the query below can come
   // back empty non-deterministically and, since it gates access, incorrectly
   // sign an active member out.
-  const [{ rows }, features, { rows: bizRows }] = await withTenant(
+  const [{ rows }, features, { rows: bizRows }, prefs] = await withTenant(
     session.businessId,
     () =>
       Promise.all([
@@ -133,11 +135,13 @@ export default async function DashboardLayout({
         ),
         effectiveFeatures(session.businessId),
         query<{ industry: Industry }>("SELECT industry FROM businesses WHERE id = $1", [session.businessId]),
+        getSetting<{ currencyDisplay?: "toman" | "rial" }>(session.businessId, SETTING_KEYS.businessPrefs),
       ]),
     { locationId: session.locationId, userId: session.sub },
   );
   const member = rows[0];
   if (!member?.is_active) redirect("/login");
+  const currencyDisplay = prefs?.currencyDisplay === "rial" ? "rial" : "toman";
   const industry = bizRows[0]?.industry ?? "food_service";
   const permissions = effectivePermissions(member.role, parseOverrides(member.permissions));
   const settingsTabs = visibleSettingsTabs(permissions, { role: member.role, features, industry });
@@ -158,7 +162,8 @@ export default async function DashboardLayout({
 
   return (
     <LockProvider fullName={session.fullName}>
-      <div className="flex min-h-screen flex-col md:flex-row">
+      <MoneyProvider unit={currencyDisplay}>
+        <div className="flex min-h-screen flex-col md:flex-row">
         <DashboardSidebar
           navItems={navItems}
           role={member.role}
@@ -170,8 +175,9 @@ export default async function DashboardLayout({
           <OfflineBanner />
           <main className="flex-1 overflow-y-auto p-2 pb-24 md:p-4">{children}</main>
         </div>
-        {assistantMode && canUseAssistant && features.ai_assistant ? <AiAssistant mode={assistantMode} /> : null}
-      </div>
+          {assistantMode && canUseAssistant && features.ai_assistant ? <AiAssistant mode={assistantMode} /> : null}
+        </div>
+      </MoneyProvider>
     </LockProvider>
   );
 }

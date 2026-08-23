@@ -38,7 +38,11 @@ export const GET = withTenantScope(async (_request: NextRequest, context: { para
   const { rows: items } = await query(
     `SELECT pi.id, pi.inventory_item_id, ii.name AS inventory_item_name, ii.unit,
             ii.purchase_unit, ii.purchase_unit_factor,
-            pi.quantity, pi.unit_cost, pi.extended_cost
+            pi.quantity, pi.unit_cost, pi.extended_cost,
+            (SELECT il.id FROM inventory_lots il
+              WHERE il.source_type = 'purchase' AND il.source_id = pi.purchase_id
+                AND il.inventory_item_id = pi.inventory_item_id AND il.remaining_qty > 0
+              ORDER BY il.received_at, il.id LIMIT 1) AS inventory_lot_id
        FROM purchase_items pi JOIN inventory_items ii ON ii.id = pi.inventory_item_id
       WHERE pi.purchase_id = $1 AND ii.location_id = $2
         AND EXISTS (SELECT 1 FROM purchases p WHERE p.id=pi.purchase_id AND p.location_id=$2)`,

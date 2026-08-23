@@ -12,7 +12,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { MinusIcon, PlusIcon } from "lucide-react";
 import { toPersianDigits } from "@/lib/digits";
-import { formatToman } from "@/lib/money";
+import { useMoney } from "@/components/money/money-context";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import type { PaymentMethodView } from "@/lib/payment-methods";
 import { api, errorMessage } from "../ui";
@@ -95,11 +95,18 @@ export function ClosedOrderAmendment({
     { menuItemId: string; quantity: number }[]
   >([]);
   const [addItemId, setAddItemId] = useState("");
+  const money = useMoney();
   const [discountType, setDiscountType] = useState<"" | "percent" | "amount">(
     initialDiscountType ?? "",
   );
   const [discountValue, setDiscountValue] = useState(
-    initialDiscountValue ? String(initialDiscountValue) : "",
+    initialDiscountValue
+      ? String(
+          initialDiscountType === "amount"
+            ? money.toInput(initialDiscountValue)
+            : initialDiscountValue,
+        )
+      : "",
   );
   const [method, setMethod] = useState("");
   const { methods: paymentMethods } = usePaymentMethods();
@@ -166,7 +173,13 @@ export function ClosedOrderAmendment({
               ...additions,
             ],
             discount: discountType
-              ? { type: discountType, value: Number(discountValue) || 0 }
+              ? {
+                  type: discountType,
+                  value:
+                    discountType === "amount"
+                      ? money.fromInput(Math.max(0, Math.round(Number(discountValue) || 0)))
+                      : Number(discountValue) || 0,
+                }
               : { type: null },
             paymentMethod: method || undefined,
           };
@@ -185,7 +198,7 @@ export function ClosedOrderAmendment({
     setInfo(
       kind === "void"
         ? "سفارش حذف شد؛ همهٔ اثرهای حسابداری، انبار و صندوق آن برگشت خورد."
-        : `سفارش اصلاح شد؛ مبلغ جدید ${formatToman(Number(data.newTotal ?? 0))} در همان تاریخ فروش ثبت شد.`,
+        : `سفارش اصلاح شد؛ مبلغ جدید ${money.format(Number(data.newTotal ?? 0))} در همان تاریخ فروش ثبت شد.`,
     );
     setOpen(false);
     setReason("");
@@ -394,7 +407,7 @@ export function ClosedOrderAmendment({
                 aria-label="مقدار تخفیف"
                 value={discountValue}
                 onChange={(event) => setDiscountValue(event.target.value)}
-                placeholder={discountType === "percent" ? "٪" : "تومان"}
+                placeholder={discountType === "percent" ? "٪" : money.unitLabel}
               />
             ) : null}
             <div className="min-w-0 flex-1">
@@ -456,7 +469,7 @@ export function ClosedOrderAmendment({
               {KIND_LABELS[row.kind]} در{" "}
               {toPersianDigits(row.createdAt.slice(0, 10))}
               {row.createdByName ? ` توسط ${row.createdByName}` : ""} —{" "}
-              {formatToman(row.previousTotal)} ← {formatToman(row.newTotal)} —{" "}
+              {money.format(row.previousTotal)} ← {money.format(row.newTotal)} —{" "}
               {row.reason}
             </li>
           ))}

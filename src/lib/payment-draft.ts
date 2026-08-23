@@ -9,14 +9,14 @@
  * screens ask the same questions of it — what is still owed, is this ready to
  * send, what does the receipt say, does the drawer open — so they ask here.
  */
-import { parseToRial, type Rial } from "./money";
+import { parseToRial, type MoneyUnit, type Rial } from "./money";
 import type { PaymentMethodView } from "./payment-methods";
 
 export interface PaymentDraftRow {
   /** Stable across re-renders so React keys and focus survive a row being removed. */
   key: string;
   methodId: string;
-  /** As typed, in Toman. Empty while the cashier is still typing. */
+  /** As typed, in the business's display unit. Empty while the cashier is still typing. */
   amount: string;
   reference: string;
 }
@@ -47,10 +47,10 @@ export function emptyPaymentDraft(methods: readonly PaymentMethodView[]): Paymen
 }
 
 /** A row's amount in Rial, or null while it is empty or not a number yet. */
-export function draftRowRial(row: PaymentDraftRow): Rial | null {
+export function draftRowRial(row: PaymentDraftRow, unit: MoneyUnit = "toman"): Rial | null {
   if (!row.amount.trim()) return null;
   try {
-    const rial = parseToRial(row.amount, "toman");
+    const rial = parseToRial(row.amount, unit);
     return rial > 0 ? rial : null;
   } catch {
     return null;
@@ -58,14 +58,14 @@ export function draftRowRial(row: PaymentDraftRow): Rial | null {
 }
 
 /** What the typed rows come to so far — rows still being typed count as zero. */
-export function draftTotal(draft: PaymentDraft, due: Rial): Rial {
+export function draftTotal(draft: PaymentDraft, due: Rial, unit: MoneyUnit = "toman"): Rial {
   if (!draft.split) return due;
-  return draft.rows.reduce((sum, row) => sum + (draftRowRial(row) ?? 0), 0);
+  return draft.rows.reduce((sum, row) => sum + (draftRowRial(row, unit) ?? 0), 0);
 }
 
 /** Still owed. Negative once the rows overshoot the bill. */
-export function draftRemaining(draft: PaymentDraft, due: Rial): Rial {
-  return due - draftTotal(draft, due);
+export function draftRemaining(draft: PaymentDraft, due: Rial, unit: MoneyUnit = "toman"): Rial {
+  return due - draftTotal(draft, due, unit);
 }
 
 export function methodOf(methods: readonly PaymentMethodView[], id: string): PaymentMethodView | undefined {
@@ -107,6 +107,7 @@ export function paymentDraftBody(
   draft: PaymentDraft,
   methods: readonly PaymentMethodView[],
   due: Rial,
+  unit: MoneyUnit = "toman",
 ): DraftResult<PaymentDraftBody[]> {
   const rows = draft.split ? draft.rows : [{ ...newDraftRow(draft.methodId), amount: "" }];
   if (rows.length === 0) return { ok: false, error: "no_payment" };
@@ -122,7 +123,7 @@ export function paymentDraftBody(
       body.push({ methodId: method.id, reference: row.reference.trim() || undefined });
       continue;
     }
-    const amount = draftRowRial(row);
+    const amount = draftRowRial(row, unit);
     if (amount === null) return { ok: false, error: "invalid_amount" };
     // The last slice is sent open — "take the rest" — even though the cashier
     // typed a figure for it. The typed figures are checked against `due` just
@@ -136,7 +137,7 @@ export function paymentDraftBody(
       reference: row.reference.trim() || undefined,
     });
   }
-  if (draft.split && draftRemaining(draft, due) !== 0) {
+  if (draft.split && draftRemaining(draft, due, unit) !== 0) {
     return { ok: false, error: "payment_total_mismatch" };
   }
   return { ok: true, value: body };
@@ -151,6 +152,7 @@ export function draftReceiptPayments(
   draft: PaymentDraft,
   methods: readonly PaymentMethodView[],
   due: Rial,
+  unit: MoneyUnit = "toman",
 ): { label: string; amount: Rial }[] {
   if (!draft.split) {
     const method = methodOf(methods, draft.methodId);
@@ -158,7 +160,7 @@ export function draftReceiptPayments(
   }
   return draft.rows.flatMap((row) => {
     const method = methodOf(methods, row.methodId);
-    const amount = draftRowRial(row);
+    const amount = draftRowRial(row, unit);
     return method && amount !== null ? [{ label: method.name, amount }] : [];
   });
 }

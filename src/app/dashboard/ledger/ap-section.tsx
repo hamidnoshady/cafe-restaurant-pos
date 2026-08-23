@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
-import { formatToman, parseToRial, rialToToman } from "@/lib/money";
+import { useMoney } from "@/components/money/money-context";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { api, ErrorBox, errorMessage, inputClass, PrimaryButton, SecondaryButton } from "../ui";
 import { ApStatementPanel } from "./ap-statement-panel";
@@ -39,6 +39,7 @@ const AGING_COLUMNS: { key: keyof Omit<AgingRow, "supplierId" | "supplierName">;
 ];
 
 export function ApSection({ busy, run }: { busy: boolean; run: (fn: () => Promise<{ ok: boolean; data: { error?: string } }>) => Promise<boolean> }) {
+  const money = useMoney();
   const [suppliers, setSuppliers] = useState<SupplierBalance[] | null>(null);
   const [view, setView] = useState<"balances" | "aging">("balances");
   const [aging, setAging] = useState<AgingReport | null>(null);
@@ -95,7 +96,7 @@ export function ApSection({ busy, run }: { busy: boolean; run: (fn: () => Promis
                         <tr key={s.supplierId} className="border-b border-border">
                           <td className="py-3 pe-3"><button type="button" onClick={() => setStatementTarget({ id: s.supplierId, name: s.supplierName })} className="font-semibold hover:text-[#9B6700] hover:underline">{s.supplierName}</button></td>
                           <td className="py-3 pe-3 text-muted-foreground">{s.supplierPhone ? toPersianDigits(s.supplierPhone) : "—"}</td>
-                          <td className="whitespace-nowrap py-3 pe-3 font-bold">{formatToman(s.balance)}</td>
+                          <td className="whitespace-nowrap py-3 pe-3 font-bold">{money.format(s.balance)}</td>
                           <td className="py-3">{s.supplierId !== "unknown" ? <button type="button" onClick={() => setPayTarget(s)} className="rounded-lg px-3 text-xs font-semibold text-[#9B6700] hover:bg-[#FFF1D8]">پرداخت</button> : null}</td>
                         </tr>
                       ))}
@@ -107,7 +108,7 @@ export function ApSection({ busy, run }: { busy: boolean; run: (fn: () => Promis
                     <article key={s.supplierId} className="rounded-xl border border-[#EEECE7] bg-[#FCFBF8] p-4">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0"><button type="button" onClick={() => setStatementTarget({ id: s.supplierId, name: s.supplierName })} className="truncate text-right font-bold hover:text-[#9B6700]">{s.supplierName}</button><p className="mt-1 text-xs text-muted-foreground">{s.supplierPhone ? toPersianDigits(s.supplierPhone) : "شماره‌ای ثبت نشده"}</p></div>
-                        <span className="whitespace-nowrap font-bold">{formatToman(s.balance)}</span>
+                        <span className="whitespace-nowrap font-bold">{money.format(s.balance)}</span>
                       </div>
                       {s.supplierId !== "unknown" ? <button type="button" onClick={() => setPayTarget(s)} className="mt-3 rounded-lg bg-[#FFF1D8] px-4 text-sm font-semibold text-[#9B6700]">ثبت پرداخت</button> : null}
                     </article>
@@ -127,20 +128,20 @@ export function ApSection({ busy, run }: { busy: boolean; run: (fn: () => Promis
                 <div className="hidden overflow-x-auto lg:block">
                   <table className="w-full text-sm">
                     <thead><tr className="border-b border-border"><th className="py-3 pe-3 text-start">تأمین‌کننده</th>{AGING_COLUMNS.map((col) => <th key={col.key} className="py-3 pe-3 text-start">{col.label}</th>)}</tr></thead>
-                    <tbody>{aging.rows.map((r) => <tr key={r.supplierId} className="border-b border-border"><td className="py-3 pe-3 font-medium">{r.supplierName}</td>{AGING_COLUMNS.map((col) => <td key={col.key} className={`whitespace-nowrap py-3 pe-3 ${col.key === "total" ? "font-bold" : ""}`}>{r[col.key] ? formatToman(r[col.key]) : "—"}</td>)}</tr>)}</tbody>
-                    <tfoot><tr className="border-t-2 border-input font-bold"><td className="py-3 pe-3">جمع کل</td>{AGING_COLUMNS.map((col) => <td key={col.key} className="whitespace-nowrap py-3 pe-3">{formatToman(aging.totals[col.key])}</td>)}</tr></tfoot>
+                    <tbody>{aging.rows.map((r) => <tr key={r.supplierId} className="border-b border-border"><td className="py-3 pe-3 font-medium">{r.supplierName}</td>{AGING_COLUMNS.map((col) => <td key={col.key} className={`whitespace-nowrap py-3 pe-3 ${col.key === "total" ? "font-bold" : ""}`}>{r[col.key] ? money.format(r[col.key]) : "—"}</td>)}</tr>)}</tbody>
+                    <tfoot><tr className="border-t-2 border-input font-bold"><td className="py-3 pe-3">جمع کل</td>{AGING_COLUMNS.map((col) => <td key={col.key} className="whitespace-nowrap py-3 pe-3">{money.format(aging.totals[col.key])}</td>)}</tr></tfoot>
                   </table>
                 </div>
                 <div className="space-y-3 lg:hidden">
                   {aging.rows.map((r) => (
                     <article key={r.supplierId} className="rounded-xl border border-[#EEECE7] bg-[#FCFBF8] p-4">
-                      <div className="flex justify-between gap-3"><h3>{r.supplierName}</h3><span className="whitespace-nowrap font-bold">{formatToman(r.total)}</span></div>
+                      <div className="flex justify-between gap-3"><h3>{r.supplierName}</h3><span className="whitespace-nowrap font-bold">{money.format(r.total)}</span></div>
                       <dl className="mt-3 grid grid-cols-2 gap-2 border-t border-[#F0EEE9] pt-3 text-sm">
-                        {AGING_COLUMNS.filter((col) => col.key !== "total").map((col) => <div key={col.key}><dt className="text-xs text-muted-foreground">{col.label}</dt><dd className="mt-1 font-semibold">{r[col.key] ? formatToman(r[col.key]) : "—"}</dd></div>)}
+                        {AGING_COLUMNS.filter((col) => col.key !== "total").map((col) => <div key={col.key}><dt className="text-xs text-muted-foreground">{col.label}</dt><dd className="mt-1 font-semibold">{r[col.key] ? money.format(r[col.key]) : "—"}</dd></div>)}
                       </dl>
                     </article>
                   ))}
-                  <dl className="rounded-xl border border-[#DEDAD2] bg-[#FFFEFC] p-4"><dt className="text-sm text-muted-foreground">جمع کل حساب‌های پرداختنی</dt><dd className="mt-1 text-lg font-bold">{formatToman(aging.totals.total)}</dd></dl>
+                  <dl className="rounded-xl border border-[#DEDAD2] bg-[#FFFEFC] p-4"><dt className="text-sm text-muted-foreground">جمع کل حساب‌های پرداختنی</dt><dd className="mt-1 text-lg font-bold">{money.format(aging.totals.total)}</dd></dl>
                 </div>
               </>
             )}
@@ -181,7 +182,8 @@ function PayBillDialog({
   onClose: () => void;
   onSubmit: (body: { supplierId: string; amount: number; method: "cash" | "bank"; memo?: string }) => Promise<boolean>;
 }) {
-  const [amount, setAmount] = useState(String(rialToToman(Math.max(supplier.balance, 0)) || ""));
+  const money = useMoney();
+  const [amount, setAmount] = useState(String(money.toInput(Math.max(supplier.balance, 0)) || ""));
   const [method, setMethod] = useState<"cash" | "bank">("cash");
   const [memo, setMemo] = useState("");
   const [localError, setLocalError] = useState("");
@@ -189,7 +191,7 @@ function PayBillDialog({
   async function submit() {
     let rial: number;
     try {
-      rial = parseToRial(amount, "toman");
+      rial = money.parse(amount);
     } catch {
       setLocalError(errorMessage("invalid_amount"));
       return;
@@ -218,7 +220,7 @@ function PayBillDialog({
         <ErrorBox>{localError}</ErrorBox>
         <div className="space-y-4">
           <label className="flex flex-col gap-1.5 text-sm">
-            <span className="font-medium text-muted-foreground">مبلغ (تومان)</span>
+            <span className="font-medium text-muted-foreground">مبلغ ({money.unitLabel})</span>
             <input className={inputClass} dir="ltr" inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value)} />
           </label>
           <label className="flex flex-col gap-1.5 text-sm">

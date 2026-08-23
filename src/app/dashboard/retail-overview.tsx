@@ -18,7 +18,7 @@ import Link from "next/link";
 import { AlertTriangleIcon, BarChart3Icon, GemIcon, PackageIcon, ReceiptTextIcon, WrenchIcon } from "lucide-react";
 import { formatPersianNumber, toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
-import { formatToman } from "@/lib/money";
+import { useMoney } from "@/components/money/money-context";
 import { labelFor } from "@/lib/industry-profile";
 import type { Industry } from "@/lib/industries";
 import { PageHeader } from "./page-chrome";
@@ -52,6 +52,7 @@ const PURITY_LABELS: Record<string, string> = {
 };
 
 export function RetailOverview({ industry }: { industry: Industry }) {
+  const money = useMoney();
   const [data, setData] = useState<RetailOverview | null>(null);
   const [nearExpiry, setNearExpiry] = useState<NearExpiryRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -95,7 +96,7 @@ export function RetailOverview({ industry }: { industry: Industry }) {
           icon={BarChart3Icon}
           label="فروش امروز"
           hint={`جمع ${labelFor(industry, "saleDocumentPlural")} تکمیل‌شده`}
-          value={loading ? "…" : formatToman(Number(data?.today.total ?? 0))}
+          value={loading ? "…" : money.format(Number(data?.today.total ?? 0))}
         />
         <Kpi
           icon={ReceiptTextIcon}
@@ -194,7 +195,7 @@ export function RetailOverview({ industry }: { industry: Industry }) {
                     {toPersianDigits(formatJalali(price.priceDate))}
                   </dt>
                   <dd className="mt-1 text-sm font-bold text-[#252522]">
-                    {formatPersianNumber(price.pricePerGram)} ریال بر گرم
+                    {money.format(price.pricePerGram)} بر گرم
                   </dd>
                 </div>
               ))}

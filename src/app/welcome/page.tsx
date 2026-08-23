@@ -2,9 +2,15 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { Loader2Icon } from "lucide-react";
 import { ModeChoice } from "./mode-choice";
 import { PairForm } from "./pair-form";
-import { ENABLED_INDUSTRIES, INDUSTRIES, INDUSTRY_LABELS, type Industry } from "@/lib/industries";
+import {
+  ENABLED_INDUSTRIES,
+  INDUSTRIES,
+  INDUSTRY_LABELS,
+  type Industry,
+} from "@/lib/industries";
 
 type Stage = "choosing" | "local" | "connecting";
 
@@ -43,10 +49,18 @@ export default function WelcomePage() {
   return (
     <div className="flex min-h-screen items-center justify-center p-4">
       {stage === "choosing" ? (
-        <ModeChoice onChoose={(mode) => setStage(mode === "local" ? "local" : "connecting")} />
+        <ModeChoice
+          onChoose={(mode) =>
+            setStage(mode === "local" ? "local" : "connecting")
+          }
+        />
       ) : null}
-      {stage === "local" ? <LocalBootstrapForm onBack={() => setStage("choosing")} /> : null}
-      {stage === "connecting" ? <PairForm onBack={() => setStage("choosing")} /> : null}
+      {stage === "local" ? (
+        <LocalBootstrapForm onBack={() => setStage("choosing")} />
+      ) : null}
+      {stage === "connecting" ? (
+        <PairForm onBack={() => setStage("choosing")} />
+      ) : null}
     </div>
   );
 }
@@ -91,7 +105,8 @@ function LocalBootstrapForm({ onBack }: { onBack: () => void }) {
         missing_fields: "همهٔ فیلدهای الزامی را پر کنید.",
         invalid_email: "ایمیل معتبر نیست.",
         weak_password: "گذرواژه باید حداقل ۸ کاراکتر باشد.",
-        email_password_mismatch: "این ایمیل قبلاً ثبت شده و گذرواژه با آن هم‌خوانی ندارد.",
+        email_password_mismatch:
+          "این ایمیل قبلاً ثبت شده و گذرواژه با آن هم‌خوانی ندارد.",
         invalid_industry: "نوع کسب‌وکار نامعتبر است.",
         industry_not_available: "این نوع کسب‌وکار هنوز در دسترس نیست.",
       };
@@ -113,8 +128,8 @@ function LocalBootstrapForm({ onBack }: { onBack: () => void }) {
       </button>
       <h1 className="mb-1 text-2xl font-bold">راه‌اندازی محلی</h1>
       <p className="mb-6 text-sm text-muted-foreground">
-        کسب‌وکار و حساب مالک را بسازید. بعد از آن، جادوگر راه‌اندازی شما را قدم‌به‌قدم تا
-        آماده‌شدن برای فروش همراهی می‌کند.
+        کسب‌وکار و حساب مالک را بسازید. بعد از آن، جادوگر راه‌اندازی شما را
+        قدم‌به‌قدم تا آماده‌شدن برای فروش همراهی می‌کند.
       </p>
 
       {error ? (
@@ -125,7 +140,9 @@ function LocalBootstrapForm({ onBack }: { onBack: () => void }) {
 
       <form onSubmit={submit} className="space-y-4">
         <label className="block">
-          <span className="mb-1 block text-sm font-medium text-foreground">نام کسب‌وکار *</span>
+          <span className="mb-1 block text-sm font-medium text-foreground">
+            نام کسب‌وکار *
+          </span>
           <input
             className="w-full rounded-lg border border-input px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-ring/30"
             value={businessName}
@@ -135,7 +152,9 @@ function LocalBootstrapForm({ onBack }: { onBack: () => void }) {
           />
         </label>
         <div className="block">
-          <span className="mb-1 block text-sm font-medium text-foreground">نوع کسب‌وکار *</span>
+          <span className="mb-1 block text-sm font-medium text-foreground">
+            نوع کسب‌وکار *
+          </span>
           <div className="grid grid-cols-2 gap-2">
             {INDUSTRIES.map((option) => {
               const enabled = ENABLED_INDUSTRIES.includes(option);
@@ -164,7 +183,9 @@ function LocalBootstrapForm({ onBack }: { onBack: () => void }) {
           </div>
         </div>
         <label className="block">
-          <span className="mb-1 block text-sm font-medium text-foreground">نام شعبهٔ اول *</span>
+          <span className="mb-1 block text-sm font-medium text-foreground">
+            نام شعبهٔ اول *
+          </span>
           <input
             className="w-full rounded-lg border border-input px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-ring/30"
             value={locationName}
@@ -174,7 +195,9 @@ function LocalBootstrapForm({ onBack }: { onBack: () => void }) {
         </label>
         <hr className="border-border" />
         <label className="block">
-          <span className="mb-1 block text-sm font-medium text-foreground">نام مالک *</span>
+          <span className="mb-1 block text-sm font-medium text-foreground">
+            نام مالک *
+          </span>
           <input
             className="w-full rounded-lg border border-input px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-ring/30"
             value={ownerName}
@@ -183,7 +206,9 @@ function LocalBootstrapForm({ onBack }: { onBack: () => void }) {
           />
         </label>
         <label className="block">
-          <span className="mb-1 block text-sm font-medium text-foreground">ایمیل مالک *</span>
+          <span className="mb-1 block text-sm font-medium text-foreground">
+            ایمیل مالک *
+          </span>
           <input
             className="w-full rounded-lg border border-input px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-ring/30"
             dir="ltr"
@@ -194,7 +219,9 @@ function LocalBootstrapForm({ onBack }: { onBack: () => void }) {
           />
         </label>
         <label className="block">
-          <span className="mb-1 block text-sm font-medium text-foreground">گذرواژه *</span>
+          <span className="mb-1 block text-sm font-medium text-foreground">
+            گذرواژه *
+          </span>
           <input
             className="w-full rounded-lg border border-input px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-ring/30"
             dir="ltr"
@@ -210,7 +237,13 @@ function LocalBootstrapForm({ onBack }: { onBack: () => void }) {
           disabled={busy}
           className="w-full rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/85 disabled:opacity-50"
         >
-          {busy ? "در حال ساخت…" : "ساخت و شروع راه‌اندازی"}
+          {busy ? (
+            <span className="flex items-center justify-center gap-2">
+              <Loader2Icon className="size-4 animate-spin" /> در حال ساخت…
+            </span>
+          ) : (
+            "ساخت و شروع راه‌اندازی"
+          )}
         </button>
       </form>
     </div>

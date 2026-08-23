@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState, useDeferredValue } from "rea
 import { InfoIcon, RefreshCwIcon, SearchIcon, ShoppingBagIcon, UserIcon } from "lucide-react";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali, isoDateInTimeZone } from "@/lib/jalali";
-import { formatToman } from "@/lib/money";
+import { useMoney } from "@/components/money/money-context";
 import { formatQueueLabel } from "@/lib/orders";
 import {
   linePriceBreakdown,
@@ -238,6 +238,7 @@ function OrderDetailsPanel({
   onRetry: () => void;
   onOpenDetail: (orderId: string) => void;
 }) {
+  const money = useMoney();
   if (!selectedOrder) {
     return (
       <aside
@@ -345,7 +346,7 @@ function OrderDetailsPanel({
             <div className="rounded-xl bg-[#FCFCFA] p-3">
               <dt className="text-[11px] text-[#77756F]">مبلغ سفارش</dt>
               <dd className="mt-1 text-sm font-bold text-[#B97905]">
-                {formatToman(Number(order.total))}
+                {money.format(Number(order.total))}
               </dd>
             </div>
             {order.table_name ? (
@@ -428,11 +429,11 @@ function OrderDetailsPanel({
                             </span>
                           </p>
                           <p className="mt-0.5 text-[11px] text-[#77756F]">
-                            {formatToman(breakdown.unit)} هر واحد
+                            {money.format(breakdown.unit)} هر واحد
                           </p>
                         </div>
                         <span className="shrink-0 text-xs font-bold text-[#B97905]">
-                          {formatToman(breakdown.total)}
+                          {money.format(breakdown.total)}
                         </span>
                       </div>
                       <ModifierBadges
@@ -511,6 +512,7 @@ export function OrdersList({
    * own: it is the same subject (this branch's sales), reached from the same
    * place, and closed again the moment the paper receipts are typed in.
    */
+  const money = useMoney();
   const [showBackdated, setShowBackdated] = useState(false);
   const [orders, setOrders] = useState<OrderRow[] | null>(null);
   const [closedOrders, setClosedOrders] = useState<OrderRow[]>([]);
@@ -1139,7 +1141,7 @@ export function OrdersList({
                       <p
                         className={`text-sm font-bold ${closed ? "text-[#77756F]" : "text-[#B97905]"}`}
                       >
-                        {formatToman(Number(order.total))}
+                        {money.format(Number(order.total))}
                       </p>
                       <p className="mt-1 text-[11px] text-[#77756F]">
                         {orderTimeLabel(order.opened_at)}
