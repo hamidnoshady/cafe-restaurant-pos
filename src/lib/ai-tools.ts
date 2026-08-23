@@ -36,6 +36,9 @@ import { nearExpiryBatches } from "./cosmetics-service";
 import { staffCommissionReport } from "./commission-service";
 import { customersDueForRepurchase } from "./loyalty-service";
 import { getBusinessIndustry } from "./industry-guard";
+import { runAccountingReview } from "./accounting-review-service";
+import { summarizeFindings } from "./accounting-review";
+import { countPendingCoworkerRuns, listCoworkerJobs } from "./ai-coworker-service";
 
 export interface ToolResult {
   ok: boolean;
@@ -922,6 +925,49 @@ export async function runReadTool(
       return { ok: true, data: await customersDueForRepurchase(businessId, locationId, today) };
     }
 
+    // Phase 32 — the coworker's two read tools. Both are deterministic: the
+    // review is a rule engine (see accounting-review.ts on why an LLM must not
+    // be the thing that finds a bookkeeping error), and the job list is the
+    // owner's own standing instructions read back to them.
+    case "run_accounting_review": {
+      const asOfDate = typeof args.asOfDate === "string" ? args.asOfDate : undefined;
+      const review = await runAccountingReview(businessId, { asOfDate });
+      return {
+        ok: true,
+        data: {
+          asOfDate: review.asOfDate,
+          windowDays: review.windowDays,
+          headline: summarizeFindings(review.findings),
+          findings: cap(review.findings, 15),
+        },
+      };
+    }
+
+    case "list_coworker_jobs": {
+      const jobs = await listCoworkerJobs(businessId);
+      const pendingCount = await countPendingCoworkerRuns(businessId);
+      return {
+        ok: true,
+        data: {
+          pendingApprovalCount: pendingCount,
+          jobs: cap(
+            jobs.map((job) => ({
+              id: job.id,
+              title: job.title,
+              templateKey: job.templateKey,
+              trigger: job.triggerKind,
+              event: job.eventKind,
+              scheduleHour: job.scheduleHour,
+              approvalMode: job.approvalMode,
+              enabled: job.enabled,
+              lastRunAt: job.lastRunAt,
+            })),
+            30,
+          ),
+        },
+      };
+    }
+
     default:
       return { ok: false, data: { error: `ابزار ناشناخته: ${name}` } };
   }
@@ -952,4 +998,6 @@ export const READ_TOOL_NAMES = new Set([
   "get_near_expiry_items",
   "get_staff_commission",
   "get_repurchase_candidates",
+  "run_accounting_review",
+  "list_coworker_jobs",
 ]);

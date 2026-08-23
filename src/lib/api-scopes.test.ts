@@ -18,6 +18,10 @@ describe("API scopes", () => {
       "inventory.read",
       "reports.read",
       "webhooks.manage",
+      // Phase 32 — the coworker over the public API.
+      "accounting.read",
+      "coworker.read",
+      "coworker.write",
     ]);
   });
 

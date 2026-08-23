@@ -23,6 +23,7 @@ import {
   type AutopilotCategorySetting,
 } from "./ai-autopilot";
 import { AUTOPILOT_EXECUTORS, AUTOPILOT_REVERTERS } from "./ai-autopilot-executors";
+import { autopilotAmountContext } from "./ai-amount-context";
 import { createAiActionAudit } from "./ai-action-audit";
 import { runAgentTurn } from "./ai-service";
 import { runReadTool } from "./ai-tools";
@@ -261,74 +262,6 @@ async function appliedTodayInCategory(businessId: string, category: AutopilotCat
   return Number(rows[0]?.count ?? 0);
 }
 
-/**
- * The values the caps are measured against, read here rather than taken from
- * the model's own payload — a proposal cannot talk its way under a cap by
- * misreporting the current price or the order's subtotal.
- */
-async function amountContext(
-  businessId: string,
-  proposal: ProposedAction,
-): Promise<AutopilotAmountContext> {
-  switch (proposal.type) {
-    case "menu.item.priceUpdate": {
-      const menuItemId = proposal.payload.menuItemId;
-      if (typeof menuItemId !== "string") return {};
-      const { rows } = await query<{ price: string }>(
-        `SELECT m.price::text AS price FROM menu_items m
-           JOIN locations l ON l.id = m.location_id
-          WHERE m.id = $1 AND l.business_id = $2`,
-        [menuItemId, businessId],
-      );
-      return rows[0] ? { currentPriceRial: Number(rows[0].price) } : {};
-    }
-    case "order.discount.apply": {
-      const orderId = proposal.payload.orderId;
-      if (typeof orderId !== "string") return {};
-      const { rows } = await query<{ subtotal: string }>(
-        `SELECT o.subtotal::text AS subtotal FROM orders o
-           JOIN locations l ON l.id = o.location_id
-          WHERE o.id = $1 AND l.business_id = $2`,
-        [orderId, businessId],
-      );
-      return rows[0] ? { orderSubtotalRial: Number(rows[0].subtotal) } : {};
-    }
-    case "inventory.reorder.draftPO": {
-      const items = Array.isArray(proposal.payload.items) ? (proposal.payload.items as Record<string, unknown>[]) : [];
-      let total = 0;
-      for (const item of items) {
-        const cost = Number(item.totalCost);
-        if (!Number.isFinite(cost)) return {};
-        total += cost;
-      }
-      return { documentValueRial: total };
-    }
-    case "inventory.adjustment.propose": {
-      const lines = Array.isArray(proposal.payload.lines) ? (proposal.payload.lines as Record<string, unknown>[]) : [];
-      const ids = lines.map((line) => line.inventoryItemId).filter((id): id is string => typeof id === "string");
-      if (ids.length !== lines.length || ids.length === 0) return {};
-      const { rows } = await query<{ id: string; quantity: string; unit_cost: string }>(
-        `SELECT i.id, i.quantity::text AS quantity, COALESCE(i.last_unit_cost, 0)::text AS unit_cost
-           FROM inventory_items i JOIN locations l ON l.id = i.location_id
-          WHERE i.id = ANY($1::uuid[]) AND l.business_id = $2`,
-        [ids, businessId],
-      );
-      const byId = new Map(rows.map((row) => [row.id, row]));
-      let value = 0;
-      for (const line of lines) {
-        const row = byId.get(String(line.inventoryItemId));
-        if (!row) return {};
-        const counted = Number(line.countedQty);
-        if (!Number.isFinite(counted)) return {};
-        value += Math.abs(counted - Number(row.quantity)) * Number(row.unit_cost);
-      }
-      return { documentValueRial: Math.round(value) };
-    }
-    default:
-      return {};
-  }
-}
-
 const NO_ROWS = Promise.resolve({ rows: [] as unknown[] });
 
 /**
@@ -372,14 +305,14 @@ async function collectCategoryFacts(
         // Only ever proposes a price move where recorded ingredient cost moved.
         query<{ menu_item_id: string; name: string; price: string; recipe_cost: string }>(
           `SELECT m.id AS menu_item_id, m.name, m.price::text AS price,
-                  COALESCE(SUM(r.quantity * i.last_unit_cost), 0)::text AS recipe_cost
+                  COALESCE(SUM(r.quantity * i.avg_cost), 0)::text AS recipe_cost
              FROM menu_items m
              JOIN locations l ON l.id = m.location_id
              JOIN recipes r ON r.menu_item_id = m.id
              JOIN inventory_items i ON i.id = r.inventory_item_id
             WHERE l.business_id = $1 AND m.is_active
             GROUP BY m.id, m.name, m.price
-           HAVING COALESCE(SUM(r.quantity * i.last_unit_cost), 0) > m.price * 0.6
+           HAVING COALESCE(SUM(r.quantity * i.avg_cost), 0) > m.price * 0.6
             ORDER BY m.name LIMIT 20`,
           [businessId],
         ),
@@ -549,7 +482,7 @@ export async function applyOrDeferProposal(input: {
     // Read from the database, never taken from the model's own payload: a
     // proposal cannot talk its way under a cap by misreporting the price it
     // is changing or the bill it is discounting.
-    context: await amountContext(businessId, proposal),
+    context: await autopilotAmountContext(businessId, proposal),
   });
 
   if (verdict.decision === "needs_confirmation") {

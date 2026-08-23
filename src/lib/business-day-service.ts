@@ -22,6 +22,7 @@ import {
   type LiveWindowCloseReason,
 } from "./business-day";
 import { postgresDateToIso } from "./jalali";
+import { recordCoworkerEvent } from "./ai-coworker-events";
 
 export class BusinessDayError extends Error {
   status: number;
@@ -250,6 +251,14 @@ export async function closeBusinessDay(
       closureId: rows[0]?.id ?? null,
     },
   );
+
+  // Phase 32 — «بستن روز کاری» is the third thing a coworker job can wait for.
+  await recordCoworkerEvent({
+    businessId,
+    locationId,
+    kind: "day_close",
+    payload: { businessDate: status.businessDate, closureId: rows[0]?.id ?? null },
+  });
 
   const updated = await getBusinessDayStatus(locationId);
   if (!updated) throw new BusinessDayError("location_not_found", 404);

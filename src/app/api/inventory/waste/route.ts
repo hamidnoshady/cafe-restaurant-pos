@@ -1,16 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
-import { getPool, query } from "@/lib/db";
-import { consumeInventoryExact } from "@/lib/inventory-consumption-exact";
+import { query } from "@/lib/db";
 import { MissingLedgerAccountError } from "@/lib/ledger-service";
-import { WELL_KNOWN_CODES } from "@/lib/coa-template";
 import { positiveQuantityText } from "@/lib/inventory-exact";
 import { resolveActiveLocation } from "@/lib/setup-state";
-import { emitDomainEvent } from "@/lib/posting-engine";
-// Side-effect import: registers "inventory.operational_posting" with the engine.
-import "@/lib/fnb-posting-rules";
-
-const WASTE_REASONS = ["spoilage", "prep_error", "customer_return", "staff_meal", "other"] as const;
+import { isWasteReason, recordWaste } from "@/lib/waste-service";
 
 export const GET = withTenantScope(async () => {
   const { session, error } = await requireRole("owner", "manager");
@@ -30,7 +24,12 @@ export const GET = withTenantScope(async () => {
   return NextResponse.json({ entries: rows });
 });
 
-/** Logs shrinkage: reduces stock without touching sales figures (separate from order deduction). */
+/**
+ * Logs shrinkage: reduces stock without touching sales figures (separate from
+ * order deduction). The posting itself lives in `waste-service.ts` because the
+ * coworker's `inventory.waste.log` executor runs the identical write with no
+ * request to hang a session on — see Phase 32.
+ */
 export const POST = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
@@ -42,7 +41,6 @@ export const POST = withTenantScope(async (request: NextRequest) => {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
 
-  const reason = body.reason;
   // Accept the quantity as text so a caller can send more precision than an
   // IEEE-754 double carries; `positiveQuantityText` is the validator.
   let quantity;
@@ -54,7 +52,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   if (!body.inventoryItemId) {
     return NextResponse.json({ error: "invalid_item" }, { status: 400 });
   }
-  if (!reason || !WASTE_REASONS.includes(reason as (typeof WASTE_REASONS)[number])) {
+  if (!isWasteReason(body.reason)) {
     return NextResponse.json({ error: "invalid_waste_reason" }, { status: 400 });
   }
 
@@ -67,54 +65,21 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   );
   if (item.length === 0) return NextResponse.json({ error: "item_not_found" }, { status: 404 });
 
-  const client = await getPool().connect();
   try {
-    await client.query("BEGIN");
-    const { rows: events } = await client.query<{id:string}>(
-      `INSERT INTO inventory_events(business_id,location_id,event_type,source_type,created_by,metadata,costing_version)
-       VALUES($1,$2,'waste','waste',$3,jsonb_build_object('reason',$4::text),2) RETURNING id`,
-      [session.businessId,location.id,session.sub,reason]);
-    const eventId=events[0].id;
-    await client.query("UPDATE inventory_events SET source_id=id WHERE id=$1",[eventId]);
-    const result = await consumeInventoryExact(client, {
-      locationId: location.id,
+    const recorded = await recordWaste({
       businessId: session.businessId,
+      locationId: location.id,
       inventoryItemId: body.inventoryItemId,
       quantity,
-      type: "waste",
-      sourceType: "waste",
-      sourceId: eventId,
+      reason: body.reason,
       note: body.note?.trim() || null,
-      wasteReason: reason,
-      createdBy: session.sub,
-      inventoryEventId: eventId,
-    });
-    await emitDomainEvent(client, {
-      businessId: session.businessId,
-      locationId: location.id,
-      eventType: "inventory.operational_posting",
-      payload: {
-        debitCode: WELL_KNOWN_CODES.wasteExpense,
-        creditCode: WELL_KNOWN_CODES.inventory,
-        amount: result.postedCost,
-        memo: "ضایعات",
-        postingKind: "waste",
-        inventoryEventId: eventId,
-      },
-      sourceType: "waste",
-      sourceId: eventId,
       createdBy: session.sub,
     });
-    await client.query("UPDATE inventory_events SET posting_status='posted' WHERE id=$1",[eventId]);
-    await client.query("COMMIT");
-    return NextResponse.json({ ok: true, totalCost: result.postedCost });
+    return NextResponse.json({ ok: true, totalCost: recorded.postedCost });
   } catch (err) {
-    await client.query("ROLLBACK");
     if (err instanceof MissingLedgerAccountError) {
       return NextResponse.json({ error: "ledger_account_missing", code: err.code }, { status: 409 });
     }
     throw err;
-  } finally {
-    client.release();
   }
 });

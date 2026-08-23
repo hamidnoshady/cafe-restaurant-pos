@@ -224,6 +224,41 @@ has kept.
   applies the inverse delta (so sales made after the count survive it) and is refused once a
   counted surplus has been sold.
 
+## The AI coworker — read before touching a recurring AI job
+
+Since Phase 32 an owner can hand the assistant a *standing* instruction — «هر شب که شیفت بسته
+می‌شود، ماندهٔ نان را ضایعات بزن» — as a **job** (`ai_coworker_jobs`) that fires on a business event
+or a schedule and lands in an approval inbox at `/dashboard/ai` ← «همکار هوشمند». See the "AI
+coworker" section of [README.md](README.md) and
+[docs/phases/Phase-32-AI-Coworker.md](docs/phases/Phase-32-AI-Coworker.md).
+
+- **A job is deterministic — never call a provider from one.** Its actions are built by a pure
+  builder in `src/lib/ai-coworker-templates.ts` from params plus facts the service read. That is why
+  a job costs no credits, needs no credit opt-in, and can be asserted to the Rial in an integration
+  test. Adding a model call to a job path removes the only basis on which an owner could
+  pre-approve it.
+- **Params hold intent; the database holds numbers.** A job stores *which item and why*, never a
+  quantity. `loadFacts` reads the current figure at fire time and the builder clamps to it.
+- **A new template adds a builder, not a branch elsewhere.** Declare its module, scope, triggers and
+  emitted actions in `COWORKER_TEMPLATES`; the API narrows by module and the form renders from
+  `template.params`.
+- **`approvalMode: 'auto'` never bypasses Phase 31.** `planCoworkerActions` still runs every action
+  through `evaluateAutopilotProposal` against the same per-category settings. Don't add a path that
+  applies an action without it, and don't let over-cap mean dropped — it means held, and the held
+  action must apply unchanged when a human approves.
+- **Idempotency is the UNIQUE index**, not a read-then-write. Every firing claims
+  `ai_coworker_runs (job_id, dedupe_key)` first.
+- **Event producers only enqueue.** `shift-service` and `business-day-service` call
+  `recordCoworkerEvent` (its own tiny module, to keep the import graph acyclic), which swallows its
+  own errors: a cashier clocking out must never fail because of a background job.
+- **Waste is `coworkerOnly`.** `inventory.waste.log` may run unattended, but `actionTypesForCategory`
+  excludes it so an *autopilot* run — the model deciding for itself — still cannot log waste. Phase
+  31's reasoning is intact; a job just supplies the "why" in advance. Don't remove that flag.
+- **`accounting-review.ts` is a rule engine, and must stay one.** Never route a finding through a
+  model: a plausible finding about money is worse than none. It reports and never writes; a rule
+  whose query fails is named in `unavailableChecks` rather than returning "found nothing", and the
+  integration test asserts that list is empty.
+
 ## Repository layout
 
 - `src/app/api/**/route.ts` — route handlers. Every handler starts with a guard

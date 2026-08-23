@@ -17,10 +17,13 @@ export default async function AiSettingsPage() {
     <PageShell>
       <PageHeader
         title="هوش مصنوعی"
-        description="گفتگو با دستیار، مرور گفتگوهای اخیر، و مدیریت اعتبار/گزارش‌های خودکار/گزارش ممیزی."
+        description="گفتگو با دستیار، سپردن کارهای تکرارشونده به همکار هوشمند و تأیید آن‌ها، و مدیریت اعتبار/گزارش‌های خودکار/گزارش ممیزی."
       />
       <FeatureLock locked={locked} title="دستیار هوشمند">
-        <AiChatHub />
+        {/* Pre-approving an unattended write is the Owner's call alone — the
+            same rule the autopilot money category follows. The POST route
+            enforces it too; this only keeps the option out of the form. */}
+        <AiChatHub canAutoApply={session.role === "owner"} />
       </FeatureLock>
     </PageShell>
   );

@@ -1,0 +1,187 @@
+import { describe, expect, it } from "vitest";
+import {
+  emptyAccountingSnapshot,
+  filterFindings,
+  reviewAccounting,
+  summarizeFindings,
+  type AccountingReviewSnapshot,
+} from "./accounting-review";
+
+function snapshot(overrides: Partial<AccountingReviewSnapshot> = {}): AccountingReviewSnapshot {
+  return { ...emptyAccountingSnapshot("2026-08-23"), ...overrides };
+}
+
+function codes(s: AccountingReviewSnapshot): string[] {
+  return reviewAccounting(s).map((finding) => finding.code);
+}
+
+describe("a clean set of books", () => {
+  it("produces no findings at all", () => {
+    expect(reviewAccounting(snapshot())).toEqual([]);
+    expect(summarizeFindings([])).toContain("اشکالی پیدا نشد");
+  });
+});
+
+describe("the rules that mean a report is lying", () => {
+  it("flags an unbalanced entry and totals the gap", () => {
+    const findings = reviewAccounting(
+      snapshot({
+        unbalancedEntries: [
+          { id: "e1", entryDate: "2026-08-01", memo: "سند", debitRial: 1_000_000, creditRial: 900_000 },
+          { id: "e2", entryDate: "2026-08-02", memo: "سند", debitRial: 500_000, creditRial: 700_000 },
+        ],
+      }),
+    );
+    expect(findings[0].code).toBe("unbalanced_entry");
+    expect(findings[0].severity).toBe("high");
+    expect(findings[0].amountRial).toBe(300_000);
+    expect(findings[0].count).toBe(2);
+  });
+
+  it("flags stock that moved without reaching the ledger", () => {
+    expect(
+      codes(
+        snapshot({
+          unpostedInventoryEvents: [
+            { id: "i1", eventType: "waste", occurredAt: "2026-08-20T10:00:00Z", status: "pending" },
+          ],
+        }),
+      ),
+    ).toContain("unposted_inventory_event");
+  });
+
+  it("flags a settled sale with no entry, and totals the money that is missing from the books", () => {
+    const findings = reviewAccounting(
+      snapshot({
+        closedOrdersWithoutEntry: [
+          { id: "o1", reference: "۱۲۰۱", closedAt: "2026-08-20T20:00:00Z", totalRial: 2_400_000 },
+        ],
+      }),
+    );
+    const finding = findings.find((row) => row.code === "closed_order_without_entry");
+    expect(finding?.severity).toBe("high");
+    expect(finding?.amountRial).toBe(2_400_000);
+  });
+
+  it("flags an account the product needs and this chart does not have", () => {
+    const findings = reviewAccounting(
+      snapshot({ missingAccountCodes: [{ code: "5200", name: "حقوق و دستمزد" }] }),
+    );
+    const finding = findings.find((row) => row.code === "missing_account_code");
+    expect(finding?.severity).toBe("high");
+    expect(finding?.detail).toContain("5200");
+  });
+});
+
+describe("the rules with a threshold — they must not cry wolf", () => {
+  it("ignores a draft that is younger than the staleness floor", () => {
+    const fresh = snapshot({
+      pendingDrafts: [{ id: "d1", memo: "سند", createdAt: "2026-08-22", ageDays: 2, amountRial: 100_000 }],
+      staleDraftAfterDays: 7,
+    });
+    expect(codes(fresh)).not.toContain("stale_journal_draft");
+
+    const stale = snapshot({
+      pendingDrafts: [{ id: "d1", memo: "سند", createdAt: "2026-08-01", ageDays: 20, amountRial: 100_000 }],
+      staleDraftAfterDays: 7,
+    });
+    expect(codes(stale)).toContain("stale_journal_draft");
+  });
+
+  it("ignores a small drawer difference and reports a real one", () => {
+    const variance = (rial: number) =>
+      snapshot({
+        shiftVariances: [{ shiftId: "s1", employeeName: "علی", endedAt: "2026-08-22", varianceRial: rial }],
+        varianceThresholdRial: 500_000,
+      });
+    expect(codes(variance(-100_000))).not.toContain("shift_cash_variance");
+    expect(codes(variance(-900_000))).toContain("shift_cash_variance");
+  });
+
+  it("nets shortages against surpluses but reports the absolute size", () => {
+    const findings = reviewAccounting(
+      snapshot({
+        shiftVariances: [
+          { shiftId: "s1", employeeName: "علی", endedAt: "2026-08-21", varianceRial: -900_000 },
+          { shiftId: "s2", employeeName: "رضا", endedAt: "2026-08-22", varianceRial: -600_000 },
+        ],
+        varianceThresholdRial: 500_000,
+      }),
+    );
+    const finding = findings.find((row) => row.code === "shift_cash_variance");
+    expect(finding?.count).toBe(2);
+    expect(finding?.amountRial).toBe(1_500_000);
+  });
+
+  it("escalates unreconciled bank lines only once there are a lot of them", () => {
+    const few = snapshot({ unreconciledBankLines: { count: 3, oldestAgeDays: 5, amountRial: 10_000 } });
+    const many = snapshot({ unreconciledBankLines: { count: 40, oldestAgeDays: 90, amountRial: 10_000 } });
+    expect(reviewAccounting(few)[0].severity).toBe("low");
+    expect(reviewAccounting(many)[0].severity).toBe("medium");
+  });
+
+  it("ignores a purchase draft still inside its grace period", () => {
+    const s = snapshot({
+      staleDraftPurchases: [{ id: "p1", supplierName: "نانوایی", createdAt: "2026-08-20", ageDays: 3 }],
+      staleDraftPurchaseAfterDays: 14,
+    });
+    expect(codes(s)).not.toContain("stale_draft_purchase");
+  });
+});
+
+describe("ordering and filtering", () => {
+  const busy = snapshot({
+    unbalancedEntries: [{ id: "e1", entryDate: "2026-08-01", memo: "", debitRial: 10, creditRial: 5 }],
+    unreconciledBankLines: { count: 2, oldestAgeDays: 3, amountRial: 100 },
+    negativeStock: [{ id: "n1", name: "شیر", quantity: "-2", unit: "لیتر" }],
+  });
+
+  it("puts what makes a report lie above what merely leaves it behind", () => {
+    const severities = reviewAccounting(busy).map((finding) => finding.severity);
+    expect(severities).toEqual(["high", "medium", "low"]);
+  });
+
+  it("filters by the owner's chosen floor", () => {
+    const findings = reviewAccounting(busy);
+    expect(filterFindings(findings, "low")).toHaveLength(3);
+    expect(filterFindings(findings, "medium")).toHaveLength(2);
+    expect(filterFindings(findings, "high")).toHaveLength(1);
+  });
+
+  it("summarizes by severity", () => {
+    const summary = summarizeFindings(reviewAccounting(busy));
+    expect(summary).toContain("بحرانی");
+    expect(summary).toContain("مهم");
+  });
+});
+
+describe("every finding is actionable", () => {
+  it("carries a severity, a count and a suggestion — a finding with no next step is noise", () => {
+    const everything = snapshot({
+      unbalancedEntries: [{ id: "e1", entryDate: "2026-08-01", memo: "", debitRial: 10, creditRial: 5 }],
+      unpostedInventoryEvents: [{ id: "i1", eventType: "waste", occurredAt: "2026-08-01", status: "pending" }],
+      pendingDrafts: [{ id: "d1", memo: "m", createdAt: "2026-08-01", ageDays: 30, amountRial: 1 }],
+      shiftVariances: [{ shiftId: "s1", employeeName: "a", endedAt: "2026-08-01", varianceRial: -9_000_000 }],
+      missingAccountCodes: [{ code: "5200", name: "حقوق" }],
+      negativeStock: [{ id: "n1", name: "شیر", quantity: "-2", unit: "لیتر" }],
+      unreconciledBankLines: { count: 1, oldestAgeDays: 1, amountRial: 1 },
+      closedOrdersWithoutEntry: [{ id: "o1", reference: "1", closedAt: "2026-08-01", totalRial: 1 }],
+      agedReceivables: [{ customerId: "c1", customerName: "x", amountRial: 1, ageDays: 90 }],
+      overdueCheques: [
+        { id: "q1", serialNumber: "1", dueDate: "2026-08-01", amountRial: 1, direction: "received", status: "in_hand" },
+      ],
+      staleDraftPurchases: [{ id: "p1", supplierName: null, createdAt: "2026-08-01", ageDays: 30 }],
+      unlockedPastPeriods: [{ id: "f1", label: "1405-04", endsOn: "2026-07-22" }],
+    });
+
+    const findings = reviewAccounting(everything);
+    expect(findings.length).toBe(12);
+    for (const finding of findings) {
+      expect(finding.count, finding.code).toBeGreaterThan(0);
+      expect(finding.title.length, finding.code).toBeGreaterThan(0);
+      expect(finding.suggestion.length, finding.code).toBeGreaterThan(0);
+    }
+    // Every code is distinct, so two rules can never quietly overwrite one card.
+    expect(new Set(findings.map((finding) => finding.code)).size).toBe(findings.length);
+  });
+});

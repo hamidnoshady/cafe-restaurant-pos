@@ -337,6 +337,60 @@ notion of "a thing we make".
 
 See [docs/phases/Phase-29-In-House-Production.md](docs/phases/Phase-29-In-House-Production.md).
 
+## The AI coworker (همکار هوشمند, Phase 32)
+
+The assistant can answer questions and, within owner-set caps, act on its own judgement. What it
+could not do was take an instruction and keep it. An owner who already knows the job — «هر شب که
+شیفت بسته می‌شود، نانی که مانده را ضایعات بزن» — had nowhere to put that sentence.
+
+A **job** is that sentence: a ready-made template, the owner's intent (which item, which reason,
+which formula), a trigger, and an approval mode. It lives at `/dashboard/ai` ← «همکار هوشمند», and
+each firing produces a **run** in the approval inbox.
+
+- **Triggers are business events, not just clock times.** `shift_open`, `shift_close` and
+  `day_close` are facts `employee_shifts` and `business_day_closures` already know; a cron
+  expression can only guess at them, and guesses wrong on the nights that ran long. The producers
+  (`shift-service`, `business-day-service`) only enqueue into `ai_coworker_events`, because a
+  cashier clocking out must never fail because of a background job.
+- **A job is deterministic, and that is the point.** Its actions are built by a pure function in
+  `ai-coworker-templates.ts` from parameters and database facts — no provider call, no credits, no
+  `ai_proactive_settings.enabled` requirement (that switch is the *credit* opt-in). An owner cannot
+  meaningfully pre-approve "whatever the model felt like at 02:00"; they can pre-approve "write off
+  the bread that is left, as spoilage". The model is how you *talk about* the work, not what runs it.
+- **Params hold intent; quantities are read at fire time.** The bread job stores «نان، هرچه مانده،
+  فساد», never "12". A fixed quantity is clamped down to what actually exists — writing off more
+  than there is would open a negative layer at a price nobody paid.
+- **`approvalMode: 'auto'` is necessary, never sufficient.** Every action still passes Phase 31's
+  per-category caps, measured against values read from the database, and needs a real user's
+  authority behind it (`ai_coworker_jobs.authorized_by`). Only an Owner may set a job to `auto`.
+  Over a cap means **held** — shown with the reason, and applied by the identical executor the
+  moment a human taps approve. Never dropped, never forced.
+- **One event, one run.** `UNIQUE (job_id, dedupe_key)` on `ai_coworker_runs` is the whole
+  idempotency story: two ticks racing, or one retried, cannot write the same night off twice.
+- **Waste can be logged now, but only from a job a human wrote.** `inventory.waste.log` is
+  `coworkerOnly`, so `actionTypesForCategory` excludes it and the model still cannot decide on its
+  own that stock should go. Phase 31's reasoning — *why* stock left is a fact only a person in the
+  room has — holds; the owner just supplies it in advance.
+- **Applying opens no new mutation path.** Auto or approved, it runs Phase 31's executors (the same
+  service function the route handler calls) and writes the same `ai_action_audit` row, tagged
+  `source = 'coworker'`.
+
+**«بازبینی حساب‌ها»** is the other half: twelve deterministic checks over the ledger
+(`accounting-review.ts`) — an unbalanced entry, an inventory event that never posted, a settled sale
+with no entry, a chart missing an account its own industry template requires, a cheque past its due
+date, a drawer variance, an unlocked past period, and so on — each with a severity, the money
+involved, a suggested fix and the screen that makes it. It is a **rule engine, not a prompt**: a
+language model asked to audit a trial balance produces plausible findings, and a plausible finding
+about money is worse than none. It reports and never writes. A check whose query fails is *named*
+in `unavailableChecks` rather than silently returning "found nothing", because that is
+indistinguishable from clean books.
+
+The whole feature is drivable from a sub app over `/api/v1/coworker/*` and `/api/v1/accounting/review`
+under the `coworker.read`, `coworker.write` and `accounting.read` scopes. A public-API write is
+attributed to the user who issued the key — an automated write is never anonymous.
+
+See [docs/phases/Phase-32-AI-Coworker.md](docs/phases/Phase-32-AI-Coworker.md).
+
 ## The business day (روز کاری)
 
 A branch's trading day does not have to start at local midnight. `locations.business_day_start_minutes`

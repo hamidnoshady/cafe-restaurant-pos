@@ -34,7 +34,12 @@ export const AUTOPILOT_CEILINGS: Record<AutopilotCategory, AutopilotCategorySett
   pricing: { enabled: true, maxAmountRial: 5_000_000, maxPercent: 15, maxItemsPerRun: 10, dailyActionLimit: 10 },
   money: { enabled: true, maxAmountRial: 20_000_000, maxPercent: 20, maxItemsPerRun: 5, dailyActionLimit: 5 },
   customer: { enabled: true, maxAmountRial: null, maxPercent: null, maxItemsPerRun: 20, dailyActionLimit: 20 },
-  waste: { enabled: true, maxAmountRial: null, maxPercent: null, maxItemsPerRun: 1, dailyActionLimit: 1 },
+  // Phase 32 — waste stopped being detect-only when the coworker gave it a
+  // human-authored reason (see ACTION_CATALOG's `coworkerOnly`), so the
+  // category needs caps that can express a real night: several items, more
+  // than one shift a day, and — because a write-off has a real cost and no
+  // honest one-click undo — a monetary ceiling it never had before.
+  waste: { enabled: true, maxAmountRial: 20_000_000, maxPercent: null, maxItemsPerRun: 15, dailyActionLimit: 8 },
 };
 
 /**
@@ -46,7 +51,7 @@ export const AUTOPILOT_DEFAULTS: Record<AutopilotCategory, AutopilotCategorySett
   pricing: { enabled: false, maxAmountRial: 1_000_000, maxPercent: 5, maxItemsPerRun: 3, dailyActionLimit: 3 },
   money: { enabled: false, maxAmountRial: 5_000_000, maxPercent: 10, maxItemsPerRun: 1, dailyActionLimit: 2 },
   customer: { enabled: false, maxAmountRial: null, maxPercent: null, maxItemsPerRun: 10, dailyActionLimit: 10 },
-  waste: { enabled: false, maxAmountRial: null, maxPercent: null, maxItemsPerRun: 1, dailyActionLimit: 1 },
+  waste: { enabled: false, maxAmountRial: 2_000_000, maxPercent: null, maxItemsPerRun: 5, dailyActionLimit: 2 },
 };
 
 export const AUTOPILOT_CATEGORY_LABELS: Record<AutopilotCategory, string> = {
@@ -224,6 +229,29 @@ export function evaluateAutopilotProposal(input: {
       return { decision: "auto_apply" };
     }
 
+    case "inventory.waste.log": {
+      const quantity = finiteNumber(payload.quantity);
+      if (quantity === null || quantity <= 0) return defer("invalid_payload");
+      if (typeof payload.reason !== "string" || payload.reason.length === 0) return defer("invalid_payload");
+      // The cost is the inventory layers' own, computed by the service from
+      // the database — never a number the caller supplied — so a cap on it
+      // measures the real loss.
+      const cost = context.documentValueRial;
+      if (cost === undefined) return defer("missing_context");
+      if (setting.maxAmountRial !== null && cost > setting.maxAmountRial) return defer("amount_over_cap");
+      return { decision: "auto_apply" };
+    }
+
+    case "inventory.production.run": {
+      const batches = finiteNumber(payload.batches);
+      if (batches === null || batches <= 0) return defer("invalid_payload");
+      if (typeof payload.formulaId !== "string" || payload.formulaId.length === 0) return defer("invalid_payload");
+      const value = context.documentValueRial;
+      if (value === undefined) return defer("missing_context");
+      if (setting.maxAmountRial !== null && value > setting.maxAmountRial) return defer("amount_over_cap");
+      return { decision: "auto_apply" };
+    }
+
     case "customer.note.add": {
       const notes = payload.notes;
       if (typeof notes !== "string" || notes.trim().length === 0 || notes.length > 2_000) {
@@ -247,6 +275,9 @@ export function evaluateAutopilotProposal(input: {
 /** Action types an autopilot run for `category` may propose. */
 export function actionTypesForCategory(category: AutopilotCategory): ActionType[] {
   return (Object.keys(ACTION_CATALOG) as ActionType[]).filter(
-    (type) => ACTION_CATALOG[type].autopilotCategory === category,
+    // `coworkerOnly` is excluded on purpose: this list is what an *autopilot*
+    // run — the model deciding for itself what is worth doing — is offered.
+    // Phase 31's reasoning still holds there. See ACTION_CATALOG's own note.
+    (type) => ACTION_CATALOG[type].autopilotCategory === category && !ACTION_CATALOG[type].coworkerOnly,
   );
 }

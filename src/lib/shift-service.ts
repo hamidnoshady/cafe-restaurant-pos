@@ -14,6 +14,11 @@ import { getBusinessDayStatus, type BusinessDayStatus } from "./business-day-ser
 import { getPool, query } from "./db";
 import { postgresDateToIso } from "./jalali";
 import { reconcileCash } from "./shift";
+// Phase 32 — the coworker's event queue. Enqueued, never acted on here: a
+// cashier clocking in or out is a foreground request and must not wait on (or
+// fail because of) a background job. `recordCoworkerEvent` swallows its own
+// errors for the same reason.
+import { recordCoworkerEvent } from "./ai-coworker-events";
 
 export class ShiftError extends Error {
   status: number;
@@ -194,6 +199,12 @@ export async function openShift(
     if (!rows[0]) throw new ShiftError("session_required", 400);
     const shift = toShift(rows[0]);
     await auditShift(businessId, employeeId, "shift.opened", shift.id, { openingFloat });
+    await recordCoworkerEvent({
+      businessId,
+      locationId: shift.locationId,
+      kind: "shift_open",
+      payload: { shiftId: shift.id, employeeId },
+    });
     return shift;
   } catch (err) {
     if ((err as { code?: string }).code === "23505") {
@@ -325,6 +336,12 @@ async function closeShiftRow(
     await auditShift(businessId, actorId, "shift.closed", shift.id, {
       closingFloat,
       reconciliation,
+    });
+    await recordCoworkerEvent({
+      businessId,
+      locationId: shift.locationId,
+      kind: "shift_close",
+      payload: { shiftId: shift.id, employeeId: shift.employeeId },
     });
     return { shift, cashSummary, reconciliation };
   } catch (err) {

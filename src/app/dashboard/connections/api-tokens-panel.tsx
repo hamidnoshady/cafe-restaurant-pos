@@ -47,6 +47,9 @@ const SCOPE_LABELS: Record<string, string> = {
   "inventory.read": "خواندن موجودی انبار",
   "reports.read": "خواندن گزارش‌ها",
   "webhooks.manage": "مدیریت وب‌هوک‌ها",
+  "accounting.read": "بازبینی حساب‌ها (فقط خواندن)",
+  "coworker.read": "خواندن کارهای همکار هوشمند",
+  "coworker.write": "تعریف کار و تأیید اجرای همکار هوشمند",
 };
 
 function formatDateTime(iso: string | null): string {

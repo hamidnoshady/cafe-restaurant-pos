@@ -24,6 +24,9 @@ import { applyOrderDiscount, normalizeDiscountInput } from "./order-discount-ser
 import { recordExpense, ExpenseError } from "./expense-service";
 import { createDraft, deleteDraft, ManualJournalError } from "./manual-journal-service";
 import { updateCustomer } from "./customers-service";
+import { isWasteReason, recordWaste } from "./waste-service";
+import { recordProductionRun, reverseProductionRun, ProductionError } from "./production-service";
+import { positiveQuantityText, type QuantityText, type RialText } from "./inventory-exact";
 import type { PurchaseItemInput } from "./purchase-lines";
 
 export interface AutopilotExecutionResult {
@@ -328,6 +331,118 @@ const customerNote: AutopilotExecutor = async (ctx) => {
   };
 };
 
+/**
+ * Phase 32. Reached only from a coworker job — `inventory.waste.log` is
+ * `coworkerOnly`, so a model that decided on its own that some stock should go
+ * can never get here. What makes this a legitimate unattended write is that the
+ * owner wrote down *which item and why* when they created the job; the quantity
+ * is the template builder's, read from the stock table at fire time.
+ */
+const wasteLog: AutopilotExecutor = async (ctx) => {
+  const inventoryItemId = str(ctx.payload.inventoryItemId);
+  const reason = ctx.payload.reason;
+  if (!inventoryItemId || !isWasteReason(reason)) return fail("invalid_payload");
+
+  let quantity: QuantityText;
+  try {
+    quantity = positiveQuantityText(String(ctx.payload.quantity ?? ""));
+  } catch {
+    return fail("invalid_quantity");
+  }
+
+  // On hand is summed from the append-only stock ledger; `inventory_items`
+  // holds cost and settings, never a quantity column.
+  const { rows } = await query<{ location_id: string; name: string; quantity: string; unit: string }>(
+    `SELECT i.location_id, i.name, i.unit,
+            trim_scale(COALESCE(sm.total, 0))::text AS quantity
+       FROM inventory_items i
+       LEFT JOIN LATERAL (
+         SELECT sum(quantity) AS total FROM stock_movements WHERE inventory_item_id = i.id
+       ) sm ON true
+      WHERE i.id = $1`,
+    [inventoryItemId],
+  );
+  const item = rows[0];
+  if (!item) return fail("not_found");
+
+  try {
+    const recorded = await recordWaste({
+      businessId: ctx.businessId,
+      locationId: item.location_id,
+      inventoryItemId,
+      quantity,
+      reason,
+      note: noteWith(ctx.payload.note),
+      createdBy: ctx.authorizedByUserId,
+    });
+    return {
+      ok: true,
+      // There is no one-click undo for a write-off (ACTION_CATALOG says so),
+      // but the prior quantity is still what a human needs to correct it with a
+      // stock count, so it is captured all the same.
+      priorState: { inventoryItemId, name: item.name, quantity: item.quantity, unit: item.unit },
+      result: {
+        inventoryEventId: recorded.inventoryEventId,
+        postedCost: recorded.postedCost,
+        locationId: item.location_id,
+      },
+    };
+  } catch (err) {
+    return fail(err instanceof Error ? err.message : "waste_failed");
+  }
+};
+
+const productionRun: AutopilotExecutor = async (ctx) => {
+  const formulaId = str(ctx.payload.formulaId);
+  const batchesRaw = str(ctx.payload.batches);
+  if (!formulaId || !batchesRaw) return fail("invalid_payload");
+
+  let batches: QuantityText;
+  try {
+    batches = positiveQuantityText(batchesRaw);
+  } catch {
+    return fail("invalid_quantity");
+  }
+
+  const { rows } = await query<{ location_id: string; name: string }>(
+    `SELECT location_id, name FROM production_formulas WHERE id = $1`,
+    [formulaId],
+  );
+  const formula = rows[0];
+  if (!formula) return fail("not_found");
+
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const recorded = await recordProductionRun(client, {
+      businessId: ctx.businessId,
+      locationId: formula.location_id,
+      formulaId,
+      batches,
+      outputQuantity: str(ctx.payload.outputQuantity) as QuantityText | null,
+      conversionCostRial: null,
+      note: noteWith(ctx.payload.note),
+      createdBy: ctx.authorizedByUserId,
+    });
+    await client.query("COMMIT");
+    return {
+      ok: true,
+      priorState: { formulaId, formulaName: formula.name, locationId: formula.location_id },
+      result: {
+        productionRunId: recorded.id,
+        locationId: formula.location_id,
+        totalCostRial: recorded.totalCostRial,
+      },
+    };
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    if (err instanceof ProductionError) return fail(err.message);
+    return fail(err instanceof Error ? err.message : "production_run_failed");
+  } finally {
+    client.release();
+  }
+};
+
 export const AUTOPILOT_EXECUTORS: Record<AutopilotExecutorKey, AutopilotExecutor> = {
   menuItemPatch,
   stockCount,
@@ -336,6 +451,8 @@ export const AUTOPILOT_EXECUTORS: Record<AutopilotExecutorKey, AutopilotExecutor
   expense,
   journalDraft,
   customerNote,
+  wasteLog,
+  productionRun,
 };
 
 // ---------------------------------------------------------------------------
@@ -437,6 +554,34 @@ const revertCustomerNote: AutopilotReverter = async (ctx) => {
   return restored ? { ok: true, result: { customerId, restored: true } } : fail("not_found");
 };
 
+const revertProductionRun: AutopilotReverter = async (ctx) => {
+  const runId = str(ctx.result?.productionRunId);
+  const locationId = str(ctx.result?.locationId);
+  if (!runId || !locationId) return fail("no_prior_state");
+
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    // Phase 29's own reversal — which refuses once the batch has been sold, so
+    // an undo can never conjure back stock a customer already took away.
+    const reversal = await reverseProductionRun(client, {
+      businessId: ctx.businessId,
+      locationId,
+      runId,
+      note: `${AUTOPILOT_NOTE_PREFIX}برگشت تولید خودکار`,
+      createdBy: ctx.authorizedByUserId,
+    });
+    await client.query("COMMIT");
+    return { ok: true, result: { reversalRunId: reversal.id } };
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    if (err instanceof ProductionError) return fail(err.message);
+    return fail(err instanceof Error ? err.message : "production_reversal_failed");
+  } finally {
+    client.release();
+  }
+};
+
 export const AUTOPILOT_REVERTERS: Partial<Record<AutopilotExecutorKey, AutopilotReverter>> = {
   menuItemPatch: revertMenuItemPatch,
   stockCount: revertStockCount,
@@ -444,4 +589,5 @@ export const AUTOPILOT_REVERTERS: Partial<Record<AutopilotExecutorKey, Autopilot
   orderDiscount: revertOrderDiscount,
   journalDraft: revertJournalDraft,
   customerNote: revertCustomerNote,
+  productionRun: revertProductionRun,
 };
