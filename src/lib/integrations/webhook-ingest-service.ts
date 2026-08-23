@@ -30,10 +30,41 @@ import {
 } from "./webhook-signature";
 import { wooAmountToRial } from "./woo-money";
 import { writeIntegrationAudit } from "./audit";
+import { getBusinessIndustry } from "../industry-guard";
 import { connectionLocationId, upsertCustomerFromWoo, upsertProductFromWoo } from "./sync-service";
 import type { WooCustomer, WooOrder, WooProduct, WooRefund } from "./woocommerce-client";
+import type { Industry } from "../industries";
 
 const zero = "0" as RialText;
+
+/**
+ * The industry-specific revenue/COGS/inventory accounts a retail trade posts
+ * an online sale to. Every value is a WELL_KNOWN_CODES entry that the trade's
+ * own chart of accounts seeds (see coa-template.ts), so the WooCommerce order
+ * lands in the same accounts a counter sale of the same item would.
+ */
+const RETAIL_ACCOUNT_CODES: Record<Exclude<Industry, "food_service">, { revenue: string; cogs: string; inventory: string }> = {
+  jewelry: {
+    revenue: WELL_KNOWN_CODES.goldSalesRevenue,
+    cogs: WELL_KNOWN_CODES.goldCogs,
+    inventory: WELL_KNOWN_CODES.goldInventory,
+  },
+  watch: {
+    revenue: WELL_KNOWN_CODES.watchSalesRevenue,
+    cogs: WELL_KNOWN_CODES.watchCogs,
+    inventory: WELL_KNOWN_CODES.watchInventory,
+  },
+  accessories: {
+    revenue: WELL_KNOWN_CODES.accessorySalesRevenue,
+    cogs: WELL_KNOWN_CODES.accessoryCogs,
+    inventory: WELL_KNOWN_CODES.accessoryInventory,
+  },
+  cosmetics: {
+    revenue: WELL_KNOWN_CODES.cosmeticSalesRevenue,
+    cogs: WELL_KNOWN_CODES.cosmeticCogs,
+    inventory: WELL_KNOWN_CODES.cosmeticInventory,
+  },
+};
 
 export async function handleWooCommerceWebhook(
   connectionId: string,
@@ -207,6 +238,20 @@ async function resolveLocationId(connection: ConnectionRow): Promise<string> {
 }
 
 async function ingestOrder(connection: ConnectionRow, order: WooOrder): Promise<void> {
+  const industry = await getBusinessIndustry(connection.business_id);
+  if (industry && industry !== "food_service") {
+    await ingestRetailOrder(connection, order, industry);
+    return;
+  }
+  await ingestFnBOrder(connection, order);
+}
+
+/**
+ * F&B: one WooCommerce order -> a `delivery` order whose lines point at
+ * `menu_items`, with recipe-based inventory deduction and COGS. The original
+ * Wave 2 path, now reached only by food_service businesses.
+ */
+async function ingestFnBOrder(connection: ConnectionRow, order: WooOrder): Promise<void> {
   const businessId = connection.business_id;
   const remoteId = String(order.id);
 
@@ -360,6 +405,204 @@ async function ingestOrder(connection: ConnectionRow, order: WooOrder): Promise<
     if (inventoryEventId) {
       await client.query("UPDATE inventory_events SET posting_status='posted' WHERE id=$1", [inventoryEventId]);
     }
+
+    await client.query(
+      `INSERT INTO integration_mappings (business_id, connection_id, entity_type, remote_id, local_id)
+       VALUES ($1, $2, 'order', $3, $4)
+       ON CONFLICT (connection_id, entity_type, remote_id) DO NOTHING`,
+      [businessId, connection.id, remoteId, orderId],
+    );
+    await client.query("COMMIT");
+
+    await writeIntegrationAudit({
+      businessId,
+      connectionId: connection.id,
+      action: "order.imported",
+      entityType: "order",
+      remoteId,
+      localId: orderId,
+      payload: { orderNumber: order.number ?? remoteId, totalRial: total.toString(), cogsRial },
+    });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Retail: one WooCommerce order -> a `retail` order whose lines point at the
+ * `items` model (order_items.item_id) rather than F&B's `menu_items`, with the
+ * revenue posted to the trade's own sales-revenue account. COGS is posted only
+ * for lines whose item already has a weighted-average cost basis — the same
+ * "no cost yet, no COGS" rule the counter sale enforces — and the stock
+ * quantity is relieved in the same step.
+ */
+async function ingestRetailOrder(
+  connection: ConnectionRow,
+  order: WooOrder,
+  industry: Exclude<Industry, "food_service">,
+): Promise<void> {
+  const businessId = connection.business_id;
+  const remoteId = String(order.id);
+  const codes = RETAIL_ACCOUNT_CODES[industry];
+
+  const total = wooAmountToRial(order.total ?? "0", connection.currency_unit);
+  const tax = wooAmountToRial(order.total_tax ?? "0", connection.currency_unit);
+  if (tax > total) throw new Error("tax_exceeds_total");
+  const net = total - tax;
+
+  const locationId = await resolveLocationId(connection);
+  const note = order.billing
+    ? `مشتری: ${[order.billing.first_name, order.billing.last_name].filter(Boolean).join(" ")}`
+    : null;
+
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`woo-order:${connection.id}:${remoteId}`]);
+    const { rows: mapped } = await client.query(
+      `SELECT 1 FROM integration_mappings
+        WHERE business_id = $1 AND connection_id = $2 AND entity_type = 'order' AND remote_id = $3`,
+      [businessId, connection.id, remoteId],
+    );
+    if (mapped.length > 0) {
+      await client.query("ROLLBACK");
+      return;
+    }
+
+    const { rows: counter } = await client.query<{ next_number: string }>(
+      `INSERT INTO order_number_counters (location_id, next_number) VALUES ($1, 2)
+       ON CONFLICT (location_id) DO UPDATE SET next_number = order_number_counters.next_number + 1
+       RETURNING next_number - 1 AS next_number`,
+      [locationId],
+    );
+    const orderNumber = Number(counter[0].next_number);
+
+    const { rows: orderRows } = await client.query<{ id: string }>(
+      `INSERT INTO orders (location_id, order_number, type, status, subtotal, discount, service_charge, tax, total, note)
+       VALUES ($1, $2, 'retail', 'open', $3, 0, 0, $4, $5, $6)
+       RETURNING id`,
+      [locationId, orderNumber, net.toString(), tax.toString(), total.toString(), note],
+    );
+    const orderId = orderRows[0].id;
+
+    // Resolve each line's WooCommerce product to its mapped local item. A
+    // variation line resolves to the exact sellable variant_child; a simple
+    // product to its item. Unmapped lines are still recorded (revenue is never
+    // missed) but contribute no stock movement or COGS.
+    const remoteProductIds = (order.line_items ?? [])
+      .map((line) => String(line.product_id))
+      .filter((id): id is string => Boolean(id));
+    const itemByRemote = new Map<string, string>();
+    if (remoteProductIds.length > 0) {
+      const { rows: productMappings } = await client.query<{ remote_id: string; local_id: string }>(
+        `SELECT remote_id, local_id FROM integration_mappings
+          WHERE business_id = $1 AND connection_id = $2 AND entity_type = 'product'
+            AND remote_id = ANY($3::text[])`,
+        [businessId, connection.id, remoteProductIds],
+      );
+      for (const m of productMappings) itemByRemote.set(m.remote_id, m.local_id);
+    }
+
+    // The cost basis for every mapped line, fetched once so COGS and stock
+    // relief use the exact weighted-average cost the counter sale would.
+    const itemIds = [...new Set(itemByRemote.values())];
+    const costById = new Map<string, bigint>();
+    if (itemIds.length > 0) {
+      const { rows: stockRows } = await client.query<{ item_id: string; unit_cost: string | null }>(
+        `SELECT item_id, unit_cost::text FROM item_stock WHERE item_id = ANY($1::uuid[]) AND unit_cost IS NOT NULL`,
+        [itemIds],
+      );
+      for (const r of stockRows) costById.set(r.item_id, BigInt(r.unit_cost as string));
+    }
+
+    let cogsRial = "0";
+    for (const line of order.line_items ?? []) {
+      const unitPrice = wooAmountToRial(line.price ?? "0", connection.currency_unit);
+      const quantity = Math.max(1, Math.round(line.quantity ?? 1));
+      const itemId = itemByRemote.get(String(line.product_id)) ?? null;
+      await client.query(
+        `INSERT INTO order_items (location_id, order_id, item_id, name_snapshot, unit_price, quantity, status)
+         VALUES ($1, $2, $3, $4, $5, $6, 'served')`,
+        [locationId, orderId, itemId, line.name, unitPrice.toString(), quantity],
+      );
+
+      // COGS + stock relief only for a mapped item with a known cost basis —
+      // the retail analogue of F&B's "no recipe, no COGS".
+      const unitCost = itemId ? costById.get(itemId) : undefined;
+      if (unitCost != null && unitCost > 0n) {
+        cogsRial = (BigInt(cogsRial) + unitCost * BigInt(quantity)).toString();
+        // GREATEST(0, …) so a stock picture already synced post-sale (WooCommerce
+        // deducted it) can never drive the quantity negative and abort the order;
+        // the next catalogue sync re-establishes the authoritative level.
+        await client.query(
+          `UPDATE item_stock SET quantity = GREATEST(0, quantity - $2), last_sold_at = now(), updated_at = now()
+            WHERE item_id = $1`,
+          [itemId, quantity],
+        );
+      }
+    }
+
+    if (total > 0n) {
+      await client.query(
+        `INSERT INTO payments (location_id, order_id, method, amount, reference)
+         VALUES ($1, $2, 'online', $3, $4)`,
+        [locationId, orderId, total.toString(), order.number ?? remoteId],
+      );
+    }
+
+    const { rowCount: closed } = await client.query(
+      `UPDATE orders SET status = 'completed', closed_at = now()
+        WHERE id = $1 AND status = 'open'
+        RETURNING id`,
+      [orderId],
+    );
+    if (closed !== 1) {
+      throw new Error("order_close_failed");
+    }
+
+    // COGS entry posts to the trade's own COGS/inventory accounts, not F&B's
+    // 5100/1300 — the same split a counter sale's posting rule produces.
+    if (BigInt(cogsRial) > 0n) {
+      const cogsAccounts = await accountIdsByCode(client, businessId, [codes.cogs, codes.inventory]);
+      await postExactJournalEntry(client, {
+        businessId,
+        locationId,
+        memo: "بهای تمام‌شده فروش آنلاین",
+        sourceType: "woocommerce_order",
+        sourceId: orderId,
+        createdBy: null,
+        postingKind: "cogs",
+        lines: [
+          { accountId: cogsAccounts.get(codes.cogs)!, debit: cogsRial as RialText, credit: zero },
+          { accountId: cogsAccounts.get(codes.inventory)!, debit: zero, credit: cogsRial as RialText },
+        ],
+      });
+    }
+
+    const accounts = await accountIdsByCode(client, businessId, [
+      WELL_KNOWN_CODES.bankClearing,
+      codes.revenue,
+      WELL_KNOWN_CODES.vatPayable,
+    ]);
+    await postExactJournalEntry(client, {
+      businessId,
+      locationId,
+      memo: `فروش آنلاین ووکامرس #${order.number ?? order.id}`,
+      sourceType: "woocommerce_order",
+      sourceId: orderId,
+      createdBy: null,
+      postingKind: "revenue",
+      lines: [
+        { accountId: accounts.get(WELL_KNOWN_CODES.bankClearing)!, debit: total.toString() as RialText, credit: zero },
+        { accountId: accounts.get(codes.revenue)!, debit: zero, credit: net.toString() as RialText },
+        ...(tax > 0n
+          ? [{ accountId: accounts.get(WELL_KNOWN_CODES.vatPayable)!, debit: zero, credit: tax.toString() as RialText }]
+          : []),
+      ],
+    });
 
     await client.query(
       `INSERT INTO integration_mappings (business_id, connection_id, entity_type, remote_id, local_id)
