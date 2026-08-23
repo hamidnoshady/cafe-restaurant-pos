@@ -22,3 +22,6 @@
 ## 2024-11-28 - Extract O(n) String Normalizations from Hot Filtering Loops
 **Learning:** `searchInventoryItems` performs O(N) regex `.replace()` string normalizations. When called inside a functional React component rendering cycle (like inside a `useMemo` filter hook that depends on a `deferredQuery` for search fields), the string allocations and regex replacements block the main thread and cause noticeable input lag as the user types.
 **Action:** Created `useInventorySearch` hook. It uses one `useMemo` to pre-compute the normalized option strings every time the items array changes (which happens rarely), and then returns a second `useMemo` that filters these strings using a lightweight `.includes()` query check (which executes fast per keystroke). This minimizes blocking per-keystroke operations in list filtering components.
+## 2024-11-29 - Extract O(N) String Computations from Hot Loops
+**Learning:** In list views (like `orders-list.tsx`), building searchable strings with `join(" ").toLocaleLowerCase("fa")` on every keystroke blocks the main thread.
+**Action:** Extract these expensive string operations into an independent `useMemo` that relies only on the array data (`orderRows`). Then, filter by doing a fast `.includes()` over the pre-computed strings in the downstream hook.
