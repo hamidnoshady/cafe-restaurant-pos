@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { formatPersianNumber } from "@/lib/digits";
 import { useMoney } from "@/components/money/money-context";
 import { api, ErrorBox, Field, inputClass } from "../ui";
+import { StockCountSection } from "./stock-count-section";
 
 interface StockItem {
   id: string;
@@ -81,7 +82,7 @@ export default function StockPage() {
       <header className="mb-5 border-b border-stone-200/80 pb-4">
         <h1 className="text-2xl font-bold tracking-tight text-stone-950">خرید و انبار</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          خرید، برگشت به تأمین‌کننده، انتقال بین شعبه‌ها و گزارش کمبود/راکد موجودی.
+          خرید، برگشت به تأمین‌کننده، انتقال بین شعبه‌ها، انبارگردانی و گزارش کمبود/راکد موجودی.
         </p>
       </header>
 
@@ -100,6 +101,13 @@ export default function StockPage() {
         />
         <ReturnForm items={items} onDone={(m) => { setDone(m); load(); }} onError={setError} />
       </div>
+
+      <StockCountSection
+        items={items}
+        onDone={setDone}
+        onError={setError}
+        reload={load}
+      />
 
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
         <Panel title="کمبود موجودی (زیر نقطهٔ سفارش)">

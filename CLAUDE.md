@@ -169,6 +169,35 @@ and the only thing the ledger sees. See the "Payment ways" section of [README.md
 - **A split posts one entry, not one per slice** — `postExactOrderPaymentEntry` takes `tenders` and
   builds a debit line per settlement against a single revenue credit.
 
+## Counting stock — read before touching barcodes or a physical count
+
+Both item models can now be counted with a scanner, and they stay **two separate
+implementations on purpose** — the same boundary Phase 21 Wave 1 drew and every phase since
+has kept.
+
+- **Barcodes are per model.** `item_barcodes` → `items` (retail, Phase 27 Wave 4, gated on the
+  `barcode` capability) and `inventory_item_barcodes` → `inventory_items` (F&B). What they
+  *share* is the pure code format in `src/lib/barcode.ts` — EAN-13/UPC-A check digits and the
+  GS1 in-store prefix `2` for minted internal codes — so one scanner reads both without
+  configuration. Don't unify the tables; do reuse `barcode.ts`.
+- **A scanner is a keyboard.** Any scan input must stay enabled while its lookup is in flight
+  and refocus afterwards, or fast consecutive reads are silently dropped. A repeat scan *adds*
+  to the tally (in `Decimal`, not float — a kg-counted store room drifts otherwise).
+- **Counts are per model too**, and the retail one is deliberately the small one:
+  `item_stock` is a moving weighted average with no lots and no negative layers, so
+  `item-stock-count-service.ts` needs none of `stock-count-service.ts`'s settlement machinery.
+  A count **sets** the quantity to the counted figure rather than applying a delta (which is
+  what keeps it inside `item_stock`'s `quantity >= 0` check), and **never moves the unit cost** —
+  only the quantity was ever wrong.
+- **Shortage and surplus never net.** They hit different accounts, so a count that is short on
+  one item and over on another must post both, not nothing.
+- **The retail shortage account is `5190`, not F&B's `5160`.** Cosmetics already spends 5160 on
+  «کالای منقضی و تستر» — an *identified* loss — and unexplained shrinkage must not be folded into
+  it. The surplus side shares `4910` with F&B, which means the same thing in every trade.
+- **A posted count is corrected by reversal, never edited**, like a production run. A reversal
+  applies the inverse delta (so sales made after the count survive it) and is refused once a
+  counted surplus has been sold.
+
 ## Repository layout
 
 - `src/app/api/**/route.ts` — route handlers. Every handler starts with a guard
@@ -228,6 +257,11 @@ and the only thing the ledger sees. See the "Payment ways" section of [README.md
   role provisioning, perf benchmarks, …) rather than through a route handler; some run inside
   the running container itself (e.g. `check-app-update.ts`, invoked via `docker compose exec`
   by the on-site launcher — see the README's "On-site deployment" section).
+- **Warehouse counting** — barcode assignment and label printing for F&B live under the
+  «بارکد و لیبل» tab of `/dashboard/inventory` (`/api/inventory/barcodes*`), and the retail
+  physical count under `/dashboard/stock` (`/api/stock/counts*`). Both inherit an existing
+  module (`inventory` and `stock` respectively) with **no new gating**, the way Phase 29's
+  production tab does — gate a new tab, never the hub.
 - **Connections (Phase 28)** — everything a business connects *to* lives behind one hub,
   `/dashboard/connections` (`src/lib/connection-kinds.ts`), with three kinds: the desktop
   install, a WooCommerce store, and developer API keys for `/api/v1`. The page is

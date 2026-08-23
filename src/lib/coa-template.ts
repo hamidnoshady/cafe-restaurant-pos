@@ -126,6 +126,13 @@ export const WELL_KNOWN_CODES = {
   // (Debit this, Credit salariesPayable) through the domain-event engine.
   commissionExpense: "5210",
   inventoryCountExpense: "5160",
+  // The retail trades' count shortage. Deliberately NOT 5160: cosmetics
+  // already spends that code on «کالای منقضی و تستر» (an identified loss —
+  // expiry and testers), and unexplained shrinkage found at a count is a
+  // different fact that must not be folded into it. One code across all four
+  // retail trades rather than 5160-for-three-and-5190-for-one, so the posting
+  // rule stays a rule and not a per-industry lookup.
+  retailCountShortageExpense: "5190",
   inventoryWriteDownExpense: "5170",
   // Phase 29 — labour/overhead a production run capitalises into the cost of
   // what it made. A CONTRA-expense, and that is the whole point: the baker's
@@ -248,17 +255,24 @@ const COST_OF_SALES_CODES_BY_INDUSTRY: Record<Industry, readonly string[]> = {
     WELL_KNOWN_CODES.goldCogs,
     WELL_KNOWN_CODES.repairPartsExpense,
     WELL_KNOWN_CODES.inventoryWriteDownExpense,
+    WELL_KNOWN_CODES.retailCountShortageExpense,
   ],
   watch: [
     WELL_KNOWN_CODES.watchCogs,
     WELL_KNOWN_CODES.repairPartsExpense,
     WELL_KNOWN_CODES.inventoryWriteDownExpense,
+    WELL_KNOWN_CODES.retailCountShortageExpense,
   ],
-  accessories: [WELL_KNOWN_CODES.accessoryCogs, WELL_KNOWN_CODES.inventoryWriteDownExpense],
+  accessories: [
+    WELL_KNOWN_CODES.accessoryCogs,
+    WELL_KNOWN_CODES.inventoryWriteDownExpense,
+    WELL_KNOWN_CODES.retailCountShortageExpense,
+  ],
   cosmetics: [
     WELL_KNOWN_CODES.cosmeticCogs,
     WELL_KNOWN_CODES.cosmeticExpiredAndTester,
     WELL_KNOWN_CODES.inventoryWriteDownExpense,
+    WELL_KNOWN_CODES.retailCountShortageExpense,
   ],
 };
 
@@ -357,8 +371,18 @@ const RETAIL_ASSET_ACCOUNTS: TemplateAccount[] = [
   { code: "1510", name: "استهلاک انباشته", type: "asset", parentCode: "1500", isContra: true },
 ];
 
+/**
+ * Revenue accounts every retail chart needs but none of the four listed. 4910
+ * is the same code and the same name F&B has carried since Phase 22 — a count
+ * surplus means one thing whatever the shop sells.
+ */
+const RETAIL_REVENUE_ACCOUNTS: TemplateAccount[] = [
+  { code: "4910", name: "درآمد اضافه شمارش موجودی", type: "revenue", parentCode: "4000" },
+];
+
 const RETAIL_EXPENSE_ACCOUNTS: TemplateAccount[] = [
   { code: "5170", name: "هزینه کاهش ارزش موجودی", type: "expense", parentCode: "5000" },
+  { code: "5190", name: "هزینه کسری انبارگردانی", type: "expense", parentCode: "5000" },
   { code: "5200", name: "حقوق و دستمزد", type: "expense", parentCode: "5000" },
   { code: "5500", name: "ملزومات مصرفی", type: "expense", parentCode: "5000" },
   { code: "5700", name: "هزینه استهلاک", type: "expense", parentCode: "5000" },
@@ -484,6 +508,7 @@ export const JEWELRY_COA_TEMPLATE: TemplateAccount[] = [
   { code: "4900", name: "سایر درآمدها", type: "revenue", parentCode: "4000" },
   { code: "4400", name: "برگشت از فروش", type: "revenue", parentCode: "4000", isContra: true },
 
+  ...RETAIL_REVENUE_ACCOUNTS,
   ...SHARED_REVENUE_ACCOUNTS,
 
   { code: "5000", name: "هزینه‌ها", type: "expense" },
@@ -542,6 +567,7 @@ export const WATCH_COA_TEMPLATE: TemplateAccount[] = [
   { code: "4900", name: "سایر درآمدها", type: "revenue", parentCode: "4000" },
   { code: "4400", name: "برگشت از فروش", type: "revenue", parentCode: "4000", isContra: true },
 
+  ...RETAIL_REVENUE_ACCOUNTS,
   ...SHARED_REVENUE_ACCOUNTS,
 
   { code: "5000", name: "هزینه‌ها", type: "expense" },
@@ -599,6 +625,7 @@ export const ACCESSORIES_COA_TEMPLATE: TemplateAccount[] = [
   { code: "4900", name: "سایر درآمدها", type: "revenue", parentCode: "4000" },
   { code: "4400", name: "برگشت از فروش", type: "revenue", parentCode: "4000", isContra: true },
 
+  ...RETAIL_REVENUE_ACCOUNTS,
   ...SHARED_REVENUE_ACCOUNTS,
 
   { code: "5000", name: "هزینه‌ها", type: "expense" },
@@ -656,6 +683,7 @@ export const COSMETICS_COA_TEMPLATE: TemplateAccount[] = [
   { code: "4900", name: "سایر درآمدها", type: "revenue", parentCode: "4000" },
   { code: "4400", name: "برگشت از فروش", type: "revenue", parentCode: "4000", isContra: true },
 
+  ...RETAIL_REVENUE_ACCOUNTS,
   ...SHARED_REVENUE_ACCOUNTS,
 
   { code: "5000", name: "هزینه‌ها", type: "expense" },
