@@ -10,6 +10,8 @@
  *   - supplier return:    Debit settlement account / Credit {industry}Inventory
  *   - transfer ship:      Debit inventory-in-transit / Credit {industry}Inventory
  *   - transfer receive:   Debit {industry}Inventory / Credit inventory-in-transit
+ *   - stock count:        Debit count shortage / Credit {industry}Inventory, and
+ *                         Debit {industry}Inventory / Credit count surplus gain
  */
 import type { PoolClient } from "pg";
 import { WELL_KNOWN_CODES } from "./coa-template";
@@ -124,4 +126,105 @@ registerPostingRule("retail.transfer_receive", async (event, client): Promise<Po
     memo: "دریافت انتقال کالا",
     postingKind: "retail_transfer_receive",
   };
+});
+
+interface StockCountPayload {
+  /** Total value of the lines that came up short (positive Rial, 0 if none). */
+  shortage: RialText;
+  /** Total value of the lines that came up over (positive Rial, 0 if none). */
+  surplus: RialText;
+}
+
+/**
+ * A physical count's variance, netted across the whole count into one entry —
+ * the same shape `postExactStockCountEntry` gives F&B, so the two models'
+ * variance entries read identically in the ledger.
+ *
+ * Shortage and surplus are kept as separate totals rather than one signed
+ * number on purpose: they hit different accounts, and a count that is 100,000
+ * short on one item and 100,000 over on another has *not* had a quiet night —
+ * netting them to zero would hide both.
+ *
+ * The shortage account is `retailCountShortageExpense` (5190) and not F&B's
+ * 5160: cosmetics already spends 5160 on expiry and testers, an identified
+ * loss that unexplained shrinkage must not be folded into. The surplus side
+ * shares 4910 with F&B, which means the same thing in every trade.
+ */
+registerPostingRule("retail.stock_count_adjustment", async (event, client): Promise<PostingResult | null> => {
+  const payload = event.payload as unknown as StockCountPayload;
+  const shortage = rialBigInt(payload.shortage);
+  const surplus = rialBigInt(payload.surplus);
+  // A count that matches the system exactly is still a real event worth
+  // recording; it just has nothing to post.
+  if (shortage === 0n && surplus === 0n) return null;
+
+  const inventoryCode = await inventoryCodeForBusiness(client, event.businessId);
+  const accounts = await accountIdsByCode(client, event.businessId, [
+    inventoryCode,
+    WELL_KNOWN_CODES.retailCountShortageExpense,
+    WELL_KNOWN_CODES.inventoryCountGain,
+  ]);
+  const inventory = accounts.get(inventoryCode)!;
+
+  const lines = [];
+  if (shortage > 0n) {
+    lines.push({
+      accountId: accounts.get(WELL_KNOWN_CODES.retailCountShortageExpense)!,
+      debit: payload.shortage,
+      credit: ZERO,
+    });
+    lines.push({ accountId: inventory, debit: ZERO, credit: payload.shortage });
+  }
+  if (surplus > 0n) {
+    lines.push({ accountId: inventory, debit: payload.surplus, credit: ZERO });
+    lines.push({
+      accountId: accounts.get(WELL_KNOWN_CODES.inventoryCountGain)!,
+      debit: ZERO,
+      credit: payload.surplus,
+    });
+  }
+
+  return { lines, memo: "مغایرت انبارگردانی", postingKind: "retail_stock_count" };
+});
+
+/**
+ * Undoing a posted count: the same lines with the two sides swapped, so the
+ * shortage expense and surplus gain are given back at the value originally
+ * recorded. A separate event type rather than a negative amount, so the
+ * `(source_type, source_id, posting_kind)` identity of the reversal is its own
+ * and cannot collide with the count it reverses.
+ */
+registerPostingRule("retail.stock_count_reversal", async (event, client): Promise<PostingResult | null> => {
+  const payload = event.payload as unknown as StockCountPayload;
+  const shortage = rialBigInt(payload.shortage);
+  const surplus = rialBigInt(payload.surplus);
+  if (shortage === 0n && surplus === 0n) return null;
+
+  const inventoryCode = await inventoryCodeForBusiness(client, event.businessId);
+  const accounts = await accountIdsByCode(client, event.businessId, [
+    inventoryCode,
+    WELL_KNOWN_CODES.retailCountShortageExpense,
+    WELL_KNOWN_CODES.inventoryCountGain,
+  ]);
+  const inventory = accounts.get(inventoryCode)!;
+
+  const lines = [];
+  if (shortage > 0n) {
+    lines.push({ accountId: inventory, debit: payload.shortage, credit: ZERO });
+    lines.push({
+      accountId: accounts.get(WELL_KNOWN_CODES.retailCountShortageExpense)!,
+      debit: ZERO,
+      credit: payload.shortage,
+    });
+  }
+  if (surplus > 0n) {
+    lines.push({
+      accountId: accounts.get(WELL_KNOWN_CODES.inventoryCountGain)!,
+      debit: payload.surplus,
+      credit: ZERO,
+    });
+    lines.push({ accountId: inventory, debit: ZERO, credit: payload.surplus });
+  }
+
+  return { lines, memo: "برگشت مغایرت انبارگردانی", postingKind: "retail_stock_count_reversal" };
 });

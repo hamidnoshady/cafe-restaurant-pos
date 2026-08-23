@@ -45,6 +45,11 @@ const CORE_REQUIRED_CODES: readonly string[] = [
   WELL_KNOWN_CODES.accumulatedDepreciation,
   WELL_KNOWN_CODES.depreciationExpense,
   WELL_KNOWN_CODES.inventoryWriteDownExpense,
+  // A physical count can find *more* than the system thought in any trade, so
+  // the gain side is core. The shortage side is not: F&B books it to 5160 and
+  // the retail trades to 5190, because cosmetics already spends 5160 on
+  // expiry/testers. See WELL_KNOWN_CODES.retailCountShortageExpense.
+  WELL_KNOWN_CODES.inventoryCountGain,
   WELL_KNOWN_CODES.salesReturns,
   WELL_KNOWN_CODES.storeCreditPayable,
   WELL_KNOWN_CODES.giftCardPayable,
@@ -69,7 +74,6 @@ const TRADE_REQUIRED_CODES: Record<Industry, readonly string[]> = {
     WELL_KNOWN_CODES.cogs,
     WELL_KNOWN_CODES.wasteExpense,
     WELL_KNOWN_CODES.inventoryCountExpense,
-    WELL_KNOWN_CODES.inventoryCountGain,
     WELL_KNOWN_CODES.workInProgress,
     WELL_KNOWN_CODES.appliedConversionCost,
     WELL_KNOWN_CODES.inventoryInTransit,
@@ -93,6 +97,7 @@ const TRADE_REQUIRED_CODES: Record<Industry, readonly string[]> = {
     WELL_KNOWN_CODES.repairServiceRevenue,
     WELL_KNOWN_CODES.repairPartsExpense,
     WELL_KNOWN_CODES.retailInventoryInTransit,
+    WELL_KNOWN_CODES.retailCountShortageExpense,
   ],
   watch: [
     WELL_KNOWN_CODES.watchInventory,
@@ -101,12 +106,14 @@ const TRADE_REQUIRED_CODES: Record<Industry, readonly string[]> = {
     WELL_KNOWN_CODES.repairServiceRevenue,
     WELL_KNOWN_CODES.repairPartsExpense,
     WELL_KNOWN_CODES.retailInventoryInTransit,
+    WELL_KNOWN_CODES.retailCountShortageExpense,
   ],
   accessories: [
     WELL_KNOWN_CODES.accessoryInventory,
     WELL_KNOWN_CODES.accessorySalesRevenue,
     WELL_KNOWN_CODES.accessoryCogs,
     WELL_KNOWN_CODES.retailInventoryInTransit,
+    WELL_KNOWN_CODES.retailCountShortageExpense,
   ],
   cosmetics: [
     WELL_KNOWN_CODES.cosmeticInventory,
@@ -114,6 +121,7 @@ const TRADE_REQUIRED_CODES: Record<Industry, readonly string[]> = {
     WELL_KNOWN_CODES.cosmeticCogs,
     WELL_KNOWN_CODES.cosmeticExpiredAndTester,
     WELL_KNOWN_CODES.retailInventoryInTransit,
+    WELL_KNOWN_CODES.retailCountShortageExpense,
   ],
 };
 

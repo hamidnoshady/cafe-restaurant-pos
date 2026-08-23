@@ -6,6 +6,7 @@ import { formatPersianNumber } from "@/lib/digits";
 import { useMoney } from "@/components/money/money-context";
 import { api, ErrorBox, Field, inputClass } from "../ui";
 import { PageHeader, PageShell, SectionCard } from "../page-chrome";
+import { StockCountSection } from "./stock-count-section";
 
 interface StockItem {
   id: string;
@@ -72,7 +73,7 @@ export default function StockPage() {
     <PageShell className="max-w-[1100px]">
       <PageHeader
         title="خرید و انبار"
-        description="خرید، برگشت به تأمین‌کننده، انتقال بین شعبه‌ها و گزارش کمبود/راکد موجودی."
+        description="خرید، برگشت به تأمین‌کننده، انتقال بین شعبه‌ها، انبارگردانی و گزارش کمبود/راکد موجودی."
       />
 
       <ErrorBox>{error}</ErrorBox>
@@ -90,6 +91,13 @@ export default function StockPage() {
         />
         <ReturnForm items={items} onDone={(m) => { setDone(m); load(); }} onError={setError} />
       </div>
+
+      <StockCountSection
+        items={items}
+        onDone={setDone}
+        onError={setError}
+        reload={load}
+      />
 
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
         <SectionCard title="کمبود موجودی (زیر نقطهٔ سفارش)" bodyClassName="space-y-3">
