@@ -213,6 +213,25 @@ export function cloudKeyFor(prefix: string, artifactName: string): string {
   return `${prefix}${artifactName}.enc`;
 }
 
+/**
+ * Whether `name` is a bare local artifact file name and not a path.
+ *
+ * The restore route takes the artifact to restore from the request body, and
+ * local artifacts live flat in the backup directory — so anything carrying a
+ * path separator (and therefore any `..` segment) is a traversal attempt rather
+ * than a backup, and must never reach `path.join(backupDir, name)`. Checked on
+ * both separators regardless of platform: the string arrives over HTTP, so a
+ * `\` means a separator to a Windows host whatever the server's own `path.sep`
+ * is.
+ *
+ * Only the local branch needs this — a cloud artifact is an S3 object key,
+ * where the configured prefix makes a `/` legitimate and there is no
+ * filesystem to escape.
+ */
+export function isPlainArtifactName(name: string): boolean {
+  return name.length > 0 && !/[\\/]/.test(name) && name !== "." && name !== "..";
+}
+
 // ---------------------------------------------------------------------------
 // Scheduling — wall-clock slots in the location's timezone
 // ---------------------------------------------------------------------------
