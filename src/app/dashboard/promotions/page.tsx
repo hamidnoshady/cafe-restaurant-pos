@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { formatPersianNumber, toPersianDigits } from "@/lib/digits";
 import { useMoney } from "@/components/money/money-context";
 import { formatJalali } from "@/lib/jalali";
-import { api, ErrorBox, Field, inputClass } from "../ui";
+import { EmptyState, PageHeader, PageShell, SectionCard } from "../page-chrome";
+import { api, ErrorBox, Field, InfoBox, inputClass } from "../ui";
 
 interface PromotionRow {
   id: string;
@@ -29,15 +30,6 @@ const KIND_LABELS: Record<string, string> = {
   buy_x_get_y: "تعداد مشخص با قیمت ثابت",
 };
 
-function Panel({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section className="rounded-2xl border border-stone-200 bg-white p-4 shadow-[0_1px_2px_rgb(41_37_36/0.035)] sm:p-5">
-      <h2 className="font-semibold text-stone-950">{title}</h2>
-      <div className="mt-4 space-y-3">{children}</div>
-    </section>
-  );
-}
-
 export default function PromotionsPage() {
   const money = useMoney();
   const [promotions, setPromotions] = useState<PromotionRow[]>([]);
@@ -50,16 +42,14 @@ export default function PromotionsPage() {
   useEffect(load, [load]);
 
   return (
-    <div className="mx-auto w-full max-w-[1100px]">
-      <header className="mb-5 border-b border-stone-200/80 pb-4">
-        <h1 className="text-2xl font-bold tracking-tight text-stone-950">کمپین تخفیف و کارت هدیه</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          یک موتور تخفیف برای همه کسب‌وکارها؛ تخفیف هرگز از مبلغ خط بیشتر نمی‌شود.
-        </p>
-      </header>
+    <PageShell>
+      <PageHeader
+        title="کمپین تخفیف و کارت هدیه"
+        description="یک موتور تخفیف برای همه کسب‌وکارها؛ تخفیف هرگز از مبلغ خط بیشتر نمی‌شود."
+      />
 
       <ErrorBox>{error}</ErrorBox>
-      {done ? <p className="mb-3 text-xs text-emerald-700">{done}</p> : null}
+      {done ? <InfoBox>{done}</InfoBox> : null}
 
       <div className="grid gap-4 lg:grid-cols-2">
         <PromotionForm
@@ -78,11 +68,9 @@ export default function PromotionsPage() {
       </div>
 
       <div className="mt-4">
-        <Panel title="کمپین‌های فعال">
+        <SectionCard title="کمپین‌های فعال">
           {promotions.length === 0 ? (
-            <p className="rounded-xl border border-dashed border-stone-200 px-3 py-6 text-center text-sm text-muted-foreground">
-              هنوز کمپینی تعریف نشده است.
-            </p>
+            <EmptyState>هنوز کمپینی تعریف نشده است.</EmptyState>
           ) : (
             <ul className="divide-y divide-stone-200/80 text-sm">
               {promotions.map((p) => (
@@ -107,9 +95,9 @@ export default function PromotionsPage() {
               ))}
             </ul>
           )}
-        </Panel>
+        </SectionCard>
       </div>
-    </div>
+    </PageShell>
   );
 }
 
@@ -158,7 +146,7 @@ function PromotionForm({ onSaved, onError }: { onSaved: (m: string) => void; onE
   }
 
   return (
-    <Panel title="کمپین جدید">
+    <SectionCard title="کمپین جدید" bodyClassName="space-y-3 p-4 sm:p-5">
       <form onSubmit={submit} className="grid gap-3">
         <Field label="نام کمپین">
           <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} required />
@@ -213,7 +201,7 @@ function PromotionForm({ onSaved, onError }: { onSaved: (m: string) => void; onE
           ذخیره کمپین
         </Button>
       </form>
-    </Panel>
+    </SectionCard>
   );
 }
 
@@ -267,7 +255,7 @@ function GiftCardPanel({ onChanged, onError }: { onChanged: (m: string) => void;
   }
 
   return (
-    <Panel title="کارت هدیه">
+    <SectionCard title="کارت هدیه" bodyClassName="space-y-3 p-4 sm:p-5">
       <div className="grid grid-cols-[1fr_1fr_auto] items-end gap-2">
         <Field label="کد کارت جدید">
           <input className={inputClass} dir="ltr" value={code} onChange={(e) => setCode(e.target.value)} />
@@ -298,6 +286,6 @@ function GiftCardPanel({ onChanged, onError }: { onChanged: (m: string) => void;
       <p className="text-xs leading-5 text-muted-foreground">
         کارت هدیه یک بدهی واقعی (حساب ۲۴۲۰) است؛ صدور آن را بستانکار و مصرف آن را بدهکار می‌کند و هرگز درآمد را دوباره ثبت نمی‌کند.
       </p>
-    </Panel>
+    </SectionCard>
   );
 }

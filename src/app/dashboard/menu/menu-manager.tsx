@@ -14,6 +14,7 @@ import {
 } from "../ui";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ChevronDown } from "lucide-react";
+import { SectionCard } from "../page-chrome";
 
 interface Category {
   id: string;
@@ -135,8 +136,7 @@ function CategorySection({
   }
 
   return (
-    <section className="rounded-2xl bg-card p-5 shadow-sm">
-      <h2 className="mb-3 font-semibold">دسته‌ها</h2>
+    <SectionCard title="دسته‌ها">
       <form
         className="mb-4 grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_auto]"
         onSubmit={(event) => {
@@ -191,7 +191,7 @@ function CategorySection({
           <p className="text-sm text-muted-foreground">دسته‌ای ثبت نشده است.</p>
         ) : null}
       </ul>
-    </section>
+    </SectionCard>
   );
 }
 
@@ -252,8 +252,7 @@ function ItemSection({
     (i.sku ? i.sku.toLowerCase().includes(q) : false);
 
   return (
-    <section className="rounded-2xl bg-card p-5 shadow-sm">
-      <h2 className="mb-3 font-semibold">آیتم‌ها</h2>
+    <SectionCard title="آیتم‌ها">
       <form
         onSubmit={add}
         className="mb-4 grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4"
@@ -312,7 +311,7 @@ function ItemSection({
               <button
                 type="button"
                 onClick={() => toggleCategory(c.id)}
-                className="mb-1 flex items-center gap-1.5 text-sm font-medium text-foreground"
+                className="mb-1 flex items-center gap-1.5 text-sm font-medium text-stone-950"
                 aria-expanded={!isCollapsed}
               >
                 <ChevronDown
@@ -325,7 +324,7 @@ function ItemSection({
                 </span>
               </button>
               {isCollapsed ? null : (
-                <ul className="divide-y divide-border rounded-lg border border-border">
+                <ul className="divide-y divide-stone-200/80 rounded-xl border border-stone-200/80">
                   {items.map((i) => (
                     <ItemRow
                       key={i.id}
@@ -343,7 +342,7 @@ function ItemSection({
           );
         })}
       </div>
-    </section>
+    </SectionCard>
   );
 }
 
@@ -438,7 +437,7 @@ function ItemRow({
       </div>
       {pricingOpen ? <PricingPanel item={item} busy={busy} run={run} /> : null}
       {expanded ? (
-        <div className="mt-2 flex flex-wrap gap-2 border-t border-border pt-2">
+        <div className="mt-2 flex flex-wrap gap-2 border-t border-stone-200/80 pt-2">
           {groups.length === 0 ? (
             <span className="text-xs text-muted-foreground">
               گروه افزودنی‌ای ثبت نشده است.
@@ -467,10 +466,11 @@ function ItemRow({
                           }),
                     )
                   }
-                  className={`rounded-full border px-3 py-1 text-xs ${
+                  aria-pressed={isOn}
+                  className={`min-h-9 rounded-lg border px-3 text-xs font-medium transition-colors ${
                     isOn
-                      ? "border-primary/40 bg-primary/5 text-primary"
-                      : "border-input text-muted-foreground"
+                      ? "border-amber-200 bg-amber-100 text-amber-950"
+                      : "border-stone-200 text-stone-600 hover:bg-stone-50"
                   }`}
                 >
                   {g.name}
@@ -633,7 +633,7 @@ function PricingPanel({
   }
 
   return (
-    <div className="mt-2 space-y-2 rounded-lg border border-border bg-muted/40 p-3 text-xs">
+    <div className="mt-2 space-y-2 rounded-xl border border-stone-200/80 bg-stone-50/60 p-3 text-xs">
       {loading ? (
         <p className="text-muted-foreground">در حال محاسبه…</p>
       ) : !suggestion ? (
@@ -691,7 +691,7 @@ function PricingPanel({
         </>
       )}
 
-      <div className="grid min-w-0 gap-2 border-t border-border pt-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+      <div className="grid min-w-0 gap-2 border-t border-stone-200/80 pt-2 sm:grid-cols-[minmax(0,1fr)_auto]">
         <Field label="حاشیه سود اختصاصی این آیتم (درصد)">
           <input
             className={inputClass}
@@ -745,8 +745,7 @@ function ModifierSection({
   }
 
   return (
-    <section className="min-w-0 rounded-2xl bg-card p-5 shadow-sm">
-      <h2 className="mb-3 font-semibold">گروه‌های افزودنی</h2>
+    <SectionCard title="گروه‌های افزودنی">
       <form
         className="mb-4 grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4"
         onSubmit={(event) => {
@@ -802,7 +801,7 @@ function ModifierSection({
           <p className="text-sm text-muted-foreground">گروهی ثبت نشده است.</p>
         ) : null}
       </div>
-    </section>
+    </SectionCard>
   );
 }
 
@@ -892,7 +891,7 @@ function ModifierGroupRow({
   }
 
   return (
-    <div className="min-w-0 rounded-lg border border-border p-3">
+    <div className="min-w-0 rounded-xl border border-stone-200/80 p-3">
       {editing ? (
         <form
           className="mb-2 grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-3"

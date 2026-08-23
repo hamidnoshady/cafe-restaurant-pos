@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { requireModuleForPage } from "@/lib/industry-guard";
 import { requireFeatureForPage } from "@/lib/features";
+import { PageHeader, PageShell } from "../page-chrome";
 import { DeliveryBoard } from "./delivery-board";
 
 export default async function DeliveryPage() {
@@ -14,12 +15,12 @@ export default async function DeliveryPage() {
   const canManageCouriers = session.role === "owner" || session.role === "manager";
 
   return (
-    <div>
-      <header className="mb-6">
-        <h1 className="text-2xl font-bold">ارسال و پیک</h1>
-        <p className="text-sm text-muted-foreground">تخصیص سفارش‌های ارسالی به پیک‌ها و پیگیری وضعیت تحویل.</p>
-      </header>
+    <PageShell>
+      <PageHeader
+        title="ارسال و پیک"
+        description="تخصیص سفارش‌های ارسالی به پیک‌ها و پیگیری وضعیت تحویل."
+      />
       <DeliveryBoard canManageCouriers={canManageCouriers} />
-    </div>
+    </PageShell>
   );
 }

@@ -21,6 +21,7 @@ import {
   errorMessage,
   inputClass,
 } from "../ui";
+import { SectionCard } from "../page-chrome";
 
 interface ConfigView {
   remoteUrl: string;
@@ -89,7 +90,7 @@ const SYNC_STATUS_LABELS: Record<string, string> = {
 
 function StatusRow({ label, value, tone }: { label: string; value: string; tone?: "error" }) {
   return (
-    <div className="flex items-center justify-between border-b border-border/60 py-2 text-sm last:border-b-0">
+    <div className="flex items-center justify-between border-b border-stone-200/60 py-2 text-sm last:border-b-0">
       <span className="text-muted-foreground">{label}</span>
       <span className={tone === "error" ? "font-medium text-destructive" : "font-medium"}>{value}</span>
     </div>
@@ -237,8 +238,7 @@ export function ServerSyncSettings() {
   if (role === "central") {
     return (
       <div className="space-y-6">
-        <section className="rounded-2xl bg-card p-5 shadow-sm">
-          <h2 className="mb-1 font-semibold">این سرور، سرور مرکزی است</h2>
+        <SectionCard title="این سرور، سرور مرکزی است">
           <p className="mb-4 text-sm text-muted-foreground">
             نصب‌های محلی (مثلاً لپ‌تاپ کافه) به این سرور همگام می‌شوند؛ خودِ این سرور به جایی همگام نمی‌شود، بنابراین
             آدرس و توکن اتصال اینجا تنظیم نمی‌شود. توکن هر نصب هنگام «جفت‌سازی» در کنسول مدیریت ساخته می‌شود.
@@ -259,7 +259,7 @@ export function ServerSyncSettings() {
               هنوز نصب محلی‌ای به این کسب‌وکار جفت نشده است.
             </p>
           )}
-        </section>
+        </SectionCard>
 
         <SyncStatusPanels syncState={syncState} appUpdateStatus={appUpdateStatus} deadLetters={deadLetters} />
       </div>
@@ -268,8 +268,7 @@ export function ServerSyncSettings() {
 
   return (
     <div className="space-y-6">
-      <section className="rounded-2xl bg-card p-5 shadow-sm">
-        <h2 className="mb-1 font-semibold">اتصال به سرور مرکزی</h2>
+      <SectionCard title="اتصال به سرور مرکزی">
         <p className="mb-4 text-sm text-muted-foreground">
           این نصب (مثلاً لپ‌تاپ کافه) با سرور مرکزی به‌صورت دوطرفه همگام می‌شود. توکن مشترک باید در هر دو سمت یکسان
           باشد.
@@ -376,7 +375,7 @@ export function ServerSyncSettings() {
           </label>
           <PrimaryButton disabled={busy || tokenInvalid}>{busy ? "در حال ذخیره…" : "ذخیره تنظیمات"}</PrimaryButton>
         </form>
-      </section>
+      </SectionCard>
 
       <SyncStatusPanels syncState={syncState} appUpdateStatus={appUpdateStatus} deadLetters={deadLetters} />
     </div>
@@ -400,8 +399,7 @@ function SyncStatusPanels({
   return (
     <>
       {syncState ? (
-        <section className="rounded-2xl bg-card p-5 shadow-sm">
-          <h2 className="mb-3 font-semibold">وضعیت همگام‌سازی</h2>
+        <SectionCard title="وضعیت همگام‌سازی">
           {syncState.legacyTokenLastUsedAt ? (
             <InfoBox>
               درخواست‌های ورودی هنوز با توکن مشترک قدیمی (REMOTE_SYNC_TOKEN) تأیید می‌شوند، نه توکن اختصاصی این
@@ -431,12 +429,11 @@ function SyncStatusPanels({
               />
             </div>
           </div>
-        </section>
+        </SectionCard>
       ) : null}
 
       {appUpdateStatus && appUpdateStatus.error !== "sync_not_configured" ? (
-        <section className="rounded-2xl bg-card p-5 shadow-sm">
-          <h2 className="mb-1 font-semibold">به‌روزرسانی نرم‌افزار</h2>
+        <SectionCard title="به‌روزرسانی نرم‌افزار">
           <p className="mb-4 text-sm text-muted-foreground">
             نسخهٔ نصب‌شده روی این دستگاه در برابر نسخهٔ در حال اجرا روی سرور مرکزی. دریافت نسخهٔ جدید هنگام روشن‌شدن
             سیستم انجام می‌شود، نه به‌صورت خودکار در طول کار.
@@ -450,11 +447,10 @@ function SyncStatusPanels({
           <StatusRow label="آخرین نسخهٔ منتشرشده" value={appUpdateStatus.latestVersion ?? "—"} />
           <StatusRow label="آخرین بررسی" value={formatTime(appUpdateStatus.checkedAt)} />
           {appUpdateStatus.error ? <StatusRow label="خطا" value={appUpdateStatus.error} tone="error" /> : null}
-        </section>
+        </SectionCard>
       ) : null}
 
-      <section className="rounded-2xl bg-card p-5 shadow-sm">
-        <h2 className="mb-1 font-semibold">رویدادهای ناموفق</h2>
+      <SectionCard title="رویدادهای ناموفق">
         <p className="mb-4 text-sm text-muted-foreground">
           رویدادهایی که هنگام دریافت از سرور مرکزی اعمال نشدند و برای بررسی نگه داشته شده‌اند.
         </p>
@@ -473,7 +469,7 @@ function SyncStatusPanels({
             ))}
           </div>
         )}
-      </section>
+      </SectionCard>
     </>
   );
 }

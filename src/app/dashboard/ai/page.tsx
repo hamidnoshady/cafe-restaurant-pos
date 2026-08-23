@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { featureLockedForPage } from "@/lib/features";
 import { FeatureLock } from "@/components/feature-lock";
+import { PageHeader, PageShell } from "../page-chrome";
 import { AiChatHub } from "./ai-chat-hub";
 
 export default async function AiSettingsPage() {
@@ -13,8 +14,14 @@ export default async function AiSettingsPage() {
   const locked = await featureLockedForPage(session.businessId, "ai_assistant");
 
   return (
-    <FeatureLock locked={locked} title="دستیار هوشمند">
-      <AiChatHub />
-    </FeatureLock>
+    <PageShell>
+      <PageHeader
+        title="هوش مصنوعی"
+        description="گفتگو با دستیار، مرور گفتگوهای اخیر، و مدیریت اعتبار/گزارش‌های خودکار/گزارش ممیزی."
+      />
+      <FeatureLock locked={locked} title="دستیار هوشمند">
+        <AiChatHub />
+      </FeatureLock>
+    </PageShell>
   );
 }

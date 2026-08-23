@@ -122,7 +122,7 @@ export function AiAssistant({ mode, currentStep }: Props) {
       )}
 
       {open && (
-        <div className="fixed bottom-5 left-5 z-50 flex h-[min(74vh,610px)] w-[min(92vw,410px)] flex-col overflow-hidden rounded-2xl border bg-card shadow-2xl ring-1 ring-foreground/10">
+        <div className="fixed bottom-5 left-5 z-50 flex h-[min(74vh,610px)] w-[min(92vw,410px)] flex-col overflow-hidden rounded-2xl border border-stone-200/80 bg-card shadow-2xl ring-1 ring-foreground/10">
           <AiChatHeader
             mode={mode}
             conversationId={conversationId}

@@ -8,6 +8,7 @@ import { useFeatureLocked } from "@/components/feature-lock";
 import { ACTION_CATALOG, type ActionType } from "@/lib/ai";
 import { AUTOPILOT_CATEGORY_LABELS, type AutopilotCategory } from "@/lib/ai-autopilot";
 import { applyProposalRequest } from "@/components/ai/apply-proposal";
+import { SectionCard, StatusBadge } from "../page-chrome";
 
 interface Entry {
   id: string;
@@ -30,12 +31,12 @@ const STATUS_LABEL: Record<Entry["status"], string> = {
   reverted: "برگردانده شد",
 };
 
-const STATUS_CLASS: Record<Entry["status"], string> = {
-  proposed: "bg-amber-500/10 text-amber-700 dark:text-amber-400",
-  applied: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
-  failed: "bg-destructive/10 text-destructive",
-  dismissed: "bg-muted text-muted-foreground",
-  reverted: "bg-muted text-muted-foreground",
+const STATUS_TONE: Record<Entry["status"], "active" | "positive" | "neutral" | "danger"> = {
+  proposed: "active",
+  applied: "positive",
+  failed: "danger",
+  dismissed: "neutral",
+  reverted: "neutral",
 };
 
 const DEFERRED_REASON: Record<string, string> = {
@@ -155,21 +156,25 @@ export function AiAutopilotActivity() {
 
   if (loading) {
     return (
-      <section className="rounded-2xl border bg-card p-5 text-sm text-muted-foreground">
+      <SectionCard bodyClassName="min-w-0 p-4 text-sm text-muted-foreground sm:p-5">
         <Loader2Icon className="me-2 inline size-4 animate-spin" /> در حال خواندن سابقهٔ اجرای خودکار…
-      </section>
+      </SectionCard>
     );
   }
 
   return (
-    <section className="rounded-2xl border bg-card p-5">
-      <h2 className="flex items-center gap-2 font-semibold">
-        <WandSparklesIcon className="size-5 text-primary" /> کارهای انجام‌شدهٔ خودکار
-      </h2>
+    <SectionCard
+      title={
+        <span className="flex items-center gap-2">
+          <WandSparklesIcon className="size-5 text-primary" aria-hidden="true" /> کارهای انجام‌شدهٔ خودکار
+        </span>
+      }
+      description="هر اقدامی که دستیار بدون تأیید لحظه‌ای انجام داده، به‌همراه مواردی که برای تأیید شما کنار گذاشته شده است."
+    >
       {entries.length === 0 ? (
-        <p className="mt-2 text-sm text-muted-foreground">هنوز هیچ اقدام خودکاری ثبت نشده است.</p>
+        <p className="text-sm text-muted-foreground">هنوز هیچ اقدام خودکاری ثبت نشده است.</p>
       ) : (
-        <ul className="mt-4 space-y-3">
+        <ul className="space-y-3">
           {entries.map((entry) => {
             const meta = ACTION_CATALOG[entry.actionType as ActionType];
             const canRevert = entry.status === "applied" && Boolean(meta?.revertible);
@@ -178,11 +183,9 @@ export function AiAutopilotActivity() {
               <li key={entry.id} className="rounded-xl border p-3 text-sm">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-medium">{entry.actionTitle || meta?.label}</span>
-                  <span className={`rounded-full px-2 py-0.5 text-[11px] ${STATUS_CLASS[entry.status]}`}>
-                    {STATUS_LABEL[entry.status]}
-                  </span>
+                  <StatusBadge tone={STATUS_TONE[entry.status]}>{STATUS_LABEL[entry.status]}</StatusBadge>
                   {entry.category ? (
-                    <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] text-primary">
+                    <span className="inline-flex shrink-0 items-center rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
                       {AUTOPILOT_CATEGORY_LABELS[entry.category]}
                     </span>
                   ) : null}
@@ -192,7 +195,7 @@ export function AiAutopilotActivity() {
                   <p className="mt-1 text-xs leading-6 text-muted-foreground">{entry.actionSummary}</p>
                 ) : null}
                 {entry.status === "proposed" && entry.deferredReason ? (
-                  <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
+                  <p className="mt-1 text-xs text-amber-800">
                     {DEFERRED_REASON[entry.deferredReason] ?? "برای تأیید شما نگه داشته شد."}
                   </p>
                 ) : null}
@@ -229,6 +232,6 @@ export function AiAutopilotActivity() {
           })}
         </ul>
       )}
-    </section>
+    </SectionCard>
   );
 }

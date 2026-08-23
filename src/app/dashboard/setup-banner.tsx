@@ -16,7 +16,7 @@ export function SetupBanner() {
   if (!visible) return null;
 
   return (
-    <div className="mb-4 flex flex-col items-start gap-3 rounded-2xl border border-primary/25 bg-primary/[0.045] px-4 py-3.5 text-sm text-primary shadow-[0_2px_7px_rgb(15_23_42/0.04)] transition-colors hover:bg-primary/[0.075] sm:flex-row sm:items-center sm:justify-between sm:px-5">
+    <div className="mb-4 flex flex-col items-start gap-3 rounded-2xl border border-primary/25 bg-primary/[0.045] px-4 py-3.5 text-sm text-primary shadow-[0_2px_7px_rgb(41_37_36/0.04)] transition-colors hover:bg-primary/[0.075] sm:flex-row sm:items-center sm:justify-between sm:px-5">
       <div className="flex flex-1 items-start gap-3 sm:items-center">
         <span>
           <b>راه‌اندازی اولیه کامل نشده است.</b> برای آماده‌شدن جهت ثبت سفارش،

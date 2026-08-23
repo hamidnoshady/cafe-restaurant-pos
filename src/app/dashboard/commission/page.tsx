@@ -4,7 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { formatPersianNumber } from "@/lib/digits";
 import { useMoney } from "@/components/money/money-context";
-import { api, ErrorBox, Field, inputClass } from "../ui";
+import { EmptyState, PageHeader, PageShell, SectionCard, StatusBadge } from "../page-chrome";
+import { api, ErrorBox, Field, InfoBox, inputClass } from "../ui";
 
 interface CommissionRuleRow {
   id: string;
@@ -38,15 +39,6 @@ const BASIS_LABELS: Record<string, string> = {
   margin: "روی سود (مبلغ خط منهای بهای تمام‌شده)",
 };
 
-function Panel({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section className="rounded-2xl border border-stone-200 bg-white p-4 shadow-[0_1px_2px_rgb(41_37_36/0.035)] sm:p-5">
-      <h2 className="font-semibold text-stone-950">{title}</h2>
-      <div className="mt-4 space-y-3">{children}</div>
-    </section>
-  );
-}
-
 export default function CommissionPage() {
   const money = useMoney();
   const [rules, setRules] = useState<CommissionRuleRow[]>([]);
@@ -67,16 +59,14 @@ export default function CommissionPage() {
   useEffect(load, [load]);
 
   return (
-    <div className="mx-auto w-full max-w-[1100px]">
-      <header className="mb-5 border-b border-stone-200/80 pb-4">
-        <h1 className="text-2xl font-bold tracking-tight text-stone-950">پورسانت فروشندگان</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          هر خطِ فاکتور به فروشندهٔ خودش پورسانت می‌دهد و به‌صورت بدهی حقوق (۲۳۰۰) ثبت می‌شود، نه فقط یک گزارش.
-        </p>
-      </header>
+    <PageShell>
+      <PageHeader
+        title="پورسانت فروشندگان"
+        description="هر خطِ فاکتور به فروشندهٔ خودش پورسانت می‌دهد و به‌صورت بدهی حقوق (۲۳۰۰) ثبت می‌شود، نه فقط یک گزارش."
+      />
 
       <ErrorBox>{error}</ErrorBox>
-      {done ? <p className="mb-3 text-xs text-emerald-700">{done}</p> : null}
+      {done ? <InfoBox>{done}</InfoBox> : null}
 
       <div className="grid gap-4 lg:grid-cols-2">
         <RuleForm
@@ -87,11 +77,9 @@ export default function CommissionPage() {
           }}
           onError={setError}
         />
-        <Panel title="رتبه‌بندی فروشندگان">
+        <SectionCard title="رتبه‌بندی فروشندگان">
           {report.length === 0 ? (
-            <p className="rounded-xl border border-dashed border-stone-200 px-3 py-6 text-center text-sm text-muted-foreground">
-              هنوز پورسانتی ثبت نشده است.
-            </p>
+            <EmptyState>هنوز پورسانتی ثبت نشده است.</EmptyState>
           ) : (
             <ul className="divide-y divide-stone-200/80 text-sm">
               {report.map((r, i) => (
@@ -109,15 +97,13 @@ export default function CommissionPage() {
               ))}
             </ul>
           )}
-        </Panel>
+        </SectionCard>
       </div>
 
       <div className="mt-4">
-        <Panel title="قوانین پورسانت">
+        <SectionCard title="قوانین پورسانت">
           {rules.length === 0 ? (
-            <p className="rounded-xl border border-dashed border-stone-200 px-3 py-6 text-center text-sm text-muted-foreground">
-              هنوز قانونی تعریف نشده است.
-            </p>
+            <EmptyState>هنوز قانونی تعریف نشده است.</EmptyState>
           ) : (
             <ul className="divide-y divide-stone-200/80 text-sm">
               {rules.map((r) => (
@@ -129,16 +115,16 @@ export default function CommissionPage() {
                       {BASIS_LABELS[r.basis]} · اولویت {formatPersianNumber(r.priority)}
                     </span>
                   </div>
-                  <span className={`shrink-0 text-xs ${r.isActive ? "text-emerald-700" : "text-stone-400"}`}>
+                  <StatusBadge tone={r.isActive ? "positive" : "neutral"}>
                     {r.isActive ? "فعال" : "غیرفعال"}
-                  </span>
+                  </StatusBadge>
                 </li>
               ))}
             </ul>
           )}
-        </Panel>
+        </SectionCard>
       </div>
-    </div>
+    </PageShell>
   );
 }
 
@@ -183,7 +169,7 @@ function RuleForm({
   }
 
   return (
-    <Panel title="قانون جدید">
+    <SectionCard title="قانون جدید" bodyClassName="space-y-3 p-4 sm:p-5">
       <form onSubmit={submit} className="grid gap-3">
         <Field label="فروشنده">
           <select className={inputClass} value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} required>
@@ -219,6 +205,6 @@ function RuleForm({
           ذخیره قانون
         </Button>
       </form>
-    </Panel>
+    </SectionCard>
   );
 }

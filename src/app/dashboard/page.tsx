@@ -11,6 +11,7 @@ import { OperationsOverview } from "./operations-overview";
 import { RetailOverview } from "./retail-overview";
 import { PinnedReports } from "./pinned-reports";
 import { SetupBanner } from "./setup-banner";
+import { PageHeader, PageShell } from "./page-chrome";
 
 const BACKUP_ALERT_LABELS: Record<string, string> = {
   local_failed: "آخرین پشتیبان‌گیری محلی ناموفق بود.",
@@ -50,12 +51,12 @@ export default async function DashboardPage() {
     : false;
 
   return (
-    <div className="mx-auto w-full max-w-[1440px] pb-6">
+    <PageShell className="pb-6">
       {!hasOperationalOverview && !isRetail ? (
-        <header className="mb-5 flex items-baseline justify-between border-b border-border/80 pb-4">
-          <h1 className="text-2xl font-bold">داشبورد</h1>
-          <p className="text-sm text-muted-foreground">امروز: {today}</p>
-        </header>
+        <PageHeader
+          title="داشبورد"
+          actions={<p className="text-sm text-muted-foreground">امروز: {today}</p>}
+        />
       ) : null}
 
       {canSetup && !setupDone ? <SetupBanner /> : null}
@@ -63,7 +64,7 @@ export default async function DashboardPage() {
       {backupHealth?.alert.level === "error" ? (
         <Link
           href="/dashboard/backup"
-          className="mb-4 flex flex-col items-start gap-3 rounded-2xl border border-destructive/25 bg-destructive/[0.055] px-4 py-3.5 text-sm text-destructive shadow-[0_2px_7px_rgb(15_23_42/0.04)] transition-colors hover:bg-destructive/[0.09] sm:flex-row sm:items-center sm:justify-between sm:px-5"
+          className="mb-4 flex flex-col items-start gap-3 rounded-2xl border border-destructive/25 bg-destructive/[0.055] px-4 py-3.5 text-sm text-destructive shadow-[0_2px_7px_rgb(41_37_36/0.04)] transition-colors hover:bg-destructive/[0.09] sm:flex-row sm:items-center sm:justify-between sm:px-5"
         >
           <span>
             <b>هشدار پشتیبان‌گیری:</b>{" "}
@@ -78,7 +79,7 @@ export default async function DashboardPage() {
       setupDone ? (
         <Link
           href="/dashboard/backup"
-          className="mb-4 flex flex-col items-start gap-3 rounded-2xl border border-amber-500/25 bg-amber-500/[0.075] px-4 py-3.5 text-sm text-amber-800 shadow-[0_2px_7px_rgb(15_23_42/0.04)] transition-colors hover:bg-amber-500/[0.12] dark:text-amber-300 sm:flex-row sm:items-center sm:justify-between sm:px-5"
+          className="mb-4 flex flex-col items-start gap-3 rounded-2xl border border-amber-500/25 bg-amber-500/[0.075] px-4 py-3.5 text-sm text-amber-800 shadow-[0_2px_7px_rgb(41_37_36/0.04)] transition-colors hover:bg-amber-500/[0.12] dark:text-amber-300 sm:flex-row sm:items-center sm:justify-between sm:px-5"
         >
           <span>
             <b>پشتیبان‌گیری خودکار هنوز فعال نیست.</b> برای محافظت از داده‌ها،
@@ -100,6 +101,6 @@ export default async function DashboardPage() {
         canEdit={canSetup}
         canExplain={canSetup && Boolean(features?.ai_assistant)}
       />
-    </div>
+    </PageShell>
   );
 }

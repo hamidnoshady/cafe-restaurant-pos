@@ -16,6 +16,8 @@ import { useCallback, useEffect, useState } from "react";
 import { formatJalali } from "@/lib/jalali";
 import { toPersianDigits } from "@/lib/digits";
 import { ErrorBox, Field, InfoBox, PrimaryButton, api, errorMessage, inputClass } from "../ui";
+import { SectionCard } from "../page-chrome";
+import { Button } from "@/components/ui/button";
 
 /** Shared with src/app/login/page.tsx — must stay in sync. */
 const DEVICE_TOKEN_KEY = "pos:deviceToken";
@@ -104,8 +106,7 @@ export function DeviceSettings() {
 
   return (
     <div className="space-y-6">
-      <section className="rounded-2xl bg-card p-5 shadow-sm">
-        <h2 className="mb-1 font-semibold">ثبت این دستگاه</h2>
+      <SectionCard title="ثبت این دستگاه">
         <p className="mb-4 text-sm text-muted-foreground">
           ثبت یک پایانه (صندوق، تبلت) به سیستم اجازه می‌دهد دکمهٔ ورود بیومتریک را فقط برای کارکنانی نشان دهد که
           دستگاه احرازهویت‌شان را دقیقاً روی همین دستگاه ثبت کرده‌اند.
@@ -127,10 +128,9 @@ export function DeviceSettings() {
             {busy ? "در حال ثبت…" : "ثبت این دستگاه"}
           </PrimaryButton>
         </form>
-      </section>
+      </SectionCard>
 
-      <section className="rounded-2xl bg-card p-5 shadow-sm">
-        <h2 className="mb-3 font-semibold">دستگاه‌های ثبت‌شده</h2>
+      <SectionCard title="دستگاه‌های ثبت‌شده">
         {devices === null && <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>}
         {devices !== null && devices.length === 0 && (
           <p className="text-sm text-muted-foreground">هنوز دستگاهی ثبت نشده است.</p>
@@ -141,7 +141,7 @@ export function DeviceSettings() {
               <div
                 key={device.id}
                 className={`flex items-center justify-between rounded-lg border px-3 py-2 text-sm ${
-                  device.revokedAt ? "border-border/60 opacity-60" : "border-input"
+                  device.revokedAt ? "border-stone-200/60 opacity-60" : "border-input"
                 }`}
               >
                 <div>
@@ -152,20 +152,22 @@ export function DeviceSettings() {
                   </p>
                 </div>
                 {!device.revokedAt && (
-                  <button
+                  <Button
                     type="button"
+                    variant="ghost"
+                    size="xs"
+                    className="shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
                     onClick={() => revoke(device.id)}
                     disabled={busy}
-                    className="text-xs text-destructive hover:underline disabled:opacity-50"
                   >
                     حذف
-                  </button>
+                  </Button>
                 )}
               </div>
             ))}
           </div>
         )}
-      </section>
+      </SectionCard>
     </div>
   );
 }

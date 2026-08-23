@@ -139,7 +139,7 @@ export function FiscalPeriodsSection({
     <section className="space-y-4">
       <ErrorBox>{error}</ErrorBox>
 
-      <div className="rounded-2xl bg-card p-4 shadow-sm sm:p-5">
+      <div className="rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-4 sm:p-5">
         <p className="text-xs font-semibold text-[#9B6700]">تقویم مالی</p>
         <h2 className="mt-1">سال‌های مالی</h2>
         <p className="mt-2 text-sm text-muted-foreground">سال مالی و دوره‌های آن را با همان محدودیت‌های ثبت و قفل موجود مدیریت کنید.</p>
@@ -194,7 +194,7 @@ export function FiscalPeriodsSection({
       </div>
 
       {periods ? (
-        <div className="rounded-2xl bg-card p-4 shadow-sm sm:p-5">
+        <div className="rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-4 sm:p-5">
           <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
             <div>
               <p className="text-xs font-semibold text-[#9B6700]">کنترل دوره</p>

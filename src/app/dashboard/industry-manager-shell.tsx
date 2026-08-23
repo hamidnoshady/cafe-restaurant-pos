@@ -10,8 +10,13 @@
  * section. Only the tab list and the sections differ. Keeping three copies
  * meant a fix to the tab strip's focus ring or its ARIA wiring had to be made
  * three times — and, as of this wave, a fourth if another industry is added.
+ *
+ * The tab strip itself is now `<TabBar>` (page-chrome.tsx), shared with every
+ * other tabbed screen in the dashboard. What is left here is the industry
+ * managers' own contract: the `Runner` shape and the error box above the strip.
  */
 import type { ReactNode } from "react";
+import { TabBar, TabPanel, type Tab } from "./page-chrome";
 import { ErrorBox } from "./ui";
 
 /**
@@ -23,10 +28,7 @@ export type Runner = (
   fn: () => Promise<{ ok: boolean; data: { error?: string; message?: string } }>,
 ) => Promise<boolean>;
 
-export interface ManagerTab<K extends string> {
-  key: K;
-  label: string;
-}
+export type ManagerTab<K extends string> = Tab<K>;
 
 export function IndustryManagerShell<K extends string>({
   /** Prefixes the tab and panel element ids, so several shells could coexist on a page. */
@@ -49,43 +51,10 @@ export function IndustryManagerShell<K extends string>({
   return (
     <div className="min-w-0 space-y-4 sm:space-y-5">
       <ErrorBox>{error}</ErrorBox>
-
-      <nav
-        aria-label={navLabel}
-        className="rounded-2xl border border-stone-200/80 bg-white p-2 shadow-[0_1px_2px_rgb(41_37_36/0.03)]"
-      >
-        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
-          {tabs.map((tab) => {
-            const isActive = activeTab === tab.key;
-            return (
-              <button
-                key={tab.key}
-                id={`${idPrefix}-tab-${tab.key}`}
-                type="button"
-                aria-pressed={isActive}
-                aria-controls={`${idPrefix}-tabpanel`}
-                onClick={() => onTabChange(tab.key)}
-                className={`min-h-[52px] rounded-xl border px-3 text-center text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-amber-400/40 sm:px-4 ${
-                  isActive
-                    ? "border-amber-200 bg-amber-100 text-amber-950 shadow-[0_1px_2px_rgb(120_53_15/0.08)]"
-                    : "border-transparent bg-transparent text-stone-600 hover:border-stone-200 hover:bg-stone-50 hover:text-stone-950"
-                }`}
-              >
-                {tab.label}
-              </button>
-            );
-          })}
-        </div>
-      </nav>
-
-      <div
-        id={`${idPrefix}-tabpanel`}
-        role="region"
-        aria-labelledby={`${idPrefix}-tab-${activeTab}`}
-        className="min-w-0"
-      >
+      <TabBar idPrefix={idPrefix} label={navLabel} tabs={tabs} active={activeTab} onChange={onTabChange} />
+      <TabPanel idPrefix={idPrefix} active={activeTab}>
         {children}
-      </div>
+      </TabPanel>
     </div>
   );
 }

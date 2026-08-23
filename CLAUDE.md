@@ -169,6 +169,32 @@ and the only thing the ledger sees. See the "Payment ways" section of [README.md
 - **A split posts one entry, not one per slice** — `postExactOrderPaymentEntry` takes `tenders` and
   builds a debit line per settlement against a single revenue credit.
 
+## Dashboard UI — read before adding a page or a panel
+
+Every page and panel under `src/app/dashboard/**` is **built from the primitives in
+`src/app/dashboard/page-chrome.tsx`** — `PageShell`, `PageHeader`, `SectionCard`/`cardClass`,
+`TabBar`/`TabPanel`, `EmptyState`, `StatusBadge` — plus `<Button>` and `ui.tsx`'s
+`inputClass`/`Field`/`ErrorBox`/`InfoBox` for controls. See
+[docs/ui-conventions.md](docs/ui-conventions.md) for what each one replaces and why.
+
+Two rules carry the history:
+
+- **Compose, don't re-derive.** The dashboard already went through a phase where every screen
+  hand-rolled its own header spacing, tab pills and card border, and moving between two screens
+  of the same product looked like moving between two products. A new page that spells out
+  `mx-auto w-full max-w-[1600px]` or `rounded-2xl … shadow-sm` instead of using the shared
+  component is how that comes back.
+- **Teal is the brand accent, amber is selection, neutrals are warm stone.** Filled `<Button>`s
+  stay teal (`--primary`); active tabs and pressed chips are `bg-amber-100 text-amber-950`;
+  hairlines are `border-stone-200/80` and the card shadow is
+  `shadow-[0_1px_2px_rgb(41_37_36/0.035)]`. A cool `gray-*`/`slate-*` class or a `shadow-sm` on
+  a card is drift, not a choice. Dark mode is deliberately unsupported here — don't add `dark:`
+  variants piecemeal.
+
+Full-screen operational surfaces (POS, orders, floor plan, KDS, reservations) keep their own
+compact icon-led chrome on purpose, and `src/app/platform/**` is a separate realm with its own
+`ui.tsx`. Both are documented exceptions — don't extend them to a new dashboard page.
+
 ## Repository layout
 
 - `src/app/api/**/route.ts` — route handlers. Every handler starts with a guard
@@ -176,7 +202,8 @@ and the only thing the ledger sees. See the "Payment ways" section of [README.md
   caller's active branch via `resolveActiveLocation(session)` (`src/lib/setup-state.ts`) —
   since Phase 14 a business may have several branches; this always returns the one the
   caller is currently scoped to, validated against their branch assignment.
-- `src/app/dashboard/**` — authenticated UI (role-gated per page/route in the sidebar nav).
+- `src/app/dashboard/**` — authenticated UI (role-gated per page/route in the sidebar nav),
+  built from `page-chrome.tsx` — see "Dashboard UI" above.
 - `src/app/platform/**` (Phase 15) — the super-admin console, a separate auth realm from the
   tenant dashboard, and since Phase 23 served from its **own host** (`admin.$ROOT_DOMAIN`)
   rather than from a tenant's origin — middleware redirects `/platform` reached anywhere else. **Any functionality that supervises or administers clients across

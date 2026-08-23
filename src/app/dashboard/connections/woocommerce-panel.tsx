@@ -14,7 +14,9 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { useFeatureLocked } from "@/components/feature-lock";
-import { InfoBox, api, errorMessageOrRaw } from "../ui";
+import { api, ErrorBox, errorMessageOrRaw, InfoBox, inputClass } from "../ui";
+import { Button } from "@/components/ui/button";
+import { SectionCard } from "../page-chrome";
 
 type LinkMode = "rest_api" | "plugin";
 
@@ -109,16 +111,17 @@ function ShowOnceSecret({ title, value, note, onDone }: { title: string; value: 
       <code dir="ltr" className="mt-2 block select-all break-all rounded-lg bg-white/70 p-2 font-mono text-amber-900">
         {value}
       </code>
-      <button
+      <Button
         type="button"
-        className="mt-2 rounded-md bg-amber-600 px-3 py-1 text-xs text-white"
+        size="sm"
+        className="mt-2 bg-amber-600 text-white hover:bg-amber-700"
         onClick={() => {
           void navigator.clipboard.writeText(value).catch(() => undefined);
           onDone();
         }}
       >
         کپی و بستن
-      </button>
+      </Button>
     </div>
   );
 }
@@ -236,17 +239,8 @@ export function WooCommercePanel() {
 
   return (
     <div className="space-y-6">
-      {message ? (
-        <div
-          className={`rounded-lg border p-3 text-sm ${
-            message.kind === "ok"
-              ? "border-emerald-300 bg-emerald-50 text-emerald-800"
-              : "border-red-300 bg-red-50 text-red-800"
-          }`}
-        >
-          {message.text}
-        </div>
-      ) : null}
+      {message?.kind === "ok" ? <InfoBox>{message.text}</InfoBox> : null}
+      {message?.kind === "error" ? <ErrorBox>{message.text}</ErrorBox> : null}
 
       {linkToken ? (
         <ShowOnceSecret
@@ -266,8 +260,7 @@ export function WooCommercePanel() {
         />
       ) : null}
 
-      <section className="rounded-xl border bg-card p-4">
-        <h2 className="mb-1 text-base font-semibold">افزودن فروشگاه</h2>
+      <SectionCard title="افزودن فروشگاه">
         <p className="mb-3 text-xs leading-5 text-muted-foreground">
           روش پیشنهادی «افزونهٔ وردپرس» است: فقط یک توکن می‌گیرید و آن را در وردپرس وارد می‌کنید؛ خودِ افزونه
           هر دو جهت همگام‌سازی را انجام می‌دهد و نیازی به باز بودن فروشگاه از بیرون ندارد.
@@ -284,8 +277,11 @@ export function WooCommercePanel() {
               key={option.key}
               type="button"
               onClick={() => setForm({ ...form, linkMode: option.key })}
-              className={`rounded-lg border px-3 py-1.5 text-xs ${
-                form.linkMode === option.key ? "border-stone-900 bg-stone-900 text-white" : "border-stone-200"
+              aria-pressed={form.linkMode === option.key}
+              className={`min-h-9 rounded-lg border px-3 text-xs font-medium transition-colors ${
+                form.linkMode === option.key
+                  ? "border-amber-200 bg-amber-100 text-amber-950"
+                  : "border-stone-200 text-stone-600 hover:bg-stone-50"
               }`}
             >
               {option.label}
@@ -295,13 +291,13 @@ export function WooCommercePanel() {
 
         <div className="grid gap-3 sm:grid-cols-2">
           <input
-            className="rounded-md border p-2 text-sm"
+            className={inputClass}
             placeholder="نام فروشگاه"
             value={form.name}
             onChange={(e) => setForm({ ...form, name: e.target.value })}
           />
           <input
-            className="rounded-md border p-2 text-sm"
+            className={inputClass}
             dir="ltr"
             placeholder="https://shop.example.com"
             value={form.baseUrl}
@@ -310,14 +306,14 @@ export function WooCommercePanel() {
           {form.linkMode === "rest_api" ? (
             <>
               <input
-                className="rounded-md border p-2 text-sm"
+                className={inputClass}
                 dir="ltr"
                 placeholder="Consumer Key (ck_…)"
                 value={form.consumerKey}
                 onChange={(e) => setForm({ ...form, consumerKey: e.target.value })}
               />
               <input
-                className="rounded-md border p-2 text-sm"
+                className={inputClass}
                 dir="ltr"
                 placeholder="Consumer Secret (cs_…)"
                 value={form.consumerSecret}
@@ -326,26 +322,20 @@ export function WooCommercePanel() {
             </>
           ) : null}
           <select
-            className="rounded-md border p-2 text-sm"
+            className={inputClass}
             value={form.currencyUnit}
             onChange={(e) => setForm({ ...form, currencyUnit: e.target.value as "rial" | "toman" })}
           >
             <option value="toman">واحد قیمت فروشگاه: تومان</option>
             <option value="rial">واحد قیمت فروشگاه: ریال</option>
           </select>
-          <button
-            type="button"
-            className="rounded-md bg-stone-900 px-4 py-2 text-sm text-white disabled:opacity-50"
-            onClick={createConnection}
-            disabled={busy !== null}
-          >
+          <Button type="button" onClick={createConnection} disabled={busy !== null}>
             {form.linkMode === "plugin" ? "ساخت اتصال و توکن افزونه" : "اتصال و ذخیره"}
-          </button>
+          </Button>
         </div>
-      </section>
+      </SectionCard>
 
-      <section className="rounded-xl border bg-card p-4">
-        <h2 className="mb-3 text-base font-semibold">فروشگاه‌های متصل</h2>
+      <SectionCard title="فروشگاه‌های متصل">
         {loading ? (
           <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>
         ) : connections.length === 0 ? (
@@ -362,7 +352,7 @@ export function WooCommercePanel() {
                 c.linkMode === "plugin" && (lastSeenAt === 0 || Date.now() - lastSeenAt > PLUGIN_STALE_MS);
               const pluginStale = pluginSeenStale && queueCount > 0;
               return (
-              <li key={c.id} className="rounded-lg border p-3">
+              <li key={c.id} className="rounded-xl border border-stone-200/80 p-3">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-semibold">{c.name}</span>
                   <span className="text-xs text-muted-foreground" dir="ltr">
@@ -420,59 +410,66 @@ export function WooCommercePanel() {
                 ) : null}
 
                 <div className="mt-2 flex flex-wrap gap-2 text-xs">
-                  <button
+                  <Button
                     type="button"
-                    className="rounded-md border px-2 py-1"
+                    variant="outline"
+                    size="xs"
                     onClick={() => call(`/api/integrations/connections/${c.id}/test`)}
                     disabled={busy !== null}
                   >
                     تست اتصال
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="button"
-                    className="rounded-md border px-2 py-1"
+                    variant="outline"
+                    size="xs"
                     onClick={() => call(`/api/integrations/connections/${c.id}/sync/products`)}
                     disabled={busy !== null}
                   >
                     همگام‌سازی محصولات
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="button"
-                    className="rounded-md border px-2 py-1"
+                    variant="outline"
+                    size="xs"
                     onClick={() => call(`/api/integrations/connections/${c.id}/sync/customers`)}
                     disabled={busy !== null}
                   >
                     همگام‌سازی مشتریان
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="button"
-                    className="rounded-md border px-2 py-1"
+                    variant="outline"
+                    size="xs"
                     onClick={() => call(`/api/integrations/connections/${c.id}/sync/inventory`)}
                     disabled={busy !== null}
                   >
                     ارسال موجودی و قیمت
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="button"
-                    className="rounded-md border px-2 py-1"
+                    variant="outline"
+                    size="xs"
                     onClick={() => call(`/api/integrations/connections/${c.id}/reconcile`)}
                     disabled={busy !== null}
                   >
                     مغایرت‌گیری
-                  </button>
+                  </Button>
                   {c.linkMode === "plugin" ? (
-                    <button
+                    <Button
                       type="button"
-                      className="rounded-md border px-2 py-1"
+                      variant="outline"
+                      size="xs"
                       onClick={() => rotateToken(c.id)}
                       disabled={busy !== null}
                     >
                       تعویض توکن افزونه
-                    </button>
+                    </Button>
                   ) : null}
-                  <button
+                  <Button
                     type="button"
-                    className="rounded-md border px-2 py-1"
+                    variant="outline"
+                    size="xs"
                     onClick={() =>
                       call(`/api/integrations/connections/${c.id}`, "PATCH", {
                         status: c.status === "active" ? "paused" : "active",
@@ -481,26 +478,29 @@ export function WooCommercePanel() {
                     disabled={busy !== null}
                   >
                     {c.status === "active" ? "توقف" : "فعال‌سازی"}
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="button"
-                    className="rounded-md border px-2 py-1"
+                    variant="outline"
+                    size="xs"
                     onClick={() => void loadAudit(c.id)}
                     disabled={busy !== null}
                   >
                     گزارش رویدادها
-                  </button>
-                  <button className="rounded-md border px-2 py-1" onClick={() => void loadOutbox(c.id)} disabled={busy !== null}>
+                  </Button>
+                  <Button type="button" variant="outline" size="xs" onClick={() => void loadOutbox(c.id)} disabled={busy !== null}>
                     کارهای در صف
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="button"
-                    className="rounded-md border border-red-200 px-2 py-1 text-red-700"
+                    variant="ghost"
+                    size="xs"
+                    className="text-destructive hover:bg-destructive/10 hover:text-destructive"
                     onClick={() => call(`/api/integrations/connections/${c.id}`, "DELETE")}
                     disabled={busy !== null}
                   >
                     حذف
-                  </button>
+                  </Button>
                 </div>
 
                 <div className="mt-2 flex flex-wrap gap-3 text-xs text-muted-foreground">
@@ -588,10 +588,9 @@ export function WooCommercePanel() {
             })}
           </ul>
         )}
-      </section>
+      </SectionCard>
 
-      <section className="rounded-xl border bg-card p-4 text-sm">
-        <h2 className="mb-2 text-base font-semibold">نصب افزونهٔ وردپرس</h2>
+      <SectionCard title="نصب افزونهٔ وردپرس">
         <ol className="list-inside list-decimal space-y-1 text-xs leading-6 text-muted-foreground">
           <li>افزونهٔ «POS Accounting Connector» را در وردپرس نصب و فعال کنید.</li>
           <li>
@@ -610,7 +609,7 @@ export function WooCommercePanel() {
           <code dir="ltr" className="font-mono">wp cron event run --due-now</code> (یا بازدید دوره‌ای از
           wp-cron.php).
         </InfoBox>
-      </section>
+      </SectionCard>
     </div>
   );
 }

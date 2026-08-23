@@ -4,9 +4,12 @@ import { useEffect, useState } from "react";
 import { Loader2Icon, LockIcon, WandSparklesIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { useFeatureLocked } from "@/components/feature-lock";
 import { AUTOPILOT_CATEGORIES, AUTOPILOT_CATEGORY_LABELS, type AutopilotCategory } from "@/lib/ai-autopilot";
 import { moneyToInput, moneyFromInput } from "@/lib/money";
+import { SectionCard } from "../page-chrome";
+import { Field, inputClass } from "../ui";
 
 interface Setting {
   enabled: boolean;
@@ -56,8 +59,7 @@ function NumberField({
   disabled: boolean;
 }) {
   return (
-    <label className="flex flex-col gap-1 text-xs">
-      <span className="text-muted-foreground">{label}</span>
+    <Field label={label} hint={hint}>
       <input
         type="number"
         dir="ltr"
@@ -66,10 +68,9 @@ function NumberField({
         value={value}
         disabled={disabled}
         onChange={(event) => onChange(Number(event.target.value))}
-        className="w-full rounded-lg border bg-background px-2 py-1.5 text-left text-sm disabled:opacity-50"
+        className={cn(inputClass, "text-left")}
       />
-      {hint ? <span className="text-[11px] text-muted-foreground">{hint}</span> : null}
-    </label>
+    </Field>
   );
 }
 
@@ -129,25 +130,23 @@ export function AiAutopilotSettings() {
 
   if (loading) {
     return (
-      <section className="rounded-2xl border bg-card p-5 text-sm text-muted-foreground">
+      <SectionCard bodyClassName="min-w-0 p-4 text-sm text-muted-foreground sm:p-5">
         <Loader2Icon className="me-2 inline size-4 animate-spin" /> در حال خواندن تنظیمات اجرای خودکار…
-      </section>
+      </SectionCard>
     );
   }
   if (!data) return null;
 
   return (
-    <section className="rounded-2xl border bg-card p-5">
-      <h2 className="flex items-center gap-2 font-semibold">
-        <WandSparklesIcon className="size-5 text-primary" /> اجرای خودکار (خلبان خودکار)
-      </h2>
-      <p className="mt-1 text-sm leading-6 text-muted-foreground">
-        برای هر دسته جداگانه تعیین کنید که دستیار اجازهٔ اجرای بدون تأیید داشته باشد یا نه. هر پیشنهادی که از سقف
-        تعیین‌شدهٔ شما بگذرد، اجرا نمی‌شود و برای تأیید دستی نگه داشته می‌شود — هیچ‌چیز بی‌صدا حذف نمی‌شود. این کار
-        فقط زمانی انجام می‌شود که «گزارش‌های خودکار» بالا فعال باشد.
-      </p>
-
-      <div className="mt-4 space-y-3">
+    <SectionCard
+      title={
+        <span className="flex items-center gap-2">
+          <WandSparklesIcon className="size-5 text-primary" aria-hidden="true" /> اجرای خودکار (خلبان خودکار)
+        </span>
+      }
+      description="برای هر دسته جداگانه تعیین کنید که دستیار اجازهٔ اجرای بدون تأیید داشته باشد یا نه. هر پیشنهادی که از سقف تعیین‌شدهٔ شما بگذرد، اجرا نمی‌شود و برای تأیید دستی نگه داشته می‌شود — هیچ‌چیز بی‌صدا حذف نمی‌شود. این کار فقط زمانی انجام می‌شود که «گزارش‌های خودکار» بالا فعال باشد."
+    >
+      <div className="space-y-3">
         {AUTOPILOT_CATEGORIES.map((category) => {
           const setting = data.settings[category];
           const ceiling = data.ceilings[category];
@@ -222,6 +221,6 @@ export function AiAutopilotSettings() {
           );
         })}
       </div>
-    </section>
+    </SectionCard>
   );
 }
