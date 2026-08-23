@@ -9,11 +9,8 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
-import {
-  ACTION_CATALOG,
-  resolveActionEndpoint,
-  type ProposedAction,
-} from "@/lib/ai";
+import { ACTION_CATALOG, type ProposedAction } from "@/lib/ai";
+import { applyProposalRequest } from "./apply-proposal";
 import {
   MAX_RECEIPT_IMAGE_BYTES,
   parseReceiptImageDataUrl,
@@ -438,36 +435,22 @@ export function useAiChat({
     if (!proposal) return;
     const meta = ACTION_CATALOG[proposal.type];
     if (!meta) return;
-    const endpoint = resolveActionEndpoint(meta, proposal.payload);
-    if (!endpoint) {
-      toast.error("شناسهٔ لازم برای اجرای این پیشنهاد در آن موجود نیست.");
-      return;
-    }
     setApplyingId(message.id);
     try {
-      const response = await fetch(endpoint, {
-        method: meta.method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(proposal.payload),
-      });
-      const data = (await response.json().catch(() => ({}))) as Record<
-        string,
-        unknown
-      >;
-      if (!response.ok) {
-        const detail = Array.isArray(data.messages)
-          ? data.messages.join(" ")
-          : typeof data.error === "string"
-            ? data.error
-            : "";
+      const outcome = await applyProposalRequest(proposal);
+      if (!outcome.ok) {
+        if (outcome.error === "missing_param") {
+          toast.error(outcome.detail);
+          return;
+        }
         if (message.auditId) {
           void finishAudit(message.auditId, "failed", {
-            endpoint,
-            method: meta.method,
-            detail,
+            endpoint: outcome.endpoint,
+            method: outcome.method,
+            detail: outcome.detail,
           });
         }
-        toast.error(`ثبت انجام نشد. ${detail}`.trim());
+        toast.error(`ثبت انجام نشد. ${outcome.detail}`.trim());
         return;
       }
 
@@ -475,9 +458,9 @@ export function useAiChat({
       if (message.auditId) {
         try {
           await finishAudit(message.auditId, "applied", {
-            endpoint,
-            method: meta.method,
-            status: response.status,
+            endpoint: outcome.endpoint,
+            method: outcome.method,
+            status: outcome.status,
           });
         } catch {
           auditUpdated = false;

@@ -9,6 +9,10 @@
  * this module stays unit-testable (see ai.test.ts).
  */
 
+// Type-only, so the value dependency stays one-way: ai-autopilot.ts imports
+// ACTION_CATALOG from here, never the reverse.
+import type { AutopilotCategory } from "./ai-autopilot";
+
 export type AiProvider = "openrouter" | "arvan";
 
 export interface ProviderMeta {
@@ -160,6 +164,19 @@ export type ActionType =
   | "journal.manual.propose"
   | "expense.categorize";
 
+/**
+ * Phase 31 — which server-side executor can run an action without a browser.
+ * Keyed rather than inlined so ai.ts stays free of database imports.
+ */
+export type AutopilotExecutorKey =
+  | "menuItemPatch"
+  | "stockCount"
+  | "draftPurchase"
+  | "orderDiscount"
+  | "expense"
+  | "journalDraft"
+  | "customerNote";
+
 export interface ActionMeta {
   type: ActionType;
   /**
@@ -176,6 +193,21 @@ export interface ActionMeta {
   wizardStep?: string;
   /** Human-readable description of the expected payload, injected into the prompt. */
   payloadHint: string;
+  /**
+   * Phase 31 — the risk grouping an owner switches autopilot on for. Absent
+   * means the action is manual-only forever, whatever the owner has enabled:
+   * the six one-time setup-wizard actions, and the five live floor actions
+   * (reservations, tables, courier) that a tick running 15 minutes behind the
+   * room has no way to judge.
+   */
+  autopilotCategory?: AutopilotCategory;
+  /** Present only where a server-side executor exists. See ai-autopilot-executors.ts. */
+  executor?: AutopilotExecutorKey;
+  /**
+   * Whether an applied instance can be undone in one click. "while_open" =
+   * only until the bill is settled; false = no one-click undo exists.
+   */
+  revertible?: "always" | "while_open" | false;
 }
 
 export const ACTION_CATALOG: Record<ActionType, ActionMeta> = {
@@ -238,6 +270,9 @@ export const ACTION_CATALOG: Record<ActionType, ActionMeta> = {
     method: "PATCH",
     label: "تغییر قیمت آیتم منو",
     payloadHint: "{ menuItemId: string, price: number /* integer Rial */ }",
+    autopilotCategory: "pricing",
+    executor: "menuItemPatch",
+    revertible: "always",
   },
   "menu.item.disable": {
     type: "menu.item.disable",
@@ -245,6 +280,9 @@ export const ACTION_CATALOG: Record<ActionType, ActionMeta> = {
     method: "PATCH",
     label: "غیرفعال کردن آیتم منو",
     payloadHint: "{ menuItemId: string, isActive: false }",
+    autopilotCategory: "pricing",
+    executor: "menuItemPatch",
+    revertible: "always",
   },
   "order.discount.apply": {
     type: "order.discount.apply",
@@ -253,6 +291,10 @@ export const ACTION_CATALOG: Record<ActionType, ActionMeta> = {
     label: "اعمال تخفیف روی سفارش باز",
     payloadHint:
       '{ orderId: string, discount: { type: "percent"|"amount", value: number } } — فقط روی سفارش باز (status=open) اجرا می‌شود',
+    autopilotCategory: "money",
+    executor: "orderDiscount",
+    // Undo recomputes the order's totals, which only an open order accepts.
+    revertible: "while_open",
   },
   "inventory.reorder.draftPO": {
     type: "inventory.reorder.draftPO",
@@ -261,6 +303,10 @@ export const ACTION_CATALOG: Record<ActionType, ActionMeta> = {
     label: "ثبت پیش‌نویس سفارش خرید",
     payloadHint:
       '{ supplierId?: string, note?: string, items: Array<{ inventoryItemId: string, purchaseQty: string /* در واحد خرید کالا */, totalCost: string /* مبلغ کل ریال به‌صورت رشته */ }> }',
+    autopilotCategory: "inventory",
+    executor: "draftPurchase",
+    // A draft has no stock or ledger effect, so cancelling it is a clean undo.
+    revertible: "always",
   },
   "inventory.adjustment.propose": {
     type: "inventory.adjustment.propose",
@@ -269,6 +315,9 @@ export const ACTION_CATALOG: Record<ActionType, ActionMeta> = {
     label: "ثبت شمارش و تعدیل موجودی",
     payloadHint:
       "{ note?: string, lines: Array<{ inventoryItemId: string, countedQty: number|string /* مقدار شمارش‌شدهٔ واقعی */ }> }",
+    autopilotCategory: "inventory",
+    executor: "stockCount",
+    revertible: "always",
   },
   "reservation.create": {
     type: "reservation.create",
@@ -315,6 +364,12 @@ export const ACTION_CATALOG: Record<ActionType, ActionMeta> = {
     label: "افزودن یادداشت به پروفایل مشتری",
     payloadHint:
       "{ customerId: string, notes: string /* این فیلد کل یادداشت‌ها را جایگزین می‌کند — متن قبلی (از get_customer_profile) را با یادداشت جدید ترکیب کن */ }",
+    // An internal note on the business's own record reaches nobody, so it may
+    // autopilot. Nothing that leaves the business (a message to a customer)
+    // ever does — see Phase 31 Decision 2.
+    autopilotCategory: "customer",
+    executor: "customerNote",
+    revertible: "always",
   },
   "journal.manual.propose": {
     type: "journal.manual.propose",
@@ -323,6 +378,14 @@ export const ACTION_CATALOG: Record<ActionType, ActionMeta> = {
     label: "پیش‌نویس سند حسابداری دستی",
     payloadHint:
       "{ entryDate?: string, memo: string, lines: Array<{ accountId: string, debit?: number, credit?: number }> } — مجموع بدهکار باید با مجموع بستانکار برابر باشد؛ فقط به‌صورت پیش‌نویس ثبت می‌شود و برای اعمال روی دفتر نیاز به تأیید جداگانه دارد",
+    // Autopilot here means the DRAFT is created without a chat round-trip. It
+    // is never posted: Phase 16's approval queue exists so no single actor both
+    // writes and posts an entry, which holds whether a human or the agent
+    // drafted it. ai.test.ts pins this endpoint so it can't be repointed at
+    // the approve route. See Phase 31 Decision 1.
+    autopilotCategory: "money",
+    executor: "journalDraft",
+    revertible: "always",
   },
   "expense.categorize": {
     type: "expense.categorize",
@@ -331,6 +394,12 @@ export const ACTION_CATALOG: Record<ActionType, ActionMeta> = {
     label: "ثبت و دسته‌بندی هزینه",
     payloadHint:
       "{ accountId: string /* حساب هزینه، کد ۵۲۰۰-۵۹۰۰ */, paymentAccountId: string /* حساب پرداخت: صندوق یا بانک */, amount: number, expenseDate?: string, vendor?: string, memo: string }",
+    autopilotCategory: "money",
+    executor: "expense",
+    // reverseEntry only accepts source_type 'manual', which an expense's entry
+    // is not — so there is no honest one-click undo. This is why the money
+    // category ships with the tightest default caps of the five.
+    revertible: false,
   },
 };
 
@@ -380,7 +449,7 @@ export interface ChatMessage {
   tool_call_id?: string;
 }
 
-export type AgentMode = "wizard" | "dashboard" | "floor" | "platform" | "proactive";
+export type AgentMode = "wizard" | "dashboard" | "floor" | "platform" | "proactive" | "autopilot";
 
 export interface PromptContext {
   mode: AgentMode;
@@ -392,6 +461,10 @@ export interface PromptContext {
   role?: string;
   /** Wave 5 (issue #145) — a receipt/invoice image is attached to this turn. */
   hasAttachment?: boolean;
+  /** Phase 31 — the single category an autopilot run is scoped to. */
+  autopilotCategory?: AutopilotCategory;
+  /** Phase 31 — narrows the catalogue block to just this run's own actions. */
+  allowedActionTypes?: ActionType[];
 }
 
 const WIZARD_STEP_LABELS: Record<string, string> = {
@@ -443,6 +516,15 @@ export function buildSystemPrompt(ctx: PromptContext): string {
       "در پرسش‌های حساسیت/آلرژی، فقط دادهٔ ثبت‌شده را بازگو کن. اگر ابزار گفت دادهٔ ساخت‌یافتهٔ آلرژن موجود نیست، صریح بگو که ایمن‌بودن غذا قابل تأیید نیست و باید با آشپزخانه بررسی شود؛ هرگز از روی نام مواد حدس نزن.",
       "برای صورت‌حساب فقط از get_bill_split_preview استفاده کن و هرگز شمارهٔ تلفن، نام مهمان یا دادهٔ مشتری را بازگو نکن.",
     );
+  } else if (ctx.mode === "autopilot") {
+    lines.push(
+      "این یک اجرای زمان‌بندی‌شده و بدون حضور کاربر است؛ هیچ‌کس در لحظه پاسخ تو را نمی‌خواند و نمی‌تواند سؤال تو را جواب دهد.",
+      "فقط در محدودهٔ همین دسته کار کن و حداکثر یک propose_action بساز. اگر چند قلم را می‌توان در یک payload جمع کرد، در همان یک پیشنهاد بیاور.",
+      "اگر داده‌ها اقدامی را به‌روشنی توجیه نمی‌کنند، هیچ پیشنهادی نساز و فقط با متن کوتاه بگو چیزی برای انجام نیست. پیشنهادِ نامطمئن بدتر از نبودِ پیشنهاد است.",
+      "فیلدها را با حدس پر نکن؛ هر مقدار باید از دادهٔ واقعیِ ابزارها آمده باشد.",
+      "هر پیشنهادی که از سقف تعیین‌شدهٔ کسب‌وکار بگذرد، اجرا نمی‌شود و برای تأیید انسانی کنار گذاشته می‌شود؛ پس بزرگ‌نمایی هیچ سودی ندارد.",
+      "هرگز ادعا نکن که پیامی برای مشتری ارسال شده است؛ در این حالت هیچ کانال ارسالی وجود ندارد.",
+    );
   } else if (ctx.mode === "proactive") {
     lines.push(
       "این حالت فقط برای گزارش خصوصیِ زمان‌بندی‌شدهٔ همان کسب‌وکار است. داده‌های واقعی در پیام کاربر آمده‌اند و هیچ ابزار، هیچ پیشنهاد اجرایی و هیچ کانال ارسالی نداری.",
@@ -456,10 +538,13 @@ export function buildSystemPrompt(ctx: PromptContext): string {
     );
   }
 
-  if (ctx.mode === "wizard" || ctx.mode === "dashboard") {
-    const catalog = ACTION_TYPES.map((t) => `- ${t}: ${ACTION_CATALOG[t].label} — payload: ${ACTION_CATALOG[t].payloadHint}`).join(
-      "\n",
-    );
+  if (ctx.mode === "wizard" || ctx.mode === "dashboard" || ctx.mode === "autopilot") {
+    // An autopilot run sees only its own category's actions, so the model is
+    // never told about a tool this run is not allowed to call.
+    const types = ctx.mode === "autopilot" ? ctx.allowedActionTypes ?? [] : ACTION_TYPES;
+    const catalog = types
+      .map((t) => `- ${t}: ${ACTION_CATALOG[t].label} — payload: ${ACTION_CATALOG[t].payloadHint}`)
+      .join("\n");
     lines.push("انواع عملیات مجاز برای propose_action و ساختار payload آن‌ها:\n" + catalog);
   }
 
@@ -505,6 +590,11 @@ function noArgsTool(name: string, description: string): OpenAiTool {
 export interface ToolDefinitionsOptions {
   /** Wave 5 (issue #145) — only offer draft_expense_from_receipt when a turn actually attached an image. */
   hasAttachment?: boolean;
+  /**
+   * Phase 31 — narrows propose_action's `type` enum to this run's own
+   * category. Ignored outside autopilot mode, where the full catalogue applies.
+   */
+  actionTypes?: ActionType[];
 }
 
 /** OpenAI-compatible tool list. Read tools run server-side; propose_action is the confirm gate. */
@@ -670,7 +760,7 @@ export function toolDefinitions(mode: AgentMode, opts: ToolDefinitionsOptions = 
     },
   };
 
-  const proposeTool: OpenAiTool = {
+  const proposeToolFor = (types: ActionType[]): OpenAiTool => ({
     type: "function",
     function: {
       name: "propose_action",
@@ -679,7 +769,7 @@ export function toolDefinitions(mode: AgentMode, opts: ToolDefinitionsOptions = 
       parameters: {
         type: "object",
         properties: {
-          type: { type: "string", enum: ACTION_TYPES, description: "نوع عملیات مجاز" },
+          type: { type: "string", enum: types, description: "نوع عملیات مجاز" },
           title: { type: "string", description: "عنوان کوتاه فارسی برای کارت تأیید" },
           summary: { type: "string", description: "توضیح خوانا از آنچه اجرا می‌شود و مقادیر کلیدی" },
           payload: { type: "object", description: "بدنهٔ درخواست مطابق ساختار همان نوع عملیات" },
@@ -688,7 +778,8 @@ export function toolDefinitions(mode: AgentMode, opts: ToolDefinitionsOptions = 
         additionalProperties: false,
       },
     },
-  };
+  });
+  const proposeTool = proposeToolFor(ACTION_TYPES);
 
   const floorReadTools: OpenAiTool[] = [
     {
@@ -754,5 +845,14 @@ export function toolDefinitions(mode: AgentMode, opts: ToolDefinitionsOptions = 
   }
   if (mode === "floor") return floorReadTools;
   if (mode === "proactive") return [];
+  if (mode === "autopilot") {
+    // Zero read tools, exactly like proactive mode: the service collects a
+    // bounded, category-scoped fact set server-side and puts it in the prompt.
+    // That keeps an unattended run to a single provider round (one credit
+    // reservation, no six-round tool loop) and means the model can only ever
+    // act on facts this codebase gathered, not on a query it composed itself.
+    const types = opts.actionTypes ?? [];
+    return types.length === 0 ? [] : [proposeToolFor(types)];
+  }
   return platformReadTools;
 }

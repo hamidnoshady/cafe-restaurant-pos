@@ -20,6 +20,8 @@ import { AiActionAudit } from "./ai-action-audit";
 import { AiAgentCards, type AgentTodayTask } from "./ai-agent-cards";
 import { AiBillingDashboard } from "./ai-billing";
 import { AiProactiveSettings } from "./ai-proactive-settings";
+import { AiAutopilotSettings } from "./ai-autopilot-settings";
+import { AiAutopilotActivity } from "./ai-autopilot-activity";
 import { AiRecentConversations } from "./ai-recent-conversations";
 import { AiTodayTasks } from "./ai-today-tasks";
 
@@ -272,6 +274,10 @@ export function AiChatHub() {
       ) : (
         <div className="mx-auto w-full max-w-2xl space-y-5">
           <AiProactiveSettings />
+          {/* Autopilot sits directly under the proactive opt-in it depends on,
+              so the dependency is legible rather than buried in copy. */}
+          <AiAutopilotSettings />
+          <AiAutopilotActivity />
           <AiBillingDashboard />
           <AiActionAudit />
         </div>

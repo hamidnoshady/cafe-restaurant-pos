@@ -1,0 +1,447 @@
+/**
+ * Phase 31 — the server-side half of autopilot.
+ *
+ * Every ACTION_CATALOG entry carries an HTTP endpoint meant for the *browser*
+ * to fetch with the signed-in user's own session cookie. A background tick has
+ * no request, no session and no cookie, so it cannot use that path at all.
+ * Each executor below therefore calls the SAME service function the route
+ * handler calls — never an internal HTTP loopback, never a second mutation
+ * path. The caller runs them inside withTenant(businessId, …), so RLS is
+ * already the tenant boundary here exactly as it is in a request.
+ *
+ * Two rules this file enforces by what it does NOT import:
+ *   - `approveDraft` is never imported. A journal entry is only ever DRAFTED
+ *     here, into Phase 16's existing human approval queue (Decision 1).
+ *   - No message gateway, phone number or send path is imported. Autopilot
+ *     writes internal records only; nothing reaches a customer (Decision 2).
+ */
+import { getPool, query } from "./db";
+import type { AutopilotExecutorKey } from "./ai";
+import { updateMenuItem } from "./menu-service";
+import { createStockCount, reverseStockCount } from "./stock-count-service";
+import { createDraftPurchase, cancelDraftPurchase, PurchaseServiceError } from "./purchase-service";
+import { applyOrderDiscount, normalizeDiscountInput } from "./order-discount-service";
+import { recordExpense, ExpenseError } from "./expense-service";
+import { createDraft, deleteDraft, ManualJournalError } from "./manual-journal-service";
+import { updateCustomer } from "./customers-service";
+import type { PurchaseItemInput } from "./purchase-lines";
+
+export interface AutopilotExecutionResult {
+  ok: boolean;
+  /** Persisted to ai_action_audit.prior_state — read inside the write's own transaction. */
+  priorState?: Record<string, unknown>;
+  result: Record<string, unknown>;
+  errorCode?: string;
+}
+
+export interface AutopilotExecutorContext {
+  businessId: string;
+  /** The owner/manager who switched this category on; every write is theirs. */
+  authorizedByUserId: string | null;
+  payload: Record<string, unknown>;
+}
+
+export type AutopilotExecutor = (ctx: AutopilotExecutorContext) => Promise<AutopilotExecutionResult>;
+
+export interface AutopilotReverterContext {
+  businessId: string;
+  authorizedByUserId: string | null;
+  payload: Record<string, unknown>;
+  priorState: Record<string, unknown> | null;
+  result: Record<string, unknown> | null;
+}
+
+export type AutopilotReverter = (ctx: AutopilotReverterContext) => Promise<AutopilotExecutionResult>;
+
+/** Every row an executor creates says so, so an automated write never reads as typed by hand. */
+export const AUTOPILOT_NOTE_PREFIX = "ثبت خودکار دستیار — ";
+
+function fail(errorCode: string): AutopilotExecutionResult {
+  return { ok: false, result: { error: errorCode }, errorCode };
+}
+
+function str(value: unknown): string | null {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+function int(value: unknown): number | null {
+  const parsed = typeof value === "string" ? Number(value) : value;
+  return typeof parsed === "number" && Number.isSafeInteger(parsed) ? parsed : null;
+}
+
+function noteWith(value: unknown): string {
+  const base = str(value);
+  return base ? `${AUTOPILOT_NOTE_PREFIX}${base}` : AUTOPILOT_NOTE_PREFIX.trim();
+}
+
+// ---------------------------------------------------------------------------
+// Branch resolution
+//
+// resolveActiveLocation(session) is unusable without a request, and guessing a
+// "primary branch" would let a write land in the wrong shop. Each executor
+// resolves the branch from the target row instead, which RLS has already
+// bounded to this tenant.
+// ---------------------------------------------------------------------------
+
+async function locationOfMenuItem(menuItemId: string): Promise<string | null> {
+  const { rows } = await query<{ location_id: string }>(
+    `SELECT l.id AS location_id
+       FROM menu_items m JOIN locations l ON l.id = m.location_id
+      WHERE m.id = $1`,
+    [menuItemId],
+  );
+  return rows[0]?.location_id ?? null;
+}
+
+async function locationOfOrder(orderId: string): Promise<string | null> {
+  const { rows } = await query<{ location_id: string }>(`SELECT location_id FROM orders WHERE id = $1`, [orderId]);
+  return rows[0]?.location_id ?? null;
+}
+
+/**
+ * A stock count and a purchase order are each a single-branch document, so a
+ * payload whose items span branches is refused rather than silently split or
+ * assigned to whichever branch happened to come first.
+ */
+async function locationOfInventoryItems(itemIds: string[]): Promise<string | null | "mixed"> {
+  if (itemIds.length === 0) return null;
+  const { rows } = await query<{ location_id: string }>(
+    `SELECT DISTINCT location_id FROM inventory_items WHERE id = ANY($1::uuid[])`,
+    [itemIds],
+  );
+  if (rows.length === 0) return null;
+  if (rows.length > 1) return "mixed";
+  return rows[0].location_id;
+}
+
+/** For rows whose location_id is nullable (expenses, journal drafts). */
+async function defaultLocation(businessId: string): Promise<string | null> {
+  const { rows } = await query<{ id: string }>(
+    `SELECT id FROM locations WHERE business_id = $1 AND is_active ORDER BY created_at LIMIT 1`,
+    [businessId],
+  );
+  return rows[0]?.id ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// Executors
+// ---------------------------------------------------------------------------
+
+const menuItemPatch: AutopilotExecutor = async (ctx) => {
+  const menuItemId = str(ctx.payload.menuItemId);
+  if (!menuItemId) return fail("invalid_payload");
+  const locationId = await locationOfMenuItem(menuItemId);
+  if (!locationId) return fail("not_found");
+
+  const { rows: before } = await query<{ price: string; is_active: boolean; name: string }>(
+    `SELECT price::text AS price, is_active, name FROM menu_items WHERE id = $1 AND location_id = $2`,
+    [menuItemId, locationId],
+  );
+  if (!before[0]) return fail("not_found");
+
+  const patch: { price?: number; isActive?: boolean } = {};
+  if (ctx.payload.price !== undefined) {
+    const price = int(ctx.payload.price);
+    if (price === null || price <= 0) return fail("invalid_payload");
+    patch.price = price;
+  }
+  if (ctx.payload.isActive !== undefined) {
+    if (typeof ctx.payload.isActive !== "boolean") return fail("invalid_payload");
+    patch.isActive = ctx.payload.isActive;
+  }
+  if (patch.price === undefined && patch.isActive === undefined) return fail("invalid_payload");
+
+  const updated = await updateMenuItem(locationId, menuItemId, patch);
+  if (!updated.ok) return fail(updated.error);
+  return {
+    ok: true,
+    priorState: { menuItemId, name: before[0].name, price: Number(before[0].price), isActive: before[0].is_active },
+    result: { menuItemId, locationId, applied: patch },
+  };
+};
+
+const stockCount: AutopilotExecutor = async (ctx) => {
+  const rawLines = Array.isArray(ctx.payload.lines) ? (ctx.payload.lines as Record<string, unknown>[]) : null;
+  if (!rawLines || rawLines.length === 0) return fail("invalid_payload");
+  const itemIds = rawLines.map((line) => str(line.inventoryItemId)).filter((id): id is string => Boolean(id));
+  if (itemIds.length !== rawLines.length) return fail("invalid_payload");
+
+  const locationId = await locationOfInventoryItems(itemIds);
+  if (locationId === "mixed") return fail("autopilot_mixed_location");
+  if (!locationId) return fail("not_found");
+
+  const { rows: before } = await query<{ id: string; name: string; quantity: string }>(
+    `SELECT id, name, quantity::text AS quantity FROM inventory_items WHERE id = ANY($1::uuid[])`,
+    [itemIds],
+  );
+
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const created = await createStockCount(client, {
+      businessId: ctx.businessId,
+      locationId,
+      note: noteWith(ctx.payload.note),
+      lines: rawLines.map((line) => ({
+        inventoryItemId: String(line.inventoryItemId),
+        countedQty: line.countedQty as string | number,
+      })),
+      createdBy: ctx.authorizedByUserId,
+    });
+    await client.query("COMMIT");
+    return {
+      ok: true,
+      priorState: { locationId, items: before.map((r) => ({ id: r.id, name: r.name, quantity: r.quantity })) },
+      result: { stockCountId: created.id, locationId },
+    };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    return fail(err instanceof Error ? err.message : "stock_count_failed");
+  } finally {
+    client.release();
+  }
+};
+
+const draftPurchase: AutopilotExecutor = async (ctx) => {
+  const rawItems = Array.isArray(ctx.payload.items) ? (ctx.payload.items as Record<string, unknown>[]) : null;
+  if (!rawItems || rawItems.length === 0) return fail("invalid_payload");
+  const itemIds = rawItems.map((item) => str(item.inventoryItemId)).filter((id): id is string => Boolean(id));
+  if (itemIds.length !== rawItems.length) return fail("invalid_payload");
+
+  const locationId = await locationOfInventoryItems(itemIds);
+  if (locationId === "mixed") return fail("autopilot_mixed_location");
+  if (!locationId) return fail("not_found");
+
+  try {
+    const created = await createDraftPurchase({
+      locationId,
+      supplierId: str(ctx.payload.supplierId),
+      note: noteWith(ctx.payload.note),
+      purchaseDate: null,
+      items: rawItems as unknown as PurchaseItemInput[],
+      createdBy: ctx.authorizedByUserId,
+    });
+    return {
+      ok: true,
+      priorState: { locationId },
+      result: { purchaseId: created.id, total: created.total, locationId, status: "draft" },
+    };
+  } catch (err) {
+    if (err instanceof PurchaseServiceError) return fail(err.code);
+    return fail(err instanceof Error ? err.message : "draft_purchase_failed");
+  }
+};
+
+const orderDiscount: AutopilotExecutor = async (ctx) => {
+  const orderId = str(ctx.payload.orderId);
+  if (!orderId) return fail("invalid_payload");
+  const raw = ctx.payload.discount;
+  if (!raw || typeof raw !== "object") return fail("invalid_payload");
+  // Re-validated with the route's own validator: a model-authored payload is
+  // never trusted more than a browser-authored one.
+  const discount = normalizeDiscountInput(raw as { type?: "percent" | "amount" | null; value?: number });
+  if (!discount) return fail("invalid_discount");
+
+  const locationId = await locationOfOrder(orderId);
+  if (!locationId) return fail("not_found");
+
+  const applied = await applyOrderDiscount({ locationId, orderId, discount });
+  if (!applied.ok) return fail(applied.error);
+  return {
+    ok: true,
+    priorState: { orderId, locationId, ...applied.prior },
+    result: { orderId, locationId, totals: applied.totals as unknown as Record<string, unknown> },
+  };
+};
+
+const expense: AutopilotExecutor = async (ctx) => {
+  const accountId = str(ctx.payload.accountId);
+  const paymentAccountId = str(ctx.payload.paymentAccountId);
+  const amount = int(ctx.payload.amount);
+  const memo = str(ctx.payload.memo);
+  if (!accountId || !paymentAccountId || amount === null || !memo) return fail("invalid_payload");
+
+  try {
+    const created = await recordExpense({
+      businessId: ctx.businessId,
+      locationId: await defaultLocation(ctx.businessId),
+      accountId,
+      paymentAccountId,
+      amount,
+      expenseDate: str(ctx.payload.expenseDate),
+      vendor: str(ctx.payload.vendor),
+      memo: `${AUTOPILOT_NOTE_PREFIX}${memo}`,
+      createdBy: ctx.authorizedByUserId,
+    });
+    return { ok: true, result: { expenseId: created.id, amount } };
+  } catch (err) {
+    if (err instanceof ExpenseError) return fail(err.message);
+    return fail(err instanceof Error ? err.message : "expense_failed");
+  }
+};
+
+const journalDraft: AutopilotExecutor = async (ctx) => {
+  const memo = str(ctx.payload.memo);
+  const lines = Array.isArray(ctx.payload.lines) ? (ctx.payload.lines as Record<string, unknown>[]) : null;
+  if (!memo || !lines || lines.length === 0) return fail("invalid_payload");
+  if (!ctx.authorizedByUserId) return fail("no_authorizing_user");
+
+  try {
+    // createDraft only — the entry lands in Phase 16's approval queue and a
+    // human still approves it. Never approveDraft (Decision 1).
+    const created = await createDraft({
+      businessId: ctx.businessId,
+      locationId: await defaultLocation(ctx.businessId),
+      entryDate: str(ctx.payload.entryDate),
+      memo: `${AUTOPILOT_NOTE_PREFIX}${memo}`,
+      lines: lines.map((line) => ({
+        accountId: String(line.accountId ?? ""),
+        debit: Number(line.debit ?? 0),
+        credit: Number(line.credit ?? 0),
+      })),
+      createdBy: ctx.authorizedByUserId,
+    });
+    return { ok: true, result: { draftId: created.id, posted: false } };
+  } catch (err) {
+    if (err instanceof ManualJournalError) return fail(err.message);
+    return fail(err instanceof Error ? err.message : "journal_draft_failed");
+  }
+};
+
+const customerNote: AutopilotExecutor = async (ctx) => {
+  const customerId = str(ctx.payload.customerId);
+  const notes = str(ctx.payload.notes);
+  if (!customerId || !notes) return fail("invalid_payload");
+
+  const { rows: before } = await query<{ notes: string | null; name: string }>(
+    `SELECT notes, name FROM customers WHERE id = $1 AND business_id = $2`,
+    [customerId, ctx.businessId],
+  );
+  if (!before[0]) return fail("not_found");
+
+  const updated = await updateCustomer(ctx.businessId, customerId, { notes });
+  if (!updated) return fail("not_found");
+  return {
+    ok: true,
+    priorState: { customerId, notes: before[0].notes, name: before[0].name },
+    result: { customerId },
+  };
+};
+
+export const AUTOPILOT_EXECUTORS: Record<AutopilotExecutorKey, AutopilotExecutor> = {
+  menuItemPatch,
+  stockCount,
+  draftPurchase,
+  orderDiscount,
+  expense,
+  journalDraft,
+  customerNote,
+};
+
+// ---------------------------------------------------------------------------
+// Reverters — the one-click undo behind an applied autopilot action.
+//
+// `expense` has no entry here on purpose: reverseEntry only accepts a
+// source_type of 'manual', which an expense's journal entry is not, so there is
+// no honest one-click undo to offer. The UI shows none for it.
+// ---------------------------------------------------------------------------
+
+const revertMenuItemPatch: AutopilotReverter = async (ctx) => {
+  const prior = ctx.priorState;
+  const menuItemId = str(prior?.menuItemId) ?? str(ctx.payload.menuItemId);
+  if (!prior || !menuItemId) return fail("no_prior_state");
+  const locationId = await locationOfMenuItem(menuItemId);
+  if (!locationId) return fail("not_found");
+
+  const patch: { price?: number; isActive?: boolean } = {};
+  if (typeof prior.price === "number") patch.price = prior.price;
+  if (typeof prior.isActive === "boolean") patch.isActive = prior.isActive;
+  if (patch.price === undefined && patch.isActive === undefined) return fail("no_prior_state");
+
+  const updated = await updateMenuItem(locationId, menuItemId, patch);
+  if (!updated.ok) return fail(updated.error);
+  return { ok: true, result: { menuItemId, restored: patch } };
+};
+
+const revertStockCount: AutopilotReverter = async (ctx) => {
+  const countId = str(ctx.result?.stockCountId);
+  const locationId = str(ctx.result?.locationId);
+  if (!countId || !locationId) return fail("no_prior_state");
+
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const reversal = await reverseStockCount(client, {
+      businessId: ctx.businessId,
+      locationId,
+      countId,
+      createdBy: ctx.authorizedByUserId,
+      note: `${AUTOPILOT_NOTE_PREFIX}برگشت شمارش خودکار`,
+    });
+    await client.query("COMMIT");
+    return { ok: true, result: { reversalCountId: reversal.id, eventId: reversal.eventId } };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    return fail(err instanceof Error ? err.message : "stock_count_reversal_failed");
+  } finally {
+    client.release();
+  }
+};
+
+const revertDraftPurchase: AutopilotReverter = async (ctx) => {
+  const purchaseId = str(ctx.result?.purchaseId);
+  const locationId = str(ctx.result?.locationId);
+  if (!purchaseId || !locationId) return fail("no_prior_state");
+  const cancelled = await cancelDraftPurchase(locationId, purchaseId);
+  return cancelled ? { ok: true, result: { purchaseId, status: "cancelled" } } : fail("purchase_not_draft");
+};
+
+const revertOrderDiscount: AutopilotReverter = async (ctx) => {
+  const orderId = str(ctx.priorState?.orderId) ?? str(ctx.payload.orderId);
+  const locationId = str(ctx.priorState?.locationId);
+  if (!orderId || !locationId) return fail("no_prior_state");
+
+  const priorType = ctx.priorState?.discountType;
+  const priorValue = Number(ctx.priorState?.discountValue ?? 0);
+  const discount =
+    priorType === "percent" || priorType === "amount"
+      ? ({ type: priorType, value: priorValue } as const)
+      : ({ type: null } as const);
+
+  // Refuses once the bill is settled: recomputeOrderTotals only applies to an
+  // open order, which is why this action is marked revertible "while_open".
+  const applied = await applyOrderDiscount({ locationId, orderId, discount });
+  if (!applied.ok) return fail(applied.error);
+  return { ok: true, result: { orderId, restored: discount } };
+};
+
+const revertJournalDraft: AutopilotReverter = async (ctx) => {
+  const draftId = str(ctx.result?.draftId);
+  if (!draftId) return fail("no_prior_state");
+  try {
+    await deleteDraft(ctx.businessId, draftId);
+    return { ok: true, result: { draftId, deleted: true } };
+  } catch (err) {
+    if (err instanceof ManualJournalError) return fail(err.message);
+    throw err;
+  }
+};
+
+const revertCustomerNote: AutopilotReverter = async (ctx) => {
+  const customerId = str(ctx.priorState?.customerId) ?? str(ctx.payload.customerId);
+  if (!customerId || !ctx.priorState) return fail("no_prior_state");
+  const prior = ctx.priorState.notes;
+  const restored = await updateCustomer(ctx.businessId, customerId, {
+    notes: typeof prior === "string" ? prior : "",
+  });
+  return restored ? { ok: true, result: { customerId, restored: true } } : fail("not_found");
+};
+
+export const AUTOPILOT_REVERTERS: Partial<Record<AutopilotExecutorKey, AutopilotReverter>> = {
+  menuItemPatch: revertMenuItemPatch,
+  stockCount: revertStockCount,
+  draftPurchase: revertDraftPurchase,
+  orderDiscount: revertOrderDiscount,
+  journalDraft: revertJournalDraft,
+  customerNote: revertCustomerNote,
+};

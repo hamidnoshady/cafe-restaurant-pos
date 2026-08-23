@@ -1,14 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
-import { getPool, query } from "@/lib/db";
+import { query } from "@/lib/db";
 import { resolveActiveLocation } from "@/lib/setup-state";
-import {
-  preparePurchaseLines,
-  purchaseDateOrNull,
-  PurchaseLineError,
-  type PurchaseItemInput,
-  type PurchaseLine,
-} from "@/lib/purchase-lines";
+import { PurchaseLineError, type PurchaseItemInput } from "@/lib/purchase-lines";
+import { createDraftPurchase, PurchaseServiceError } from "@/lib/purchase-service";
 
 const PURCHASE_STATUSES = ["draft", "ordered", "received", "cancelled"] as const;
 
@@ -85,59 +80,20 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
 
-  if (body.supplierId) {
-    const { rows: supplier } = await query(
-      "SELECT id FROM suppliers WHERE id = $1 AND location_id = $2",
-      [body.supplierId, location.id],
-    );
-    if (supplier.length === 0) return NextResponse.json({ error: "supplier_not_found" }, { status: 404 });
-  }
-
-  let lines: PurchaseLine[];
-  let total: string;
-  let purchaseDate: string | null;
   try {
-    purchaseDate = purchaseDateOrNull(body.purchaseDate);
-    ({ lines, total } = await preparePurchaseLines(body.items ?? [], location.id));
+    const { id, total } = await createDraftPurchase({
+      locationId: location.id,
+      supplierId: body.supplierId,
+      note: body.note,
+      purchaseDate: body.purchaseDate,
+      items: body.items ?? [],
+      createdBy: session.sub,
+    });
+    return NextResponse.json({ ok: true, id, total });
   } catch (err) {
-    if (err instanceof PurchaseLineError) {
+    if (err instanceof PurchaseLineError || err instanceof PurchaseServiceError) {
       return NextResponse.json({ error: err.code }, { status: err.status });
     }
     throw err;
-  }
-
-  const client = await getPool().connect();
-  try {
-    await client.query("BEGIN");
-    // No date entered means today *at the branch*, not at the server — the
-    // column's CURRENT_DATE default would be the wrong day for the hours the
-    // two disagree (up to 03:30 in Asia/Tehran on a UTC server) — and "today"
-    // is the branch's business day, so a delivery signed for at 01:00 during a
-    // night service is dated the day that service belongs to rather than the
-    // one the wall clock had just rolled into. Still only a default: the date
-    // is the user's to set.
-    const { rows: purchaseRows } = await client.query<{ id: string }>(
-      `INSERT INTO purchases (location_id, supplier_id, status, total, note, purchase_date, created_by)
-       VALUES ($1, $2, 'draft', $3, $4,
-               COALESCE($5::date, (SELECT app_business_date(now(), l.timezone, l.business_day_start_minutes)
-                                     FROM locations l WHERE l.id = $1)),
-               $6) RETURNING id`,
-      [location.id, body.supplierId || null, total, body.note?.trim() || null, purchaseDate, session.sub],
-    );
-    const purchaseId = purchaseRows[0].id;
-    for (const line of lines) {
-      await client.query(
-        `INSERT INTO purchase_items (purchase_id, inventory_item_id, quantity, unit_cost, extended_cost)
-         VALUES ($1, $2, $3, $4::numeric / $3::numeric, $4)`,
-        [purchaseId, line.inventoryItemId, line.baseQty, line.totalCost],
-      );
-    }
-    await client.query("COMMIT");
-    return NextResponse.json({ ok: true, id: purchaseId, total });
-  } catch (err) {
-    await client.query("ROLLBACK");
-    throw err;
-  } finally {
-    client.release();
   }
 });

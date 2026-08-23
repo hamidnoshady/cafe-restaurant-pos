@@ -320,3 +320,71 @@ describe("AI Hub Wave 5 (issue #145) — receipt attachment tool", () => {
     expect(withoutAttachment).not.toContain("draft_expense_from_receipt");
   });
 });
+
+describe("Phase 31 — autopilot tagging of the action catalogue", () => {
+  const eligible = ACTION_TYPES.filter((t) => ACTION_CATALOG[t].autopilotCategory);
+
+  it("pins the eligible set, so tagging a new action is a deliberate change", () => {
+    expect(eligible.sort()).toEqual(
+      [
+        "customer.note.add",
+        "expense.categorize",
+        "inventory.adjustment.propose",
+        "inventory.reorder.draftPO",
+        "journal.manual.propose",
+        "menu.item.disable",
+        "menu.item.priceUpdate",
+        "order.discount.apply",
+      ].sort(),
+    );
+  });
+
+  it("tags category, executor and revertible together — never half of them", () => {
+    for (const type of ACTION_TYPES) {
+      const meta = ACTION_CATALOG[type];
+      const tagged = [meta.autopilotCategory, meta.executor, meta.revertible !== undefined].filter(Boolean).length;
+      expect(tagged === 0 || tagged === 3, type).toBe(true);
+    }
+  });
+
+  it("leaves the live floor actions manual-only — a 15-minute-behind tick cannot judge a room", () => {
+    for (const type of [
+      "reservation.create",
+      "reservation.reschedule",
+      "table.merge",
+      "table.split",
+      "courier.assign",
+    ] as const) {
+      expect(ACTION_CATALOG[type].autopilotCategory, type).toBeUndefined();
+    }
+  });
+
+  it("keeps journal.manual.propose pointed at the DRAFT endpoint, never the approve route", () => {
+    // Phase 31 Decision 1: autopilot creates the draft, a human still approves
+    // it. Repointing this endpoint would collapse Phase 16's approval control.
+    expect(ACTION_CATALOG["journal.manual.propose"].endpoint).toBe("/api/ledger/entries/drafts");
+    expect(ACTION_CATALOG["journal.manual.propose"].endpoint).not.toContain("approve");
+  });
+
+  it("narrows propose_action's enum to the run's own category in autopilot mode", () => {
+    const tools = toolDefinitions("autopilot", { actionTypes: ["menu.item.priceUpdate"] });
+    expect(tools.map((t) => t.function.name)).toEqual(["propose_action"]);
+    const params = tools[0].function.parameters as { properties: { type: { enum: string[] } } };
+    expect(params.properties.type.enum).toEqual(["menu.item.priceUpdate"]);
+  });
+
+  it("exposes no tool at all when a category has no eligible action", () => {
+    expect(toolDefinitions("autopilot", { actionTypes: [] })).toEqual([]);
+  });
+
+  it("names only the run's own actions in the autopilot prompt", () => {
+    const prompt = buildSystemPrompt({
+      mode: "autopilot",
+      autopilotCategory: "pricing",
+      allowedActionTypes: ["menu.item.priceUpdate"],
+    });
+    expect(prompt).toContain("menu.item.priceUpdate");
+    expect(prompt).not.toContain("expense.categorize");
+    expect(prompt).toContain("هیچ کانال ارسالی وجود ندارد");
+  });
+});

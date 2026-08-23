@@ -7,7 +7,7 @@
 import { query } from "./db";
 import type { ProposedAction } from "./ai";
 
-export type AiActionAuditStatus = "proposed" | "applied" | "failed" | "dismissed";
+export type AiActionAuditStatus = "proposed" | "applied" | "failed" | "dismissed" | "reverted";
 
 export interface AiActionAuditEntry extends Record<string, unknown> {
   id: string;
@@ -19,6 +19,8 @@ export interface AiActionAuditEntry extends Record<string, unknown> {
   actionSummary: string;
   payload: Record<string, unknown>;
   status: AiActionAuditStatus;
+  /** Phase 31 — whether a human clicked apply or autopilot ran it unattended. */
+  source: "manual" | "autopilot";
   result: Record<string, unknown> | null;
   createdAt: string;
   appliedAt: string | null;
@@ -82,6 +84,7 @@ export async function listAiActionAudit(businessId: string, limit = 30): Promise
             action_summary AS "actionSummary",
             proposal_payload AS payload,
             status,
+            source,
             result,
             created_at AS "createdAt",
             applied_at AS "appliedAt"

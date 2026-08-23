@@ -8,6 +8,7 @@ import {
   chatCompletionsUrl,
   isKnownAction,
   toolDefinitions,
+  type ActionType,
   type AgentMode,
   type AiConfig,
   type ProposedAction,
@@ -410,13 +411,21 @@ export async function runAgentTurn(opts: {
    * change to the confirm-before-apply architecture itself.
    */
   allowActions?: boolean;
+  /**
+   * Phase 31 — restricts which action types this turn may propose. Narrows the
+   * tool schema the model sees AND is re-checked against the returned proposal,
+   * so a hand-crafted response naming another action is refused rather than
+   * treated as executable.
+   */
+  actionTypes?: ActionType[];
 }): Promise<AgentReply> {
   const { config, mode, businessId, floorScope, promptContext, messages, attachment } = opts;
   const allowActions = opts.allowActions ?? true;
   const hasAttachment = Boolean(attachment);
-  const tools = toolDefinitions(mode, { hasAttachment }).filter(
+  const tools = toolDefinitions(mode, { hasAttachment, actionTypes: opts.actionTypes }).filter(
     (tool) => allowActions || tool.function.name !== "propose_action",
   );
+  const allowedActionTypes = opts.actionTypes ? new Set<string>(opts.actionTypes) : null;
   const canPropose = tools.some((tool) => tool.function.name === "propose_action");
   const allowedReadToolNames = new Set(
     tools
@@ -453,7 +462,8 @@ export async function runAgentTurn(opts: {
       ? toolCalls.find((c) => c.function.name === "propose_action")
       : undefined;
     if (proposal) {
-      const action = toProposedAction(parseArgs(proposal.function.arguments));
+      const parsed = toProposedAction(parseArgs(proposal.function.arguments));
+      const action = parsed && (!allowedActionTypes || allowedActionTypes.has(parsed.type)) ? parsed : null;
       const text = textOf(message.content).trim() || (action ? action.summary : "پیشنهاد آماده است.");
       return { content: text, proposedAction: action, usage };
     }
