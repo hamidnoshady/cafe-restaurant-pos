@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { formatPersianNumber, formatQuantity, toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import { useMoney } from "@/components/money/money-context";
+import { EmptyState, SectionCard } from "../page-chrome";
 import { api, Field, inputClass } from "../ui";
 
 /**
@@ -192,15 +193,11 @@ export function StockCountSection({
 
   return (
     <div className="mt-4 grid gap-4 lg:grid-cols-2">
-      <section className="rounded-2xl border border-stone-200 bg-white p-4 shadow-[0_1px_2px_rgb(41_37_36/0.035)] sm:p-5">
-        <h2 className="font-semibold text-stone-950">انبارگردانی</h2>
-        <p className="mt-1 text-xs leading-5 text-muted-foreground">
-          بارکد هر کالا را اسکن کنید؛ مقدار شمارش‌شده جمع می‌شود. پس از ثبت،
-          موجودی سیستم برابر مقدار شمارش‌شده می‌شود و اختلاف به‌عنوان کسری یا
-          اضافهٔ انبارگردانی در دفتر ثبت می‌گردد.
-        </p>
-
-        <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_7rem]">
+      <SectionCard
+        title="انبارگردانی"
+        description="بارکد هر کالا را اسکن کنید؛ مقدار شمارش‌شده جمع می‌شود. پس از ثبت، موجودی سیستم برابر مقدار شمارش‌شده می‌شود و اختلاف به‌عنوان کسری یا اضافهٔ انبارگردانی در دفتر ثبت می‌گردد."
+      >
+        <div className="grid gap-3 sm:grid-cols-[1fr_7rem]">
           <Field label="بارکد">
             <input
               ref={inputRef}
@@ -307,9 +304,7 @@ export function StockCountSection({
             })}
           </ul>
         ) : (
-          <p className="mt-3 rounded-xl border border-dashed border-stone-200 px-3 py-6 text-center text-sm text-muted-foreground">
-            هنوز کالایی شمارش نشده است.
-          </p>
+          <EmptyState>هنوز کالایی شمارش نشده است.</EmptyState>
         )}
 
         <div className="mt-3">
@@ -330,18 +325,14 @@ export function StockCountSection({
         >
           ثبت انبارگردانی
         </Button>
-      </section>
+      </SectionCard>
 
-      <section className="rounded-2xl border border-stone-200 bg-white p-4 shadow-[0_1px_2px_rgb(41_37_36/0.035)] sm:p-5">
-        <h2 className="font-semibold text-stone-950">انبارگردانی‌های اخیر</h2>
-        <p className="mt-1 text-xs leading-5 text-muted-foreground">
-          یک انبارگردانی ثبت‌شده ویرایش نمی‌شود؛ برای اصلاح، آن را برگشت بزنید و
-          شمارش تازه ثبت کنید.
-        </p>
+      <SectionCard
+        title="انبارگردانی‌های اخیر"
+        description="یک انبارگردانی ثبت‌شده ویرایش نمی‌شود؛ برای اصلاح، آن را برگشت بزنید و شمارش تازه ثبت کنید."
+      >
         {history.length === 0 ? (
-          <p className="mt-3 rounded-xl border border-dashed border-stone-200 px-3 py-6 text-center text-sm text-muted-foreground">
-            انبارگردانی ثبت نشده است.
-          </p>
+          <EmptyState>انبارگردانی ثبت نشده است.</EmptyState>
         ) : (
           <ul className="mt-3 divide-y divide-stone-200/80 text-sm">
             {history.map((c) => (
@@ -376,7 +367,7 @@ export function StockCountSection({
             ))}
           </ul>
         )}
-      </section>
+      </SectionCard>
     </div>
   );
 }

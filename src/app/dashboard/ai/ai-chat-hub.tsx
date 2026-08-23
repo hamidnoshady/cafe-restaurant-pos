@@ -22,15 +22,14 @@ import { AiBillingDashboard } from "./ai-billing";
 import { AiProactiveSettings } from "./ai-proactive-settings";
 import { AiRecentConversations } from "./ai-recent-conversations";
 import { AiTodayTasks } from "./ai-today-tasks";
+import { TabBar, TabPanel, cardClass, type Tab } from "../page-chrome";
 
 type HubTab = "chat" | "settings";
 
-function tabClass(active: boolean): string {
-  return (
-    "rounded-lg px-3 py-1.5 text-sm " +
-    (active ? "bg-primary/10 font-semibold text-primary" : "text-muted-foreground hover:bg-muted")
-  );
-}
+const HUB_TABS: readonly Tab<HubTab>[] = [
+  { key: "chat", label: "چت هوش مصنوعی" },
+  { key: "settings", label: "تنظیمات" },
+];
 
 export function AiChatHub() {
   const locked = useFeatureLocked();
@@ -105,26 +104,13 @@ export function AiChatHub() {
     !loadingConversation;
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-4">
-      <header>
-        <h1 className="text-xl font-bold">هوش مصنوعی</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          گفتگو با دستیار، مرور گفتگوهای اخیر، و مدیریت اعتبار/گزارش‌های خودکار/گزارش ممیزی.
-        </p>
-      </header>
+    <div className="min-w-0 space-y-4 sm:space-y-5">
+      <TabBar idPrefix="ai" label="بخش‌های هوش مصنوعی" tabs={HUB_TABS} active={tab} onChange={selectTab} />
 
-      <div className="flex flex-wrap gap-2 border-b border-border pb-2" aria-label="بخش‌های هوش مصنوعی">
-        <button type="button" onClick={() => selectTab("chat")} className={tabClass(tab === "chat")}>
-          چت هوش مصنوعی
-        </button>
-        <button type="button" onClick={() => selectTab("settings")} className={tabClass(tab === "settings")}>
-          تنظیمات
-        </button>
-      </div>
-
+      <TabPanel idPrefix="ai" active={tab}>
       {tab === "chat" ? (
         <div className="grid gap-4 lg:grid-cols-[1fr_300px]">
-          <section className="flex h-[min(78vh,720px)] flex-col overflow-hidden rounded-2xl border bg-card">
+          <section className={cn("flex h-[min(78vh,720px)] flex-col overflow-hidden", cardClass)}>
             <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto p-4">
               {loadingConversation ? (
                 <p className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -192,7 +178,7 @@ export function AiChatHub() {
               )}
             </div>
 
-            <div className="border-t p-3">
+            <div className="border-t border-stone-200/80 p-3">
               {pending ? (
                 <div className="mb-2 rounded-xl border border-primary/25 bg-primary/5 p-3 text-xs">
                   <p className="font-semibold text-foreground">
@@ -276,6 +262,7 @@ export function AiChatHub() {
           <AiActionAudit />
         </div>
       )}
+      </TabPanel>
     </div>
   );
 }

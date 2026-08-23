@@ -343,7 +343,7 @@ export function TableOrderPanel({
             ) : (
               <ul className="space-y-2">
                 {orderItems.map((it) => (
-                  <li key={it.id} className="rounded-xl bg-card p-3 shadow-sm">
+                  <li key={it.id} className="rounded-xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-3">
                     <div className="flex items-start justify-between gap-2">
                       <div>
                         <p className="text-sm font-medium">
@@ -376,7 +376,7 @@ export function TableOrderPanel({
             )}
           </div>
 
-          <div className="flex-1 rounded-2xl bg-card p-4 shadow-sm">
+          <div className="flex-1 rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-4">
             <ErrorBox>{error}</ErrorBox>
             {info ? <InfoBox>{info}</InfoBox> : null}
             {!menu ? (

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { ClipboardCheckIcon, Loader2Icon } from "lucide-react";
 import { useFeatureLocked } from "@/components/feature-lock";
+import { SectionCard } from "../page-chrome";
 
 type AuditStatus = "proposed" | "applied" | "failed" | "dismissed";
 
@@ -69,28 +70,25 @@ export function AiActionAudit() {
   }, [locked]);
 
   return (
-    <section className="rounded-2xl border bg-card p-5" aria-labelledby="ai-action-audit-title">
-      <div className="flex items-start gap-2">
-        <ClipboardCheckIcon className="mt-0.5 size-5 text-primary" />
-        <div>
-          <h2 id="ai-action-audit-title" className="font-semibold">گزارش ممیزی پیشنهادهای دستیار</h2>
-          <p className="mt-1 text-sm leading-6 text-muted-foreground">
-            درخواست، پیشنهاد و نتیجهٔ هر اقدام تأییدشده یا ردشده در همین کسب‌وکار ثبت می‌شود.
-          </p>
-        </div>
-      </div>
-
+    <SectionCard
+      title={
+        <span className="flex items-center gap-2">
+          <ClipboardCheckIcon className="size-5 text-primary" aria-hidden="true" /> گزارش ممیزی پیشنهادهای دستیار
+        </span>
+      }
+      description="درخواست، پیشنهاد و نتیجهٔ هر اقدام تأییدشده یا ردشده در همین کسب‌وکار ثبت می‌شود."
+    >
       {entries === null && !error ? (
-        <p className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
+        <p className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2Icon className="size-4 animate-spin" /> در حال خواندن گزارش ممیزی…
         </p>
       ) : null}
-      {error ? <p className="mt-4 text-sm text-destructive">{error}</p> : null}
+      {error ? <p className="text-sm text-destructive">{error}</p> : null}
       {entries?.length === 0 ? (
-        <p className="mt-4 text-sm text-muted-foreground">هنوز پیشنهادی از دستیار ثبت نشده است.</p>
+        <p className="text-sm text-muted-foreground">هنوز پیشنهادی از دستیار ثبت نشده است.</p>
       ) : null}
       {entries?.length ? (
-        <ol className="mt-4 divide-y">
+        <ol className="divide-y divide-stone-200/80">
           {entries.map((entry) => (
             <li key={entry.id} className="py-3 first:pt-0">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
@@ -108,7 +106,7 @@ export function AiActionAudit() {
                     {entry.actorName || "کاربر"} · {formatDate(entry.createdAt)}
                   </p>
                 </div>
-                <span className={"w-fit shrink-0 rounded-full px-2 py-1 text-xs font-medium " + STATUS_CLASS[entry.status]}>
+                <span className={"w-fit shrink-0 rounded-full px-2 py-0.5 text-xs font-medium " + STATUS_CLASS[entry.status]}>
                   {STATUS_LABEL[entry.status]}
                 </span>
               </div>
@@ -116,6 +114,6 @@ export function AiActionAudit() {
           ))}
         </ol>
       ) : null}
-    </section>
+    </SectionCard>
   );
 }

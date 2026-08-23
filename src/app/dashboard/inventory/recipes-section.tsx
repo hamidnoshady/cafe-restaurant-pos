@@ -72,7 +72,7 @@ function MenuItemRecipeCard({
   }
 
   return (
-    <section className="min-w-0 rounded-2xl bg-card p-5 shadow-sm">
+    <section className="min-w-0 rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-5">
       <h2 className="mb-3 font-semibold">دستورالعمل مصرف آیتم منو (رسپی)</h2>
       <Field label="آیتم منو">
         <SearchableSelect
@@ -186,7 +186,7 @@ function ModifierRecipeCard({
   }
 
   return (
-    <section className="min-w-0 rounded-2xl bg-card p-5 shadow-sm">
+    <section className="min-w-0 rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-5">
       <h2 className="mb-1 font-semibold">اثر افزودنی‌ها بر مصرف مواد</h2>
       <p className="mb-3 text-xs text-muted-foreground">
         عدد مثبت یعنی مصرف اضافه (مثلاً «شات اضافه»)، عدد منفی یعنی کاهش/جایگزینی مادهٔ پایه (مثلاً «شیر بادام» جایگزین شیر معمولی).

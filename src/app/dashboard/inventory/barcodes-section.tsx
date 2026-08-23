@@ -6,6 +6,7 @@ import { toPersianDigits } from "@/lib/digits";
 import { printLabel } from "@/lib/print-agent-client";
 import type { LabelData } from "@/lib/label-template";
 import { firstPrinter, useBusinessInfo, usePrinters } from "../use-printers";
+import { EmptyState, SectionCard } from "../page-chrome";
 import { api, Field, inputClass } from "../ui";
 import type { InventoryItem, Runner } from "./inventory-manager";
 
@@ -138,13 +139,10 @@ export function BarcodesSection({
 
   return (
     <div className="space-y-6">
-      <section className="min-w-0 rounded-2xl bg-card p-5 shadow-sm">
-        <h2 className="mb-1 font-semibold">آماده‌سازی انبار برای شمارش</h2>
-        <p className="mb-3 text-xs leading-5 text-muted-foreground">
-          شمارش با بارکدخوان تنها برای اقلامی کار می‌کند که بارکد داشته باشند.
-          اقلامی که هنوز بارکد ندارند در فهرست زیر می‌آیند؛ با یک دکمه برای همهٔ
-          آن‌ها بارکد داخلی تولید کنید و سپس لیبل‌ها را چاپ و روی قفسه‌ها نصب کنید.
-        </p>
+      <SectionCard
+        title="آماده‌سازی انبار برای شمارش"
+        description="شمارش با بارکدخوان تنها برای اقلامی کار می‌کند که بارکد داشته باشند. اقلامی که هنوز بارکد ندارند در فهرست زیر می‌آیند؛ با یک دکمه برای همهٔ آن‌ها بارکد داخلی تولید کنید و سپس لیبل‌ها را چاپ و روی قفسه‌ها نصب کنید."
+      >
         {pending === null ? (
           <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>
         ) : pending.length === 0 ? (
@@ -178,14 +176,12 @@ export function BarcodesSection({
         )}
         {notice ? <p className="mt-3 text-sm text-emerald-700">{notice}</p> : null}
         {error ? <p className="mt-3 text-sm text-rose-700">{error}</p> : null}
-      </section>
+      </SectionCard>
 
-      <section className="min-w-0 rounded-2xl bg-card p-5 shadow-sm">
-        <h2 className="mb-1 font-semibold">بارکد یک قلم</h2>
-        <p className="mb-3 text-xs leading-5 text-muted-foreground">
-          اگر بسته‌بندی تأمین‌کننده بارکد چاپی دارد، همان را ثبت کنید تا نیازی به
-          لیبل تازه نباشد.
-        </p>
+      <SectionCard
+        title="بارکد یک قلم"
+        description="اگر بسته‌بندی تأمین‌کننده بارکد چاپی دارد، همان را ثبت کنید تا نیازی به لیبل تازه نباشد."
+      >
         <Field label="قلم انبار">
           <select
             className={inventoryInputClass}
@@ -252,7 +248,7 @@ export function BarcodesSection({
             هنوز بارکدی برای این قلم ثبت نشده است.
           </p>
         ) : null}
-      </section>
+      </SectionCard>
     </div>
   );
 }

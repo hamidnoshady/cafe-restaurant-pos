@@ -15,6 +15,8 @@ import { toPersianDigits } from "@/lib/digits";
 import { formatMoney, type MoneyUnit } from "@/lib/money";
 import { useMoney } from "@/components/money/money-context";
 import { ErrorBox, InfoBox, api, errorMessage, inputClass } from "../ui";
+import { SectionCard } from "../page-chrome";
+import { Button } from "@/components/ui/button";
 
 interface Shift {
   id: string;
@@ -95,8 +97,7 @@ export function ShiftHistorySettings() {
 
   return (
     <div className="space-y-6">
-      <section className="rounded-2xl bg-card p-5 shadow-sm">
-        <h2 className="mb-1 font-semibold">شیفت‌ها</h2>
+      <SectionCard title="شیفت‌ها">
         <p className="mb-4 text-sm text-muted-foreground">
           تاریخچهٔ ورود/خروج کارکنان صندوق، گارسون و آشپزخانه. شیفت بازمانده (فراموش‌شده) را می‌توانید از همین‌جا ببندید.
         </p>
@@ -124,13 +125,15 @@ export function ShiftHistorySettings() {
                     </p>
                   </div>
                   {!shift.endedAt && closingId !== shift.id && (
-                    <button
+                    <Button
                       type="button"
+                      variant="ghost"
+                      size="xs"
+                      className="shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
                       onClick={() => setClosingId(shift.id)}
-                      className="shrink-0 text-xs text-destructive hover:underline"
                     >
                       بستن شیفت
-                    </button>
+                    </Button>
                   )}
                 </div>
                 {closingId === shift.id && (
@@ -143,31 +146,27 @@ export function ShiftHistorySettings() {
                       onChange={(e) => setClosingAmount(e.target.value)}
                       placeholder="موجودی صندوق (اختیاری)"
                     />
-                    <button
-                      type="button"
-                      onClick={() => forceClose(shift.id)}
-                      disabled={busy}
-                      className="shrink-0 rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground transition hover:bg-primary/85 disabled:opacity-50"
-                    >
+                    <Button type="button" size="xs" onClick={() => forceClose(shift.id)} disabled={busy}>
                       تأیید
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                       type="button"
+                      variant="ghost"
+                      size="xs"
                       onClick={() => {
                         setClosingId(null);
                         setClosingAmount("");
                       }}
-                      className="shrink-0 text-xs text-muted-foreground hover:underline"
                     >
                       انصراف
-                    </button>
+                    </Button>
                   </div>
                 )}
               </div>
             ))}
           </div>
         )}
-      </section>
+      </SectionCard>
     </div>
   );
 }

@@ -155,7 +155,7 @@ export function StockCountsSection({
 
   return (
     <div className="space-y-6">
-      <section className="min-w-0 rounded-2xl bg-card p-5 shadow-sm">
+      <section className="min-w-0 rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-5">
         <h2 className="mb-1 font-semibold">شمارش فیزیکی انبار</h2>
         <p className="mb-3 text-xs text-muted-foreground">
           فقط اقلامی که مقدار شمارش‌شده برایشان وارد شود ثبت می‌شوند؛ اختلاف با
@@ -278,7 +278,7 @@ export function StockCountsSection({
         </form>
       </section>
 
-      <section className="min-w-0 rounded-2xl bg-card p-5 shadow-sm">
+      <section className="min-w-0 rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-5">
         <h2 className="mb-3 font-semibold">شمارش‌های اخیر</h2>
         <p className="mb-3 text-xs text-muted-foreground">
           برای دیدن اقلام هر شمارش و ویرایش یا حذف آن، روی شمارش بزنید.

@@ -196,7 +196,8 @@ export function DashboardGrid({ canEdit, canExplain }: { canEdit: boolean; canEx
           <button
             type="button"
             onClick={() => setEditMode((v) => !v)}
-            className={`inline-flex h-9 items-center rounded-lg border px-3 text-xs font-semibold shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${editMode ? "border-primary/30 bg-primary/10 text-primary hover:bg-primary/15" : "border-border bg-card text-foreground hover:bg-muted"}`}
+            aria-pressed={editMode}
+            className={`inline-flex h-9 items-center rounded-lg border px-3 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-amber-400/40 ${editMode ? "border-amber-200 bg-amber-100 text-amber-950 hover:bg-amber-200" : "border-stone-200 bg-card text-stone-700 hover:bg-stone-50"}`}
           >
             {editMode ? "پایان ویرایش چیدمان" : "ویرایش چیدمان"}
           </button>
@@ -234,7 +235,7 @@ export function DashboardGrid({ canEdit, canExplain }: { canEdit: boolean; canEx
         {widgets === null ? (
           <p dir="rtl" className="text-sm text-muted-foreground">در حال بارگذاری داشبورد…</p>
         ) : widgets.length === 0 ? (
-          <p dir="rtl" className="flex min-h-52 items-center justify-center rounded-2xl border border-dashed border-border bg-card p-6 text-center text-sm text-muted-foreground shadow-[0_2px_7px_rgb(15_23_42/0.04)]">
+          <p dir="rtl" className="flex min-h-52 items-center justify-center rounded-2xl border border-dashed border-border bg-card p-6 text-center text-sm text-muted-foreground shadow-[0_2px_7px_rgb(41_37_36/0.04)]">
             {canEdit
               ? "هنوز ابزارکی به داشبورد سنجاق نشده است. از صفحهٔ «گزارش‌ها» یک گزارش را به داشبورد سنجاق کنید."
               : "هنوز ابزارکی برای این نقش تنظیم نشده است."}
@@ -252,7 +253,7 @@ export function DashboardGrid({ canEdit, canExplain }: { canEdit: boolean; canEx
             autoSize
           >
             {widgets.map((w) => (
-              <div key={w.id} dir="rtl" className="overflow-hidden rounded-xl border border-border/90 bg-card shadow-[0_1px_3px_rgb(15_23_42/0.05)] transition-shadow hover:shadow-[0_3px_9px_rgb(15_23_42/0.06)]">
+              <div key={w.id} dir="rtl" className="overflow-hidden rounded-xl border border-border/90 bg-card shadow-[0_1px_3px_rgb(41_37_36/0.05)] transition-shadow hover:shadow-[0_3px_9px_rgb(41_37_36/0.06)]">
                 <div className="flex min-h-8 items-center justify-between border-b border-border/80 px-2.5 py-1.5">
                   <p className="truncate text-xs font-semibold text-muted-foreground">{w.title ?? w.report_name}</p>
                   {editMode ? (

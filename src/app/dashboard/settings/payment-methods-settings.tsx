@@ -5,6 +5,8 @@ import { ChevronDownIcon, ChevronUpIcon, TrashIcon } from "lucide-react";
 import { CUSTOM_PAYMENT_SETTLEMENTS, type PaymentMethodView, type PaymentSettlement } from "@/lib/payment-methods";
 import { ErrorBox, Field, InfoBox, PrimaryButton, api, errorMessage, inputClass } from "../ui";
 import { paymentWayIcon } from "../payment-ways";
+import { SectionCard } from "../page-chrome";
+import { Button } from "@/components/ui/button";
 
 /** How each settlement reads to an owner choosing one, and where the money lands. */
 const SETTLEMENT_LABELS: Record<PaymentSettlement, string> = {
@@ -105,8 +107,7 @@ export function PaymentMethodsSettings() {
       <ErrorBox>{error}</ErrorBox>
       {info ? <InfoBox>{info}</InfoBox> : null}
 
-      <section className="rounded-2xl bg-card p-5 shadow-sm">
-        <h2 className="mb-1 text-lg font-semibold">روش‌های دریافت وجه</h2>
+      <SectionCard title="روش‌های دریافت وجه">
         <p className="mb-4 text-sm text-muted-foreground">
           همین فهرست و همین ترتیب در صندوق فروش و صفحهٔ سفارش‌ها نمایش داده می‌شود. صندوق‌دار می‌تواند مبلغ یک فاکتور را
           بین چند روش تقسیم کند؛ مثلاً بخشی نقدی و بخشی با کارت‌خوان.
@@ -118,7 +119,7 @@ export function PaymentMethodsSettings() {
             return (
               <li
                 key={method.id}
-                className="flex flex-wrap items-center gap-2 rounded-xl border border-border p-3"
+                className="flex flex-wrap items-center gap-2 rounded-xl border border-stone-200/80 p-3"
               >
                 <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
                   <Icon className="size-4" aria-hidden="true" />
@@ -171,26 +172,30 @@ export function PaymentMethodsSettings() {
                 </label>
 
                 <div className="flex shrink-0 items-center gap-1">
-                  <button
+                  <Button
                     type="button"
                     onClick={() => move(index, -1)}
                     disabled={busy || index === 0}
-                    className="flex size-9 items-center justify-center rounded-lg border border-border text-muted-foreground disabled:opacity-40"
+                    variant="outline"
+                    size="icon-sm"
+                    className="text-muted-foreground"
                     aria-label={`بردن ${method.name} به بالا`}
                   >
                     <ChevronUpIcon className="size-4" aria-hidden="true" />
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="button"
                     onClick={() => move(index, 1)}
                     disabled={busy || index === methods.length - 1}
-                    className="flex size-9 items-center justify-center rounded-lg border border-border text-muted-foreground disabled:opacity-40"
+                    variant="outline"
+                    size="icon-sm"
+                    className="text-muted-foreground"
                     aria-label={`بردن ${method.name} به پایین`}
                   >
                     <ChevronDownIcon className="size-4" aria-hidden="true" />
-                  </button>
+                  </Button>
                   {method.isBuiltin ? null : (
-                    <button
+                    <Button
                       type="button"
                       onClick={() =>
                         void send(
@@ -200,25 +205,27 @@ export function PaymentMethodsSettings() {
                         )
                       }
                       disabled={busy}
-                      className="flex size-9 items-center justify-center rounded-lg border border-destructive/30 text-destructive disabled:opacity-40"
+                      variant="outline"
+                      size="icon-sm"
+                      className="border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
                       aria-label={`حذف ${method.name}`}
                     >
                       <TrashIcon className="size-4" aria-hidden="true" />
-                    </button>
+                    </Button>
                   )}
                 </div>
               </li>
             );
           })}
         </ul>
-      </section>
+      </SectionCard>
 
-      <form onSubmit={add} className="rounded-2xl bg-card p-5 shadow-sm">
-        <h2 className="mb-1 text-lg font-semibold">افزودن روش پرداخت</h2>
-        <p className="mb-4 text-sm text-muted-foreground">
-          نام را به دلخواه بنویسید (مثلاً «پوز بانک ملت» یا «کیف پول»). «نحوهٔ تسویه» تعیین می‌کند مبلغ به کدام حساب
-          دفتر کل بنشیند و پس از اولین دریافت با این روش قابل تغییر نیست.
-        </p>
+      <SectionCard
+        title="افزودن روش پرداخت"
+        description="نام را به دلخواه بنویسید (مثلاً «پوز بانک ملت» یا «کیف پول»). «نحوهٔ تسویه» تعیین می‌کند مبلغ به کدام حساب دفتر کل بنشیند و پس از اولین دریافت با این روش قابل تغییر نیست."
+        bodyClassName="p-0"
+      >
+        <form onSubmit={add} className="p-4 sm:p-5">
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="نام روش">
             <input
@@ -252,7 +259,8 @@ export function PaymentMethodsSettings() {
           صندوق‌دار هنگام دریافت، شمارهٔ پیگیری وارد کند
         </label>
         <PrimaryButton disabled={busy || !name.trim()}>افزودن روش پرداخت</PrimaryButton>
-      </form>
+        </form>
+      </SectionCard>
     </div>
   );
 }

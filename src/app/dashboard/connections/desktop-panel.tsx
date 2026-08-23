@@ -20,6 +20,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
 import { ErrorBox, InfoBox, PrimaryButton, SecondaryButton, api, errorMessage } from "../ui";
+import { SectionCard } from "../page-chrome";
 
 interface PairingCodeSummary {
   id: string;
@@ -161,14 +162,13 @@ export function DesktopPanel() {
   // here would point a second desktop at a replica.
   if (view?.role === "site") {
     return (
-      <section className="rounded-2xl bg-card p-5 shadow-sm">
-        <h2 className="mb-1 font-semibold">این نصب، نسخهٔ محلی است</h2>
+      <SectionCard title="این نصب، نسخهٔ محلی است">
         <p className="text-sm leading-6 text-muted-foreground">
           کد اتصال دسکتاپ در حساب ابری ساخته می‌شود، نه روی نصب محلی. وارد حساب ابری خود شوید و از همین بخش
           «اتصال‌ها → برنامه دسکتاپ» کد بگیرید.
         </p>
         <ErrorBox>{error}</ErrorBox>
-      </section>
+      </SectionCard>
     );
   }
 
@@ -176,8 +176,7 @@ export function DesktopPanel() {
 
   return (
     <div className="space-y-6">
-      <section className="rounded-2xl bg-card p-5 shadow-sm">
-        <h2 className="mb-1 font-semibold">اتصال یک دستگاه جدید</h2>
+      <SectionCard title="اتصال یک دستگاه جدید">
         <p className="mb-4 text-sm leading-6 text-muted-foreground">
           در برنامهٔ دسکتاپ، «اتصال به پلتفرم آنلاین» را انتخاب کنید و این دو مقدار را وارد کنید.
         </p>
@@ -220,10 +219,9 @@ export function DesktopPanel() {
             همگام‌سازی سرور با سرور است و بعد از اتصال، خودکار تنظیم می‌شود.
           </p>
         </div>
-      </section>
+      </SectionCard>
 
-      <section className="rounded-2xl bg-card p-5 shadow-sm">
-        <h2 className="mb-1 font-semibold">کدهای صادرشده</h2>
+      <SectionCard title="کدهای صادرشده">
         <p className="mb-4 text-sm text-muted-foreground">
           سابقهٔ کدهای این کسب‌وکار. «استفاده‌شده» یعنی دستگاهی با آن متصل شده است.
         </p>
@@ -253,7 +251,7 @@ export function DesktopPanel() {
             })}
           </ul>
         )}
-      </section>
+      </SectionCard>
     </div>
   );
 }

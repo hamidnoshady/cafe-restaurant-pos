@@ -8,7 +8,7 @@ export function PinnedReports({ canEdit, canExplain }: { canEdit: boolean; canEx
   const [open, setOpen] = useState(false);
 
   return (
-    <section className="mt-6 rounded-2xl border border-border/80 bg-card px-4 py-1.5 shadow-[0_1px_2px_rgb(15_23_42/0.03)]" aria-labelledby="pinned-reports-heading">
+    <section className="mt-6 rounded-2xl border border-border/80 bg-card px-4 py-1.5 shadow-[0_1px_2px_rgb(41_37_36/0.035)]" aria-labelledby="pinned-reports-heading">
       <button
         type="button"
         onClick={() => setOpen((current) => !current)}

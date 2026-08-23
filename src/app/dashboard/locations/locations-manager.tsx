@@ -16,6 +16,7 @@ import { useMoney } from "@/components/money/money-context";
 import { JalaliDatePicker } from "../jalali-date-picker";
 import { BarChart } from "../charts";
 import { ErrorBox, Field, InfoBox, PrimaryButton, SecondaryButton, api, inputClass } from "../ui";
+import { SectionCard } from "../page-chrome";
 
 interface StaffRow {
   staffId: string;
@@ -132,9 +133,9 @@ function ComparisonCard() {
   }, [load]);
 
   return (
-    <section className="rounded-2xl bg-card p-5 shadow-sm">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <h2 className="font-semibold">مقایسهٔ شعبه‌ها</h2>
+    <SectionCard
+      title="مقایسهٔ شعبه‌ها"
+      actions={
         <div className="flex flex-wrap items-center gap-2">
           <div className="w-36">
             <JalaliDatePicker value={dateFrom} onChange={setDateFrom} placeholder="از تاریخ" />
@@ -144,8 +145,8 @@ function ComparisonCard() {
             <JalaliDatePicker value={dateTo} onChange={setDateTo} placeholder="تا تاریخ" />
           </div>
         </div>
-      </div>
-
+      }
+    >
       {error ? <ErrorBox>{error}</ErrorBox> : null}
       {!overview ? (
         <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>
@@ -227,7 +228,7 @@ function ComparisonCard() {
           </div>
         </div>
       )}
-    </section>
+    </SectionCard>
   );
 }
 
@@ -276,8 +277,7 @@ function RegistryCard() {
   }
 
   return (
-    <section className="rounded-2xl bg-card p-5 shadow-sm">
-      <h2 className="mb-1 font-semibold">شعبه‌های ثبت‌شده</h2>
+    <SectionCard title="شعبه‌های ثبت‌شده">
       <p className="mb-4 text-sm text-muted-foreground">
         برای هر شعبه یک توکن صادر می‌شود؛ آن را در «همگام‌سازی با سرور مرکزی» همان شعبه وارد کنید.
         توکن فقط همین یک بار نمایش داده می‌شود.
@@ -343,7 +343,7 @@ function RegistryCard() {
           <PrimaryButton disabled={busy || !name.trim()}>ثبت و صدور توکن</PrimaryButton>
         </div>
       </form>
-    </section>
+    </SectionCard>
   );
 }
 
@@ -412,8 +412,7 @@ function LocalSyncCard() {
   }
 
   return (
-    <section className="rounded-2xl bg-card p-5 shadow-sm">
-      <h2 className="mb-1 font-semibold">همگام‌سازی با سرور مرکزی</h2>
+    <SectionCard title="همگام‌سازی با سرور مرکزی">
       <p className="mb-4 text-sm text-muted-foreground">
         اگر این سرورِ یک شعبه است، نشانی سرور مرکزی و توکن صادرشده برای این شعبه را وارد کنید.
         ارسال هر ۵ دقیقه انجام می‌شود و قطع اینترنت فقط ارسال را عقب می‌اندازد — با اتصال دوباره،
@@ -476,6 +475,6 @@ function LocalSyncCard() {
           ) : null}
         </dl>
       ) : null}
-    </section>
+    </SectionCard>
   );
 }

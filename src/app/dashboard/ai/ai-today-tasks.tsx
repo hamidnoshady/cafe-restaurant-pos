@@ -4,6 +4,7 @@ import { CheckCircle2Icon, ClockIcon, Loader2Icon } from "lucide-react";
 import { toPersianDigits } from "@/lib/digits";
 import { cn } from "@/lib/utils";
 import type { AgentTodayTask } from "./ai-agent-cards";
+import { cardClass } from "../page-chrome";
 
 function formatHour(hour: number): string {
   return toPersianDigits(`${String(hour).padStart(2, "0")}:00`);
@@ -17,9 +18,9 @@ function formatHour(hour: number): string {
  */
 export function AiTodayTasks({ tasks }: { tasks: AgentTodayTask[] | null }) {
   return (
-    <section className="flex flex-col overflow-hidden rounded-2xl border bg-card">
-      <header className="border-b px-3 py-2.5">
-        <p className="text-sm font-semibold">کارهای خودکار امروز</p>
+    <section className={cn("flex flex-col overflow-hidden", cardClass)}>
+      <header className="border-b border-stone-200/80 px-3 py-2.5">
+        <p className="text-sm font-semibold text-stone-950">کارهای خودکار امروز</p>
       </header>
       <div className="space-y-1.5 p-1.5">
         {tasks === null ? (
