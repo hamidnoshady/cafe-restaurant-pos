@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   formatJalali,
   formatShiftWindow,
@@ -8,6 +8,7 @@ import {
   jalaliMonthLength,
   jalaliToIsoDate,
   jalaliWeekdayColumn,
+  postgresDateToIso,
   toGregorian,
   toJalali,
   isoDateInTimeZone,
@@ -149,5 +150,48 @@ describe("isoDateInTimeZone", () => {
 
   it("returns null for something that isn't a date", () => {
     expect(isoDateInTimeZone("not-a-date")).toBeNull();
+  });
+});
+
+describe("postgresDateToIso", () => {
+  // node-postgres hands a Postgres `date` back as a JS Date at *local*
+  // midnight, so the runner's own time zone decides what toISOString() says.
+  // These tests pin TZ themselves rather than trusting the runner: CI runs in
+  // UTC, where the bug is invisible, while the desktop app runs in Tehran,
+  // where it silently shifts every business date back a day.
+  const originalTz = process.env.TZ;
+  afterEach(() => {
+    process.env.TZ = originalTz;
+  });
+
+  it("recovers the calendar date east of UTC, where toISOString is a day early", () => {
+    process.env.TZ = "Asia/Tehran";
+    const businessDate = new Date(2026, 7, 16); // what `date '2026-08-16'` becomes
+    expect(postgresDateToIso(businessDate)).toBe("2026-08-16");
+    // The bug this function exists to prevent — Tehran midnight is 20:30 the
+    // previous day in UTC, so the old spelling reported the wrong day.
+    expect(businessDate.toISOString().slice(0, 10)).toBe("2026-08-15");
+  });
+
+  it("agrees with toISOString on a UTC runner", () => {
+    process.env.TZ = "UTC";
+    const businessDate = new Date(2026, 7, 16);
+    expect(postgresDateToIso(businessDate)).toBe("2026-08-16");
+    expect(businessDate.toISOString().slice(0, 10)).toBe("2026-08-16");
+  });
+
+  it("recovers the calendar date west of UTC too", () => {
+    process.env.TZ = "America/New_York";
+    expect(postgresDateToIso(new Date(2026, 7, 16))).toBe("2026-08-16");
+  });
+
+  it("zero-pads single-digit months and days", () => {
+    process.env.TZ = "Asia/Tehran";
+    expect(postgresDateToIso(new Date(2026, 0, 5))).toBe("2026-01-05");
+  });
+
+  it("keeps the date across a Nowruz year boundary", () => {
+    process.env.TZ = "Asia/Tehran";
+    expect(postgresDateToIso(new Date(2026, 2, 21))).toBe("2026-03-21");
   });
 });

@@ -12,6 +12,7 @@
  */
 import { getBusinessDayStatus, type BusinessDayStatus } from "./business-day-service";
 import { getPool, query } from "./db";
+import { postgresDateToIso } from "./jalali";
 import { reconcileCash } from "./shift";
 
 export class ShiftError extends Error {
@@ -141,7 +142,9 @@ function toShift(row: ShiftRow): EmployeeShift {
     deviceId: row.device_id,
     openingFloat: row.opening_float !== null ? Number(row.opening_float) : null,
     closingFloat: row.closing_float !== null ? Number(row.closing_float) : null,
-    businessDate: row.business_date.toISOString().slice(0, 10),
+    // employee_shifts.business_date is a Postgres `date` (local-midnight Date
+    // from node-postgres) — see postgresDateToIso for why toISOString is wrong.
+    businessDate: postgresDateToIso(row.business_date),
     startedAt: row.started_at.toISOString(),
     endedAt: row.ended_at ? row.ended_at.toISOString() : null,
     closedBy: row.closed_by,

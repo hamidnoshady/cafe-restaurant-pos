@@ -18,6 +18,7 @@ import type { PoolClient } from "pg";
 import type { AuthenticationResponseJSON, AuthenticatorTransportFuture, RegistrationResponseJSON } from "@simplewebauthn/server";
 import { getPool, query, withoutTenantScope } from "./db";
 import { hostRoutingEnabled, parseHost, rootDomain } from "./host";
+import { postgresDateToIso } from "./jalali";
 import { resolveBusinessByLabel } from "./host-resolution";
 import { isValidPin } from "./team";
 import {
@@ -109,7 +110,9 @@ function toProfile(row: EmployeeRow): EmployeeProfile {
     employeeCode: row.employee_code,
     phone: row.phone,
     photoUrl: row.photo_url,
-    hiredAt: row.hired_at ? row.hired_at.toISOString().slice(0, 10) : null,
+    // users.hired_at is a Postgres `date` (local-midnight Date from
+    // node-postgres) — see postgresDateToIso for why toISOString is wrong.
+    hiredAt: row.hired_at ? postgresDateToIso(row.hired_at) : null,
     notes: row.notes,
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),
