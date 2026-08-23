@@ -5,14 +5,17 @@ import {
   useDeferredValue,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
+import Decimal from "decimal.js";
 import { PlusIcon, SearchIcon, XIcon } from "lucide-react";
 import { formatQuantity, toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import { useMoney } from "@/components/money/money-context";
 import { useInventorySearch } from "@/lib/inventory-search";
 import { api, errorMessage, Field, inputClass, PrimaryButton } from "../ui";
+import { CountScanField, type ScanMatch } from "./count-scan-field";
 import type { InventoryItem, Runner } from "./inventory-manager";
 
 interface StockCount {
@@ -72,6 +75,10 @@ export function StockCountsSection({
   const [countedQty, setCountedQty] = useState<Record<string, string>>({});
   const [searchQuery, setSearchQuery] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
+  /** Items reached by the scanner this session, newest first — pinned above
+   *  the full list so a warehouse of thousands stays legible while counting. */
+  const [scannedIds, setScannedIds] = useState<string[]>([]);
+  const countedQtyRef = useRef<Record<string, string>>({});
 
   const loadCounts = useCallback(() => {
     api<{ counts: StockCount[] }>("/api/inventory/stock-counts").then(
@@ -85,6 +92,42 @@ export function StockCountsSection({
   const activeItems = useMemo(() => items.filter((i) => i.is_active), [items]);
   const deferredSearchQuery = useDeferredValue(searchQuery);
   const visibleItems = useInventorySearch(activeItems, deferredSearchQuery);
+
+  const activeIds = useMemo(() => new Set(activeItems.map((i) => i.id)), [activeItems]);
+  const isCountable = useCallback((id: string) => activeIds.has(id), [activeIds]);
+
+  // Scanning the same barcode twice means "two of them", so a scan *adds* to
+  // the tally rather than replacing it. Decimal, not float: a store room
+  // counted in kg would otherwise drift (0.1 + 0.2) after a few hundred reads.
+  const handleScan = useCallback((match: ScanMatch, qty: number) => {
+    setScannedIds((prev) =>
+      prev.includes(match.inventoryItemId) ? prev : [match.inventoryItemId, ...prev],
+    );
+    setCountedQty((prev) => {
+      const current = prev[match.inventoryItemId]?.trim();
+      const base = current && Number.isFinite(Number(current)) ? new Decimal(current) : new Decimal(0);
+      return { ...prev, [match.inventoryItemId]: base.plus(qty).toFixed() };
+    });
+  }, []);
+
+  const runningTotal = useCallback(
+    (inventoryItemId: string) => countedQtyRef.current[inventoryItemId],
+    [],
+  );
+
+  // The scan field reads the tally back after the parent state settles; a ref
+  // keeps that read stable so the callback identity never churns per keystroke.
+  useEffect(() => {
+    countedQtyRef.current = countedQty;
+  }, [countedQty]);
+
+  const scannedItems = useMemo(
+    () =>
+      scannedIds
+        .map((id) => activeItems.find((i) => i.id === id))
+        .filter((i): i is InventoryItem => Boolean(i)),
+    [scannedIds, activeItems],
+  );
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -105,6 +148,7 @@ export function StockCountsSection({
     if (ok) {
       setNote("");
       setCountedQty({});
+      setScannedIds([]);
       loadCounts();
     }
   }
@@ -118,6 +162,59 @@ export function StockCountsSection({
           موجودی سیستم به‌صورت خودکار به‌عنوان اصلاحیه ثبت می‌شود.
         </p>
         <form onSubmit={submit} className="space-y-3">
+          <CountScanField
+            onScan={handleScan}
+            isCountable={isCountable}
+            runningTotal={runningTotal}
+          />
+          {scannedItems.length > 0 ? (
+            <div className="rounded-lg border border-border">
+              <div className="flex items-center justify-between px-3 py-2 text-xs font-medium">
+                <span>اقلام اسکن‌شده ({toPersianDigits(scannedItems.length)})</span>
+                <button
+                  type="button"
+                  className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+                  onClick={() => {
+                    setScannedIds([]);
+                    setCountedQty((prev) => {
+                      const next = { ...prev };
+                      for (const id of scannedIds) delete next[id];
+                      return next;
+                    });
+                  }}
+                >
+                  پاک کردن اسکن‌ها
+                </button>
+              </div>
+              <ul className="divide-y divide-border border-t border-border">
+                {scannedItems.map((i) => (
+                  <li
+                    key={i.id}
+                    className="flex min-w-0 flex-col gap-2 px-3 py-2 text-sm sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <span className="min-w-0 break-words">
+                      {i.name}{" "}
+                      <span className="text-xs text-muted-foreground">
+                        (موجودی سیستم: {formatQuantity(i.stock)} {i.unit})
+                      </span>
+                    </span>
+                    <label className="grid w-full gap-1 text-xs font-medium sm:w-40">
+                      <span>مقدار شمارش‌شده</span>
+                      <input
+                        className={inputClass}
+                        dir="ltr"
+                        inputMode="decimal"
+                        value={countedQty[i.id] ?? ""}
+                        onChange={(e) =>
+                          setCountedQty((prev) => ({ ...prev, [i.id]: e.target.value }))
+                        }
+                      />
+                    </label>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
           <Field label="یادداشت">
             <input
               className={inputClass}
