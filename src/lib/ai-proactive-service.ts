@@ -23,6 +23,7 @@ import {
   type LocalBusinessClock,
 } from "./ai-proactive";
 import { getPlatformAiConfig, isPlatformAiConfigured, type PlatformAiConfig } from "./ai-config";
+import { runBusinessAutopilot } from "./ai-autopilot-service";
 import {
   AiInsufficientCreditError,
   cancelAiTurnReservation,
@@ -744,6 +745,16 @@ async function runBusinessProactiveJobs(
   const clock = localBusinessClock(now, timezone);
   const due = dueProactiveRuns(settings, clock);
   if (due.length === 0) return 0;
+  // Phase 31 — autopilot rides this tick rather than opening a second business
+  // enumeration under its own bypass. It is gated by the same credit opt-in
+  // (settings.enabled, already true to be here) plus its own per-category
+  // switches, and must never take down the digests if it throws.
+  let autopilotCompleted = 0;
+  try {
+    autopilotCompleted = await runBusinessAutopilot(businessId, clock, aiConfig);
+  } catch (error) {
+    console.error(`autopilot run failed for business ${businessId}:`, errorText(error));
+  }
   const agentSettings = await getAiAgentSettings(businessId);
   const inclusion = digestSectionInclusion(agentSettings);
   let completed = 0;
@@ -773,7 +784,7 @@ async function runBusinessProactiveJobs(
       console.error(`proactive AI ${kind} run failed for business ${businessId}:`, errorText(error));
     }
   }
-  return completed;
+  return completed + autopilotCompleted;
 }
 
 /**

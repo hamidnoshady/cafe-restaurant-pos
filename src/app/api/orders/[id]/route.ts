@@ -3,7 +3,7 @@ import { requireRole, withTenantScope } from "@/lib/auth";
 import { getPool } from "@/lib/db";
 import { recomputeOrderTotals } from "@/lib/order-totals";
 import { getOrderDetail } from "@/lib/order-read-service";
-import type { DiscountInput } from "@/lib/orders";
+import { normalizeDiscountInput } from "@/lib/order-discount-service";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { broadcast } from "@/lib/realtime";
 import { lockOpenOrder } from "@/lib/order-lock";
@@ -46,12 +46,9 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
 
-  if (body.discount !== undefined) {
-    const type = body.discount.type === "percent" || body.discount.type === "amount" ? body.discount.type : null;
-    const value = Number(body.discount.value ?? 0);
-    if (type && (!Number.isFinite(value) || value < 0 || (type === "percent" && value > 100))) {
-      return NextResponse.json({ error: "invalid_discount" }, { status: 400 });
-    }
+  const discountInput = body.discount === undefined ? undefined : normalizeDiscountInput(body.discount);
+  if (discountInput === null) {
+    return NextResponse.json({ error: "invalid_discount" }, { status: 400 });
   }
 
   const client = await getPool().connect();
@@ -110,11 +107,8 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
       if (body.note !== undefined) {
         await client.query("UPDATE orders SET note = $2 WHERE id = $1", [id, body.note?.trim() || null]);
       }
-      if (body.discount !== undefined) {
-        const type = body.discount.type === "percent" || body.discount.type === "amount" ? body.discount.type : null;
-        const value = Number(body.discount.value ?? 0);
-        const discount: DiscountInput = type ? { type, value } : { type: null };
-        const totals = await recomputeOrderTotals(client, id, discount);
+      if (discountInput !== undefined) {
+        const totals = await recomputeOrderTotals(client, id, discountInput);
         await client.query("COMMIT");
         broadcast(location.id, { type: "order.updated", orderId: id });
         return NextResponse.json({ ok: true, totals });

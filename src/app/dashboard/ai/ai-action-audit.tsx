@@ -5,7 +5,7 @@ import { ClipboardCheckIcon, Loader2Icon } from "lucide-react";
 import { useFeatureLocked } from "@/components/feature-lock";
 import { SectionCard } from "../page-chrome";
 
-type AuditStatus = "proposed" | "applied" | "failed" | "dismissed";
+type AuditStatus = "proposed" | "applied" | "failed" | "dismissed" | "reverted";
 
 interface AuditEntry {
   id: string;
@@ -16,6 +16,7 @@ interface AuditEntry {
   actionTitle: string;
   actionSummary: string;
   status: AuditStatus;
+  source?: "manual" | "autopilot";
   createdAt: string;
   appliedAt: string | null;
 }
@@ -25,6 +26,7 @@ const STATUS_LABEL: Record<AuditStatus, string> = {
   applied: "اجرا شد",
   failed: "ناموفق بود",
   dismissed: "رد شد",
+  reverted: "برگردانده شد",
 };
 
 const STATUS_CLASS: Record<AuditStatus, string> = {
@@ -32,6 +34,7 @@ const STATUS_CLASS: Record<AuditStatus, string> = {
   applied: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
   failed: "bg-destructive/10 text-destructive",
   dismissed: "bg-muted text-muted-foreground",
+  reverted: "bg-muted text-muted-foreground",
 };
 
 function formatDate(value: string) {
@@ -106,6 +109,11 @@ export function AiActionAudit() {
                     {entry.actorName || "کاربر"} · {formatDate(entry.createdAt)}
                   </p>
                 </div>
+                {entry.source === "autopilot" ? (
+                  <span className="w-fit shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                    خودکار
+                  </span>
+                ) : null}
                 <span className={"w-fit shrink-0 rounded-full px-2 py-0.5 text-xs font-medium " + STATUS_CLASS[entry.status]}>
                   {STATUS_LABEL[entry.status]}
                 </span>

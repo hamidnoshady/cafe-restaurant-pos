@@ -21,6 +21,7 @@ interface Props {
 
 export function AiAssistant({ mode, currentStep }: Props) {
   const [open, setOpen] = useState(false);
+  const [unseenCount, setUnseenCount] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const {
     canPropose,
@@ -73,16 +74,50 @@ export function AiAssistant({ mode, currentStep }: Props) {
     return () => window.removeEventListener("ai:prefill", prefill);
   }, [setInput]);
 
+  // Phase 31 — how an owner learns an unattended action ran. There is no
+  // notification channel in this product, so the launcher carries the count and
+  // the AI hub's activity list is where it gets read. Dashboard mode only:
+  // floor mode has no autopilot surface at all.
+  useEffect(() => {
+    if (mode !== "dashboard") return;
+    let cancelled = false;
+    async function refresh() {
+      if (document.visibilityState !== "visible") return;
+      try {
+        const response = await fetch("/api/ai/autopilot/activity?countOnly=1");
+        if (!response.ok) return;
+        const body = (await response.json()) as { unseenCount?: number };
+        if (!cancelled) setUnseenCount(Number(body.unseenCount ?? 0));
+      } catch {
+        // A badge is not worth surfacing an error for.
+      }
+    }
+    void refresh();
+    const timer = setInterval(() => void refresh(), 5 * 60 * 1000);
+    const clear = () => setUnseenCount(0);
+    window.addEventListener("ai:autopilot-seen", clear);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+      window.removeEventListener("ai:autopilot-seen", clear);
+    };
+  }, [mode]);
+
   return (
     <>
       {!open && (
         <button
           type="button"
           onClick={() => setOpen(true)}
-          aria-label="دستیار هوشمند"
+          aria-label={unseenCount > 0 ? `دستیار هوشمند — ${unseenCount} اقدام خودکار جدید` : "دستیار هوشمند"}
           className="fixed bottom-5 left-5 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg ring-1 ring-foreground/10 transition-transform hover:scale-105 active:scale-95"
         >
           <SparklesIcon className="size-6" />
+          {unseenCount > 0 && (
+            <span className="absolute -end-1 -top-1 flex min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-[11px] font-semibold text-destructive-foreground ring-2 ring-background">
+              {unseenCount > 9 ? "۹+" : unseenCount.toLocaleString("fa-IR")}
+            </span>
+          )}
         </button>
       )}
 
