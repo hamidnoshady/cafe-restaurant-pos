@@ -261,6 +261,23 @@ export function isoDateInTimeZone(
   return year && month && day ? `${year}-${month}-${day}` : null;
 }
 
+/**
+ * The calendar date (YYYY-MM-DD) a node-postgres `date` value names.
+ *
+ * node-postgres returns a Postgres `date` (no time) as a JS Date at *local*
+ * midnight, so `value.toISOString().slice(0, 10)` is wrong for any runner
+ * east of UTC — Tehran midnight is 20:30 the previous day in UTC, and the
+ * date silently shifts back one day (the desktop app runs on exactly such a
+ * machine). Reading the Date's local components recovers the calendar date
+ * the database returned, on every runner timezone, UTC included.
+ */
+export function postgresDateToIso(value: Date): string {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 /** Today's date as Jalali parts, in the given IANA time zone (default Asia/Tehran). */
 export function todayJalali(timeZone = "Asia/Tehran"): JalaliDate {
   const parts = new Intl.DateTimeFormat("en-US", {

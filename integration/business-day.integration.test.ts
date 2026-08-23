@@ -35,6 +35,7 @@ import { randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { runMigrations } from "../scripts/migrate";
+import { postgresDateToIso } from "../src/lib/jalali";
 
 const rootDatabaseUrl = process.env.DATABASE_URL;
 if (!rootDatabaseUrl) {
@@ -157,7 +158,9 @@ async function salesByDay(locationId: string): Promise<Record<string, number>> {
   );
   return Object.fromEntries(
     rows.map((row) => [
-      row.sale_date.toISOString().slice(0, 10),
+      // sale_date is a Postgres `date` — local components, not toISOString()
+      // (see postgresDateToIso; toISOString shifts a day on runners east of UTC).
+      postgresDateToIso(row.sale_date),
       Number(row.order_count),
     ]),
   );
@@ -256,7 +259,10 @@ describe("the business-day date rule", () => {
         SIX_PM,
       ],
     );
-    const day = (value: Date) => value.toISOString().slice(0, 10);
+    // node-postgres returns Postgres `date` values as local-midnight Dates, so
+    // the calendar date is its local components, not toISOString() (which is a
+    // day early on any runner east of UTC — see postgresDateToIso).
+    const day = (value: Date) => postgresDateToIso(value);
     expect(day(rows[0].evening)).toBe("2026-08-16");
     expect(day(rows[0].small_hours)).toBe("2026-08-16");
     expect(day(rows[0].next_evening)).toBe("2026-08-17");
@@ -268,8 +274,8 @@ describe("the business-day date rule", () => {
               (($1::timestamp AT TIME ZONE $2) AT TIME ZONE $2)::date       AS plain`,
       ["2026-08-17 01:30", TEHRAN],
     );
-    expect(rows[0].configured.toISOString().slice(0, 10)).toBe(
-      rows[0].plain.toISOString().slice(0, 10),
+    expect(postgresDateToIso(rows[0].configured)).toBe(
+      postgresDateToIso(rows[0].plain),
     );
   });
 

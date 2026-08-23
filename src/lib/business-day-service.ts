@@ -21,6 +21,7 @@ import {
   resolveLiveWindow,
   type LiveWindowCloseReason,
 } from "./business-day";
+import { postgresDateToIso } from "./jalali";
 
 export class BusinessDayError extends Error {
   status: number;
@@ -153,7 +154,10 @@ export async function getBusinessDayStatus(
     timeZone: row.timezone,
     startMinutes,
     enabled,
-    businessDate: row.business_date.toISOString().slice(0, 10),
+    // row.business_date is a Postgres `date` — node-postgres hands it back as a
+    // local-midnight Date, so slicing toISOString() would shift it a day on any
+    // runner east of UTC (see postgresDateToIso).
+    businessDate: postgresDateToIso(row.business_date),
     scheduledStart,
     scheduledEnd,
     windowStart,
@@ -319,7 +323,7 @@ export async function listBusinessDayClosures(
   );
   return rows.map((row) => ({
     id: row.id,
-    businessDate: row.business_date.toISOString().slice(0, 10),
+    businessDate: postgresDateToIso(row.business_date),
     closedAt: row.closed_at.toISOString(),
     closedByName: row.closed_by_name,
     note: row.note,
