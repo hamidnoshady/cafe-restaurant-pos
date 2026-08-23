@@ -189,7 +189,7 @@ function FormulaCard({
   }
 
   return (
-    <section className="min-w-0 rounded-2xl bg-card p-5 shadow-sm">
+    <section className="min-w-0 rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-5">
       <h2 className="mb-1 font-semibold">فرمول‌های تولید</h2>
       <p className="mb-3 text-xs leading-5 text-muted-foreground">
         برای کالاهایی که خودتان می‌سازید: یک بار پخت چه موادی مصرف می‌کند و چند واحد محصول می‌دهد.
@@ -423,7 +423,7 @@ function RunCard({
   }
 
   return (
-    <section className="min-w-0 rounded-2xl bg-card p-5 shadow-sm">
+    <section className="min-w-0 rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-5">
       <h2 className="mb-1 font-semibold">ثبت تولید</h2>
       <p className="mb-3 text-xs leading-5 text-muted-foreground">
         با ثبت تولید، مواد اولیه از انبار کم و محصول با بهای واقعی (مواد + هزینهٔ تبدیل) به انبار

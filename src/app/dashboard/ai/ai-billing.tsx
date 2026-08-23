@@ -9,6 +9,9 @@ import { formatToman } from "@/lib/money";
 import { Button } from "@/components/ui/button";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useFeatureLocked } from "@/components/feature-lock";
+import { cn } from "@/lib/utils";
+import { inputClass } from "../ui";
+import { SectionCard, cardClass } from "../page-chrome";
 
 interface Billing {
   balanceRial: number;
@@ -146,7 +149,7 @@ export function AiBillingDashboard() {
       ) : null}
 
       <section className="grid gap-3 sm:grid-cols-2">
-        <div className="rounded-2xl border bg-card p-5">
+        <div className={cn(cardClass, "p-4 sm:p-5")}>
           <div className="flex items-center gap-2 text-primary">
             <SparklesIcon className="size-5" />
             <p className="font-semibold">اعتبار قابل استفاده</p>
@@ -158,7 +161,7 @@ export function AiBillingDashboard() {
               : "واحد اعتبار هنوز تعریف نشده است"}
           </p>
         </div>
-        <div className="rounded-2xl border bg-card p-5">
+        <div className={cn(cardClass, "p-4 sm:p-5")}>
           <p className="font-semibold">اشتراک AI</p>
           {data.billing.subscriptionPlan ? (
             <>
@@ -176,15 +179,14 @@ export function AiBillingDashboard() {
         </div>
       </section>
 
-      <section className="rounded-2xl border bg-card p-5">
-        <h2 className="font-semibold">درخواست شارژ اعتبار</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          پس از پرداخت توافق‌شده، درخواست شما به مدیر پلتفرم ارسال می‌شود و اعتبار پس از تأیید اضافه خواهد شد.
-        </p>
+      <SectionCard
+        title="درخواست شارژ اعتبار"
+        description="پس از پرداخت توافق‌شده، درخواست شما به مدیر پلتفرم ارسال می‌شود و اعتبار پس از تأیید اضافه خواهد شد."
+      >
         {data.packages.length === 0 ? (
-          <p className="mt-4 text-sm text-muted-foreground">هنوز بستهٔ شارژی برای این سرویس فعال نشده است.</p>
+          <p className="text-sm text-muted-foreground">هنوز بستهٔ شارژی برای این سرویس فعال نشده است.</p>
         ) : (
-          <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_1fr_auto]">
+          <div className="grid gap-3 lg:grid-cols-[1fr_1fr_auto]">
             <label className="block">
               <span className="mb-1 block text-sm font-medium">بستهٔ شارژ</span>
               <SearchableSelect
@@ -199,7 +201,7 @@ export function AiBillingDashboard() {
             <label className="block">
               <span className="mb-1 block text-sm font-medium">یادداشت پرداخت (اختیاری)</span>
               <input
-                className="h-10 w-full rounded-lg border border-input bg-transparent px-3 text-sm"
+                className={inputClass}
                 value={note}
                 onChange={(event) => setNote(event.target.value)}
                 placeholder="مثلاً شماره پیگیری انتقال"
@@ -218,14 +220,13 @@ export function AiBillingDashboard() {
             با تأیید این بسته، {formatToman(selected.creditAmountRial)} اعتبار به ماندهٔ شما افزوده می‌شود.
           </p>
         ) : null}
-      </section>
+      </SectionCard>
 
-      <section className="rounded-2xl border bg-card p-5">
-        <h2 className="font-semibold">تاریخچهٔ اعتبار و مصرف</h2>
+      <SectionCard title="تاریخچهٔ اعتبار و مصرف">
         {data.ledger.length === 0 ? (
-          <p className="mt-4 text-sm text-muted-foreground">هنوز تراکنشی ثبت نشده است.</p>
+          <p className="text-sm text-muted-foreground">هنوز تراکنشی ثبت نشده است.</p>
         ) : (
-          <ul className="mt-3 divide-y">
+          <ul className="divide-y divide-stone-200/80">
             {data.ledger.map((entry) => {
               const displayAmount =
                 entry.kind === "usage" && entry.actualCostRial !== null
@@ -250,7 +251,7 @@ export function AiBillingDashboard() {
             })}
           </ul>
         )}
-      </section>
+      </SectionCard>
     </div>
   );
 }

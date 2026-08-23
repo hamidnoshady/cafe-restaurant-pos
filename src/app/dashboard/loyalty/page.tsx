@@ -6,7 +6,8 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { formatPersianNumber, toPersianDigits } from "@/lib/digits";
 import { formatToman, parseToRial } from "@/lib/money";
 import { formatJalali } from "@/lib/jalali";
-import { api, ErrorBox, Field, inputClass } from "../ui";
+import { EmptyState, PageHeader, PageShell, SectionCard } from "../page-chrome";
+import { api, ErrorBox, Field, InfoBox, inputClass } from "../ui";
 
 interface Program {
   id: string;
@@ -29,15 +30,6 @@ interface RepurchaseRow {
   customerName: string;
   productName: string;
   predictedDate: string;
-}
-
-function Panel({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section className="rounded-2xl border border-stone-200 bg-white p-4 shadow-[0_1px_2px_rgb(41_37_36/0.035)] sm:p-5">
-      <h2 className="font-semibold text-stone-950">{title}</h2>
-      <div className="mt-4 space-y-3">{children}</div>
-    </section>
-  );
 }
 
 export default function LoyaltyPage() {
@@ -67,16 +59,14 @@ export default function LoyaltyPage() {
   const customer = customers.find((c) => c.id === customerId);
 
   return (
-    <div className="mx-auto w-full max-w-[1100px]">
-      <header className="mb-5 border-b border-stone-200/80 pb-4">
-        <h1 className="text-2xl font-bold tracking-tight text-stone-950">وفاداری و اعتبار فروشگاهی</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          امتیاز مشتریان، اعتبار فروشگاهی به‌عنوان بدهی واقعی، و فهرست «آماده خرید مجدد».
-        </p>
-      </header>
+    <PageShell>
+      <PageHeader
+        title="وفاداری و اعتبار فروشگاهی"
+        description="امتیاز مشتریان، اعتبار فروشگاهی به‌عنوان بدهی واقعی، و فهرست «آماده خرید مجدد»."
+      />
 
       <ErrorBox>{error}</ErrorBox>
-      {done ? <p className="mb-3 text-xs text-emerald-700">{done}</p> : null}
+      {done ? <InfoBox>{done}</InfoBox> : null}
 
       <div className="grid gap-4 lg:grid-cols-2">
         <ProgramsPanel
@@ -103,11 +93,9 @@ export default function LoyaltyPage() {
       </div>
 
       <div className="mt-4">
-        <Panel title="مشتریان آماده خرید مجدد">
+        <SectionCard title="مشتریان آماده خرید مجدد">
           {due.length === 0 ? (
-            <p className="rounded-xl border border-dashed border-stone-200 px-3 py-6 text-center text-sm text-muted-foreground">
-              هنوز مشتری‌ای در موعد خرید مجدد نیست.
-            </p>
+            <EmptyState>هنوز مشتری‌ای در موعد خرید مجدد نیست.</EmptyState>
           ) : (
             <ul className="divide-y divide-stone-200/80 text-sm">
               {due.map((r) => (
@@ -123,9 +111,9 @@ export default function LoyaltyPage() {
               ))}
             </ul>
           )}
-        </Panel>
+        </SectionCard>
       </div>
-    </div>
+    </PageShell>
   );
 }
 
@@ -168,7 +156,7 @@ function ProgramsPanel({
   }
 
   return (
-    <Panel title="برنامه وفاداری">
+    <SectionCard title="برنامه وفاداری" bodyClassName="space-y-3 p-4 sm:p-5">
       <ul className="divide-y divide-stone-200/80 text-sm">
         {programs.map((p) => (
           <li key={p.id} className="flex items-center justify-between gap-2 py-2">
@@ -202,7 +190,7 @@ function ProgramsPanel({
           ذخیره برنامه
         </Button>
       </form>
-    </Panel>
+    </SectionCard>
   );
 }
 
@@ -261,7 +249,7 @@ function CustomerPanel({
   }
 
   return (
-    <Panel title="مشتری و اعتبار">
+    <SectionCard title="مشتری و اعتبار" bodyClassName="space-y-3 p-4 sm:p-5">
       <Field label="مشتری">
         <SearchableSelect
           value={customerId}
@@ -272,7 +260,7 @@ function CustomerPanel({
       </Field>
 
       {customer && balance ? (
-        <div className="grid grid-cols-2 gap-2 rounded-xl border border-stone-200 p-3 text-sm">
+        <div className="grid grid-cols-2 gap-2 rounded-xl border border-stone-200/80 p-3 text-sm">
           <div>
             <span className="text-muted-foreground">امتیاز:</span> <b>{formatPersianNumber(balance.points)}</b>
           </div>
@@ -308,6 +296,6 @@ function CustomerPanel({
       <p className="text-xs leading-5 text-muted-foreground">
         اعتبار فروشگاهی یک بدهی واقعی (حساب ۲۴۱۰) است که در تراز آزمایشی دیده می‌شود؛ ماندهٔ آن از دفتر کل بازسازی می‌شود، نه از یک ستون.
       </p>
-    </Panel>
+    </SectionCard>
   );
 }

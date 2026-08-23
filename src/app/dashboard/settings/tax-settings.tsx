@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { toLatinDigits } from "@/lib/digits";
 import { ErrorBox, Field, InfoBox, PrimaryButton, api, errorMessage, inputClass } from "../ui";
+import { SectionCard } from "../page-chrome";
 
 interface Category {
   id: string;
@@ -82,8 +83,7 @@ export function TaxSettings() {
       <ErrorBox>{error}</ErrorBox>
       {saved ? <InfoBox>تنظیمات مالیات ذخیره شد.</InfoBox> : null}
 
-      <section className="rounded-2xl bg-card p-5 shadow-sm">
-        <h2 className="mb-1 font-semibold">نرخ پیش‌فرض</h2>
+      <SectionCard title="نرخ پیش‌فرض">
         <p className="mb-4 text-sm text-muted-foreground">این نرخ هنگام ساخت دستهٔ جدید منو پیشنهاد می‌شود؛ نرخ هر دسته را می‌توانید جداگانه تغییر دهید.</p>
         <div className="max-w-xs">
           <Field label="درصد مالیات">
@@ -93,15 +93,14 @@ export function TaxSettings() {
             </div>
           </Field>
         </div>
-      </section>
+      </SectionCard>
 
-      <section className="rounded-2xl bg-card p-5 shadow-sm">
-        <h2 className="mb-1 font-semibold">نرخ دسته‌های منو</h2>
+      <SectionCard title="نرخ دسته‌های منو">
         <p className="mb-4 text-sm text-muted-foreground">برای کالاهای معاف یا دارای نرخ متفاوت، نرخ همین دسته را ویرایش کنید.</p>
         {categories.length === 0 ? <p className="text-sm text-muted-foreground">هنوز دسته‌ای در منو ثبت نشده است.</p> : null}
         <div className="space-y-2">
           {categories.map((category) => (
-            <div key={category.id} className="flex items-center gap-3 rounded-lg border border-border p-3">
+            <div key={category.id} className="flex items-center gap-3 rounded-lg border border-stone-200/80 p-3">
               <span className="min-w-0 flex-1 text-sm font-medium">{category.name}</span>
               <div className="relative w-28">
                 <input className={inputClass} dir="ltr" inputMode="decimal" value={rates[category.id] ?? ""} onChange={(e) => { setSaved(false); setRates((current) => ({ ...current, [category.id]: e.target.value })); }} />
@@ -110,7 +109,7 @@ export function TaxSettings() {
             </div>
           ))}
         </div>
-      </section>
+      </SectionCard>
 
       <div className="max-w-xs">
         <PrimaryButton disabled={saving}>{saving ? "در حال ذخیره…" : "ذخیرهٔ مالیات"}</PrimaryButton>

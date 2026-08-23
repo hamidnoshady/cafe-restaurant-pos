@@ -308,9 +308,9 @@ function SplitDialog({
           </div>
         </section>
 
-        <div className="flex gap-1 rounded-lg bg-muted p-1 text-sm">
-          <button type="button" onClick={() => { setMode("even"); setShares(null); }} className={`min-h-11 flex-1 rounded-md ${mode === "even" ? "bg-card shadow-sm" : "text-muted-foreground"}`}>تقسیم مساوی</button>
-          <button type="button" onClick={() => { setMode("itemized"); setShares(null); }} className={`min-h-11 flex-1 rounded-md ${mode === "itemized" ? "bg-card shadow-sm" : "text-muted-foreground"}`}>به تفکیک اقلام</button>
+        <div className="flex gap-1 rounded-xl bg-stone-100 p-1 text-sm">
+          <button type="button" aria-pressed={mode === "even"} onClick={() => { setMode("even"); setShares(null); }} className={`min-h-11 flex-1 rounded-lg font-medium transition-colors ${mode === "even" ? "bg-amber-100 text-amber-950" : "text-stone-600 hover:bg-stone-50"}`}>تقسیم مساوی</button>
+          <button type="button" aria-pressed={mode === "itemized"} onClick={() => { setMode("itemized"); setShares(null); }} className={`min-h-11 flex-1 rounded-lg font-medium transition-colors ${mode === "itemized" ? "bg-amber-100 text-amber-950" : "text-stone-600 hover:bg-stone-50"}`}>به تفکیک اقلام</button>
         </div>
 
         {mode === "itemized" ? (

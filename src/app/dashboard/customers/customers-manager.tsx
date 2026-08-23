@@ -3,7 +3,17 @@
 import { useEffect, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
 import { formatToman } from "@/lib/money";
-import { api, ErrorBox, errorMessage, Field, inputClass, InfoBox, PrimaryButton, SecondaryButton } from "../ui";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { SectionCard, StatusBadge } from "../page-chrome";
+import { api, ErrorBox, errorMessage, Field, inputClass, InfoBox } from "../ui";
 import { ArStatementPanel } from "../ledger/ar-statement-panel";
 
 interface Customer {
@@ -120,27 +130,33 @@ export function CustomersManager({ role }: { role: string }) {
   const totalPages = Math.max(Math.ceil(total / PAGE_SIZE), 1);
 
   return (
-    <section className="space-y-4">
+    <div className="min-w-0 space-y-4">
       <ErrorBox>{error}</ErrorBox>
       {info ? <InfoBox>{info}</InfoBox> : null}
 
-      <div className="rounded-2xl bg-card p-5 shadow-sm">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-3">
-            <input
-              className={`${inputClass} w-56`}
-              placeholder="جستجو با نام یا تلفن…"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-            />
-            <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
-              <input type="checkbox" checked={includeInactive} onChange={(e) => setIncludeInactive(e.target.checked)} />
-              نمایش آرشیوشده‌ها
-            </label>
-          </div>
-          <PrimaryButton type="button" onClick={() => setShowAdd(true)}>
+      <SectionCard
+        title="فهرست مشتریان"
+        description="روی نام هر مشتری بزنید تا صورتحساب او باز شود."
+        actions={
+          <Button type="button" onClick={() => setShowAdd(true)}>
             + مشتری جدید
-          </PrimaryButton>
+          </Button>
+        }
+      >
+        <div className="mb-4 flex flex-wrap items-center gap-3">
+          <input
+            className={`${inputClass} w-56`}
+            placeholder="جستجو با نام یا تلفن…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+          <label className="flex items-center gap-2 text-sm text-stone-600">
+            <Checkbox
+              checked={includeInactive}
+              onCheckedChange={(checked) => setIncludeInactive(checked === true)}
+            />
+            نمایش آرشیوشده‌ها
+          </label>
         </div>
 
         {!customers ? (
@@ -149,19 +165,19 @@ export function CustomersManager({ role }: { role: string }) {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-border text-muted-foreground">
-                  <th className="py-2 pe-3 text-start">نام</th>
-                  <th className="py-2 pe-3 text-start">تلفن</th>
-                  <th className="py-2 pe-3 text-start">آدرس</th>
-                  {canSeeLedger ? <th className="py-2 pe-3 text-start">مانده حساب</th> : null}
-                  <th className="py-2 pe-3 text-start">وضعیت</th>
-                  <th className="py-2 text-start">عملیات</th>
+                <tr className="border-b border-stone-200/80 text-muted-foreground">
+                  <th className="py-2 pe-3 text-start font-medium">نام</th>
+                  <th className="py-2 pe-3 text-start font-medium">تلفن</th>
+                  <th className="py-2 pe-3 text-start font-medium">آدرس</th>
+                  {canSeeLedger ? <th className="py-2 pe-3 text-start font-medium">مانده حساب</th> : null}
+                  <th className="py-2 pe-3 text-start font-medium">وضعیت</th>
+                  <th className="py-2 text-start font-medium">عملیات</th>
                 </tr>
               </thead>
               <tbody>
                 {customers.map((c) => (
-                  <tr key={c.id} className="border-b border-border">
-                    <td className="py-2 pe-3 font-medium">
+                  <tr key={c.id} className="border-b border-stone-200/80">
+                    <td className="py-2 pe-3 font-medium text-stone-950">
                       {canSeeLedger ? (
                         <button type="button" onClick={() => setStatementTarget({ id: c.id, name: c.name })} className="hover:underline">
                           {c.name}
@@ -178,37 +194,35 @@ export function CustomersManager({ role }: { role: string }) {
                       </td>
                     ) : null}
                     <td className="py-2 pe-3">
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-xs ${c.isActive ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}
-                      >
+                      <StatusBadge tone={c.isActive ? "positive" : "neutral"}>
                         {c.isActive ? "فعال" : "آرشیو"}
-                      </span>
+                      </StatusBadge>
                     </td>
                     <td className="py-2">
                       <div className="flex flex-wrap gap-1">
-                        <button
-                          type="button"
-                          onClick={() => setEditTarget(c)}
-                          className="rounded-lg px-2 py-1 text-xs font-semibold text-primary hover:bg-primary/10"
-                        >
+                        <Button type="button" variant="ghost" size="xs" onClick={() => setEditTarget(c)}>
                           ویرایش
-                        </button>
-                        <button
+                        </Button>
+                        <Button
                           type="button"
+                          variant="ghost"
+                          size="xs"
                           disabled={busy}
                           onClick={() => toggleActive(c)}
-                          className="rounded-lg px-2 py-1 text-xs font-semibold text-muted-foreground hover:bg-muted"
+                          className="text-muted-foreground"
                         >
                           {c.isActive ? "آرشیو" : "فعال‌سازی"}
-                        </button>
-                        <button
+                        </Button>
+                        <Button
                           type="button"
+                          variant="ghost"
+                          size="xs"
                           disabled={busy}
                           onClick={() => remove(c)}
-                          className="rounded-lg px-2 py-1 text-xs font-semibold text-destructive hover:bg-destructive/10"
+                          className="text-destructive hover:bg-destructive/10 hover:text-destructive"
                         >
                           حذف
-                        </button>
+                        </Button>
                       </div>
                     </td>
                   </tr>
@@ -229,18 +243,18 @@ export function CustomersManager({ role }: { role: string }) {
                   {toPersianDigits(String(page))} از {toPersianDigits(String(totalPages))}
                 </span>
                 <div className="flex gap-2">
-                  <SecondaryButton onClick={() => setPage((p) => Math.max(p - 1, 1))} disabled={page <= 1}>
+                  <Button type="button" variant="outline" onClick={() => setPage((p) => Math.max(p - 1, 1))} disabled={page <= 1}>
                     قبلی
-                  </SecondaryButton>
-                  <SecondaryButton onClick={() => setPage((p) => Math.min(p + 1, totalPages))} disabled={page >= totalPages}>
+                  </Button>
+                  <Button type="button" variant="outline" onClick={() => setPage((p) => Math.min(p + 1, totalPages))} disabled={page >= totalPages}>
                     بعدی
-                  </SecondaryButton>
+                  </Button>
                 </div>
               </div>
             ) : null}
           </div>
         )}
-      </div>
+      </SectionCard>
 
       {showAdd ? (
         <CustomerFormDialog
@@ -276,7 +290,7 @@ export function CustomersManager({ role }: { role: string }) {
           onClose={() => setStatementTarget(null)}
         />
       ) : null}
-    </section>
+    </div>
   );
 }
 
@@ -309,9 +323,11 @@ function CustomerFormDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className="w-full max-w-sm rounded-2xl bg-card p-5 shadow-lg" onClick={(e) => e.stopPropagation()}>
-        <h3 className="mb-4 font-semibold">{title}</h3>
+    <Dialog open onOpenChange={(next) => (next ? undefined : onClose())}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+        </DialogHeader>
         <ErrorBox>{localError}</ErrorBox>
         <Field label="نام">
           <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} />
@@ -325,15 +341,15 @@ function CustomerFormDialog({
         <Field label="یادداشت (اختیاری)">
           <textarea className={inputClass} rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
         </Field>
-        <div className="mt-4 flex justify-end gap-2">
-          <SecondaryButton onClick={onClose} disabled={busy}>
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
             انصراف
-          </SecondaryButton>
-          <PrimaryButton type="button" onClick={submit} disabled={busy}>
+          </Button>
+          <Button type="button" onClick={submit} disabled={busy}>
             ذخیره
-          </PrimaryButton>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

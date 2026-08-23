@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
+import { PageHeader, PageShell } from "../page-chrome";
 import { CustomersManager } from "./customers-manager";
 
 export default async function CustomersPage() {
@@ -8,14 +9,12 @@ export default async function CustomersPage() {
   if (!["owner", "manager", "cashier", "accountant"].includes(session.role)) redirect("/dashboard");
 
   return (
-    <div>
-      <header className="mb-6">
-        <h1 className="text-2xl font-bold">مشتریان</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          افزودن، ویرایش و حذف مشتریان؛ مشاهدهٔ مانده بدهکار/بستانکار و صورتحساب هر مشتری.
-        </p>
-      </header>
+    <PageShell>
+      <PageHeader
+        title="مشتریان"
+        description="افزودن، ویرایش و حذف مشتریان؛ مشاهدهٔ مانده بدهکار/بستانکار و صورتحساب هر مشتری."
+      />
       <CustomersManager role={session.role} />
-    </div>
+    </PageShell>
   );
 }

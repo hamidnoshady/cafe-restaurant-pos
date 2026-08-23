@@ -21,6 +21,7 @@ import { formatJalali } from "@/lib/jalali";
 import { formatToman } from "@/lib/money";
 import { labelFor } from "@/lib/industry-profile";
 import type { Industry } from "@/lib/industries";
+import { PageHeader } from "./page-chrome";
 
 interface RetailOverview {
   today: { invoiceCount: number; total: string };
@@ -84,12 +85,10 @@ export function RetailOverview({ industry }: { industry: Industry }) {
 
   return (
     <section className="w-full" aria-labelledby="retail-overview-heading">
-      <header className="mb-5 flex flex-wrap items-baseline justify-between gap-2 border-b border-[#EAE8E2] pb-4">
-        <h1 id="retail-overview-heading" className="text-2xl font-bold text-[#252522]">
-          داشبورد
-        </h1>
-        <p className="text-sm text-[#77756F]">امروز: {today}</p>
-      </header>
+      <PageHeader
+        title={<span id="retail-overview-heading">داشبورد</span>}
+        actions={<p className="text-sm text-muted-foreground">امروز: {today}</p>}
+      />
 
       <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Kpi

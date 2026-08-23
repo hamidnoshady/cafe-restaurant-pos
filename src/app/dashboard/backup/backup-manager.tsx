@@ -13,6 +13,8 @@ import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ErrorBox, Field, InfoBox, PrimaryButton, api, inputClass } from "../ui";
+import { Button } from "@/components/ui/button";
+import { SectionCard, StatusBadge } from "../page-chrome";
 
 interface Health {
   enabled: boolean;
@@ -99,14 +101,10 @@ function formatSize(bytes: number | null): string {
   return toPersianDigits(mb >= 1 ? `${mb.toFixed(1)} MB` : `${Math.ceil(bytes / 1024)} KB`);
 }
 
-function StatusBadge({ status }: { status: RunRow["status"] }) {
-  if (status === "success") {
-    return <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">موفق</span>;
-  }
-  if (status === "failed") {
-    return <span className="rounded-full bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive">ناموفق</span>;
-  }
-  return <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">در حال اجرا</span>;
+function RunStatus({ status }: { status: RunRow["status"] }) {
+  if (status === "success") return <StatusBadge tone="positive">موفق</StatusBadge>;
+  if (status === "failed") return <StatusBadge tone="danger">ناموفق</StatusBadge>;
+  return <StatusBadge tone="active">در حال اجرا</StatusBadge>;
 }
 
 export function BackupManager({ isOwner }: { isOwner: boolean }) {
@@ -172,8 +170,7 @@ function ExportCard() {
   }
 
   return (
-    <section className="rounded-2xl bg-card p-5 shadow-sm">
-      <h2 className="mb-1 font-semibold">خروجی اطلاعات کسب‌وکار</h2>
+    <SectionCard title="خروجی اطلاعات کسب‌وکار">
       <p className="mb-4 text-sm text-muted-foreground">
         تمام اطلاعات این کسب‌وکار (سفارش‌ها، انبار، حساب‌ها، اعضا و غیره) را دریافت کنید — جدا از
         سایر کسب‌وکارهای این سامانه. فایل SQL برای بازگردانی در پایگاه‌دادهٔ دیگر و فایل اکسل برای
@@ -188,7 +185,7 @@ function ExportCard() {
           {busy === "xlsx" ? "در حال آماده‌سازی…" : "دریافت خروجی اکسل"}
         </PrimaryButton>
       </div>
-    </section>
+    </SectionCard>
   );
 }
 
@@ -234,14 +231,14 @@ function StatusCard({
   }
 
   return (
-    <section className="rounded-2xl bg-card p-5 shadow-sm">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <h2 className="font-semibold">وضعیت پشتیبان‌گیری</h2>
-        <PrimaryButton onClick={backupNow} disabled={busy}>
+    <SectionCard
+      title="وضعیت پشتیبان‌گیری"
+      actions={
+        <Button type="button" onClick={backupNow} disabled={busy}>
           {busy ? "در حال پشتیبان‌گیری…" : "پشتیبان‌گیری هم‌اکنون"}
-        </PrimaryButton>
-      </div>
-
+        </Button>
+      }
+    >
       {error ? <ErrorBox>{error}</ErrorBox> : null}
       {message ? <InfoBox>{message}</InfoBox> : null}
 
@@ -298,7 +295,7 @@ function StatusCard({
                   <td className="py-2">{r.trigger === "scheduled" ? "زمان‌بندی" : "دستی"}</td>
                   <td className="py-2 tabular-nums">{formatSize(r.sizeBytes)}</td>
                   <td className="py-2">
-                    <StatusBadge status={r.status} />
+                    <RunStatus status={r.status} />
                     {r.error ? (
                       <p dir="ltr" className="mt-1 max-w-xs truncate text-xs text-destructive" title={r.error}>
                         {r.error}
@@ -311,7 +308,7 @@ function StatusCard({
           </table>
         </div>
       )}
-    </section>
+    </SectionCard>
   );
 }
 
@@ -346,10 +343,9 @@ function SettingsCard({ onSaved }: { onSaved: () => void }) {
 
   if (!config) {
     return (
-      <section className="rounded-2xl bg-card p-5 shadow-sm">
-        <h2 className="mb-1 font-semibold">تنظیمات پشتیبان‌گیری</h2>
+      <SectionCard title="تنظیمات پشتیبان‌گیری">
         <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>
-      </section>
+      </SectionCard>
     );
   }
 
@@ -375,8 +371,7 @@ function SettingsCard({ onSaved }: { onSaved: () => void }) {
   }
 
   return (
-    <section className="rounded-2xl bg-card p-5 shadow-sm">
-      <h2 className="mb-1 font-semibold">تنظیمات پشتیبان‌گیری</h2>
+    <SectionCard title="تنظیمات پشتیبان‌گیری">
       <p className="mb-4 text-sm text-muted-foreground">
         {localOnly ? (
           <>
@@ -537,6 +532,6 @@ function SettingsCard({ onSaved }: { onSaved: () => void }) {
 
         <PrimaryButton disabled={busy}>ذخیره</PrimaryButton>
       </form>
-    </section>
+    </SectionCard>
   );
 }

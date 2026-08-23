@@ -5,6 +5,7 @@ import { Loader2Icon, SparklesIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useFeatureLocked } from "@/components/feature-lock";
+import { SectionCard } from "../page-chrome";
 
 interface Overview {
   enabled: boolean;
@@ -78,36 +79,35 @@ export function AiProactiveSettings() {
 
   if (loading) {
     return (
-      <section className="rounded-2xl border bg-card p-5 text-sm text-muted-foreground">
+      <SectionCard bodyClassName="min-w-0 p-4 text-sm text-muted-foreground sm:p-5">
         <Loader2Icon className="me-2 inline size-4 animate-spin" /> در حال خواندن تنظیمات گزارش‌های خودکار…
-      </section>
+      </SectionCard>
     );
   }
   if (!data) return null;
 
   return (
-    <section className="rounded-2xl border bg-card p-5">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="max-w-xl">
-          <h2 className="flex items-center gap-2 font-semibold">
-            <SparklesIcon className="size-5 text-primary" /> گزارش‌های خودکار دستیار
-          </h2>
-          <p className="mt-1 text-sm leading-6 text-muted-foreground">
-            خلاصهٔ روزانه و هفتگی، هشدارهای عملیاتی و پیش‌نویس‌های پیگیری بدهی در پس‌زمینه آماده می‌شوند. این کار از اعتبار AI شما استفاده می‌کند؛ هیچ پیام مشتری به‌صورت خودکار ارسال نمی‌شود.
-          </p>
-        </div>
+    <SectionCard
+      title={
+        <span className="flex items-center gap-2">
+          <SparklesIcon className="size-5 text-primary" aria-hidden="true" /> گزارش‌های خودکار دستیار
+        </span>
+      }
+      description="خلاصهٔ روزانه و هفتگی، هشدارهای عملیاتی و پیش‌نویس‌های پیگیری بدهی در پس‌زمینه آماده می‌شوند. این کار از اعتبار AI شما استفاده می‌کند؛ هیچ پیام مشتری به‌صورت خودکار ارسال نمی‌شود."
+      actions={
         <Button variant={data.enabled ? "outline" : "default"} onClick={() => void toggle()} disabled={saving} aria-pressed={data.enabled}>
           {saving ? <Loader2Icon className="animate-spin" /> : null}
           {data.enabled ? "غیرفعال‌سازی" : "فعال‌سازی"}
         </Button>
-      </div>
-      <div className="mt-4 grid gap-2 text-xs text-muted-foreground sm:grid-cols-3">
+      }
+    >
+      <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-3">
         <p>وضعیت: <span className="font-medium text-foreground">{data.enabled ? "فعال" : "غیرفعال"}</span></p>
         <p>
           آخرین اجرا: <span className="font-medium text-foreground">{data.lastRunAt ? `${formatDate(data.lastRunAt)}${data.lastRunStatus ? ` · ${statusLabel[data.lastRunStatus]}` : ""}` : "هنوز اجرا نشده"}</span>
         </p>
         <p>پیش‌نویس‌های آماده: <span className="font-medium text-foreground">{data.draftCount.toLocaleString("fa-IR")}</span></p>
       </div>
-    </section>
+    </SectionCard>
   );
 }

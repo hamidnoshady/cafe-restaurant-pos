@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { Switch } from "@/components/ui/switch";
 import { useFeatureLocked } from "@/components/feature-lock";
 import { AI_AGENT_DEFINITIONS, type AiAgentKey } from "@/lib/ai-agents";
+import { cardClass } from "../page-chrome";
 
 interface AgentOverviewEntry {
   agentKey: AiAgentKey;
@@ -101,9 +102,9 @@ export function AiAgentCards({ onTodayTasksChange }: { onTodayTasksChange?: (tas
   }
 
   return (
-    <section className="flex flex-col overflow-hidden rounded-2xl border bg-card">
-      <header className="border-b px-3 py-2.5">
-        <p className="text-sm font-semibold">ایجنت‌های فعال</p>
+    <section className={cn("flex flex-col overflow-hidden", cardClass)}>
+      <header className="border-b border-stone-200/80 px-3 py-2.5">
+        <p className="text-sm font-semibold text-stone-950">ایجنت‌های فعال</p>
       </header>
       <div className="space-y-1.5 p-1.5">
         {agents === null ? (
@@ -116,7 +117,7 @@ export function AiAgentCards({ onTodayTasksChange }: { onTodayTasksChange?: (tas
             const Icon = AGENT_ICONS[definition.key];
             const status = entry?.status ?? "inactive";
             return (
-              <div key={definition.key} className="rounded-xl border bg-background p-2.5">
+              <div key={definition.key} className="rounded-xl border border-stone-200/80 bg-background p-2.5">
                 <div className="flex items-start gap-2">
                   <Icon className="mt-0.5 size-4 shrink-0 text-primary" />
                   <div className="min-w-0 flex-1">

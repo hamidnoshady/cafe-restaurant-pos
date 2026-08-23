@@ -347,7 +347,7 @@ export function PurchasesSection({
 
   return (
     <div className="space-y-6">
-      <section className="min-w-0 rounded-2xl bg-card p-5 shadow-sm">
+      <section className="min-w-0 rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-5">
         <h2 className="mb-3 font-semibold">ثبت خرید (رسید ورود کالا)</h2>
         <form onSubmit={submit} className="space-y-3">
           <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -379,7 +379,7 @@ export function PurchasesSection({
         </form>
       </section>
 
-      <section className="min-w-0 rounded-2xl bg-card p-5 shadow-sm">
+      <section className="min-w-0 rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-5">
         <h2 className="mb-3 font-semibold">خریدهای اخیر</h2>
 
         <div className="mb-4 grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">

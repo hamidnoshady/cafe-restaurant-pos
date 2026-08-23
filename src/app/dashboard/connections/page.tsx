@@ -4,6 +4,7 @@ import { query, withTenant } from "@/lib/db";
 import { effectiveFeatures } from "@/lib/features";
 import type { Industry } from "@/lib/industries";
 import { visibleConnectionKinds, resolveConnectionKind } from "@/lib/connection-kinds";
+import { PageHeader, PageShell } from "../page-chrome";
 import { ConnectionsManager } from "./connections-manager";
 
 /**
@@ -40,14 +41,11 @@ export default async function ConnectionsPage({
   const active = resolveConnectionKind(tab, kinds)!;
 
   return (
-    <div className="mx-auto w-full max-w-[1400px]">
-      <header className="mb-5 border-b border-stone-200/80 pb-5 sm:mb-6 sm:pb-6">
-        <h1 className="text-2xl font-bold tracking-tight text-stone-950 sm:text-[1.7rem]">اتصال‌ها</h1>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
-          اتصال این کسب‌وکار به برنامهٔ دسکتاپ، فروشگاه اینترنتی و برنامه‌های توسعه‌دهندگان — همراه با
-          آزمایش اتصال، وضعیت همگام‌سازی و مدیریت کلیدها.
-        </p>
-      </header>
+    <PageShell>
+      <PageHeader
+        title="اتصال‌ها"
+        description="اتصال این کسب‌وکار به برنامهٔ دسکتاپ، فروشگاه اینترنتی و برنامه‌های توسعه‌دهندگان — همراه با آزمایش اتصال، وضعیت همگام‌سازی و مدیریت کلیدها."
+      />
       <ConnectionsManager
         kinds={kinds}
         initialTab={active}
@@ -56,6 +54,6 @@ export default async function ConnectionsPage({
           api_platform: Boolean(features.api_platform),
         }}
       />
-    </div>
+    </PageShell>
   );
 }

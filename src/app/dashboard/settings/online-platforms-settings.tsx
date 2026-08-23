@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { toLatinDigits } from "@/lib/digits";
 import { ErrorBox, Field, InfoBox, PrimaryButton, api, errorMessage, inputClass } from "../ui";
+import { SectionCard } from "../page-chrome";
 
 interface OnlinePlatformsResponse {
   onlinePlatforms: { snappfood: { commissionPercent: number } | null };
@@ -77,8 +78,7 @@ export function OnlinePlatformsSettings() {
       <ErrorBox>{error}</ErrorBox>
       {saved ? <InfoBox>تنظیمات پلتفرم آنلاین ذخیره شد.</InfoBox> : null}
 
-      <section className="rounded-2xl bg-card p-5 shadow-sm">
-        <h2 className="mb-1 font-semibold">کارمزد اسنپ‌فود</h2>
+      <SectionCard title="کارمزد اسنپ‌فود">
         <p className="mb-4 text-sm text-muted-foreground">
           این درصد از مبلغ هر سفارشی که هنگام تسویه با روش «اسنپ‌فود» ثبت می‌شود کسر و به‌عنوان هزینهٔ کارمزد پلتفرم ثبت
           می‌شود؛ باقیمانده به‌عنوان مطالبات از اسنپ‌فود ثبت می‌شود تا زمانی که تسویه واقعی دریافت شود. چون این نرخ بر
@@ -103,7 +103,7 @@ export function OnlinePlatformsSettings() {
             </div>
           </Field>
         </div>
-      </section>
+      </SectionCard>
 
       <div className="max-w-xs">
         <PrimaryButton disabled={saving}>{saving ? "در حال ذخیره…" : "ذخیرهٔ تنظیمات"}</PrimaryButton>

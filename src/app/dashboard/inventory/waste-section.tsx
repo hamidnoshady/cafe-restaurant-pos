@@ -65,7 +65,7 @@ export function WasteSection({ items, busy, run }: { items: InventoryItem[]; bus
 
   return (
     <div className="space-y-6">
-      <section className="min-w-0 rounded-2xl bg-card p-5 shadow-sm">
+      <section className="min-w-0 rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-5">
         <h2 className="mb-3 font-semibold">ثبت ضایعات</h2>
         <p className="mb-3 text-xs text-muted-foreground">
           ضایعات مستقل از فروش است و تنها موجودی را کاهش می‌دهد؛ در ارقام فروش اثری ندارد.
@@ -111,7 +111,7 @@ export function WasteSection({ items, busy, run }: { items: InventoryItem[]; bus
         </form>
       </section>
 
-      <section className="min-w-0 rounded-2xl bg-card p-5 shadow-sm">
+      <section className="min-w-0 rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-5">
         <h2 className="mb-3 font-semibold">ضایعات اخیر</h2>
         <ul className="divide-y divide-border rounded-lg border border-border">
           {(entries ?? []).map((e) => (

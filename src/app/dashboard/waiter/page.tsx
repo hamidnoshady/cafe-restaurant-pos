@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { requireModuleForPage } from "@/lib/industry-guard";
 import { requireFeatureForPage } from "@/lib/features";
+import { PageHeader, PageShell } from "../page-chrome";
 import { WaiterBoard } from "./waiter-board";
 
 export default async function WaiterPage() {
@@ -12,16 +13,9 @@ export default async function WaiterPage() {
   await requireFeatureForPage(session.businessId, "reservations");
 
   return (
-    <div className="mx-auto max-w-[1600px]">
-      <header className="mb-4 sm:mb-5">
-        <h1 className="text-2xl font-bold tracking-tight text-[#252522]">
-          میزهای من
-        </h1>
-        <p className="mt-1 text-sm text-[#77756F]">
-          میزهای تخصیص‌داده‌شده به شما
-        </p>
-      </header>
+    <PageShell>
+      <PageHeader title="میزهای من" description="میزهای تخصیص‌داده‌شده به شما" />
       <WaiterBoard />
-    </div>
+    </PageShell>
   );
 }

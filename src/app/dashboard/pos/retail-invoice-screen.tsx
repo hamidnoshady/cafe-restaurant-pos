@@ -31,6 +31,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ledgerSettlementFor } from "@/lib/payment-methods";
 import { api, ErrorBox, Field, inputClass } from "../ui";
 import { usePaymentMethods } from "../payment-ways";
+import { PageHeader, PageShell } from "../page-chrome";
 
 type Purity = "18" | "21" | "24";
 
@@ -239,21 +240,17 @@ export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
   }
 
   return (
-    <div className="mx-auto w-full max-w-[1600px]">
-      <header className="mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-stone-200/80 pb-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-stone-950">
-            {labelFor(industry, "sellScreen")}
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            کالاها را به فاکتور اضافه کنید، مشتری و روش پرداخت را انتخاب کنید و فاکتور را ثبت کنید.
-          </p>
-        </div>
-        <Button variant="outline" onClick={() => void load()} disabled={loading || busy}>
-          <RefreshCwIcon aria-hidden="true" className="size-4" />
-          به‌روزرسانی
-        </Button>
-      </header>
+    <PageShell>
+      <PageHeader
+        title={labelFor(industry, "sellScreen")}
+        description="کالاها را به فاکتور اضافه کنید، مشتری و روش پرداخت را انتخاب کنید و فاکتور را ثبت کنید."
+        actions={
+          <Button variant="outline" onClick={() => void load()} disabled={loading || busy}>
+            <RefreshCwIcon aria-hidden="true" className="size-4" />
+            به‌روزرسانی
+          </Button>
+        }
+      />
 
       <ErrorBox>{error}</ErrorBox>
       {done ? (
@@ -380,7 +377,7 @@ export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
           </div>
         </aside>
       </div>
-    </div>
+    </PageShell>
   );
 }
 

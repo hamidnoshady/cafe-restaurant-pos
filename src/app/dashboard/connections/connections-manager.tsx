@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { FeatureLock } from "@/components/feature-lock";
 import type { ConnectionKind, ConnectionKindKey } from "@/lib/connection-kinds";
+import { TabBar, TabPanel } from "../page-chrome";
 import { DesktopPanel } from "./desktop-panel";
 import { WooCommercePanel } from "./woocommerce-panel";
 import { ApiTokensPanel } from "./api-tokens-panel";
@@ -40,33 +41,18 @@ export function ConnectionsManager({
   const locked = Boolean(activeKind.feature && !features[activeKind.feature]);
 
   return (
-    <div className="space-y-6">
-      <div role="tablist" aria-label="نوع اتصال" className="flex flex-wrap gap-2">
-        {kinds.map((kind) => (
-          <button
-            key={kind.key}
-            type="button"
-            role="tab"
-            aria-selected={kind.key === active}
-            onClick={() => select(kind.key)}
-            className={`rounded-full px-4 py-2 text-sm font-medium transition ${
-              kind.key === active
-                ? "bg-stone-900 text-white"
-                : "border border-stone-200 bg-card text-stone-700 hover:border-stone-400"
-            }`}
-          >
-            {kind.label}
-          </button>
-        ))}
-      </div>
+    <div className="min-w-0 space-y-4 sm:space-y-5">
+      <TabBar idPrefix="connections" label="نوع اتصال" tabs={kinds} active={active} onChange={select} />
 
-      <p className="text-sm leading-6 text-muted-foreground">{activeKind.description}</p>
+      <TabPanel idPrefix="connections" active={active}>
+        <p className="mb-4 text-sm leading-6 text-muted-foreground">{activeKind.description}</p>
 
-      <FeatureLock locked={locked} title={activeKind.label}>
-        {active === "desktop" ? <DesktopPanel /> : null}
-        {active === "woocommerce" ? <WooCommercePanel /> : null}
-        {active === "api" ? <ApiTokensPanel /> : null}
-      </FeatureLock>
+        <FeatureLock locked={locked} title={activeKind.label}>
+          {active === "desktop" ? <DesktopPanel /> : null}
+          {active === "woocommerce" ? <WooCommercePanel /> : null}
+          {active === "api" ? <ApiTokensPanel /> : null}
+        </FeatureLock>
+      </TabPanel>
     </div>
   );
 }

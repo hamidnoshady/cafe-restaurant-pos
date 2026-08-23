@@ -114,7 +114,7 @@ export function FixedAssetsSection({ busy, refreshKey }: { busy: boolean; refres
 
   return (
     <div className="space-y-4">
-      <section className="rounded-2xl bg-card p-4 shadow-sm sm:p-5">
+      <section className="rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-4 sm:p-5">
         <p className="text-xs font-semibold text-[#9B6700]">دفتر دارایی</p>
         <h2 className="mt-1">ثبت دارایی ثابت</h2>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
@@ -152,7 +152,7 @@ export function FixedAssetsSection({ busy, refreshKey }: { busy: boolean; refres
         </form>
       </section>
 
-      <section className="rounded-2xl bg-card p-4 shadow-sm sm:p-5">
+      <section className="rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-4 sm:p-5">
         <div className="mb-4">
           <p className="text-xs font-semibold text-[#9B6700]">فهرست دارایی‌ها</p>
           <h2 className="mt-1">دارایی‌های ثابت</h2>
