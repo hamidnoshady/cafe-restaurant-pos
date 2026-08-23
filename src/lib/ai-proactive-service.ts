@@ -37,6 +37,7 @@ import { listCustomerBalances, UNKNOWN_CUSTOMER_KEY } from "./ar-service";
 import { query, withTenant, withoutTenantScope } from "./db";
 import { isFeatureEnabled } from "./features";
 import { serviceDueDate } from "./watch";
+import { runCoworkerTick } from "./ai-coworker-service";
 import {
   AGENT_RUN_KIND,
   AI_AGENT_KEYS,
@@ -743,8 +744,22 @@ async function runBusinessProactiveJobs(
   const settings = await getAiProactiveSettings(businessId);
   const timezone = await businessTimezone(businessId);
   const clock = localBusinessClock(now, timezone);
+
+  // Phase 32 — the coworker rides this tick for the same reason autopilot does
+  // (one tenant enumeration, not two), but runs BEFORE the digest-due check and
+  // regardless of `settings.enabled`: a job fires on a business event, so "the
+  // shift just closed" cannot wait for the once-a-day digest hour, and a job's
+  // actions are built by a pure template with no provider call, so it spends no
+  // credits and needs no credit opt-in. It must never take the digests down.
+  let coworkerCompleted = 0;
+  try {
+    coworkerCompleted = await runCoworkerTick(businessId, clock);
+  } catch (error) {
+    console.error(`coworker tick failed for business ${businessId}:`, errorText(error));
+  }
+
   const due = dueProactiveRuns(settings, clock);
-  if (due.length === 0) return 0;
+  if (due.length === 0) return coworkerCompleted;
   // Phase 31 — autopilot rides this tick rather than opening a second business
   // enumeration under its own bypass. It is gated by the same credit opt-in
   // (settings.enabled, already true to be here) plus its own per-category
@@ -784,7 +799,7 @@ async function runBusinessProactiveJobs(
       console.error(`proactive AI ${kind} run failed for business ${businessId}:`, errorText(error));
     }
   }
-  return completed + autopilotCompleted;
+  return completed + autopilotCompleted + coworkerCompleted;
 }
 
 /**

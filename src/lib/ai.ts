@@ -162,7 +162,16 @@ export type ActionType =
   | "courier.assign"
   | "customer.note.add"
   | "journal.manual.propose"
-  | "expense.categorize";
+  | "expense.categorize"
+  // Phase 32 — the three the coworker needed and the catalogue never had.
+  // `inventory.waste.log` reverses a Phase 31 decision *narrowly*: waste was
+  // detect-and-flag-only because "why did this stock leave" is a fact only a
+  // person in the room has. A coworker job carries exactly that fact, chosen
+  // by the owner in advance ("bread, end of night, spoilage"), so the missing
+  // half is supplied by a human — just earlier than the write.
+  | "inventory.waste.log"
+  | "inventory.production.run"
+  | "menu.item.create";
 
 /**
  * Phase 31 — which server-side executor can run an action without a browser.
@@ -175,7 +184,9 @@ export type AutopilotExecutorKey =
   | "orderDiscount"
   | "expense"
   | "journalDraft"
-  | "customerNote";
+  | "customerNote"
+  | "wasteLog"
+  | "productionRun";
 
 export interface ActionMeta {
   type: ActionType;
@@ -203,6 +214,15 @@ export interface ActionMeta {
   autopilotCategory?: AutopilotCategory;
   /** Present only where a server-side executor exists. See ai-autopilot-executors.ts. */
   executor?: AutopilotExecutorKey;
+  /**
+   * Phase 32 — eligible for an unattended write, but only when a *human*
+   * authored the job that proposes it. This keeps Phase 31's decision intact
+   * where it was right: `actionTypesForCategory` (which builds an autopilot
+   * run's own catalogue) excludes these, so the model still never discovers on
+   * its own that some stock should be written off. A coworker job may, because
+   * the owner wrote down which item and why before the night began.
+   */
+  coworkerOnly?: boolean;
   /**
    * Whether an applied instance can be undone in one click. "while_open" =
    * only until the bill is settled; false = no one-click undo exists.
@@ -401,6 +421,47 @@ export const ACTION_CATALOG: Record<ActionType, ActionMeta> = {
     // category ships with the tightest default caps of the five.
     revertible: false,
   },
+
+  // -- Phase 32 --------------------------------------------------------------
+  "inventory.waste.log": {
+    type: "inventory.waste.log",
+    endpoint: "/api/inventory/waste",
+    method: "POST",
+    label: "ثبت ضایعات کالا",
+    payloadHint:
+      '{ inventoryItemId: string, quantity: string /* مقدار به‌صورت رشته، در واحد انبار */, reason: "spoilage"|"prep_error"|"customer_return"|"staff_meal"|"other", note?: string }',
+    autopilotCategory: "waste",
+    executor: "wasteLog",
+    coworkerOnly: true,
+    // Waste consumes real FIFO/weighted-average layers at their own cost;
+    // "undoing" it would be a receipt at a cost nobody paid, so there is no
+    // honest one-click undo. Correct a mistaken write-off with a stock count.
+    revertible: false,
+  },
+  "inventory.production.run": {
+    type: "inventory.production.run",
+    endpoint: "/api/inventory/production/runs",
+    method: "POST",
+    label: "ثبت تولید داخلی",
+    payloadHint:
+      "{ formulaId: string, batches: string /* تعداد بچ به‌صورت رشته */, outputQuantity?: string /* مقدار واقعی تولیدشده */, note?: string }",
+    autopilotCategory: "inventory",
+    executor: "productionRun",
+    // Phase 29 gives a run a real reversal (refused once the batch has sold),
+    // which is exactly what a one-click undo needs.
+    revertible: "always",
+  },
+  "menu.item.create": {
+    type: "menu.item.create",
+    endpoint: "/api/menu/items",
+    method: "POST",
+    label: "افزودن آیتم جدید به منو",
+    payloadHint:
+      "{ categoryId: string, name: string, price: number /* ریال صحیح */, description?: string, sku?: string }",
+    // Deliberately no autopilotCategory: adding something a customer can order
+    // is a product decision, not a bookkeeping one. It is chat-and-confirm
+    // ("یک آیتم جدید به منو اضافه کن") forever, whatever an owner switches on.
+  },
 };
 
 /** A single mutation the agent wants to run, pending the user's "Apply". */
@@ -503,6 +564,8 @@ export function buildSystemPrompt(ctx: PromptContext): string {
       "در این حالت به کاربر (مالک/مدیر) کمک می‌کنی: نمایش و تحلیل گزارش‌ها (فروش، منو، موجودی، حسابداری)، پاسخ به سؤال دربارهٔ وضعیت راه‌اندازی، و انجام کارهای مجاز از طریق پیشنهادِ قابل‌تأیید.",
       "برای گزارش‌ها اول list_reports را صدا بزن تا کلیدهای معتبر را بدانی، سپس run_report را با key و در صورت نیاز بازهٔ تاریخ اجرا کن و خلاصهٔ خوانا بده.",
       "علاوه بر گزارش‌های استاندارد، ابزارهای تخصصی هم داری: عملکرد منو و آیتم‌های باطل‌شده (get_menu_performance، get_void_pattern)، موجودی و تأمین‌کنندگان (get_stock_valuation، get_supplier_performance)، رزرو و میز (get_reservation_conflicts، get_table_turnover_rate)، پیک تحویل (get_courier_performance)، مشتریان (get_customer_profile، get_at_risk_customers)، حسابداری (get_ar_aging، get_ap_upcoming، get_unreconciled_bank_lines، get_payroll_summary، get_vat_liability)، مقایسهٔ شعبه‌ها (get_branch_comparison)، تخمین تقاضا (forecast_demand)، اقلام در حال انقضا (get_near_expiry_items)، پورسانت کارکنان (get_staff_commission) و مشتریان آمادهٔ خرید مجدد (get_repurchase_candidates). هر کدام مناسب سؤال بود همان را صدا بزن؛ برای forecast_demand همیشه در پاسخ صریح بگو که یک تخمین است.",
+      "برای سؤال‌هایی مثل «حساب‌هایم را بررسی کن»، «اشتباهی هست؟» یا «چه چیزی جا افتاده؟» حتماً run_accounting_review را صدا بزن و دقیقاً همان یافته‌ها را با درجهٔ اهمیت و پیشنهاد اصلاحشان گزارش کن. هرگز از خودت مورد اضافه نکن و هرگز نگو حسابی مشکل دارد مگر این ابزار گفته باشد.",
+      "کاربر می‌تواند کارهای تکرارشونده را به «همکار هوشمند» بسپارد (مثلاً «هر شب با بستن شیفت، ماندهٔ نان را ضایعات بزن» یا «هر روز صبح حساب‌ها را بررسی کن»). با list_coworker_jobs می‌توانی کارهای فعلی و تعداد اجراهای منتظر تأیید را ببینی؛ برای ساختن کار جدید کاربر را به بخش «همکار هوشمند» در صفحهٔ هوش مصنوعی راهنمایی کن.",
       "برای هر تغییر در داده‌ها هرگز مستقیم اقدام نکن؛ فقط ابزار propose_action را با نوع مجاز و payload کامل صدا بزن. کاربر خودش با دکمهٔ تأیید آن را اجرا می‌کند (human-in-the-loop).",
       "قبل از پیشنهاد، اطلاعات لازم را با پرسیدن سؤال از کاربر کامل کن؛ فیلدها را با حدس‌های نامطمئن پر نکن.",
       ctx.hasAttachment
@@ -737,6 +800,27 @@ export function toolDefinitions(mode: AgentMode, opts: ToolDefinitionsOptions = 
     noArgsTool(
       "get_repurchase_candidates",
       "مشتریانی که طبق فاصلهٔ خرید ثبت‌شده، وقت خرید مجددشان رسیده است (وفاداری).",
+    ),
+    // Phase 32 — the coworker's own two. Both are deterministic checks over the
+    // database, not model judgement; the assistant explains what they found.
+    {
+      type: "function",
+      function: {
+        name: "run_accounting_review",
+        description:
+          "بازبینی کامل دفترها و پیدا کردن اشکال‌های واقعی: سند نامتوازن، رویداد انباری ثبت‌نشده در دفتر، فروش تسویه‌شدهٔ بدون سند، سرفصل جاافتاده، پیش‌نویس معطل، کسری/اضافهٔ صندوق، چک سررسیدگذشته، طلب معوق، موجودی منفی و دورهٔ مالی بسته‌نشده. هر مورد با درجهٔ اهمیت، مبلغ و پیشنهاد اصلاح برمی‌گردد. این ابزار یک بررسی قطعی روی داده است، نه تحلیل حدسی — نتیجهٔ آن را همان‌طور که هست گزارش کن و موردی به آن اضافه نکن.",
+        parameters: {
+          type: "object",
+          properties: {
+            asOfDate: { type: "string", description: "تاریخ مبنا (ISO)، پیش‌فرض امروز" },
+          },
+          additionalProperties: false,
+        },
+      },
+    },
+    noArgsTool(
+      "list_coworker_jobs",
+      "فهرست کارهای تعریف‌شدهٔ «همکار هوشمند» این کسب‌وکار (قالب، زمان اجرا، حالت تأیید، آخرین اجرا) و تعداد اجراهای منتظر تأیید. پارامتر ندارد.",
     ),
   ];
 

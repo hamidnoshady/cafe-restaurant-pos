@@ -13,6 +13,7 @@ import {
   toPublicConfig,
   validateConfigInput,
 } from "./ai";
+import { actionTypesForCategory } from "./ai-autopilot";
 
 describe("provider metadata", () => {
   it("knows both providers and only those", () => {
@@ -335,8 +336,22 @@ describe("Phase 31 — autopilot tagging of the action catalogue", () => {
         "menu.item.disable",
         "menu.item.priceUpdate",
         "order.discount.apply",
+        // Phase 32 additions. `inventory.waste.log` is also `coworkerOnly`,
+        // which is the whole distinction: eligible for an unattended write,
+        // but only from a job a human wrote down — never from the model's own
+        // discovery. The next test pins that half.
+        "inventory.production.run",
+        "inventory.waste.log",
       ].sort(),
     );
+  });
+
+  it("keeps waste out of an autopilot run's own catalogue — only a human-authored job may log it", () => {
+    const coworkerOnly = ACTION_TYPES.filter((t) => ACTION_CATALOG[t].coworkerOnly);
+    expect(coworkerOnly).toEqual(["inventory.waste.log"]);
+    // Phase 31's reasoning — "why did this stock leave" is a fact only a person
+    // in the room has — still holds for a model deciding on its own.
+    expect(actionTypesForCategory("waste")).toEqual([]);
   });
 
   it("tags category, executor and revertible together — never half of them", () => {

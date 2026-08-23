@@ -17,6 +17,7 @@ import { AiAttachmentChip, AiComposerTools } from "@/components/ai/ai-composer-t
 import { AiProposalCard } from "@/components/ai/ai-proposal-card";
 import { SUGGESTED_PROMPTS, useAiChat } from "@/components/ai/use-ai-chat";
 import { AiActionAudit } from "./ai-action-audit";
+import { AiCoworkerPanel } from "./ai-coworker-panel";
 import { AiAgentCards, type AgentTodayTask } from "./ai-agent-cards";
 import { AiBillingDashboard } from "./ai-billing";
 import { AiProactiveSettings } from "./ai-proactive-settings";
@@ -26,19 +27,29 @@ import { AiRecentConversations } from "./ai-recent-conversations";
 import { AiTodayTasks } from "./ai-today-tasks";
 import { TabBar, TabPanel, cardClass, type Tab } from "../page-chrome";
 
-type HubTab = "chat" | "settings";
+type HubTab = "chat" | "coworker" | "settings";
 
 const HUB_TABS: readonly Tab<HubTab>[] = [
   { key: "chat", label: "چت هوش مصنوعی" },
+  // Phase 32 — second, not last: after the first week an owner comes here to
+  // clear the inbox far more often than to chat.
+  { key: "coworker", label: "همکار هوشمند" },
   { key: "settings", label: "تنظیمات" },
 ];
 
-export function AiChatHub() {
+function isHubTab(value: string | null): value is HubTab {
+  return value === "chat" || value === "coworker" || value === "settings";
+}
+
+export function AiChatHub({ canAutoApply }: { canAutoApply: boolean }) {
   const locked = useFeatureLocked();
   const router = useRouter();
   const searchParams = useSearchParams();
   const money = useMoney();
-  const [tab, setTab] = useState<HubTab>(searchParams.get("tab") === "settings" ? "settings" : "chat");
+  const [tab, setTab] = useState<HubTab>(() => {
+    const requested = searchParams.get("tab");
+    return isHubTab(requested) ? requested : "chat";
+  });
   const [conversationsKey, setConversationsKey] = useState(0);
   const [todayTasks, setTodayTasks] = useState<AgentTodayTask[] | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -91,8 +102,8 @@ export function AiChatHub() {
   function selectTab(next: HubTab) {
     setTab(next);
     const params = new URLSearchParams(searchParams.toString());
-    if (next === "settings") params.set("tab", "settings");
-    else params.delete("tab");
+    if (next === "chat") params.delete("tab");
+    else params.set("tab", next);
     params.delete("conversation");
     router.replace(`/dashboard/ai${params.toString() ? `?${params.toString()}` : ""}`, { scroll: false });
   }
@@ -257,6 +268,8 @@ export function AiChatHub() {
             />
           </aside>
         </div>
+      ) : tab === "coworker" ? (
+        <AiCoworkerPanel canAutoApply={canAutoApply} />
       ) : (
         <div className="mx-auto w-full max-w-2xl space-y-5">
           <AiProactiveSettings />

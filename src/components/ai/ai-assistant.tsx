@@ -84,10 +84,24 @@ export function AiAssistant({ mode, currentStep }: Props) {
     async function refresh() {
       if (document.visibilityState !== "visible") return;
       try {
-        const response = await fetch("/api/ai/autopilot/activity?countOnly=1");
-        if (!response.ok) return;
-        const body = (await response.json()) as { unseenCount?: number };
-        if (!cancelled) setUnseenCount(Number(body.unseenCount ?? 0));
+        // Phase 32 — one badge, two sources. A coworker run waiting for the
+        // owner's yes is the same kind of "the assistant needs you" as an
+        // autopilot action, and two competing badges on one launcher would
+        // just teach people to ignore both.
+        const [activity, runs] = await Promise.all([
+          fetch("/api/ai/autopilot/activity?countOnly=1"),
+          fetch("/api/ai/coworker/runs?status=pending_approval&limit=1"),
+        ]);
+        let total = 0;
+        if (activity.ok) {
+          const body = (await activity.json()) as { unseenCount?: number };
+          total += Number(body.unseenCount ?? 0);
+        }
+        if (runs.ok) {
+          const body = (await runs.json()) as { pendingCount?: number };
+          total += Number(body.pendingCount ?? 0);
+        }
+        if (!cancelled) setUnseenCount(total);
       } catch {
         // A badge is not worth surfacing an error for.
       }
@@ -109,7 +123,7 @@ export function AiAssistant({ mode, currentStep }: Props) {
         <button
           type="button"
           onClick={() => setOpen(true)}
-          aria-label={unseenCount > 0 ? `دستیار هوشمند — ${unseenCount} اقدام خودکار جدید` : "دستیار هوشمند"}
+          aria-label={unseenCount > 0 ? `دستیار هوشمند — ${unseenCount} مورد نیازمند توجه شما` : "دستیار هوشمند"}
           className="fixed bottom-5 left-5 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg ring-1 ring-foreground/10 transition-transform hover:scale-105 active:scale-95"
         >
           <SparklesIcon className="size-6" />

@@ -149,3 +149,18 @@ export async function revokeApiKey(businessId: string, id: string): Promise<bool
   );
   return (rowCount ?? 0) > 0;
 }
+
+/**
+ * The user who issued a key. Phase 32: a public-API write still has to be
+ * attributable to a person — "an automated write is never anonymous" is the
+ * rule ai_autopilot_settings.authorized_by and ai_coworker_jobs.authorized_by
+ * both encode — and the honest answer for a machine credential is whoever
+ * created it. A key whose issuer is gone can read, but cannot author work.
+ */
+export async function apiKeyIssuerUserId(apiKeyId: string): Promise<string | null> {
+  const { rows } = await query<{ created_by: string | null }>(
+    `SELECT created_by FROM api_keys WHERE id = $1`,
+    [apiKeyId],
+  );
+  return rows[0]?.created_by ?? null;
+}

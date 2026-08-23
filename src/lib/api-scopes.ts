@@ -14,6 +14,13 @@ export const API_SCOPES = {
   inventoryRead: "inventory.read",
   reportsRead: "reports.read",
   webhooksManage: "webhooks.manage",
+  // Phase 32 — the AI coworker over the public API, so a business can build a
+  // sub app around it. Split three ways because reading the setup, changing
+  // the setup, and approving a change the coworker wants to make are three
+  // different levels of trust to hand a long-lived machine credential.
+  accountingRead: "accounting.read",
+  coworkerRead: "coworker.read",
+  coworkerWrite: "coworker.write",
 } as const;
 
 export type ApiScope = (typeof API_SCOPES)[keyof typeof API_SCOPES];
