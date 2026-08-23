@@ -1,7 +1,19 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, useDeferredValue } from "react";
-import { InfoIcon, RefreshCwIcon, SearchIcon, ShoppingBagIcon, UserIcon } from "lucide-react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useDeferredValue,
+} from "react";
+import {
+  InfoIcon,
+  RefreshCwIcon,
+  SearchIcon,
+  ShoppingBagIcon,
+  UserIcon,
+} from "lucide-react";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali, isoDateInTimeZone } from "@/lib/jalali";
 import { useMoney } from "@/components/money/money-context";
@@ -525,7 +537,9 @@ export function OrdersList({
    * empty when the next business day starts — or the moment management closes
    * the day by hand.
    */
-  const [businessDay, setBusinessDay] = useState<BusinessDayWindow | null>(null);
+  const [businessDay, setBusinessDay] = useState<BusinessDayWindow | null>(
+    null,
+  );
   /** Empty for roles that may not review other people's shifts — the picker hides itself. */
   const [shifts, setShifts] = useState<ShiftOption[]>([]);
   /** "" = the default window (this shift, or today). Otherwise the shift being reviewed. */
@@ -533,9 +547,13 @@ export function OrdersList({
   const [initialLoading, setInitialLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [loadError, setLoadError] = useState("");
-  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(initialOrderId);
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(
+    initialOrderId,
+  );
   /** The order whose dialog is open — independent of which row is highlighted. */
-  const [detailOrderId, setDetailOrderId] = useState<string | null>(initialOrderId);
+  const [detailOrderId, setDetailOrderId] = useState<string | null>(
+    initialOrderId,
+  );
   const [detailOpen, setDetailOpen] = useState(Boolean(initialOrderId));
   const [detail, setDetail] = useState<OrderDetailsResponse | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -634,17 +652,11 @@ export function OrdersList({
   );
   const deferredSearchQuery = useDeferredValue(searchQuery);
 
-  // ⚡ Bolt: Use deferred search query to prevent UI blocking on slow text inputs
-  const filteredOrders = useMemo(() => {
-    const normalizedSearch = deferredSearchQuery.trim().toLocaleLowerCase("fa");
-    return orderRows.filter((order) => {
-      const matchesStatus =
-        statusFilter === "all" || order.status === statusFilter;
-      const matchesType = typeFilter === "all" || order.type === typeFilter;
-      const matchesTable =
-        tableFilter === "all" || order.table_name === tableFilter;
-      const matchesDate =
-        !dateFilter || orderDateValue(order.opened_at) === dateFilter;
+  // ⚡ Bolt: Pre-compute the searchable string for each order to avoid
+  // running expensive string allocations and normalization (O(N) operations)
+  // on every keystroke during filtering.
+  const normalizedOrderRows = useMemo(() => {
+    return orderRows.map((order) => {
       const searchableText = [
         formatQueueLabel(order.type, order.order_number),
         TYPE_LABELS[order.type],
@@ -654,17 +666,35 @@ export function OrdersList({
       ]
         .join(" ")
         .toLocaleLowerCase("fa");
-      return (
-        matchesStatus &&
-        matchesType &&
-        matchesTable &&
-        matchesDate &&
-        (!normalizedSearch || searchableText.includes(normalizedSearch))
-      );
+      return { order, searchableText };
     });
+  }, [orderRows]);
+
+  // ⚡ Bolt: Use deferred search query to prevent UI blocking on slow text inputs.
+  // Re-uses pre-computed searchable text for fast `.includes()` checking.
+  const filteredOrders = useMemo(() => {
+    const normalizedSearch = deferredSearchQuery.trim().toLocaleLowerCase("fa");
+    return normalizedOrderRows
+      .filter(({ order, searchableText }) => {
+        const matchesStatus =
+          statusFilter === "all" || order.status === statusFilter;
+        const matchesType = typeFilter === "all" || order.type === typeFilter;
+        const matchesTable =
+          tableFilter === "all" || order.table_name === tableFilter;
+        const matchesDate =
+          !dateFilter || orderDateValue(order.opened_at) === dateFilter;
+        return (
+          matchesStatus &&
+          matchesType &&
+          matchesTable &&
+          matchesDate &&
+          (!normalizedSearch || searchableText.includes(normalizedSearch))
+        );
+      })
+      .map(({ order }) => order);
   }, [
     dateFilter,
-    orderRows,
+    normalizedOrderRows,
     deferredSearchQuery,
     statusFilter,
     tableFilter,
@@ -731,11 +761,11 @@ export function OrdersList({
     orderRows.find((order) => order.id === selectedOrderId) ?? null;
   const hasActiveFilters = Boolean(
     searchQuery ||
-      statusFilter !== "all" ||
-      typeFilter !== "all" ||
-      tableFilter !== "all" ||
-      dateFilter ||
-      shiftFilter,
+    statusFilter !== "all" ||
+    typeFilter !== "all" ||
+    tableFilter !== "all" ||
+    dateFilter ||
+    shiftFilter,
   );
 
   /**
@@ -961,7 +991,10 @@ export function OrdersList({
               ariaLabel="فیلتر میز سفارش"
               options={[
                 { value: "all", label: "همهٔ میزها" },
-                ...tableNames.map((tableName) => ({ value: tableName, label: tableName })),
+                ...tableNames.map((tableName) => ({
+                  value: tableName,
+                  label: tableName,
+                })),
               ]}
             />
           </label>
@@ -1001,9 +1034,19 @@ export function OrdersList({
           </div>
 
           {orders ? (
-            <div className="flex items-center gap-2 border-b border-[#EAE8E2] bg-[#FCFCFA] px-4 py-2 text-[11px] text-[#77756F]" role="status">
-              <span title="راهنمای بازه سفارش‌ها" className="inline-flex shrink-0" aria-label="راهنمای بازه سفارش‌ها">
-                <InfoIcon className="size-4 text-[#9B6700]" aria-hidden="true" />
+            <div
+              className="flex items-center gap-2 border-b border-[#EAE8E2] bg-[#FCFCFA] px-4 py-2 text-[11px] text-[#77756F]"
+              role="status"
+            >
+              <span
+                title="راهنمای بازه سفارش‌ها"
+                className="inline-flex shrink-0"
+                aria-label="راهنمای بازه سفارش‌ها"
+              >
+                <InfoIcon
+                  className="size-4 text-[#9B6700]"
+                  aria-hidden="true"
+                />
               </span>
               <span>بازه سفارش‌ها</span>
               <span className="sr-only">
@@ -1127,7 +1170,9 @@ export function OrdersList({
                             className="size-3.5 shrink-0 text-[#9B6700]"
                             aria-hidden="true"
                           />
-                          <span className="truncate">{order.customer_name}</span>
+                          <span className="truncate">
+                            {order.customer_name}
+                          </span>
                         </p>
                       ) : null}
                       <p className="mt-1 truncate text-xs text-[#77756F]">
