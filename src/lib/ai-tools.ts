@@ -1204,7 +1204,12 @@ export async function runReadTool(
         data: {
           asOfDate: review.asOfDate,
           windowDays: review.windowDays,
-          headline: summarizeFindings(review.findings),
+          // The degraded checks travel with the headline. Without them the
+          // model was handed "اشکالی پیدا نشد" for a review that had failed to
+          // run three of its checks, and would tell the owner their books were
+          // clean on the strength of it.
+          headline: summarizeFindings(review.findings, review.unavailableChecks),
+          unavailableChecks: review.unavailableChecks,
           findings: cap(review.findings, 15),
         },
       };

@@ -575,6 +575,7 @@ async function loadFacts(
   if (kinds.includes("accounting_review")) {
     const review = await runAccountingReview(businessId);
     facts.review = review.findings;
+    facts.reviewUnavailableChecks = review.unavailableChecks;
   }
 
   return facts;

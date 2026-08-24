@@ -18,10 +18,17 @@ import {
   type AccountingFinding,
   type AccountingReviewSnapshot,
 } from "./accounting-review";
-import { coaTemplateForIndustry } from "./coa-template";
+import { coaTemplateForIndustry, WELL_KNOWN_CODES } from "./coa-template";
+import { industryProfile } from "./industry-profile";
 import type { Industry } from "./industries";
 
 const DEFAULT_WINDOW_DAYS = 30;
+
+/**
+ * How many rows any one check will carry back. Hit it and the finding says so
+ * (`truncatedChecks`) rather than presenting a capped count as a total.
+ */
+const ROW_CAP = 50;
 
 /**
  * Rules are independent, so one failing query must not lose the other eleven —
@@ -49,6 +56,40 @@ async function safely<T>(
   }
 }
 
+/**
+ * Records that a check came back full, so its finding can say the count is a
+ * floor. `>=` rather than `===` because a future cap change should not silently
+ * turn this off.
+ */
+function markTruncated(rows: readonly unknown[], code: string, truncatedChecks: string[]): void {
+  if (rows.length >= ROW_CAP) truncatedChecks.push(code);
+}
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * `asOfDate` arrives straight off a query string on both routes. An unparseable
+ * one used to reach `new Date(...).toISOString()` and throw a RangeError out of
+ * the whole collector — a 500 on the review screen for a typo — so it is
+ * normalised here instead, before any check runs.
+ */
+function normalizeAsOfDate(value: string | undefined): string {
+  const today = new Date().toISOString().slice(0, 10);
+  if (!value || !ISO_DATE.test(value)) return today;
+  const parsed = new Date(`${value}T12:00:00.000Z`);
+  return Number.isNaN(parsed.getTime()) ? today : value;
+}
+
+/**
+ * Both routes clamp `windowDays` before calling, but a direct caller need not:
+ * a NaN or absurd value would walk `isoDaysAgo` into an Invalid Date and throw
+ * the same RangeError a malformed `asOfDate` used to.
+ */
+function normalizeWindowDays(value: number | undefined): number {
+  if (value === undefined || !Number.isFinite(value) || value <= 0) return DEFAULT_WINDOW_DAYS;
+  return Math.min(3650, Math.floor(value));
+}
+
 function isoDaysAgo(asOfDate: string, days: number): string {
   const atNoon = new Date(`${asOfDate}T12:00:00.000Z`);
   atNoon.setUTCDate(atNoon.getUTCDate() - days);
@@ -70,11 +111,26 @@ export async function collectAccountingSnapshot(
   businessId: string,
   options: AccountingReviewOptions = {},
 ): Promise<CollectedSnapshot> {
-  const asOfDate = options.asOfDate ?? new Date().toISOString().slice(0, 10);
-  const windowDays = options.windowDays ?? DEFAULT_WINDOW_DAYS;
+  const asOfDate = normalizeAsOfDate(options.asOfDate);
+  const windowDays = normalizeWindowDays(options.windowDays);
   const since = isoDaysAgo(asOfDate, windowDays);
   const snapshot = emptyAccountingSnapshot(asOfDate, windowDays);
   const unavailableChecks: string[] = [];
+  // Aliased, not copied: `markTruncated` pushes straight onto the snapshot's
+  // own list, which the rules then read.
+  const truncatedChecks = snapshot.truncatedChecks;
+
+  // Read once, up front: two checks below mean different things depending on
+  // what trade this business is in, and neither should pay for its own lookup.
+  // Wrapped like every other read — this runs before the checks do, so an
+  // unwrapped throw here would take down the whole review rather than one rule.
+  const industry = await safely<Industry>("business industry", "food_service", unavailableChecks, async () => {
+    const { rows } = await query<{ industry: Industry }>(
+      "SELECT industry FROM businesses WHERE id = $1",
+      [businessId],
+    );
+    return rows[0]?.industry ?? "food_service";
+  });
 
   snapshot.unbalancedEntries = await safely("unbalanced entries", snapshot.unbalancedEntries, unavailableChecks, async () => {
     const { rows } = await query<{ id: string; entry_date: string; memo: string | null; debit: string; credit: string }>(
@@ -87,9 +143,10 @@ export async function collectAccountingSnapshot(
         GROUP BY je.id, je.entry_date, je.memo
        HAVING coalesce(sum(jl.debit), 0) <> coalesce(sum(jl.credit), 0)
         ORDER BY je.entry_date DESC
-        LIMIT 50`,
+        LIMIT ${ROW_CAP}`,
       [businessId],
     );
+    markTruncated(rows, "unbalanced_entry", truncatedChecks);
     return rows.map((row) => ({
       id: row.id,
       entryDate: row.entry_date,
@@ -101,14 +158,21 @@ export async function collectAccountingSnapshot(
 
   snapshot.unpostedInventoryEvents = await safely("unposted inventory events", snapshot.unpostedInventoryEvents, unavailableChecks, async () => {
     const { rows } = await query<{ id: string; event_type: string; effective_at: string; posting_status: string }>(
+      // 'pending' and 'failed' only. `<> 'posted'` also caught 'reversed',
+      // which is the opposite of unposted: a reversed event was posted and then
+      // undone by a compensating entry in the same transaction (stock-count,
+      // production and order-amendment reversals all do this), so both halves
+      // are in the ledger. The migration 0013/0015 health views have always
+      // used this pair — the review had drifted from them.
       `SELECT id, event_type::text AS event_type, effective_at::text AS effective_at,
               posting_status::text AS posting_status
          FROM inventory_events
-        WHERE business_id = $1 AND posting_status <> 'posted'
+        WHERE business_id = $1 AND posting_status IN ('pending', 'failed')
         ORDER BY effective_at DESC
-        LIMIT 50`,
+        LIMIT ${ROW_CAP}`,
       [businessId],
     );
+    markTruncated(rows, "unposted_inventory_event", truncatedChecks);
     return rows.map((row) => ({
       id: row.id,
       eventType: row.event_type,
@@ -127,7 +191,7 @@ export async function collectAccountingSnapshot(
         WHERE d.business_id = $1
         GROUP BY d.id, d.memo, d.created_at
         ORDER BY d.created_at
-        LIMIT 50`,
+        LIMIT ${ROW_CAP}`,
       [businessId],
     );
     return rows.map((row) => ({
@@ -164,7 +228,7 @@ export async function collectAccountingSnapshot(
           AND s.opening_float IS NOT NULL
           AND s.closing_float IS NOT NULL
         ORDER BY s.ended_at DESC
-        LIMIT 50`,
+        LIMIT ${ROW_CAP}`,
       [businessId, since],
     );
     return rows.map((row) => ({
@@ -179,11 +243,7 @@ export async function collectAccountingSnapshot(
     // Measured against the business's OWN industry template rather than a
     // hard-coded list, so a jewellery shop is not told it is missing a café's
     // accounts — and so Phase 30's per-trade charts stay the one source.
-    const { rows: businesses } = await query<{ industry: Industry }>(
-      "SELECT industry FROM businesses WHERE id = $1",
-      [businessId],
-    );
-    const template = coaTemplateForIndustry(businesses[0]?.industry ?? "food_service");
+    const template = coaTemplateForIndustry(industry);
     const { rows } = await query<{ code: string }>(
       `SELECT code FROM accounts WHERE business_id = $1`,
       [businessId],
@@ -208,13 +268,20 @@ export async function collectAccountingSnapshot(
          ) sm ON true
         WHERE l.business_id = $1 AND sm.total < 0
         ORDER BY sm.total
-        LIMIT 50`,
+        LIMIT ${ROW_CAP}`,
       [businessId],
     );
+    markTruncated(rows, "negative_stock", truncatedChecks);
     return rows;
   });
 
   snapshot.unreconciledBankLines = await safely("unreconciled bank lines", snapshot.unreconciledBankLines, unavailableChecks, async () => {
+    // The two accounts reconciliation-service.ts can actually reconcile, taken
+    // from the same constants it uses rather than re-typed here. The literals
+    // this replaced were ('1110', '1120') — wrong on both ends: 1110 is the
+    // business's own bank account, which no reconciliation can ever clear, so
+    // its lines accumulated as permanently "unmatched"; and 1100 (صندوق), which
+    // the cash reconciliation does clear, was missing entirely.
     const { rows } = await query<{ count: string; oldest_age: string | null; amount: string }>(
       `SELECT count(*)::text AS count,
               max(floor(extract(epoch FROM (now() - je.entry_date::timestamptz)) / 86400))::text AS oldest_age,
@@ -223,9 +290,9 @@ export async function collectAccountingSnapshot(
          JOIN journal_entries je ON je.id = jl.entry_id
          JOIN accounts a ON a.id = jl.account_id
         WHERE je.business_id = $1
-          AND a.code IN ('1110', '1120')
+          AND a.code IN ($2, $3)
           AND NOT EXISTS (SELECT 1 FROM bank_reconciliation_lines brl WHERE brl.journal_line_id = jl.id)`,
-      [businessId],
+      [businessId, WELL_KNOWN_CODES.cash, WELL_KNOWN_CODES.bankClearing],
     );
     const row = rows[0];
     return {
@@ -236,7 +303,20 @@ export async function collectAccountingSnapshot(
   });
 
   snapshot.closedOrdersWithoutEntry = await safely("orders without entry", snapshot.closedOrdersWithoutEntry, unavailableChecks, async () => {
+    // This check reads `journal_entries (source_type = 'order', source_id =
+    // orders.id)`, which is what postExactOrderPaymentEntry writes — and only
+    // an order-ticket trade settles that way. A retail invoice is an `orders`
+    // row too, but it posts through the domain-event engine, one event per
+    // line, keyed by item id: there is no order-level entry to find, so running
+    // this against a jewellery or cosmetics shop flagged every single sale it
+    // had ever settled as missing from the books.
+    if (industryProfile(industry).salesModel !== "order_ticket") return [];
     const { rows } = await query<{ id: string; reference: string; closed_at: string; total: string }>(
+      // `total > 0` because a fully comped or voided order legitimately posts
+      // nothing: postExactOrderPaymentEntry has no debit line to write and
+      // postExactJournalEntry drops the empty entry. Those are not missing
+      // sales, and reporting them as «فروش بدون سند» sent owners looking for
+      // money that was never collected.
       `SELECT o.id, coalesce(o.order_number::text, o.id::text) AS reference,
               o.closed_at::text AS closed_at, o.total::text AS total
          FROM orders o
@@ -244,14 +324,16 @@ export async function collectAccountingSnapshot(
         WHERE l.business_id = $1
           AND o.status = 'completed'
           AND o.closed_at >= $2::date
+          AND o.total > 0
           AND NOT EXISTS (
               SELECT 1 FROM journal_entries je
                WHERE je.business_id = $1 AND je.source_type = 'order' AND je.source_id = o.id
           )
         ORDER BY o.closed_at DESC
-        LIMIT 50`,
+        LIMIT ${ROW_CAP}`,
       [businessId, since],
     );
+    markTruncated(rows, "closed_order_without_entry", truncatedChecks);
     return rows.map((row) => ({
       id: row.id,
       reference: row.reference,
@@ -292,9 +374,10 @@ export async function collectAccountingSnapshot(
           AND due_date < $2::date
           AND status IN ('on_hand', 'in_collection', 'issued', 'endorsed')
         ORDER BY due_date
-        LIMIT 50`,
+        LIMIT ${ROW_CAP}`,
       [businessId, asOfDate],
     );
+    markTruncated(rows, "overdue_cheque", truncatedChecks);
     return rows.map((row) => ({
       id: row.id,
       serialNumber: row.serial_number,
@@ -314,7 +397,7 @@ export async function collectAccountingSnapshot(
          LEFT JOIN suppliers s ON s.id = p.supplier_id
         WHERE l.business_id = $1 AND p.status = 'draft'
         ORDER BY p.created_at
-        LIMIT 50`,
+        LIMIT ${ROW_CAP}`,
       [businessId],
     );
     return rows.map((row) => ({

@@ -50,6 +50,24 @@ describe("the rules that mean a report is lying", () => {
     ).toContain("unposted_inventory_event");
   });
 
+  // The service now filters `reversed` out in SQL, but the rule is what an
+  // owner reads: if a reversed event ever reaches the snapshot again, the
+  // finding it produces would tell them to re-post a correction they already
+  // made — so the sample text has to keep naming the status it was given.
+  it("names the posting status on each sample, so a reversal can never pass as unposted", () => {
+    const finding = reviewAccounting(
+      snapshot({
+        unpostedInventoryEvents: [
+          { id: "i1", eventType: "sale_consumption", occurredAt: "2026-08-20T10:00:00Z", status: "failed" },
+        ],
+      }),
+    ).find((row) => row.code === "unposted_inventory_event");
+    expect(finding?.samples[0].label).toContain("failed");
+    // Jalali, not the raw ISO date — this renders on a Persian-first screen.
+    expect(finding?.samples[0].label).not.toContain("2026-08-20");
+    expect(finding?.samples[0].label).toContain("۱۴۰۵");
+  });
+
   it("flags a settled sale with no entry, and totals the money that is missing from the books", () => {
     const findings = reviewAccounting(
       snapshot({
@@ -183,5 +201,81 @@ describe("every finding is actionable", () => {
     }
     // Every code is distinct, so two rules can never quietly overwrite one card.
     expect(new Set(findings.map((finding) => finding.code)).size).toBe(findings.length);
+  });
+});
+
+describe("how a finding reads on a Persian phone", () => {
+  it("writes money grouped and in Persian digits, never as a bare integer", () => {
+    const finding = reviewAccounting(
+      snapshot({
+        unbalancedEntries: [
+          { id: "e1", entryDate: "2026-08-01", memo: "سند", debitRial: 619_224_620, creditRial: 0 },
+        ],
+      }),
+    )[0];
+    expect(finding.detail).toContain("۶۱۹٬۲۲۴٬۶۲۰ ریال");
+    expect(finding.detail).not.toContain("619224620");
+    // The machine-readable amount stays an integer Rial — only the prose shifts.
+    expect(finding.amountRial).toBe(619_224_620);
+  });
+
+  it("counts in Persian digits too", () => {
+    const finding = reviewAccounting(
+      snapshot({
+        negativeStock: [
+          { id: "n1", name: "شیر", quantity: "-2.50", unit: "لیتر" },
+          { id: "n2", name: "نان", quantity: "-1", unit: "عدد" },
+        ],
+      }),
+    )[0];
+    expect(finding.detail.startsWith("۲ کالا")).toBe(true);
+    expect(finding.samples[0].label).toContain("-۲.۵ لیتر");
+  });
+});
+
+describe("a rule can never be the thing that breaks the review", () => {
+  it("falls back to the raw date rather than throwing on a malformed one", () => {
+    const finding = reviewAccounting(
+      snapshot({
+        unlockedPastPeriods: [{ id: "f1", label: "۱۴۰۵-۰۴", endsOn: "not-a-date" }],
+      }),
+    )[0];
+    expect(finding.samples[0].label).toContain("not-a-dat");
+  });
+});
+
+describe("a count the service had to cap", () => {
+  it("says so, so «۵۰ مورد» is not read as a total", () => {
+    const rows = Array.from({ length: 50 }, (_, index) => ({
+      id: `n${index}`,
+      name: "شیر",
+      quantity: "-1",
+      unit: "لیتر",
+    }));
+    const capped = reviewAccounting(snapshot({ negativeStock: rows, truncatedChecks: ["negative_stock"] }))[0];
+    expect(capped.detail).toContain("بیشتر باشد");
+
+    const exact = reviewAccounting(snapshot({ negativeStock: rows }))[0];
+    expect(exact.detail).not.toContain("بیشتر باشد");
+  });
+});
+
+describe("a review that could not run every check", () => {
+  it("never reports clean books when a check was unavailable", () => {
+    const summary = summarizeFindings([], ["negative stock", "overdue cheques"]);
+    expect(summary).toContain("کامل نیست");
+    // The clean-books sentence is exactly what must not be said here.
+    expect(summary.startsWith("در بازبینی حساب‌ها اشکالی پیدا نشد")).toBe(false);
+  });
+
+  it("still says nothing was found when every check ran", () => {
+    expect(summarizeFindings([])).toBe("در بازبینی حساب‌ها اشکالی پیدا نشد.");
+  });
+
+  it("appends the caveat to a summary that does have findings", () => {
+    const findings = reviewAccounting(
+      snapshot({ unreconciledBankLines: { count: 2, oldestAgeDays: 3, amountRial: 100 } }),
+    );
+    expect(summarizeFindings(findings, ["negative stock"])).toContain("کامل نیست");
   });
 });
