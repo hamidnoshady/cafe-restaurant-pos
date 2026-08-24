@@ -550,6 +550,23 @@ export function buildSystemPrompt(ctx: PromptContext): string {
   if (ctx.businessName) lines.push(`نام کسب‌وکار: ${ctx.businessName}.`);
   if (ctx.userName) lines.push(`کاربر: ${ctx.userName}${ctx.role ? ` (${ctx.role})` : ""}.`);
 
+  // Phase 33 — the four habits that made the assistant feel like a form rather
+  // than a colleague. Each one is here because a real owner hit it:
+  //   * it asked for an `inventoryItemId` when told «نان»;
+  //   * it printed «spoilage» and «staff_meal» to a Persian-speaking user;
+  //   * it said "not found" for an item that was merely disabled;
+  //   * it answered on a 360px phone with a six-column Markdown table.
+  if (ctx.mode === "dashboard" || ctx.mode === "wizard" || ctx.mode === "floor") {
+    lines.push(
+      "هرگز از کاربر شناسه (id/UUID) نپرس و هرگز شناسه را در پاسخ ننویس. کاربر کالاها را با نام می‌شناسد؛ اگر نامی گفت، اول find_items را صدا بزن و شناسه را خودت پیدا کن. اگر چند مورد مشابه بود، فهرست کوتاهی از نام‌ها بده و بپرس کدام‌یک — نه شناسه‌ها.",
+      "هرگز مقدار خام پایگاه‌داده یا نام انگلیسی فیلد را به کاربر نشان نده (مثل spoilage یا staff_meal یا inventoryItemId). ابزارها برچسب فارسی هر مقدار را کنار خودش برمی‌گردانند؛ همان برچسب را بنویس.",
+      "اگر کالایی غیرفعال بود، صریح بگو «غیرفعال است» — این یک پاسخ درست است، نه «پیدا نشد».",
+      "مبالغ را به تومان بنویس (ابزارها هر مبلغ را به تومان هم می‌دهند؛ خودت تقسیم بر ۱۰ نکن) و اعداد را با جداکنندهٔ هزارگان بیاور.",
+      "پاسخ روی موبایل خوانده می‌شود: کوتاه بنویس، از فهرست گلوله‌ای استفاده کن، و اگر جدول لازم بود حداکثر سه ستون. برای یک یا دو عدد اصلاً جدول نساز — یک جمله بنویس.",
+      "قبل از اینکه بگویی کاری شدنی نیست یا بخشی از نرم‌افزار وجود ندارد، describe_app را صدا بزن و از روی همان پاسخ بده.",
+    );
+  }
+
   if (ctx.mode === "wizard") {
     const step = ctx.currentStep ? WIZARD_STEP_LABELS[ctx.currentStep] ?? ctx.currentStep : null;
     lines.push(
@@ -564,6 +581,7 @@ export function buildSystemPrompt(ctx: PromptContext): string {
       "در این حالت به کاربر (مالک/مدیر) کمک می‌کنی: نمایش و تحلیل گزارش‌ها (فروش، منو، موجودی، حسابداری)، پاسخ به سؤال دربارهٔ وضعیت راه‌اندازی، و انجام کارهای مجاز از طریق پیشنهادِ قابل‌تأیید.",
       "برای گزارش‌ها اول list_reports را صدا بزن تا کلیدهای معتبر را بدانی، سپس run_report را با key و در صورت نیاز بازهٔ تاریخ اجرا کن و خلاصهٔ خوانا بده.",
       "علاوه بر گزارش‌های استاندارد، ابزارهای تخصصی هم داری: عملکرد منو و آیتم‌های باطل‌شده (get_menu_performance، get_void_pattern)، موجودی و تأمین‌کنندگان (get_stock_valuation، get_supplier_performance)، رزرو و میز (get_reservation_conflicts، get_table_turnover_rate)، پیک تحویل (get_courier_performance)، مشتریان (get_customer_profile، get_at_risk_customers)، حسابداری (get_ar_aging، get_ap_upcoming، get_unreconciled_bank_lines، get_payroll_summary، get_vat_liability)، مقایسهٔ شعبه‌ها (get_branch_comparison)، تخمین تقاضا (forecast_demand)، اقلام در حال انقضا (get_near_expiry_items)، پورسانت کارکنان (get_staff_commission) و مشتریان آمادهٔ خرید مجدد (get_repurchase_candidates). هر کدام مناسب سؤال بود همان را صدا بزن؛ برای forecast_demand همیشه در پاسخ صریح بگو که یک تخمین است.",
+      "برای هر سؤالی دربارهٔ ضایعات («چقدر نان دور ریختیم؟»، «ضایعات این ماه چقدر بود؟») از get_waste_history استفاده کن؛ این ابزار تفکیک کالا و دلیل و هزینه را یک‌جا می‌دهد. get_stock_valuation فقط موجودی همین لحظه را می‌گوید و به سؤال «چه چیزی از انبار خارج شد» جواب نمی‌دهد.",
       "برای سؤال‌هایی مثل «حساب‌هایم را بررسی کن»، «اشتباهی هست؟» یا «چه چیزی جا افتاده؟» حتماً run_accounting_review را صدا بزن و دقیقاً همان یافته‌ها را با درجهٔ اهمیت و پیشنهاد اصلاحشان گزارش کن. هرگز از خودت مورد اضافه نکن و هرگز نگو حسابی مشکل دارد مگر این ابزار گفته باشد.",
       "کاربر می‌تواند کارهای تکرارشونده را به «همکار هوشمند» بسپارد (مثلاً «هر شب با بستن شیفت، ماندهٔ نان را ضایعات بزن» یا «هر روز صبح حساب‌ها را بررسی کن»). با list_coworker_jobs می‌توانی کارهای فعلی و تعداد اجراهای منتظر تأیید را ببینی؛ برای ساختن کار جدید کاربر را به بخش «همکار هوشمند» در صفحهٔ هوش مصنوعی راهنمایی کن.",
       "برای هر تغییر در داده‌ها هرگز مستقیم اقدام نکن؛ فقط ابزار propose_action را با نوع مجاز و payload کامل صدا بزن. کاربر خودش با دکمهٔ تأیید آن را اجرا می‌کند (human-in-the-loop).",
@@ -818,6 +836,48 @@ export function toolDefinitions(mode: AgentMode, opts: ToolDefinitionsOptions = 
         },
       },
     },
+    {
+      type: "function",
+      function: {
+        name: "find_items",
+        description:
+          "پیدا کردن کالای انبار یا آیتم منو از روی نام فارسی (جست‌وجوی بخشی از نام کافی است). برای هر مورد شناسه، نام، واحد، شعبه، موجودی فعلی، بهای واحد و وضعیت فعال/غیرفعال برمی‌گردد. هر وقت کاربر کالایی را با نام گفت، اول همین ابزار را صدا بزن تا شناسه را پیدا کنی — هرگز شناسه را از کاربر نپرس.",
+        parameters: {
+          type: "object",
+          properties: {
+            query: { type: "string", description: "بخشی از نام کالا یا آیتم، مثل «نان»" },
+            kind: {
+              type: "string",
+              enum: ["all", "inventory", "menu"],
+              description: "محدود کردن جست‌وجو به کالای انبار یا آیتم منو؛ پیش‌فرض هر دو",
+            },
+          },
+          required: ["query"],
+          additionalProperties: false,
+        },
+      },
+    },
+    {
+      type: "function",
+      function: {
+        name: "get_waste_history",
+        description:
+          "سابقهٔ ضایعات ثبت‌شده به تفکیک کالا و دلیل، با مقدار، تعداد دفعات، بازهٔ تاریخ و هزینه به ریال و تومان. دلیل ضایعات با برچسب فارسی برمی‌گردد. اگر تاریخ ندهی، کل تاریخچه را می‌دهد.",
+        parameters: {
+          type: "object",
+          properties: {
+            itemQuery: { type: "string", description: "بخشی از نام کالا؛ خالی یعنی همهٔ کالاها" },
+            dateFrom: { type: "string", description: "از تاریخ (ISO)، اختیاری" },
+            dateTo: { type: "string", description: "تا تاریخ (ISO)، اختیاری" },
+          },
+          additionalProperties: false,
+        },
+      },
+    },
+    noArgsTool(
+      "describe_app",
+      "معرفی همین نصب از نرم‌افزار: صنف کسب‌وکار، شعبه‌ها، ماژول‌های موجود، امکانات فعال، واژگان همان صنف (سفارش/فاکتور) و فهرست کارهایی که خودت می‌توانی پیشنهاد بدهی. وقتی کاربر می‌پرسد «چه کارهایی بلدی؟» یا وقتی مطمئن نیستی بخشی از نرم‌افزار برای این کسب‌وکار وجود دارد یا نه، همین را صدا بزن.",
+    ),
     noArgsTool(
       "list_coworker_jobs",
       "فهرست کارهای تعریف‌شدهٔ «همکار هوشمند» این کسب‌وکار (قالب، زمان اجرا، حالت تأیید، آخرین اجرا) و تعداد اجراهای منتظر تأیید. پارامتر ندارد.",

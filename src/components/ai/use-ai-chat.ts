@@ -25,6 +25,8 @@ export interface AiChatMessage {
   proposal?: ProposedAction | null;
   auditId?: string | null;
   applied?: boolean;
+  /** Actual Rial charged for this turn, shown quietly once it finishes. */
+  costRial?: number | null;
 }
 
 export interface TurnEstimate {
@@ -34,11 +36,6 @@ export interface TurnEstimate {
   estimatedOutputTokens: number;
   assumedToolRounds: number;
   hasTools: boolean;
-}
-
-export interface PendingTurn {
-  text: string;
-  estimate: TurnEstimate;
 }
 
 /** Wave 5 (issue #145) — a receipt/invoice image attached to the next turn only; never persisted. */
@@ -132,8 +129,6 @@ export function useAiChat({
   const [messages, setMessages] = useState<AiChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
-  const [estimating, setEstimating] = useState(false);
-  const [pending, setPending] = useState<PendingTurn | null>(null);
   const [applyingId, setApplyingId] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [loadingConversation, setLoadingConversation] = useState(false);
@@ -189,7 +184,6 @@ export function useAiChat({
 
   function startNewConversation() {
     setConversation(null);
-    setPending(null);
     setInput("");
     clearAttachment();
     setMessages([{ id: uid(), role: "assistant", content: greeting(mode) }]);
@@ -215,7 +209,6 @@ export function useAiChat({
         })),
       );
       setConversation(id);
-      setPending(null);
     } catch {
       toast.error("بازکردن این مکالمه ممکن نشد.");
     } finally {
@@ -223,53 +216,25 @@ export function useAiChat({
     }
   }
 
-  async function prepareSend(textOverride?: string) {
+  /**
+   * Sends immediately.
+   *
+   * This used to POST to `/api/ai/estimate` first and park the turn behind a
+   * "برآورد هزینه … شروع پاسخ" card, so every single message — including
+   * "سلام" — cost the user an extra round trip and an extra tap before the
+   * assistant would say anything. That is not how a chat behaves, and the card
+   * was not buying the safety it looked like it was: `/api/ai/chat` does its
+   * own credit reservation against `config.maxTurnRial` and refuses when there
+   * is no credit, entirely independently of this call.
+   *
+   * So the estimate is gone from the send path and the *actual* charge is shown
+   * under the reply once the turn settles, which is both truthful and free.
+   */
+  async function sendMessage(textOverride?: string) {
     const text = (textOverride ?? input).trim();
-    if (!text || busy || estimating || pending) return;
-
-    const candidateHistory = [
-      ...messages,
-      { id: uid(), role: "user" as const, content: text },
-    ];
-    setEstimating(true);
-    try {
-      const response = await fetch("/api/ai/estimate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          mode,
-          currentStep: currentStep ?? null,
-          messages: candidateHistory.map((message) => ({
-            role: message.role,
-            content: message.content,
-          })),
-          attachment: attachment ? { dataUrl: attachment.dataUrl } : undefined,
-          allowActions: actionsAllowed,
-        }),
-      });
-      const data = (await response.json().catch(() => ({}))) as Record<
-        string,
-        unknown
-      >;
-      if (!response.ok || !isEstimate(data))
-        throw new Error(errorMessage(data));
-      setInput("");
-      setPending({ text, estimate: data });
-    } catch (error) {
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : "محاسبهٔ برآورد هزینه ممکن نشد.",
-      );
-    } finally {
-      setEstimating(false);
-    }
-  }
-
-  function cancelPending() {
-    if (!pending) return;
-    setInput(pending.text);
-    setPending(null);
+    if (!text || busy) return;
+    setInput("");
+    await startStream(text);
   }
 
   async function startStream(text: string) {
@@ -278,7 +243,6 @@ export function useAiChat({
     const replyId = uid();
     const history = [...messages, userMsg];
     setMessages([...history, { id: replyId, role: "assistant", content: "" }]);
-    setPending(null);
     setBusy(true);
 
     function setReply(update: (current: AiChatMessage) => AiChatMessage) {
@@ -327,6 +291,7 @@ export function useAiChat({
               null)
             : null,
           auditId: typeof payload.auditId === "string" ? payload.auditId : null,
+          costRial: typeof payload.costRial === "number" ? payload.costRial : null,
         }));
         if (typeof payload.conversationId === "string")
           setConversation(payload.conversationId);
@@ -507,8 +472,6 @@ export function useAiChat({
     input,
     setInput,
     busy,
-    estimating,
-    pending,
     applyingId,
     conversationId,
     loadingConversation,
@@ -520,8 +483,7 @@ export function useAiChat({
     ensureGreeting,
     startNewConversation,
     loadConversation,
-    prepareSend,
-    cancelPending,
+    sendMessage,
     startStream,
     applyProposal,
     dismissProposal,

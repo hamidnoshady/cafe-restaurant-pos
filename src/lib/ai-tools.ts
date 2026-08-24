@@ -39,6 +39,11 @@ import { getBusinessIndustry } from "./industry-guard";
 import { runAccountingReview } from "./accounting-review-service";
 import { summarizeFindings } from "./accounting-review";
 import { countPendingCoworkerRuns, listCoworkerJobs } from "./ai-coworker-service";
+import { ACTION_CATALOG, ACTION_TYPES } from "./ai";
+import { WASTE_REASON_LABELS, labelFor, moneyFields } from "./ai-labels";
+import { isFeatureEnabled } from "./features";
+import { INDUSTRY_LABELS, type Industry } from "./industries";
+import { industryProfile, labelFor as industryLabelFor } from "./industry-profile";
 
 export interface ToolResult {
   ok: boolean;
@@ -193,6 +198,257 @@ async function voidPattern(businessId: string, args: Record<string, unknown>) {
       15,
     ),
     byHourOfDay: byHour.map((r) => ({ hour: Number(r.hour), count: Number(r.void_count) })),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Phase 33 — knowing what things are called
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolves a Persian name the owner typed into the ids the action catalogue
+ * needs.
+ *
+ * This exists because the assistant used to answer «نان چند تکه مونده؟» with a
+ * request for an `inventoryItemId` — a UUID nobody can read off a shelf, let
+ * alone remember. The owner knows the name; the ids are the software's problem.
+ *
+ * Deliberately returns everything needed to decide *without a second question*:
+ * whether the item is still active (a disabled item is a real answer, not an
+ * empty result), how much is on hand right now, and what it is worth — so the
+ * model can say "«نان» غیرفعال است" instead of "پیدا نشد".
+ */
+async function findItems(businessId: string, args: Record<string, unknown>) {
+  const search = typeof args.query === "string" ? args.query.trim() : "";
+  const kind = args.kind === "menu" || args.kind === "inventory" ? args.kind : "all";
+  if (search.length === 0) return { ok: false as const, data: { error: "عبارت جست‌وجو خالی است." } };
+
+  // ILIKE on both sides: an owner typing «نان» must find «نان باگت» and
+  // «نان لواش», and typing «باگت» must find the same row.
+  const pattern = `%${search}%`;
+  const results: Record<string, unknown>[] = [];
+
+  if (kind === "all" || kind === "inventory") {
+    const { rows } = await query<{
+      id: string;
+      name: string;
+      unit: string;
+      is_active: boolean;
+      is_produced: boolean;
+      on_hand: string;
+      avg_cost: string;
+      location_name: string;
+    }>(
+      `SELECT i.id, i.name, i.unit, i.is_active, i.is_produced,
+              trim_scale(COALESCE(sm.total, 0))::text AS on_hand,
+              COALESCE(i.avg_cost, 0)::text AS avg_cost,
+              l.name AS location_name
+         FROM inventory_items i
+         JOIN locations l ON l.id = i.location_id
+         LEFT JOIN LATERAL (
+           SELECT sum(quantity) AS total FROM stock_movements WHERE inventory_item_id = i.id
+         ) sm ON true
+        WHERE l.business_id = $1 AND i.name ILIKE $2
+        ORDER BY i.is_active DESC, i.name
+        LIMIT 25`,
+      [businessId, pattern],
+    );
+    for (const row of rows) {
+      results.push({
+        kind: "inventory",
+        kindLabel: "کالای انبار",
+        inventoryItemId: row.id,
+        name: row.name,
+        unit: row.unit,
+        branch: row.location_name,
+        onHandQty: row.on_hand,
+        isActive: row.is_active,
+        statusLabel: row.is_active ? "فعال" : "غیرفعال",
+        isProduced: row.is_produced,
+        unitCost: moneyFields(Math.round(Number(row.avg_cost))),
+      });
+    }
+  }
+
+  if (kind === "all" || kind === "menu") {
+    const { rows } = await query<{
+      id: string;
+      name: string;
+      price: string;
+      is_active: boolean;
+      category_name: string | null;
+      location_name: string;
+    }>(
+      `SELECT m.id, m.name, m.price::text AS price, m.is_active,
+              c.name AS category_name, l.name AS location_name
+         FROM menu_items m
+         JOIN locations l ON l.id = m.location_id
+         LEFT JOIN menu_categories c ON c.id = m.category_id
+        WHERE l.business_id = $1 AND m.name ILIKE $2
+        ORDER BY m.is_active DESC, m.name
+        LIMIT 25`,
+      [businessId, pattern],
+    );
+    for (const row of rows) {
+      results.push({
+        kind: "menu",
+        kindLabel: "آیتم منو",
+        menuItemId: row.id,
+        name: row.name,
+        category: row.category_name,
+        branch: row.location_name,
+        price: moneyFields(Number(row.price)),
+        isActive: row.is_active,
+        statusLabel: row.is_active ? "فعال" : "غیرفعال",
+      });
+    }
+  }
+
+  return {
+    ok: true as const,
+    data: {
+      query: search,
+      matchCount: results.length,
+      // An explicit "nothing matched" beats an empty array the model might
+      // paper over with a plausible-sounding guess.
+      note:
+        results.length === 0
+          ? `هیچ کالا یا آیتمی با نام «${search}» پیدا نشد. شاید نام دیگری دارد یا هنوز ثبت نشده است.`
+          : null,
+      matches: cap(results, 25),
+    },
+  };
+}
+
+/**
+ * The waste question the owner actually asks — "how much bread have we thrown
+ * away, ever?" — answered in one call, broken down by item and reason, with
+ * Persian reason labels and Toman totals.
+ *
+ * Before this, that question forced the model to reach for the generic
+ * valuation tool, which knows only what is on the shelf *now* and nothing about
+ * what left it.
+ */
+async function wasteHistory(businessId: string, args: Record<string, unknown>) {
+  const search = typeof args.itemQuery === "string" && args.itemQuery.trim().length > 0
+    ? `%${args.itemQuery.trim()}%`
+    : null;
+  const dateFrom = typeof args.dateFrom === "string" ? args.dateFrom : null;
+  const dateTo = typeof args.dateTo === "string" ? args.dateTo : null;
+
+  const { rows } = await query<{
+    item_name: string;
+    unit: string;
+    waste_reason: string | null;
+    quantity: string;
+    cost: string;
+    entries: string;
+    first_at: string;
+    last_at: string;
+  }>(
+    // The ledger of what left the shelf, not the shelf itself. Quantities are
+    // stored negative for an outflow, so they are negated back here.
+    `SELECT ii.name AS item_name, ii.unit, sm.waste_reason::text AS waste_reason,
+            trim_scale(sum(-sm.quantity))::text AS quantity,
+            COALESCE(sum(sm.cost_value_rial), 0)::text AS cost,
+            count(*)::text AS entries,
+            min(sm.occurred_at)::date::text AS first_at,
+            max(sm.occurred_at)::date::text AS last_at
+       FROM stock_movements sm
+       JOIN inventory_items ii ON ii.id = sm.inventory_item_id
+       JOIN locations l ON l.id = sm.location_id
+      WHERE l.business_id = $1 AND sm.type = 'waste'
+        AND ($2::text IS NULL OR ii.name ILIKE $2)
+        AND ($3::date IS NULL OR sm.occurred_at >= $3::date)
+        AND ($4::date IS NULL OR sm.occurred_at < ($4::date + 1))
+      GROUP BY ii.name, ii.unit, sm.waste_reason
+      ORDER BY sum(sm.cost_value_rial) DESC NULLS LAST
+      LIMIT 60`,
+    [businessId, search, dateFrom, dateTo],
+  );
+
+  const lines = rows.map((row) => ({
+    item: row.item_name,
+    unit: row.unit,
+    reason: labelFor(WASTE_REASON_LABELS, row.waste_reason),
+    quantity: row.quantity,
+    entryCount: Number(row.entries),
+    cost: moneyFields(Number(row.cost)),
+    firstAt: row.first_at,
+    lastAt: row.last_at,
+  }));
+  const totalCost = rows.reduce((sum, row) => sum + Number(row.cost), 0);
+
+  return {
+    ok: true as const,
+    data: {
+      scope: {
+        item: typeof args.itemQuery === "string" ? args.itemQuery : "همهٔ کالاها",
+        dateFrom: dateFrom ?? "از ابتدا",
+        dateTo: dateTo ?? "تا امروز",
+      },
+      lineCount: lines.length,
+      note: lines.length === 0 ? "هیچ ضایعاتی با این شرایط ثبت نشده است." : null,
+      totalCost: moneyFields(totalCost),
+      lines,
+    },
+  };
+}
+
+/**
+ * What this business's copy of the product actually is.
+ *
+ * The assistant is embedded in an app with five industries, per-trade modules,
+ * per-business feature flags and several branches — and it knew none of that.
+ * It would offer to do things this business cannot do, and fail to mention
+ * things it can. This is the orientation it was missing.
+ */
+async function describeApp(businessId: string) {
+  const [{ rows: business }, { rows: locations }] = await Promise.all([
+    query<{ name: string; industry: Industry }>(
+      "SELECT name, industry FROM businesses WHERE id = $1",
+      [businessId],
+    ),
+    query<{ name: string; is_active: boolean }>(
+      "SELECT name, is_active FROM locations WHERE business_id = $1 ORDER BY created_at",
+      [businessId],
+    ),
+  ]);
+
+  const industry = business[0]?.industry ?? "food_service";
+  const profile = industryProfile(industry);
+  // The trade's own words: a café sells «سفارش», a shop sells «فاکتور». The
+  // assistant should use the noun this owner uses, not F&B's by default.
+  const vocabulary = {
+    saleDocument: industryLabelFor(industry, "saleDocument"),
+    saleDocumentPlural: industryLabelFor(industry, "saleDocumentPlural"),
+    sellScreen: industryLabelFor(industry, "sellScreen"),
+  };
+
+  const features: string[] = [];
+  for (const flag of ["inventory", "ledger", "reporting", "reservations", "delivery", "multi_location"]) {
+    if (await isFeatureEnabled(businessId, flag)) features.push(flag);
+  }
+
+  return {
+    ok: true as const,
+    data: {
+      business: business[0]?.name ?? null,
+      industry: { code: industry, label: INDUSTRY_LABELS[industry] },
+      brand: profile.brandTitle,
+      salesModel: profile.salesModel,
+      vocabulary,
+      branches: locations.map((row) => ({ name: row.name, isActive: row.is_active })),
+      modules: profile.modules.map((key) => String(key)),
+      enabledFeatures: features,
+      // What the assistant may CHANGE, in the owner's language — so it can say
+      // "این کار از من برمی‌آید" or "این کار را باید خودتان از صفحهٔ … انجام
+      // دهید" instead of guessing at its own reach.
+      actionsICanPropose: ACTION_TYPES.map((type) => ({
+        type,
+        label: ACTION_CATALOG[type].label,
+      })),
+    },
   };
 }
 
@@ -833,6 +1089,17 @@ export async function runReadTool(
     case "get_void_pattern":
       return { ok: true, data: await voidPattern(businessId, args) };
 
+    // Phase 33 — name→id resolution, so the assistant never asks an owner for
+    // a UUID, and never reports "پیدا نشد" for an item that is merely disabled.
+    case "find_items":
+      return findItems(businessId, args);
+
+    case "get_waste_history":
+      return wasteHistory(businessId, args);
+
+    case "describe_app":
+      return describeApp(businessId);
+
     case "get_stock_valuation":
       return { ok: true, data: await stockValuation(businessId) };
 
@@ -1000,4 +1267,7 @@ export const READ_TOOL_NAMES = new Set([
   "get_repurchase_candidates",
   "run_accounting_review",
   "list_coworker_jobs",
+  "find_items",
+  "get_waste_history",
+  "describe_app",
 ]);

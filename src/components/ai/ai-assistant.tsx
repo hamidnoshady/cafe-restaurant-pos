@@ -29,8 +29,6 @@ export function AiAssistant({ mode, currentStep }: Props) {
     input,
     setInput,
     busy,
-    estimating,
-    pending,
     applyingId,
     conversationId,
     attachment,
@@ -40,9 +38,7 @@ export function AiAssistant({ mode, currentStep }: Props) {
     setActionsAllowed,
     ensureGreeting,
     loadConversation,
-    prepareSend,
-    cancelPending,
-    startStream,
+    sendMessage,
     applyProposal,
     dismissProposal,
   } = useAiChat({ mode, currentStep });
@@ -57,7 +53,7 @@ export function AiAssistant({ mode, currentStep }: Props) {
       top: scrollRef.current.scrollHeight,
       behavior: "smooth",
     });
-  }, [messages, busy, pending]);
+  }, [messages, busy]);
 
   useEffect(() => {
     function prefill(event: Event) {
@@ -146,22 +142,18 @@ export function AiAssistant({ mode, currentStep }: Props) {
             mode={mode}
             messages={messages}
             busy={busy}
-            estimating={estimating}
-            pending={pending}
             canPropose={canPropose}
             applyingId={applyingId}
             scrollRef={scrollRef}
             applyProposal={applyProposal}
             dismissProposal={dismissProposal}
-            prepareSend={prepareSend}
+            sendMessage={sendMessage}
           />
           <AiChatInput
             mode={mode}
             input={input}
             setInput={setInput}
             busy={busy}
-            estimating={estimating}
-            pending={pending}
             canPropose={canPropose}
             attachment={attachment}
             actionsAllowed={actionsAllowed}
@@ -169,9 +161,7 @@ export function AiAssistant({ mode, currentStep }: Props) {
             attachReceiptImage={attachReceiptImage}
             clearAttachment={clearAttachment}
             loadConversation={loadConversation}
-            prepareSend={prepareSend}
-            cancelPending={cancelPending}
-            startStream={startStream}
+            sendMessage={sendMessage}
           />
         </div>
       )}
