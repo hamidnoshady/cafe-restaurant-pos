@@ -259,6 +259,32 @@ coworker" section of [README.md](README.md) and
   whose query fails is named in `unavailableChecks` rather than returning "found nothing", and the
   integration test asserts that list is empty.
 
+## The assistant's replies — read before adding an AI tool or touching the chat
+
+Phase 33 fixed a chat that did not behave like one and answers that were not
+grounded enough to trust. Four rules carry that work; see
+[docs/phases/Phase-33-Assistant-Usability.md](docs/phases/Phase-33-Assistant-Usability.md).
+
+- **A tool returns the label, not just the code.** Every enum a tool surfaces comes back with its
+  Persian label from `src/lib/ai-labels.ts`, and every money field as `{ rial, toman, text }`. A
+  label the tool returns is a fact; one the model translates on the fly is a guess, and a confident
+  guess about what a status means is what makes an owner stop trusting the feature. Never hand the
+  model a bare `spoilage` or a bare Rial integer and expect it to cope.
+- **Never make the user carry an id.** `find_items` resolves a partial Persian name to the ids the
+  action catalogue needs, and the prompt forbids asking for or printing one. A new tool that takes
+  an id must have a companion path that finds it from a name.
+- **A disabled row is an answer.** `find_items` returns `isActive` plus a Persian `statusLabel`;
+  «غیرفعال است» is a correct reply and "پیدا نشد" for a disabled item is a bug.
+- **The reply is read on a 360px phone.** Assistant replies render through
+  `src/components/ai/ai-markdown.tsx`: anything intrinsically wide (a table, a code block, a long
+  token) gets its own scroll box or is forced to break, so the *page* never scrolls sideways. Don't
+  reintroduce `whitespace-pre-wrap` for assistant content — that is what made Markdown arrive as
+  literal `**` and `|---|`.
+
+Also: **don't put a gate in front of the answer.** The pre-send cost estimate was removed because
+`/api/ai/chat` already reserves credit and refuses without it; the actual charge is shown under the
+reply instead. `/api/ai/estimate` still exists, but nothing in the send path may block on it.
+
 ## Repository layout
 
 - `src/app/api/**/route.ts` — route handlers. Every handler starts with a guard

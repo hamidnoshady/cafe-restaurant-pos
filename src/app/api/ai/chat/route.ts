@@ -190,7 +190,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
               onToolCalls: () => emit("reset", {}),
             },
           });
-          await settleAiTurn({
+          const settlement = await settleAiTurn({
             businessId: session.businessId,
             reservation,
             usage: reply.usage,
@@ -223,6 +223,10 @@ export const POST = withTenantScope(async (request: NextRequest) => {
             proposedAction: reply.proposedAction,
             auditId,
             conversationId,
+            // What this turn actually cost, so the client can say so under the
+            // reply. It replaces the pre-send estimate card, which charged the
+            // user an extra round trip and a tap to show a *guess*.
+            costRial: settlement.chargedRial + settlement.overageRial,
           });
         } catch (err) {
           if (!settled) {

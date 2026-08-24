@@ -1,74 +1,81 @@
 import { RefObject } from "react";
-import { Loader2Icon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { AiMarkdown } from "./ai-markdown";
 import { AiProposalCard } from "./ai-proposal-card";
-import {
-  SUGGESTED_PROMPTS,
-  type AiChatMessage,
-  type AssistantMode,
-  type PendingTurn,
-} from "./use-ai-chat";
+import { SUGGESTED_PROMPTS, type AiChatMessage, type AssistantMode } from "./use-ai-chat";
 
 interface AiChatMessagesProps {
   mode: AssistantMode;
   messages: AiChatMessage[];
   busy: boolean;
-  estimating: boolean;
-  pending: PendingTurn | null;
   canPropose: boolean;
   applyingId?: string | null;
   scrollRef: RefObject<HTMLDivElement | null>;
   applyProposal: (message: AiChatMessage) => void;
   dismissProposal: (message: AiChatMessage) => void;
-  prepareSend: (prompt?: string) => void;
+  sendMessage: (prompt?: string) => void;
+}
+
+/** Three dots, not a sentence — a chat says "typing", it does not narrate. */
+export function TypingDots() {
+  return (
+    <span className="inline-flex items-center gap-1 py-1" aria-label="در حال نوشتن">
+      {[0, 150, 300].map((delay) => (
+        <span
+          key={delay}
+          className="size-1.5 animate-bounce rounded-full bg-current opacity-60"
+          style={{ animationDelay: `${delay}ms` }}
+        />
+      ))}
+    </span>
+  );
 }
 
 export function AiChatMessages({
   mode,
   messages,
   busy,
-  estimating,
-  pending,
   canPropose,
   applyingId,
   scrollRef,
   applyProposal,
   dismissProposal,
-  prepareSend,
+  sendMessage,
 }: AiChatMessagesProps) {
   const showSuggestions =
-    messages.length === 1 &&
-    messages[0]?.role === "assistant" &&
-    !busy &&
-    !estimating &&
-    !pending;
+    messages.length === 1 && messages[0]?.role === "assistant" && !busy;
 
   return (
     <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-3 py-3">
       {messages.map((message) => (
         <div
           key={message.id}
-          className={cn(
-            "flex",
-            message.role === "user" ? "justify-start" : "justify-end",
-          )}
+          className={cn("flex min-w-0", message.role === "user" ? "justify-start" : "justify-end")}
         >
-          <div className="max-w-[85%] space-y-2">
+          <div className="min-w-0 max-w-[85%] space-y-2">
             <div
               className={cn(
-                "whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm leading-relaxed",
+                "min-w-0 overflow-hidden rounded-2xl px-3 py-2 text-sm leading-relaxed",
                 message.role === "user"
-                  ? "bg-primary text-primary-foreground"
+                  ? "whitespace-pre-wrap break-words bg-primary text-primary-foreground"
                   : "bg-muted text-foreground",
               )}
             >
-              {message.content ||
-                (busy ? (
-                  <span className="text-muted-foreground">
-                    در حال دریافت پاسخ…
-                  </span>
-                ) : null)}
+              {message.role === "user" ? (
+                message.content
+              ) : message.content ? (
+                <AiMarkdown content={message.content} />
+              ) : (
+                <TypingDots />
+              )}
             </div>
+            {/* The charge, after the fact and in passing — never a gate in front
+                of the reply. See sendMessage in use-ai-chat.ts. */}
+            {message.role === "assistant" && typeof message.costRial === "number" && message.costRial > 0 ? (
+              <p className="px-1 text-[10px] text-muted-foreground">
+                هزینهٔ این پاسخ: {Math.round(message.costRial / 10).toLocaleString("fa-IR")} تومان
+              </p>
+            ) : null}
             {canPropose && message.proposal ? (
               <AiProposalCard
                 proposal={message.proposal}
@@ -92,21 +99,12 @@ export function AiChatMessages({
               <button
                 key={suggestion}
                 type="button"
-                onClick={() => void prepareSend(suggestion)}
+                onClick={() => void sendMessage(suggestion)}
                 className="rounded-full border bg-background px-2.5 py-1.5 text-right text-[11px] leading-4 transition-colors hover:border-primary/40 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 {suggestion}
               </button>
             ))}
-          </div>
-        </div>
-      ) : null}
-
-      {busy ? (
-        <div className="flex justify-end">
-          <div className="flex items-center gap-2 rounded-2xl bg-muted px-3 py-2 text-sm text-muted-foreground">
-            <Loader2Icon className="size-4 animate-spin" /> پاسخ به‌صورت زنده در
-            حال دریافت است…
           </div>
         </div>
       ) : null}

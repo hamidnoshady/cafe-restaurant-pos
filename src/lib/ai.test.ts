@@ -322,6 +322,44 @@ describe("AI Hub Wave 5 (issue #145) — receipt attachment tool", () => {
   });
 });
 
+describe("Phase 33 — the assistant's manners", () => {
+  const dashboard = buildSystemPrompt({ mode: "dashboard" });
+
+  it("forbids asking the user for an id, and points at the tool that resolves a name", () => {
+    expect(dashboard).toContain("find_items");
+    expect(dashboard).toContain("هرگز از کاربر شناسه");
+  });
+
+  it("forbids printing raw enum values to a Persian-speaking owner", () => {
+    expect(dashboard).toContain("spoilage");
+    expect(dashboard).toContain("برچسب فارسی");
+  });
+
+  it("says a disabled item is an answer, not a miss", () => {
+    expect(dashboard).toContain("غیرفعال است");
+  });
+
+  it("asks for phone-shaped answers, since that is where this is read", () => {
+    expect(dashboard).toContain("موبایل");
+    expect(dashboard).toContain("سه ستون");
+  });
+
+  it("offers the three orientation tools in dashboard mode", () => {
+    const names = toolDefinitions("dashboard").map((tool) => tool.function.name);
+    expect(names).toEqual(expect.arrayContaining(["find_items", "get_waste_history", "describe_app"]));
+  });
+
+  it("keeps them out of the wizard, which is scoped to setup state", () => {
+    const names = toolDefinitions("wizard").map((tool) => tool.function.name);
+    expect(names).not.toContain("find_items");
+  });
+
+  it("makes find_items require only a plain-language query", () => {
+    const findItems = toolDefinitions("dashboard").find((tool) => tool.function.name === "find_items");
+    expect(findItems?.function.parameters).toMatchObject({ required: ["query"] });
+  });
+});
+
 describe("Phase 31 — autopilot tagging of the action catalogue", () => {
   const eligible = ACTION_TYPES.filter((t) => ACTION_CATALOG[t].autopilotCategory);
 

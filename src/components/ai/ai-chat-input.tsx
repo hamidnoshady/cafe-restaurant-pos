@@ -1,17 +1,14 @@
 import Link from "next/link";
-import { Loader2Icon, SendIcon } from "lucide-react";
-import { useMoney } from "@/components/money/money-context";
+import { SendIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AiAttachmentChip, AiComposerTools } from "./ai-composer-tools";
-import type { ChatAttachment, PendingTurn, AssistantMode } from "./use-ai-chat";
+import type { ChatAttachment, AssistantMode } from "./use-ai-chat";
 
 interface AiChatInputProps {
   mode: AssistantMode;
   input: string;
   setInput: (value: string) => void;
   busy: boolean;
-  estimating: boolean;
-  pending: PendingTurn | null;
   canPropose: boolean;
   attachment: ChatAttachment | null;
   actionsAllowed: boolean;
@@ -19,9 +16,7 @@ interface AiChatInputProps {
   attachReceiptImage: (file: File) => void;
   clearAttachment: () => void;
   loadConversation: (id: string) => void;
-  prepareSend: (prompt?: string) => void;
-  cancelPending: () => void;
-  startStream: (text: string) => void;
+  sendMessage: (prompt?: string) => void;
 }
 
 export function AiChatInput({
@@ -29,8 +24,6 @@ export function AiChatInput({
   input,
   setInput,
   busy,
-  estimating,
-  pending,
   canPropose,
   attachment,
   actionsAllowed,
@@ -38,49 +31,16 @@ export function AiChatInput({
   attachReceiptImage,
   clearAttachment,
   loadConversation,
-  prepareSend,
-  cancelPending,
-  startStream,
+  sendMessage,
 }: AiChatInputProps) {
-  const money = useMoney();
   return (
     <div className="border-t p-2">
-      {pending ? (
-        <div className="mb-2 rounded-xl border border-primary/25 bg-primary/5 p-2.5 text-xs">
-          <p className="font-semibold text-foreground">
-            برآورد هزینه: {money.format(pending.estimate.estimatedCostRial)}
-          </p>
-          <p className="mt-1 leading-5 text-muted-foreground">
-            بر پایهٔ {pending.estimate.assumedToolRounds} نوبت پاسخ/ابزار محاسبه
-            شده است. حداکثر رزرو این درخواست:{" "}
-            {money.format(pending.estimate.maximumReservationRial)}؛ مبلغ نهایی
-            بر اساس مصرف واقعی تسویه می‌شود.
-          </p>
-          <div className="mt-2 flex gap-2">
-            <Button
-              size="sm"
-              onClick={() => void startStream(pending.text)}
-              disabled={busy}
-            >
-              <SendIcon className="rtl:-scale-x-100" /> شروع پاسخ
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={cancelPending}
-              disabled={busy}
-            >
-              ویرایش
-            </Button>
-          </div>
-        </div>
-      ) : null}
       <AiAttachmentChip attachment={attachment} onClear={clearAttachment} />
       <div className="mb-1.5">
         <AiComposerTools
           mode={mode}
           canPropose={canPropose}
-          disabled={busy || estimating || Boolean(pending)}
+          disabled={busy}
           onAttach={(file) => void attachReceiptImage(file)}
           actionsAllowed={actionsAllowed}
           onActionsAllowedChange={setActionsAllowed}
@@ -95,27 +55,21 @@ export function AiChatInput({
           onKeyDown={(event) => {
             if (event.key === "Enter" && !event.shiftKey) {
               event.preventDefault();
-              void prepareSend();
+              void sendMessage();
             }
           }}
           rows={1}
-          disabled={busy || estimating || Boolean(pending)}
-          placeholder={
-            estimating ? "در حال محاسبهٔ برآورد…" : "پیام خود را بنویسید…"
-          }
+          disabled={busy}
+          placeholder="پیام خود را بنویسید…"
           className="max-h-28 min-h-9 flex-1 resize-none rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-input/30"
         />
         <Button
           size="icon"
-          onClick={() => void prepareSend()}
-          disabled={busy || estimating || Boolean(pending) || !input.trim()}
+          onClick={() => void sendMessage()}
+          disabled={busy || !input.trim()}
           aria-label="ارسال پیام"
         >
-          {estimating ? (
-            <Loader2Icon className="animate-spin" />
-          ) : (
-            <SendIcon className="rtl:-scale-x-100" />
-          )}
+          <SendIcon className="rtl:-scale-x-100" />
         </Button>
       </div>
       {mode === "floor" ? (
@@ -125,8 +79,8 @@ export function AiChatInput({
         </p>
       ) : (
         <p className="mt-1 px-1 text-[10px] text-muted-foreground">
-          هزینهٔ تخمینی پیش از ارسال نشان داده می‌شود؛ تغییرها فقط با تأیید شما
-          ثبت می‌شوند.{" "}
+          هزینهٔ هر پاسخ زیر همان پاسخ نوشته می‌شود؛ تغییرها فقط با تأیید شما ثبت
+          می‌شوند.{" "}
           <Link
             href="/dashboard/ai?tab=settings"
             className="underline underline-offset-2 hover:text-foreground"
