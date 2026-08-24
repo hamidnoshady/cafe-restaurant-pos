@@ -17,6 +17,10 @@
  * what it costs (where that is knowable), and which screen fixes it.
  */
 
+import { formatJalali } from "./jalali";
+import { formatRial } from "./money";
+import { formatQuantity, toPersianDigits } from "./digits";
+
 export type AccountingReviewSeverity = "high" | "medium" | "low";
 
 export interface AccountingFindingSample {
@@ -77,6 +81,13 @@ export interface AccountingReviewSnapshot {
   staleDraftPurchaseAfterDays: number;
   /** Fiscal periods that ended but were never soft-closed or locked. */
   unlockedPastPeriods: { id: string; label: string; endsOn: string }[];
+  /**
+   * Codes of findings whose row list hit the service's row cap, so their count
+   * is a floor rather than a total. An audit tool that prints «۵۰ مورد» when
+   * there are six hundred is lying in the same way one that finds nothing
+   * because its query broke is — see `unavailableChecks` for the sibling case.
+   */
+  truncatedChecks: string[];
 }
 
 /** An empty snapshot, so a caller that cannot read one table still gets a review. */
@@ -100,6 +111,7 @@ export function emptyAccountingSnapshot(asOfDate: string, windowDays = 30): Acco
     staleDraftPurchases: [],
     staleDraftPurchaseAfterDays: 14,
     unlockedPastPeriods: [],
+    truncatedChecks: [],
   };
 }
 
@@ -122,6 +134,55 @@ function sum(values: number[]): number {
   return values.reduce((total, value) => total + value, 0);
 }
 
+// ---------------------------------------------------------------------------
+// Display helpers
+//
+// A finding is read by a shop owner on a Persian phone, so it follows the same
+// display conventions as every other screen: Persian digits, thousands
+// grouping, Jalali dates. Storage stays integer Rial and ISO/Gregorian — only
+// these strings shift. `amountRial` on the finding itself stays a raw integer,
+// which is what the public API and the coworker inbox consume.
+// ---------------------------------------------------------------------------
+
+/** e.g. 619_224_620 → «۶۱۹٬۲۲۴٬۶۲۰ ریال» rather than a bare `619224620`. */
+function money(rial: number): string {
+  return formatRial(rial);
+}
+
+/**
+ * An ISO/Gregorian date (or the leading date of a timestamp) as Jalali. Falls
+ * back to the raw value rather than throwing: every rule runs outside the
+ * service's `safely` wrapper, so one bad date must not take down the review.
+ */
+function day(iso: string): string {
+  const date = iso.slice(0, 10);
+  try {
+    return toPersianDigits(formatJalali(date));
+  } catch {
+    return date;
+  }
+}
+
+function fa(value: number): string {
+  return toPersianDigits(value);
+}
+
+const CHEQUE_DIRECTION_LABELS: Record<string, string> = {
+  receivable: "دریافتی",
+  payable: "پرداختی",
+};
+
+/**
+ * Appended when the service's row cap swallowed the rest of the matches, so
+ * the count reads as "at least this many" instead of a total the owner would
+ * otherwise take as exact.
+ */
+function truncated(s: AccountingReviewSnapshot, code: string): string {
+  return s.truncatedChecks.includes(code)
+    ? " این فهرست به سقف نمایش رسیده، پس شمار واقعی می‌تواند از این بیشتر باشد."
+    : "";
+}
+
 type Rule = (snapshot: AccountingReviewSnapshot) => AccountingFinding | null;
 
 const RULES: Rule[] = [
@@ -136,17 +197,24 @@ const RULES: Rule[] = [
       code: "unbalanced_entry",
       severity: "high",
       title: "سند حسابداری نامتوازن",
-      detail: `${rows.length} سند پیدا شد که جمع بدهکار و بستانکار آن برابر نیست (اختلاف کل: ${gap} ریال). تراز آزمایشی تا اصلاح این اسناد درست نخواهد بود.`,
+      detail: `${fa(rows.length)} سند پیدا شد که جمع بدهکار و بستانکار آن برابر نیست (اختلاف کل: ${money(gap)}). تراز آزمایشی تا اصلاح این اسناد درست نخواهد بود.${truncated(s, "unbalanced_entry")}`,
       count: rows.length,
       amountRial: gap,
       suggestion: "هر سند را در دفتر روزنامه باز کنید و ردیف جاافتاده را اضافه یا اصلاح کنید. اگر سند از یک عملیات خودکار آمده، آن عملیات را برگردانید و دوباره ثبت کنید.",
       href: "/dashboard/ledger",
-      samples: firstSamples(rows, (row) => sample(`${row.entryDate} — ${row.memo || "بدون شرح"}`, row.id)),
+      samples: firstSamples(rows, (row) => sample(`${day(row.entryDate)} — ${row.memo || "بدون شرح"}`, row.id)),
     };
   },
 
   // An inventory event that moved stock but never posted is a silent gap
   // between the store room and the ledger: COGS and inventory value disagree.
+  //
+  // `pending`/`failed` only — never `reversed`. A reversed event WAS posted and
+  // then deliberately undone by a compensating entry (see stock-count-service
+  // and production-service, which flip the original to `reversed` and post the
+  // reversal in the same transaction), so both halves are in the ledger and
+  // there is nothing to fix. Treating it as unposted told owners to re-post
+  // corrections they had already made, which would double-count them.
   (s) => {
     const rows = s.unpostedInventoryEvents;
     if (rows.length === 0) return null;
@@ -154,12 +222,12 @@ const RULES: Rule[] = [
       code: "unposted_inventory_event",
       severity: "high",
       title: "رویداد انباری ثبت‌نشده در دفتر",
-      detail: `${rows.length} رویداد انبار (خرید، ضایعات، شمارش یا تولید) موجودی را جابه‌جا کرده اما سند حسابداری آن ثبت نشده است. ارزش انبار و بهای تمام‌شده تا اصلاح این موارد با هم نمی‌خواند.`,
+      detail: `${fa(rows.length)} رویداد انبار (خرید، ضایعات، شمارش یا تولید) موجودی را جابه‌جا کرده اما سند حسابداری آن ثبت نشده است. ارزش انبار و بهای تمام‌شده تا اصلاح این موارد با هم نمی‌خواند.${truncated(s, "unposted_inventory_event")}`,
       count: rows.length,
       amountRial: null,
       suggestion: "این رویدادها معمولاً به‌دلیل نبودِ یک سرفصل حساب متوقف می‌مانند. ابتدا سرفصل‌های جاافتاده را بسازید، سپس رویداد را دوباره ثبت کنید.",
       href: "/dashboard/inventory",
-      samples: firstSamples(rows, (row) => sample(`${row.eventType} — ${row.occurredAt.slice(0, 10)} (${row.status})`, row.id)),
+      samples: firstSamples(rows, (row) => sample(`${row.eventType} — ${day(row.occurredAt)} (${row.status})`, row.id)),
     };
   },
 
@@ -171,12 +239,12 @@ const RULES: Rule[] = [
       code: "closed_order_without_entry",
       severity: "high",
       title: "فروش تسویه‌شده بدون سند",
-      detail: `${rows.length} سفارش در ${s.windowDays} روز گذشته بسته و تسویه شده اما هیچ سند حسابداری برای آن ثبت نشده است (جمع: ${total} ریال). این مبلغ در گزارش فروش هست و در دفاتر نیست.`,
+      detail: `${fa(rows.length)} سفارش در ${fa(s.windowDays)} روز گذشته بسته و تسویه شده اما هیچ سند حسابداری برای آن ثبت نشده است (جمع: ${money(total)}). این مبلغ در گزارش فروش هست و در دفاتر نیست.${truncated(s, "closed_order_without_entry")}`,
       count: rows.length,
       amountRial: total,
       suggestion: "این سفارش‌ها را در صفحهٔ سفارش‌ها بررسی کنید. اگر پرداختشان واقعی بوده، سند فروش را دستی ثبت کنید و علت جاافتادن آن را پیگیری کنید.",
       href: "/dashboard/orders",
-      samples: firstSamples(rows, (row) => sample(`${row.reference} — ${row.totalRial} ریال`, row.id)),
+      samples: firstSamples(rows, (row) => sample(`${row.reference} — ${money(row.totalRial)}`, row.id)),
     };
   },
 
@@ -187,7 +255,7 @@ const RULES: Rule[] = [
       code: "missing_account_code",
       severity: "high",
       title: "سرفصل حساب جاافتاده",
-      detail: `${rows.length} سرفصل که نرم‌افزار برای ثبت خودکار به آن نیاز دارد در جدول حساب‌های شما نیست: ${rows.map((row) => `${row.code} ${row.name}`).join("، ")}.`,
+      detail: `${fa(rows.length)} سرفصل که نرم‌افزار برای ثبت خودکار به آن نیاز دارد در جدول حساب‌های شما نیست: ${rows.map((row) => `${row.code} ${row.name}`).join("، ")}.`,
       count: rows.length,
       amountRial: null,
       suggestion: "این سرفصل‌ها را در «سرفصل حساب‌ها» بسازید. تا وقتی نباشند، هر عملیاتی که به آن‌ها نیاز دارد با خطای «سرفصل حساب موجود نیست» متوقف می‌شود.",
@@ -205,12 +273,12 @@ const RULES: Rule[] = [
       code: "stale_journal_draft",
       severity: "medium",
       title: "پیش‌نویس سند معطل‌مانده",
-      detail: `${rows.length} پیش‌نویس سند بیش از ${s.staleDraftAfterDays} روز است که منتظر تأیید مانده (قدیمی‌ترین: ${oldest} روز، جمع: ${total} ریال). تا تأیید نشوند در هیچ گزارشی دیده نمی‌شوند.`,
+      detail: `${fa(rows.length)} پیش‌نویس سند بیش از ${fa(s.staleDraftAfterDays)} روز است که منتظر تأیید مانده (قدیمی‌ترین: ${fa(oldest)} روز، جمع: ${money(total)}). تا تأیید نشوند در هیچ گزارشی دیده نمی‌شوند.`,
       count: rows.length,
       amountRial: total,
       suggestion: "پیش‌نویس‌ها را در صف تأیید اسناد بررسی و تعیین‌تکلیف کنید: تأیید، اصلاح یا حذف.",
       href: "/dashboard/ledger",
-      samples: firstSamples(rows, (row) => sample(`${row.memo} — ${row.ageDays} روز`, row.id)),
+      samples: firstSamples(rows, (row) => sample(`${row.memo} — ${fa(row.ageDays)} روز`, row.id)),
     };
   },
 
@@ -222,12 +290,12 @@ const RULES: Rule[] = [
       code: "shift_cash_variance",
       severity: "medium",
       title: "کسری یا اضافهٔ صندوق",
-      detail: `${rows.length} شیفت در ${s.windowDays} روز گذشته با اختلاف قابل‌توجه بین موجودی شمرده‌شده و مبلغ مورد انتظار بسته شده است (خالص: ${net} ریال).`,
+      detail: `${fa(rows.length)} شیفت در ${fa(s.windowDays)} روز گذشته با اختلاف قابل‌توجه بین موجودی شمرده‌شده و مبلغ مورد انتظار بسته شده است (خالص: ${money(net)}).`,
       count: rows.length,
       amountRial: Math.abs(net),
       suggestion: "شیفت‌ها را با صندوق‌دار مرور کنید. اختلاف تکرارشونده معمولاً یا از ثبت‌نشدن یک پرداخت است یا از تحویل نادرست صندوق؛ مانده را در سرفصل «کسری و اضافهٔ صندوق» ببندید.",
       href: "/dashboard/reports",
-      samples: firstSamples(rows, (row) => sample(`${row.employeeName} — ${row.varianceRial} ریال`, row.shiftId)),
+      samples: firstSamples(rows, (row) => sample(`${row.employeeName} — ${money(row.varianceRial)}`, row.shiftId)),
     };
   },
 
@@ -239,24 +307,29 @@ const RULES: Rule[] = [
       code: "overdue_cheque",
       severity: "high",
       title: "چک سررسیدگذشته بدون تعیین‌تکلیف",
-      detail: `${rows.length} چک از سررسید گذشته و هنوز در وضعیت باز است (جمع: ${total} ریال). چک دریافتی وصول‌نشده یعنی طلبی که هنوز نقد نشده، و چک پرداختی سررسیدگذشته یعنی بدهی که ممکن است برگشت خورده باشد.`,
+      detail: `${fa(rows.length)} چک از سررسید گذشته و هنوز در وضعیت باز است (جمع: ${money(total)}). چک دریافتی وصول‌نشده یعنی طلبی که هنوز نقد نشده، و چک پرداختی سررسیدگذشته یعنی بدهی که ممکن است برگشت خورده باشد.${truncated(s, "overdue_cheque")}`,
       count: rows.length,
       amountRial: total,
       suggestion: "هر چک را در دفتر چک‌ها به وضعیت واقعی‌اش ببرید: وصول، برگشت یا ابطال. وضعیت اشتباه، هم مانده بانک و هم مانده طرف حساب را غلط نشان می‌دهد.",
       href: "/dashboard/ledger",
-      samples: firstSamples(rows, (row) => sample(`${row.serialNumber} — سررسید ${row.dueDate}`, row.id)),
+      samples: firstSamples(rows, (row) =>
+        sample(
+          `${CHEQUE_DIRECTION_LABELS[row.direction] ?? row.direction} ${row.serialNumber} — سررسید ${day(row.dueDate)}`,
+          row.id,
+        ),
+      ),
     };
   },
 
   (s) => {
     const { count, amountRial, oldestAgeDays } = s.unreconciledBankLines;
     if (count === 0) return null;
-    const age = oldestAgeDays === null ? "" : ` قدیمی‌ترین ${oldestAgeDays} روز پیش ثبت شده است.`;
+    const age = oldestAgeDays === null ? "" : ` قدیمی‌ترین ${fa(oldestAgeDays)} روز پیش ثبت شده است.`;
     return {
       code: "unreconciled_bank_lines",
       severity: count > 20 ? "medium" : "low",
       title: "ردیف بانکی مغایرت‌گیری‌نشده",
-      detail: `${count} ردیف بانکی هنوز با صورتحساب بانک تطبیق داده نشده است (جمع: ${amountRial} ریال).${age}`,
+      detail: `${fa(count)} ردیف صندوق یا کارت‌خوان هنوز با صورتحساب تطبیق داده نشده است (جمع: ${money(amountRial)}).${age}`,
       count,
       amountRial,
       suggestion: "در «مغایرت‌گیری بانکی» صورتحساب دوره را وارد و ردیف‌ها را تطبیق دهید. هرچه دیرتر انجام شود، پیدا کردن ردیف جاافتاده سخت‌تر می‌شود.",
@@ -273,12 +346,12 @@ const RULES: Rule[] = [
       code: "aged_receivable",
       severity: "medium",
       title: "طلب معوق از مشتری",
-      detail: `${rows.length} مشتری بیش از ${s.receivableAgeFloorDays} روز است که بدهی تسویه‌نشده دارند (جمع: ${total} ریال).`,
+      detail: `${fa(rows.length)} مشتری بیش از ${fa(s.receivableAgeFloorDays)} روز است که بدهی تسویه‌نشده دارند (جمع: ${money(total)}).`,
       count: rows.length,
       amountRial: total,
       suggestion: "فهرست را در گزارش سنی حساب‌های دریافتنی مرور کنید. برای مانده‌هایی که دیگر وصول نمی‌شوند، ذخیرهٔ مطالبات مشکوک‌الوصول ثبت کنید تا سود دوره واقعی شود.",
       href: "/dashboard/customers",
-      samples: firstSamples(rows, (row) => sample(`${row.customerName} — ${row.amountRial} ریال (${row.ageDays} روز)`, row.customerId)),
+      samples: firstSamples(rows, (row) => sample(`${row.customerName} — ${money(row.amountRial)} (${fa(row.ageDays)} روز)`, row.customerId)),
     };
   },
 
@@ -289,12 +362,14 @@ const RULES: Rule[] = [
       code: "negative_stock",
       severity: "medium",
       title: "موجودی منفی",
-      detail: `${rows.length} کالا موجودی منفی دارد. یعنی فروش یا مصرفی ثبت شده که خریدِ متناظرش هنوز وارد نشده؛ تا اصلاح، بهای تمام‌شدهٔ آن کالا تخمینی است.`,
+      detail: `${fa(rows.length)} کالا موجودی منفی دارد. یعنی فروش یا مصرفی ثبت شده که خریدِ متناظرش هنوز وارد نشده؛ تا اصلاح، بهای تمام‌شدهٔ آن کالا تخمینی است.${truncated(s, "negative_stock")}`,
       count: rows.length,
       amountRial: null,
       suggestion: "رسید خریدهای ثبت‌نشدهٔ این کالاها را وارد کنید. اگر خریدی در کار نبوده، با یک شمارش انبار موجودی را اصلاح کنید.",
       href: "/dashboard/inventory",
-      samples: firstSamples(rows, (row) => sample(`${row.name} — ${row.quantity} ${row.unit}`, row.id)),
+      // formatQuantity already returns Persian digits, and trims the nine
+      // decimal places migration 0015 stores cost-basis quantities with.
+      samples: firstSamples(rows, (row) => sample(`${row.name} — ${formatQuantity(row.quantity)} ${row.unit}`, row.id)),
     };
   },
 
@@ -305,12 +380,12 @@ const RULES: Rule[] = [
       code: "stale_draft_purchase",
       severity: "low",
       title: "پیش‌نویس خرید رسید نشده",
-      detail: `${rows.length} پیش‌نویس سفارش خرید بیش از ${s.staleDraftPurchaseAfterDays} روز است که رسید نشده است.`,
+      detail: `${fa(rows.length)} پیش‌نویس سفارش خرید بیش از ${fa(s.staleDraftPurchaseAfterDays)} روز است که رسید نشده است.`,
       count: rows.length,
       amountRial: null,
       suggestion: "اگر کالا رسیده، رسید خرید را ثبت کنید تا موجودی و بدهی تأمین‌کننده درست شود؛ اگر منتفی شده، پیش‌نویس را لغو کنید.",
       href: "/dashboard/inventory",
-      samples: firstSamples(rows, (row) => sample(`${row.supplierName ?? "بدون تأمین‌کننده"} — ${row.ageDays} روز`, row.id)),
+      samples: firstSamples(rows, (row) => sample(`${row.supplierName ?? "بدون تأمین‌کننده"} — ${fa(row.ageDays)} روز`, row.id)),
     };
   },
 
@@ -321,12 +396,12 @@ const RULES: Rule[] = [
       code: "unlocked_past_period",
       severity: "low",
       title: "دورهٔ مالی بسته‌نشده",
-      detail: `${rows.length} دورهٔ مالی به پایان رسیده اما هنوز بسته یا قفل نشده است. تا قفل نشود، ثبت سند با تاریخ گذشته در آن دوره ممکن است و گزارش‌های نهایی‌شده می‌توانند تغییر کنند.`,
+      detail: `${fa(rows.length)} دورهٔ مالی به پایان رسیده اما هنوز بسته یا قفل نشده است. تا قفل نشود، ثبت سند با تاریخ گذشته در آن دوره ممکن است و گزارش‌های نهایی‌شده می‌توانند تغییر کنند.`,
       count: rows.length,
       amountRial: null,
       suggestion: "پس از اطمینان از کامل‌بودن اسناد، دوره را در «دوره‌های مالی» ببندید و سپس قفل کنید.",
       href: "/dashboard/ledger",
-      samples: firstSamples(rows, (row) => sample(`${row.label} — پایان ${row.endsOn}`, row.id)),
+      samples: firstSamples(rows, (row) => sample(`${row.label} — پایان ${day(row.endsOn)}`, row.id)),
     };
   },
 ];
@@ -352,17 +427,32 @@ export function filterFindings(
   return findings.filter((finding) => SEVERITY_RANK[finding.severity] >= SEVERITY_RANK[minSeverity]);
 }
 
-/** A short Persian headline for a digest, a chat reply, or the run's summary. */
-export function summarizeFindings(findings: AccountingFinding[]): string {
-  if (findings.length === 0) return "در بازبینی حساب‌ها اشکالی پیدا نشد.";
+/**
+ * A short Persian headline for a digest, a chat reply, or the run's summary.
+ *
+ * `unavailableChecks` is not decoration: "nothing found" from a review that
+ * only managed nine of its twelve checks reads as clean books, which is the one
+ * thing an audit tool must never imply. Every caller that has the list — the
+ * panel, the assistant's tool, a scheduled job — passes it, so the headline can
+ * never assert more than the review actually established.
+ */
+export function summarizeFindings(findings: AccountingFinding[], unavailableChecks: string[] = []): string {
+  const caveat = unavailableChecks.length
+    ? ` ${toPersianDigits(unavailableChecks.length)} بررسی در این نوبت انجام نشد، پس این فهرست کامل نیست.`
+    : "";
+  if (findings.length === 0) {
+    return unavailableChecks.length
+      ? `در بررسی‌هایی که انجام شد اشکالی پیدا نشد، اما${caveat}`
+      : "در بازبینی حساب‌ها اشکالی پیدا نشد.";
+  }
   const high = findings.filter((finding) => finding.severity === "high").length;
   const medium = findings.filter((finding) => finding.severity === "medium").length;
   const low = findings.filter((finding) => finding.severity === "low").length;
   const parts: string[] = [];
-  if (high) parts.push(`${high} مورد بحرانی`);
-  if (medium) parts.push(`${medium} مورد مهم`);
-  if (low) parts.push(`${low} مورد جزئی`);
-  return `بازبینی حساب‌ها: ${parts.join("، ")} پیدا شد.`;
+  if (high) parts.push(`${toPersianDigits(high)} مورد بحرانی`);
+  if (medium) parts.push(`${toPersianDigits(medium)} مورد مهم`);
+  if (low) parts.push(`${toPersianDigits(low)} مورد جزئی`);
+  return `بازبینی حساب‌ها: ${parts.join("، ")} پیدا شد.${caveat}`;
 }
 
 export const ACCOUNTING_REVIEW_SEVERITY_LABELS: Record<AccountingReviewSeverity, string> = {

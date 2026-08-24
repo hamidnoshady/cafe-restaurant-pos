@@ -469,4 +469,155 @@ describe("the accounting review", () => {
     const lines = await db.query("SELECT * FROM journal_lines WHERE entry_id = $1", [entry.rows[0].id]);
     expect(lines.rows).toHaveLength(1);
   });
+
+  // A reversal is the app's ONLY way to correct a posted stock count or
+  // production run: the original event is flipped to 'reversed' and a
+  // compensating entry is posted in the same transaction. Both halves are in
+  // the ledger, so there is nothing unposted — but the check used to ask for
+  // `posting_status <> 'posted'` and reported every one of them as a critical
+  // gap, telling owners to re-post corrections they had already made.
+  it("does not call a reversed inventory event unposted", async () => {
+    const review = await import("../src/lib/accounting-review-service");
+
+    const reversed = await db.query<{ id: string }>(
+      `INSERT INTO inventory_events (business_id, location_id, event_type, source_type, posting_status)
+       VALUES ($1, $2, 'stock_count_adjustment', 'stock_count_reversal', 'reversed') RETURNING id`,
+      [shop.businessId, shop.locationId],
+    );
+
+    const clean = await dbLib.withTenant(shop.businessId, () => review.runAccountingReview(shop.businessId));
+    expect(clean.unavailableChecks).toEqual([]);
+    expect(clean.findings.find((finding) => finding.code === "unposted_inventory_event")).toBeUndefined();
+
+    // …while a genuinely stuck one still is. Same table, same check: the fix
+    // narrowed the predicate, it did not switch the check off.
+    await db.query("UPDATE inventory_events SET posting_status = 'failed' WHERE id = $1", [reversed.rows[0].id]);
+    const dirty = await dbLib.withTenant(shop.businessId, () => review.runAccountingReview(shop.businessId));
+    const finding = dirty.findings.find((row) => row.code === "unposted_inventory_event");
+    expect(finding?.count).toBe(1);
+    expect(finding?.severity).toBe("high");
+
+    await db.query("DELETE FROM inventory_events WHERE id = $1", [reversed.rows[0].id]);
+  });
+
+  // A fully comped order legitimately posts nothing: there is no money to debit,
+  // so postExactJournalEntry drops the empty entry. Reporting it as a settled
+  // sale missing from the books sent owners looking for money nobody collected.
+  it("does not call a zero-total order a sale that never reached the books", async () => {
+    const review = await import("../src/lib/accounting-review-service");
+
+    const comped = await db.query<{ id: string }>(
+      `INSERT INTO orders (location_id, order_number, status, total, closed_by, closed_at)
+       VALUES ($1, 9001, 'completed', 0, $2, now()) RETURNING id`,
+      [shop.locationId, shop.userId],
+    );
+
+    const clean = await dbLib.withTenant(shop.businessId, () => review.runAccountingReview(shop.businessId));
+    expect(clean.findings.find((finding) => finding.code === "closed_order_without_entry")).toBeUndefined();
+
+    // A real, unposted sale in the same window still is reported.
+    await db.query(
+      `INSERT INTO orders (location_id, order_number, status, total, closed_by, closed_at)
+       VALUES ($1, 9002, 'completed', 750000, $2, now())`,
+      [shop.locationId, shop.userId],
+    );
+    const dirty = await dbLib.withTenant(shop.businessId, () => review.runAccountingReview(shop.businessId));
+    const finding = dirty.findings.find((row) => row.code === "closed_order_without_entry");
+    expect(finding?.count).toBe(1);
+    expect(finding?.amountRial).toBe(750_000);
+
+    await db.query("DELETE FROM orders WHERE location_id = $1 AND order_number IN (9001, 9002)", [shop.locationId]);
+    void comped;
+  });
+
+  // reconciliation-service.ts reconciles cash (1100) and bank-clearing (1120).
+  // The review used to look at 1110 — the business's own bank account, which no
+  // reconciliation can ever clear — and skipped 1100 entirely, so it counted
+  // lines nobody could act on while missing the ones they could.
+  it("counts exactly the lines the reconciliation screen can clear", async () => {
+    const review = await import("../src/lib/accounting-review-service");
+
+    await db.query(
+      `INSERT INTO accounts (business_id, code, name, type)
+       SELECT $1, code, name, type::account_type FROM (VALUES
+         ('1100','صندوق','asset'),('1110','بانک','asset'),('1120','کارت‌خوان','asset')
+       ) a(code, name, type)
+       ON CONFLICT DO NOTHING`,
+      [shop.businessId],
+    );
+    const entry = await db.query<{ id: string }>(
+      `INSERT INTO journal_entries (business_id, location_id, entry_date, memo, source_type)
+       VALUES ($1, $2, current_date, 'نقد و بانک', 'manual') RETURNING id`,
+      [shop.businessId, shop.locationId],
+    );
+    for (const [code, amount] of [["1100", 100_000], ["1110", 200_000], ["1120", 300_000]] as const) {
+      await db.query(
+        `INSERT INTO journal_lines (entry_id, account_id, debit)
+         SELECT $1, id, $3 FROM accounts WHERE business_id = $2 AND code = $4`,
+        [entry.rows[0].id, shop.businessId, amount, code],
+      );
+    }
+
+    const result = await dbLib.withTenant(shop.businessId, () => review.runAccountingReview(shop.businessId));
+    const finding = result.findings.find((row) => row.code === "unreconciled_bank_lines");
+    // Cash + card-clearing, and not the untouchable bank line.
+    expect(finding?.count).toBe(2);
+    expect(finding?.amountRial).toBe(400_000);
+
+    await db.query("DELETE FROM journal_lines WHERE entry_id = $1", [entry.rows[0].id]);
+    await db.query("DELETE FROM journal_entries WHERE id = $1", [entry.rows[0].id]);
+  });
+
+  // A retail invoice is an `orders` row too, but it posts through the
+  // domain-event engine — one event per line, keyed by item id — so there is no
+  // `source_type = 'order'` entry to find. Running the order-ticket check
+  // against a shop that sells this way flagged every sale it had ever settled.
+  it("does not demand an order-level entry from a trade that does not post one", async () => {
+    const review = await import("../src/lib/accounting-review-service");
+
+    await db.query(
+      `INSERT INTO orders (location_id, order_number, status, total, closed_by, closed_at)
+       VALUES ($1, 9003, 'completed', 1250000, $2, now())`,
+      [shop.locationId, shop.userId],
+    );
+
+    // As a café, this is a real finding.
+    const cafe = await dbLib.withTenant(shop.businessId, () => review.runAccountingReview(shop.businessId));
+    expect(cafe.findings.find((row) => row.code === "closed_order_without_entry")?.count).toBe(1);
+
+    // The same row, in a trade that settles through a retail invoice, is not.
+    await db.query("UPDATE businesses SET industry = 'jewelry' WHERE id = $1", [shop.businessId]);
+    try {
+      const shop_ = await dbLib.withTenant(shop.businessId, () => review.runAccountingReview(shop.businessId));
+      expect(shop_.findings.find((row) => row.code === "closed_order_without_entry")).toBeUndefined();
+      // And the check is skipped, not broken — nothing degraded.
+      expect(shop_.unavailableChecks).toEqual([]);
+    } finally {
+      await db.query("UPDATE businesses SET industry = 'food_service' WHERE id = $1", [shop.businessId]);
+      await db.query("DELETE FROM orders WHERE location_id = $1 AND order_number = 9003", [shop.locationId]);
+    }
+  });
+
+  // A typo in the query string used to reach `new Date(...).toISOString()` and
+  // throw a RangeError out of the whole collector — a 500 on the review screen.
+  it("falls back to today rather than throwing on an unparseable asOfDate", async () => {
+    const review = await import("../src/lib/accounting-review-service");
+    const today = new Date().toISOString().slice(0, 10);
+    for (const asOfDate of ["", "abc", "2026-13-45", "۱۴۰۵/۰۶/۰۲"]) {
+      const result = await dbLib.withTenant(shop.businessId, () =>
+        review.runAccountingReview(shop.businessId, { asOfDate }),
+      );
+      expect(result.asOfDate).toBe(today);
+      expect(result.unavailableChecks).toEqual([]);
+    }
+
+    // Same for a window a direct caller (not a route, which clamps) got wrong.
+    for (const windowDays of [Number.NaN, 0, -5, Number.POSITIVE_INFINITY]) {
+      const result = await dbLib.withTenant(shop.businessId, () =>
+        review.runAccountingReview(shop.businessId, { windowDays }),
+      );
+      expect(result.windowDays).toBe(30);
+      expect(result.unavailableChecks).toEqual([]);
+    }
+  });
 });

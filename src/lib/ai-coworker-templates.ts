@@ -20,7 +20,7 @@
 
 import type { ActionType, ProposedAction } from "./ai";
 import type { CoworkerEventKind, CoworkerTriggerKind } from "./ai-coworker";
-import type { AccountingFinding, AccountingReviewSeverity } from "./accounting-review";
+import { filterFindings, type AccountingFinding, type AccountingReviewSeverity } from "./accounting-review";
 
 export const COWORKER_TEMPLATE_KEYS = [
   "shift_close_waste",
@@ -243,6 +243,12 @@ export interface CoworkerFacts {
   formulas?: Record<string, ProductionFormulaFact>;
   lowStock?: LowStockFact[];
   review?: AccountingFinding[];
+  /**
+   * Checks whose query could not run this time. Carried alongside the findings
+   * so a review that half-ran cannot report itself as "nothing wrong" — the
+   * same reason `runAccountingReview` returns the list at all.
+   */
+  reviewUnavailableChecks?: string[];
 }
 
 export interface CoworkerBuildResult {
@@ -366,8 +372,6 @@ function compareDecimalText(a: string, b: string): number {
 function isPositiveDecimal(text: string): boolean {
   return /^\d+(\.\d+)?$/.test(text) && /[1-9]/.test(text);
 }
-
-const SEVERITY_ORDER: Record<AccountingReviewSeverity, number> = { high: 3, medium: 2, low: 1 };
 
 function buildWaste(params: Record<string, unknown>, facts: CoworkerFacts): CoworkerBuildResult {
   const onHand = facts.onHand ?? {};
@@ -527,11 +531,15 @@ function buildLowStockDraft(params: Record<string, unknown>, facts: CoworkerFact
 
 function buildAccountingReview(params: Record<string, unknown>, facts: CoworkerFacts): CoworkerBuildResult {
   const floor = (params.minSeverity as AccountingReviewSeverity | undefined) ?? "medium";
-  const findings = (facts.review ?? []).filter(
-    (finding) => SEVERITY_ORDER[finding.severity] >= SEVERITY_ORDER[floor],
-  );
+  const findings = filterFindings(facts.review ?? [], floor);
   if (findings.length === 0) {
-    return { actions: [], skipReason: "در این بازبینی اشکالی پیدا نشد." };
+    const degraded = facts.reviewUnavailableChecks?.length ?? 0;
+    return {
+      actions: [],
+      skipReason: degraded
+        ? `در بررسی‌هایی که انجام شد اشکالی پیدا نشد، اما ${degraded} بررسی این نوبت انجام نشد.`
+        : "در این بازبینی اشکالی پیدا نشد.",
+    };
   }
   // A report, never a write. Every finding carries where to go and what to do;
   // deciding *which* correcting entry to post is the accountant's call, and a

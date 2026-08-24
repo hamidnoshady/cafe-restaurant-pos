@@ -18,6 +18,7 @@ import {
   summarizeFindings,
   type AccountingFinding,
 } from "@/lib/accounting-review";
+import { toPersianDigits } from "@/lib/digits";
 import { EmptyState, SectionCard, StatusBadge } from "../page-chrome";
 
 const SEVERITY_TONE: Record<AccountingFinding["severity"], "danger" | "active" | "neutral"> = {
@@ -61,7 +62,7 @@ export function CoworkerReview() {
       description={
         findings === null
           ? "دفترها را بررسی می‌کند و اشکال‌های واقعی را با پیشنهاد اصلاح فهرست می‌کند."
-          : summarizeFindings(findings)
+          : summarizeFindings(findings, unavailable)
       }
       actions={
         <Button size="sm" variant="outline" onClick={() => void load()} disabled={loading || locked}>
@@ -76,7 +77,7 @@ export function CoworkerReview() {
           clean books, which is the one thing an audit tool must never imply. */}
       {unavailable.length > 0 ? (
         <p className="border-b border-stone-200/80 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-900 sm:px-5">
-          {unavailable.length} بررسی در این نوبت انجام نشد، پس این فهرست کامل نیست.
+          {toPersianDigits(unavailable.length)} بررسی در این نوبت انجام نشد، پس این فهرست کامل نیست.
         </p>
       ) : null}
       {loading && findings === null ? (
@@ -86,7 +87,7 @@ export function CoworkerReview() {
         </div>
       ) : findings === null || findings.length === 0 ? (
         <div className="p-4 sm:p-5">
-          <EmptyState>در بازبینی حساب‌ها اشکالی پیدا نشد.</EmptyState>
+          <EmptyState>{summarizeFindings(findings ?? [], unavailable)}</EmptyState>
         </div>
       ) : (
         <ul className="divide-y divide-stone-200/80">
@@ -95,7 +96,7 @@ export function CoworkerReview() {
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="font-medium text-stone-950">{finding.title}</span>
                 <div className="flex items-center gap-2">
-                  <StatusBadge tone="neutral">{finding.count} مورد</StatusBadge>
+                  <StatusBadge tone="neutral">{toPersianDigits(finding.count)} مورد</StatusBadge>
                   <StatusBadge tone={SEVERITY_TONE[finding.severity]}>
                     {ACCOUNTING_REVIEW_SEVERITY_LABELS[finding.severity]}
                   </StatusBadge>

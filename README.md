@@ -383,7 +383,9 @@ involved, a suggested fix and the screen that makes it. It is a **rule engine, n
 language model asked to audit a trial balance produces plausible findings, and a plausible finding
 about money is worse than none. It reports and never writes. A check whose query fails is *named*
 in `unavailableChecks` rather than silently returning "found nothing", because that is
-indistinguishable from clean books.
+indistinguishable from clean books — and for the same reason a check whose rows hit the row cap is
+named in `truncatedChecks`, so its finding reads as "at least this many" rather than presenting a
+capped count as a total.
 
 The whole feature is drivable from a sub app over `/api/v1/coworker/*` and `/api/v1/accounting/review`
 under the `coworker.read`, `coworker.write` and `accounting.read` scopes. A public-API write is
