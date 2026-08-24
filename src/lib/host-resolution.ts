@@ -93,6 +93,48 @@ export async function resolveBusinessBySlug(slug: string): Promise<ResolvedBusin
   });
 }
 
+/**
+ * The one business on an install that has only one.
+ *
+ * A deployment with no `ROOT_DOMAIN` — the Electron desktop app, a single-café
+ * laptop — has no host label to resolve, so a session-less entrance that must
+ * still name a tenant has nothing to ask. There is exactly one business on such
+ * an install, and this returns it.
+ *
+ * Returns null rather than guessing when there is none or more than one: a
+ * multi-business install that has host routing switched off cannot answer
+ * "which business is this request for?" at all, and picking the oldest would be
+ * answering it wrongly and silently.
+ *
+ * Same bypass rationale as `resolveBusinessByLabel` directly above — this *is*
+ * the "which business is this request for?" lookup, just for the deployment
+ * shape where the answer is not in the hostname.
+ */
+export async function resolveSoleBusiness(): Promise<ResolvedBusinessHost | null> {
+  return withoutTenantScope("host-resolution", async () => {
+    const { rows } = await query<{
+      id: string;
+      name: string;
+      subdomain: string | null;
+      status: ResolvedBusinessHost["status"];
+    }>(
+      `SELECT id, name, subdomain::text AS subdomain, status::text AS status
+         FROM businesses
+        WHERE status <> 'archived'
+        LIMIT 2`,
+    );
+    if (rows.length !== 1) return null;
+    const row = rows[0];
+    return {
+      businessId: row.id,
+      name: row.name,
+      subdomain: row.subdomain ?? "",
+      status: row.status,
+      viaAlias: false,
+    };
+  });
+}
+
 /** `parseHost` + the database lookup, for callers that hold a raw Host header. */
 export async function resolveHost(
   host: string | null | undefined,

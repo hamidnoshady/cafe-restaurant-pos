@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2Icon } from "lucide-react";
 import {
   browserSupportsWebAuthn,
@@ -69,8 +69,32 @@ export default function LoginForm() {
   );
 }
 
+/**
+ * Where to go after signing in.
+ *
+ * `?next=` is set by middleware and by the host resolver so a deep link
+ * survives the login page — Phase 34 depends on it concretely: an owner
+ * following Claude's "connect" button lands on `/mcp/consent?…`, and dropping
+ * that URL abandons an OAuth flow they have no way to restart from inside the
+ * app.
+ *
+ * Only ever a same-site path. Without the second test a protocol-relative
+ * `//evil.example` is a URL too, which is how a login page becomes an open
+ * redirect — the same check `/api/host/redirect` makes on the value it forwards.
+ */
+function useNextPath(fallback: string): string {
+  const params = useSearchParams();
+  const requested = params.get("next");
+  return requested && requested.startsWith("/") && !requested.startsWith("//")
+    ? requested
+    : fallback;
+}
+
 function PasswordForm() {
   const router = useRouter();
+  // Root routes owners/managers to the wizard until setup is complete, so it
+  // stays the fallback rather than /dashboard.
+  const next = useNextPath("/");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -87,8 +111,7 @@ function PasswordForm() {
     });
     setBusy(false);
     if (res.ok) {
-      // Root routes owners/managers to the wizard until setup is complete.
-      router.push("/");
+      router.push(next);
       router.refresh();
     } else {
       setError("ایمیل یا رمز عبور نادرست است.");
@@ -228,6 +251,7 @@ function rememberRecent(employeeId: string) {
  */
 function PinLogin() {
   const router = useRouter();
+  const next = useNextPath("/dashboard");
   const [employees, setEmployees] = useState<RosterEmployee[] | null>(null);
   const [rosterError, setRosterError] = useState(false);
   const [selected, setSelected] = useState<RosterEmployee | null>(null);
@@ -290,7 +314,7 @@ function PinLogin() {
     setBusy(false);
     if (res.ok) {
       rememberRecent(selected.id);
-      router.push("/dashboard");
+      router.push(next);
       router.refresh();
       return;
     }
@@ -338,7 +362,7 @@ function PinLogin() {
       if (!verifyRes.ok) throw new Error("invalid_credentials");
 
       rememberRecent(selected.id);
-      router.push("/dashboard");
+      router.push(next);
       router.refresh();
     } catch {
       // Covers a failed verification as well as the user cancelling the

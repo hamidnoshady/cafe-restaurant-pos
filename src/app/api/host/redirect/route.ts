@@ -72,7 +72,11 @@ export async function GET(request: NextRequest) {
   // middleware where it reflects the external one. Redirecting there would
   // send the browser somewhere it cannot reach.
   if (!slug && here.kind === "business" && here.label === business.subdomain) {
-    return NextResponse.redirect(`${proto}://${hostHeader}/login`);
+    // `next` is carried through so a deep link survives the sign-in — it has
+    // already been narrowed to a same-site path above, so it cannot become an
+    // open redirect here either.
+    const query = next === "/" ? "" : `?next=${encodeURIComponent(next)}`;
+    return NextResponse.redirect(`${proto}://${hostHeader}/login${query}`);
   }
 
   // 308, not 301: a browser must not silently turn a POST into a GET here, and

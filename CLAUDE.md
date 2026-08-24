@@ -85,11 +85,14 @@ Three rules follow for the database side:
   `integration/tenant-isolation.integration.test.ts` fails if one is missing — that failure
   is a real bug, not a test to update.
 - **Don't add `withoutTenantScope()` calls casually.** Each one is a hole in the isolation
-  boundary. Six reasons are justified today (see `src/lib/db.ts`'s doc comment on
+  boundary. Seven reasons are justified today (see `src/lib/db.ts`'s doc comment on
   `withoutTenantScope` for the authoritative list): resolving a login email to its memberships
   before a business is chosen; platform administration; resolving a server-sync bearer token to
   its business before any tenant is chosen (the same shape as login); resolving a public API bearer
-  key to its business/location before a tenant has been selected; a narrow write to the global
+  key to its business/location before a tenant has been selected; resolving an MCP bearer credential
+  — a connector token or an OAuth access token — to its connection, and therefore its business and
+  branch (the same shape again; the MCP OAuth flow itself needs no hole, because it names the tenant
+  from the host first); a narrow write to the global
   `platform_users` table on behalf of an already-verified in-business membership (e.g.
   a password reset); re-checking a PIN login's `employee_sessions` row before a tenant scope
   has been entered for the request (the same shape as the impersonation-grant re-check it sits
@@ -285,6 +288,42 @@ Also: **don't put a gate in front of the answer.** The pre-send cost estimate wa
 `/api/ai/chat` already reserves credit and refuses without it; the actual charge is shown under the
 reply instead. `/api/ai/estimate` still exists, but nothing in the send path may block on it.
 
+## The MCP connector — read before touching `/api/mcp` or its OAuth server
+
+Since Phase 34 an owner can connect their *own* Claude, ChatGPT or Codex to their business through
+an MCP server at `/api/mcp`, set up from «اتصال‌ها ← دستیارهای هوش مصنوعی». See the "Connecting
+Claude, ChatGPT and other assistants" section of [README.md](README.md) and
+[docs/phases/Phase-34-MCP-Connector.md](docs/phases/Phase-34-MCP-Connector.md).
+
+- **The read tools are the assistant's own, not a copy.** `mcpReadTools()` reshapes
+  `toolDefinitions("dashboard")` and dispatches through `runReadTool`. Adding a read tool to `ai.ts`
+  adds it to MCP for free — which is the point: a question asked in Claude and the same question
+  asked in «دستیار» must not be able to disagree about last week's revenue, since only one of them is
+  in the room to be corrected. Do not write a parallel catalogue.
+- **The write tools are exactly the `ACTION_CATALOG` entries with an `executor` and no
+  `coworkerOnly` flag** — `assertWriteToolsMatchCatalogue()` fails the unit test if that drifts. Each
+  runs the same Phase 31 executor a coworker job runs, so **MCP opens no new mutation path**. Waste
+  stays absent: Phase 32 let a *job* log it on the strength of a fact the owner wrote down in
+  advance, and a model in a chat window has written down nothing.
+- **`pos.read` and `pos.write` are independent grants, and write *trust* is a third axis.**
+  `write_mode` is `'approve'` (the write waits in the owner's list and changes nothing) or `'apply'`.
+  Never default a connection to `apply`, and never let a scope widen anywhere except through the
+  consent screen or the owner's own PATCH.
+- **The 401's `WWW-Authenticate` header is the whole discovery chain.** A client that has never seen
+  the business reads it, follows it to `/.well-known/oauth-protected-resource`, finds the
+  authorization server and registers itself. Removing or narrowing it breaks no test — it breaks
+  "paste a URL and press connect", silently, in a client that shows no error.
+- **In `/authorize`, `client_id` and `redirect_uri` are validated before anything else.** Only once
+  both are known-registered does another failure become a redirect. The other order makes the
+  endpoint an open redirect. For the same reason the consent hand-off emits a **relative**
+  `Location`: `request.url` in a route handler is the container's origin, and rebuilding it from
+  `x-forwarded-host` would let a client-supplied header choose the destination.
+- **PKCE is S256 only, codes are claimed with a conditional `UPDATE`, and refresh rotates** and
+  re-reads the connection's current scopes — so narrowing a connection cannot be undone by a refresh.
+- **Everything is tenant-scoped from the host.** The OAuth endpoints resolve the business with
+  `resolveMcpTenant` (Phase 23's "ask the host" rule) and then work inside `withTenant`; only the
+  bearer lookup bypasses, under the documented `mcp-token-auth` reason. Do not add a second hole.
+
 ## Repository layout
 
 - `src/app/api/**/route.ts` — route handlers. Every handler starts with a guard
@@ -350,9 +389,10 @@ reply instead. `/api/ai/estimate` still exists, but nothing in the send path may
   physical count under `/dashboard/stock` (`/api/stock/counts*`). Both inherit an existing
   module (`inventory` and `stock` respectively) with **no new gating**, the way Phase 29's
   production tab does — gate a new tab, never the hub.
-- **Connections (Phase 28)** — everything a business connects *to* lives behind one hub,
-  `/dashboard/connections` (`src/lib/connection-kinds.ts`), with three kinds: the desktop
-  install, a WooCommerce store, and developer API keys for `/api/v1`. The page is
+- **Connections (Phase 28, Phase 34)** — everything a business connects *to* lives behind one hub,
+  `/dashboard/connections` (`src/lib/connection-kinds.ts`), with four kinds: the desktop
+  install, a WooCommerce store, developer API keys for `/api/v1`, and (Phase 34) the MCP
+  connector an owner points their own Claude/ChatGPT/Codex at. The page is
   deliberately **not** feature-gated — its tabs have three different entitlements and one
   (desktop pairing) has none — so gate a new tab, never the hub. Two rules carry the
   history: a desktop install is claimed with a **pairing code** issued by the Owner from

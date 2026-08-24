@@ -114,6 +114,29 @@ const PUBLIC_ROUTES: Record<string, string> = {
   "integrations/wordpress/events": "WordPress plugin channel — see integrations/wordpress/ping",
   "integrations/wordpress/jobs": "WordPress plugin channel — see integrations/wordpress/ping",
   "integrations/wordpress/jobs/ack": "WordPress plugin channel — see integrations/wordpress/ping",
+  // Phase 34 — the MCP connector's OAuth 2.1 flow. Every one of these is
+  // reached BEFORE any credential exists (that is what the flow is for), and
+  // the only step that makes a decision — the owner pressing "allow" — is
+  // deliberately NOT here: it lives at /api/connections/mcp/consent, behind
+  // the tenant session and an owner-role guard.
+  "mcp/oauth/register":
+    "RFC 7591 dynamic client registration — the first call a client makes, before any owner has " +
+    "been asked anything; it issues a client_id and nothing else, and a registration alone can " +
+    "read no row. The tenant comes from the host, never from the body",
+  "mcp/oauth/authorize":
+    "the OAuth authorization endpoint — validates the request and hands the browser to the " +
+    "authenticated consent page; it authorizes nothing itself and mints nothing",
+  "mcp/oauth/token":
+    "the OAuth token endpoint — session-less by definition; it makes no policy decisions, since " +
+    "every one was recorded on the authorization code by the owner at the consent screen",
+  "mcp/oauth/revoke":
+    "RFC 7009 token revocation — a client handing its own token back; always answers 200, " +
+    "because a truthful 'no such token' would make an unauthenticated endpoint a lookup oracle",
+  "well-known/oauth-protected-resource/[[...path]]":
+    "RFC 9728 discovery — read by a client before it has any credential at all; discloses only " +
+    "URLs already implied by the hostname (rewritten from /.well-known/… in next.config.ts)",
+  "well-known/oauth-authorization-server/[[...path]]":
+    "RFC 8414 discovery — see well-known/oauth-protected-resource",
   "integrations/woocommerce/webhook/[connectionId]":
     "Phase 23 (issue #118) — WooCommerce delivers webhooks to this URL with an HMAC-SHA256 " +
     "signature authenticated against the connection's webhook secret (webhook-ingest-service.ts), " +
@@ -159,6 +182,16 @@ function isApiKeyGuarded(src: string): boolean {
 }
 
 
+/**
+ * The MCP endpoint is session-less for the same reason a /api/v1 route is: it
+ * authenticates a scoped bearer credential of its own (Phase 34). `withMcpScope`
+ * resolves the connection, establishes its tenant scope, and refuses without
+ * one — so this is a guard, not an exemption.
+ */
+function isMcpGuarded(src: string): boolean {
+  return /withMcpScope\(/.test(src);
+}
+
 /** All requireRole(...) argument lists found in a file, as role-name arrays. */
 function requireRoleCalls(src: string): string[][] {
   const calls: string[][] = [];
@@ -185,6 +218,13 @@ describe("every API route is guarded", () => {
     it(`${key} is guarded or explicitly public`, () => {
       if (key === "v1" || key.startsWith("v1/")) {
         expect(isApiKeyGuarded(src), `src/app/api/${key}/route.ts must authenticate a scoped API key`).toBe(true);
+        return;
+      }
+      if (key === "mcp") {
+        expect(
+          isMcpGuarded(src),
+          "src/app/api/mcp/route.ts must authenticate a scoped MCP connection",
+        ).toBe(true);
         return;
       }
       if (PUBLIC_ROUTES[key]) return; // documented public route

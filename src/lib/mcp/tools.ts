@@ -1,0 +1,463 @@
+/**
+ * The tool catalogue an MCP client sees.
+ *
+ * The read half is **not** written here. It is the assistant's own read tools
+ * (`toolDefinitions("dashboard")` in `ai.ts`, executed by `runReadTool` in
+ * `ai-tools.ts`), reshaped into MCP's tool descriptor. That is the whole point:
+ * a question Claude asks over MCP and the same question asked in «دستیار» must
+ * be answered by the same code reading the same views, or the two surfaces
+ * start disagreeing about last week's revenue — and only one of them is in the
+ * room to be corrected. Adding a read tool to `ai.ts` adds it here for free.
+ *
+ * Two things are added on top:
+ *
+ *   * **An English line.** The in-app assistant is prompted in Persian and
+ *     talks to a Persian owner, so its descriptions are Persian only. An MCP
+ *     client may be driving a model that is reasoning in English about a
+ *     Persian business, and a tool it cannot read is a tool it will not call.
+ *     Each tool therefore gets one English sentence *in front of* the Persian
+ *     one — never instead of it, because the Persian text carries the domain
+ *     rules ("بازهٔ پیش‌فرض ۳۰ روز", "شناسه را از کاربر نپرس").
+ *   * **The write half**, built from `ACTION_CATALOG` — every action that has a
+ *     server-side executor and is not `coworkerOnly`. See `MCP_WRITE_TOOLS`.
+ *
+ * Pure. Executing a tool is `server.ts`'s job; this file only says what exists.
+ */
+import {
+  ACTION_CATALOG,
+  toolDefinitions,
+  type ActionType,
+  type AutopilotExecutorKey,
+  type OpenAiTool,
+} from "../ai";
+import { MCP_SCOPES, type McpScope } from "./scopes";
+
+/** MCP's own tool descriptor. `annotations` are hints a client may show or ignore. */
+export interface McpToolDescriptor {
+  name: string;
+  title: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+  annotations: {
+    title: string;
+    readOnlyHint: boolean;
+    destructiveHint: boolean;
+    idempotentHint: boolean;
+    openWorldHint: boolean;
+  };
+}
+
+/** Which half of the connection a tool belongs to, and what it runs. */
+export type McpToolBinding =
+  | { kind: "read"; readToolName: string }
+  | { kind: "write"; actionType: ActionType; executor: AutopilotExecutorKey };
+
+export interface McpTool {
+  descriptor: McpToolDescriptor;
+  scope: McpScope;
+  binding: McpToolBinding;
+}
+
+// ---------------------------------------------------------------------------
+// Read tools
+// ---------------------------------------------------------------------------
+
+/**
+ * The tools an MCP client is *not* offered, and why each one is missing.
+ *
+ *   * `propose_action` — the in-app confirm gate. Over MCP a write is a tool
+ *     the client calls directly (see below), so a "propose" wrapper would be a
+ *     second, parallel way to ask for the same change.
+ *   * `draft_expense_from_receipt` — reads an image the caller attached to the
+ *     current chat turn. There is no such attachment over MCP; the tool would
+ *     always answer "no image".
+ */
+const EXCLUDED_READ_TOOLS = new Set(["propose_action", "draft_expense_from_receipt"]);
+
+/**
+ * One English sentence per read tool.
+ *
+ * Kept as a map rather than being folded into `ai.ts` so that the in-app
+ * assistant's prompt does not grow an English half it will never use — and so
+ * that `tools.test.ts` can assert this map has an entry for every tool the
+ * catalogue exposes. A tool added to `ai.ts` with no entry here still works; it
+ * simply arrives Persian-only, which is a degraded description rather than a
+ * missing tool.
+ */
+export const MCP_READ_TOOL_SUMMARIES: Record<string, string> = {
+  get_setup_state: "Business setup state: name, branches, preferences, costing method, tax rate, and which setup steps are still incomplete.",
+  list_reports: "List the standard reports available, by key and title. Call this before run_report.",
+  run_report: "Run one standard report (by key from list_reports) over an optional ISO date range and return its rows.",
+  get_menu_performance: "Best- and worst-selling menu items by quantity and revenue, plus items never ordered.",
+  get_void_pattern: "Voided order items broken down by item, by the employee who opened the order, and by hour of day.",
+  get_stock_valuation: "Current inventory valuation per item and in total.",
+  get_supplier_performance: "Supplier purchase counts, total spend, and average lead time.",
+  get_reservation_conflicts: "Future active reservations that overlap on the same table.",
+  get_table_turnover_rate: "Average occupancy time and revenue per table, from closed table sessions.",
+  get_courier_performance: "Delivery counts, revenue, courier cost, and average delivery time per courier.",
+  get_customer_profile: "One customer's contact details, order count, lifetime spend, and first/last purchase.",
+  get_at_risk_customers: "Repeat customers who have not bought for a while.",
+  get_ar_aging: "Accounts receivable aged by customer into current / 30 / 60 / 90+ day buckets.",
+  get_ap_upcoming: "Open supplier invoices, oldest first, for payment prioritisation.",
+  get_unreconciled_bank_lines: "Ledger lines in cash and bank-in-transit not yet matched in any reconciliation.",
+  get_payroll_summary: "Recent payroll runs and the monthly wage total for active staff.",
+  get_vat_liability: "Output VAT against input VAT and the net position for a period.",
+  get_branch_comparison: "Per-branch order count, revenue, and estimated labour cost.",
+  forecast_demand: "A simple demand estimate from the last 28 days' average. Always an estimate, never a promise.",
+  get_near_expiry_items: "Cosmetics batches approaching their expiry date (cosmetics businesses only).",
+  get_staff_commission: "Sales commission accrued per employee.",
+  get_repurchase_candidates: "Customers due to buy again, based on their recorded repurchase interval.",
+  run_accounting_review: "A deterministic audit of the books: unbalanced entries, unposted stock events, settled sales with no entry, missing account headings, stale drafts, till variances, overdue cheques and receivables, negative stock, unclosed periods. Rule-based, never a model's opinion.",
+  find_items: "Resolve a partial Persian item name to its id, unit, branch, current stock, unit cost and active/disabled status. Use this instead of ever asking the user for an id.",
+  get_waste_history: "Recorded waste by item and reason, with quantity, occurrences, date range and cost.",
+  describe_app: "What this installation is: the trade, its branches, which modules and features it has, the words it uses for things, and what you are able to do here. Call this first when you are unsure whether a part of the app exists for this business.",
+  list_coworker_jobs: "The standing «همکار هوشمند» jobs this business has defined, and how many runs are waiting for approval.",
+};
+
+function readDescriptor(tool: OpenAiTool): McpToolDescriptor {
+  const english = MCP_READ_TOOL_SUMMARIES[tool.function.name];
+  return {
+    name: tool.function.name,
+    title: tool.function.name,
+    description: english ? `${english}\n\n${tool.function.description}` : tool.function.description,
+    inputSchema: tool.function.parameters,
+    annotations: {
+      title: tool.function.name,
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  };
+}
+
+/**
+ * Every read tool, in `ai.ts`'s own order.
+ *
+ * Dashboard mode with no attachment: the widest read surface the app has, which
+ * is what a connector granted `pos.read` is for. Floor mode's narrower set is
+ * about a waiter's tablet in a room, and has no meaning here.
+ */
+export function mcpReadTools(): McpTool[] {
+  return toolDefinitions("dashboard")
+    .filter((tool) => !EXCLUDED_READ_TOOLS.has(tool.function.name))
+    .map((tool) => ({
+      descriptor: readDescriptor(tool),
+      scope: MCP_SCOPES.read,
+      binding: { kind: "read", readToolName: tool.function.name } as const,
+    }));
+}
+
+// ---------------------------------------------------------------------------
+// Write tools
+// ---------------------------------------------------------------------------
+
+interface WriteToolSpec {
+  name: string;
+  actionType: ActionType;
+  english: string;
+  /** JSON Schema for the action's payload — the typed form of ACTION_CATALOG's `payloadHint`. */
+  inputSchema: Record<string, unknown>;
+  /** True where applying it cannot be undone in one click; surfaced as MCP's destructiveHint. */
+  destructive: boolean;
+}
+
+const money = (description: string) => ({ type: "integer", description });
+const id = (description: string) => ({ type: "string", description });
+
+/**
+ * The writes an MCP connection may perform.
+ *
+ * The list is not chosen freely — it is exactly the `ACTION_CATALOG` entries
+ * with a server-side `executor`, minus the `coworkerOnly` ones, and
+ * `assertWriteToolsMatchCatalogue` (called from the test) fails if it drifts
+ * from that. Three consequences worth stating, because each one is a decision
+ * some future change will want to undo:
+ *
+ *   * **No new mutation path.** Every tool here runs the same executor a
+ *     coworker job runs, which calls the same service function the route
+ *     handler calls. There is no MCP-specific write anywhere in this codebase.
+ *   * **`inventory.waste.log` is absent**, and must stay absent. Phase 31 kept
+ *     waste out of autopilot because "why did this stock leave" is a fact only
+ *     a person in the room has; Phase 32 let a *coworker job* log it because
+ *     the owner supplied that fact in advance. A model in a chat window has
+ *     supplied nothing, so it is back to the Phase 31 position.
+ *   * **Actions with no executor are absent** — the setup-wizard six, the live
+ *     floor five (reservations, tables, courier), and `menu.item.create`. Their
+ *     absence is not an omission to fix by writing an executor: each was left
+ *     without one deliberately (see their entries in `ai.ts`).
+ */
+const WRITE_TOOL_SPECS: WriteToolSpec[] = [
+  {
+    name: "write_menu_item_price",
+    actionType: "menu.item.priceUpdate",
+    english: "Change one menu item's price. Amount is an integer in Rial (not Toman).",
+    destructive: false,
+    inputSchema: {
+      type: "object",
+      properties: {
+        menuItemId: id("شناسهٔ آیتم منو — از find_items بگیر، هرگز از کاربر نپرس"),
+        price: money("قیمت جدید، ریال صحیح (تومان × ۱۰)"),
+      },
+      required: ["menuItemId", "price"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "write_menu_item_availability",
+    actionType: "menu.item.disable",
+    english: "Turn one menu item off (or back on) — e.g. when it is out of stock.",
+    destructive: false,
+    inputSchema: {
+      type: "object",
+      properties: {
+        menuItemId: id("شناسهٔ آیتم منو — از find_items بگیر"),
+        isActive: { type: "boolean", description: "false یعنی غیرفعال شود؛ true یعنی دوباره فعال شود" },
+      },
+      required: ["menuItemId", "isActive"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "write_order_discount",
+    actionType: "order.discount.apply",
+    english: "Apply a discount to an order that is still open. Refused once the bill is settled.",
+    destructive: false,
+    inputSchema: {
+      type: "object",
+      properties: {
+        orderId: id("شناسهٔ سفارش باز"),
+        discount: {
+          type: "object",
+          properties: {
+            type: { type: "string", enum: ["percent", "amount"], description: "درصدی یا مبلغ ثابت" },
+            value: { type: "number", description: "درصد ۰..۱۰۰، یا مبلغ ریال صحیح" },
+          },
+          required: ["type", "value"],
+          additionalProperties: false,
+        },
+      },
+      required: ["orderId", "discount"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "write_purchase_draft",
+    actionType: "inventory.reorder.draftPO",
+    english:
+      "Create a DRAFT purchase order. A draft moves no stock and posts nothing to the ledger until a human receives it.",
+    destructive: false,
+    inputSchema: {
+      type: "object",
+      properties: {
+        supplierId: id("شناسهٔ تأمین‌کننده، اختیاری"),
+        note: { type: "string", description: "یادداشت، اختیاری" },
+        items: {
+          type: "array",
+          minItems: 1,
+          items: {
+            type: "object",
+            properties: {
+              inventoryItemId: id("شناسهٔ کالای انبار — از find_items بگیر"),
+              purchaseQty: { type: "string", description: "مقدار در واحد خرید، به‌صورت رشته (اعشار دقیق)" },
+              totalCost: { type: "string", description: "مبلغ کل ریال، به‌صورت رشته" },
+            },
+            required: ["inventoryItemId", "purchaseQty", "totalCost"],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ["items"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "write_stock_count",
+    actionType: "inventory.adjustment.propose",
+    english:
+      "Record a physical stock count. Quantities are what was COUNTED, not a delta; the adjustment and its ledger posting are derived.",
+    destructive: false,
+    inputSchema: {
+      type: "object",
+      properties: {
+        note: { type: "string", description: "یادداشت شمارش، اختیاری" },
+        lines: {
+          type: "array",
+          minItems: 1,
+          items: {
+            type: "object",
+            properties: {
+              inventoryItemId: id("شناسهٔ کالای انبار — از find_items بگیر"),
+              countedQty: { type: "string", description: "مقدار شمارش‌شدهٔ واقعی، به‌صورت رشته" },
+            },
+            required: ["inventoryItemId", "countedQty"],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ["lines"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "write_customer_note",
+    actionType: "customer.note.add",
+    english:
+      "Replace a customer's internal notes. This overwrites the field, so read get_customer_profile first and send the combined text. Internal only — nothing is sent to the customer.",
+    destructive: false,
+    inputSchema: {
+      type: "object",
+      properties: {
+        customerId: id("شناسهٔ مشتری"),
+        notes: { type: "string", description: "کل متن یادداشت‌ها — جایگزین متن قبلی می‌شود" },
+      },
+      required: ["customerId", "notes"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "write_journal_draft",
+    actionType: "journal.manual.propose",
+    english:
+      "Draft a manual journal entry. Debits must equal credits. It is only ever a DRAFT — posting it to the ledger needs separate human approval, by design.",
+    destructive: false,
+    inputSchema: {
+      type: "object",
+      properties: {
+        entryDate: { type: "string", description: "تاریخ سند (ISO)، پیش‌فرض امروزِ کسب‌وکار" },
+        memo: { type: "string", description: "شرح سند" },
+        lines: {
+          type: "array",
+          minItems: 2,
+          items: {
+            type: "object",
+            properties: {
+              accountId: id("شناسهٔ حساب"),
+              debit: money("بدهکار، ریال صحیح"),
+              credit: money("بستانکار، ریال صحیح"),
+            },
+            required: ["accountId"],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ["memo", "lines"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "write_expense",
+    actionType: "expense.categorize",
+    english:
+      "Record and categorise an expense. This posts to the ledger immediately and has NO one-click undo — correct a mistake with a reversing entry.",
+    destructive: true,
+    inputSchema: {
+      type: "object",
+      properties: {
+        accountId: id("حساب هزینه (کد ۵۲۰۰ تا ۵۹۰۰)"),
+        paymentAccountId: id("حساب پرداخت: صندوق یا بانک"),
+        amount: money("مبلغ، ریال صحیح"),
+        expenseDate: { type: "string", description: "تاریخ (ISO)، پیش‌فرض امروزِ کسب‌وکار" },
+        vendor: { type: "string", description: "نام فروشنده، اختیاری" },
+        memo: { type: "string", description: "شرح هزینه" },
+      },
+      required: ["accountId", "paymentAccountId", "amount", "memo"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "write_production_run",
+    actionType: "inventory.production.run",
+    english:
+      "Record an in-house production run against a formula: consumes the raw materials and receives the produced good at cost.",
+    destructive: false,
+    inputSchema: {
+      type: "object",
+      properties: {
+        formulaId: id("شناسهٔ فرمول تولید"),
+        batches: { type: "string", description: "تعداد بچ، به‌صورت رشته" },
+        outputQuantity: { type: "string", description: "مقدار واقعی تولیدشده، اختیاری" },
+        note: { type: "string", description: "یادداشت، اختیاری" },
+      },
+      required: ["formulaId", "batches"],
+      additionalProperties: false,
+    },
+  },
+];
+
+function writeDescriptor(spec: WriteToolSpec): McpToolDescriptor {
+  const meta = ACTION_CATALOG[spec.actionType];
+  return {
+    name: spec.name,
+    title: meta.label,
+    description: `${spec.english}\n\n${meta.label} — ${meta.payloadHint}`,
+    inputSchema: spec.inputSchema,
+    annotations: {
+      title: meta.label,
+      readOnlyHint: false,
+      // "Destructive" in MCP's sense is "cannot simply be undone", which is
+      // exactly what ACTION_CATALOG's `revertible: false` records.
+      destructiveHint: spec.destructive,
+      // None of these are idempotent: calling write_expense twice books the
+      // expense twice, and a client that retries on a timeout must be told so.
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+  };
+}
+
+export function mcpWriteTools(): McpTool[] {
+  return WRITE_TOOL_SPECS.map((spec) => {
+    const meta = ACTION_CATALOG[spec.actionType];
+    return {
+      descriptor: writeDescriptor(spec),
+      scope: MCP_SCOPES.write,
+      // Non-null by construction; assertWriteToolsMatchCatalogue proves it.
+      binding: { kind: "write", actionType: spec.actionType, executor: meta.executor! } as const,
+    };
+  });
+}
+
+/**
+ * The invariant the write list must keep: exactly the executable, non-coworker
+ * -only actions. Exported rather than inlined in the test so the rule reads as
+ * part of the module it constrains.
+ */
+export function assertWriteToolsMatchCatalogue(): { missing: ActionType[]; extra: ActionType[] } {
+  const expected = (Object.keys(ACTION_CATALOG) as ActionType[]).filter((type) => {
+    const meta = ACTION_CATALOG[type];
+    return Boolean(meta.executor) && !meta.coworkerOnly;
+  });
+  const present = WRITE_TOOL_SPECS.map((spec) => spec.actionType);
+  return {
+    missing: expected.filter((type) => !present.includes(type)),
+    extra: present.filter((type) => !expected.includes(type)),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Catalogue
+// ---------------------------------------------------------------------------
+
+/**
+ * The tools this connection may call.
+ *
+ * Filtered by scope, not merely annotated with it: a read-only connection must
+ * not be able to *see* that a write tool exists, or a model will keep proposing
+ * one and telling the owner the app refused. Server-side, `server.ts` checks the
+ * scope again on every call — this list is a courtesy to the client, never the
+ * guard.
+ */
+export function mcpToolCatalogue(scopes: readonly McpScope[]): McpTool[] {
+  const all = [...mcpReadTools(), ...mcpWriteTools()];
+  return all.filter((tool) => scopes.includes(tool.scope));
+}
+
+export function findMcpTool(name: string, scopes: readonly McpScope[]): McpTool | null {
+  return mcpToolCatalogue(scopes).find((tool) => tool.descriptor.name === name) ?? null;
+}
+
+/** True for a name this server knows at all — so "no access" and "no such tool" can be told apart. */
+export function isKnownMcpTool(name: string): boolean {
+  return mcpToolCatalogue(["pos.read", "pos.write"]).some((tool) => tool.descriptor.name === name);
+}

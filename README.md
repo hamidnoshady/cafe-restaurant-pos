@@ -393,6 +393,63 @@ attributed to the user who issued the key — an automated write is never anonym
 
 See [docs/phases/Phase-32-AI-Coworker.md](docs/phases/Phase-32-AI-Coworker.md).
 
+## Connecting Claude, ChatGPT and other assistants (MCP, Phase 34)
+
+Everything above runs a model *this app* calls. This is the other direction: a **Model Context
+Protocol** server at `POST /api/mcp` that lets an owner's own Claude, ChatGPT, Codex or any other
+MCP client read — and, if they allow it, change — their business.
+
+Set it up from «اتصال‌ها ← دستیارهای هوش مصنوعی» (`/dashboard/connections?tab=mcp`, Owner only,
+gated on the `api_platform` entitlement). Two ways in:
+
+- **Claude (mobile/desktop) and ChatGPT.** Copy the address the panel shows and paste it into the
+  client's "add connector" box. That is the whole of it: the client discovers this server's OAuth
+  endpoints from the `WWW-Authenticate` header on its first 401, registers itself, and sends the
+  owner here to sign in and choose what to grant. No key is typed anywhere.
+- **Codex, IDE extensions, scripts.** Mint a `posmcp_…` token from the same panel and put it in the
+  client's config as an `Authorization: Bearer` header. Shown once, stored only as a SHA-256 hash.
+
+### What a connection may do
+
+Two independent grants, so read-only is a real choice and the default one:
+
+| Scope | What it reaches |
+| --- | --- |
+| `pos.read` | Reports, sales, menu, stock, customers, ledger, setup state — the assistant's own read tools, executed by the same code |
+| `pos.write` | Menu price/availability, order discount, draft purchase order, stock count, expense, journal **draft**, customer note, production run |
+
+A connection with `pos.write` is additionally in one of two modes, chosen by the owner:
+
+- **«منتظر تأیید بماند» (default)** — the write lands in the owner's approval list on that same
+  page and changes nothing until they press تأیید, at which point the stored payload runs unchanged.
+- **«بدون تأیید اجرا شود»** — it applies immediately.
+
+Either can be narrowed, widened or revoked later from the connections screen without re-running the
+OAuth flow, and a revoke takes effect on the connector's very next call.
+
+### What it deliberately cannot do
+
+- **Log waste.** `inventory.waste.log` is `coworkerOnly`: a coworker job may log it because the owner
+  wrote down the item and the reason in advance; a model in a chat window has written down nothing.
+- **Post a journal entry.** It can only ever create a *draft* into Phase 16's approval queue.
+- **Create or settle an order.** That path is the POS's, and a second one is how a divergent sale
+  path starts.
+- **Send anything to a customer.** Nothing customer-facing exists in the write catalogue at all.
+
+Every write is recorded in `ai_action_audit` with `source = 'mcp'` and the connection that asked for
+it, alongside chat, autopilot and coworker writes, with the same prior state and the same undo. It
+runs under the authority of the owner who authorized the connection — a connection whose authorizer
+has been deleted can still read, but every write is refused.
+
+### For a model reading this
+
+The server publishes three MCP resources so a client knows what it is looking at before it starts
+guessing: `pos://app/overview` (trade, branches, modules, vocabulary), `pos://app/conventions`
+(integer Rial vs spoken Toman, Gregorian ISO on the wire vs Jalali on screen, a trading day that is
+not a calendar day, decimal quantities as strings) and `pos://reports/catalog`.
+
+See [docs/phases/Phase-34-MCP-Connector.md](docs/phases/Phase-34-MCP-Connector.md).
+
 ## The business day (روز کاری)
 
 A branch's trading day does not have to start at local midnight. `locations.business_day_start_minutes`

@@ -8,6 +8,7 @@ import { TabBar, TabPanel } from "../page-chrome";
 import { DesktopPanel } from "./desktop-panel";
 import { WooCommercePanel } from "./woocommerce-panel";
 import { ApiTokensPanel } from "./api-tokens-panel";
+import { McpPanel } from "./mcp-panel";
 
 /**
  * The hub's tab shell.
@@ -50,6 +51,7 @@ export function ConnectionsManager({
         <FeatureLock locked={locked} title={activeKind.label}>
           {active === "desktop" ? <DesktopPanel /> : null}
           {active === "woocommerce" ? <WooCommercePanel /> : null}
+          {active === "mcp" ? <McpPanel /> : null}
           {active === "api" ? <ApiTokensPanel /> : null}
         </FeatureLock>
       </TabPanel>
