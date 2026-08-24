@@ -9,6 +9,7 @@ import {
   BotIcon,
   CalendarDaysIcon,
   CalculatorIcon,
+  CheckIcon,
   ChefHatIcon,
   CircleIcon,
   ClipboardListIcon,
@@ -25,6 +26,13 @@ import {
   WatchIcon,
   type LucideIcon,
 } from "lucide-react";
+import {
+  BOTTOM_NAV_MAX,
+  BOTTOM_NAV_STORAGE_KEY,
+  parseBottomNavHrefs,
+  resolveBottomNavHrefs,
+  toggleBottomNavHref,
+} from "@/lib/bottom-nav";
 import {
   resolveSidebarMode,
   toggleDashboardSidebarPreference,
@@ -46,6 +54,16 @@ import {
   SidebarTrigger,
   useSidebar,
 } from "@/components/ui/sidebar";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { BiometricSettingsButton } from "./biometric-settings";
 import { BranchSwitcher } from "./branch-switcher";
@@ -187,7 +205,104 @@ function SidebarBrand({ title, subtitle }: { title: string; subtitle: string }) 
   );
 }
 
-function DashboardSidebarFooter({ role, fullName }: { role: string; fullName: string }) {
+/**
+ * Chooses which pages the mobile bottom bar shows.
+ *
+ * Lives in the drawer footer next to the other per-device switches (theme, the
+ * biometric opt-in) because that drawer *is* what the bar's «پروفایل» button
+ * opens — the setting sits one tap from the thing it changes. Mobile-only, since
+ * the bar itself is.
+ */
+function BottomNavSettings({
+  navItems,
+  current,
+  onSave,
+}: {
+  navItems: NavItem[];
+  current: string[];
+  onSave: (hrefs: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState<string[]>(current);
+  const options = navItems.filter((item): item is NavItem & { href: string } => Boolean(item.href));
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        // Reopening always starts from what is on screen, so cancelling by
+        // tapping away discards the draft rather than half-keeping it.
+        if (next) setDraft(current);
+        setOpen(next);
+      }}
+    >
+      <DialogTrigger asChild>
+        <button
+          type="button"
+          className="mb-3 w-full rounded-lg border border-input py-1.5 text-sm text-muted-foreground transition hover:bg-muted/50 md:hidden"
+        >
+          چیدمان نوار پایین
+        </button>
+      </DialogTrigger>
+      <DialogContent className="max-h-[80svh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>نوار پایین صفحه</DialogTitle>
+          <DialogDescription>
+            تا {toPersianDigits(BOTTOM_NAV_MAX)} صفحه انتخاب کنید. دکمهٔ «پروفایل» همیشه در نوار
+            می‌ماند. انتخاب‌شده: {toPersianDigits(draft.length)} از {toPersianDigits(BOTTOM_NAV_MAX)}
+          </DialogDescription>
+        </DialogHeader>
+        <ul className="space-y-1">
+          {options.map((item) => {
+            const Icon = NAV_ICONS[item.href] ?? CircleIcon;
+            const picked = draft.includes(item.href);
+            return (
+              <li key={item.href}>
+                <button
+                  type="button"
+                  disabled={!picked && draft.length >= BOTTOM_NAV_MAX}
+                  aria-pressed={picked}
+                  onClick={() => setDraft((entries) => toggleBottomNavHref(entries, item.href))}
+                  className={`flex min-h-11 w-full items-center gap-2 rounded-lg px-2 text-sm disabled:opacity-40 ${
+                    picked ? "bg-[#FFF1D8] font-semibold text-[#B97905]" : "text-[#3C3A36]"
+                  }`}
+                >
+                  <Icon aria-hidden="true" className="size-4 shrink-0" />
+                  <span className="min-w-0 flex-1 truncate text-right">{item.label}</span>
+                  {picked ? <CheckIcon aria-hidden="true" className="size-4 shrink-0" /> : null}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+        <DialogFooter showCloseButton>
+          <Button
+            onClick={() => {
+              onSave(draft);
+              setOpen(false);
+            }}
+          >
+            ذخیره
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function DashboardSidebarFooter({
+  role,
+  fullName,
+  navItems,
+  bottomNavHrefs,
+  onSaveBottomNav,
+}: {
+  role: string;
+  fullName: string;
+  navItems: NavItem[];
+  bottomNavHrefs: string[];
+  onSaveBottomNav: (hrefs: string[]) => void;
+}) {
   return (
     <SidebarFooter className="border-[#EAE8E2] bg-white">
       <div className="group-data-[state=collapsed]/sidebar:hidden">
@@ -195,6 +310,11 @@ function DashboardSidebarFooter({ role, fullName }: { role: string; fullName: st
         <p className="font-semibold text-[#252522]">{fullName}</p>
         <p className="mb-3 text-xs text-[#77756F]">{ROLE_LABELS[role] ?? role}</p>
         <div className="mb-3 md:hidden"><ThemeToggle /></div>
+        <BottomNavSettings
+          navItems={navItems}
+          current={bottomNavHrefs}
+          onSave={onSaveBottomNav}
+        />
         {PIN_ROLES.includes(role) && <ShiftButton />}
         {PIN_ROLES.includes(role) && <BiometricSettingsButton />}
         {PIN_ROLES.includes(role) && <LockButton />}
@@ -239,14 +359,13 @@ function MobileDashboardHeader({ navItems, pathname }: Pick<SidebarProps, "navIt
   );
 }
 
-function MobileBottomNavigation({ navItems, pathname }: Pick<SidebarProps, "navItems"> & { pathname: string }) {
+function MobileBottomNavigation({
+  navItems,
+  pathname,
+  hrefs,
+}: Pick<SidebarProps, "navItems"> & { pathname: string; hrefs: string[] }) {
   const { setOpenMobile } = useSidebar();
-  // Keep the established bottom-navigation set on other screens. On POS, replace
-  // reports with the cashier tab so the active sales workflow is always visible.
-  const primaryHrefs = isActive(pathname, "/dashboard/pos")
-    ? ["/dashboard", "/dashboard/pos", "/dashboard/orders"]
-    : ["/dashboard", "/dashboard/orders", "/dashboard/reports"];
-  const primaryItems = primaryHrefs
+  const primaryItems = hrefs
     .map((href) => navItems.find((item) => item.href === href))
     .filter((item): item is NavItem & { href: string } => Boolean(item?.href));
 
@@ -260,21 +379,21 @@ function MobileBottomNavigation({ navItems, pathname }: Pick<SidebarProps, "navI
             key={item.href}
             href={item.href}
             aria-current={active ? "page" : undefined}
-            className={`flex min-h-14 flex-1 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[10px] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 active:scale-[0.98] ${active ? "bg-[#FFF1D8] text-[#B97905]" : "text-[#77756F]"}`}
+            className={`flex min-h-14 min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[10px] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 active:scale-[0.98] ${active ? "bg-[#FFF1D8] text-[#B97905]" : "text-[#77756F]"}`}
           >
-            <Icon className="size-5" aria-hidden="true" />
-            <span>{item.label}</span>
+            <Icon className="size-5 shrink-0" aria-hidden="true" />
+            <span className="max-w-full truncate">{item.label}</span>
           </Link>
         );
       })}
       <button
         type="button"
         onClick={() => setOpenMobile(true)}
-        className="flex min-h-14 flex-1 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[10px] font-medium text-[#77756F] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 active:scale-[0.98]"
+        className="flex min-h-14 min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[10px] font-medium text-[#77756F] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 active:scale-[0.98]"
         aria-label="باز کردن پروفایل و منو"
       >
-        <UserRoundIcon className="size-5" aria-hidden="true" />
-        <span>پروفایل</span>
+        <UserRoundIcon className="size-5 shrink-0" aria-hidden="true" />
+        <span className="max-w-full truncate">پروفایل</span>
       </button>
     </nav>
   );
@@ -286,11 +405,24 @@ export function DashboardSidebar({ navItems, role, fullName, brandTitle, brandSu
   const [preferenceLoaded, setPreferenceLoaded] = useState(false);
   const [tabletMode, setTabletMode] = useState(false);
   const [tabletExpanded, setTabletExpanded] = useState(false);
+  const [bottomNav, setBottomNav] = useState<string[] | null>(null);
   const mode = tabletMode ? (tabletExpanded ? "expanded" : "collapsed") : resolveSidebarMode(pathname, preference);
+  const availableHrefs = navItems.flatMap((item) => (item.href ? [item.href] : []));
 
   useEffect(() => {
     setPreference(window.localStorage.getItem(SIDEBAR_PREFERENCE_KEY) === "collapsed" ? "collapsed" : "expanded");
     setPreferenceLoaded(true);
+  }, []);
+
+  // Read after mount, not during render: localStorage does not exist on the
+  // server, and the first paint has to match what the server sent.
+  useEffect(() => {
+    setBottomNav(parseBottomNavHrefs(window.localStorage.getItem(BOTTOM_NAV_STORAGE_KEY)));
+  }, []);
+
+  const saveBottomNav = useCallback((hrefs: string[]) => {
+    setBottomNav(hrefs);
+    window.localStorage.setItem(BOTTOM_NAV_STORAGE_KEY, JSON.stringify(hrefs));
   }, []);
 
   useEffect(() => {
@@ -338,9 +470,22 @@ export function DashboardSidebar({ navItems, role, fullName, brandTitle, brandSu
       <Sidebar side="right" className="border-[#EAE8E2] bg-white text-[#252522]">
         <SidebarBrand title={brandTitle} subtitle={brandSubtitle} />
         <SidebarNavigation navItems={navItems} pathname={pathname} />
-        <DashboardSidebarFooter role={role} fullName={fullName} />
+        <DashboardSidebarFooter
+          role={role}
+          fullName={fullName}
+          navItems={navItems}
+          // The picker always opens on the plain default, never the sell-screen
+          // substitution — that swap is a live behaviour of an unconfigured bar,
+          // not a saved choice, so offering it as one would silently freeze it.
+          bottomNavHrefs={resolveBottomNavHrefs(bottomNav, availableHrefs, false)}
+          onSaveBottomNav={saveBottomNav}
+        />
       </Sidebar>
-      <MobileBottomNavigation navItems={navItems} pathname={pathname} />
+      <MobileBottomNavigation
+        navItems={navItems}
+        pathname={pathname}
+        hrefs={resolveBottomNavHrefs(bottomNav, availableHrefs, isActive(pathname, "/dashboard/pos"))}
+      />
     </SidebarProvider>
   );
 }

@@ -652,8 +652,23 @@ export async function middleware(request: NextRequest) {
   return NextResponse.next();
 }
 export const config = {
-  // Everything except Next internals and static assets
+  // Everything except Next internals and static assets.
+  //
+  // The three PWA files are excluded by name, and that exclusion is what makes
+  // the app installable on Android at all. A browser fetches a web app manifest
+  // with credentials *omitted* (unless the link tag says
+  // `crossorigin="use-credentials"` — it does not), so the request arrives with
+  // no session cookie: middleware saw an unauthenticated page request and
+  // redirected it to the host resolver, Chrome got HTML where it wanted JSON,
+  // and with no readable manifest "Install app" silently degrades to a
+  // home-screen *shortcut* — which opens in a Chrome tab with the address bar,
+  // exactly the "it's just Chrome" symptom. iOS was unaffected only because
+  // Safari ignores the manifest and installs from the `apple-mobile-web-app-*`
+  // meta tags instead. `sw.js` and `offline.html` are here for the same reason
+  // in a milder form: registration fired from the login page (no session yet)
+  // was fetching a redirect, and an offline fallback that needs a live session
+  // to be *read* is not a fallback. None of the three carries tenant data.
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:woff2|png|svg|ico)).*)",
+    "/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|sw.js|offline.html|.*\\.(?:woff2|png|svg|ico)).*)",
   ],
 };

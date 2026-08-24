@@ -37,10 +37,18 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: "#0f172a",
-  // Prevent pinch-zoom flicker in the standalone POS window while still
-  // allowing the layout to fit tablets and the café laptop screen.
   width: "device-width",
   initialScale: 1,
+  // Zoom is locked on touch devices. A POS is a fixed-layout app driven by
+  // thumbs: an accidental pinch or a double-tap on a price used to leave the
+  // screen scaled and horizontally scrolled, with the fixed bottom bar and the
+  // sticky headers half off-screen and no obvious way back. Desktop zoom
+  // (Ctrl+wheel, browser zoom) is untouched — this only governs the visual
+  // viewport. iOS Safari ignores `user-scalable` outside standalone mode, so the
+  // CSS `touch-action` rule in globals.css and the gesture guard in
+  // pwa-register.tsx close that gap; all three exist for one behaviour.
+  maximumScale: 1,
+  userScalable: false,
 };
 
 
