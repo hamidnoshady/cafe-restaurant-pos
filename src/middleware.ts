@@ -95,6 +95,21 @@ const PUBLIC_PATHS = [
   // Prefix-matched so the whole /ping, /handshake, /events, /jobs family is
   // reachable pre-session.
   "/api/integrations/wordpress",
+  // Phase 34: the MCP connector. Every path under /api/mcp authenticates with a
+  // bearer credential (a connector token, or an OAuth access token) or is part
+  // of the OAuth flow that mints one — the authorize/token/register endpoints
+  // exist precisely to be reachable before any session, and the MCP endpoint
+  // itself is called by a program that will never hold a cookie. Prefix-matched
+  // so the whole family is reachable. The one part of the flow that DOES need a
+  // session — the owner pressing "allow" — deliberately lives outside this
+  // prefix, at /api/connections/mcp/consent.
+  "/api/mcp",
+  // The OAuth discovery documents, which a client reads before it has any
+  // credential at all. `/.well-known/*` is what RFC 8414/9728 specify and is
+  // rewritten to `/api/well-known/*` in next.config.ts — middleware runs before
+  // that rewrite, so both spellings are listed.
+  "/.well-known",
+  "/api/well-known",
   // Phase 23: the apex host's "which business?" router. It verifies a password
   // but mints nothing — the whole point is that no session exists on the apex —
   // so like every other credential exchange it cannot require one.
@@ -171,6 +186,7 @@ const businessLimits = new Map<string, RateLimitEntry>();
 const syncTokenLimits = new Map<string, RateLimitEntry>();
 const apiKeyLimits = new Map<string, RateLimitEntry>();
 const authIpLimits = new Map<string, RateLimitEntry>();
+const mcpLimits = new Map<string, RateLimitEntry>();
 
 const BUSINESS_API_LIMIT = 300;
 const BUSINESS_API_WINDOW_MS = 60_000;
@@ -180,6 +196,12 @@ const API_KEY_LIMIT = 120;
 const API_KEY_WINDOW_MS = 60_000;
 const AUTH_IP_LIMIT = 20;
 const AUTH_IP_WINDOW_MS = 60_000;
+// Phase 34 — the MCP realm's own bucket, keyed by bearer credential (or by IP
+// where there is none yet, which is the OAuth flow). Higher than the public
+// API's, because a single model turn routinely fans out into a handful of tool
+// calls and an owner watching a chat stall on a 429 has no way to tell why.
+const MCP_LIMIT = 240;
+const MCP_WINDOW_MS = 60_000;
 
 const STALE_ENTRY_MS = 5 * 60_000;
 const SWEEP_EVERY_N_REQUESTS = 200;
@@ -193,6 +215,7 @@ function maybeSweep(now: number) {
   sweepExpired(syncTokenLimits, now, STALE_ENTRY_MS);
   sweepExpired(apiKeyLimits, now, STALE_ENTRY_MS);
   sweepExpired(authIpLimits, now, STALE_ENTRY_MS);
+  sweepExpired(mcpLimits, now, STALE_ENTRY_MS);
 }
 
 function clientIp(request: NextRequest): string {
@@ -282,6 +305,21 @@ function isPluginChannelPath(pathname: string): boolean {
   return pathname === "/api/integrations/wordpress" || pathname.startsWith("/api/integrations/wordpress/");
 }
 
+/**
+ * The MCP realm: the endpoint plus its OAuth flow and discovery documents.
+ * Prefix-based for the same reason the plugin channel is — one caller cycles
+ * through the whole family, and a compromised connector is exactly the runaway
+ * client the per-credential bucket exists to contain.
+ */
+function isMcpPath(pathname: string): boolean {
+  return (
+    pathname === "/api/mcp" ||
+    pathname.startsWith("/api/mcp/") ||
+    pathname.startsWith("/.well-known/oauth-") ||
+    pathname.startsWith("/api/well-known/oauth-")
+  );
+}
+
 /** All public API routes share one per-key bucket; this must stay prefix-based, not an exact route list. */
 function isPublicApiPath(pathname: string): boolean {
   return pathname === "/api/v1" || pathname.startsWith("/api/v1/");
@@ -315,6 +353,13 @@ function handleRateLimits(
       SYNC_TOKEN_WINDOW_MS,
       now,
     );
+    if (!result.allowed) return rateLimited(result.retryAfterMs);
+  }
+
+  if (isMcpPath(pathname)) {
+    const authHeader = request.headers.get("authorization");
+    const key = authHeader ? `mcp:${hashKey(authHeader)}` : `ip:${clientIp(request)}`;
+    const result = checkRateLimit(mcpLimits, key, MCP_LIMIT, MCP_WINDOW_MS, now);
     if (!result.allowed) return rateLimited(result.retryAfterMs);
   }
 
@@ -438,6 +483,13 @@ async function handleTenantAuth(request: NextRequest, pathname: string, host: Pa
       };
     }
     const loginUrl = new URL("/login", request.url);
+    // Carry where they were going, so a deep link survives the sign-in. Phase 34
+    // needs this concretely: an owner following Claude's "connect" button lands
+    // on /mcp/consent, and losing that URL at the login page abandons an OAuth
+    // flow they cannot restart from inside the app.
+    if (!pathname.startsWith("/api/")) {
+      loginUrl.searchParams.set("next", `${request.nextUrl.pathname}${request.nextUrl.search}`);
+    }
     return { response: NextResponse.redirect(loginUrl) };
   }
   return { session };

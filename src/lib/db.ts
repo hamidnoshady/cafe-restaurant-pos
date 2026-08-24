@@ -242,6 +242,16 @@ export async function withTenant<T>(
  *     `business_subdomain_aliases`, returning the business's identity and
  *     nothing else about it.
  *
+ *   - **mcp-token-auth** — resolving an MCP bearer credential (a static
+ *     connector token, or an OAuth access token) to the connection, and
+ *     therefore the business and branch, it belongs to (Phase 34). Identical in
+ *     shape to api-key-auth and server-sync-auth: the token is *how* the tenant
+ *     gets selected, so there is nothing to scope to until the lookup returns.
+ *     The OAuth flow's own pre-session lookups — a client registration, an
+ *     authorization code — are NOT here: they run on a business's own origin,
+ *     so `resolveMcpTenant` names the tenant from the host first (under
+ *     host-resolution) and every subsequent read runs inside `withTenant`.
+ *
  *   - **impersonation-handoff** — redeeming the one-time token the console
  *     mints on admin.{root} so the browser can mint its impersonation session
  *     on the business's own origin (Phase 23 follow-up). The caller has no

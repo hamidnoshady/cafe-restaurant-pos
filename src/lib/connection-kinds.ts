@@ -19,7 +19,7 @@ import type { Role } from "./auth";
 import type { Industry } from "./industries";
 import { hasModule } from "./industry-profile";
 
-export const CONNECTION_KIND_KEYS = ["desktop", "woocommerce", "api"] as const;
+export const CONNECTION_KIND_KEYS = ["desktop", "woocommerce", "api", "mcp"] as const;
 export type ConnectionKindKey = (typeof CONNECTION_KIND_KEYS)[number];
 
 export interface ConnectionKind {
@@ -53,6 +53,18 @@ export const CONNECTION_KINDS: ConnectionKind[] = [
       "اتصال دوطرفه به فروشگاه اینترنتی: سفارش، محصول، مشتری، موجودی و قیمت، با ثبت خودکار حسابداری.",
     allowedRoles: ["owner", "manager"],
     feature: "integrations",
+  },
+  {
+    key: "mcp",
+    label: "دستیارهای هوش مصنوعی",
+    description:
+      "اتصال امن Claude، ChatGPT و دستیارهای مشابه به همین کسب‌وکار: پرسیدن از داده‌ها و — در صورت اجازهٔ شما — انجام تغییرها.",
+    // Same reasoning as the two below: this hands a program continuous access
+    // to a whole branch's orders, stock, customers and ledger, and (if the
+    // owner grants it) the ability to change them. That is an owner's decision
+    // in the same way inviting a member is.
+    allowedRoles: ["owner"],
+    feature: "api_platform",
   },
   {
     key: "api",

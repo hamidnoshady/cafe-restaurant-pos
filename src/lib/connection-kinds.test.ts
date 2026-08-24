@@ -8,18 +8,20 @@ import {
 import { INDUSTRIES } from "./industries";
 
 describe("visibleConnectionKinds", () => {
-  it("gives an Owner all three connections", () => {
+  it("gives an Owner every connection", () => {
     expect(visibleConnectionKinds({ role: "owner" }).map((k) => k.key)).toEqual([
       "desktop",
       "woocommerce",
+      "mcp",
       "api",
     ]);
   });
 
-  it("gives a Manager only the store, not the two credential-issuing tabs", () => {
-    // Both of the others hand out a credential that reaches a whole business:
-    // a pairing code redeems a full snapshot, an API key reads a branch's
-    // orders, menu, inventory and reports.
+  it("gives a Manager only the store, not the credential-issuing tabs", () => {
+    // Every one of the others hands out a credential that reaches a whole
+    // business: a pairing code redeems a full snapshot, an API key reads a
+    // branch's orders, menu, inventory and reports, and an MCP connection can
+    // be granted the right to change them.
     expect(visibleConnectionKinds({ role: "manager" }).map((k) => k.key)).toEqual(["woocommerce"]);
   });
 
