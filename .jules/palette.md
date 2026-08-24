@@ -9,3 +9,6 @@
 ## 2025-02-18 - [Add aria-labels to cart quantity and remove buttons]
 **Learning:** Screen readers need context when navigating by buttons. A list of identical "حذف" (Delete), "+" and "-" buttons without descriptive aria-labels makes it impossible to know *what* is being deleted or adjusted without navigating to the surrounding text.
 **Action:** Always append the item name to the `aria-label` for repeated buttons in lists or carts (e.g. `aria-label={"حذف " + item.name}`). This is a standard pattern for screen readers.
+## 2026-08-24 - [Focus Ring Classes]
+ **Learning:** Avoid `ring-3` as it is not a standard Tailwind CSS class and may result in a missing focus ring.
+ **Action:** Use `focus-visible:ring focus-visible:ring-ring/50 outline-none` when adding or fixing focus states.

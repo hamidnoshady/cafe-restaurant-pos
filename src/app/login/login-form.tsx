@@ -3,7 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2Icon } from "lucide-react";
-import { browserSupportsWebAuthn, startAuthentication } from "@simplewebauthn/browser";
+import {
+  browserSupportsWebAuthn,
+  startAuthentication,
+} from "@simplewebauthn/browser";
 import { PinPad } from "@/components/auth/pin-pad";
 import { toPersianDigits } from "@/lib/digits";
 
@@ -31,14 +34,18 @@ export default function LoginForm() {
         <h1 className="mb-1 text-center text-xl font-bold">
           سیستم فروش کافه و رستوران
         </h1>
-        <p className="mb-6 text-center text-sm text-muted-foreground">ورود به سامانه</p>
+        <p className="mb-6 text-center text-sm text-muted-foreground">
+          ورود به سامانه
+        </p>
 
         <div className="mb-6 grid grid-cols-2 rounded-lg bg-muted p-1 text-sm">
           <button
             type="button"
             onClick={() => setMode("password")}
-            className={`rounded-md py-2 transition ${
-              mode === "password" ? "bg-card font-semibold shadow-sm" : "text-muted-foreground"
+            className={`rounded-md py-2 transition outline-none focus-visible:ring focus-visible:ring-ring/50 ${
+              mode === "password"
+                ? "bg-card font-semibold shadow-sm"
+                : "text-muted-foreground"
             }`}
           >
             مدیر / مالک
@@ -46,8 +53,10 @@ export default function LoginForm() {
           <button
             type="button"
             onClick={() => setMode("pin")}
-            className={`rounded-md py-2 transition ${
-              mode === "pin" ? "bg-card font-semibold shadow-sm" : "text-muted-foreground"
+            className={`rounded-md py-2 transition outline-none focus-visible:ring focus-visible:ring-ring/50 ${
+              mode === "pin"
+                ? "bg-card font-semibold shadow-sm"
+                : "text-muted-foreground"
             }`}
           >
             ورود سریع با پین
@@ -89,7 +98,10 @@ function PasswordForm() {
   return (
     <form onSubmit={submit} className="space-y-4">
       <div>
-        <label htmlFor="email" className="mb-1 block text-sm text-muted-foreground">
+        <label
+          htmlFor="email"
+          className="mb-1 block text-sm text-muted-foreground"
+        >
           ایمیل
         </label>
         <input
@@ -103,7 +115,10 @@ function PasswordForm() {
         />
       </div>
       <div>
-        <label htmlFor="password" className="mb-1 block text-sm text-muted-foreground">
+        <label
+          htmlFor="password"
+          className="mb-1 block text-sm text-muted-foreground"
+        >
           رمز عبور
         </label>
         <input
@@ -120,7 +135,7 @@ function PasswordForm() {
       <button
         type="submit"
         disabled={busy}
-        className="w-full rounded-lg bg-primary py-2.5 font-semibold text-primary-foreground transition hover:bg-primary/85 disabled:opacity-50"
+        className="w-full rounded-lg bg-primary py-2.5 font-semibold text-primary-foreground transition hover:bg-primary/85 disabled:opacity-50 outline-none focus-visible:ring focus-visible:ring-ring/50"
       >
         {busy ? (
           <span className="flex items-center justify-center gap-2">
@@ -168,7 +183,9 @@ function readRecents(): string[] {
   try {
     const raw = window.localStorage.getItem(RECENTS_KEY);
     const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed.filter((v) => typeof v === "string") : [];
+    return Array.isArray(parsed)
+      ? parsed.filter((v) => typeof v === "string")
+      : [];
   } catch {
     return [];
   }
@@ -185,13 +202,19 @@ function lockoutMessage(lockedUntil: unknown): string {
   if (!until || Number.isNaN(until.getTime())) {
     return "به‌دلیل تلاش‌های ناموفق مکرر، ورود موقتاً قفل شده است.";
   }
-  const minutes = Math.max(1, Math.ceil((until.getTime() - Date.now()) / 60_000));
+  const minutes = Math.max(
+    1,
+    Math.ceil((until.getTime() - Date.now()) / 60_000),
+  );
   return `به‌دلیل تلاش‌های ناموفق مکرر، ورود موقتاً قفل شده است؛ ${toPersianDigits(String(minutes))} دقیقه دیگر دوباره تلاش کنید.`;
 }
 
 function rememberRecent(employeeId: string) {
   try {
-    const next = [employeeId, ...readRecents().filter((id) => id !== employeeId)].slice(0, MAX_RECENTS);
+    const next = [
+      employeeId,
+      ...readRecents().filter((id) => id !== employeeId),
+    ].slice(0, MAX_RECENTS);
     window.localStorage.setItem(RECENTS_KEY, JSON.stringify(next));
   } catch {
     // localStorage can be unavailable (private mode, quota) — the shortcut is a nicety, not a requirement.
@@ -243,7 +266,8 @@ function PinLogin() {
     return [...employees].sort((a, b) => {
       const ra = recents.indexOf(a.id);
       const rb = recents.indexOf(b.id);
-      if (ra === -1 && rb === -1) return a.fullName.localeCompare(b.fullName, "fa");
+      if (ra === -1 && rb === -1)
+        return a.fullName.localeCompare(b.fullName, "fa");
       if (ra === -1) return 1;
       if (rb === -1) return -1;
       return ra - rb;
@@ -257,7 +281,11 @@ function PinLogin() {
     const res = await fetch("/api/auth/pin-login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ pin, employeeId: selected.id, deviceToken: readDeviceToken() }),
+      body: JSON.stringify({
+        pin,
+        employeeId: selected.id,
+        deviceToken: readDeviceToken(),
+      }),
     });
     setBusy(false);
     if (res.ok) {
@@ -293,11 +321,18 @@ function PinLogin() {
       const verifyRes = await fetch("/api/auth/webauthn/login/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ employeeId: selected.id, response, challengeToken, deviceToken }),
+        body: JSON.stringify({
+          employeeId: selected.id,
+          response,
+          challengeToken,
+          deviceToken,
+        }),
       });
       if (verifyRes.status === 423) {
         const data = await verifyRes.json().catch(() => ({}));
-        setError(lockoutMessage((data as { lockedUntil?: unknown }).lockedUntil));
+        setError(
+          lockoutMessage((data as { lockedUntil?: unknown }).lockedUntil),
+        );
         return;
       }
       if (!verifyRes.ok) throw new Error("invalid_credentials");
@@ -319,15 +354,23 @@ function PinLogin() {
   if (!selected) {
     return (
       <div>
-        <p className="mb-3 text-center text-sm text-muted-foreground">نام خود را انتخاب کنید</p>
+        <p className="mb-3 text-center text-sm text-muted-foreground">
+          نام خود را انتخاب کنید
+        </p>
         {rosterError && (
-          <p className="text-center text-sm text-destructive">دریافت فهرست کارکنان ممکن نشد.</p>
+          <p className="text-center text-sm text-destructive">
+            دریافت فهرست کارکنان ممکن نشد.
+          </p>
         )}
         {!rosterError && !employees && (
-          <p className="text-center text-sm text-muted-foreground">در حال بارگذاری…</p>
+          <p className="text-center text-sm text-muted-foreground">
+            در حال بارگذاری…
+          </p>
         )}
         {!rosterError && employees && employees.length === 0 && (
-          <p className="text-center text-sm text-muted-foreground">کارمندی برای ورود سریع یافت نشد.</p>
+          <p className="text-center text-sm text-muted-foreground">
+            کارمندی برای ورود سریع یافت نشد.
+          </p>
         )}
         <div className="grid grid-cols-3 gap-2">
           {ordered.map((employee) => (
@@ -338,10 +381,12 @@ function PinLogin() {
                 setSelected(employee);
                 setError(null);
               }}
-              className="flex flex-col items-center gap-1.5 rounded-lg p-2 text-center transition hover:bg-primary/10 active:scale-95"
+              className="flex flex-col items-center gap-1.5 rounded-lg p-2 text-center transition hover:bg-primary/10 active:scale-95 outline-none focus-visible:ring focus-visible:ring-ring/50"
             >
               <EmployeeAvatar employee={employee} />
-              <span className="line-clamp-1 text-xs font-semibold">{employee.fullName}</span>
+              <span className="line-clamp-1 text-xs font-semibold">
+                {employee.fullName}
+              </span>
               <span className="text-[11px] text-muted-foreground">
                 {ROLE_LABELS[employee.role] ?? employee.role}
               </span>
@@ -361,7 +406,7 @@ function PinLogin() {
             setSelected(null);
             setError(null);
           }}
-          className="text-sm text-muted-foreground hover:text-foreground"
+          className="rounded text-sm text-muted-foreground hover:text-foreground outline-none focus-visible:ring focus-visible:ring-ring/50"
         >
           ← کارمند دیگر
         </button>
@@ -375,25 +420,44 @@ function PinLogin() {
           type="button"
           onClick={submitBiometric}
           disabled={busy}
-          className="mb-4 w-full rounded-lg border border-input py-2.5 text-sm font-semibold transition hover:bg-primary/10 disabled:opacity-50"
+          className="mb-4 w-full rounded-lg border border-input py-2.5 text-sm font-semibold transition hover:bg-primary/10 disabled:opacity-50 outline-none focus-visible:ring focus-visible:ring-ring/50"
         >
           ورود با اثر انگشت یا چهره
         </button>
       )}
-      <PinPad onComplete={submit} busy={busy} error={error} resetKey={selected.id} />
+      <PinPad
+        onComplete={submit}
+        busy={busy}
+        error={error}
+        resetKey={selected.id}
+      />
     </div>
   );
 }
 
-function EmployeeAvatar({ employee, size = "md" }: { employee: RosterEmployee; size?: "sm" | "md" }) {
+function EmployeeAvatar({
+  employee,
+  size = "md",
+}: {
+  employee: RosterEmployee;
+  size?: "sm" | "md";
+}) {
   const dims = size === "sm" ? "size-8 text-xs" : "size-14 text-lg";
   if (employee.photoUrl) {
     // eslint-disable-next-line @next/next/no-img-element
-    return <img src={employee.photoUrl} alt="" className={`${dims} rounded-full object-cover`} />;
+    return (
+      <img
+        src={employee.photoUrl}
+        alt=""
+        className={`${dims} rounded-full object-cover`}
+      />
+    );
   }
   const initials = employee.fullName.trim().slice(0, 1);
   return (
-    <span className={`${dims} flex items-center justify-center rounded-full bg-primary/15 font-bold text-primary`}>
+    <span
+      className={`${dims} flex items-center justify-center rounded-full bg-primary/15 font-bold text-primary`}
+    >
       {initials}
     </span>
   );
