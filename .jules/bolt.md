@@ -25,3 +25,6 @@
 ## 2024-11-29 - Extract O(N) String Computations from Hot Loops
 **Learning:** In list views (like `orders-list.tsx`), building searchable strings with `join(" ").toLocaleLowerCase("fa")` on every keystroke blocks the main thread.
 **Action:** Extract these expensive string operations into an independent `useMemo` that relies only on the array data (`orderRows`). Then, filter by doing a fast `.includes()` over the pre-computed strings in the downstream hook.
+## 2024-11-28 - Avoid Concatenating Strings for Fast Filtering Lookups
+**Learning:** Extracting string normalizations into `useMemo` is a good optimization, but concatenating fields (like name and SKU) into a single string (`.join(" ")`) introduces subtle false-positive match bugs where a query can bridge across the boundary of the two concatenated values.
+**Action:** When extracting O(n) computations into `useMemo`, store the normalized parts as separate properties (e.g., `nameLower`, `skuLower`) rather than concatenating them, and perform individual `.includes()` checks.

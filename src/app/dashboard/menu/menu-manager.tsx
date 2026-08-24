@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useState, useDeferredValue } from "react";
+import {
+  useCallback,
+  useEffect,
+  useState,
+  useDeferredValue,
+  useMemo,
+} from "react";
 import { toPersianDigits } from "@/lib/digits";
 import { useMoney } from "@/components/money/money-context";
 import {
@@ -245,11 +251,30 @@ function ItemSection({
 
   const activeCategories = data.categories.filter((c) => c.is_active);
 
-  const q = deferredQuery.trim().toLowerCase();
-  const matches = (i: Item) =>
-    !q ||
-    i.name.toLowerCase().includes(q) ||
-    (i.sku ? i.sku.toLowerCase().includes(q) : false);
+  // ⚡ Bolt: Extract expensive O(n) string computations (like lowercase)
+  // out of the hot rendering loop. This memoizes the normalized text based on the
+  // data.items array instead of per-keystroke.
+  const searchableItems = useMemo(() => {
+    return data.items.map((i) => {
+      return {
+        item: i,
+        nameLower: i.name.toLowerCase(),
+        skuLower: i.sku ? i.sku.toLowerCase() : "",
+      };
+    });
+  }, [data.items]);
+
+  // ⚡ Bolt: Filter the pre-computed strings with a fast .includes() check
+  const filteredItems = useMemo(() => {
+    const q = deferredQuery.trim().toLowerCase();
+    if (!q) return data.items;
+    return searchableItems
+      .filter(
+        (si) =>
+          si.nameLower.includes(q) || (si.skuLower && si.skuLower.includes(q)),
+      )
+      .map((si) => si.item);
+  }, [searchableItems, deferredQuery, data.items]);
 
   return (
     <SectionCard title="آیتم‌ها">
@@ -301,9 +326,7 @@ function ItemSection({
       />
       <div className="space-y-4">
         {data.categories.map((c) => {
-          const items = data.items.filter(
-            (i) => i.category_id === c.id && matches(i),
-          );
+          const items = filteredItems.filter((i) => i.category_id === c.id);
           if (items.length === 0) return null;
           const isCollapsed = collapsedCategories.has(c.id);
           return (
