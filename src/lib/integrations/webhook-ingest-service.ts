@@ -635,6 +635,11 @@ async function ingestRetailOrder(
  * never exceeding what each order item still has returnable. Unmapped products
  * are skipped — an order line that never deducted inventory has nothing to
  * restore.
+ *
+ * Since Phase 25 retail orders use `order_items.item_id` (FK to `items`) while
+ * F&B orders use `menu_item_id`, the WHERE clause matches both columns. The
+ * returned objects carry an optional `itemId` so the caller can tell which
+ * inventory model to restock: `item_stock` (retail) vs `stock_movements` (F&B).
  */
 async function buildRefundReturnLines(
   client: import("pg").PoolClient,
@@ -642,8 +647,8 @@ async function buildRefundReturnLines(
   connection: ConnectionRow,
   orderId: string,
   refund: WooRefund,
-): Promise<ReturnLine[]> {
-  const lines: ReturnLine[] = [];
+): Promise<(ReturnLine & { itemId?: string })[]> {
+  const lines: (ReturnLine & { itemId?: string })[] = [];
   const remoteProductIds = (refund.line_items ?? [])
     .map((line) => String(line.product_id))
     .filter((id): id is string => Boolean(id));
@@ -654,28 +659,35 @@ async function buildRefundReturnLines(
         AND remote_id = ANY($3::text[])`,
     [businessId, connection.id, remoteProductIds],
   );
-  const menuItemByRemote = new Map(productMappings.map((m) => [m.remote_id, m.local_id]));
+  const localByRemote = new Map(productMappings.map((m) => [m.remote_id, m.local_id]));
 
   for (const line of refund.line_items ?? []) {
-    const menuItemId = menuItemByRemote.get(String(line.product_id));
-    if (!menuItemId) continue;
+    const localId = localByRemote.get(String(line.product_id));
+    if (!localId) continue;
     // WooCommerce refund quantities are negative.
     let remaining = Math.max(0, Math.abs(Math.round(line.quantity ?? 0)));
     if (remaining === 0) continue;
-    const { rows: items } = await client.query<{ id: string; quantity: string; returned: string }>(
+    // Match by both menu_item_id (F&B) and item_id (retail) — retail orders
+    // from ingestRetailOrder populate item_id, F&B orders populate menu_item_id.
+    const { rows: items } = await client.query<{ id: string; quantity: string; returned: string; item_id: string | null }>(
       `SELECT oi.id, oi.quantity::text,
               COALESCE((SELECT sum(l.quantity)::text FROM customer_return_lines l
-                         WHERE l.order_item_id = oi.id), '0') AS returned
+                         WHERE l.order_item_id = oi.id), '0') AS returned,
+              oi.item_id::text
          FROM order_items oi
-        WHERE oi.order_id = $1 AND oi.menu_item_id = $2 AND oi.status <> 'voided'
+        WHERE oi.order_id = $1
+          AND (oi.menu_item_id = $2 OR oi.item_id = $2)
+          AND oi.status <> 'voided'
         ORDER BY oi.created_at, oi.id`,
-      [orderId, menuItemId],
+      [orderId, localId],
     );
     for (const item of items) {
       if (remaining <= 0) break;
       const take = Math.min(Number(item.quantity) - Number(item.returned), remaining);
       if (take > 0) {
-        lines.push({ orderItemId: item.id, quantity: quantityText(String(take)), disposition: "restockable" });
+        const rl: ReturnLine & { itemId?: string } = { orderItemId: item.id, quantity: quantityText(String(take)), disposition: "restockable" };
+        if (item.item_id) rl.itemId = item.item_id;
+        lines.push(rl);
         remaining -= take;
       }
     }
@@ -709,57 +721,13 @@ async function ingestRefund(connection: ConnectionRow, refund: WooRefund, inboxI
       return;
     }
 
-    // Tie the refund to the imported order (via the order mapping) and, for
-    // line items whose products were mapped at import time, reverse the
-    // inventory deduction and COGS through the shared customer-return path —
-    // exactly like a POS return. A refund that can't be tied to local order
-    // items (unmapped at import, amount-only refund, unknown order) still
-    // posts the money side.
-    let recoveredValueRial = "0";
-    const { rows: orderRows } = await client.query<{ id: string }>(
-      `SELECT local_id::text AS id FROM integration_mappings
-        WHERE business_id = $1 AND connection_id = $2 AND entity_type = 'order' AND remote_id = $3`,
-      [businessId, connection.id, String(refund.parent_id)],
-    );
-    const orderId = orderRows[0]?.id ?? null;
-    const returnLines = orderId ? await buildRefundReturnLines(client, businessId, connection, orderId, refund) : [];
-
-    if (orderId && returnLines.length > 0) {
-      const result = await createCustomerReturn(client, {
-        businessId,
-        locationId,
-        orderId,
-        refundMethod: "online",
-        refundAmount: amount.toString() as RialText,
-        reason: refund.reason?.trim() || "WooCommerce refund",
-        idempotencyKey: `woo-refund:${connection.id}:${remoteId}`,
-        createdBy: null,
-        lines: returnLines,
-      });
-      recoveredValueRial = result.recoveredValue;
+    const industry = await getBusinessIndustry(businessId);
+    if (industry && industry !== "food_service") {
+      await ingestRetailRefund(client, connection, refund, { businessId, locationId, amount, tax, net, remoteId, inboxId, industry });
     } else {
-      const accounts = await accountIdsByCode(client, businessId, [
-        WELL_KNOWN_CODES.salesReturns,
-        WELL_KNOWN_CODES.vatPayable,
-        WELL_KNOWN_CODES.bankClearing,
-      ]);
-      await postExactJournalEntry(client, {
-        businessId,
-        locationId,
-        memo: `برگشت از فروش ووکامرس #${refund.id}`,
-        sourceType: "woocommerce_refund",
-        sourceId: inboxId,
-        createdBy: null,
-        postingKind: "customer_refund",
-        lines: [
-          { accountId: accounts.get(WELL_KNOWN_CODES.salesReturns)!, debit: net.toString() as RialText, credit: zero },
-          ...(tax > 0n
-            ? [{ accountId: accounts.get(WELL_KNOWN_CODES.vatPayable)!, debit: tax.toString() as RialText, credit: zero }]
-            : []),
-          { accountId: accounts.get(WELL_KNOWN_CODES.bankClearing)!, debit: zero, credit: amount.toString() as RialText },
-        ],
-      });
+      await ingestFnBRefund(client, connection, refund, { businessId, locationId, amount, tax, net, remoteId, inboxId });
     }
+
     await client.query(
       `INSERT INTO integration_mappings (business_id, connection_id, entity_type, remote_id, local_id)
        VALUES ($1, $2, 'refund', $3, $4)
@@ -774,12 +742,247 @@ async function ingestRefund(connection: ConnectionRow, refund: WooRefund, inboxI
       action: "refund.imported",
       entityType: "refund",
       remoteId,
-      payload: { amountRial: amount.toString(), parentRemoteId: String(refund.parent_id), recoveredValueRial },
+      payload: { amountRial: amount.toString(), parentRemoteId: String(refund.parent_id) },
     });
   } catch (err) {
     await client.query("ROLLBACK");
     throw err;
   } finally {
     client.release();
+  }
+}
+
+interface RefundMeta {
+  businessId: string;
+  locationId: string;
+  amount: bigint;
+  tax: bigint;
+  net: bigint;
+  remoteId: string;
+  inboxId: string;
+}
+
+/**
+ * Retail refund: restock `item_stock` directly and post a trade-specific COGS
+ * reversal — the retail analogue of `createCustomerReturn`. Because retail
+ * orders don't populate `order_item_inventory_snapshots` (that's F&B's recipe
+ * deductor), inventory recovery bypasses the customer-return machinery and
+ * updates `item_stock.quantity` directly, using the unit_cost the order
+ * import recorded.
+ */
+async function ingestRetailRefund(
+  client: import("pg").PoolClient,
+  connection: ConnectionRow,
+  refund: WooRefund,
+  meta: RefundMeta & { industry: Exclude<Industry, "food_service"> },
+): Promise<void> {
+  const codes = RETAIL_ACCOUNT_CODES[meta.industry];
+
+  // Find the imported order.
+  const { rows: orderRows } = await client.query<{ id: string }>(
+    `SELECT local_id::text AS id FROM integration_mappings
+      WHERE business_id = $1 AND connection_id = $2 AND entity_type = 'order' AND remote_id = $3`,
+    [meta.businessId, connection.id, String(refund.parent_id)],
+  );
+  const orderId = orderRows[0]?.id ?? null;
+
+  // Resolve product mappings for the refund's line items so we can match
+  // them to item_id rows in order_items and find their cost basis.
+  const remoteProductIds = (refund.line_items ?? [])
+    .map((line) => String(line.product_id))
+    .filter((id): id is string => Boolean(id));
+  const itemByRemote = new Map<string, string>();
+  if (remoteProductIds.length > 0) {
+    const { rows: productMappings } = await client.query<{ remote_id: string; local_id: string }>(
+      `SELECT remote_id, local_id FROM integration_mappings
+        WHERE business_id = $1 AND connection_id = $2 AND entity_type = 'product'
+          AND remote_id = ANY($3::text[])`,
+      [meta.businessId, connection.id, remoteProductIds],
+    );
+    for (const m of productMappings) itemByRemote.set(m.remote_id, m.local_id);
+  }
+
+  // Fetch the unit_cost for every mapped item so the COGS reversal uses the
+  // same weighted-average cost the sale side posted.
+  const itemIds = [...new Set(itemByRemote.values())];
+  const costById = new Map<string, bigint>();
+  if (itemIds.length > 0) {
+    const { rows: stockRows } = await client.query<{ item_id: string; unit_cost: string | null }>(
+      `SELECT item_id, unit_cost::text FROM item_stock WHERE item_id = ANY($1::uuid[]) AND unit_cost IS NOT NULL FOR UPDATE`,
+      [itemIds],
+    );
+    for (const r of stockRows) costById.set(r.item_id, BigInt(r.unit_cost as string));
+  }
+
+  let recoveredCogsRial = "0";
+
+  if (orderId) {
+    for (const line of refund.line_items ?? []) {
+      const itemId = itemByRemote.get(String(line.product_id));
+      if (!itemId) continue;
+      const qty = Math.max(0, Math.abs(Math.round(line.quantity ?? 0)));
+      if (qty === 0) continue;
+
+      // Find the order_items rows for this item, not yet fully returned.
+      const { rows: items } = await client.query<{ id: string; quantity: string; returned: string }>(
+        `SELECT oi.id, oi.quantity::text,
+                COALESCE((SELECT sum(l.quantity)::text FROM customer_return_lines l
+                           WHERE l.order_item_id = oi.id), '0') AS returned
+           FROM order_items oi
+          WHERE oi.order_id = $1 AND oi.item_id = $2 AND oi.status <> 'voided'
+          ORDER BY oi.created_at, oi.id`,
+        [orderId, itemId],
+      );
+
+      let remaining = qty;
+      const unitCost = costById.get(itemId);
+      for (const item of items) {
+        if (remaining <= 0) break;
+        const take = Math.min(Number(item.quantity) - Number(item.returned), remaining);
+        if (take <= 0) continue;
+
+        // Record the return line so a replayed refund delivery is idempotent.
+        // We still insert into customer_return_lines even though we don't go
+        // through the full createCustomerReturn path — it's the single source
+        // of truth for "how much of this order item was returned".
+        const { rows: returnRows } = await client.query<{ id: string }>(
+          `INSERT INTO customer_returns
+             (business_id, location_id, order_id, refund_method, refund_amount_rial, reason, created_by, idempotency_key)
+           VALUES ($1, $2, $3, 'online', $4, $5, $6, $7)
+           ON CONFLICT (idempotency_key) DO NOTHING
+           RETURNING id`,
+          [meta.businessId, meta.locationId, orderId, "0",
+            `WooCommerce refund #${meta.remoteId}`, null,
+            `woo-refund:${connection.id}:${meta.remoteId}`],
+        );
+        const returnId = returnRows[0]?.id;
+        if (returnId) {
+          await client.query(
+            `INSERT INTO customer_return_lines (customer_return_id, order_item_id, quantity, disposition)
+             VALUES ($1, $2, $3, 'restockable')
+             ON CONFLICT DO NOTHING`,
+            [returnId, item.id, String(take)],
+          );
+        }
+
+        // Restock item_stock: add the returned quantity back.
+        await client.query(
+          `UPDATE item_stock SET quantity = quantity + $2, updated_at = now()
+            WHERE item_id = $1`,
+          [itemId, take],
+        );
+
+        // Reverse COGS if we have a cost basis.
+        if (unitCost != null && unitCost > 0n) {
+          recoveredCogsRial = (BigInt(recoveredCogsRial) + unitCost * BigInt(take)).toString();
+        }
+
+        remaining -= take;
+      }
+    }
+  }
+
+  // Post the COGS reversal to the trade's own COGS/inventory accounts.
+  if (BigInt(recoveredCogsRial) > 0n) {
+    const cogsAccounts = await accountIdsByCode(client, meta.businessId, [codes.cogs, codes.inventory]);
+    await postExactJournalEntry(client, {
+      businessId: meta.businessId,
+      locationId: meta.locationId,
+      memo: "برگشت بهای تمام‌شده فروش آنلاین",
+      sourceType: "woocommerce_refund",
+      sourceId: meta.inboxId,
+      createdBy: null,
+      postingKind: "cogs_reversal",
+      lines: [
+        { accountId: cogsAccounts.get(codes.inventory)!, debit: recoveredCogsRial as RialText, credit: zero },
+        { accountId: cogsAccounts.get(codes.cogs)!, debit: zero, credit: recoveredCogsRial as RialText },
+      ],
+    });
+  }
+
+  // Post the money side.
+  const accounts = await accountIdsByCode(client, meta.businessId, [
+    WELL_KNOWN_CODES.salesReturns,
+    WELL_KNOWN_CODES.vatPayable,
+    WELL_KNOWN_CODES.bankClearing,
+  ]);
+  await postExactJournalEntry(client, {
+    businessId: meta.businessId,
+    locationId: meta.locationId,
+    memo: `برگشت از فروش ووکامرس #${refund.id}`,
+    sourceType: "woocommerce_refund",
+    sourceId: meta.inboxId,
+    createdBy: null,
+    postingKind: "customer_refund",
+    lines: [
+      { accountId: accounts.get(WELL_KNOWN_CODES.salesReturns)!, debit: meta.net.toString() as RialText, credit: zero },
+      ...(meta.tax > 0n
+        ? [{ accountId: accounts.get(WELL_KNOWN_CODES.vatPayable)!, debit: meta.tax.toString() as RialText, credit: zero }]
+        : []),
+      { accountId: accounts.get(WELL_KNOWN_CODES.bankClearing)!, debit: zero, credit: meta.amount.toString() as RialText },
+    ],
+  });
+}
+
+/**
+ * F&B refund: uses the existing `createCustomerReturn` path which reverses
+ * inventory through `order_item_inventory_snapshots` → `stock_movements`.
+ * Extracted from the old `ingestRefund` so the retail path can share the
+ * outer dedup/mapping/audit structure without duplicating it.
+ */
+async function ingestFnBRefund(
+  client: import("pg").PoolClient,
+  connection: ConnectionRow,
+  refund: WooRefund,
+  meta: RefundMeta,
+): Promise<void> {
+  // Tie the refund to the imported order (via the order mapping) and, for
+  // line items whose products were mapped at import time, reverse the
+  // inventory deduction and COGS through the shared customer-return path —
+  // exactly like a POS return. A refund that can't be tied to local order
+  // items (unmapped at import, amount-only refund, unknown order) still
+  // posts the money side.
+  const { rows: orderRows } = await client.query<{ id: string }>(
+    `SELECT local_id::text AS id FROM integration_mappings
+      WHERE business_id = $1 AND connection_id = $2 AND entity_type = 'order' AND remote_id = $3`,
+    [meta.businessId, connection.id, String(refund.parent_id)],
+  );
+  const orderId = orderRows[0]?.id ?? null;
+  const returnLines = orderId ? await buildRefundReturnLines(client, meta.businessId, connection, orderId, refund) : [];
+
+  if (orderId && returnLines.length > 0) {
+    await createCustomerReturn(client, {
+      businessId: meta.businessId,
+      locationId: meta.locationId,
+      orderId,
+      refundMethod: "online",
+      refundAmount: meta.amount.toString() as RialText,
+      reason: refund.reason?.trim() || "WooCommerce refund",
+      idempotencyKey: `woo-refund:${connection.id}:${meta.remoteId}`,
+      createdBy: null,
+      lines: returnLines,
+    });
+  } else {
+    const accounts = await accountIdsByCode(client, meta.businessId, [
+      WELL_KNOWN_CODES.salesReturns,
+      WELL_KNOWN_CODES.vatPayable,
+      WELL_KNOWN_CODES.bankClearing,
+    ]);
+    await postExactJournalEntry(client, {
+      businessId: meta.businessId,
+      locationId: meta.locationId,
+      memo: `برگشت از فروش ووکامرس #${refund.id}`,
+      sourceType: "woocommerce_refund",
+      sourceId: meta.inboxId,
+      createdBy: null,
+      postingKind: "customer_refund",
+      lines: [
+        { accountId: accounts.get(WELL_KNOWN_CODES.salesReturns)!, debit: meta.net.toString() as RialText, credit: zero },
+        ...(meta.tax > 0n
+          ? [{ accountId: accounts.get(WELL_KNOWN_CODES.vatPayable)!, debit: meta.tax.toString() as RialText, credit: zero }]
+          : []),
+        { accountId: accounts.get(WELL_KNOWN_CODES.bankClearing)!, debit: zero, credit: meta.amount.toString() as RialText },
+      ],
+    });
   }
 }
