@@ -19,6 +19,12 @@ import { reconcileCash } from "./shift";
 // fail because of) a background job. `recordCoworkerEvent` swallows its own
 // errors for the same reason.
 import { recordCoworkerEvent } from "./ai-coworker-events";
+// Phase 35 — notifications, queued for the same reason and with the same
+// contract: `recordNotification` swallows its own errors, so a shift can never
+// fail to close because nobody could be told about it.
+import { recordNotification } from "./notification-events";
+import { cashVarianceText, notificationDedupeKey } from "./notifications";
+import { tomanText } from "./ai-labels";
 
 export class ShiftError extends Error {
   status: number;
@@ -26,6 +32,21 @@ export class ShiftError extends Error {
     super(code);
     this.status = status;
   }
+}
+
+/**
+ * Who the notification is about, by name.
+ *
+ * A push notification is read on a lock screen with no way to ask a follow-up
+ * question, so «شیفت بسته شد» alone is not worth sending — the owner's next
+ * question is always "whose".
+ */
+async function employeeName(businessId: string, employeeId: string): Promise<string> {
+  const { rows } = await query<{ full_name: string | null }>(
+    `SELECT full_name FROM users WHERE id = $1 AND business_id = $2`,
+    [employeeId, businessId],
+  );
+  return rows[0]?.full_name?.trim() || "کارمند";
 }
 
 async function auditShift(
@@ -205,6 +226,19 @@ export async function openShift(
       kind: "shift_open",
       payload: { shiftId: shift.id, employeeId },
     });
+    await recordNotification({
+      businessId,
+      locationId: shift.locationId,
+      eventKey: "shift.opened",
+      severity: "info",
+      title: "شیفت باز شد",
+      body: `${await employeeName(businessId, employeeId)} شیفت خود را شروع کرد.`,
+      url: "/dashboard/settings?tab=shifts",
+      // Keyed on the shift, not on now(): a retried request is one shift and
+      // therefore one notification.
+      dedupeKey: notificationDedupeKey("shift.opened", shift.id),
+      payload: { shiftId: shift.id, employeeId },
+    });
     return shift;
   } catch (err) {
     if ((err as { code?: string }).code === "23505") {
@@ -343,6 +377,40 @@ async function closeShiftRow(
       kind: "shift_close",
       payload: { shiftId: shift.id, employeeId: shift.employeeId },
     });
+
+    const closerName = await employeeName(businessId, shift.employeeId);
+    await recordNotification({
+      businessId,
+      locationId: shift.locationId,
+      eventKey: "shift.closed",
+      severity: "info",
+      title: "شیفت بسته شد",
+      body: `${closerName} — فروش نقدی ${tomanText(cashSummary.cashTotal)}`,
+      url: "/dashboard/settings?tab=shifts",
+      amountRial: cashSummary.cashTotal,
+      dedupeKey: notificationDedupeKey("shift.closed", shift.id),
+      payload: { shiftId: shift.id, employeeId: shift.employeeId },
+    });
+
+    // A separate event rather than a field on the one above, because it is a
+    // separate *decision*: an owner who does not want a card every time a till
+    // closes still wants to know the night it came up 400,000 ﷼ short, and
+    // `min_amount_rial` on this event is what lets them set the size that
+    // matters to them.
+    if (reconciliation && reconciliation.variance !== 0) {
+      await recordNotification({
+        businessId,
+        locationId: shift.locationId,
+        eventKey: "shift.cash_variance",
+        severity: "important",
+        title: `${cashVarianceText(reconciliation.variance)}`,
+        body: `شیفت ${closerName} — مبلغ مورد انتظار ${tomanText(reconciliation.expectedCash)}`,
+        url: "/dashboard/settings?tab=shifts",
+        amountRial: reconciliation.variance,
+        dedupeKey: notificationDedupeKey("shift.cash_variance", shift.id),
+        payload: { shiftId: shift.id, employeeId: shift.employeeId, variance: reconciliation.variance },
+      });
+    }
     return { shift, cashSummary, reconciliation };
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});

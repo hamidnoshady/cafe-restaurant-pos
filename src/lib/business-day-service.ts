@@ -23,6 +23,9 @@ import {
 } from "./business-day";
 import { postgresDateToIso } from "./jalali";
 import { recordCoworkerEvent } from "./ai-coworker-events";
+import { recordNotification } from "./notification-events";
+import { notificationDedupeKey } from "./notifications";
+import { toPersianDigits } from "./digits";
 
 export class BusinessDayError extends Error {
   status: number;
@@ -257,6 +260,21 @@ export async function closeBusinessDay(
     businessId,
     locationId,
     kind: "day_close",
+    payload: { businessDate: status.businessDate, closureId: rows[0]?.id ?? null },
+  });
+
+  // Phase 35 — and the fourth thing worth telling an owner who is not here.
+  // Keyed on the business date rather than on the closure id, so a close,
+  // reopen and close of the same day is one notification, not three.
+  await recordNotification({
+    businessId,
+    locationId,
+    eventKey: "business_day.closed",
+    severity: "info",
+    title: "روز کاری بسته شد",
+    body: `روز ${toPersianDigits(status.businessDate)} در این شعبه بسته شد.`,
+    url: "/dashboard/settings?tab=shifts",
+    dedupeKey: notificationDedupeKey("business_day.closed", locationId, status.businessDate),
     payload: { businessDate: status.businessDate, closureId: rows[0]?.id ?? null },
   });
 

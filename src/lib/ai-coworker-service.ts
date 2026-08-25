@@ -63,6 +63,12 @@ import { compactProactiveFacts, type LocalBusinessClock } from "./ai-proactive";
 import { runAccountingReview } from "./accounting-review-service";
 import { query } from "./db";
 import { isFeatureEnabled } from "./features";
+// Phase 35 — a job that fires at 02:00 and then waits for approval is the
+// clearest case in the product of something the owner cannot be expected to
+// discover on their own. Enqueued, never sent inline: the tick in
+// notifications-service.ts is what talks to a push service.
+import { recordNotification } from "./notification-events";
+import { notificationDedupeKey } from "./notifications";
 import { isModuleEnabled } from "./industry-guard";
 import type { ModuleKey } from "./industry-profile";
 
@@ -769,6 +775,22 @@ export async function fireCoworkerJob(input: {
           JSON.stringify(compactProactiveFacts(built.report ?? { skipReason: built.skipReason ?? null })),
         ],
       );
+      // A report is worth telling someone about; "nothing to do" is not — a job
+      // that correctly finds no stale bread on 300 nights must not produce 300
+      // notifications, or the one night it does find something is lost in them.
+      if (built.report) {
+        await recordNotification({
+          businessId,
+          locationId,
+          eventKey: "ai.coworker.reported",
+          severity: "info",
+          title: `${job.title}: گزارش آماده است`,
+          body: `${built.report.findings.length} مورد برای بررسی پیدا شد.`,
+          url: "/dashboard/ai",
+          dedupeKey: notificationDedupeKey("ai.coworker.reported", runId),
+          payload: { runId, jobId: job.id, findings: built.report.findings.length },
+        });
+      }
       await touchJob(businessId, job.id);
       return runId;
     }
@@ -856,17 +878,48 @@ export async function fireCoworkerJob(input: {
       statuses.push(status);
     }
 
+    const runStatus = runStatusFromActions(statuses);
+    const summary = summarizeRun({ jobTitle: job.title, statuses });
     await query(
       `UPDATE ai_coworker_runs SET status = $3, summary = $4, facts = $5::jsonb
         WHERE id = $1 AND business_id = $2`,
       [
         runId,
         businessId,
-        runStatusFromActions(statuses),
-        summarizeRun({ jobTitle: job.title, statuses }),
+        runStatus,
+        summary,
         JSON.stringify(compactProactiveFacts({ locationId, triggerSource })),
       ],
     );
+
+    // Only the outcomes that need a person. An `applied` run did exactly what
+    // the owner pre-approved and is already in the audit tab; notifying about
+    // it would be the product telling them what they told it to do.
+    if (runStatus === "pending_approval") {
+      await recordNotification({
+        businessId,
+        locationId,
+        eventKey: "ai.coworker.pending",
+        severity: "important",
+        title: `${job.title}: در انتظار تأیید شما`,
+        body: summary,
+        url: "/dashboard/ai",
+        dedupeKey: notificationDedupeKey("ai.coworker.pending", runId),
+        payload: { runId, jobId: job.id, actions: statuses.length },
+      });
+    } else if (runStatus === "failed" || runStatus === "partially_applied") {
+      await recordNotification({
+        businessId,
+        locationId,
+        eventKey: "ai.coworker.failed",
+        severity: "important",
+        title: `${job.title}: اجرا کامل نشد`,
+        body: summary,
+        url: "/dashboard/ai",
+        dedupeKey: notificationDedupeKey("ai.coworker.failed", runId),
+        payload: { runId, jobId: job.id },
+      });
+    }
     await touchJob(businessId, job.id);
     return runId;
   } catch (error) {
@@ -879,6 +932,19 @@ export async function fireCoworkerJob(input: {
         WHERE id = $1 AND business_id = $2`,
       [runId, businessId, message.slice(0, 500), `${job.title}: اجرای این کار ناموفق بود.`],
     );
+    // A standing instruction that has quietly stopped working is worth more
+    // urgency than one that merely needs approving: the owner believes it ran.
+    await recordNotification({
+      businessId,
+      locationId,
+      eventKey: "ai.coworker.failed",
+      severity: "important",
+      title: `${job.title}: اجرای این کار ناموفق بود`,
+      body: message.slice(0, 200),
+      url: "/dashboard/ai",
+      dedupeKey: notificationDedupeKey("ai.coworker.failed", runId),
+      payload: { runId, jobId: job.id },
+    });
     return runId;
   }
 }

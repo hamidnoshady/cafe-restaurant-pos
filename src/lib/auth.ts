@@ -191,6 +191,29 @@ export function withTenantScope<Args extends unknown[]>(
   };
 }
 
+/**
+ * Session guard with no role restriction — any signed-in member of a business.
+ *
+ * Deliberately narrow in what it may be used for: endpoints where every member
+ * acts only on **their own** rows, so the role that would gate the screen has
+ * nothing left to gate. Phase 35's notification devices, rules and inbox are
+ * the case it exists for — a kitchen member choosing which of their own alerts
+ * reach their own phone is not a manager-level act, and listing all six roles
+ * to say "everyone" reads as an oversight rather than as a decision.
+ *
+ * The handler is still responsible for scoping every query to
+ * `session.sub`; this guard proves who is asking, not what they may touch.
+ */
+export async function requireMember(): Promise<
+  { session: SessionPayload; error: null } | { session: null; error: NextResponse }
+> {
+  const session = await getSession();
+  if (!session) {
+    return { session: null, error: NextResponse.json({ error: "unauthorized" }, { status: 401 }) };
+  }
+  return { session, error: null };
+}
+
 /** Session + role guard for API routes. Returns a response to short-circuit with, or the session. */
 export async function requireRole(
   ...roles: Role[]

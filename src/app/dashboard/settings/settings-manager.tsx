@@ -32,6 +32,7 @@ import { AuditLogSettings } from "./audit-log-settings";
 import { BusinessSettings } from "./business-settings";
 import { DeviceSettings } from "./device-settings";
 import { MenuSettings } from "./menu-settings";
+import { NotificationSettings } from "./notification-settings";
 import { OnlinePlatformsSettings } from "./online-platforms-settings";
 import { PaymentMethodsSettings } from "./payment-methods-settings";
 import { PricingSettings } from "./pricing-settings";
@@ -170,6 +171,7 @@ export function SettingsManager({ tabs, features, currentUserId, isOwner }: Sett
         {activeTab === "branch-management" ? <BranchManagementSettings features={features} /> : null}
         {activeTab === "server-sync" ? <ServerSyncSettings /> : null}
         {activeTab === "devices" ? <DeviceSettings /> : null}
+        {activeTab === "notifications" ? <NotificationSettings /> : null}
         {activeTab === "shifts" ? (
           <div className="space-y-6">
             <BusinessDaySettings />
