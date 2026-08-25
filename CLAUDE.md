@@ -15,8 +15,8 @@ conventions are load-bearing; don't casually deviate from them.
 
 ## Test and build, locally — before every commit
 
-Run these from the repo root before considering any change done. They mirror the GitHub
-Actions `test` job (see below) exactly, so a change that fails here will fail CI too:
+Run these from the repo root before considering any change done. **This is the only gate** —
+there is no CI (see below) — so a change nobody ran these on is a change nobody tested:
 
 ```bash
 npm install               # first time, or after a dependency change
@@ -35,27 +35,30 @@ it (see `src/lib/orders.test.ts` for the pattern: pure functions, integer-Rial f
 DB). If you changed the schema, add a new forward-only `migrations/NNNN_name.sql` file —
 never edit an already-applied migration.
 
-## CI (`.github/workflows/test.yml`)
+## CI — there isn't any
 
-GitHub Actions, which replaced the old CircleCI pipeline. One job, on every push to `main` and
-every PR against it:
+There is no CI. `.github/workflows/test.yml` ran the checklist above on every push to `main`
+and every PR against it; it was removed once the runners stopped working — every run, on
+branches and on `main` alike, failed before executing a single step (an account-level Actions
+problem, not a code one), so the only thing it produced was a permanent red ✗ on every PR that
+said nothing about the change. A gate that fails identically whatever you push is worse than no
+gate, because it trains you to ignore it.
 
-- **`test`** ("type check, unit tests, integration tests, build") — `postgres:16` service,
-  `npm ci`, `npm run db:migrate` (twice, to prove reruns are a no-op), `npm run test:db`,
-  `npx tsc --noEmit`, `npm test`, `npm run build`. It sets `JWT_SECRET` itself, because vitest
-  does not read `.env`.
+What follows from that:
 
-The workflow is deliberately test-only: **no image build, no registry push, no deploy.** This
-gate exists to keep `main` green and to mirror the local checklist above step for step.
+- **Run the local checklist above, every time, in full.** Nothing else will catch a change that
+  breaks the type check or a test — least of all a reviewer looking at a diff.
+- Don't report a change as done on the strength of a partial run. `npm test` passing while
+  `npm run test:db` was never started is not a green checklist; say which steps you actually ran.
+- Restoring the workflow is a fine idea once the runners bill again — `git log -- .github/` has
+  it, and it needs no changes beyond existing.
 
-Note that this leaves a real gap, so don't assume an image exists for a given commit: the
-self-update path (`src/lib/app-update.ts`, `scripts/check-app-update.ts`, `/platform/updates`)
-and the pull-based compose files (`docker-compose.local.yml`, `docker-compose.srv1.yml`) all
-expect `ghcr.io/hamidnoshady/cafe-restaurant-pos:sha-<short-sha>` images that nothing in this
-repo publishes. Those images are produced outside CI today.
-
-Treat a red CI run as blocking. Re-diagnose and push a fix rather than working around it or
-declaring the task done with CI failing.
+Note also, unrelated to the above and unchanged by it: don't assume a container image exists for
+a given commit. The self-update path (`src/lib/app-update.ts`, `scripts/check-app-update.ts`,
+`/platform/updates`) and the pull-based compose files (`docker-compose.local.yml`,
+`docker-compose.srv1.yml`) all expect
+`ghcr.io/hamidnoshady/cafe-restaurant-pos:sha-<short-sha>` images that nothing in this repo has
+ever published. Those images are produced outside it.
 
 ## Tenancy — read before touching the database
 
@@ -143,16 +146,20 @@ Every PR from work in this repo gets watched through to a terminal state, not ju
 and left:
 
 1. Right after pushing and opening the PR, subscribe to its activity (PR comments, review
-   feedback, CI results) so you keep receiving updates on it.
-2. When an event comes in — a CI failure, a review comment — investigate and, if you're
+   feedback, status checks) so you keep receiving updates on it.
+2. When an event comes in — a failing check, a review comment — investigate and, if you're
    confident in the fix and it's in scope, push it and keep the PR's status current. If a
    fix is ambiguous or architecturally significant, ask before acting instead of guessing.
-3. CI success, new pushes, and merge-conflict transitions aren't always delivered as
+3. New pushes, check results and merge-conflict transitions aren't always delivered as
    events. Schedule a periodic check-in (roughly hourly is reasonable) on any PR still open,
-   to catch state that webhooks missed — re-check status, mergeability, and CI, act on
+   to catch state that webhooks missed — re-check status, mergeability and checks, act on
    anything actionable, and re-arm silently if nothing changed.
-4. A PR isn't done at "opened" or even at "CI green" if review is still pending — keep
-   checking in until it's actually merged or closed. Stop immediately if asked to.
+4. A PR isn't done at "opened", and there is no CI to be green (see above) — the local
+   checklist is what stands in for it, and review may still be pending. Keep checking in
+   until it's actually merged or closed. Stop immediately if asked to.
+
+The only check that still reports here is an external security review app, which is not a
+workflow in this repo and does not run the tests.
 
 ## Payment ways — read before touching how money is taken
 

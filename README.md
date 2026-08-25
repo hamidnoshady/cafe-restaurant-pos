@@ -528,7 +528,7 @@ APP_DB_PASSWORD=$(openssl rand -hex 32) npm run db:app-role
 Migrations keep running as the owner. `server.ts` refuses to start in production when the
 configured role can bypass RLS, and warns in development.
 `integration/tenant-isolation.integration.test.ts` provisions its own unprivileged role, so
-the policies are proven in CI regardless of how the local database is set up.
+the policies are proven by `npm run test:db` regardless of how the local database is set up.
 
 **Connection pool size** (`DB_POOL_MAX`, default 20). A transaction (order creation, payment
 + inventory consumption) pins one connection for its full lifetime, so the right ceiling
@@ -755,7 +755,8 @@ strangers rather than just isolated by construction:
   runaway offline-sync client) can't degrade another's.
 - **Generated isolation test suite** (`integration/tenant-isolation.integration.test.ts`) — proves,
   from `pg_policy` itself, that every tenant table's RLS policy both exists *and* actually scopes
-  by business — a future migration that adds a table without one fails CI, not production.
+  by business — a future migration that adds a table without one fails `npm run test:db`, not
+  production.
 - **Multi-tenancy performance review** — `integration/query-performance.integration.test.ts`
   proves the RLS design stays index-backed at realistic scale; `DB_POOL_MAX`
   (`src/lib/pool-config.ts`) replaces a hardcoded pool size; `scripts/order-perf-benchmark.ts`
