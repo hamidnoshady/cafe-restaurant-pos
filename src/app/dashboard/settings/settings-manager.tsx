@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
+  BellIcon,
   BookOpenIcon,
   Building2Icon,
   CalendarClockIcon,
@@ -63,16 +64,19 @@ const TAB_ICONS: Record<SettingsTabKey, LucideIcon> = {
   "branch-management": StoreIcon,
   "server-sync": NetworkIcon,
   devices: MonitorCogIcon,
+  notifications: BellIcon,
   shifts: CalendarClockIcon,
   "audit-log": ClipboardCheckIcon,
   "security-center": ShieldCheckIcon,
   backup: CloudCogIcon,
 };
 
+// Every key must appear in exactly one group: the nav renders from this list,
+// so a tab missing here is dropped from the sidebar without any type error.
 const SETTINGS_GROUPS: Array<{ label: string; keys: SettingsTabKey[] }> = [
   { label: "کسب‌وکار", keys: ["business", "branch-management"] },
   { label: "مالی و فروش", keys: ["tax", "pricing", "payment-methods", "accounts"] },
-  { label: "مدیریت", keys: ["team", "menu", "printers", "devices", "shifts"] },
+  { label: "مدیریت", keys: ["team", "menu", "printers", "devices", "notifications", "shifts"] },
   { label: "امنیت و اتصال", keys: ["server-sync", "audit-log", "security-center", "backup"] },
   { label: "فروش آنلاین", keys: ["online-platforms"] },
 ];
