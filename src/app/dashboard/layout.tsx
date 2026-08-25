@@ -9,6 +9,7 @@ import { getSetting, SETTING_KEYS } from "@/lib/settings";
 import { visibleSettingsTabs } from "@/lib/settings-tabs";
 import { AiAssistant } from "@/components/ai/ai-assistant";
 import { MoneyProvider } from "@/components/money/money-context";
+import { PullToRefresh } from "@/components/pull-to-refresh";
 import { LockProvider } from "./lock-screen";
 import { OfflineBanner } from "./offline-banner";
 import { DashboardSidebar, type NavItem } from "./dashboard-sidebar";
@@ -173,7 +174,9 @@ export default async function DashboardLayout({
         />
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
           <OfflineBanner />
-          <main className="flex-1 overflow-y-auto p-2 pb-24 md:p-4">{children}</main>
+          <PullToRefresh className="flex-1 overflow-y-auto overscroll-y-contain p-2 pb-24 md:p-4">
+            {children}
+          </PullToRefresh>
         </div>
           {assistantMode && canUseAssistant && features.ai_assistant ? <AiAssistant mode={assistantMode} /> : null}
         </div>

@@ -142,6 +142,10 @@
   }
   html {
     @apply font-sans;
+    /* Zoom lock, the CSS half (see the `viewport` export in layout.tsx). Panning
+       is still allowed, so every scroller keeps working; pinch-zoom and
+       double-tap-zoom are not, because a scaled fixed-layout POS is unusable. */
+    touch-action: pan-x pan-y;
   }
   /* Touch-first: remove the 300ms tap delay and double-tap zoom on controls
      so buttons feel instant on tablets and touch POS screens. */

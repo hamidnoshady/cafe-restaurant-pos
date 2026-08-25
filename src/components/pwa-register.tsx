@@ -9,6 +9,9 @@ import { useEffect } from "react";
  *
  * Renders nothing. Registration is skipped in development so the SW never
  * caches while iterating, and skipped when the browser has no SW support.
+ *
+ * It also carries the iOS half of the app-wide zoom lock, because this is the
+ * one client component mounted on every route — login and POS included.
  */
 export function PwaRegister() {
   useEffect(() => {
@@ -30,6 +33,21 @@ export function PwaRegister() {
       window.addEventListener("load", register, { once: true });
       return () => window.removeEventListener("load", register);
     }
+  }, []);
+
+  // Zoom lock, the iOS half. Safari ignores `user-scalable=no` in a browser tab
+  // and honours it only in a standalone install, so `maximumScale` in layout.tsx
+  // and `touch-action` in globals.css leave one hole: WebKit's own pinch
+  // `gesture*` events, which are not touch events and are not governed by
+  // touch-action. Refusing them is what actually stops the page scaling on an
+  // iPhone. No-ops on every other engine, which never fires them.
+  useEffect(() => {
+    const block = (event: Event) => event.preventDefault();
+    const types = ["gesturestart", "gesturechange", "gestureend"];
+    for (const type of types) document.addEventListener(type, block, { passive: false });
+    return () => {
+      for (const type of types) document.removeEventListener(type, block);
+    };
   }, []);
 
   return null;
