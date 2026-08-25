@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { FeatureLock } from "@/components/feature-lock";
 import type { ConnectionKind, ConnectionKindKey } from "@/lib/connection-kinds";
-import { TabBar, TabPanel } from "../page-chrome";
+import { SectionNav } from "../section-nav";
 import { DesktopPanel } from "./desktop-panel";
 import { WooCommercePanel } from "./woocommerce-panel";
 import { ApiTokensPanel } from "./api-tokens-panel";
@@ -22,14 +22,18 @@ import { McpPanel } from "./mcp-panel";
 export function ConnectionsManager({
   kinds,
   initialTab,
+  initialOpen = false,
   features,
 }: {
   kinds: ConnectionKind[];
   initialTab: ConnectionKindKey;
+  /** The URL already named a tab, so the phone's drill-down starts inside it. */
+  initialOpen?: boolean;
   features: Record<string, boolean>;
 }) {
   const router = useRouter();
   const [active, setActive] = useState<ConnectionKindKey>(initialTab);
+  const [open, setOpen] = useState(initialOpen);
   const activeKind = kinds.find((kind) => kind.key === active) ?? kinds[0];
 
   function select(key: ConnectionKindKey) {
@@ -42,10 +46,16 @@ export function ConnectionsManager({
   const locked = Boolean(activeKind.feature && !features[activeKind.feature]);
 
   return (
-    <div className="min-w-0 space-y-4 sm:space-y-5">
-      <TabBar idPrefix="connections" label="نوع اتصال" tabs={kinds} active={active} onChange={select} />
-
-      <TabPanel idPrefix="connections" active={active}>
+    <SectionNav
+      idPrefix="connections"
+      label="نوع اتصال"
+      sections={kinds}
+      active={active}
+      onChange={select}
+      open={open}
+      onOpenChange={setOpen}
+    >
+      <div className="min-w-0">
         <p className="mb-4 text-sm leading-6 text-muted-foreground">{activeKind.description}</p>
 
         <FeatureLock locked={locked} title={activeKind.label}>
@@ -54,7 +64,7 @@ export function ConnectionsManager({
           {active === "mcp" ? <McpPanel /> : null}
           {active === "api" ? <ApiTokensPanel /> : null}
         </FeatureLock>
-      </TabPanel>
-    </div>
+      </div>
+    </SectionNav>
   );
 }

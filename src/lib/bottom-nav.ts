@@ -8,9 +8,9 @@
  */
 
 /**
- * How many pages the bar can hold. The «پروفایل» button that opens the full nav
- * is not one of them — it always occupies the last slot, so the bar shows at
- * most BOTTOM_NAV_MAX + 1 items.
+ * How many pages the bar can hold, and now all it holds: the «پروفایل» button
+ * that used to sit in the last slot is gone, since the drawer it opened is
+ * already one tap away from the header's hamburger on every screen.
  */
 export const BOTTOM_NAV_MAX = 4;
 

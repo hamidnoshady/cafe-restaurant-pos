@@ -120,7 +120,15 @@ export function AiAssistant({ mode, currentStep }: Props) {
           type="button"
           onClick={() => setOpen(true)}
           aria-label={unseenCount > 0 ? `دستیار هوشمند — ${unseenCount} مورد نیازمند توجه شما` : "دستیار هوشمند"}
-          className="fixed bottom-5 left-5 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg ring-1 ring-foreground/10 transition-transform hover:scale-105 active:scale-95"
+          /*
+            On a phone the button sits *above* the fixed bottom bar rather than
+            on top of it — it used to cover a nav entry, and the entry it
+            covered depended on which pages the member had put in the bar.
+            It also rests translucent so it stops hiding whatever is under it,
+            and comes to full strength on touch/hover/focus, so the control you
+            are actually reaching for is the solid one.
+          */
+          className="fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] left-4 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground opacity-70 shadow-lg ring-1 ring-foreground/10 transition-[transform,opacity] hover:scale-105 hover:opacity-100 focus-visible:opacity-100 active:scale-95 active:opacity-100 md:bottom-5 md:left-5"
         >
           <SparklesIcon className="size-6" />
           {unseenCount > 0 && (
@@ -132,7 +140,7 @@ export function AiAssistant({ mode, currentStep }: Props) {
       )}
 
       {open && (
-        <div className="fixed bottom-5 left-5 z-50 flex h-[min(74vh,610px)] w-[min(92vw,410px)] flex-col overflow-hidden rounded-2xl border border-stone-200/80 bg-card shadow-2xl ring-1 ring-foreground/10">
+        <div className="fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] left-4 z-50 flex h-[min(68dvh,610px)] w-[min(92vw,410px)] flex-col overflow-hidden rounded-2xl border border-stone-200/80 bg-card shadow-2xl ring-1 ring-foreground/10 md:bottom-5 md:left-5 md:h-[min(74vh,610px)]">
           <AiChatHeader
             mode={mode}
             conversationId={conversationId}

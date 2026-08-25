@@ -975,7 +975,16 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
 
   return (
     <div className="flex flex-col gap-3 md:h-[calc(100dvh-2rem)] md:flex-row">
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-[#EAE8E2] bg-white shadow-[0_1px_3px_rgba(37,37,34,0.03)]">
+      {/*
+        Below `md` this panel is *not* a scroller. It was: `flex-1` +
+        `overflow-hidden` around a grid that scrolled inside it, which on a
+        phone left the grid a couple of rows tall — past the fourth product the
+        tiles were clipped behind the cart bar, and the panel had swallowed the
+        page's scroll so there was no way to reach them. On a phone the grid
+        simply runs down the page and the page scrolls, the way every other
+        screen does; from `md` up the two-column till is unchanged.
+      */}
+      <div className="flex flex-col overflow-hidden rounded-2xl border border-[#EAE8E2] bg-white shadow-[0_1px_3px_rgba(37,37,34,0.03)] md:min-h-0 md:flex-1">
         <div className="border-b border-[#EAE8E2] p-3 md:p-4">
           <div className="mb-3 hidden flex-wrap items-center gap-2 md:flex">
             <div className="flex min-w-0 flex-1 items-center gap-2">
@@ -1155,7 +1164,7 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
             container instead: two columns on a phone, two beside the panel on a
             laptop, five on a wide till, with no breakpoint to keep in sync.
           */
-          className="grid flex-1 auto-rows-min grid-cols-[repeat(auto-fill,minmax(9rem,1fr))] content-start gap-2.5 overflow-y-auto p-3 md:p-4"
+          className="grid auto-rows-min grid-cols-[repeat(auto-fill,minmax(9rem,1fr))] content-start gap-2.5 p-3 md:flex-1 md:overflow-y-auto md:p-4"
         >
           {visibleProducts.map(({ item, categoryLabel }, index) => {
             const inCart = cartCountsByItem.get(item.id) ?? 0;
@@ -1570,12 +1579,14 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
         the product grid so the cashier never has to open the sheet to check —
         opening it is now only for the order's details and the payment.
       */}
-      <div className="sticky bottom-20 z-20 md:hidden">
+      <div className="sticky bottom-[calc(5rem+env(safe-area-inset-bottom))] z-20 md:hidden">
         <button
           type="button"
           onClick={() => setCartSheetOpen(true)}
           className={
-            "flex min-h-14 w-full items-center justify-between gap-3 rounded-2xl px-4 text-sm font-bold shadow-[0_8px_20px_rgba(233,161,27,0.22)] transition duration-200 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 motion-reduce:transition-none " +
+            // `pe-[5.25rem]`: the assistant's floating button rests in this
+            // same band at the inline end, so the total is padded clear of it.
+            "flex min-h-14 w-full items-center justify-between gap-3 rounded-2xl ps-4 pe-[5.25rem] text-sm font-bold shadow-[0_8px_20px_rgba(233,161,27,0.22)] transition duration-200 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 motion-reduce:transition-none " +
             (cart.length === 0
               ? "border border-[#EAE8E2] bg-white text-[#5E5B55] shadow-none"
               : "bg-[#E9A11B] text-[#252522]")

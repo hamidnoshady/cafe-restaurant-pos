@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { formatQuantity } from "@/lib/digits";
-import { TabBar, TabPanel } from "../page-chrome";
+import { SectionNav } from "../section-nav";
 import { api, ErrorBox } from "../ui";
 import { useRealtime } from "../use-realtime";
 import { ItemsSection } from "./items-section";
@@ -160,9 +160,7 @@ export function InventoryManager() {
         </div>
       ) : null}
 
-      <TabBar idPrefix="inventory" label="بخش‌های انبار" tabs={TABS} active={tab} onChange={setTab} />
-
-      <TabPanel idPrefix="inventory" active={tab}>
+      <SectionNav idPrefix="inventory" label="بخش‌های انبار" sections={TABS} active={tab} onChange={setTab}>
         {tab === "items" ? (
           <ItemsSection items={data.items} busy={busy} run={run} />
         ) : null}
@@ -200,7 +198,7 @@ export function InventoryManager() {
         {tab === "barcodes" ? (
           <BarcodesSection items={data.items} busy={busy} run={run} />
         ) : null}
-      </TabPanel>
+      </SectionNav>
     </div>
   );
 }

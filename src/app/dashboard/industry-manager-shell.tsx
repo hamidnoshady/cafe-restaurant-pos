@@ -11,12 +11,15 @@
  * meant a fix to the tab strip's focus ring or its ARIA wiring had to be made
  * three times — and, as of this wave, a fourth if another industry is added.
  *
- * The tab strip itself is now `<TabBar>` (page-chrome.tsx), shared with every
- * other tabbed screen in the dashboard. What is left here is the industry
- * managers' own contract: the `Runner` shape and the error box above the strip.
+ * The tab strip itself is now `<SectionNav>` (section-nav.tsx), shared with
+ * every other tabbed screen in the dashboard — a pill strip from `md` up, and
+ * on a phone a list that drills into one section at a time. What is left here
+ * is the industry managers' own contract: the `Runner` shape and the error box
+ * above the strip.
  */
 import type { ReactNode } from "react";
-import { TabBar, TabPanel, type Tab } from "./page-chrome";
+import type { Tab } from "./page-chrome";
+import { SectionNav } from "./section-nav";
 import { ErrorBox } from "./ui";
 
 /**
@@ -51,10 +54,9 @@ export function IndustryManagerShell<K extends string>({
   return (
     <div className="min-w-0 space-y-4 sm:space-y-5">
       <ErrorBox>{error}</ErrorBox>
-      <TabBar idPrefix={idPrefix} label={navLabel} tabs={tabs} active={activeTab} onChange={onTabChange} />
-      <TabPanel idPrefix={idPrefix} active={activeTab}>
+      <SectionNav idPrefix={idPrefix} label={navLabel} sections={tabs} active={activeTab} onChange={onTabChange}>
         {children}
-      </TabPanel>
+      </SectionNav>
     </div>
   );
 }

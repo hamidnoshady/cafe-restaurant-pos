@@ -164,7 +164,26 @@ export default async function DashboardLayout({
   return (
     <LockProvider fullName={session.fullName}>
       <MoneyProvider unit={currencyDisplay}>
-        <div className="flex min-h-screen flex-col md:flex-row">
+        {/*
+          A *definite* height, not `min-h-screen` — this is the fix for "the app
+          doesn't scroll on my phone".
+
+          The dashboard scrolls inside <main>, which is `overflow-y-auto` and
+          `overscroll-y-contain`. With `min-height` here the box still grew to
+          its content, so <main> was always exactly as tall as its own content
+          and never had anything to scroll: the *document* scrolled instead. On
+          a desktop that is merely untidy. On a touch screen it is fatal — the
+          drag is captured by <main> (a scroll container with zero scrollable
+          distance) and `overscroll-behavior: contain` is precisely the rule
+          that stops it chaining out to the document. Nothing moves, on every
+          page, and no amount of pulling helps.
+
+          Giving the box a definite height makes <main> the scroller it was
+          always written as. `dvh` rather than `vh` so it tracks the visible
+          viewport as a phone's URL bar comes and goes; `svh` would leave a gap
+          once the bar retracts.
+        */}
+        <div className="flex h-[100dvh] flex-col md:h-screen md:flex-row">
         <DashboardSidebar
           navItems={navItems}
           role={member.role}
@@ -174,7 +193,19 @@ export default async function DashboardLayout({
         />
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
           <OfflineBanner />
-          <PullToRefresh className="flex-1 overflow-y-auto overscroll-y-contain p-2 pb-24 md:p-4">
+          {/*
+            `relative` so this element is the containing block for the absolutely
+            positioned descendants a page puts in it — `sr-only` text, most of
+            all. Without it their containing block is the viewport, which means
+            this scroller does not clip them: a screen-reader label sitting a
+            thousand pixels down the page extended the *document*, and left a
+            second, empty scroll behind the real one.
+
+            The bottom padding clears the fixed mobile bar (and the phone's home
+            indicator under it), so the end of a page is reachable rather than
+            parked behind the nav.
+          */}
+          <PullToRefresh className="relative flex-1 overflow-y-auto overscroll-y-contain p-2 pb-[calc(5.75rem+env(safe-area-inset-bottom))] md:p-4 md:pb-4">
             {children}
           </PullToRefresh>
         </div>
