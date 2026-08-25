@@ -544,8 +544,12 @@ export function OperationsOverview({
             {data && data.activeOrderCount > 0 ? <span className="absolute -left-1 -top-1 inline-flex min-w-5 items-center justify-center rounded-full bg-[#FFF1D8] px-1 text-[10px] font-bold leading-5 text-[#A96800]">{toPersianDigits(String(data.activeOrderCount))}</span> : null}
           </Link>
           <div className="flex min-h-11 items-center gap-2 rounded-xl border border-[#D8F0E1] bg-[#F6FCF8] px-3 text-xs text-[#23834A]" role="status">
-            <RefreshCwIcon key={refreshTick} className={`size-4 ${refreshTick > 0 && !reducedMotion ? "ops-sync-rotate" : ""}`} aria-hidden="true" />
-            <span key={successTick} className={`flex size-2 rounded-full bg-[#36B56A] ${successTick > 0 && !reducedMotion ? "ops-sync-pulse" : ""}`} aria-hidden="true" />
+            {/* Both keys only force a remount so the animation replays. They must stay
+                namespaced: the two counters are equal on mount and again on every refresh
+                (refreshTick bumps before the fetch, successTick after), and bare numbers
+                made these two siblings collide on every poll. */}
+            <RefreshCwIcon key={`sync-${refreshTick}`} className={`size-4 ${refreshTick > 0 && !reducedMotion ? "ops-sync-rotate" : ""}`} aria-hidden="true" />
+            <span key={`ok-${successTick}`} className={`flex size-2 rounded-full bg-[#36B56A] ${successTick > 0 && !reducedMotion ? "ops-sync-pulse" : ""}`} aria-hidden="true" />
             <span>{syncLabel}</span>
             {data && !isRefreshing ? <span className="border-r border-[#BDE4CB] pr-2 tabular-nums">{formatTime(data.generatedAt, data.timeZone)}</span> : null}
           </div>
