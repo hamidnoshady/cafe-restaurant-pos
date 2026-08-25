@@ -122,7 +122,7 @@ function LocalBootstrapForm({ onBack }: { onBack: () => void }) {
       <button
         type="button"
         onClick={onBack}
-        className="mb-4 text-sm text-muted-foreground hover:text-foreground"
+        className="mb-4 text-sm text-muted-foreground hover:text-foreground outline-none focus-visible:ring focus-visible:ring-ring/50 rounded-sm"
       >
         ← بازگشت
       </button>
@@ -165,7 +165,7 @@ function LocalBootstrapForm({ onBack }: { onBack: () => void }) {
                   type="button"
                   disabled={!enabled}
                   onClick={() => enabled && setIndustry(option)}
-                  className={`relative rounded-lg border px-3 py-2 text-sm transition-colors ${
+                  className={`relative rounded-lg border px-3 py-2 text-sm transition-colors outline-none focus-visible:ring focus-visible:ring-ring/50 ${
                     selected
                       ? "border-primary bg-primary/10 font-medium text-primary"
                       : "border-input text-foreground"
@@ -235,7 +235,7 @@ function LocalBootstrapForm({ onBack }: { onBack: () => void }) {
         <button
           type="submit"
           disabled={busy}
-          className="w-full rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/85 disabled:opacity-50"
+          className="w-full rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/85 disabled:opacity-50 outline-none focus-visible:ring focus-visible:ring-ring/50"
         >
           {busy ? (
             <span className="flex items-center justify-center gap-2">
