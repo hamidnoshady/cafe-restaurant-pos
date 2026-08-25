@@ -201,11 +201,11 @@ export default async function DashboardLayout({
             thousand pixels down the page extended the *document*, and left a
             second, empty scroll behind the real one.
 
-            The bottom padding clears the fixed mobile bar (and the phone's home
-            indicator under it), so the end of a page is reachable rather than
-            parked behind the nav.
+            The bottom padding clears the fixed mobile bar (whose height, home
+            indicator included, is `--app-bottom-nav`), so the end of a page is
+            reachable rather than parked behind the nav.
           */}
-          <PullToRefresh className="relative flex-1 overflow-y-auto overscroll-y-contain p-2 pb-[calc(5.75rem+env(safe-area-inset-bottom))] md:p-4 md:pb-4">
+          <PullToRefresh className="relative flex-1 overflow-y-auto overscroll-y-contain p-2 pb-[calc(var(--app-bottom-nav)+2rem)] md:p-4 md:pb-4">
             {children}
           </PullToRefresh>
         </div>

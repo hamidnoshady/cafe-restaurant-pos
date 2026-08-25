@@ -974,7 +974,14 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
   }
 
   return (
-    <div className="flex flex-col gap-3 md:h-[calc(100dvh-2rem)] md:flex-row">
+    <div
+      /*
+        `pb-16` below `md`: the cart summary is fixed to the bottom bar and so
+        takes no room in the flow — without this the last row of products ends
+        under it.
+      */
+      className="flex flex-col gap-3 pb-16 md:h-[calc(100dvh-2rem)] md:flex-row md:pb-0"
+    >
       {/*
         Below `md` this panel is *not* a scroller. It was: `flex-1` +
         `overflow-hidden` around a grid that scrolled inside it, which on a
@@ -1579,14 +1586,22 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
         the product grid so the cashier never has to open the sheet to check —
         opening it is now only for the order's details and the payment.
       */}
-      <div className="sticky bottom-[calc(5rem+env(safe-area-inset-bottom))] z-20 md:hidden">
+      {/*
+        `fixed`, not `sticky`, and offset from `--app-bottom-nav` so it rests
+        directly on the bottom bar. As a sticky element it drifted: Chrome
+        measures a sticky offset from the scrollport's *content* box, so the
+        dashboard scroller's own bottom padding was added to this offset and
+        the bar floated ~110px above the nav with the assistant's button
+        stranded in the gap between them. A fixed offset is measured from the
+        viewport, which is the thing it is supposed to be attached to, and
+        every engine measures it the same way.
+      */}
+      <div data-bottom-dock className="fixed inset-x-2 bottom-[var(--app-bottom-nav)] z-30 md:hidden">
         <button
           type="button"
           onClick={() => setCartSheetOpen(true)}
           className={
-            // `pe-[5.25rem]`: the assistant's floating button rests in this
-            // same band at the inline end, so the total is padded clear of it.
-            "flex min-h-14 w-full items-center justify-between gap-3 rounded-2xl ps-4 pe-[5.25rem] text-sm font-bold shadow-[0_8px_20px_rgba(233,161,27,0.22)] transition duration-200 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 motion-reduce:transition-none " +
+            "flex min-h-14 w-full items-center justify-between gap-3 rounded-2xl px-4 text-sm font-bold shadow-[0_8px_20px_rgba(233,161,27,0.22)] transition duration-200 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 motion-reduce:transition-none " +
             (cart.length === 0
               ? "border border-[#EAE8E2] bg-white text-[#5E5B55] shadow-none"
               : "bg-[#E9A11B] text-[#252522]")
