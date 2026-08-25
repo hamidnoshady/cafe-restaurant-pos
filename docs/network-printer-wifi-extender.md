@@ -59,11 +59,45 @@ the till PC will never reach the printer. Turn it off for that SSID.
 ## 2. Printer: a fixed IP on the router's subnet
 
 Generic LAN boards like the TY-3018's usually ship with DHCP **off** and a
-factory static address (often `192.168.1.100`), which will not match the cafe
-router's subnet unless you are lucky. Find out what it actually has first:
+factory static address (often `192.168.1.100`, sometimes `192.168.123.100`),
+which will not match the cafe router's subnet unless you are lucky. Find out
+what it actually has first — in the order below, because the first one is the
+only one that doesn't depend on guessing the address:
 
-- **Self-test slip** — power the printer off, hold **FEED**, power it on, release.
-  It prints its configuration, including the IP and MAC.
+- **Direct cable to a laptop** (most reliable). Unplug the printer from the
+  extender and run the Ethernet cable straight into a laptop — any modern port
+  is auto-MDIX, so no crossover cable is needed. Give the laptop a static
+  `192.168.1.10 / 255.255.255.0`, then look for the printer:
+
+  ```bash
+  nmap -p 9100 --open 192.168.1.0/24    # anything answering on the raw-print port is it
+  ```
+
+  On Windows without nmap, "Advanced IP Scanner" does the same job. If the scan
+  is empty, repeat with the laptop on `192.168.123.10` — that's the other common
+  factory subnet. Once it answers, either open `http://<found-ip>` (many boards
+  serve a config page; `admin`/`admin` is the usual login) or use the vendor
+  utility to write the final settings.
+- **Over USB, with the vendor utility.** The TY-3018 has USB and RS232 as well as
+  LAN, and the generic Windows tools ("Printer Test Tool" / "POS Printer Set
+  Tool" / XPrinter's setup tool) read *and* write the Ethernet parameters over
+  USB. This works no matter what IP the board currently holds, which makes it
+  the fallback when the direct-cable scan finds nothing. Some of these tools also
+  have a LAN **Search** button that discovers the printer by broadcast even when
+  its address is on a foreign subnet.
+- **The router's DHCP client list.** If the board came up with DHCP on, plug it
+  into the extender, power-cycle it, and look for the new client in the main
+  router's lease table (the extender bridges, so the printer appears as a client
+  of the *router*, not of the RE200). The Tether app's client list is a second
+  place to look.
+- **Self-test slip — but check what the button actually does first.** On many of
+  these boards, powering on with **FEED** held prints a configuration slip with
+  the IP and MAC; on others, including some TY-3018 firmware, that same gesture
+  is a **factory reset** and nothing prints. If a reset is what happens, don't
+  repeat it — you have simply put the board back on its factory defaults, so try
+  the first method above against `192.168.1.100`. Variants worth one attempt
+  each: release FEED the moment printing starts rather than holding it, and
+  hold FEED with the paper cover open, power on, then close the cover.
 
 Then give it a stable address, either way round:
 
@@ -74,7 +108,9 @@ Then give it a stable address, either way round:
   but **outside its DHCP pool** (e.g. `192.168.1.50` when the pool starts at
   `.100`).
 - **DHCP + reservation** — turn DHCP on at the printer, then reserve that IP to
-  the printer's MAC in the router. The MAC is on the self-test slip.
+  the printer's MAC in the router. The MAC is on the self-test slip, on the
+  printer's own label, or in the router's lease table next to the address it
+  handed out.
 
 Either way the point is the same: **the IP must not move.** The app stores the
 address you type; a printer that picks up a different lease next week stops
