@@ -57,6 +57,22 @@ Notes that are easy to get wrong:
     drill-down state means nothing above the breakpoint, so there is no `matchMedia` read and
     therefore no desktop layout flashing on a phone before hydration.
 
+## The phone's bottom band
+
+`--app-bottom-nav` (globals.css) is how tall the fixed mobile bar is, safe area
+included, and it is the only definition of that. The bar sizes itself from it,
+and everything that has to sit on top of the bar offsets from it: the dashboard
+scroller's bottom padding, the assistant's floating button, a page's own docked
+bar. Never write that height out again as a number of your own — three
+independent guesses are what left the sell screen's cart summary floating a
+hundred pixels above the nav.
+
+A page that docks its own bar on top of the nav marks it `data-bottom-dock`, and
+`--app-bottom-dock` lifts the assistant's button clear of it (phone widths only,
+since such a bar is `md:hidden`). Dock a bar with `fixed`, not `sticky`: Chrome
+measures a sticky offset from the scrollport's *content* box, so the scroller's
+own bottom padding gets added to it and the bar drifts.
+
 ## Controls, text and forms
 
 - **Buttons are `<Button>`** from `src/components/ui/button.tsx`. Sizes: `default` (h-10),

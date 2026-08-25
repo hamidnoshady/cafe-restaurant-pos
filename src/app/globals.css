@@ -54,6 +54,27 @@
 }
 
 :root {
+  /*
+   * How tall the phone's fixed bottom bar is, safe area included — the one
+   * definition of it. The bar itself is sized from this, and everything that
+   * has to sit on top of the bar (the sell screen's cart summary, the
+   * assistant's floating button, the dashboard scroller's bottom padding)
+   * offsets from it rather than from a number of its own. They used to each
+   * carry their own guess, and the guesses drifted: the cart bar ended up
+   * floating a hundred pixels above the nav with the assistant button
+   * stranded in the gap.
+   */
+  --app-bottom-nav: calc(3.875rem + env(safe-area-inset-bottom));
+
+  /*
+   * How much a page has docked on top of that bar. Zero almost everywhere; the
+   * sell screen's cart summary is the one thing that claims the band, and it
+   * says so with `data-bottom-dock` rather than by any page telling the
+   * assistant's button where to go — the button is a sibling of the page, not
+   * a child, so there is nothing to pass it.
+   */
+  --app-bottom-dock: 0px;
+
   /* Page canvas is a touch darker than cards so surfaces read as elevated. */
   --background: oklch(0.975 0.002 90);
   --foreground: oklch(0.145 0 0);
@@ -131,6 +152,19 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
+}
+
+/*
+ * A phone-width page that docks something above the bottom bar pushes the
+ * assistant's floating button clear of it. Scoped to phone widths because a
+ * docked bar is `md:hidden` — still in the DOM from `md` up, where it must not
+ * move anything. Browsers without `:has()` drop the rule and the button simply
+ * overlaps, which is where it used to sit anyway.
+ */
+@media (max-width: 767px) {
+  :root:has([data-bottom-dock]) {
+    --app-bottom-dock: 4.25rem;
+  }
 }
 
 @layer base {

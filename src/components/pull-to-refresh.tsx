@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import { Loader2Icon } from "lucide-react";
 import { PULL_THRESHOLD_PX, pullOffset, pullStartsHere } from "@/lib/pull-to-refresh";
 
@@ -19,10 +18,25 @@ import { PULL_THRESHOLD_PX, pullOffset, pullStartsHere } from "@/lib/pull-to-ref
  * other half of why the native gesture never fired even where it exists. The
  * two decisions it makes (whose gesture this is, and how far to show the pull)
  * live in `src/lib/pull-to-refresh.ts`, where they are tested.
+ *
+ * A committed pull reloads the document. It used to call `router.refresh()`,
+ * which re-runs server components and nothing else — and almost every screen in
+ * this dashboard is a client component that loads its own data in an effect
+ * (`/api/menu`, `/api/orders`, `/api/dashboard/overview`, …). So the pull
+ * animated, the spinner spun, not one request was made and nothing on screen
+ * changed: the gesture appeared to do nothing at all, which is exactly what it
+ * did. A reload is also what the browser gesture this restores does, so an
+ * installed app and a tab now behave the same way — including in what they cost
+ * you, which is why the gesture starts only at the very top of a page and asks
+ * for 144px of deliberate travel.
  */
 
-/** `router.refresh()` reports no completion, so the spinner is time-boxed. */
-const SPINNER_MS = 900;
+/**
+ * Safety net only: the reload normally replaces this document long before it
+ * fires. It exists so a reload the browser refuses (or defers) cannot leave the
+ * spinner turning for ever.
+ */
+const SPINNER_MS = 4000;
 
 export function PullToRefresh({
   className,
@@ -31,7 +45,6 @@ export function PullToRefresh({
   className?: string;
   children: React.ReactNode;
 }) {
-  const router = useRouter();
   const ref = useRef<HTMLElement>(null);
   const pullRef = useRef(0);
   const refreshingRef = useRef(false);
@@ -82,7 +95,7 @@ export function PullToRefresh({
       if (!commit) return;
       refreshingRef.current = true;
       setRefreshing(true);
-      router.refresh();
+      window.location.reload();
       window.setTimeout(() => {
         refreshingRef.current = false;
         setRefreshing(false);
@@ -99,7 +112,7 @@ export function PullToRefresh({
       root.removeEventListener("touchend", onEnd);
       root.removeEventListener("touchcancel", onEnd);
     };
-  }, [router]);
+  }, []);
 
   const armed = pull >= PULL_THRESHOLD_PX;
 

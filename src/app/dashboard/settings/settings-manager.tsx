@@ -122,8 +122,14 @@ export function SettingsManager({ tabs, features, currentUserId, isOwner }: Sett
       open={open}
       onOpenChange={setOpen}
     >
+      {/*
+        Hidden on a phone: the drill-down's back bar right above this already
+        names the open section, so on a phone this card was the second of three
+        headings stacked before the first field. From `md` up there is no back
+        bar and this is the only thing naming the section.
+      */}
       {activeTabMeta ? (
-        <div className="rounded-2xl border border-stone-200/80 bg-card px-5 py-4 shadow-[0_1px_2px_rgb(41_37_36/0.025)]">
+        <div className="hidden rounded-2xl border border-stone-200/80 bg-card px-5 py-4 shadow-[0_1px_2px_rgb(41_37_36/0.025)] md:block">
           <div className="flex items-start gap-3">
             {(() => {
               const Icon = TAB_ICONS[activeTabMeta.key];

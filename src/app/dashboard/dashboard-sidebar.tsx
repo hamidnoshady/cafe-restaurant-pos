@@ -378,7 +378,16 @@ function MobileBottomNavigation({
   if (primaryItems.length === 0) return null;
 
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-40 flex border-t border-[#EAE8E2] bg-white/95 px-1 pb-[env(safe-area-inset-bottom)] pt-1 shadow-[0_-1px_8px_rgba(37,37,34,0.04)] backdrop-blur md:hidden" aria-label="ناوبری اصلی">
+    <nav
+      /*
+        Height comes from `--app-bottom-nav` (globals.css) rather than from the
+        sum of this element's own padding: everything that has to sit on top of
+        this bar offsets from that variable, so the bar has to be what the
+        variable says it is.
+      */
+      className="fixed inset-x-0 bottom-0 z-40 flex h-[var(--app-bottom-nav)] border-t border-[#EAE8E2] bg-white/95 px-1 pb-[env(safe-area-inset-bottom)] pt-1 shadow-[0_-1px_8px_rgba(37,37,34,0.04)] backdrop-blur md:hidden"
+      aria-label="ناوبری اصلی"
+    >
       {primaryItems.map((item) => {
         const Icon = NAV_ICONS[item.href] ?? CircleIcon;
         const active = isActive(pathname, item.href);
