@@ -18,6 +18,8 @@ export const EXEMPT_TABLES = new Set([
   "platform_ai_config",
   "ai_credit_packages",
   "ai_subscription_plans",
+  // Phase 35 — one deployment-wide VAPID key pair, no business_id to scope by.
+  "platform_push_config",
 ]);
 
 export interface ForeignKeyEdge {

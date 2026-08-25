@@ -324,6 +324,40 @@ Claude, ChatGPT and other assistants" section of [README.md](README.md) and
   `resolveMcpTenant` (Phase 23's "ask the host" rule) and then work inside `withTenant`; only the
   bearer lookup bypasses, under the documented `mcp-token-auth` reason. Do not add a second hole.
 
+## Notifications — read before adding an alert or touching push
+
+Since Phase 35 the app can reach a person who is not looking at a screen, over **Web Push**
+(RFC 8030/8291/8292 — one implementation covering iOS, Android and Windows). See the
+"Notifications" section of [README.md](README.md) and
+[docs/phases/Phase-35-Notifications.md](docs/phases/Phase-35-Notifications.md).
+
+- **A producer only enqueues.** `recordNotification` (`src/lib/notification-events.ts`) is one
+  INSERT that swallows its own errors — the same tiny-module shape and the same contract as
+  `recordCoworkerEvent`, for the same reason: a cashier closing their till must never wait on, or
+  fail because of, an HTTPS round trip to a push service. Only `runNotificationTick` sends.
+- **A new event key needs a producer in the same change.** `NOTIFICATION_EVENTS` is the catalogue
+  the settings screen renders from, so a key nothing emits is a switch that does nothing — worse
+  than an absent one. `inventory.low_stock` is the one *scanned* producer
+  (`notification-scans.ts`), because stock leaves an item through six different paths and a
+  crossing is a property of the level, not of any one of them.
+- **A missing rule is a default, not a silence**, and no event defaults a `cashier` or `kitchen`
+  member into anything. An app that buzzes every till phone gets its permission revoked in a week,
+  and then none of it works.
+- **Quiet hours suppress the push, never the bell row.** «بیدارم نکن» is not «به من نگو». Only a
+  `critical` event overrides the window; `backup.failed` is the only one, and the exception is its
+  whole justification.
+- **Dedupe on the fact, never on the moment.** `notification_events` has UNIQUE
+  `(business_id, dedupe_key)`; build the key from the shift/run/order id through
+  `notificationDedupeKey`.
+- **A notification is not an `ACTION_CATALOG` action.** It writes nothing to the books and needs no
+  approval, so it never goes through Phase 31's autopilot machinery — an «ask me first» job would
+  otherwise have to ask permission before telling anyone anything. AI features emit them directly
+  from `fireCoworkerJob`'s outcome points, and MCP's write catalogue is unchanged.
+- **Never rotate the VAPID pair.** The public half is inside every subscription a browser has ever
+  minted; changing it invalidates every device on the deployment with no error to notice. The row
+  in `platform_push_config` is written once (`ON CONFLICT DO NOTHING` plus a re-read), and that
+  table is in `EXEMPT_TABLES`.
+
 ## Repository layout
 
 - `src/app/api/**/route.ts` — route handlers. Every handler starts with a guard

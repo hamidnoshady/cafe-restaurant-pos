@@ -4,6 +4,9 @@ import { getPool } from "@/lib/db";
 import { positiveQuantityText, rialText } from "@/lib/inventory-exact";
 import { createCustomerReturn } from "@/lib/customer-return-service";
 import { resolveActiveLocation } from "@/lib/setup-state";
+import { recordNotification } from "@/lib/notification-events";
+import { notificationDedupeKey } from "@/lib/notifications";
+import { tomanText } from "@/lib/ai-labels";
 
 export const POST = withTenantScope(async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
   const { session, error } = await requireRole("owner", "manager", "cashier");
@@ -32,6 +35,24 @@ export const POST = withTenantScope(async (request: NextRequest, context: { para
       })),
     });
     await client.query("COMMIT");
+
+    // Only a genuinely new return notifies. `createCustomerReturn` is
+    // idempotent on its key and reports a replay as `duplicate`, so a retried
+    // request must not put a second card on the owner's phone about one refund.
+    if (!result.duplicate) {
+      await recordNotification({
+        businessId: session.businessId,
+        locationId: location.id,
+        eventKey: "payment.refunded",
+        severity: "important",
+        title: "برگشت وجه به مشتری",
+        body: `${tomanText(Number(result.refundAmount))}${body.reason?.trim() ? ` — ${body.reason.trim()}` : ""}`,
+        url: "/dashboard/orders",
+        amountRial: Number(result.refundAmount),
+        dedupeKey: notificationDedupeKey("payment.refunded", result.id),
+        payload: { orderId: id, returnId: result.id },
+      });
+    }
     return NextResponse.json({ ok: true, ...result });
   } catch (caught) {
     await client.query("ROLLBACK");

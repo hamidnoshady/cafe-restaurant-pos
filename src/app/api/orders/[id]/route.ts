@@ -8,6 +8,10 @@ import { resolveActiveLocation } from "@/lib/setup-state";
 import { broadcast } from "@/lib/realtime";
 import { lockOpenOrder } from "@/lib/order-lock";
 import { ensureSessionForTable } from "@/lib/table-session-service";
+import { recordNotification } from "@/lib/notification-events";
+import { notificationDedupeKey } from "@/lib/notifications";
+import { tomanText } from "@/lib/ai-labels";
+import { toPersianDigits } from "@/lib/digits";
 
 export const GET = withTenantScope(async (_request: NextRequest, context: { params: Promise<{ id: string }> }) => {
   const { session, error } = await requireRole("owner", "manager", "cashier", "waiter");
@@ -51,6 +55,11 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
     return NextResponse.json({ error: "invalid_discount" }, { status: 400 });
   }
 
+  // Captured inside the transaction, notified after it commits: a void that
+  // rolls back must not have produced a notification about a bill that is still
+  // open. See recordNotification for why the enqueue itself cannot fail this.
+  let voided: { orderNumber: string; total: number } | null = null;
+
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
@@ -61,16 +70,17 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
     }
 
     if (body.void) {
-      const { rowCount } = await client.query(
+      const { rowCount, rows: voidedRows } = await client.query<{ order_number: string; total: string }>(
         `UPDATE orders SET status = 'voided', voided_reason = $2, closed_by = $3, closed_at = now()
           WHERE id = $1 AND status = 'open'
-          RETURNING id`,
+          RETURNING order_number::text AS order_number, total::text AS total`,
         [id, body.void.reason?.trim() || null, session.sub],
       );
       if (rowCount !== 1) {
         await client.query("ROLLBACK");
         return NextResponse.json({ error: "order_not_open" }, { status: 409 });
       }
+      voided = { orderNumber: voidedRows[0].order_number, total: Number(voidedRows[0].total) };
     } else {
       if (body.customerId !== undefined) {
         if (body.customerId) {
@@ -123,5 +133,22 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
   }
 
   broadcast(location.id, { type: "order.updated", orderId: id });
+
+  if (voided) {
+    await recordNotification({
+      businessId: session.businessId,
+      locationId: location.id,
+      eventKey: "order.voided",
+      severity: "important",
+      title: `سفارش ${toPersianDigits(voided.orderNumber)} باطل شد`,
+      body: `${tomanText(voided.total)}${body.void?.reason?.trim() ? ` — ${body.void.reason.trim()}` : ""}`,
+      url: "/dashboard/orders",
+      // The amount is what an owner's «فقط ابطال‌های بزرگ» threshold is
+      // compared against (notification_rules.min_amount_rial).
+      amountRial: voided.total,
+      dedupeKey: notificationDedupeKey("order.voided", id),
+      payload: { orderId: id, orderNumber: voided.orderNumber },
+    });
+  }
   return NextResponse.json({ ok: true });
 });

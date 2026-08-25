@@ -16,6 +16,7 @@ export const SETTINGS_TAB_KEYS = [
   "branch-management",
   "server-sync",
   "devices",
+  "notifications",
   "shifts",
   "audit-log",
   "security-center",
@@ -156,6 +157,15 @@ export const SETTINGS_TABS: SettingsTab[] = [
     label: "دستگاه‌های ثبت‌شده",
     description: "پایانه‌های متصل و ورود بیومتریک اختصاصی هر دستگاه",
     requiredAnyPermission: [PERMISSIONS.settingsManage],
+  },
+  {
+    key: "notifications",
+    label: "اعلان‌ها",
+    description: "اینکه چه چیزی روی گوشی و رایانهٔ شما اعلان شود، و ساعت‌هایی که نباید مزاحمتان شد",
+    // Deliberately open to every role and every permission: this tab edits only
+    // the caller's OWN devices and rules (see requireMember in auth.ts), and an
+    // آشپز who wants a notification on their own phone is not performing a
+    // manager-level act. It gates nothing because there is nothing to gate.
   },
   {
     key: "shifts",

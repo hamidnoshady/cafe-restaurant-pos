@@ -450,6 +450,74 @@ not a calendar day, decimal quantities as strings) and `pos://reports/catalog`.
 
 See [docs/phases/Phase-34-MCP-Connector.md](docs/phases/Phase-34-MCP-Connector.md).
 
+## Notifications (اعلان‌ها, Phase 35)
+
+Everything the app knew about a shift that came up short, a backup that failed at 03:00 or a
+coworker job waiting since last night, it knew **on a screen nobody was looking at**. This is how
+those facts reach a phone.
+
+Delivery is the **Web Push** standard (RFC 8030/8291/8292), implemented in `src/lib/web-push.ts`
+against Node's own crypto rather than as a dependency. One implementation covers everything the
+product runs on:
+
+| Platform | Condition |
+| --- | --- |
+| iOS / iPadOS 16.4+ | **Only** for a PWA added to the home screen — Safari does not expose `PushManager` otherwise, silently |
+| Android, Windows, macOS, Linux | Installed PWA or an ordinary tab (Chrome, Edge, Firefox, Safari) |
+
+Set it up from **تنظیمات ← اعلان‌ها**: «فعال کردن روی این دستگاه» on each phone or till, then one
+row per kind of event. The tab is open to every role, because it edits only *your own* devices and
+rules.
+
+### How an event gets to a phone
+
+1. A producer calls `recordNotification` — one `INSERT` into `notification_events`, error-swallowing.
+   A cashier closing their till never waits on a push service.
+2. The 15s tick (`runNotificationTick`, `server.ts`) claims each row and fans it out.
+3. `resolveRecipients` picks who hears it: their own rule if they wrote one, otherwise the
+   catalogue's default for their role.
+4. The bell row (`notification_recipients`) is written, and a push is sent to each of that
+   person's devices.
+
+### The rules
+
+A rule is per person, per event, optionally per branch, and carries: which channels
+(`push` / the in-app bell), a severity floor, an amount floor for the events that involve money
+(«فقط ابطال‌های بالای ۵ میلیون تومان»), and a quiet window.
+
+Three things worth knowing:
+
+- **A missing rule is a default, not a silence.** Notifications work the day the feature ships;
+  every deviation from that is something a person chose. Deleting a rule restores the default —
+  switching an event off is a rule with `enabled: false`, which is a different thing.
+- **Quiet hours suppress the push, never the record.** «بیدارم نکن» is not «به من نگو»: the bell
+  row is written either way. `backup.failed` is `critical` and ignores the window outright, which
+  is the whole point of it — a week of silently failed backups is discovered exactly when it is
+  too late.
+- **A rule can narrow what you see, never widen it.** Who may hear about a branch is
+  `accessibleLocationIds`, the same Phase 14 function that decides who may act in it.
+
+### What the AI half does
+
+Phase 32's coworker jobs notify at their three outcome points — a run waiting for approval, a run
+that produced a report, a run that failed — deterministically, with no model in the loop and no
+credits spent. Notifications are deliberately **not** an `ACTION_CATALOG` entry: they write nothing
+to the books and need no approval, so putting them through Phase 31's autopilot machinery would
+have meant an «ask me first» job having to ask permission before telling anyone anything. MCP gains
+no new tool.
+
+An applied run notifies nobody — it did what the owner pre-approved. Nor does a skipped one: a job
+that correctly finds no stale bread on 300 nights must not produce 300 notifications.
+
+### Configuration
+
+None required. The VAPID key pair is generated into `platform_push_config` on first use, because an
+on-site install has no operator to run a key-generation step. `VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY`
+override it when a fleet should share one identity — and must not be *changed* afterwards, since
+the public half is baked into every subscription a browser has already minted.
+
+See [docs/phases/Phase-35-Notifications.md](docs/phases/Phase-35-Notifications.md).
+
 ## The business day (روز کاری)
 
 A branch's trading day does not have to start at local midnight. `locations.business_day_start_minutes`

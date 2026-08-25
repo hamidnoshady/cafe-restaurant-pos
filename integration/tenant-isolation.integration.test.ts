@@ -50,6 +50,12 @@ const EXEMPT_TABLES = new Set([
   "platform_ai_config",
   "ai_credit_packages",
   "ai_subscription_plans",
+  // Phase 35 — one deployment-wide VAPID key pair for Web Push (migration
+  // 0102). Same shape as platform_ai_config: a singleton with no business_id,
+  // and rotating it would invalidate every business's registered devices at
+  // once, which is exactly why it is not per-tenant. The five notification_*
+  // tables that DO carry business data are deliberately not in this list.
+  "platform_push_config",
 ]);
 
 let databaseName: string;
@@ -278,6 +284,7 @@ describe("every tenant table is protected", () => {
       "platform_admins",
       "platform_ai_config",
       "platform_audit_log",
+      "platform_push_config",
       "platform_update_config",
     ]);
   });

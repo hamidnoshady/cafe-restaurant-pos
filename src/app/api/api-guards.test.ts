@@ -238,13 +238,39 @@ describe("every API route is guarded", () => {
       // requirePlatformCapability, the platform-realm equivalents of the
       // tenant requireRole/requirePermission guards.
       if (isPlatformGuarded(src)) return;
+      // Phase 35 — `requireMember` is the fourth guard: any signed-in member,
+      // for endpoints where every member acts only on their own rows and there
+      // is therefore no role left to gate (notification devices, rules, inbox).
+      // It is a guard, not an absence of one: it still refuses an unauthenticated
+      // caller, and the per-route assertions below check that such a route scopes
+      // its reads to the session's own user.
       expect(
-        /requireRole\(/.test(src) || /requireManager\(/.test(src) || /requirePermission\(/.test(src),
-        `src/app/api/${key}/route.ts has no requireRole/requireManager/requirePermission guard and is not in the documented public list`,
+        /requireRole\(/.test(src) ||
+          /requireManager\(/.test(src) ||
+          /requirePermission\(/.test(src) ||
+          /requireMember\(/.test(src),
+        `src/app/api/${key}/route.ts has no requireRole/requireManager/requirePermission/requireMember guard and is not in the documented public list`,
       ).toBe(true);
     });
 
   }
+
+  it("every requireMember route scopes its work to the caller's own user (Phase 35)", () => {
+    // `requireMember` deliberately admits every role, so the only thing keeping
+    // one member out of another's notification devices is that each handler
+    // passes `session.sub` down. A route that guards with requireMember and then
+    // reads by anything else would be a self-service endpoint that isn't.
+    const memberRoutes = [...sources].filter(([, src]) => /requireMember\(/.test(src));
+    expect(memberRoutes.length, "no requireMember routes found").toBeGreaterThan(0);
+    for (const [key, src] of memberRoutes) {
+      // public-key is the one exception: it returns a deployment-wide value that
+      // is the same for every member, so there is no per-user row to scope.
+      if (key === "notifications/public-key") continue;
+      expect(src, `src/app/api/${key}/route.ts uses requireMember but never scopes to session.sub`).toMatch(
+        /session\.sub/,
+      );
+    }
+  });
 
   it("the public list doesn't cover routes that no longer exist", () => {
     for (const key of [...Object.keys(PUBLIC_ROUTES), ...Object.keys(SELF_GUARDING_ROUTES)]) {

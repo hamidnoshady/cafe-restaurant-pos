@@ -5,7 +5,24 @@ import { SETTINGS_TABS, visibleSettingsTabs } from "./settings-tabs";
 
 describe("visibleSettingsTabs", () => {
   it("does not return unavailable settings sections", () => {
-    expect(visibleSettingsTabs([PERMISSIONS.accountsEdit]).map((tab) => tab.key)).toEqual(["accounts"]);
+    // `notifications` is here for every caller by design — see the ungated tab
+    // test below.
+    expect(visibleSettingsTabs([PERMISSIONS.accountsEdit]).map((tab) => tab.key)).toEqual([
+      "accounts",
+      "notifications",
+    ]);
+  });
+
+  it("offers the notifications tab to everyone, whatever they may otherwise do (Phase 35)", () => {
+    // The tab edits only the caller's OWN devices and rules (requireMember in
+    // auth.ts), so there is nothing for a permission to gate: a کارمند آشپزخانه
+    // choosing which of their own alerts reach their own phone is not a
+    // manager-level act. Pinned as a test because the natural thing to do when
+    // adding a tab is to copy the neighbouring `requiredAnyPermission`, and that
+    // would silently take notifications away from most of the staff.
+    for (const role of ["owner", "manager", "accountant", "cashier", "waiter", "kitchen"] as const) {
+      expect(visibleSettingsTabs([], { role }).map((tab) => tab.key)).toContain("notifications");
+    }
   });
 
   it("returns administration sections for settings managers", () => {
@@ -18,12 +35,14 @@ describe("visibleSettingsTabs", () => {
       "menu",
       "printers",
       "devices",
+      "notifications",
     ]);
   });
 
   it("shows team management, shift history, the audit trail, and the security center together, gated on team.manage (Phase 20 Waves 5-7)", () => {
     expect(visibleSettingsTabs([PERMISSIONS.teamManage]).map((tab) => tab.key)).toEqual([
       "team",
+      "notifications",
       "shifts",
       "audit-log",
       "security-center",
@@ -84,27 +103,27 @@ describe("visibleSettingsTabs", () => {
         role: "manager",
         features: { backup: true, offline_mode: true },
       }).map((tab) => tab.key),
-    ).toEqual(["backup"]);
+    ).toEqual(["notifications", "backup"]);
 
     expect(
       visibleSettingsTabs([], {
         role: "owner",
         features: { backup: true, offline_mode: true },
       }).map((tab) => tab.key),
-    ).toEqual(["branch-management", "server-sync", "backup"]);
+    ).toEqual(["branch-management", "server-sync", "notifications", "backup"]);
 
     expect(
       visibleSettingsTabs([], {
         role: "owner",
         features: { backup: false, offline_mode: false },
-      }),
-    ).toEqual([]);
+      }).map((tab) => tab.key),
+    ).toEqual(["notifications"]);
 
     expect(
       visibleSettingsTabs([], {
         role: "owner",
         features: { backup: false, offline_mode: false, multi_location: true },
       }).map((tab) => tab.key),
-    ).toEqual(["branch-management"]);
+    ).toEqual(["branch-management", "notifications"]);
   });
 });

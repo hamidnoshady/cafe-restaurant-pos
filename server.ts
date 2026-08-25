@@ -54,6 +54,8 @@ app.prepare().then(async () => {
   const { runAiSubscriptionRenewalTick, AI_SUBSCRIPTION_TICK_INTERVAL_MS } = await import("./src/lib/ai-billing-service");
   const { runAiProactiveTick, AI_PROACTIVE_TICK_INTERVAL_MS } = await import("./src/lib/ai-proactive-service");
   const { runWooCommerceSyncTick, WOO_SYNC_TICK_INTERVAL_MS } = await import("./src/lib/integrations/outbox-service");
+  const { runNotificationTick, NOTIFICATION_TICK_INTERVAL_MS } = await import("./src/lib/notifications-service");
+  const { runLowStockScanTick, LOW_STOCK_SCAN_INTERVAL_MS } = await import("./src/lib/notification-scans");
 
   // Phase 12: tenant isolation is enforced by Postgres row-level security,
   // which superusers and BYPASSRLS roles ignore outright — silently, with no
@@ -113,6 +115,28 @@ app.prepare().then(async () => {
     runWooCommerceSyncTick().catch((err) => console.error("woocommerce sync tick failed:", err));
   setInterval(wooSyncTick, WOO_SYNC_TICK_INTERVAL_MS).unref();
   setTimeout(wooSyncTick, 90_000).unref();
+
+  // Phase 35: drain the notification outbox and push to each recipient's
+  // devices. Producers only enqueue — a cashier closing their till must never
+  // wait on a push service — so this tick is the only thing that sends. It
+  // enumerates businesses with pending rows under the documented platform
+  // bypass and wraps each one's fan-out in withTenant, like every tick above.
+  // The shortest interval here on purpose: a notification that arrives ten
+  // minutes late is one the person has already found out about another way.
+  const notificationTick = () =>
+    runNotificationTick().catch((err) => console.error("notification tick failed:", err));
+  setInterval(notificationTick, NOTIFICATION_TICK_INTERVAL_MS).unref();
+  setTimeout(notificationTick, 25_000).unref();
+
+  // Phase 35: the one notification producer that has to scan rather than be
+  // told. Stock leaves an item through six different paths, so "is this item
+  // below its reorder level" is a property of the level, not of any one of
+  // them — see src/lib/notification-scans.ts. Much slower than the delivery
+  // tick above because a reorder level is a "order more this week" signal.
+  const lowStockScan = () =>
+    runLowStockScanTick().catch((err) => console.error("low-stock scan failed:", err));
+  setInterval(lowStockScan, LOW_STOCK_SCAN_INTERVAL_MS).unref();
+  setTimeout(lowStockScan, 120_000).unref();
 
   const server = createServer((req, res) => {
     handle(req, res, parse(req.url ?? "/", true));

@@ -47,6 +47,10 @@ import {
   type BackupConfig,
 } from "./backup";
 import { s3Delete, s3Get, s3List, s3Put, sha256Hex, type S3Config } from "./s3-lite";
+// Phase 35 — queued, never sent inline, and error-swallowing: a backup run's
+// outcome must not depend on whether anybody could be told about it.
+import { recordNotification } from "./notification-events";
+import { notificationDedupeKey } from "./notifications";
 
 const PG_DUMP_TIMEOUT_MS = 15 * 60 * 1000;
 
@@ -147,10 +151,32 @@ async function finishRun(
       [runId, outcome.artifact ?? null, outcome.sizeBytes, outcome.sha256],
     );
   } else {
-    await query(
-      `UPDATE backup_runs SET status = 'failed', error = $2, finished_at = now() WHERE id = $1`,
+    const { rows } = await query<{ business_id: string; kind: string }>(
+      `UPDATE backup_runs SET status = 'failed', error = $2, finished_at = now()
+        WHERE id = $1 RETURNING business_id, kind`,
       [runId, outcome.error.slice(0, 1000)],
     );
+
+    // Phase 35 — the one notification whose entire value is arriving at the
+    // wrong hour. A backup that has silently failed for a week is discovered
+    // exactly when it is too late to matter, which is why this is the
+    // catalogue's only `critical` event and why it ignores quiet hours.
+    const failed = rows[0];
+    if (failed) {
+      await recordNotification({
+        businessId: failed.business_id,
+        locationId: null,
+        eventKey: "backup.failed",
+        severity: "critical",
+        title: "پشتیبان‌گیری ناموفق بود",
+        body: outcome.error.slice(0, 200),
+        url: "/dashboard/backup",
+        // Keyed on the run, so one failed run is one notification however many
+        // times the tick re-reads it.
+        dedupeKey: notificationDedupeKey("backup.failed", runId),
+        payload: { runId, kind: failed.kind },
+      });
+    }
   }
 }
 
