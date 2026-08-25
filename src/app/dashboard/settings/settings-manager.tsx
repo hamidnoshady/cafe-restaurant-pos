@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 import type { ResolvedSettingsTab, SettingsTabKey } from "@/lib/settings-tabs";
 import { isSettingsTabKey } from "@/lib/settings-tabs";
-import { TabPanel } from "../page-chrome";
+import { SectionNav, type Section } from "../section-nav";
 import { BackupManager } from "../backup/backup-manager";
 import { BranchManagementSettings } from "./branch-management-settings";
 import { TeamManager } from "../team/team-manager";
@@ -87,11 +87,19 @@ export function SettingsManager({ tabs, features, currentUserId, isOwner }: Sett
   const normalizedRequestedTab = requestedTab === "branch-sync" ? "branch-management" : requestedTab;
   const firstTab = tabs[0]?.key;
   const [tab, setTab] = useState<SettingsTabKey>(() => tabs[0]?.key ?? "business");
+  // The phone shows the section list first; a `?tab=` link asked for one
+  // section by name, so that link opens it rather than the list around it.
+  const [open, setOpen] = useState(false);
   const available = useMemo(() => new Set(tabs.map((item) => item.key)), [tabs]);
+  const sections = useMemo<Section<SettingsTabKey>[]>(
+    () => tabs.map((item) => ({ key: item.key, label: item.label, icon: TAB_ICONS[item.key] })),
+    [tabs],
+  );
 
   useEffect(() => {
     if (isSettingsTabKey(normalizedRequestedTab) && available.has(normalizedRequestedTab)) {
       setTab(normalizedRequestedTab);
+      setOpen(true);
     }
   }, [available, normalizedRequestedTab]);
 
@@ -102,91 +110,55 @@ export function SettingsManager({ tabs, features, currentUserId, isOwner }: Sett
   const activeTabMeta = tabsByKey.get(activeTab);
 
   return (
-    <div className="flex min-w-0 flex-col gap-5 lg:flex-row lg:items-start lg:gap-6">
-      <aside className="w-full shrink-0 lg:sticky lg:top-5 lg:w-[280px]" aria-label="منوی تنظیمات">
-        <div className="overflow-hidden rounded-2xl border border-stone-200/80 bg-card shadow-[0_1px_2px_rgb(41_37_36/0.035)]">
-          <div className="border-b border-stone-200/80 px-5 py-4">
-            <h2 className="text-base font-bold text-stone-950">بخش‌های تنظیمات</h2>
-            <p className="mt-1 text-xs leading-5 text-muted-foreground">یک بخش را برای ویرایش انتخاب کنید.</p>
-          </div>
-          <nav className="max-h-[calc(100vh-190px)] overflow-y-auto p-2" aria-label="بخش‌های تنظیمات">
-            {SETTINGS_GROUPS.map((group) => {
-              const groupTabs = group.keys.map((key) => tabsByKey.get(key)).filter(Boolean) as ResolvedSettingsTab[];
-              if (groupTabs.length === 0) return null;
-              return (
-                <div key={group.label} className="mb-3 last:mb-0">
-                  <p className="px-3 pb-1 pt-2 text-[11px] font-semibold tracking-wide text-stone-400">{group.label}</p>
-                  <div className="space-y-0.5">
-                    {groupTabs.map((item) => {
-                      const Icon = TAB_ICONS[item.key];
-                      const isActive = activeTab === item.key;
-                      return (
-                        <button
-                          key={item.key}
-                          type="button"
-                          aria-current={isActive ? "page" : undefined}
-                          onClick={() => setTab(item.key)}
-                          className={`flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-right text-sm transition-colors focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-amber-400/40 ${
-                            isActive
-                              ? "bg-[#FFF1D8] font-semibold text-[#A96800]"
-                              : "text-stone-600 hover:bg-stone-50 hover:text-stone-950"
-                          }`}
-                        >
-                          <Icon className={`size-[18px] shrink-0 ${isActive ? "text-[#C27A00]" : "text-stone-400"}`} aria-hidden="true" />
-                          <span className="min-w-0 flex-1 truncate">{item.label}</span>
-                          {isActive ? <span className="size-1.5 shrink-0 rounded-full bg-[#C27A00]" aria-hidden="true" /> : null}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })}
-          </nav>
-        </div>
-      </aside>
-
-      <div className="min-w-0 flex-1 space-y-4 sm:space-y-5">
-        {activeTabMeta ? (
-          <div className="rounded-2xl border border-stone-200/80 bg-card px-5 py-4 shadow-[0_1px_2px_rgb(41_37_36/0.025)]">
-            <div className="flex items-start gap-3">
-              {(() => {
-                const Icon = TAB_ICONS[activeTabMeta.key];
-                return <Icon className="mt-0.5 size-5 shrink-0 text-[#B97905]" aria-hidden="true" />;
-              })()}
-              <div>
-                <h2 className="font-bold text-stone-950">{activeTabMeta.label}</h2>
-                <p className="mt-1 text-sm leading-6 text-muted-foreground">{activeTabMeta.description}</p>
-              </div>
+    <SectionNav
+      idPrefix="settings"
+      label="بخش‌های تنظیمات"
+      description="یک بخش را برای ویرایش انتخاب کنید."
+      variant="rail"
+      sections={sections}
+      groups={SETTINGS_GROUPS}
+      active={activeTab}
+      onChange={setTab}
+      open={open}
+      onOpenChange={setOpen}
+    >
+      {activeTabMeta ? (
+        <div className="rounded-2xl border border-stone-200/80 bg-card px-5 py-4 shadow-[0_1px_2px_rgb(41_37_36/0.025)]">
+          <div className="flex items-start gap-3">
+            {(() => {
+              const Icon = TAB_ICONS[activeTabMeta.key];
+              return <Icon className="mt-0.5 size-5 shrink-0 text-[#B97905]" aria-hidden="true" />;
+            })()}
+            <div>
+              <h2 className="font-bold text-stone-950">{activeTabMeta.label}</h2>
+              <p className="mt-1 text-sm leading-6 text-muted-foreground">{activeTabMeta.description}</p>
             </div>
           </div>
-        ) : null}
+        </div>
+      ) : null}
 
-        <TabPanel idPrefix="settings" active={activeTab}>
-        {activeTab === "business" ? <BusinessSettings /> : null}
-        {activeTab === "tax" ? <TaxSettings /> : null}
-        {activeTab === "pricing" ? <PricingSettings /> : null}
-        {activeTab === "online-platforms" ? <OnlinePlatformsSettings /> : null}
-        {activeTab === "payment-methods" ? <PaymentMethodsSettings /> : null}
-        {activeTab === "accounts" ? <AccountsSettings /> : null}
-        {activeTab === "team" ? <TeamManager currentUserId={currentUserId} /> : null}
-        {activeTab === "menu" ? <MenuSettings /> : null}
-        {activeTab === "printers" ? <PrinterSettings /> : null}
-        {activeTab === "branch-management" ? <BranchManagementSettings features={features} /> : null}
-        {activeTab === "server-sync" ? <ServerSyncSettings /> : null}
-        {activeTab === "devices" ? <DeviceSettings /> : null}
-        {activeTab === "notifications" ? <NotificationSettings /> : null}
-        {activeTab === "shifts" ? (
-          <div className="space-y-6">
-            <BusinessDaySettings />
-            <ShiftHistorySettings />
-          </div>
-        ) : null}
-        {activeTab === "audit-log" ? <AuditLogSettings /> : null}
-        {activeTab === "security-center" ? <SecurityCenterSettings /> : null}
-        {activeTab === "backup" ? <BackupManager isOwner={isOwner} /> : null}
-        </TabPanel>
-      </div>
-    </div>
+      {activeTab === "business" ? <BusinessSettings /> : null}
+      {activeTab === "tax" ? <TaxSettings /> : null}
+      {activeTab === "pricing" ? <PricingSettings /> : null}
+      {activeTab === "online-platforms" ? <OnlinePlatformsSettings /> : null}
+      {activeTab === "payment-methods" ? <PaymentMethodsSettings /> : null}
+      {activeTab === "accounts" ? <AccountsSettings /> : null}
+      {activeTab === "team" ? <TeamManager currentUserId={currentUserId} /> : null}
+      {activeTab === "menu" ? <MenuSettings /> : null}
+      {activeTab === "printers" ? <PrinterSettings /> : null}
+      {activeTab === "branch-management" ? <BranchManagementSettings features={features} /> : null}
+      {activeTab === "server-sync" ? <ServerSyncSettings /> : null}
+      {activeTab === "devices" ? <DeviceSettings /> : null}
+      {activeTab === "notifications" ? <NotificationSettings /> : null}
+      {activeTab === "shifts" ? (
+        <div className="space-y-6">
+          <BusinessDaySettings />
+          <ShiftHistorySettings />
+        </div>
+      ) : null}
+      {activeTab === "audit-log" ? <AuditLogSettings /> : null}
+      {activeTab === "security-center" ? <SecurityCenterSettings /> : null}
+      {activeTab === "backup" ? <BackupManager isOwner={isOwner} /> : null}
+    </SectionNav>
   );
 }

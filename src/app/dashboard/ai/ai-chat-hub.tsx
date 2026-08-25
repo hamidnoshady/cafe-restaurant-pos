@@ -27,7 +27,8 @@ import { AiAutopilotSettings } from "./ai-autopilot-settings";
 import { AiAutopilotActivity } from "./ai-autopilot-activity";
 import { AiRecentConversations } from "./ai-recent-conversations";
 import { AiTodayTasks } from "./ai-today-tasks";
-import { TabBar, TabPanel, cardClass, type Tab } from "../page-chrome";
+import { cardClass, type Tab } from "../page-chrome";
+import { SectionNav } from "../section-nav";
 
 type HubTab = "chat" | "coworker" | "settings";
 
@@ -111,12 +112,10 @@ export function AiChatHub({ canAutoApply }: { canAutoApply: boolean }) {
 
   return (
     <div className="min-w-0 space-y-4 sm:space-y-5">
-      <TabBar idPrefix="ai" label="بخش‌های هوش مصنوعی" tabs={HUB_TABS} active={tab} onChange={selectTab} />
-
-      <TabPanel idPrefix="ai" active={tab}>
+      <SectionNav idPrefix="ai" label="بخش‌های هوش مصنوعی" sections={HUB_TABS} active={tab} onChange={selectTab}>
       {tab === "chat" ? (
         <div className="grid gap-4 lg:grid-cols-[1fr_300px]">
-          <section className={cn("flex h-[min(78vh,720px)] flex-col overflow-hidden", cardClass)}>
+          <section className={cn("flex h-[min(70dvh,720px)] flex-col overflow-hidden md:h-[min(78vh,720px)]", cardClass)}>
             <div ref={scrollRef} className="min-w-0 flex-1 space-y-3 overflow-y-auto p-4">
               {loadingConversation ? (
                 <p className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -260,7 +259,7 @@ export function AiChatHub({ canAutoApply }: { canAutoApply: boolean }) {
           <AiActionAudit />
         </div>
       )}
-      </TabPanel>
+      </SectionNav>
     </div>
   );
 }

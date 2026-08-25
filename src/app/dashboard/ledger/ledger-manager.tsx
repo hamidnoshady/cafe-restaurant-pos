@@ -9,6 +9,7 @@ import {
   ScrollTextIcon,
   UsersIcon,
 } from "lucide-react";
+import { SectionNav } from "../section-nav";
 import { api, ErrorBox } from "../ui";
 import { TrialBalanceSection } from "./trial-balance-section";
 import { EntriesSection } from "./entries-section";
@@ -96,17 +97,17 @@ export function LedgerManager({ role }: { role: string }) {
     <div className="min-w-0 space-y-4 sm:space-y-5">
       <ErrorBox>{error}</ErrorBox>
 
-      <div
-        dir="ltr"
-        className="grid min-w-0 gap-4 md:grid-cols-[minmax(0,1fr)_13.5rem] xl:grid-cols-[minmax(0,1fr)_17.5rem] xl:gap-5"
+      <SectionNav
+        idPrefix="ledger"
+        label="بخش‌های حسابداری"
+        title="فضای کار حسابداری"
+        description="ثبت، بررسی و گزارش‌های مالی"
+        variant="rail"
+        sections={tabs}
+        active={tab}
+        onChange={setTab}
       >
-        <div
-          id="ledger-tabpanel"
-          dir="rtl"
-          role="region"
-          aria-labelledby={`ledger-tab-${tab}`}
-          className={`${styles.content} min-w-0`}
-        >
+        <div className={`${styles.content} min-w-0`}>
           {tab === "trial-balance" ? <TrialBalanceSection refreshKey={refreshKey} /> : null}
           {tab === "entries" ? <EntriesSection refreshKey={refreshKey} busy={busy} run={run} /> : null}
           {tab === "manual" ? <ManualEntrySection accounts={accounts} busy={busy} run={run} refreshKey={refreshKey} /> : null}
@@ -121,43 +122,7 @@ export function LedgerManager({ role }: { role: string }) {
           {tab === "vat" ? <VatReportSection refreshKey={refreshKey} /> : null}
           {tab === "fixed-assets" ? <FixedAssetsSection busy={busy} refreshKey={refreshKey} /> : null}
         </div>
-
-        <nav
-          dir="rtl"
-          aria-label="بخش‌های حسابداری"
-          className="order-first rounded-2xl border border-[#EAE8E2] bg-white p-2 shadow-[0_1px_2px_rgb(41_37_36/0.03)] md:order-none md:sticky md:top-4"
-        >
-          <div className="border-b border-[#F0EEE9] px-3 pb-3 pt-2">
-            <p className="text-sm font-bold text-[#252522]">فضای کار حسابداری</p>
-            <p className="mt-1 text-xs leading-5 text-[#77756F]">ثبت، بررسی و گزارش‌های مالی</p>
-          </div>
-          <div className="grid grid-cols-2 gap-2 pt-2 sm:grid-cols-3 md:grid-cols-1">
-            {tabs.map((t) => {
-              const isActive = tab === t.key;
-              const Icon = t.icon;
-              return (
-                <button
-                  key={t.key}
-                  id={`ledger-tab-${t.key}`}
-                  type="button"
-                  aria-controls="ledger-tabpanel"
-                  aria-current={isActive ? "page" : undefined}
-                  aria-pressed={isActive}
-                  onClick={() => setTab(t.key)}
-                  className={`flex min-h-[52px] items-center gap-2.5 rounded-xl border px-3 py-2 text-right text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-[#E9A11B]/40 ${
-                    isActive
-                      ? "border-[#F0D7A8] bg-[#FFF1D8] text-[#9B6700] shadow-[0_1px_2px_rgb(120_83_22/0.08)]"
-                      : "border-transparent bg-transparent text-[#5E5B55] hover:border-[#EAE8E2] hover:bg-[#FCFBF8] hover:text-[#252522]"
-                  }`}
-                >
-                  <Icon aria-hidden="true" className="size-4.5 shrink-0" />
-                  <span className="min-w-0 leading-5">{t.label}</span>
-                </button>
-              );
-            })}
-          </div>
-        </nav>
-      </div>
+      </SectionNav>
     </div>
   );
 }

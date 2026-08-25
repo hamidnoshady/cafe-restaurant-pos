@@ -21,7 +21,6 @@ import {
   ShoppingCartIcon,
   SparklesIcon,
   TruckIcon,
-  UserRoundIcon,
   UsersIcon,
   WatchIcon,
   type LucideIcon,
@@ -209,9 +208,9 @@ function SidebarBrand({ title, subtitle }: { title: string; subtitle: string }) 
  * Chooses which pages the mobile bottom bar shows.
  *
  * Lives in the drawer footer next to the other per-device switches (theme, the
- * biometric opt-in) because that drawer *is* what the bar's «پروفایل» button
- * opens — the setting sits one tap from the thing it changes. Mobile-only, since
- * the bar itself is.
+ * biometric opt-in) — the same drawer the header's hamburger opens, so the
+ * setting sits one tap from the thing it changes. Mobile-only, since the bar
+ * itself is.
  */
 function BottomNavSettings({
   navItems,
@@ -248,8 +247,8 @@ function BottomNavSettings({
         <DialogHeader>
           <DialogTitle>نوار پایین صفحه</DialogTitle>
           <DialogDescription>
-            تا {toPersianDigits(BOTTOM_NAV_MAX)} صفحه انتخاب کنید. دکمهٔ «پروفایل» همیشه در نوار
-            می‌ماند. انتخاب‌شده: {toPersianDigits(draft.length)} از {toPersianDigits(BOTTOM_NAV_MAX)}
+            تا {toPersianDigits(BOTTOM_NAV_MAX)} صفحه انتخاب کنید. انتخاب‌شده:{" "}
+            {toPersianDigits(draft.length)} از {toPersianDigits(BOTTOM_NAV_MAX)}
           </DialogDescription>
         </DialogHeader>
         <ul className="space-y-1">
@@ -359,15 +358,24 @@ function MobileDashboardHeader({ navItems, pathname }: Pick<SidebarProps, "navIt
   );
 }
 
+/**
+ * The phone's bottom bar: the pages the member picked, and nothing else.
+ *
+ * It used to end in a «پروفایل» button that opened the drawer. The drawer is
+ * already one tap away from the hamburger in the header on every screen, so
+ * that slot was a second door to the same room — and it cost the bar a fifth of
+ * its width for a control nobody was looking for down there.
+ */
 function MobileBottomNavigation({
   navItems,
   pathname,
   hrefs,
 }: Pick<SidebarProps, "navItems"> & { pathname: string; hrefs: string[] }) {
-  const { setOpenMobile } = useSidebar();
   const primaryItems = hrefs
     .map((href) => navItems.find((item) => item.href === href))
     .filter((item): item is NavItem & { href: string } => Boolean(item?.href));
+
+  if (primaryItems.length === 0) return null;
 
   return (
     <nav className="fixed inset-x-0 bottom-0 z-40 flex border-t border-[#EAE8E2] bg-white/95 px-1 pb-[env(safe-area-inset-bottom)] pt-1 shadow-[0_-1px_8px_rgba(37,37,34,0.04)] backdrop-blur md:hidden" aria-label="ناوبری اصلی">
@@ -386,15 +394,6 @@ function MobileBottomNavigation({
           </Link>
         );
       })}
-      <button
-        type="button"
-        onClick={() => setOpenMobile(true)}
-        className="flex min-h-14 min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[10px] font-medium text-[#77756F] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 active:scale-[0.98]"
-        aria-label="باز کردن پروفایل و منو"
-      >
-        <UserRoundIcon className="size-5 shrink-0" aria-hidden="true" />
-        <span className="max-w-full truncate">پروفایل</span>
-      </button>
     </nav>
   );
 }

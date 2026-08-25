@@ -29,6 +29,7 @@ moving between two screens of the same product looked like moving between two pr
 | `<SectionCard title description actions footer flush>` | `<section className="rounded-2xl …">` |
 | `cardClass` | restating the card's border/shadow on a bespoke layout |
 | `<TabBar>` + `<TabPanel>` | a row of `<button>`s styling their own active state |
+| `<SectionNav>` | a page's own in-page menu wired to its own panel |
 | `<EmptyState>` | `<p className="rounded-xl border border-dashed …">` |
 | `<StatusBadge tone>` | a `rounded-full` span with hand-picked tone classes |
 
@@ -45,6 +46,16 @@ Notes that are easy to get wrong:
 - **`TabBar`'s pills are `aria-pressed`, not `role="tab"`**, because the panel below is a plain
   region rather than a tabpanel widget. `TabPanel` is separate so a manager can put an error
   box between the strip and the panel.
+- **A page whose menu *is* a menu uses `<SectionNav>`** (`src/app/dashboard/section-nav.tsx`),
+  which wraps `TabBar`/`TabPanel` and adds the phone's behaviour: below the breakpoint the menu
+  is the whole page, and picking an entry replaces it with that section under a «بازگشت» arrow —
+  the same one-level-at-a-time shape the sidebar already gives a phone. Two variants:
+  `strip` (the default: pills above the panel from `md` up) and `rail` (a sticky menu card
+  beside the panel from `lg` up, for a menu too long to read as pills — تنظیمات, حسابداری).
+  Reach for `TabBar` on its own only where there is no menu to drill into.
+  - Rendering both halves and switching them with `hidden`/`md:block` is deliberate: the
+    drill-down state means nothing above the breakpoint, so there is no `matchMedia` read and
+    therefore no desktop layout flashing on a phone before hydration.
 
 ## Controls, text and forms
 

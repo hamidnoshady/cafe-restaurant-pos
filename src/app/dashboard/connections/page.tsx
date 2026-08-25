@@ -49,6 +49,9 @@ export default async function ConnectionsPage({
       <ConnectionsManager
         kinds={kinds}
         initialTab={active}
+        // A «?tab=» link named a section, so a phone opens that section rather
+        // than the list it sits in — the link is the whole point of the param.
+        initialOpen={Boolean(tab)}
         features={{
           integrations: Boolean(features.integrations),
           api_platform: Boolean(features.api_platform),

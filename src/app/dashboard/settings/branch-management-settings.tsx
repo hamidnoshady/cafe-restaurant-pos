@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { BranchesManager } from "../branches/branches-manager";
 import { LocationsManager } from "../locations/locations-manager";
-import { TabBar, TabPanel } from "../page-chrome";
+import { SectionNav } from "../section-nav";
 
 type BranchManagementTabKey = "branches" | "sync";
 type BranchFeatureKey = "multi_location" | "offline_mode";
@@ -63,18 +63,16 @@ export function BranchManagementSettings({ features }: BranchManagementSettingsP
         </p>
       </header>
 
-      <TabBar
+      <SectionNav
         idPrefix="branch-management"
         label="بخش‌های مدیریت شعب"
-        tabs={availableTabs}
+        sections={availableTabs}
         active={activeTab}
         onChange={setTab}
-      />
-
-      <TabPanel idPrefix="branch-management" active={activeTab}>
+      >
         {activeTab === "branches" ? <BranchesManager /> : null}
         {activeTab === "sync" ? <LocationsManager /> : null}
-      </TabPanel>
+      </SectionNav>
     </section>
   );
 }
