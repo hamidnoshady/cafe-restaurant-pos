@@ -116,16 +116,11 @@ export async function pushForConnection(businessId: string, connectionId: string
 /** Write one document through the configured mode; returns the Holoo doc number. */
 async function writeDocument(settings: HolooSettingsRow, kind: HolooOutboxKind, document: HolooDocument & { sourceId: string }): Promise<string> {
   if (settings.write_mode === "web_service") {
-    // The official API validates and returns the document number. The exact
-    // endpoint call is the real-install-verified half (Wave 1's probe covers
-    // the API surface); the guardrails above are mode-independent.
-    await writeIntegrationAudit({
-      businessId: settings.businessId,
-      connectionId: settings.connectionId,
-      action: "holoo.push_web_service",
-      remoteId: document.sourceId,
-    });
-    return `ws-${document.sourceId}`;
+    // Do not acknowledge an outbox event until the official Holoo API has
+    // actually accepted it. The API contract is installation-specific and is
+    // not implemented yet; failing here keeps the event retryable instead of
+    // creating a false mapping with a synthetic document number.
+    throw new Error("holoo_web_service_not_implemented");
   }
 
   if (settings.write_mode === "direct_sql") {
@@ -151,19 +146,11 @@ async function writeDirectSql(settings: HolooSettingsRow, kind: HolooOutboxKind,
   }
 
   const { statements } = buildDirectSqlPreview([document], (k) => TABLE_FOR[k]);
-  // Dry-run is rendered and audited before execution; the actual MSSQL
-  // execution (one transaction per document) and per-statement audit happen
-  // against the real driver, verified on a recoverable copy.
-  for (const statement of statements) {
-    await writeIntegrationAudit({
-      businessId: settings.businessId,
-      connectionId: settings.connectionId,
-      action: "holoo.write",
-      remoteId: document.sourceId,
-      payload: { statement, kind },
-    });
-  }
-  return `doc-${document.sourceId}`;
+  // Rendering a preview is not a write. Until the MSSQL transaction executor
+  // is implemented and verified against a recoverable Holoo copy, refuse the
+  // operation rather than returning a fabricated document number.
+  void statements;
+  throw new Error("holoo_direct_sql_executor_not_implemented");
 }
 
 /** Arm direct-SQL writes with the typed confirmation phrase. */

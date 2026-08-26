@@ -221,7 +221,22 @@ export async function updateHolooSettings(
       RETURNING ${SETTINGS_COLUMNS}`,
     params,
   );
-  await writeIntegrationAudit({ businessId, connectionId, action: "connection.holoo_updated", payload: input });
+  // Never persist the input object: it may contain plaintext credentials.
+  // Audit only non-secret configuration fields.
+  await writeIntegrationAudit({
+    businessId,
+    connectionId,
+    action: "connection.holoo_updated",
+    payload: {
+      host: input.host,
+      port: input.port,
+      database: input.database,
+      webServiceBaseUrl: input.webServiceBaseUrl,
+      currencyUnit: input.currencyUnit,
+      writeMode: input.writeMode,
+      locationId: input.locationId,
+    },
+  });
   return { ok: true, settings: mapSettings(rows[0]) };
 }
 
