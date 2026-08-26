@@ -113,7 +113,7 @@ export function SearchableSelect({
           disabled={disabled}
           dir={dir}
           className={cn(
-            "flex h-10 w-full min-w-0 items-center justify-between gap-1.5 rounded-lg border border-input bg-transparent px-3 py-1 text-sm transition-colors outline-none disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 data-[state=open]:border-ring dark:bg-input/30",
+            "flex h-10 w-full min-w-0 items-center justify-between gap-1.5 rounded-lg border border-input bg-transparent px-3 py-1 text-sm transition-colors outline-none disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 focus-visible:border-ring focus-visible:ring focus-visible:ring-ring/50 data-[state=open]:border-ring dark:bg-input/30",
             !selected && "text-muted-foreground",
             className,
           )}

@@ -12,3 +12,7 @@
 ## 2026-08-24 - [Focus Ring Classes]
  **Learning:** Avoid `ring-3` as it is not a standard Tailwind CSS class and may result in a missing focus ring.
  **Action:** Use `focus-visible:ring focus-visible:ring-ring/50 outline-none` when adding or fixing focus states.
+
+## 2024-05-24 - Missing Focus Rings due to Non-Standard Tailwind Class
+**Learning:** Using `ring-3` for focus states (`focus-visible:ring-3`) causes the focus ring to be entirely missing because it is not a standard Tailwind CSS class. Standard classes are `ring`, `ring-0`, `ring-1`, `ring-2`, `ring-4`, etc.
+**Action:** Always use standard Tailwind classes like `focus-visible:ring` or `focus-visible:ring-2` (along with `focus-visible:ring-ring/50 outline-none`) when building custom interactive components or fixing focus accessibility to ensure the ring renders correctly.

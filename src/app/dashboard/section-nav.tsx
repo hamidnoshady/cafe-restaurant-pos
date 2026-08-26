@@ -173,7 +173,7 @@ export function SectionNav<K extends string>({
                     aria-current={isActive ? "page" : undefined}
                     onClick={() => openSection(item.key)}
                     className={cn(
-                      "flex min-h-12 w-full items-center gap-3 rounded-xl px-3 text-right text-sm transition-colors focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-amber-400/40",
+                      "flex min-h-12 w-full items-center gap-3 rounded-xl px-3 text-right text-sm transition-colors focus-visible:outline-none focus-visible:ring focus-visible:ring-amber-400/40",
                       isActive
                         ? "bg-amber-100 font-semibold text-amber-950"
                         : "text-stone-600 hover:bg-stone-50 hover:text-stone-950",
@@ -236,7 +236,7 @@ export function SectionNav<K extends string>({
           type="button"
           onClick={back}
           className={cn(
-            "flex min-h-11 w-full items-center gap-2 rounded-xl border border-stone-200/80 bg-card px-3 text-sm font-semibold text-stone-700 shadow-[0_1px_2px_rgb(41_37_36/0.035)] transition-colors hover:bg-stone-50 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-amber-400/40",
+            "flex min-h-11 w-full items-center gap-2 rounded-xl border border-stone-200/80 bg-card px-3 text-sm font-semibold text-stone-700 shadow-[0_1px_2px_rgb(41_37_36/0.035)] transition-colors hover:bg-stone-50 focus-visible:outline-none focus-visible:ring focus-visible:ring-amber-400/40",
             bp.only,
           )}
         >
