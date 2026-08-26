@@ -118,6 +118,11 @@ PRINT_AGENT_CHROMIUM_PATH=/path/to/chromium npm run print-agent
 Set `NEXT_PUBLIC_PRINT_AGENT_URL` only if you change the agent's port from the
 `http://127.0.0.1:9123` default. See the print-agent notes in `.env.example`.
 
+A printer with an Ethernet port but no WiFi (plugged into a WiFi extender's LAN
+port, e.g. a TP-Link RE200) is a supported and common shape — the extender's
+mode, the printer's fixed IP and how to test the path are in
+[docs/network-printer-wifi-extender.md](network-printer-wifi-extender.md).
+
 ## Backups
 
 Scheduled backups (Phase 10) write to `/app/backups` inside the app container,
