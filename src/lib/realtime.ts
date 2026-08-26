@@ -41,6 +41,50 @@ export function registerConnection(ws: WebSocket, session: SessionPayload): void
   connections.add(conn);
   ws.on("close", () => connections.delete(conn));
   ws.on("error", () => connections.delete(conn));
+
+  // Phase 24: Periodic re-authorization for long-lived sockets
+  const REAUTH_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
+  const interval = setInterval(async () => {
+    // Dynamic import to avoid circular dependencies
+    const { resolveSessionFromToken } = await import("./auth");
+    
+    // We can't access the raw token anymore, but we can just use the DB to check if the session is still active
+    // Alternatively, we can check the db directly. Wait, resolveSessionFromToken requires the token.
+    // Let's just check the DB to ensure they still have the role/permission, or if their employee session is revoked.
+    try {
+      const { query } = await import("./db");
+      
+      if (session.employeeSessionId) {
+        const { rows } = await query<{ revoked_at: Date | null }>(
+          `SELECT revoked_at FROM employee_sessions WHERE id = $1`,
+          [session.employeeSessionId]
+        );
+        if (rows.length === 0 || rows[0].revoked_at !== null) {
+          ws.close(1008, "Session Revoked");
+          return;
+        }
+      }
+
+      if (session.platformUserId && session.tokenVersion) {
+        const { rows } = await query<{ token_version: number }>(
+          `SELECT token_version FROM platform_users WHERE id = $1`,
+          [session.platformUserId]
+        );
+        if (rows.length === 0 || rows[0].token_version !== session.tokenVersion) {
+          ws.close(1008, "Session Revoked");
+          return;
+        }
+      }
+
+    } catch (e) {
+      console.error("Re-auth failed:", e);
+      ws.close(1011, "Internal Error");
+    }
+  }, REAUTH_INTERVAL_MS);
+  
+  interval.unref();
+
+  ws.on("close", () => clearInterval(interval));
 }
 
 /** Sends `event` to every connected client scoped to `locationId` (or all-location owners/managers). */

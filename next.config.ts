@@ -1,6 +1,35 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  async headers() {
+    const commonHeaders = [
+      { key: "X-Content-Type-Options", value: "nosniff" },
+      { key: "X-Frame-Options", value: "DENY" },
+      { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+      { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
+      { key: "X-DNS-Prefetch-Control", value: "off" },
+      { key: "Permissions-Policy", value: "publickey-credentials-get=(self)" },
+    ];
+    return [
+      {
+        source: "/(.*)",
+        headers: commonHeaders,
+      },
+      {
+        source: "/(.*)",
+        has: [
+          {
+            type: "header",
+            key: "x-forwarded-proto",
+            value: "https",
+          },
+        ],
+        headers: [
+          { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" },
+        ],
+      },
+    ];
+  },
   /**
    * Phase 34 — the OAuth discovery documents live at `/.well-known/…`, which is
    * where RFC 8414 and RFC 9728 say to look and where every MCP client goes

@@ -120,6 +120,7 @@ services:
       traefik.http.routers.pos-admin.entrypoints: ${TRAEFIK_ENTRYPOINT:-websecure}
       traefik.http.routers.pos-admin.tls: "true"
       traefik.http.routers.pos-admin.tls.certresolver: ${TRAEFIK_CERTRESOLVER:?set TRAEFIK_CERTRESOLVER}
+      traefik.http.routers.pos-admin.middlewares: "pos-admin-ipallowlist"
 
       traefik.http.routers.pos-apex.rule: Host(`${ROOT_DOMAIN:?set ROOT_DOMAIN}`)
       traefik.http.routers.pos-apex.priority: "20"
@@ -132,6 +133,19 @@ services:
       # and the wildcard router changes nothing about that (see
       # docs/deployment-local-network.md).
       traefik.http.services.pos.loadbalancer.server.port: "3000"
+
+      # Phase 24 Wave 1 & Wave 4: Static security headers and IP allowlist for the super-admin console.
+      traefik.http.middlewares.pos-headers.headers.customresponseheaders.X-Content-Type-Options: "nosniff"
+      traefik.http.middlewares.pos-headers.headers.customresponseheaders.X-Frame-Options: "DENY"
+      traefik.http.middlewares.pos-headers.headers.customresponseheaders.Referrer-Policy: "strict-origin-when-cross-origin"
+      traefik.http.middlewares.pos-headers.headers.customresponseheaders.Cross-Origin-Opener-Policy: "same-origin"
+      traefik.http.middlewares.pos-headers.headers.customresponseheaders.X-DNS-Prefetch-Control: "off"
+      traefik.http.middlewares.pos-headers.headers.customresponseheaders.Permissions-Policy: "publickey-credentials-get=(self)"
+      traefik.http.middlewares.pos-headers.headers.customresponseheaders.Strict-Transport-Security: "max-age=31536000; includeSubDomains"
+      traefik.http.middlewares.pos-admin-ipallowlist.ipallowlist.sourcerange: ${ADMIN_ALLOWLIST_IPS:-127.0.0.1/32,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
+
+      traefik.http.routers.pos.middlewares: "pos-headers"
+      traefik.http.routers.pos-apex.middlewares: "pos-headers"
 
 volumes:
   pos-pgdata:

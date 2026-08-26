@@ -62,6 +62,10 @@ export interface BackupConfig {
    * wizard sets it from a real OS folder dialog.
    */
   directory: string;
+  /** encryption passphrase for `.dump.enc` artifacts — never sent to the cloud */
+  passphrase?: string;
+  /** whether local and USB artifacts are encrypted (default true) */
+  encryptLocal?: boolean;
   cloud: BackupCloudConfig;
 }
 
@@ -71,6 +75,8 @@ export const DEFAULT_BACKUP_CONFIG: BackupConfig = {
   anchorTime: "03:30",
   localRetention: 14,
   directory: "",
+  passphrase: "",
+  encryptLocal: true,
   cloud: {
     enabled: false,
     endpoint: "",
@@ -115,6 +121,8 @@ export function validateBackupConfig(body: unknown): BackupConfigValidation {
     return { ok: false, error: "invalid_directory" };
   }
   const directory = typeof b.directory === "string" ? b.directory.trim() : "";
+  const passphrase = typeof b.passphrase === "string" ? b.passphrase : "";
+  const encryptLocal = typeof b.encryptLocal === "boolean" ? b.encryptLocal : true;
 
   const rawCloud = (b.cloud ?? {}) as Record<string, unknown>;
   if (typeof rawCloud !== "object" || rawCloud === null) return { ok: false, error: "invalid_cloud" };
@@ -143,15 +151,24 @@ export function validateBackupConfig(body: unknown): BackupConfigValidation {
     if (!cloud.accessKeyId || !cloud.secretAccessKey) {
       return { ok: false, error: "missing_cloud_credentials" };
     }
-    if (cloud.passphrase.length < MIN_PASSPHRASE_LENGTH) {
-      return { ok: false, error: "weak_passphrase" };
-    }
+  }
+
+  // The passphrase floor applies whichever one is populated
+  const resolvedPassphrase = passphrase || cloud.passphrase;
+  if ((encryptLocal || cloudEnabled) && resolvedPassphrase && resolvedPassphrase.length < MIN_PASSPHRASE_LENGTH) {
+    return { ok: false, error: "weak_passphrase" };
   }
 
   return {
     ok: true,
-    config: { enabled, intervalHours, anchorTime, localRetention, directory, cloud },
+    config: { enabled, intervalHours, anchorTime, localRetention, directory, passphrase, encryptLocal, cloud },
   };
+}
+
+export function backupPassphrase(config: BackupConfig): string {
+  if (config.passphrase) return config.passphrase;
+  if (config.cloud.passphrase) return config.cloud.passphrase;
+  return process.env.BACKUP_PASSPHRASE || "";
 }
 
 // ---------------------------------------------------------------------------
@@ -210,7 +227,8 @@ export function parseArtifactTimestamp(name: string): string | null {
 
 /** Object key an artifact is uploaded under (encrypted, hence `.enc`). */
 export function cloudKeyFor(prefix: string, artifactName: string): string {
-  return `${prefix}${artifactName}.enc`;
+  const name = artifactName.endsWith(".enc") ? artifactName : `${artifactName}.enc`;
+  return `${prefix}${name}`;
 }
 
 /**

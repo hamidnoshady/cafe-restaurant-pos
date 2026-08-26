@@ -14,7 +14,7 @@
  * That mutual unusability is one of the phase's exit criteria.
  */
 import { SignJWT, jwtVerify } from "jose";
-import { getJwtSecret } from "./jwt-secret";
+import { getRealmSecret, verifyWithRealmSecret } from "./jwt-secret";
 
 /** Distinct from the tenant `pos_session` cookie — the realms never share one. */
 export const PLATFORM_SESSION_COOKIE = "pos_platform_session";
@@ -32,12 +32,7 @@ export interface PlatformSessionPayload {
   role: PlatformAdminRole;
   fullName: string;
   email: string;
-}
-
-function getSecret(): Uint8Array {
-  // Reuse JWT_SECRET: one deployment, one signing key. The realms are kept
-  // apart by cookie name and claim shape, not by a second secret to manage.
-  return getJwtSecret("platform sessions");
+  tokenVersion?: number;
 }
 
 /**
@@ -51,22 +46,21 @@ export function platformSessionHours(): number {
 }
 
 export async function signPlatformSession(payload: PlatformSessionPayload): Promise<string> {
+  const secret = await getRealmSecret("platform");
   return new SignJWT({ ...payload, realm: "platform" })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime(`${platformSessionHours()}h`)
-    .sign(getSecret());
+    .sign(secret);
 }
 
 export async function verifyPlatformSession(
   token: string,
 ): Promise<PlatformSessionPayload | null> {
   try {
-    const { payload } = await jwtVerify(token, getSecret(), { algorithms: ["HS256"] });
-    // A tenant token verifies against the same secret, so the realm claim is
-    // what actually keeps the two apart. Reject anything not minted here.
-    if ((payload as { realm?: string }).realm !== "platform") return null;
-    if (typeof (payload as { padmin?: unknown }).padmin !== "string") return null;
+    const payload = await verifyWithRealmSecret<{ realm?: string; padmin?: string }>(token, "platform");
+    if (!payload || payload.realm !== "platform") return null;
+    if (typeof payload.padmin !== "string") return null;
     return payload as unknown as PlatformSessionPayload;
   } catch {
     return null;

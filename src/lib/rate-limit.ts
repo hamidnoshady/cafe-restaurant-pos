@@ -11,19 +11,51 @@ export interface RateLimitEntry {
   windowStart: number;
 }
 
+export function clientIpFrom(headers: Headers, trustedHops: number): string {
+  const forwarded = headers.get("x-forwarded-for");
+  if (forwarded) {
+    const parts = forwarded.split(",").map((s) => s.trim());
+    const index = Math.max(0, parts.length - 1 - trustedHops);
+    return parts[index];
+  }
+  
+  const realIp = headers.get("x-real-ip");
+  if (realIp) return realIp;
+
+  return "unknown";
+}
+
 export interface RateLimitResult {
   allowed: boolean;
   /** Milliseconds until the caller may retry; 0 when allowed. */
   retryAfterMs: number;
 }
 
-export function checkRateLimit(
-  store: Map<string, RateLimitEntry>,
+export async function checkRateLimit(
+  _store: Map<string, RateLimitEntry> | null,
   key: string,
   limit: number,
   windowMs: number,
   now: number,
-): RateLimitResult {
+  requestUrl?: string,
+): Promise<RateLimitResult> {
+  // Use Postgres-backed rate limiting via the internal API route
+  try {
+    const origin = requestUrl ? new URL(requestUrl).origin : "http://localhost:3000";
+    const res = await fetch(`${origin}/api/internal/rate-limit`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key, limit, windowMs, now }),
+    });
+    if (res.ok) {
+      return (await res.json()) as RateLimitResult;
+    }
+  } catch (err) {
+    console.error("Postgres rate limit check failed, falling back to memory:", err);
+  }
+
+  // Memory fallback if fetch fails
+  const store = _store || new Map();
   const entry = store.get(key);
   if (!entry || now - entry.windowStart >= windowMs) {
     store.set(key, { count: 1, windowStart: now });

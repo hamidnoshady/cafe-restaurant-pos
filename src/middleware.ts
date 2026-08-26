@@ -1,4 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import {
+  cspMode,
+  generateNonce,
+  contentSecurityPolicy,
+  staticSecurityHeaders,
+} from "@/lib/security-headers";
+
 // Imported from auth-edge, not auth: middleware runs in the Edge runtime,
 // where the tenant context (node:async_hooks) and the pg pool that @/lib/auth
 // now pulls in cannot load.
@@ -11,6 +18,7 @@ import {
   checkRateLimit,
   hashKey,
   sweepExpired,
+  clientIpFrom,
   type RateLimitEntry,
 } from "@/lib/rate-limit";
 import {
@@ -219,22 +227,10 @@ function maybeSweep(now: number) {
 }
 
 function clientIp(request: NextRequest): string {
-  // Next.js `NextRequest.ip` exists in Edge runtime middleware/routes.
-  // We typecast since it might not be in the base TS definitions depending on version.
-  const edgeIp = (request as any).ip;
-  const realIp = request.headers.get("x-real-ip") ?? edgeIp;
-  if (realIp) return realIp;
-
-  const forwarded = request.headers.get("x-forwarded-for");
-  if (forwarded) {
-    const parts = forwarded.split(",");
-    for (let i = parts.length - 1; i >= 0; i--) {
-      const ip = parts[i].trim();
-      if (!isPrivateIp(ip)) return ip;
-    }
-    return parts[parts.length - 1].trim();
-  }
-  return "unknown";
+  const trustedHops = Number(process.env.TRUSTED_PROXY_HOPS ?? "1");
+  const ip = clientIpFrom(request.headers, trustedHops);
+  if (ip !== "unknown") return ip;
+  return (request as any).ip || "unknown";
 }
 
 function isPrivateIp(ip: string): boolean {
@@ -325,18 +321,19 @@ function isPublicApiPath(pathname: string): boolean {
   return pathname === "/api/v1" || pathname.startsWith("/api/v1/");
 }
 
-function handleRateLimits(
+async function handleRateLimits(
   request: NextRequest,
   pathname: string,
   now: number,
-): NextResponse | null {
+): Promise<NextResponse | null> {
   if (AUTH_RATE_LIMITED_PATHS.includes(pathname)) {
-    const result = checkRateLimit(
+    const result = await checkRateLimit(
       authIpLimits,
       `ip:${clientIp(request)}`,
       AUTH_IP_LIMIT,
       AUTH_IP_WINDOW_MS,
       now,
+      request.url
     );
     if (!result.allowed) return rateLimited(result.retryAfterMs);
   }
@@ -346,12 +343,13 @@ function handleRateLimits(
     const key = authHeader
       ? `token:${hashKey(authHeader)}`
       : `ip:${clientIp(request)}`;
-    const result = checkRateLimit(
+    const result = await checkRateLimit(
       syncTokenLimits,
       key,
       SYNC_TOKEN_LIMIT,
       SYNC_TOKEN_WINDOW_MS,
       now,
+      request.url
     );
     if (!result.allowed) return rateLimited(result.retryAfterMs);
   }
@@ -359,7 +357,7 @@ function handleRateLimits(
   if (isMcpPath(pathname)) {
     const authHeader = request.headers.get("authorization");
     const key = authHeader ? `mcp:${hashKey(authHeader)}` : `ip:${clientIp(request)}`;
-    const result = checkRateLimit(mcpLimits, key, MCP_LIMIT, MCP_WINDOW_MS, now);
+    const result = await checkRateLimit(mcpLimits, key, MCP_LIMIT, MCP_WINDOW_MS, now, request.url);
     if (!result.allowed) return rateLimited(result.retryAfterMs);
   }
 
@@ -368,12 +366,13 @@ function handleRateLimits(
     const key = authHeader
       ? `api-key:${hashKey(authHeader)}`
       : `ip:${clientIp(request)}`;
-    const result = checkRateLimit(
+    const result = await checkRateLimit(
       apiKeyLimits,
       key,
       API_KEY_LIMIT,
       API_KEY_WINDOW_MS,
       now,
+      request.url
     );
     if (!result.allowed) return rateLimited(result.retryAfterMs);
   }
@@ -386,6 +385,7 @@ async function handlePlatformAdmin(
   pathname: string,
   host: ParsedHost | null,
   rootDomain: string,
+  requestHeaders: Headers,
 ): Promise<NextResponse | null> {
   if (
     pathname === "/platform" ||
@@ -406,7 +406,7 @@ async function handlePlatformAdmin(
     }
 
     if (PLATFORM_PUBLIC_PATHS.some((p) => pathname === p)) {
-      return NextResponse.next();
+      return NextResponse.next({ request: { headers: requestHeaders } });
     }
 
     const platformToken = request.cookies.get(PLATFORM_SESSION_COOKIE)?.value;
@@ -416,7 +416,7 @@ async function handlePlatformAdmin(
     if (!platformSession) {
       return NextResponse.redirect(new URL("/platform/login", request.url));
     }
-    return NextResponse.next();
+    return NextResponse.next({ request: { headers: requestHeaders } });
   }
   return null;
 }
@@ -586,12 +586,12 @@ function handleLegacyPathRedirect(
   return toHostResolver(request, next, slug);
 }
 
-export async function middleware(request: NextRequest) {
+async function handle(request: NextRequest, requestHeaders: Headers) {
   const { pathname } = request.nextUrl;
   const now = Date.now();
   maybeSweep(now);
 
-  const rateLimitResponse = handleRateLimits(request, pathname, now);
+  const rateLimitResponse = await handleRateLimits(request, pathname, now);
   if (rateLimitResponse) return rateLimitResponse;
 
   // Read once per request. A deployment with a ROOT_DOMAIN is host-routed;
@@ -611,7 +611,7 @@ export async function middleware(request: NextRequest) {
   const host = hostRouting ? parseHost(requestHost(request.headers), rootDomain) : null;
 
   // ---- Super-admin realm ---------------------------------------------------
-  const platformResponse = await handlePlatformAdmin(request, pathname, host, rootDomain);
+  const platformResponse = await handlePlatformAdmin(request, pathname, host, rootDomain, requestHeaders);
   if (platformResponse) return platformResponse;
 
   // ---- Tenant realm --------------------------------------------------------
@@ -658,7 +658,7 @@ export async function middleware(request: NextRequest) {
   }
 
   if (isPublicPath(pathname)) {
-    return NextResponse.next();
+    return NextResponse.next({ request: { headers: requestHeaders } });
   }
 
   const authResult = await handleTenantAuth(request, pathname, host);
@@ -679,14 +679,37 @@ export async function middleware(request: NextRequest) {
 
   // Phase 17 — every authenticated tenant API request counts against its own
   if (pathname.startsWith("/api/")) {
-    const result = checkRateLimit(
+    const result = await checkRateLimit(
       businessLimits,
       `biz:${session.businessId}`,
       BUSINESS_API_LIMIT,
       BUSINESS_API_WINDOW_MS,
       now,
+      request.url
     );
     if (!result.allowed) return rateLimited(result.retryAfterMs);
+  }
+
+  // Phase 24 — Origin check on cookie-authenticated mutations
+  const originCheckEnabled = process.env.ORIGIN_CHECK !== "0" && process.env.ORIGIN_CHECK !== "off";
+  if (
+    originCheckEnabled &&
+    MUTATING_METHODS.has(request.method) &&
+    pathname.startsWith("/api/")
+  ) {
+    const origin = request.headers.get("origin");
+    if (!origin) {
+      return NextResponse.json({ error: "bad_origin" }, { status: 403 });
+    }
+    try {
+      const originUrl = new URL(origin);
+      const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
+      if (originUrl.host !== host) {
+        return NextResponse.json({ error: "bad_origin" }, { status: 403 });
+      }
+    } catch {
+      return NextResponse.json({ error: "bad_origin" }, { status: 403 });
+    }
   }
 
   // Phase 15 — read-only impersonation.
@@ -701,8 +724,40 @@ export async function middleware(request: NextRequest) {
     );
   }
 
-  return NextResponse.next();
+  return NextResponse.next({ request: { headers: requestHeaders } });
 }
+
+export async function middleware(request: NextRequest) {
+  const nonce = generateNonce();
+  const isHttps =
+    preferredProto(request.headers.get("x-forwarded-proto"), request.nextUrl.protocol) === "https";
+
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set("x-nonce", nonce);
+  
+  const cspStr = contentSecurityPolicy(nonce, { https: isHttps });
+  
+  // Set CSP on the incoming request so Next.js reads it for script nonces
+  // (Next 15 reads it from the incoming request)
+  requestHeaders.set("content-security-policy", cspStr);
+  
+  const response = await handle(request, requestHeaders) ?? NextResponse.next({ request: { headers: requestHeaders } });
+
+  const headersObj = staticSecurityHeaders({ https: isHttps });
+  for (const [key, val] of Object.entries(headersObj)) {
+    response.headers.set(key, val);
+  }
+
+  const mode = cspMode();
+  if (mode === "enforce") {
+    response.headers.set("Content-Security-Policy", cspStr);
+  } else if (mode === "report-only") {
+    response.headers.set("Content-Security-Policy-Report-Only", cspStr);
+  }
+
+  return response;
+}
+
 export const config = {
   // Everything except Next internals and static assets.
   //

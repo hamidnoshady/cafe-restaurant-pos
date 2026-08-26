@@ -97,12 +97,13 @@ export function withPlatformScope<Args extends unknown[]>(
 async function activePlatformAdmin(
   session: PlatformSessionPayload,
 ): Promise<PlatformSessionPayload | null> {
-  const { rows } = await query<{ role: PlatformAdminRole; is_active: boolean }>(
-    `SELECT role, is_active FROM platform_admins WHERE id = $1`,
+  const { rows } = await query<{ role: PlatformAdminRole; is_active: boolean, token_version: number }>(
+    `SELECT role, is_active, token_version FROM platform_admins WHERE id = $1`,
     [session.padmin],
   );
   const admin = rows[0];
   if (!admin || !admin.is_active) return null;
+  if (session.tokenVersion && admin.token_version !== session.tokenVersion) return null;
   return { ...session, role: admin.role };
 }
 
@@ -154,11 +155,13 @@ export async function platformAudit(entry: {
   entity?: string | null;
   entityId?: string | null;
   payload?: Record<string, unknown> | null;
+  ipAddress?: string | null;
+  userAgent?: string | null;
 }): Promise<void> {
   await query(
     `INSERT INTO platform_audit_log
-       (platform_admin_id, business_id, action, entity, entity_id, payload)
-     VALUES ($1, $2, $3, $4, $5, $6)`,
+       (platform_admin_id, business_id, action, entity, entity_id, payload, ip_address, user_agent)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
     [
       entry.adminId,
       entry.businessId ?? null,
@@ -166,6 +169,12 @@ export async function platformAudit(entry: {
       entry.entity ?? null,
       entry.entityId ?? null,
       entry.payload ? JSON.stringify(entry.payload) : null,
+      entry.ipAddress ?? null,
+      entry.userAgent ?? null,
     ],
-  );
+  ).catch((err) => {
+    // Phase 24 Wave 5: "make platform-audit write failures loud instead of swallowed"
+    console.error("platformAudit failed:", err);
+    throw err;
+  });
 }

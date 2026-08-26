@@ -7,7 +7,9 @@
  * Other upgrade requests (e.g. Next's dev-mode HMR websocket) are handed off
  * to Next's own upgrade handler so `next dev` keeps working normally.
  */
-import { createServer, type IncomingMessage } from "http";
+import { createServer as createHttpServer, type IncomingMessage } from "http";
+import { createServer as createHttpsServer } from "https";
+import fs from "fs";
 import type { Duplex } from "stream";
 import { parse } from "url";
 import { WebSocketServer } from "ws";
@@ -42,7 +44,7 @@ app.prepare().then(async () => {
   // next/server + next/headers, and importing those before Next's own
   // server bootstrap has run (inside prepare()) caches a broken internal
   // AsyncLocalStorage stub that then breaks every page render.
-  const { SESSION_COOKIE, verifySession } = await import("./src/lib/auth");
+  const { SESSION_COOKIE, resolveSessionFromToken } = await import("./src/lib/auth");
   const { registerConnection } = await import("./src/lib/realtime");
   const { runRollupSyncTick } = await import("./src/lib/rollup-service");
   const { ROLLUP_SYNC_INTERVAL_MS } = await import("./src/lib/rollup");
@@ -59,6 +61,10 @@ app.prepare().then(async () => {
   const { runHolooReconciliationTick, HOLOO_RECONCILIATION_TICK_INTERVAL_MS } = await import("./src/lib/integrations/holoo/reconciliation-service");
   const { runNotificationTick, NOTIFICATION_TICK_INTERVAL_MS } = await import("./src/lib/notifications-service");
   const { runLowStockScanTick, LOW_STOCK_SCAN_INTERVAL_MS } = await import("./src/lib/notification-scans");
+
+  const { assertSecurePosture } = await import("./src/lib/deployment-posture");
+  const { deploymentRole } = await import("./src/lib/deployment-role");
+  assertSecurePosture(deploymentRole(), process.env.BIND_ADDR ?? "0.0.0.0", process.env.ALLOW_INSECURE_LAN === "1");
 
   // Phase 12: tenant isolation is enforced by Postgres row-level security,
   // which superusers and BYPASSRLS roles ignore outright — silently, with no
@@ -164,9 +170,20 @@ app.prepare().then(async () => {
   setInterval(lowStockScan, LOW_STOCK_SCAN_INTERVAL_MS).unref();
   setTimeout(lowStockScan, 120_000).unref();
 
-  const server = createServer((req, res) => {
+  const requestListener = (req: any, res: any) => {
     handle(req, res, parse(req.url ?? "/", true));
-  });
+  };
+
+  const server =
+    process.env.TLS_CERT_FILE && process.env.TLS_KEY_FILE
+      ? createHttpsServer(
+          {
+            cert: fs.readFileSync(process.env.TLS_CERT_FILE),
+            key: fs.readFileSync(process.env.TLS_KEY_FILE),
+          },
+          requestListener
+        )
+      : createHttpServer(requestListener);
 
   const wss = new WebSocketServer({ noServer: true });
 
@@ -179,11 +196,28 @@ app.prepare().then(async () => {
     }
 
     const token = readCookie(req.headers.cookie, SESSION_COOKIE);
-    const session = token ? await verifySession(token) : null;
+    const session = token ? await resolveSessionFromToken(token) : null;
     if (!session) {
       socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
       socket.destroy();
       return;
+    }
+
+    // Check Origin
+    const origin = req.headers.origin;
+    if (origin) {
+      try {
+        const originUrl = new URL(origin);
+        if (originUrl.host !== req.headers.host) {
+          socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
+          socket.destroy();
+          return;
+        }
+      } catch {
+        socket.write("HTTP/1.1 400 Bad Request\r\n\r\n");
+        socket.destroy();
+        return;
+      }
     }
 
     wss.handleUpgrade(req, socket, head, (ws) => {
@@ -191,12 +225,18 @@ app.prepare().then(async () => {
     });
   });
 
-  server.listen(port, () => {
-    console.log(`> Ready on http://localhost:${port} (WebSocket sync on /ws)`);
+  const bindHost = process.env.BIND_ADDR ?? "0.0.0.0";
+  server.listen(port, bindHost, () => {
+    console.log(`> Ready on http://${bindHost}:${port} (WebSocket sync on /ws)`);
     // Phase 23 Wave 2: DEPLOYMENT_ROLE defaults by inference when unset, so
     // say out loud what the app decided — an operator otherwise has no way to
     // tell a central server from a site until the sync tab renders the wrong
     // form.
     console.log(describeDeploymentRole());
+    
+    // Phase 24: Warn if legacy token is configured but not allowed
+    if (process.env.REMOTE_SYNC_TOKEN && process.env.ALLOW_LEGACY_SYNC_TOKEN !== "1") {
+      console.warn("> WARN: REMOTE_SYNC_TOKEN is set but ALLOW_LEGACY_SYNC_TOKEN is not. Legacy sync token is denied by default.");
+    }
   });
 });

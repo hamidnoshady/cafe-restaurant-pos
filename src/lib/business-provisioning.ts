@@ -34,6 +34,7 @@ export interface ProvisionBusinessInput {
   address?: string | null;
   phone?: string | null;
   ownerName: string;
+  ownerPhone?: string | null;
   email: string;
   password: string;
   timezone?: string;
@@ -75,6 +76,10 @@ export interface ProvisionBusinessInput {
   subdomain?: string;
 }
 
+import { TOTP } from "@otplib/totp";
+import { generateSecret, generateURI } from "otplib";
+import { provisionMfaEnrolment } from "./mfa-service";
+
 export interface ProvisionedBusiness {
   businessId: string;
   businessSlug: string;
@@ -84,6 +89,8 @@ export interface ProvisionedBusiness {
   /** users.id — the owner's membership in the new business. */
   userId: string;
   platformUserId: string;
+  totpSecret?: string;
+  totpUrl?: string;
 }
 
 /** An email already registered, offered a *different* password. */
@@ -130,6 +137,7 @@ export interface ProvisionRequestBody {
   address?: string;
   phone?: string;
   ownerName?: string;
+  ownerPhone?: string;
   email?: string;
   password?: string;
   industry?: string;
@@ -138,6 +146,8 @@ export interface ProvisionRequestBody {
 }
 
 export const MIN_PASSWORD_LENGTH = 8;
+
+import { normalizePhone } from "./phone";
 
 /**
  * Validates and normalises a provisioning request.
@@ -148,12 +158,18 @@ export const MIN_PASSWORD_LENGTH = 8;
  */
 export function validateProvisionBody(
   body: ProvisionRequestBody,
-  options: { requireSubdomain?: boolean } = {},
+  options: { requireSubdomain?: boolean; deploymentMode?: string } = {},
 ): { input: ProvisionBusinessInput; error: null } | { input: null; error: string } {
   const businessName = body.businessName?.trim();
   const ownerName = body.ownerName?.trim();
   const email = body.email?.trim().toLowerCase();
   const password = body.password ?? "";
+  
+  let ownerPhone = null;
+  if (options.deploymentMode !== "local") {
+    ownerPhone = normalizePhone(body.ownerPhone || "");
+    if (!ownerPhone) return { input: null, error: "invalid_owner_phone" };
+  }
 
   if (!businessName || !ownerName || !email || !password) {
     return { input: null, error: "missing_fields" };
@@ -194,6 +210,7 @@ export function validateProvisionBody(
       address: body.address?.trim() || null,
       phone: body.phone?.trim() || null,
       ownerName,
+      ownerPhone,
       email,
       password,
       industry,
@@ -341,9 +358,9 @@ export async function provisionBusiness(
         industryProfile(input.industry ?? "food_service").defaultDisabledFeatures,
       );
 
-      // Local-only installs record the mode and turn off the platform-dependent
-      // features in the same transaction that creates the business, so there is
-      // never a window where a local install looks like a connected one.
+      let totpSecret: string | undefined;
+      let totpUrl: string | undefined;
+
       if (input.deploymentMode === "local") {
         await client.query(
           `INSERT INTO settings (business_id, location_id, key, value)
@@ -351,10 +368,21 @@ export async function provisionBusiness(
           [businessId, SETTING_KEYS.deploymentMode, JSON.stringify({ mode: "local", pairedAt: null })],
         );
         await disableFeatures(client, businessId, LOCAL_DISABLED_FEATURES);
+        
+        totpSecret = generateSecret();
+        totpUrl = generateURI({
+          label: email,
+          issuer: "CafePOS",
+          secret: totpSecret,
+          strategy: "totp"
+        });
+        await provisionMfaEnrolment(client, "platform_user", platformUserId, "totp", true, null, Buffer.from(totpSecret || ""));
+      } else {
+        await provisionMfaEnrolment(client, "platform_user", platformUserId, "sms_otp", true, input.ownerPhone, null);
       }
 
       await client.query("COMMIT");
-      return { businessId, businessSlug: slug, businessSubdomain: subdomain, locationId, userId, platformUserId };
+      return { businessId, businessSlug: slug, businessSubdomain: subdomain, locationId, userId, platformUserId, totpSecret, totpUrl };
     } catch (err) {
       await client.query("ROLLBACK");
       throw err;

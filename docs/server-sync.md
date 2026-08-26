@@ -64,7 +64,7 @@ This token is the shared secret between the laptop and the VPS. Keep it safe.
 
 ### Step 2 — Configure the VPS
 
-Add `REMOTE_SYNC_TOKEN=<your-token>` to the VPS environment (Komodo Stack
+Add `ALLOW_LEGACY_SYNC_TOKEN=1` and `REMOTE_SYNC_TOKEN=<your-token>` to the VPS environment (Komodo Stack
 Environment, or `.env`). This guards the VPS's `/api/server-sync/push` and
 `/api/server-sync/pull` endpoints.
 
@@ -251,8 +251,8 @@ The Owner dashboard's **Settings → همگام‌سازی با سرور راه 
   don't block later events, so this list is the only place they're visible
 - A notice if incoming requests are still authenticating via the shared
   `REMOTE_SYNC_TOKEN` fallback instead of this business's own per-business
-  token, with the last time it happened — otherwise a deployment could stay
-  on the weaker shared-secret path indefinitely with nothing to notice
+  token, with the last time it happened. Since Phase 24, this fallback is denied
+  by default unless `ALLOW_LEGACY_SYNC_TOKEN=1` is set.
 
 You can also query the API directly:
 ```bash

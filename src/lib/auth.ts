@@ -98,12 +98,15 @@ export {
  *
  * Server components / route handlers only.
  */
+export async function resolveSessionFromToken(token: string | null | undefined): Promise<SessionPayload | null> {
+  if (!token) return null;
+  return checkEmployeeSession(await checkImpersonation(await verifySession(token)));
+}
+
 export async function getSession(): Promise<SessionPayload | null> {
   const store = await cookies();
   const token = store.get(SESSION_COOKIE)?.value;
-  const session = await checkEmployeeSession(
-    await checkImpersonation(token ? await verifySession(token) : null),
-  );
+  const session = await resolveSessionFromToken(token);
 
   enterTenantScope(
     session ? businessScope(session.businessId, session.locationId, session.sub) : NO_SCOPE,
@@ -248,6 +251,17 @@ export async function requireRole(
   if (!session) {
     return { session: null, error: NextResponse.json({ error: "unauthorized" }, { status: 401 }) };
   }
+  
+  if (session.platformUserId && session.tokenVersion) {
+    const { rows } = await query<{ token_version: number }>(
+      `SELECT token_version FROM platform_users WHERE id = $1`,
+      [session.platformUserId]
+    );
+    if (rows.length === 0 || rows[0].token_version !== session.tokenVersion) {
+      return { session: null, error: NextResponse.json({ error: "unauthorized" }, { status: 401 }) };
+    }
+  }
+
   if (!roles.includes(session.role)) {
     return { session: null, error: NextResponse.json({ error: "forbidden" }, { status: 403 }) };
   }
