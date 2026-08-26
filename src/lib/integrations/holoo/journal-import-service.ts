@@ -41,6 +41,7 @@ export async function importJournalVouchers(
   connectionId: string,
   vouchers: HolooVoucher[],
   createdBy: string | null,
+  importRunId?: string | null,
 ): Promise<JournalImportSummary> {
   const connection = await getConnection(businessId, connectionId);
   if (!connection) throw new Error("not_found");
@@ -79,7 +80,7 @@ export async function importJournalVouchers(
           createdBy,
         });
         if (entryId) {
-          await upsertMapping(businessId, connectionId, "holoo_journal", voucher.remoteId, entryId);
+          await upsertMapping(businessId, connectionId, "holoo_journal", voucher.remoteId, entryId, importRunId);
           imported += 1;
         }
         await client.query("COMMIT");

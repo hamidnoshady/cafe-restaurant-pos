@@ -65,6 +65,7 @@ export async function applyTransactions(
   connectionId: string,
   transactions: HolooTransaction[],
   createdBy: string | null,
+  importRunId?: string | null,
 ): Promise<TransactionImportSummary> {
   const connection = await getConnection(businessId, connectionId);
   if (!connection) throw new Error("not_found");
@@ -92,7 +93,7 @@ export async function applyTransactions(
         receiptDate: tx.occurredAt.slice(0, 10),
         createdBy,
       });
-      await upsertMapping(businessId, connectionId, "holoo_receipt", tx.remoteId, receipt.id);
+      await upsertMapping(businessId, connectionId, "holoo_receipt", tx.remoteId, receipt.id, importRunId);
       imported += 1;
       continue;
     }
@@ -109,7 +110,7 @@ export async function applyTransactions(
         paymentDate: tx.occurredAt.slice(0, 10),
         createdBy,
       });
-      await upsertMapping(businessId, connectionId, "holoo_receipt", tx.remoteId, payment.id);
+      await upsertMapping(businessId, connectionId, "holoo_receipt", tx.remoteId, payment.id, importRunId);
       imported += 1;
       continue;
     }

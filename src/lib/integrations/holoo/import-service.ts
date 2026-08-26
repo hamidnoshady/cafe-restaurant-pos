@@ -82,6 +82,7 @@ export async function applyBaseImport(
   businessId: string,
   connectionId: string,
   input: BaseImportInput,
+  importRunId?: string | null,
 ): Promise<BaseImportSummary> {
   const connection = await getConnection(businessId, connectionId);
   if (!connection) throw new Error("not_found");
@@ -117,7 +118,7 @@ export async function applyBaseImport(
         [localId, goods.priceRial === null ? null : Number(goods.priceRial)],
       );
     }
-    await upsertMapping(businessId, connectionId, "holoo_goods", goods.remoteId, localId);
+    await upsertMapping(businessId, connectionId, "holoo_goods", goods.remoteId, localId, importRunId);
     createdGoods += 1;
   }
 
@@ -143,7 +144,7 @@ export async function applyBaseImport(
       );
       localId = rows[0].id;
     }
-    await upsertMapping(businessId, connectionId, "holoo_customer", person.remoteId, localId);
+    await upsertMapping(businessId, connectionId, "holoo_customer", person.remoteId, localId, importRunId);
     createdPersons += 1;
   }
 
@@ -155,7 +156,7 @@ export async function applyBaseImport(
       `SELECT id FROM accounts WHERE business_id = $1 AND code = $2`,
       [businessId, account.code],
     );
-    if (rows[0]) await upsertMapping(businessId, connectionId, "holoo_account", account.remoteId, rows[0].id);
+    if (rows[0]) await upsertMapping(businessId, connectionId, "holoo_account", account.remoteId, rows[0].id, importRunId);
   }
   // Create accounts with codes absent from the seed chart.
   for (const account of accountsPlan.toCreate) {
@@ -167,7 +168,7 @@ export async function applyBaseImport(
        VALUES ($1, $2, $3, $4, $5) RETURNING id`,
       [businessId, parentId, account.code, account.name, holooAccountType(account.code, account.nature)],
     );
-    await upsertMapping(businessId, connectionId, "holoo_account", account.remoteId, rows[0].id);
+    await upsertMapping(businessId, connectionId, "holoo_account", account.remoteId, rows[0].id, importRunId);
     createdAccounts += 1;
   }
 
