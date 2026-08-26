@@ -8,6 +8,7 @@ export interface MfaPendingPayload {
   sub: string;
   method: "sms_otp" | "totp" | null;
   authRealm: "tenant_password" | "platform_admin";
+  businessId?: string;
 }
 
 export async function signMfaPendingToken(payload: MfaPendingPayload): Promise<string> {

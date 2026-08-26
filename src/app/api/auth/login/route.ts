@@ -222,7 +222,8 @@ export async function POST(request: NextRequest) {
         const mfaToken = await signMfaPendingToken({
           sub: usableIdentity.id,
           method: enrolments.length > 0 ? enrolments[0].method : null,
-          authRealm: "tenant_password"
+          authRealm: "tenant_password",
+          businessId: chosen.businessId,
         });
         
         return NextResponse.json({
