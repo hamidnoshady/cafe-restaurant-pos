@@ -1,5 +1,6 @@
 "use client";
 
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useEffect, useMemo, useState } from "react";
 import { SearchIcon, UsersIcon } from "lucide-react";
 import {
@@ -163,7 +164,7 @@ export function TablePickerDialog({
             >
               تعداد مهمان{" "}
               <span className="font-normal text-[#8B8A85]">(اختیاری)</span>
-              <input
+              <PersianNumberInput
                 id="pos-table-guest-count"
                 className={
                   inputClass + " mt-1 min-h-11 border-[#EAE8E2] bg-[#FCFCFA]"

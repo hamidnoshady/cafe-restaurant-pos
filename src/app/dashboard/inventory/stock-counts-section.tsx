@@ -1,5 +1,6 @@
 "use client";
 
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import {
   useCallback,
   useDeferredValue,
@@ -200,7 +201,7 @@ export function StockCountsSection({
                     </span>
                     <label className="grid w-full gap-1 text-xs font-medium sm:w-40">
                       <span>مقدار شمارش‌شده</span>
-                      <input
+                      <PersianNumberInput
                         className={inputClass}
                         dir="ltr"
                         inputMode="decimal"
@@ -251,7 +252,7 @@ export function StockCountsSection({
                 </span>
                 <label className="grid w-full gap-1 text-xs font-medium sm:w-40">
                   <span>مقدار شمارش‌شده</span>
-                  <input
+                  <PersianNumberInput
                     className={inputClass}
                     dir="ltr"
                     inputMode="decimal"
@@ -537,7 +538,7 @@ function StockCountModal({
                       <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground sm:grid-cols-3">
                         <label className="grid gap-1">
                           <span>مقدار شمارش‌شده</span>
-                          <input
+                          <PersianNumberInput
                             className={inputClass}
                             dir="ltr"
                             inputMode="decimal"
@@ -591,7 +592,7 @@ function StockCountModal({
                         </div>
                         <label className="grid w-full gap-1 text-xs font-medium sm:w-40">
                           <span>مقدار شمارش‌شده</span>
-                          <input
+                          <PersianNumberInput
                             className={inputClass}
                             dir="ltr"
                             inputMode="decimal"

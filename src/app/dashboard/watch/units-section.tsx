@@ -1,5 +1,6 @@
 "use client";
 
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -137,7 +138,7 @@ export function UnitsSection({
               />
             </Field>
             <Field label="فاصلهٔ سرویس (ماه)" hint="باطری کوارتز ~۲۴، موتور اتوماتیک ۳۶ تا ۶۰. خالی = بدون یادآوری.">
-              <input
+              <PersianNumberInput
                 className={watchInputClass}
                 dir="ltr"
                 inputMode="numeric"
@@ -179,7 +180,7 @@ export function UnitsSection({
               />
             </Field>
             <Field label={`بهای تمام‌شده (${money.unitLabel})`} hint="اگر هنوز مشخص نیست، خالی بگذارید.">
-              <input
+              <PersianNumberInput
                 className={watchInputClass}
                 dir="ltr"
                 inputMode="numeric"
@@ -189,7 +190,7 @@ export function UnitsSection({
               />
             </Field>
             <Field label="گارانتی (ماه)" hint="۰ یعنی بدون گارانتی.">
-              <input
+              <PersianNumberInput
                 className={watchInputClass}
                 dir="ltr"
                 inputMode="numeric"
@@ -418,7 +419,7 @@ function CostPanel({
     <PanelShell>
       <form onSubmit={save} className="grid min-w-0 gap-3 sm:grid-cols-3">
         <Field label={`بهای تمام‌شده (${money.unitLabel})`}>
-          <input
+          <PersianNumberInput
             className={watchInputClass}
             dir="ltr"
             inputMode="numeric"
@@ -427,7 +428,7 @@ function CostPanel({
           />
         </Field>
         <Field label="گارانتی (ماه)">
-          <input
+          <PersianNumberInput
             className={watchInputClass}
             dir="ltr"
             inputMode="numeric"

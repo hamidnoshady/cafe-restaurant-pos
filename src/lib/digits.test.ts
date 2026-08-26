@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   formatPersianNumber,
+  formatPersianNumericText,
   formatQuantity,
   groupDigits,
+  normalizeNumericText,
   toLatinDigits,
   toPersianDigits,
 } from "./digits";
@@ -34,13 +36,29 @@ describe("digits", () => {
     expect(formatPersianNumber(1250000)).toBe("۱٬۲۵۰٬۰۰۰");
   });
 
+  it("normalizes Persian, Arabic-Indic, and grouped input text without losing decimals", () => {
+    expect(normalizeNumericText("۱٬۲۵۰٬۰۰۰٫۵۰")).toBe("1250000.50");
+    expect(normalizeNumericText("١,٢٥٠,٠٠٠.٥٠")).toBe("1250000.50");
+    expect(normalizeNumericText("۰۰۰۱۲")).toBe("12");
+    expect(normalizeNumericText("−۱۲٫۵")).toBe("-12.5");
+    expect(normalizeNumericText("۱۲٫۵", { allowDecimal: false })).toBe("12");
+    expect(normalizeNumericText("-۱۲", { allowNegative: false })).toBe("12");
+  });
+
+  it("formats editable numeric text with Persian digits, separators, and decimal mark", () => {
+    expect(formatPersianNumericText("1250000.50")).toBe("۱٬۲۵۰٬۰۰۰٫۵۰");
+    expect(formatPersianNumericText("-12500.5")).toBe("-۱۲٬۵۰۰٫۵");
+    expect(formatPersianNumericText("12.")).toBe("۱۲٫");
+    expect(formatPersianNumericText("1250000", { grouping: false })).toBe("۱۲۵۰۰۰۰");
+  });
+
   it("trims exact-decimal quantities for display", () => {
     expect(formatQuantity("18.000000000")).toBe("۱۸");
-    expect(formatQuantity("1000.000000000")).toBe("۱۰۰۰");
-    expect(formatQuantity("0.500000000")).toBe("۰.۵");
-    expect(formatQuantity("-2.500000000")).toBe("-۲.۵");
+    expect(formatQuantity("1000.000000000")).toBe("۱٬۰۰۰");
+    expect(formatQuantity("0.500000000")).toBe("۰٫۵");
+    expect(formatQuantity("-2.500000000")).toBe("-۲٫۵");
     expect(formatQuantity(0)).toBe("۰");
-    expect(formatQuantity("12.3456")).toBe("۱۲.۳۴۶"); // rounds beyond maxDecimals
-    expect(formatQuantity("12.3456", 4)).toBe("۱۲.۳۴۵۶");
+    expect(formatQuantity("12.3456")).toBe("۱۲٫۳۴۶"); // rounds beyond maxDecimals
+    expect(formatQuantity("12.3456", 4)).toBe("۱۲٫۳۴۵۶");
   });
 });

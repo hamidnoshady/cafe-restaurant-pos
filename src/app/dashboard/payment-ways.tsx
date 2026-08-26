@@ -1,5 +1,6 @@
 "use client";
 
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 /**
  * The payment ways a cashier picks from, and the panel that splits a bill
  * across them. Shared by the POS and the order dialog so the two checkouts
@@ -170,7 +171,7 @@ export function PaymentWays({ methods, draft, onChange, due, disabled, idPrefix 
                   <span className="min-w-0 flex-1 truncate text-xs font-bold text-[#252522]">
                     {method?.name ?? "—"}
                   </span>
-                  <input
+                  <PersianNumberInput
                     id={`${idPrefix}-tender-${index}`}
                     className={AMOUNT_INPUT + " max-w-32"}
                     dir="ltr"

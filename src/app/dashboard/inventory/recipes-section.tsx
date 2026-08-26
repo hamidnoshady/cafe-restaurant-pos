@@ -1,5 +1,6 @@
 "use client";
 
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useState } from "react";
 import { formatQuantity } from "@/lib/digits";
 import { api, Field, inputClass, PrimaryButton, SecondaryButton } from "../ui";
@@ -132,7 +133,7 @@ function MenuItemRecipeCard({
               />
             </Field>
             <Field label="مقدار مصرف برای یک واحد">
-              <input
+              <PersianNumberInput
                 className={inputClass}
                 dir="ltr"
                 inputMode="decimal"
@@ -251,7 +252,7 @@ function ModifierRecipeCard({
               />
             </Field>
             <Field label="تغییر مقدار مصرف">
-              <input
+              <PersianNumberInput
                 className={inputClass}
                 dir="ltr"
                 inputMode="decimal"

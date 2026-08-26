@@ -1,5 +1,6 @@
 "use client";
 
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -211,7 +212,7 @@ export default function MenuStep() {
               placeholder="نام آیتم"
               required
             />
-            <input
+            <PersianNumberInput
               className={inputClass}
               dir="ltr"
               inputMode="numeric"

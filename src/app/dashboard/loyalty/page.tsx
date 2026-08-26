@@ -1,5 +1,6 @@
 "use client";
 
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -178,13 +179,13 @@ function ProgramsPanel({
         </Field>
         <div className="grid grid-cols-3 gap-2">
           <Field label="امتیاز / ۱۰ هزار تومان">
-            <input className={inputClass} dir="ltr" value={earn} onChange={(e) => setEarn(e.target.value)} />
+            <PersianNumberInput inputMode="numeric" className={inputClass} dir="ltr" value={earn} onChange={(e) => setEarn(e.target.value)} />
           </Field>
           <Field label={`ارزش هر امتیاز (${money.unitLabel})`}>
-            <input className={inputClass} dir="ltr" value={value} onChange={(e) => setValue(e.target.value)} />
+            <PersianNumberInput inputMode="numeric" className={inputClass} dir="ltr" value={value} onChange={(e) => setValue(e.target.value)} />
           </Field>
           <Field label="انقضای امتیاز (روز)">
-            <input className={inputClass} dir="ltr" value={expiry} onChange={(e) => setExpiry(e.target.value)} placeholder="خالی = بدون انقضا" />
+            <PersianNumberInput inputMode="numeric" className={inputClass} dir="ltr" value={expiry} onChange={(e) => setExpiry(e.target.value)} placeholder="خالی = بدون انقضا" />
           </Field>
         </div>
         <Button type="submit" disabled={busy} className="min-h-11 w-full">
@@ -274,7 +275,7 @@ function CustomerPanel({
 
       <div className="grid grid-cols-[1fr_auto] items-end gap-2">
         <Field label="تبدیل امتیاز به اعتبار">
-          <input className={inputClass} dir="ltr" value={points} onChange={(e) => setPoints(e.target.value)} placeholder="تعداد امتیاز" />
+          <PersianNumberInput inputMode="numeric" className={inputClass} dir="ltr" value={points} onChange={(e) => setPoints(e.target.value)} placeholder="تعداد امتیاز" />
         </Field>
         <Button type="button" disabled={busy || !customerId || !points.trim()} onClick={() => void redeem()} className="min-h-11">
           تبدیل
@@ -283,7 +284,7 @@ function CustomerPanel({
 
       <div className="grid grid-cols-[1fr_auto] items-end gap-2">
         <Field label={`اعتبار فروشگاهی (${money.unitLabel})`}>
-          <input className={inputClass} dir="ltr" value={credit} onChange={(e) => setCredit(e.target.value)} />
+          <PersianNumberInput inputMode="numeric" className={inputClass} dir="ltr" value={credit} onChange={(e) => setCredit(e.target.value)} />
         </Field>
         <div className="flex flex-col gap-1">
           <select className={inputClass} value={creditAction} onChange={(e) => setCreditAction(e.target.value as "issue" | "use")}>

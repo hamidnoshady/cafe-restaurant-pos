@@ -1,5 +1,6 @@
 "use client";
 
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useDeferredValue, useMemo, useState } from "react";
 import { SearchIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -128,7 +129,7 @@ export function ItemsSection({
               />
             </Field>
             <Field label="آستانه سفارش مجدد">
-              <input
+              <PersianNumberInput
                 className={inventoryInputClass}
                 dir="ltr"
                 inputMode="decimal"
@@ -146,7 +147,7 @@ export function ItemsSection({
               />
             </Field>
             <Field label="ضریب تبدیل واحد خرید">
-              <input
+              <PersianNumberInput
                 className={inventoryInputClass}
                 dir="ltr"
                 inputMode="decimal"
@@ -376,7 +377,7 @@ function EditItemRow({
           />
         </Field>
         <Field label="آستانه سفارش مجدد">
-          <input
+          <PersianNumberInput
             className={inventoryInputClass}
             dir="ltr"
             inputMode="decimal"
@@ -394,7 +395,7 @@ function EditItemRow({
           />
         </Field>
         <Field label="ضریب تبدیل واحد خرید">
-          <input
+          <PersianNumberInput
             className={inventoryInputClass}
             dir="ltr"
             inputMode="decimal"

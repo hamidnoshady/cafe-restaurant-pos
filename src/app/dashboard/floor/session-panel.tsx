@@ -1,5 +1,6 @@
 "use client";
 
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { BanknoteIcon, CreditCardIcon, UsersIcon } from "lucide-react";
@@ -289,7 +290,7 @@ function SplitDialog({
           </div>
           <label className="mb-3 flex items-center gap-2 text-sm">
             <span className="shrink-0">تعداد نفر</span>
-            <input className={`${inputClass} w-24`} inputMode="numeric" dir="ltr" value={guests} onChange={(event) => setGuestCount(event.target.value)} />
+            <PersianNumberInput className={`${inputClass} w-24`} inputMode="numeric" dir="ltr" value={guests} onChange={(event) => setGuestCount(event.target.value)} />
           </label>
           <div className="space-y-2">
             {Array.from({ length: guestCount }, (_, index) => (

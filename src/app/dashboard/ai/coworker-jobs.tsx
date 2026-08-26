@@ -1,5 +1,6 @@
 "use client";
 
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 /**
  * Phase 32 — defining a job: pick a ready-made template, say when it should
  * run, and say whether the coworker may act or must ask.
@@ -375,7 +376,7 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
             {triggerKind === "schedule" ? (
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field label="ساعت (۰ تا ۲۳)">
-                  <input
+                  <PersianNumberInput
                     className={inputClass}
                     inputMode="numeric"
                     value={scheduleHour}
@@ -435,7 +436,7 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
                       <option value="remaining">هرچه مانده</option>
                       <option value="fixed">مقدار ثابت</option>
                     </select>
-                    <input
+                    <PersianNumberInput inputMode="decimal"
                       className={inputClass}
                       placeholder="مقدار"
                       disabled={line.mode !== "fixed"}
@@ -500,7 +501,7 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
                         </option>
                       ))}
                     </select>
-                    <input
+                    <PersianNumberInput inputMode="decimal"
                       className={inputClass}
                       placeholder="تعداد بچ"
                       value={line.batches}
@@ -546,7 +547,7 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
                         </option>
                       ))}
                     </select>
-                    <input
+                    <PersianNumberInput inputMode="decimal"
                       className={inputClass}
                       placeholder="مقدار در واحد خرید"
                       value={line.purchaseQty}
@@ -556,7 +557,7 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
                         )
                       }
                     />
-                    <input
+                    <PersianNumberInput
                       className={inputClass}
                       placeholder="مبلغ کل (ریال)"
                       inputMode="numeric"

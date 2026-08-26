@@ -1,5 +1,6 @@
 "use client";
 
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { formatQuantity, toPersianDigits } from "@/lib/digits";
@@ -195,7 +196,7 @@ export function ReportsSection({ busy, run }: { busy: boolean; run: Runner }) {
               />
             </Field>
             <Field label="وزن شمارش‌شده (گرم)">
-              <input
+              <PersianNumberInput
                 className={jewelryInputClass}
                 dir="ltr"
                 inputMode="decimal"
@@ -290,7 +291,7 @@ function ConsignorStatementRow({
         <div className="rounded-xl bg-amber-50/60 p-3 sm:p-4">
           <form onSubmit={pay} className="grid min-w-0 gap-3 sm:grid-cols-3">
             <Field label={`مبلغ (${money.unitLabel})`}>
-              <input
+              <PersianNumberInput
                 className={jewelryInputClass}
                 dir="ltr"
                 inputMode="numeric"

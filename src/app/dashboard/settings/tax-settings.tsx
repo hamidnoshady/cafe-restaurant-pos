@@ -1,5 +1,6 @@
 "use client";
 
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useCallback, useEffect, useState } from "react";
 import { toLatinDigits } from "@/lib/digits";
 import { ErrorBox, Field, InfoBox, PrimaryButton, api, errorMessage, inputClass } from "../ui";
@@ -88,7 +89,7 @@ export function TaxSettings() {
         <div className="max-w-xs">
           <Field label="درصد مالیات">
             <div className="relative">
-              <input className={inputClass} dir="ltr" inputMode="decimal" value={defaultRate} onChange={(e) => { setSaved(false); setDefaultRate(e.target.value); }} />
+              <PersianNumberInput className={inputClass} dir="ltr" inputMode="decimal" value={defaultRate} onChange={(e) => { setSaved(false); setDefaultRate(e.target.value); }} />
               <span className="pointer-events-none absolute inset-y-0 end-3 flex items-center text-sm text-muted-foreground">٪</span>
             </div>
           </Field>
@@ -103,7 +104,7 @@ export function TaxSettings() {
             <div key={category.id} className="flex items-center gap-3 rounded-lg border border-stone-200/80 p-3">
               <span className="min-w-0 flex-1 text-sm font-medium">{category.name}</span>
               <div className="relative w-28">
-                <input className={inputClass} dir="ltr" inputMode="decimal" value={rates[category.id] ?? ""} onChange={(e) => { setSaved(false); setRates((current) => ({ ...current, [category.id]: e.target.value })); }} />
+                <PersianNumberInput className={inputClass} dir="ltr" inputMode="decimal" value={rates[category.id] ?? ""} onChange={(e) => { setSaved(false); setRates((current) => ({ ...current, [category.id]: e.target.value })); }} />
                 <span className="pointer-events-none absolute inset-y-0 end-3 flex items-center text-sm text-muted-foreground">٪</span>
               </div>
             </div>

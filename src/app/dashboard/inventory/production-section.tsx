@@ -1,5 +1,6 @@
 "use client";
 
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { formatQuantity, toPersianDigits } from "@/lib/digits";
@@ -248,7 +249,7 @@ function FormulaCard({
             />
           </Field>
           <Field label="مقدار تولید در هر بار پخت" hint="به واحد پایهٔ محصول، مثلاً ۸ برش">
-            <input
+            <PersianNumberInput
               className={productionInputClass}
               dir="ltr"
               inputMode="decimal"
@@ -259,7 +260,7 @@ function FormulaCard({
             />
           </Field>
           <Field label={`هزینهٔ تبدیل هر بار پخت (${money.unitLabel})`} hint="دستمزد و سربار؛ اختیاری">
-            <input
+            <PersianNumberInput
               className={productionInputClass}
               dir="ltr"
               inputMode="numeric"
@@ -338,7 +339,7 @@ function FormulaCard({
               />
             </Field>
             <Field label="مقدار مصرف در هر بار پخت">
-              <input
+              <PersianNumberInput
                 className={productionInputClass}
                 dir="ltr"
                 inputMode="decimal"
@@ -451,7 +452,7 @@ function RunCard({
           />
         </Field>
         <Field label="تعداد بار پخت">
-          <input
+          <PersianNumberInput
             className={productionInputClass}
             dir="ltr"
             inputMode="decimal"
@@ -464,7 +465,7 @@ function RunCard({
           label="مقدار واقعی تولیدشده"
           hint={selected ? `به ${selected.outputUnit}` : "ابتدا فرمول را انتخاب کنید"}
         >
-          <input
+          <PersianNumberInput
             className={productionInputClass}
             dir="ltr"
             inputMode="decimal"
@@ -474,7 +475,7 @@ function RunCard({
           />
         </Field>
         <Field label={`هزینهٔ تبدیل (${money.unitLabel})`} hint="دستمزد و سربار این بار پخت">
-          <input
+          <PersianNumberInput
             className={productionInputClass}
             dir="ltr"
             inputMode="numeric"
