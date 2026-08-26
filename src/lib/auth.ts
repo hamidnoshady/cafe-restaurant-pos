@@ -98,12 +98,15 @@ export {
  *
  * Server components / route handlers only.
  */
+export async function resolveSessionFromToken(token: string | null | undefined): Promise<SessionPayload | null> {
+  if (!token) return null;
+  return checkEmployeeSession(await checkImpersonation(await verifySession(token)));
+}
+
 export async function getSession(): Promise<SessionPayload | null> {
   const store = await cookies();
   const token = store.get(SESSION_COOKIE)?.value;
-  const session = await checkEmployeeSession(
-    await checkImpersonation(token ? await verifySession(token) : null),
-  );
+  const session = await resolveSessionFromToken(token);
 
   enterTenantScope(
     session ? businessScope(session.businessId, session.locationId, session.sub) : NO_SCOPE,

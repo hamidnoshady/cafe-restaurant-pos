@@ -73,10 +73,10 @@ const PUBLIC_ROUTES: Record<string, string> = {
   "rollup/ingest": "server-to-server — authenticated by a per-location bearer token, not a session",
   "server-sync/pull":
     "server-to-server — authenticated by a per-business bearer token (server_sync_tokens), " +
-    "falling back to the legacy global REMOTE_SYNC_TOKEN; not a session",
+    "falling back to the legacy global REMOTE_SYNC_TOKEN if ALLOW_LEGACY_SYNC_TOKEN is set; not a session",
   "server-sync/push":
     "server-to-server — authenticated by a per-business bearer token (server_sync_tokens), " +
-    "falling back to the legacy global REMOTE_SYNC_TOKEN; not a session",
+    "falling back to the legacy global REMOTE_SYNC_TOKEN if ALLOW_LEGACY_SYNC_TOKEN is set; not a session",
   "server-sync/update-check":
     "server-to-server — authenticated by a per-business bearer token (server_sync_tokens) only, " +
     "deliberately no legacy REMOTE_SYNC_TOKEN fallback; not a session",

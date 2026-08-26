@@ -1,0 +1,66 @@
+import { createHmac } from "node:crypto";
+import { query } from "./db";
+import { getRealmSecret, getLegacySecret } from "./jwt-secret";
+import { LockoutPolicy, lockoutStatus, LockoutStatus } from "./login-lockout";
+
+export type AuthRealm = "tenant_password" | "platform_admin" | "directory";
+
+export async function identityKeyFor(email: string): Promise<string> {
+  const pepperBase = process.env.LOGIN_ATTEMPT_PEPPER;
+  let secret: Uint8Array;
+  if (pepperBase) {
+    secret = new TextEncoder().encode(pepperBase);
+  } else {
+    try {
+      secret = await getRealmSecret("platform");
+    } catch {
+      secret = await getLegacySecret() ?? new Uint8Array();
+    }
+  }
+  const hmac = createHmac("sha256", secret);
+  hmac.update(email.toLowerCase());
+  return hmac.digest("hex");
+}
+
+export async function checkAuthLockout(
+  realm: AuthRealm,
+  email: string,
+  policy: LockoutPolicy
+): Promise<LockoutStatus> {
+  const identityKey = await identityKeyFor(email);
+  const rows = await query(
+    `SELECT action as "outcome", created_at as "createdAt"
+     FROM auth_login_attempts
+     WHERE realm = $1 AND identity_key = $2
+     ORDER BY id DESC LIMIT $3`,
+    [realm, identityKey, policy.threshold]
+  );
+  
+  // wait, the db returns `outcome` not `action`, let's map it
+  const events = rows.rows.map((r: any) => ({ action: r.outcome, createdAt: r.createdAt }));
+  return lockoutStatus(events, policy);
+}
+
+export async function recordAuthFailure(realm: AuthRealm, email: string) {
+  const identityKey = await identityKeyFor(email);
+  await query(
+    `INSERT INTO auth_login_attempts (realm, identity_key, outcome) VALUES ($1, $2, 'failed')`,
+    [realm, identityKey]
+  );
+}
+
+export async function recordAuthSuccess(realm: AuthRealm, email: string) {
+  const identityKey = await identityKeyFor(email);
+  await query(
+    `INSERT INTO auth_login_attempts (realm, identity_key, outcome) VALUES ($1, $2, 'success')`,
+    [realm, identityKey]
+  );
+}
+
+export async function clearAuthLockout(realm: AuthRealm, email: string) {
+  const identityKey = await identityKeyFor(email);
+  await query(
+    `INSERT INTO auth_login_attempts (realm, identity_key, outcome) VALUES ($1, $2, 'unlocked')`,
+    [realm, identityKey]
+  );
+}

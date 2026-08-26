@@ -66,6 +66,22 @@ const EMPTY_STATE: ServerSyncState = {
   legacyTokenLastUsedAt: null,
 };
 
+export function legacySyncTokenAllowed(): boolean {
+  return process.env.ALLOW_LEGACY_SYNC_TOKEN === "1";
+}
+
+export function legacySyncToken(): string | null {
+  if (!legacySyncTokenAllowed()) return null;
+  return process.env.REMOTE_SYNC_TOKEN?.trim() || null;
+}
+
+export function legacyTokenWarning(): string | null {
+  if (process.env.REMOTE_SYNC_TOKEN && !legacySyncTokenAllowed()) {
+    return "REMOTE_SYNC_TOKEN is set but ALLOW_LEGACY_SYNC_TOKEN is not. Legacy sync token is denied by default.";
+  }
+  return null;
+}
+
 export async function getServerSyncConfig(businessId: string): Promise<ServerSyncConfig | null> {
   return getSetting<ServerSyncConfig>(businessId, SETTING_KEYS.serverSyncConfig);
 }

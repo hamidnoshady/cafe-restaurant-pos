@@ -5,10 +5,6 @@
 # the café keeps working with ZERO internet. When internet is up, it syncs
 # bidirectionally with the VPS (pos.eshobe.com) via the server-sync engine.
 #
-# Unlike docker-compose.komodo.yml (which hides the app behind Traefik), this
-# stack PUBLISHES the app on the host's port 3000 so LAN devices can reach it
-# directly at http://<laptop-lan-ip>:3000.
-#
 # Setup:
 #   1. Give this machine a fixed LAN IP (router DHCP reservation or static).
 #   2. Copy .env.local.example → .env and fill JWT_SECRET, POSTGRES_PASSWORD.
@@ -31,18 +27,6 @@
 # once you're past initial setup, so this laptop only moves versions when you
 # choose to, not on every merge to main.
 #
-# NOTE on HTTPS: LAN devices reach this over plain http://<ip>:3000. The
-# session cookie's Secure flag is only set when NODE_ENV=production, so this
-# stack runs with NODE_ENV unset->development semantics for the cookie is NOT
-# desired in a real deployment. See docs/server-sync.md "Local TLS" for the
-# recommended options (self-signed cert on a local reverse proxy, or a local
-# hostname with a trusted cert). For a quick LAN-only trial you can run as-is.
-# Biometric login (Phase 20 Wave 3) additionally needs browsers' WebAuthn
-# "secure context" requirement, which a plain http://<lan-ip> origin never
-# satisfies — staff on this stack will only see the PIN pad until it's
-# fronted with the HTTPS setup above plus WEBAUTHN_RP_ID/WEBAUTHN_ORIGIN
-# (see .env.example) matching that hostname.
-
 services:
   db:
     image: postgres:16-alpine
@@ -85,13 +69,33 @@ services:
       # Shared bearer token guarding THIS server's /api/server-sync endpoints.
       # If you want the VPS to also push/pull to this laptop, set the same
       # token the laptop's dashboard config uses. Generate: openssl rand -hex 32
-      REMOTE_SYNC_TOKEN: ${REMOTE_SYNC_TOKEN:-}
-    ports:
-      # Published on the host so LAN devices reach it at http://<lan-ip>:3000
-      - "${APP_PORT:-3000}:3000"
+      ALLOW_LEGACY_SYNC_TOKEN: ${ALLOW_LEGACY_SYNC_TOKEN:-}
+      # Phase 24 Wave 4: WebAuthn requires a host RP ID
+      WEBAUTHN_RP_ID: ${POS_LOCAL_HOST:-pos.cafe.lan}
+      WEBAUTHN_ORIGIN: https://${POS_LOCAL_HOST:-pos.cafe.lan}
+    expose:
+      # Exposed internally to Caddy, not published to the host directly
+      - "3000"
     volumes:
       - pos-backups:/app/backups
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - "${BIND_ADDR:-0.0.0.0}:80:80"
+      - "${BIND_ADDR:-0.0.0.0}:443:443"
+    environment:
+      POS_LOCAL_HOST: ${POS_LOCAL_HOST:-pos.cafe.lan}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
 
 volumes:
   pos-pgdata:
   pos-backups:
+  caddy_data:
+  caddy_config:

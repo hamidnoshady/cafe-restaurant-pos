@@ -7,6 +7,12 @@ import {
   signPlatformSession,
   type PlatformAdminRole,
 } from "@/lib/platform-auth";
+import {
+  checkAuthLockout,
+  recordAuthFailure,
+  recordAuthSuccess,
+} from "@/lib/login-lockout-service";
+import { PLATFORM_LOCKOUT_POLICY } from "@/lib/login-lockout";
 
 interface PlatformAdminRow extends Record<string, unknown> {
   id: string;
@@ -60,9 +66,21 @@ export async function POST(request: NextRequest) {
     const admin = rows[0];
     const usable = admin?.is_active ? admin : null;
     const ok = await bcrypt.compare(password, usable?.password_hash ?? DUMMY_HASH);
+    
     if (!usable || !ok) {
+      await recordAuthFailure("platform_admin", email);
       return NextResponse.json({ error: "invalid_credentials" }, { status: 401 });
     }
+
+    const lockout = await checkAuthLockout("platform_admin", email, PLATFORM_LOCKOUT_POLICY);
+    if (lockout.locked) {
+      return NextResponse.json(
+        { error: "account_locked", lockedUntil: lockout.lockedUntil },
+        { status: 423 },
+      );
+    }
+
+    await recordAuthSuccess("platform_admin", email);
 
     await query(`UPDATE platform_admins SET last_login_at = now() WHERE id = $1`, [usable.id]);
 

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { applySyncEvent, type SyncEventInput, type SyncEventType } from "@/lib/sync-events";
 import { query, withTenant, withoutTenantScope } from "@/lib/db";
-import { recordLegacyTokenUsage, resolveBusinessBySyncToken, tokensMatch } from "@/lib/server-sync";
+import { recordLegacyTokenUsage, resolveBusinessBySyncToken, tokensMatch, legacySyncToken } from "@/lib/server-sync";
 import type { Role } from "@/lib/auth";
 
 /**
@@ -22,10 +22,6 @@ import type { Role } from "@/lib/auth";
 
 const VALID_TYPES: SyncEventType[] = ["order.create", "order.add_items", "order_item.status"];
 
-function legacyToken(): string | null {
-  return process.env.REMOTE_SYNC_TOKEN?.trim() || null;
-}
-
 interface IncomingEvent {
   clientEventId?: unknown;
   type?: unknown;
@@ -44,7 +40,7 @@ export async function POST(request: NextRequest) {
   let tokenBusinessId = await resolveBusinessBySyncToken(bearer);
   let usedLegacyToken = false;
   if (!tokenBusinessId) {
-    const legacy = legacyToken();
+    const legacy = legacySyncToken();
     if (!legacy || !tokensMatch(bearer, legacy)) {
       return NextResponse.json({ error: "unauthorized" }, { status: 401 });
     }
@@ -101,6 +97,16 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "mixed_business_locations" }, { status: 422 });
   }
   const eventsBusinessId = [...eventBusinessIds][0];
+  
+  if (usedLegacyToken) {
+    const { rows } = await withoutTenantScope("server-sync-auth", () =>
+      query(`SELECT 1 FROM server_sync_tokens WHERE business_id = $1`, [eventsBusinessId])
+    );
+    if (rows.length > 0) {
+      return NextResponse.json({ error: "legacy_token_superseded" }, { status: 403 });
+    }
+  }
+
   if (tokenBusinessId && tokenBusinessId !== eventsBusinessId) {
     return NextResponse.json({ error: "location_business_mismatch" }, { status: 403 });
   }

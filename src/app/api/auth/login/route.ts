@@ -5,6 +5,12 @@ import { SESSION_COOKIE, sessionCookieOptions, signSession } from "@/lib/auth";
 import { hostRoutingEnabled, parseHost, requestHost, rootDomain } from "@/lib/host";
 import { resolveBusinessByLabel } from "@/lib/host-resolution";
 import {
+  checkAuthLockout,
+  recordAuthFailure,
+  recordAuthSuccess,
+} from "@/lib/login-lockout-service";
+import { PASSWORD_LOCKOUT_POLICY } from "@/lib/login-lockout";
+import {
   membershipBlockedReason,
   membershipsForPlatformUser,
   type Membership,
@@ -114,9 +120,21 @@ export async function POST(request: NextRequest) {
     const identity = rows[0];
     const usableIdentity = identity?.is_active ? identity : null;
     const passwordOk = await bcrypt.compare(password, usableIdentity?.password_hash ?? DUMMY_HASH);
+    
     if (!usableIdentity || !passwordOk) {
+      await recordAuthFailure("tenant_password", email.trim().toLowerCase());
       return NextResponse.json({ error: "invalid_credentials" }, { status: 401 });
     }
+
+    const lockout = await checkAuthLockout("tenant_password", email.trim().toLowerCase(), PASSWORD_LOCKOUT_POLICY);
+    if (lockout.locked) {
+      return NextResponse.json(
+        { error: "account_locked", lockedUntil: lockout.lockedUntil },
+        { status: 423 },
+      );
+    }
+
+    await recordAuthSuccess("tenant_password", email.trim().toLowerCase());
 
     const memberships = await membershipsForPlatformUser(usableIdentity.id);
     if (memberships.length === 0) {

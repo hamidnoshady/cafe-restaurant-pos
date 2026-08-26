@@ -14,35 +14,102 @@
  * secret under 32 characters (256 bits, the usual HS256 floor), not just an
  * unset or placeholder one.
  */
+import { jwtVerify } from "jose";
+
 const PLACEHOLDER = "change-me-in-production";
 const MIN_SECRET_LENGTH = 32;
 
+export type SigningRealm = "tenant" | "platform";
+
+const cache = new Map<SigningRealm, Promise<Uint8Array>>();
+
 /**
- * `context` names what is being signed — "sessions", "platform sessions",
- * "webauthn ceremony challenges" — and is reported in the error. It used to
- * exist only for the wording of a dev-fallback warning; when that fallback was
- * removed the parameter was left behind unused, so all three call sites were
- * carefully labelling themselves into a message that threw the label away. The
- * failure that reaches a developer is "JWT_SECRET must be set", with no
- * indication of which key was being resolved or how to produce one.
+ * Validates and retrieves the base JWT_SECRET or specific override.
  */
-export function getJwtSecret(context: string): Uint8Array {
-  const secret = process.env.JWT_SECRET;
+function getBaseSecret(realm?: SigningRealm): Uint8Array {
+  const secret = (realm && process.env[`JWT_SECRET_${realm.toUpperCase()}`]) || process.env.JWT_SECRET;
   const isProduction = process.env.NODE_ENV === "production";
 
   if (secret && secret !== PLACEHOLDER) {
     if (isProduction && secret.length < MIN_SECRET_LENGTH) {
       throw new Error(
         `JWT_SECRET is only ${secret.length} characters — at least ${MIN_SECRET_LENGTH} are required in ` +
-          `production to sign ${context} (e.g. \`openssl rand -hex 32\`).`,
+          `production.`
       );
     }
     return new TextEncoder().encode(secret);
   }
 
   throw new Error(
-    `JWT_SECRET must be set to a real secret before signing ${context} — it is ` +
-      `either unset or still the "${PLACEHOLDER}" placeholder from .env.example. ` +
-      "Generate one with `openssl rand -hex 32`.",
+    `JWT_SECRET must be set to a real secret before signing.`
   );
+}
+
+export async function getRealmSecret(realm: SigningRealm): Promise<Uint8Array> {
+  if (cache.has(realm)) {
+    return cache.get(realm)!;
+  }
+  const promise = (async () => {
+    const override = process.env[`JWT_SECRET_${realm.toUpperCase()}`];
+    if (override) {
+      return getBaseSecret(realm);
+    }
+    const baseSecret = getBaseSecret();
+    const keyMaterial = await crypto.subtle.importKey(
+      "raw",
+      baseSecret.buffer as ArrayBuffer,
+      "HKDF",
+      false,
+      ["deriveBits"]
+    );
+    const info = new TextEncoder().encode(`pos.jwt.${realm}.v1`);
+    const derivedBits = await crypto.subtle.deriveBits(
+      {
+        name: "HKDF",
+        hash: "SHA-256",
+        salt: new Uint8Array(),
+        info: info,
+      },
+      keyMaterial,
+      256
+    );
+    return new Uint8Array(derivedBits);
+  })();
+  cache.set(realm, promise);
+  return promise;
+}
+
+export async function getLegacySecret(): Promise<Uint8Array | null> {
+  if (process.env.JWT_LEGACY_VERIFY === "off") {
+    return null;
+  }
+  try {
+    return getBaseSecret();
+  } catch {
+    return null;
+  }
+}
+
+export async function verifyWithRealmSecret<T>(token: string, realm: SigningRealm): Promise<T | null> {
+  const realmSecret = await getRealmSecret(realm);
+  try {
+    const { payload } = await jwtVerify(token, realmSecret);
+    return payload as T;
+  } catch (err) {
+    const legacySecret = await getLegacySecret();
+    if (legacySecret) {
+      const { payload } = await jwtVerify(token, legacySecret);
+      return payload as T;
+    }
+    throw err;
+  }
+}
+
+// Preserve existing export for things that haven't migrated yet
+export function __clearJwtCache() {
+  cache.clear();
+}
+
+export function getJwtSecret(context: string): Uint8Array {
+  return getBaseSecret();
 }

@@ -49,20 +49,21 @@ ENV APP_IMAGE_SHA=$GIT_SHA
 # postgresql-client gives pg_isready / pg_dump / pg_restore. The app's backup
 # system (Phase 10) shells out to pg_dump/pg_restore, and the entrypoint uses
 # pg_isready to wait for the DB before migrating.
-RUN apk add --no-cache postgresql16-client
+# su-exec is used to drop privileges from root after fixing volume permissions.
+RUN apk add --no-cache postgresql16-client su-exec
 
 # Full dependency tree (tsx + next + runtime libs) and the built app.
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/.next ./.next
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/src ./src
-COPY --from=builder /app/migrations ./migrations
-COPY --from=builder /app/scripts ./scripts
-COPY --from=builder /app/server.ts ./server.ts
-COPY --from=builder /app/next.config.ts ./next.config.ts
-COPY --from=builder /app/tsconfig.json ./tsconfig.json
-COPY --from=builder /app/package.json ./package.json
-COPY docker-entrypoint.sh ./docker-entrypoint.sh
+COPY --from=builder --chown=node:node /app/node_modules ./node_modules
+COPY --from=builder --chown=node:node /app/.next ./.next
+COPY --from=builder --chown=node:node /app/public ./public
+COPY --from=builder --chown=node:node /app/src ./src
+COPY --from=builder --chown=node:node /app/migrations ./migrations
+COPY --from=builder --chown=node:node /app/scripts ./scripts
+COPY --from=builder --chown=node:node /app/server.ts ./server.ts
+COPY --from=builder --chown=node:node /app/next.config.ts ./next.config.ts
+COPY --from=builder --chown=node:node /app/tsconfig.json ./tsconfig.json
+COPY --from=builder --chown=node:node /app/package.json ./package.json
+COPY --chown=node:node docker-entrypoint.sh ./docker-entrypoint.sh
 RUN chmod +x ./docker-entrypoint.sh
 
 EXPOSE 3000

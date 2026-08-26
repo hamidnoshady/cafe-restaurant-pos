@@ -36,6 +36,13 @@ const EXEMPT_TABLES = new Set([
   "feature_flags",
   "platform_admins",
   "platform_audit_log",
+  // Phase 24 — Login lockout for password, platform and directory realms. The attempt
+  // happens before any business is known, so it has no business_id. It belongs to
+  // the login identity across the platform.
+  "auth_login_attempts",
+  "mfa_enrolments",
+  "mfa_challenges",
+  "mfa_recovery_codes",
   // Phase 17 — a global plan catalogue (branch/member/order-count ceilings),
   // the same shape as feature_flags: every business reads the same few rows,
   // there is nothing to isolate.

@@ -1,80 +1,60 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterAll } from "vitest";
+import { SignJWT, jwtVerify } from "jose";
+import { getRealmSecret, getLegacySecret, verifyWithRealmSecret, __clearJwtCache } from "./jwt-secret";
 
-async function freshGetJwtSecret() {
-  vi.resetModules();
-  return (await import("./jwt-secret")).getJwtSecret;
-}
+describe("jwt-secret", () => {
+  const originalEnv = process.env;
 
-beforeEach(() => {
-  vi.restoreAllMocks();
-});
-
-afterEach(() => {
-  vi.unstubAllEnvs();
-});
-
-describe("getJwtSecret", () => {
-  it("encodes a configured secret as-is outside production", async () => {
-    vi.stubEnv("NODE_ENV", "test");
-    vi.stubEnv("JWT_SECRET", "short");
-    const getJwtSecret = await freshGetJwtSecret();
-    expect(getJwtSecret("sessions")).toEqual(new TextEncoder().encode("short"));
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+    __clearJwtCache();
   });
 
-  it("accepts a long-enough secret in production", async () => {
-    vi.stubEnv("NODE_ENV", "production");
-    vi.stubEnv("JWT_SECRET", "a".repeat(32));
-    const getJwtSecret = await freshGetJwtSecret();
-    expect(getJwtSecret("sessions")).toEqual(new TextEncoder().encode("a".repeat(32)));
+  afterAll(() => {
+    process.env = originalEnv;
   });
 
-  it("throws in production when the secret is shorter than 32 characters", async () => {
-    vi.stubEnv("NODE_ENV", "production");
-    vi.stubEnv("JWT_SECRET", "too-short");
-    const getJwtSecret = await freshGetJwtSecret();
-    expect(() => getJwtSecret("sessions")).toThrow(/only 9 characters/);
+  it("realm keys differ from each other and from the raw secret", async () => {
+    process.env.JWT_SECRET = "0123456789abcdef0123456789abcdef";
+    const tenant = await getRealmSecret("tenant");
+    const platform = await getRealmSecret("platform");
+    const raw = new TextEncoder().encode(process.env.JWT_SECRET);
+
+    expect(tenant).not.toEqual(platform);
+    expect(tenant).not.toEqual(raw);
+    expect(platform).not.toEqual(raw);
   });
 
-  it("does not enforce a minimum length outside production", async () => {
-    vi.stubEnv("NODE_ENV", "test");
-    vi.stubEnv("JWT_SECRET", "x");
-    const getJwtSecret = await freshGetJwtSecret();
-    expect(() => getJwtSecret("sessions")).not.toThrow();
+  it("a tenant-signed token with a rewritten realm claim fails platform verification", async () => {
+    process.env.JWT_SECRET = "0123456789abcdef0123456789abcdef";
+    const tenantKey = await getRealmSecret("tenant");
+    const token = await new SignJWT({ realm: "platform" })
+      .setProtectedHeader({ alg: "HS256" })
+      .sign(tenantKey);
+
+    await expect(verifyWithRealmSecret(token, "platform")).rejects.toThrow();
   });
 
-  it("throws when JWT_SECRET is unset", async () => {
-    vi.stubEnv("NODE_ENV", "production");
-    vi.stubEnv("JWT_SECRET", "");
-    const getJwtSecret = await freshGetJwtSecret();
-    expect(() => getJwtSecret("sessions")).toThrow(/must be set/);
+  it("legacy fallback works and stops when disabled", async () => {
+    process.env.JWT_SECRET = "0123456789abcdef0123456789abcdef";
+    const rawKey = new TextEncoder().encode(process.env.JWT_SECRET);
+    const token = await new SignJWT({ realm: "tenant" })
+      .setProtectedHeader({ alg: "HS256" })
+      .sign(rawKey);
+
+    // Fallback is enabled by default
+    const payload = await verifyWithRealmSecret(token, "tenant");
+    expect(payload).not.toBeNull();
+    expect((payload as any).realm).toBe("tenant");
+
+    // Disable fallback
+    process.env.JWT_LEGACY_VERIFY = "off";
+    await expect(verifyWithRealmSecret(token, "tenant")).rejects.toThrow();
   });
 
-  /**
-   * `context` was an unused parameter for a while — every call site labelled
-   * what it was signing and the message discarded it, so a developer hitting
-   * this got no clue which key failed or how to make one.
-   */
-  it("names what was being signed, and how to produce a secret", async () => {
-    vi.stubEnv("NODE_ENV", "test");
-    vi.stubEnv("JWT_SECRET", "");
-    const getJwtSecret = await freshGetJwtSecret();
-    expect(() => getJwtSecret("platform sessions")).toThrow(/platform sessions/);
-    expect(() => getJwtSecret("platform sessions")).toThrow(/openssl rand -hex 32/);
-  });
-
-  it("names what was being signed when a production secret is too short", async () => {
-    vi.stubEnv("NODE_ENV", "production");
-    vi.stubEnv("JWT_SECRET", "too-short");
-    const getJwtSecret = await freshGetJwtSecret();
-    expect(() => getJwtSecret("webauthn ceremony challenges")).toThrow(
-      /webauthn ceremony challenges/,
-    );
-  });
-
-  it("throws when JWT_SECRET is still the placeholder", async () => {
-    vi.stubEnv("NODE_ENV", "production");
-    vi.stubEnv("JWT_SECRET", "change-me-in-production");
-    const getJwtSecret = await freshGetJwtSecret();
-    expect(() => getJwtSecret("sessions")).toThrow(/must be set/);
+  it("the < 32 chars production floor survives", async () => {
+    (process.env as any).NODE_ENV = "production";
+    process.env.JWT_SECRET = "short";
+    await expect(getRealmSecret("tenant")).rejects.toThrow(/at least 32 are required/);
   });
 });

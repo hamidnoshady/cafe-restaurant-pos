@@ -36,6 +36,10 @@ export const PUT = withTenantScope(async (request: NextRequest) => {
     if (!cloud.secretAccessKey) cloud.secretAccessKey = current.cloud.secretAccessKey;
     if (!cloud.passphrase) cloud.passphrase = current.cloud.passphrase;
   }
+  
+  if (!body.passphrase) {
+    body.passphrase = current.passphrase;
+  }
 
   const validated = validateBackupConfig({ ...body, cloud });
   if (!validated.ok) {

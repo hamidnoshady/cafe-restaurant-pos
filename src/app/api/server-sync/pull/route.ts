@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query, withTenant, withoutTenantScope } from "@/lib/db";
-import { recordLegacyTokenUsage, resolveBusinessBySyncToken, tokensMatch } from "@/lib/server-sync";
+import { recordLegacyTokenUsage, resolveBusinessBySyncToken, tokensMatch, legacySyncToken } from "@/lib/server-sync";
 
 /**
  * Server-to-server pull endpoint (Phase 11).
@@ -17,10 +17,6 @@ import { recordLegacyTokenUsage, resolveBusinessBySyncToken, tokensMatch } from 
  * the read in withTenant() closes that regardless of which role the DB
  * connection happens to be.
  */
-function legacyToken(): string | null {
-  return process.env.REMOTE_SYNC_TOKEN?.trim() || null;
-}
-
 type SyncEventRow = {
   id: number;
   location_id: string;
@@ -42,7 +38,7 @@ export async function GET(request: NextRequest) {
   let businessId = await resolveBusinessBySyncToken(bearer);
   let usedLegacyToken = false;
   if (!businessId) {
-    const legacy = legacyToken();
+    const legacy = legacySyncToken();
     if (!legacy || !tokensMatch(bearer, legacy)) {
       return NextResponse.json({ error: "unauthorized" }, { status: 401 });
     }
@@ -57,6 +53,13 @@ export async function GET(request: NextRequest) {
     );
     if (known.rows.length === 0) return NextResponse.json({ error: "unknown_business" }, { status: 422 });
     businessId = requested;
+
+    const { rows: tokenRows } = await withoutTenantScope("server-sync-auth", () =>
+      query(`SELECT 1 FROM server_sync_tokens WHERE business_id = $1`, [businessId])
+    );
+    if (tokenRows.length > 0) {
+      return NextResponse.json({ error: "legacy_token_superseded" }, { status: 403 });
+    }
   }
 
   const after = Number(searchParams.get("after") ?? "0");

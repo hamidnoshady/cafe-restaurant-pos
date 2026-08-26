@@ -11,6 +11,20 @@ export interface RateLimitEntry {
   windowStart: number;
 }
 
+export function clientIpFrom(headers: Headers, trustedHops: number): string {
+  const forwarded = headers.get("x-forwarded-for");
+  if (forwarded) {
+    const parts = forwarded.split(",").map((s) => s.trim());
+    const index = Math.max(0, parts.length - 1 - trustedHops);
+    return parts[index];
+  }
+  
+  const realIp = headers.get("x-real-ip");
+  if (realIp) return realIp;
+
+  return "unknown";
+}
+
 export interface RateLimitResult {
   allowed: boolean;
   /** Milliseconds until the caller may retry; 0 when allowed. */
