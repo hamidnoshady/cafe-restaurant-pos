@@ -28,6 +28,10 @@
  *   # or, when the machine can reach SQL Server directly and mssql is present:
  *   HOLOO_CONNECTION="Server=host,1433;Database=MyDb;User Id=ro;Password=..." \
  *   npx tsx scripts/holoo-probe.ts
+ *
+ * Transport security (secure by default): encryption is on unless
+ * `HOLOO_ENCRYPT=false`, and TLS certificate validation is on unless
+ * `HOLOO_TRUST_SERVER_CERT=true` (for self-signed on-prem SQL Server certs).
  */
 import "dotenv/config";
 import { writeFileSync } from "node:fs";
@@ -103,8 +107,12 @@ async function loadDriver(): Promise<SqlDriver> {
       user: process.env.HOLOO_SQL_USER,
       password: process.env.HOLOO_SQL_PASSWORD,
       options: {
-        encrypt: process.env.HOLOO_ENCRYPT === "true",
-        trustServerCertificate: true,
+        // Transport encryption is ON by default; set HOLOO_ENCRYPT=false to
+        // opt out (e.g. an isolated on-prem SQL Server with no TLS). TLS
+        // certificate validation is ON by default; set
+        // HOLOO_TRUST_SERVER_CERT=true only for a self-signed on-prem cert.
+        encrypt: process.env.HOLOO_ENCRYPT !== "false",
+        trustServerCertificate: process.env.HOLOO_TRUST_SERVER_CERT === "true",
         // Provably read-only: SQL Server will reject a write issued against
         // a read-only routing target rather than silently running it.
         readOnlyIntent: true,

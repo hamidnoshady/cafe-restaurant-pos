@@ -77,6 +77,7 @@ Holoo has two connection surfaces:
 | Write channel into Holoo | **Web service first; guarded direct SQL into SQL Server allowed as fallback.** Reads are always direct SQL. |
 | Reference books in companion mode | **Holoo is the official books.** The app still posts to its own ledger (so reports/BI/assistant work unchanged) and reconciles against Holoo nightly. |
 | Deployment | **On-prem on the local network.** The app installs as-is and opens one outbound TCP connection to SQL Server. A separate Windows bridge agent (like `print-agent/`) for cloud tenants is a follow-up. |
+| SQL Server transport security | **Secure by default.** Transport encryption is on unless `HOLOO_ENCRYPT=false`, and TLS certificate validation is on unless `HOLOO_TRUST_SERVER_CERT=true` (self-signed on-prem certs). Neither the probe nor the client silently sends SQL credentials in cleartext. |
 | Migration number | `0103` (see Numbering note above), not the issue's `0072`. |
 
 > **Risk, recorded and accepted.** Direct SQL writes bypass Holoo's own validation and Holoo's
@@ -94,6 +95,10 @@ convention) that connects to a real Holoo SQL Server with `applicationIntent = R
 `information_schema.tables`/`.columns`, row counts, one sample row per candidate table, and a
 version/edition fingerprint, and writes a JSON profile. It loads the `mssql` driver lazily so a
 checkout without Holoo never pays for it (and the dependency itself is added in Wave 2, not here).
+Its SQL Server connection is **secure by default**: transport encryption on (`HOLOO_ENCRYPT=false`
+to opt out) and TLS certificate validation on (`HOLOO_TRUST_SERVER_CERT=true` to trust a self-signed
+on-prem cert) — credentials and probed data never travel in cleartext unless an operator explicitly
+opts out.
 
 The analytical outputs this wave must settle, and their current status:
 

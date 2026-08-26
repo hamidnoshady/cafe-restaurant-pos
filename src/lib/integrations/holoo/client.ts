@@ -12,6 +12,10 @@
  * factory, so an install without Holoo never loads it — and the driver is
  * reached through an injectable seam (the `HolooSqlDriverFactory`), the same
  * way `FetchLike` makes the WooCommerce client unit-testable without a server.
+ *
+ * Transport security is secure-by-default: SQL Server transport encryption is
+ * on unless `HOLOO_ENCRYPT=false`, and TLS certificate validation is on unless
+ * `HOLOO_TRUST_SERVER_CERT=true` (for self-signed on-prem certificates).
  */
 import type { FetchLike } from "../woocommerce-client";
 
@@ -35,7 +39,7 @@ export interface HolooSqlDriver {
 
 export type HolooSqlDriverFactory = (config: HolooSqlServerConfig) => Promise<HolooSqlDriver>;
 
-/** The default factory: dynamic `import("mssql")`, read-only intent. */
+/** The default factory: dynamic `import("mssql")`, read-only intent, TLS on by default. */
 export const createMssqlDriver: HolooSqlDriverFactory = async (config) => {
   const mssql = await import("mssql");
   const pool = await mssql.connect({
@@ -45,8 +49,13 @@ export const createMssqlDriver: HolooSqlDriverFactory = async (config) => {
     user: config.user,
     password: config.password,
     options: {
-      encrypt: false,
-      trustServerCertificate: true,
+      // Transport encryption is ON by default and TLS certificate validation
+      // is ON by default — credentials and data must not travel in cleartext.
+      // An on-prem Holoo SQL Server without TLS opts out explicitly via
+      // HOLOO_ENCRYPT=false; a self-signed cert opts out via
+      // HOLOO_TRUST_SERVER_CERT=true. See Phase-26-Holoo-Interoperability.md.
+      encrypt: process.env.HOLOO_ENCRYPT !== "false",
+      trustServerCertificate: process.env.HOLOO_TRUST_SERVER_CERT === "true",
       // Reads are always read-only; a write against a read-only routing
       // target is refused rather than silently applied.
       readOnlyIntent: true,
