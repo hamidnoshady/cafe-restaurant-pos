@@ -1,5 +1,6 @@
 "use client";
 
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useEffect, useState } from "react";
 import { Loader2Icon, LockIcon, WandSparklesIcon } from "lucide-react";
 import { toast } from "sonner";
@@ -60,7 +61,7 @@ function NumberField({
 }) {
   return (
     <Field label={label} hint={hint}>
-      <input
+      <PersianNumberInput
         type="number"
         dir="ltr"
         min={1}

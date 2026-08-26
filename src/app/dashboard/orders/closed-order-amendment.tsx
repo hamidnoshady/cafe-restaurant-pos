@@ -1,5 +1,6 @@
 "use client";
 
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 /**
  * Editing or removing an order that has already been paid for.
  *
@@ -400,10 +401,10 @@ export function ClosedOrderAmendment({
               />
             </div>
             {discountType ? (
-              <input
+              <PersianNumberInput
                 className={`${OPS_INPUT} sm:w-32`}
                 dir="ltr"
-                inputMode="numeric"
+                inputMode={discountType === "percent" ? "decimal" : "numeric"}
                 aria-label="مقدار تخفیف"
                 value={discountValue}
                 onChange={(event) => setDiscountValue(event.target.value)}

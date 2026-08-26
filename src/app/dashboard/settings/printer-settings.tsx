@@ -1,5 +1,6 @@
 "use client";
 
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useCallback, useEffect, useState } from "react";
 import { kickDrawer, testPrint } from "@/lib/print-agent-client";
 import type { PrinterConnection } from "@/lib/printer-connection";
@@ -180,7 +181,16 @@ function PrinterForm({ value, onChange, onSubmit, submitLabel, busy }: { value: 
         <input className={inputClass} dir="ltr" value={value.ip} onChange={(e) => change("ip", e.target.value)} placeholder="192.168.1.50" required />
       </Field>
       <Field label="پورت">
-        <input className={inputClass} dir="ltr" inputMode="numeric" value={value.port} onChange={(e) => change("port", e.target.value)} required />
+        <PersianNumberInput
+          className={inputClass}
+          dir="ltr"
+          inputMode="numeric"
+          grouping={false}
+          allowNegative={false}
+          value={value.port}
+          onChange={(e) => change("port", e.target.value)}
+          required
+        />
       </Field>
       <Field label="عرض کاغذ">
         <SearchableSelect

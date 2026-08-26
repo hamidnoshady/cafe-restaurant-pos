@@ -1,5 +1,6 @@
 "use client";
 
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useCallback, useEffect, useState } from "react";
 import Decimal from "decimal.js";
 import { formatQuantity } from "@/lib/digits";
@@ -356,7 +357,7 @@ export function PurchasesSection({
             />
           </Field>
           <Field label={`مقدار خرید (${invItem?.purchase_unit || invItem?.unit || "واحد"})`}>
-            <input
+            <PersianNumberInput
               className={inputClass}
               dir="ltr"
               inputMode="decimal"
@@ -365,7 +366,7 @@ export function PurchasesSection({
             />
           </Field>
           <Field label={`مبلغ کل (${money.unitLabel})`}>
-            <input
+            <PersianNumberInput
               className={inputClass}
               dir="ltr"
               inputMode="numeric"
@@ -625,7 +626,7 @@ export function PurchasesSection({
                                 <div key={it.id} className="grid gap-2 sm:grid-cols-[1fr_9rem] sm:items-end">
                                   <span className="text-sm">{it.inventory_item_name} <span className="text-xs text-muted-foreground">({formatQuantity(it.quantity)} {it.unit})</span></span>
                                   <Field label={`مقدار برگشت (${it.unit})`}>
-                                    <input className={inputClass} dir="ltr" inputMode="decimal" value={returnQuantities[it.id] ?? ""} onChange={(e) => setReturnQuantities((prev) => ({ ...prev, [it.id]: e.target.value }))} />
+                                    <PersianNumberInput className={inputClass} dir="ltr" inputMode="decimal" value={returnQuantities[it.id] ?? ""} onChange={(e) => setReturnQuantities((prev) => ({ ...prev, [it.id]: e.target.value }))} />
                                   </Field>
                                 </div>
                               ))}

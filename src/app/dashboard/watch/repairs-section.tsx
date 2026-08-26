@@ -1,5 +1,6 @@
 "use client";
 
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { formatPersianNumber, formatQuantity, toPersianDigits } from "@/lib/digits";
@@ -140,7 +141,7 @@ export function RepairsSection({
               />
             </Field>
             <Field label={`اجرت تعمیر (${money.unitLabel})`}>
-              <input
+              <PersianNumberInput
                 className={watchInputClass}
                 dir="ltr"
                 inputMode="numeric"
@@ -149,7 +150,7 @@ export function RepairsSection({
               />
             </Field>
             <Field label="مالیات (٪)">
-              <input
+              <PersianNumberInput
                 className={watchInputClass}
                 dir="ltr"
                 inputMode="decimal"
@@ -371,7 +372,7 @@ function PartsPanel({ ticket, busy, run }: { ticket: RepairTicket; busy: boolean
             />
           </Field>
           <Field label="تعداد">
-            <input
+            <PersianNumberInput
               className={watchInputClass}
               dir="ltr"
               inputMode="decimal"
@@ -380,7 +381,7 @@ function PartsPanel({ ticket, busy, run }: { ticket: RepairTicket; busy: boolean
             />
           </Field>
           <Field label={`بهای تمام‌شده (${money.unitLabel})`}>
-            <input
+            <PersianNumberInput
               className={watchInputClass}
               dir="ltr"
               inputMode="numeric"
@@ -389,7 +390,7 @@ function PartsPanel({ ticket, busy, run }: { ticket: RepairTicket; busy: boolean
             />
           </Field>
           <Field label={`دریافتی از مشتری (${money.unitLabel})`} hint="در گارانتی صفر بگذارید.">
-            <input
+            <PersianNumberInput
               className={watchInputClass}
               dir="ltr"
               inputMode="numeric"
@@ -456,7 +457,7 @@ function EstimatePanel({ ticket, busy, run }: { ticket: RepairTicket; busy: bool
 
       <form onSubmit={save} className="grid min-w-0 gap-3 sm:grid-cols-2">
         <Field label={`اجرت (${money.unitLabel})`}>
-          <input
+          <PersianNumberInput
             className={watchInputClass}
             dir="ltr"
             inputMode="numeric"
@@ -465,7 +466,7 @@ function EstimatePanel({ ticket, busy, run }: { ticket: RepairTicket; busy: bool
           />
         </Field>
         <Field label={`قطعات (${money.unitLabel})`}>
-          <input
+          <PersianNumberInput
             className={watchInputClass}
             dir="ltr"
             inputMode="numeric"
@@ -548,7 +549,7 @@ function ClosePanel({
     <PanelShell>
       <form onSubmit={close} className="grid min-w-0 gap-3 sm:grid-cols-3">
         <Field label={`اجرت تعمیر (${money.unitLabel})`}>
-          <input
+          <PersianNumberInput
             className={watchInputClass}
             dir="ltr"
             inputMode="numeric"
@@ -557,7 +558,7 @@ function ClosePanel({
           />
         </Field>
         <Field label="مالیات (٪)">
-          <input
+          <PersianNumberInput
             className={watchInputClass}
             dir="ltr"
             inputMode="decimal"

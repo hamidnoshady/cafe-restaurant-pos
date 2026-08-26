@@ -1,5 +1,6 @@
 "use client";
 
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 /**
  * Phase 20 Wave 5 — self-service clock-in/clock-out for PIN-role staff (the
  * same audience as the lock screen and biometric-settings panel), in the
@@ -181,7 +182,7 @@ function ShiftModal({
               label={shift ? "موجودی صندوق در پایان (اختیاری)" : "موجودی اول صندوق (اختیاری)"}
               hint="برای شیفت‌های بدون صندوق (گارسون/آشپزخانه) می‌توانید خالی بگذارید."
             >
-              <input
+              <PersianNumberInput
                 className={inputClass}
                 dir="ltr"
                 inputMode="numeric"

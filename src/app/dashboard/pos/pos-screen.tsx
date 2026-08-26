@@ -1,5 +1,6 @@
 "use client";
 
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import {
   useCallback,
   useEffect,
@@ -1307,7 +1308,7 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
               />
               <label className="mt-3 block text-xs font-semibold text-[#5E5B55]" htmlFor="pos-guest-count">
                 تعداد مهمان
-                <input
+                <PersianNumberInput
                   id="pos-guest-count"
                   className={inputClass + " mt-1 min-h-11 border-[#EAE8E2] bg-[#FCFCFA]"}
                   dir="ltr"
@@ -1362,7 +1363,7 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
                   htmlFor="pos-delivery-fee"
                 >
                   هزینهٔ ارسال
-                  <input
+                  <PersianNumberInput
                     id="pos-delivery-fee"
                     className={
                       inputClass +
@@ -1532,11 +1533,11 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
               ]}
             />
             {discountType ? (
-              <input
+              <PersianNumberInput
                 className={inputClass}
                 aria-label="مقدار تخفیف"
                 dir="ltr"
-                inputMode="numeric"
+                inputMode={discountType === "percent" ? "decimal" : "numeric"}
                 value={discountValue}
                 onChange={(e) => setDiscountValue(e.target.value)}
                 placeholder={discountType === "percent" ? "درصد" : money.unit === "rial" ? "ریال" : "تومان"}
@@ -1654,7 +1655,7 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
                   />
                   <label className="mt-3 block text-xs font-semibold text-[#5E5B55]" htmlFor="pos-mobile-guest-count">
                     تعداد مهمان
-                    <input
+                    <PersianNumberInput
                       id="pos-mobile-guest-count"
                       className={inputClass + " mt-1 min-h-11 border-[#EAE8E2] bg-[#FCFCFA]"}
                       dir="ltr"
@@ -1713,7 +1714,7 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
                       htmlFor="pos-mobile-delivery-fee"
                     >
                       هزینهٔ ارسال
-                      <input
+                      <PersianNumberInput
                         id="pos-mobile-delivery-fee"
                         className={
                           inputClass +
@@ -1852,10 +1853,10 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
                   ]}
                 />
                 {discountType ? (
-                  <input
+                  <PersianNumberInput
                     className={inputClass}
                     dir="ltr"
-                    inputMode="numeric"
+                    inputMode={discountType === "percent" ? "decimal" : "numeric"}
                     value={discountValue}
                     onChange={(event) => setDiscountValue(event.target.value)}
                     placeholder={discountType === "percent" ? "درصد" : money.unit === "rial" ? "ریال" : "تومان"}
@@ -1998,7 +1999,7 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
                       (اختیاری، تومان)
                     </span>
                   </label>
-                  <input
+                  <PersianNumberInput
                     id="pos-checkout-tip"
                     className={
                       inputClass + " mt-1 min-h-11 border-[#EAE8E2] bg-[#FCFCFA]"

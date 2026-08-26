@@ -1,5 +1,6 @@
 "use client";
 
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 /**
  * Phase 25 Wave 3 — the retail industries' selling screen.
  *
@@ -685,7 +686,7 @@ function GoldLineForm({
           </select>
         </Field>
         <Field label="مقدار اجرت">
-          <input
+          <PersianNumberInput inputMode={makingChargeType === "percent" ? "decimal" : "numeric"}
             className={inputClass}
             dir="ltr"
             value={makingChargeValue}
@@ -693,7 +694,7 @@ function GoldLineForm({
           />
         </Field>
         <Field label="درصد سود">
-          <input
+          <PersianNumberInput inputMode="decimal"
             className={inputClass}
             dir="ltr"
             value={profitPercent}
@@ -701,7 +702,7 @@ function GoldLineForm({
           />
         </Field>
         <Field label="درصد مالیات">
-          <input
+          <PersianNumberInput inputMode="decimal"
             className={inputClass}
             dir="ltr"
             value={vatPercent}
@@ -806,13 +807,13 @@ function WatchLineForm({ units, onAdd }: { units: SerialUnit[]; onAdd: (line: Ca
       </Field>
       <div className="grid gap-x-4 sm:grid-cols-3">
         <Field label={`قیمت (${money.unitLabel})`}>
-          <input className={inputClass} dir="ltr" value={price} onChange={(e) => setPrice(e.target.value)} />
+          <PersianNumberInput inputMode="numeric" className={inputClass} dir="ltr" value={price} onChange={(e) => setPrice(e.target.value)} />
         </Field>
         <Field label={`تخفیف (${money.unitLabel})`}>
-          <input className={inputClass} dir="ltr" value={discount} onChange={(e) => setDiscount(e.target.value)} />
+          <PersianNumberInput inputMode="numeric" className={inputClass} dir="ltr" value={discount} onChange={(e) => setDiscount(e.target.value)} />
         </Field>
         <Field label="درصد مالیات">
-          <input className={inputClass} dir="ltr" value={vatPercent} onChange={(e) => setVatPercent(e.target.value)} />
+          <PersianNumberInput inputMode="decimal" className={inputClass} dir="ltr" value={vatPercent} onChange={(e) => setVatPercent(e.target.value)} />
         </Field>
       </div>
       {preview ? (
@@ -906,13 +907,13 @@ function AccessoryLineForm({ variants, onAdd }: { variants: Variant[]; onAdd: (l
       </Field>
       <div className="grid gap-x-4 sm:grid-cols-2">
         <Field label="تعداد">
-          <input className={inputClass} dir="ltr" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
+          <PersianNumberInput inputMode="decimal" className={inputClass} dir="ltr" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
         </Field>
         <Field
           label={`قیمت واحد (${money.unitLabel})`}
           hint={variant?.unitPrice ? `قیمت ثبت‌شده: ${money.format(variant.unitPrice)}` : undefined}
         >
-          <input
+          <PersianNumberInput inputMode="numeric"
             className={inputClass}
             dir="ltr"
             value={unitPrice}
@@ -921,10 +922,10 @@ function AccessoryLineForm({ variants, onAdd }: { variants: Variant[]; onAdd: (l
           />
         </Field>
         <Field label={`تخفیف (${money.unitLabel})`}>
-          <input className={inputClass} dir="ltr" value={discount} onChange={(e) => setDiscount(e.target.value)} />
+          <PersianNumberInput inputMode="numeric" className={inputClass} dir="ltr" value={discount} onChange={(e) => setDiscount(e.target.value)} />
         </Field>
         <Field label="درصد مالیات">
-          <input className={inputClass} dir="ltr" value={vatPercent} onChange={(e) => setVatPercent(e.target.value)} />
+          <PersianNumberInput inputMode="decimal" className={inputClass} dir="ltr" value={vatPercent} onChange={(e) => setVatPercent(e.target.value)} />
         </Field>
       </div>
       {preview ? (
@@ -1023,13 +1024,13 @@ function CosmeticsLineForm({ variants, onAdd }: { variants: Variant[]; onAdd: (l
       </Field>
       <div className="grid gap-x-4 sm:grid-cols-2">
         <Field label="تعداد">
-          <input className={inputClass} dir="ltr" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
+          <PersianNumberInput inputMode="decimal" className={inputClass} dir="ltr" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
         </Field>
         <Field
           label={`قیمت واحد (${money.unitLabel})`}
           hint={variant?.unitPrice ? `قیمت ثبت‌شده: ${money.format(variant.unitPrice)}` : undefined}
         >
-          <input
+          <PersianNumberInput inputMode="numeric"
             className={inputClass}
             dir="ltr"
             value={unitPrice}
@@ -1038,10 +1039,10 @@ function CosmeticsLineForm({ variants, onAdd }: { variants: Variant[]; onAdd: (l
           />
         </Field>
         <Field label={`تخفیف (${money.unitLabel})`}>
-          <input className={inputClass} dir="ltr" value={discount} onChange={(e) => setDiscount(e.target.value)} />
+          <PersianNumberInput inputMode="numeric" className={inputClass} dir="ltr" value={discount} onChange={(e) => setDiscount(e.target.value)} />
         </Field>
         <Field label="درصد مالیات">
-          <input className={inputClass} dir="ltr" value={vatPercent} onChange={(e) => setVatPercent(e.target.value)} />
+          <PersianNumberInput inputMode="decimal" className={inputClass} dir="ltr" value={vatPercent} onChange={(e) => setVatPercent(e.target.value)} />
         </Field>
       </div>
       {preview ? (

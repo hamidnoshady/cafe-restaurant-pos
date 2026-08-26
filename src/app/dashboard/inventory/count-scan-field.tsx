@@ -1,5 +1,6 @@
 "use client";
 
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ScanBarcodeIcon } from "lucide-react";
 import { formatQuantity, toPersianDigits } from "@/lib/digits";
@@ -149,7 +150,7 @@ export function CountScanField({
           />
         </Field>
         <Field label="مقدار هر اسکن">
-          <input
+          <PersianNumberInput
             className={inputClass}
             dir="ltr"
             inputMode="decimal"
