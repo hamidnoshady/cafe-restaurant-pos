@@ -1,11 +1,13 @@
 /**
- * Minimal ambient typing for the `mssql` driver, used only by
- * `scripts/holoo-probe.ts` (Phase 26 Wave 1).
+ * Minimal ambient typing for the `mssql` driver (Phase 26).
  *
- * Wave 1 is a no-dependency wave: `mssql` is not added to package.json until
- * Wave 2 (where it replaces this stub with the driver's own shipped types).
- * Declaring the module here lets the probe typecheck against the narrow seam
- * it actually uses — connect/query/close — without pulling the driver in.
+ * `mssql` is a real dependency (added in Wave 2) but ships no TypeScript
+ * definitions, and the adapter only ever touches the driver through a narrow
+ * seam — `connect()` and `request().query()`. This declares exactly that seam
+ * for both `scripts/holoo-probe.ts` and
+ * `src/lib/integrations/holoo/client.ts`, so neither has to model the whole
+ * driver. (The injectable `HolooSqlDriver` interface in client.ts is what the
+ * rest of the code actually depends on.)
  */
 declare module "mssql" {
   export interface ConnectionPool {

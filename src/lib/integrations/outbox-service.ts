@@ -13,6 +13,7 @@
 import { query, withoutTenantScope, withTenant } from "../db";
 import { getBusinessIndustry } from "../industry-guard";
 import { getConnection, wooClientFor } from "./connections-service";
+import { isWooCommerce } from "./provider-registry";
 import { listMappings, setLastPushedPayload } from "./mapping-service";
 import { rialToWooAmount } from "./woo-money";
 import { backoffDelayMs, isDeadAfterAttempts, OUTBOX_MAX_ATTEMPTS } from "./retry";
@@ -243,13 +244,17 @@ async function localPriceRial(connection: ConnectionRow, remoteId: string): Prom
 export async function runWooCommerceSyncTick(): Promise<void> {
   const { rows } = await withoutTenantScope("platform", () =>
     query<{ business_id: string; id: string }>(
-      `SELECT id, business_id FROM integration_connections WHERE status = 'active'`,
+      `SELECT id, business_id FROM integration_connections WHERE status = 'active' AND provider = 'woocommerce'`,
     ),
   );
   for (const { business_id, id } of rows) {
     await withTenant(business_id, async () => {
       const connection = await getConnection(business_id, id);
       if (!connection || connection.status !== "active") return;
+      // Provider dispatch (Phase 26): the WooCommerce tick owns only
+      // WooCommerce connections. Holoo's push path is a separate tick
+      // (Wave 8). The guard is belt-and-braces with the SQL filter above.
+      if (!isWooCommerce(connection)) return;
       if (connection.push_stock || connection.push_prices) {
         await refreshOutboxForConnection(connection);
       }
