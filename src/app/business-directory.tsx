@@ -58,9 +58,12 @@ export function BusinessDirectory() {
   return (
     <main className="flex min-h-screen items-center justify-center p-4">
       <div className="w-full max-w-sm rounded-2xl bg-card p-8 shadow-sm">
-        <h1 className="mb-1 text-center text-xl font-bold">سیستم فروش کافه و رستوران</h1>
+        <h1 className="mb-1 text-center text-xl font-bold">
+          سیستم فروش کافه و رستوران
+        </h1>
         <p className="mb-6 text-center text-sm text-muted-foreground">
-          هر کسب‌وکار نشانی اینترنتی خودش را دارد. برای دیدن فهرست کسب‌وکارهای خود وارد شوید.
+          هر کسب‌وکار نشانی اینترنتی خودش را دارد. برای دیدن فهرست کسب‌وکارهای
+          خود وارد شوید.
         </p>
 
         {businesses ? (
@@ -78,11 +81,16 @@ export function BusinessDirectory() {
                   >
                     <span>
                       <span className="block font-semibold">{b.name}</span>
-                      <span className="block text-xs text-muted-foreground" dir="ltr">
+                      <span
+                        className="block text-xs text-muted-foreground"
+                        dir="ltr"
+                      >
                         {b.subdomain}
                       </span>
                     </span>
-                    <span className="text-xs text-muted-foreground">{ROLE_LABELS[b.role] ?? b.role}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {ROLE_LABELS[b.role] ?? b.role}
+                    </span>
                   </a>
                 </li>
               ))}
@@ -91,7 +99,10 @@ export function BusinessDirectory() {
         ) : (
           <form onSubmit={submit} className="space-y-4">
             <div>
-              <label htmlFor="directory-email" className="mb-1 block text-sm text-muted-foreground">
+              <label
+                htmlFor="directory-email"
+                className="mb-1 block text-sm text-muted-foreground"
+              >
                 ایمیل
               </label>
               <input
@@ -105,7 +116,10 @@ export function BusinessDirectory() {
               />
             </div>
             <div>
-              <label htmlFor="directory-password" className="mb-1 block text-sm text-muted-foreground">
+              <label
+                htmlFor="directory-password"
+                className="mb-1 block text-sm text-muted-foreground"
+              >
                 رمز عبور
               </label>
               <input
@@ -122,7 +136,7 @@ export function BusinessDirectory() {
             <button
               type="submit"
               disabled={busy}
-              className="w-full rounded-lg bg-primary py-2.5 font-semibold text-primary-foreground transition hover:bg-primary/85 disabled:opacity-50"
+              className="w-full rounded-lg bg-primary py-2.5 font-semibold text-primary-foreground transition hover:bg-primary/85 disabled:opacity-50 outline-none focus-visible:ring focus-visible:ring-ring/50"
             >
               {busy ? (
                 <span className="flex items-center justify-center gap-2">

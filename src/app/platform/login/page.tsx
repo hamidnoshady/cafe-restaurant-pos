@@ -23,10 +23,13 @@ export default function PlatformLoginPage() {
     e.preventDefault();
     setBusy(true);
     setError(null);
-    const { ok, data } = await api<{ error?: string }>("/api/platform/auth/login", {
-      method: "POST",
-      body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
-    });
+    const { ok, data } = await api<{ error?: string }>(
+      "/api/platform/auth/login",
+      {
+        method: "POST",
+        body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
+      },
+    );
     setBusy(false);
     if (ok) {
       router.push("/platform");
@@ -74,7 +77,7 @@ export default function PlatformLoginPage() {
             <button
               type="submit"
               disabled={busy}
-              className="h-10 w-full rounded-lg bg-sky-500 text-sm font-semibold text-white transition-colors hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-50"
+              className="h-10 w-full rounded-lg bg-sky-500 text-sm font-semibold text-white transition-colors hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-50 outline-none focus-visible:ring focus-visible:ring-sky-500/50"
             >
               {busy ? "در حال ورود…" : "ورود"}
             </button>

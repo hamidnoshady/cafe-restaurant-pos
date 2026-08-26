@@ -144,7 +144,7 @@ export function PairForm({ onBack }: { onBack: () => void }) {
       <button
         type="button"
         onClick={onBack}
-        className="mb-4 text-sm text-muted-foreground hover:text-foreground"
+        className="mb-4 text-sm text-muted-foreground hover:text-foreground outline-none focus-visible:ring focus-visible:ring-ring/50 rounded-sm"
       >
         ← بازگشت
       </button>
@@ -186,7 +186,7 @@ export function PairForm({ onBack }: { onBack: () => void }) {
               type="button"
               onClick={testConnection}
               disabled={probing || !remoteUrl.trim()}
-              className="rounded-lg border border-input px-3 py-1.5 text-xs font-medium hover:border-primary disabled:opacity-50 flex items-center justify-center gap-1.5"
+              className="rounded-lg border border-input px-3 py-1.5 text-xs font-medium hover:border-primary disabled:opacity-50 flex items-center justify-center gap-1.5 outline-none focus-visible:ring focus-visible:ring-ring/50"
             >
               {probing ? (
                 <>
@@ -236,7 +236,7 @@ export function PairForm({ onBack }: { onBack: () => void }) {
         <button
           type="submit"
           disabled={busy || codeKind !== "pairing_code"}
-          className="w-full rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/85 disabled:opacity-50"
+          className="w-full rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/85 disabled:opacity-50 outline-none focus-visible:ring focus-visible:ring-ring/50"
         >
           {busy ? (
             <span className="flex items-center justify-center gap-2">
