@@ -38,8 +38,10 @@ export interface HolooDocument {
   sourceId: string;
   /** 'sale' | 'receipt' | 'purchase' — which Holoo table the document targets. */
   kind: "sale" | "receipt" | "purchase";
-  /** The values to write, in profile column order. */
+  /** The values to write, in profile column order for direct-SQL fallback. */
   values: (string | number | null)[];
+  /** Structured document body for the official web service / bridge. */
+  payload?: Record<string, unknown>;
 }
 
 export interface DirectSqlPreview {

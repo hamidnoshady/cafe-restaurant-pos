@@ -16,7 +16,7 @@
 import { getPool, query } from "../../db";
 import { decryptSecret, encryptSecret, resolveEncryptionKey } from "../secrets";
 import { writeIntegrationAudit } from "../audit";
-import { connectHolooSql, type HolooSqlServerConfig } from "./client";
+import { connectHolooSql, type HolooSqlServerConfig, type HolooWebServiceConfig } from "./client";
 import { matchProfile, type HolooSchemaProfile } from "./schema-profile";
 import type { HolooCurrencyUnit } from "./holoo-money";
 
@@ -54,6 +54,7 @@ export interface HolooSettingsRow extends Record<string, unknown> {
   write_mode: HolooWriteMode;
   direct_sql_armed_at: string | null;
   direct_sql_armed_by: string | null;
+  direct_sql_profile_key: string | null;
   companion_activated_at: string | null;
 }
 
@@ -68,6 +69,7 @@ export interface HolooSettings {
   currencyUnit: HolooCurrencyUnit;
   writeMode: HolooWriteMode;
   directSqlArmedAt: string | null;
+  directSqlProfileKey: string | null;
   companionActivatedAt: string | null;
   hasSqlCredentials: boolean;
   hasWebServiceCredentials: boolean;
@@ -77,7 +79,7 @@ const SETTINGS_COLUMNS = `id, business_id, connection_id, host, port, database,
   sql_user_ciphertext, sql_password_ciphertext, web_service_base_url,
   ws_user_ciphertext, ws_password_ciphertext, holoo_version, schema_profile,
   currency_unit, write_mode, direct_sql_armed_at, direct_sql_armed_by,
-  companion_activated_at`;
+  direct_sql_profile_key, companion_activated_at`;
 
 function mapSettings(row: HolooSettingsRow): HolooSettings {
   return {
@@ -90,6 +92,7 @@ function mapSettings(row: HolooSettingsRow): HolooSettings {
     currencyUnit: row.currency_unit,
     writeMode: row.write_mode,
     directSqlArmedAt: row.direct_sql_armed_at,
+    directSqlProfileKey: row.direct_sql_profile_key,
     companionActivatedAt: row.companion_activated_at,
     hasSqlCredentials: Boolean(row.sql_user_ciphertext && row.sql_password_ciphertext),
     hasWebServiceCredentials: Boolean(row.ws_user_ciphertext && row.ws_password_ciphertext),
@@ -103,6 +106,12 @@ function validate(input: HolooSettingsInput): string | null {
   if (input.currencyUnit !== "rial" && input.currencyUnit !== "toman") return "invalid_currency_unit";
   if (input.writeMode !== "none" && input.writeMode !== "web_service" && input.writeMode !== "direct_sql") {
     return "invalid_write_mode";
+  }
+  if (input.writeMode === "web_service") {
+    if (!input.webServiceBaseUrl?.trim() || !input.wsUser?.trim() || !input.wsPassword?.trim()) return "missing_web_service_credentials";
+  }
+  if (input.webServiceBaseUrl?.trim() && !/^https?:\/\/[^\s]+$/i.test(input.webServiceBaseUrl.trim())) {
+    return "invalid_web_service_url";
   }
   return null;
 }
@@ -236,6 +245,79 @@ export function holooSqlConfigFor(row: HolooSettingsRow): HolooSqlServerConfig {
     user: decryptSecret(row.sql_user_ciphertext, key),
     password: decryptSecret(row.sql_password_ciphertext, key),
   };
+}
+
+/** Decrypt and return the official Holoo web-service config for writes. */
+export function holooWebServiceConfigFor(row: HolooSettingsRow): HolooWebServiceConfig {
+  if (!row.web_service_base_url || !row.ws_user_ciphertext || !row.ws_password_ciphertext) {
+    throw new Error("no_web_service_credentials");
+  }
+  const key = resolveEncryptionKey(process.env);
+  return {
+    baseUrl: row.web_service_base_url,
+    database: row.database,
+    user: decryptSecret(row.ws_user_ciphertext, key),
+    password: decryptSecret(row.ws_password_ciphertext, key),
+  };
+}
+
+export async function activateHolooCompanion(
+  businessId: string,
+  connectionId: string,
+  activatedBy: string,
+): Promise<{ ok: true; companionActivatedAt: string } | { ok: false; error: "not_found" }> {
+  const { rows } = await query<{ companion_activated_at: string }>(
+    `UPDATE holoo_connection_settings
+        SET companion_activated_at = COALESCE(companion_activated_at, now()), updated_at = now()
+      WHERE business_id = $1 AND connection_id = $2
+      RETURNING companion_activated_at::text`,
+    [businessId, connectionId],
+  );
+  if (!rows[0]) return { ok: false, error: "not_found" };
+  await query(
+    `UPDATE integration_connections SET status = 'active', updated_at = now()
+      WHERE business_id = $1 AND id = $2`,
+    [businessId, connectionId],
+  );
+  await writeIntegrationAudit({
+    businessId,
+    connectionId,
+    action: "holoo.companion_activated",
+    payload: { activatedBy },
+  });
+  return { ok: true, companionActivatedAt: rows[0].companion_activated_at };
+}
+
+export async function deactivateHolooCompanion(
+  businessId: string,
+  connectionId: string,
+  deactivatedBy: string,
+): Promise<{ ok: true } | { ok: false; error: "not_found" }> {
+  const { rowCount } = await query(
+    `UPDATE holoo_connection_settings SET companion_activated_at = NULL, updated_at = now()
+      WHERE business_id = $1 AND connection_id = $2`,
+    [businessId, connectionId],
+  );
+  if (rowCount !== 1) return { ok: false, error: "not_found" };
+  await writeIntegrationAudit({
+    businessId,
+    connectionId,
+    action: "holoo.companion_deactivated",
+    payload: { deactivatedBy },
+  });
+  return { ok: true };
+}
+
+export async function hasActiveHolooCompanion(businessId: string): Promise<boolean> {
+  const { rows } = await query<{ exists: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1 FROM holoo_connection_settings h
+       JOIN integration_connections c ON c.id = h.connection_id AND c.business_id = h.business_id
+       WHERE h.business_id = $1 AND h.companion_activated_at IS NOT NULL AND c.status = 'active'
+     ) AS exists`,
+    [businessId],
+  );
+  return Boolean(rows[0]?.exists);
 }
 
 export interface HolooTestResult {

@@ -154,3 +154,40 @@ export function mapAccount(row: HolooAccountRow): MappedAccount {
     parentCode: row.parentCode?.trim() || null,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Opening inventory — stock quantity/cost at cutover.
+// ---------------------------------------------------------------------------
+
+export interface HolooOpeningInventoryRow {
+  id: string;
+  goodsId?: string | null;
+  name: string;
+  unit?: string | null;
+  quantity: number | string;
+  unitCost?: number | string | null;
+}
+
+export interface MappedOpeningInventory {
+  remoteId: string;
+  goodsRemoteId: string | null;
+  name: string;
+  unit: string | null;
+  quantity: string;
+  unitCostRial: bigint;
+}
+
+export function mapOpeningInventory(row: HolooOpeningInventoryRow, unit: HolooCurrencyUnit): MappedOpeningInventory {
+  const quantity = String(row.quantity).trim();
+  if (!quantity || Number(quantity) <= 0) throw new Error("invalid_holoo_quantity");
+  return {
+    remoteId: row.id,
+    goodsRemoteId: row.goodsId?.trim() || null,
+    name: row.name.trim(),
+    unit: row.unit?.trim() || null,
+    quantity,
+    unitCostRial: row.unitCost === null || row.unitCost === undefined || row.unitCost === ""
+      ? 0n
+      : holooAmountToRial(row.unitCost, unit),
+  };
+}

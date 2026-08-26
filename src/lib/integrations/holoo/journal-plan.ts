@@ -26,6 +26,13 @@ export interface HolooVoucher {
   lines: HolooVoucherLine[];
 }
 
+function rialBigInt(value: unknown): bigint {
+  if (typeof value === "bigint") return value;
+  if (typeof value === "number") return BigInt(Math.trunc(value));
+  if (typeof value === "string" && value.trim()) return BigInt(value.trim());
+  return 0n;
+}
+
 /** One netted line — debit XOR credit, both non-negative. */
 export interface NormalizedLine {
   accountCode: string;
@@ -35,8 +42,8 @@ export interface NormalizedLine {
 
 /** Net a possibly-two-sided line to a single side. */
 export function normalizeLine(line: HolooVoucherLine): NormalizedLine {
-  const debit = line.debitRial ?? 0n;
-  const credit = line.creditRial ?? 0n;
+  const debit = rialBigInt(line.debitRial);
+  const credit = rialBigInt(line.creditRial);
   const net = debit - credit;
   if (net >= 0n) return { accountCode: line.accountCode, debit: Number(net), credit: 0 };
   return { accountCode: line.accountCode, debit: 0, credit: Number(-net) };

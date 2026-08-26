@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { requireFeatureForPage } from "@/lib/features";
+import { withTenant } from "@/lib/db";
+import { hasActiveHolooCompanion } from "@/lib/integrations/holoo/connection-service";
 import { PageHeader, PageShell } from "../page-chrome";
 import { LedgerManager } from "./ledger-manager";
 
@@ -9,9 +11,15 @@ export default async function LedgerPage() {
   if (!session) redirect("/login");
   if (!["owner", "manager", "accountant"].includes(session.role)) redirect("/dashboard");
   await requireFeatureForPage(session.businessId, "ledger");
+  const holooCompanion = await withTenant(session.businessId, () => hasActiveHolooCompanion(session.businessId));
 
   return (
     <PageShell>
+      {holooCompanion ? (
+        <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-950">
+          دفتر رسمی در هلو نگهداری می‌شود؛ این دفتر برای گزارش، پایش و تطبیق آینه می‌شود.
+        </div>
+      ) : null}
       <PageHeader
         title="حسابداری"
         description="تراز آزمایشی، دفتر روزنامه، اسناد دستی و عملیات مالی کسب‌وکار."
