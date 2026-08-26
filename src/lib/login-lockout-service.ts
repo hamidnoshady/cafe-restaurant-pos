@@ -1,6 +1,6 @@
 import { createHmac } from "node:crypto";
 import { query } from "./db";
-import { getRealmSecret, getLegacySecret } from "./jwt-secret";
+import { getRealmSecret } from "./jwt-secret";
 import { LockoutPolicy, lockoutStatus, LockoutStatus } from "./login-lockout";
 
 export type AuthRealm = "tenant_password" | "platform_admin" | "directory";
@@ -14,7 +14,7 @@ export async function identityKeyFor(email: string): Promise<string> {
     try {
       secret = await getRealmSecret("platform");
     } catch {
-      secret = await getLegacySecret() ?? new Uint8Array();
+      secret = await getRealmSecret("platform", true); // Fallback to previous key if needed
     }
   }
   const hmac = createHmac("sha256", secret);

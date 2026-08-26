@@ -26,8 +26,12 @@ const cache = new Map<SigningRealm, Promise<Uint8Array>>();
 /**
  * Validates and retrieves the base JWT_SECRET or specific override.
  */
-function getBaseSecret(realm?: SigningRealm): Uint8Array {
-  const secret = (realm && process.env[`JWT_SECRET_${realm.toUpperCase()}`]) || process.env.JWT_SECRET;
+function getBaseSecret(realm?: SigningRealm, envKeySuffix?: string): Uint8Array {
+  let envKey = "JWT_SECRET";
+  if (realm) envKey = `JWT_SECRET_${realm.toUpperCase()}`;
+  if (envKeySuffix) envKey += envKeySuffix;
+  
+  const secret = process.env[envKey] || (envKeySuffix ? undefined : process.env.JWT_SECRET);
   const isProduction = process.env.NODE_ENV === "production";
 
   if (secret && secret !== PLACEHOLDER) {
@@ -45,16 +49,17 @@ function getBaseSecret(realm?: SigningRealm): Uint8Array {
   );
 }
 
-export async function getRealmSecret(realm: SigningRealm): Promise<Uint8Array> {
-  if (cache.has(realm)) {
-    return cache.get(realm)!;
+export async function getRealmSecret(realm: SigningRealm, previous: boolean = false): Promise<Uint8Array> {
+  const cacheKey = `${realm}${previous ? "_prev" : ""}` as SigningRealm;
+  if (cache.has(cacheKey)) {
+    return cache.get(cacheKey)!;
   }
   const promise = (async () => {
-    const override = process.env[`JWT_SECRET_${realm.toUpperCase()}`];
+    const override = process.env[`JWT_SECRET_${realm.toUpperCase()}${previous ? "_PREVIOUS" : ""}`];
     if (override) {
-      return getBaseSecret(realm);
+      return getBaseSecret(realm, previous ? "_PREVIOUS" : "");
     }
-    const baseSecret = getBaseSecret();
+    const baseSecret = getBaseSecret(undefined, previous ? "_PREVIOUS" : "");
     const keyMaterial = await crypto.subtle.importKey(
       "raw",
       baseSecret.buffer as ArrayBuffer,
@@ -75,19 +80,8 @@ export async function getRealmSecret(realm: SigningRealm): Promise<Uint8Array> {
     );
     return new Uint8Array(derivedBits);
   })();
-  cache.set(realm, promise);
+  cache.set(cacheKey, promise);
   return promise;
-}
-
-export async function getLegacySecret(): Promise<Uint8Array | null> {
-  if (process.env.JWT_LEGACY_VERIFY === "off") {
-    return null;
-  }
-  try {
-    return getBaseSecret();
-  } catch {
-    return null;
-  }
 }
 
 export async function verifyWithRealmSecret<T>(token: string, realm: SigningRealm): Promise<T | null> {
@@ -96,12 +90,13 @@ export async function verifyWithRealmSecret<T>(token: string, realm: SigningReal
     const { payload } = await jwtVerify(token, realmSecret);
     return payload as T;
   } catch (err) {
-    const legacySecret = await getLegacySecret();
-    if (legacySecret) {
-      const { payload } = await jwtVerify(token, legacySecret);
+    try {
+      const prevSecret = await getRealmSecret(realm, true);
+      const { payload } = await jwtVerify(token, prevSecret);
       return payload as T;
+    } catch {
+      throw err;
     }
-    throw err;
   }
 }
 

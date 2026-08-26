@@ -251,6 +251,17 @@ export async function requireRole(
   if (!session) {
     return { session: null, error: NextResponse.json({ error: "unauthorized" }, { status: 401 }) };
   }
+  
+  if (session.platformUserId && session.tokenVersion) {
+    const { rows } = await query<{ token_version: number }>(
+      `SELECT token_version FROM platform_users WHERE id = $1`,
+      [session.platformUserId]
+    );
+    if (rows.length === 0 || rows[0].token_version !== session.tokenVersion) {
+      return { session: null, error: NextResponse.json({ error: "unauthorized" }, { status: 401 }) };
+    }
+  }
+
   if (!roles.includes(session.role)) {
     return { session: null, error: NextResponse.json({ error: "forbidden" }, { status: 403 }) };
   }

@@ -321,18 +321,19 @@ function isPublicApiPath(pathname: string): boolean {
   return pathname === "/api/v1" || pathname.startsWith("/api/v1/");
 }
 
-function handleRateLimits(
+async function handleRateLimits(
   request: NextRequest,
   pathname: string,
   now: number,
-): NextResponse | null {
+): Promise<NextResponse | null> {
   if (AUTH_RATE_LIMITED_PATHS.includes(pathname)) {
-    const result = checkRateLimit(
+    const result = await checkRateLimit(
       authIpLimits,
       `ip:${clientIp(request)}`,
       AUTH_IP_LIMIT,
       AUTH_IP_WINDOW_MS,
       now,
+      request.url
     );
     if (!result.allowed) return rateLimited(result.retryAfterMs);
   }
@@ -342,12 +343,13 @@ function handleRateLimits(
     const key = authHeader
       ? `token:${hashKey(authHeader)}`
       : `ip:${clientIp(request)}`;
-    const result = checkRateLimit(
+    const result = await checkRateLimit(
       syncTokenLimits,
       key,
       SYNC_TOKEN_LIMIT,
       SYNC_TOKEN_WINDOW_MS,
       now,
+      request.url
     );
     if (!result.allowed) return rateLimited(result.retryAfterMs);
   }
@@ -355,7 +357,7 @@ function handleRateLimits(
   if (isMcpPath(pathname)) {
     const authHeader = request.headers.get("authorization");
     const key = authHeader ? `mcp:${hashKey(authHeader)}` : `ip:${clientIp(request)}`;
-    const result = checkRateLimit(mcpLimits, key, MCP_LIMIT, MCP_WINDOW_MS, now);
+    const result = await checkRateLimit(mcpLimits, key, MCP_LIMIT, MCP_WINDOW_MS, now, request.url);
     if (!result.allowed) return rateLimited(result.retryAfterMs);
   }
 
@@ -364,12 +366,13 @@ function handleRateLimits(
     const key = authHeader
       ? `api-key:${hashKey(authHeader)}`
       : `ip:${clientIp(request)}`;
-    const result = checkRateLimit(
+    const result = await checkRateLimit(
       apiKeyLimits,
       key,
       API_KEY_LIMIT,
       API_KEY_WINDOW_MS,
       now,
+      request.url
     );
     if (!result.allowed) return rateLimited(result.retryAfterMs);
   }
@@ -588,7 +591,7 @@ async function handle(request: NextRequest, requestHeaders: Headers) {
   const now = Date.now();
   maybeSweep(now);
 
-  const rateLimitResponse = handleRateLimits(request, pathname, now);
+  const rateLimitResponse = await handleRateLimits(request, pathname, now);
   if (rateLimitResponse) return rateLimitResponse;
 
   // Read once per request. A deployment with a ROOT_DOMAIN is host-routed;
@@ -676,12 +679,13 @@ async function handle(request: NextRequest, requestHeaders: Headers) {
 
   // Phase 17 — every authenticated tenant API request counts against its own
   if (pathname.startsWith("/api/")) {
-    const result = checkRateLimit(
+    const result = await checkRateLimit(
       businessLimits,
       `biz:${session.businessId}`,
       BUSINESS_API_LIMIT,
       BUSINESS_API_WINDOW_MS,
       now,
+      request.url
     );
     if (!result.allowed) return rateLimited(result.retryAfterMs);
   }

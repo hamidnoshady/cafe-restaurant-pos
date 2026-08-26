@@ -21,6 +21,7 @@ interface PlatformAdminRow extends Record<string, unknown> {
   password_hash: string;
   is_active: boolean;
   role: PlatformAdminRole;
+  token_version: number;
 }
 
 /** A bcrypt hash of nothing in particular, used to keep timing uniform. */
@@ -56,7 +57,7 @@ export async function POST(request: NextRequest) {
 
   return withoutTenantScope("platform", async () => {
     const { rows } = await query<PlatformAdminRow>(
-      `SELECT id, email::text AS email, full_name, password_hash, is_active, role::text AS role
+      `SELECT id, email::text AS email, full_name, password_hash, is_active, role::text AS role, token_version
          FROM platform_admins WHERE email = $1`,
       [email],
     );
@@ -89,6 +90,7 @@ export async function POST(request: NextRequest) {
       role: usable.role,
       fullName: usable.full_name,
       email: usable.email,
+      tokenVersion: usable.token_version,
     });
 
     const res = NextResponse.json({

@@ -21,12 +21,13 @@ interface PlatformUserRow extends Record<string, unknown> {
   full_name: string;
   password_hash: string;
   is_active: boolean;
+  token_version: number;
 }
 
 /** A bcrypt hash of nothing in particular, used to keep timing uniform. */
 const DUMMY_HASH = "$2b$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy";
 
-function sessionFor(membership: Membership, platformUserId: string) {
+function sessionFor(membership: Membership, platformUserId: string, tokenVersion: number) {
   return signSession({
     sub: membership.userId,
     role: membership.role,
@@ -36,6 +37,7 @@ function sessionFor(membership: Membership, platformUserId: string) {
     locationId: membership.locationId,
     fullName: membership.fullName,
     platformUserId,
+    tokenVersion,
   });
 }
 
@@ -110,7 +112,7 @@ export async function POST(request: NextRequest) {
 
   return withoutTenantScope("login", async () => {
     const { rows } = await query<PlatformUserRow>(
-      `SELECT id, full_name, password_hash, is_active FROM platform_users WHERE email = $1`,
+      `SELECT id, full_name, password_hash, is_active, token_version FROM platform_users WHERE email = $1`,
       [email.trim().toLowerCase()],
     );
 
@@ -190,7 +192,7 @@ export async function POST(request: NextRequest) {
     });
     res.cookies.set(
       SESSION_COOKIE,
-      await sessionFor(chosen, usableIdentity.id),
+      await sessionFor(chosen, usableIdentity.id, usableIdentity.token_version),
       sessionCookieOptions(),
     );
     return res;

@@ -32,6 +32,12 @@ RUN npm run build
 # runner's COPY always succeeds and future assets are picked up automatically.
 RUN mkdir -p public
 
+# ---- prod-deps: production dependencies only ---------------------------------
+FROM node:20-alpine AS prod-deps
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
+
 # ---- runner: the image that actually runs in Komodo -------------------------
 FROM node:20-alpine AS runner
 WORKDIR /app
@@ -52,8 +58,8 @@ ENV APP_IMAGE_SHA=$GIT_SHA
 # su-exec is used to drop privileges from root after fixing volume permissions.
 RUN apk add --no-cache postgresql16-client su-exec
 
-# Full dependency tree (tsx + next + runtime libs) and the built app.
-COPY --from=builder --chown=node:node /app/node_modules ./node_modules
+# Production tree only (tsx is now in dependencies).
+COPY --from=prod-deps --chown=node:node /app/node_modules ./node_modules
 COPY --from=builder --chown=node:node /app/.next ./.next
 COPY --from=builder --chown=node:node /app/public ./public
 COPY --from=builder --chown=node:node /app/src ./src

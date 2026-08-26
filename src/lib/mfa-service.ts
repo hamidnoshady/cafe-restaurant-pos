@@ -1,5 +1,5 @@
 import { query } from "./db";
-import { getRealmSecret, getLegacySecret } from "./jwt-secret";
+import { getRealmSecret } from "./jwt-secret";
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { TOTP } from "@otplib/totp";
 

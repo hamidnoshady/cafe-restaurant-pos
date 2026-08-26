@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { SignJWT, jwtVerify } from "jose";
-import { getRealmSecret, getLegacySecret, verifyWithRealmSecret, __clearJwtCache } from "./jwt-secret";
+import { getRealmSecret, verifyWithRealmSecret, __clearJwtCache } from "./jwt-secret";
 
 describe("jwt-secret", () => {
   const originalEnv = process.env;
@@ -35,21 +35,22 @@ describe("jwt-secret", () => {
     await expect(verifyWithRealmSecret(token, "platform")).rejects.toThrow();
   });
 
-  it("legacy fallback works and stops when disabled", async () => {
+  it("key rotation works with JWT_SECRET_TENANT_PREVIOUS", async () => {
     process.env.JWT_SECRET = "0123456789abcdef0123456789abcdef";
-    const rawKey = new TextEncoder().encode(process.env.JWT_SECRET);
+    const prevKey = await getRealmSecret("tenant");
+
+    // Rotate keys
+    process.env.JWT_SECRET_TENANT_PREVIOUS = process.env.JWT_SECRET;
+    process.env.JWT_SECRET = "new-key-123456789abcdef0123456789";
+
     const token = await new SignJWT({ realm: "tenant" })
       .setProtectedHeader({ alg: "HS256" })
-      .sign(rawKey);
+      .sign(prevKey);
 
-    // Fallback is enabled by default
+    // Should verify successfully using the previous key
     const payload = await verifyWithRealmSecret(token, "tenant");
     expect(payload).not.toBeNull();
     expect((payload as any).realm).toBe("tenant");
-
-    // Disable fallback
-    process.env.JWT_LEGACY_VERIFY = "off";
-    await expect(verifyWithRealmSecret(token, "tenant")).rejects.toThrow();
   });
 
   it("the < 32 chars production floor survives", async () => {
