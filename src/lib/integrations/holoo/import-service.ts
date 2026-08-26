@@ -124,12 +124,26 @@ export async function applyBaseImport(
   const personsMapped = await alreadyMapped(businessId, connectionId, "holoo_customer", input.persons.map((p) => p.remoteId));
   const personsPlan = planPersons(input.persons, personsMapped);
   for (const person of personsPlan.toCreate) {
-    const { rows } = await query<{ id: string }>(
-      `INSERT INTO customers (business_id, location_id, name, phone, address)
-       VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-      [businessId, locationId, person.name, person.phone, person.address],
-    );
-    await upsertMapping(businessId, connectionId, "holoo_customer", person.remoteId, rows[0].id);
+    // Suppliers go through the existing supplier path (the `suppliers` table,
+    // keyed on location); customers through `customers`. Both are recorded
+    // under the same mapping kind — a Holoo person id is unique, and Wave 4
+    // resolves the right one per transaction type.
+    let localId: string;
+    if (person.isSupplier) {
+      const { rows } = await query<{ id: string }>(
+        `INSERT INTO suppliers (location_id, name, phone) VALUES ($1, $2, $3) RETURNING id`,
+        [locationId, person.name, person.phone],
+      );
+      localId = rows[0].id;
+    } else {
+      const { rows } = await query<{ id: string }>(
+        `INSERT INTO customers (business_id, location_id, name, phone, address)
+         VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+        [businessId, locationId, person.name, person.phone, person.address],
+      );
+      localId = rows[0].id;
+    }
+    await upsertMapping(businessId, connectionId, "holoo_customer", person.remoteId, localId);
     createdPersons += 1;
   }
 
