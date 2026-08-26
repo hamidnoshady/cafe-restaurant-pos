@@ -6,7 +6,21 @@
  */
 import { query } from "../db";
 
-export type MappingEntityType = "product" | "customer" | "order" | "refund";
+export type MappingEntityType =
+  | "product"
+  | "customer"
+  | "order"
+  | "refund"
+  // Phase 26 — Holoo entity kinds (Waves 3–8). See migrations/0104.
+  | "holoo_goods"
+  | "holoo_customer"
+  | "holoo_account"
+  | "holoo_invoice"
+  | "holoo_purchase"
+  | "holoo_receipt"
+  | "holoo_stock"
+  | "holoo_journal"
+  | "holoo_document";
 
 export async function upsertMapping(
   businessId: string,
