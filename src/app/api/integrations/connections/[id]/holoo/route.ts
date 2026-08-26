@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
 import { getConnection } from "@/lib/integrations/connections-service";
 import { getHolooSettings, updateHolooSettings } from "@/lib/integrations/holoo/connection-service";
+import { holooHealth } from "@/lib/integrations/holoo/reconciliation-service";
 import type { HolooCurrencyUnit } from "@/lib/integrations/holoo/holoo-money";
 import type { HolooWriteMode } from "@/lib/integrations/holoo/connection-service";
 import { isHoloo } from "@/lib/integrations/provider-registry";
@@ -16,7 +17,8 @@ export const GET = withTenantScope(async (_request: Request, context: { params: 
   if (!connection || !isHoloo(connection)) return NextResponse.json({ error: "not_found" }, { status: 404 });
   const settings = await getHolooSettings(session.businessId, id);
   if (!settings) return NextResponse.json({ error: "not_found" }, { status: 404 });
-  return NextResponse.json({ settings });
+  const health = await holooHealth(session.businessId, id);
+  return NextResponse.json({ settings, health });
 });
 
 export const PATCH = withTenantScope(async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {

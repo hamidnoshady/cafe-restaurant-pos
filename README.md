@@ -254,6 +254,22 @@ More one-time setup, but proven in production:
   a business that's already paired — a leaked one expires on its own within
   the hour.
 
+### Holoo (هلو) side-by-side — companion mode
+
+A business that runs Holoo (هلو) as its official books can install this app
+*beside* it on the same LAN and use the POS, dashboard, reports and assistant
+on Holoo's own data — without migrating. The app installs exactly as above
+(the installer is **not** changed); reaching Holoo is one outbound TCP
+connection from the same Node process to Holoo's SQL Server, configured from
+**Dashboard → اتصال‌ها → نرم‌افزار هلو** (`/dashboard/connections?tab=holoo`).
+Reads are always direct SQL; writes go through the official web service first,
+with a guarded direct-SQL fallback (pinned profile + typed arming + dry-run +
+per-statement audit). Companion mode is gated by the `holoo_companion` feature
+flag (off by default), and rows the mirror pulled from Holoo are owned by Holoo
+— the API refuses to mutate them with `409 holoo_owned`. Full scope and the
+migration path live in
+[docs/phases/Phase-26-Holoo-Interoperability.md](docs/phases/Phase-26-Holoo-Interoperability.md).
+
 ## Conventions (important)
 
 - **Money** is stored as `BIGINT` **Rial** (smallest unit) everywhere — DB, API, calculations. Formatting as Toman with Persian digits happens only at display time (`src/lib/money.ts`).

@@ -56,6 +56,7 @@ app.prepare().then(async () => {
   const { runWooCommerceSyncTick, WOO_SYNC_TICK_INTERVAL_MS } = await import("./src/lib/integrations/outbox-service");
   const { runHolooSyncTick, HOLOO_SYNC_TICK_INTERVAL_MS } = await import("./src/lib/integrations/holoo/pull-service");
   const { runHolooPushTick, HOLOO_PUSH_TICK_INTERVAL_MS } = await import("./src/lib/integrations/holoo/push-service");
+  const { runHolooReconciliationTick, HOLOO_RECONCILIATION_TICK_INTERVAL_MS } = await import("./src/lib/integrations/holoo/reconciliation-service");
   const { runNotificationTick, NOTIFICATION_TICK_INTERVAL_MS } = await import("./src/lib/notifications-service");
   const { runLowStockScanTick, LOW_STOCK_SCAN_INTERVAL_MS } = await import("./src/lib/notification-scans");
 
@@ -134,6 +135,12 @@ app.prepare().then(async () => {
     runHolooPushTick().catch((err) => console.error("holoo push tick failed:", err));
   setInterval(holooPushTick, HOLOO_PUSH_TICK_INTERVAL_MS).unref();
   setTimeout(holooPushTick, 150_000).unref();
+
+  // Phase 26 Wave 9: nightly reconciliation of the shadow books against Holoo.
+  const holooReconciliationTick = () =>
+    runHolooReconciliationTick().catch((err) => console.error("holoo reconciliation tick failed:", err));
+  setInterval(holooReconciliationTick, HOLOO_RECONCILIATION_TICK_INTERVAL_MS).unref();
+  setTimeout(holooReconciliationTick, 180_000).unref();
 
   // Phase 35: drain the notification outbox and push to each recipient's
   // devices. Producers only enqueue — a cashier closing their till must never
