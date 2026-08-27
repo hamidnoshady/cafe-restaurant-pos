@@ -76,11 +76,19 @@ export function CartLineCard({
         <div
           className="flex shrink-0 items-center gap-0.5 rounded-lg border border-[#EAE8E2] bg-[#FCFCFA] p-0.5"
           role="group"
-          aria-label={"تعداد " + line.name}
+          aria-label={
+            hasAddOns
+              ? "تعداد این ترکیب از " + line.name + " (با افزودنی‌ها)"
+              : "تعداد " + line.name
+          }
         >
           <button
             type="button"
-            aria-label={"کاهش تعداد " + line.name}
+            aria-label={
+              hasAddOns
+                ? "کاهش تعداد این ترکیب از " + line.name
+                : "کاهش تعداد " + line.name
+            }
             onClick={() => onStep(line.key, -1)}
             className="flex size-10 items-center justify-center rounded-md text-[#5E5B55] transition-colors hover:bg-[#FFF1D8] hover:text-[#9B6700] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 active:scale-95 motion-reduce:transition-none"
           >
@@ -94,7 +102,13 @@ export function CartLineCard({
           </span>
           <button
             type="button"
-            aria-label={"افزایش تعداد " + line.name}
+            aria-label={
+              hasAddOns
+                ? "افزایش تعداد این ترکیب از " +
+                  line.name +
+                  " (افزودنی‌ها روی واحد جدید هم اعمال می‌شود)"
+                : "افزایش تعداد " + line.name
+            }
             onClick={() => onStep(line.key, 1)}
             className="flex size-10 items-center justify-center rounded-md text-[#9B6700] transition-colors hover:bg-[#FFF1D8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 active:scale-95 motion-reduce:transition-none"
           >

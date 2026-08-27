@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   addOrMergeLine,
+  addPlainUnit,
   countLinesForItem,
+  decideTilePlus,
+  isPlainConfiguration,
   sameLineConfig,
   stepLastLineForItem,
   stepLineQuantity,
@@ -138,5 +141,87 @@ describe("countLinesForItem", () => {
     expect(countLinesForItem(lines, "coffee")).toBe(2);
     expect(countLinesForItem(lines, "tea")).toBe(1);
     expect(countLinesForItem(lines, "cola")).toBe(0);
+  });
+});
+
+describe("isPlainConfiguration", () => {
+  it("treats add-ons or a note as a customised line", () => {
+    expect(isPlainConfiguration(makeLine({ key: "a" }))).toBe(true);
+    expect(
+      isPlainConfiguration(makeLine({ key: "b", modifierIds: ["choc"] })),
+    ).toBe(false);
+    expect(isPlainConfiguration(makeLine({ key: "c", note: "بدون شکر" }))).toBe(
+      false,
+    );
+  });
+});
+
+describe("decideTilePlus", () => {
+  it("behaves like a first tap when the product is not in the cart", () => {
+    expect(decideTilePlus([], "coffee", false)).toEqual({ type: "pick" });
+    expect(decideTilePlus([], "coffee", true)).toEqual({ type: "pick" });
+  });
+
+  it("never copies add-ons: a customised line means add a plain sibling", () => {
+    const withChocolate = makeLine({ key: "l1", modifierIds: ["choc"] });
+    expect(decideTilePlus([withChocolate], "coffee", false)).toEqual({
+      type: "add_plain",
+    });
+  });
+
+  it("still adds a plain unit when a plain line is already in the cart", () => {
+    // addPlainUnit merges with that line; the decision is the same either way.
+    const plain = makeLine({ key: "l1" });
+    const withChocolate = makeLine({ key: "l2", modifierIds: ["choc"] });
+    expect(decideTilePlus([plain, withChocolate], "coffee", false)).toEqual({
+      type: "add_plain",
+    });
+  });
+
+  it("opens the picker when a plain unit would skip a required choice", () => {
+    const withSize = makeLine({ key: "l1", modifierIds: ["large"] });
+    expect(decideTilePlus([withSize], "coffee", true)).toEqual({
+      type: "configure",
+    });
+  });
+});
+
+describe("addPlainUnit (tile +)", () => {
+  it("appends a plain sibling instead of growing a customised line", () => {
+    const withChocolate = makeLine({
+      key: "l1",
+      modifierIds: ["choc"],
+      modifiers: [{ name: "شکلات", priceDelta: 10_000 }],
+    });
+    const next = addPlainUnit(
+      [withChocolate],
+      makeLine({ key: "l2", modifierIds: ["choc"], note: "ignored" }),
+    );
+    expect(next).toHaveLength(2);
+    expect(next[0]).toEqual(withChocolate);
+    expect(next[1].key).toBe("l2");
+    expect(next[1].quantity).toBe(1);
+    expect(next[1].modifierIds).toEqual([]);
+    expect(next[1].modifiers).toEqual([]);
+    expect(next[1].note).toBe("");
+  });
+
+  it("merges into an existing plain line rather than spawning a duplicate", () => {
+    const withChocolate = makeLine({ key: "l1", modifierIds: ["choc"] });
+    const plain = makeLine({ key: "l2", quantity: 1 });
+    const next = addPlainUnit([withChocolate, plain], makeLine({ key: "l3" }));
+    expect(next.map((line) => line.key)).toEqual(["l1", "l2"]);
+    expect(next[0].quantity).toBe(1);
+    expect(next[0].modifierIds).toEqual(["choc"]);
+    expect(next[1].quantity).toBe(2);
+    expect(next[1].modifierIds).toEqual([]);
+  });
+
+  it("grows a lone plain line in place", () => {
+    const plain = makeLine({ key: "l1", quantity: 2 });
+    const next = addPlainUnit([plain], makeLine({ key: "l2" }));
+    expect(next).toHaveLength(1);
+    expect(next[0].key).toBe("l1");
+    expect(next[0].quantity).toBe(3);
   });
 });
