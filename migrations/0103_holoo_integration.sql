@@ -6,9 +6,12 @@
 --  1. integration_connections.provider is opened from 'woocommerce' to
 --     IN ('woocommerce','holoo').
 --  2. The WooCommerce-only columns (base_url + the three credential
---     ciphertexts) become nullable, and a new CHECK re-imposes the old
---     NOT NULLs *only for provider = 'woocommerce'* — bit-for-bit the same
---     guarantees a WooCommerce connection always had.
+--     ciphertexts) become nullable, and a new CHECK re-imposes, *only for
+--     provider = 'woocommerce'*, the guarantees that existed immediately
+--     before this migration: base_url and the webhook secret are required for
+--     every WooCommerce row; the two consumer-key ciphertexts remain
+--     rest_api-only, exactly as 0076 left them (plugin-mode rows have always
+--     stored NULL there, and mode_credentials below still enforces that).
 --  3. Two tenant-scoped tables are added: holoo_connection_settings (the
 --     per-connection Holoo-specific facts: SQL Server + web-service
 --     credentials encrypted via secrets.ts, version/profile, currency unit,
@@ -51,16 +54,27 @@ ALTER TABLE integration_connections
         OR (consumer_key_ciphertext IS NOT NULL AND consumer_secret_ciphertext IS NOT NULL)
     );
 
--- Re-impose, for WooCommerce only, the NOT NULLs the columns above just lost.
--- A Holoo connection keeps them all NULL (its own columns live on
--- holoo_connection_settings); a WooCommerce connection must still have them.
+-- Re-impose, for WooCommerce only, the column-level state that existed
+-- immediately before this migration. A Holoo connection keeps every one of
+-- these columns NULL (its own credentials live on holoo_connection_settings).
+--
+-- For a WooCommerce row the history is: base_url and webhook_secret_ciphertext
+-- were NOT NULL from 0070 for *every* connection, plugin mode included; the
+-- two consumer-key columns were NOT NULL from 0070 too, but 0076 dropped those
+-- two NOT NULLs because REST consumer keys are meaningless in plugin mode —
+-- connections-service.createConnection() inserts NULL for both on every
+-- plugin connection. Re-demanding them here would not only reverse 0076, it
+-- would reject rows already in the table (ADD CONSTRAINT validates existing
+-- rows), so any database holding a plugin-mode connection could not apply
+-- this migration at all. The rest_api-only requirement for the two ciphertexts
+-- stays enforced by integration_connections_mode_credentials, which this same
+-- migration keeps in force above.
 ALTER TABLE integration_connections
     ADD CONSTRAINT integration_connections_provider_credentials CHECK (
         provider <> 'woocommerce'
+        OR link_mode = 'plugin'
         OR (
             base_url IS NOT NULL
-            AND consumer_key_ciphertext IS NOT NULL
-            AND consumer_secret_ciphertext IS NOT NULL
             AND webhook_secret_ciphertext IS NOT NULL
         )
     );

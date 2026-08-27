@@ -16,6 +16,39 @@ import { Client } from "pg";
 const MIGRATIONS_DIR = join(process.cwd(), "migrations");
 export const MIGRATION_ADVISORY_LOCK_ID = "7310318183545164275";
 
+/**
+ * One-time historical checksum corrections.
+ *
+ * Forward-only migrations are immutable once applied: a mismatch is a real
+ * deployment hazard (the file a database ran is no longer the file in the
+ * image), so it aborts. There is exactly one known exception:
+ *
+ *   0103_holoo_integration.sql shipped with
+ *   integration_connections_provider_credentials demanding the two REST
+ *   consumer-key ciphertexts from EVERY WooCommerce row. Migration 0076 had
+ *   made those columns NULL-able for plugin-mode rows (and the application
+ *   writes NULL there), so on any database holding a plugin connection
+ *   ADD CONSTRAINT failed validation and the migration could never apply —
+ *   the forward-only runner then never reached the follow-up fix in 0109.
+ *   The constraint predicate was corrected in place (plugin-mode rows are
+ *   exempt; 0109, which imposes the identical corrected constraint, remains
+ *   the forward fix for databases that applied the broken file).
+ *
+ * Databases that applied the broken original are always non-plugin databases
+ * on which 0109 ran immediately afterwards and corrected the constraint, so
+ * their resulting schema is identical to what the repaired 0103 + 0109 now
+ * produce. Adopting the checksum is therefore schema-neutral; the stored
+ * checksum is only updated when it still equals the known-broken value below,
+ * so no genuine file tampering or unrelated drift is ever masked.
+ */
+const CHECKSUM_REPAIRS: ReadonlyMap<string, string> = new Map([
+  [
+    "0103_holoo_integration.sql",
+    // sha256 of the original, broken revision (over-strict provider_credentials).
+    "889ff7579bd57c57882cde73de2a2bb5cdc7b5f76ffb377532fca3ef6bd614e8",
+  ],
+]);
+
 export interface MigrationRunOptions {
   databaseUrl: string;
   migrationsDir?: string;
@@ -25,6 +58,7 @@ export interface MigrationRunOptions {
 export interface MigrationRunResult {
   applied: number;
   adoptedChecksums: number;
+  repairedChecksums: string[];
 }
 
 interface MigrationFile {
@@ -52,6 +86,7 @@ export async function runMigrations(options: MigrationRunOptions): Promise<Migra
   let lockAcquired = false;
   let adoptedChecksums = 0;
   let appliedCount = 0;
+  const repairedChecksums: string[] = [];
 
   await client.connect();
   try {
@@ -86,6 +121,23 @@ export async function runMigrations(options: MigrationRunOptions): Promise<Migra
         continue;
       }
       if (storedChecksum !== migration.checksum) {
+        const knownBrokenChecksum = CHECKSUM_REPAIRS.get(migration.filename);
+        if (knownBrokenChecksum && storedChecksum === knownBrokenChecksum) {
+          // The applied revision is the documented broken one; the current
+          // file repairs it with a schema-neutral result (see CHECKSUM_REPAIRS).
+          await client.query(
+            "UPDATE schema_migrations SET checksum = $2 WHERE filename = $1 AND checksum = $3",
+            [migration.filename, migration.checksum, knownBrokenChecksum],
+          );
+          applied.set(migration.filename, migration.checksum);
+          repairedChecksums.push(migration.filename);
+          if (!options.quiet) {
+            console.warn(
+              `Checksum repaired for previously applied ${migration.filename}: it had shipped with a broken revision (see CHECKSUM_REPAIRS in scripts/migrate.ts).`,
+            );
+          }
+          continue;
+        }
         throw new Error(`migration_checksum_mismatch: ${migration.filename}`);
       }
     }
@@ -110,7 +162,7 @@ export async function runMigrations(options: MigrationRunOptions): Promise<Migra
       }
     }
 
-    return { applied: appliedCount, adoptedChecksums };
+    return { applied: appliedCount, adoptedChecksums, repairedChecksums };
   } finally {
     try {
       if (lockAcquired) {
@@ -131,6 +183,11 @@ export async function main() {
   }
 
   const result = await runMigrations({ databaseUrl });
+  if (result.repairedChecksums.length > 0) {
+    console.log(
+      `Repaired checksum(s) for corrected migration(s): ${result.repairedChecksums.join(", ")}.`,
+    );
+  }
   if (result.adoptedChecksums > 0) {
     console.log(`Adopted checksum(s) for ${result.adoptedChecksums} existing migration(s).`);
   }
