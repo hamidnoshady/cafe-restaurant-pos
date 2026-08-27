@@ -140,6 +140,9 @@ const ERROR_MESSAGES: Record<string, string> = {
     email_required: "برای این نقش ایمیل الزامی است.",
     pin_required: "برای این نقش رمز عددی الزامی است.",
     weak_password: "رمز عبور باید حداقل ۸ نویسه باشد.",
+    // Phase 24 — the Owner's second factor is texted to this number as the
+    // business is created, so provisioning cannot proceed without a valid one.
+    invalid_owner_phone: "شمارهٔ موبایل مالک معتبر نیست. نمونه: ۰۹۱۲۱۲۳۴۵۶۷",
     already_a_member: "این شخص هم‌اکنون عضو این کسب‌وکار است.",
     role_not_invitable: "این نقش با رمز عددی ساخته می‌شود و قابل دعوت نیست.",
     last_owner: "این تنها مالک فعال کسب‌وکار است؛ ابتدا مالک دیگری اضافه کنید.",

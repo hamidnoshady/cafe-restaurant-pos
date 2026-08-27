@@ -27,6 +27,9 @@ import { coaTemplateForIndustry, nextAccountLevel, type AccountLevel, type Templ
 import { ENABLED_INDUSTRIES, INDUSTRIES, type Industry } from "./industries";
 import { industryProfile } from "./industry-profile";
 import { seedPaymentMethods } from "./payment-methods-service";
+import { normalizePhone } from "./phone";
+import { generateSecret, generateURI } from "otplib";
+import { provisionMfaEnrolment } from "./mfa-service";
 
 export interface ProvisionBusinessInput {
   businessName: string;
@@ -75,10 +78,6 @@ export interface ProvisionBusinessInput {
    */
   subdomain?: string;
 }
-
-import { TOTP } from "@otplib/totp";
-import { generateSecret, generateURI } from "otplib";
-import { provisionMfaEnrolment } from "./mfa-service";
 
 export interface ProvisionedBusiness {
   businessId: string;
@@ -147,29 +146,30 @@ export interface ProvisionRequestBody {
 
 export const MIN_PASSWORD_LENGTH = 8;
 
-import { normalizePhone } from "./phone";
-
 /**
  * Validates and normalises a provisioning request.
  *
  * Lives here rather than in the route because Next.js route modules may only
  * export handlers — and because both entry points (bootstrap and signup) must
  * apply exactly the same rules. Pure, so it is unit-tested directly.
+ *
+ * `deploymentMode` decides whether the Owner's mobile is required, because it
+ * decides which second factor Phase 24 enrols them with: a connected install
+ * gets `sms_otp` and therefore needs a number to send to, while a local one
+ * gets TOTP (no signal in an offline café, so an SMS-only Owner would be
+ * locked out of their own till the first time the line dropped). Absent, it
+ * reads as `connected` — matching `resolveDeploymentMode`, where an install
+ * predating the setting is a connected one, and failing closed rather than
+ * silently skipping the enrolment.
  */
 export function validateProvisionBody(
   body: ProvisionRequestBody,
-  options: { requireSubdomain?: boolean; deploymentMode?: string } = {},
+  options: { requireSubdomain?: boolean; deploymentMode?: DeploymentModeName } = {},
 ): { input: ProvisionBusinessInput; error: null } | { input: null; error: string } {
   const businessName = body.businessName?.trim();
   const ownerName = body.ownerName?.trim();
   const email = body.email?.trim().toLowerCase();
   const password = body.password ?? "";
-  
-  let ownerPhone = null;
-  if (options.deploymentMode !== "local") {
-    ownerPhone = normalizePhone(body.ownerPhone || "");
-    if (!ownerPhone) return { input: null, error: "invalid_owner_phone" };
-  }
 
   if (!businessName || !ownerName || !email || !password) {
     return { input: null, error: "missing_fields" };
@@ -179,6 +179,15 @@ export function validateProvisionBody(
   }
   if (password.length < MIN_PASSWORD_LENGTH) {
     return { input: null, error: "weak_password" };
+  }
+
+  // Checked after the fields above, not before them: an empty form should say
+  // "fill everything in", not single out the one field the visitor has never
+  // been asked for on this deployment before.
+  let ownerPhone: string | null = null;
+  if (options.deploymentMode !== "local") {
+    ownerPhone = normalizePhone(body.ownerPhone || "");
+    if (!ownerPhone) return { input: null, error: "invalid_owner_phone" };
   }
 
   const industry = (body.industry?.trim() || "food_service") as Industry;

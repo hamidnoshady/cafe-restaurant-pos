@@ -31,15 +31,19 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
 
-  const validated = validateProvisionBody(body);
-  if (!validated.input) return NextResponse.json({ error: validated.error }, { status: 400 });
-  const input = validated.input;
-
   // The first-run wizard's mode choice. Anything other than the literal
   // 'local' is treated as connected, which is what every non-desktop caller
   // (public signup, the platform console) already sends by omission.
   const deploymentMode =
     (body as { deploymentMode?: unknown }).deploymentMode === "local" ? "local" : "connected";
+
+  // Resolved before validation, not after: Phase 24 makes the Owner's mobile
+  // required on a connected install (it is where their SMS second factor is
+  // sent) and pointless on a local one, which enrols TOTP instead. Passing the
+  // mode is what lets the validator tell those two cases apart.
+  const validated = validateProvisionBody(body, { deploymentMode });
+  if (!validated.input) return NextResponse.json({ error: validated.error }, { status: 400 });
+  const input = validated.input;
 
   let created;
   try {

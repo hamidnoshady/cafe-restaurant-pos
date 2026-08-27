@@ -45,6 +45,12 @@ const EXEMPT_TABLES = new Set([
   "mfa_recovery_codes",
   "mfa_grace_periods",
   "platform_sms_config",
+  // Phase 24 Wave 5 — the durable rate-limit counter (migration 0074). Its
+  // keys are IP addresses and hashed bearer tokens, counted before any
+  // business is known: the login bucket exists precisely for requests that
+  // have no session yet, so there is no business_id to scope by. The row is a
+  // key, a count and a window start — no tenant data at all.
+  "rate_limits",
   // Phase 17 — a global plan catalogue (branch/member/order-count ceilings),
   // the same shape as feature_flags: every business reads the same few rows,
   // there is nothing to isolate.

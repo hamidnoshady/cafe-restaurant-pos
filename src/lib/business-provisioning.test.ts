@@ -7,6 +7,10 @@ const VALID = {
   ownerName: "مالک",
   email: "Owner@Example.COM",
   password: "correct-horse",
+  // Phase 24 — a connected install enrols the Owner in SMS OTP as the business
+  // is created, so provisioning needs a mobile to send to. Every case below
+  // that isn't specifically about the phone carries a valid one.
+  ownerPhone: "09121234567",
 };
 
 describe("validateProvisionBody", () => {
@@ -103,6 +107,41 @@ describe("validateProvisionBody", () => {
     expect(
       validateProvisionBody({ ...VALID, subdomain: "acme" }, { requireSubdomain: true }).error,
     ).toBeNull();
+  });
+
+  it("requires the Owner's mobile on a connected install, and normalises it to E.164", () => {
+    // Phase 24: `provisionBusiness` writes an sms_otp enrolment in the same
+    // transaction, so a business cannot exist without somewhere to send the
+    // code. Absent `deploymentMode` reads as connected, matching
+    // resolveDeploymentMode — an install predating the setting is a connected
+    // one, and the requirement fails closed rather than skipping enrolment.
+    expect(validateProvisionBody({ ...VALID, ownerPhone: undefined }).error).toBe("invalid_owner_phone");
+    expect(validateProvisionBody({ ...VALID, ownerPhone: "  " }).error).toBe("invalid_owner_phone");
+    expect(validateProvisionBody({ ...VALID, ownerPhone: "12345" }).error).toBe("invalid_owner_phone");
+
+    // The forms are Persian, so the digits may be too.
+    for (const typed of ["09121234567", "+989121234567", "989121234567", "۰۹۱۲۱۲۳۴۵۶۷", "0912 123 4567"]) {
+      expect(validateProvisionBody({ ...VALID, ownerPhone: typed }).input?.ownerPhone, typed).toBe(
+        "+989121234567",
+      );
+    }
+  });
+
+  it("does not ask a local install for a mobile — it enrols TOTP instead", () => {
+    // An offline café has no signal, so an SMS-only Owner would be locked out
+    // of their own till the first time the line dropped.
+    const local = validateProvisionBody({ ...VALID, ownerPhone: undefined }, { deploymentMode: "local" });
+    expect(local.error).toBeNull();
+    expect(local.input?.ownerPhone).toBeNull();
+  });
+
+  it("reports a missing mobile only once the rest of the form is filled in", () => {
+    // Ordering matters for the message the visitor sees: an empty form should
+    // say "fill everything in", not single out the one field this deployment
+    // has never asked for before.
+    expect(validateProvisionBody({ ...VALID, businessName: "", ownerPhone: "" }).error).toBe("missing_fields");
+    expect(validateProvisionBody({ ...VALID, email: "nope", ownerPhone: "" }).error).toBe("invalid_email");
+    expect(validateProvisionBody({ ...VALID, password: "short", ownerPhone: "" }).error).toBe("weak_password");
   });
 
   it("never derives the subdomain from the business name", () => {

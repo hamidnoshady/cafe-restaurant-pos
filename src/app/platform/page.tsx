@@ -234,6 +234,10 @@ function ProvisionForm({ onDone, rootDomain }: { onDone: () => void; rootDomain:
   const [ownerName, setOwnerName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  // Phase 24 — where the Owner's SMS second factor is sent. Deliberately the
+  // Owner's own mobile and not the branch's landline, which is a separate
+  // field on the location: one-time passwords must not go to the counter phone.
+  const [ownerPhone, setOwnerPhone] = useState("");
   const [locationName, setLocationName] = useState("");
   // The business's public address, typed in English by the admin. Deliberately
   // NOT prefilled from the business name: names here are Persian, and a
@@ -265,6 +269,7 @@ function ProvisionForm({ onDone, rootDomain }: { onDone: () => void; rootDomain:
         ownerName: ownerName.trim(),
         email: email.trim().toLowerCase(),
         password,
+        ownerPhone: ownerPhone.trim(),
         locationName: locationName.trim() || undefined,
         subdomain,
         industry,
@@ -358,6 +363,19 @@ function ProvisionForm({ onDone, rootDomain }: { onDone: () => void; rootDomain:
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className={inputClass}
+            />
+          </Field>
+          {/* Phase 24 — the Owner's own mobile, not the branch line: their
+              second factor is texted here as the business is created. */}
+          <Field label="موبایل مالک" hint="کد ورود دومرحله‌ای به این شماره پیامک می‌شود.">
+            <input
+              type="tel"
+              dir="ltr"
+              required
+              placeholder="09121234567"
+              value={ownerPhone}
+              onChange={(e) => setOwnerPhone(e.target.value)}
+              className={`${inputClass} text-start`}
             />
           </Field>
         </div>

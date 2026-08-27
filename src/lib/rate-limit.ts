@@ -6,6 +6,8 @@
  * ever touches is the Map passed in.
  */
 
+import { INTERNAL_AUTH_HEADER, internalAuthToken } from "./internal-auth";
+
 export interface RateLimitEntry {
   count: number;
   windowStart: number;
@@ -39,16 +41,27 @@ export async function checkRateLimit(
   now: number,
   requestUrl?: string,
 ): Promise<RateLimitResult> {
-  // Use Postgres-backed rate limiting via the internal API route
+  // Phase 24 Wave 5 — the durable counter lives in Postgres, which this (Edge)
+  // runtime cannot reach, so it is asked for over HTTP. The call is signed
+  // with the internal secret because the endpoint writes a shared table and
+  // has no session to authenticate: see src/lib/internal-auth.ts.
+  //
+  // `now` is deliberately NOT sent. The window is anchored on the database
+  // clock; letting the caller supply the time let a forged call rewind its own
+  // window forever. It stays in the signature for the in-memory fallback
+  // below, which is per-process and has no such exposure.
   try {
-    const origin = requestUrl ? new URL(requestUrl).origin : "http://localhost:3000";
-    const res = await fetch(`${origin}/api/internal/rate-limit`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ key, limit, windowMs, now }),
-    });
-    if (res.ok) {
-      return (await res.json()) as RateLimitResult;
+    const token = await internalAuthToken();
+    if (token) {
+      const origin = requestUrl ? new URL(requestUrl).origin : "http://localhost:3000";
+      const res = await fetch(`${origin}/api/internal/rate-limit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", [INTERNAL_AUTH_HEADER]: token },
+        body: JSON.stringify({ key, limit, windowMs }),
+      });
+      if (res.ok) {
+        return (await res.json()) as RateLimitResult;
+      }
     }
   } catch (err) {
     console.error("Postgres rate limit check failed, falling back to memory:", err);
