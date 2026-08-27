@@ -1,7 +1,7 @@
 "use client";
 
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { BanknoteIcon, CreditCardIcon, UsersIcon } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -208,6 +208,16 @@ function SplitDialog({
     })),
   ];
 
+  // ⚡ Bolt: Prevent O(G * L) array recreation. When mode is "itemized", every line item
+  // rendered its own identical array of guest options. This computes it once per guest count change.
+  const guestOptions = useMemo(() => [
+    { value: "", label: "مشترک" },
+    ...Array.from({ length: guestCount }, (_, index) => ({
+      value: String(index),
+      label: `مهمان ${toPersianDigits(index + 1)}`,
+    }))
+  ], [guestCount]);
+
   useEffect(() => {
     const timer = setTimeout(() => {
       void api<{ customers: Customer[] }>(`/api/customers?q=${encodeURIComponent(customerQuery)}`).then(({ ok, data }) => {
@@ -329,7 +339,7 @@ function SplitDialog({
                     if (value === "") delete next[line.orderItemId]; else next[line.orderItemId] = Number(value);
                     return next;
                   })}
-                  options={[{ value: "", label: "مشترک" }, ...Array.from({ length: guestCount }, (_, index) => ({ value: String(index), label: `مهمان ${toPersianDigits(index + 1)}` }))]}
+                  options={guestOptions}
                 />
               </div>
             ))}
