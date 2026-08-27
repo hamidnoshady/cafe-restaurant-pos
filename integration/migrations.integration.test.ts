@@ -83,9 +83,13 @@ describe("migration runner", () => {
     );
     await client.end();
 
-    expect(first).toEqual({ applied: expectedMigrations.length, adoptedChecksums: 0 });
+    expect(first).toEqual({
+      applied: expectedMigrations.length,
+      adoptedChecksums: 0,
+      repairedChecksums: [],
+    });
     expect(actualMigrations.rows).toEqual(expectedMigrations);
-    expect(second).toEqual({ applied: 0, adoptedChecksums: 0 });
+    expect(second).toEqual({ applied: 0, adoptedChecksums: 0, repairedChecksums: [] });
   }, 60_000);
 
   it("serializes concurrent runners with the advisory lock", async () => {
@@ -141,7 +145,7 @@ describe("migration runner", () => {
     const upgraded = await runMigrations({ databaseUrl: database.url, migrationsDir: dir, quiet: true });
     const rerun = await runMigrations({ databaseUrl: database.url, migrationsDir: dir, quiet: true });
     expect(upgraded.applied).toBe(files.length - 11);
-    expect(rerun).toEqual({ applied: 0, adoptedChecksums: 0 });
+    expect(rerun).toEqual({ applied: 0, adoptedChecksums: 0, repairedChecksums: [] });
   }, 60_000);
 
   it("adopts a checksum for legacy migration rows once", async () => {
@@ -161,11 +165,65 @@ describe("migration runner", () => {
     await expect(runMigrations({ databaseUrl: database.url, migrationsDir, quiet: true })).resolves.toEqual({
       applied: 0,
       adoptedChecksums: 1,
+      repairedChecksums: [],
     });
     await expect(runMigrations({ databaseUrl: database.url, migrationsDir, quiet: true })).resolves.toEqual({
       applied: 0,
       adoptedChecksums: 0,
+      repairedChecksums: [],
     });
+  });
+
+  it("repairs the checksum of a known-broken applied migration without re-running it", async () => {
+    const database = await createDatabase();
+    // The repaired content keeps the real filename so CHECKSUM_REPAIRS
+    // recognises it (see scripts/migrate.ts).
+    const migrationsDir = await tempMigrations({
+      "0103_holoo_integration.sql": "CREATE TABLE repair_probe(id integer);",
+    });
+    const repairedPath = join(migrationsDir, "0103_holoo_integration.sql");
+    const repairedChecksum = createHash("sha256").update(readFileSync(repairedPath)).digest("hex");
+
+    // Record it as applied under the checksum of the original broken revision
+    // (the sha-256 pinned in CHECKSUM_REPAIRS).
+    const client = new Client({ connectionString: database.url });
+    await client.connect();
+    await client.query(
+      `CREATE TABLE schema_migrations(
+         filename text PRIMARY KEY, checksum text,
+         applied_at timestamptz NOT NULL DEFAULT now())`,
+    );
+    await client.query("INSERT INTO schema_migrations(filename, checksum) VALUES($1, $2)", [
+      "0103_holoo_integration.sql",
+      "889ff7579bd57c57882cde73de2a2bb5cdc7b5f76ffb377532fca3ef6bd614e8",
+    ]);
+    await client.end();
+
+    const first = await runMigrations({ databaseUrl: database.url, migrationsDir, quiet: true });
+    expect(first).toEqual({
+      applied: 0,
+      adoptedChecksums: 0,
+      repairedChecksums: ["0103_holoo_integration.sql"],
+    });
+
+    // The stored checksum now matches the repaired file, and the migration was
+    // not re-applied (the probe table is absent because the recorded row was
+    // treated as already applied).
+    const verify = new Client({ connectionString: database.url });
+    await verify.connect();
+    const { rows } = await verify.query<{ checksum: string }>(
+      "SELECT checksum FROM schema_migrations WHERE filename = '0103_holoo_integration.sql'",
+    );
+    const { rows: probe } = await verify.query(
+      "SELECT to_regclass('repair_probe') AS present",
+    );
+    await verify.end();
+    expect(rows[0].checksum).toBe(repairedChecksum);
+    expect(probe[0].present).toBeNull();
+
+    // Second run is a plain no-op: the repair fires exactly once.
+    const second = await runMigrations({ databaseUrl: database.url, migrationsDir, quiet: true });
+    expect(second).toEqual({ applied: 0, adoptedChecksums: 0, repairedChecksums: [] });
   });
 
   it("rejects drift in an already-applied migration", async () => {
