@@ -19,7 +19,7 @@ import type { Role } from "./auth";
 import type { Industry } from "./industries";
 import { hasModule } from "./industry-profile";
 
-export const CONNECTION_KIND_KEYS = ["desktop", "woocommerce", "api", "mcp"] as const;
+export const CONNECTION_KIND_KEYS = ["desktop", "woocommerce", "holoo", "api", "mcp"] as const;
 export type ConnectionKindKey = (typeof CONNECTION_KIND_KEYS)[number];
 
 export interface ConnectionKind {
@@ -51,6 +51,14 @@ export const CONNECTION_KINDS: ConnectionKind[] = [
     label: "فروشگاه ووکامرس",
     description:
       "اتصال دوطرفه به فروشگاه اینترنتی: سفارش، محصول، مشتری، موجودی و قیمت، با ثبت خودکار حسابداری.",
+    allowedRoles: ["owner", "manager"],
+    feature: "integrations",
+  },
+  {
+    key: "holoo",
+    label: "نرم‌افزار هلو",
+    description:
+      "اتصال به دیتابیس هلو برای مهاجرت یا کار در حالت همراه: اپ روی داده‌های خود هلو کار می‌کند در حالی که دفتر رسمی هلو می‌ماند.",
     allowedRoles: ["owner", "manager"],
     feature: "integrations",
   },

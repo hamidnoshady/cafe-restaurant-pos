@@ -102,7 +102,7 @@ function PadButton({
       type="button"
       onClick={onClick}
       aria-label={ariaLabel}
-      className={`rounded-lg py-3 text-lg font-semibold transition outline-none focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-95 ${
+      className={`rounded-lg py-3 text-lg font-semibold transition outline-none focus-visible:ring focus-visible:ring-ring/50 active:scale-95 ${
         muted
           ? "bg-muted text-muted-foreground hover:bg-muted-foreground/20"
           : "bg-muted hover:bg-primary/10"

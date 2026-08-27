@@ -54,6 +54,9 @@ app.prepare().then(async () => {
   const { runAiSubscriptionRenewalTick, AI_SUBSCRIPTION_TICK_INTERVAL_MS } = await import("./src/lib/ai-billing-service");
   const { runAiProactiveTick, AI_PROACTIVE_TICK_INTERVAL_MS } = await import("./src/lib/ai-proactive-service");
   const { runWooCommerceSyncTick, WOO_SYNC_TICK_INTERVAL_MS } = await import("./src/lib/integrations/outbox-service");
+  const { runHolooSyncTick, HOLOO_SYNC_TICK_INTERVAL_MS } = await import("./src/lib/integrations/holoo/pull-service");
+  const { runHolooPushTick, HOLOO_PUSH_TICK_INTERVAL_MS } = await import("./src/lib/integrations/holoo/push-service");
+  const { runHolooReconciliationTick, HOLOO_RECONCILIATION_TICK_INTERVAL_MS } = await import("./src/lib/integrations/holoo/reconciliation-service");
   const { runNotificationTick, NOTIFICATION_TICK_INTERVAL_MS } = await import("./src/lib/notifications-service");
   const { runLowStockScanTick, LOW_STOCK_SCAN_INTERVAL_MS } = await import("./src/lib/notification-scans");
 
@@ -115,6 +118,29 @@ app.prepare().then(async () => {
     runWooCommerceSyncTick().catch((err) => console.error("woocommerce sync tick failed:", err));
   setInterval(wooSyncTick, WOO_SYNC_TICK_INTERVAL_MS).unref();
   setTimeout(wooSyncTick, 90_000).unref();
+
+  // Phase 26 (issue #125) Wave 7: mirror Holoo base data for companion-mode
+  // businesses. Polling (Holoo cannot call back), gated on holoo_companion,
+  // enumerating under the platform bypass and re-entering each business with
+  // withTenant — the same shape as the WooCommerce tick above.
+  const holooSyncTick = () =>
+    runHolooSyncTick().catch((err) => console.error("holoo sync tick failed:", err));
+  setInterval(holooSyncTick, HOLOO_SYNC_TICK_INTERVAL_MS).unref();
+  setTimeout(holooSyncTick, 120_000).unref();
+
+  // Phase 26 Wave 8: drain the Holoo push outbox (sales/receipts/purchases)
+  // with the same backoff/dead-letter policy, web_service preferred and the
+  // guarded direct_sql fallback.
+  const holooPushTick = () =>
+    runHolooPushTick().catch((err) => console.error("holoo push tick failed:", err));
+  setInterval(holooPushTick, HOLOO_PUSH_TICK_INTERVAL_MS).unref();
+  setTimeout(holooPushTick, 150_000).unref();
+
+  // Phase 26 Wave 9: nightly reconciliation of the shadow books against Holoo.
+  const holooReconciliationTick = () =>
+    runHolooReconciliationTick().catch((err) => console.error("holoo reconciliation tick failed:", err));
+  setInterval(holooReconciliationTick, HOLOO_RECONCILIATION_TICK_INTERVAL_MS).unref();
+  setTimeout(holooReconciliationTick, 180_000).unref();
 
   // Phase 35: drain the notification outbox and push to each recipient's
   // devices. Producers only enqueue — a cashier closing their till must never

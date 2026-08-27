@@ -3,6 +3,7 @@ import { requireRole, withTenantScope } from "@/lib/auth";
 import { getPool, query } from "@/lib/db";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { receiveItemPurchase, RetailStockError } from "@/lib/retail-stock-service";
+import { enqueueHolooPurchase } from "@/lib/integrations/holoo/outbox-producer";
 
 /** This branch's item purchases plus its suppliers, for the purchase form. */
 export const GET = withTenantScope(async () => {
@@ -79,6 +80,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
       createdBy: session.sub,
       lines: body.lines as never[],
     });
+    await enqueueHolooPurchase(client, session.businessId, purchase.id, "item_purchase");
     await client.query("COMMIT");
     return NextResponse.json({ ok: true, purchase });
   } catch (err) {

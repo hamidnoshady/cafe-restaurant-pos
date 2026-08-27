@@ -1,5 +1,6 @@
 "use client";
 
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useCallback, useEffect, useState } from "react";
 import { toLatinDigits } from "@/lib/digits";
 import { ErrorBox, Field, InfoBox, PrimaryButton, api, errorMessage, inputClass } from "../ui";
@@ -90,7 +91,7 @@ export function PricingSettings() {
         <div className="max-w-xs">
           <Field label="درصد حاشیه سود">
             <div className="relative">
-              <input
+              <PersianNumberInput
                 className={inputClass}
                 dir="ltr"
                 inputMode="decimal"
@@ -116,7 +117,7 @@ export function PricingSettings() {
         <div className="max-w-xs">
           <Field label="درصد سربار برآوردی">
             <div className="relative">
-              <input
+              <PersianNumberInput
                 className={inputClass}
                 dir="ltr"
                 inputMode="decimal"

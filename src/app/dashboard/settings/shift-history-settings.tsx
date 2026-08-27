@@ -1,5 +1,6 @@
 "use client";
 
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 /**
  * Phase 20 Wave 5 — admin review of every employee's shift history
  * (team.manage-gated, the same permission that lets an owner/manager reset
@@ -138,7 +139,7 @@ export function ShiftHistorySettings() {
                 </div>
                 {closingId === shift.id && (
                   <div className="mt-2 flex items-center gap-2">
-                    <input
+                    <PersianNumberInput
                       className={inputClass}
                       dir="ltr"
                       inputMode="numeric"

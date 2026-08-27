@@ -1,5 +1,6 @@
 "use client";
 
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 /**
  * The cheque register (چک‌ها).
  *
@@ -301,11 +302,18 @@ function ChequeForm({
       </label>
       <label className="grid gap-1 text-sm">
         <span>شناسه صیاد (اختیاری)</span>
-        <input className={inputClass} value={sayadId} onChange={(e) => setSayadId(e.target.value)} inputMode="numeric" />
+        <PersianNumberInput
+          className={inputClass}
+          value={sayadId}
+          onChange={(e) => setSayadId(e.target.value)}
+          inputMode="numeric"
+          grouping={false}
+          allowNegative={false}
+        />
       </label>
       <label className="grid gap-1 text-sm">
         <span>مبلغ ({money.unitLabel})</span>
-        <input className={inputClass} value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="numeric" required />
+        <PersianNumberInput className={inputClass} value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="numeric" required />
       </label>
       <label className="grid gap-1 text-sm">
         <span>سررسید</span>

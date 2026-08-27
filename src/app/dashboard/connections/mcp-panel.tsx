@@ -1,5 +1,6 @@
 "use client";
 
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 /**
  * «دستیارهای هوش مصنوعی» — connecting Claude, ChatGPT, Codex and anything else
  * that speaks MCP to this business.
@@ -300,7 +301,7 @@ export function McpPanel() {
             value={name}
             onChange={(e) => setName(e.target.value)}
           />
-          <input
+          <PersianNumberInput
             className={inputClass}
             dir="ltr"
             type="number"

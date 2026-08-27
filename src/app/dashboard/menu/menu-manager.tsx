@@ -1,5 +1,6 @@
 "use client";
 
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import {
   useCallback,
   useEffect,
@@ -301,7 +302,7 @@ function ItemSection({
           />
         </Field>
         <Field label={`قیمت (${money.unitLabel})`}>
-          <input
+          <PersianNumberInput
             className={inputClass}
             dir="ltr"
             inputMode="numeric"
@@ -574,7 +575,7 @@ function EditItemRow({
           />
         </Field>
         <Field label={`قیمت (${money.unitLabel})`}>
-          <input
+          <PersianNumberInput
             className={inputClass}
             dir="ltr"
             inputMode="numeric"
@@ -716,7 +717,7 @@ function PricingPanel({
 
       <div className="grid min-w-0 gap-2 border-t border-stone-200/80 pt-2 sm:grid-cols-[minmax(0,1fr)_auto]">
         <Field label="حاشیه سود اختصاصی این آیتم (درصد)">
-          <input
+          <PersianNumberInput
             className={inputClass}
             dir="ltr"
             inputMode="decimal"
@@ -785,7 +786,7 @@ function ModifierSection({
           />
         </Field>
         <Field label="حداقل انتخاب">
-          <input
+          <PersianNumberInput
             className={inputClass}
             dir="ltr"
             inputMode="numeric"
@@ -794,7 +795,7 @@ function ModifierSection({
           />
         </Field>
         <Field label="حداکثر انتخاب">
-          <input
+          <PersianNumberInput
             className={inputClass}
             dir="ltr"
             inputMode="numeric"
@@ -929,7 +930,7 @@ function ModifierGroupRow({
             />
           </Field>
           <Field label="حداقل انتخاب">
-            <input
+            <PersianNumberInput
               className={inputClass}
               dir="ltr"
               inputMode="numeric"
@@ -939,7 +940,7 @@ function ModifierGroupRow({
             />
           </Field>
           <Field label="حداکثر انتخاب">
-            <input
+            <PersianNumberInput
               className={inputClass}
               dir="ltr"
               inputMode="numeric"
@@ -1013,7 +1014,7 @@ function ModifierGroupRow({
           />
         </Field>
         <Field label={`مبلغ اضافه (${money.unitLabel})`}>
-          <input
+          <PersianNumberInput
             className={inputClass}
             dir="ltr"
             inputMode="numeric"
@@ -1169,7 +1170,7 @@ function EditModifierRow({
           />
         </Field>
         <Field label={`مبلغ اضافه (${money.unitLabel})`}>
-          <input
+          <PersianNumberInput
             className={inputClass}
             dir="ltr"
             inputMode="numeric"

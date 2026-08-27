@@ -1,5 +1,6 @@
 "use client";
 
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useCallback, useEffect, useState } from "react";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { toPersianDigits } from "@/lib/digits";
@@ -195,7 +196,7 @@ export default function OpeningStep() {
                     { value: "unit", label: "عدد" },
                   ]}
                 />
-                <input
+                <PersianNumberInput
                   className={inputClass}
                   dir="ltr"
                   inputMode="decimal"
@@ -203,7 +204,7 @@ export default function OpeningStep() {
                   value={r.quantity}
                   onChange={(e) => setInvRows((rs) => rs.map((x, j) => (j === i ? { ...x, quantity: e.target.value } : x)))}
                 />
-                <input
+                <PersianNumberInput
                   className={inputClass}
                   dir="ltr"
                   inputMode="numeric"
@@ -271,7 +272,7 @@ export default function OpeningStep() {
                       { value: "credit", label: "بستانکار" },
                     ]}
                   />
-                  <input
+                  <PersianNumberInput
                     className={inputClass}
                     dir="ltr"
                     inputMode="numeric"

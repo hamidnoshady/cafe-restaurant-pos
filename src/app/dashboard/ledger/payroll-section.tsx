@@ -1,5 +1,6 @@
 "use client";
 
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useEffect, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
@@ -138,7 +139,7 @@ export function PayrollSection({ busy, run, refreshKey }: { busy: boolean; run: 
                 </div>
                 <label className="block text-sm font-medium">
                   <span className="mb-1.5 block text-xs text-muted-foreground">حقوق ماهانه ({money.unitLabel})</span>
-                  <input
+                  <PersianNumberInput
                     className={inputClass + " w-full"}
                     dir="ltr"
                     inputMode="numeric"

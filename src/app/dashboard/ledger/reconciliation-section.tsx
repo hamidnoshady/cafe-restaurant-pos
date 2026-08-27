@@ -1,5 +1,6 @@
 "use client";
 
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useEffect, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
@@ -167,7 +168,7 @@ export function ReconciliationSection({ busy, run }: { busy: boolean; run: (fn: 
               </label>
               <label className="block">
                 <span className="mb-1.5 block text-sm font-medium">مانده صورتحساب ({money.unitLabel})</span>
-                <input className={inputClass} dir="ltr" inputMode="numeric" value={statementBalance} onChange={(e) => setStatementBalance(e.target.value)} placeholder="۰" />
+                <PersianNumberInput className={inputClass} dir="ltr" inputMode="numeric" value={statementBalance} onChange={(e) => setStatementBalance(e.target.value)} placeholder="۰" />
               </label>
             </div>
             <div className="mt-4 max-w-xs">

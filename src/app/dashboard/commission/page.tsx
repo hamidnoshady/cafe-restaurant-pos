@@ -1,5 +1,6 @@
 "use client";
 
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { formatPersianNumber } from "@/lib/digits";
@@ -189,7 +190,7 @@ function RuleForm({
             </select>
           </Field>
           <Field label={kind === "percent" ? "درصد" : `مبلغ (${money.unitLabel})`}>
-            <input className={inputClass} dir="ltr" value={value} onChange={(e) => setValue(e.target.value)} required />
+            <PersianNumberInput inputMode={kind === "percent" ? "decimal" : "numeric"} className={inputClass} dir="ltr" value={value} onChange={(e) => setValue(e.target.value)} required />
           </Field>
         </div>
         <Field label="مبنا">
@@ -199,7 +200,7 @@ function RuleForm({
           </select>
         </Field>
         <Field label="اولویت (بیشتر = زودتر)">
-          <input className={inputClass} dir="ltr" value={priority} onChange={(e) => setPriority(e.target.value)} />
+          <PersianNumberInput inputMode="numeric" className={inputClass} dir="ltr" value={priority} onChange={(e) => setPriority(e.target.value)} />
         </Field>
         <Button type="submit" disabled={busy} className="min-h-11 w-full">
           ذخیره قانون

@@ -197,7 +197,7 @@ export function DashboardGrid({ canEdit, canExplain }: { canEdit: boolean; canEx
             type="button"
             onClick={() => setEditMode((v) => !v)}
             aria-pressed={editMode}
-            className={`inline-flex h-9 items-center rounded-lg border px-3 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-amber-400/40 ${editMode ? "border-amber-200 bg-amber-100 text-amber-950 hover:bg-amber-200" : "border-stone-200 bg-card text-stone-700 hover:bg-stone-50"}`}
+            className={`inline-flex h-9 items-center rounded-lg border px-3 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring focus-visible:ring-amber-400/40 ${editMode ? "border-amber-200 bg-amber-100 text-amber-950 hover:bg-amber-200" : "border-stone-200 bg-card text-stone-700 hover:bg-stone-50"}`}
           >
             {editMode ? "پایان ویرایش چیدمان" : "ویرایش چیدمان"}
           </button>

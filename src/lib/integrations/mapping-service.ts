@@ -6,7 +6,21 @@
  */
 import { query } from "../db";
 
-export type MappingEntityType = "product" | "customer" | "order" | "refund";
+export type MappingEntityType =
+  | "product"
+  | "customer"
+  | "order"
+  | "refund"
+  // Phase 26 — Holoo entity kinds (Waves 3–8). See migrations/0104.
+  | "holoo_goods"
+  | "holoo_customer"
+  | "holoo_account"
+  | "holoo_invoice"
+  | "holoo_purchase"
+  | "holoo_receipt"
+  | "holoo_stock"
+  | "holoo_journal"
+  | "holoo_document";
 
 export async function upsertMapping(
   businessId: string,
@@ -14,13 +28,15 @@ export async function upsertMapping(
   entityType: MappingEntityType,
   remoteId: string,
   localId: string,
+  /** Phase 26 Wave 6 — the import run that created this mapping, for rollback. */
+  importRunId?: string | null,
 ): Promise<void> {
   await query(
-    `INSERT INTO integration_mappings (business_id, connection_id, entity_type, remote_id, local_id)
-     VALUES ($1, $2, $3, $4, $5)
+    `INSERT INTO integration_mappings (business_id, connection_id, entity_type, remote_id, local_id, import_run_id)
+     VALUES ($1, $2, $3, $4, $5, $6)
      ON CONFLICT (connection_id, entity_type, remote_id)
-     DO UPDATE SET local_id = EXCLUDED.local_id, updated_at = now()`,
-    [businessId, connectionId, entityType, remoteId, localId],
+     DO UPDATE SET local_id = EXCLUDED.local_id, import_run_id = EXCLUDED.import_run_id, updated_at = now()`,
+    [businessId, connectionId, entityType, remoteId, localId, importRunId ?? null],
   );
 }
 

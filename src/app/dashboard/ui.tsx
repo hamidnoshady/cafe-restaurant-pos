@@ -202,6 +202,16 @@ const ERROR_MESSAGES: Record<string, string> = {
     invalid_base_url: "آدرس فروشگاه معتبر نیست.",
     missing_credentials: "کلیدهای REST ووکامرس را وارد کنید.",
     invalid_currency_unit: "واحد قیمت فروشگاه معتبر نیست.",
+    invalid_web_service_url: "آدرس وب‌سرویس هلو معتبر نیست.",
+    missing_web_service_credentials: "برای نوشتن از وب‌سرویس، آدرس و نام کاربری و رمز وب‌سرویس هلو را وارد کنید.",
+    no_web_service_credentials: "اطلاعات وب‌سرویس هلو برای این اتصال ثبت نشده است.",
+    no_sql_credentials: "اطلاعات SQL Server هلو برای این اتصال ثبت نشده است.",
+    confirmation_mismatch: "عبارت تأیید دقیقاً مطابق متن خواسته‌شده نیست.",
+    unknown_profile: "ابتدا اتصال هلو را تست کنید تا پروفایل ساختار دیتابیس شناسایی شود.",
+    holoo_direct_sql_profile_not_pinned: "پروفایل فعلی با پروفایل پین‌شده برای SQL مستقیم هم‌خوان نیست؛ دوباره تست و مسلح‌سازی کنید.",
+    holoo_owned: "این ردیف از هلو آمده و در حالت همراه مالکیت آن با هلو است.",
+    opening_inventory_exists: "موجودی افتتاحیه قبلاً ثبت شده است.",
+    missing_manifest: "فایل/مانیفست مهاجرت ارسال نشده است.",
     not_plugin_mode: "این اتصال از نوع «افزونهٔ وردپرس» نیست، پس توکن افزونه ندارد.",
     plugin_never_connected: "افزونهٔ وردپرس هنوز به این سامانه وصل نشده است.",
     // Errors the connection routes and the auth/isolation middleware can
@@ -269,7 +279,7 @@ export function Field({
 
 /** shadcn <Input>-equivalent classes for raw <input>/<select>/<textarea> elements. */
 export const inputClass =
-  "h-10 w-full min-w-0 rounded-lg border border-input bg-transparent px-3 py-1 text-sm transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/30";
+  "h-10 w-full min-w-0 rounded-lg border border-input bg-transparent px-3 py-1 text-sm transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/30";
 
 export function PrimaryButton({
   children,

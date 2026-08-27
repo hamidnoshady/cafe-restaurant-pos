@@ -1,21 +1,18 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
-import { listReconciliations, runReconciliation } from "@/lib/integrations/reconciliation-service";
+import { getConnection } from "@/lib/integrations/connections-service";
+import { isHoloo } from "@/lib/integrations/provider-registry";
+import { runHolooReconciliation } from "@/lib/integrations/holoo/reconciliation-service";
+import { runReconciliation } from "@/lib/integrations/reconciliation-service";
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-
-export const GET = withTenantScope(async (_request: Request, context: { params: Promise<{ id: string }> }) => {
+/** Reconcile a period, dispatching on provider (WooCommerce or Holoo). */
+export const POST = withTenantScope(async (request: Request, context: { params: Promise<{ id: string }> }) => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
   const { id } = await context.params;
-  const reconciliations = await listReconciliations(session.businessId, id);
-  return NextResponse.json({ reconciliations });
-});
 
-export const POST = withTenantScope(async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager");
-  if (error) return error;
-  const { id } = await context.params;
+  const connection = await getConnection(session.businessId, id);
+  if (!connection) return NextResponse.json({ error: "not_found" }, { status: 404 });
 
   let body: { periodStart?: string; periodEnd?: string };
   try {
@@ -23,14 +20,18 @@ export const POST = withTenantScope(async (request: NextRequest, context: { para
   } catch {
     body = {};
   }
-  const periodEnd = body.periodEnd ?? new Date().toISOString();
-  const periodStart = body.periodStart ?? new Date(new Date(periodEnd).getTime() - 30 * DAY_MS).toISOString();
+  const now = new Date();
+  const periodEnd = body.periodEnd ?? now.toISOString().slice(0, 10);
+  const start = new Date(now.getTime() - 30 * 24 * 3600 * 1000);
+  const periodStart = body.periodStart ?? start.toISOString().slice(0, 10);
 
-  try {
-    const result = await runReconciliation(session.businessId, id, session.sub, periodStart, periodEnd);
+  if (isHoloo(connection)) {
+    const result = await runHolooReconciliation(session.businessId, id, session.sub, periodStart, periodEnd);
     if (!result) return NextResponse.json({ error: "not_found" }, { status: 404 });
-    return NextResponse.json({ reconciliation: result });
-  } catch (err) {
-    return NextResponse.json({ ok: false, error: (err as Error).message }, { status: 502 });
+    return NextResponse.json({ ok: true, reconciliation: result });
   }
+
+  const result = await runReconciliation(session.businessId, id, session.sub, periodStart, periodEnd);
+  if (!result) return NextResponse.json({ error: "not_found" }, { status: 404 });
+  return NextResponse.json({ ok: true, reconciliation: result });
 });

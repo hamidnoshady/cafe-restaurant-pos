@@ -1,5 +1,6 @@
 "use client";
 
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useCallback, useEffect, useState } from "react";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { toPersianDigits } from "@/lib/digits";
@@ -120,10 +121,12 @@ export default function UsersStep() {
             </>
           ) : (
             <Field label="پین ۴ رقمی *" hint="برای ورود سریع در صفحهٔ ورود؛ در هر شعبه باید یکتا باشد.">
-              <input
+              <PersianNumberInput
                 className={`${inputClass} w-28 text-center tracking-[0.5em]`}
                 dir="ltr"
                 inputMode="numeric"
+                grouping={false}
+                allowNegative={false}
                 maxLength={4}
                 value={pin}
                 onChange={(e) => setPin(e.target.value.replace(/[^0-9]/g, ""))}

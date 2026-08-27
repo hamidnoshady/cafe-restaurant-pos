@@ -28,3 +28,6 @@
 ## 2024-11-28 - Avoid Concatenating Strings for Fast Filtering Lookups
 **Learning:** Extracting string normalizations into `useMemo` is a good optimization, but concatenating fields (like name and SKU) into a single string (`.join(" ")`) introduces subtle false-positive match bugs where a query can bridge across the boundary of the two concatenated values.
 **Action:** When extracting O(n) computations into `useMemo`, store the normalized parts as separate properties (e.g., `nameLower`, `skuLower`) rather than concatenating them, and perform individual `.includes()` checks.
+## 2025-02-23 - Caching computed object state
+**Learning:** Re-computing expensive derived state like a ticket's status through an O(N) `Array.some()` call multiple times during render, filtering, and inside child components creates redundant work and slows down rendering.
+**Action:** Compute the derived value once during the object's construction (e.g., inside a `useMemo` mapping function), cache it as a property on the object, and reference the cached property downstream.

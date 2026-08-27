@@ -216,7 +216,7 @@ export function AiChatHub({ canAutoApply }: { canAutoApply: boolean }) {
                   rows={2}
                   disabled={busy || loadingConversation}
                   placeholder="پیام خود را بنویسید…"
-                  className="max-h-40 min-h-11 flex-1 resize-none rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-input/30"
+                  className="max-h-40 min-h-11 flex-1 resize-none rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-input/30"
                 />
                 <Button
                   size="icon"
