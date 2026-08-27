@@ -12,10 +12,13 @@
  */
 import { query, withoutTenantScope, withTenant } from "../../db";
 import { getConnection } from "../connections-service";
-import { getHolooSettingsRow } from "./connection-service";
+import { getHolooSettingsRow, holooSqlConfigFor } from "./connection-service";
 import { isFeatureEnabled } from "../../features";
 import { reconcileTotals } from "../reconciliation";
 import { writeIntegrationAudit } from "../audit";
+import { connectHolooSql } from "./client";
+import { holooAmountToRial } from "./holoo-money";
+import { profileForKey } from "./schema-profile";
 
 export const HOLOO_RECONCILIATION_TICK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
@@ -30,36 +33,70 @@ export interface HolooReconciliationResult {
   inBalance: boolean;
 }
 
+function ident(name: string): string {
+  return `[${name.replace(/]/g, "]]")}]`;
+}
+
+function literal(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
+function maxIsoDate(a: string, b: string | null): string {
+  if (!b) return a;
+  const date = b.slice(0, 10);
+  return date > a ? date : a;
+}
+
 async function localShadowTotals(
   businessId: string,
   after: string,
   before: string,
 ): Promise<{ count: number; totalRial: bigint }> {
-  // All app documents in the period — in companion mode every app-side
-  // document is by definition a shadow document after companion_activated_at.
+  // Companion reconciliation is sales-document first: compare the orders the
+  // POS created after activation with Holoo's invoice table for the same
+  // period. The ledger still powers accounting reports; this top-level health
+  // check deliberately uses document headers so retail domain-event source ids
+  // (which point at items) cannot collapse multiple sales together.
   const { rows } = await query<{ count: string; total: string }>(
-    `SELECT count(*) AS count, COALESCE(SUM(jl.debit), 0)::text AS total
-       FROM journal_entries je
-       JOIN journal_lines jl ON jl.entry_id = je.id
-      WHERE je.business_id = $1
-        AND je.entry_date >= $2::date AND je.entry_date < $3::date`,
+    `SELECT count(*)::text AS count, COALESCE(SUM(o.total), 0)::text AS total
+       FROM orders o
+       JOIN locations l ON l.id = o.location_id
+      WHERE l.business_id = $1
+        AND o.status = 'completed'
+        AND o.closed_at >= $2::date AND o.closed_at < $3::date`,
     [businessId, after, before],
   );
   return { count: Number(rows[0]?.count ?? 0), totalRial: BigInt(rows[0]?.total ?? "0") };
 }
 
-/**
- * Holoo-side totals for the period. Reads through the SQL client against the
- * matched schema profile — the real-install-verified half; returning zeros is
- * the safe no-op for an unmapped install.
- */
+/** Holoo-side totals for the period, read through the matched SQL profile. */
 async function holooTotals(
-  _businessId: string,
-  _connectionId: string,
-  _after: string,
-  _before: string,
+  businessId: string,
+  connectionId: string,
+  after: string,
+  before: string,
 ): Promise<{ count: number; totalRial: bigint }> {
-  return { count: 0, totalRial: 0n };
+  const settings = await getHolooSettingsRow(businessId, connectionId);
+  if (!settings?.schema_profile) return { count: 0, totalRial: 0n };
+  const profile = profileForKey(settings.schema_profile);
+  if (!profile) return { count: 0, totalRial: 0n };
+
+  const table = profile.tables.invoices;
+  const dateColumn = profile.columns.invoices.date;
+  const totalColumn = profile.columns.invoices.total;
+  const sql =
+    `SELECT COUNT(*) AS ${ident("count")}, COALESCE(SUM(${ident(totalColumn)}), 0) AS ${ident("total")} ` +
+    `FROM ${ident(table)} WHERE ${ident(dateColumn)} >= ${literal(after)} AND ${ident(dateColumn)} < ${literal(before)}`;
+
+  const client = await connectHolooSql(holooSqlConfigFor(settings));
+  try {
+    const rows = await client.query<{ count: number | string; total: number | string }>(sql);
+    const count = Number(rows[0]?.count ?? 0);
+    const totalRial = holooAmountToRial(rows[0]?.total ?? 0, settings.currency_unit);
+    return { count, totalRial };
+  } finally {
+    await client.close();
+  }
 }
 
 export async function runHolooReconciliation(
@@ -71,10 +108,12 @@ export async function runHolooReconciliation(
 ): Promise<HolooReconciliationResult | null> {
   const connection = await getConnection(businessId, connectionId);
   if (!connection) return null;
+  const settings = await getHolooSettingsRow(businessId, connectionId);
+  const effectiveStart = maxIsoDate(periodStart, settings?.companion_activated_at ?? null);
 
   const [remote, local] = await Promise.all([
-    holooTotals(businessId, connectionId, periodStart, periodEnd),
-    localShadowTotals(businessId, periodStart, periodEnd),
+    holooTotals(businessId, connectionId, effectiveStart, periodEnd),
+    localShadowTotals(businessId, effectiveStart, periodEnd),
   ]);
   const result = reconcileTotals({
     remoteOrderCount: remote.count,
@@ -91,7 +130,7 @@ export async function runHolooReconciliation(
     [
       businessId,
       connectionId,
-      periodStart,
+      effectiveStart,
       periodEnd,
       result.remoteOrderCount,
       result.remoteTotalRial.toString(),
@@ -110,7 +149,7 @@ export async function runHolooReconciliation(
   });
 
   return {
-    periodStart,
+    periodStart: effectiveStart,
     periodEnd,
     holooCount: result.remoteOrderCount,
     holooTotalRial: result.remoteTotalRial.toString(),

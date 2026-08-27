@@ -23,6 +23,7 @@ import { getPool, query } from "./db";
 import { WELL_KNOWN_CODES } from "./coa-template";
 import { accountIdsByCode, MissingLedgerAccountError, postJournalEntry } from "./ledger-service";
 import { ageOpenItems, summarizeAging, type AgingSummary } from "./aging";
+import { enqueueHolooReceiptForApPayment } from "./integrations/holoo/outbox-producer";
 
 export { MissingLedgerAccountError };
 
@@ -214,6 +215,8 @@ export async function payBill(params: {
   paymentDate?: string | null;
   memo?: string | null;
   createdBy: string | null;
+  /** Holoo imports create local payments but must not push them back to Holoo. */
+  skipHolooPush?: boolean;
 }): Promise<ApPayment> {
   if (!Number.isSafeInteger(params.amount) || params.amount <= 0) {
     throw new ApError("invalid_amount");
@@ -277,6 +280,10 @@ export async function payBill(params: {
         { accountId: cashAccount, debit: 0, credit: params.amount },
       ],
     });
+
+    if (!params.skipHolooPush) {
+      await enqueueHolooReceiptForApPayment(client, params.businessId, payment.id);
+    }
 
     await client.query("COMMIT");
     return {

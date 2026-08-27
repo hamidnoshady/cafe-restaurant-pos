@@ -15,6 +15,7 @@ import { paymentFailureFor } from "@/lib/order-payment-errors";
 import { rialBigInt, rialText, type RialText } from "@/lib/inventory-exact";
 import { tendersWithTip, validateTenders, type ResolvedTender } from "@/lib/payment-methods";
 import { listPaymentMethods } from "@/lib/payment-methods-service";
+import { enqueueHolooSaleForOrder } from "@/lib/integrations/holoo/outbox-producer";
 
 interface PayTenderBody {
   /** `payment_methods.id` — the way the cashier tapped. */
@@ -223,6 +224,7 @@ export const POST = withTenantScope(async (request: NextRequest, context: { para
       inventoryEventId,
     });
     await client.query("UPDATE inventory_events SET posting_status='posted' WHERE id=$1", [inventoryEventId]);
+    await enqueueHolooSaleForOrder(client, session.businessId, id);
     await client.query("COMMIT");
   } catch (err) {
     await client.query("ROLLBACK");
