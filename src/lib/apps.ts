@@ -180,3 +180,32 @@ export function visibleApps(options: AppVisibilityOptions = {}): AppDef[] {
 export function unassignedModules(): ModuleKey[] {
   return MODULE_KEYS.filter((module) => MODULE_APP_MAP[module] === undefined);
 }
+
+/**
+ * Group arbitrary nav-like items — anything carrying a `module: ModuleKey` — by
+ * the app that owns each item's module. This is what turns the flat nav list
+ * into the workspace rail: the caller hands in the same `navItems` the flat
+ * sidebar used and gets them back as `{ app, items }` pairs, in `APP_KEYS`
+ * order, with apps that have no items (or whose modules the trade entirely
+ * lacks) dropped.
+ *
+ * Generic over the item shape so it works for `NavItem` (a client component's
+ * type) without this pure module importing a `"use client"` file.
+ */
+export function appsForNav<T extends { module: ModuleKey }>(
+  items: T[],
+  industry?: Industry,
+): { app: AppDef; items: T[] }[] {
+  const byApp = new Map<AppKey, T[]>();
+  for (const item of items) {
+    const app = appForModule(item.module);
+    if (!app) continue;
+    const list = byApp.get(app);
+    if (list) list.push(item);
+    else byApp.set(app, [item]);
+  }
+  return APPS.filter((def) => {
+    if (!byApp.has(def.key)) return false;
+    return industry ? def.modules.some((module) => hasModule(industry, module)) : true;
+  }).map((def) => ({ app: def, items: byApp.get(def.key)! }));
+}

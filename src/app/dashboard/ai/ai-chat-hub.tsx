@@ -89,8 +89,18 @@ export function AiChatHub({ canAutoApply }: { canAutoApply: boolean }) {
     // The greeting is local, so a locked preview still opens on a real-looking
     // chat; reopening a stored conversation is a request, and would only 403.
     const requested = locked ? null : searchParams.get("conversation");
-    if (requested) void loadConversation(requested);
-    else ensureGreeting();
+    const ctx = searchParams.get("ctx");
+    if (ctx) {
+      // Phase 35 Wave 2 — a page's "ask the assistant" link carries its context
+      // here; prefill the composer with it so the writer starts where the page
+      // left off. The user can still edit or discard before sending.
+      setInput(ctx);
+      ensureGreeting();
+    } else if (requested) {
+      void loadConversation(requested);
+    } else {
+      ensureGreeting();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

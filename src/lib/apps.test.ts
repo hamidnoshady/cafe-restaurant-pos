@@ -4,6 +4,7 @@ import {
   APP_KEYS,
   appForModule,
   appForKey,
+  appsForNav,
   isAppKey,
   modulesForApp,
   unassignedModules,
@@ -120,5 +121,45 @@ describe("unassignedModules", () => {
     expect(unassigned).toContain("workspace");
     expect(unassigned).not.toContain("crm");
     expect(unassigned).not.toContain("loyalty");
+  });
+});
+
+describe("appsForNav", () => {
+  const items = [
+    { label: "وفاداری", module: "loyalty" as ModuleKey },
+    { label: "کمپین‌ها", module: "promotions" as ModuleKey },
+    { label: "پورسانت", module: "commission" as ModuleKey },
+    { label: "صندوق", module: "pos" as ModuleKey },
+    { label: "حسابداری", module: "ledger" as ModuleKey },
+    // `ai` has no app (it is the chat home) and `stock` is retail-only; both
+    // must be dropped, not grouped under a bogus app.
+    { label: "دستیار", module: "ai" as ModuleKey },
+  ];
+
+  it("groups nav items by their owning app, in APP_KEYS order", () => {
+    const grouped = appsForNav(items);
+    // APP_KEYS order is sales → growth → operations → accounting → …, so the
+    // groups present in `items` come back sales, growth, accounting.
+    expect(grouped.map((group) => group.app.key)).toEqual(["sales", "growth", "accounting"]);
+    expect(grouped[0].app.key).toBe("sales");
+    expect(grouped[0].items.map((item) => item.label)).toEqual(["صندوق"]);
+    expect(grouped.find((group) => group.app.key === "growth")?.items.map((item) => item.label)).toEqual([
+      "وفاداری",
+      "کمپین‌ها",
+      "پورسانت",
+    ]);
+  });
+
+  it("drops items whose module is not part of any app", () => {
+    const grouped = appsForNav(items);
+    const allItems = grouped.flatMap((group) => group.items);
+    expect(allItems).toHaveLength(5); // the `ai` item is excluded
+  });
+
+  it("keeps only apps the trade has, given an industry", () => {
+    // Every industry has loyalty (growth), pos (sales) and ledger (accounting),
+    // so all three groups survive for food_service.
+    const grouped = appsForNav(items, "food_service");
+    expect(grouped.map((group) => group.app.key)).toEqual(["sales", "growth", "accounting"]);
   });
 });
