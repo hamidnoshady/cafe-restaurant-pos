@@ -445,7 +445,14 @@ Since Phase 35 the app can reach a person who is not looking at a screen, over *
   `wordpress-plugin/` does all the calling and authenticates with a link token plus an
   HMAC envelope over timestamp, nonce and body (`src/lib/integrations/plugin-link.ts`).
   Both modes feed one ingest path (`applyIngestEvent`) and one outbox — in plugin mode
-  the app fills that queue but must never drain it.
+  the app fills that queue but must never drain it. Holoo is the second provider in this
+  same gateway, not a parallel subsystem: SQL Server reads are profile-driven through
+  `src/lib/integrations/holoo/schema-profile.ts`, web-service writes are preferred,
+  direct-SQL writes require a tested known profile, a pinned profile key and the exact
+  `holoo-direct-sql` arming phrase, and companion mode is bounded by
+  `holoo_connection_settings.companion_activated_at`. Never add Holoo source columns to
+  core tables; ownership is enforced from `integration_mappings` by `withTenantScope`,
+  and the migration wizard lives at `/dashboard/integrations/holoo`, not in first-run setup.
 - `wordpress-plugin/pos-accounting-connector/` — the WordPress/WooCommerce plugin (PHP,
   no build step, not part of the Next.js app). Its signing string must stay byte-identical
   to `plugin-link.ts`'s; `plugin-link.test.ts` pins the expected value on the TS side, so

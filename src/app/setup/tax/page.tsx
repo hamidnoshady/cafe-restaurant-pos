@@ -1,5 +1,6 @@
 "use client";
 
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toLatinDigits, toPersianDigits } from "@/lib/digits";
@@ -69,7 +70,7 @@ export default function TaxStep() {
       <form onSubmit={submit} className="max-w-lg">
         <ErrorBox>{error}</ErrorBox>
         <Field label="نرخ پیش‌فرض مالیات (٪)" hint="نرخ رایج ارزش افزوده ۱۰٪ است؛ اگر مشمول نیستید ۰ بگذارید.">
-          <input
+          <PersianNumberInput
             className={`${inputClass} w-28`}
             dir="ltr"
             inputMode="decimal"
@@ -86,7 +87,7 @@ export default function TaxStep() {
               {categories.map((c, i) => (
                 <div key={c.id} className="flex items-center gap-3">
                   <span className="w-40 truncate text-sm">{c.name}</span>
-                  <input
+                  <PersianNumberInput
                     className={`${inputClass} w-24`}
                     dir="ltr"
                     inputMode="decimal"

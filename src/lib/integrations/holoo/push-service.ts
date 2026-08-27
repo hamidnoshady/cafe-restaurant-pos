@@ -16,21 +16,17 @@
  */
 import { query, withoutTenantScope, withTenant } from "../../db";
 import { getConnection } from "../connections-service";
-import { getHolooSettingsRow, type HolooSettingsRow } from "./connection-service";
+import { getHolooSettingsRow, holooSqlConfigFor, holooWebServiceConfigFor, type HolooSettingsRow } from "./connection-service";
 import { backoffDelayMs, isDeadAfterAttempts, OUTBOX_MAX_ATTEMPTS } from "../retry";
-import { armDirectSql, buildDirectSqlPreview, type HolooDocument } from "./direct-sql";
+import { armDirectSql, buildDirectSqlPreview, isPinnedProfile, type HolooDocument } from "./direct-sql";
+import { connectHolooSqlWriter, createHolooWebServiceClient } from "./client";
+import { profileForKey } from "./schema-profile";
 import { writeIntegrationAudit } from "../audit";
 
 export const HOLOO_PUSH_TICK_INTERVAL_MS = 60 * 1000;
 const DRAIN_BATCH = 25;
 
 export type HolooOutboxKind = "holoo_sale" | "holoo_receipt" | "holoo_purchase";
-
-const TABLE_FOR: Record<HolooDocument["kind"], string> = {
-  sale: "SellInvoice",
-  receipt: "ReceivePay",
-  purchase: "BuyInvoice",
-};
 
 interface DueEvent extends Record<string, unknown> {
   id: string;
@@ -116,11 +112,30 @@ export async function pushForConnection(businessId: string, connectionId: string
 /** Write one document through the configured mode; returns the Holoo doc number. */
 async function writeDocument(settings: HolooSettingsRow, kind: HolooOutboxKind, document: HolooDocument & { sourceId: string }): Promise<string> {
   if (settings.write_mode === "web_service") {
-    // Do not acknowledge an outbox event until the official Holoo API has
-    // actually accepted it. The API contract is installation-specific and is
-    // not implemented yet; failing here keeps the event retryable instead of
-    // creating a false mapping with a synthetic document number.
-    throw new Error("holoo_web_service_not_implemented");
+    const client = createHolooWebServiceClient(holooWebServiceConfigFor(settings));
+    try {
+      const body = {
+        sourceId: document.sourceId,
+        values: document.values,
+        ...(document.payload ?? {}),
+      };
+      const holooDocumentNumber =
+        kind === "holoo_sale"
+          ? await client.createSaleInvoice(body)
+          : kind === "holoo_receipt"
+            ? await client.createReceiptPayment(body)
+            : await client.createPurchaseInvoice(body);
+      await writeIntegrationAudit({
+        businessId: settings.businessId,
+        connectionId: settings.connectionId,
+        action: "holoo.push_web_service",
+        remoteId: document.sourceId,
+        payload: { holooDocumentNumber, kind },
+      });
+      return holooDocumentNumber;
+    } finally {
+      await client.close();
+    }
   }
 
   if (settings.write_mode === "direct_sql") {
@@ -135,22 +150,54 @@ async function writeDocument(settings: HolooSettingsRow, kind: HolooOutboxKind, 
  * previously armed mode, and the dry-run preview rendered before execution.
  */
 async function writeDirectSql(settings: HolooSettingsRow, kind: HolooOutboxKind, document: HolooDocument & { sourceId: string }): Promise<string> {
+  const profile = settings.schema_profile ? profileForKey(settings.schema_profile) : null;
   // Unknown probed profile → refuse outright (a structure we have not
   // catalogued must never be written to).
-  if (!settings.schema_profile) {
+  if (!profile) {
     throw new Error("holoo_direct_sql_unknown_profile");
   }
-  // Armed only via the typed confirmation phrase (armDirectSqlFor below).
+  // Armed only via the typed confirmation phrase (armDirectSqlFor below), and
+  // the exact probed profile must still match the profile pinned at arming.
   if (!settings.direct_sql_armed_at) {
     throw new Error("holoo_direct_sql_not_armed");
   }
+  if (!isPinnedProfile(settings.schema_profile, settings.direct_sql_profile_key)) {
+    throw new Error("holoo_direct_sql_profile_not_pinned");
+  }
 
-  const { statements } = buildDirectSqlPreview([document], (k) => TABLE_FOR[k]);
-  // Rendering a preview is not a write. Until the MSSQL transaction executor
-  // is implemented and verified against a recoverable Holoo copy, refuse the
-  // operation rather than returning a fabricated document number.
-  void statements;
-  throw new Error("holoo_direct_sql_executor_not_implemented");
+  const tableFor = (docKind: HolooDocument["kind"]) =>
+    docKind === "sale"
+      ? profile.tables.invoices
+      : docKind === "receipt"
+        ? profile.tables.receipt_payment
+        : profile.tables.purchases;
+  const { statements } = buildDirectSqlPreview([document], tableFor);
+
+  await writeIntegrationAudit({
+    businessId: settings.businessId,
+    connectionId: settings.connectionId,
+    action: "holoo.write_dry_run",
+    remoteId: document.sourceId,
+    payload: { statements, kind },
+  });
+
+  const client = await connectHolooSqlWriter(holooSqlConfigFor(settings));
+  try {
+    await client.executeTransaction(statements);
+  } finally {
+    await client.close();
+  }
+
+  for (const statement of statements) {
+    await writeIntegrationAudit({
+      businessId: settings.businessId,
+      connectionId: settings.connectionId,
+      action: "holoo.write",
+      remoteId: document.sourceId,
+      payload: { statement, kind },
+    });
+  }
+  return document.sourceId;
 }
 
 /** Arm direct-SQL writes with the typed confirmation phrase. */
@@ -159,17 +206,20 @@ export async function armDirectSqlFor(
   connectionId: string,
   confirmation: string,
   armedBy: string,
-): Promise<{ ok: true } | { ok: false; error: "confirmation_mismatch" | "not_found" }> {
+): Promise<{ ok: true } | { ok: false; error: "confirmation_mismatch" | "not_found" | "unknown_profile" }> {
   const settings = await getHolooSettingsRow(businessId, connectionId);
   if (!settings) return { ok: false, error: "not_found" };
+  if (!settings.schema_profile || !profileForKey(settings.schema_profile)) return { ok: false, error: "unknown_profile" };
   const result = armDirectSql(confirmation);
   if (!result.ok) return result;
   await query(
-    `UPDATE holoo_connection_settings SET direct_sql_armed_at = now(), direct_sql_armed_by = $3, updated_at = now()
+    `UPDATE holoo_connection_settings
+        SET direct_sql_armed_at = now(), direct_sql_armed_by = $3,
+            direct_sql_profile_key = schema_profile, updated_at = now()
       WHERE business_id = $1 AND connection_id = $2`,
     [businessId, connectionId, armedBy],
   );
-  await writeIntegrationAudit({ businessId, connectionId, action: "holoo.direct_sql_armed" });
+  await writeIntegrationAudit({ businessId, connectionId, action: "holoo.direct_sql_armed", payload: { profile: settings.schema_profile } });
   return { ok: true };
 }
 

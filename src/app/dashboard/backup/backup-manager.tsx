@@ -1,5 +1,6 @@
 "use client";
 
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 /**
  * Backup dashboard (Phase 10). Four cards:
  *  1. Status — health badges, last successful local/cloud backup, a manual
@@ -207,7 +208,7 @@ function SourcePill({
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={`min-h-9 rounded-lg border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-amber-400/40 ${
+      className={`min-h-9 rounded-lg border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring focus-visible:ring-amber-400/40 ${
         active
           ? "border-amber-200 bg-amber-100 text-amber-950"
           : "border-transparent text-stone-600 hover:bg-stone-50 hover:text-stone-950"
@@ -733,7 +734,7 @@ function SettingsCard({ onSaved }: { onSaved: () => void }) {
           </Field>
         </div>
         <Field label="تعداد نسخه‌های محلی نگه‌داشته‌شده" hint="نسخه‌های قدیمی‌تر خودکار حذف می‌شوند">
-          <input
+          <PersianNumberInput
             type="number"
             dir="ltr"
             min={1}
@@ -806,7 +807,7 @@ function SettingsCard({ onSaved }: { onSaved: () => void }) {
                 <input dir="ltr" className={inputClass} value={cloud.prefix} onChange={(e) => setCloud({ prefix: e.target.value })} />
               </Field>
               <Field label="تعداد نسخه‌های ابری نگه‌داشته‌شده">
-                <input
+                <PersianNumberInput
                   type="number"
                   dir="ltr"
                   min={1}

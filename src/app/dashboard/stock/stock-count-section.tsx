@@ -1,5 +1,6 @@
 "use client";
 
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Decimal from "decimal.js";
 import { Button } from "@/components/ui/button";
@@ -216,7 +217,7 @@ export function StockCountSection({
             />
           </Field>
           <Field label="مقدار هر اسکن">
-            <input
+            <PersianNumberInput
               className={inputClass}
               dir="ltr"
               inputMode="decimal"
@@ -290,7 +291,7 @@ export function StockCountSection({
                       </span>
                     ) : null}
                   </span>
-                  <input
+                  <PersianNumberInput
                     className={`${inputClass} w-full sm:w-32`}
                     dir="ltr"
                     inputMode="decimal"

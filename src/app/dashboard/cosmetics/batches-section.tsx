@@ -1,5 +1,6 @@
 "use client";
 
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { formatQuantity, toPersianDigits } from "@/lib/digits";
@@ -169,10 +170,10 @@ export function BatchesSection() {
               <input className={accInputClass} type="date" value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} dir="ltr" />
             </Field>
             <Field label="تعداد">
-              <input className={accInputClass} value={quantity} onChange={(e) => setQuantity(e.target.value)} dir="ltr" inputMode="decimal" />
+              <PersianNumberInput className={accInputClass} value={quantity} onChange={(e) => setQuantity(e.target.value)} dir="ltr" inputMode="decimal" />
             </Field>
             <Field label={`بهای تمام‌شده هر واحد (${money.unitLabel})`}>
-              <input className={accInputClass} value={unitCost} onChange={(e) => setUnitCost(e.target.value)} dir="ltr" inputMode="numeric" />
+              <PersianNumberInput className={accInputClass} value={unitCost} onChange={(e) => setUnitCost(e.target.value)} dir="ltr" inputMode="numeric" />
             </Field>
             {error ? <p className="text-xs text-rose-700">{error}</p> : null}
             {done ? <p className="text-xs text-emerald-700">{done}</p> : null}

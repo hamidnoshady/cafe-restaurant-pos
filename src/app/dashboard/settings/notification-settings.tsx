@@ -1,5 +1,6 @@
 "use client";
 
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { toLatinDigits, toPersianDigits } from "@/lib/digits";
@@ -382,7 +383,7 @@ export function NotificationSettings() {
 
                       {event.hasAmount ? (
                         <Field label="فقط اگر مبلغ از این بیشتر بود (تومان)">
-                          <input
+                          <PersianNumberInput
                             className={inputClass}
                             inputMode="numeric"
                             defaultValue={rialToTomanInput(preference.minAmountRial)}

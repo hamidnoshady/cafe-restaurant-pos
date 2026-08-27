@@ -1,5 +1,6 @@
 "use client";
 
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -331,7 +332,7 @@ function StockPanel({
     <PanelShell>
       <form onSubmit={save} className="grid min-w-0 gap-3 sm:grid-cols-3">
         <Field label="تعداد ورودی" hint="برای ثبت فقط قیمت، خالی بگذارید.">
-          <input
+          <PersianNumberInput
             className={accInputClass}
             dir="ltr"
             inputMode="decimal"
@@ -340,7 +341,7 @@ function StockPanel({
           />
         </Field>
         <Field label={`بهای تمام‌شده هر واحد (${money.unitLabel})`}>
-          <input
+          <PersianNumberInput
             className={accInputClass}
             dir="ltr"
             inputMode="numeric"
@@ -349,7 +350,7 @@ function StockPanel({
           />
         </Field>
         <Field label={`قیمت فروش هر واحد (${money.unitLabel})`}>
-          <input
+          <PersianNumberInput
             className={accInputClass}
             dir="ltr"
             inputMode="numeric"

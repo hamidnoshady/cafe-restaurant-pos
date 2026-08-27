@@ -14,14 +14,7 @@
  * Pure, framework-free, unit-tested.
  */
 
-export type HolooTransactionType =
-  | "sale"
-  | "sale_return"
-  | "purchase"
-  | "purchase_return"
-  | "receipt"
-  | "payment"
-  | "stock";
+export type HolooTransactionType = "sale" | "purchase" | "receipt" | "payment" | "stock";
 
 export interface HolooTransaction {
   /** The Holoo document id (stable mapping key). */

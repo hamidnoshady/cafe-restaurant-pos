@@ -1,5 +1,6 @@
 "use client";
 
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import Decimal from "decimal.js";
@@ -166,7 +167,7 @@ export function ItemsSection({
               />
             </Field>
             <Field label="وزن ناخالص (گرم)">
-              <input
+              <PersianNumberInput
                 className={jewelryInputClass}
                 dir="ltr"
                 inputMode="decimal"
@@ -176,7 +177,7 @@ export function ItemsSection({
               />
             </Field>
             <Field label="وزن خالص (گرم)">
-              <input
+              <PersianNumberInput
                 className={jewelryInputClass}
                 dir="ltr"
                 inputMode="decimal"
@@ -186,7 +187,7 @@ export function ItemsSection({
               />
             </Field>
             <Field label={`بهای تمام‌شده هر گرم (${money.unitLabel})`} hint="اگر هنوز مشخص نیست، خالی بگذارید.">
-              <input
+              <PersianNumberInput
                 className={jewelryInputClass}
                 dir="ltr"
                 inputMode="decimal"
@@ -374,7 +375,7 @@ function CostPanel({
     <PanelShell>
       <form onSubmit={save} className="grid min-w-0 gap-3 sm:grid-cols-3">
         <Field label="وزن ناخالص (گرم)">
-          <input
+          <PersianNumberInput
             className={jewelryInputClass}
             dir="ltr"
             inputMode="decimal"
@@ -384,7 +385,7 @@ function CostPanel({
           />
         </Field>
         <Field label="وزن خالص (گرم)">
-          <input
+          <PersianNumberInput
             className={jewelryInputClass}
             dir="ltr"
             inputMode="decimal"
@@ -394,7 +395,7 @@ function CostPanel({
           />
         </Field>
         <Field label={`بهای هر گرم (${money.unitLabel})`}>
-          <input
+          <PersianNumberInput
             className={jewelryInputClass}
             dir="ltr"
             inputMode="decimal"
@@ -487,7 +488,7 @@ function StonesPanel({ item, busy, run }: { item: WeightItem; busy: boolean; run
             <input className={jewelryInputClass} value={stoneType} onChange={(e) => setStoneType(e.target.value)} />
           </Field>
           <Field label="وزن (قیراط)">
-            <input
+            <PersianNumberInput
               className={jewelryInputClass}
               dir="ltr"
               inputMode="decimal"
@@ -496,7 +497,7 @@ function StonesPanel({ item, busy, run }: { item: WeightItem; busy: boolean; run
             />
           </Field>
           <Field label={`بها (${money.unitLabel})`}>
-            <input
+            <PersianNumberInput
               className={jewelryInputClass}
               dir="ltr"
               inputMode="numeric"

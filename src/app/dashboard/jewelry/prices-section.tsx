@@ -1,5 +1,6 @@
 "use client";
 
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useMoney } from "@/components/money/money-context";
@@ -80,7 +81,7 @@ export function PricesSection({ prices, busy, run }: { prices: GoldPriceRow[]; b
               />
             </Field>
             <Field label={`قیمت هر گرم (${money.unitLabel})`}>
-              <input
+              <PersianNumberInput
                 className={jewelryInputClass}
                 dir="ltr"
                 inputMode="numeric"

@@ -1,5 +1,6 @@
 "use client";
 
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 /**
  * Owner-only settings for the bidirectional server-to-server sync (Phase 11):
  * connects this server to a remote peer (café laptop <-> VPS) and reuses the
@@ -359,7 +360,7 @@ export function ServerSyncSettings() {
             ) : null}
           </Field>
           <Field label="تعداد رویداد در هر دسته">
-            <input
+            <PersianNumberInput
               className={inputClass}
               value={batchSize}
               onChange={(e) => setBatchSize(e.target.value)}

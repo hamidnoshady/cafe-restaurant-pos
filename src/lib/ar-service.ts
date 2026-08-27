@@ -17,6 +17,7 @@ import { getPool, query } from "./db";
 import { WELL_KNOWN_CODES } from "./coa-template";
 import { accountIdsByCode, MissingLedgerAccountError, postJournalEntry } from "./ledger-service";
 import { ageOpenItems, summarizeAging, type AgingSummary } from "./aging";
+import { enqueueHolooReceiptForArReceipt } from "./integrations/holoo/outbox-producer";
 
 export { MissingLedgerAccountError };
 
@@ -206,6 +207,8 @@ export async function receivePayment(params: {
   receiptDate?: string | null;
   memo?: string | null;
   createdBy: string | null;
+  /** Holoo imports create local receipts but must not push them back to Holoo. */
+  skipHolooPush?: boolean;
 }): Promise<ArReceipt> {
   if (!Number.isSafeInteger(params.amount) || params.amount <= 0) {
     throw new ArError("invalid_amount");
@@ -266,6 +269,10 @@ export async function receivePayment(params: {
         { accountId: arAccount, debit: 0, credit: params.amount },
       ],
     });
+
+    if (!params.skipHolooPush) {
+      await enqueueHolooReceiptForArReceipt(client, params.businessId, receipt.id);
+    }
 
     await client.query("COMMIT");
     return {

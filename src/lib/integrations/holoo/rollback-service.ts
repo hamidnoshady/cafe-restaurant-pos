@@ -38,6 +38,25 @@ export async function rollbackImportRun(businessId: string, runId: string): Prom
   try {
     await client.query("BEGIN");
 
+    // Opening inventory imported from Holoo maps holoo_stock → inventory_events.id.
+    // Remove its journal first, then the movements/lots, then the event. If user
+    // data has consumed those lots, the FK/CHECK rails fail the transaction.
+    const stockEventIds = [...new Set(ids("holoo_stock"))];
+    if (stockEventIds.length) {
+      await client.query(
+        `DELETE FROM journal_entries
+          WHERE business_id = $2 AND inventory_event_id = ANY($1::uuid[])`,
+        [stockEventIds, businessId],
+      );
+      await client.query(`DELETE FROM inventory_lots WHERE inventory_event_id = ANY($1::uuid[])`, [stockEventIds]);
+      const movements = await client.query(`DELETE FROM stock_movements WHERE inventory_event_id = ANY($1::uuid[])`, [stockEventIds]);
+      await client.query(
+        `DELETE FROM inventory_events WHERE business_id = $2 AND id = ANY($1::uuid[])`,
+        [stockEventIds, businessId],
+      );
+      reverted.holoo_stock = movements.rowCount ?? 0;
+    }
+
     // Journal entries (their lines cascade via ON DELETE CASCADE).
     const journalIds = ids("holoo_journal");
     if (journalIds.length) {

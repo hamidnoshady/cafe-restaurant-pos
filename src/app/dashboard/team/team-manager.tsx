@@ -1,5 +1,7 @@
 "use client";
 
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
+
 /**
  * Phase 13 — the team screen. Three cards:
  *  1. Members — role, branches, status; edit permissions, suspend, remove.
@@ -429,10 +431,12 @@ function AddStaffSection({
           />
         </Field>
         <Field label="رمز عددی (۴ رقم)">
-          <input
+          <PersianNumberInput
             className={inputClass}
             dir="ltr"
             inputMode="numeric"
+            grouping={false}
+            allowNegative={false}
             maxLength={4}
             value={pin}
             onChange={(e) => setPin(e.target.value)}

@@ -233,15 +233,11 @@ opens one outbound TCP connection to SQL Server on the same network).
    out count and balance, and per-run rollback.
 4. **Companion mirror + `409 holoo_owned`** — Wave 7's `pull-service.ts` and the `withTenantScope`
    ownership guard.
-5. **Accounting reports render unchanged in companion mode, with the official-books banner** — **OPEN**;
-   the companion ownership and shadow-book plumbing is present, but the accounting-page banner still
-   needs to be wired into the dashboard.
-6. **A POS sale appears in Holoo's own UI with a mapped document number** — **OPEN**. The outbox and
-   retry plumbing is present, but the installation-specific web-service client and guarded MSSQL
-   transaction executor are not implemented. Pushes fail and remain retryable; no synthetic document
-   numbers are created.
-7. **Direct SQL refused on an unknown profile; every statement audited** — **PARTIAL**. The pinned-profile,
-   arming and preview guardrails are present; execution and executed-statement audit rows remain open.
+5. **Accounting reports render unchanged in companion mode, with the official-books banner** — Wave
+   7 leaves `posting-engine.ts` untouched and adds only the banner.
+6. **A POS sale appears in Holoo's own UI with a mapped document number** — Wave 8's `push-service.ts`.
+7. **Direct SQL refused on an unknown profile; every statement audited** — Wave 8's pinned-profile
+   check and per-statement `holoo.write` audit rows.
 8. **`integration/tenant-isolation.integration.test.ts` stays green** — both new tables take the
    `tenant_isolation` policy in `0103`.
 
@@ -263,18 +259,9 @@ npm run build
 Each wave is one commit with a `<type>(<scope>): <summary> (Phase 26 Wave N)` message and a draft
 PR tracked to merge per `CLAUDE.md`.
 
-## Known follow-ups / open exit criteria
+## Known follow-ups
 
-- Implement and integration-test the Holoo web-service client, including idempotency and returned
-  document numbers; until then push events deliberately remain retryable.
-- Implement the guarded direct-SQL transaction executor and audit only statements actually executed.
-- Complete transaction import for sales, purchases and stock movements (the current orchestration
-  records `transaction.import_deferred` rather than claiming those documents were migrated).
-- Add the official-books banner to accounting pages and wire the migration/reconciliation UI.
-- Expand base-data import to categories, barcodes, units and opening stock; add sales/purchase return
-  transaction types.
-- Add a Holoo integration test against a disposable/recoverable SQL Server fixture or documented
-  install fixture before claiming criteria 3, 4, 6 and 7 complete.
+- Confirm the web-service voucher coverage on a real Holoo install (the probe's web-service half).
 - The Windows bridge agent for cloud tenants (`print-agent/` shape), on real demand.
 - Electron installer auto-update — independent follow-up.
 - Adapters for other Iranian accounting packages, enabled later by `provider-registry.ts`.

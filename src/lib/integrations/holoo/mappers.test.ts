@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { holooDateToIso, mapAccount, mapGoods, mapPerson } from "./mappers";
+import { holooDateToIso, mapAccount, mapGoods, mapOpeningInventory, mapPerson } from "./mappers";
 
 describe("holooDateToIso", () => {
   it("passes a Gregorian ISO datetime through", () => {
@@ -53,6 +53,19 @@ describe("mapAccount", () => {
       name: "صندوق",
       nature: "debit",
       parentCode: "11",
+    });
+  });
+});
+
+describe("mapOpeningInventory", () => {
+  it("maps quantity and cost into a cutover stock row", () => {
+    expect(mapOpeningInventory({ id: "s1", goodsId: "g1", name: "قهوه", unit: "kg", quantity: "2.5", unitCost: "1000" }, "toman")).toEqual({
+      remoteId: "s1",
+      goodsRemoteId: "g1",
+      name: "قهوه",
+      unit: "kg",
+      quantity: "2.5",
+      unitCostRial: 10000n,
     });
   });
 });

@@ -1,5 +1,6 @@
 "use client";
 
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { formatPersianNumber } from "@/lib/digits";
@@ -226,13 +227,13 @@ function PurchaseForm({
             </select>
           </Field>
           <Field label="تعداد">
-            <input className={inputClass} dir="ltr" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
+            <PersianNumberInput inputMode="decimal" className={inputClass} dir="ltr" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
           </Field>
           <Button type="button" variant="outline" onClick={addLine} className="min-h-11">+</Button>
         </div>
         <div className="grid grid-cols-2 gap-2">
           <Field label={`بهای هر واحد (${money.unitLabel})`}>
-            <input className={inputClass} dir="ltr" inputMode="numeric" value={unitCost} onChange={(e) => setUnitCost(e.target.value)} />
+            <PersianNumberInput className={inputClass} dir="ltr" inputMode="numeric" value={unitCost} onChange={(e) => setUnitCost(e.target.value)} />
           </Field>
           <Field label="انقضا (اختیاری، میلادی)">
             <input className={inputClass} dir="ltr" type="date" value={expiry} onChange={(e) => setExpiry(e.target.value)} />
@@ -298,7 +299,7 @@ function ReturnForm({
         </Field>
         <div className="grid grid-cols-2 gap-2">
           <Field label="تعداد">
-            <input className={inputClass} dir="ltr" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
+            <PersianNumberInput inputMode="decimal" className={inputClass} dir="ltr" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
           </Field>
           <Field label="دلیل">
             <input className={inputClass} value={reason} onChange={(e) => setReason(e.target.value)} />

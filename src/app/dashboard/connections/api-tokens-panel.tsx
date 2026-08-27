@@ -1,5 +1,6 @@
 "use client";
 
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 /**
  * «کلیدهای API» — issuing and revoking the keys that authenticate `/api/v1/*`.
  *
@@ -183,7 +184,7 @@ export function ApiTokensPanel() {
             value={name}
             onChange={(e) => setName(e.target.value)}
           />
-          <input
+          <PersianNumberInput
             className={inputClass}
             dir="ltr"
             type="number"
