@@ -21,6 +21,7 @@ import {
   clientIpFrom,
   type RateLimitEntry,
 } from "@/lib/rate-limit";
+import { isInternalCall } from "@/lib/internal-auth";
 import {
   ADMIN_HOST_LABEL,
   hostRoutingEnabled,
@@ -319,6 +320,17 @@ function isMcpPath(pathname: string): boolean {
 /** All public API routes share one per-key bucket; this must stay prefix-based, not an exact route list. */
 function isPublicApiPath(pathname: string): boolean {
   return pathname === "/api/v1" || pathname.startsWith("/api/v1/");
+}
+
+/**
+ * Routes this server calls on itself, which are never public.
+ *
+ * Reaching one still requires the internal secret; this only marks which paths
+ * are *eligible* to present it, so a stray header on any other route changes
+ * nothing.
+ */
+function isInternalRoutePath(pathname: string): boolean {
+  return pathname === "/api/internal/rate-limit" || pathname.startsWith("/api/internal/");
 }
 
 async function handleRateLimits(
@@ -658,6 +670,25 @@ async function handle(request: NextRequest, requestHeaders: Headers) {
   }
 
   if (isPublicPath(pathname)) {
+    return NextResponse.next({ request: { headers: requestHeaders } });
+  }
+
+  // Phase 24 Wave 5 — this server calling itself.
+  //
+  // `checkRateLimit` above runs in the Edge runtime and cannot reach Postgres,
+  // so it asks the Node-runtime route for the durable counter over HTTP. That
+  // fetch re-enters middleware, where it has no session cookie — it is made
+  // *for* requests that have none — so the tenant guard below would answer 401
+  // and the counter would never be written. The limiter then falls back to the
+  // per-process Map on every single request, silently restoring exactly the
+  // reset-on-restart, per-replica behaviour Wave 5 exists to remove.
+  //
+  // Listing the path in PUBLIC_PATHS would fix the 401 by making it genuinely
+  // public, which is the opposite of what it needs. Instead the request is let
+  // through only when it carries the internal secret, which the route then
+  // verifies again itself — middleware decides "this is our own call", the
+  // route decides whether to trust it.
+  if (isInternalRoutePath(pathname) && (await isInternalCall(request.headers))) {
     return NextResponse.next({ request: { headers: requestHeaders } });
   }
 

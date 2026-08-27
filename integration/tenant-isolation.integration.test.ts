@@ -300,6 +300,11 @@ describe("every tenant table is protected", () => {
       "platform_ai_config",
       "platform_audit_log",
       "platform_push_config",
+      // Phase 24 — the deployment-wide SMS gateway credentials (Kavenegar) the
+      // MFA challenge sends through. A singleton with no business_id, the same
+      // shape as platform_ai_config: one account, configured once by a
+      // super-admin, holding no tenant data.
+      "platform_sms_config",
       "platform_update_config",
     ]);
   });

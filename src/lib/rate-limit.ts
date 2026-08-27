@@ -33,6 +33,28 @@ export interface RateLimitResult {
   retryAfterMs: number;
 }
 
+/**
+ * The durable counter is best-effort: if it cannot be reached the limiter still
+ * works, just per-process again. That degradation must be *visible* — it
+ * silently reinstates the reset-on-restart, per-replica behaviour Wave 5 exists
+ * to remove — but logging a stack trace on every single request turns one
+ * misconfiguration into an unreadable log and a performance problem of its own.
+ * So: complain immediately, then at a decreasing rate.
+ */
+let durableFailures = 0;
+
+function noteDurableFailure(reason: string): void {
+  durableFailures += 1;
+  const isPowerOfTen = /^10*$/.test(String(durableFailures));
+  if (durableFailures === 1 || isPowerOfTen) {
+    console.error(
+      `rate-limit: durable (Postgres) counter unreachable — falling back to the per-process ` +
+        `counter, which resets on restart and is not shared across replicas. ` +
+        `Occurrence ${durableFailures}. Reason: ${reason}`,
+    );
+  }
+}
+
 export async function checkRateLimit(
   _store: Map<string, RateLimitEntry> | null,
   key: string,
@@ -50,21 +72,30 @@ export async function checkRateLimit(
   // clock; letting the caller supply the time let a forged call rewind its own
   // window forever. It stays in the signature for the in-memory fallback
   // below, which is per-process and has no such exposure.
+  //
+  // INTERNAL_BASE_URL overrides the origin for deployments where the request's
+  // own origin is not reachable from inside the runtime — behind a proxy that
+  // terminates a public hostname the container cannot resolve, for instance.
   try {
     const token = await internalAuthToken();
     if (token) {
-      const origin = requestUrl ? new URL(requestUrl).origin : "http://localhost:3000";
+      const configured = process.env.INTERNAL_BASE_URL?.trim();
+      const origin = configured || (requestUrl ? new URL(requestUrl).origin : "http://127.0.0.1:3000");
       const res = await fetch(`${origin}/api/internal/rate-limit`, {
         method: "POST",
         headers: { "Content-Type": "application/json", [INTERNAL_AUTH_HEADER]: token },
         body: JSON.stringify({ key, limit, windowMs }),
       });
       if (res.ok) {
+        durableFailures = 0;
         return (await res.json()) as RateLimitResult;
       }
+      noteDurableFailure(`HTTP ${res.status}`);
+    } else {
+      noteDurableFailure("no JWT_SECRET, so the internal call cannot be signed");
     }
   } catch (err) {
-    console.error("Postgres rate limit check failed, falling back to memory:", err);
+    noteDurableFailure(err instanceof Error ? err.message : String(err));
   }
 
   // Memory fallback if fetch fails
