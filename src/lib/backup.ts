@@ -153,8 +153,22 @@ export function validateBackupConfig(body: unknown): BackupConfigValidation {
     }
   }
 
-  // The passphrase floor applies whichever one is populated
+  // The passphrase floor applies to whichever one is populated.
   const resolvedPassphrase = passphrase || cloud.passphrase;
+
+  // Cloud upload cannot proceed without a real passphrase. Accepting an empty
+  // one here would let `runCloudUpload` derive its AES key from "" via scrypt
+  // and ship an artifact anyone who obtains it can decrypt — the whole ledger
+  // and customer list, off-site, behind a key that is public knowledge.
+  //
+  // Deliberately *not* applied to `encryptLocal`: that flag defaults to on and
+  // documents a plaintext fallback (see Phase-24 §5 "Decisions"), so requiring
+  // a passphrase for it would refuse to save any config on the installs that
+  // have never set one, and their artifacts never leave the premises anyway.
+  // `getBackupConfigMasked` raises the plaintext warning for that case.
+  if (cloudEnabled && !resolvedPassphrase) {
+    return { ok: false, error: "passphrase_required" };
+  }
   if ((encryptLocal || cloudEnabled) && resolvedPassphrase && resolvedPassphrase.length < MIN_PASSPHRASE_LENGTH) {
     return { ok: false, error: "weak_passphrase" };
   }

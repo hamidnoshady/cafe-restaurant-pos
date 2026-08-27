@@ -74,18 +74,21 @@ export async function POST(request: NextRequest) {
     const admin = rows[0];
     const usable = admin?.is_active ? admin : null;
     const ok = await bcrypt.compare(password, usable?.password_hash ?? DUMMY_HASH);
-    
-    if (!usable || !ok) {
-      await recordAuthFailure("platform_admin", email);
-      return NextResponse.json({ error: "invalid_credentials" }, { status: 401 });
-    }
 
+    // Gate on the lockout before the credential verdict — see the same
+    // ordering in /api/auth/login. A locked admin answers 423 whatever the
+    // password was, so the status code leaks nothing about it.
     const lockout = await checkAuthLockout("platform_admin", email, PLATFORM_LOCKOUT_POLICY);
     if (lockout.locked) {
       return NextResponse.json(
         { error: "account_locked", lockedUntil: lockout.lockedUntil },
         { status: 423 },
       );
+    }
+
+    if (!usable || !ok) {
+      await recordAuthFailure("platform_admin", email);
+      return NextResponse.json({ error: "invalid_credentials" }, { status: 401 });
     }
 
     await recordAuthSuccess("platform_admin", email);

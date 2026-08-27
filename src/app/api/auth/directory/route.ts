@@ -65,18 +65,21 @@ export async function POST(request: NextRequest) {
     // password must cost the same time, or the timing is the oracle instead.
     const identity = rows[0]?.is_active ? rows[0] : null;
     const passwordOk = await bcrypt.compare(password, identity?.password_hash ?? DUMMY_HASH);
-    
-    if (!identity || !passwordOk) {
-      await recordAuthFailure("directory", email.trim().toLowerCase());
-      return NextResponse.json({ error: "invalid_credentials" }, { status: 401 });
-    }
 
+    // Gate on the lockout before the credential verdict — see the same
+    // ordering in /api/auth/login. A locked account answers 423 whatever the
+    // password was, so the status code leaks nothing about it.
     const lockout = await checkAuthLockout("directory", email.trim().toLowerCase(), PASSWORD_LOCKOUT_POLICY);
     if (lockout.locked) {
       return NextResponse.json(
         { error: "account_locked", lockedUntil: lockout.lockedUntil },
         { status: 423 },
       );
+    }
+
+    if (!identity || !passwordOk) {
+      await recordAuthFailure("directory", email.trim().toLowerCase());
+      return NextResponse.json({ error: "invalid_credentials" }, { status: 401 });
     }
 
     await recordAuthSuccess("directory", email.trim().toLowerCase());

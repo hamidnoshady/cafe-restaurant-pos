@@ -337,6 +337,13 @@ export async function runCloudUpload(
     let data = await fs.readFile(path.join(backupDir(config.directory), artifact));
     if (!isEncryptedBackup(data)) {
       const pp = backupPassphrase(config);
+      // `validateBackupConfig` refuses to enable cloud without a passphrase,
+      // but a config stored before that check — or one whose passphrase came
+      // only from a since-removed BACKUP_PASSPHRASE — could still land here.
+      // Failing the run is the only safe answer: encrypting with "" derives
+      // the key from a publicly known input, so the artifact would be
+      // plaintext to anyone who fetches it from the bucket.
+      if (!pp) throw new Error("passphrase_required");
       data = encryptBackup(data, pp) as any;
     }
     const s3 = s3ConfigOf(config);

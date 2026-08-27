@@ -5,6 +5,12 @@ import { LockoutPolicy, lockoutStatus, LockoutStatus } from "./login-lockout";
 
 export type AuthRealm = "tenant_password" | "platform_admin" | "directory";
 
+/** One row of `auth_login_attempts` (migration 0070). */
+interface AuthLoginAttemptRow extends Record<string, unknown> {
+  outcome: string;
+  createdAt: Date;
+}
+
 export async function identityKeyFor(email: string): Promise<string> {
   const pepperBase = process.env.LOGIN_ATTEMPT_PEPPER;
   let secret: Uint8Array;
@@ -28,16 +34,17 @@ export async function checkAuthLockout(
   policy: LockoutPolicy
 ): Promise<LockoutStatus> {
   const identityKey = await identityKeyFor(email);
-  const rows = await query(
-    `SELECT action as "outcome", created_at as "createdAt"
+  const { rows } = await query<AuthLoginAttemptRow>(
+    `SELECT outcome, created_at AS "createdAt"
      FROM auth_login_attempts
      WHERE realm = $1 AND identity_key = $2
      ORDER BY id DESC LIMIT $3`,
     [realm, identityKey, policy.threshold]
   );
-  
-  // wait, the db returns `outcome` not `action`, let's map it
-  const events = rows.rows.map((r: any) => ({ action: r.outcome, createdAt: r.createdAt }));
+
+  // `lockoutStatus` speaks the shared audit vocabulary (`action`), while this
+  // table stores the same value in its own `outcome` column — map across.
+  const events = rows.map((row) => ({ action: row.outcome, createdAt: row.createdAt }));
   return lockoutStatus(events, policy);
 }
 

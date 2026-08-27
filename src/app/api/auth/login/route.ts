@@ -129,18 +129,23 @@ export async function POST(request: NextRequest) {
     const identity = rows[0];
     const usableIdentity = identity?.is_active ? identity : null;
     const passwordOk = await bcrypt.compare(password, usableIdentity?.password_hash ?? DUMMY_HASH);
-    
-    if (!usableIdentity || !passwordOk) {
-      await recordAuthFailure("tenant_password", email.trim().toLowerCase());
-      return NextResponse.json({ error: "invalid_credentials" }, { status: 401 });
-    }
 
+    // The lockout gate answers *before* the credential verdict is acted on.
+    // Checking it afterwards would make it useless twice over: a wrong
+    // password would return 401 without ever consulting the lockout (so it
+    // throttles nothing), and a locked account would answer 423 only when the
+    // password happened to be right — an oracle confirming the password.
     const lockout = await checkAuthLockout("tenant_password", email.trim().toLowerCase(), PASSWORD_LOCKOUT_POLICY);
     if (lockout.locked) {
       return NextResponse.json(
         { error: "account_locked", lockedUntil: lockout.lockedUntil },
         { status: 423 },
       );
+    }
+
+    if (!usableIdentity || !passwordOk) {
+      await recordAuthFailure("tenant_password", email.trim().toLowerCase());
+      return NextResponse.json({ error: "invalid_credentials" }, { status: 401 });
     }
 
     await recordAuthSuccess("tenant_password", email.trim().toLowerCase());

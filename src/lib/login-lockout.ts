@@ -10,10 +10,14 @@ export const EMPLOYEE_LOCKOUT_POLICY: LockoutPolicy = {
   failedAction: "employee.login_failed",
 };
 
+/**
+ * Password realms count the `failed` outcome recorded in
+ * `auth_login_attempts` (migration 0070), not an audit-log action name.
+ */
 export const PASSWORD_LOCKOUT_POLICY: LockoutPolicy = {
   threshold: 5,
   windowMinutes: 15,
-  failedAction: "failed", // wait, what should this be? 'failed' in auth_login_attempts
+  failedAction: "failed",
 };
 
 export const PLATFORM_LOCKOUT_POLICY: LockoutPolicy = {
