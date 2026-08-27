@@ -14,6 +14,7 @@ import { sessionStatus } from "./employee";
 import { featureForApiPath, isFeatureEnabled } from "./features";
 import { isModuleEnabled } from "./industry-guard";
 import { moduleForApiPath } from "./industry-profile";
+import { holooGuardedEntityType, holooLocalIdFromPath, holooOwnedIds, HOLOO_GUARDED_PREFIXES } from "./integrations/holoo/holoo-ownership";
 import { hasPermission, parseOverrides, PERMISSIONS, type Permission } from "./permissions";
 import { activeGrant } from "./platform-service";
 import { platformAudit } from "./platform-auth";
@@ -166,6 +167,31 @@ export function withTenantScope<Args extends unknown[]>(
         const module = request ? moduleForApiPath(request.nextUrl.pathname) : null;
         if (module && !(await isModuleEnabled(session.businessId, module))) {
           return NextResponse.json({ error: "module_unavailable", module }, { status: 403 });
+        }
+
+        // Phase 26 Wave 7 — Holoo ownership guard. A row the companion mirror
+        // pulled from Holoo is owned by Holoo: mutating it from this app would
+        // fork the books away from Holoo. Answered from integration_mappings,
+        // enforced here — one guard in one file, no CRUD route edited. When the
+        // companion flag is off this short-circuits before any lookup.
+        if (
+          request &&
+          MUTATING_METHODS.has(request.method) &&
+          (await isFeatureEnabled(session.businessId, "holoo_companion"))
+        ) {
+          const entityType = holooGuardedEntityType(request.nextUrl.pathname);
+          if (entityType) {
+            const prefix = HOLOO_GUARDED_PREFIXES.find(
+              ([p]) => request.nextUrl.pathname === p || request.nextUrl.pathname.startsWith(`${p}/`),
+            )![0];
+            const localId = holooLocalIdFromPath(request.nextUrl.pathname, prefix);
+            if (localId) {
+              const owned = await holooOwnedIds(session.businessId, entityType, [localId]);
+              if (owned.has(localId)) {
+                return NextResponse.json({ error: "holoo_owned", entityType }, { status: 409 });
+              }
+            }
+          }
         }
       }
 
