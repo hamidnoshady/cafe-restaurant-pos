@@ -9,6 +9,13 @@
  * (the bug where tapping + on a tile silently added another unit *with* an
  * add-on the new unit was not supposed to carry).
  *
+ * Tile `+` never copies add-ons. It adds (or grows) a *plain* unit — no
+ * add-ons, no note — and leaves any customised sibling alone. Growing a
+ * customised configuration is the cart-line stepper's job, where the number
+ * sits on that line. The previous "smart +" still copied toppings whenever the
+ * cart held only one line of the product; `decideTilePlus` is what closed that
+ * hole.
+ *
  * Everything here is a plain function over the cart array and is unit-tested;
  * the component only wires these into state.
  */
@@ -140,10 +147,8 @@ export function stepLastLineForItem(
 
 /**
  * How many *distinct configurations* of a product the cart currently holds.
- * The tile's + uses it: with 0 or 1 lines the next unit is unambiguous and the
- * tile can add it in place; with 2+ (e.g. one coffee with chocolate, one
- * without) a bare + cannot know which configuration to grow, so it opens the
- * add-on picker instead of guessing.
+ * A tile badge that wants a count of units should use `cartQuantitiesByItem`
+ * instead — this one is "how many cards", not "how many coffees".
  */
 export function countLinesForItem(
   lines: readonly PosCartLine[],
@@ -154,4 +159,58 @@ export function countLinesForItem(
       line.menuItemId === menuItemId ? count + 1 : count,
     0,
   );
+}
+
+/** No add-ons and no note: the default unit the product tile's + rings up. */
+export function isPlainConfiguration(line: PosCartLineConfig): boolean {
+  return line.modifierIds.length === 0 && line.note === "";
+}
+
+/**
+ * What the product tile's + should do.
+ *
+ * The tile + means "another unit of this product, without extra add-ons".
+ * It must never grow a customised line — that was the bug: one coffee with
+ * chocolate, tap +, both coffees had chocolate. A line that already carries
+ * add-ons (or a note) stays put; the new unit is a separate, plain line, or
+ * merges with the plain line already in the cart.
+ *
+ * When the item *requires* a modifier choice (size, etc.) a plain unit isn't
+ * valid, so the caller opens the picker instead of guessing.
+ *
+ * `pick` is first-add: the tile isn't in the cart yet, so the caller behaves
+ * like a tap (plain add, or the picker when the item has groups).
+ */
+export type TilePlusDecision =
+  | { type: "pick" }
+  | { type: "configure" }
+  | { type: "add_plain" };
+
+export function decideTilePlus(
+  lines: readonly PosCartLine[],
+  menuItemId: string,
+  requiresConfiguration: boolean,
+): TilePlusDecision {
+  const inCart = lines.some((line) => line.menuItemId === menuItemId);
+  if (!inCart) return { type: "pick" };
+  if (requiresConfiguration) return { type: "configure" };
+  return { type: "add_plain" };
+}
+
+/**
+ * Applies the tile's + to the cart: a new plain unit, merged with an existing
+ * plain line of the same product if there is one. Customised lines are never
+ * touched. The caller only invokes this when `decideTilePlus` returned
+ * `add_plain` — `pick` / `configure` open UI, they don't mutate the cart.
+ */
+export function addPlainUnit(
+  lines: readonly PosCartLine[],
+  incoming: PosCartLine,
+): PosCartLine[] {
+  return addOrMergeLine(lines, {
+    ...incoming,
+    modifierIds: [],
+    modifiers: [],
+    note: "",
+  });
 }

@@ -76,7 +76,9 @@ import { ModifierPicker } from "../modifier-picker";
 import { CartLineCard } from "./cart-line-card";
 import {
   addOrMergeLine,
+  addPlainUnit,
   countLinesForItem,
+  decideTilePlus,
   stepLastLineForItem,
   stepLineQuantity,
   upsertLine,
@@ -535,37 +537,35 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
    * press +" on a phone.
    *
    * − always undoes the cashier's *last* touch of the product (the most recent
-   * line — `stepLastLineForItem`), which is the one they just added. + is more
-   * careful: it can only grow a line it can identify unambiguously. With no
-   * line yet it behaves like a tap (plain add, or the add-on picker when the
-   * item has groups); with exactly one line it grows that line; and with two or
-   * more distinct configurations already in the cart (one coffee with
-   * chocolate, one without) a bare + cannot know which one the new unit belongs
-   * to, so it opens the picker instead of guessing — the mistake where + used
-   * to silently add another unit *with* the add-on.
+   * line — `stepLastLineForItem`), which is the one they just added.
+   *
+   * + never copies add-ons. It means "another unit of this product, without
+   * extra add-ons": a new plain line, or one more on the plain line already in
+   * the cart. A coffee that already carries chocolate stays at its own quantity;
+   * the extra unit is a separate coffee without chocolate. Growing the
+   * chocolate line is the stepper *on that cart line*. When the item requires a
+   * modifier choice (size, …) a plain unit isn't valid, so + opens the picker
+   * instead of guessing.
    */
   function stepTileQuantity(item: Item, delta: 1 | -1) {
     if (delta === -1) {
       setCart((prev) => stepLastLineForItem(prev, item.id, -1));
       return;
     }
-    const variantCount = countLinesForItem(cart, item.id);
-    if (variantCount === 1) {
-      setCart((prev) => stepLastLineForItem(prev, item.id, 1));
-      flashItem(item.id);
-      return;
-    }
-    // Two or more distinct configurations already in the cart (one coffee with
-    // chocolate, one without): a bare + cannot know which line the new unit
-    // belongs to, so open the configurator — add-ons, note and quantity — and
-    // make the configuration a deliberate choice instead of silently copying a
-    // customised line.
-    if (variantCount >= 2) {
+    const requiresConfiguration = attachedGroups(item.id).some(
+      (group) => group.min_select > 0,
+    );
+    const decision = decideTilePlus(cart, item.id, requiresConfiguration);
+    if (decision.type === "configure") {
       setPickerItem(item);
       return;
     }
-    // Not in the cart yet: behave exactly like tapping the tile.
-    pickItem(item);
+    if (decision.type === "pick") {
+      pickItem(item);
+      return;
+    }
+    setCart((prev) => addPlainUnit(prev, buildCartLine(item, [], "", 1)));
+    flashItem(item.id);
   }
 
   /**
@@ -1254,11 +1254,19 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
         >
           {visibleProducts.map(({ item, categoryLabel }, index) => {
             const inCart = cartCountsByItem.get(item.id) ?? 0;
-            // Distinct configurations of this product in the cart — when more
-            // than one, the tile + hands the choice to the add-on picker rather
-            // than guessing which line to grow.
+            const requiresConfiguration = attachedGroups(item.id).some(
+              (group) => group.min_select > 0,
+            );
+            const plusDecision = decideTilePlus(
+              cart,
+              item.id,
+              requiresConfiguration,
+            );
+            // Required-choice items can't take a plain unit, so + opens the
+            // picker. Otherwise + adds without add-ons, even when a customised
+            // sibling is already in the cart.
+            const plusOpensPicker = plusDecision.type === "configure";
             const variantCount = inCart > 0 ? countLinesForItem(cart, item.id) : 0;
-            const plusIsAmbiguous = variantCount > 1;
             const active = index === searchActiveIndex;
             return (
               /*
@@ -1352,22 +1360,22 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
                       onClick={() => stepTileQuantity(item, 1)}
                       className={
                         "flex size-11 items-center justify-center rounded-lg text-[#9B6700] transition-colors hover:bg-[#FFF1D8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 " +
-                        (plusIsAmbiguous ? "ring-1 ring-[#E9A11B]/50" : "")
+                        (plusOpensPicker ? "ring-1 ring-[#E9A11B]/50" : "")
                       }
                       aria-label={
-                        plusIsAmbiguous
+                        plusOpensPicker
                           ? "افزودن " +
                             item.name +
                             " — انتخاب افزودنی‌ها برای واحد جدید"
-                          : "افزایش تعداد " + item.name
+                          : "افزودن یک واحد " + item.name + " بدون افزودنی"
                       }
                       title={
-                        plusIsAmbiguous
-                          ? "چند ترکیب مختلف از این محصول در سبد است؛ ترکیب واحد جدید را مشخص کنید"
-                          : undefined
+                        plusOpensPicker
+                          ? "این محصول انتخاب الزامی دارد؛ ترکیب واحد جدید را مشخص کنید"
+                          : "یک واحد بدون افزودنی اضافه می‌شود؛ برای همان ترکیب، تعداد را در سبد زیاد کنید"
                       }
                     >
-                      {plusIsAmbiguous ? (
+                      {plusOpensPicker ? (
                         <SlidersHorizontalIcon className="size-4" aria-hidden="true" />
                       ) : (
                         <PlusIcon className="size-4" aria-hidden="true" />
@@ -1530,9 +1538,9 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
           ) : (
             <>
               <p className="mb-2 text-[11px] font-semibold text-[#8B8A85]">
-                هر ردیف یک ترکیب است؛ تعداد هر ترکیب را کنار خودش تنظیم کنید.
-                برای افزودنی متفاوت، همان محصول را دوباره با ترکیب تازه اضافه
-                کنید.
+                هر ردیف یک ترکیب است. + روی کارت محصول یک واحد بدون افزودنی
+                اضافه می‌کند؛ + روی ردیف سبد همان ترکیب (با افزودنی) را زیاد
+                می‌کند.
               </p>
               <ul className="space-y-2.5">
                 {cart.map((l) => (
@@ -1797,9 +1805,9 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
               ) : (
                 <>
                   <p className="mb-2 text-[11px] font-semibold text-[#8B8A85]">
-                    هر ردیف یک ترکیب است؛ تعداد هر ترکیب را کنار خودش تنظیم
-                    کنید. برای افزودنی متفاوت، همان محصول را دوباره با ترکیب تازه
-                    اضافه کنید.
+                    هر ردیف یک ترکیب است. + روی کارت محصول یک واحد بدون افزودنی
+                    اضافه می‌کند؛ + روی ردیف سبد همان ترکیب (با افزودنی) را زیاد
+                    می‌کند.
                   </p>
                   <ul className="space-y-2.5">
                     {cart.map((line) => (

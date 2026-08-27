@@ -306,6 +306,12 @@ export function ModifierPicker({
                   ))}
                 </div>
               </div>
+              {count > 1 && chosen.length > 0 ? (
+                <p className="mt-2 px-1 text-[11px] leading-5 text-muted-foreground">
+                  افزودنی‌ها روی همهٔ {toPersianDigits(count)} واحد اعمال
+                  می‌شود. برای یکی با افزودنی و یکی بدون آن، جداگانه اضافه کنید.
+                </p>
+              ) : null}
             </div>
           ) : null}
 
