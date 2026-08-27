@@ -73,6 +73,14 @@ import {
 } from "@/lib/modifier-display";
 import { ModifierBadges } from "../modifier-badges";
 import { ModifierPicker } from "../modifier-picker";
+import { CartLineCard } from "./cart-line-card";
+import {
+  addOrMergeLine,
+  countLinesForItem,
+  stepLastLineForItem,
+  stepLineQuantity,
+  upsertLine,
+} from "@/lib/pos-cart";
 import { TablePickerDialog } from "./table-picker-dialog";
 import {
   SearchableSelect,
@@ -206,6 +214,13 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
   );
   const [discountValue, setDiscountValue] = useState("");
   const [pickerItem, setPickerItem] = useState<Item | null>(null);
+  /**
+   * The cart line whose add-ons/note/quantity are being re-picked, set when a
+   * cashier presses «تغییر افزودنی‌ها» on a line. Null means the only picker on
+   * screen (if any) is the add-new one. Editing is how «this coffee should not
+   * have had chocolate» is fixed in one press instead of delete-then-re-add.
+   */
+  const [editingLineKey, setEditingLineKey] = useState<string | null>(null);
   const [cartSheetOpen, setCartSheetOpen] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [checkoutIntent, setCheckoutIntent] = useState<CheckoutIntent>("order");
@@ -360,7 +375,12 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
   // shows its confirmation without ever setting `reviewOpen`, and "/" must not
   // reach the product search behind it.
   const hasOpenOverlay = Boolean(
-    pickerItem || reviewOpen || cartSheetOpen || result || tablePickerFor,
+    pickerItem ||
+      editingLineKey ||
+      reviewOpen ||
+      cartSheetOpen ||
+      result ||
+      tablePickerFor,
   );
   useEffect(() => {
     function handleGlobalShortcut(event: KeyboardEvent) {
@@ -433,44 +453,71 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
     );
   }
 
+  /**
+   * Builds a line for an item with the chosen add-ons, honouring the one rule
+   * that keeps a cart readable: the item and its add-ons are one *configuration*,
+   * and a different configuration (coffee without the chocolate the first one
+   * had) is a separate line with its own quantity — not a bigger number on the
+   * same row. Two lines that carry the same item/add-ons/note merge via
+   * `addOrMergeLine`, so repeat taps don't spawn duplicate cards.
+   */
+  function buildCartLine(
+    item: Item,
+    selectedModifierIds: string[],
+    note: string,
+    quantity: number,
+    key?: string,
+  ): CartUiLine {
+    const units = Math.max(1, Math.round(quantity));
+    const modifiers: DisplayModifier[] = selectedModifierIds.map((id) => {
+      const modifier = menu!.modifiers.find((m) => m.id === id)!;
+      return { name: modifier.name, priceDelta: Number(modifier.price_delta) };
+    });
+    return {
+      key: key ?? `${item.id}-${crypto.randomUUID()}`,
+      menuItemId: item.id,
+      name: item.name,
+      unitPrice: Number(item.price),
+      quantity: units,
+      taxRatePercent: categoryTaxRate(item.category_id),
+      modifierIds: [...selectedModifierIds].sort(),
+      modifiers,
+      note,
+    };
+  }
+
   function addToCart(
     item: Item,
     selectedModifierIds: string[],
     note: string,
     quantity = 1,
   ) {
-    const units = Math.max(1, Math.round(quantity));
-    const modifiers: DisplayModifier[] = selectedModifierIds.map((id) => {
-      const modifier = menu!.modifiers.find((m) => m.id === id)!;
-      return { name: modifier.name, priceDelta: Number(modifier.price_delta) };
-    });
-    const modifierIds = [...selectedModifierIds].sort();
-    setCart((prev) => {
-      const existing = prev.find(
-        (l) =>
-          l.menuItemId === item.id &&
-          l.note === note &&
-          l.modifierIds.length === modifierIds.length &&
-          l.modifierIds.every((id, i) => id === modifierIds[i]),
-      );
-      if (existing) {
-        return prev.map((l) =>
-          l.key === existing.key ? { ...l, quantity: l.quantity + units } : l,
-        );
-      }
-      const line: CartUiLine = {
-        key: `${item.id}-${crypto.randomUUID()}`,
-        menuItemId: item.id,
-        name: item.name,
-        unitPrice: Number(item.price),
-        quantity: units,
-        taxRatePercent: categoryTaxRate(item.category_id),
-        modifierIds,
-        modifiers,
-        note,
-      };
-      return [...prev, line];
-    });
+    const line = buildCartLine(item, selectedModifierIds, note, quantity);
+    setCart((prev) => addOrMergeLine(prev, line));
+    flashItem(item.id);
+  }
+
+  /**
+   * Commits an edit of a line already in the cart: it is rebuilt with the new
+   * add-ons/note/quantity and re-merged via `upsertLine`, so stripping the
+   * chocolate off one coffee joins the plain coffee already in the cart rather
+   * than leaving two cards for what is now the same thing.
+   */
+  function commitLineEdit(
+    lineKey: string,
+    item: Item,
+    selectedModifierIds: string[],
+    note: string,
+    quantity: number,
+  ) {
+    const line = buildCartLine(
+      item,
+      selectedModifierIds,
+      note,
+      quantity,
+      `${item.id}-${crypto.randomUUID()}`,
+    );
+    setCart((prev) => upsertLine(prev, lineKey, line));
     flashItem(item.id);
   }
 
@@ -487,25 +534,38 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
    * cart at all — the step that used to mean "open the sheet, find the line,
    * press +" on a phone.
    *
-   * It moves the *last* line for that product, which is the one the cashier just
-   * touched. Earlier lines of the same product exist only when they carry
-   * different add-ons or a different note, and those stay where they are: the
-   * tile deliberately cannot rewrite a customised line it does not show.
+   * − always undoes the cashier's *last* touch of the product (the most recent
+   * line — `stepLastLineForItem`), which is the one they just added. + is more
+   * careful: it can only grow a line it can identify unambiguously. With no
+   * line yet it behaves like a tap (plain add, or the add-on picker when the
+   * item has groups); with exactly one line it grows that line; and with two or
+   * more distinct configurations already in the cart (one coffee with
+   * chocolate, one without) a bare + cannot know which one the new unit belongs
+   * to, so it opens the picker instead of guessing — the mistake where + used
+   * to silently add another unit *with* the add-on.
    */
-  function stepItemQuantity(itemId: string, delta: 1 | -1) {
-    setCart((prev) => {
-      for (let index = prev.length - 1; index >= 0; index -= 1) {
-        if (prev[index].menuItemId !== itemId) continue;
-        const line = prev[index];
-        const next = line.quantity + delta;
-        if (next <= 0) return prev.filter((l) => l.key !== line.key);
-        return prev.map((l) =>
-          l.key === line.key ? { ...l, quantity: next } : l,
-        );
-      }
-      return prev;
-    });
-    if (delta === 1) flashItem(itemId);
+  function stepTileQuantity(item: Item, delta: 1 | -1) {
+    if (delta === -1) {
+      setCart((prev) => stepLastLineForItem(prev, item.id, -1));
+      return;
+    }
+    const variantCount = countLinesForItem(cart, item.id);
+    if (variantCount === 1) {
+      setCart((prev) => stepLastLineForItem(prev, item.id, 1));
+      flashItem(item.id);
+      return;
+    }
+    // Two or more distinct configurations already in the cart (one coffee with
+    // chocolate, one without): a bare + cannot know which line the new unit
+    // belongs to, so open the configurator — add-ons, note and quantity — and
+    // make the configuration a deliberate choice instead of silently copying a
+    // customised line.
+    if (variantCount >= 2) {
+      setPickerItem(item);
+      return;
+    }
+    // Not in the cart yet: behave exactly like tapping the tile.
+    pickItem(item);
   }
 
   /**
@@ -531,15 +591,21 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
     }
   }
 
-  function setQty(key: string, quantity: number) {
-    setCart((prev) =>
-      quantity <= 0
-        ? prev.filter((l) => l.key !== key)
-        : prev.map((l) => (l.key === key ? { ...l, quantity } : l)),
-    );
+  /**
+   * The − / + printed on a cart line's own card: it can only ever move that one
+   * line's count (and removes the line at zero), which is why the stepper lives
+   * on the card itself rather than in any shared strip.
+   */
+  function stepLine(key: string, delta: 1 | -1) {
+    setCart((prev) => stepLineQuantity(prev, key, delta));
   }
   function removeLine(key: string) {
     setCart((prev) => prev.filter((l) => l.key !== key));
+    if (editingLineKey === key) setEditingLineKey(null);
+  }
+  /** Opens the add-on picker pre-filled with a line, to re-pick in place. */
+  function editLine(key: string) {
+    setEditingLineKey(key);
   }
 
   // ⚡ Bolt: Memoize cart computations to prevent jank on frequent state changes (e.g., search typing)
@@ -974,6 +1040,18 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
     setError("");
   }
 
+  /**
+   * The line being edited and its menu item. The item is looked up the same way
+   * the grid looks things up; if either has vanished (menu reloaded, line
+   * removed) the edit picker simply doesn't open rather than guessing.
+   */
+  const editingLine = editingLineKey
+    ? (cart.find((line) => line.key === editingLineKey) ?? null)
+    : null;
+  const editingItem = editingLine
+    ? (itemsById.get(editingLine.menuItemId) ?? null)
+    : null;
+
   return (
     <div
       /*
@@ -1176,6 +1254,11 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
         >
           {visibleProducts.map(({ item, categoryLabel }, index) => {
             const inCart = cartCountsByItem.get(item.id) ?? 0;
+            // Distinct configurations of this product in the cart — when more
+            // than one, the tile + hands the choice to the add-on picker rather
+            // than guessing which line to grow.
+            const variantCount = inCart > 0 ? countLinesForItem(cart, item.id) : 0;
+            const plusIsAmbiguous = variantCount > 1;
             const active = index === searchActiveIndex;
             return (
               /*
@@ -1249,22 +1332,46 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
                   <div className="flex items-center justify-between gap-1 border-t border-[#F2D097] bg-white/70 px-1.5 py-1">
                     <button
                       type="button"
-                      onClick={() => stepItemQuantity(item.id, -1)}
+                      onClick={() => stepTileQuantity(item, -1)}
                       className="flex size-11 items-center justify-center rounded-lg text-[#5E5B55] transition-colors hover:bg-[#FFF1D8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45"
-                      aria-label={"کاهش تعداد " + item.name}
+                      aria-label={
+                        "کاهش تعداد آخرین " + item.name +
+                        (variantCount > 1 ? " (تنظیمات افزودنی در سبد خرید)" : "")
+                      }
                     >
                       <MinusIcon className="size-4" aria-hidden="true" />
                     </button>
-                    <span className="text-sm font-bold text-[#252522]">
+                    <span
+                      className="text-sm font-bold text-[#252522]"
+                      aria-live="polite"
+                    >
                       {toPersianDigits(inCart)}
                     </span>
                     <button
                       type="button"
-                      onClick={() => stepItemQuantity(item.id, 1)}
-                      className="flex size-11 items-center justify-center rounded-lg text-[#9B6700] transition-colors hover:bg-[#FFF1D8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45"
-                      aria-label={"افزایش تعداد " + item.name}
+                      onClick={() => stepTileQuantity(item, 1)}
+                      className={
+                        "flex size-11 items-center justify-center rounded-lg text-[#9B6700] transition-colors hover:bg-[#FFF1D8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 " +
+                        (plusIsAmbiguous ? "ring-1 ring-[#E9A11B]/50" : "")
+                      }
+                      aria-label={
+                        plusIsAmbiguous
+                          ? "افزودن " +
+                            item.name +
+                            " — انتخاب افزودنی‌ها برای واحد جدید"
+                          : "افزایش تعداد " + item.name
+                      }
+                      title={
+                        plusIsAmbiguous
+                          ? "چند ترکیب مختلف از این محصول در سبد است؛ ترکیب واحد جدید را مشخص کنید"
+                          : undefined
+                      }
                     >
-                      <PlusIcon className="size-4" aria-hidden="true" />
+                      {plusIsAmbiguous ? (
+                        <SlidersHorizontalIcon className="size-4" aria-hidden="true" />
+                      ) : (
+                        <PlusIcon className="size-4" aria-hidden="true" />
+                      )}
                     </button>
                   </div>
                 ) : null}
@@ -1421,98 +1528,24 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
               سبد خالی است. از فهرست محصولات، آیتم‌ها را اضافه کنید.
             </p>
           ) : (
-            <ul className="space-y-2.5">
-              {cart.map((l) => {
-                const line = linePriceBreakdown({
-                  unitPrice: l.unitPrice,
-                  modifierDeltas: l.modifiers.map(
-                    (modifier) => modifier.priceDelta,
-                  ),
-                  quantity: l.quantity,
-                });
-                return (
-                  <li
+            <>
+              <p className="mb-2 text-[11px] font-semibold text-[#8B8A85]">
+                هر ردیف یک ترکیب است؛ تعداد هر ترکیب را کنار خودش تنظیم کنید.
+                برای افزودنی متفاوت، همان محصول را دوباره با ترکیب تازه اضافه
+                کنید.
+              </p>
+              <ul className="space-y-2.5">
+                {cart.map((l) => (
+                  <CartLineCard
                     key={l.key}
-                    className={
-                      "rounded-xl border p-3 text-sm animate-in fade-in slide-in-from-top-1 duration-150 " +
-                      (l.modifiers.length > 0
-                        ? "border-[#F2D097] bg-[#FFFCF5]"
-                        : "border-[#EAE8E2] bg-white")
-                    }
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className="font-bold text-[#252522]">{l.name}</p>
-                        <p className="mt-0.5 text-xs text-[#77756F]">
-                          {l.modifiers.length > 0 ? (
-                            <>
-                              {money.format(l.unitPrice, { withUnit: false })}
-                              {" + "}
-                              <span className="font-bold text-[#B97905]">
-                                {formatModifierDelta(line.addOns, {
-                                  withUnit: false,
-                                  unit: money.unit,
-                                })}
-                              </span>
-                              {" = "}
-                              <span className="font-bold text-[#252522]">
-                                {money.format(line.unit)}
-                              </span>{" "}
-                              هر واحد
-                            </>
-                          ) : (
-                            money.format(l.unitPrice) + " هر واحد"
-                          )}
-                        </p>
-                      </div>
-                      <p className="shrink-0 font-bold text-[#B97905]">
-                        {money.format(line.total)}
-                      </p>
-                    </div>
-                    <ModifierBadges
-                      modifiers={l.modifiers}
-                      tone="amber"
-                      showCaption={false}
-                      className="mt-2"
-                    />
-                    {l.note ? (
-                      <p className="mt-2 text-xs text-[#77756F]">
-                        یادداشت: {l.note}
-                      </p>
-                    ) : null}
-                    <div className="mt-2 flex items-center gap-2">
-                      <button
-                        type="button"
-                        aria-label={"کاهش تعداد " + l.name}
-                        onClick={() => setQty(l.key, l.quantity - 1)}
-                        className="flex size-12 items-center justify-center rounded-lg bg-muted text-lg text-muted-foreground transition-colors hover:bg-muted-foreground/20 hover:text-foreground active:scale-95"
-                      >
-                        −
-                      </button>
-                      <span className="w-8 text-center text-base font-semibold">
-                        {toPersianDigits(l.quantity)}
-                      </span>
-                      <button
-                        type="button"
-                        aria-label={"افزایش تعداد " + l.name}
-                        onClick={() => setQty(l.key, l.quantity + 1)}
-                        className="flex size-12 items-center justify-center rounded-lg bg-muted text-lg text-muted-foreground transition-colors hover:bg-muted-foreground/20 hover:text-foreground active:scale-95"
-                      >
-                        +
-                      </button>
-                      <button
-                        type="button"
-                        aria-label={"حذف " + l.name}
-                        onClick={() => removeLine(l.key)}
-                        className="ms-auto px-2 py-1 text-sm text-destructive hover:underline"
-                      >
-                        حذف
-                      </button>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
+                    line={l}
+                    onStep={stepLine}
+                    onEdit={editLine}
+                    onRemove={removeLine}
+                  />
+                ))}
+              </ul>
+            </>
           )}
         </div>
 
@@ -1762,80 +1795,24 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
                   سبد خرید خالی است.
                 </p>
               ) : (
-                <ul className="space-y-2.5">
-                  {cart.map((line) => {
-                    const breakdown = linePriceBreakdown({
-                      unitPrice: line.unitPrice,
-                      modifierDeltas: line.modifiers.map(
-                        (modifier) => modifier.priceDelta,
-                      ),
-                      quantity: line.quantity,
-                    });
-                    return (
-                      <li
+                <>
+                  <p className="mb-2 text-[11px] font-semibold text-[#8B8A85]">
+                    هر ردیف یک ترکیب است؛ تعداد هر ترکیب را کنار خودش تنظیم
+                    کنید. برای افزودنی متفاوت، همان محصول را دوباره با ترکیب تازه
+                    اضافه کنید.
+                  </p>
+                  <ul className="space-y-2.5">
+                    {cart.map((line) => (
+                      <CartLineCard
                         key={line.key}
-                        className={
-                          "rounded-xl border p-3 " +
-                          (line.modifiers.length > 0
-                            ? "border-[#F2D097] bg-[#FFFCF5]"
-                            : "border-[#EAE8E2] bg-white")
-                        }
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="font-bold text-[#252522]">
-                              {line.name}
-                            </p>
-                            <p className="mt-0.5 text-xs text-[#77756F]">
-                              {money.format(breakdown.unit)} هر واحد
-                            </p>
-                          </div>
-                          <p className="shrink-0 text-sm font-bold text-[#B97905]">
-                            {money.format(breakdown.total)}
-                          </p>
-                        </div>
-                        <ModifierBadges
-                          modifiers={line.modifiers}
-                          tone="amber"
-                          className="mt-2"
-                        />
-                        {line.note ? (
-                          <p className="mt-2 text-xs text-[#77756F]">
-                            یادداشت: {line.note}
-                          </p>
-                        ) : null}
-                        <div className="mt-2 flex items-center gap-2">
-                          <button
-                            type="button"
-                            aria-label="کاهش تعداد"
-                            onClick={() => setQty(line.key, line.quantity - 1)}
-                            className="flex size-11 items-center justify-center rounded-lg bg-muted"
-                          >
-                            −
-                          </button>
-                          <span className="w-8 text-center font-semibold">
-                            {toPersianDigits(line.quantity)}
-                          </span>
-                          <button
-                            type="button"
-                            aria-label="افزایش تعداد"
-                            onClick={() => setQty(line.key, line.quantity + 1)}
-                            className="flex size-11 items-center justify-center rounded-lg bg-muted"
-                          >
-                            +
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => removeLine(line.key)}
-                            className="ms-auto px-2 py-1 text-sm text-destructive"
-                          >
-                            حذف
-                          </button>
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
+                        line={line}
+                        onStep={stepLine}
+                        onEdit={editLine}
+                        onRemove={removeLine}
+                      />
+                    ))}
+                  </ul>
+                </>
               )}
             </div>
             <div className="border-t border-border p-4">
@@ -2050,6 +2027,38 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
           onConfirm={(modifierIds, note, quantity) => {
             addToCart(pickerItem, modifierIds, note, quantity);
             setPickerItem(null);
+          }}
+        />
+      ) : null}
+      {/*
+        Re-picking an existing line's add-ons/note/count. It is pre-filled with
+        the line's current choice; confirming rebuilds the line and re-merges it
+        (commitLineEdit → upsertLine), so «remove the chocolate from one of the
+        coffees» collapses into the plain coffee instead of duplicating it. A
+        plain item shows the quantity + note controls only, and still opens here
+        because fixing a note is the same motion.
+      */}
+      {editingLine && editingItem && !pickerItem ? (
+        <ModifierPicker
+          itemName={editingItem.name}
+          itemPrice={Number(editingItem.price)}
+          selectQuantity
+          quantity={editingLine.quantity}
+          initialModifierIds={editingLine.modifierIds}
+          initialNote={editingLine.note}
+          confirmLabel="اعمال تغییر"
+          groups={attachedGroups(editingItem.id)}
+          tone="amber"
+          onCancel={() => setEditingLineKey(null)}
+          onConfirm={(modifierIds, note, quantity) => {
+            commitLineEdit(
+              editingLine.key,
+              editingItem,
+              modifierIds,
+              note,
+              quantity,
+            );
+            setEditingLineKey(null);
           }}
         />
       ) : null}
