@@ -16,6 +16,7 @@ import {
   type PurchaseLine,
 } from "@/lib/purchase-lines";
 import { resolveActiveLocation } from "@/lib/setup-state";
+import { enqueueHolooPurchase } from "@/lib/integrations/holoo/outbox-producer";
 
 const SETTLEMENT_METHODS = ["cash", "bank", "credit"] as const;
 type SettlementMethod = (typeof SETTLEMENT_METHODS)[number];
@@ -268,6 +269,7 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
       inventoryEventId: eventId,
     });
     await client.query("UPDATE inventory_events SET posting_status='posted' WHERE id=$1", [eventId]);
+    await enqueueHolooPurchase(client, session.businessId, id, "purchase");
     await client.query("COMMIT");
   } catch (err) {
     await client.query("ROLLBACK");

@@ -1,18 +1,28 @@
 /**
  * Minimal ambient typing for the `mssql` driver (Phase 26).
  *
- * `mssql` is a real dependency (added in Wave 2) but ships no TypeScript
- * definitions, and the adapter only ever touches the driver through a narrow
- * seam — `connect()` and `request().query()`. This declares exactly that seam
- * for both `scripts/holoo-probe.ts` and
- * `src/lib/integrations/holoo/client.ts`, so neither has to model the whole
- * driver. (The injectable `HolooSqlDriver` interface in client.ts is what the
- * rest of the code actually depends on.)
+ * `mssql` is a real dependency but ships no TypeScript definitions in the
+ * shape this project consumes, and the adapter only ever touches the driver
+ * through a narrow seam — connection pool, request query, and transaction.
  */
 declare module "mssql" {
-  export interface ConnectionPool {
-    request(): { query<T>(sql: string): Promise<{ recordset: T[] }> };
+  export class ConnectionPool {
+    constructor(config: string | Record<string, unknown>);
+    connect(): Promise<ConnectionPool>;
+    request(): Request;
     close(): Promise<void>;
+  }
+
+  export class Transaction {
+    constructor(pool: ConnectionPool);
+    begin(): Promise<void>;
+    commit(): Promise<void>;
+    rollback(): Promise<void>;
+  }
+
+  export class Request {
+    constructor(transaction?: Transaction);
+    query<T>(sql: string): Promise<{ recordset: T[] }>;
   }
 
   export function connect(
