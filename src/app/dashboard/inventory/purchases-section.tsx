@@ -1,7 +1,7 @@
 "use client";
 
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useMemo } from "react";
 import Decimal from "decimal.js";
 import { formatQuantity } from "@/lib/digits";
 import { useMoney } from "@/components/money/money-context";
@@ -197,6 +197,45 @@ export function PurchasesSection({
   const activeItems = items.filter((i) => i.is_active);
   const activeSuppliers = suppliers.filter((s) => s.is_active);
 
+  // ⚡ Bolt: Cache derived SearchableSelect options array.
+  // Instead of recalculating identical options arrays on every render for every line,
+  // we compute it once and pass it down. We depend on `items` directly and filter
+  // inside useMemo so that the cache actually holds across renders.
+  const activeItemsOptions = useMemo(() => {
+    const active = items.filter((i) => i.is_active);
+    return [
+      { value: "", label: "قلم انبار را انتخاب کنید…" },
+      ...active.map((it) => ({
+        value: it.id,
+        label: it.name,
+        searchString: [it.name, it.sku, it.unit].filter(Boolean).join(" "),
+      })),
+    ];
+  }, [items]);
+
+  const activeSuppliersOptions = useMemo(() => {
+    const active = suppliers.filter((s) => s.is_active);
+    return [
+      { value: "", label: "بدون تأمین‌کننده" },
+      ...active.map((s) => ({ value: s.id, label: s.name })),
+    ];
+  }, [suppliers]);
+
+  const activeSuppliersOptionsForPurchase = useMemo(() => {
+    const active = suppliers.filter((s) => s.is_active);
+    return [
+      { value: "", label: "تأمین‌کننده را انتخاب کنید…" },
+      ...active.map((s) => ({ value: s.id, label: s.name })),
+    ];
+  }, [suppliers]);
+
+  const allSuppliersOptions = useMemo(() => {
+    return [
+      { value: "", label: "همه تأمین‌کنندگان" },
+      ...suppliers.map((s) => ({ value: s.id, label: s.name })),
+    ];
+  }, [suppliers]);
+
   function updateLine(index: number, patch: Partial<DraftLine>) {
     setLines((prev) => prev.map((l, i) => (i === index ? { ...l, ...patch } : l)));
   }
@@ -346,14 +385,7 @@ export function PurchasesSection({
             <SearchableSelect
               value={line.inventoryItemId}
               onChange={(value) => onChange(i, { inventoryItemId: value })}
-              options={[
-                { value: "", label: "قلم انبار را انتخاب کنید…" },
-                ...activeItems.map((it) => ({
-                  value: it.id,
-                  label: it.name,
-                  searchString: [it.name, it.sku, it.unit].filter(Boolean).join(" "),
-                })),
-              ]}
+                options={activeItemsOptions}
             />
           </Field>
           <Field label={`مقدار خرید (${invItem?.purchase_unit || invItem?.unit || "واحد"})`}>
@@ -399,10 +431,7 @@ export function PurchasesSection({
               <SearchableSelect
                 value={supplierId}
                 onChange={setSupplierId}
-                options={[
-                  { value: "", label: "بدون تأمین‌کننده" },
-                  ...activeSuppliers.map((s) => ({ value: s.id, label: s.name })),
-                ]}
+                options={activeSuppliersOptions}
               />
             </Field>
             <Field label="تاریخ خرید">
@@ -444,10 +473,7 @@ export function PurchasesSection({
             <SearchableSelect
               value={filterSupplier}
               onChange={setFilterSupplier}
-              options={[
-                { value: "", label: "همه تأمین‌کنندگان" },
-                ...suppliers.map((s) => ({ value: s.id, label: s.name })),
-              ]}
+              options={allSuppliersOptions}
             />
           </Field>
           <Field label="از تاریخ">
@@ -499,10 +525,7 @@ export function PurchasesSection({
                             <SearchableSelect
                               value={supplierByPurchase[p.id] ?? ""}
                               onChange={(v) => setSupplierByPurchase((prev) => ({ ...prev, [p.id]: v }))}
-                              options={[
-                                { value: "", label: "تأمین‌کننده را انتخاب کنید…" },
-                                ...activeSuppliers.map((s) => ({ value: s.id, label: s.name })),
-                              ]}
+                              options={activeSuppliersOptionsForPurchase}
                             />
                           </div>
                         ) : null}
@@ -536,10 +559,7 @@ export function PurchasesSection({
                             <SearchableSelect
                               value={editSupplierId}
                               onChange={setEditSupplierId}
-                              options={[
-                                { value: "", label: "بدون تأمین‌کننده" },
-                                ...activeSuppliers.map((s) => ({ value: s.id, label: s.name })),
-                              ]}
+                              options={activeSuppliersOptions}
                             />
                           </Field>
                           <Field label="تاریخ خرید">
