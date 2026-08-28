@@ -85,6 +85,66 @@ export async function listPromotions(businessId: string, includeInactive = false
   return rows.map(mapPromotion);
 }
 
+/**
+ * Phase 36b — the management catalogue: full rows (name, is_active, the date
+ * window) for the Growth app's campaigns screen. `listPromotions` above
+ * returns the engine's shape, which deliberately carries no name — the
+ * engine evaluates discounts, it does not market them. The screen that lists
+ * and pauses campaigns needs the columns the engine drops, so it gets its own
+ * read rather than a widened engine type.
+ */
+export interface PromotionCatalogueRow {
+  id: string;
+  name: string;
+  kind: Promotion["kind"];
+  value: number;
+  minQuantity: number | null;
+  itemIds: string[];
+  brandIds: string[];
+  categoryIds: string[];
+  activeFrom: string | null;
+  activeTo: string | null;
+  daysOfWeek: number[];
+  timeFrom: string | null;
+  timeTo: string | null;
+  priority: number;
+  stacking: Promotion["stacking"];
+  isActive: boolean;
+}
+
+export async function listPromotionCatalogue(businessId: string): Promise<PromotionCatalogueRow[]> {
+  // Dates are cast to text deliberately: `SELECT *` would hand back JS Dates
+  // (and JSON would serialize them to full ISO timestamps), and the state
+  // classifier compares ISO date strings — a campaign starting *today* must
+  // classify as «در حال اجرا», which only works when both sides are dates.
+  const { rows } = await query<PromotionRow>(
+    `SELECT id, name, kind, value, min_quantity, item_ids, brand_ids, category_ids,
+            active_from::text AS active_from, active_to::text AS active_to,
+            days_of_week, time_from::text AS time_from, time_to::text AS time_to,
+            priority, stacking, is_active
+       FROM promotions WHERE business_id = $1 ORDER BY priority DESC, name`,
+    [businessId],
+  );
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    kind: row.kind,
+    value: Number(row.value),
+    minQuantity: row.min_quantity,
+    itemIds: row.item_ids ?? [],
+    brandIds: row.brand_ids ?? [],
+    categoryIds: row.category_ids ?? [],
+    activeFrom: row.active_from,
+    activeTo: row.active_to,
+    daysOfWeek: row.days_of_week ?? [],
+    timeFrom: row.time_from ? row.time_from.slice(0, 5) : null,
+    timeTo: row.time_to ? row.time_to.slice(0, 5) : null,
+    priority: row.priority,
+    stacking: row.stacking,
+    isActive: row.is_active,
+  }));
+}
+
 export async function upsertPromotion(businessId: string, input: PromotionInput): Promise<Promotion> {
   const name = input.name?.trim();
   if (!name) throw new Error("نام کمپین نمی‌تواند خالی باشد.");

@@ -534,6 +534,33 @@ the public half is baked into every subscription a browser has already minted.
 
 See [docs/phases/Phase-35-Notifications.md](docs/phases/Phase-35-Notifications.md).
 
+## The Growth & Marketing app (رشد و بازاریابی, Phase 36b)
+
+Loyalty, campaigns and gift cards, and seller commission are one app at `/dashboard/growth` —
+with a management dashboard of its own («میز کار رشد») the way accounting has one, not three flat
+sidebar pages. One entry in the nav; the old `/dashboard/loyalty`, `/dashboard/promotions` and
+`/dashboard/commission` routes redirect into the app's sections.
+
+- **میز کار رشد** — KPIs over all four engines (campaign discount spend, gift-card and
+  store-credit liabilities, points in circulation with an estimated redemption value, commission
+  accrued, customers due for a repurchase), top campaigns and top sellers, a merged activity
+  feed, and a first-run checklist that jumps to each section.
+- **پل حسابداری** — the app's connection to the books, *visible*: the four ledger accounts its
+  engines write to (۲۴۱۰ اعتبار فروشگاهی، ۲۴۲۰ کارت هدیه، ۲۳۰۰ حقوق پرداختنی، ۵۲۱۰ پورسانت
+  فروش) with balances reconstructed from `journal_lines` — the same reconstruction the trial
+  balance does — and a link into `/dashboard/ledger`. Marketing moves money only through the
+  posting rules it already had; the dashboard never keeps a number of its own.
+- **Campaign management** — life-cycle states (در حال اجرا / زمان‌بندی‌شده / پایان‌یافته /
+  متوقف، with the engine's inclusive date bounds), one-tap pause/resume, and the effectiveness
+  report (how often each campaign fired and what it cost) beside the form.
+- **Roles** — a cashier lands directly on «وفاداری و اعتبار», the one growth surface the sell
+  side works with, and never sees commission (compensation data) or the KPI dashboard.
+
+CRM (customer segments, consent, the customer file), SMS/email marketing and the website manager
+grow this app rather than adding new sidebar peers.
+
+See [docs/phases/Phase-36b-Growth-Marketing-App.md](docs/phases/Phase-36b-Growth-Marketing-App.md).
+
 ## The business day (روز کاری)
 
 A branch's trading day does not have to start at local midnight. `locations.business_day_start_minutes`

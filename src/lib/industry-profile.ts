@@ -289,6 +289,11 @@ export const PAGE_MODULE_PREFIXES: readonly (readonly [string, ModuleKey])[] = [
   ["/dashboard/loyalty", "loyalty"],
   ["/dashboard/promotions", "promotions"],
   ["/dashboard/commission", "commission"],
+  // Phase 36b — the Growth & Marketing app's home. Anchored on `loyalty`
+  // (core for every trade) like its nav entry: the app is the container for
+  // loyalty, promotions and commission, and a business that had any of the
+  // three has loyalty.
+  ["/dashboard/growth", "loyalty"],
   ["/dashboard/stock", "stock"],
 ];
 

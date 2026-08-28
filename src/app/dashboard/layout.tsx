@@ -52,23 +52,17 @@ function navItemsFor(industry: Industry): NavItem[] {
       href: "/dashboard/customers",
       roles: ["owner", "manager", "cashier", "accountant"],
     },
+    // Phase 36b — loyalty, campaigns/gift cards and commission are one app
+    // now («رشد و بازاریابی», /dashboard/growth), with its own dashboard the
+    // way accounting has one. The entry is anchored on the `loyalty` module —
+    // core for every trade — and the app's rail restricts its sections by
+    // role: a cashier lands on loyalty, the surface the old flat page gave
+    // them, and never sees commission or the KPIs. The old routes redirect.
     {
-      label: "وفاداری",
+      label: "رشد و بازاریابی",
       module: "loyalty",
-      href: "/dashboard/loyalty",
+      href: "/dashboard/growth",
       roles: ["owner", "manager", "cashier"],
-    },
-    {
-      label: "کمپین‌ها و کارت هدیه",
-      module: "promotions",
-      href: "/dashboard/promotions",
-      roles: ["owner", "manager"],
-    },
-    {
-      label: "پورسانت فروشندگان",
-      module: "commission",
-      href: "/dashboard/commission",
-      roles: ["owner", "manager"],
     },
     {
       label: "خرید و انبار",
