@@ -133,7 +133,6 @@ const RULES: readonly Rule[] = [
       "ai/ai-action-audit.tsx",
       "ai/ai-agent-cards.tsx",
       "ai/ai-billing.tsx",
-      "ai/ai-chat-hub.tsx",
       "ai/ai-today-tasks.tsx",
       "backup/backup-manager.tsx",
       "floor/session-panel.tsx",
