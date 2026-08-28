@@ -6,25 +6,20 @@ import { getBackupHealth } from "@/lib/backup-service";
 import { isSetupComplete } from "@/lib/setup-state";
 import { effectiveFeatures } from "@/lib/features";
 import { getBusinessIndustry } from "@/lib/industry-guard";
-import { DashboardOverview } from "./overview/dashboard-overview";
-import { AiChatHub } from "./ai/ai-chat-hub";
+import { DashboardOverview } from "./dashboard-overview";
 
-/**
- * `/dashboard` is the workspace home (Phase 35 Wave 2).
- *
- * When the `workspace` feature flag is on, this is the chat home — the same
- * full-page assistant hub used by `/dashboard/ai`, composed from the shared
- * `useAiChat` core. When it is off, the page is exactly the legacy dashboard,
- * unchanged, now also reachable at `/dashboard/overview`. One branch, not two
- * component trees: the flag is read here and in the layout, and everything else
- * is shared. Note the assistant hub reads `?conversation=` / `?ctx=` from the
- * URL itself, so "open a recent thread" and "ask about this page" links just
- * navigate here with those params.
- */
-export default async function DashboardPage() {
+export default async function DashboardOverviewPage() {
   const today = toPersianDigits(formatJalali(new Date(), { withMonthName: true }));
   const session = await getSession();
   const canSetup = session?.role === "owner" || session?.role === "manager";
+  // Every DB-backed read below is wrapped in withTenant(), never the ambient
+  // scope getSession() set via enterWith(): that scope is lost the moment a
+  // background tick (backup/rollup/server-sync, all withTenant()/withoutTenantScope()
+  // .run() calls) fires mid-request, and RLS then silently returns empty rows.
+  // An empty settings read here made getBackupConfig fall back to the default
+  // (enabled: false), so a working backup showed the «پشتیبان‌گیری خودکار هنوز
+  // فعال نیست» banner — see settings/page.tsx and dashboard/layout.tsx, which
+  // already wrap their reads the same way for the same reason.
   const [setupDone, features, backupHealth, industryRead] = session
     ? await withTenant(
         session.businessId,
@@ -32,6 +27,9 @@ export default async function DashboardPage() {
           Promise.all([
             isSetupComplete(session.businessId),
             effectiveFeatures(session.businessId),
+            // Phase 10 exit criterion: a failed/missed backup surfaces right on
+            // the Owner's dashboard, not only on the backup page nobody may be
+            // watching.
             canSetup ? getBackupHealth(session.businessId).catch(() => null) : Promise.resolve(null),
             getBusinessIndustry(session.businessId),
           ]),
@@ -39,13 +37,6 @@ export default async function DashboardPage() {
       )
     : [true, null, null, null];
   const industry = industryRead ?? "food_service";
-  const workspaceEnabled = Boolean(features?.workspace);
-
-  if (workspaceEnabled) {
-    return (
-      <AiChatHub canAutoApply={session?.role === "owner"} />
-    );
-  }
 
   return (
     <DashboardOverview

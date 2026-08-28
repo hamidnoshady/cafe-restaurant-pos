@@ -29,7 +29,11 @@ import { DashboardSidebar, type NavItem } from "./dashboard-sidebar";
  */
 function navItemsFor(industry: Industry): NavItem[] {
   return [
-    { label: "داشبورد", module: "dashboard", href: "/dashboard" },
+    // Phase 35 Wave 2: the dashboard itself moved to /dashboard/overview; the
+    // bare /dashboard route is now the chat home. Links that meant "the
+    // dashboard" point here instead, so the legacy surface is still one tap away
+    // whether or not the workspace shell is on.
+    { label: "داشبورد", module: "dashboard", href: "/dashboard/overview" },
     {
       label: labelFor(industry, "saleDocumentPlural"),
       module: "orders",
@@ -160,6 +164,11 @@ export default async function DashboardLayout({
   const canUseAssistant =
     assistantMode === "dashboard" ||
     (assistantMode === "floor" && permissions.has(PERMISSIONS.menuView));
+  // Phase 35 Wave 2 — the workspace shell is gated on this flag. Off (the
+  // default) means today's flat sidebar and the floating bubble; on means the
+  // rail and a bubble only on the floor (operational) surfaces, which have no
+  // page header to hang a thin "ask" link from.
+  const workspaceEnabled = Boolean(features.workspace);
 
   return (
     <LockProvider fullName={session.fullName}>
@@ -190,6 +199,8 @@ export default async function DashboardLayout({
           fullName={session.fullName}
           brandTitle={profile.brandTitle}
           brandSubtitle={profile.brandSubtitle}
+          variant={workspaceEnabled ? "workspace" : "classic"}
+          industry={industry}
         />
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
           <OfflineBanner />
@@ -209,7 +220,9 @@ export default async function DashboardLayout({
             {children}
           </PullToRefresh>
         </div>
-          {assistantMode && canUseAssistant && features.ai_assistant ? <AiAssistant mode={assistantMode} /> : null}
+          {assistantMode && canUseAssistant && features.ai_assistant && (assistantMode === "floor" || !workspaceEnabled) ? (
+            <AiAssistant mode={assistantMode} />
+          ) : null}
         </div>
       </MoneyProvider>
     </LockProvider>
