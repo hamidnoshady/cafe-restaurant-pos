@@ -432,3 +432,8 @@ grep -rn '<h1' src/app/dashboard/ --include='page.tsx' && echo "PageHeader bypas
 And the visual check: build the page, open it next to the matching reference screenshot, and
 compare the *states* — hover a row, focus an input, press a chip. The language is in the
 states as much as in the shapes.
+
+Reference screenshots of the normalized screens, captured from the running app, live in
+[`docs/design/verification/`](design/verification/) — they were compared against the
+references here (palette + states) as the acceptance check for the token normalization.
+They are captures of the seeded demo data, not production data.
