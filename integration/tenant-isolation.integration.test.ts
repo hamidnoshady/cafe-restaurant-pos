@@ -56,6 +56,11 @@ const EXEMPT_TABLES = new Set([
   // once, which is exactly why it is not per-tenant. The five notification_*
   // tables that DO carry business data are deliberately not in this list.
   "platform_push_config",
+  // Phase 35 — platform-wide prompt-fragment overrides for the assistant
+  // (migration 0112). Same shape as platform_ai_config: no business_id /
+  // location_id column, nothing to scope by; a row overrides the code default
+  // for a fragment key + version and falls back to code when absent.
+  "ai_prompt_templates",
 ]);
 
 let databaseName: string;

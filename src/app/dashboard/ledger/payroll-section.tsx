@@ -114,7 +114,7 @@ export function PayrollSection({ busy, run, refreshKey }: { busy: boolean; run: 
     <div className="space-y-5">
       <section aria-labelledby="payroll-wages-heading" className="rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-4 sm:p-5">
         <header className="mb-5 border-b border-border pb-4">
-          <p className="text-xs font-semibold text-[#9B6700]">تنظیمات حقوق</p>
+          <p className="text-xs font-semibold text-amber-700">تنظیمات حقوق</p>
           <h2 id="payroll-wages-heading" className="mt-1 text-lg font-bold">حقوق ماهانه کارکنان</h2>
           <p className="mt-1 text-sm text-muted-foreground">مبلغ حقوق هر کارمند را به تومان وارد و ذخیره کنید.</p>
         </header>
@@ -126,13 +126,13 @@ export function PayrollSection({ busy, run, refreshKey }: { busy: boolean; run: 
         ) : null}
 
         {staff.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-border bg-[#FCFBF8] px-4 py-8 text-center text-sm text-muted-foreground">
+          <p className="rounded-xl border border-dashed border-border bg-stone-50 px-4 py-8 text-center text-sm text-muted-foreground">
             عضو فعالی یافت نشد.
           </p>
         ) : (
           <div className="space-y-3">
             {staff.map((s) => (
-              <div key={s.id} className="grid gap-3 rounded-xl border border-border bg-[#FFFEFC] p-4 md:grid-cols-[minmax(10rem,1fr)_minmax(12rem,15rem)_auto] md:items-end">
+              <div key={s.id} className="grid gap-3 rounded-xl border border-border bg-stone-50 p-4 md:grid-cols-[minmax(10rem,1fr)_minmax(12rem,15rem)_auto] md:items-end">
                 <div>
                   <p className="text-xs font-medium text-muted-foreground">کارمند</p>
                   <p className="mt-1 font-semibold">{s.fullName}</p>
@@ -162,7 +162,7 @@ export function PayrollSection({ busy, run, refreshKey }: { busy: boolean; run: 
 
       <section aria-labelledby="payroll-accrual-heading" className="rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-4 sm:p-5">
         <header className="mb-5 border-b border-border pb-4">
-          <p className="text-xs font-semibold text-[#9B6700]">ثبت دوره</p>
+          <p className="text-xs font-semibold text-amber-700">ثبت دوره</p>
           <h2 id="payroll-accrual-heading" className="mt-1 text-lg font-bold">تعهد حقوق و دستمزد جدید</h2>
           <p className="mt-1 text-sm text-muted-foreground">ثبت تعهد، همان گردش سندداری موجود را اجرا می‌کند.</p>
         </header>
@@ -189,18 +189,18 @@ export function PayrollSection({ busy, run, refreshKey }: { busy: boolean; run: 
 
       <section aria-labelledby="payroll-history-heading" className="rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-4 sm:p-5">
         <header className="mb-5 border-b border-border pb-4">
-          <p className="text-xs font-semibold text-[#9B6700]">سوابق</p>
+          <p className="text-xs font-semibold text-amber-700">سوابق</p>
           <h2 id="payroll-history-heading" className="mt-1 text-lg font-bold">تاریخچه حقوق و دستمزد</h2>
         </header>
 
         {runs.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-border bg-[#FCFBF8] px-4 py-8 text-center text-sm text-muted-foreground">
+          <p className="rounded-xl border border-dashed border-border bg-stone-50 px-4 py-8 text-center text-sm text-muted-foreground">
             هنوز تعهدی ثبت نشده است.
           </p>
         ) : (
           <ul className="space-y-3">
             {runs.map((r) => (
-              <li key={r.id} className="rounded-xl border border-border bg-[#FFFEFC] p-4">
+              <li key={r.id} className="rounded-xl border border-border bg-stone-50 p-4">
                 <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border pb-3">
                   <div>
                     <h3 className="font-semibold">{r.periodLabel}</h3>
@@ -216,7 +216,7 @@ export function PayrollSection({ busy, run, refreshKey }: { busy: boolean; run: 
 
                 <div className="mt-3 grid gap-2 sm:grid-cols-2">
                   {r.lines.map((l, i) => (
-                    <div key={i} className="flex items-center justify-between gap-3 rounded-lg bg-[#FCFBF8] px-3 py-2.5 text-sm">
+                    <div key={i} className="flex items-center justify-between gap-3 rounded-lg bg-stone-50 px-3 py-2.5 text-sm">
                       <span className="min-w-0 truncate text-muted-foreground">{l.fullName ?? "—"}</span>
                       <span className="shrink-0 font-semibold tabular-nums">{money.format(l.amount)}</span>
                     </div>

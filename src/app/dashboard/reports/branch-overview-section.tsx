@@ -41,32 +41,32 @@ function BranchMetrics({ branch }: { branch: BranchRow }) {
   return (
     <dl className="grid grid-cols-2 gap-3">
       <div>
-        <dt className="text-xs text-[#77756F]">تعداد سفارش</dt>
-        <dd className="mt-1 font-bold tabular-nums text-[#252522]">
+        <dt className="text-xs text-stone-500">تعداد سفارش</dt>
+        <dd className="mt-1 font-bold tabular-nums text-stone-950">
           {toPersianDigits(String(branch.orderCount))}
         </dd>
       </div>
       <div>
-        <dt className="text-xs text-[#77756F]">فروش ناخالص</dt>
-        <dd className="mt-1 font-bold tabular-nums text-[#252522]">
+        <dt className="text-xs text-stone-500">فروش ناخالص</dt>
+        <dd className="mt-1 font-bold tabular-nums text-stone-950">
           {money(branch.subtotal, moneyApi.unit)}
         </dd>
       </div>
       <div>
-        <dt className="text-xs text-[#77756F]">بهای تمام‌شده</dt>
-        <dd className="mt-1 font-bold tabular-nums text-[#252522]">
+        <dt className="text-xs text-stone-500">بهای تمام‌شده</dt>
+        <dd className="mt-1 font-bold tabular-nums text-stone-950">
           {money(branch.cogs, moneyApi.unit)}
         </dd>
       </div>
       <div>
-        <dt className="text-xs text-[#77756F]">ضایعات</dt>
-        <dd className="mt-1 font-bold tabular-nums text-[#252522]">
+        <dt className="text-xs text-stone-500">ضایعات</dt>
+        <dd className="mt-1 font-bold tabular-nums text-stone-950">
           {money(branch.wasteCost, moneyApi.unit)}
         </dd>
       </div>
-      <div className="col-span-2 border-t border-[#F0EEE9] pt-3">
-        <dt className="text-xs text-[#77756F]">فروش خالص</dt>
-        <dd className="mt-1 text-base font-bold tabular-nums text-[#252522]">
+      <div className="col-span-2 border-t border-stone-100 pt-3">
+        <dt className="text-xs text-stone-500">فروش خالص</dt>
+        <dd className="mt-1 text-base font-bold tabular-nums text-stone-950">
           {money(branch.total, moneyApi.unit)}
         </dd>
       </div>
@@ -97,7 +97,7 @@ export function BranchOverviewSection() {
         role="status"
         aria-live="polite"
         aria-label="در حال بارگذاری مقایسه شعب"
-        className="rounded-2xl border border-[#EAE8E2] bg-white px-5 py-8 text-sm text-[#77756F] shadow-[0_1px_2px_rgb(41_37_36/0.03)]"
+        className="rounded-2xl border border-stone-200/80 bg-white px-5 py-8 text-sm text-stone-500 shadow-[0_1px_2px_rgb(41_37_36/0.03)]"
       >
         در حال بارگذاری…
       </section>
@@ -109,9 +109,9 @@ export function BranchOverviewSection() {
 
   if (data.branches.length <= 1) {
     return (
-      <section className="rounded-2xl border border-dashed border-[#DEDAD2] bg-[#FCFBF8] p-5 sm:p-6">
-        <p className="text-xs font-semibold text-[#9B6700]">مقایسهٔ شعب</p>
-        <p className="mt-2 text-sm leading-6 text-[#77756F]">
+      <section className="rounded-2xl border border-dashed border-stone-200/80 bg-stone-50 p-5 sm:p-6">
+        <p className="text-xs font-semibold text-amber-700">مقایسهٔ شعب</p>
+        <p className="mt-2 text-sm leading-6 text-stone-500">
           این کسب‌وکار بیش از یک شعبه ندارد؛ مقایسه وقتی شعبهٔ دوم اضافه شود در
           دسترس خواهد بود.
         </p>
@@ -122,17 +122,17 @@ export function BranchOverviewSection() {
   return (
     <section
       aria-labelledby="branch-overview-heading"
-      className="overflow-hidden rounded-2xl border border-[#EAE8E2] bg-white shadow-[0_1px_2px_rgb(41_37_36/0.03)]"
+      className="overflow-hidden rounded-2xl border border-stone-200/80 bg-white shadow-[0_1px_2px_rgb(41_37_36/0.03)]"
     >
-      <header className="border-b border-[#F0EEE9] px-4 py-4 sm:px-5">
-        <p className="text-xs font-semibold text-[#9B6700]">نمای یکپارچه</p>
+      <header className="border-b border-stone-100 px-4 py-4 sm:px-5">
+        <p className="text-xs font-semibold text-amber-700">نمای یکپارچه</p>
         <h2
           id="branch-overview-heading"
-          className="mt-1 text-lg font-bold text-[#252522]"
+          className="mt-1 text-lg font-bold text-stone-950"
         >
           مقایسهٔ شعب
         </h2>
-        <p className="mt-1 text-sm text-[#77756F]">
+        <p className="mt-1 text-sm text-stone-500">
           اعداد تجمیعی بر پایهٔ گزارش‌های فعلی هر شعبه.
         </p>
       </header>
@@ -140,8 +140,8 @@ export function BranchOverviewSection() {
       <div className="hidden overflow-x-auto md:block">
         <table className="min-w-[760px] w-full text-sm">
           <caption className="sr-only">مقایسه عملکرد شعب</caption>
-          <thead className="bg-[#FCFBF8] text-[#77756F]">
-            <tr className="border-b border-[#EEECE7]">
+          <thead className="bg-stone-50 text-stone-500">
+            <tr className="border-b border-stone-200/80">
               <th
                 scope="col"
                 className="px-4 py-3.5 text-start text-xs font-semibold"
@@ -184,36 +184,36 @@ export function BranchOverviewSection() {
             {data.branches.map((branch) => (
               <tr
                 key={branch.locationId}
-                className="border-b border-[#F0EEE9] last:border-b-0"
+                className="border-b border-stone-100 last:border-b-0"
               >
-                <td className="px-4 py-4 font-semibold text-[#252522]">
+                <td className="px-4 py-4 font-semibold text-stone-950">
                   <span>{branch.locationName}</span>
                   {!branch.isActive ? (
-                    <span className="ms-2 rounded-full bg-[#F5F3EE] px-2 py-1 text-xs font-medium text-[#5E5B55]">
+                    <span className="ms-2 rounded-full bg-stone-100 px-2 py-1 text-xs font-medium text-stone-600">
                       غیرفعال
                     </span>
                   ) : null}
                 </td>
-                <td className="px-4 py-4 tabular-nums text-[#252522]">
+                <td className="px-4 py-4 tabular-nums text-stone-950">
                   {toPersianDigits(String(branch.orderCount))}
                 </td>
-                <td className="px-4 py-4 tabular-nums text-[#252522]">
+                <td className="px-4 py-4 tabular-nums text-stone-950">
                   {money(branch.subtotal, moneyApi.unit)}
                 </td>
-                <td className="px-4 py-4 tabular-nums text-[#252522]">
+                <td className="px-4 py-4 tabular-nums text-stone-950">
                   {money(branch.cogs, moneyApi.unit)}
                 </td>
-                <td className="px-4 py-4 tabular-nums text-[#252522]">
+                <td className="px-4 py-4 tabular-nums text-stone-950">
                   {money(branch.wasteCost, moneyApi.unit)}
                 </td>
-                <td className="px-4 py-4 font-bold tabular-nums text-[#252522]">
+                <td className="px-4 py-4 font-bold tabular-nums text-stone-950">
                   {money(branch.total, moneyApi.unit)}
                 </td>
               </tr>
             ))}
           </tbody>
-          <tfoot className="bg-[#FCFBF8]">
-            <tr className="border-t-2 border-[#DEDAD2] font-bold text-[#252522]">
+          <tfoot className="bg-stone-50">
+            <tr className="border-t-2 border-stone-200/80 font-bold text-stone-950">
               <th scope="row" className="px-4 py-4 text-start">
                 مجموع کسب‌وکار
               </th>
@@ -241,14 +241,14 @@ export function BranchOverviewSection() {
         {data.branches.map((branch) => (
           <article
             key={branch.locationId}
-            className="rounded-xl border border-[#EEECE7] bg-[#FFFEFC] p-4"
+            className="rounded-xl border border-stone-200/80 bg-stone-50 p-4"
           >
-            <div className="mb-4 flex items-start justify-between gap-3 border-b border-[#F0EEE9] pb-3">
-              <h3 className="font-bold text-[#252522]">
+            <div className="mb-4 flex items-start justify-between gap-3 border-b border-stone-100 pb-3">
+              <h3 className="font-bold text-stone-950">
                 {branch.locationName}
               </h3>
               {!branch.isActive ? (
-                <span className="shrink-0 rounded-full bg-[#F5F3EE] px-2 py-1 text-xs font-medium text-[#5E5B55]">
+                <span className="shrink-0 rounded-full bg-stone-100 px-2 py-1 text-xs font-medium text-stone-600">
                   غیرفعال
                 </span>
               ) : null}
@@ -257,8 +257,8 @@ export function BranchOverviewSection() {
           </article>
         ))}
 
-        <article className="rounded-xl border border-[#DEDAD2] bg-[#FCFBF8] p-4">
-          <h3 className="mb-4 text-sm font-bold text-[#252522]">
+        <article className="rounded-xl border border-stone-200/80 bg-stone-50 p-4">
+          <h3 className="mb-4 text-sm font-bold text-stone-950">
             مجموع کسب‌وکار
           </h3>
           <BranchMetrics

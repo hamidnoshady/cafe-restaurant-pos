@@ -4,7 +4,7 @@ import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useEffect, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
 import { todayJalali } from "@/lib/jalali";
-import { api, ErrorBox } from "../ui";
+import { api, ErrorBox, inputClass } from "../ui";
 import type { Runner } from "./ledger-manager";
 
 interface FiscalYear {
@@ -141,7 +141,7 @@ export function FiscalPeriodsSection({
       <ErrorBox>{error}</ErrorBox>
 
       <div className="rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-4 sm:p-5">
-        <p className="text-xs font-semibold text-[#9B6700]">تقویم مالی</p>
+        <p className="text-xs font-semibold text-amber-700">تقویم مالی</p>
         <h2 className="mt-1">سال‌های مالی</h2>
         <p className="mt-2 text-sm text-muted-foreground">سال مالی و دوره‌های آن را با همان محدودیت‌های ثبت و قفل موجود مدیریت کنید.</p>
 
@@ -153,7 +153,7 @@ export function FiscalPeriodsSection({
               grouping={false}
               value={newYear}
               onChange={(e) => setNewYear(e.target.value)}
-              className="w-full rounded-lg border border-input bg-background px-3 py-1.5"
+              className={inputClass}
             />
           </label>
           <button
@@ -167,7 +167,7 @@ export function FiscalPeriodsSection({
         </div>
 
         {years.length === 0 ? (
-          <p className="mt-5 rounded-xl border border-dashed border-[#DEDAD2] bg-[#FCFBF8] px-4 py-7 text-center text-sm text-muted-foreground">
+          <p className="mt-5 rounded-xl border border-dashed border-stone-200/80 bg-stone-50 px-4 py-7 text-center text-sm text-muted-foreground">
             هنوز سال مالی‌ای تعریف نشده است.
           </p>
         ) : (
@@ -182,8 +182,8 @@ export function FiscalPeriodsSection({
                   onClick={() => setSelectedYearId(y.id)}
                   className={`min-h-12 rounded-xl border px-4 text-sm ${
                     selectedYearId === y.id
-                      ? "border-[#F0D7A8] bg-[#FFF1D8] font-semibold text-[#9B6700]"
-                      : "border-transparent text-muted-foreground hover:border-[#EAE8E2] hover:bg-[#FCFBF8]"
+                      ? "border-amber-200 bg-amber-100 font-semibold text-amber-700"
+                      : "border-transparent text-muted-foreground hover:border-stone-200/80 hover:bg-stone-50"
                   }`}
                 >
                   {toPersianDigits(y.label)}
@@ -199,7 +199,7 @@ export function FiscalPeriodsSection({
         <div className="rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-4 sm:p-5">
           <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
             <div>
-              <p className="text-xs font-semibold text-[#9B6700]">کنترل دوره</p>
+              <p className="text-xs font-semibold text-amber-700">کنترل دوره</p>
               <h2 className="mt-1">دوره‌های سال مالی</h2>
             </div>
             {selectedYear && !selectedYear.closedAt ? (
@@ -216,7 +216,7 @@ export function FiscalPeriodsSection({
           </div>
 
           {periods.length === 0 ? (
-            <p className="rounded-xl border border-dashed border-[#DEDAD2] bg-[#FCFBF8] px-4 py-7 text-center text-sm text-muted-foreground">
+            <p className="rounded-xl border border-dashed border-stone-200/80 bg-stone-50 px-4 py-7 text-center text-sm text-muted-foreground">
               دوره‌ای برای سال انتخاب‌شده وجود ندارد.
             </p>
           ) : (
@@ -237,7 +237,7 @@ export function FiscalPeriodsSection({
                         <td className="py-3 pe-3"><span className={`rounded-full px-3 py-1 text-xs font-semibold ${STATUS_STYLES[p.status]}`}>{STATUS_LABELS[p.status]}</span></td>
                         <td className="py-3">
                           <div className="flex flex-wrap gap-2">
-                            {p.status === "open" ? <button type="button" onClick={() => setStatus(p.id, "soft_closed")} className="rounded-lg px-3 text-xs font-semibold text-[#9B6700] hover:bg-[#FFF1D8]">بستن موقت</button> : null}
+                            {p.status === "open" ? <button type="button" onClick={() => setStatus(p.id, "soft_closed")} className="rounded-lg px-3 text-xs font-semibold text-amber-700 hover:bg-amber-100">بستن موقت</button> : null}
                             {p.status === "soft_closed" ? (
                               <>
                                 <button type="button" onClick={() => setStatus(p.id, "locked")} className="rounded-lg px-3 text-xs font-semibold text-destructive hover:bg-destructive/10">قفل کردن</button>
@@ -255,13 +255,13 @@ export function FiscalPeriodsSection({
 
               <div className="space-y-3 lg:hidden">
                 {periods.map((p) => (
-                  <article key={p.id} className="rounded-xl border border-[#EEECE7] bg-[#FCFBF8] p-4">
+                  <article key={p.id} className="rounded-xl border border-stone-200/80 bg-stone-50 p-4">
                     <div className="flex items-center justify-between gap-3">
                       <h3>{toPersianDigits(p.name)}</h3>
                       <span className={`rounded-full px-3 py-1 text-xs font-semibold ${STATUS_STYLES[p.status]}`}>{STATUS_LABELS[p.status]}</span>
                     </div>
-                    <div className="mt-3 flex flex-wrap gap-2 border-t border-[#F0EEE9] pt-3">
-                      {p.status === "open" ? <button type="button" onClick={() => setStatus(p.id, "soft_closed")} className="rounded-lg px-3 text-sm font-semibold text-[#9B6700] hover:bg-[#FFF1D8]">بستن موقت</button> : null}
+                    <div className="mt-3 flex flex-wrap gap-2 border-t border-stone-100 pt-3">
+                      {p.status === "open" ? <button type="button" onClick={() => setStatus(p.id, "soft_closed")} className="rounded-lg px-3 text-sm font-semibold text-amber-700 hover:bg-amber-100">بستن موقت</button> : null}
                       {p.status === "soft_closed" ? (
                         <>
                           <button type="button" onClick={() => setStatus(p.id, "locked")} className="rounded-lg px-3 text-sm font-semibold text-destructive hover:bg-destructive/10">قفل کردن</button>

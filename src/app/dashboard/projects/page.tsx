@@ -12,8 +12,9 @@ import {
   PlusIcon,
   StickyNoteIcon,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { EmptyState, PageHeader, PageShell, SectionCard } from "../page-chrome";
+import { cardClass, EmptyState, PageHeader, PageShell, SectionCard } from "../page-chrome";
 import { api, inputClass } from "../ui";
 
 interface Project {
@@ -132,7 +133,10 @@ export default function ProjectsPage() {
             <Link
               key={project.id}
               href={`/dashboard/projects/${project.id}`}
-              className="group flex flex-col gap-2 rounded-2xl border border-stone-200/80 bg-card p-4 shadow-[0_1px_2px_rgb(41_37_36/0.035)] transition hover:border-amber-300/60 hover:shadow-[0_2px_8px_rgb(41_37_36/0.06)]"
+              className={cn(
+                cardClass,
+                "group flex flex-col gap-2 p-4 transition hover:border-amber-300/60 hover:shadow-[0_2px_8px_rgb(41_37_36/0.06)]",
+              )}
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="flex items-center gap-2">

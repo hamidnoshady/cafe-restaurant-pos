@@ -128,29 +128,29 @@ export function RetailOverview({ industry }: { industry: Industry }) {
       </div>
 
       {industry === "cosmetics" ? (
-        <section className="mb-5 rounded-2xl border border-[#EAE8E2] bg-white p-4 sm:p-5">
+        <section className="mb-5 rounded-2xl border border-stone-200/80 bg-white p-4 sm:p-5">
           <div className="mb-3 flex items-center justify-between gap-2">
-            <h2 className="flex items-center gap-2 font-semibold text-[#252522]">
+            <h2 className="flex items-center gap-2 font-semibold text-stone-950">
               <AlertTriangleIcon aria-hidden="true" className="size-4" />
               بچ‌های نزدیک به انقضا
             </h2>
-            <Link href="/dashboard/cosmetics" className="text-sm font-semibold text-[#8C5B00] hover:underline">
+            <Link href="/dashboard/cosmetics" className="text-sm font-semibold text-amber-800 hover:underline">
               مدیریت کالاها ←
             </Link>
           </div>
           {loading ? (
-            <p className="text-sm text-[#77756F]">در حال بارگذاری…</p>
+            <p className="text-sm text-stone-500">در حال بارگذاری…</p>
           ) : nearExpiry.length === 0 ? (
-            <p className="rounded-xl border border-dashed border-[#EAE8E2] px-3 py-6 text-center text-sm text-[#77756F]">
+            <p className="rounded-xl border border-dashed border-stone-200/80 px-3 py-6 text-center text-sm text-stone-500">
               هیچ بچی منقضی یا نزدیک به انقضا نیست.
             </p>
           ) : (
-            <ul className="divide-y divide-[#EAE8E2]">
+            <ul className="divide-y divide-stone-200/80">
               {nearExpiry.slice(0, 10).map((row) => (
                 <li key={`${row.batchNumber}-${row.itemName}`} className="flex items-center justify-between gap-3 py-2.5 text-sm">
                   <div className="min-w-0">
-                    <span className="font-medium text-[#252522]">{row.itemName}</span>
-                    <span className="mr-2 text-xs text-[#77756F]">
+                    <span className="font-medium text-stone-950">{row.itemName}</span>
+                    <span className="mr-2 text-xs text-stone-500">
                       بچ {row.batchNumber}
                       {row.expiryDate ? ` · انقضا ${toPersianDigits(formatJalali(row.expiryDate))}` : ""}
                     </span>
@@ -174,27 +174,27 @@ export function RetailOverview({ industry }: { industry: Industry }) {
       ) : null}
 
       {industry === "jewelry" ? (
-        <section className="mb-5 rounded-2xl border border-[#EAE8E2] bg-white p-4 sm:p-5">
+        <section className="mb-5 rounded-2xl border border-stone-200/80 bg-white p-4 sm:p-5">
           <div className="mb-3 flex items-center justify-between gap-2">
-            <h2 className="flex items-center gap-2 font-semibold text-[#252522]">
+            <h2 className="flex items-center gap-2 font-semibold text-stone-950">
               <GemIcon aria-hidden="true" className="size-4" />
               نرخ طلا
             </h2>
-            <Link href="/dashboard/jewelry" className="text-sm font-semibold text-[#8C5B00] hover:underline">
+            <Link href="/dashboard/jewelry" className="text-sm font-semibold text-amber-800 hover:underline">
               ثبت نرخ روز ←
             </Link>
           </div>
           {loading ? (
-            <p className="text-sm text-[#77756F]">در حال بارگذاری…</p>
+            <p className="text-sm text-stone-500">در حال بارگذاری…</p>
           ) : data && data.goldPrices.length > 0 ? (
             <dl className="grid gap-3 sm:grid-cols-3">
               {data.goldPrices.map((price) => (
-                <div key={price.purity} className="rounded-xl bg-[#FCFCFA] p-3">
-                  <dt className="text-[11px] text-[#77756F]">
+                <div key={price.purity} className="rounded-xl bg-stone-50 p-3">
+                  <dt className="text-[11px] text-stone-500">
                     {PURITY_LABELS[price.purity] ?? price.purity} —{" "}
                     {toPersianDigits(formatJalali(price.priceDate))}
                   </dt>
-                  <dd className="mt-1 text-sm font-bold text-[#252522]">
+                  <dd className="mt-1 text-sm font-bold text-stone-950">
                     {money.format(price.pricePerGram)} بر گرم
                   </dd>
                 </div>
@@ -213,13 +213,13 @@ export function RetailOverview({ industry }: { industry: Industry }) {
       <div className="flex flex-wrap gap-3">
         <Link
           href="/dashboard/pos"
-          className="inline-flex min-h-12 flex-1 items-center justify-center rounded-xl border border-[#E9A11B]/35 bg-[#FFF9EE] px-4 text-sm font-semibold text-[#8C5B00] transition-colors hover:bg-[#FFF3DE]"
+          className="inline-flex min-h-12 flex-1 items-center justify-center rounded-xl border border-amber-500/35 bg-amber-50 px-4 text-sm font-semibold text-amber-800 transition-colors hover:bg-amber-50"
         >
           {labelFor(industry, "sellScreen")} ←
         </Link>
         <Link
           href={`/dashboard/${industry}`}
-          className="inline-flex min-h-12 flex-1 items-center justify-center rounded-xl border border-[#EAE8E2] bg-white px-4 text-sm font-semibold text-[#52504B] transition-colors hover:bg-[#FCFCFA]"
+          className="inline-flex min-h-12 flex-1 items-center justify-center rounded-xl border border-stone-200/80 bg-white px-4 text-sm font-semibold text-stone-600 transition-colors hover:bg-stone-50"
         >
           مدیریت {labelFor(industry, "catalogue")} ←
         </Link>
@@ -240,14 +240,14 @@ function Kpi({
   value: string;
 }) {
   return (
-    <div className="rounded-2xl border border-[#EAE8E2] bg-white p-4 shadow-[0_1px_2px_rgba(37,37,34,0.03)]">
+    <div className="rounded-2xl border border-stone-200/80 bg-white p-4 shadow-[0_1px_2px_rgba(37,37,34,0.03)]">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className="text-sm font-medium text-[#77756F]">{label}</p>
-          <p className="mt-1.5 text-xl font-bold text-[#252522]">{value}</p>
-          <p className="mt-1 text-[11px] text-[#9C9A94]">{hint}</p>
+          <p className="text-sm font-medium text-stone-500">{label}</p>
+          <p className="mt-1.5 text-xl font-bold text-stone-950">{value}</p>
+          <p className="mt-1 text-[11px] text-stone-400">{hint}</p>
         </div>
-        <span className="shrink-0 rounded-xl bg-[#FFF9EE] p-2 text-[#B97905]">
+        <span className="shrink-0 rounded-xl bg-amber-50 p-2 text-amber-700">
           <Icon aria-hidden="true" className="size-5" />
         </span>
       </div>

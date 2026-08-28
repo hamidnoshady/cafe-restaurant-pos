@@ -15,25 +15,25 @@
 
 /** The amber focus ring every interactive element in this language wears. */
 export const FOCUS =
-  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45";
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45";
 
 /** A white surface panel. */
 export const CARD =
-  "rounded-2xl border border-[#EAE8E2] bg-white shadow-[0_1px_2px_rgba(37,37,34,0.03)]";
+  "rounded-2xl border border-stone-200/80 bg-white shadow-[0_1px_2px_rgba(37,37,34,0.03)]";
 
 /** The one amber call to action on a surface — full width by default. */
-export const PRIMARY_BUTTON = `flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#E9A11B] px-4 text-sm font-bold text-[#252522] transition duration-200 hover:bg-[#DB9612] ${FOCUS} active:scale-[0.98] disabled:opacity-55 motion-reduce:transition-none`;
+export const PRIMARY_BUTTON = `flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-amber-500 px-4 text-sm font-bold text-stone-950 transition duration-200 hover:bg-amber-500 ${FOCUS} active:scale-[0.98] disabled:opacity-55 motion-reduce:transition-none`;
 
 /** Everything else: outlined, white, quiet. */
-export const SECONDARY_BUTTON = `inline-flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-[#EAE8E2] bg-white px-3 text-sm font-semibold text-[#5E5B55] transition-colors hover:bg-[#FCFCFA] ${FOCUS} active:scale-[0.98] disabled:opacity-55`;
+export const SECONDARY_BUTTON = `inline-flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-stone-200/80 bg-white px-3 text-sm font-semibold text-stone-600 transition-colors hover:bg-stone-50 ${FOCUS} active:scale-[0.98] disabled:opacity-55`;
 
 /** Voiding, removing, reversing — outlined rather than solid, so it is never the loudest thing on screen. */
 export const DANGER_BUTTON =
-  "inline-flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-[#E5CCC5] bg-white px-3 text-sm font-semibold text-[#9E4437] transition-colors hover:bg-[#FFF7F4] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D95757]/35 active:scale-[0.98] disabled:opacity-55";
+  "inline-flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-destructive/30 bg-white px-3 text-sm font-semibold text-destructive transition-colors hover:bg-destructive/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/35 active:scale-[0.98] disabled:opacity-55";
 
 /** Text/number inputs and SearchableSelect triggers. */
 export const OPS_INPUT =
-  "min-h-12 w-full min-w-0 rounded-xl border border-[#EAE8E2] bg-[#FCFCFA] px-3 text-sm text-[#252522] outline-none placeholder:text-[#8D8A82] focus-visible:border-[#E9A11B] focus-visible:ring-2 focus-visible:ring-[#E9A11B]/25";
+  "min-h-12 w-full min-w-0 rounded-xl border border-stone-200/80 bg-stone-50 px-3 text-sm text-stone-950 outline-none placeholder:text-stone-500 focus-visible:border-amber-500 focus-visible:ring-2 focus-visible:ring-amber-500/25";
 
 /** One square of a −/qty/+ stepper. */
-export const STEPPER_BUTTON = `flex size-11 shrink-0 items-center justify-center rounded-xl border border-[#EAE8E2] bg-white text-[#5E5B55] transition-colors hover:bg-[#FCFCFA] ${FOCUS} active:scale-[0.95] disabled:opacity-40 motion-reduce:transition-none`;
+export const STEPPER_BUTTON = `flex size-11 shrink-0 items-center justify-center rounded-xl border border-stone-200/80 bg-white text-stone-600 transition-colors hover:bg-stone-50 ${FOCUS} active:scale-[0.95] disabled:opacity-40 motion-reduce:transition-none`;

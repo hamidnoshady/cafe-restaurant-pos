@@ -62,7 +62,7 @@ export function EntriesSection({ refreshKey, busy, run }: { refreshKey: number; 
   return (
     <section className="space-y-4">
       <header className="rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-5">
-        <p className="text-xs font-semibold text-[#9B6700]">دفاتر مالی</p>
+        <p className="text-xs font-semibold text-amber-700">دفاتر مالی</p>
         <h2 className="mt-1">دفتر روزنامه</h2>
         <p className="mt-1 text-sm text-muted-foreground">اسناد خودکار و دستیِ ثبت‌شده، با امکان برگشت فقط برای اسناد دستی مجاز.</p>
       </header>
@@ -77,12 +77,12 @@ export function EntriesSection({ refreshKey, busy, run }: { refreshKey: number; 
             const canReverse = e.source_type === "manual" && !isReversal && !isReversed;
             return (
               <article key={e.id} className="rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-4 sm:p-5">
-                <div className="mb-4 flex flex-wrap items-start justify-between gap-3 border-b border-[#F0EEE9] pb-3">
+                <div className="mb-4 flex flex-wrap items-start justify-between gap-3 border-b border-stone-100 pb-3">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <h3 className="truncate text-base">{e.memo || "—"}</h3>
-                      {isReversal ? <span className="rounded-full bg-[#FFF1D8] px-2.5 py-1 text-xs font-semibold text-[#9B6700]">سند برگشتی</span> : null}
-                      {isReversed ? <span className="rounded-full bg-[#F5F3EE] px-2.5 py-1 text-xs font-semibold text-[#5E5B55]">برگشت‌خورده</span> : null}
+                      {isReversal ? <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-700">سند برگشتی</span> : null}
+                      {isReversed ? <span className="rounded-full bg-stone-100 px-2.5 py-1 text-xs font-semibold text-stone-600">برگشت‌خورده</span> : null}
                     </div>
                     <p className="mt-1 text-xs text-muted-foreground">
                       {SOURCE_LABELS[e.source_type ?? ""] ?? e.source_type} — {formatJalali(e.entry_date)}
@@ -119,7 +119,7 @@ export function EntriesSection({ refreshKey, busy, run }: { refreshKey: number; 
 
                 <div className="space-y-2 lg:hidden">
                   {e.lines.map((l, i) => (
-                    <div key={i} className="rounded-xl border border-[#EEECE7] bg-[#FCFBF8] p-3">
+                    <div key={i} className="rounded-xl border border-stone-200/80 bg-stone-50 p-3">
                       <p className="text-sm font-semibold">{l.account_code} {l.account_name}</p>
                       <dl className="mt-2 grid grid-cols-2 gap-2 text-sm">
                         <div><dt className="text-xs text-muted-foreground">بدهکار</dt><dd className="mt-1 font-semibold">{Number(l.debit) !== 0 ? money.format(Number(l.debit)) : "—"}</dd></div>

@@ -293,10 +293,10 @@ function SplitDialog({
       <DialogContent className="max-h-[92dvh] max-w-lg overflow-y-auto">
         <DialogHeader><DialogTitle>تقسیم صورتحساب و مشتری‌ها</DialogTitle></DialogHeader>
 
-        <section className="rounded-xl border border-[#EAE8E2] bg-[#FCFCFA] p-3" aria-label="مشتری‌های میز">
+        <section className="rounded-xl border border-stone-200/80 bg-stone-50 p-3" aria-label="مشتری‌های میز">
           <div className="mb-3 flex items-center justify-between gap-2">
             <h3 className="text-sm font-bold">مشتری‌های این میز</h3>
-            <UsersIcon className="size-4 text-[#9B6700]" aria-hidden="true" />
+            <UsersIcon className="size-4 text-amber-700" aria-hidden="true" />
           </div>
           <label className="mb-3 flex items-center gap-2 text-sm">
             <span className="shrink-0">تعداد نفر</span>
@@ -363,9 +363,9 @@ function SplitDialog({
         <section className="border-t border-border pt-3" aria-label="پرداخت یکجای صورتحساب">
           <p className="mb-2 text-xs font-semibold text-muted-foreground">پرداخت کل با یک پرداخت</p>
           <div className="mb-2 grid grid-cols-3 gap-2">
-            <button type="button" onClick={() => setPaymentMethod("cash")} className={`flex min-h-12 items-center justify-center gap-1 rounded-lg border text-xs font-bold ${paymentMethod === "cash" ? "border-[#E9A11B] bg-[#FFF1D8] text-[#9B6700]" : "border-border"}`}><BanknoteIcon className="size-4" aria-hidden="true" />نقدی</button>
-            <button type="button" onClick={() => setPaymentMethod("card")} className={`flex min-h-12 items-center justify-center gap-1 rounded-lg border text-xs font-bold ${paymentMethod === "card" ? "border-[#E9A11B] bg-[#FFF1D8] text-[#9B6700]" : "border-border"}`}><CreditCardIcon className="size-4" aria-hidden="true" />کارت</button>
-            <button type="button" onClick={() => setPaymentMethod("card_to_card")} className={`flex min-h-12 items-center justify-center rounded-lg border text-xs font-bold ${paymentMethod === "card_to_card" ? "border-[#E9A11B] bg-[#FFF1D8] text-[#9B6700]" : "border-border"}`}>کارت‌به‌کارت</button>
+            <button type="button" onClick={() => setPaymentMethod("cash")} className={`flex min-h-12 items-center justify-center gap-1 rounded-lg border text-xs font-bold ${paymentMethod === "cash" ? "border-amber-500 bg-amber-100 text-amber-700" : "border-border"}`}><BanknoteIcon className="size-4" aria-hidden="true" />نقدی</button>
+            <button type="button" onClick={() => setPaymentMethod("card")} className={`flex min-h-12 items-center justify-center gap-1 rounded-lg border text-xs font-bold ${paymentMethod === "card" ? "border-amber-500 bg-amber-100 text-amber-700" : "border-border"}`}><CreditCardIcon className="size-4" aria-hidden="true" />کارت</button>
+            <button type="button" onClick={() => setPaymentMethod("card_to_card")} className={`flex min-h-12 items-center justify-center rounded-lg border text-xs font-bold ${paymentMethod === "card_to_card" ? "border-amber-500 bg-amber-100 text-amber-700" : "border-border"}`}>کارت‌به‌کارت</button>
           </div>
           <PrimaryButton type="button" onClick={() => void payAll()} disabled={busy || bill.total <= 0}>پرداخت کل {money.format(bill.total)}</PrimaryButton>
         </section>

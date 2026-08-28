@@ -117,7 +117,7 @@ export function FixedAssetsSection({ busy, refreshKey }: { busy: boolean; refres
   return (
     <div className="space-y-4">
       <section className="rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-4 sm:p-5">
-        <p className="text-xs font-semibold text-[#9B6700]">دفتر دارایی</p>
+        <p className="text-xs font-semibold text-amber-700">دفتر دارایی</p>
         <h2 className="mt-1">ثبت دارایی ثابت</h2>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
           استهلاک به روش خط مستقیم محاسبه می‌شود؛ ثبت دارایی به‌تنهایی سندی صادر نمی‌کند — استهلاک هر دوره را جداگانه ثبت کنید.
@@ -156,19 +156,19 @@ export function FixedAssetsSection({ busy, refreshKey }: { busy: boolean; refres
 
       <section className="rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-4 sm:p-5">
         <div className="mb-4">
-          <p className="text-xs font-semibold text-[#9B6700]">فهرست دارایی‌ها</p>
+          <p className="text-xs font-semibold text-amber-700">فهرست دارایی‌ها</p>
           <h2 className="mt-1">دارایی‌های ثابت</h2>
         </div>
         {!assets ? (
           <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>
         ) : assets.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-[#DEDAD2] bg-[#FCFBF8] px-4 py-8 text-center text-sm text-muted-foreground">
+          <p className="rounded-xl border border-dashed border-stone-200/80 bg-stone-50 px-4 py-8 text-center text-sm text-muted-foreground">
             هنوز دارایی ثابتی ثبت نشده است.
           </p>
         ) : (
           <div className="space-y-3">
             {assets.map((a) => (
-              <article key={a.id} className="rounded-xl border border-[#EEECE7] bg-[#FCFBF8] p-4">
+              <article key={a.id} className="rounded-xl border border-stone-200/80 bg-stone-50 p-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0">
                     <h3 className="truncate">{a.name}</h3>
@@ -185,7 +185,7 @@ export function FixedAssetsSection({ busy, refreshKey }: { busy: boolean; refres
                     ) : null}
                   </div>
                 </div>
-                <dl className="mt-3 grid grid-cols-2 gap-2 border-t border-[#F0EEE9] pt-3 text-sm sm:grid-cols-4">
+                <dl className="mt-3 grid grid-cols-2 gap-2 border-t border-stone-100 pt-3 text-sm sm:grid-cols-4">
                   <div><dt className="text-xs text-muted-foreground">بهای تمام‌شده</dt><dd className="mt-1 tabular-nums">{money.format(a.cost)}</dd></div>
                   <div><dt className="text-xs text-muted-foreground">ارزش اسقاط</dt><dd className="mt-1 tabular-nums">{money.format(a.salvageValue)}</dd></div>
                   <div><dt className="text-xs text-muted-foreground">استهلاک انباشته</dt><dd className="mt-1 tabular-nums">{money.format(a.accumulatedDepreciation)}</dd></div>
@@ -193,7 +193,7 @@ export function FixedAssetsSection({ busy, refreshKey }: { busy: boolean; refres
                 </dl>
 
                 {depreciating === a.id ? (
-                  <form onSubmit={(e) => submitDepreciation(e, a.id)} className="mt-4 grid gap-3 border-t border-[#F0EEE9] pt-4 sm:grid-cols-[1fr_1fr_auto]">
+                  <form onSubmit={(e) => submitDepreciation(e, a.id)} className="mt-4 grid gap-3 border-t border-stone-100 pt-4 sm:grid-cols-[1fr_1fr_auto]">
                     <label className="block">
                       <span className="mb-1.5 block text-xs text-muted-foreground">عنوان دوره</span>
                       <input className={inputClass} value={periodLabel} onChange={(e) => setPeriodLabel(e.target.value)} placeholder="مثلاً ۱۴۰۳/۰۵" required />

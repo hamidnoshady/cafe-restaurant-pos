@@ -52,29 +52,29 @@ const STATUS_STYLE: Record<
   { card: string; dot: string; badge: string }
 > = {
   free: {
-    card: "border-[#B7DDC6] bg-[#F3FCF6] text-[#246B43]",
-    dot: "bg-[#36B56A]",
-    badge: "bg-[#E7F7EC] text-[#246B43]",
+    card: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    dot: "bg-emerald-500",
+    badge: "bg-emerald-50 text-emerald-700",
   },
   seated: {
-    card: "border-[#F2D097] bg-[#FFF6E7] text-[#8A5B00]",
-    dot: "bg-[#D68D00]",
-    badge: "bg-[#FFF0CF] text-[#8A5B00]",
+    card: "border-amber-200 bg-amber-50 text-amber-800",
+    dot: "bg-amber-500",
+    badge: "bg-amber-100 text-amber-800",
   },
   bill_requested: {
-    card: "border-[#DDC8EE] bg-[#FAF4FF] text-[#6B3B8D]",
-    dot: "bg-[#8B5BAF]",
-    badge: "bg-[#F1E5FB] text-[#6B3B8D]",
+    card: "border-chart-7/25 bg-chart-7/5 text-chart-7",
+    dot: "bg-chart-7",
+    badge: "bg-chart-7/5 text-chart-7",
   },
   cleaning: {
-    card: "border-[#E8DDBB] bg-[#FFFCF1] text-[#7A621F]",
-    dot: "bg-[#AF8B2F]",
-    badge: "bg-[#F8F0D8] text-[#7A621F]",
+    card: "border-amber-100 bg-amber-50 text-amber-800",
+    dot: "bg-amber-600",
+    badge: "bg-amber-100 text-amber-800",
   },
   out_of_service: {
-    card: "border-[#E5CCC5] bg-[#FFF7F4] text-[#9E4437]",
-    dot: "bg-[#C45B4C]",
-    badge: "bg-[#FBE9E4] text-[#9E4437]",
+    card: "border-destructive/30 bg-destructive/5 text-destructive",
+    dot: "bg-destructive",
+    badge: "bg-destructive/10 text-destructive",
   },
 };
 
@@ -198,23 +198,23 @@ export function WaiterBoard() {
 
   return (
     <section className="space-y-4" aria-label="فضای کاری میزهای من">
-      <div className="flex flex-col gap-3 rounded-2xl border border-[#EAE8E2] bg-white p-3 sm:flex-row sm:items-center sm:justify-between sm:p-4">
+      <div className="flex flex-col gap-3 rounded-2xl border border-stone-200/80 bg-white p-3 sm:flex-row sm:items-center sm:justify-between sm:p-4">
         <div className="min-w-0">
-          <p className="text-sm font-bold text-[#252522]">
+          <p className="text-sm font-bold text-stone-950">
             {toPersianDigits(tables.length)} میز تخصیص‌داده‌شده به شما
           </p>
-          <p className="mt-1 flex items-center gap-1.5 text-xs text-[#77756F]">
+          <p className="mt-1 flex items-center gap-1.5 text-xs text-stone-500">
             <span>{today}</span>
             <span aria-hidden="true">·</span>
             <span className="inline-flex items-center gap-1" role="status">
               {online ? (
                 <span
-                  className="size-2 rounded-full bg-[#36B56A]"
+                  className="size-2 rounded-full bg-emerald-500"
                   aria-hidden="true"
                 />
               ) : (
                 <WifiOffIcon
-                  className="size-3.5 text-[#C45B4C]"
+                  className="size-3.5 text-destructive"
                   aria-hidden="true"
                 />
               )}
@@ -226,7 +226,7 @@ export function WaiterBoard() {
           type="button"
           onClick={() => void load(true)}
           disabled={refreshing}
-          className="inline-flex min-h-12 shrink-0 items-center justify-center gap-2 rounded-xl border border-[#EAE8E2] bg-[#FCFCFA] px-4 text-sm font-semibold text-[#5E5B55] transition hover:bg-[#FFF9EE] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 disabled:cursor-wait disabled:opacity-70 motion-reduce:transition-none"
+          className="inline-flex min-h-12 shrink-0 items-center justify-center gap-2 rounded-xl border border-stone-200/80 bg-stone-50 px-4 text-sm font-semibold text-stone-600 transition hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 disabled:cursor-wait disabled:opacity-70 motion-reduce:transition-none"
         >
           <RefreshCwIcon
             className={`size-4 ${refreshing ? "animate-spin motion-reduce:animate-none" : ""}`}
@@ -243,13 +243,13 @@ export function WaiterBoard() {
           {error ? (
             <div
               role="alert"
-              className="flex flex-col gap-3 rounded-2xl border border-[#E5CCC5] bg-[#FFF7F4] p-3 text-sm text-[#9E4437] sm:flex-row sm:items-center sm:justify-between"
+              className="flex flex-col gap-3 rounded-2xl border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive sm:flex-row sm:items-center sm:justify-between"
             >
               <span>{error}</span>
               <button
                 type="button"
                 onClick={() => void load(true)}
-                className="min-h-11 rounded-lg border border-[#E5CCC5] bg-white px-3 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45"
+                className="min-h-11 rounded-lg border border-destructive/30 bg-white px-3 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45"
               >
                 تلاش دوباره
               </button>
@@ -272,11 +272,11 @@ export function WaiterBoard() {
                       <div className="mb-2 flex items-center justify-between gap-3 px-1">
                         <h2
                           id={`my-tables-section-${sectionId ?? "none"}`}
-                          className="text-sm font-bold text-[#3C3A36]"
+                          className="text-sm font-bold text-stone-700"
                         >
                           {sectionName}
                         </h2>
-                        <span className="text-xs text-[#77756F]">
+                        <span className="text-xs text-stone-500">
                           {toPersianDigits(sectionTables.length)} میز
                         </span>
                       </div>
@@ -308,15 +308,15 @@ export function WaiterBoard() {
                     onOpen={() => setViewingId(selected.id)}
                   />
                 ) : (
-                  <div className="sticky top-4 rounded-2xl border border-[#EAE8E2] bg-white p-5 text-right">
+                  <div className="sticky top-4 rounded-2xl border border-stone-200/80 bg-white p-5 text-right">
                     <CircleDotIcon
-                      className="size-5 text-[#B97905]"
+                      className="size-5 text-amber-700"
                       aria-hidden="true"
                     />
-                    <h2 className="mt-4 text-base font-bold text-[#252522]">
+                    <h2 className="mt-4 text-base font-bold text-stone-950">
                       یک میز را انتخاب کنید
                     </h2>
-                    <p className="mt-2 text-sm leading-6 text-[#77756F]">
+                    <p className="mt-2 text-sm leading-6 text-stone-500">
                       جزئیات میز و مسیر موجود برای مشاهدهٔ آن اینجا نمایش داده
                       می‌شود.
                     </p>
@@ -331,7 +331,7 @@ export function WaiterBoard() {
               <SheetContent
                 side="bottom"
                 showCloseButton={false}
-                className="max-h-[88dvh] overflow-y-auto rounded-t-3xl border-[#EAE8E2] bg-white p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] data-[state=open]:duration-200 data-[state=closed]:duration-150"
+                className="max-h-[88dvh] overflow-y-auto rounded-t-3xl border-stone-200/80 bg-white p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] data-[state=open]:duration-200 data-[state=closed]:duration-150"
               >
                 <SheetHeader className="sr-only">
                   <SheetTitle>جزئیات میز انتخاب‌شده</SheetTitle>
@@ -372,10 +372,10 @@ function TableCard({
       onClick={onSelect}
       aria-pressed={selected}
       aria-label={label}
-      className={`min-h-36 rounded-2xl border p-4 text-right transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/50 active:scale-[0.99] motion-reduce:transition-none ${style.card} ${selected ? "border-[#E9A11B] bg-[#FFF9EE] ring-2 ring-[#E9A11B]/25" : "hover:border-[#E9A11B]/70 hover:shadow-[0_5px_16px_rgba(37,37,34,0.05)]"}`}
+      className={`min-h-36 rounded-2xl border p-4 text-right transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50 active:scale-[0.99] motion-reduce:transition-none ${style.card} ${selected ? "border-amber-500 bg-amber-50 ring-2 ring-amber-500/25" : "hover:border-amber-500/70 hover:shadow-[0_5px_16px_rgba(37,37,34,0.05)]"}`}
     >
       <div className="flex items-start justify-between gap-3">
-        <span className="text-base font-bold text-[#252522]">{table.name}</span>
+        <span className="text-base font-bold text-stone-950">{table.name}</span>
         <span
           className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${style.badge}`}
         >
@@ -386,7 +386,7 @@ function TableCard({
           {TABLE_STATUS_LABELS[table.status]}
         </span>
       </div>
-      <div className="mt-5 flex items-center justify-between gap-3 text-xs text-[#5E5B55]">
+      <div className="mt-5 flex items-center justify-between gap-3 text-xs text-stone-600">
         <span className="inline-flex items-center gap-1.5">
           <UsersIcon className="size-3.5" aria-hidden="true" />
           {toPersianDigits(table.capacity)} نفر
@@ -396,12 +396,12 @@ function TableCard({
       {ready > 0 || cooking > 0 ? (
         <div className="mt-3 flex flex-wrap gap-1.5 text-xs font-medium">
           {ready > 0 ? (
-            <span className="rounded-full bg-[#E7F7EC] px-2 py-1 text-[#246B43]">
+            <span className="rounded-full bg-emerald-50 px-2 py-1 text-emerald-700">
               {toPersianDigits(ready)} آماده
             </span>
           ) : null}
           {cooking > 0 ? (
-            <span className="rounded-full bg-white/70 px-2 py-1 text-[#6E5A24]">
+            <span className="rounded-full bg-white/70 px-2 py-1 text-amber-900">
               {toPersianDigits(cooking)} در حال آماده‌سازی
             </span>
           ) : null}
@@ -427,15 +427,15 @@ function TableDetails({
 
   return (
     <section
-      className="sticky top-4 rounded-2xl border border-[#EAE8E2] bg-white p-4 shadow-[0_6px_20px_rgba(37,37,34,0.04)] sm:p-5"
+      className="sticky top-4 rounded-2xl border border-stone-200/80 bg-white p-4 shadow-[0_6px_20px_rgba(37,37,34,0.04)] sm:p-5"
       aria-labelledby={`table-details-${table.id}`}
     >
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-xs font-medium text-[#77756F]">میز انتخاب‌شده</p>
+          <p className="text-xs font-medium text-stone-500">میز انتخاب‌شده</p>
           <h2
             id={`table-details-${table.id}`}
-            className="mt-1 text-xl font-bold text-[#252522]"
+            className="mt-1 text-xl font-bold text-stone-950"
           >
             {table.name}
           </h2>
@@ -443,7 +443,7 @@ function TableDetails({
         <button
           type="button"
           onClick={onClose}
-          className="flex size-11 shrink-0 items-center justify-center rounded-xl text-[#77756F] transition hover:bg-[#FCFCFA] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 motion-reduce:transition-none"
+          className="flex size-11 shrink-0 items-center justify-center rounded-xl text-stone-500 transition hover:bg-stone-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 motion-reduce:transition-none"
           aria-label="بستن جزئیات میز"
         >
           <XIcon className="size-5" aria-hidden="true" />
@@ -460,7 +460,7 @@ function TableDetails({
         {TABLE_STATUS_LABELS[table.status]}
       </div>
 
-      <dl className="mt-5 divide-y divide-[#F0EEE9] rounded-xl border border-[#EAE8E2] px-3">
+      <dl className="mt-5 divide-y divide-stone-100 rounded-xl border border-stone-200/80 px-3">
         <DetailRow label="بخش" value={sectionName} />
         <DetailRow
           label="ظرفیت"
@@ -484,16 +484,16 @@ function TableDetails({
       </dl>
 
       {ready > 0 || cooking > 0 ? (
-        <div className="mt-4 rounded-xl bg-[#FCFCFA] p-3 text-sm">
-          <p className="font-semibold text-[#3C3A36]">وضعیت آماده‌سازی</p>
+        <div className="mt-4 rounded-xl bg-stone-50 p-3 text-sm">
+          <p className="font-semibold text-stone-700">وضعیت آماده‌سازی</p>
           <div className="mt-2 flex flex-wrap gap-2 text-xs">
             {ready > 0 ? (
-              <span className="rounded-full bg-[#E7F7EC] px-2.5 py-1 text-[#246B43]">
+              <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-emerald-700">
                 {toPersianDigits(ready)} قلم آماده است
               </span>
             ) : null}
             {cooking > 0 ? (
-              <span className="rounded-full bg-[#FFF0CF] px-2.5 py-1 text-[#8A5B00]">
+              <span className="rounded-full bg-amber-100 px-2.5 py-1 text-amber-800">
                 {toPersianDigits(cooking)} قلم در حال آماده‌سازی است
               </span>
             ) : null}
@@ -504,7 +504,7 @@ function TableDetails({
       <button
         type="button"
         onClick={onOpen}
-        className="mt-5 inline-flex min-h-[52px] w-full items-center justify-center gap-2 rounded-xl bg-[#E9A11B] px-4 text-sm font-bold text-[#252522] transition hover:bg-[#D99314] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 active:scale-[0.99] motion-reduce:transition-none"
+        className="mt-5 inline-flex min-h-[52px] w-full items-center justify-center gap-2 rounded-xl bg-amber-500 px-4 text-sm font-bold text-stone-950 transition hover:bg-amber-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 active:scale-[0.99] motion-reduce:transition-none"
       >
         مشاهده میز
         <ChevronLeftIcon className="size-4" aria-hidden="true" />
@@ -516,8 +516,8 @@ function TableDetails({
 function DetailRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex min-h-12 items-center justify-between gap-4 py-2 text-sm">
-      <dt className="text-[#77756F]">{label}</dt>
-      <dd className="min-w-0 truncate text-left font-semibold text-[#3C3A36]">
+      <dt className="text-stone-500">{label}</dt>
+      <dd className="min-w-0 truncate text-left font-semibold text-stone-700">
         {value}
       </dd>
     </div>
@@ -526,11 +526,11 @@ function DetailRow({ label, value }: { label: string; value: string }) {
 
 function EmptyState() {
   return (
-    <section className="flex min-h-64 flex-col items-center justify-center rounded-2xl border border-dashed border-[#DDD9D1] bg-[#FCFCFA] px-6 text-center">
-      <h2 className="text-base font-bold text-[#252522]">
+    <section className="flex min-h-64 flex-col items-center justify-center rounded-2xl border border-dashed border-stone-200/80 bg-stone-50 px-6 text-center">
+      <h2 className="text-base font-bold text-stone-950">
         میزی برای نمایش وجود ندارد
       </h2>
-      <p className="mt-2 max-w-sm text-sm leading-6 text-[#77756F]">
+      <p className="mt-2 max-w-sm text-sm leading-6 text-stone-500">
         میزی به شما تخصیص داده نشده است.
       </p>
     </section>
@@ -547,19 +547,19 @@ function BoardError({
   return (
     <section
       role="alert"
-      className="flex min-h-64 flex-col items-center justify-center rounded-2xl border border-[#E5CCC5] bg-[#FFF7F4] px-6 text-center"
+      className="flex min-h-64 flex-col items-center justify-center rounded-2xl border border-destructive/30 bg-destructive/5 px-6 text-center"
     >
-      <WifiOffIcon className="size-6 text-[#C45B4C]" aria-hidden="true" />
-      <h2 className="mt-4 text-base font-bold text-[#252522]">
+      <WifiOffIcon className="size-6 text-destructive" aria-hidden="true" />
+      <h2 className="mt-4 text-base font-bold text-stone-950">
         میزهای من در دسترس نیست
       </h2>
-      <p className="mt-2 max-w-sm text-sm leading-6 text-[#9E4437]">
+      <p className="mt-2 max-w-sm text-sm leading-6 text-destructive">
         {message}
       </p>
       <button
         type="button"
         onClick={onRetry}
-        className="mt-5 min-h-12 rounded-xl bg-[#E9A11B] px-5 text-sm font-bold text-[#252522] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45"
+        className="mt-5 min-h-12 rounded-xl bg-amber-500 px-5 text-sm font-bold text-stone-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45"
       >
         تلاش دوباره
       </button>
@@ -574,7 +574,7 @@ function WaiterBoardSkeleton() {
       aria-busy="true"
       aria-label="در حال بارگذاری میزهای من"
     >
-      <div className="flex flex-col gap-3 rounded-2xl border border-[#EAE8E2] bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 rounded-2xl border border-stone-200/80 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="space-y-2">
           <div className="ops-skeleton h-5 w-44 rounded-lg" />
           <div className="ops-skeleton h-4 w-56 rounded-lg" />
@@ -600,7 +600,7 @@ function WaiterBoardSkeleton() {
             </div>
           ))}
         </div>
-        <aside className="hidden rounded-2xl border border-[#EAE8E2] bg-white p-5 md:block">
+        <aside className="hidden rounded-2xl border border-stone-200/80 bg-white p-5 md:block">
           <div className="ops-skeleton h-5 w-28 rounded-lg" />
           <div className="mt-4 space-y-3">
             <div className="ops-skeleton h-12 rounded-xl" />

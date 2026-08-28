@@ -70,7 +70,7 @@ export function PinToDashboardButton({
       size="lg"
       onClick={pin}
       disabled={state === "busy"}
-      className="min-h-[52px] border-[#DEDAD2] bg-white px-4 text-[#252522] hover:bg-[#FCFBF8]"
+      className="min-h-[52px] border-stone-200/80 bg-white px-4 text-stone-950 hover:bg-stone-50"
     >
       {state === "done"
         ? "سنجاق شد ✓"

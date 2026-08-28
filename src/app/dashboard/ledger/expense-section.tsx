@@ -95,7 +95,7 @@ export function ExpenseSection({
   return (
     <div className="space-y-4">
       <section className="rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-4 sm:p-5">
-        <p className="text-xs font-semibold text-[#9B6700]">عملیات هزینه</p>
+        <p className="text-xs font-semibold text-amber-700">عملیات هزینه</p>
         <h2 className="mt-1">ثبت هزینه</h2>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
           هزینه به‌عنوان پرداخت‌شده ثبت می‌شود و بلافاصله در دفاتر موجود منعکس خواهد شد.
@@ -152,13 +152,13 @@ export function ExpenseSection({
 
       <section className="rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-4 sm:p-5">
         <div className="mb-4">
-          <p className="text-xs font-semibold text-[#9B6700]">سوابق عملیاتی</p>
+          <p className="text-xs font-semibold text-amber-700">سوابق عملیاتی</p>
           <h2 className="mt-1">هزینه‌های اخیر</h2>
         </div>
         {!expenses ? (
           <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>
         ) : expenses.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-[#DEDAD2] bg-[#FCFBF8] px-4 py-8 text-center text-sm text-muted-foreground">
+          <p className="rounded-xl border border-dashed border-stone-200/80 bg-stone-50 px-4 py-8 text-center text-sm text-muted-foreground">
             هنوز هزینه‌ای ثبت نشده است.
           </p>
         ) : (
@@ -191,7 +191,7 @@ export function ExpenseSection({
             </div>
             <div className="space-y-3 lg:hidden">
               {expenses.map((e) => (
-                <article key={e.id} className="rounded-xl border border-[#EEECE7] bg-[#FCFBF8] p-4">
+                <article key={e.id} className="rounded-xl border border-stone-200/80 bg-stone-50 p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <h3 className="truncate">{e.accountCode} {e.accountName}</h3>
@@ -200,7 +200,7 @@ export function ExpenseSection({
                     <span className="whitespace-nowrap font-bold">{money.format(e.amount)}</span>
                   </div>
                   <p className="mt-3 text-sm">{e.memo}</p>
-                  <dl className="mt-3 grid grid-cols-2 gap-2 border-t border-[#F0EEE9] pt-3 text-xs">
+                  <dl className="mt-3 grid grid-cols-2 gap-2 border-t border-stone-100 pt-3 text-xs">
                     <div><dt className="text-muted-foreground">طرف حساب</dt><dd className="mt-1 text-sm">{e.vendor ?? "—"}</dd></div>
                     <div><dt className="text-muted-foreground">پرداخت از</dt><dd className="mt-1 text-sm">{e.paymentAccountCode} {e.paymentAccountName}</dd></div>
                   </dl>

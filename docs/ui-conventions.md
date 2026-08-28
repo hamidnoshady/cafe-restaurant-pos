@@ -1,5 +1,11 @@
 # UI conventions — the dashboard's design language
 
+> **Pixel-level canon:** [docs/design-system.md](design-system.md) is the normative visual
+> spec — exact colours, the control/table/chip recipes, hover/focus/active states, motion
+> vocabulary, and the banned old look — backed by the reference screenshots in
+> [`docs/design/reference/`](design/reference/). Read it alongside this file; this file is
+> the composition rules, that file is what things look like.
+
 **Every new page and panel under `src/app/dashboard/**` is built from
 [`src/app/dashboard/page-chrome.tsx`](../src/app/dashboard/page-chrome.tsx). Do not
 re-derive its classes, and do not invent a second spelling of a shape it already has.**
@@ -122,6 +128,12 @@ own bottom padding gets added to it and the bar drifts.
   is its own piece of work.
 
 ## Reviewing a change
+
+The design-system bans (cool neutrals, heavy shadows, hand-rolled shells and card chrome,
+`dark:` variants, raw hex classes, bare `<h1>`) are **enforced by
+[`src/app/dashboard/design-lint.test.ts`](../src/app/dashboard/design-lint.test.ts)** — it
+runs with `npm test` and fails on a new violation outside its documented baseline. Run it
+alone with `npx vitest run src/app/dashboard/design-lint.test.ts`. The same checks by hand:
 
 These greps should each return nothing new under `src/app/dashboard/`:
 
