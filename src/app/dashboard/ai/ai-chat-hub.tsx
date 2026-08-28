@@ -89,8 +89,18 @@ export function AiChatHub({ canAutoApply }: { canAutoApply: boolean }) {
     // The greeting is local, so a locked preview still opens on a real-looking
     // chat; reopening a stored conversation is a request, and would only 403.
     const requested = locked ? null : searchParams.get("conversation");
-    if (requested) void loadConversation(requested);
-    else ensureGreeting();
+    const ctx = searchParams.get("ctx");
+    if (ctx) {
+      // Phase 35 Wave 2 — a page's "ask the assistant" link carries its context
+      // here; prefill the composer with it so the writer starts where the page
+      // left off. The user can still edit or discard before sending.
+      setInput(ctx);
+      ensureGreeting();
+    } else if (requested) {
+      void loadConversation(requested);
+    } else {
+      ensureGreeting();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -216,7 +226,7 @@ export function AiChatHub({ canAutoApply }: { canAutoApply: boolean }) {
                   rows={2}
                   disabled={busy || loadingConversation}
                   placeholder="پیام خود را بنویسید…"
-                  className="max-h-40 min-h-11 flex-1 resize-none rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-input/30"
+                  className="max-h-40 min-h-11 flex-1 resize-none rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-input/30"
                 />
                 <Button
                   size="icon"

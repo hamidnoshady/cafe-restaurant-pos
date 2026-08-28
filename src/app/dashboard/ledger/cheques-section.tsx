@@ -1,5 +1,6 @@
 "use client";
 
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 /**
  * The cheque register (چک‌ها).
  *
@@ -301,11 +302,18 @@ function ChequeForm({
       </label>
       <label className="grid gap-1 text-sm">
         <span>شناسه صیاد (اختیاری)</span>
-        <input className={inputClass} value={sayadId} onChange={(e) => setSayadId(e.target.value)} inputMode="numeric" />
+        <PersianNumberInput
+          className={inputClass}
+          value={sayadId}
+          onChange={(e) => setSayadId(e.target.value)}
+          inputMode="numeric"
+          grouping={false}
+          allowNegative={false}
+        />
       </label>
       <label className="grid gap-1 text-sm">
         <span>مبلغ ({money.unitLabel})</span>
-        <input className={inputClass} value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="numeric" required />
+        <PersianNumberInput className={inputClass} value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="numeric" required />
       </label>
       <label className="grid gap-1 text-sm">
         <span>سررسید</span>
@@ -328,7 +336,7 @@ function ChequeForm({
         <span>توضیح</span>
         <input className={inputClass} value={memo} onChange={(e) => setMemo(e.target.value)} />
       </label>
-      <div className="flex gap-2 sm:col-span-2">
+      <div className="grid gap-2 sm:grid-cols-2 sm:col-span-2">
         <PrimaryButton type="submit" disabled={busy}>ثبت چک</PrimaryButton>
         <SecondaryButton onClick={onCancel}>انصراف</SecondaryButton>
       </div>
@@ -383,7 +391,7 @@ function EndorseDialog({
           <input className={inputClass} type="date" value={occurredOn} onChange={(e) => setOccurredOn(e.target.value)} />
         </label>
       </div>
-      <div className="mt-4 flex gap-2">
+      <div className="mt-4 grid gap-2 sm:grid-cols-2">
         <PrimaryButton
           type="button"
           disabled={busy}

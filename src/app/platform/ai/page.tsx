@@ -1,5 +1,6 @@
 "use client";
 
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { formatToman } from "@/lib/money";
 import { formatPersianNumber } from "@/lib/digits";
@@ -281,22 +282,22 @@ export default function PlatformAiPage() {
               <input className={inputClass} dir="ltr" type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} autoComplete="off" />
             </Field>
             <Field label={"نرخ ورودی (ریال / یک‌میلیون توکن)"}>
-              <input className={inputClass} type="number" min="1" value={configDraft.inputTokenRialPerMillion} onChange={(event) => setConfigDraft({ ...configDraft, inputTokenRialPerMillion: Number(event.target.value) })} />
+              <PersianNumberInput className={inputClass} type="number" min="1" value={configDraft.inputTokenRialPerMillion} onChange={(event) => setConfigDraft({ ...configDraft, inputTokenRialPerMillion: Number(event.target.value) })} />
             </Field>
             <Field label={"نرخ خروجی (ریال / یک‌میلیون توکن)"}>
-              <input className={inputClass} type="number" min="1" value={configDraft.outputTokenRialPerMillion} onChange={(event) => setConfigDraft({ ...configDraft, outputTokenRialPerMillion: Number(event.target.value) })} />
+              <PersianNumberInput className={inputClass} type="number" min="1" value={configDraft.outputTokenRialPerMillion} onChange={(event) => setConfigDraft({ ...configDraft, outputTokenRialPerMillion: Number(event.target.value) })} />
             </Field>
             <Field label="حداکثر رزرو هر پاسخ (ریال)" hint="پیش از تماس با مدل رزرو می‌شود؛ باقی‌مانده پس از محاسبهٔ مصرف واقعی برمی‌گردد.">
-              <input className={inputClass} type="number" min="1" value={configDraft.maxTurnRial} onChange={(event) => setConfigDraft({ ...configDraft, maxTurnRial: Number(event.target.value) })} />
+              <PersianNumberInput className={inputClass} type="number" min="1" value={configDraft.maxTurnRial} onChange={(event) => setConfigDraft({ ...configDraft, maxTurnRial: Number(event.target.value) })} />
             </Field>
             <Field label="هر اعتبار چند ریال است">
-              <input className={inputClass} type="number" min="1" value={configDraft.creditUnitRial} onChange={(event) => setConfigDraft({ ...configDraft, creditUnitRial: Number(event.target.value) })} />
+              <PersianNumberInput className={inputClass} type="number" min="1" value={configDraft.creditUnitRial} onChange={(event) => setConfigDraft({ ...configDraft, creditUnitRial: Number(event.target.value) })} />
             </Field>
             <Field label="حداکثر توکن خروجی">
-              <input className={inputClass} type="number" min="64" max="8192" value={configDraft.maxOutputTokens} onChange={(event) => setConfigDraft({ ...configDraft, maxOutputTokens: Number(event.target.value) })} />
+              <PersianNumberInput className={inputClass} type="number" min="64" max="8192" value={configDraft.maxOutputTokens} onChange={(event) => setConfigDraft({ ...configDraft, maxOutputTokens: Number(event.target.value) })} />
             </Field>
             <Field label={"دما"}>
-              <input className={inputClass} type="number" min="0" max="2" step="0.1" value={configDraft.temperature} onChange={(event) => setConfigDraft({ ...configDraft, temperature: Number(event.target.value) })} />
+              <PersianNumberInput className={inputClass} type="number" min="0" max="2" step="0.1" value={configDraft.temperature} onChange={(event) => setConfigDraft({ ...configDraft, temperature: Number(event.target.value) })} />
             </Field>
             <label className="flex items-center gap-2 text-sm text-white/80">
               <input type="checkbox" checked={configDraft.enabled} onChange={(event) => setConfigDraft({ ...configDraft, enabled: event.target.checked })} />
@@ -341,8 +342,8 @@ export default function PlatformAiPage() {
             </ul>
             <form onSubmit={addPackage} className="grid gap-2 sm:grid-cols-3">
               <input className={inputClass} placeholder="نام بسته" value={packageName} onChange={(event) => setPackageName(event.target.value)} />
-              <input className={inputClass} type="number" min="1" placeholder="قیمت (تومان)" value={packagePrice} onChange={(event) => setPackagePrice(event.target.value)} />
-              <input className={inputClass} type="number" min="1" placeholder="اعتبار (تومان)" value={packageCredit} onChange={(event) => setPackageCredit(event.target.value)} />
+              <PersianNumberInput className={inputClass} type="number" min="1" placeholder="قیمت (تومان)" value={packagePrice} onChange={(event) => setPackagePrice(event.target.value)} />
+              <PersianNumberInput className={inputClass} type="number" min="1" placeholder="اعتبار (تومان)" value={packageCredit} onChange={(event) => setPackageCredit(event.target.value)} />
               <Button type="submit" disabled={busy === "package"} className="sm:col-span-3">{busy === "package" ? <Loader2Icon className="animate-spin" /> : "افزودن بسته"}</Button>
             </form>
           </Card>
@@ -377,8 +378,8 @@ export default function PlatformAiPage() {
             </ul>
             <form onSubmit={addPlan} className="grid gap-2 sm:grid-cols-3">
               <input className={inputClass} placeholder="نام اشتراک" value={planName} onChange={(event) => setPlanName(event.target.value)} />
-              <input className={inputClass} type="number" min="1" placeholder="قیمت ماهانه (تومان)" value={planPrice} onChange={(event) => setPlanPrice(event.target.value)} />
-              <input className={inputClass} type="number" min="1" placeholder="اعتبار ماهانه (تومان)" value={planCredit} onChange={(event) => setPlanCredit(event.target.value)} />
+              <PersianNumberInput className={inputClass} type="number" min="1" placeholder="قیمت ماهانه (تومان)" value={planPrice} onChange={(event) => setPlanPrice(event.target.value)} />
+              <PersianNumberInput className={inputClass} type="number" min="1" placeholder="اعتبار ماهانه (تومان)" value={planCredit} onChange={(event) => setPlanCredit(event.target.value)} />
               <Button type="submit" disabled={busy === "plan"} className="sm:col-span-3">{busy === "plan" ? <Loader2Icon className="animate-spin" /> : "افزودن اشتراک"}</Button>
             </form>
           </Card>
@@ -417,7 +418,7 @@ export default function PlatformAiPage() {
             </div>
             <form onSubmit={(event) => { event.preventDefault(); void write({ action: "grant", businessId: selected.businessId, amountRial: toRial(grantToman), note: grantNote }, "grant"); }} className="space-y-2">
               <p className="text-sm font-medium">اعطای اعتبار دستی</p>
-              <input className={inputClass} type="number" min="1" placeholder="اعتبار (تومان)" value={grantToman} onChange={(event) => setGrantToman(event.target.value)} />
+              <PersianNumberInput className={inputClass} type="number" min="1" placeholder="اعتبار (تومان)" value={grantToman} onChange={(event) => setGrantToman(event.target.value)} />
               <input className={inputClass} placeholder="یادداشت (اختیاری)" value={grantNote} onChange={(event) => setGrantNote(event.target.value)} />
               <Button type="submit" disabled={busy === "grant"}>{busy === "grant" ? <Loader2Icon className="animate-spin" /> : "افزودن اعتبار"}</Button>
             </form>

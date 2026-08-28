@@ -11,6 +11,7 @@ import {
   type RetailInvoiceLineInput,
 } from "@/lib/retail-invoice-service";
 import type { SettlementMethod } from "@/lib/ledger";
+import { enqueueHolooSaleForOrder } from "@/lib/integrations/holoo/outbox-producer";
 
 const PAYMENT_METHODS: SettlementMethod[] = ["cash", "bank", "credit"];
 
@@ -79,6 +80,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
       note: typeof body.note === "string" ? body.note : null,
       createdBy: session.sub,
     });
+    await enqueueHolooSaleForOrder(client, session.businessId, invoice.orderId);
     await client.query("COMMIT");
     return NextResponse.json({ invoice });
   } catch (err) {

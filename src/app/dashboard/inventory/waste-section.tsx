@@ -1,5 +1,6 @@
 "use client";
 
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useCallback, useEffect, useState } from "react";
 import { formatQuantity } from "@/lib/digits";
 import { useMoney } from "@/components/money/money-context";
@@ -87,7 +88,7 @@ export function WasteSection({ items, busy, run }: { items: InventoryItem[]; bus
             />
           </Field>
           <Field label="مقدار">
-            <input
+            <PersianNumberInput
               className={inputClass}
               dir="ltr"
               inputMode="decimal"

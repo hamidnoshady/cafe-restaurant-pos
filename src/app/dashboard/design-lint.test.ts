@@ -138,7 +138,6 @@ const RULES: readonly Rule[] = [
       "backup/backup-manager.tsx",
       "floor/session-panel.tsx",
       "ledger/fiscal-periods-section.tsx",
-      "page.tsx",
       "ui.tsx",
       "waiter/table-order-panel.tsx",
     ],

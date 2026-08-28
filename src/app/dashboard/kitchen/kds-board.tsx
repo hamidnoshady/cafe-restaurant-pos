@@ -51,6 +51,8 @@ interface ApiError {
   error?: string;
 }
 
+type TicketStatus = TicketItem["status"];
+
 interface Ticket {
   key: string;
   earliestSentAt: number;
@@ -59,9 +61,8 @@ interface Ticket {
   orderType: TicketItem["order_type"];
   tableName: string | null;
   priority: KitchenTicketPriority;
+  status: TicketStatus;
 }
-
-type TicketStatus = TicketItem["status"];
 type TicketFilter = "all" | TicketStatus;
 
 const NEXT_STATUS: Record<TicketStatus, "preparing" | "ready" | null> = {
@@ -103,13 +104,6 @@ const STATUS_META: Record<
 function sourceLabel(ticket: Ticket): string {
   if (ticket.orderType === "dine_in") return ticket.tableName ?? "سفارش حضوری";
   return ticket.orderType === "takeaway" ? "بیرون‌بر" : "ارسال";
-}
-
-function ticketStage(ticket: Ticket): TicketStatus {
-  if (ticket.items.some((item) => item.status === "sent")) return "sent";
-  if (ticket.items.some((item) => item.status === "preparing"))
-    return "preparing";
-  return "ready";
 }
 
 function formatElapsed(sentAt: number, now: number): string {
@@ -154,7 +148,9 @@ const PRIORITY_META: Record<
 function PriorityBadge({ priority }: { priority: KitchenTicketPriority }) {
   const meta = PRIORITY_META[priority.tier];
   return (
-    <span className={`rounded-md border px-2 py-1 text-xs font-semibold ${meta.className}`}>
+    <span
+      className={`rounded-md border px-2 py-1 text-xs font-semibold ${meta.className}`}
+    >
       {meta.label}
     </span>
   );
@@ -246,7 +242,7 @@ function TicketCard({
   selected: boolean;
   onSelect: () => void;
 }) {
-  const status = ticketStage(ticket);
+  const status = ticket.status;
   const late =
     ticketAgeMinutes(ticket.earliestSentAt, now) >=
     DEFAULT_TICKET_AGING_MINUTES;
@@ -309,7 +305,7 @@ function TicketDetails({
   bumpingItemId: string | null;
   onBump: (itemId: string, status: "preparing" | "ready") => void;
 }) {
-  const status = ticketStage(ticket);
+  const status = ticket.status;
   const late =
     ticketAgeMinutes(ticket.earliestSentAt, now) >=
     DEFAULT_TICKET_AGING_MINUTES;
@@ -349,7 +345,9 @@ function TicketDetails({
         </div>
         <div>
           <dt className="text-xs text-stone-500">اولویت صف</dt>
-          <dd className="mt-1"><PriorityBadge priority={ticket.priority} /></dd>
+          <dd className="mt-1">
+            <PriorityBadge priority={ticket.priority} />
+          </dd>
         </div>
       </dl>
 
@@ -520,7 +518,9 @@ export function KdsBoard() {
 
     return [...groups.entries()].map(([key, ticketItems]) => {
       const earliestSentAt = Math.min(
-        ...ticketItems.map((item) => new Date(item.sent_to_kitchen_at).getTime()),
+        ...ticketItems.map((item) =>
+          new Date(item.sent_to_kitchen_at).getTime(),
+        ),
       );
       const status = ticketItems.some((item) => item.status === "sent")
         ? "sent"
@@ -553,6 +553,7 @@ export function KdsBoard() {
           orderType: first.order_type,
           tableName: first.table_name,
           priority,
+          status: status as TicketStatus,
         };
       })
       .sort((left, right) =>
@@ -564,7 +565,7 @@ export function KdsBoard() {
     () =>
       filter === "all"
         ? tickets
-        : tickets.filter((ticket) => ticketStage(ticket) === filter),
+        : tickets.filter((ticket) => ticket.status === filter),
     [filter, tickets],
   );
 
@@ -574,9 +575,7 @@ export function KdsBoard() {
     return statuses
       .map((status) => ({
         status,
-        tickets: visibleTickets.filter(
-          (ticket) => ticketStage(ticket) === status,
-        ),
+        tickets: visibleTickets.filter((ticket) => ticket.status === status),
       }))
       .filter((section) => section.tickets.length > 0);
   }, [filter, visibleTickets]);
@@ -600,8 +599,7 @@ export function KdsBoard() {
       ...(["sent", "preparing", "ready"] as TicketStatus[]).map((status) => ({
         value: status,
         label: STATUS_META[status].filterLabel,
-        count: tickets.filter((ticket) => ticketStage(ticket) === status)
-          .length,
+        count: tickets.filter((ticket) => ticket.status === status).length,
       })),
     ],
     [tickets],

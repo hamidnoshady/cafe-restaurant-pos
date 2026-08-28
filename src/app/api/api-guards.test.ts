@@ -169,6 +169,14 @@ const SELF_GUARDING_ROUTES: Record<string, string> = {
   // ownership filter is the authorization, the same shape as auth/businesses.
   "ai/conversations": "lists/creates only the caller's own conversations — ownership is the authorization",
   "ai/conversations/[id]": "reads/deletes only the caller's own conversation — ownership is the authorization",
+  // Phase 35 Wave 3 — projects are scoped to the business by RLS and to the
+  // creating member by the same ownership pattern as conversations. Notes
+  // reach tenant scope through their parent project (like ai_messages through
+  // ai_conversations).
+  "ai/projects": "lists/creates projects for the caller's business — RLS + ownership",
+  "ai/projects/[id]": "reads/updates/archives a project — RLS + ownership",
+  "ai/projects/[id]/notes": "lists/adds notes to a project — RLS through parent project",
+  "ai/projects/[id]/notes/[noteId]": "deletes a note — RLS through parent project",
 };
 
 /** True for the super-admin console's own routes, which use the platform guards. */

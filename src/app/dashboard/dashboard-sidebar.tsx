@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   ArmchairIcon,
   BarChart3Icon,
@@ -13,9 +13,13 @@ import {
   ChefHatIcon,
   CircleIcon,
   ClipboardListIcon,
+  FolderIcon,
   GemIcon,
   LayoutDashboardIcon,
+  LayoutGridIcon,
   LockIcon,
+  MessageSquareIcon,
+  MessageSquarePlusIcon,
   PackageIcon,
   SettingsIcon,
   ShoppingCartIcon,
@@ -32,6 +36,8 @@ import {
   resolveBottomNavHrefs,
   toggleBottomNavHref,
 } from "@/lib/bottom-nav";
+import { appsForNav } from "@/lib/apps";
+import type { Industry } from "@/lib/industries";
 import {
   resolveSidebarMode,
   toggleDashboardSidebarPreference,
@@ -69,6 +75,7 @@ import { BranchSwitcher } from "./branch-switcher";
 import { LockButton } from "./lock-screen";
 import { LogoutButton } from "./logout-button";
 import { ShiftButton } from "./shift-panel";
+import { AiRecentConversations } from "./ai/ai-recent-conversations";
 
 /** Roles that sign in with a PIN (team.ts's PIN_ROLES) — the lock screen is a floor-terminal convenience for them. */
 const PIN_ROLES = ["cashier", "waiter", "kitchen"];
@@ -129,6 +136,15 @@ interface SidebarProps {
   /** From the business's industry profile — a jewellery shop is not «کافه و رستوران». */
   brandTitle: string;
   brandSubtitle: string;
+  /**
+   * Phase 35 Wave 2 — which shell to render. `"classic"` is the flat nav that
+   * has always been here; `"workspace"` is the new rail (New chat / Projects /
+   * Apps / Recent threads). The flag is decided in the layout; this is purely
+   * the visual switch, so there is one sidebar with one `if`, not two trees.
+   */
+  variant?: "classic" | "workspace";
+  /** The business's industry, used to group nav items into apps in the rail. */
+  industry?: Industry;
 }
 
 function isActive(path: string, href: string): boolean {
@@ -182,6 +198,110 @@ function NavLinks({
             );
           })}
         </SidebarMenu>
+      </nav>
+    </SidebarContent>
+  );
+}
+
+/**
+ * The workspace rail (Phase 35 Wave 2). Replaces the flat nav when the
+ * `workspace` flag is on: a "new chat" action, a Projects placeholder (filled
+ * in by Wave 3), the apps grouped from the nav items via `appsForNav`, and the
+ * member's recent threads. Clicking a thread hands its id to the chat home at
+ * `/dashboard?conversation=…`; clicking a page navigates to it. The collapse
+ * preference, tablet mode, ⌘/Ctrl-B, mobile header, bottom nav and footer are
+ * all inherited from the surrounding shell — only this middle block changed.
+ */
+function WorkspaceRail({
+  navItems,
+  pathname,
+  industry,
+}: {
+  navItems: NavItem[];
+  pathname: string;
+  industry?: Industry;
+}) {
+  const router = useRouter();
+  const grouped = appsForNav(navItems, industry);
+
+  return (
+    <SidebarContent className="px-3 py-4">
+      <nav aria-label="میز کار" className="space-y-4">
+        <SidebarMenu className="space-y-1.5">
+          <SidebarMenuItem>
+            <SidebarMenuButton asChild isActive={pathname === "/dashboard"} className="min-h-12 rounded-xl text-stone-700 hover:bg-amber-50 hover:text-amber-700 data-[active=true]:bg-amber-100 data-[active=true]:font-semibold data-[active=true]:text-amber-700">
+              <Link href="/dashboard">
+                <MessageSquarePlusIcon aria-hidden="true" className="size-5 shrink-0" />
+                <span className="group-data-[state=collapsed]/sidebar:hidden">گفت‌وگوی جدید</span>
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          {/* Phase 35 Wave 3 — Projects are now functional. */}
+          <SidebarMenuItem>
+            <SidebarMenuButton asChild isActive={pathname.startsWith("/dashboard/projects")} className="min-h-12 rounded-xl text-stone-700 hover:bg-amber-50 hover:text-amber-700 data-[active=true]:bg-amber-100 data-[active=true]:font-semibold data-[active=true]:text-amber-700">
+              <Link href="/dashboard/projects">
+                <FolderIcon aria-hidden="true" className="size-5 shrink-0" />
+                <span className="group-data-[state=collapsed]/sidebar:hidden">پروژه‌ها</span>
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+
+        <div>
+          <p className="px-2 pb-1 text-xs font-medium text-muted-foreground">برنامه‌ها</p>
+          <SidebarMenu className="space-y-1.5">
+            {grouped.map(({ app, items }) => (
+              <SidebarMenuItem key={app.key}>
+                <details className="group/app rounded-xl">
+                  <summary className="flex cursor-pointer list-none items-center gap-2 rounded-xl px-2 py-2 text-sm text-stone-700 transition hover:bg-amber-50 hover:text-amber-700">
+                    <LayoutGridIcon aria-hidden="true" className="size-4 shrink-0 text-stone-400" />
+                    <span className="min-w-0 flex-1 truncate">{app.label}</span>
+                    <span className="text-[10px] text-muted-foreground">{items.length}</span>
+                  </summary>
+                  <ul className="ms-3 mt-1 space-y-1 border-s-2 border-stone-200 ps-2">
+                    {items
+                      .filter((item): item is NavItem & { href: string } => Boolean(item.href))
+                      .map((item) => {
+                        const Icon = NAV_ICONS[item.href] ?? CircleIcon;
+                        const active = isActive(pathname, item.href);
+                        return (
+                          <li key={item.label}>
+                            <Link
+                              href={item.href}
+                              aria-current={active ? "page" : undefined}
+                              className={`flex min-h-9 items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition ${
+                                active
+                                  ? "bg-amber-100 font-semibold text-amber-700"
+                                  : "text-stone-700 hover:bg-amber-50 hover:text-amber-700"
+                              }`}
+                            >
+                              <Icon aria-hidden="true" className="size-4 shrink-0" />
+                              <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                              {item.locked ? (
+                                <LockIcon aria-hidden="true" className="size-3 shrink-0 text-stone-400" />
+                              ) : null}
+                            </Link>
+                          </li>
+                        );
+                      })}
+                  </ul>
+                </details>
+              </SidebarMenuItem>
+            ))}
+          </SidebarMenu>
+        </div>
+
+        <div>
+          <p className="px-2 pb-1 text-xs font-medium text-muted-foreground">نخ‌های اخیر</p>
+          {/* AiRecentConversations already filters to dashboard-mode threads and
+              shows its own empty/loading states; selecting one opens it in the
+              chat home. */}
+          <AiRecentConversations
+            activeId={null}
+            refreshKey={0}
+            onSelect={(id) => router.push(`/dashboard?conversation=${id}`)}
+          />
+        </div>
       </nav>
     </SidebarContent>
   );
@@ -407,7 +527,15 @@ function MobileBottomNavigation({
   );
 }
 
-export function DashboardSidebar({ navItems, role, fullName, brandTitle, brandSubtitle }: SidebarProps) {
+export function DashboardSidebar({
+  navItems,
+  role,
+  fullName,
+  brandTitle,
+  brandSubtitle,
+  variant = "classic",
+  industry,
+}: SidebarProps) {
   const pathname = usePathname();
   const [preference, setPreference] = useState<DashboardSidebarPreference>("expanded");
   const [preferenceLoaded, setPreferenceLoaded] = useState(false);
@@ -477,7 +605,11 @@ export function DashboardSidebar({ navItems, role, fullName, brandTitle, brandSu
       <MobileDashboardHeader navItems={navItems} pathname={pathname} />
       <Sidebar side="right" className="border-stone-200/80 bg-white text-stone-950">
         <SidebarBrand title={brandTitle} subtitle={brandSubtitle} />
-        <SidebarNavigation navItems={navItems} pathname={pathname} />
+        {variant === "workspace" ? (
+          <WorkspaceRail navItems={navItems} pathname={pathname} industry={industry} />
+        ) : (
+          <SidebarNavigation navItems={navItems} pathname={pathname} />
+        )}
         <DashboardSidebarFooter
           role={role}
           fullName={fullName}

@@ -1,5 +1,6 @@
 "use client";
 
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   BanIcon,
@@ -755,7 +756,7 @@ function ViewPanel({
                 <span className="mb-1.5 block text-xs font-bold text-stone-600">
                   تعداد نفرات
                 </span>
-                <input
+                <PersianNumberInput
                   className={`${inputClass} min-h-12 border-stone-200/80 bg-white`}
                   inputMode="numeric"
                   dir="ltr"
@@ -1080,7 +1081,7 @@ function AddTable({
           <span className="mb-1.5 block text-xs font-bold text-stone-600">
             ظرفیت
           </span>
-          <input
+          <PersianNumberInput
             className={`${inputClass} min-h-12 border-stone-200/80 bg-stone-50`}
             inputMode="numeric"
             dir="ltr"
@@ -1222,7 +1223,7 @@ function TableEditor({
           <span className="mb-1.5 block text-xs font-bold text-stone-600">
             ظرفیت
           </span>
-          <input
+          <PersianNumberInput
             className={`${inputClass} min-h-12 border-stone-200/80 bg-stone-50`}
             inputMode="numeric"
             dir="ltr"
@@ -1267,7 +1268,7 @@ function TableEditor({
             <span className="mb-1.5 block text-xs font-bold text-stone-600">
               عرض
             </span>
-            <input
+            <PersianNumberInput
               className={`${inputClass} min-h-12 border-stone-200/80 bg-stone-50`}
               inputMode="numeric"
               dir="ltr"
@@ -1281,7 +1282,7 @@ function TableEditor({
             <span className="mb-1.5 block text-xs font-bold text-stone-600">
               ارتفاع
             </span>
-            <input
+            <PersianNumberInput
               className={`${inputClass} min-h-12 border-stone-200/80 bg-stone-50`}
               inputMode="numeric"
               dir="ltr"

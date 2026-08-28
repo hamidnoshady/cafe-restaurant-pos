@@ -1,5 +1,6 @@
 "use client";
 
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { formatPersianNumber, toPersianDigits } from "@/lib/digits";
@@ -162,17 +163,17 @@ function PromotionForm({ onSaved, onError }: { onSaved: (m: string) => void; onE
             </select>
           </Field>
           <Field label={kind === "percent" ? "درصد" : `مبلغ (${money.unitLabel})`}>
-            <input className={inputClass} dir="ltr" value={value} onChange={(e) => setValue(e.target.value)} />
+            <PersianNumberInput inputMode={kind === "percent" ? "decimal" : "numeric"} className={inputClass} dir="ltr" value={value} onChange={(e) => setValue(e.target.value)} />
           </Field>
         </div>
         {kind === "buy_x_get_y" ? (
           <Field label="حداقل تعداد برای قیمت ثابت">
-            <input className={inputClass} dir="ltr" value={minQuantity} onChange={(e) => setMinQuantity(e.target.value)} />
+            <PersianNumberInput inputMode="decimal" className={inputClass} dir="ltr" value={minQuantity} onChange={(e) => setMinQuantity(e.target.value)} />
           </Field>
         ) : null}
         <div className="grid grid-cols-2 gap-2">
           <Field label="اولویت (بیشتر = زودتر)">
-            <input className={inputClass} dir="ltr" value={priority} onChange={(e) => setPriority(e.target.value)} />
+            <PersianNumberInput inputMode="numeric" className={inputClass} dir="ltr" value={priority} onChange={(e) => setPriority(e.target.value)} />
           </Field>
           <Field label="قانون ترکیب">
             <select className={inputClass} value={stacking} onChange={(e) => setStacking(e.target.value)}>
@@ -261,7 +262,7 @@ function GiftCardPanel({ onChanged, onError }: { onChanged: (m: string) => void;
           <input className={inputClass} dir="ltr" value={code} onChange={(e) => setCode(e.target.value)} />
         </Field>
         <Field label={`ارزش (${money.unitLabel})`}>
-          <input className={inputClass} dir="ltr" value={issueValue} onChange={(e) => setIssueValue(e.target.value)} />
+          <PersianNumberInput inputMode="numeric" className={inputClass} dir="ltr" value={issueValue} onChange={(e) => setIssueValue(e.target.value)} />
         </Field>
         <Button type="button" disabled={busy} onClick={() => void issue()} className="min-h-11">
           صدور
@@ -273,7 +274,7 @@ function GiftCardPanel({ onChanged, onError }: { onChanged: (m: string) => void;
           <input className={inputClass} dir="ltr" value={redeemCode} onChange={(e) => setRedeemCode(e.target.value)} />
         </Field>
         <Field label={`مبلغ مصرف (${money.unitLabel})`}>
-          <input className={inputClass} dir="ltr" value={redeemValue} onChange={(e) => setRedeemValue(e.target.value)} />
+          <PersianNumberInput inputMode="numeric" className={inputClass} dir="ltr" value={redeemValue} onChange={(e) => setRedeemValue(e.target.value)} />
         </Field>
         <Button type="button" variant="outline" disabled={busy} onClick={() => void check()} className="min-h-11">
           مانده

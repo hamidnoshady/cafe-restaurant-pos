@@ -12,6 +12,7 @@ describe("visibleConnectionKinds", () => {
     expect(visibleConnectionKinds({ role: "owner" }).map((k) => k.key)).toEqual([
       "desktop",
       "woocommerce",
+      "holoo",
       "mcp",
       "api",
     ]);
@@ -22,7 +23,7 @@ describe("visibleConnectionKinds", () => {
     // business: a pairing code redeems a full snapshot, an API key reads a
     // branch's orders, menu, inventory and reports, and an MCP connection can
     // be granted the right to change them.
-    expect(visibleConnectionKinds({ role: "manager" }).map((k) => k.key)).toEqual(["woocommerce"]);
+    expect(visibleConnectionKinds({ role: "manager" }).map((k) => k.key)).toEqual(["woocommerce", "holoo"]);
   });
 
   it("gives a floor role nothing, so the page redirects rather than rendering empty", () => {

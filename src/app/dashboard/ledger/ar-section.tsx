@@ -1,5 +1,6 @@
 "use client";
 
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useEffect, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
 import { useMoney } from "@/components/money/money-context";
@@ -221,7 +222,7 @@ function ReceivePaymentDialog({
         <div className="space-y-4">
           <label className="flex flex-col gap-1.5 text-sm">
             <span className="font-medium text-muted-foreground">مبلغ ({money.unitLabel})</span>
-            <input className={inputClass} dir="ltr" inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value)} />
+            <PersianNumberInput className={inputClass} dir="ltr" inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value)} />
           </label>
           <label className="flex flex-col gap-1.5 text-sm">
             <span className="font-medium text-muted-foreground">روش دریافت</span>

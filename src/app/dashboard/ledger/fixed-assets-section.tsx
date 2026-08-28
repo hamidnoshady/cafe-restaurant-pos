@@ -1,5 +1,6 @@
 "use client";
 
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useEffect, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
@@ -133,15 +134,15 @@ export function FixedAssetsSection({ busy, refreshKey }: { busy: boolean; refres
           </label>
           <label className="block">
             <span className="mb-1.5 block text-sm font-medium">عمر مفید (ماه)</span>
-            <input className={inputClass} dir="ltr" inputMode="numeric" value={usefulLifeMonths} onChange={(e) => setUsefulLifeMonths(e.target.value)} placeholder="۶۰" />
+            <PersianNumberInput className={inputClass} dir="ltr" inputMode="numeric" value={usefulLifeMonths} onChange={(e) => setUsefulLifeMonths(e.target.value)} placeholder="۶۰" />
           </label>
           <label className="block">
             <span className="mb-1.5 block text-sm font-medium">بهای تمام‌شده ({money.unitLabel})</span>
-            <input className={inputClass} dir="ltr" inputMode="numeric" value={cost} onChange={(e) => setCost(e.target.value)} placeholder="۰" />
+            <PersianNumberInput className={inputClass} dir="ltr" inputMode="numeric" value={cost} onChange={(e) => setCost(e.target.value)} placeholder="۰" />
           </label>
           <label className="block">
             <span className="mb-1.5 block text-sm font-medium">ارزش اسقاط ({money.unitLabel}) <span className="font-normal text-muted-foreground">(اختیاری)</span></span>
-            <input className={inputClass} dir="ltr" inputMode="numeric" value={salvageValue} onChange={(e) => setSalvageValue(e.target.value)} placeholder="۰" />
+            <PersianNumberInput className={inputClass} dir="ltr" inputMode="numeric" value={salvageValue} onChange={(e) => setSalvageValue(e.target.value)} placeholder="۰" />
           </label>
           <div className="md:col-span-2 xl:col-span-3">
             <div className="max-w-xs">

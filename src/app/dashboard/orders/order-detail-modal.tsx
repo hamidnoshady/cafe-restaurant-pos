@@ -1,5 +1,6 @@
 "use client";
 
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 /**
  * The whole of an order — meta, lines, add-ons, discount, tender, and the
  * closed-order amendment panel — in one dialog over the orders screen.
@@ -1115,7 +1116,7 @@ export function OrderDetailModal({
                               ]}
                             />
                           </div>
-                          <input
+                          <PersianNumberInput
                             className={`${OPS_INPUT} sm:w-20`}
                             dir="ltr"
                             inputMode="numeric"
@@ -1394,10 +1395,10 @@ export function OrderDetailModal({
                                 />
                               </div>
                               {discountType ? (
-                                <input
+                                <PersianNumberInput
                                   className={`${OPS_INPUT} w-24`}
                                   dir="ltr"
-                                  inputMode="numeric"
+                                  inputMode={discountType === "percent" ? "decimal" : "numeric"}
                                   aria-label="مقدار تخفیف"
                                   value={discountValue}
                                   onChange={(event) =>
@@ -1494,7 +1495,7 @@ export function OrderDetailModal({
                               (اختیاری، تومان)
                             </span>
                           </span>
-                          <input
+                          <PersianNumberInput
                             className={OPS_INPUT}
                             dir="ltr"
                             inputMode="numeric"

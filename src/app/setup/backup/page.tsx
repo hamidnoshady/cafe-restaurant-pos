@@ -1,5 +1,6 @@
 "use client";
 
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 /**
  * Optional wizard step, shown only on a local-only install: where the nightly
  * backup is written.
@@ -166,7 +167,7 @@ export default function BackupStepPage() {
 
         <label className="block">
           <span className="mb-1 block text-sm font-medium">تعداد نسخه‌های نگهداری‌شده</span>
-          <input
+          <PersianNumberInput
             className="w-32 rounded-lg border border-input px-3 py-2 text-sm outline-none focus:border-primary"
             dir="ltr"
             type="number"

@@ -59,6 +59,17 @@ export const MODULE_KEYS = [
   "reports",
   "ai",
   "settings",
+  // Phase 35 — module keys for the app ecosystem and the phases that build on
+  // it. None is added to any industry's `modules` yet: `workspace` is the
+  // ecosystem shell (gated by the `workspace` feature flag, not a trade module)
+  // and `crm`/`website`/`messaging` are the subjects of phases 36–38, which
+  // wire up their own pages. They exist now so the app registry
+  // (src/lib/apps.ts) can give them a place and so a later phase need not touch
+  // the union again.
+  "workspace",
+  "crm",
+  "website",
+  "messaging",
 ] as const;
 export type ModuleKey = (typeof MODULE_KEYS)[number];
 

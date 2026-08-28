@@ -1,5 +1,6 @@
 "use client";
 
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useEffect, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
 import { todayJalali } from "@/lib/jalali";
@@ -147,8 +148,9 @@ export function FiscalPeriodsSection({
         <div className="mt-5 grid gap-3 sm:grid-cols-[minmax(0,13rem)_auto] sm:items-end">
           <label className="block">
             <span className="mb-1.5 block text-sm font-medium">سال شمسی جدید</span>
-            <input
+            <PersianNumberInput
               type="number"
+              grouping={false}
               value={newYear}
               onChange={(e) => setNewYear(e.target.value)}
               className={inputClass}

@@ -1,5 +1,6 @@
 "use client";
 
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { CalendarDaysIcon, RefreshCwIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -548,7 +549,7 @@ function BookingForm({
       </Field>
       <div className="grid grid-cols-2 gap-3">
         <Field label="تعداد نفرات">
-          <input
+          <PersianNumberInput
             className={fieldClass}
             inputMode="numeric"
             dir="ltr"
@@ -558,7 +559,7 @@ function BookingForm({
           />
         </Field>
         <Field label="مدت (دقیقه)">
-          <input
+          <PersianNumberInput
             className={fieldClass}
             inputMode="numeric"
             dir="ltr"
@@ -577,15 +578,15 @@ function BookingForm({
         />
       </Field>
       <Field label="ساعت (۲۴ ساعته، مثل 20:00)">
-        <input
-          className={fieldClass}
-          dir="ltr"
-          inputMode="numeric"
-          value={time}
-          onChange={(event) => setTime(event.target.value)}
-          placeholder="HH:MM"
-          aria-required="true"
-        />
+          <input
+            className={fieldClass}
+            dir="ltr"
+            inputMode="numeric"
+            value={toPersianDigits(time)}
+            onChange={(event) => setTime(toLatinDigits(event.target.value))}
+            placeholder="HH:MM"
+            aria-required="true"
+          />
       </Field>
       <Field label="میز (اختیاری — برای تشخیص تداخل لازم است)">
         <SearchableSelect

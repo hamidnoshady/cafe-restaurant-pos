@@ -445,7 +445,7 @@ export function TableOrderPanel({
                               type="button"
                               aria-label={"کاهش تعداد " + l.name}
                               onClick={() => setQty(l.key, l.quantity - 1)}
-                              className="flex size-6 items-center justify-center rounded bg-muted transition-colors hover:bg-muted-foreground/20 hover:text-foreground active:scale-95 focus-visible:ring-3 focus-visible:ring-ring/50 outline-none"
+                              className="flex size-6 items-center justify-center rounded bg-muted transition-colors hover:bg-muted-foreground/20 hover:text-foreground active:scale-95 focus-visible:ring focus-visible:ring-ring/50 outline-none"
                             >
                               −
                             </button>
@@ -456,7 +456,7 @@ export function TableOrderPanel({
                               type="button"
                               aria-label={"افزایش تعداد " + l.name}
                               onClick={() => setQty(l.key, l.quantity + 1)}
-                              className="flex size-6 items-center justify-center rounded bg-muted transition-colors hover:bg-muted-foreground/20 hover:text-foreground active:scale-95 focus-visible:ring-3 focus-visible:ring-ring/50 outline-none"
+                              className="flex size-6 items-center justify-center rounded bg-muted transition-colors hover:bg-muted-foreground/20 hover:text-foreground active:scale-95 focus-visible:ring focus-visible:ring-ring/50 outline-none"
                             >
                               +
                             </button>

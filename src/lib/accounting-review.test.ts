@@ -229,7 +229,7 @@ describe("how a finding reads on a Persian phone", () => {
       }),
     )[0];
     expect(finding.detail.startsWith("۲ کالا")).toBe(true);
-    expect(finding.samples[0].label).toContain("-۲.۵ لیتر");
+    expect(finding.samples[0].label).toContain("-۲٫۵ لیتر");
   });
 });
 
