@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -18,12 +18,12 @@ import {
   LayoutDashboardIcon,
   LayoutGridIcon,
   LockIcon,
-  MessageSquareIcon,
   MessageSquarePlusIcon,
   PackageIcon,
   SettingsIcon,
   ShoppingCartIcon,
   SparklesIcon,
+  TrendingUpIcon,
   TruckIcon,
   UsersIcon,
   WatchIcon,
@@ -36,7 +36,6 @@ import {
   resolveBottomNavHrefs,
   toggleBottomNavHref,
 } from "@/lib/bottom-nav";
-import { appsForNav } from "@/lib/apps";
 import type { Industry } from "@/lib/industries";
 import {
   resolveSidebarMode,
@@ -81,6 +80,21 @@ import { AiRecentConversations } from "./ai/ai-recent-conversations";
 const PIN_ROLES = ["cashier", "waiter", "kitchen"];
 
 const SIDEBAR_PREFERENCE_KEY = "dashboard-sidebar-preference";
+
+/**
+ * Resizable sidebar width. The rail starts at the same width the fixed shell
+ * always used (w-64 = 16rem), and drag/arrow keys move it between the bounds;
+ * the choice is remembered per device.
+ */
+const SIDEBAR_WIDTH_KEY = "dashboard-sidebar-width";
+const SIDEBAR_DEFAULT_WIDTH = 256;
+const SIDEBAR_MIN_WIDTH = 240;
+const SIDEBAR_MAX_WIDTH = 460;
+const SIDEBAR_KEYBOARD_STEP = 16;
+
+/** One button skin for every rail entry — «گفت‌وگوی جدید», «پروژه‌ها» and the apps are peers. */
+const RAIL_BUTTON_CLASS =
+  "min-h-12 rounded-xl text-stone-700 hover:bg-amber-50 hover:text-amber-700 data-[active=true]:bg-amber-100 data-[active=true]:font-semibold data-[active=true]:text-amber-700";
 
 const ROLE_LABELS: Record<string, string> = {
   owner: "مالک",
@@ -137,13 +151,14 @@ interface SidebarProps {
   brandTitle: string;
   brandSubtitle: string;
   /**
-   * Phase 35 Wave 2 — which shell to render. `"classic"` is the flat nav that
-   * has always been here; `"workspace"` is the new rail (New chat / Projects /
-   * Apps / Recent threads). The flag is decided in the layout; this is purely
-   * the visual switch, so there is one sidebar with one `if`, not two trees.
+   * Phase 35 Wave 2 — which shell the business is entitled to. `"workspace"`
+   * shows the rail (New chat / Projects / apps / recent threads) on the chat
+   * home and the projects surface; everywhere else the shell falls back to the
+   * classic flat sidebar, so entering an app feels like the main product the
+   * business already knows. `"classic"` is the flat nav, unchanged.
    */
   variant?: "classic" | "workspace";
-  /** The business's industry, used to group nav items into apps in the rail. */
+  /** The business's industry. */
   industry?: Industry;
 }
 
@@ -156,15 +171,33 @@ function NavLinks({
   navItems,
   pathname,
   onNavigate,
+  showWorkspaceHome = false,
 }: {
   navItems: NavItem[];
   pathname: string;
   onNavigate: () => void;
+  /** True while the business has the workspace shell: adds a «میز کار» entry back to the chat home. */
+  showWorkspaceHome?: boolean;
 }) {
   return (
     <SidebarContent className="px-3 py-4">
       <nav aria-label="ناوبری داشبورد">
         <SidebarMenu className="space-y-1.5">
+          {showWorkspaceHome ? (
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                asChild
+                isActive={pathname === "/dashboard"}
+                tooltip="میز کار"
+                className={RAIL_BUTTON_CLASS}
+              >
+                <Link href="/dashboard" onClick={onNavigate} aria-current={pathname === "/dashboard" ? "page" : undefined}>
+                  <LayoutGridIcon aria-hidden="true" className="size-5 shrink-0" />
+                  <span className="group-data-[state=collapsed]/sidebar:hidden">میز کار</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          ) : null}
           {navItems.map((item) => {
             if (!item.href) return null;
             const Icon = NAV_ICONS[item.href] ?? CircleIcon;
@@ -204,41 +237,52 @@ function NavLinks({
 }
 
 /**
- * The workspace rail (Phase 35 Wave 2). Replaces the flat nav when the
- * `workspace` flag is on: a "new chat" action, a Projects placeholder (filled
- * in by Wave 3), the apps grouped from the nav items via `appsForNav`, and the
- * member's recent threads. Clicking a thread hands its id to the chat home at
- * `/dashboard?conversation=…`; clicking a page navigates to it. The collapse
- * preference, tablet mode, ⌘/Ctrl-B, mobile header, bottom nav and footer are
- * all inherited from the surrounding shell — only this middle block changed.
+ * The workspace rail (Phase 35 Wave 2).
+ *
+ * Every entry is the same flat button — «گفت‌وگوی جدید», «پروژه‌ها», and the
+ * two apps the business works in: «حسابداری» (which owns the day-to-day
+ * surfaces: فروش, عملیات, اتصال‌ها and تنظیمات live behind its classic
+ * sidebar) and «رشد و بازاریابی» (وفاداری، کمپین‌ها و پورسانت). No dropdowns,
+ * no counts. Clicking an app opens the main product — the page plus the
+ * classic sidebar — so the rail is a launcher, not a second navigation
+ * system. Recent threads start short, collapse, and load more on demand.
  */
-function WorkspaceRail({
-  navItems,
-  pathname,
-  industry,
-}: {
-  navItems: NavItem[];
-  pathname: string;
-  industry?: Industry;
-}) {
+function WorkspaceRail({ navItems, pathname }: { navItems: NavItem[]; pathname: string }) {
   const router = useRouter();
-  const grouped = appsForNav(navItems, industry);
+  const hrefs = navItems.flatMap((item) => (item.href ? [item.href] : []));
+  // First available page of each app, in order of preference — a business
+  // without the ledger flag still lands somewhere real inside حسابداری.
+  const accountingHref = ["/dashboard/ledger", "/dashboard/reports"].find((href) => hrefs.includes(href));
+  const growthHref = ["/dashboard/loyalty", "/dashboard/promotions", "/dashboard/commission"].find((href) =>
+    hrefs.includes(href),
+  );
+  const accountingActive = accountingHref !== undefined && isActive(pathname, accountingHref);
+  const growthActive = growthHref !== undefined && isActive(pathname, growthHref);
 
   return (
     <SidebarContent className="px-3 py-4">
       <nav aria-label="میز کار" className="space-y-4">
         <SidebarMenu className="space-y-1.5">
           <SidebarMenuItem>
-            <SidebarMenuButton asChild isActive={pathname === "/dashboard"} className="min-h-12 rounded-xl text-stone-700 hover:bg-amber-50 hover:text-amber-700 data-[active=true]:bg-amber-100 data-[active=true]:font-semibold data-[active=true]:text-amber-700">
+            <SidebarMenuButton
+              asChild
+              isActive={pathname === "/dashboard"}
+              tooltip="گفت‌وگوی جدید"
+              className={RAIL_BUTTON_CLASS}
+            >
               <Link href="/dashboard">
                 <MessageSquarePlusIcon aria-hidden="true" className="size-5 shrink-0" />
                 <span className="group-data-[state=collapsed]/sidebar:hidden">گفت‌وگوی جدید</span>
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
-          {/* Phase 35 Wave 3 — Projects are now functional. */}
           <SidebarMenuItem>
-            <SidebarMenuButton asChild isActive={pathname.startsWith("/dashboard/projects")} className="min-h-12 rounded-xl text-stone-700 hover:bg-amber-50 hover:text-amber-700 data-[active=true]:bg-amber-100 data-[active=true]:font-semibold data-[active=true]:text-amber-700">
+            <SidebarMenuButton
+              asChild
+              isActive={pathname.startsWith("/dashboard/projects")}
+              tooltip="پروژه‌ها"
+              className={RAIL_BUTTON_CLASS}
+            >
               <Link href="/dashboard/projects">
                 <FolderIcon aria-hidden="true" className="size-5 shrink-0" />
                 <span className="group-data-[state=collapsed]/sidebar:hidden">پروژه‌ها</span>
@@ -247,58 +291,44 @@ function WorkspaceRail({
           </SidebarMenuItem>
         </SidebarMenu>
 
-        <div>
-          <p className="px-2 pb-1 text-xs font-medium text-muted-foreground">برنامه‌ها</p>
-          <SidebarMenu className="space-y-1.5">
-            {grouped.map(({ app, items }) => (
-              <SidebarMenuItem key={app.key}>
-                <details className="group/app rounded-xl">
-                  <summary className="flex cursor-pointer list-none items-center gap-2 rounded-xl px-2 py-2 text-sm text-stone-700 transition hover:bg-amber-50 hover:text-amber-700">
-                    <LayoutGridIcon aria-hidden="true" className="size-4 shrink-0 text-stone-400" />
-                    <span className="min-w-0 flex-1 truncate">{app.label}</span>
-                    <span className="text-[10px] text-muted-foreground">{items.length}</span>
-                  </summary>
-                  <ul className="ms-3 mt-1 space-y-1 border-s-2 border-stone-200 ps-2">
-                    {items
-                      .filter((item): item is NavItem & { href: string } => Boolean(item.href))
-                      .map((item) => {
-                        const Icon = NAV_ICONS[item.href] ?? CircleIcon;
-                        const active = isActive(pathname, item.href);
-                        return (
-                          <li key={item.label}>
-                            <Link
-                              href={item.href}
-                              aria-current={active ? "page" : undefined}
-                              className={`flex min-h-9 items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition ${
-                                active
-                                  ? "bg-amber-100 font-semibold text-amber-700"
-                                  : "text-stone-700 hover:bg-amber-50 hover:text-amber-700"
-                              }`}
-                            >
-                              <Icon aria-hidden="true" className="size-4 shrink-0" />
-                              <span className="min-w-0 flex-1 truncate">{item.label}</span>
-                              {item.locked ? (
-                                <LockIcon aria-hidden="true" className="size-3 shrink-0 text-stone-400" />
-                              ) : null}
-                            </Link>
-                          </li>
-                        );
-                      })}
-                  </ul>
-                </details>
-              </SidebarMenuItem>
-            ))}
-          </SidebarMenu>
-        </div>
+        {accountingHref || growthHref ? (
+          <div>
+            <p className="px-2 pb-1 text-xs font-medium text-muted-foreground group-data-[state=collapsed]/sidebar:hidden">برنامه‌ها</p>
+            <SidebarMenu className="space-y-1.5">
+              {accountingHref ? (
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild isActive={accountingActive} tooltip="حسابداری" className={RAIL_BUTTON_CLASS}>
+                    <Link href={accountingHref}>
+                      <CalculatorIcon aria-hidden="true" className="size-5 shrink-0" />
+                      <span className="group-data-[state=collapsed]/sidebar:hidden">حسابداری</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ) : null}
+              {growthHref ? (
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild isActive={growthActive} tooltip="رشد و بازاریابی" className={RAIL_BUTTON_CLASS}>
+                    <Link href={growthHref}>
+                      <TrendingUpIcon aria-hidden="true" className="size-5 shrink-0" />
+                      <span className="group-data-[state=collapsed]/sidebar:hidden">رشد و بازاریابی</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ) : null}
+            </SidebarMenu>
+          </div>
+        ) : null}
 
-        <div>
-          <p className="px-2 pb-1 text-xs font-medium text-muted-foreground">نخ‌های اخیر</p>
+        <div className="group-data-[state=collapsed]/sidebar:hidden">
           {/* AiRecentConversations already filters to dashboard-mode threads and
               shows its own empty/loading states; selecting one opens it in the
-              chat home. */}
+              chat home. It starts with five threads, collapses, and grows on
+              demand so it never owns the sidebar. */}
           <AiRecentConversations
             activeId={null}
             refreshKey={0}
+            initialLimit={5}
+            collapsible
             onSelect={(id) => router.push(`/dashboard?conversation=${id}`)}
           />
         </div>
@@ -409,18 +439,58 @@ function BottomNavSettings({
   );
 }
 
+/**
+ * The assistant's own settings page, parked at the bottom of the sidebar next
+ * to the member — the way the chat products do it — rather than as another
+ * entry in the middle of the nav. Owner and manager only; the page itself
+ * guards the same way. `iconOnly` is the collapsed-rail variant (a bare
+ * sparkles button, the ChatGPT-style footprint at the bottom of a collapsed
+ * sidebar).
+ */
+function AiSettingsButton({ iconOnly = false }: { iconOnly?: boolean }) {
+  if (iconOnly) {
+    return (
+      <Button
+        asChild
+        variant="ghost"
+        size="icon"
+        aria-label="تنظیمات هوش مصنوعی"
+        title="تنظیمات هوش مصنوعی"
+        className="min-h-11 min-w-11 text-stone-600 hover:bg-amber-50 hover:text-amber-700"
+      >
+        <Link href="/dashboard/ai/settings">
+          <SparklesIcon aria-hidden="true" />
+        </Link>
+      </Button>
+    );
+  }
+  return (
+    <div className="mb-3">
+      <Button asChild variant="outline" className="w-full justify-start gap-2">
+        <Link href="/dashboard/ai/settings">
+          <SparklesIcon aria-hidden="true" className="size-4 shrink-0" />
+          تنظیمات هوش مصنوعی
+        </Link>
+      </Button>
+    </div>
+  );
+}
+
 function DashboardSidebarFooter({
   role,
   fullName,
   navItems,
   bottomNavHrefs,
   onSaveBottomNav,
+  showAiSettings,
 }: {
   role: string;
   fullName: string;
   navItems: NavItem[];
   bottomNavHrefs: string[];
   onSaveBottomNav: (hrefs: string[]) => void;
+  /** Owner/manager with the assistant on their nav — the settings entry is theirs. */
+  showAiSettings: boolean;
 }) {
   return (
     <SidebarFooter className="border-stone-200/80 bg-white">
@@ -437,15 +507,29 @@ function DashboardSidebarFooter({
         {PIN_ROLES.includes(role) && <ShiftButton />}
         {PIN_ROLES.includes(role) && <BiometricSettingsButton />}
         {PIN_ROLES.includes(role) && <LockButton />}
+        {showAiSettings && <AiSettingsButton />}
         <LogoutButton />
       </div>
+      {/* Collapsed: everything above hides; this stays as the one footer control. */}
+      {showAiSettings ? (
+        <div className="hidden justify-center group-data-[state=collapsed]/sidebar:flex">
+          <AiSettingsButton iconOnly />
+        </div>
+      ) : null}
     </SidebarFooter>
   );
 }
 
-function SidebarNavigation({ navItems, pathname }: Pick<SidebarProps, "navItems"> & { pathname: string }) {
+function SidebarNavigation({ navItems, pathname, showWorkspaceHome }: Pick<SidebarProps, "navItems"> & { pathname: string; showWorkspaceHome: boolean }) {
   const { setOpenMobile } = useSidebar();
-  return <NavLinks navItems={navItems} pathname={pathname} onNavigate={() => setOpenMobile(false)} />;
+  return (
+    <NavLinks
+      navItems={navItems}
+      pathname={pathname}
+      showWorkspaceHome={showWorkspaceHome}
+      onNavigate={() => setOpenMobile(false)}
+    />
+  );
 }
 
 function MobileDashboardHeader({ navItems, pathname }: Pick<SidebarProps, "navItems"> & { pathname: string }) {
@@ -527,6 +611,90 @@ function MobileBottomNavigation({
   );
 }
 
+/**
+ * The drag edge of the sidebar: grab it to change the width (the rail and the
+ * classic sidebar alike), double-click to snap back to the default, and the
+ * arrow keys move it in steps. The width is remembered per device.
+ */
+function SidebarResizeHandle({
+  width,
+  onWidthChange,
+  onDragChange,
+  onReset,
+}: {
+  /** The sidebar's current rendered width, so a drag always starts from the truth. */
+  width: number;
+  onWidthChange: (width: number) => void;
+  onDragChange: (dragging: boolean) => void;
+  onReset: () => void;
+}) {
+  const start = useRef<{ x: number; width: number } | null>(null);
+  const widthRef = useRef(width);
+
+  useEffect(() => {
+    widthRef.current = width;
+  }, [width]);
+
+  const onPointerDown = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      start.current = { x: event.clientX, width: widthRef.current };
+      onDragChange(true);
+      document.body.style.userSelect = "none";
+      event.currentTarget.setPointerCapture(event.pointerId);
+    },
+    [onDragChange],
+  );
+
+  const onPointerMove = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (!start.current) return;
+      // The sidebar sits on the right; pulling the edge left widens it.
+      const next = Math.min(
+        SIDEBAR_MAX_WIDTH,
+        Math.max(SIDEBAR_MIN_WIDTH, start.current.width + (start.current.x - event.clientX)),
+      );
+      onWidthChange(next);
+    },
+    [onWidthChange],
+  );
+
+  const endDrag = useCallback(() => {
+    if (!start.current) return;
+    start.current = null;
+    onDragChange(false);
+    document.body.style.userSelect = "";
+  }, [onDragChange]);
+
+  const onKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+      event.preventDefault();
+      const direction = event.key === "ArrowLeft" ? 1 : -1;
+      onWidthChange(
+        Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, widthRef.current + direction * SIDEBAR_KEYBOARD_STEP)),
+      );
+    },
+    [onWidthChange],
+  );
+
+  return (
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="تغییر عرض نوار کناری"
+      title="برای تغییر عرض بکشید"
+      tabIndex={0}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={endDrag}
+      onPointerCancel={endDrag}
+      onDoubleClick={onReset}
+      onKeyDown={onKeyDown}
+      className="absolute inset-y-0 end-0 z-10 hidden w-1.5 cursor-col-resize touch-none items-center justify-center outline-none transition-colors hover:bg-amber-200/70 focus-visible:bg-amber-200/70 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-400/60 md:flex"
+    />
+  );
+}
+
 export function DashboardSidebar({
   navItems,
   role,
@@ -534,7 +702,6 @@ export function DashboardSidebar({
   brandTitle,
   brandSubtitle,
   variant = "classic",
-  industry,
 }: SidebarProps) {
   const pathname = usePathname();
   const [preference, setPreference] = useState<DashboardSidebarPreference>("expanded");
@@ -542,12 +709,25 @@ export function DashboardSidebar({
   const [tabletMode, setTabletMode] = useState(false);
   const [tabletExpanded, setTabletExpanded] = useState(false);
   const [bottomNav, setBottomNav] = useState<string[] | null>(null);
+  const [sidebarWidth, setSidebarWidth] = useState<number | null>(null);
+  const [draggingWidth, setDraggingWidth] = useState(false);
   const mode = tabletMode ? (tabletExpanded ? "expanded" : "collapsed") : resolveSidebarMode(pathname, preference);
   const availableHrefs = navItems.flatMap((item) => (item.href ? [item.href] : []));
+  const workspaceShell = variant === "workspace";
+  // The rail is the workspace *home* — the chat plus the projects surface.
+  // Inside an app the shell is the classic sidebar, so «حسابداری» and «رشد و
+  // بازاریابی» open the main product with the nav the business already knows.
+  const showWorkspaceRail =
+    workspaceShell && (pathname === "/dashboard" || pathname.startsWith("/dashboard/projects"));
+  const showAiSettings = (role === "owner" || role === "manager") && navItems.some((item) => item.module === "ai");
 
   useEffect(() => {
     setPreference(window.localStorage.getItem(SIDEBAR_PREFERENCE_KEY) === "collapsed" ? "collapsed" : "expanded");
     setPreferenceLoaded(true);
+    const storedWidth = Number(window.localStorage.getItem(SIDEBAR_WIDTH_KEY));
+    if (Number.isFinite(storedWidth) && storedWidth >= SIDEBAR_MIN_WIDTH && storedWidth <= SIDEBAR_MAX_WIDTH) {
+      setSidebarWidth(storedWidth);
+    }
   }, []);
 
   // Read after mount, not during render: localStorage does not exist on the
@@ -576,6 +756,12 @@ export function DashboardSidebar({
     if (preferenceLoaded) window.localStorage.setItem(SIDEBAR_PREFERENCE_KEY, preference);
   }, [preference, preferenceLoaded]);
 
+  // Persist a finished resize; the drag itself just paints.
+  useEffect(() => {
+    if (draggingWidth || sidebarWidth === null) return;
+    window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth));
+  }, [sidebarWidth, draggingWidth]);
+
   const setExpanded = useCallback((expanded: boolean) => {
     if (tabletMode) {
       setTabletExpanded(expanded);
@@ -600,15 +786,25 @@ export function DashboardSidebar({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [tabletMode]);
 
+  const resetWidth = useCallback(() => setSidebarWidth(SIDEBAR_DEFAULT_WIDTH), []);
+
   return (
     <SidebarProvider open={mode === "expanded"} onOpenChange={setExpanded}>
       <MobileDashboardHeader navItems={navItems} pathname={pathname} />
-      <Sidebar side="right" className="border-stone-200/80 bg-white text-stone-950">
+      <Sidebar
+        side="right"
+        className={`border-stone-200/80 bg-white text-stone-950 ${draggingWidth ? "transition-none" : ""}`}
+        style={
+          mode === "expanded" && sidebarWidth !== null && sidebarWidth !== SIDEBAR_DEFAULT_WIDTH
+            ? { width: sidebarWidth }
+            : undefined
+        }
+      >
         <SidebarBrand title={brandTitle} subtitle={brandSubtitle} />
-        {variant === "workspace" ? (
-          <WorkspaceRail navItems={navItems} pathname={pathname} industry={industry} />
+        {showWorkspaceRail ? (
+          <WorkspaceRail navItems={navItems} pathname={pathname} />
         ) : (
-          <SidebarNavigation navItems={navItems} pathname={pathname} />
+          <SidebarNavigation navItems={navItems} pathname={pathname} showWorkspaceHome={workspaceShell} />
         )}
         <DashboardSidebarFooter
           role={role}
@@ -619,7 +815,16 @@ export function DashboardSidebar({
           // not a saved choice, so offering it as one would silently freeze it.
           bottomNavHrefs={resolveBottomNavHrefs(bottomNav, availableHrefs, false)}
           onSaveBottomNav={saveBottomNav}
+          showAiSettings={showAiSettings}
         />
+        {mode === "expanded" ? (
+          <SidebarResizeHandle
+            width={sidebarWidth ?? SIDEBAR_DEFAULT_WIDTH}
+            onWidthChange={setSidebarWidth}
+            onDragChange={setDraggingWidth}
+            onReset={resetWidth}
+          />
+        ) : null}
       </Sidebar>
       <MobileBottomNavigation
         navItems={navItems}
