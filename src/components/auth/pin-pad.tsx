@@ -39,7 +39,14 @@ export function PinPad({
 
   return (
     <div>
-      <div className="mb-4 flex justify-center gap-3" aria-label="پین وارد شده">
+      <div
+        className="mb-4 flex justify-center gap-3"
+        role="progressbar"
+        aria-label="پین وارد شده"
+        aria-valuenow={pin.length}
+        aria-valuemin={0}
+        aria-valuemax={4}
+      >
         {[0, 1, 2, 3].map((i) => (
           <span
             key={i}
@@ -75,10 +82,15 @@ export function PinPad({
         />
       </div>
       {error && (
-        <p className="mt-3 text-center text-sm text-destructive">{error}</p>
+        <p role="alert" className="mt-3 text-center text-sm text-destructive">
+          {error}
+        </p>
       )}
       {busy && (
-        <p className="mt-3 text-center text-sm text-muted-foreground">
+        <p
+          role="status"
+          className="mt-3 text-center text-sm text-muted-foreground"
+        >
           در حال بررسی…
         </p>
       )}
