@@ -721,6 +721,10 @@ export function DashboardSidebar({
   const [sidebarWidth, setSidebarWidth] = useState<number | null>(null);
   const [draggingWidth, setDraggingWidth] = useState(false);
   const mode = tabletMode ? (tabletExpanded ? "expanded" : "collapsed") : resolveSidebarMode(pathname, preference);
+  // The assistant page has its own in-app nav (conversations/projects) and a
+  // pinned composer, so the customizable mobile bottom bar is replaced there
+  // rather than stacked under it.
+  const assistantRoute = pathname === "/dashboard/ai" || pathname.startsWith("/dashboard/ai/");
   const availableHrefs = navItems.flatMap((item) => (item.href ? [item.href] : []));
   const workspaceShell = variant === "workspace";
   // The rail is the workspace *home* — the chat plus the projects surface.
@@ -835,11 +839,13 @@ export function DashboardSidebar({
           />
         ) : null}
       </Sidebar>
-      <MobileBottomNavigation
-        navItems={navItems}
-        pathname={pathname}
-        hrefs={resolveBottomNavHrefs(bottomNav, availableHrefs, isActive(pathname, "/dashboard/pos"))}
-      />
+      {!assistantRoute ? (
+        <MobileBottomNavigation
+          navItems={navItems}
+          pathname={pathname}
+          hrefs={resolveBottomNavHrefs(bottomNav, availableHrefs, isActive(pathname, "/dashboard/pos"))}
+        />
+      ) : null}
     </SidebarProvider>
   );
 }

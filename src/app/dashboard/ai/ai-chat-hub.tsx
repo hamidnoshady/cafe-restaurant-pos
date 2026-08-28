@@ -1,14 +1,20 @@
 "use client";
 
 /**
- * Conversation-first AI home. The assistant intentionally has no page tabs,
- * agent cards, or recent-conversation rail: business questions are the primary
- * action, while receipts, saved conversations, and report prompts remain
- * available as compact composer tools.
+ * The AI assistant's chat surface, refactored to a responsive, ChatGPT-like
+ * column (Phase 36b revision).
+ *
+ * It is now a self-contained panel that fills its parent: a slim header
+ * (new-chat + an optional nav toggle on phones), a scrollable message thread,
+ * and a composer pinned to the bottom of the column — never an overlay that a
+ * mobile navbar would sit on top of. The conversation state can be owned by a
+ * parent (the new `AiWorkspace`, which pairs this panel with the assistant's own
+ * in-app nav) or, when rendered standalone on the workspace home, created here.
  */
+
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Loader2Icon, MessageSquarePlusIcon, SendIcon, SparklesIcon } from "lucide-react";
+import { Loader2Icon, MenuIcon, MessageSquarePlusIcon, SendIcon, SparklesIcon } from "lucide-react";
 import { useMoney } from "@/components/money/money-context";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -17,11 +23,21 @@ import { AiAttachmentChip, AiComposerTools } from "@/components/ai/ai-composer-t
 import { AiMarkdown } from "@/components/ai/ai-markdown";
 import { TypingDots } from "@/components/ai/ai-chat-messages";
 import { AiProposalCard } from "@/components/ai/ai-proposal-card";
-import { SUGGESTED_PROMPTS, useAiChat } from "@/components/ai/use-ai-chat";
+import { SUGGESTED_PROMPTS, useAiChat, type AiChatState } from "@/components/ai/use-ai-chat";
 import { cardClass } from "../page-chrome";
 
-export function AiChatHub() {
+export function AiChatHub({
+  chat: externalChat,
+  onOpenNav,
+}: {
+  chat?: AiChatState;
+  /** Shown on phones to open the assistant's own side nav (conversations/projects). */
+  onOpenNav?: () => void;
+}) {
   const locked = useFeatureLocked();
+  const internalChat = useAiChat({ mode: "dashboard" });
+  const chat = externalChat ?? internalChat;
+
   const searchParams = useSearchParams();
   const money = useMoney();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -47,7 +63,7 @@ export function AiChatHub() {
     sendMessage,
     applyProposal,
     dismissProposal,
-  } = useAiChat({ mode: "dashboard" });
+  } = chat;
 
   useEffect(() => {
     if (initialized.current) return;
@@ -73,14 +89,32 @@ export function AiChatHub() {
     messages.length === 1 && messages[0]?.role === "assistant" && !busy && !loadingConversation;
 
   return (
-    <section className="relative mx-auto flex min-h-[calc(100dvh-var(--app-bottom-nav)-1rem)] w-full max-w-5xl flex-col md:min-h-[calc(100vh-2rem)]">
-      <div className="absolute start-0 top-0 z-10">
-        <Button variant="outline" size="icon" onClick={startNewConversation} aria-label="گفتگوی جدید" title="گفتگوی جدید">
-          <MessageSquarePlusIcon />
+    <section className="flex h-full min-h-0 w-full flex-col">
+      <header className="flex min-h-12 items-center gap-2 border-b border-stone-200/80 bg-white/80 px-2 py-1.5 backdrop-blur sm:px-3">
+        {onOpenNav ? (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onOpenNav}
+            aria-label="منوی دستیار"
+            className="md:hidden"
+          >
+            <MenuIcon />
+          </Button>
+        ) : null}
+        <div className="min-w-0 flex-1 text-sm font-semibold text-stone-950">دستیار هوشمند</div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={startNewConversation}
+          className="gap-1.5"
+        >
+          <MessageSquarePlusIcon className="size-4" aria-hidden="true" />
+          گفت‌وگوی جدید
         </Button>
-      </div>
+      </header>
 
-      <div ref={scrollRef} className="min-w-0 flex-1 overflow-y-auto px-1 pb-52 pt-16 sm:px-6">
+      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-1 pb-4 pt-4 sm:px-6">
         {loadingConversation ? (
           <div className="flex min-h-[55vh] items-center justify-center gap-2 text-sm text-muted-foreground">
             <Loader2Icon className="size-4 animate-spin" /> در حال بازکردن مکالمه…
@@ -149,8 +183,8 @@ export function AiChatHub() {
         )}
       </div>
 
-      <div className="pointer-events-none absolute inset-x-0 bottom-2 bg-gradient-to-t from-background via-background via-80% to-transparent px-1 pt-12 sm:px-6 md:bottom-0">
-        <div className="pointer-events-auto mx-auto max-w-3xl">
+      <div className="border-t border-stone-200/80 bg-white/80 px-1 py-2 backdrop-blur sm:px-4 sm:py-3">
+        <div className="mx-auto max-w-3xl">
           <AiAttachmentChip attachment={attachment} onClear={clearAttachment} />
           <div
             className={cn(

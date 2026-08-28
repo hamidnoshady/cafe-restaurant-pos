@@ -12,8 +12,7 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
-import { ArrowLeftIcon, CalculatorIcon, RefreshCwIcon } from "lucide-react";
+import { ArrowLeftIcon, RefreshCwIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useMoney } from "@/components/money/money-context";
 import { formatPersianNumber, toPersianDigits } from "@/lib/digits";
@@ -21,7 +20,7 @@ import { formatJalali } from "@/lib/jalali";
 import type { GrowthOverview } from "@/lib/growth-overview";
 import { cardClass, EmptyState, SectionCard, StatusBadge } from "../page-chrome";
 import { api, ErrorBox } from "../ui";
-import type { GrowthSectionKey } from "./growth-sections";
+import type { GrowthSectionKey } from "./growth-routes";
 
 const CAMPAIGN_STATE_LABELS: Record<string, string> = {
   live: "در حال اجرا",
@@ -88,7 +87,7 @@ export function OverviewSection({ onGoToSection }: { onGoToSection: (key: Growth
       {firstRun ? (
         <SectionCard
           title="شروع برنامهٔ رشد"
-          description="سه قدم کوچک؛ هر یک همان جایی که باید، در حسابداری هم می‌نشیند."
+          description="سه قدم کوچک برای شروع برنامهٔ رشد و بازاریابی."
         >
           <div className="grid gap-3 sm:grid-cols-3">
             <Button variant="outline" className="min-h-11 justify-start" onClick={() => onGoToSection("campaigns")}>
@@ -123,7 +122,7 @@ export function OverviewSection({ onGoToSection }: { onGoToSection: (key: Growth
         <StatCard
           label="پورسانت فروشندگان · ۳۰ روز گذشته"
           value={money.format(overview.commission.accrued30d)}
-          hint="هزینه ۵۲۱۰، بدهی حقوق ۲۳۰۰ — هر دو در دفتر"
+          hint="هزینه ۵۲۱۰، بدهی حقوق ۲۳۰۰"
         />
         <StatCard
           label="امتیاز در گردش"
@@ -221,36 +220,6 @@ export function OverviewSection({ onGoToSection }: { onGoToSection: (key: Growth
           )}
         </SectionCard>
 
-        <SectionCard
-          title="پل حسابداری"
-          description="این برنامه به حسابداری وصل است: هر موتور رشد، سند خودش را می‌سازد و مانده‌اش از دفتر کل بازسازی می‌شود."
-          actions={
-            <Button variant="ghost" size="xs" asChild>
-              <Link href="/dashboard/ledger">
-                <CalculatorIcon aria-hidden="true" className="size-3.5" />
-                حسابداری
-              </Link>
-            </Button>
-          }
-        >
-          <ul className="divide-y divide-stone-200/80 text-sm">
-            {overview.bridge.map((row) => (
-              <li key={row.code} className="flex items-center justify-between gap-3 py-2.5">
-                <div className="min-w-0">
-                  <span className="font-medium text-stone-950">{row.name}</span>
-                  <span className="mr-2 text-xs text-muted-foreground" dir="ltr">
-                    {toPersianDigits(row.code)}
-                  </span>
-                </div>
-                <span className="shrink-0 font-semibold text-stone-950">{money.format(row.balance)}</span>
-              </li>
-            ))}
-          </ul>
-          <p className="mt-3 text-xs leading-5 text-muted-foreground">
-            صدور اعتبار و کارت هدیه بدهی می‌سازد؛ پورسانت هزینه (۵۲۱۰) و بدهی حقوق (۲۳۰۰). کمپین‌ها تخفیف خط فروش
-            را کم می‌کنند و همان‌جا در سند فروش می‌نشینند. هیچ عددی در این برنامه با دفتر کل رقابت نمی‌کند.
-          </p>
-        </SectionCard>
       </div>
     </div>
   );
