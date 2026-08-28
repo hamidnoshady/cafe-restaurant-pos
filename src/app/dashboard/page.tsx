@@ -43,7 +43,7 @@ export default async function DashboardPage() {
 
   if (workspaceEnabled) {
     return (
-      <AiChatHub canAutoApply={session?.role === "owner"} />
+      <AiChatHub />
     );
   }
 
