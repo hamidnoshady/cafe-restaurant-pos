@@ -119,6 +119,9 @@ export interface UseAiChatOptions {
   onConversationIdChange?: (id: string | null) => void;
 }
 
+/** The shape returned by `useAiChat` — shared by the chat panel and the assistant's own nav. */
+export type AiChatState = ReturnType<typeof useAiChat>;
+
 export function useAiChat({
   mode,
   currentStep,

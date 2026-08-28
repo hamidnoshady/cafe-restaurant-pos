@@ -9,10 +9,9 @@ import { getSetting, SETTING_KEYS } from "@/lib/settings";
 import { visibleSettingsTabs } from "@/lib/settings-tabs";
 import { AiAssistant } from "@/components/ai/ai-assistant";
 import { MoneyProvider } from "@/components/money/money-context";
-import { PullToRefresh } from "@/components/pull-to-refresh";
 import { LockProvider } from "./lock-screen";
-import { OfflineBanner } from "./offline-banner";
 import { DashboardSidebar, type NavItem } from "./dashboard-sidebar";
+import { DashboardMain } from "./dashboard-main";
 
 /**
  * The dashboard nav.
@@ -196,27 +195,10 @@ export default async function DashboardLayout({
           variant={workspaceEnabled ? "workspace" : "classic"}
           industry={industry}
         />
-        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-          <OfflineBanner />
-          {/*
-            `relative` so this element is the containing block for the absolutely
-            positioned descendants a page puts in it — `sr-only` text, most of
-            all. Without it their containing block is the viewport, which means
-            this scroller does not clip them: a screen-reader label sitting a
-            thousand pixels down the page extended the *document*, and left a
-            second, empty scroll behind the real one.
-
-            The bottom padding clears the fixed mobile bar (whose height, home
-            indicator included, is `--app-bottom-nav`), so the end of a page is
-            reachable rather than parked behind the nav.
-          */}
-          <PullToRefresh className="relative flex-1 overflow-y-auto overscroll-y-contain p-2 pb-[calc(var(--app-bottom-nav)+2rem)] md:p-4 md:pb-4">
-            {children}
-          </PullToRefresh>
-        </div>
-          {assistantMode && canUseAssistant && features.ai_assistant && (assistantMode === "floor" || !workspaceEnabled) ? (
-            <AiAssistant mode={assistantMode} />
-          ) : null}
+        <DashboardMain>{children}</DashboardMain>
+        {assistantMode && canUseAssistant && features.ai_assistant && (assistantMode === "floor" || !workspaceEnabled) ? (
+          <AiAssistant mode={assistantMode} />
+        ) : null}
         </div>
       </MoneyProvider>
     </LockProvider>

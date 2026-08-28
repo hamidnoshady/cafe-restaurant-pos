@@ -7,6 +7,7 @@ import {
   CircleIcon,
   ClipboardListIcon,
   ScrollTextIcon,
+  TrendingUpIcon,
   UsersIcon,
 } from "lucide-react";
 import { SectionNav } from "../section-nav";
@@ -24,6 +25,7 @@ import { ExpenseSection } from "./expense-section";
 import { PayrollSection } from "./payroll-section";
 import { VatReportSection } from "./vat-report-section";
 import { FixedAssetsSection } from "./fixed-assets-section";
+import { GrowthAccountingView } from "@/components/growth/growth-accounting-view";
 import styles from "./ledger-workspace.module.css";
 
 export interface AccountRow {
@@ -48,6 +50,7 @@ const TABS = [
   { key: "payroll", label: "حقوق و دستمزد", icon: UsersIcon },
   { key: "vat", label: "گزارش مالیات", icon: CircleIcon },
   { key: "fixed-assets", label: "دارایی‌های ثابت", icon: CircleIcon },
+  { key: "growth", label: "رشد و بازاریابی", icon: TrendingUpIcon },
 ] as const;
 type TabKey = (typeof TABS)[number]["key"];
 
@@ -121,6 +124,7 @@ export function LedgerManager({ role }: { role: string }) {
           {tab === "payroll" ? <PayrollSection busy={busy} run={run} refreshKey={refreshKey} /> : null}
           {tab === "vat" ? <VatReportSection refreshKey={refreshKey} /> : null}
           {tab === "fixed-assets" ? <FixedAssetsSection busy={busy} refreshKey={refreshKey} /> : null}
+          {tab === "growth" ? <GrowthAccountingView /> : null}
         </div>
       </SectionNav>
     </div>
