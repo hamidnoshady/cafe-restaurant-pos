@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
 import { todayJalali } from "@/lib/jalali";
-import { api, ErrorBox } from "../ui";
+import { api, ErrorBox, inputClass } from "../ui";
 import type { Runner } from "./ledger-manager";
 
 interface FiscalYear {
@@ -151,7 +151,7 @@ export function FiscalPeriodsSection({
               type="number"
               value={newYear}
               onChange={(e) => setNewYear(e.target.value)}
-              className="w-full rounded-lg border border-input bg-background px-3 py-1.5"
+              className={inputClass}
             />
           </label>
           <button

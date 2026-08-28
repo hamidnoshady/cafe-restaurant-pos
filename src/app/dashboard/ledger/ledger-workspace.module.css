@@ -1,16 +1,15 @@
 /*
  * Ledger workspace chrome — STRUCTURAL ONLY.
  *
- * Sizing and rhythm for the accounting screens: touch-height inputs and
- * buttons, generous radii, the mobile boxed-table treatment, scrollbar
- * styling. This module deliberately sets (almost) no colors: an earlier
- * revision repainted the canon from inside the workspace — amber primary
- * buttons, amber input focus, paper-tinted cards, every amber/emerald class
- * forced to one shade — which is the old dialect the design system banned.
- * Stripped, so the shared primitives render exactly as everywhere else:
- * teal <Button> fills, teal focus rings, white cards, native token shades
- * (docs/design-system.md). The only color rules left restate canon values
- * for raw table elements that carry no utility classes.
+ * Heading emphasis, the mobile boxed-table treatment, and scrollbar styling.
+ * Controls are NOT styled here: inputs/selects/textareas come from
+ * `inputClass` and buttons from `<Button>`, exactly like every other screen
+ * (h-10, rounded-lg). This module once also inflated controls (48px inputs,
+ * 44/48px buttons, oversized radii) and repainted the canon's colors from
+ * inside the workspace — the old dialect; both are stripped so ledger renders
+ * the shared primitives exactly (docs/design-system.md). The only color rules
+ * left restate canon values for raw table elements that carry no utility
+ * classes.
  */
 .content {
   min-width: 0;
@@ -25,18 +24,6 @@
 
 .content :global(h3) {
   font-weight: 700;
-}
-
-.content :global(input:not([type="checkbox"])),
-.content :global(select),
-.content :global(textarea) {
-  min-height: 48px;
-  border-radius: 0.875rem;
-}
-
-.content :global(button) {
-  min-height: 44px;
-  border-radius: 0.75rem;
 }
 
 /*
@@ -92,10 +79,6 @@
 
   .content :global(table) {
     min-width: 34rem;
-  }
-
-  .content :global(button) {
-    min-height: 48px;
   }
 }
 
