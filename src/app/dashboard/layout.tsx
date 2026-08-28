@@ -195,7 +195,7 @@ export default async function DashboardLayout({
           variant={workspaceEnabled ? "workspace" : "classic"}
           industry={industry}
         />
-        <DashboardMain>{children}</DashboardMain>
+        <DashboardMain workspaceEnabled={workspaceEnabled}>{children}</DashboardMain>
         {assistantMode && canUseAssistant && features.ai_assistant && (assistantMode === "floor" || !workspaceEnabled) ? (
           <AiAssistant mode={assistantMode} />
         ) : null}

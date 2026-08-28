@@ -102,15 +102,15 @@ export function AiChatHub({
             <MenuIcon />
           </Button>
         ) : null}
-        <div className="min-w-0 flex-1 text-sm font-semibold text-stone-950">دستیار هوشمند</div>
+        <div className="min-w-0 flex-1 truncate text-sm font-semibold text-stone-950">دستیار هوشمند</div>
         <Button
           variant="outline"
           size="sm"
           onClick={startNewConversation}
-          className="gap-1.5"
+          className="gap-1.5 px-2.5 sm:px-3"
         >
-          <MessageSquarePlusIcon className="size-4" aria-hidden="true" />
-          گفت‌وگوی جدید
+          <MessageSquarePlusIcon className="size-4 shrink-0" aria-hidden="true" />
+          <span className="hidden sm:inline">گفت‌وگوی جدید</span>
         </Button>
       </header>
 

@@ -42,6 +42,7 @@ import {
   toggleDashboardSidebarPreference,
   type DashboardSidebarPreference,
 } from "@/lib/sidebar-state";
+import { isAssistantSurface } from "@/lib/assistant-route";
 import type { ModuleKey } from "@/lib/industry-profile";
 import type { Permission } from "@/lib/permissions";
 import { toPersianDigits } from "@/lib/digits";
@@ -721,18 +722,35 @@ export function DashboardSidebar({
   const [sidebarWidth, setSidebarWidth] = useState<number | null>(null);
   const [draggingWidth, setDraggingWidth] = useState(false);
   const mode = tabletMode ? (tabletExpanded ? "expanded" : "collapsed") : resolveSidebarMode(pathname, preference);
-  // The assistant page has its own in-app nav (conversations/projects) and a
-  // pinned composer, so the customizable mobile bottom bar is replaced there
-  // rather than stacked under it.
-  const assistantRoute = pathname === "/dashboard/ai" || pathname.startsWith("/dashboard/ai/");
-  const availableHrefs = navItems.flatMap((item) => (item.href ? [item.href] : []));
+  // The assistant surfaces (the `/dashboard/ai` page and, with the workspace
+  // shell, the chat home `/dashboard`) have their own in-app nav
+  // (conversations/projects) and a pinned composer, so the customizable mobile
+  // bottom bar and the global mobile header stand aside there rather than being
+  // stacked under or over the assistant's own chrome.
   const workspaceShell = variant === "workspace";
+  const assistantRoute = isAssistantSurface(pathname, workspaceShell);
+  // On the dedicated assistant page the assistant renders its own header and a
+  // nav toggle (the conversations/projects drawer), so the dashboard's global
+  // mobile header would only duplicate it. The workspace chat home keeps the
+  // global header — its hamburger is the only way to reach the rail on a phone.
+  const assistantPage = pathname === "/dashboard/ai" || pathname.startsWith("/dashboard/ai/");
+  const availableHrefs = navItems.flatMap((item) => (item.href ? [item.href] : []));
   // The rail is the workspace *home* — the chat plus the projects surface.
   // Inside an app the shell is the classic sidebar, so «حسابداری» and «رشد و
   // بازاریابی» open the main product with the nav the business already knows.
   const showWorkspaceRail =
     workspaceShell && (pathname === "/dashboard" || pathname.startsWith("/dashboard/projects"));
   const showAiSettings = (role === "owner" || role === "manager") && navItems.some((item) => item.module === "ai");
+  // Inside an app the classic sidebar is that app's own navigation. «رشد و
+  // بازاریابی» and «دستیار هوشمند» are not entries there: they are separate
+  // products launched from the workspace rail (the growth app has its own side
+  // menu inside its shell, and the assistant is the chat home itself). Keeping
+  // them in the accounting suite's sidebar made the growth app look like a
+  // corner of accounting — the complaint this filter removes.
+  const appNavItems =
+    workspaceShell && !showWorkspaceRail
+      ? navItems.filter((item) => item.module !== "ai" && item.module !== "loyalty")
+      : navItems;
 
   useEffect(() => {
     setPreference(window.localStorage.getItem(SIDEBAR_PREFERENCE_KEY) === "collapsed" ? "collapsed" : "expanded");
@@ -803,7 +821,7 @@ export function DashboardSidebar({
 
   return (
     <SidebarProvider open={mode === "expanded"} onOpenChange={setExpanded}>
-      <MobileDashboardHeader navItems={navItems} pathname={pathname} />
+      {!assistantPage ? <MobileDashboardHeader navItems={navItems} pathname={pathname} /> : null}
       <Sidebar
         side="right"
         className={`border-stone-200/80 bg-white text-stone-950 ${draggingWidth ? "transition-none" : ""}`}
@@ -817,7 +835,7 @@ export function DashboardSidebar({
         {showWorkspaceRail ? (
           <WorkspaceRail navItems={navItems} pathname={pathname} />
         ) : (
-          <SidebarNavigation navItems={navItems} pathname={pathname} showWorkspaceHome={workspaceShell} />
+          <SidebarNavigation navItems={appNavItems} pathname={pathname} showWorkspaceHome={workspaceShell} />
         )}
         <DashboardSidebarFooter
           role={role}
