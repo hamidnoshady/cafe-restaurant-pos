@@ -10,8 +10,17 @@
   box-shadow: 0 1px 2px rgb(41 37 36 / 0.03);
 }
 
-.content :global(.rounded-lg.border),
-.content :global(.rounded-xl.border) {
+/* Input-like surfaces: rounded boxes that carry a border. Scoped to NOT match
+   buttons — every shadcn <Button> has the base classes `rounded-lg border`, so
+   an unscoped rule here (specificity 0,3,0, unlayered) out-ranked both
+   Tailwind's `bg-primary` and this file's own `button.bg-primary` (0,2,1) and
+   repainted every primary Save/Confirm button in the workspace as a white pill
+   with its white label invisible. Buttons keep their own look from Tailwind
+   plus the button rules below. Input-styled buttons (border-input, e.g. the
+   SearchableSelect and JalaliDatePicker triggers) are re-covered by the
+   `button.border-input` rule further down. */
+.content :global(.rounded-lg.border:not(button)),
+.content :global(.rounded-xl.border:not(button)) {
   border-color: #eae8e2;
   background: #fffefc;
 }
@@ -59,12 +68,18 @@
   border-radius: 0.75rem;
 }
 
-.content :global(button.bg-primary) {
+/* The `[data-slot="button"]` selector (0,3,1) guarantees the amber save colour
+   can never be out-ranked by another unlayered two-class rule again; the plain
+   `button.bg-primary` (0,2,1) keeps covering raw buttons that use bg-primary
+   without the shadcn Button base (e.g. «تعریف سال مالی»). */
+.content :global(button.bg-primary),
+.content :global(button[data-slot="button"].bg-primary) {
   background: #c98514;
   color: #fff;
 }
 
-.content :global(button.bg-primary:hover:not(:disabled)) {
+.content :global(button.bg-primary:hover:not(:disabled)),
+.content :global(button[data-slot="button"].bg-primary:hover:not(:disabled)) {
   background: #ab700c;
 }
 
