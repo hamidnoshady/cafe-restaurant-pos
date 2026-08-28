@@ -275,6 +275,47 @@ coworker" section of [README.md](README.md) and
   whose query fails is named in `unavailableChecks` rather than returning "found nothing", and the
   integration test asserts that list is empty.
 
+## Apps — read before adding a feature area or touching retrieval
+
+Phase 36 turned the assistant from a bubble in the corner into a workspace, and made
+"what the app knows" a retrievable thing. Four rules carry that work; see
+[docs/phases/Phase-36-App-Ecosystem.md](docs/phases/Phase-36-App-Ecosystem.md).
+
+- **An app is not a folder of pages.** An app is a contribution to four shared registries:
+  a read tool (`toolDefinitions`/`runReadTool`), an `ACTION_CATALOG` entry with a Phase 31
+  executor, a domain event (`recordCoworkerEvent`), and a posting rule in the posting engine.
+  Do that and chat, MCP, the coworker and autopilot pick the new app up for free. A second
+  write path, a parallel tool list, or a hand-rolled ledger call is exactly what this rule
+  forbids.
+- **`ModuleKey` is the gating vocabulary; `AppKey` is only grouping.** `industry-profile.ts`
+  says what a trade has and `moduleForApiPath` enforces it at the API. `apps.ts` says only
+  what is seen next to what. If a grouping is the *only* thing hiding a route, the hiding is
+  decoration and the route is open.
+- **Prompt text is built from fragments, and a database row overrides the code default** —
+  not merely its version. A bad edit or an unmigrated deploy must fall back to the code
+  fragment, never silence the assistant.
+- **No number is ever copied into a vector.** `ai_embeddings` holds slow-moving text only —
+  help, policy, procedures, item and menu descriptions, project notes, names for approximate
+  lookup. Orders, stock, payments and ledger rows are read through tools at the moment of
+  asking, because a vector copy of a figure on a POS is stale within minutes and makes the
+  model *confidently* wrong about money. `EMBEDDABLE_KINDS` in `src/lib/ai-rag.ts` is where
+  that is enforced; `NEVER_EMBEDDED_KINDS` records the exclusion so it reads as a decision.
+
+Two more, because both of these are load-bearing and easy to undo by accident:
+
+- **pgvector is optional, and its absence is not a failure.** Migrations `0113` and `0114`
+  create the extension inside a `DO … EXCEPTION WHEN OTHERS` block and create nothing
+  downstream unless `pg_extension` really has the row; `isRetrievalAvailable()` and
+  `isAnswerCacheAvailable()` probe once and answer *false* if the probe itself throws. The
+  desktop installer runs `embedded-postgres` with no `vector` library — it loses RAG, not
+  the assistant. Don't make either migration hard-fail.
+- **The answer cache key is the *business day*, not the calendar date, plus a tool
+  signature.** A café trading 18:00–03:00 runs one service; a key built from the calendar
+  date carries the pre-midnight answer into the next service. The signature is what makes a
+  backdated order (`/api/orders/backdated`) invalidate the range it landed in. And only
+  read-only turns are ever cached — `isCacheableTurn()` fails closed and is checked inside
+  `storeCachedAnswer()`, not just at the call site.
+
 ## The assistant's replies — read before adding an AI tool or touching the chat
 
 Phase 33 fixed a chat that did not behave like one and answers that were not
