@@ -46,28 +46,28 @@ const STATUS_META: Record<
 > = {
   booked: {
     label: "رزرو",
-    toneClass: "border-[#F0D39C] bg-[#FFF7E8] text-[#835500]",
-    dotClass: "bg-[#D69217]",
+    toneClass: "border-amber-200 bg-amber-50 text-amber-800",
+    dotClass: "bg-amber-500",
   },
   seated: {
     label: "نشسته",
-    toneClass: "border-[#B9E3C8] bg-[#ECF8F0] text-[#1E7041]",
-    dotClass: "bg-[#36B56A]",
+    toneClass: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    dotClass: "bg-emerald-500",
   },
   completed: {
     label: "تکمیل",
-    toneClass: "border-[#D9D6CF] bg-[#F5F3EE] text-[#5E5B55]",
-    dotClass: "bg-[#77756F]",
+    toneClass: "border-stone-200/80 bg-stone-100 text-stone-600",
+    dotClass: "bg-stone-500",
   },
   cancelled: {
     label: "لغو",
-    toneClass: "border-[#D9D6CF] bg-[#F5F3EE] text-[#77756F]",
-    dotClass: "bg-[#9C9992]",
+    toneClass: "border-stone-200/80 bg-stone-100 text-stone-500",
+    dotClass: "bg-stone-400",
   },
   no_show: {
     label: "عدم حضور",
-    toneClass: "border-[#E9B9AF] bg-[#FFF2EF] text-[#8A3126]",
-    dotClass: "bg-[#AF3E2E]",
+    toneClass: "border-destructive/30 bg-destructive/5 text-red-800",
+    dotClass: "bg-destructive",
   },
 };
 
@@ -128,38 +128,38 @@ function ReservationSkeleton() {
   return (
     <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_20rem] lg:grid-cols-[minmax(0,1fr)_23rem]">
       <section
-        className="rounded-xl border border-[#EAE8E2] bg-white p-4 md:col-start-1"
+        className="rounded-xl border border-stone-200/80 bg-white p-4 md:col-start-1"
         aria-busy="true"
       >
         <div className="flex items-center justify-between gap-3">
-          <div className="h-5 w-36 animate-pulse rounded bg-[#F0EEE9] motion-reduce:animate-none" />
-          <div className="h-6 w-16 animate-pulse rounded-md bg-[#F0EEE9] motion-reduce:animate-none" />
+          <div className="h-5 w-36 animate-pulse rounded bg-stone-100 motion-reduce:animate-none" />
+          <div className="h-6 w-16 animate-pulse rounded-md bg-stone-100 motion-reduce:animate-none" />
         </div>
         <div className="mt-4 space-y-3">
           {[0, 1, 2].map((item) => (
-            <div key={item} className="rounded-xl border border-[#F0EFEB] p-4">
+            <div key={item} className="rounded-xl border border-stone-100 p-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0 flex-1 space-y-3">
-                  <div className="h-5 w-32 animate-pulse rounded bg-[#F0EEE9] motion-reduce:animate-none" />
-                  <div className="h-4 w-3/4 animate-pulse rounded bg-[#F0EEE9] motion-reduce:animate-none" />
-                  <div className="h-4 w-1/2 animate-pulse rounded bg-[#F0EEE9] motion-reduce:animate-none" />
+                  <div className="h-5 w-32 animate-pulse rounded bg-stone-100 motion-reduce:animate-none" />
+                  <div className="h-4 w-3/4 animate-pulse rounded bg-stone-100 motion-reduce:animate-none" />
+                  <div className="h-4 w-1/2 animate-pulse rounded bg-stone-100 motion-reduce:animate-none" />
                 </div>
-                <div className="h-7 w-20 animate-pulse rounded-full bg-[#F0EEE9] motion-reduce:animate-none" />
+                <div className="h-7 w-20 animate-pulse rounded-full bg-stone-100 motion-reduce:animate-none" />
               </div>
             </div>
           ))}
         </div>
       </section>
       <aside
-        className="hidden rounded-xl border border-[#EAE8E2] bg-white p-4 md:col-start-2 md:block"
+        className="hidden rounded-xl border border-stone-200/80 bg-white p-4 md:col-start-2 md:block"
         aria-hidden="true"
       >
-        <div className="h-5 w-28 animate-pulse rounded bg-[#F0EEE9] motion-reduce:animate-none" />
+        <div className="h-5 w-28 animate-pulse rounded bg-stone-100 motion-reduce:animate-none" />
         <div className="mt-6 space-y-4">
           {[0, 1, 2, 3].map((item) => (
             <div key={item} className="space-y-2">
-              <div className="h-3 w-20 animate-pulse rounded bg-[#F0EEE9] motion-reduce:animate-none" />
-              <div className="h-[52px] w-full animate-pulse rounded-lg bg-[#F0EEE9] motion-reduce:animate-none" />
+              <div className="h-3 w-20 animate-pulse rounded bg-stone-100 motion-reduce:animate-none" />
+              <div className="h-[52px] w-full animate-pulse rounded-lg bg-stone-100 motion-reduce:animate-none" />
             </div>
           ))}
         </div>
@@ -176,18 +176,18 @@ function EmptySchedule({
   onCreate: () => void;
 }) {
   return (
-    <section className="rounded-xl border border-dashed border-[#DDD9D1] bg-[#FFFCF7] px-5 py-12 text-center">
-      <p className="font-semibold text-[#36342F]">
+    <section className="rounded-xl border border-dashed border-stone-200/80 bg-stone-50 px-5 py-12 text-center">
+      <p className="font-semibold text-stone-700">
         رزروی در بازهٔ پیش‌رو ثبت نشده است.
       </p>
-      <p className="mt-2 text-sm leading-6 text-[#77756F]">
+      <p className="mt-2 text-sm leading-6 text-stone-500">
         برای این روز، رزروی در برنامهٔ میزها دیده نمی‌شود.
       </p>
       {canBook ? (
         <Button
           type="button"
           onClick={onCreate}
-          className="mt-5 min-h-[52px] bg-[#E9A11B] px-5 font-semibold text-[#2B2418] hover:bg-[#D99110] focus-visible:ring-[#E9A11B]/45"
+          className="mt-5 min-h-[52px] bg-amber-500 px-5 font-semibold text-stone-900 hover:bg-amber-500 focus-visible:ring-amber-500/45"
         >
           رزرو جدید
         </Button>
@@ -198,13 +198,13 @@ function EmptySchedule({
 
 function DetailsPlaceholder({ canBook }: { canBook: boolean }) {
   return (
-    <section className="rounded-xl border border-dashed border-[#DDD9D1] bg-[#FFFCF7] p-6 text-center">
-      <p className="font-semibold text-[#36342F]">
+    <section className="rounded-xl border border-dashed border-stone-200/80 bg-stone-50 p-6 text-center">
+      <p className="font-semibold text-stone-700">
         {canBook
           ? "رزروی را انتخاب کنید یا رزرو جدید ثبت کنید"
           : "یک رزرو را انتخاب کنید"}
       </p>
-      <p className="mt-2 text-sm leading-6 text-[#77756F]">
+      <p className="mt-2 text-sm leading-6 text-stone-500">
         جزئیات مهمان و اقدام‌های مجاز رزرو در این بخش نمایش داده می‌شود.
       </p>
     </section>
@@ -231,34 +231,34 @@ function ReservationRow({
       className={
         "overflow-hidden rounded-xl border bg-white shadow-[0_1px_2px_rgba(37,37,34,0.03)] transition-colors motion-reduce:transition-none " +
         (selected
-          ? "border-[#E9A11B] ring-2 ring-[#E9A11B]/20"
+          ? "border-amber-500 ring-2 ring-amber-500/20"
           : overdue
-            ? "border-[#E9B9AF]"
-            : "border-[#EAE8E2]")
+            ? "border-destructive/30"
+            : "border-stone-200/80")
       }
     >
       <button
         type="button"
         onClick={onSelect}
         aria-pressed={selected}
-        className="min-h-[116px] w-full p-4 text-start outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#E9A11B]"
+        className="min-h-[116px] w-full p-4 text-start outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-500"
       >
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <time
               dateTime={reservation.reserved_at}
-              className="text-lg font-bold tabular-nums text-[#252522]"
+              className="text-lg font-bold tabular-nums text-stone-950"
               dir="ltr"
             >
               {tehranTime(reservation.reserved_at)}
             </time>
-            <p className="mt-1 truncate text-base font-semibold text-[#36342F]">
+            <p className="mt-1 truncate text-base font-semibold text-stone-700">
               {reservation.customer_name}
             </p>
           </div>
           <ReservationStatusBadge status={reservation.status} />
         </div>
-        <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-[#5E5B55]">
+        <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-stone-600">
           <span>{toPersianDigits(reservation.party_size)} نفر</span>
           <span>{toPersianDigits(reservation.duration_minutes)} دقیقه</span>
           <span>
@@ -268,7 +268,7 @@ function ReservationRow({
           </span>
         </div>
         {overdue ? (
-          <p className="mt-3 text-sm font-medium text-[#8A3126]">
+          <p className="mt-3 text-sm font-medium text-red-800">
             از زمان رزرو گذشته؛ احتمال عدم حضور
           </p>
         ) : null}
@@ -296,46 +296,46 @@ function ReservationDetails({
 
   return (
     <section
-      className="rounded-xl border border-[#EAE8E2] bg-white p-4 shadow-[0_1px_2px_rgba(37,37,34,0.03)]"
+      className="rounded-xl border border-stone-200/80 bg-white p-4 shadow-[0_1px_2px_rgba(37,37,34,0.03)]"
       aria-label={"جزئیات رزرو " + reservation.customer_name}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-xs font-medium text-[#77756F]">جزئیات رزرو</p>
-          <h2 className="mt-1 break-words text-xl font-bold text-[#252522]">
+          <p className="text-xs font-medium text-stone-500">جزئیات رزرو</p>
+          <h2 className="mt-1 break-words text-xl font-bold text-stone-950">
             {reservation.customer_name}
           </h2>
         </div>
         <ReservationStatusBadge status={reservation.status} />
       </div>
 
-      <dl className="mt-5 grid grid-cols-2 gap-3 border-y border-[#F0EFEB] py-4 text-sm">
+      <dl className="mt-5 grid grid-cols-2 gap-3 border-y border-stone-100 py-4 text-sm">
         <div>
-          <dt className="text-xs text-[#77756F]">تاریخ</dt>
-          <dd className="mt-1 font-semibold text-[#3C3A36]">
+          <dt className="text-xs text-stone-500">تاریخ</dt>
+          <dd className="mt-1 font-semibold text-stone-700">
             {toPersianDigits(
               formatJalali(reservation.reserved_at, { withMonthName: true }),
             )}
           </dd>
         </div>
         <div>
-          <dt className="text-xs text-[#77756F]">ساعت</dt>
+          <dt className="text-xs text-stone-500">ساعت</dt>
           <dd
-            className="mt-1 font-semibold tabular-nums text-[#3C3A36]"
+            className="mt-1 font-semibold tabular-nums text-stone-700"
             dir="ltr"
           >
             {tehranTime(reservation.reserved_at)}
           </dd>
         </div>
         <div>
-          <dt className="text-xs text-[#77756F]">تعداد نفرات</dt>
-          <dd className="mt-1 font-semibold text-[#3C3A36]">
+          <dt className="text-xs text-stone-500">تعداد نفرات</dt>
+          <dd className="mt-1 font-semibold text-stone-700">
             {toPersianDigits(reservation.party_size)} نفر
           </dd>
         </div>
         <div>
-          <dt className="text-xs text-[#77756F]">مدت</dt>
-          <dd className="mt-1 font-semibold text-[#3C3A36]">
+          <dt className="text-xs text-stone-500">مدت</dt>
+          <dd className="mt-1 font-semibold text-stone-700">
             {toPersianDigits(reservation.duration_minutes)} دقیقه
           </dd>
         </div>
@@ -343,43 +343,43 @@ function ReservationDetails({
 
       <dl className="mt-5 space-y-4 text-sm">
         <div>
-          <dt className="text-xs text-[#77756F]">تلفن</dt>
-          <dd className="mt-1 font-semibold text-[#3C3A36]" dir="ltr">
+          <dt className="text-xs text-stone-500">تلفن</dt>
+          <dd className="mt-1 font-semibold text-stone-700" dir="ltr">
             {reservation.customer_phone
               ? toPersianDigits(reservation.customer_phone)
               : "ثبت نشده"}
           </dd>
         </div>
         <div>
-          <dt className="text-xs text-[#77756F]">میز</dt>
-          <dd className="mt-1 font-semibold text-[#3C3A36]">
+          <dt className="text-xs text-stone-500">میز</dt>
+          <dd className="mt-1 font-semibold text-stone-700">
             {reservation.table_name
               ? "میز " + reservation.table_name
               : "بدون میز مشخص"}
           </dd>
         </div>
         <div>
-          <dt className="text-xs text-[#77756F]">یادداشت</dt>
-          <dd className="mt-1 break-words font-semibold leading-6 text-[#3C3A36]">
+          <dt className="text-xs text-stone-500">یادداشت</dt>
+          <dd className="mt-1 break-words font-semibold leading-6 text-stone-700">
             {reservation.note || "ثبت نشده"}
           </dd>
         </div>
       </dl>
 
       {overdue ? (
-        <p className="mt-5 rounded-lg border border-[#E9B9AF] bg-[#FFF7F5] px-3 py-2 text-sm font-medium text-[#8A3126]">
+        <p className="mt-5 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm font-medium text-red-800">
           از زمان رزرو گذشته است؛ در صورت لزوم عدم حضور مهمان را ثبت کنید.
         </p>
       ) : null}
 
       {reservation.status === "booked" ? (
-        <div className="mt-5 space-y-3 border-t border-[#F0EFEB] pt-4">
+        <div className="mt-5 space-y-3 border-t border-stone-100 pt-4">
           <Button
             type="button"
             size="lg"
             onClick={() => onAction(reservation.id, "seat")}
             disabled={pendingAction !== null}
-            className="min-h-[52px] w-full bg-[#E9A11B] font-semibold text-[#2B2418] hover:bg-[#D99110] focus-visible:ring-[#E9A11B]/45"
+            className="min-h-[52px] w-full bg-amber-500 font-semibold text-stone-900 hover:bg-amber-500 focus-visible:ring-amber-500/45"
           >
             {pendingAction === actionKey("seat")
               ? "در حال نشاندن…"
@@ -391,7 +391,7 @@ function ReservationDetails({
               variant="outline"
               onClick={() => onAction(reservation.id, "no_show")}
               disabled={pendingAction !== null}
-              className="min-h-[52px] border-[#E1DDD5] bg-[#FFFCF7] text-[#5E5B55] hover:bg-[#FFF5E5]"
+              className="min-h-[52px] border-stone-200/80 bg-stone-50 text-stone-600 hover:bg-amber-50"
             >
               {pendingAction === actionKey("no_show")
                 ? "در حال ثبت…"
@@ -402,7 +402,7 @@ function ReservationDetails({
               variant="outline"
               onClick={() => onAction(reservation.id, "cancel")}
               disabled={pendingAction !== null}
-              className="min-h-[52px] border-[#E9B9AF] bg-white text-[#8A3126] hover:bg-[#FFF0ED]"
+              className="min-h-[52px] border-destructive/30 bg-white text-red-800 hover:bg-red-50"
             >
               {pendingAction === actionKey("cancel")
                 ? "در حال لغو…"
@@ -438,7 +438,7 @@ function BookingForm({
 
   const fieldClass =
     inputClass +
-    " min-h-[52px] border-[#DDD9D1] bg-[#FFFEFC] text-[#36342F] focus-visible:border-[#E9A11B] focus-visible:ring-[#E9A11B]/30";
+    " min-h-[52px] border-stone-200/80 bg-stone-50 text-stone-700 focus-visible:border-amber-500 focus-visible:ring-amber-500/30";
 
   function buildReservedAt(): string | null {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
@@ -514,7 +514,7 @@ function BookingForm({
 
   return (
     <form
-      className="rounded-xl border border-[#EAE8E2] bg-white p-4 shadow-[0_1px_2px_rgba(37,37,34,0.03)]"
+      className="rounded-xl border border-stone-200/80 bg-white p-4 shadow-[0_1px_2px_rgba(37,37,34,0.03)]"
       onSubmit={(event) => {
         event.preventDefault();
         void submit(false);
@@ -522,8 +522,8 @@ function BookingForm({
       noValidate
     >
       <div className="mb-5">
-        <p className="text-xs font-medium text-[#77756F]">ثبت رزرو</p>
-        <h2 className="mt-1 text-xl font-bold text-[#252522]">رزرو جدید</h2>
+        <p className="text-xs font-medium text-stone-500">ثبت رزرو</p>
+        <h2 className="mt-1 text-xl font-bold text-stone-950">رزرو جدید</h2>
       </div>
       <ErrorBox>{error}</ErrorBox>
 
@@ -608,7 +608,7 @@ function BookingForm({
 
       {conflicts ? (
         <section
-          className="mb-4 rounded-lg border border-[#F0D39C] bg-[#FFF8EA] px-4 py-3 text-sm text-[#7B5100]"
+          className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"
           role="alert"
         >
           <p className="font-semibold">این میز در این بازه رزرو دیگری دارد:</p>
@@ -625,7 +625,7 @@ function BookingForm({
             variant="outline"
             onClick={() => void submit(true)}
             disabled={busy}
-            className="mt-3 min-h-[52px] border-[#D9AE5B] bg-white text-[#6E4800] hover:bg-[#FFF3DB]"
+            className="mt-3 min-h-[52px] border-amber-300 bg-white text-amber-900 hover:bg-amber-50"
           >
             به‌هرحال ثبت کن
           </Button>
@@ -636,7 +636,7 @@ function BookingForm({
         type="submit"
         size="lg"
         disabled={busy}
-        className="min-h-[52px] w-full bg-[#E9A11B] font-semibold text-[#2B2418] hover:bg-[#D99110] focus-visible:ring-[#E9A11B]/45"
+        className="min-h-[52px] w-full bg-amber-500 font-semibold text-stone-900 hover:bg-amber-500 focus-visible:ring-amber-500/45"
       >
         {busy ? "در حال ثبت…" : "ثبت رزرو"}
       </Button>
@@ -818,15 +818,15 @@ export function ReservationsManager({ canBook }: { canBook: boolean }) {
 
   return (
     <div className="space-y-4" dir="rtl">
-      <header className="rounded-xl border border-[#EAE8E2] bg-white p-4 shadow-[0_1px_2px_rgba(37,37,34,0.03)]">
+      <header className="rounded-xl border border-stone-200/80 bg-white p-4 shadow-[0_1px_2px_rgba(37,37,34,0.03)]">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
           <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-end sm:gap-5">
             <div className="min-w-0">
-              <h1 className="text-2xl font-bold text-[#252522]">رزروها</h1>
-              <p className="mt-1 text-sm text-[#77756F]">{scheduleLabel}</p>
+              <h1 className="text-2xl font-bold text-stone-950">رزروها</h1>
+              <p className="mt-1 text-sm text-stone-500">{scheduleLabel}</p>
             </div>
             <label className="block min-w-0 sm:w-56">
-              <span className="mb-1.5 flex items-center gap-1.5 text-sm font-medium text-[#5E5B55]">
+              <span className="mb-1.5 flex items-center gap-1.5 text-sm font-medium text-stone-600">
                 <CalendarDaysIcon className="size-4" aria-hidden="true" />
                 روز رزرو
               </span>
@@ -836,21 +836,21 @@ export function ReservationsManager({ canBook }: { canBook: boolean }) {
                   if (value) setSelectedDate(value);
                 }}
                 clearable={false}
-                className="min-h-[52px] border-[#DDD9D1] bg-[#FFFEFC] px-3 text-[#36342F] focus-visible:border-[#E9A11B] focus-visible:ring-[#E9A11B]/30"
+                className="min-h-[52px] border-stone-200/80 bg-stone-50 px-3 text-stone-700 focus-visible:border-amber-500 focus-visible:ring-amber-500/30"
               />
             </label>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
             <p
-              className="flex min-h-[44px] min-w-0 flex-1 items-center gap-2 text-sm text-[#5E5B55] sm:flex-none"
+              className="flex min-h-[44px] min-w-0 flex-1 items-center gap-2 text-sm text-stone-600 sm:flex-none"
               role="status"
               aria-live="polite"
             >
               <span
                 className={
                   "size-2.5 shrink-0 rounded-full " +
-                  (isOnline ? "bg-[#36B56A]" : "bg-[#D69217]")
+                  (isOnline ? "bg-emerald-500" : "bg-amber-500")
                 }
                 aria-hidden="true"
               />
@@ -860,7 +860,7 @@ export function ReservationsManager({ canBook }: { canBook: boolean }) {
               type="button"
               variant="outline"
               onClick={() => void load({ showRefresh: true })}
-              className="min-h-[52px] shrink-0 border-[#E1DDD5] bg-[#FFFCF7] px-4 text-[#3C3A36] hover:bg-[#FFF5E5]"
+              className="min-h-[52px] shrink-0 border-stone-200/80 bg-stone-50 px-4 text-stone-700 hover:bg-amber-50"
             >
               <RefreshCwIcon
                 className={
@@ -877,7 +877,7 @@ export function ReservationsManager({ canBook }: { canBook: boolean }) {
               <Button
                 type="button"
                 onClick={openNewReservation}
-                className="min-h-[52px] shrink-0 bg-[#E9A11B] px-5 font-semibold text-[#2B2418] hover:bg-[#D99110] focus-visible:ring-[#E9A11B]/45"
+                className="min-h-[52px] shrink-0 bg-amber-500 px-5 font-semibold text-stone-900 hover:bg-amber-500 focus-visible:ring-amber-500/45"
               >
                 رزرو جدید
               </Button>
@@ -888,7 +888,7 @@ export function ReservationsManager({ canBook }: { canBook: boolean }) {
 
       {loadError ? (
         <section
-          className="flex flex-col gap-3 rounded-xl border border-[#E9B9AF] bg-[#FFF7F5] p-4 text-[#8A3126] sm:flex-row sm:items-center sm:justify-between"
+          className="flex flex-col gap-3 rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-red-800 sm:flex-row sm:items-center sm:justify-between"
           role="alert"
         >
           <p className="text-sm font-medium">{loadError}</p>
@@ -896,7 +896,7 @@ export function ReservationsManager({ canBook }: { canBook: boolean }) {
             type="button"
             variant="outline"
             onClick={() => void load({ showRefresh: true })}
-            className="min-h-[48px] shrink-0 border-[#E9B9AF] bg-white text-[#8A3126] hover:bg-[#FFF0ED]"
+            className="min-h-[48px] shrink-0 border-destructive/30 bg-white text-red-800 hover:bg-red-50"
           >
             تلاش دوباره
           </Button>
@@ -909,15 +909,15 @@ export function ReservationsManager({ canBook }: { canBook: boolean }) {
         <ReservationSkeleton />
       ) : (
         <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_20rem] lg:grid-cols-[minmax(0,1fr)_23rem]">
-          <section className="min-w-0 rounded-xl border border-[#EAE8E2] bg-[#FFFEFC] p-3 sm:p-4 md:col-start-1">
+          <section className="min-w-0 rounded-xl border border-stone-200/80 bg-stone-50 p-3 sm:p-4 md:col-start-1">
             <div className="mb-4 flex items-center justify-between gap-3">
               <div className="min-w-0">
-                <h2 className="font-bold text-[#36342F]">برنامهٔ روز</h2>
-                <p className="mt-1 text-sm text-[#77756F]">
+                <h2 className="font-bold text-stone-700">برنامهٔ روز</h2>
+                <p className="mt-1 text-sm text-stone-500">
                   به‌ترتیب ساعت رزرو
                 </p>
               </div>
-              <span className="shrink-0 rounded-md bg-[#F4F2ED] px-2.5 py-1 text-xs font-semibold text-[#5E5B55]">
+              <span className="shrink-0 rounded-md bg-stone-100 px-2.5 py-1 text-xs font-semibold text-stone-600">
                 {toPersianDigits(reservations.length)} رزرو
               </span>
             </div>

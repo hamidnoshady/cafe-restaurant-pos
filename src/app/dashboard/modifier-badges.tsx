@@ -37,15 +37,15 @@ export const MODIFIER_TONE: Record<
   }
 > = {
   amber: {
-    chip: "border-[#F2D097] bg-[#FFF9EE] text-[#5E5B55]",
-    chipPrice: "text-[#B97905]",
-    caption: "text-[#8B8A85]",
+    chip: "border-amber-200 bg-amber-50 text-stone-600",
+    chipPrice: "text-amber-700",
+    caption: "text-stone-400",
     option:
-      "border-[#EAE8E2] bg-white text-[#5E5B55] hover:border-[#F2D097] hover:bg-[#FFF9EE]",
-    optionSelected: "border-[#E9A11B] bg-[#FFF1D8] text-[#9B6700]",
-    accent: "text-[#B97905]",
-    surface: "border-[#F2D097]/60 bg-[#FFF9EE]",
-    cta: "bg-[#E9A11B] text-[#252522] hover:bg-[#DB9612] focus-visible:ring-[#E9A11B]/45",
+      "border-stone-200/80 bg-white text-stone-600 hover:border-amber-200 hover:bg-amber-50",
+    optionSelected: "border-amber-500 bg-amber-100 text-amber-700",
+    accent: "text-amber-700",
+    surface: "border-amber-200/60 bg-amber-50",
+    cta: "bg-amber-500 text-stone-950 hover:bg-amber-500 focus-visible:ring-amber-500/45",
   },
   brand: {
     chip: "border-primary/25 bg-primary/5 text-foreground",

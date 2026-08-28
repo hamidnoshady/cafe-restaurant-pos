@@ -1,57 +1,37 @@
+/*
+ * Ledger workspace chrome — STRUCTURAL ONLY.
+ *
+ * Sizing and rhythm for the accounting screens: touch-height inputs and
+ * buttons, generous radii, the mobile boxed-table treatment, scrollbar
+ * styling. This module deliberately sets (almost) no colors: an earlier
+ * revision repainted the canon from inside the workspace — amber primary
+ * buttons, amber input focus, paper-tinted cards, every amber/emerald class
+ * forced to one shade — which is the old dialect the design system banned.
+ * Stripped, so the shared primitives render exactly as everywhere else:
+ * teal <Button> fills, teal focus rings, white cards, native token shades
+ * (docs/design-system.md). The only color rules left restate canon values
+ * for raw table elements that carry no utility classes.
+ */
 .content {
   min-width: 0;
-  color: #252522;
-}
-
-/* Shared accounting surfaces: scoped to the ledger workspace only. */
-.content :global(.rounded-2xl.bg-card) {
-  border: 1px solid #eae8e2;
-  background: #fffefc;
-  box-shadow: 0 1px 2px rgb(41 37 36 / 0.03);
-}
-
-.content :global(.rounded-lg.border),
-.content :global(.rounded-xl.border) {
-  border-color: #eae8e2;
-  background: #fffefc;
+  color: var(--color-stone-950);
 }
 
 .content :global(h2) {
-  color: #252522;
   font-size: 1.125rem;
   font-weight: 700;
   letter-spacing: -0.01em;
 }
 
 .content :global(h3) {
-  color: #252522;
   font-weight: 700;
-}
-
-.content :global(p.text-muted-foreground),
-.content :global(span.text-muted-foreground),
-.content :global(td.text-muted-foreground),
-.content :global(th.text-muted-foreground) {
-  color: #77756f;
 }
 
 .content :global(input:not([type="checkbox"])),
 .content :global(select),
 .content :global(textarea) {
   min-height: 48px;
-  border-color: #e2dfd8;
   border-radius: 0.875rem;
-  background: #fffefc;
-  color: #252522;
-  box-shadow: none;
-}
-
-.content :global(input:not([type="checkbox"]):focus),
-.content :global(select:focus),
-.content :global(textarea:focus) {
-  border-color: #d99a28;
-  outline: 3px solid rgb(233 161 27 / 0.2);
-  outline-offset: 1px;
 }
 
 .content :global(button) {
@@ -59,34 +39,18 @@
   border-radius: 0.75rem;
 }
 
-.content :global(button.bg-primary) {
-  background: #c98514;
-  color: #fff;
-}
-
-.content :global(button.bg-primary:hover:not(:disabled)) {
-  background: #ab700c;
-}
-
-.content :global(button.border-input),
-.content :global(button.bg-background) {
-  border-color: #e2dfd8;
-  background: #fffefc;
-  color: #3c3a36;
-}
-
-.content :global(button:focus-visible) {
-  outline: 3px solid rgb(233 161 27 / 0.35);
-  outline-offset: 2px;
-}
-
+/*
+ * Raw table elements carry no utility classes, so the canon's table
+ * treatment (§Tables) is restated here in its own token values: stone-50
+ * header wash, stone-100 hairlines, stone-50 row-hover wash.
+ */
 .content :global(table) {
-  color: #3c3a36;
+  color: var(--color-stone-700);
 }
 
 .content :global(thead) {
-  background: #fcfbf8;
-  color: #77756f;
+  background: var(--color-stone-50);
+  color: var(--color-stone-500);
 }
 
 .content :global(th) {
@@ -95,51 +59,24 @@
 
 .content :global(td),
 .content :global(th) {
-  border-color: #f0eee9;
+  border-color: var(--color-stone-100);
 }
 
 .content :global(tbody tr:hover) {
-  background: #fffaf0;
+  background: var(--color-stone-50);
 }
 
 .content :global(tfoot) {
-  background: #fcfbf8;
-  color: #252522;
-}
-
-.content :global(.bg-primary\/10) {
-  background: #fff1d8;
-}
-
-.content :global(.text-primary) {
-  color: #9b6700;
-}
-
-.content :global(.text-emerald-700),
-.content :global(.text-emerald-800) {
-  color: #1e7a45;
-}
-
-.content :global(.bg-emerald-100) {
-  background: #e7f6ec;
-}
-
-.content :global(.bg-amber-500\/10),
-.content :global(.bg-amber-100) {
-  background: #fff1d8;
-}
-
-.content :global(.text-amber-700),
-.content :global(.text-amber-800) {
-  color: #9b6700;
+  background: var(--color-stone-50);
+  color: var(--color-stone-950);
 }
 
 .content :global(.divide-y > :not([hidden]) ~ :not([hidden])) {
-  border-color: #f0eee9;
+  border-color: var(--color-stone-100);
 }
 
 .content :global(.overflow-x-auto) {
-  scrollbar-color: #d8d3c8 transparent;
+  scrollbar-color: var(--color-stone-300) transparent;
   scrollbar-width: thin;
 }
 
@@ -149,7 +86,7 @@
   }
 
   .content :global(.overflow-x-auto) {
-    border: 1px solid #f0eee9;
+    border: 1px solid var(--color-stone-100);
     border-radius: 0.875rem;
   }
 

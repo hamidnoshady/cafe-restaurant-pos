@@ -46,7 +46,7 @@ const LEDGER_KEYS = new Set(["profit_and_loss", "balance_sheet", "cash_flow", "f
 const COMPARABLE_LEDGER_KEYS = new Set(["profit_and_loss", "balance_sheet", "cash_flow"]);
 const CONTROL_CLASS = [
   inputClass,
-  "min-h-[52px] border-[#DEDAD2] bg-white text-[#252522]",
+  "min-h-[52px] border-stone-200/80 bg-white text-stone-950",
 ].join(" ");
 
 type LedgerReportData =
@@ -166,7 +166,7 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
         role="status"
         aria-live="polite"
         aria-label="در حال بارگذاری گزارش‌های آماده"
-        className="rounded-2xl border border-[#EAE8E2] bg-white px-5 py-8 text-sm text-[#77756F] shadow-[0_1px_2px_rgb(41_37_36/0.03)]"
+        className="rounded-2xl border border-stone-200/80 bg-white px-5 py-8 text-sm text-stone-500 shadow-[0_1px_2px_rgb(41_37_36/0.03)]"
       >
         در حال بارگذاری…
       </section>
@@ -177,15 +177,15 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
     <div className="grid gap-4 md:grid-cols-[minmax(12.5rem,15rem)_minmax(0,1fr)] md:items-start lg:gap-5">
       <aside
         aria-labelledby="prepared-reports-heading"
-        className="min-w-0 rounded-2xl border border-[#EAE8E2] bg-white p-3 shadow-[0_1px_2px_rgb(41_37_36/0.03)] md:sticky md:top-5"
+        className="min-w-0 rounded-2xl border border-stone-200/80 bg-white p-3 shadow-[0_1px_2px_rgb(41_37_36/0.03)] md:sticky md:top-5"
       >
-        <div className="border-b border-[#F0EEE9] px-2 pb-3">
-          <p className="text-xs font-semibold text-[#9B6700]">
+        <div className="border-b border-stone-100 px-2 pb-3">
+          <p className="text-xs font-semibold text-amber-700">
             کتابخانهٔ گزارش
           </p>
           <h2
             id="prepared-reports-heading"
-            className="mt-1 font-bold text-[#252522]"
+            className="mt-1 font-bold text-stone-950"
           >
             گزارش‌های آماده
           </h2>
@@ -205,10 +205,10 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
                   aria-pressed={isSelected}
                   onClick={() => select(report)}
                   className={[
-                    "min-h-[52px] shrink-0 rounded-xl border px-3 text-start text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 md:w-full",
+                    "min-h-[52px] shrink-0 rounded-xl border px-3 text-start text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 md:w-full",
                     isSelected
-                      ? "border-[#F0D7A8] bg-[#FFF1D8] font-bold text-[#8A5C00]"
-                      : "border-transparent text-[#5E5B55] hover:border-[#EAE8E2] hover:bg-[#FCFBF8] hover:text-[#252522]",
+                      ? "border-amber-200 bg-amber-100 font-bold text-amber-800"
+                      : "border-transparent text-stone-600 hover:border-stone-200/80 hover:bg-stone-50 hover:text-stone-950",
                   ].join(" ")}
                 >
                   {report.label}
@@ -222,21 +222,21 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
       <section
         aria-live="polite"
         aria-labelledby="prepared-report-preview-heading"
-        className="min-w-0 rounded-2xl border border-[#EAE8E2] bg-white p-4 shadow-[0_1px_2px_rgb(41_37_36/0.03)] sm:p-5"
+        className="min-w-0 rounded-2xl border border-stone-200/80 bg-white p-4 shadow-[0_1px_2px_rgb(41_37_36/0.03)] sm:p-5"
       >
         {!selected ? (
-          <div className="flex min-h-48 items-center rounded-xl border border-dashed border-[#DEDAD2] bg-[#FCFBF8] px-5 text-sm text-[#77756F]">
+          <div className="flex min-h-48 items-center rounded-xl border border-dashed border-stone-200/80 bg-stone-50 px-5 text-sm text-stone-500">
             یک گزارش را از فهرست انتخاب کنید.
           </div>
         ) : (
           <div className="space-y-5">
-            <header className="border-b border-[#F0EEE9] pb-5">
-              <p className="text-xs font-semibold text-[#9B6700]">
+            <header className="border-b border-stone-100 pb-5">
+              <p className="text-xs font-semibold text-amber-700">
                 پیش‌نمایش گزارش
               </p>
               <h2
                 id="prepared-report-preview-heading"
-                className="mt-1 text-lg font-bold text-[#252522]"
+                className="mt-1 text-lg font-bold text-stone-950"
               >
                 {selected.label}
               </h2>
@@ -248,7 +248,7 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
                   {hasDateColumn || LEDGER_KEYS.has(selected.key) ? (
                     <>
                       <label className="block">
-                        <span className="mb-1.5 block text-xs font-medium text-[#77756F]">
+                        <span className="mb-1.5 block text-xs font-medium text-stone-500">
                           از تاریخ
                         </span>
                         <JalaliDatePicker
@@ -259,7 +259,7 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
                         />
                       </label>
                       <label className="block">
-                        <span className="mb-1.5 block text-xs font-medium text-[#77756F]">
+                        <span className="mb-1.5 block text-xs font-medium text-stone-500">
                           تا تاریخ
                         </span>
                         <JalaliDatePicker
@@ -289,7 +289,7 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
 
                   {selected.chartType ? (
                     <label className="block">
-                      <span className="mb-1.5 block text-xs font-medium text-[#77756F]">
+                      <span className="mb-1.5 block text-xs font-medium text-stone-500">
                         نوع نمایش
                       </span>
                       <SearchableSelect
@@ -309,12 +309,12 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
               ) : null}
 
               {COMPARABLE_LEDGER_KEYS.has(selected.key) ? (
-                <label className="mt-3 flex min-h-[52px] cursor-pointer items-center gap-3 rounded-xl border border-[#EEECE7] bg-[#FCFBF8] px-3 text-sm text-[#5E5B55] sm:w-fit">
+                <label className="mt-3 flex min-h-[52px] cursor-pointer items-center gap-3 rounded-xl border border-stone-200/80 bg-stone-50 px-3 text-sm text-stone-600 sm:w-fit">
                   <input
                     type="checkbox"
                     checked={compare}
                     onChange={(event) => setCompare(event.target.checked)}
-                    className="size-5 rounded border-[#B7B4AD] text-[#C98712] focus-visible:ring-[#E9A11B]/45"
+                    className="size-5 rounded border-stone-400 text-amber-600 focus-visible:ring-amber-500/45"
                   />
                   مقایسه با دورهٔ قبل
                 </label>
@@ -350,7 +350,7 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
               ) : (
                 <p
                   role="status"
-                  className="rounded-xl bg-[#FCFBF8] px-4 py-8 text-center text-sm text-[#77756F]"
+                  className="rounded-xl bg-stone-50 px-4 py-8 text-center text-sm text-stone-500"
                 >
                   در حال بارگذاری…
                 </p>
@@ -358,7 +358,7 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
             ) : rows === null ? (
               <p
                 role="status"
-                className="rounded-xl bg-[#FCFBF8] px-4 py-8 text-center text-sm text-[#77756F]"
+                className="rounded-xl bg-stone-50 px-4 py-8 text-center text-sm text-stone-500"
               >
                 در حال بارگذاری…
               </p>
@@ -376,7 +376,7 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
               </div>
             )}
 
-            <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-[#F0EEE9] pt-4">
+            <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-stone-100 pt-4">
               {/* food_cost_variance has no export kind yet (see ExportRequest["kind"]) — a v1 scoping decision, not an oversight. */}
               {selected.key !== "food_cost_variance" ? (
                 <ExportButtons
@@ -411,7 +411,7 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
                 <button
                   type="button"
                   onClick={explainSelectedReport}
-                  className="inline-flex min-h-[44px] items-center gap-1.5 rounded-xl border border-[#E6D4AF] bg-[#FFF8EA] px-3 text-sm font-semibold text-[#8A5C00] transition-colors hover:bg-[#FFF1D8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45"
+                  className="inline-flex min-h-[44px] items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 px-3 text-sm font-semibold text-amber-800 transition-colors hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45"
                 >
                   <SparklesIcon className="size-4" /> توضیح این عدد
                 </button>

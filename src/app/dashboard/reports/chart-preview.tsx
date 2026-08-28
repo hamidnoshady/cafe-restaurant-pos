@@ -42,12 +42,12 @@ export function DataTable({
 }) {
   return (
     <section aria-label="داده‌های گزارش">
-      <div className="hidden overflow-hidden rounded-xl border border-[#EEECE7] bg-white sm:block">
+      <div className="hidden overflow-hidden rounded-xl border border-stone-200/80 bg-white sm:block">
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
             <caption className="sr-only">داده‌های گزارش</caption>
-            <thead className="bg-[#FCFBF8] text-[#77756F]">
-              <tr className="border-b border-[#EEECE7]">
+            <thead className="bg-stone-50 text-stone-500">
+              <tr className="border-b border-stone-200/80">
                 <th
                   scope="col"
                   className="px-4 py-3 text-start text-xs font-semibold"
@@ -66,12 +66,12 @@ export function DataTable({
               {data.map((datum, index) => (
                 <tr
                   key={index}
-                  className="border-b border-[#F0EEE9] last:border-b-0"
+                  className="border-b border-stone-100 last:border-b-0"
                 >
-                  <td className="px-4 py-3.5 font-medium text-[#252522]">
+                  <td className="px-4 py-3.5 font-medium text-stone-950">
                     {datum.label}
                   </td>
-                  <td className="px-4 py-3.5 tabular-nums text-[#252522]">
+                  <td className="px-4 py-3.5 tabular-nums text-stone-950">
                     {toPersianDigits(
                       Math.round(datum.value).toLocaleString("en-US"),
                     )}
@@ -82,7 +82,7 @@ export function DataTable({
                 <tr>
                   <td
                     colSpan={2}
-                    className="px-4 py-10 text-center text-sm text-[#77756F]"
+                    className="px-4 py-10 text-center text-sm text-stone-500"
                   >
                     داده‌ای یافت نشد.
                   </td>
@@ -97,22 +97,22 @@ export function DataTable({
         {data.map((datum, index) => (
           <li
             key={index}
-            className="rounded-xl border border-[#EEECE7] bg-[#FFFEFC] p-4"
+            className="rounded-xl border border-stone-200/80 bg-stone-50 p-4"
           >
             <dl className="space-y-2">
               <div>
-                <dt className="text-xs font-medium text-[#77756F]">
+                <dt className="text-xs font-medium text-stone-500">
                   {columns[0]}
                 </dt>
-                <dd className="mt-1 break-words font-semibold text-[#252522]">
+                <dd className="mt-1 break-words font-semibold text-stone-950">
                   {datum.label}
                 </dd>
               </div>
-              <div className="border-t border-[#F0EEE9] pt-2">
-                <dt className="text-xs font-medium text-[#77756F]">
+              <div className="border-t border-stone-100 pt-2">
+                <dt className="text-xs font-medium text-stone-500">
                   {columns[1]}
                 </dt>
-                <dd className="mt-1 tabular-nums font-bold text-[#252522]">
+                <dd className="mt-1 tabular-nums font-bold text-stone-950">
                   {toPersianDigits(
                     Math.round(datum.value).toLocaleString("en-US"),
                   )}
@@ -122,7 +122,7 @@ export function DataTable({
           </li>
         ))}
         {data.length === 0 ? (
-          <li className="rounded-xl border border-dashed border-[#DEDAD2] bg-[#FCFBF8] px-4 py-10 text-center text-sm text-[#77756F]">
+          <li className="rounded-xl border border-dashed border-stone-200/80 bg-stone-50 px-4 py-10 text-center text-sm text-stone-500">
             داده‌ای یافت نشد.
           </li>
         ) : null}

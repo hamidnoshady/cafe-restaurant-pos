@@ -58,11 +58,11 @@ export function usePaymentMethods(): {
   return { methods, loaded, reload };
 }
 
-const CHIP_ON = "border-[#F2D097] bg-[#FFF1D8] text-[#9B6700]";
-const CHIP_OFF = "border-[#EAE8E2] text-[#5E5B55] hover:bg-[#FCFCFA]";
+const CHIP_ON = "border-amber-200 bg-amber-100 text-amber-700";
+const CHIP_OFF = "border-stone-200/80 text-stone-600 hover:bg-stone-50";
 
 const AMOUNT_INPUT =
-  "h-10 w-full min-w-0 rounded-lg border border-[#EAE8E2] bg-white px-2 text-sm tabular-nums outline-none focus-visible:border-[#E9A11B] focus-visible:ring-2 focus-visible:ring-[#E9A11B]/30";
+  "h-10 w-full min-w-0 rounded-lg border border-stone-200/80 bg-white px-2 text-sm tabular-nums outline-none focus-visible:border-amber-500 focus-visible:ring-2 focus-visible:ring-amber-500/30";
 
 export interface PaymentWaysProps {
   methods: PaymentMethodView[];
@@ -116,7 +116,7 @@ export function PaymentWays({ methods, draft, onChange, due, disabled, idPrefix 
   return (
     <div>
       <div className="mb-2 flex items-center justify-between gap-2">
-        <p className="text-xs font-bold text-[#5E5B55]">روش دریافت وجه</p>
+        <p className="text-xs font-bold text-stone-600">روش دریافت وجه</p>
         <button
           type="button"
           onClick={toggleSplit}
@@ -141,7 +141,7 @@ export function PaymentWays({ methods, draft, onChange, due, disabled, idPrefix 
               onClick={() => chooseWay(method.id)}
               disabled={disabled}
               className={
-                "flex min-h-14 items-center justify-center gap-2 rounded-xl border px-2 text-center text-sm font-bold transition duration-200 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 disabled:opacity-55 motion-reduce:transition-none " +
+                "flex min-h-14 items-center justify-center gap-2 rounded-xl border px-2 text-center text-sm font-bold transition duration-200 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 disabled:opacity-55 motion-reduce:transition-none " +
                 (selected ? CHIP_ON : CHIP_OFF)
               }
             >
@@ -152,13 +152,13 @@ export function PaymentWays({ methods, draft, onChange, due, disabled, idPrefix 
         })}
       </div>
       {methods.length === 0 ? (
-        <p className="mt-2 text-xs text-[#8B8A85]">روشی برای دریافت وجه تعریف نشده است.</p>
+        <p className="mt-2 text-xs text-stone-400">روشی برای دریافت وجه تعریف نشده است.</p>
       ) : null}
 
       {draft.split ? (
-        <div className="mt-3 space-y-2 rounded-xl border border-[#EAE8E2] bg-[#FCFCFA] p-2">
+        <div className="mt-3 space-y-2 rounded-xl border border-stone-200/80 bg-stone-50 p-2">
           {draft.rows.length === 0 ? (
-            <p className="px-1 py-2 text-xs text-[#8B8A85]">
+            <p className="px-1 py-2 text-xs text-stone-400">
               یکی از روش‌های بالا را بزنید تا سهم آن از مبلغ اضافه شود.
             </p>
           ) : null}
@@ -167,7 +167,7 @@ export function PaymentWays({ methods, draft, onChange, due, disabled, idPrefix 
             return (
               <div key={row.key} className="space-y-1">
                 <div className="flex items-center gap-2">
-                  <span className="min-w-0 flex-1 truncate text-xs font-bold text-[#252522]">
+                  <span className="min-w-0 flex-1 truncate text-xs font-bold text-stone-950">
                     {method?.name ?? "—"}
                   </span>
                   <input
@@ -185,7 +185,7 @@ export function PaymentWays({ methods, draft, onChange, due, disabled, idPrefix 
                     type="button"
                     onClick={() => removeRow(row.key)}
                     disabled={disabled}
-                    className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-[#EAE8E2] text-[#8B8A85] hover:bg-white disabled:opacity-55"
+                    className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-stone-200/80 text-stone-400 hover:bg-white disabled:opacity-55"
                     aria-label={`حذف ${method?.name ?? ""}`}
                   >
                     <XIcon className="size-4" aria-hidden="true" />
@@ -206,16 +206,16 @@ export function PaymentWays({ methods, draft, onChange, due, disabled, idPrefix 
             );
           })}
 
-          <div className="flex items-center justify-between border-t border-[#EAE8E2] pt-2 text-xs font-bold">
-            <span className="text-[#5E5B55]">
+          <div className="flex items-center justify-between border-t border-stone-200/80 pt-2 text-xs font-bold">
+            <span className="text-stone-600">
               {remaining > 0 ? "باقی‌مانده" : remaining < 0 ? "مازاد (بازگشت به مشتری)" : "تسویه شد"}
             </span>
-            <span className={remaining === 0 ? "text-[#2E7D32]" : "text-[#B3261E]"}>
+            <span className={remaining === 0 ? "text-emerald-700" : "text-destructive"}>
               {money.format(Math.abs(remaining))}
             </span>
           </div>
           {draft.rows.length > 0 && remaining > 0 ? (
-            <p className="flex items-center gap-1 text-[11px] text-[#8B8A85]">
+            <p className="flex items-center gap-1 text-[11px] text-stone-400">
               <PlusIcon className="size-3" aria-hidden="true" />
               روش دیگری را از بالا بزنید تا {money.format(remaining)} باقی‌مانده با آن دریافت شود.
             </p>

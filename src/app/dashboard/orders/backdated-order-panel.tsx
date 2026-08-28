@@ -174,27 +174,27 @@ export function BackdatedOrderPanel() {
   return (
     <div className="flex flex-col gap-4">
       <section className={`${CARD} p-4`}>
-        <h2 className="text-sm font-bold text-[#252522]">ثبت سفارش گذشته</h2>
-        <p className="mt-1 text-xs leading-6 text-[#5E5B55]">
+        <h2 className="text-sm font-bold text-stone-950">ثبت سفارش گذشته</h2>
+        <p className="mt-1 text-xs leading-6 text-stone-600">
           فروشی که قبلاً انجام شده — شبی که سیستم قطع بود، یا فروش پیش از نصب. سفارش با همان تاریخ در
           گزارش‌ها، دفتر کل و انبار ثبت می‌شود، نه با تاریخ امروز.
         </p>
 
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <label className="flex flex-col gap-1.5">
-            <span className="text-xs font-semibold text-[#5E5B55]">تاریخ فروش</span>
+            <span className="text-xs font-semibold text-stone-600">تاریخ فروش</span>
             <div className={OPS_INPUT}>
               <JalaliDatePicker
                 value={occurredOn}
                 onChange={setOccurredOn}
                 placeholder="انتخاب روز"
-                className="min-h-10 w-full min-w-0 bg-transparent text-sm text-[#252522] outline-none"
+                className="min-h-10 w-full min-w-0 bg-transparent text-sm text-stone-950 outline-none"
               />
             </div>
           </label>
 
           <label className="flex flex-col gap-1.5">
-            <span className="text-xs font-semibold text-[#5E5B55]">ساعت فروش (به وقت شعبه)</span>
+            <span className="text-xs font-semibold text-stone-600">ساعت فروش (به وقت شعبه)</span>
             <input
               type="time"
               value={occurredTime}
@@ -204,7 +204,7 @@ export function BackdatedOrderPanel() {
           </label>
 
           <label className="flex flex-col gap-1.5">
-            <span className="text-xs font-semibold text-[#5E5B55]">نوع سفارش</span>
+            <span className="text-xs font-semibold text-stone-600">نوع سفارش</span>
             <select
               value={type}
               onChange={(event) => setType(event.target.value as typeof type)}
@@ -217,7 +217,7 @@ export function BackdatedOrderPanel() {
           </label>
 
           <label className="flex flex-col gap-1.5">
-            <span className="text-xs font-semibold text-[#5E5B55]">روش پرداخت</span>
+            <span className="text-xs font-semibold text-stone-600">روش پرداخت</span>
             <select
               value={methodId}
               onChange={(event) => setMethodId(event.target.value)}
@@ -233,7 +233,7 @@ export function BackdatedOrderPanel() {
 
           {selectedMethod?.requiresReference && (
             <label className="flex flex-col gap-1.5">
-              <span className="text-xs font-semibold text-[#5E5B55]">شمارهٔ پیگیری</span>
+              <span className="text-xs font-semibold text-stone-600">شمارهٔ پیگیری</span>
               <input
                 value={reference}
                 onChange={(event) => setReference(event.target.value)}
@@ -245,9 +245,9 @@ export function BackdatedOrderPanel() {
         </div>
 
         <div className="mt-4 flex flex-col gap-2">
-          <span className="text-xs font-semibold text-[#5E5B55]">اقلام فاکتور</span>
+          <span className="text-xs font-semibold text-stone-600">اقلام فاکتور</span>
           {lines.length === 0 ? (
-            <p className="rounded-xl border border-dashed border-[#EAE8E2] p-3 text-xs text-[#8D8A82]">
+            <p className="rounded-xl border border-dashed border-stone-200/80 p-3 text-xs text-stone-500">
               هنوز قلمی اضافه نشده است.
             </p>
           ) : (
@@ -257,10 +257,10 @@ export function BackdatedOrderPanel() {
                 return (
                   <li
                     key={line.menuItemId}
-                    className="flex items-center gap-2 rounded-xl border border-[#EAE8E2] bg-[#FCFCFA] p-2"
+                    className="flex items-center gap-2 rounded-xl border border-stone-200/80 bg-stone-50 p-2"
                   >
-                    <span className="min-w-0 flex-1 truncate text-sm text-[#252522]">{item?.name ?? "—"}</span>
-                    <span className="text-xs text-[#8D8A82]">{money.format(Number(item?.price ?? 0))}</span>
+                    <span className="min-w-0 flex-1 truncate text-sm text-stone-950">{item?.name ?? "—"}</span>
+                    <span className="text-xs text-stone-500">{money.format(Number(item?.price ?? 0))}</span>
                     <button
                       type="button"
                       aria-label="کاهش تعداد"
@@ -269,7 +269,7 @@ export function BackdatedOrderPanel() {
                     >
                       −
                     </button>
-                    <span className="w-8 text-center text-sm font-bold text-[#252522]">
+                    <span className="w-8 text-center text-sm font-bold text-stone-950">
                       {toPersianDigits(line.quantity)}
                     </span>
                     <button
@@ -320,8 +320,8 @@ export function BackdatedOrderPanel() {
         </div>
 
         <label className="mt-4 flex flex-col gap-1.5">
-          <span className="text-xs font-semibold text-[#5E5B55]">
-            دلیل ثبت با تأخیر <span className="text-[#9E4437]">*</span>
+          <span className="text-xs font-semibold text-stone-600">
+            دلیل ثبت با تأخیر <span className="text-destructive">*</span>
           </span>
           <input
             value={reason}
@@ -332,23 +332,23 @@ export function BackdatedOrderPanel() {
         </label>
 
         <label className="mt-3 flex flex-col gap-1.5">
-          <span className="text-xs font-semibold text-[#5E5B55]">یادداشت سفارش (اختیاری)</span>
+          <span className="text-xs font-semibold text-stone-600">یادداشت سفارش (اختیاری)</span>
           <input value={note} onChange={(event) => setNote(event.target.value)} className={OPS_INPUT} />
         </label>
 
         {lines.length > 0 && (
-          <p className="mt-3 text-xs text-[#5E5B55]">
+          <p className="mt-3 text-xs text-stone-600">
             جمع اقلام پیش از مالیات و تخفیف: <b>{money.format(estimate)}</b>
           </p>
         )}
 
         {error && (
-          <p className="mt-3 rounded-xl border border-[#E5CCC5] bg-[#FFF7F4] p-3 text-xs text-[#9E4437]">
+          <p className="mt-3 rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive">
             {error}
           </p>
         )}
         {info && (
-          <p className="mt-3 rounded-xl border border-[#EAE8E2] bg-[#FCFCFA] p-3 text-xs text-[#252522]">
+          <p className="mt-3 rounded-xl border border-stone-200/80 bg-stone-50 p-3 text-xs text-stone-950">
             {info}
           </p>
         )}
@@ -364,23 +364,23 @@ export function BackdatedOrderPanel() {
       </section>
 
       <section className={`${CARD} p-4`}>
-        <h3 className="text-sm font-bold text-[#252522]">آخرین سفارش‌های گذشته‌ای که ثبت شده</h3>
+        <h3 className="text-sm font-bold text-stone-950">آخرین سفارش‌های گذشته‌ای که ثبت شده</h3>
         {entries.length === 0 ? (
-          <p className="mt-2 text-xs text-[#8D8A82]">هنوز چیزی با تأخیر ثبت نشده است.</p>
+          <p className="mt-2 text-xs text-stone-500">هنوز چیزی با تأخیر ثبت نشده است.</p>
         ) : (
           <ul className="mt-3 flex flex-col gap-2">
             {entries.map((entry) => (
-              <li key={entry.id} className="rounded-xl border border-[#EAE8E2] bg-[#FCFCFA] p-3 text-xs">
+              <li key={entry.id} className="rounded-xl border border-stone-200/80 bg-stone-50 p-3 text-xs">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="font-bold text-[#252522]">
+                  <span className="font-bold text-stone-950">
                     فاکتور {toPersianDigits(entry.orderNumber)} — {money.format(entry.total)}
                   </span>
-                  <span className="text-[#5E5B55]">
+                  <span className="text-stone-600">
                     روز کاری {toPersianDigits(formatJalali(entry.entryDate))}
                   </span>
                 </div>
-                <p className="mt-1 text-[#5E5B55]">{entry.reason}</p>
-                <p className="mt-1 text-[#8D8A82]">
+                <p className="mt-1 text-stone-600">{entry.reason}</p>
+                <p className="mt-1 text-stone-500">
                   ثبت‌شده در {toPersianDigits(formatJalali(entry.recordedAt.slice(0, 10)))}
                   {entry.recordedByName ? ` توسط ${entry.recordedByName}` : ""}
                 </p>

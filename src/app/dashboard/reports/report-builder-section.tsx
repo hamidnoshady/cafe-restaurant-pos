@@ -45,7 +45,7 @@ const AGG_LABELS: Record<Aggregation, string> = {
 };
 const CONTROL_CLASS = [
   inputClass,
-  "min-h-[52px] border-[#DEDAD2] bg-white text-[#252522]",
+  "min-h-[52px] border-stone-200/80 bg-white text-stone-950",
 ].join(" ");
 
 export function ReportBuilderSection() {
@@ -195,7 +195,7 @@ export function ReportBuilderSection() {
         role="status"
         aria-live="polite"
         aria-label="در حال بارگذاری گزارش‌ساز"
-        className="rounded-2xl border border-[#EAE8E2] bg-white px-5 py-8 text-sm text-[#77756F] shadow-[0_1px_2px_rgb(41_37_36/0.03)]"
+        className="rounded-2xl border border-stone-200/80 bg-white px-5 py-8 text-sm text-stone-500 shadow-[0_1px_2px_rgb(41_37_36/0.03)]"
       >
         در حال بارگذاری…
       </section>
@@ -207,17 +207,17 @@ export function ReportBuilderSection() {
       <section
         aria-labelledby="report-builder-heading"
         aria-busy={busy}
-        className="rounded-2xl border border-[#EAE8E2] bg-white p-4 shadow-[0_1px_2px_rgb(41_37_36/0.03)] sm:p-5"
+        className="rounded-2xl border border-stone-200/80 bg-white p-4 shadow-[0_1px_2px_rgb(41_37_36/0.03)] sm:p-5"
       >
-        <header className="border-b border-[#F0EEE9] pb-4">
-          <p className="text-xs font-semibold text-[#9B6700]">گزارش سفارشی</p>
+        <header className="border-b border-stone-100 pb-4">
+          <p className="text-xs font-semibold text-amber-700">گزارش سفارشی</p>
           <h2
             id="report-builder-heading"
-            className="mt-1 text-lg font-bold text-[#252522]"
+            className="mt-1 text-lg font-bold text-stone-950"
           >
             گزارش‌ساز
           </h2>
-          <p className="mt-1 text-sm text-[#77756F]">
+          <p className="mt-1 text-sm text-stone-500">
             منبع، معیار و نحوهٔ نمایش گزارش را با داده‌های موجود تنظیم کنید.
           </p>
         </header>
@@ -273,13 +273,13 @@ export function ReportBuilderSection() {
           </div>
 
           {currentView?.hasDateColumn ? (
-            <fieldset className="mt-1 rounded-xl border border-[#EEECE7] bg-[#FCFBF8] p-3 sm:p-4">
-              <legend className="px-1 text-sm font-semibold text-[#252522]">
+            <fieldset className="mt-1 rounded-xl border border-stone-200/80 bg-stone-50 p-3 sm:p-4">
+              <legend className="px-1 text-sm font-semibold text-stone-950">
                 بازهٔ تاریخ
               </legend>
               <div className="mt-2 grid gap-3 sm:grid-cols-2">
                 <label className="block">
-                  <span className="mb-1.5 block text-xs font-medium text-[#77756F]">
+                  <span className="mb-1.5 block text-xs font-medium text-stone-500">
                     از تاریخ
                   </span>
                   <JalaliDatePicker
@@ -290,7 +290,7 @@ export function ReportBuilderSection() {
                   />
                 </label>
                 <label className="block">
-                  <span className="mb-1.5 block text-xs font-medium text-[#77756F]">
+                  <span className="mb-1.5 block text-xs font-medium text-stone-500">
                     تا تاریخ
                   </span>
                   <JalaliDatePicker
@@ -314,19 +314,19 @@ export function ReportBuilderSection() {
             </fieldset>
           ) : null}
 
-          <div className="mt-5 grid gap-3 border-t border-[#F0EEE9] pt-5 lg:grid-cols-[auto_minmax(11rem,1fr)_minmax(12rem,1fr)_auto] lg:items-end">
+          <div className="mt-5 grid gap-3 border-t border-stone-100 pt-5 lg:grid-cols-[auto_minmax(11rem,1fr)_minmax(12rem,1fr)_auto] lg:items-end">
             <Button
               type="button"
               size="lg"
               onClick={preview}
               disabled={busy}
-              className="min-h-[52px] bg-[#E9A11B] px-5 font-bold text-[#3A290B] hover:bg-[#D9910E] focus-visible:ring-[#E9A11B]/45"
+              className="min-h-[52px] bg-amber-500 px-5 font-bold text-amber-950 hover:bg-amber-500 focus-visible:ring-amber-500/45"
             >
               پیش‌نمایش
             </Button>
 
             <label className="block">
-              <span className="mb-1.5 block text-xs font-medium text-[#77756F]">
+              <span className="mb-1.5 block text-xs font-medium text-stone-500">
                 نوع نمایش
               </span>
               <SearchableSelect
@@ -343,7 +343,7 @@ export function ReportBuilderSection() {
             </label>
 
             <label className="block">
-              <span className="mb-1.5 block text-xs font-medium text-[#77756F]">
+              <span className="mb-1.5 block text-xs font-medium text-stone-500">
                 نام گزارش
               </span>
               <input
@@ -361,7 +361,7 @@ export function ReportBuilderSection() {
                 size="lg"
                 onClick={save}
                 disabled={busy}
-                className="min-h-[52px] border-[#DEDAD2] bg-white px-4 font-semibold text-[#252522] hover:bg-[#FCFBF8]"
+                className="min-h-[52px] border-stone-200/80 bg-white px-4 font-semibold text-stone-950 hover:bg-stone-50"
               >
                 {editingId ? "به‌روزرسانی گزارش" : "ذخیرهٔ گزارش"}
               </Button>
@@ -374,7 +374,7 @@ export function ReportBuilderSection() {
                     setEditingId(null);
                     setName("");
                   }}
-                  className="min-h-[52px] px-4 text-[#5E5B55] hover:bg-[#FCFBF8]"
+                  className="min-h-[52px] px-4 text-stone-600 hover:bg-stone-50"
                 >
                   انصراف از ویرایش
                 </Button>
@@ -385,7 +385,7 @@ export function ReportBuilderSection() {
           {rows !== null ? (
             <section
               aria-label="خروجی پیش‌نمایش گزارش"
-              className="mt-6 space-y-5 border-t border-[#F0EEE9] pt-5"
+              className="mt-6 space-y-5 border-t border-stone-100 pt-5"
             >
               <ChartPreview
                 chartType={chartType}
@@ -396,7 +396,7 @@ export function ReportBuilderSection() {
                 columns={["بُعد", "مقدار"]}
                 data={rowsToChartData(rows)}
               />
-              <div className="border-t border-[#F0EEE9] pt-4">
+              <div className="border-t border-stone-100 pt-4">
                 <ExportButtons
                   request={{
                     title: name || currentView?.label || "گزارش",
@@ -412,23 +412,23 @@ export function ReportBuilderSection() {
 
       <section
         aria-labelledby="saved-reports-heading"
-        className="rounded-2xl border border-[#EAE8E2] bg-white p-4 shadow-[0_1px_2px_rgb(41_37_36/0.03)] sm:p-5"
+        className="rounded-2xl border border-stone-200/80 bg-white p-4 shadow-[0_1px_2px_rgb(41_37_36/0.03)] sm:p-5"
       >
-        <header className="border-b border-[#F0EEE9] pb-4">
-          <p className="text-xs font-semibold text-[#9B6700]">گزارش‌های شخصی</p>
+        <header className="border-b border-stone-100 pb-4">
+          <p className="text-xs font-semibold text-amber-700">گزارش‌های شخصی</p>
           <h2
             id="saved-reports-heading"
-            className="mt-1 text-lg font-bold text-[#252522]"
+            className="mt-1 text-lg font-bold text-stone-950"
           >
             گزارش‌های سفارشی ذخیره‌شده
           </h2>
         </header>
 
-        <ul className="divide-y divide-[#F0EEE9]">
+        <ul className="divide-y divide-stone-100">
           {saved === null ? (
             <li
               role="status"
-              className="py-8 text-center text-sm text-[#77756F]"
+              className="py-8 text-center text-sm text-stone-500"
             >
               در حال بارگذاری…
             </li>
@@ -439,7 +439,7 @@ export function ReportBuilderSection() {
               key={report.id}
               className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between"
             >
-              <span className="min-w-0 break-words font-semibold text-[#252522]">
+              <span className="min-w-0 break-words font-semibold text-stone-950">
                 {report.name}
               </span>
               <div className="grid shrink-0 gap-2 sm:flex sm:flex-wrap">
@@ -448,7 +448,7 @@ export function ReportBuilderSection() {
                   variant="outline"
                   size="lg"
                   onClick={() => loadIntoBuilder(report)}
-                  className="min-h-[52px] border-[#DEDAD2] bg-white px-4 text-[#252522] hover:bg-[#FCFBF8]"
+                  className="min-h-[52px] border-stone-200/80 bg-white px-4 text-stone-950 hover:bg-stone-50"
                 >
                   ویرایش
                 </Button>
@@ -462,7 +462,7 @@ export function ReportBuilderSection() {
                   variant="outline"
                   size="lg"
                   onClick={() => remove(report.id)}
-                  className="min-h-[52px] border-[#EBC4C1] bg-white px-4 text-[#B42318] hover:bg-[#FDECEC]"
+                  className="min-h-[52px] border-destructive/30 bg-white px-4 text-destructive hover:bg-destructive/10"
                 >
                   حذف
                 </Button>
@@ -471,7 +471,7 @@ export function ReportBuilderSection() {
           ))}
 
           {saved !== null && customReports.length === 0 ? (
-            <li className="py-8 text-center text-sm text-[#77756F]">
+            <li className="py-8 text-center text-sm text-stone-500">
               هنوز گزارش سفارشی‌ای ذخیره نشده است.
             </li>
           ) : null}

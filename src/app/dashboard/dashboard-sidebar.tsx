@@ -159,7 +159,7 @@ function NavLinks({
                   asChild
                   isActive={active}
                   tooltip={item.label}
-                  className="min-h-12 rounded-xl text-[#3C3A36] hover:bg-[#FFF9EE] hover:text-[#9B6700] data-[active=true]:bg-[#FFF1D8] data-[active=true]:font-semibold data-[active=true]:text-[#B97905]"
+                  className="min-h-12 rounded-xl text-stone-700 hover:bg-amber-50 hover:text-amber-700 data-[active=true]:bg-amber-100 data-[active=true]:font-semibold data-[active=true]:text-amber-700"
                 >
                   <Link
                     href={item.href}
@@ -173,7 +173,7 @@ function NavLinks({
                     {item.locked ? (
                       <LockIcon
                         aria-hidden="true"
-                        className="ms-auto size-3.5 shrink-0 text-[#A8A49A] group-data-[state=collapsed]/sidebar:hidden"
+                        className="ms-auto size-3.5 shrink-0 text-stone-400 group-data-[state=collapsed]/sidebar:hidden"
                       />
                     ) : null}
                   </Link>
@@ -189,15 +189,15 @@ function NavLinks({
 
 function SidebarBrand({ title, subtitle }: { title: string; subtitle: string }) {
   return (
-    <SidebarHeader className="border-[#EAE8E2] bg-white p-4">
+    <SidebarHeader className="border-stone-200/80 bg-white p-4">
       <div className="flex items-start justify-between gap-2 group-data-[state=collapsed]/sidebar:justify-center">
         <div className="min-w-0 group-data-[state=collapsed]/sidebar:hidden">
-          <p className="truncate font-bold text-[#252522]">{title}</p>
-          <p className="text-xs text-[#77756F]">{subtitle}</p>
+          <p className="truncate font-bold text-stone-950">{title}</p>
+          <p className="text-xs text-stone-500">{subtitle}</p>
         </div>
         <div className="flex shrink-0 items-center gap-1">
           <span className="hidden md:block group-data-[state=collapsed]/sidebar:hidden"><ThemeToggle /></span>
-          <SidebarTrigger className="hidden text-[#5E5B55] md:inline-flex" />
+          <SidebarTrigger className="hidden text-stone-600 md:inline-flex" />
         </div>
       </div>
     </SidebarHeader>
@@ -263,7 +263,7 @@ function BottomNavSettings({
                   aria-pressed={picked}
                   onClick={() => setDraft((entries) => toggleBottomNavHref(entries, item.href))}
                   className={`flex min-h-11 w-full items-center gap-2 rounded-lg px-2 text-sm disabled:opacity-40 ${
-                    picked ? "bg-[#FFF1D8] font-semibold text-[#B97905]" : "text-[#3C3A36]"
+                    picked ? "bg-amber-100 font-semibold text-amber-700" : "text-stone-700"
                   }`}
                 >
                   <Icon aria-hidden="true" className="size-4 shrink-0" />
@@ -303,11 +303,11 @@ function DashboardSidebarFooter({
   onSaveBottomNav: (hrefs: string[]) => void;
 }) {
   return (
-    <SidebarFooter className="border-[#EAE8E2] bg-white">
+    <SidebarFooter className="border-stone-200/80 bg-white">
       <div className="group-data-[state=collapsed]/sidebar:hidden">
         <BranchSwitcher />
-        <p className="font-semibold text-[#252522]">{fullName}</p>
-        <p className="mb-3 text-xs text-[#77756F]">{ROLE_LABELS[role] ?? role}</p>
+        <p className="font-semibold text-stone-950">{fullName}</p>
+        <p className="mb-3 text-xs text-stone-500">{ROLE_LABELS[role] ?? role}</p>
         <div className="mb-3 md:hidden"><ThemeToggle /></div>
         <BottomNavSettings
           navItems={navItems}
@@ -345,14 +345,14 @@ function MobileDashboardHeader({ navItems, pathname }: Pick<SidebarProps, "navIt
   }, []);
 
   return (
-    <header className="sticky top-0 z-30 flex min-h-14 items-center gap-2 border-b border-[#EAE8E2] bg-white/95 px-2 py-1 backdrop-blur md:hidden">
-      <SidebarTrigger className="text-[#52504B]" />
+    <header className="sticky top-0 z-30 flex min-h-14 items-center gap-2 border-b border-stone-200/80 bg-white/95 px-2 py-1 backdrop-blur md:hidden">
+      <SidebarTrigger className="text-stone-600" />
       <div className="min-w-0 flex-1 text-right">
-        <p className="truncate text-sm font-bold text-[#252522]">{active?.label ?? "داشبورد"}</p>
-        <p className="mt-0.5 flex items-center gap-1 text-[10px] text-[#77756F]"><CalendarDaysIcon className="size-3" aria-hidden="true" />{today}</p>
+        <p className="truncate text-sm font-bold text-stone-950">{active?.label ?? "داشبورد"}</p>
+        <p className="mt-0.5 flex items-center gap-1 text-[10px] text-stone-500"><CalendarDaysIcon className="size-3" aria-hidden="true" />{today}</p>
       </div>
       <span className="flex min-h-11 min-w-11 items-center justify-center" role="status" aria-label={online ? "اتصال برقرار است" : "اتصال قطع است"}>
-        <span className={`size-2.5 rounded-full ${online ? "bg-[#36B56A]" : "bg-[#D95757]"}`} aria-hidden="true" />
+        <span className={`size-2.5 rounded-full ${online ? "bg-emerald-500" : "bg-destructive"}`} aria-hidden="true" />
       </span>
     </header>
   );
@@ -385,7 +385,7 @@ function MobileBottomNavigation({
         this bar offsets from that variable, so the bar has to be what the
         variable says it is.
       */
-      className="fixed inset-x-0 bottom-0 z-40 flex h-[var(--app-bottom-nav)] border-t border-[#EAE8E2] bg-white/95 px-1 pb-[env(safe-area-inset-bottom)] pt-1 shadow-[0_-1px_8px_rgba(37,37,34,0.04)] backdrop-blur md:hidden"
+      className="fixed inset-x-0 bottom-0 z-40 flex h-[var(--app-bottom-nav)] border-t border-stone-200/80 bg-white/95 px-1 pb-[env(safe-area-inset-bottom)] pt-1 shadow-[0_-1px_8px_rgba(37,37,34,0.04)] backdrop-blur md:hidden"
       aria-label="ناوبری اصلی"
     >
       {primaryItems.map((item) => {
@@ -396,7 +396,7 @@ function MobileBottomNavigation({
             key={item.href}
             href={item.href}
             aria-current={active ? "page" : undefined}
-            className={`flex min-h-14 min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[10px] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]/45 active:scale-[0.98] ${active ? "bg-[#FFF1D8] text-[#B97905]" : "text-[#77756F]"}`}
+            className={`flex min-h-14 min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[10px] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 active:scale-[0.98] ${active ? "bg-amber-100 text-amber-700" : "text-stone-500"}`}
           >
             <Icon className="size-5 shrink-0" aria-hidden="true" />
             <span className="max-w-full truncate">{item.label}</span>
@@ -475,7 +475,7 @@ export function DashboardSidebar({ navItems, role, fullName, brandTitle, brandSu
   return (
     <SidebarProvider open={mode === "expanded"} onOpenChange={setExpanded}>
       <MobileDashboardHeader navItems={navItems} pathname={pathname} />
-      <Sidebar side="right" className="border-[#EAE8E2] bg-white text-[#252522]">
+      <Sidebar side="right" className="border-stone-200/80 bg-white text-stone-950">
         <SidebarBrand title={brandTitle} subtitle={brandSubtitle} />
         <SidebarNavigation navItems={navItems} pathname={pathname} />
         <DashboardSidebarFooter

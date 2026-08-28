@@ -86,7 +86,7 @@ export function LedgerManager({ role }: { role: string }) {
     return (
       <div
         aria-live="polite"
-        className="rounded-2xl border border-[#EAE8E2] bg-white px-5 py-6 text-sm text-[#77756F] shadow-[0_1px_2px_rgb(41_37_36/0.03)]"
+        className="rounded-2xl border border-stone-200/80 bg-white px-5 py-6 text-sm text-stone-500 shadow-[0_1px_2px_rgb(41_37_36/0.03)]"
       >
         در حال بارگذاری…
       </div>

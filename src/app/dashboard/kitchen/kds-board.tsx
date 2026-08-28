@@ -83,20 +83,20 @@ const STATUS_META: Record<
   sent: {
     label: "جدید",
     filterLabel: "جدید",
-    toneClass: "border-[#F0D39C] bg-[#FFF7E8] text-[#835500]",
-    dotClass: "bg-[#D69217]",
+    toneClass: "border-amber-200 bg-amber-50 text-amber-800",
+    dotClass: "bg-amber-500",
   },
   preparing: {
     label: "در حال آماده‌سازی",
     filterLabel: "در حال آماده‌سازی",
-    toneClass: "border-[#EDC976] bg-[#FFF1D8] text-[#7B5100]",
-    dotClass: "bg-[#C98209]",
+    toneClass: "border-amber-200 bg-amber-100 text-amber-800",
+    dotClass: "bg-amber-600",
   },
   ready: {
     label: "آماده",
     filterLabel: "آماده",
-    toneClass: "border-[#B9E3C8] bg-[#ECF8F0] text-[#1E7041]",
-    dotClass: "bg-[#36B56A]",
+    toneClass: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    dotClass: "bg-emerald-500",
   },
 };
 
@@ -135,19 +135,19 @@ const PRIORITY_META: Record<
 > = {
   overdue: {
     label: "فوری",
-    className: "border-[#E9B9AF] bg-[#FFF3F1] text-[#AF3E2E]",
+    className: "border-destructive/30 bg-destructive/5 text-destructive",
   },
   waiting: {
     label: "بعدی",
-    className: "border-[#F0D39C] bg-[#FFF7E8] text-[#835500]",
+    className: "border-amber-200 bg-amber-50 text-amber-800",
   },
   preparing: {
     label: "در جریان",
-    className: "border-[#EDC976] bg-[#FFF1D8] text-[#7B5100]",
+    className: "border-amber-200 bg-amber-100 text-amber-800",
   },
   ready: {
     label: "آمادهٔ تحویل",
-    className: "border-[#B9E3C8] bg-[#ECF8F0] text-[#1E7041]",
+    className: "border-emerald-200 bg-emerald-50 text-emerald-700",
   },
 };
 
@@ -194,14 +194,14 @@ function QueueSkeleton() {
       {[0, 1].map((column) => (
         <section
           key={column}
-          className="rounded-xl border border-[#EAE8E2] bg-white p-4"
+          className="rounded-xl border border-stone-200/80 bg-white p-4"
         >
           <div className="ops-skeleton h-5 w-28 rounded" />
           <div className="mt-4 space-y-3">
             {[0, 1].map((card) => (
               <div
                 key={card}
-                className="rounded-xl border border-[#F0EFEB] p-4"
+                className="rounded-xl border border-stone-100 p-4"
               >
                 <div className="flex items-center justify-between gap-3">
                   <div className="ops-skeleton h-5 w-24 rounded" />
@@ -220,13 +220,13 @@ function QueueSkeleton() {
 
 function EmptyState({ filtered }: { filtered: boolean }) {
   return (
-    <section className="rounded-xl border border-dashed border-[#DDD9D1] bg-[#FFFCF7] px-5 py-12 text-center">
-      <p className="font-semibold text-[#36342F]">
+    <section className="rounded-xl border border-dashed border-stone-200/80 bg-stone-50 px-5 py-12 text-center">
+      <p className="font-semibold text-stone-700">
         {filtered
           ? "سفارشی در این وضعیت نیست."
           : "فعلاً سفارشی برای آشپزخانه نیست."}
       </p>
-      <p className="mt-2 text-sm text-[#77756F]">
+      <p className="mt-2 text-sm text-stone-500">
         {filtered
           ? "فیلتر وضعیت را تغییر دهید یا با رسیدن سفارش تازه، صف اینجا به‌روزرسانی می‌شود."
           : "سفارش‌های بازِ ارسال‌شده به آشپزخانه در این بخش نمایش داده می‌شوند."}
@@ -255,24 +255,24 @@ function TicketCard({
     <article
       className={`overflow-hidden rounded-xl border bg-white shadow-[0_1px_2px_rgba(37,37,34,0.03)] transition-colors motion-reduce:transition-none ${
         selected
-          ? "border-[#E9A11B] ring-2 ring-[#E9A11B]/20"
+          ? "border-amber-500 ring-2 ring-amber-500/20"
           : late
-            ? "border-[#E9B9AF]"
-            : "border-[#EAE8E2]"
+            ? "border-destructive/30"
+            : "border-stone-200/80"
       }`}
     >
       <button
         type="button"
         onClick={onSelect}
         aria-pressed={selected}
-        className="min-h-[128px] w-full p-4 text-right outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#E9A11B]"
+        className="min-h-[128px] w-full p-4 text-right outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-500"
       >
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-base font-bold text-[#252522]">
+            <p className="text-base font-bold text-stone-950">
               سفارش {toPersianDigits(ticket.orderNumber)}
             </p>
-            <p className="mt-1 truncate text-sm text-[#77756F]">
+            <p className="mt-1 truncate text-sm text-stone-500">
               {sourceLabel(ticket)}
             </p>
           </div>
@@ -283,11 +283,11 @@ function TicketCard({
         </div>
         <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
           <span
-            className={`font-medium ${late ? "text-[#AF3E2E]" : "text-[#5E5B55]"}`}
+            className={`font-medium ${late ? "text-destructive" : "text-stone-600"}`}
           >
             {formatElapsed(ticket.earliestSentAt, now)}
           </span>
-          <span className="text-[#77756F]">
+          <span className="text-stone-500">
             {toPersianDigits(ticket.items.length)} قلم
           </span>
         </div>
@@ -316,13 +316,13 @@ function TicketDetails({
 
   return (
     <section
-      className="rounded-xl border border-[#EAE8E2] bg-white p-4 shadow-[0_1px_2px_rgba(37,37,34,0.03)]"
+      className="rounded-xl border border-stone-200/80 bg-white p-4 shadow-[0_1px_2px_rgba(37,37,34,0.03)]"
       aria-label={`جزئیات سفارش ${toPersianDigits(ticket.orderNumber)}`}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-xs font-medium text-[#77756F]">جزئیات سفارش</p>
-          <h2 className="mt-1 text-xl font-bold text-[#252522]">
+          <p className="text-xs font-medium text-stone-500">جزئیات سفارش</p>
+          <h2 className="mt-1 text-xl font-bold text-stone-950">
             سفارش {toPersianDigits(ticket.orderNumber)}
           </h2>
         </div>
@@ -332,35 +332,35 @@ function TicketDetails({
         </div>
       </div>
 
-      <dl className="mt-5 grid grid-cols-2 gap-3 border-y border-[#F0EFEB] py-4 text-sm md:grid-cols-3">
+      <dl className="mt-5 grid grid-cols-2 gap-3 border-y border-stone-100 py-4 text-sm md:grid-cols-3">
         <div>
-          <dt className="text-xs text-[#77756F]">منبع سفارش</dt>
-          <dd className="mt-1 font-semibold text-[#3C3A36]">
+          <dt className="text-xs text-stone-500">منبع سفارش</dt>
+          <dd className="mt-1 font-semibold text-stone-700">
             {sourceLabel(ticket)}
           </dd>
         </div>
         <div>
-          <dt className="text-xs text-[#77756F]">زمان گذشته</dt>
+          <dt className="text-xs text-stone-500">زمان گذشته</dt>
           <dd
-            className={`mt-1 font-semibold ${late ? "text-[#AF3E2E]" : "text-[#3C3A36]"}`}
+            className={`mt-1 font-semibold ${late ? "text-destructive" : "text-stone-700"}`}
           >
             {formatElapsed(ticket.earliestSentAt, now)}
           </dd>
         </div>
         <div>
-          <dt className="text-xs text-[#77756F]">اولویت صف</dt>
+          <dt className="text-xs text-stone-500">اولویت صف</dt>
           <dd className="mt-1"><PriorityBadge priority={ticket.priority} /></dd>
         </div>
       </dl>
 
       <div className="mt-5">
         <div className="flex items-center justify-between gap-3">
-          <h3 className="font-bold text-[#252522]">اقلام سفارش</h3>
-          <span className="text-sm text-[#77756F]">
+          <h3 className="font-bold text-stone-950">اقلام سفارش</h3>
+          <span className="text-sm text-stone-500">
             {toPersianDigits(ticket.items.length)} قلم
           </span>
         </div>
-        <ul className="mt-3 divide-y divide-[#F0EFEB]">
+        <ul className="mt-3 divide-y divide-stone-100">
           {ticket.items.map((item) => {
             const next = NEXT_STATUS[item.status];
             const modifiers = modifiersByItem.get(item.id) ?? [];
@@ -370,19 +370,19 @@ function TicketDetails({
               <li key={item.id} className="py-4 first:pt-0 last:pb-0">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
-                    <p className="break-words font-semibold text-[#36342F]">
-                      <span className="ml-1 inline-flex min-w-7 justify-center rounded-md bg-[#F7F5F0] px-1.5 py-0.5 text-sm text-[#5E5B55]">
+                    <p className="break-words font-semibold text-stone-700">
+                      <span className="ml-1 inline-flex min-w-7 justify-center rounded-md bg-stone-100 px-1.5 py-0.5 text-sm text-stone-600">
                         {toPersianDigits(item.quantity)}×
                       </span>
                       {item.name_snapshot}
                     </p>
                     {modifiers.length > 0 ? (
-                      <p className="mt-1 break-words text-sm text-[#77756F]">
+                      <p className="mt-1 break-words text-sm text-stone-500">
                         {modifiers.join("، ")}
                       </p>
                     ) : null}
                     {item.note ? (
-                      <p className="mt-2 break-words rounded-lg bg-[#FFF8EA] px-3 py-2 text-sm text-[#7B5100]">
+                      <p className="mt-2 break-words rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
                         {item.note}
                       </p>
                     ) : null}
@@ -394,7 +394,7 @@ function TicketDetails({
                   <div className="mt-3">
                     {waitingForUpdate ? (
                       <p
-                        className="flex min-h-[52px] items-center justify-center rounded-lg bg-[#FFF8EA] px-4 text-sm font-semibold text-[#7B5100]"
+                        className="flex min-h-[52px] items-center justify-center rounded-lg bg-amber-50 px-4 text-sm font-semibold text-amber-800"
                         role="status"
                       >
                         در حال ثبت تغییر…
@@ -404,7 +404,7 @@ function TicketDetails({
                         type="button"
                         size="lg"
                         onClick={() => onBump(item.id, next)}
-                        className="min-h-[52px] w-full bg-[#E9A11B] font-semibold text-[#2B2418] hover:bg-[#D99110] focus-visible:ring-[#E9A11B]/45"
+                        className="min-h-[52px] w-full bg-amber-500 font-semibold text-stone-900 hover:bg-amber-500 focus-visible:ring-amber-500/45"
                       >
                         {BUMP_LABEL[item.status]}
                       </Button>
@@ -422,9 +422,9 @@ function TicketDetails({
 
 function DetailPlaceholder() {
   return (
-    <aside className="rounded-xl border border-dashed border-[#DDD9D1] bg-[#FFFCF7] p-6 text-center md:sticky md:top-4">
-      <p className="font-semibold text-[#36342F]">یک سفارش را انتخاب کنید</p>
-      <p className="mt-2 text-sm leading-6 text-[#77756F]">
+    <aside className="rounded-xl border border-dashed border-stone-200/80 bg-stone-50 p-6 text-center md:sticky md:top-4">
+      <p className="font-semibold text-stone-700">یک سفارش را انتخاب کنید</p>
+      <p className="mt-2 text-sm leading-6 text-stone-500">
         جزئیات اقلام، یادداشت‌ها و اقدام مجاز آشپزخانه در اینجا نمایش داده
         می‌شود.
       </p>
@@ -655,11 +655,11 @@ export function KdsBoard() {
 
   return (
     <div className="space-y-4" dir="rtl">
-      <header className="rounded-xl border border-[#EAE8E2] bg-white p-4 shadow-[0_1px_2px_rgba(37,37,34,0.03)]">
+      <header className="rounded-xl border border-stone-200/80 bg-white p-4 shadow-[0_1px_2px_rgba(37,37,34,0.03)]">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div className="hidden min-w-0 md:block">
-            <h1 className="text-2xl font-bold text-[#252522]">آشپزخانه</h1>
-            <p className="mt-1 text-sm text-[#77756F]">
+            <h1 className="text-2xl font-bold text-stone-950">آشپزخانه</h1>
+            <p className="mt-1 text-sm text-stone-500">
               {toPersianDigits(
                 formatJalali(new Date(now), { withMonthName: true }),
               )}
@@ -667,12 +667,12 @@ export function KdsBoard() {
           </div>
           <div className="flex min-w-0 items-center justify-between gap-3">
             <p
-              className="flex min-h-11 min-w-0 items-center gap-2 text-sm text-[#5E5B55]"
+              className="flex min-h-11 min-w-0 items-center gap-2 text-sm text-stone-600"
               role="status"
               aria-live="polite"
             >
               <span
-                className={`size-2.5 shrink-0 rounded-full ${isOnline && pendingCount === 0 ? "bg-[#36B56A]" : "bg-[#D69217]"}`}
+                className={`size-2.5 shrink-0 rounded-full ${isOnline && pendingCount === 0 ? "bg-emerald-500" : "bg-amber-500"}`}
                 aria-hidden="true"
               />
               <span className="truncate">{syncLabel}</span>
@@ -681,7 +681,7 @@ export function KdsBoard() {
               type="button"
               variant="outline"
               onClick={() => void load({ showRefresh: true })}
-              className="min-h-[52px] shrink-0 border-[#E1DDD5] bg-[#FFFCF7] px-4 text-[#3C3A36] hover:bg-[#FFF5E5]"
+              className="min-h-[52px] shrink-0 border-stone-200/80 bg-stone-50 px-4 text-stone-700 hover:bg-amber-50"
             >
               {isRefreshing ? "در حال به‌روزرسانی" : "به‌روزرسانی"}
             </Button>
@@ -691,7 +691,7 @@ export function KdsBoard() {
 
       {loadError ? (
         <div
-          className="flex flex-col gap-3 rounded-xl border border-[#E9B9AF] bg-[#FFF7F5] p-4 text-[#8A3126] sm:flex-row sm:items-center sm:justify-between"
+          className="flex flex-col gap-3 rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-red-800 sm:flex-row sm:items-center sm:justify-between"
           role="alert"
         >
           <p className="text-sm font-medium">{loadError}</p>
@@ -699,7 +699,7 @@ export function KdsBoard() {
             type="button"
             variant="outline"
             onClick={() => void load({ showRefresh: true })}
-            className="min-h-[48px] shrink-0 border-[#E9B9AF] bg-white text-[#8A3126] hover:bg-[#FFF0ED]"
+            className="min-h-[48px] shrink-0 border-destructive/30 bg-white text-red-800 hover:bg-red-50"
           >
             تلاش دوباره
           </Button>
@@ -708,7 +708,7 @@ export function KdsBoard() {
 
       {mutationMessage ? (
         <p
-          className="rounded-lg bg-[#FFF8EA] px-4 py-3 text-sm font-medium text-[#7B5100]"
+          className="rounded-lg bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800"
           role="status"
           aria-live="polite"
         >
@@ -720,13 +720,13 @@ export function KdsBoard() {
         <button
           type="button"
           onClick={() => setSelectedKey(nextTicket.key)}
-          className="flex w-full flex-wrap items-center justify-between gap-3 rounded-xl border border-[#F0D39C] bg-[#FFF9EE] px-4 py-3 text-right transition-colors hover:bg-[#FFF3DE] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E9A11B]"
+          className="flex w-full flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-right transition-colors hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
           aria-label={`انتخاب سفارش اولویت‌دار ${toPersianDigits(nextTicket.orderNumber)}`}
         >
-          <span className="text-sm font-bold text-[#5B4214]">
+          <span className="text-sm font-bold text-amber-900">
             نوبت بعدی: سفارش {toPersianDigits(nextTicket.orderNumber)}
           </span>
-          <span className="flex items-center gap-2 text-sm text-[#7B5100]">
+          <span className="flex items-center gap-2 text-sm text-amber-800">
             <PriorityBadge priority={nextTicket.priority} />
             <span>{formatElapsed(nextTicket.earliestSentAt, now)}</span>
           </span>
@@ -749,13 +749,13 @@ export function KdsBoard() {
                 aria-pressed={active}
                 className={`min-h-[52px] gap-2 rounded-lg px-4 font-semibold ${
                   active
-                    ? "border-[#E9A11B] bg-[#FFF1D8] text-[#8A5A00] hover:bg-[#FFF1D8]"
-                    : "border-[#EAE8E2] bg-white text-[#5E5B55] hover:bg-[#FFFCF7]"
+                    ? "border-amber-500 bg-amber-100 text-amber-800 hover:bg-amber-100"
+                    : "border-stone-200/80 bg-white text-stone-600 hover:bg-stone-50"
                 }`}
               >
                 <span>{item.label}</span>
                 <span
-                  className={`rounded-md px-1.5 py-0.5 text-xs ${active ? "bg-[#F5D79A]" : "bg-[#F4F2ED]"}`}
+                  className={`rounded-md px-1.5 py-0.5 text-xs ${active ? "bg-amber-200" : "bg-stone-100"}`}
                 >
                   {toPersianDigits(item.count)}
                 </span>
@@ -781,7 +781,7 @@ export function KdsBoard() {
               {ticketSections.map((section) => (
                 <section
                   key={section.status}
-                  className="rounded-xl border border-[#EAE8E2] bg-[#FFFEFC] p-3 sm:p-4"
+                  className="rounded-xl border border-stone-200/80 bg-stone-50 p-3 sm:p-4"
                   aria-labelledby={`kitchen-section-${section.status}`}
                 >
                   <div className="mb-4 flex items-center justify-between gap-3">
@@ -792,12 +792,12 @@ export function KdsBoard() {
                       />
                       <h2
                         id={`kitchen-section-${section.status}`}
-                        className="truncate font-bold text-[#36342F]"
+                        className="truncate font-bold text-stone-700"
                       >
                         {STATUS_META[section.status].label}
                       </h2>
                     </div>
-                    <span className="shrink-0 rounded-md bg-[#F4F2ED] px-2 py-1 text-xs font-semibold text-[#5E5B55]">
+                    <span className="shrink-0 rounded-md bg-stone-100 px-2 py-1 text-xs font-semibold text-stone-600">
                       {toPersianDigits(section.tickets.length)} سفارش
                     </span>
                   </div>

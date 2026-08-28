@@ -458,7 +458,7 @@ function StockCountModal({
       >
         <header className="mb-4 flex items-start justify-between gap-3 border-b border-border pb-4">
           <div>
-            <p className="text-xs font-semibold text-[#9B6700]">جزئیات شمارش</p>
+            <p className="text-xs font-semibold text-amber-700">جزئیات شمارش</p>
             <h3
               id="stock-count-modal-heading"
               className="mt-1 text-lg font-bold"
@@ -507,7 +507,7 @@ function StockCountModal({
             <div>
               <p className="mb-2 text-sm font-medium">اقلام شمارش‌شده</p>
               {draftLines.length === 0 && addedItemIds.length === 0 ? (
-                <p className="rounded-xl border border-dashed border-border bg-[#FCFBF8] px-4 py-6 text-center text-sm text-muted-foreground">
+                <p className="rounded-xl border border-dashed border-border bg-stone-50 px-4 py-6 text-center text-sm text-muted-foreground">
                   قلمی باقی نمانده است؛ ذخیرهٔ این تغییرات یعنی حذف کامل شمارش.
                 </p>
               ) : (

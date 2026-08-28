@@ -187,6 +187,12 @@ Every page and panel under `src/app/dashboard/**` is **built from the primitives
 `inputClass`/`Field`/`ErrorBox`/`InfoBox` for controls. See
 [docs/ui-conventions.md](docs/ui-conventions.md) for what each one replaces and why.
 
+**The visual canon is [docs/design-system.md](docs/design-system.md)** — the exact colours,
+borders/shadow weights, radius scale, control/table/chip recipes, hover/focus/active states
+and motion vocabulary, backed by the reference screenshots in `docs/design/reference/`.
+Read it before building or restyling any page or panel; the screenshots there are ground
+truth, and its "old look" list is a set of regressions, not style choices.
+
 Two rules carry the history:
 
 - **Compose, don't re-derive.** The dashboard already went through a phase where every screen

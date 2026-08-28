@@ -125,7 +125,7 @@ export function ChartOfAccountsSection({ busy, run }: { busy: boolean; run: Runn
   return (
     <div className="space-y-4">
       <section className="rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-4 sm:p-5">
-        <p className="text-xs font-semibold text-[#9B6700]">ساختار مالی</p>
+        <p className="text-xs font-semibold text-amber-700">ساختار مالی</p>
         <h2 className="mt-1">افزودن حساب</h2>
         <p className="mt-2 text-sm text-muted-foreground">فقط حساب‌های مجاز جدید را اضافه کنید؛ حساب‌های سیستمی و دارای سند همچنان با قوانین فعلی محافظت می‌شوند.</p>
         {localError ? <p className="mt-4 rounded-xl border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">{localError}</p> : null}
@@ -169,7 +169,7 @@ export function ChartOfAccountsSection({ busy, run }: { busy: boolean; run: Runn
 
       <section className="rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-4 sm:p-5">
         <div className="mb-4">
-          <p className="text-xs font-semibold text-[#9B6700]">فهرست ساختار</p>
+          <p className="text-xs font-semibold text-amber-700">فهرست ساختار</p>
           <h2 className="mt-1">سرفصل حساب‌ها</h2>
         </div>
         <div className="hidden overflow-x-auto lg:block">
@@ -181,7 +181,7 @@ export function ChartOfAccountsSection({ busy, run }: { busy: boolean; run: Runn
                   <td className="py-3 pe-3 text-muted-foreground">{a.code}</td>
                   <td className="py-3 pe-3 font-semibold">
                     {a.name}
-                    {WELL_KNOWN_CODE_SET.has(a.code) ? <span className="ms-2 rounded-full bg-[#F3EEE3] px-2 py-0.5 text-xs font-semibold text-[#9B6700]">سیستمی</span> : null}
+                    {WELL_KNOWN_CODE_SET.has(a.code) ? <span className="ms-2 rounded-full bg-stone-100 px-2 py-0.5 text-xs font-semibold text-amber-700">سیستمی</span> : null}
                   </td>
                   <td className="py-3 pe-3 text-muted-foreground">{TYPE_LABELS[a.type]}</td>
                   <td className="py-3 pe-3 text-muted-foreground">{ACCOUNT_LEVEL_LABELS[a.level]}</td>
@@ -200,18 +200,18 @@ export function ChartOfAccountsSection({ busy, run }: { busy: boolean; run: Runn
 
         <div className="space-y-3 lg:hidden">
           {accounts.map((a) => (
-            <article key={a.id} className="rounded-xl border border-[#EEECE7] bg-[#FCFBF8] p-4">
+            <article key={a.id} className="rounded-xl border border-stone-200/80 bg-stone-50 p-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="text-xs text-muted-foreground">{a.code}</p>
                   <h3 className="mt-1 truncate">
                     {a.name}
-                    {WELL_KNOWN_CODE_SET.has(a.code) ? <span className="ms-2 rounded-full bg-[#F3EEE3] px-2 py-0.5 text-xs font-semibold text-[#9B6700]">سیستمی</span> : null}
+                    {WELL_KNOWN_CODE_SET.has(a.code) ? <span className="ms-2 rounded-full bg-stone-100 px-2 py-0.5 text-xs font-semibold text-amber-700">سیستمی</span> : null}
                   </h3>
                 </div>
                 <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${a.isActive ? "bg-emerald-100 text-emerald-800" : "bg-muted text-muted-foreground"}`}>{a.isActive ? "فعال" : "غیرفعال"}</span>
               </div>
-              <dl className="mt-3 grid grid-cols-2 gap-2 border-t border-[#F0EEE9] pt-3 text-sm">
+              <dl className="mt-3 grid grid-cols-2 gap-2 border-t border-stone-100 pt-3 text-sm">
                 <div><dt className="text-xs text-muted-foreground">نوع</dt><dd className="mt-1">{TYPE_LABELS[a.type]}</dd></div>
                 <div><dt className="text-xs text-muted-foreground">سطح</dt><dd className="mt-1">{ACCOUNT_LEVEL_LABELS[a.level]}</dd></div>
                 <div><dt className="text-xs text-muted-foreground">ماهیت</dt><dd className="mt-1">{NORMAL_BALANCE_LABELS[a.normalBalance]}{a.isContra ? " (کاهنده)" : ""}</dd></div>

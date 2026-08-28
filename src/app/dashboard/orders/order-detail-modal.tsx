@@ -97,19 +97,19 @@ const LINE_GRID =
 const STATUS_CHIP: Record<string, { label: string; className: string }> = {
   open: {
     label: "باز",
-    className: "border-[#E9A11B]/25 bg-[#FFF6E6] text-[#9B6700]",
+    className: "border-amber-500/25 bg-amber-50 text-amber-700",
   },
   held: {
     label: "نگه‌داشته",
-    className: "border-[#EAE8E2] bg-[#F8F7F4] text-[#77756F]",
+    className: "border-stone-200/80 bg-stone-100 text-stone-500",
   },
   completed: {
     label: "تکمیل‌شده",
-    className: "border-[#36B56A]/25 bg-[#EFFAF3] text-[#23834A]",
+    className: "border-emerald-500/25 bg-emerald-50 text-emerald-700",
   },
   voided: {
     label: "باطل‌شده",
-    className: "border-[#E5CCC5] bg-[#FFF7F4] text-[#9E4437]",
+    className: "border-destructive/30 bg-destructive/5 text-destructive",
   },
 };
 
@@ -758,18 +758,18 @@ export function OrderDetailModal({
     return (
       <li
         key={it.id}
-        className={`grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 gap-y-3 border-b border-[#F1EFEA] px-4 py-3.5 last:border-b-0 md:items-center ${LINE_GRID}`}
+        className={`grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 gap-y-3 border-b border-stone-100 px-4 py-3.5 last:border-b-0 md:items-center ${LINE_GRID}`}
       >
         <div className="col-start-1 row-start-1 min-w-0 md:row-start-1">
           <p
-            className={`truncate text-sm font-semibold ${voided ? "text-[#8B8A85] line-through" : "text-[#252522]"}`}
+            className={`truncate text-sm font-semibold ${voided ? "text-stone-400 line-through" : "text-stone-950"}`}
           >
             {it.name_snapshot}
           </p>
-          <p className="mt-1 text-xs text-[#77756F]">
+          <p className="mt-1 text-xs text-stone-500">
             {money.format(breakdown.unit)} هر واحد
             {addOns.length > 0 ? (
-              <span className="text-[#B97905]">
+              <span className="text-amber-700">
                 {" "}
                 — شامل{" "}
                 {formatModifierDelta(breakdown.addOns, {
@@ -793,7 +793,7 @@ export function OrderDetailModal({
                   type="button"
                   onClick={() => startEditAddOns(it)}
                   disabled={busy}
-                  className={`inline-flex min-h-9 items-center gap-1 rounded-lg border border-dashed border-[#F0D39C] bg-[#FFFCF5] px-2.5 text-[11px] font-bold text-[#9B6700] transition-colors hover:bg-[#FFF9EE] ${FOCUS} disabled:opacity-55`}
+                  className={`inline-flex min-h-9 items-center gap-1 rounded-lg border border-dashed border-amber-200 bg-amber-50 px-2.5 text-[11px] font-bold text-amber-700 transition-colors hover:bg-amber-50 ${FOCUS} disabled:opacity-55`}
                 >
                   {addOns.length > 0 ? (
                     <>
@@ -812,17 +812,17 @@ export function OrderDetailModal({
           ) : null}
 
           {it.note ? (
-            <p className="mt-2 text-xs text-[#77756F]">یادداشت: {it.note}</p>
+            <p className="mt-2 text-xs text-stone-500">یادداشت: {it.note}</p>
           ) : null}
           {voided && it.void_reason ? (
-            <p className="mt-2 text-xs font-medium text-[#9E4437]">
+            <p className="mt-2 text-xs font-medium text-destructive">
               باطل: {it.void_reason}
             </p>
           ) : null}
         </div>
 
         <p
-          className={`col-start-2 row-start-1 justify-self-end whitespace-nowrap text-sm font-bold tabular-nums md:col-start-3 md:justify-self-stretch md:text-end ${voided ? "text-[#8B8A85] line-through" : "text-[#252522]"}`}
+          className={`col-start-2 row-start-1 justify-self-end whitespace-nowrap text-sm font-bold tabular-nums md:col-start-3 md:justify-self-stretch md:text-end ${voided ? "text-stone-400 line-through" : "text-stone-950"}`}
         >
           {money.format(breakdown.total)}
         </p>
@@ -839,7 +839,7 @@ export function OrderDetailModal({
               >
                 <MinusIcon className="size-4" aria-hidden="true" />
               </button>
-              <span className="w-7 text-center text-sm font-bold tabular-nums text-[#252522]">
+              <span className="w-7 text-center text-sm font-bold tabular-nums text-stone-950">
                 {toPersianDigits(it.quantity)}
               </span>
               <button
@@ -853,7 +853,7 @@ export function OrderDetailModal({
               </button>
             </>
           ) : (
-            <span className="text-xs text-[#77756F]">
+            <span className="text-xs text-stone-500">
               تعداد{" "}
               <span className="font-bold tabular-nums">
                 {toPersianDigits(it.quantity)}
@@ -883,13 +883,13 @@ export function OrderDetailModal({
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent
           showCloseButton={false}
-          className="flex h-[100dvh] max-h-[100dvh] w-screen max-w-none flex-col gap-0 overflow-hidden rounded-none bg-[#FCFCFA] p-0 ring-0 sm:h-auto sm:max-h-[92dvh] sm:w-[calc(100%-2rem)] sm:max-w-5xl sm:rounded-2xl sm:ring-1 sm:ring-[#EAE8E2]"
+          className="flex h-[100dvh] max-h-[100dvh] w-screen max-w-none flex-col gap-0 overflow-hidden rounded-none bg-stone-50 p-0 ring-0 sm:h-auto sm:max-h-[92dvh] sm:w-[calc(100%-2rem)] sm:max-w-5xl sm:rounded-2xl sm:ring-1 sm:ring-stone-200/80"
         >
-          <DialogHeader className="shrink-0 gap-0 border-b border-[#EAE8E2] bg-white px-4 py-3 sm:px-5">
+          <DialogHeader className="shrink-0 gap-0 border-b border-stone-200/80 bg-white px-4 py-3 sm:px-5">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <DialogTitle className="font-sans text-lg font-bold text-[#252522] sm:text-xl">
+                  <DialogTitle className="font-sans text-lg font-bold text-stone-950 sm:text-xl">
                     {order
                       ? toPersianDigits(
                           formatQueueLabel(order.type, order.order_number),
@@ -907,13 +907,13 @@ export function OrderDetailModal({
                       list: on a phone the facts are a scroll away, and whose
                       bill this is belongs with what bill it is. */}
                   {order?.customer_name ? (
-                    <span className="inline-flex min-h-7 max-w-full items-center gap-1 rounded-full border border-[#F2D097] bg-[#FFF9EE] px-2.5 text-xs font-bold text-[#9B6700]">
+                    <span className="inline-flex min-h-7 max-w-full items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 text-xs font-bold text-amber-700">
                       <UserIcon className="size-3.5 shrink-0" aria-hidden="true" />
                       <span className="truncate">{order.customer_name}</span>
                     </span>
                   ) : null}
                 </div>
-                <DialogDescription className="mt-1 text-xs text-[#77756F]">
+                <DialogDescription className="mt-1 text-xs text-stone-500">
                   {order ? (
                     <>
                       {TYPE_LABELS[order.type]}
@@ -961,7 +961,7 @@ export function OrderDetailModal({
                   type="button"
                   onClick={() => onOpenChange(false)}
                   aria-label="بستن"
-                  className={`flex size-11 shrink-0 items-center justify-center rounded-xl border border-[#EAE8E2] bg-white text-[#5E5B55] transition-colors hover:bg-[#FCFCFA] ${FOCUS} active:scale-[0.95]`}
+                  className={`flex size-11 shrink-0 items-center justify-center rounded-xl border border-stone-200/80 bg-white text-stone-600 transition-colors hover:bg-stone-50 ${FOCUS} active:scale-[0.95]`}
                 >
                   <XIcon className="size-4" aria-hidden="true" />
                 </button>
@@ -1008,14 +1008,14 @@ export function OrderDetailModal({
               <>
                 {error ? (
                   <div
-                    className="mb-3 flex flex-col gap-2 rounded-xl border border-[#D95757]/20 bg-[#D95757]/[0.035] px-4 py-3 text-sm text-[#A23C3C] sm:flex-row sm:items-center sm:justify-between"
+                    className="mb-3 flex flex-col gap-2 rounded-xl border border-destructive/20 bg-destructive/[0.035] px-4 py-3 text-sm text-destructive sm:flex-row sm:items-center sm:justify-between"
                     role="status"
                   >
                     <span>{error}</span>
                     <button
                       type="button"
                       onClick={() => setError("")}
-                      className="min-h-11 shrink-0 rounded-lg border border-[#D95757]/25 bg-white px-3 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D95757]/35"
+                      className="min-h-11 shrink-0 rounded-lg border border-destructive/25 bg-white px-3 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/35"
                     >
                       باشد
                     </button>
@@ -1023,14 +1023,14 @@ export function OrderDetailModal({
                 ) : null}
                 {info ? (
                   <p
-                    className="mb-3 rounded-xl border border-[#E9A11B]/25 bg-[#FFF9EE] px-4 py-3 text-sm leading-6 text-[#8A5B00]"
+                    className="mb-3 rounded-xl border border-amber-500/25 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-800"
                     role="status"
                   >
                     {info}
                   </p>
                 ) : null}
                 {order.status === "voided" && order.voided_reason ? (
-                  <p className="mb-3 rounded-xl border border-[#E5CCC5] bg-[#FFF7F4] px-4 py-3 text-sm text-[#9E4437]">
+                  <p className="mb-3 rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
                     دلیل ابطال: {order.voided_reason}
                   </p>
                 ) : null}
@@ -1038,23 +1038,23 @@ export function OrderDetailModal({
                 <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_21rem] lg:items-start">
                   <div className="min-w-0 space-y-3">
                     <section className={CARD} aria-label="اقلام سفارش">
-                      <div className="flex items-center justify-between gap-3 border-b border-[#EAE8E2] px-4 py-3">
-                        <h3 className="font-semibold text-[#252522]">
+                      <div className="flex items-center justify-between gap-3 border-b border-stone-200/80 px-4 py-3">
+                        <h3 className="font-semibold text-stone-950">
                           اقلام سفارش
                         </h3>
-                        <span className="text-xs text-[#77756F]">
+                        <span className="text-xs text-stone-500">
                           {toPersianDigits(itemCount)} قلم
                         </span>
                       </div>
 
                       {liveItems.length === 0 ? (
-                        <p className="px-4 py-8 text-center text-sm text-[#77756F]">
+                        <p className="px-4 py-8 text-center text-sm text-stone-500">
                           قلم فعالی برای این سفارش ثبت نشده است.
                         </p>
                       ) : (
                         <>
                           <div
-                            className={`hidden border-b border-[#EAE8E2] bg-[#FCFCFA] px-4 py-2.5 text-xs font-medium text-[#77756F] ${LINE_GRID}`}
+                            className={`hidden border-b border-stone-200/80 bg-stone-50 px-4 py-2.5 text-xs font-medium text-stone-500 ${LINE_GRID}`}
                             aria-hidden="true"
                           >
                             <span>قلم</span>
@@ -1067,12 +1067,12 @@ export function OrderDetailModal({
                       )}
 
                       {voidedItems.length > 0 ? (
-                        <div className="border-t border-[#EAE8E2]">
+                        <div className="border-t border-stone-200/80">
                           <button
                             type="button"
                             onClick={() => setShowVoided((value) => !value)}
                             aria-expanded={showVoided}
-                            className={`flex min-h-12 w-full items-center justify-between gap-2 px-4 text-xs font-semibold text-[#77756F] transition-colors hover:bg-[#FCFCFA] ${FOCUS}`}
+                            className={`flex min-h-12 w-full items-center justify-between gap-2 px-4 text-xs font-semibold text-stone-500 transition-colors hover:bg-stone-50 ${FOCUS}`}
                           >
                             <span>
                               اقلام باطل‌شده (
@@ -1083,7 +1083,7 @@ export function OrderDetailModal({
                             </span>
                           </button>
                           {showVoided ? (
-                            <ul className="border-t border-[#EAE8E2] bg-[#FCFCFA]">
+                            <ul className="border-t border-stone-200/80 bg-stone-50">
                               {voidedItems.map(renderLine)}
                             </ul>
                           ) : null}
@@ -1096,7 +1096,7 @@ export function OrderDetailModal({
                         className={`${CARD} p-4`}
                         aria-label="افزودن قلم"
                       >
-                        <h3 className="mb-3 font-semibold text-[#252522]">
+                        <h3 className="mb-3 font-semibold text-stone-950">
                           افزودن قلم
                         </h3>
                         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -1133,7 +1133,7 @@ export function OrderDetailModal({
                             افزودن
                           </button>
                         </div>
-                        <p className="mt-2 text-xs leading-5 text-[#77756F]">
+                        <p className="mt-2 text-xs leading-5 text-stone-500">
                           آیتم‌هایی که گروه افزودنی دارند، پیش از ثبت پنجرهٔ
                           انتخاب افزودنی را باز می‌کنند.
                         </p>
@@ -1145,7 +1145,7 @@ export function OrderDetailModal({
                       aria-label="یادداشت سفارش"
                     >
                       <div className="flex items-center justify-between gap-3">
-                        <h3 className="font-semibold text-[#252522]">
+                        <h3 className="font-semibold text-stone-950">
                           یادداشت سفارش
                         </h3>
                         {editable && !editingNote ? (
@@ -1192,7 +1192,7 @@ export function OrderDetailModal({
                           </div>
                         </div>
                       ) : (
-                        <p className="mt-2 text-sm leading-6 text-[#77756F]">
+                        <p className="mt-2 text-sm leading-6 text-stone-500">
                           {order.note || "یادداشتی ثبت نشده است."}
                         </p>
                       )}
@@ -1204,7 +1204,7 @@ export function OrderDetailModal({
                       className={`${CARD} p-4`}
                       aria-label="مشخصات سفارش"
                     >
-                      <h3 className="mb-3 font-semibold text-[#252522]">
+                      <h3 className="mb-3 font-semibold text-stone-950">
                         مشخصات سفارش
                       </h3>
                       {/* Flex rather than a 2-column grid: the number of facts
@@ -1259,7 +1259,7 @@ export function OrderDetailModal({
 
                     {editable && order.type === "dine_in" ? (
                       <section className={`${CARD} p-4`} aria-label="تعیین میز">
-                        <h3 className="mb-2 font-semibold text-[#252522]">تعیین میز</h3>
+                        <h3 className="mb-2 font-semibold text-stone-950">تعیین میز</h3>
                         {/*
                           A seated table is offered too: moving a bill onto a
                           table that already has guests is how friends sitting
@@ -1267,7 +1267,7 @@ export function OrderDetailModal({
                           cleaned or out of service is left out — PATCH refuses
                           those, so offering them would only produce an error.
                         */}
-                        <p className="mb-2 text-xs text-[#77756F]">میز این سفارش را می‌توانید تغییر دهید. میزی که مهمان دارد هم قابل انتخاب است؛ هر سفارش صورت‌حساب جدای خودش را دارد.</p>
+                        <p className="mb-2 text-xs text-stone-500">میز این سفارش را می‌توانید تغییر دهید. میزی که مهمان دارد هم قابل انتخاب است؛ هر سفارش صورت‌حساب جدای خودش را دارد.</p>
                         <SearchableSelect
                           value={selectedTableId}
                           onChange={(value) => void saveOrderTable(value)}
@@ -1302,8 +1302,8 @@ export function OrderDetailModal({
                     */}
                     {editable && order.type === "dine_in" && order.table_id ? (
                       <section className={`${CARD} p-4`} aria-label="مهمان جدید روی این میز">
-                        <h3 className="mb-2 font-semibold text-[#252522]">مهمان جدید روی این میز</h3>
-                        <p className="mb-3 text-xs text-[#77756F]">
+                        <h3 className="mb-2 font-semibold text-stone-950">مهمان جدید روی این میز</h3>
+                        <p className="mb-3 text-xs text-stone-500">
                           برای مهمانی که تازه به {order.table_name ?? "این میز"} اضافه شده، سفارش جداگانه ثبت کنید: صورت‌حساب، تخفیف، تسویه و چاپ آن کاملاً مستقل از این سفارش است. مشتری‌اش را در صندوق انتخاب می‌کنید.
                         </p>
                         <Link
@@ -1318,12 +1318,12 @@ export function OrderDetailModal({
                     {editable ? (
                       <section className={`${CARD} p-4`} aria-label="مشتری سفارش">
                         <div className="flex items-center justify-between gap-2">
-                          <h3 className="font-semibold text-[#252522]">مشتری سفارش</h3>
-                          <span className="text-xs text-[#77756F]">اختیاری</span>
+                          <h3 className="font-semibold text-stone-950">مشتری سفارش</h3>
+                          <span className="text-xs text-stone-500">اختیاری</span>
                         </div>
                         {selectedCustomer ? (
                           <div className="mt-3 flex items-center gap-2">
-                            <span className="min-w-0 flex-1 truncate rounded-xl bg-[#FCFCFA] px-3 py-2.5 text-sm text-[#252522]">
+                            <span className="min-w-0 flex-1 truncate rounded-xl bg-stone-50 px-3 py-2.5 text-sm text-stone-950">
                               {selectedCustomer.name}{selectedCustomer.phone ? ` — ${toPersianDigits(selectedCustomer.phone)}` : ""}
                             </span>
                             <button type="button" onClick={() => { setSelectedCustomer(null); void saveOrderCustomer(null); }} className={`${SECONDARY_BUTTON} shrink-0`}>
@@ -1339,7 +1339,7 @@ export function OrderDetailModal({
                               onChange={(event) => setCustomerQuery(event.target.value)}
                             />
                             {customerResults.length > 0 ? (
-                              <ul className="mt-2 max-h-44 overscroll-contain overflow-y-auto rounded-xl border border-[#EAE8E2] bg-white" onWheel={(event) => event.stopPropagation()}>
+                              <ul className="mt-2 max-h-44 overscroll-contain overflow-y-auto rounded-xl border border-stone-200/80 bg-white" onWheel={(event) => event.stopPropagation()}>
                                 {customerResults.map((candidate) => (
                                   <li key={candidate.id}>
                                     <button type="button" onClick={() => setSelectedCustomer(candidate)} className={`min-h-12 w-full px-3 text-start text-sm ${FOCUS}`}>
@@ -1350,7 +1350,7 @@ export function OrderDetailModal({
                               </ul>
                             ) : null}
                             {customerQuery.trim() && !showNewCustomer ? (
-                              <button type="button" onClick={() => setShowNewCustomer(true)} className={`mt-2 min-h-11 text-xs font-bold text-[#9B6700] ${FOCUS}`}>
+                              <button type="button" onClick={() => setShowNewCustomer(true)} className={`mt-2 min-h-11 text-xs font-bold text-amber-700 ${FOCUS}`}>
                                 + مشتری جدید «{customerQuery.trim()}»
                               </button>
                             ) : null}
@@ -1370,8 +1370,8 @@ export function OrderDetailModal({
 
                     <section className={`${CARD} p-4`} aria-label="مبلغ سفارش">
                       {editable ? (
-                        <div className="mb-4 border-b border-[#EAE8E2] pb-4">
-                          <h3 className="mb-2 font-semibold text-[#252522]">
+                        <div className="mb-4 border-b border-stone-200/80 pb-4">
+                          <h3 className="mb-2 font-semibold text-stone-950">
                             تخفیف
                           </h3>
                           <div className="flex flex-col gap-2">
@@ -1451,11 +1451,11 @@ export function OrderDetailModal({
                             value={money.format(Number(order.tax))}
                           />
                         ) : null}
-                        <div className="mt-1 flex items-center justify-between gap-3 rounded-xl border border-[#F2D097] bg-[#FFF9EE] px-3 py-2.5">
-                          <dt className="text-sm font-bold text-[#252522]">
+                        <div className="mt-1 flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5">
+                          <dt className="text-sm font-bold text-stone-950">
                             جمع کل
                           </dt>
-                          <dd className="text-base font-bold tabular-nums text-[#B97905]">
+                          <dd className="text-base font-bold tabular-nums text-amber-700">
                             {money.format(Number(order.total))}
                           </dd>
                         </div>
@@ -1467,7 +1467,7 @@ export function OrderDetailModal({
                         className={`${CARD} p-4`}
                         aria-label="دریافت وجه"
                       >
-                        <h3 className="mb-3 font-semibold text-[#252522]">
+                        <h3 className="mb-3 font-semibold text-stone-950">
                           دریافت وجه و تکمیل سفارش
                         </h3>
                         <div className="mb-3">
@@ -1488,9 +1488,9 @@ export function OrderDetailModal({
                         </div>
 
                         <label className="mb-3 block">
-                          <span className="mb-1.5 block text-xs font-semibold text-[#5E5B55]">
+                          <span className="mb-1.5 block text-xs font-semibold text-stone-600">
                             انعام{" "}
-                            <span className="font-normal text-[#8B8A85]">
+                            <span className="font-normal text-stone-400">
                               (اختیاری، تومان)
                             </span>
                           </span>
@@ -1507,10 +1507,10 @@ export function OrderDetailModal({
                         </label>
 
                         {needsCustomer ? (
-                          <div className="mb-3 rounded-xl border border-[#EAE8E2] bg-[#FCFCFA] p-3">
+                          <div className="mb-3 rounded-xl border border-stone-200/80 bg-stone-50 p-3">
                             {selectedCustomer ? (
                               <div className="flex items-center justify-between gap-2">
-                                <span className="min-w-0 truncate text-sm text-[#252522]">
+                                <span className="min-w-0 truncate text-sm text-stone-950">
                                   {selectedCustomer.name}
                                   {selectedCustomer.phone
                                     ? ` — ${toPersianDigits(selectedCustomer.phone)}`
@@ -1535,7 +1535,7 @@ export function OrderDetailModal({
                                   }
                                 />
                                 {customerResults.length > 0 ? (
-                                  <ul className="mt-2 max-h-44 divide-y divide-[#F1EFEA] overflow-y-auto rounded-xl border border-[#EAE8E2] bg-white">
+                                  <ul className="mt-2 max-h-44 divide-y divide-stone-100 overflow-y-auto rounded-xl border border-stone-200/80 bg-white">
                                     {customerResults.map((customer) => (
                                       <li key={customer.id}>
                                         <button
@@ -1543,7 +1543,7 @@ export function OrderDetailModal({
                                           onClick={() =>
                                             setSelectedCustomer(customer)
                                           }
-                                          className={`block min-h-12 w-full px-3 text-start text-sm text-[#252522] hover:bg-[#FCFCFA] ${FOCUS}`}
+                                          className={`block min-h-12 w-full px-3 text-start text-sm text-stone-950 hover:bg-stone-50 ${FOCUS}`}
                                         >
                                           {customer.name}
                                           {customer.phone
@@ -1558,7 +1558,7 @@ export function OrderDetailModal({
                                   <button
                                     type="button"
                                     onClick={() => setShowNewCustomer(true)}
-                                    className={`mt-2 min-h-11 text-xs font-bold text-[#9B6700] hover:underline ${FOCUS}`}
+                                    className={`mt-2 min-h-11 text-xs font-bold text-amber-700 hover:underline ${FOCUS}`}
                                   >
                                     + مشتری جدید «{customerQuery.trim()}»
                                   </button>
@@ -1644,14 +1644,14 @@ export function OrderDetailModal({
               collected off-screen — the same reason the POS cart pins its own
               total. */}
           {order ? (
-            <div className="flex shrink-0 items-center justify-between gap-3 border-t border-[#EAE8E2] bg-white px-4 py-3 sm:px-5">
+            <div className="flex shrink-0 items-center justify-between gap-3 border-t border-stone-200/80 bg-white px-4 py-3 sm:px-5">
               <div className="flex items-baseline gap-2">
-                <span className="text-sm font-bold text-[#252522]">جمع کل</span>
-                <span className="text-xs text-[#77756F]">
+                <span className="text-sm font-bold text-stone-950">جمع کل</span>
+                <span className="text-xs text-stone-500">
                   {toPersianDigits(itemCount)} قلم
                 </span>
               </div>
-              <span className="text-base font-bold tabular-nums text-[#B97905]">
+              <span className="text-base font-bold tabular-nums text-amber-700">
                 {money.format(Number(order.total))}
               </span>
             </div>
@@ -1692,9 +1692,9 @@ export function OrderDetailModal({
 
 function Fact({ label, value }: { label: string; value: string }) {
   return (
-    <div className="min-w-0 flex-1 basis-[calc(50%-0.25rem)] rounded-xl border border-[#F1EFEA] bg-[#FCFCFA] p-3">
-      <dt className="text-[11px] text-[#77756F]">{label}</dt>
-      <dd className="mt-1 truncate text-sm font-bold text-[#252522]">
+    <div className="min-w-0 flex-1 basis-[calc(50%-0.25rem)] rounded-xl border border-stone-100 bg-stone-50 p-3">
+      <dt className="text-[11px] text-stone-500">{label}</dt>
+      <dd className="mt-1 truncate text-sm font-bold text-stone-950">
         {value}
       </dd>
     </div>
@@ -1712,9 +1712,9 @@ function Row({
 }) {
   return (
     <div className="flex items-center justify-between gap-3 text-sm">
-      <dt className="text-[#77756F]">{label}</dt>
+      <dt className="text-stone-500">{label}</dt>
       <dd
-        className={`tabular-nums ${accent ? "font-semibold text-[#B97905]" : "text-[#5E5B55]"}`}
+        className={`tabular-nums ${accent ? "font-semibold text-amber-700" : "text-stone-600"}`}
       >
         {value}
       </dd>
