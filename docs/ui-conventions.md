@@ -57,7 +57,7 @@ Notes that are easy to get wrong:
   is the whole page, and picking an entry replaces it with that section under a «بازگشت» arrow —
   the same one-level-at-a-time shape the sidebar already gives a phone. Two variants:
   `strip` (the default: pills above the panel from `md` up) and `rail` (a sticky menu card
-  beside the panel from `lg` up, for a menu too long to read as pills — تنظیمات, حسابداری).
+  beside the panel from `lg` up, for a menu too long to read as pills — تنظیمات, حسابداری, رشد و بازاریابی).
   Reach for `TabBar` on its own only where there is no menu to drill into.
   - Rendering both halves and switching them with `hidden`/`md:block` is deliberate: the
     drill-down state means nothing above the breakpoint, so there is no `matchMedia` read and

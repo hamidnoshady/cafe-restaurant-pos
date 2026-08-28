@@ -1,12 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
-import { listPromotions, upsertPromotion, type PromotionInput } from "@/lib/promotions-service";
+import { listPromotionCatalogue, upsertPromotion, type PromotionInput } from "@/lib/promotions-service";
 
-/** The business's promotions, active ones first by priority. */
+/**
+ * The business's promotions, as the management catalogue (Phase 36b): full
+ * rows — name, is_active, the date window — so the Growth app's campaigns
+ * screen can label, order and pause them. The engine's own callers read
+ * `listPromotions` server-side and never through this route.
+ */
 export const GET = withTenantScope(async () => {
   const { session, error } = await requireRole("owner", "manager", "cashier");
   if (error) return error;
-  return NextResponse.json({ promotions: await listPromotions(session.businessId, true) });
+  return NextResponse.json({ promotions: await listPromotionCatalogue(session.businessId) });
 });
 
 /** Creates or edits one promotion. */

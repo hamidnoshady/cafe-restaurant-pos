@@ -123,6 +123,9 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   "/dashboard/reports": BarChart3Icon,
   "/dashboard/ai": BotIcon,
   "/dashboard/settings": SettingsIcon,
+  // Phase 36b — the Growth & Marketing app's home; the trend glyph the
+  // workspace rail already uses for «رشد و بازاریابی».
+  "/dashboard/growth": TrendingUpIcon,
 };
 
 export interface NavItem {
@@ -253,9 +256,15 @@ function WorkspaceRail({ navItems, pathname }: { navItems: NavItem[]; pathname: 
   // First available page of each app, in order of preference — a business
   // without the ledger flag still lands somewhere real inside حسابداری.
   const accountingHref = ["/dashboard/ledger", "/dashboard/reports"].find((href) => hrefs.includes(href));
-  const growthHref = ["/dashboard/loyalty", "/dashboard/promotions", "/dashboard/commission"].find((href) =>
-    hrefs.includes(href),
-  );
+  // Phase 36b — the Growth app has a home of its own; the old flat pages
+  // (loyalty/promotions/commission) redirect into it, so a member whose saved
+  // bottom-nav still holds one lands in the app rather than on a 404.
+  const growthHref = [
+    "/dashboard/growth",
+    "/dashboard/loyalty",
+    "/dashboard/promotions",
+    "/dashboard/commission",
+  ].find((href) => hrefs.includes(href));
   const accountingActive = accountingHref !== undefined && isActive(pathname, accountingHref);
   const growthActive = growthHref !== undefined && isActive(pathname, growthHref);
 

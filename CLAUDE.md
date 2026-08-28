@@ -315,6 +315,15 @@ Two more, because both of these are load-bearing and easy to undo by accident:
   backdated order (`/api/orders/backdated`) invalidate the range it landed in. And only
   read-only turns are ever cached — `isCacheableTurn()` fails closed and is checked inside
   `storeCachedAnswer()`, not just at the call site.
+- **The Growth & Marketing app (`/dashboard/growth`) is the container for every
+  customer-growing surface** (Phase 36b): loyalty, campaigns/gift cards and commission are
+  its sections today; CRM (#367), messaging (#372) and the website manager (#378) become
+  sections of it, not new sidebar peers. Its dashboard never keeps a number of its own —
+  every balance on it is reconstructed from `journal_lines` the way the trial balance does
+  (`growth-overview.ts`), and marketing moves money only through the posting rules its
+  services already own (`GROWTH_BRIDGE_CODES` is exactly ۲۳۰۰/۲۴۱۰/۲۴۲۰/۵۲۱۰). The old flat
+  routes (`/dashboard/{loyalty,promotions,commission}`) redirect into the app — keep them
+  that way; bookmarks and saved bottom-nav slots depend on them.
 
 ## The assistant's replies — read before adding an AI tool or touching the chat
 

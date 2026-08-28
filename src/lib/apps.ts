@@ -57,11 +57,15 @@ export const APPS: AppDef[] = [
     key: "growth",
     label: "رشد و بازاریابی",
     description:
-      "نگه‌داشتن و رشد مشتریان: وفاداری، کمپین‌ها و کارت هدیه، و پورسانت فروشندگان.",
+      "برنامهٔ نگه‌داشتن و رشد مشتریان: میز کار رشد، وفاداری، کمپین‌ها و کارت هدیه، و پورسانت فروشندگان.",
+    // Since Phase 36b this app has a home of its own (/dashboard/growth) with
+    // a management dashboard and one section per engine — the same shape the
+    // accounting suite has — over the same services and posting rules the
+    // three old flat pages used.
     // `crm`, `website` and `messaging` are listed here as forward references:
-    // their pages land in phases 36–38 (CRM, the website manager, SMS/email),
-    // but this phase builds the module key and its place in the app list, so
-    // they already sit under Growth & Marketing rather than as new flat peers.
+    // their pages land in the CRM/messaging/website phases, but the registry
+    // already seats them under Growth & Marketing rather than as new flat
+    // peers — CRM will grow this app's audience, not the sidebar.
     modules: ["loyalty", "promotions", "commission", "crm", "website", "messaging"],
   },
   {

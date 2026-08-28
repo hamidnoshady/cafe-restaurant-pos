@@ -1,0 +1,138 @@
+# Phase 36b — the Growth & Marketing app («رشد و بازاریابی»)
+
+> Filed as **36b** because it is the direct continuation of Phase 36's wave 1
+> (#359): the registry grouped loyalty, campaigns/gift cards and commission
+> under one app key, but the three surfaces stayed three flat sidebar pages.
+> This phase builds the app that key was promising. The next phases keep their
+> issue numbers — CRM is #367 ("Phase 36" in issue numbering), messaging #372,
+> the website manager #378 — and CRM's audience grows *this* app rather than
+> adding a new sidebar peer.
+
+## Why
+
+Loyalty, campaigns and gift cards, and seller commission were built right —
+each with a pure engine, a service, and a posting rule that puts its money in
+the ledger (store credit credits ۲۴۱۰, gift cards ۲۴۲۰, commission debits ۵۲۱۰
+and credits ۲۳۰۰). But they were reached as three unrelated pages, and the
+facts an owner actually wants — «بازاریابی‌ام چه خبر؟», what campaigns cost,
+what we owe customers and staff because of marketing — were scattered across
+them and the trial balance.
+
+The accounting suite had already solved this shape for the money side: one
+route, a rail of sections, each section a screen with its own data
+(`ledger-manager.tsx`). This phase gives marketing the same container:
+
+- **`/dashboard/growth`** — the app's home, a management dashboard («میز کار
+  رشد») over all four engines, plus one section per engine. Same
+  `SectionNav` rail pattern as حسابداری, same chrome, nothing new invented.
+- The three flat sidebar entries collapse into **one** entry, «رشد و
+  بازاریابی». The old routes (`/dashboard/loyalty`, `/dashboard/promotions`,
+  `/dashboard/commission`) redirect into the app's sections, so bookmarks,
+  saved bottom-nav slots and assistant links keep working.
+- **The connection to accounting is not just kept, it is made visible**: a
+  «پل حسابداری» card on the dashboard shows the four ledger accounts this app
+  writes to, with balances reconstructed from `journal_lines` — the same
+  reconstruction the trial balance does — and a link into `/dashboard/ledger`.
+
+## The architecture rule, kept
+
+Per the ecosystem's rule — *a new app adds modules, a section screen, read
+tools and posting rules; not a second write path* — this phase added:
+
+- **No new tables.** The dashboard reads `promotions`,
+  `promotion_applications`, `customer_points`, `gift_cards`,
+  `commission_accruals`, `customers`, `accounts` + `journal_lines` — tables
+  the engines already own.
+- **No new ledger writes.** Issuing a gift card from the new section runs the
+  same `promotions.gift_card_issued` event and the same posting rule the old
+  page ran; the KPI card reads the liability the rule posted. A marketing
+  dashboard that disagrees with the books would be worse than none, so every
+  balance on it *is* the ledger's.
+- **One new read endpoint**, `/api/growth/overview` (owner/manager — it
+  aggregates commission, which is compensation data, the same line the
+  ledger's payroll tab draws), plus a widened `GET /api/promotions` that
+  returns the management catalogue (name, `is_active`, date window as text)
+  instead of the engine's name-less shape. That widening also fixed a real
+  bug: the old page rendered `p.name` from a payload that never carried one.
+
+## What the dashboard shows
+
+| Card | Source of truth |
+| --- | --- |
+| تخفیف کمپین‌ها · ۳۰ روز | `promotion_applications` (applications count, discount sum) |
+| بدهی کارت هدیه (۲۴۲۰) | `journal_lines` balance of ۲۴۲۰ + `gift_cards` issued in window |
+| اعتبار فروشگاهی مشتریان (۲۴۱۰) | `journal_lines` balance of ۲۴۱۰; `customer_points` for engagement |
+| پورسانت فروشندگان · ۳۰ روز | `commission_accruals` (۵۲۱۰/۲۳۰۰ by rule) |
+| امتیاز در گردش | `Σ customer_points.points`, with the default program's rate as an *estimated* redemption value |
+| آمادهٔ خرید مجدد | `customersDueForRepurchase` for the caller's branch |
+
+Plus: top campaigns and top sellers leaderboards, a merged **activity feed**
+of the last events across all four engines (a campaign firing, points earned
+or redeemed, a card issued, a commission accrued), the bridge card, and a
+first-run «شروع برنامهٔ رشد» checklist whose buttons jump to the sections.
+
+Windows are **rolling 30-day ranges** over the stored Gregorian ISO dates,
+deliberately not calendar months, so a number means the same thing on any day
+it is opened.
+
+## Campaign management, added
+
+The campaigns section keeps the engine untouched (`promotions.ts` still
+decides every discount deterministically) and adds the management half:
+
+- every campaign labelled **در حال اجرا / زمان‌بندی‌شده / پایان‌یافته /
+    متوقف** — `classifyCampaign()` in `growth-shared.ts`, inclusive date
+    bounds exactly as the engine reads them, and a paused campaign answers
+    «متوقف» even mid-window;
+- **one-tap pause/resume** through the existing `POST /api/promotions`
+    upsert, sending the full row so nothing else changes;
+- the **effectiveness report** (how often each campaign fired and what it
+  cost) rendered beside the form, over the same 30-day window as the KPIs.
+
+## Files
+
+| File | What |
+| --- | --- |
+| `src/lib/growth-shared.ts` (+ test) | Framework-free half: campaign states, window math, bridge account list, balance signing |
+| `src/lib/growth-overview.ts` | The one dashboard query, read-only |
+| `src/app/api/growth/overview/route.ts` | GET, owner/manager |
+| `src/app/dashboard/growth/page.tsx` | The app's route; validates `?section=` deep links |
+| `growth-manager.tsx`, `growth-sections.ts` | The rail + the shared section keys (a `"use client"` export is a stub on the server, so the keys live apart) |
+| `overview-section.tsx`, `campaigns-section.tsx`, `gift-cards-section.tsx`, `loyalty-section.tsx`, `commission-section.tsx` | The screens — the three old pages' substance, moved, plus the dashboard and campaign states |
+| `src/app/dashboard/{loyalty,promotions,commission}/page.tsx` | Now redirects into the app |
+| `src/app/dashboard/layout.tsx`, `dashboard-sidebar.tsx` | One nav entry; the workspace rail's growth href prefers the new route |
+| `src/lib/promotions-service.ts` | `listPromotionCatalogue()` — full rows, dates as text |
+| `src/lib/apps.ts`, `src/lib/industry-profile.ts` | The growth app's description; `/dashboard/growth` in `PAGE_MODULE_PREFIXES`, anchored on `loyalty` |
+
+## Roles
+
+The app's page admits owner, manager and cashier; **the rail restricts
+itself**: a cashier lands directly on «وفاداری و اعتبار» — the one surface
+the old `/dashboard/loyalty` gave them — and never sees commission
+(compensation), the campaigns/gift-card counters, or the KPI dashboard, the
+same way the ledger drops its payroll tab for a manager. A deep link a role
+cannot use (`?section=commission` as a cashier) falls back to that role's
+first section rather than an empty panel.
+
+## Exit criteria
+
+| # | Criterion | Where it is met |
+| --- | --- | --- |
+| 1 | One sidebar entry opens the app; the three old routes redirect into its sections | `layout.tsx`; the three redirect pages |
+| 2 | The dashboard's gift-card and store-credit numbers equal the trial balance's | Both reconstruct from `journal_lines`; `GROWTH_BRIDGE_CODES` is exactly ۲۳۰۰/۲۴۱۰/۲۴۲۰/۵۲۱۰ |
+| 3 | Issuing a gift card from the app still posts cash/۲۴۲۰ and appears on the dashboard | Verified live: `promotions.gift_card_issued` → ۱۱۰۰ debit, ۲۴۲۰ credit, bridge reads it back |
+| 4 | A campaign starting today is «در حال اجرا», not «زمان‌بندی‌شده» | `classifyCampaign` inclusive bounds; catalogue casts dates to text; unit tests |
+| 5 | Pause/resume changes nothing but `is_active` | The row is POSTed whole; the upsert is unchanged |
+| 6 | A cashier sees only وفاداری; the overview API refuses them (403) | `growth-manager.tsx` filter; `requireRole("owner","manager")` |
+| 7 | No new table, no new write path, no new `withoutTenantScope` reason | `growth-overview.ts` is read-only and runs inside the caller's tenant scope |
+| 8 | `npx tsc --noEmit`, `npm test`, `npm run build` green | Locally and CI |
+
+## Out of scope, deliberately
+
+- **CRM (segments, consent, the customer file)** — issue #367. It grows this
+  app («مخاطبان» becomes a section) rather than forking a new one.
+- **SMS/email marketing (#372) and the website manager (#378)** — the module
+  keys already sit under the growth app in `apps.ts`.
+- Campaign budgets and a marketing-expense cost centre (#376 exists for the
+  messaging phase; project cost centres are #377's subject).
+- Changing any engine's arithmetic, posting rule or account number.
