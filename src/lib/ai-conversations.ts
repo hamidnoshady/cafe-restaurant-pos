@@ -35,6 +35,8 @@ export interface AiConversationSummary {
   title: string;
   lastMessageAt: string;
   createdAt: string;
+  /** Phase 35 Wave 3 — the project this conversation belongs to, if any. */
+  projectId: string | null;
 }
 
 export interface AiConversationMessage {
@@ -57,9 +59,13 @@ interface Owner {
  * unknown/foreign id — a stale or tampered client-supplied id just starts a
  * new conversation instead of failing the (already-reserved, already
  * mid-flight) turn.
+ *
+ * Phase 35 Wave 3: `projectId` links the new conversation to a project.
+ * When resuming an existing conversation, the project link is not checked —
+ * the conversation already carries it.
  */
 export async function getOrCreateConversation(
-  owner: Owner & { mode: AgentMode; conversationId: string | null; firstMessageContent: string },
+  owner: Owner & { mode: AgentMode; conversationId: string | null; firstMessageContent: string; projectId?: string | null },
 ): Promise<{ id: string; isNew: boolean }> {
   if (owner.conversationId) {
     const { rows } = await query<{ id: string }>(
@@ -70,11 +76,12 @@ export async function getOrCreateConversation(
     if (rows[0]) return { id: rows[0].id, isNew: false };
   }
 
+  const projectId = owner.projectId ?? null;
   const { rows } = await query<{ id: string }>(
-    `INSERT INTO ai_conversations (business_id, actor_user_id, mode, title)
-     VALUES ($1, $2, $3, $4)
+    `INSERT INTO ai_conversations (business_id, actor_user_id, mode, title, project_id)
+     VALUES ($1, $2, $3, $4, $5)
      RETURNING id`,
-    [owner.businessId, owner.actorUserId, owner.mode, deriveConversationTitle(owner.firstMessageContent)],
+    [owner.businessId, owner.actorUserId, owner.mode, deriveConversationTitle(owner.firstMessageContent), projectId],
   );
   return { id: rows[0].id, isNew: true };
 }
@@ -111,8 +118,9 @@ export async function listConversations(
     title: string;
     last_message_at: string;
     created_at: string;
+    project_id: string | null;
   }>(
-    `SELECT id, mode, title, last_message_at, created_at
+    `SELECT id, mode, title, last_message_at, created_at, project_id
        FROM ai_conversations
       WHERE business_id = $1 AND actor_user_id = $2
         AND ($3::timestamptz IS NULL OR last_message_at < $3::timestamptz)
@@ -126,6 +134,7 @@ export async function listConversations(
     title: row.title,
     lastMessageAt: row.last_message_at,
     createdAt: row.created_at,
+    projectId: row.project_id,
   }));
 }
 
@@ -138,8 +147,9 @@ export async function getConversationMessages(
     title: string;
     last_message_at: string;
     created_at: string;
+    project_id: string | null;
   }>(
-    `SELECT id, mode, title, last_message_at, created_at
+    `SELECT id, mode, title, last_message_at, created_at, project_id
        FROM ai_conversations
       WHERE id = $1 AND business_id = $2 AND actor_user_id = $3`,
     [owner.conversationId, owner.businessId, owner.actorUserId],
@@ -169,6 +179,7 @@ export async function getConversationMessages(
       title: conversation.title,
       lastMessageAt: conversation.last_message_at,
       createdAt: conversation.created_at,
+      projectId: conversation.project_id,
     },
     messages: messageRows.map((row) => ({
       id: row.id,
@@ -223,4 +234,55 @@ export async function deleteConversation(owner: Owner & { conversationId: string
     [owner.conversationId, owner.businessId, owner.actorUserId],
   );
   return (rowCount ?? 0) > 0;
+}
+
+/**
+ * Phase 35 Wave 3 — list conversations belonging to a specific project.
+ * Same ownership rules as listConversations.
+ */
+export async function listConversationsByProject(
+  owner: Owner & { projectId: string },
+  options: { limit?: number; before?: string | null } = {},
+): Promise<AiConversationSummary[]> {
+  const limit = Math.max(1, Math.min(100, Math.floor(options.limit ?? 30)));
+  const { rows } = await query<{
+    id: string;
+    mode: AgentMode;
+    title: string;
+    last_message_at: string;
+    created_at: string;
+    project_id: string | null;
+  }>(
+    `SELECT id, mode, title, last_message_at, created_at, project_id
+       FROM ai_conversations
+      WHERE business_id = $1 AND actor_user_id = $2 AND project_id = $3
+        AND ($4::timestamptz IS NULL OR last_message_at < $4::timestamptz)
+      ORDER BY last_message_at DESC
+      LIMIT $5`,
+    [owner.businessId, owner.actorUserId, owner.projectId, options.before ?? null, limit],
+  );
+  return rows.map((row) => ({
+    id: row.id,
+    mode: row.mode,
+    title: row.title,
+    lastMessageAt: row.last_message_at,
+    createdAt: row.created_at,
+    projectId: row.project_id,
+  }));
+}
+
+/**
+ * Phase 35 Wave 3 — resolve the project_id for a conversation, for prompt
+ * injection. Returns null if the conversation has no project.
+ */
+export async function getConversationProjectId(
+  businessId: string,
+  conversationId: string,
+): Promise<string | null> {
+  const { rows } = await query<{ project_id: string | null }>(
+    `SELECT project_id FROM ai_conversations
+      WHERE id = $1 AND business_id = $2`,
+    [conversationId, businessId],
+  );
+  return rows[0]?.project_id ?? null;
 }

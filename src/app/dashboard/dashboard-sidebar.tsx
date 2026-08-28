@@ -236,12 +236,13 @@ function WorkspaceRail({
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
-          {/* Projects land in Wave 3; shown now as a disabled placeholder so the
-              rail's shape is stable and the entry is there to fill. */}
+          {/* Phase 35 Wave 3 — Projects are now functional. */}
           <SidebarMenuItem>
-            <SidebarMenuButton disabled className="min-h-12 cursor-not-allowed rounded-xl text-[#A8A49A]">
-              <FolderIcon aria-hidden="true" className="size-5 shrink-0" />
-              <span className="group-data-[state=collapsed]/sidebar:hidden">پروژه‌ها</span>
+            <SidebarMenuButton asChild isActive={pathname.startsWith("/dashboard/projects")} className="min-h-12 rounded-xl text-[#3C3A36] hover:bg-[#FFF9EE] hover:text-[#9B6700] data-[active=true]:bg-[#FFF1D8] data-[active=true]:font-semibold data-[active=true]:text-[#B97905]">
+              <Link href="/dashboard/projects">
+                <FolderIcon aria-hidden="true" className="size-5 shrink-0" />
+                <span className="group-data-[state=collapsed]/sidebar:hidden">پروژه‌ها</span>
+              </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
