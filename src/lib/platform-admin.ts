@@ -39,6 +39,9 @@ export type PlatformCapability =
   // Owner-only business data operations
   | "business.edit"
   | "business.reset"
+  // Learning content: the per-section knowledge-base URLs every business's
+  // «آموزش» modal opens.
+  | "knowledge.manage"
   // Impersonation, split by blast radius
   | "impersonate.readOnly"
   | "impersonate.full"
@@ -68,6 +71,7 @@ const CAPABILITIES: Record<PlatformAdminRole, PlatformCapability[]> = {
     "business.suspend",
     "ai.credits.manage",
     "impersonate.revoke",
+    "knowledge.manage",
   ],
   owner: [
     ...READ,
@@ -76,6 +80,7 @@ const CAPABILITIES: Record<PlatformAdminRole, PlatformCapability[]> = {
     "business.suspend",
     "ai.credits.manage",
     "impersonate.revoke",
+    "knowledge.manage",
     "impersonate.full",
     "business.provision",
     "business.archive",

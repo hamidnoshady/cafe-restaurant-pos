@@ -7,6 +7,7 @@ import { formatPersianNumber } from "@/lib/digits";
 import { useMoney } from "@/components/money/money-context";
 import { api, ErrorBox, Field, inputClass } from "../ui";
 import { PageHeader, PageShell, SectionCard } from "../page-chrome";
+import { KnowledgeHelpButton } from "../knowledge-help";
 import { JalaliDatePicker } from "../jalali-date-picker";
 import { StockCountSection } from "./stock-count-section";
 
@@ -76,6 +77,7 @@ export default function StockPage() {
       <PageHeader
         title="خرید و انبار"
         description="خرید، برگشت به تأمین‌کننده، انتقال بین شعبه‌ها، انبارگردانی و گزارش کمبود/راکد موجودی."
+        actions={<KnowledgeHelpButton section="stock" />}
       />
 
       <ErrorBox>{error}</ErrorBox>

@@ -35,6 +35,7 @@ describe("platformCan — role → capability presets", () => {
     expect(platformCan("support", "admins.manage")).toBe(false);
     expect(platformCan("support", "updates.manage")).toBe(false);
     expect(platformCan("support", "ai.config.manage")).toBe(false);
+    expect(platformCan("support", "knowledge.manage")).toBe(false);
   });
 
   it("engineer adds operational writes but not the owner-only powers", () => {

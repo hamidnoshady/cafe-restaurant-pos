@@ -3,6 +3,7 @@ import { getSession } from "@/lib/auth";
 import { requireModuleForPage } from "@/lib/industry-guard";
 import { requireFeatureForPage } from "@/lib/features";
 import { PageHeader, PageShell } from "../page-chrome";
+import { KnowledgeHelpButton } from "../knowledge-help";
 import { InventoryManager } from "./inventory-manager";
 
 export default async function InventoryPage() {
@@ -18,6 +19,7 @@ export default async function InventoryPage() {
       <PageHeader
         title="انبار"
         description="اقلام انبار، دستورالعمل مصرف (رسپی)، تأمین‌کنندگان، خرید، ضایعات و شمارش فیزیکی."
+        actions={<KnowledgeHelpButton section="inventory" />}
       />
       <InventoryManager />
     </PageShell>

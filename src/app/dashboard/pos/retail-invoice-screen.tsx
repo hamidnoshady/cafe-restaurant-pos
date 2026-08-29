@@ -33,6 +33,7 @@ import { ledgerSettlementFor } from "@/lib/payment-methods";
 import { api, ErrorBox, Field, inputClass } from "../ui";
 import { usePaymentMethods } from "../payment-ways";
 import { PageHeader, PageShell } from "../page-chrome";
+import { KnowledgeHelpButton } from "../knowledge-help";
 
 type Purity = "18" | "21" | "24";
 
@@ -247,10 +248,13 @@ export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
         title={labelFor(industry, "sellScreen")}
         description="کالاها را به فاکتور اضافه کنید، مشتری و روش پرداخت را انتخاب کنید و فاکتور را ثبت کنید."
         actions={
-          <Button variant="outline" onClick={() => void load()} disabled={loading || busy}>
-            <RefreshCwIcon aria-hidden="true" className="size-4" />
-            به‌روزرسانی
-          </Button>
+          <>
+            <KnowledgeHelpButton section="pos" />
+            <Button variant="outline" onClick={() => void load()} disabled={loading || busy}>
+              <RefreshCwIcon aria-hidden="true" className="size-4" />
+              به‌روزرسانی
+            </Button>
+          </>
         }
       />
 

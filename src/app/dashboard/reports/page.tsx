@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { effectiveFeatures, requireFeatureForPage } from "@/lib/features";
 import { PageHeader, PageShell } from "../page-chrome";
+import { KnowledgeHelpButton } from "../knowledge-help";
 import { ReportsManager } from "./reports-manager";
 import { AskAssistant } from "@/components/ai/ask-assistant";
 
@@ -19,12 +20,15 @@ export default async function ReportsPage() {
         title="گزارش‌ها"
         description="گزارش‌های آمادهٔ فروش، انبار، حسابداری و کارکنان، به‌همراه گزارش‌ساز برای ساخت گزارش سفارشی."
         actions={
-          features.ai_assistant ? (
-            <AskAssistant
-              app="growth"
-              context="گزارش‌های این صفحه را بررسی کن و تفاوت فروش هفتهٔ جاری را با هفتهٔ قبل بگو."
-            />
-          ) : null
+          <>
+            <KnowledgeHelpButton section="reports" />
+            {features.ai_assistant ? (
+              <AskAssistant
+                app="growth"
+                context="گزارش‌های این صفحه را بررسی کن و تفاوت فروش هفتهٔ جاری را با هفتهٔ قبل بگو."
+              />
+            ) : null}
+          </>
         }
       />
       <ReportsManager

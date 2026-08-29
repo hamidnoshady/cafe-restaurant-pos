@@ -9,6 +9,7 @@ import { formatJalali, jalaliToIsoDate, todayJalali } from "@/lib/jalali";
 import { isNoShowOverdue } from "@/lib/reservations";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { JalaliDatePicker } from "../jalali-date-picker";
+import { KnowledgeHelpButton } from "../knowledge-help";
 import { api, ErrorBox, errorMessage, Field, inputClass } from "../ui";
 
 // Iran no longer observes DST, so wall-clock Tehran time is a fixed +03:30.
@@ -843,6 +844,7 @@ export function ReservationsManager({ canBook }: { canBook: boolean }) {
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
+            <KnowledgeHelpButton section="reservations" />
             <p
               className="flex min-h-[44px] min-w-0 flex-1 items-center gap-2 text-sm text-stone-600 sm:flex-none"
               role="status"

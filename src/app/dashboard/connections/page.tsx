@@ -5,6 +5,7 @@ import { effectiveFeatures } from "@/lib/features";
 import type { Industry } from "@/lib/industries";
 import { visibleConnectionKinds, resolveConnectionKind } from "@/lib/connection-kinds";
 import { PageHeader, PageShell } from "../page-chrome";
+import { KnowledgeHelpButton } from "../knowledge-help";
 import { ConnectionsManager } from "./connections-manager";
 
 /**
@@ -45,6 +46,7 @@ export default async function ConnectionsPage({
       <PageHeader
         title="اتصال‌ها"
         description="اتصال این کسب‌وکار به برنامهٔ دسکتاپ، فروشگاه اینترنتی و برنامه‌های توسعه‌دهندگان — همراه با آزمایش اتصال، وضعیت همگام‌سازی و مدیریت کلیدها."
+        actions={<KnowledgeHelpButton section="connections" />}
       />
       <ConnectionsManager
         kinds={kinds}

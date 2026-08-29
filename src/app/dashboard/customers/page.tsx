@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { PageHeader, PageShell } from "../page-chrome";
+import { KnowledgeHelpButton } from "../knowledge-help";
 import { CustomersManager } from "./customers-manager";
 
 export default async function CustomersPage() {
@@ -13,6 +14,7 @@ export default async function CustomersPage() {
       <PageHeader
         title="مشتریان"
         description="افزودن، ویرایش و حذف مشتریان؛ مشاهدهٔ مانده بدهکار/بستانکار و صورتحساب هر مشتری."
+        actions={<KnowledgeHelpButton section="customers" />}
       />
       <CustomersManager role={session.role} />
     </PageShell>

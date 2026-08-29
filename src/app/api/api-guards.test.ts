@@ -274,6 +274,10 @@ describe("every API route is guarded", () => {
       // public-key is the one exception: it returns a deployment-wide value that
       // is the same for every member, so there is no per-user row to scope.
       if (key === "notifications/public-key") continue;
+      // Same shape: the knowledge base is platform-maintained content — the
+      // same active learning page is the right answer for every member of every
+      // business, so there is no per-user row to scope to.
+      if (key === "knowledge") continue;
       expect(src, `src/app/api/${key}/route.ts uses requireMember but never scopes to session.sub`).toMatch(
         /session\.sub/,
       );
