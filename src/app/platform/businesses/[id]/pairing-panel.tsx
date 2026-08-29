@@ -10,6 +10,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { api, errorMessage, Button, Card, ErrorBox, InfoBox, useCan } from "../../ui";
+import { useBusiness } from "./context";
 
 interface PairingCodeSummary {
   id: string;
@@ -34,7 +35,8 @@ function fmtDate(iso: string | null): string {
   return new Date(iso).toLocaleString("fa-IR", { dateStyle: "short", timeStyle: "short" });
 }
 
-export function PairingPanel({ id }: { id: string }) {
+export function PairingPanel() {
+  const { id, version } = useBusiness();
   const can = useCan();
   const allowed = can("business.provision");
 
@@ -51,7 +53,7 @@ export function PairingPanel({ id }: { id: string }) {
     );
     if (ok) setCodes(data.codes ?? []);
     else setError(errorMessage(data.error));
-  }, [id, allowed]);
+  }, [id, allowed, version]);
 
   useEffect(() => {
     void load();

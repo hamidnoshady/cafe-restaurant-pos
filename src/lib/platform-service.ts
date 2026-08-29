@@ -49,6 +49,10 @@ export interface BusinessSummary {
   archivedAt: string | null;
   locationCount: number;
   memberCount: number;
+  /** Denormalized-at-read counters for the console list — order volume and the
+   * newest order timestamp answer "is this tenant alive?" without a click. */
+  orderCount: number;
+  lastActivityAt: string | null;
 }
 
 interface BusinessRow extends Record<string, unknown> {
@@ -65,6 +69,8 @@ interface BusinessRow extends Record<string, unknown> {
   archived_at: string | null;
   location_count: string;
   member_count: string;
+  order_count: string;
+  last_activity_at: string | null;
 }
 
 function toSummary(row: BusinessRow): BusinessSummary {
@@ -82,6 +88,8 @@ function toSummary(row: BusinessRow): BusinessSummary {
     archivedAt: row.archived_at,
     locationCount: Number(row.location_count),
     memberCount: Number(row.member_count),
+    orderCount: Number(row.order_count),
+    lastActivityAt: row.last_activity_at,
   };
 }
 
@@ -93,7 +101,11 @@ export async function listBusinesses(): Promise<BusinessSummary[]> {
               b.status::text AS status, b.plan,
               b.timezone, b.industry, b.created_at, b.suspended_at, b.archived_at,
               (SELECT count(*) FROM locations l WHERE l.business_id = b.id) AS location_count,
-              (SELECT count(*) FROM users u WHERE u.business_id = b.id AND u.is_active) AS member_count
+              (SELECT count(*) FROM users u WHERE u.business_id = b.id AND u.is_active) AS member_count,
+              (SELECT count(*) FROM orders o JOIN locations l ON l.id = o.location_id
+                WHERE l.business_id = b.id) AS order_count,
+              (SELECT max(o.opened_at) FROM orders o JOIN locations l ON l.id = o.location_id
+                WHERE l.business_id = b.id) AS last_activity_at
          FROM businesses b
         ORDER BY b.created_at DESC`,
     );
@@ -109,7 +121,11 @@ export async function getBusiness(businessId: string): Promise<BusinessSummary |
               b.status::text AS status, b.plan,
               b.timezone, b.industry, b.created_at, b.suspended_at, b.archived_at,
               (SELECT count(*) FROM locations l WHERE l.business_id = b.id) AS location_count,
-              (SELECT count(*) FROM users u WHERE u.business_id = b.id AND u.is_active) AS member_count
+              (SELECT count(*) FROM users u WHERE u.business_id = b.id AND u.is_active) AS member_count,
+              (SELECT count(*) FROM orders o JOIN locations l ON l.id = o.location_id
+                WHERE l.business_id = b.id) AS order_count,
+              (SELECT max(o.opened_at) FROM orders o JOIN locations l ON l.id = o.location_id
+                WHERE l.business_id = b.id) AS last_activity_at
          FROM businesses b
         WHERE b.id = $1`,
       [businessId],

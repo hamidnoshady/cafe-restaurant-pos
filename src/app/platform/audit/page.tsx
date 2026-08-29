@@ -1,17 +1,47 @@
 "use client";
 
 /**
- * Phase 15 — the platform audit log.
+ * Phase 15 — the platform audit log, rebuilt as a timeline instead of a
+ * scroll-to-forever table.
  *
  * Every privileged cross-tenant action, newest first: who did it, to which
- * business, when. This is the console's accountability surface — the record
- * that impersonation and lifecycle changes cannot happen unseen (exit
- * criterion 3). Read-only; any admin may view it.
+ * business, when, with what payload. This is the console's accountability
+ * surface (exit criterion 3), so the redesign is about *scanning*, not
+ * reading: day groups, per-action colors and icons, quick filters (search,
+ * action family, business, date), collapsible payloads, and "load more"
+ * paging over the last 500 rows the API serves. Read-only.
  */
-import { useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { toPersianDigits } from "@/lib/digits";
-import { api, errorMessage, ErrorBox, Card } from "../ui";
+import { useSearchParams } from "next/navigation";
+import {
+  Archive,
+  Ban,
+  CircleCheck,
+  Globe,
+  KeyRound,
+  Layers,
+  Pencil,
+  RefreshCw,
+  RotateCcw,
+  Search,
+  SlidersHorizontal,
+  Store,
+  Trash2,
+  X,
+} from "lucide-react";
+import { toPersianDigits, formatPersianNumber } from "@/lib/digits";
+import {
+  api,
+  errorMessage,
+  ErrorBox,
+  Card,
+  EmptyState,
+  SkeletonRows,
+  Button,
+  inputClass,
+  selectClass,
+} from "../ui";
 
 interface AuditEntry {
   id: string;
@@ -25,126 +55,472 @@ interface AuditEntry {
   createdAt: string;
 }
 
-const ACTION_LABELS: Record<string, string> = {
-  "business.provision": "ایجاد کسب‌وکار",
-  "business.active": "فعال‌سازی",
-  "business.suspended": "تعلیق",
-  "business.archived": "بایگانی",
-  "business.delete": "حذف قطعی",
-  "business.plan": "تغییر پلن",
-  "business.edit": "ویرایش کسب‌وکار",
-  "business.subdomain": "تغییر نشانی (ساب‌دامنه)",
-  "business.industry_change": "تغییر نوع کسب‌وکار",
-  "business.reset": "ریست کامل کسب‌وکار",
-  "feature.override": "بازنویسی پرچم ویژگی",
-  "impersonation.start": "شروع دسترسی پشتیبانی",
-  "impersonation.end": "پایان دسترسی پشتیبانی",
-  "impersonation.revoke": "لغو دسترسی پشتیبانی",
+type Tone = "ok" | "warn" | "bad" | "info" | "key" | "muted";
+
+interface ActionMeta {
+  label: string;
+  tone: Tone;
+  icon: React.ComponentType<{ className?: string }>;
+}
+
+const ACTION_META: Record<string, ActionMeta> = {
+  "business.provision": { label: "ایجاد کسب‌وکار", tone: "ok", icon: Store },
+  "business.active": { label: "فعال‌سازی", tone: "ok", icon: CircleCheck },
+  "business.suspended": { label: "تعلیق", tone: "warn", icon: Ban },
+  "business.archived": { label: "بایگانی", tone: "muted", icon: Archive },
+  "business.delete": { label: "حذف قطعی", tone: "bad", icon: Trash2 },
+  "business.reset": { label: "ریست کامل کسب‌وکار", tone: "bad", icon: RotateCcw },
+  "business.plan": { label: "تغییر پلن", tone: "info", icon: Layers },
+  "business.edit": { label: "ویرایش کسب‌وکار", tone: "info", icon: Pencil },
+  "business.subdomain": { label: "تغییر نشانی (ساب‌دامنه)", tone: "info", icon: Globe },
+  "business.industry_change": { label: "تغییر نوع کسب‌وکار", tone: "info", icon: SlidersHorizontal },
+  "feature.override": { label: "بازنویسی پرچم ویژگی", tone: "info", icon: SlidersHorizontal },
+  "impersonation.start": { label: "شروع دسترسی پشتیبانی", tone: "key", icon: KeyRound },
+  "impersonation.end": { label: "پایان دسترسی پشتیبانی", tone: "key", icon: KeyRound },
+  "impersonation.revoke": { label: "لغو دسترسی پشتیبانی", tone: "key", icon: KeyRound },
 };
 
-function fmtDate(iso: string): string {
+const TONE_CLS: Record<Tone, { text: string; ring: string; bg: string; dot: string }> = {
+  ok: { text: "text-emerald-300", ring: "border-emerald-500/30", bg: "bg-emerald-500/10", dot: "bg-emerald-400" },
+  warn: { text: "text-amber-300", ring: "border-amber-500/30", bg: "bg-amber-500/10", dot: "bg-amber-400" },
+  bad: { text: "text-red-300", ring: "border-red-500/30", bg: "bg-red-500/10", dot: "bg-red-400" },
+  info: { text: "text-sky-300", ring: "border-sky-500/30", bg: "bg-sky-500/10", dot: "bg-sky-400" },
+  key: { text: "text-violet-300", ring: "border-violet-500/30", bg: "bg-violet-500/10", dot: "bg-violet-400" },
+  muted: { text: "text-white/50", ring: "border-white/15", bg: "bg-white/5", dot: "bg-white/30" },
+};
+
+function metaFor(action: string): ActionMeta {
+  return ACTION_META[action] ?? { label: action, tone: "muted", icon: CircleCheck };
+}
+
+function fmtTime(iso: string): string {
   try {
     return toPersianDigits(
-      new Intl.DateTimeFormat("fa-IR", { dateStyle: "medium", timeStyle: "short" }).format(
-        new Date(iso),
-      ),
+      new Intl.DateTimeFormat("fa-IR", { hour: "2-digit", minute: "2-digit" }).format(new Date(iso)),
     );
   } catch {
     return iso;
   }
 }
 
+/** «امروز» / «دیروز» / Persian full date — the day-group heading. */
+function dayLabel(ts: number): string {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const dayMs = 24 * 60 * 60 * 1000;
+  if (ts >= today.getTime()) return "امروز";
+  if (ts >= today.getTime() - dayMs) return "دیروز";
+  try {
+    return toPersianDigits(new Intl.DateTimeFormat("fa-IR", { dateStyle: "full" }).format(new Date(ts)));
+  } catch {
+    return new Date(ts).toISOString().slice(0, 10);
+  }
+}
+
+function relativeTime(iso: string): string {
+  try {
+    const diffMin = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+    if (diffMin < 1) return "همین حالا";
+    if (diffMin < 60) return `${toPersianDigits(diffMin)} دقیقه پیش`;
+    const hours = Math.round(diffMin / 60);
+    if (hours < 24) return `${toPersianDigits(hours)} ساعت پیش`;
+    const days = Math.round(hours / 24);
+    if (days < 30) return `${toPersianDigits(days)} روز پیش`;
+    const months = Math.round(days / 30);
+    return `${toPersianDigits(months)} ماه پیش`;
+  } catch {
+    return "";
+  }
+}
+
+const DATE_PRESETS = [
+  { days: 0, label: "همه" },
+  { days: 1, label: "امروز" },
+  { days: 7, label: "۷ روز" },
+  { days: 30, label: "۳۰ روز" },
+  { days: 90, label: "۹۰ روز" },
+];
+
+const PAGE = 40;
+
 export default function AuditPage() {
+  // `?businessId=` arrives from a business's overview page ("events of this
+  // tenant"); hydrating the filter from the URL makes the two views one flow.
+  return (
+    <Suspense>
+      <AuditTimeline />
+    </Suspense>
+  );
+}
+
+function AuditTimeline() {
+  const searchParams = useSearchParams();
   const [entries, setEntries] = useState<AuditEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    (async () => {
-      const { ok, data } = await api<{ entries: AuditEntry[]; error?: string }>(
-        "/api/platform/audit",
-      );
-      if (ok) setEntries(data.entries);
-      else setError(errorMessage(data.error));
-    })();
+  const [q, setQ] = useState("");
+  const [action, setAction] = useState("");
+  const [businessId, setBusinessId] = useState(() => searchParams.get("businessId") ?? "");
+  const [preset, setPreset] = useState(0);
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [limit, setLimit] = useState(PAGE);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    // One fat page, paged client-side: the API caps at 500 and the filters
+    // below (including date) slice locally, so paging never races the server.
+    const { ok, data } = await api<{ entries: AuditEntry[]; error?: string }>(
+      "/api/platform/audit?limit=500",
+    );
+    if (ok) setEntries(data.entries ?? []);
+    else setError(errorMessage(data.error));
+    setLoading(false);
   }, []);
 
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const businesses = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const e of entries ?? []) {
+      if (e.businessId && e.businessName) map.set(e.businessId, e.businessName);
+    }
+    return Array.from(map.entries()).sort((a, b) => a[1].localeCompare(b[1], "fa"));
+  }, [entries]);
+
+  const counts = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const e of entries ?? []) map.set(e.action, (map.get(e.action) ?? 0) + 1);
+    return Array.from(map.entries()).sort((a, b) => b[1] - a[1]);
+  }, [entries]);
+
+  const visible = useMemo(() => {
+    const list = entries ?? [];
+    const needle = q.trim().toLowerCase();
+    const dayMs = 24 * 60 * 60 * 1000;
+    const fromTs = from ? new Date(`${from}T00:00:00`).getTime() : null;
+    const toTs = to ? new Date(`${to}T23:59:59.999`).getTime() : null;
+    const presetTs = !fromTs && !toTs && preset > 0 ? Date.now() - preset * dayMs : null;
+    return list.filter((e) => {
+      if (action && e.action !== action) return false;
+      if (businessId && e.businessId !== businessId) return false;
+      if (needle) {
+        const hay = `${metaFor(e.action).label} ${e.action} ${e.adminName ?? ""} ${e.businessName ?? ""} ${e.entityId ?? ""}`.toLowerCase();
+        if (!hay.includes(needle)) return false;
+      }
+      const t = new Date(e.createdAt).getTime();
+      if (fromTs !== null && t < fromTs) return false;
+      if (toTs !== null && t > toTs) return false;
+      if (presetTs !== null && t < presetTs) return false;
+      return true;
+    });
+  }, [entries, q, action, businessId, preset, from, to]);
+
+  // Day groups, newest day first; entries are already time-desc.
+  const groups = useMemo(() => {
+    const out: { dayTs: number; items: AuditEntry[] }[] = [];
+    for (const e of visible.slice(0, limit)) {
+      const d = new Date(e.createdAt);
+      d.setHours(0, 0, 0, 0);
+      const dayTs = d.getTime();
+      const last = out[out.length - 1];
+      if (last && last.dayTs === dayTs) last.items.push(e);
+      else out.push({ dayTs, items: [e] });
+    }
+    return out;
+  }, [visible, limit]);
+
+  const hasFilters = Boolean(q || action || businessId || preset || from || to);
+
+  function clearFilters() {
+    setQ("");
+    setAction("");
+    setBusinessId("");
+    setPreset(0);
+    setFrom("");
+    setTo("");
+    setLimit(PAGE);
+  }
+
+  function toggle(id: string) {
+    setExpanded((cur) => {
+      const next = new Set(cur);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  /** Excel opens a BOM-prefixed UTF-8 CSV correctly even with Persian text. */
+  function exportCsv() {
+    const head = ["datetime", "action", "business", "admin", "entity", "payload"];
+    const lines = visible.map((e) =>
+      [
+        new Date(e.createdAt).toISOString(),
+        e.action,
+        e.businessName ?? "",
+        e.adminName ?? "system",
+        e.entity ?? "",
+        JSON.stringify(e.payload ?? {}),
+      ]
+        .map((cell) => `"${String(cell).replaceAll('"', '""')}"`)
+        .join(","),
+    );
+    const blob = new Blob(["\ufeff" + [head.join(","), ...lines].join("\n")], {
+      type: "text/csv;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `platform-events-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   return (
-    <div className="mx-auto w-full max-w-5xl">
-      <h1 className="mb-6 text-xl font-bold">رویدادها</h1>
+    <div className="mx-auto w-full max-w-5xl space-y-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-bold">رویدادها</h1>
+          <p className="mt-1 text-sm text-white/40">
+            هر اقدام مدیریتی روی کسب‌وکارها — چه کسی، روی کدام کسب‌وکار، چه زمانی.
+            {entries ? ` ${formatPersianNumber(entries.length)} رویداد اخیر.` : ""}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {visible.length > 0 ? (
+            <Button variant="ghost" onClick={exportCsv}>
+              خروجی CSV
+            </Button>
+          ) : null}
+          <Button variant="ghost" onClick={() => void load()} disabled={loading}>
+            <RefreshCw className={`ms-1 inline h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+            تازه‌سازی
+          </Button>
+        </div>
+      </div>
+
       <ErrorBox>{error}</ErrorBox>
 
-      {entries === null ? (
-        <p className="text-sm text-white/50">در حال بارگذاری…</p>
-      ) : entries.length === 0 ? (
-        <Card>
-          <p className="text-sm text-white/50">رویدادی ثبت نشده است.</p>
-        </Card>
+      {entries === null && loading ? (
+        <SkeletonRows rows={6} />
+      ) : entries && entries.length === 0 ? (
+        <EmptyState title="هنوز رویدادی ثبت نشده است." hint="با اولین اقدام مدیریتی، اینجا پر می‌شود." />
       ) : (
         <>
-          <div className="space-y-3 md:hidden">
-            {entries.map((e) => (
-              <div key={e.id} className="rounded-xl border border-white/10 bg-white/3 p-4">
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div>
-                    <p className="font-medium text-white/90">{ACTION_LABELS[e.action] ?? e.action}</p>
-                    <p className="mt-1 text-xs text-white/45">{fmtDate(e.createdAt)}</p>
-                  </div>
-                  <span className="text-xs text-white/55">{e.adminName ?? "—"}</span>
-                </div>
-                <div className="mt-4 border-t border-white/5 pt-3 text-sm">
-                  <p className="text-xs text-white/40">کسب‌وکار</p>
-                  {e.businessId ? (
-                    <Link
-                      href={"/platform/businesses/" + e.businessId}
-                      className="mt-1 inline-block break-all text-sky-300 hover:underline"
-                    >
-                      {e.businessName ?? e.businessId}
-                    </Link>
-                  ) : (
-                    <p className="mt-1 break-all text-white/50">{e.businessName ?? "—"}</p>
-                  )}
-                </div>
+          <Card>
+            <div className="grid gap-3 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
+              <div className="relative">
+                <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/30" />
+                <input
+                  value={q}
+                  onChange={(e) => {
+                    setQ(e.target.value);
+                    setLimit(PAGE);
+                  }}
+                  className={`${inputClass} ps-9`}
+                  placeholder="جستجو در مدیر، کسب‌وکار یا اقدام…"
+                />
               </div>
+              <select
+                value={action}
+                onChange={(e) => {
+                  setAction(e.target.value);
+                  setLimit(PAGE);
+                }}
+                className={selectClass}
+                aria-label="نوع اقدام"
+              >
+                <option value="">همه اقدام‌ها</option>
+                {counts.map(([key, n]) => (
+                  <option key={key} value={key}>
+                    {metaFor(key).label} ({toPersianDigits(n)})
+                  </option>
+                ))}
+              </select>
+              <select
+                value={businessId}
+                onChange={(e) => {
+                  setBusinessId(e.target.value);
+                  setLimit(PAGE);
+                }}
+                className={selectClass}
+                aria-label="کسب‌وکار"
+              >
+                <option value="">همه کسب‌وکارها</option>
+                {businesses.map(([id, name]) => (
+                  <option key={id} value={id}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+              {hasFilters ? (
+                <Button variant="ghost" onClick={clearFilters} className="text-xs">
+                  <X className="ms-1 inline h-3.5 w-3.5" />
+                  حذف فیلترها
+                </Button>
+              ) : null}
+            </div>
+
+            <div className="mt-3 flex flex-wrap items-center gap-1.5">
+              <span className="text-xs text-white/35">بازه زمانی:</span>
+              {DATE_PRESETS.map((p) => (
+                <button
+                  key={p.days}
+                  type="button"
+                  onClick={() => {
+                    setPreset(p.days);
+                    setFrom("");
+                    setTo("");
+                    setLimit(PAGE);
+                  }}
+                  className={
+                    preset === p.days && !from && !to
+                      ? "rounded-full border border-sky-400/50 bg-sky-500/15 px-3 py-1 text-xs font-medium text-sky-300"
+                      : "rounded-full border border-white/15 px-3 py-1 text-xs text-white/55 transition-colors hover:bg-white/5 hover:text-white"
+                  }
+                >
+                  {p.label}
+                </button>
+              ))}
+              <span className="mx-1 h-5 w-px bg-white/10" aria-hidden />
+              <label className="flex items-center gap-1 text-xs text-white/45">
+                از
+                <input
+                  type="date"
+                  dir="ltr"
+                  value={from}
+                  onChange={(e) => {
+                    setFrom(e.target.value);
+                    setPreset(0);
+                    setLimit(PAGE);
+                  }}
+                  className={`${inputClass} !h-8 w-[9rem] text-xs`}
+                />
+              </label>
+              <label className="flex items-center gap-1 text-xs text-white/45">
+                تا
+                <input
+                  type="date"
+                  dir="ltr"
+                  value={to}
+                  onChange={(e) => {
+                    setTo(e.target.value);
+                    setPreset(0);
+                    setLimit(PAGE);
+                  }}
+                  className={`${inputClass} !h-8 w-[9rem] text-xs`}
+                />
+              </label>
+            </div>
+          </Card>
+
+          <div className="space-y-5">
+            {groups.map((g) => (
+              <section key={g.dayTs}>
+                <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold text-white/60">
+                  <span className="h-1.5 w-1.5 rounded-full bg-sky-400/70" aria-hidden />
+                  {dayLabel(g.dayTs)}
+                  <span className="text-xs font-normal text-white/30">
+                    {formatPersianNumber(g.items.length)} رویداد
+                  </span>
+                </h2>
+                <div className="overflow-hidden rounded-xl border border-white/10">
+                  {g.items.map((e, idx) => {
+                    const m = metaFor(e.action);
+                    const tone = TONE_CLS[m.tone];
+                    const Icon = m.icon;
+                    const open = expanded.has(e.id);
+                    return (
+                      <div
+                        key={e.id}
+                        className={`flex gap-3 bg-white/2 px-3 py-2.5 sm:px-4 ${idx > 0 ? "border-t border-white/5" : ""}`}
+                      >
+                        <span
+                          className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border ${tone.ring} ${tone.bg} ${tone.text}`}
+                          aria-hidden
+                        >
+                          <Icon className="h-4 w-4" />
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                            <span className={`text-sm font-medium ${tone.text}`}>{m.label}</span>
+                            {e.businessId ? (
+                              <Link
+                                href={`/platform/businesses/${e.businessId}`}
+                                className="truncate text-sm text-sky-300 hover:underline"
+                              >
+                                {e.businessName ?? e.businessId}
+                              </Link>
+                            ) : e.businessName ? (
+                              <span className="text-sm text-white/50">{e.businessName}</span>
+                            ) : (
+                              <span className="text-sm text-white/30">بدون کسب‌وکار</span>
+                            )}
+                            <span className="ms-auto flex items-center gap-2 whitespace-nowrap text-[11px] text-white/35">
+                              <span title={relativeTime(e.createdAt)}>{relativeTime(e.createdAt)}</span>
+                              <span dir="ltr" className="tabular-nums">
+                                {fmtTime(e.createdAt)}
+                              </span>
+                            </span>
+                          </div>
+                          <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-white/40">
+                            <span>
+                              مدیر: <span className="text-white/60">{e.adminName ?? "سیستم"}</span>
+                            </span>
+                            {e.entity ? (
+                              <span>
+                                موجودیت: <span className="text-white/55">{e.entity}</span>
+                              </span>
+                            ) : null}
+                            {e.payload !== null && e.payload !== undefined ? (
+                              <button
+                                type="button"
+                                onClick={() => toggle(e.id)}
+                                className={`rounded border px-1.5 py-0.5 text-[11px] transition-colors ${
+                                  open
+                                    ? "border-sky-400/40 text-sky-300"
+                                    : "border-white/15 text-white/45 hover:bg-white/5 hover:text-white/75"
+                                }`}
+                                aria-expanded={open}
+                              >
+                                {open ? "بستن جزئیات" : "جزئیات"}
+                              </button>
+                            ) : null}
+                          </div>
+                          {open ? (
+                            <pre
+                              dir="ltr"
+                              className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-lg border border-white/10 bg-black/25 p-3 text-start text-[11px] leading-5 text-white/70"
+                            >
+                              {JSON.stringify(e.payload, null, 2) ?? "null"}
+                            </pre>
+                          ) : null}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
             ))}
           </div>
-          <div className="hidden overflow-x-auto rounded-xl border border-white/10 md:block">
-            <table className="min-w-[680px] w-full text-sm">
-              <thead className="bg-white/3 text-white/50">
-                <tr>
-                  <th className="px-4 py-3 text-start font-medium">زمان</th>
-                  <th className="px-4 py-3 text-start font-medium">مدیر</th>
-                  <th className="px-4 py-3 text-start font-medium">اقدام</th>
-                  <th className="px-4 py-3 text-start font-medium">کسب‌وکار</th>
-                </tr>
-              </thead>
-              <tbody>
-                {entries.map((e) => (
-                  <tr key={e.id} className="border-t border-white/5">
-                    <td className="whitespace-nowrap px-4 py-3 text-white/50">
-                      {fmtDate(e.createdAt)}
-                    </td>
-                    <td className="px-4 py-3 text-white/80">{e.adminName ?? "—"}</td>
-                    <td className="px-4 py-3">
-                      <span className="text-white/90">
-                        {ACTION_LABELS[e.action] ?? e.action}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      {e.businessId ? (
-                        <Link
-                          href={"/platform/businesses/" + e.businessId}
-                          className="text-sky-300 hover:underline"
-                        >
-                          {e.businessName ?? e.businessId}
-                        </Link>
-                      ) : (
-                        <span className="text-white/40">{e.businessName ?? "—"}</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+
+          <div className="flex items-center justify-center gap-3 pb-2">
+            {visible.length > limit ? (
+              <Button variant="ghost" onClick={() => setLimit((n) => n + PAGE)}>
+                نمایش بیشتر ({formatPersianNumber(Math.min(PAGE, visible.length - limit))} مورد بعدی)
+              </Button>
+            ) : (
+              <p className="text-xs text-white/30">
+                {visible.length === 0
+                  ? "رویدادی با این فیلترها نیست."
+                  : `همه ${formatPersianNumber(visible.length)} رویدادِ منطبق نمایش داده شد.`}
+              </p>
+            )}
           </div>
         </>
       )}

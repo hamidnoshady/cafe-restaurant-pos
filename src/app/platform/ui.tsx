@@ -9,7 +9,10 @@
  * operator never mistakes it for a tenant screen). Persian RTL throughout.
  */
 import { createContext, useContext } from "react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import type { PlatformCapability } from "@/lib/platform-admin";
+import { toPersianDigits } from "@/lib/digits";
 
 export async function api<T = Record<string, unknown>>(
   url: string,
@@ -69,6 +72,10 @@ export function errorMessage(code: string | undefined): string {
     invalid_industry: "نوع کسب‌وکار نامعتبر است.",
     industry_not_available: "این نوع کسب‌وکار هنوز در دسترس نیست.",
     unchanged: "زیردامنه تغییری نکرده است.",
+    // OpenObserve (پایش)
+    observability_not_configured: "پایش هنوز تنظیم نشده است؛ متغیرهای OPENOBSERVE را در سرور وارد کنید.",
+    observability_unreachable: "سرویس پایش در دسترس نیست. آخرین داده‌های موفق نمایش داده می‌شود.",
+    invalid_level: "سطح لاگ نامعتبر است.",
   };
   return map[code ?? ""] ?? "خطای غیرمنتظره. دوباره تلاش کنید.";
 }
@@ -178,4 +185,151 @@ export function Card({ children, title }: { children: React.ReactNode; title?: s
       {children}
     </div>
   );
+}
+
+/**
+ * Plan keys come from the `plans` catalogue (migration 0034) and are English;
+ * the console always shows the Persian name. Unknown keys — a plan retired
+ * from the catalogue — fall back to the raw key rather than rendering blank.
+ */
+export const PLAN_LABELS: Record<string, string> = {
+  free: "رایگان",
+  pro: "حرفه‌ای",
+  business: "سازمانی",
+};
+
+export function planLabel(key: string, names?: Record<string, string> | null): string {
+  return names?.[key] ?? PLAN_LABELS[key] ?? key;
+}
+
+export function PlanBadge({ plan, names }: { plan: string; names?: Record<string, string> | null }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full border border-indigo-400/25 bg-indigo-500/10 px-2.5 py-0.5 text-xs font-medium text-indigo-200">
+      {planLabel(plan, names)}
+      <span className="text-[10px] text-indigo-200/40" dir="ltr">
+        {plan}
+      </span>
+    </span>
+  );
+}
+
+/** The styled-native look the filter toolbars use; keeps RTL + the dark theme. */
+export const selectClass =
+  "h-10 w-full min-w-0 cursor-pointer rounded-lg border border-white/15 bg-white/5 px-3 text-sm text-white outline-none transition-colors hover:border-white/25 focus:border-sky-400/60 focus:ring-2 focus:ring-sky-400/20";
+
+/**
+ * A sub-navigation strip shared by every section of the console that has
+ * sub-pages (AI, and inside a business). Rendered as tabs under the section
+ * header on all viewports — horizontal scrolling keeps it usable on phones.
+ */
+export function SubNav({
+  items,
+}: {
+  items: { label: string; href: string; exact?: boolean }[];
+}) {
+  const pathname = usePathname();
+  return (
+    <nav
+      aria-label="بخش‌های این صفحه"
+      className="flex gap-1 overflow-x-auto rounded-xl border border-white/10 bg-white/2 p-1"
+    >
+      {items.map((item) => {
+        const active = item.exact ? pathname === item.href : pathname.startsWith(item.href);
+        return (
+          <Link
+            key={item.href}
+            href={item.href}
+            aria-current={active ? "page" : undefined}
+            className={
+              active
+                ? "shrink-0 whitespace-nowrap rounded-lg bg-sky-500/15 px-3.5 py-2 text-sm font-medium text-sky-300"
+                : "shrink-0 whitespace-nowrap rounded-lg px-3.5 py-2 text-sm text-white/60 transition-colors hover:bg-white/5 hover:text-white"
+            }
+          >
+            {item.label}
+          </Link>
+        );
+      })}
+    </nav>
+  );
+}
+
+/** Placeholder rows while a list loads, so a page never flashes empty. */
+export function SkeletonRows({ rows = 4 }: { rows?: number }) {
+  return (
+    <div className="space-y-2" aria-hidden>
+      {Array.from({ length: rows }).map((_, i) => (
+        <div
+          key={i}
+          className="h-12 animate-pulse rounded-xl border border-white/5 bg-white/3"
+          style={{ animationDelay: `${i * 90}ms` }}
+        />
+      ))}
+    </div>
+  );
+}
+
+export function EmptyState({
+  title,
+  hint,
+  action,
+}: {
+  title: string;
+  hint?: string;
+  action?: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-white/15 bg-white/2 px-4 py-12 text-center">
+      <p className="text-sm font-medium text-white/70">{title}</p>
+      {hint ? <p className="max-w-sm text-xs leading-6 text-white/40">{hint}</p> : null}
+      {action ? <div className="mt-2">{action}</div> : null}
+    </div>
+  );
+}
+
+/** A headline figure for the dashboards (businesses list, system page). */
+export function StatCard({
+  label,
+  value,
+  tone = "neutral",
+  hint,
+  icon,
+}: {
+  label: string;
+  value: string;
+  tone?: "neutral" | "ok" | "warn" | "bad";
+  hint?: string;
+  icon?: React.ReactNode;
+}) {
+  const toneCls = {
+    neutral: "border-white/10 text-white",
+    ok: "border-emerald-500/25 text-emerald-300",
+    warn: "border-amber-500/25 text-amber-300",
+    bad: "border-red-500/25 text-red-300",
+  }[tone];
+  return (
+    <div className={`rounded-xl border bg-white/2 p-4 ${toneCls}`}>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs text-white/45">{label}</p>
+        {icon ? <span className="text-white/30">{icon}</span> : null}
+      </div>
+      <p className="mt-1 text-2xl font-bold tabular-nums">{value}</p>
+      {hint ? <p className="mt-1 text-[11px] leading-5 text-white/35">{hint}</p> : null}
+    </div>
+  );
+}
+
+/** Persian-digit date+time for every page; `dateOnly` drops the clock. */
+export function fmtDate(iso: string | null | undefined, dateOnly = false): string {
+  if (!iso) return "—";
+  try {
+    return toPersianDigits(
+      new Intl.DateTimeFormat("fa-IR", {
+        dateStyle: "medium",
+        ...(dateOnly ? {} : { timeStyle: "short" as const }),
+      }).format(new Date(iso)),
+    );
+  } catch {
+    return iso;
+  }
 }
