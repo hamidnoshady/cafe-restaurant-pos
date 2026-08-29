@@ -127,6 +127,46 @@ first section rather than an empty panel.
 | 7 | No new table, no new write path, no new `withoutTenantScope` reason | `growth-overview.ts` is read-only and runs inside the caller's tenant scope |
 | 8 | `npx tsc --noEmit`, `npm test`, `npm run build` green | Locally and CI |
 
+## Revised again — the app owns its own main sidebar
+
+The revision above moved the app out of the flat pages but not out of the
+accounting shell: `/dashboard/growth` still rendered inside the dashboard's
+sidebar, which listed the business's own pages (حسابداری, گزارش‌ها, تنظیمات…),
+while the app's section menu was drawn *inside the page*, next to it. Two
+symptoms, one cause — the app was a guest in another product's chrome. Clicking
+«رشد و بازاریابی» looked like opening a sub-app of accounting, and its menu was
+a sub-sub-menu.
+
+So the sidebar slot itself is now handed to the app:
+
+| File | What |
+| --- | --- |
+| `src/lib/app-shells.ts` | The registry of apps that own their main sidebar — the route prefix they own, their name, their one line of description. `appShellForPathname` is the whole rule, and it matches path segments, so `/dashboard/growthlab` is not inside the app. |
+| `src/app/dashboard/app-shell-nav.ts` | Which component fills the slot for an app. `dashboard-sidebar.tsx` asks the map; it never names an app. |
+| `src/app/dashboard/growth/growth-nav.ts` | The app's menu entries — label, line of help, glyph — filtered by `canViewGrowthSection`, so the menu and the route guard are the same rule. |
+| `src/app/dashboard/growth/growth-app-nav.tsx` | The menu, drawn in the dashboard's sidebar slot. Also carries «بازگشت به میز کار» (the rail) or «بازگشت به داشبورد» (the classic shell), which is the only way out — deliberately, since the app is not a page of accounting. |
+| `src/app/dashboard/growth/growth-app-shell.tsx` | Header and page only. The in-page rail is gone, so the section gets the full 1600px column. |
+| `src/app/dashboard/sidebar-nav-styles.ts` | The one amber-selection button skin, shared by the rail, the flat nav and an app's own menu — three menus, one look. |
+
+What this changes for the business, and what it does not:
+
+- Inside `/dashboard/growth*` the sidebar lists the app's five sections and
+  **nothing else** — no حسابداری, no گزارش‌ها. The accounting suite keeps the
+  business nav exactly as it was; `appShellForPathname` is the only thing that
+  decides whose menu a route gets.
+- The growth entry is dropped from the business nav by href (`isInsideAnyAppShell`)
+  rather than by module, and only where the workspace rail exists to launch the
+  app from. With the flag off — no rail — the entry stays, because it is the only
+  door into the app.
+- Role gating is unchanged and now visibly so: a cashier's sidebar holds
+  «وفاداری و اعتبار» alone, which is why their redirect still lands somewhere real.
+- No new routes, no new API, no arithmetic touched. The engines, the posting
+  rules and the bridge card are the same code paths as before.
+
+Criterion 6 of the exit list above is met by `growth-nav.ts` now (the filter runs
+where the menu is built), and the app's own sidebar is covered by
+`src/lib/app-shells.test.ts` and `src/app/dashboard/growth/growth-nav.test.ts`.
+
 ## Out of scope, deliberately
 
 - **CRM (segments, consent, the customer file)** — issue #367. It grows this

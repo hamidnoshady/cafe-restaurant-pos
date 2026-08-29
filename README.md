@@ -538,8 +538,11 @@ See [docs/phases/Phase-35-Notifications.md](docs/phases/Phase-35-Notifications.m
 
 Loyalty, campaigns and gift cards, and seller commission are one app at `/dashboard/growth` —
 with a management dashboard of its own («میز کار رشد») the way accounting has one, not three flat
-sidebar pages. One entry in the nav; the old `/dashboard/loyalty`, `/dashboard/promotions` and
-`/dashboard/commission` routes redirect into the app's sections.
+sidebar pages. It is a separate app rather than a page inside one: its launcher sits next to
+حسابداری in the workspace rail, and inside its routes the dashboard's sidebar *is* the app's own
+menu — its five sections and nothing else, no accounting entries alongside a sub-menu of its own.
+The old `/dashboard/loyalty`, `/dashboard/promotions` and `/dashboard/commission` routes redirect
+into the app's sections.
 
 - **میز کار رشد** — KPIs over all four engines (campaign discount spend, gift-card and
   store-credit liabilities, points in circulation with an estimated redemption value, commission

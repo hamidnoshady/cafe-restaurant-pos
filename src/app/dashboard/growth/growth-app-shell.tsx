@@ -1,29 +1,25 @@
-"use client";
-
 /**
- * The Growth app shell (Phase 36b, revised).
+ * The Growth app shell (Phase 36b, revised again).
  *
- * Wraps every Growth route. The dashboard's global sidebar already names the app
- * (رشد و بازاریابی); this shell adds the app's *own* side menu and a header,
- * so entering `/dashboard/growth` feels like entering a separate product with
- * its own navigation — not a corner of accounting. The bridge to accounting is
- * deliberately not surfaced here: the work passes through the ledger in the
- * backend, and the app shows only its own numbers.
+ * Wraps every Growth route with the app's own header. Its side menu used to be
+ * drawn here too, beside the content, *inside* the dashboard's sidebar — which
+ * still showed the business's flat nav, accounting included. That made the app
+ * look like a page of accounting with a sub-menu of its own.
+ *
+ * The app now owns the sidebar itself: `src/lib/app-shells.ts` hands the slot to
+ * `growth/growth-app-nav.tsx` for every route under `/dashboard/growth`, so this
+ * shell is the header and the page, at the width the rest of the dashboard uses.
+ * The bridge to accounting is deliberately not surfaced here either: the work
+ * passes through the ledger in the backend, and the app shows only its own
+ * numbers.
  */
 
-import { PageHeader } from "../page-chrome";
+import { PageHeader, PageShell } from "../page-chrome";
 import { AskAssistant } from "@/components/ai/ask-assistant";
-import { GrowthSideNav } from "./growth-side-nav";
 
-export function GrowthAppShell({
-  role,
-  children,
-}: {
-  role: string;
-  children: React.ReactNode;
-}) {
+export function GrowthAppShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="space-y-4 sm:space-y-5">
+    <PageShell className="space-y-4 sm:space-y-5">
       <PageHeader
         title="رشد و بازاریابی"
         description="برنامهٔ نگه‌داشتن و رشد مشتریان: میز کار، کمپین‌ها و کارت هدیه، وفاداری و پورسانت فروشندگان."
@@ -34,12 +30,7 @@ export function GrowthAppShell({
           />
         }
       />
-      <div className="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
-        <div className="lg:sticky lg:top-4 lg:self-start">
-          <GrowthSideNav role={role} />
-        </div>
-        <div className="min-w-0">{children}</div>
-      </div>
-    </div>
+      <div className="min-w-0">{children}</div>
+    </PageShell>
   );
 }
