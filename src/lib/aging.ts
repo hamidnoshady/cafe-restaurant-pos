@@ -14,6 +14,19 @@
  * repo convention.
  */
 
+/**
+ * Group key for subledger lines carrying no party attribution — a manual
+ * journal entry against A/R, or a credit order predating customer attribution.
+ *
+ * Lives in this pure module rather than in `ar-service` because client
+ * components need it too (the A/R statement hides its "open the CRM file" link
+ * for unattributed lines), and importing `ar-service` into a client component
+ * drags the Postgres driver into the browser bundle — which is a build
+ * failure, not a subtle one.
+ */
+export const UNKNOWN_CUSTOMER_KEY = "unknown";
+
+
 export interface OpenItem {
   id: string;
   date: string; // ISO date

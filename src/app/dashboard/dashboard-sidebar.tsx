@@ -13,6 +13,7 @@ import {
   ChefHatIcon,
   CircleIcon,
   ClipboardListIcon,
+  ContactIcon,
   FolderIcon,
   GemIcon,
   LayoutDashboardIcon,
@@ -43,6 +44,7 @@ import {
   type DashboardSidebarPreference,
 } from "@/lib/sidebar-state";
 import { isAssistantSurface } from "@/lib/assistant-route";
+import type { AppKey } from "@/lib/apps";
 import { appShellForPathname, isInsideAnyAppShell, type AppShellDef } from "@/lib/app-shells";
 import { APP_NAV_BUTTON_CLASS } from "./sidebar-nav-styles";
 import { appShellNavFor, type AppShellNavProps } from "./app-shell-nav";
@@ -127,7 +129,60 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   // Phase 36b — the Growth & Marketing app's home; the trend glyph the
   // workspace rail already uses for «رشد و بازاریابی».
   "/dashboard/growth": TrendingUpIcon,
+  // Phase 36 — the CRM app's home. `/dashboard/customers` keeps the plain
+  // people glyph above; this is the app that now owns that record.
+  "/dashboard/crm": ContactIcon,
 };
+
+/**
+ * The apps the workspace rail launches, in rail order.
+ *
+ * A table rather than a block of markup per app: the rail is the front door to
+ * every app in the platform, so adding one (the CRM, and whatever follows it)
+ * should be an entry here, not another copy of a `SidebarMenuItem`.
+ *
+ * `hrefs` is a preference list, not an alias list. The first entry is the app's
+ * own home; the rest are pages the app absorbed, kept so that a member whose
+ * saved bottom-nav or bookmark still points at an old flat route is launched
+ * into the app instead of hitting a redirect chain. Only routes the member can
+ * actually reach (their trade's modules, their role, their feature flags — the
+ * nav list is already filtered for all three) are considered, which is what
+ * makes an app disappear from the rail for a business that does not have it.
+ */
+const WORKSPACE_APP_LAUNCHERS: readonly {
+  key: AppKey;
+  label: string;
+  icon: LucideIcon;
+  hrefs: readonly string[];
+}[] = [
+  {
+    key: "accounting",
+    label: "حسابداری",
+    icon: CalculatorIcon,
+    // The accounting overview is available to every member who can see this
+    // rail; ledger and reports stay reachable from the app's own sidebar.
+    hrefs: ["/dashboard/overview", "/dashboard/ledger", "/dashboard/reports"],
+  },
+  {
+    key: "crm",
+    label: "ارتباط با مشتری",
+    icon: ContactIcon,
+    // `/dashboard/customers` redirects into the app's directory, so a business
+    // that has customers but has never opened the CRM still gets the launcher.
+    hrefs: ["/dashboard/crm", "/dashboard/customers"],
+  },
+  {
+    key: "growth",
+    label: "رشد و بازاریابی",
+    icon: TrendingUpIcon,
+    hrefs: [
+      "/dashboard/growth",
+      "/dashboard/loyalty",
+      "/dashboard/promotions",
+      "/dashboard/commission",
+    ],
+  },
+];
 
 export interface NavItem {
   label: string;
@@ -254,22 +309,16 @@ function NavLinks({
 function WorkspaceRail({ navItems, pathname }: { navItems: NavItem[]; pathname: string }) {
   const router = useRouter();
   const hrefs = navItems.flatMap((item) => (item.href ? [item.href] : []));
-  // App launchers always open the app's dashboard/overview, not a detail
-  // section. The accounting overview is available to every member who can
-  // see this rail; the ledger and reports routes remain available from the
-  // accounting app's sidebar.
-  const accountingHref = ["/dashboard/overview", "/dashboard/ledger", "/dashboard/reports"].find((href) => hrefs.includes(href));
-  // Phase 36b — the Growth app has a home of its own; the old flat pages
-  // (loyalty/promotions/commission) redirect into it, so a member whose saved
-  // bottom-nav still holds one lands in the app rather than on a 404.
-  const growthHref = [
-    "/dashboard/growth",
-    "/dashboard/loyalty",
-    "/dashboard/promotions",
-    "/dashboard/commission",
-  ].find((href) => hrefs.includes(href));
-  const accountingActive = accountingHref !== undefined && isActive(pathname, accountingHref);
-  const growthActive = growthHref !== undefined && isActive(pathname, growthHref);
+  // The apps this rail launches, as data rather than three copies of the same
+  // markup. Each entry lists its candidate routes in preference order: a
+  // launcher always opens the app's own home, and falls back to a page the
+  // app absorbed so a member whose saved bottom-nav still holds an old flat
+  // route lands in the app rather than on a 404. An app with no reachable
+  // route (its modules are not this trade's) is simply not listed.
+  const launchers = WORKSPACE_APP_LAUNCHERS.flatMap((launcher) => {
+    const href = launcher.hrefs.find((candidate) => hrefs.includes(candidate));
+    return href ? [{ ...launcher, href, active: isActive(pathname, href) }] : [];
+  });
 
   return (
     <SidebarContent className="px-3 py-4">
@@ -303,30 +352,28 @@ function WorkspaceRail({ navItems, pathname }: { navItems: NavItem[]; pathname: 
           </SidebarMenuItem>
         </SidebarMenu>
 
-        {accountingHref || growthHref ? (
+        {launchers.length > 0 ? (
           <div>
             <p className="px-2 pb-1 text-xs font-medium text-muted-foreground group-data-[state=collapsed]/sidebar:hidden">برنامه‌ها</p>
             <SidebarMenu className="space-y-1.5">
-              {accountingHref ? (
-                <SidebarMenuItem>
-                  <SidebarMenuButton asChild isActive={accountingActive} tooltip="حسابداری" className={APP_NAV_BUTTON_CLASS}>
-                    <Link href={accountingHref}>
-                      <CalculatorIcon aria-hidden="true" className="size-5 shrink-0" />
-                      <span className="group-data-[state=collapsed]/sidebar:hidden">حسابداری</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ) : null}
-              {growthHref ? (
-                <SidebarMenuItem>
-                  <SidebarMenuButton asChild isActive={growthActive} tooltip="رشد و بازاریابی" className={APP_NAV_BUTTON_CLASS}>
-                    <Link href={growthHref}>
-                      <TrendingUpIcon aria-hidden="true" className="size-5 shrink-0" />
-                      <span className="group-data-[state=collapsed]/sidebar:hidden">رشد و بازاریابی</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ) : null}
+              {launchers.map((launcher) => {
+                const Icon = launcher.icon;
+                return (
+                  <SidebarMenuItem key={launcher.key}>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={launcher.active}
+                      tooltip={launcher.label}
+                      className={APP_NAV_BUTTON_CLASS}
+                    >
+                      <Link href={launcher.href}>
+                        <Icon aria-hidden="true" className="size-5 shrink-0" />
+                        <span className="group-data-[state=collapsed]/sidebar:hidden">{launcher.label}</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                );
+              })}
             </SidebarMenu>
           </div>
         ) : null}

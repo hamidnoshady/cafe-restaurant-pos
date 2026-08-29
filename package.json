@@ -19,6 +19,7 @@
     "db:restore": "tsx scripts/restore.ts",
     "db:restore-tenant": "tsx scripts/restore-tenant.ts",
     "db:reconcile-opening": "tsx scripts/reconcile-opening-inventory.ts",
+    "db:normalize-phones": "tsx scripts/normalize-customer-phones.ts",
     "inventory:cutover": "tsx scripts/inventory-cutover.ts",
     "print-agent": "tsx print-agent/server.ts"
   },

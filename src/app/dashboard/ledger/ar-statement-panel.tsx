@@ -5,6 +5,8 @@ import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import { useMoney } from "@/components/money/money-context";
 import { api } from "../ui";
+import { crmCustomerHref } from "../crm/crm-routes";
+import { UNKNOWN_CUSTOMER_KEY } from "@/lib/aging";
 
 interface ArStatementLine {
   date: string;
@@ -54,6 +56,21 @@ export function ArStatementPanel({
           <div>
             <p className="text-xs font-semibold text-amber-700">جزئیات حساب</p>
             <h3 id="ar-statement-heading" className="mt-1 text-lg font-bold">صورتحساب {customerName}</h3>
+            {/*
+              Phase 36d — the way back into the CRM. Someone looking at a debt
+              is one click from the person's whole history: what they buy, the
+              open complaint that might be why they have not paid, who last
+              spoke to them. Hidden for unattributed A/R lines, which belong to
+              no customer record and would link nowhere.
+            */}
+            {customerId !== UNKNOWN_CUSTOMER_KEY ? (
+              <a
+                href={crmCustomerHref(customerId)}
+                className="mt-1 inline-block text-xs font-semibold text-teal-700 underline-offset-4 hover:underline"
+              >
+                پروندهٔ مشتری در CRM
+              </a>
+            ) : null}
           </div>
           <button type="button" onClick={onClose} className="rounded-lg border border-border px-3 text-sm font-medium text-muted-foreground">
             بستن

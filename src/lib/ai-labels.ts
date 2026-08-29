@@ -67,6 +67,23 @@ export const PURCHASE_STATUS_LABELS: Record<string, string> = {
   cancelled: "لغوشده",
 };
 
+/**
+ * Phase 36 — reservation statuses, in the same shape as the maps above.
+ *
+ * The labels already existed, but only inside `reservations-manager.tsx`'s
+ * `STATUS_META`, which is a `"use client"` component carrying Tailwind classes:
+ * unimportable from a service. The CRM's customer timeline needed the words
+ * without the styling, and the alternative — printing the raw enum — puts
+ * «وضعیت: no_show» in front of a Persian-speaking owner.
+ */
+export const RESERVATION_STATUS_LABELS: Record<string, string> = {
+  booked: "رزرو",
+  seated: "نشسته",
+  completed: "تکمیل",
+  cancelled: "لغو",
+  no_show: "عدم حضور",
+};
+
 /** Falls back to the raw value rather than to an invented translation. */
 export function labelFor(map: Record<string, string>, value: string | null | undefined): string {
   if (!value) return "نامشخص";

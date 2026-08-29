@@ -171,7 +171,16 @@ export type ActionType =
   // half is supplied by a human — just earlier than the write.
   | "inventory.waste.log"
   | "inventory.production.run"
-  | "menu.item.create";
+  | "menu.item.create"
+  // Phase 36 — the CRM's entire write surface, and its smallness is the point.
+  // The assistant may label a customer and write on their file. It may not
+  // change who may be contacted (`crm.consent` does not exist here) and it may
+  // not merge two people into one (`crm.customer.merge` does not either). Both
+  // are irreversible judgements about a real person that must carry a human's
+  // name; see `src/app/dashboard/crm/duplicates-section.tsx` for the merge
+  // path a person walks through instead.
+  | "crm.customer.tag"
+  | "crm.customer.note";
 
 /**
  * Phase 31 — which server-side executor can run an action without a browser.
@@ -185,6 +194,8 @@ export type AutopilotExecutorKey =
   | "expense"
   | "journalDraft"
   | "customerNote"
+  | "customerTag"
+  | "crmCustomerNote"
   | "wasteLog"
   | "productionRun";
 
@@ -389,6 +400,33 @@ export const ACTION_CATALOG: Record<ActionType, ActionMeta> = {
     // ever does — see Phase 31 Decision 2.
     autopilotCategory: "customer",
     executor: "customerNote",
+    revertible: "always",
+  },
+  "crm.customer.tag": {
+    type: "crm.customer.tag",
+    endpoint: "/api/crm/customers/{customerId}/tags",
+    method: "PATCH",
+    label: "افزودن یا برداشتن یک برچسب از مشتری",
+    payloadHint:
+      '{ customerId: string, tag: string, action: "add"|"remove" } — هر بار فقط یک برچسب؛ برچسب‌های دیگر دست‌نخورده می‌مانند',
+    // A label on the business's own record reaches nobody, and the endpoint
+    // cannot clobber the other tags however it is called — so it may autopilot,
+    // and removing the tag is a one-call undo.
+    autopilotCategory: "customer",
+    executor: "customerTag",
+    revertible: "always",
+  },
+  "crm.customer.note": {
+    type: "crm.customer.note",
+    endpoint: "/api/crm/customers/{customerId}/notes",
+    method: "POST",
+    label: "ثبت یادداشت در پروندهٔ مشتری",
+    payloadHint:
+      "{ customerId: string, body: string, isPinned?: boolean } — یادداشت تازه اضافه می‌شود و هیچ یادداشت قبلی را پاک نمی‌کند",
+    // Prefer this over the older `customer.note.add`, whose PUT replaces the
+    // whole free-text field; here each note is its own dated, attributed row.
+    autopilotCategory: "customer",
+    executor: "crmCustomerNote",
     revertible: "always",
   },
   "journal.manual.propose": {
@@ -597,7 +635,7 @@ export function buildSystemPrompt(ctx: PromptContext): string {
     lines.push(
       "در این حالت به کاربر (مالک/مدیر) کمک می‌کنی: نمایش و تحلیل گزارش‌ها (فروش، منو، موجودی، حسابداری)، پاسخ به سؤال دربارهٔ وضعیت راه‌اندازی، و انجام کارهای مجاز از طریق پیشنهادِ قابل‌تأیید.",
       "برای گزارش‌ها اول list_reports را صدا بزن تا کلیدهای معتبر را بدانی، سپس run_report را با key و در صورت نیاز بازهٔ تاریخ اجرا کن و خلاصهٔ خوانا بده.",
-      "علاوه بر گزارش‌های استاندارد، ابزارهای تخصصی هم داری: عملکرد منو و آیتم‌های باطل‌شده (get_menu_performance، get_void_pattern)، موجودی و تأمین‌کنندگان (get_stock_valuation، get_supplier_performance)، رزرو و میز (get_reservation_conflicts، get_table_turnover_rate)، پیک تحویل (get_courier_performance)، مشتریان (get_customer_profile، get_at_risk_customers)، حسابداری (get_ar_aging، get_ap_upcoming، get_unreconciled_bank_lines، get_payroll_summary، get_vat_liability)، مقایسهٔ شعبه‌ها (get_branch_comparison)، تخمین تقاضا (forecast_demand)، اقلام در حال انقضا (get_near_expiry_items)، پورسانت کارکنان (get_staff_commission) و مشتریان آمادهٔ خرید مجدد (get_repurchase_candidates). هر کدام مناسب سؤال بود همان را صدا بزن؛ برای forecast_demand همیشه در پاسخ صریح بگو که یک تخمین است.",
+      "علاوه بر گزارش‌های استاندارد، ابزارهای تخصصی هم داری: عملکرد منو و آیتم‌های باطل‌شده (get_menu_performance، get_void_pattern)، موجودی و تأمین‌کنندگان (get_stock_valuation، get_supplier_performance)، رزرو و میز (get_reservation_conflicts، get_table_turnover_rate)، پیک تحویل (get_courier_performance)، مشتریان (get_customer_profile، get_at_risk_customers، find_customers، get_customer_timeline، list_customer_segments، preview_customer_segment)، حسابداری (get_ar_aging، get_ap_upcoming، get_unreconciled_bank_lines، get_payroll_summary، get_vat_liability)، مقایسهٔ شعبه‌ها (get_branch_comparison)، تخمین تقاضا (forecast_demand)، اقلام در حال انقضا (get_near_expiry_items)، پورسانت کارکنان (get_staff_commission) و مشتریان آمادهٔ خرید مجدد (get_repurchase_candidates). هر کدام مناسب سؤال بود همان را صدا بزن؛ برای forecast_demand همیشه در پاسخ صریح بگو که یک تخمین است.",
       "برای هر سؤالی دربارهٔ ضایعات («چقدر نان دور ریختیم؟»، «ضایعات این ماه چقدر بود؟») از get_waste_history استفاده کن؛ این ابزار تفکیک کالا و دلیل و هزینه را یک‌جا می‌دهد. get_stock_valuation فقط موجودی همین لحظه را می‌گوید و به سؤال «چه چیزی از انبار خارج شد» جواب نمی‌دهد.",
       "برای سؤال‌هایی مثل «حساب‌هایم را بررسی کن»، «اشتباهی هست؟» یا «چه چیزی جا افتاده؟» حتماً run_accounting_review را صدا بزن و دقیقاً همان یافته‌ها را با درجهٔ اهمیت و پیشنهاد اصلاحشان گزارش کن. هرگز از خودت مورد اضافه نکن و هرگز نگو حسابی مشکل دارد مگر این ابزار گفته باشد.",
       "کاربر می‌تواند کارهای تکرارشونده را به «همکار هوشمند» بسپارد (مثلاً «هر شب با بستن شیفت، ماندهٔ نان را ضایعات بزن» یا «هر روز صبح حساب‌ها را بررسی کن»). با list_coworker_jobs می‌توانی کارهای فعلی و تعداد اجراهای منتظر تأیید را ببینی؛ برای ساختن کار جدید کاربر را به بخش «همکار هوشمند» در صفحهٔ هوش مصنوعی راهنمایی کن.",
@@ -812,6 +850,70 @@ export function toolDefinitions(mode: AgentMode, opts: ToolDefinitionsOptions = 
             minOrders: { type: "number", description: "حداقل تعداد سفارش تاریخی، پیش‌فرض ۳" },
             lapsedDays: { type: "number", description: "چند روز از آخرین خرید گذشته باشد، پیش‌فرض ۳۰" },
           },
+          additionalProperties: false,
+        },
+      },
+    },
+    // Phase 36 — the CRM's read tools. `find_customers` is the entry point: the
+    // model is told, in the prompt, to resolve a person by name here rather
+    // than asking an owner for a UUID.
+    {
+      type: "function",
+      function: {
+        name: "find_customers",
+        description:
+          "جست‌وجوی مشتری با نام، شماره تلفن یا ایمیل. برای پیدا کردن شناسهٔ مشتری از روی نامی که کاربر گفته، همیشه اول این را صدا بزن.",
+        parameters: {
+          type: "object",
+          properties: { query: { type: "string", description: "بخشی از نام، شماره یا ایمیل" } },
+          required: ["query"],
+          additionalProperties: false,
+        },
+      },
+    },
+    {
+      type: "function",
+      function: {
+        name: "get_customer_timeline",
+        description:
+          "پروندهٔ کامل یک مشتری: خلاصهٔ خرید، امتیاز، مرحلهٔ چرخهٔ عمر، وضعیت رضایت ارتباط، و رویدادهای اخیر (خرید، پرداخت، تیکت، یادداشت) به ترتیب زمانی.",
+        parameters: {
+          type: "object",
+          properties: {
+            customerId: { type: "string", description: "شناسه مشتری (از find_customers)" },
+            limit: { type: "number", description: "چند رویداد، پیش‌فرض ۲۵" },
+          },
+          required: ["customerId"],
+          additionalProperties: false,
+        },
+      },
+    },
+    noArgsTool(
+      "list_customer_segments",
+      "بخش‌بندی‌های ذخیره‌شدهٔ مشتریان با تعداد اعضا و شرح شرط‌هایشان به فارسی.",
+    ),
+    {
+      type: "function",
+      function: {
+        name: "preview_customer_segment",
+        description:
+          "شمارش و نمونه‌گیری یک بخش‌بندی بدون ذخیره کردن آن. اگر purpose برابر sms یا email باشد، فقط مشتریانی شمرده می‌شوند که اجازهٔ دریافت داده‌اند؛ عدد بدون فیلتر هم جداگانه برمی‌گردد تا تفاوت را به کاربر بگویی.",
+        parameters: {
+          type: "object",
+          properties: {
+            definition: {
+              type: "object",
+              description:
+                'تعریف بخش: { all?: Rule[], any?: Rule[] } — «all» با AND و «any» با OR ترکیب می‌شود؛ کلید دیگری مجاز نیست و سند نامعتبر رد می‌شود (نه اینکه همه را انتخاب کند). شکل هر شرط به فیلدش بستگی دارد: { field: "lastPurchaseAt"|"firstPurchaseAt"|"createdAt", op: "before"|"after", days: number }؛ { field: "totalSpentRial"|"orderCount"|"averageOrderRial"|"loyaltyPoints"|"receivableRial", op: "gte"|"lte", value: number } (receivableRial = مانده بدهی مشتری طبق دفاتر حسابداری، به ریال)؛ { field: "tags", op: "hasAny"|"hasAll"|"hasNone", values: string[] }؛ { field: "birthdayMonth", op: "is", month: 1..12 }؛ { field: "isActive"|"hasEmail"|"smsConsent"|"marketingConsent", op: "is", value: boolean }؛ { field: "city", op: "contains", value: string }',
+              additionalProperties: true,
+            },
+            purpose: {
+              type: "string",
+              enum: ["view", "sms", "email"],
+              description: "هدف: دیدن، یا ارسال پیامک/ایمیل. پیش‌فرض view",
+            },
+          },
+          required: ["definition"],
           additionalProperties: false,
         },
       },

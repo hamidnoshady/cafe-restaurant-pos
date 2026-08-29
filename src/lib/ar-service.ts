@@ -16,13 +16,13 @@
 import { getPool, query } from "./db";
 import { WELL_KNOWN_CODES } from "./coa-template";
 import { accountIdsByCode, MissingLedgerAccountError, postJournalEntry } from "./ledger-service";
-import { ageOpenItems, summarizeAging, type AgingSummary } from "./aging";
+import { ageOpenItems, summarizeAging, UNKNOWN_CUSTOMER_KEY, type AgingSummary } from "./aging";
 import { enqueueHolooReceiptForArReceipt } from "./integrations/holoo/outbox-producer";
 
 export { MissingLedgerAccountError };
 
-/** Group key for AR lines that carry no customer attribution — a manual journal entry against A/R, or a credit order predating this feature. */
-export const UNKNOWN_CUSTOMER_KEY = "unknown";
+/** Group key for AR lines that carry no customer attribution. Defined in the pure `aging` module so client components can import it without pulling in `pg`; re-exported here because this is where callers expect to find it. */
+export { UNKNOWN_CUSTOMER_KEY };
 
 export class ArError extends Error {
   status: number;

@@ -289,7 +289,12 @@ describe("evaluateAutopilotProposal — inventory and customer", () => {
 describe("actionTypesForCategory", () => {
   it("returns only that category's actions", () => {
     expect(actionTypesForCategory("pricing").sort()).toEqual(["menu.item.disable", "menu.item.priceUpdate"]);
-    expect(actionTypesForCategory("customer")).toEqual(["customer.note.add"]);
+    // Phase 36 added the CRM's two writes to the same «مشتری» category: one
+    // switch an owner turns on still governs everything that writes on a
+    // customer's record, and all three of these reach nobody outside the shop.
+    expect(actionTypesForCategory("customer").sort()).toEqual(
+      ["crm.customer.note", "crm.customer.tag", "customer.note.add"].sort(),
+    );
   });
 
   it("gives waste no action at all — it detects and flags, it never logs waste", () => {

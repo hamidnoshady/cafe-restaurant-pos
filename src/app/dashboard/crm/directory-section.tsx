@@ -1,6 +1,22 @@
 "use client";
 
+/**
+ * The CRM app's customer directory (Phase 36).
+ *
+ * This is the old `/dashboard/customers` manager, moved into the app that now
+ * owns the customer record. It is deliberately the *same* screen rather than a
+ * rewrite: it was already the working CRUD surface the floor uses, and the
+ * value of the move is that the record now sits next to its file, its notes,
+ * its consent and its history instead of on a flat page beside حسابداری.
+ *
+ * What changed in the move: each row links into the customer's 360° file, and
+ * the AR statement stays exactly where it was — the ledger's own panel, opened
+ * for the members who may see accounting figures. The CRM reads that balance;
+ * it does not restate it.
+ */
+
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { toPersianDigits } from "@/lib/digits";
 import { useMoney } from "@/components/money/money-context";
 import { Button } from "@/components/ui/button";
@@ -15,6 +31,7 @@ import {
 import { SectionCard, StatusBadge } from "../page-chrome";
 import { api, ErrorBox, errorMessage, Field, inputClass, InfoBox } from "../ui";
 import { ArStatementPanel } from "../ledger/ar-statement-panel";
+import { crmCustomerHref } from "./crm-routes";
 
 interface Customer {
   id: string;
@@ -33,7 +50,7 @@ interface CustomerBalance {
 
 const PAGE_SIZE = 20;
 
-export function CustomersManager({ role }: { role: string }) {
+export function DirectorySection({ role }: { role: string }) {
   // The AR balance list and per-customer statement are guarded server-side
   // by requireRole("owner","manager","accountant") — cashiers manage the
   // directory but don't see accounting figures.
@@ -137,7 +154,7 @@ export function CustomersManager({ role }: { role: string }) {
 
       <SectionCard
         title="فهرست مشتریان"
-        description="روی نام هر مشتری بزنید تا صورتحساب او باز شود."
+        description="روی نام هر مشتری بزنید تا پروندهٔ کامل او باز شود."
         actions={
           <Button type="button" onClick={() => setShowAdd(true)}>
             + مشتری جدید
@@ -179,13 +196,13 @@ export function CustomersManager({ role }: { role: string }) {
                 {customers.map((c) => (
                   <tr key={c.id} className="border-b border-stone-200/80">
                     <td className="py-2 pe-3 font-medium text-stone-950">
-                      {canSeeLedger ? (
-                        <button type="button" onClick={() => setStatementTarget({ id: c.id, name: c.name })} className="hover:underline">
-                          {c.name}
-                        </button>
-                      ) : (
-                        c.name
-                      )}
+                      {/* The name now opens the 360° file — the screen that
+                          answers "who is this person" rather than only "what do
+                          they owe". The statement is still one click away, in
+                          the actions column, for the members who may see it. */}
+                      <Link href={crmCustomerHref(c.id)} className="hover:underline">
+                        {c.name}
+                      </Link>
                     </td>
                     <td className="py-2 pe-3 text-muted-foreground">{c.phone ? toPersianDigits(c.phone) : "—"}</td>
                     <td className="py-2 pe-3 text-muted-foreground">{c.address || "—"}</td>
@@ -204,6 +221,17 @@ export function CustomersManager({ role }: { role: string }) {
                         <Button type="button" variant="ghost" size="xs" onClick={() => setEditTarget(c)}>
                           ویرایش
                         </Button>
+                        {canSeeLedger ? (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="xs"
+                            onClick={() => setStatementTarget({ id: c.id, name: c.name })}
+                            className="text-muted-foreground"
+                          >
+                            صورتحساب
+                          </Button>
+                        ) : null}
                         <Button
                           type="button"
                           variant="ghost"

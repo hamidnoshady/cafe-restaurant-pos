@@ -375,6 +375,86 @@ export const REPORT_VIEWS: Record<string, ReportViewDef> = {
       { key: "vendor", label: "طرف حساب", column: "vendor" },
     ],
   },
+  // Phase 36 — the CRM's three views (migration 0119). All three count only
+  // non-merged customers and use the same "completed order on a business day"
+  // rule as the CRM's own screens, so a number here and a number on a
+  // customer's file are the same number.
+  //
+  // Customer grain (one row per customer, dated by first purchase): who we
+  // won, and when.
+  v_customer_acquisition: {
+    label: "جذب مشتری",
+    dateColumn: "acquired_date",
+    dimensions: [
+      { key: "day", label: "روز", dateTrunc: "day" },
+      { key: "week", label: "هفته", dateTrunc: "week" },
+      { key: "month", label: "ماه", dateTrunc: "month" },
+      { key: "lifecycle", label: "مرحلهٔ چرخهٔ عمر", columns: ["lifecycle_stage"] },
+    ],
+    metrics: [
+      { key: "customers", label: "تعداد مشتری تازه", column: "customer_count", aggregations: ["sum"] },
+      {
+        key: "first_order_total",
+        label: "مبلغ نخستین خرید",
+        column: "first_order_total",
+        aggregations: ["sum", "avg"],
+      },
+      { key: "rows", label: "تعداد ردیف", column: null, aggregations: ["count"] },
+    ],
+    filters: [{ key: "lifecycle_stage", label: "مرحلهٔ چرخهٔ عمر", column: "lifecycle_stage" }],
+  },
+  // Customer grain (one row per customer, dated by *last* purchase): what the
+  // relationship has been worth, and how long since it last showed a sign of
+  // life. Retention and CLV are the same rows read two ways.
+  v_customer_value: {
+    label: "ارزش و ماندگاری مشتری",
+    dateColumn: "last_purchase_date",
+    dimensions: [
+      { key: "month", label: "ماه آخرین خرید", dateTrunc: "month" },
+      { key: "week", label: "هفتهٔ آخرین خرید", dateTrunc: "week" },
+      { key: "lifecycle", label: "مرحلهٔ چرخهٔ عمر", columns: ["lifecycle_stage"] },
+      { key: "customer", label: "مشتری", columns: ["customer_id", "customer_name"] },
+    ],
+    metrics: [
+      { key: "total_spent", label: "ارزش کل مشتری", column: "total_spent", aggregations: ["sum", "avg"] },
+      { key: "order_count", label: "تعداد خرید", column: "order_count", aggregations: ["sum", "avg"] },
+      { key: "average_order", label: "میانگین هر خرید", column: "average_order", aggregations: ["avg"] },
+      {
+        key: "days_since_last_purchase",
+        label: "روز از آخرین خرید",
+        column: "days_since_last_purchase",
+        aggregations: ["avg"],
+      },
+      {
+        key: "relationship_days",
+        label: "طول رابطه (روز)",
+        column: "relationship_days",
+        aggregations: ["avg"],
+      },
+      { key: "customers", label: "تعداد مشتری", column: null, aggregations: ["count"] },
+    ],
+    filters: [{ key: "lifecycle_stage", label: "مرحلهٔ چرخهٔ عمر", column: "lifecycle_stage" }],
+  },
+  // Customer grain, one row per customer: permission and reachability side by
+  // side, because they are different numbers and only reporting the first one
+  // promises an audience that cannot be delivered to.
+  v_customer_consent: {
+    label: "پوشش رضایت ارتباط",
+    dateColumn: "registered_date",
+    dimensions: [
+      { key: "month", label: "ماه ثبت", dateTrunc: "month" },
+      { key: "consent_state", label: "وضعیت رضایت", columns: ["consent_state"] },
+    ],
+    metrics: [
+      { key: "customers", label: "تعداد مشتری", column: "customer_count", aggregations: ["sum"] },
+      { key: "sms_granted", label: "اجازهٔ پیامک", column: "sms_granted", aggregations: ["sum"] },
+      { key: "sms_reachable", label: "پیامک قابل ارسال", column: "sms_reachable", aggregations: ["sum"] },
+      { key: "email_granted", label: "اجازهٔ ایمیل", column: "email_granted", aggregations: ["sum"] },
+      { key: "email_reachable", label: "ایمیل قابل ارسال", column: "email_reachable", aggregations: ["sum"] },
+      { key: "rows", label: "تعداد ردیف", column: null, aggregations: ["count"] },
+    ],
+    filters: [{ key: "consent_state", label: "وضعیت رضایت", column: "consent_state" }],
+  },
 };
 
 export interface ReportFilters {
@@ -752,6 +832,73 @@ export const STANDARD_REPORTS: StandardReportDef[] = [
         metric: "delivery_count",
         aggregation: "sum",
         dimension: "courier",
+        sort: { by: "metric", dir: "desc" },
+      },
+    },
+  },
+  // Phase 36 — the CRM's four. They live in the shared report library rather
+  // than only inside the CRM app so that they export, schedule and appear in
+  // the assistant's `list_reports` like everything else; an owner should not
+  // have to learn a second place where reports live.
+  {
+    key: "customer_acquisition",
+    label: "جذب مشتری تازه",
+    view: "v_customer_acquisition",
+    defaultChart: {
+      chartType: "bar",
+      config: {
+        view: "v_customer_acquisition",
+        metric: "customers",
+        aggregation: "sum",
+        dimension: "month",
+      },
+    },
+  },
+  {
+    key: "customer_retention",
+    label: "ماندگاری و ریزش مشتری",
+    view: "v_customer_value",
+    defaultChart: {
+      chartType: "pie",
+      // Churn as a distribution over lifecycle stages, not a single ratio: «۱۸٪
+      // ریزش» tells an owner nothing they can act on, whereas «۴۰ مشتری در
+      // خطر، ۱۲ مشتری از دست‌رفته» names who to call tomorrow.
+      config: {
+        view: "v_customer_value",
+        metric: "customers",
+        aggregation: "count",
+        dimension: "lifecycle",
+        sort: { by: "metric", dir: "desc" },
+      },
+    },
+  },
+  {
+    key: "customer_lifetime_value",
+    label: "ارزش طول عمر مشتری",
+    view: "v_customer_value",
+    defaultChart: {
+      chartType: "bar",
+      config: {
+        view: "v_customer_value",
+        metric: "total_spent",
+        aggregation: "sum",
+        dimension: "customer",
+        sort: { by: "metric", dir: "desc" },
+        limit: 20,
+      },
+    },
+  },
+  {
+    key: "consent_coverage",
+    label: "پوشش رضایت ارتباط",
+    view: "v_customer_consent",
+    defaultChart: {
+      chartType: "pie",
+      config: {
+        view: "v_customer_consent",
+        metric: "customers",
+        aggregation: "sum",
+        dimension: "consent_state",
         sort: { by: "metric", dir: "desc" },
       },
     },
