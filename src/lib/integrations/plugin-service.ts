@@ -187,7 +187,25 @@ export async function pluginHandshake(
       },
       // Everything time-sensitive about the protocol, so the plugin never has
       // to hardcode a constant this side owns.
-      protocol: { version: 1, timestampSkewMs: PLUGIN_TIMESTAMP_SKEW_MS, jobPullLimit: JOB_PULL_LIMIT },
+      protocol: {
+        version: 1,
+        timestampSkewMs: PLUGIN_TIMESTAMP_SKEW_MS,
+        jobPullLimit: JOB_PULL_LIMIT,
+        // Phase 38: operations as well as numbers. A plugin that predates
+        // these acks unknown types as done, so advertising them is safe; a
+        // plugin that does understand them can stop guessing whether the
+        // server will ever send one.
+        jobTypes: [
+          "stock",
+          "price",
+          "product_update",
+          "order_status",
+          "refund_create",
+          "catalogue_export",
+          "customer_export",
+          "orders_export",
+        ],
+      },
     });
   });
 }
@@ -234,6 +252,15 @@ export interface PluginJob {
   id: string;
   type: string;
   remoteId: string;
+  /**
+   * The variation's parent product id, when this job targets one.
+   *
+   * A variation is not `products/{id}`. Without the parent the plugin can
+   * only guess, and the guess is a 404 — so it is sent alongside the job
+   * rather than left for the plugin to work out from a product it may never
+   * have seen. Absent on every job that targets a plain product.
+   */
+  parentRemoteId: string | null;
   payload: Record<string, unknown>;
   attempts: number;
 }
@@ -256,8 +283,9 @@ export async function pluginPullJobs(connection: ConnectionRow): Promise<NextRes
       remote_id: string;
       payload: Record<string, unknown>;
       attempts: number;
+      parent_remote_id: string | null;
     }>(
-      `UPDATE integration_outbox_events
+      `UPDATE integration_outbox_events o
           SET status = 'processing', leased_until = now() + ($3 || ' milliseconds')::interval, updated_at = now()
         WHERE id IN (
           SELECT id FROM integration_outbox_events
@@ -270,7 +298,16 @@ export async function pluginPullJobs(connection: ConnectionRow): Promise<NextRes
            LIMIT $2
            FOR UPDATE SKIP LOCKED
         )
-        RETURNING id, entity_type, remote_id, payload, attempts`,
+        RETURNING o.id, o.entity_type, o.remote_id, o.payload, o.attempts,
+                  COALESCE(
+                    o.payload->>'__parentRemoteId',
+                    (SELECT m.last_pushed_payload->>'remoteParentId'
+                       FROM integration_mappings m
+                      WHERE m.connection_id = o.connection_id
+                        AND m.entity_type = 'product'
+                        AND m.remote_id = o.remote_id
+                      LIMIT 1)
+                  ) AS parent_remote_id`,
       [connection.id, JOB_PULL_LIMIT, JOB_LEASE_MS],
     );
 
@@ -278,6 +315,7 @@ export async function pluginPullJobs(connection: ConnectionRow): Promise<NextRes
       id: row.id,
       type: row.entity_type,
       remoteId: row.remote_id,
+      parentRemoteId: row.parent_remote_id ?? null,
       payload: row.payload,
       attempts: row.attempts,
     }));
@@ -364,7 +402,7 @@ export async function pluginAckJobs(
 export async function enqueuePluginExport(
   businessId: string,
   connectionId: string,
-  entityType: "catalogue_export" | "customer_export",
+  entityType: "catalogue_export" | "customer_export" | "orders_export",
 ): Promise<void> {
   await query(
     `INSERT INTO integration_outbox_events (business_id, connection_id, entity_type, remote_id, payload)
