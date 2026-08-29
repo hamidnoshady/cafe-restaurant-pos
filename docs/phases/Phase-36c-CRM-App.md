@@ -169,12 +169,79 @@ All three views repeat the *same* "completed order, bucketed by
 `app_business_date`, merged records excluded" rule the CRM's own screens use, so
 a number in a report and a number on a customer's file are the same number.
 
+## Phase 36d — the cross-app bridges
+
+The first cut of this app read the platform well and was reachable from almost
+nowhere. Four connections closed that, each in the direction the *job* runs
+rather than the direction the code happened to point.
+
+### Accounting → CRM: the customer's balance is the books' number
+
+`getCustomerFile` now carries `accounting.receivableRial`, read from
+`ar-service.listCustomerBalances` — accounting's own reconstruction from every
+journal line posted to A/R. It is deliberately **not** recomputed from unpaid
+orders: that second derivation would miss manual journal entries and credit
+notes, and the moment a CRM screen and the trial balance disagree about a debt,
+the owner cannot tell which one is lying.
+
+`hasLedger` is separate from a zero balance, because "this cash-only cafe keeps
+no A/R" and "this customer owes nothing" are different facts and only one of
+them should be shown as «۰ ﷼».
+
+### Accounting → segments: audiences that know who owes money
+
+A new segment field, `receivableRial`, compiled from an `ar_stats` CTE that
+repeats the same A/R reconstruction. The valuable rule is the *inverse* one —
+`{ field: "receivableRial", op: "lte", value: 0 }` — which keeps a discount
+campaign away from customers with an unpaid invoice.
+
+There are now three independent readers of the A/R ledger: `ar-service`, the
+customer file, and the segment compiler. `crm.integration.test.ts` asserts all
+three return the same number, and that assertion was verified to fail when the
+CTE is sabotaged.
+
+### CRM → Growth: segments become campaign audiences
+
+`campaign-audience.ts` resolves a saved segment (or an ad-hoc definition) into a
+sendable audience for one channel, over `POST /api/growth/campaign-audience`,
+surfaced in the Growth app's campaigns section.
+
+It returns **three** numbers, not one: `matched` (the rules), `reachable`
+(consent applied) and `excludedByConsent` (the gap). Showing only the last would
+make the segment look smaller than it is; showing only the first would imply a
+reach the business does not legally have. A fourth, `missingContact`, separates
+"consented but we hold no phone/email" — a data-quality problem an owner can fix
+— from a refusal, which they must respect.
+
+Channels map to consent purposes through an explicit `Record`, so adding a
+channel without deciding its consent rule is a compile error rather than a
+silent fall-through to `view`, which means *no filtering at all*.
+
+### Inbound deep links
+
+The A/R statement panel and the order detail modal both link into the customer's
+CRM file. Someone looking at a debt or a receipt is one click from the open
+complaint that might explain it.
+
+### A build-only defect worth recording
+
+Importing `UNKNOWN_CUSTOMER_KEY` from `ar-service` into a **client** component
+pulled `db.ts` → `pg` into the browser bundle: `Module not found: Can't resolve
+'fs'`. `tsc --noEmit` and the whole unit suite passed; only `npm run build`
+caught it. Fixed by moving the constant to the pure `aging.ts` and splitting the
+bridge's constants into `campaign-channels.ts`, leaving the DB-touching
+resolution in `campaign-audience.ts`.
+
+The general rule, now demonstrated twice in this codebase: **a client component
+may not import a module whose transitive graph reaches `db.ts`.** Type-checking
+will not tell you; the production bundler will.
+
 ## Exit criteria
 
 - [x] `npx tsc --noEmit` clean.
-- [x] `npm test` — 2689 unit tests pass.
-- [x] `npm run test:db` — 783 integration tests across 84 files pass, including
-      `crm.integration.test.ts` (8) and the tenant-isolation sweep over the new
-      tables.
-- [x] `npm run build` succeeds; all ten CRM routes compile.
+- [x] `npm test` — 2699 unit tests across 178 files pass.
+- [x] `npm run test:db` — 785 integration tests across 84 files pass, including
+      `crm.integration.test.ts` (10, two of them the Phase 36d bridges) and the
+      tenant-isolation sweep over the new tables.
+- [x] `npm run build` succeeds — 346 pages; all ten CRM routes compile.
 - [x] `design-lint.test.ts` passes with no new baseline entries.

@@ -31,6 +31,7 @@
 
 import { query } from "./db";
 import { businessToday } from "./business-day-service";
+import { WELL_KNOWN_CODES } from "./coa-template";
 import {
   compileSegment,
   consentPredicate,
@@ -108,6 +109,30 @@ function segmentSourceSql(): string {
         FROM customer_points
        WHERE business_id = $1
        GROUP BY customer_id
+    ),
+    -- The accounting bridge (Phase 36d). Same reconstruction as
+    -- ar-service.listCustomerBalances: sum every journal line posted to the
+    -- A/R control account, attributed to a customer through the order or the
+    -- receipt that caused it. Deliberately NOT "unpaid orders" — that would
+    -- ignore manual journal entries and credit notes and would let a segment
+    -- disagree with the trial balance about who owes what.
+    ar_stats AS (
+      SELECT COALESCE(o.customer_id, r.customer_id) AS customer_id,
+             coalesce(sum(jl.debit - jl.credit), 0)::bigint AS ar_balance
+        FROM journal_lines jl
+        JOIN journal_entries je ON je.id = jl.entry_id
+        JOIN accounts a ON a.id = jl.account_id
+        LEFT JOIN order_amendments am
+               ON je.source_type = 'order_amendment' AND am.id = je.source_id
+        LEFT JOIN orders o
+               ON o.id = CASE WHEN je.source_type = 'order' THEN je.source_id ELSE am.order_id END
+        LEFT JOIN ar_receipts r
+               ON je.source_type = 'ar_receipt' AND r.id = je.source_id
+       WHERE je.business_id = $1
+         AND a.business_id = $1
+         AND a.code = '${WELL_KNOWN_CODES.accountsReceivable}'
+         AND COALESCE(o.customer_id, r.customer_id) IS NOT NULL
+       GROUP BY COALESCE(o.customer_id, r.customer_id)
     )
     SELECT c.*,
            coalesce(os.order_count, 0)   AS order_count,
@@ -117,10 +142,12 @@ function segmentSourceSql(): string {
            CASE WHEN coalesce(os.order_count, 0) > 0
                 THEN coalesce(os.total_spent, 0) / os.order_count
                 ELSE 0 END               AS average_order,
-           coalesce(ps.loyalty_points, 0) AS loyalty_points
+           coalesce(ps.loyalty_points, 0) AS loyalty_points,
+           coalesce(ars.ar_balance, 0)   AS ar_balance
       FROM customers c
       LEFT JOIN order_stats os ON os.customer_id = c.id
       LEFT JOIN point_stats ps ON ps.customer_id = c.id
+      LEFT JOIN ar_stats ars ON ars.customer_id = c.id
      WHERE c.business_id = $1
        AND c.merged_into_id IS NULL
   `;

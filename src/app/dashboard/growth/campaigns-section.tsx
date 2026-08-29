@@ -20,6 +20,7 @@ import { useMoney } from "@/components/money/money-context";
 import { formatJalali } from "@/lib/jalali";
 import { classifyCampaign, rollingWindow, type CampaignState } from "@/lib/growth-shared";
 import { cardClass, EmptyState, SectionCard, StatusBadge } from "../page-chrome";
+import { CampaignAudiencePanel } from "./campaign-audience-panel";
 import { api, ErrorBox, Field, InfoBox, inputClass } from "../ui";
 import { JalaliDatePicker } from "../jalali-date-picker";
 
@@ -119,6 +120,13 @@ export function CampaignsSection() {
     <div className="space-y-4 sm:space-y-5">
       <ErrorBox>{error}</ErrorBox>
       {done ? <InfoBox>{done}</InfoBox> : null}
+
+      {/*
+        Phase 36d — who a campaign reaches, from the CRM's segments, sitting
+        next to the form that creates the campaign. Placed above the promotion
+        list because audience is the question an owner asks first.
+      */}
+      <CampaignAudiencePanel />
 
       <div className="grid gap-4 lg:grid-cols-2">
         <PromotionForm

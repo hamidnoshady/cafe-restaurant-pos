@@ -904,7 +904,7 @@ export function toolDefinitions(mode: AgentMode, opts: ToolDefinitionsOptions = 
             definition: {
               type: "object",
               description:
-                'تعریف بخش: { all?: Rule[], any?: Rule[] } — «all» با AND و «any» با OR ترکیب می‌شود؛ کلید دیگری مجاز نیست و سند نامعتبر رد می‌شود (نه اینکه همه را انتخاب کند). شکل هر شرط به فیلدش بستگی دارد: { field: "lastPurchaseAt"|"firstPurchaseAt"|"createdAt", op: "before"|"after", days: number }؛ { field: "totalSpentRial"|"orderCount"|"averageOrderRial"|"loyaltyPoints", op: "gte"|"lte", value: number }؛ { field: "tags", op: "hasAny"|"hasAll"|"hasNone", values: string[] }؛ { field: "birthdayMonth", op: "is", month: 1..12 }؛ { field: "isActive"|"hasEmail"|"smsConsent"|"marketingConsent", op: "is", value: boolean }؛ { field: "city", op: "contains", value: string }',
+                'تعریف بخش: { all?: Rule[], any?: Rule[] } — «all» با AND و «any» با OR ترکیب می‌شود؛ کلید دیگری مجاز نیست و سند نامعتبر رد می‌شود (نه اینکه همه را انتخاب کند). شکل هر شرط به فیلدش بستگی دارد: { field: "lastPurchaseAt"|"firstPurchaseAt"|"createdAt", op: "before"|"after", days: number }؛ { field: "totalSpentRial"|"orderCount"|"averageOrderRial"|"loyaltyPoints"|"receivableRial", op: "gte"|"lte", value: number } (receivableRial = مانده بدهی مشتری طبق دفاتر حسابداری، به ریال)؛ { field: "tags", op: "hasAny"|"hasAll"|"hasNone", values: string[] }؛ { field: "birthdayMonth", op: "is", month: 1..12 }؛ { field: "isActive"|"hasEmail"|"smsConsent"|"marketingConsent", op: "is", value: boolean }؛ { field: "city", op: "contains", value: string }',
               additionalProperties: true,
             },
             purpose: {

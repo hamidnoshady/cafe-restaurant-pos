@@ -55,7 +55,8 @@ export type SegmentField =
   | "smsConsent"
   | "marketingConsent"
   | "city"
-  | "createdAt";
+  | "createdAt"
+  | "receivableRial";
 
 export type SegmentRule =
   /** Days since/before the last purchase, relative to the anchor date. */
@@ -74,7 +75,14 @@ export type SegmentRule =
   | { field: "smsConsent"; op: "is"; value: boolean }
   | { field: "marketingConsent"; op: "is"; value: boolean }
   | { field: "city"; op: "contains"; value: string }
-  | { field: "createdAt"; op: "before" | "after"; days: number };
+  | { field: "createdAt"; op: "before" | "after"; days: number }
+  /**
+   * Outstanding A/R, straight off the ledger (Phase 36d). Lets Growth build
+   * "owes us money" audiences — and, more importantly, lets any campaign
+   * *exclude* debtors, so the business stops sending discount offers to people
+   * who have not paid the last invoice.
+   */
+  | { field: "receivableRial"; op: "gte" | "lte"; value: number };
 
 /**
  * A rule document. `all` is AND, `any` is OR, and a document carrying both
@@ -133,6 +141,7 @@ const FIELD_SQL: Record<SegmentField, string> = {
   marketingConsent: "c.marketing_consent",
   city: "coalesce(c.address, '')",
   createdAt: "c.created_at::date",
+  receivableRial: "s.ar_balance",
 };
 
 export class SegmentRuleError extends Error {
@@ -203,6 +212,7 @@ function compileRule(
     case "totalSpentRial":
     case "orderCount":
     case "averageOrderRial":
+    case "receivableRial":
     case "loyaltyPoints": {
       const value = assertFiniteNumber(rule.value, "value");
       if (rule.op !== "gte" && rule.op !== "lte") {
@@ -456,6 +466,7 @@ export const SEGMENT_FIELDS: readonly SegmentFieldMeta[] = [
   { field: "hasEmail", label: "ایمیل دارد", operators: ["is"], valueKind: "boolean" },
   { field: "smsConsent", label: "اجازهٔ پیامک", operators: ["is"], valueKind: "boolean" },
   { field: "marketingConsent", label: "اجازهٔ بازاریابی", operators: ["is"], valueKind: "boolean" },
+  { field: "receivableRial", label: "مانده بدهی (حسابداری)", operators: ["gte", "lte"], valueKind: "money" },
   { field: "city", label: "نشانی شامل", operators: ["contains"], valueKind: "text" },
   { field: "createdAt", label: "تاریخ ثبت مشتری", operators: ["before", "after"], valueKind: "days" },
 ];
@@ -506,6 +517,8 @@ export function describeRule(rule: SegmentRule, formatMoney: (rial: number) => s
       return `${rule.op === "gte" ? "حداقل" : "حداکثر"} ${rule.value} خرید`;
     case "loyaltyPoints":
       return `${rule.op === "gte" ? "حداقل" : "حداکثر"} ${rule.value} امتیاز`;
+    case "receivableRial":
+      return `مانده بدهی ${rule.op === "gte" ? "حداقل" : "حداکثر"} ${formatMoney(rule.value)}`;
     case "tags":
       return `${SEGMENT_OPERATOR_LABELS[rule.op]} برچسب‌های ${rule.values.join("، ")}`;
     case "birthdayMonth":

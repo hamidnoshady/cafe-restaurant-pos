@@ -38,7 +38,7 @@ let timelineService: typeof import("../src/lib/customer-timeline-service");
 
 const biz = { id: "", locationId: "" };
 const other = { id: "", locationId: "" };
-const acct = { cash: "", revenue: "" };
+const acct = { cash: "", revenue: "", receivable: "" };
 
 function urlFor(database: string): string {
   const url = new URL(rootDatabaseUrl!);
@@ -133,12 +133,14 @@ beforeEach(async () => {
   const accounts = await db.query<{ id: string; code: string }>(
     `INSERT INTO accounts (business_id, code, name, type)
      VALUES ($1, '1100', 'Cash', 'asset'),
+            ($1, '1200', 'Accounts Receivable', 'asset'),
             ($1, '4100', 'Sales Revenue', 'revenue')
      RETURNING id, code`,
     [biz.id],
   );
   for (const row of accounts.rows) {
     if (row.code === "1100") acct.cash = row.id;
+    if (row.code === "1200") acct.receivable = row.id;
     if (row.code === "4100") acct.revenue = row.id;
   }
 });
@@ -487,5 +489,115 @@ describe("the customer timeline", () => {
     // A kind filter narrows it without changing the ordering rule.
     const onlyOrders = await timelineService.customerTimeline(biz.id, customer, { kinds: ["order"] });
     expect(onlyOrders.every((event) => event.kind === "order")).toBe(true);
+  });
+});
+
+describe("cross-app bridges", () => {
+  /**
+   * Phase 36d — the accounting bridge.
+   *
+   * The CRM shows a customer's outstanding balance and lets a segment target
+   * (or exclude) debtors. Both numbers are reconstructed from the A/R control
+   * account, and there are now *three* independent readers of that ledger:
+   * `ar-service` (accounting's own), `getCustomerFile` (the CRM's 360 view) and
+   * the segment compiler's `ar_stats` CTE. If any two of them ever disagree,
+   * one of the app's screens is lying about a debt and the owner has no way to
+   * tell which. So the test asserts they are equal, not merely plausible.
+   */
+  it("agrees with the ledger about who owes money, on every surface that reports it", async () => {
+    const debtor = await makeCustomer(biz.id, "بدهکار", {
+      phone: "+989120000010",
+      smsConsent: true,
+    });
+    const settled = await makeCustomer(biz.id, "تسویه‌شده", {
+      phone: "+989120000011",
+      smsConsent: true,
+    });
+
+    // A credit sale: revenue earned, cash not received. This is what makes a
+    // debtor — not an unpaid order flag, but a debit sitting in A/R.
+    const closedAt = new Date(Date.now() - 2 * 86_400_000).toISOString();
+    const order = await db.query<{ id: string }>(
+      `INSERT INTO orders (location_id, customer_id, status, subtotal, total, closed_at, order_number)
+       VALUES ($1, $2, 'completed', $3, $3, $4, $5) RETURNING id`,
+      [biz.locationId, debtor, 3_000_000, closedAt, 77_001],
+    );
+    const entry = await db.query<{ id: string }>(
+      `INSERT INTO journal_entries (business_id, location_id, entry_date, memo, source_type, source_id)
+       VALUES ($1, $2, $3::date, 'credit sale', 'order', $4) RETURNING id`,
+      [biz.id, biz.locationId, closedAt.slice(0, 10), order.rows[0].id],
+    );
+    await db.query(
+      `INSERT INTO journal_lines (entry_id, account_id, debit, credit)
+       VALUES ($1, $2, 3000000, 0), ($1, $3, 0, 3000000)`,
+      [entry.rows[0].id, acct.receivable, acct.revenue],
+    );
+
+    // A cash sale for the other customer: same revenue, nothing in A/R.
+    await makeSale(biz.locationId, biz.id, settled, 1_000_000, 2);
+
+    await dbLib.withTenant(biz.id, async () => {
+      const arService = await import("../src/lib/ar-service");
+      const balances = await arService.listCustomerBalances(biz.id);
+      const fromLedger = balances.find((b) => b.customerId === debtor)?.balance ?? 0;
+      expect(fromLedger).toBe(3_000_000);
+
+      // Reader 2: the customer file.
+      const debtorFile = await crm.getCustomerFile(biz.id, debtor);
+      expect(debtorFile?.accounting.receivableRial).toBe(fromLedger);
+      expect(debtorFile?.accounting.hasLedger).toBe(true);
+
+      // A cash customer owes nothing — and that is different from having no
+      // ledger at all, which is why hasLedger is a separate flag.
+      const settledFile = await crm.getCustomerFile(biz.id, settled);
+      expect(settledFile?.accounting.receivableRial).toBe(0);
+
+      // Reader 3: the segment compiler, through its own CTE.
+      const owing = await segmentsService.resolveDefinition(
+        biz.id,
+        { all: [{ field: "receivableRial", op: "gte", value: 1_000_000 }] },
+        { purpose: "view" },
+      );
+      expect(owing.map((m) => m.id)).toEqual([debtor]);
+
+      // The inverse — "everyone who does not owe us" — is the rule that keeps a
+      // discount campaign away from people with an unpaid invoice.
+      const clear = await segmentsService.resolveDefinition(
+        biz.id,
+        { all: [{ field: "receivableRial", op: "lte", value: 0 }] },
+        { purpose: "view" },
+      );
+      expect(clear.map((m) => m.id)).toContain(settled);
+      expect(clear.map((m) => m.id)).not.toContain(debtor);
+    });
+  });
+
+  /**
+   * Phase 36d — the Growth bridge. A campaign audience must never include
+   * somebody who refused the channel, and the caller must be told how many were
+   * dropped, because a silently smaller number is indistinguishable from a bug.
+   */
+  it("hands Growth an audience with consent already applied, and says how many it removed", async () => {
+    const willing = await makeCustomer(biz.id, "موافق", {
+      phone: "+989120000020",
+      smsConsent: true,
+    });
+    await makeCustomer(biz.id, "مخالف", {
+      phone: "+989120000021",
+      smsConsent: false,
+    });
+
+    await dbLib.withTenant(biz.id, async () => {
+      const bridge = await import("../src/lib/campaign-audience");
+      // An empty document means "everyone" by design, which makes it the
+      // sharpest test of the consent filter: nothing else is narrowing.
+      const audience = await bridge.audienceForDefinition(biz.id, {}, "sms");
+
+      expect(audience.matched).toBeGreaterThanOrEqual(2);
+      expect(audience.members.map((m) => m.id)).toContain(willing);
+      expect(audience.members.every((m) => m.smsConsent)).toBe(true);
+      expect(audience.excludedByConsent).toBe(audience.matched - audience.reachable);
+      expect(audience.excludedByConsent).toBeGreaterThan(0);
+    });
   });
 });

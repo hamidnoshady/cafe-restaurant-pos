@@ -199,6 +199,23 @@ export function CustomerFileSection({ customerId, role }: { customerId: string; 
                 : `${formatPersianNumber(file.stats.daysSinceLastPurchase)} روز پیش`
             }
           />
+          {/*
+            Phase 36d — the books' number, not a CRM recomputation. Only shown
+            when the business actually keeps a ledger; a cash-only cafe with no
+            A/R account should not be told it is owed «۰ ﷼», which reads like a
+            fact about the customer rather than about the absence of a ledger.
+          */}
+          {file.accounting.hasLedger ? (
+            <Metric
+              label="مانده بدهی"
+              value={money.format(file.accounting.receivableRial)}
+              hint={
+                file.accounting.receivableRial > 0
+                  ? "طبق دفاتر حسابداری"
+                  : "تسویه‌شده طبق دفاتر"
+              }
+            />
+          ) : null}
           <Metric label="امتیاز وفاداری" value={formatPersianNumber(file.stats.loyaltyPoints)} />
           <Metric label="تیکت باز" value={formatPersianNumber(file.stats.openCases)} />
           <Metric label="معاملهٔ باز" value={formatPersianNumber(file.stats.openDeals)} />

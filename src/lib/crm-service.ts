@@ -25,6 +25,7 @@
  */
 
 import { query, withTenant } from "./db";
+import { listCustomerBalances } from "./ar-service";
 import { businessToday } from "./business-day-service";
 import { normalizePhone } from "./phone";
 import {
@@ -78,6 +79,22 @@ export interface CustomerFile {
     monetary: number | null;
     stage: string | null;
     scoredAt: string | null;
+  };
+  /**
+   * What the books say about this customer, not what the CRM thinks.
+   *
+   * `receivableRial` comes straight from `ar-service.listCustomerBalances`,
+   * which reconstructs it from every journal line posted to A/R. Recomputing
+   * it here from orders would produce a second, subtly different number — it
+   * would miss manual journal entries and credit notes — and the moment a CRM
+   * screen and the trial balance disagree about a debt, the owner cannot tell
+   * which one is lying. So the CRM asks accounting and shows its answer.
+   * Positive means the customer owes the business.
+   */
+  accounting: {
+    receivableRial: number;
+    /** False when the chart of accounts has no A/R account yet. */
+    hasLedger: boolean;
   };
 }
 
@@ -140,6 +157,11 @@ export async function getCustomerFile(
   if (!row) return null;
 
   const today = await businessToday(businessId);
+  // Ask the books rather than recomputing. Returns [] when the business has no
+  // A/R account yet, which is a real state for a cash-only cafe — distinct from
+  // "has an account and owes nothing", hence the hasLedger flag below.
+  const balances = await listCustomerBalances(businessId);
+  const arBalance = balances.find((b) => b.customerId === customerId) ?? null;
   const lastPurchaseDate = (row.lastPurchaseDate as string | null) ?? null;
   const firstPurchaseDate = (row.firstPurchaseDate as string | null) ?? null;
   const orderCount = Number(row.orderCount ?? 0);
@@ -185,6 +207,10 @@ export async function getCustomerFile(
       monetary: (row.rfmMonetary as number | null) ?? null,
       stage: (row.lifecycleStage as string | null) ?? null,
       scoredAt: (row.rfmScoredAt as string | null) ?? null,
+    },
+    accounting: {
+      receivableRial: arBalance ? arBalance.balance : 0,
+      hasLedger: balances.length > 0,
     },
   };
 }
