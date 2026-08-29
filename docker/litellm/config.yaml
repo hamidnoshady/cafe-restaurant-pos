@@ -1,0 +1,69 @@
+# LiteLLM proxy configuration — Phase 37.
+#
+# This is a *starting point*, not a tuned production config. Every credential
+# is an env reference so nothing secret lives in this file; add your upstream
+# keys to .env (or your orchestrator's secret store) and never commit them.
+#
+# Run it with:
+#   docker compose --profile ai up -d litellm
+#
+# The proxy is bound to the compose network only. It is never published to the
+# host and never exposed through Traefik: it holds every upstream vendor API
+# key, and its management API can mint keys and read spend.
+#
+# Model names below are *aliases* (model_name); a business only ever asks for
+# the alias, so which vendor actually serves it stays a platform decision that
+# can change without touching this application. The application's own aliases
+# live in /platform/ai/gateway and must match these.
+
+model_list:
+  # Primary chat model. Point this at whichever vendor you have contracted.
+  - model_name: pos-chat
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: os.environ/OPENAI_API_KEY
+      rpm: 60
+
+  # Failover: a different vendor entirely, so a single provider outage stops
+  # being a platform-wide outage. The application sends this as its client-side
+  # `fallbacks` chain, but declaring it here as well means a direct call to the
+  # gateway fails over even without that parameter.
+  - model_name: pos-cheap
+    litellm_params:
+      model: openai/gpt-4.1-nano
+      api_key: os.environ/OPENAI_API_KEY
+      rpm: 120
+
+  # Embeddings can come from a different vendor than chat. This is what makes
+  # the assistant's knowledge search (Phase 36) work at all on a gateway whose
+  # chat provider does not serve embedding models.
+  - model_name: pos-embed
+    litellm_params:
+      model: openai/text-embedding-3-small
+      api_key: os.environ/OPENAI_API_KEY
+
+general_settings:
+  # MUST be set. Without a master key the proxy accepts unauthenticated
+  # requests, and anyone who can reach port 4000 can create keys and read
+  # every prompt that has passed through it.
+  master_key: os.environ/LITELLM_MASTER_KEY
+  # Required for virtual keys, per-key spend and budgets.
+  database_url: os.environ/LITELLM_DATABASE_URL
+  # Do not let a virtual key rewrite the gateway's own configuration.
+  disable_add_model_via_api: true
+
+litellm_settings:
+  # Retry a failing deployment before falling back to the next model group.
+  num_retries: 3
+  request_timeout: 120
+  # Drop parameters the target provider does not understand rather than
+  # rejecting the call — this is what makes one client work across vendors.
+  drop_params: true
+
+router_settings:
+  routing_strategy: simple-shuffle
+  # Tried in order; also sent per-request by the application, which keeps the
+  # chain editable from /platform/ai/gateway without restarting this service.
+  fallbacks:
+    - pos-chat:
+        - pos-cheap

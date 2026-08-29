@@ -10,7 +10,7 @@ import { Loader2Icon } from "lucide-react";
 
 interface AiConfig {
   enabled: boolean;
-  provider: "openrouter" | "arvan";
+  provider: "openrouter" | "arvan" | "litellm";
   model: string;
   baseUrl: string;
   temperature: number;
@@ -199,7 +199,8 @@ export default function PlatformAiPage() {
         <h1 className="text-xl font-bold">مدیریت هوش مصنوعی</h1>
         <p className="mt-1 text-sm text-white/50">
           اتصال واحد سرویس، هزینه و حاشیهٔ درآمد، اعتبار کسب‌وکارها، اشتراک‌ها و درخواست‌های شارژ.
-          مدیریت پرامپت‌ها در بخش <a className="underline" href="/platform/ai/prompts">پرامپت‌ها</a> است.
+          مدیریت پرامپت‌ها در بخش <a className="underline" href="/platform/ai/prompts">پرامپت‌ها</a> و تنظیمات
+          دروازهٔ مدل (LiteLLM) در بخش <a className="underline" href="/platform/ai/gateway">دروازهٔ مدل</a> است.
         </p>
       </header>
 
@@ -229,6 +230,13 @@ export default function PlatformAiPage() {
           {!configDraft.configured ? (
             <InfoBox>تا تکمیل کلید و هزینه‌ها، سرویس برای کسب‌وکارها فعال نمی‌شود.</InfoBox>
           ) : null}
+          {configDraft.provider === "litellm" ? (
+            <InfoBox>
+              با انتخاب LiteLLM، نشانی و کلید همین‌جا تنظیم می‌شود و امکانات دروازه — کلید مجازی برای هر
+              کسب‌وکار، سقف هزینه، زنجیرهٔ جایگزین و نام مستعار مدل — در بخش{" "}
+              <a className="underline" href="/platform/ai/gateway">دروازهٔ مدل</a> است.
+            </InfoBox>
+          ) : null}
           <form onSubmit={saveConfig} className="grid gap-4 lg:grid-cols-2">
             <Field label="ارائه‌دهنده">
               <SearchableSelect
@@ -238,6 +246,7 @@ export default function PlatformAiPage() {
                 options={[
                   { value: "openrouter", label: "OpenRouter" },
                   { value: "arvan", label: "آروان‌کلاد" },
+                  { value: "litellm", label: "LiteLLM (دروازهٔ یکپارچه)" },
                 ]}
               />
             </Field>

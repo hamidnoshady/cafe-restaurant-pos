@@ -6,6 +6,7 @@ import { PageHeader, PageShell } from "../../page-chrome";
 import { AiAutopilotSettings } from "../ai-autopilot-settings";
 import { AiProactiveSettings } from "../ai-proactive-settings";
 import { AiBillingDashboard } from "../ai-billing";
+import { AiGatewayPanel } from "../ai-gateway-panel";
 import { AiPromptSettings } from "@/components/ai/ai-prompt-settings";
 
 /**
@@ -34,6 +35,7 @@ export default async function AiSettingsPage() {
           <AiPromptSettings />
           <AiAutopilotSettings />
           <AiProactiveSettings />
+          <AiGatewayPanel />
           <AiBillingDashboard />
         </div>
       </FeatureLock>

@@ -30,6 +30,20 @@ export function embeddingModel(): string {
   return process.env.AI_EMBEDDING_MODEL?.trim() || DEFAULT_EMBEDDING_MODEL;
 }
 
+/**
+ * The embedding model for one connection.
+ *
+ * Phase 37: a gateway can route `/embeddings` to a different alias than chat —
+ * which is the whole fix for the note below about embedding support being
+ * all-or-nothing on a single vendor. Without a gateway the answer is unchanged:
+ * the env override, then today's default.
+ */
+export function embeddingModelFor(config?: AiConfig): string {
+  const resolved = config?.embeddingModel?.trim();
+  if (resolved) return resolved;
+  return embeddingModel();
+}
+
 /** Join a base URL with the embeddings path, tolerating a trailing slash. */
 export function embeddingsUrl(baseUrl: string): string {
   return `${baseUrl.replace(/\/+$/, "")}/embeddings`;
@@ -70,9 +84,11 @@ export async function embedTexts(config: AiConfig, texts: string[]): Promise<Emb
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${config.apiKey}`,
+        // Phase 37 — a gateway deployment authenticates with the calling
+        // business's virtual key, exactly as the chat path does.
+        Authorization: `Bearer ${config.gateway?.authKey || config.apiKey}`,
       },
-      body: JSON.stringify({ model: embeddingModel(), input }),
+      body: JSON.stringify({ model: embeddingModelFor(config), input }),
       signal: controller.signal,
     });
   } catch (err) {
@@ -132,7 +148,7 @@ export function resetEmbeddingAvailabilityCache(): void {
 }
 
 function availabilityKey(config: AiConfig): string {
-  return `${config.provider}|${config.baseUrl}|${embeddingModel()}`;
+  return `${config.provider}|${config.baseUrl}|${embeddingModelFor(config)}`;
 }
 
 /**

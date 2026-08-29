@@ -18,3 +18,42 @@ services:
 
 volumes:
   pos-pgdata:
+
+  # Phase 37 — optional LLM gateway (LiteLLM).
+  #
+  # Not started by `docker compose up -d`: it sits behind a profile, because a
+  # shop that buys directly from OpenRouter or ArvanCloud needs one less
+  # container, and a laptop or offline install must keep working with no
+  # gateway at all. Start it with:
+  #
+  #   docker compose --profile ai up -d litellm
+  #
+  # Then select provider "litellm" in /platform/ai and finish the setup in
+  # /platform/ai/gateway. Bound to the compose network only — never published
+  # to the host — because this service holds every upstream vendor key and its
+  # management API can mint keys and read spend.
+  litellm:
+    image: ghcr.io/berriai/litellm:main-stable
+    profiles:
+      - ai
+    restart: unless-stopped
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    volumes:
+      - ./docker/litellm/config.yaml:/app/config.yaml:ro
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?set LITELLM_MASTER_KEY}
+      # LiteLLM keeps its own database for virtual keys, budgets and spend
+      # logs. It is deliberately NOT the application's database: the gateway
+      # manages its own schema and migrates it on boot. Create the *database*
+      # once first (`createdb -U pos litellm` inside the db container) — the
+      # gateway creates its tables, but not the database.
+      LITELLM_DATABASE_URL: postgres://${POSTGRES_USER:-pos}:${POSTGRES_PASSWORD:-pos}@db:5432/${LITELLM_DB:-litellm}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:4000/health/liveliness\")'"]
+      interval: 30s
+      timeout: 5s
+      retries: 5

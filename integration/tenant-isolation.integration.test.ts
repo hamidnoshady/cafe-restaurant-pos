@@ -61,6 +61,13 @@ const EXEMPT_TABLES = new Set([
   // location_id column, nothing to scope by; a row overrides the code default
   // for a fragment key + version and falls back to code when absent.
   "ai_prompt_templates",
+  // Phase 37 — deployment-wide LLM gateway settings (migration 0117). A
+  // singleton holding the gateway's address and admin credential, with no
+  // tenant column: rotating it is a deployment-wide act by definition, which
+  // is the same exemption as platform_ai_config and platform_push_config.
+  // `ai_business_gateway` — the per-business virtual key, budgets and model
+  // choice — is deliberately NOT exempt and must keep proving isolation.
+  "platform_ai_gateway",
 ]);
 
 let databaseName: string;
@@ -288,6 +295,10 @@ describe("every tenant table is protected", () => {
     expect([...EXEMPT_TABLES].filter((t) => t.startsWith("platform_")).sort()).toEqual([
       "platform_admins",
       "platform_ai_config",
+      // Phase 37 — the deployment-wide LLM gateway settings. The per-business
+      // table it provisions keys into (`ai_business_gateway`) is deliberately
+      // absent from EXEMPT_TABLES and is asserted by the coverage test above.
+      "platform_ai_gateway",
       "platform_audit_log",
       "platform_push_config",
       "platform_update_config",
