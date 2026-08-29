@@ -17,6 +17,13 @@ import { useFeatureLocked } from "@/components/feature-lock";
 import { api, ErrorBox, errorMessageOrRaw, InfoBox, inputClass } from "../ui";
 import { Button } from "@/components/ui/button";
 import { SectionCard } from "../page-chrome";
+import { formatDateTime } from "./format";
+import {
+  CatalogueSection,
+  StoreOrdersSection,
+  SyncSettingsSection,
+  TaxonomiesSection,
+} from "./woo-store-sections";
 
 type LinkMode = "rest_api" | "plugin";
 
@@ -26,8 +33,14 @@ interface Connection {
   baseUrl: string;
   linkMode: LinkMode;
   currencyUnit: "rial" | "toman";
+  /** Phase 38 — what the connection pulls, and when it last pulled it. */
+  syncCategories: boolean;
+  autoPullOrders: boolean;
+  orderLookbackDays: number;
   status: "active" | "paused" | "error";
   lastSyncAt: string | null;
+  lastCatalogueSyncAt: string | null;
+  lastOrderSyncAt: string | null;
   lastError: string | null;
   webhookPath: string;
   hasLinkToken: boolean;
@@ -70,6 +83,10 @@ const ACTION_LABELS: Record<string, string> = {
   "order.imported": "سفارش وارد شد",
   "refund.imported": "برگشت وجه وارد شد",
   "products.synced": "همگام‌سازی محصولات",
+  "orders.synced": "همگام‌سازی سفارش‌ها",
+  "orders.pull_failed": "خطا در بازخوانی سفارش‌ها",
+  "taxonomy.sync_failed": "خطا در دریافت دسته‌بندی‌ها",
+  "product.variations_failed": "خطا در دریافت تنوع‌ها",
   "customers.synced": "همگام‌سازی مشتریان",
   "reconciliation.run": "مغایرت‌گیری",
   "outbox.dead_lettered": "خطای دائمی ارسال",
@@ -80,6 +97,11 @@ const OUTBOX_TYPE_LABELS: Record<string, string> = {
   price: "ارسال قیمت",
   catalogue_export: "همگام‌سازی محصولات",
   customer_export: "همگام‌سازی مشتریان",
+  // Phase 38 — operations, not just numbers.
+  product_update: "به‌روزرسانی محصول",
+  order_status: "تغییر وضعیت سفارش",
+  refund_create: "ثبت برگشت وجه",
+  orders_export: "بازخوانی سفارش‌ها",
 };
 
 const OUTBOX_STATUS_LABELS: Record<string, string> = {
@@ -96,11 +118,6 @@ const OUTBOX_STATUS_LABELS: Record<string, string> = {
  * not running — the queue is real, it is just not being drained.
  */
 const PLUGIN_STALE_MS = 15 * 60 * 1000;
-
-function formatDateTime(iso: string | null): string {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleString("fa-IR", { dateStyle: "short", timeStyle: "short" });
-}
 
 /** A secret shown exactly once. Deliberately loud: there is no second chance to read it. */
 function ShowOnceSecret({ title, value, note, onDone }: { title: string; value: string; note: string; onDone: () => void }) {
@@ -137,6 +154,8 @@ export function WooCommercePanel() {
   const [auditFor, setAuditFor] = useState<string | null>(null);
   const [outboxJobs, setOutboxJobs] = useState<OutboxJob[]>([]);
   const [outboxFor, setOutboxFor] = useState<string | null>(null);
+  // Phase 38 — the four working surfaces, one open at a time per store.
+  const [sectionFor, setSectionFor] = useState<string | null>(null);
   const locked = useFeatureLocked();
 
   const [form, setForm] = useState({
@@ -432,6 +451,15 @@ export function WooCommercePanel() {
                     type="button"
                     variant="outline"
                     size="xs"
+                    onClick={() => call(`/api/integrations/connections/${c.id}/sync/orders`)}
+                    disabled={busy !== null}
+                  >
+                    همگام‌سازی سفارش‌ها
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="xs"
                     onClick={() => call(`/api/integrations/connections/${c.id}/sync/customers`)}
                     disabled={busy !== null}
                   >
@@ -491,6 +519,29 @@ export function WooCommercePanel() {
                   <Button type="button" variant="outline" size="xs" onClick={() => void loadOutbox(c.id)} disabled={busy !== null}>
                     کارهای در صف
                   </Button>
+                  {(
+                    [
+                      { key: "catalogue", label: "کاتالوگ" },
+                      { key: "taxonomies", label: "دسته‌بندی‌ها" },
+                      { key: "orders", label: "سفارش‌های فروشگاه" },
+                      { key: "sync", label: "تنظیمات همگام‌سازی" },
+                    ] as const
+                  ).map((section) => (
+                    <Button
+                      key={section.key}
+                      type="button"
+                      variant="outline"
+                      size="xs"
+                      aria-pressed={sectionFor === `${c.id}:${section.key}`}
+                      onClick={() => {
+                        const next = `${c.id}:${section.key}`;
+                        setSectionFor(sectionFor === next ? null : next);
+                      }}
+                      disabled={busy !== null}
+                    >
+                      {section.label}
+                    </Button>
+                  ))}
                   <Button
                     type="button"
                     variant="ghost"
@@ -519,6 +570,20 @@ export function WooCommercePanel() {
                     صف این فروشگاه توسط خودِ افزونهٔ وردپرس (هر ۵ دقیقه) تخلیه می‌شود؛ اگر «در صف» ثابت ماند، افزونه در
                     حال اجرا نیست.
                   </p>
+                ) : null}
+
+                {sectionFor === `${c.id}:catalogue` ? (
+                  <CatalogueSection connectionId={c.id} busy={busy !== null} call={call} />
+                ) : null}
+
+                {sectionFor === `${c.id}:taxonomies` ? <TaxonomiesSection connectionId={c.id} /> : null}
+
+                {sectionFor === `${c.id}:orders` ? (
+                  <StoreOrdersSection connectionId={c.id} busy={busy !== null} call={call} />
+                ) : null}
+
+                {sectionFor === `${c.id}:sync` ? (
+                  <SyncSettingsSection connection={c} busy={busy !== null} call={call} />
                 ) : null}
 
                 {auditFor === c.id ? (

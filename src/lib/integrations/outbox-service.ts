@@ -18,6 +18,7 @@ import { listMappings, setLastPushedPayload } from "./mapping-service";
 import { rialToWooAmount } from "./woo-money";
 import { backoffDelayMs, isDeadAfterAttempts, OUTBOX_MAX_ATTEMPTS } from "./retry";
 import { writeIntegrationAudit } from "./audit";
+import { wooUpdatePath } from "./woo-catalogue";
 import type { ConnectionRow } from "./connections-service";
 
 export const WOO_SYNC_TICK_INTERVAL_MS = 60 * 1000;
@@ -143,11 +144,84 @@ async function upsertOutbox(
   );
 }
 
+export type OutboxEntityType =
+  | "stock"
+  | "price"
+  | "product_update"
+  | "order_status"
+  | "refund_create"
+  | "catalogue_export"
+  | "customer_export"
+  | "orders_export";
+
+/**
+ * Apply one queued push to the store.
+ *
+ * The variation path is the Phase 38 fix. A variation is
+ * `products/{parent}/variations/{id}` and not `products/{id}`; sending the
+ * flat path with a variation id answers 404, and every push to a variation
+ * duly walked itself into the dead-letter queue. The parent id is recorded
+ * on the mapping when the product is synced (see sync-service's
+ * `recordProductShape`) and carried on the row so the plugin — which leases
+ * these rows and applies them itself — can make the same choice.
+ */
+async function applyOutboundEvent(
+  connection: ConnectionRow,
+  client: ReturnType<typeof wooClientFor>,
+  event: { entity_type: string; remote_id: string; payload: unknown },
+): Promise<void> {
+  const patch = (event.payload ?? {}) as Record<string, unknown>;
+  // Reserved keys never reach the store: `__parentRemoteId` is routing
+  // metadata for this channel, not a WooCommerce field.
+  const body: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(patch)) {
+    if (!key.startsWith("__")) body[key] = value;
+  }
+
+  switch (event.entity_type) {
+    case "stock":
+    case "price":
+    case "product_update": {
+      const parent = (patch.__parentRemoteId as string | undefined) ?? null;
+      await client.updateAt(wooUpdatePath(event.remote_id, parent), body);
+      return;
+    }
+    case "order_status":
+      await client.updateOrder(Number(event.remote_id), { status: body.status });
+      return;
+    case "refund_create":
+      // `api_refund` is forced false by woo-ops-service and re-forced here:
+      // this channel records a refund, it does not move money through
+      // someone's payment gateway.
+      await client.createRefund(Number(event.remote_id), {
+        amount: body.amount,
+        reason: body.reason ?? "",
+        api_refund: false,
+      });
+      return;
+    case "catalogue_export":
+    case "customer_export":
+    case "orders_export":
+      // Plugin-only: they ask the plugin to send what only it can see. In
+      // REST mode there is nothing to apply, and leaving them queued would
+      // dead-letter a job that was never meant for this side.
+      return;
+    default:
+      return;
+  }
+}
+
 export async function drainOutbox(connection: ConnectionRow): Promise<void> {
   const businessId = connection.business_id;
   const client = wooClientFor(connection);
 
-  const { rows } = await query<{ id: string; entity_type: "stock" | "price"; remote_id: string; payload: unknown; attempts: number }>(
+  const { rows } = await query<{
+    id: string;
+    entity_type: OutboxEntityType;
+    remote_id: string;
+    payload: unknown;
+    attempts: number;
+  }>(
     `SELECT id, entity_type, remote_id, payload, attempts
        FROM integration_outbox_events
       WHERE connection_id = $1 AND status IN ('pending', 'failed') AND next_attempt_at <= now()
@@ -159,22 +233,28 @@ export async function drainOutbox(connection: ConnectionRow): Promise<void> {
   for (const event of rows) {
     await query(`UPDATE integration_outbox_events SET status = 'processing' WHERE id = $1`, [event.id]);
     try {
-      const patch = event.payload as Record<string, unknown>;
-      await client.updateProduct(Number(event.remote_id), patch);
+      await applyOutboundEvent(connection, client, event);
       await query(
         `UPDATE integration_outbox_events SET status = 'sent', sent_at = now(), last_error = NULL, updated_at = now()
           WHERE id = $1`,
         [event.id],
       );
       // Preserve the other half so a stock push doesn't erase the last-pushed price (and vice versa).
-      const previous = await previousPayload(businessId, connection.id, event.remote_id);
-      await setLastPushedPayload(businessId, connection.id, "product", event.remote_id, {
-        ...previous,
-        ...(event.entity_type === "stock" ? { stock: patch.stock_quantity as number } : {}),
-        ...(event.entity_type === "price"
-          ? { priceRial: await localPriceRial(connection, event.remote_id) }
-          : {}),
-      });
+      if (event.entity_type === "stock" || event.entity_type === "price" || event.entity_type === "product_update") {
+        const patch = (event.payload ?? {}) as Record<string, unknown>;
+        const previous = await previousPayload(businessId, connection.id, event.remote_id);
+        await setLastPushedPayload(businessId, connection.id, "product", event.remote_id, {
+          ...previous,
+          ...(event.entity_type === "stock" ? { stock: patch.stock_quantity as number } : {}),
+          ...(event.entity_type === "price" ? { priceRial: await localPriceRial(connection, event.remote_id) } : {}),
+          ...(event.entity_type === "product_update"
+            ? {
+                ...("stock_quantity" in patch ? { stock: patch.stock_quantity as number } : {}),
+                ...("regular_price" in patch ? { priceRial: await localPriceRial(connection, event.remote_id) } : {}),
+              }
+            : {}),
+        });
+      }
     } catch (err) {
       const attempts = event.attempts + 1;
       if (isDeadAfterAttempts(attempts, OUTBOX_MAX_ATTEMPTS)) {
@@ -257,6 +337,25 @@ export async function runWooCommerceSyncTick(): Promise<void> {
       if (!isWooCommerce(connection)) return;
       if (connection.push_stock || connection.push_prices) {
         await refreshOutboxForConnection(connection);
+      }
+      // Phase 38 — a scheduled order pull, in REST mode only. The plugin
+      // pushes its own orders, so pulling there would be a second path to the
+      // same rows; but a REST connection whose webhook was never configured
+      // (or whose webhook has been failing for a week) has no other way for a
+      // sale to reach this app at all. The inbox's delivery-id dedup makes
+      // re-reading the same orders free.
+      if (connection.link_mode === "rest_api" && connection.auto_pull_orders && connection.sync_orders) {
+        try {
+          const { syncOrders } = await import("./sync-service");
+          await syncOrders(connection.business_id, connection.id, { maxPages: 10 });
+        } catch (err) {
+          await writeIntegrationAudit({
+            businessId: connection.business_id,
+            connectionId: connection.id,
+            action: "orders.pull_failed",
+            error: (err as Error).message,
+          });
+        }
       }
       // Filling the queue is the same in both link modes — it only reads local
       // stock and prices. Draining is not: in plugin mode the WordPress plugin
