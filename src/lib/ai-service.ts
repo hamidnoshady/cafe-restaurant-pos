@@ -409,6 +409,20 @@ async function isRetrievalEnabledForTurn(config: AiConfig): Promise<boolean> {
 }
 
 /**
+ * Whether this mode's turn will declare the retrieval tool — exported so a
+ * caller resolving the system prompt through the prompt manager can build the
+ * same context `runAgentTurn` would (the fallback prompt's retrieval line
+ * depends on it). Probes are cached per process, so the double call is free.
+ */
+export async function retrievalReadyForMode(
+  config: AiConfig,
+  mode: AgentMode,
+  businessId?: string,
+): Promise<boolean> {
+  return mode === "dashboard" && Boolean(businessId) && (await isRetrievalEnabledForTurn(config));
+}
+
+/**
  * Phase 36 Wave 6 — the `search_business_knowledge` executor. Embeds the
  * question over the shared platform connection (its tokens are metered into
  * the same turn, exit criterion 5), retrieves the nearest knowledge rows, and
@@ -471,6 +485,13 @@ function traceOf(name: string, args: Record<string, unknown>): AgentToolCallTrac
   /** Optional callbacks turn the provider response into a live UI stream. */
   stream?: ProviderStreamCallbacks;
   promptContext: PromptContext;
+  /**
+   * The prompt manager's resolved system prompt. When present it replaces the
+   * code-built one (`buildSystemPrompt`) for this turn — see
+   * `resolveSystemPrompt` in ai-prompt-service.ts. Absent means today's
+   * behaviour, which is also what any failure in the resolver degrades to.
+   */
+  systemPrompt?: string;
   messages: InboundMessage[];
   /** Wave 5 (issue #145) — a receipt/invoice image attached to this turn only. */
   attachment?: ChatAttachment;
@@ -497,8 +518,7 @@ function traceOf(name: string, args: Record<string, unknown>): AgentToolCallTrac
   // and a platform connection that answers /embeddings. Both probes cache per
   // process, and neither ever throws — a probe that fails means "off", and off
   // is exactly the pre-wave behaviour. Desktop installs keep the assistant.
-  const retrievalReady =
-    mode === "dashboard" && Boolean(businessId) && (await isRetrievalEnabledForTurn(config));
+  const retrievalReady = await retrievalReadyForMode(config, mode, businessId);
 
   const tools = toolDefinitions(mode, { hasAttachment, actionTypes: opts.actionTypes, retrieval: retrievalReady }).filter(
     (tool) => allowActions || tool.function.name !== "propose_action",
@@ -517,7 +537,12 @@ function traceOf(name: string, args: Record<string, unknown>): AgentToolCallTrac
   const toolTrace: AgentToolCallTrace[] = [];
 
   const convo: ProviderMessage[] = [
-    { role: "system", content: buildSystemPrompt({ ...promptContext, hasAttachment, retrieval: retrievalReady }) },
+    {
+      role: "system",
+      content:
+        opts.systemPrompt?.trim() ||
+        buildSystemPrompt({ ...promptContext, hasAttachment, retrieval: retrievalReady }),
+    },
     ...messages.map((m) => ({ role: m.role, content: m.content })),
   ];
 

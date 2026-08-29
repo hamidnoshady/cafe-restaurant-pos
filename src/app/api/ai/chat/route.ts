@@ -12,7 +12,14 @@ import {
 import { createAiActionAudit } from "@/lib/ai-action-audit";
 import { appendMessage, getOrCreateConversation } from "@/lib/ai-conversations";
 import { parseReceiptImageDataUrl } from "@/lib/ai-receipt";
-import { AiError, runAgentTurn, type ChatAttachment, type InboundMessage } from "@/lib/ai-service";
+import {
+  AiError,
+  retrievalReadyForMode,
+  runAgentTurn,
+  type ChatAttachment,
+  type InboundMessage,
+} from "@/lib/ai-service";
+import { resolveSystemPrompt } from "@/lib/ai-prompt-service";
 import {
   buildToolSignature,
   isCacheableTurn,
@@ -201,6 +208,20 @@ export const POST = withTenantScope(async (request: NextRequest) => {
 
       void (async () => {
         try {
+          // The prompt manager's prompt for this surface: platform override or
+          // code default, plus the business's standing instructions. The ctx is
+          // built with the same attachment/retrieval facts runAgentTurn would
+          // use, so the fallback prompt is identical to the pre-manager one.
+          const systemPrompt = await resolveSystemPrompt({
+            mode,
+            ctx: {
+              ...promptContext,
+              hasAttachment: Boolean(attachment),
+              retrieval: await retrievalReadyForMode(config, mode, session.businessId),
+            },
+            businessId: session.businessId,
+          });
+
           // Wave 7 — a repeated read-only question inside this trading day
           // answers from the cache, labelled, for the price of an embedding.
           let cachedHit: CacheHit | null = null;
@@ -254,6 +275,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
             config,
             mode,
             businessId: session.businessId,
+            systemPrompt,
             floorScope:
               mode === "floor" && floorLocation && (session.role === "cashier" || session.role === "waiter")
                 ? {

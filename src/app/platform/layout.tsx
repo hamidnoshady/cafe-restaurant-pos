@@ -36,6 +36,7 @@ const NAV: NavItem[] = [
   { label: "رویدادها", href: "/platform/audit" },
   { label: "سیستم", href: "/platform/system" },
   { label: "هوش مصنوعی", href: "/platform/ai", cap: "ai.read" },
+  { label: "پرامپت‌ها", href: "/platform/ai/prompts", cap: "ai.read" },
   { label: "به‌روزرسانی‌ها", href: "/platform/updates" },
   { label: "مدیران", href: "/platform/admins", cap: "admins.manage" },
 ];

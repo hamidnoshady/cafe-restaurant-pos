@@ -16,9 +16,17 @@ import {
 import { query } from "./db";
 
 export interface PlatformAiConfig extends AiConfig {
+  /** The provider's own cost per million input tokens, Rial. */
+  inputCostRialPerMillion: number;
+  /** The provider's own cost per million output tokens, Rial. */
+  outputCostRialPerMillion: number;
+  /** The revenue margin added on top of cost, percent. 0 = at cost. */
+  revenueMarginPercent: number;
+  /** Effective sale rate: cost + margin. Derived, never stored. */
   inputTokenRialPerMillion: number;
   outputTokenRialPerMillion: number;
   maxTurnRial: number;
+  /** Fixed at 1 since the credit-package catalogue was removed: a credit is a Rial. */
   creditUnitRial: number;
   maxOutputTokens: number;
 }
@@ -30,10 +38,12 @@ export interface PublicPlatformAiConfig {
   baseUrl: string;
   temperature: number;
   maxOutputTokens: number;
+  inputCostRialPerMillion: number;
+  outputCostRialPerMillion: number;
+  revenueMarginPercent: number;
   inputTokenRialPerMillion: number;
   outputTokenRialPerMillion: number;
   maxTurnRial: number;
-  creditUnitRial: number;
   hasApiKey: boolean;
   configured: boolean;
 }
@@ -45,10 +55,10 @@ export interface PlatformAiConfigInput {
   baseUrl: string;
   apiKey?: string;
   temperature: number;
-  inputTokenRialPerMillion: number;
-  outputTokenRialPerMillion: number;
+  inputCostRialPerMillion: number;
+  outputCostRialPerMillion: number;
+  revenueMarginPercent: number;
   maxTurnRial: number;
-  creditUnitRial: number;
   maxOutputTokens: number;
 }
 
@@ -59,10 +69,10 @@ type ConfigRow = {
   base_url: string;
   api_key: string | null;
   temperature: string | number;
-  input_token_rial_per_million: string | number;
-  output_token_rial_per_million: string | number;
+  input_cost_rial_per_million: string | number;
+  output_cost_rial_per_million: string | number;
+  revenue_margin_percent: string | number;
   max_turn_rial: string | number;
-  credit_unit_rial: string | number;
   max_output_tokens: number;
 };
 
@@ -79,6 +89,15 @@ function envKeyFor(provider: AiProvider): string {
   return process.env[PROVIDERS[provider].keyEnv]?.trim() ?? "";
 }
 
+/**
+ * Cost-plus pricing: the sale rate is the provider cost with the platform's
+ * revenue margin on top, rounded up so a turn never sells below cost.
+ */
+export function effectiveRate(costRialPerMillion: number, marginPercent: number): number {
+  if (!(costRialPerMillion > 0)) return 0;
+  return Math.ceil(costRialPerMillion * (1 + (marginPercent || 0) / 100));
+}
+
 function defaultPlatformConfig(): PlatformAiConfig {
   const provider: AiProvider = isProvider(process.env.AI_PROVIDER)
     ? (process.env.AI_PROVIDER as AiProvider)
@@ -93,10 +112,21 @@ function defaultPlatformConfig(): PlatformAiConfig {
     baseUrl: process.env.AI_BASE_URL?.trim() || base.baseUrl,
     apiKey: envKeyFor(provider),
     temperature: temp >= 0 && temp <= 2 ? temp : base.temperature,
-    inputTokenRialPerMillion: envNumber("AI_INPUT_TOKEN_RIAL_PER_MILLION"),
-    outputTokenRialPerMillion: envNumber("AI_OUTPUT_TOKEN_RIAL_PER_MILLION"),
+    inputCostRialPerMillion: envNumber("AI_INPUT_COST_RIAL_PER_MILLION"),
+    outputCostRialPerMillion: envNumber("AI_OUTPUT_COST_RIAL_PER_MILLION"),
+    revenueMarginPercent: envNumber("AI_REVENUE_MARGIN_PERCENT"),
+    inputTokenRialPerMillion: effectiveRate(
+      envNumber("AI_INPUT_COST_RIAL_PER_MILLION"),
+      envNumber("AI_REVENUE_MARGIN_PERCENT"),
+    ),
+    outputTokenRialPerMillion: effectiveRate(
+      envNumber("AI_OUTPUT_COST_RIAL_PER_MILLION"),
+      envNumber("AI_REVENUE_MARGIN_PERCENT"),
+    ),
     maxTurnRial: envNumber("AI_MAX_TURN_RIAL"),
-    creditUnitRial: envNumber("AI_CREDIT_UNIT_RIAL"),
+    // A credit is a Rial. The display-unit setting left with the credit
+    // package catalogue; the field stays so billing code keeps one shape.
+    creditUnitRial: 1,
     maxOutputTokens:
       Number.isInteger(maxOutputTokens) && maxOutputTokens >= 64 && maxOutputTokens <= 8192
         ? maxOutputTokens
@@ -115,10 +145,19 @@ function rowToConfig(row: ConfigRow): PlatformAiConfig {
     baseUrl: row.base_url?.trim() || base.baseUrl,
     apiKey: row.api_key?.trim() || envKeyFor(provider),
     temperature: numberValue(row.temperature),
-    inputTokenRialPerMillion: numberValue(row.input_token_rial_per_million),
-    outputTokenRialPerMillion: numberValue(row.output_token_rial_per_million),
+    inputCostRialPerMillion: numberValue(row.input_cost_rial_per_million),
+    outputCostRialPerMillion: numberValue(row.output_cost_rial_per_million),
+    revenueMarginPercent: numberValue(row.revenue_margin_percent),
+    inputTokenRialPerMillion: effectiveRate(
+      numberValue(row.input_cost_rial_per_million),
+      numberValue(row.revenue_margin_percent),
+    ),
+    outputTokenRialPerMillion: effectiveRate(
+      numberValue(row.output_cost_rial_per_million),
+      numberValue(row.revenue_margin_percent),
+    ),
     maxTurnRial: numberValue(row.max_turn_rial),
-    creditUnitRial: numberValue(row.credit_unit_rial),
+    creditUnitRial: 1,
     maxOutputTokens: row.max_output_tokens,
   };
 }
@@ -127,8 +166,8 @@ function rowToConfig(row: ConfigRow): PlatformAiConfig {
 export async function getPlatformAiConfig(): Promise<PlatformAiConfig> {
   const { rows } = await query<ConfigRow>(
     `SELECT enabled, provider, model, base_url, api_key, temperature,
-            input_token_rial_per_million, output_token_rial_per_million,
-            max_turn_rial, credit_unit_rial, max_output_tokens
+            input_cost_rial_per_million, output_cost_rial_per_million,
+            revenue_margin_percent, max_turn_rial, max_output_tokens
        FROM platform_ai_config
       WHERE id = true`,
   );
@@ -144,10 +183,9 @@ export function isPlatformAiProviderReady(config: PlatformAiConfig): boolean {
 export function isPlatformAiConfigured(config: PlatformAiConfig): boolean {
   return (
     isPlatformAiProviderReady(config) &&
-    config.inputTokenRialPerMillion > 0 &&
-    config.outputTokenRialPerMillion > 0 &&
-    config.maxTurnRial > 0 &&
-    config.creditUnitRial > 0
+    config.inputCostRialPerMillion > 0 &&
+    config.outputCostRialPerMillion > 0 &&
+    config.maxTurnRial > 0
   );
 }
 
@@ -159,10 +197,12 @@ export function toPublicPlatformAiConfig(config: PlatformAiConfig): PublicPlatfo
     baseUrl: config.baseUrl,
     temperature: config.temperature,
     maxOutputTokens: config.maxOutputTokens,
+    inputCostRialPerMillion: config.inputCostRialPerMillion,
+    outputCostRialPerMillion: config.outputCostRialPerMillion,
+    revenueMarginPercent: config.revenueMarginPercent,
     inputTokenRialPerMillion: config.inputTokenRialPerMillion,
     outputTokenRialPerMillion: config.outputTokenRialPerMillion,
     maxTurnRial: config.maxTurnRial,
-    creditUnitRial: config.creditUnitRial,
     hasApiKey: Boolean(config.apiKey),
     configured: isPlatformAiConfigured(config),
   };
@@ -175,10 +215,16 @@ function positiveInteger(value: number): boolean {
 export function validatePlatformAiConfigInput(input: PlatformAiConfigInput): string[] {
   const errors = validateConfigInput(input);
   if (typeof input.enabled !== "boolean") errors.push("ai_bad_enabled");
-  if (!positiveInteger(input.inputTokenRialPerMillion)) errors.push("ai_bad_input_rate");
-  if (!positiveInteger(input.outputTokenRialPerMillion)) errors.push("ai_bad_output_rate");
+  if (!positiveInteger(input.inputCostRialPerMillion)) errors.push("ai_bad_input_cost");
+  if (!positiveInteger(input.outputCostRialPerMillion)) errors.push("ai_bad_output_cost");
+  if (
+    !Number.isFinite(input.revenueMarginPercent) ||
+    input.revenueMarginPercent < 0 ||
+    input.revenueMarginPercent > 1000
+  ) {
+    errors.push("ai_bad_margin");
+  }
   if (!positiveInteger(input.maxTurnRial)) errors.push("ai_bad_max_turn");
-  if (!positiveInteger(input.creditUnitRial)) errors.push("ai_bad_credit_unit");
   if (
     !Number.isSafeInteger(input.maxOutputTokens) ||
     input.maxOutputTokens < 64 ||
@@ -200,10 +246,10 @@ export async function savePlatformAiConfig(input: PlatformAiConfigInput): Promis
   await query(
     `INSERT INTO platform_ai_config
        (id, enabled, provider, model, base_url, api_key, temperature,
-        input_token_rial_per_million, output_token_rial_per_million,
-        max_turn_rial, credit_unit_rial, max_output_tokens, updated_at)
+        input_cost_rial_per_million, output_cost_rial_per_million,
+        revenue_margin_percent, max_turn_rial, max_output_tokens, updated_at)
      VALUES
-       (true, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, now())
+       (true, $1, $2, $3, $4, $5, $6, $7, $8, $9::numeric, $10, $11, now())
      ON CONFLICT (id)
      DO UPDATE SET enabled = EXCLUDED.enabled,
                    provider = EXCLUDED.provider,
@@ -211,10 +257,10 @@ export async function savePlatformAiConfig(input: PlatformAiConfigInput): Promis
                    base_url = EXCLUDED.base_url,
                    api_key = EXCLUDED.api_key,
                    temperature = EXCLUDED.temperature,
-                   input_token_rial_per_million = EXCLUDED.input_token_rial_per_million,
-                   output_token_rial_per_million = EXCLUDED.output_token_rial_per_million,
+                   input_cost_rial_per_million = EXCLUDED.input_cost_rial_per_million,
+                   output_cost_rial_per_million = EXCLUDED.output_cost_rial_per_million,
+                   revenue_margin_percent = EXCLUDED.revenue_margin_percent,
                    max_turn_rial = EXCLUDED.max_turn_rial,
-                   credit_unit_rial = EXCLUDED.credit_unit_rial,
                    max_output_tokens = EXCLUDED.max_output_tokens,
                    updated_at = now()`,
     [
@@ -224,10 +270,10 @@ export async function savePlatformAiConfig(input: PlatformAiConfigInput): Promis
       input.baseUrl.trim(),
       apiKey,
       input.temperature,
-      input.inputTokenRialPerMillion,
-      input.outputTokenRialPerMillion,
+      input.inputCostRialPerMillion,
+      input.outputCostRialPerMillion,
+      input.revenueMarginPercent,
       input.maxTurnRial,
-      input.creditUnitRial,
       input.maxOutputTokens,
     ],
   );

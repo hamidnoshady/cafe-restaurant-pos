@@ -9,12 +9,11 @@ import {
 import {
   assignAiSubscription,
   grantAiCredits,
-  listAiCreditPackages,
   listAiSubscriptionPlans,
   listPlatformAiBusinesses,
+  listPlatformAiCosting,
   listPlatformAiTopUpRequests,
   reviewAiTopUpRequest,
-  saveAiCreditPackage,
   saveAiSubscriptionPlan,
 } from "@/lib/ai-billing-service";
 import {
@@ -29,20 +28,23 @@ export const GET = withPlatformScope(async () => {
   const { session, error } = await requirePlatformCapability("ai.read");
   if (error) return error;
 
-  const [businesses, packages, subscriptions, topUps, config] = await Promise.all([
+  const config = await getPlatformAiConfig();
+  const [businesses, subscriptions, topUps, costing] = await Promise.all([
     listPlatformAiBusinesses(),
-    listAiCreditPackages(),
     listAiSubscriptionPlans(),
     listPlatformAiTopUpRequests(),
-    getPlatformAiConfig(),
+    listPlatformAiCosting({
+      inputCostRialPerMillion: config.inputCostRialPerMillion,
+      outputCostRialPerMillion: config.outputCostRialPerMillion,
+    }),
   ]);
 
   const canManageConfig = session.role === "owner";
   return NextResponse.json({
     businesses,
-    packages,
     subscriptions,
     topUps,
+    costing,
     // A support/engineer admin may read operational data but not the provider
     // connection, pricing inputs or even its masked key state.
     config: canManageConfig ? toPublicPlatformAiConfig(config) : null,
@@ -98,25 +100,6 @@ export const PUT = withPlatformScope(async (request: NextRequest) => {
         payload: { provider: saved.provider, model: saved.model, enabled: saved.enabled },
       });
       return NextResponse.json({ config: toPublicPlatformAiConfig(saved) });
-    }
-
-    if (body.action === "credit_package") {
-      const pkg = await saveAiCreditPackage(catalogueInput(body, "creditAmountRial") as {
-        id?: string;
-        name: string;
-        priceRial: number;
-        creditAmountRial: number;
-        isActive: boolean;
-        sortOrder: number;
-      });
-      await platformAudit({
-        adminId: session.padmin,
-        action: "ai.credit_package.save",
-        entity: "ai_credit_package",
-        entityId: pkg.id,
-        payload: { name: pkg.name, priceRial: pkg.priceRial, creditAmountRial: pkg.creditAmountRial },
-      });
-      return NextResponse.json({ package: pkg });
     }
 
     if (body.action === "subscription_plan") {

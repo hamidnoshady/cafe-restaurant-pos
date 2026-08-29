@@ -174,6 +174,31 @@ live assistant, on the same degradation rules:
   its `entry_date`. `*..*` signatures (range-less tool calls) are covered by
   both, because `signatureTouchesRange` treats them as unbounded.
 
+## Follow-up — the prompt manager (two layers) and cost-plus pricing
+
+Prompt management became a real subsystem, wired into every chat turn:
+
+- **Platform layer** (`ai_prompt_templates`, migration 0112): an active row
+  keyed `surface:<mode>` replaces the code-built system prompt for that
+  surface on every install. Managed from `/platform/ai/prompts`
+  (`ai.config.manage`; version-stacked, revert by clearing back to the code
+  default). Superadmin owns all six surfaces, proactive/autopilot/platform
+  included.
+- **Business layer** (`ai_prompt_overrides`, migration 0115): a business
+  manager appends standing instructions per surface (dashboard / floor /
+  wizard only) from the AI settings page — appended under their own heading,
+  never able to replace the platform prompt or its confirm-before-write rules.
+- `resolveSystemPrompt()` in `ai-prompt-service.ts` is the single door both
+  layers are read through; `/api/ai/chat` resolves it per turn, and any read
+  failure degrades to the plain code default. Both layers cache for 15s.
+
+Pricing moved to cost-plus (migration 0116): the platform stores the
+provider's own per-million cost plus a revenue margin percent; the sale rate
+is derived (`effectiveRate`, rounded up). The credit-package catalogue and its
+management are gone — top-up requests now state an amount directly — and the
+credit unit is fixed at 1 Rial. `/api/platform/ai` also returns a per-business
+costing report (tokens, charged, provider cost, revenue) read from the ledger.
+
 ## Measurement — the ten questions, before and after
 
 Ten representative questions, run against the same seeded books before the phase
