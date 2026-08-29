@@ -1,0 +1,50 @@
+# OpenObserve for the ON-SITE box (pairs with docker-compose.local.yml).
+#
+#   docker compose -f docker-compose.local.yml -f docker-compose.observability.local.yml up -d
+#
+# A café's own server gets its OWN collector on the LAN — no internet needed,
+# which is the whole premise of the offline box. Logs from app + db stay on
+# the premises; if you also want them at HQ, skip this file entirely and just
+# point the app's OPENOBSERVE_URL at the central collector instead.
+#
+# The UI is published on the host's port 5080 (http://<lan-ip>:5080) because
+# this stack has no reverse proxy in front; keep it off routable networks.
+#
+# Before first boot, set OPENOBSERVE_ROOT_EMAIL / OPENOBSERVE_ROOT_PASSWORD in
+# the folder's .env (next to .env for the app).
+
+services:
+  observability:
+    image: public.ecr.aws/zinclabs/openobserve:${OPENOBSERVE_VERSION:-latest}
+    restart: unless-stopped
+    environment:
+      ZO_ROOT_USER_EMAIL: ${OPENOBSERVE_ROOT_EMAIL:?set OPENOBSERVE_ROOT_EMAIL}
+      ZO_ROOT_USER_PASSWORD: ${OPENOBSERVE_ROOT_PASSWORD:?set OPENOBSERVE_ROOT_PASSWORD}
+      ZO_DATA_DIR: /data
+      # An SD-card/mini-PC box wants a SHORTER leash than the central server.
+      ZO_COMPACT_DATA_RETENTION_DAYS: ${OPENOBSERVE_RETENTION_DAYS:-14}
+      ZO_COMPACT_LOCAL_STORAGE: "true"
+    volumes:
+      - zo-data:/data
+    ports:
+      - "${OPENOBSERVE_LAN_PORT:-5080}:5080"
+
+  app:
+    environment:
+      OPENOBSERVE_URL: http://observability:5080
+      OPENOBSERVE_USER: ${OPENOBSERVE_ROOT_EMAIL}
+      OPENOBSERVE_PASSWORD: ${OPENOBSERVE_ROOT_PASSWORD}
+      OPENOBSERVE_ORG: ${OPENOBSERVE_ORG:-default}
+      OPENOBSERVE_LOG_STREAM: ${OPENOBSERVE_LOG_STREAM:-pos_app_logs}
+      # One label per site keeps a shared collector queryable by service; on
+      # a standalone box it simply names the source in every record.
+      OPENOBSERVE_SERVICE: ${OPENOBSERVE_SERVICE:-pos-local}
+      OPENOBSERVE_ENV: ${OPENOBSERVE_ENV:-onsite}
+      # Reachable from the LAN only; used for the console's "full dashboard" link.
+      OPENOBSERVE_PUBLIC_URL: ${OPENOBSERVE_PUBLIC_URL:-http://localhost:5080}
+    depends_on:
+      observability:
+        condition: service_started
+
+volumes:
+  zo-data:
