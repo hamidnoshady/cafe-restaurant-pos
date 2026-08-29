@@ -19,7 +19,15 @@ import {
   jalaliWeekdayColumn,
   todayJalali,
 } from "@/lib/jalali";
-import { inputClass } from "./ui";
+
+// The control class, kept here (not imported from ./ui) so this component stays
+// theme-agnostic and can be dropped into the super-admin/platform console as
+// well as the dashboard. It matches the dashboard `inputClass` minus the
+// dark-mode variant — the dashboard is light-only and the design-lint bans that
+// token in this tree. The platform passes its own dark-theme `inputClass` via
+// `className` instead; a caller can always override with `className`.
+const DEFAULT_INPUT_CLASS =
+  "h-10 w-full min-w-0 rounded-lg border border-input bg-transparent px-3 py-1 text-sm transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50";
 
 // شنبه … جمعه — the Persian week, starting Saturday.
 const WEEKDAY_SHORT = ["ش", "ی", "د", "س", "چ", "پ", "ج"] as const;
@@ -35,6 +43,7 @@ export function JalaliDatePicker({
   placeholder = "انتخاب تاریخ",
   clearable = true,
   disabled = false,
+  popoverClass,
 }: {
   value: string;
   onChange: (iso: string) => void;
@@ -42,6 +51,9 @@ export function JalaliDatePicker({
   placeholder?: string;
   clearable?: boolean;
   disabled?: boolean;
+  /** Override the popover's background/text token classes (e.g. the dark
+   *  super-admin console, where the shadcn `--popover` tokens are light). */
+  popoverClass?: string;
 }) {
   const selected = isoDateToJalali(value);
   const [open, setOpen] = useState(false);
@@ -107,7 +119,7 @@ export function JalaliDatePicker({
         type="button"
         disabled={disabled}
         onClick={() => setOpen((o) => !o)}
-        className={`${className ?? inputClass} flex items-center justify-between gap-2 text-start`}
+        className={`${className ?? DEFAULT_INPUT_CLASS} flex items-center justify-between gap-2 text-start`}
         aria-haspopup="dialog"
         aria-expanded={open}
       >
@@ -132,7 +144,10 @@ export function JalaliDatePicker({
         <div
           role="dialog"
           aria-label="انتخاب تاریخ شمسی"
-          className="absolute z-50 mt-1 w-64 rounded-xl border border-border bg-popover p-3 text-popover-foreground shadow-lg"
+          className={
+            popoverClass ??
+            "absolute z-50 mt-1 w-64 rounded-xl border border-border bg-popover p-3 text-popover-foreground shadow-lg"
+          }
         >
           <div className="mb-2 flex items-center justify-between">
             <button

@@ -273,7 +273,7 @@ migration path live in
 ## Conventions (important)
 
 - **Money** is stored as `BIGINT` **Rial** (smallest unit) everywhere — DB, API, calculations. Formatting as Toman with Persian digits happens only at display time (`src/lib/money.ts`).
-- **Dates** are stored as ISO/Gregorian `timestamptz` everywhere. Jalali conversion happens only at display time (`src/lib/jalali.ts`).
+- **Dates** are stored as ISO/Gregorian `timestamptz` everywhere. **Jalali (Shamsi) is the only date a user ever sees** — conversion happens only at display time (`src/lib/jalali.ts`), in every screen (dashboard/user and super-admin/platform), and in every module (accounting, loyalty & marketing, inventory, reports, exports, receipts, notifications, AI). Never render a raw Gregorian/ISO date string and never use the native `<input type="date">` (it opens a Gregorian calendar) — use `JalaliDatePicker`. The AI assistant and all reports/export templates already phrase dates in Shamsi.
 - **Digits** are stored as Latin numerals; Persian digits are display-only (`src/lib/digits.ts`).
 - **Multi-location:** every tenant-scoped table carries `location_id` (business-scoped tables like `users`, `accounts`, `customers` carry `business_id` and a nullable `location_id`). Since Phase 14 a business may have several active branches; `resolveActiveLocation` (`src/lib/setup-state.ts`) is what every route resolves the caller's current branch through, validated against their branch assignment (`src/lib/location-access.ts`).
 - **Multi-business:** `businesses` is the tenant, and isolation between tenants is enforced by Postgres row-level security — see below.

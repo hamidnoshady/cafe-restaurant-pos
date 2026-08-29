@@ -15,6 +15,7 @@ import { PersianNumberInput } from "@/components/ui/persian-number-input";
  */
 import { useEffect, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
+import { formatJalali } from "@/lib/jalali";
 import { useMoney } from "@/components/money/money-context";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
@@ -24,6 +25,7 @@ import {
   type ChequeStatus,
 } from "@/lib/cheques";
 import { api, ErrorBox, inputClass, PrimaryButton, SecondaryButton } from "../ui";
+import { JalaliDatePicker } from "../jalali-date-picker";
 
 interface Cheque {
   id: string;
@@ -177,7 +179,7 @@ export function ChequesSection({
                         {cheque.sayadId ? ` — صیاد ${toPersianDigits(cheque.sayadId)}` : ""}
                       </p>
                       <p className="mt-1 text-xs text-muted-foreground">
-                        سررسید {toPersianDigits(cheque.dueDate)}
+                        سررسید {toPersianDigits(formatJalali(cheque.dueDate))}
                       </p>
                     </div>
                     <div className="text-end">
@@ -317,7 +319,7 @@ function ChequeForm({
       </label>
       <label className="grid gap-1 text-sm">
         <span>سررسید</span>
-        <input className={inputClass} type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} required />
+        <JalaliDatePicker className={inputClass} value={dueDate} onChange={setDueDate} />
       </label>
       <div className="grid gap-1 text-sm">
         <span>{direction === "receivable" ? "مشتری" : "تأمین‌کننده"}</span>
@@ -388,7 +390,7 @@ function EndorseDialog({
         </div>
         <label className="grid gap-1 text-sm">
           <span>تاریخ واگذاری</span>
-          <input className={inputClass} type="date" value={occurredOn} onChange={(e) => setOccurredOn(e.target.value)} />
+          <JalaliDatePicker className={inputClass} value={occurredOn} onChange={setOccurredOn} />
         </label>
       </div>
       <div className="mt-4 grid gap-2 sm:grid-cols-2">

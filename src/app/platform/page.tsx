@@ -22,6 +22,7 @@ import { toPersianDigits, formatPersianNumber } from "@/lib/digits";
 import { INDUSTRY_LABELS, type Industry } from "@/lib/industries";
 import { validateSubdomain } from "@/lib/slug";
 import { IndustryPicker } from "./industry-picker";
+import { JalaliDatePicker } from "@/app/dashboard/jalali-date-picker";
 import {
   api,
   errorMessage,
@@ -520,28 +521,26 @@ function FilterBar({
             <span className="mx-1 h-5 w-px bg-white/10" aria-hidden />
             <label className="flex items-center gap-1 text-xs text-white/45">
               از
-              <input
-                type="date"
-                dir="ltr"
-                value={filters.from}
-                onChange={(e) => {
-                  onDateEdit();
-                  onPatch({ from: e.target.value });
-                }}
+              <JalaliDatePicker
                 className={`${inputClass} !h-8 w-[9.5rem] text-xs`}
+                popoverClass="dark absolute z-50 mt-1 w-64 rounded-xl border border-border bg-popover p-3 text-popover-foreground shadow-lg"
+                value={filters.from}
+                onChange={(v) => {
+                  onDateEdit();
+                  onPatch({ from: v });
+                }}
               />
             </label>
             <label className="flex items-center gap-1 text-xs text-white/45">
               تا
-              <input
-                type="date"
-                dir="ltr"
-                value={filters.to}
-                onChange={(e) => {
-                  onDateEdit();
-                  onPatch({ to: e.target.value });
-                }}
+              <JalaliDatePicker
                 className={`${inputClass} !h-8 w-[9.5rem] text-xs`}
+                popoverClass="dark absolute z-50 mt-1 w-64 rounded-xl border border-border bg-popover p-3 text-popover-foreground shadow-lg"
+                value={filters.to}
+                onChange={(v) => {
+                  onDateEdit();
+                  onPatch({ to: v });
+                }}
               />
             </label>
           </div>

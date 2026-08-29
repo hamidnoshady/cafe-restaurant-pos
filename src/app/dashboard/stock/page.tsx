@@ -7,6 +7,7 @@ import { formatPersianNumber } from "@/lib/digits";
 import { useMoney } from "@/components/money/money-context";
 import { api, ErrorBox, Field, inputClass } from "../ui";
 import { PageHeader, PageShell, SectionCard } from "../page-chrome";
+import { JalaliDatePicker } from "../jalali-date-picker";
 import { StockCountSection } from "./stock-count-section";
 
 interface StockItem {
@@ -235,8 +236,8 @@ function PurchaseForm({
           <Field label={`بهای هر واحد (${money.unitLabel})`}>
             <PersianNumberInput className={inputClass} dir="ltr" inputMode="numeric" value={unitCost} onChange={(e) => setUnitCost(e.target.value)} />
           </Field>
-          <Field label="انقضا (اختیاری، میلادی)">
-            <input className={inputClass} dir="ltr" type="date" value={expiry} onChange={(e) => setExpiry(e.target.value)} />
+          <Field label="انقضا (اختیاری، شمسی)">
+            <JalaliDatePicker className={inputClass} value={expiry} onChange={setExpiry} />
           </Field>
         </div>
         {lines.length > 0 ? (
