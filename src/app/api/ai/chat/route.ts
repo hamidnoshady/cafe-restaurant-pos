@@ -13,6 +13,17 @@ import { createAiActionAudit } from "@/lib/ai-action-audit";
 import { appendMessage, getOrCreateConversation } from "@/lib/ai-conversations";
 import { parseReceiptImageDataUrl } from "@/lib/ai-receipt";
 import { AiError, runAgentTurn, type ChatAttachment, type InboundMessage } from "@/lib/ai-service";
+import {
+  buildToolSignature,
+  isCacheableTurn,
+  lookupCachedAnswer,
+  normalizeRangeDate,
+  storeCachedAnswer,
+  type CacheHit,
+} from "@/lib/ai-answer-cache";
+import { embedOne, isEmbeddingAvailable } from "@/lib/ai-embeddings";
+import { toolDefinitions } from "@/lib/ai";
+import { businessToday } from "@/lib/business-day-service";
 import { requireManager, resolveActiveLocation } from "@/lib/setup-state";
 import { requireFloorAssistant, withTenantScope } from "@/lib/auth";
 
@@ -64,6 +75,8 @@ export const POST = withTenantScope(async (request: NextRequest) => {
     conversationId?: unknown;
     attachment?: unknown;
     allowActions?: unknown;
+    /** Phase 36 Wave 7 — «دوباره بپرس»: build a fresh turn, skip the cache. */
+    bypassCache?: unknown;
   };
   try {
     body = await request.json();
@@ -162,6 +175,25 @@ export const POST = withTenantScope(async (request: NextRequest) => {
     console.error("ai conversation persistence failed", err);
   }
 
+  // Phase 36 Wave 7 — the question's embedding, over the shared platform
+  // connection, computed once whether this turn is a lookup or a store (a
+  // «دوباره بپرس» turn skips the lookup, but its fresh answer is still worth
+  // caching). Failed embedding turns the cache off for this turn, never the
+  // assistant.
+  const bypassCache = body.bypassCache === true;
+  const cacheCandidate = (mode === "dashboard" || mode === "floor") && !attachment && latestPrompt.trim();
+  let questionEmbedding: number[] | null = null;
+  let questionEmbeddingTokens = 0;
+  if (cacheCandidate && (await isEmbeddingAvailable(config))) {
+    try {
+      const embedded = await embedOne(config, latestPrompt);
+      questionEmbedding = embedded.vector;
+      questionEmbeddingTokens = embedded.inputTokens;
+    } catch {
+      questionEmbedding = null;
+    }
+  }
+
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
       let settled = false;
@@ -169,6 +201,55 @@ export const POST = withTenantScope(async (request: NextRequest) => {
 
       void (async () => {
         try {
+          // Wave 7 — a repeated read-only question inside this trading day
+          // answers from the cache, labelled, for the price of an embedding.
+          let cachedHit: CacheHit | null = null;
+          if (questionEmbedding && !bypassCache) {
+            try {
+              cachedHit = await lookupCachedAnswer(
+                {
+                  businessId: session.businessId,
+                  locationId: floorLocation?.id ?? null,
+                  businessDate: await businessToday(session.businessId),
+                  toolSignature: null,
+                },
+                questionEmbedding,
+              );
+            } catch {
+              cachedHit = null;
+            }
+          }
+
+          if (cachedHit) {
+            const settlement = await settleAiTurn({
+              businessId: session.businessId,
+              reservation,
+              usage: { inputTokens: questionEmbeddingTokens, outputTokens: 0 },
+              inputTokenRialPerMillion: config.inputTokenRialPerMillion,
+              outputTokenRialPerMillion: config.outputTokenRialPerMillion,
+            });
+            settled = true;
+
+            if (conversationId) {
+              await appendMessage({
+                conversationId,
+                role: "assistant",
+                content: cachedHit.answer,
+              }).catch((err) => console.error("ai conversation persistence failed", err));
+            }
+
+            emit("done", {
+              content: cachedHit.answer,
+              proposedAction: null,
+              auditId: null,
+              conversationId,
+              costRial: settlement.chargedRial + settlement.overageRial,
+              cached: true,
+              cacheNotice: cachedHit.notice,
+            });
+            return;
+          }
+
           const reply = await runAgentTurn({
             config,
             mode,
@@ -216,6 +297,44 @@ export const POST = withTenantScope(async (request: NextRequest) => {
               content: reply.content,
               proposal: reply.proposedAction,
             }).catch((err) => console.error("ai conversation persistence failed", err));
+          }
+
+          // Wave 7 — cache the answer only when the turn was provably
+          // read-only: no proposal and nothing outside the mode's read tools.
+          // `storeCachedAnswer` re-checks the same gate, so a future edit to
+          // this route cannot forget it.
+          const readToolNames = toolDefinitions(mode, { hasAttachment: false })
+            .filter((tool) => tool.function.name !== "propose_action")
+            .map((tool) => tool.function.name);
+          const toolsUsed = reply.toolCalls.map((call) => call.name);
+          const turnShape = {
+            mode,
+            toolsUsed,
+            proposedAction: Boolean(reply.proposedAction),
+            readToolNames,
+          };
+          if (questionEmbedding && isCacheableTurn(turnShape)) {
+            const toolSignature = buildToolSignature(
+              reply.toolCalls.map((call) => ({
+                tool: call.name,
+                from: normalizeRangeDate(call.dateFrom),
+                to: normalizeRangeDate(call.dateTo),
+              })),
+            );
+            await storeCachedAnswer(
+              {
+                businessId: session.businessId,
+                locationId: floorLocation?.id ?? null,
+                businessDate: await businessToday(session.businessId),
+                toolSignature,
+              },
+              {
+                questionText: latestPrompt,
+                questionEmbedding,
+                answer: reply.content,
+                turn: turnShape,
+              },
+            ).catch(() => {});
           }
 
           emit("done", {

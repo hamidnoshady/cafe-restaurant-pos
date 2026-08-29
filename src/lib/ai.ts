@@ -526,6 +526,13 @@ export interface PromptContext {
   autopilotCategory?: AutopilotCategory;
   /** Phase 31 — narrows the catalogue block to just this run's own actions. */
   allowedActionTypes?: ActionType[];
+  /**
+   * Phase 36 Wave 6 — retrieval is up (pgvector present *and* the platform
+   * connection can embed), so `search_business_knowledge` is declared and the
+   * prompt may point the model at it. Absent/false means behave exactly as
+   * before the wave.
+   */
+  retrieval?: boolean;
 }
 
 const WIZARD_STEP_LABELS: Record<string, string> = {
@@ -564,6 +571,16 @@ export function buildSystemPrompt(ctx: PromptContext): string {
       "مبالغ را به تومان بنویس (ابزارها هر مبلغ را به تومان هم می‌دهند؛ خودت تقسیم بر ۱۰ نکن) و اعداد را با جداکنندهٔ هزارگان بیاور.",
       "پاسخ روی موبایل خوانده می‌شود: کوتاه بنویس، از فهرست گلوله‌ای استفاده کن، و اگر جدول لازم بود حداکثر سه ستون. برای یک یا دو عدد اصلاً جدول نساز — یک جمله بنویس.",
       "قبل از اینکه بگویی کاری شدنی نیست یا بخشی از نرم‌افزار وجود ندارد، describe_app را صدا بزن و از روی همان پاسخ بده.",
+    );
+  }
+
+  // Phase 36 Wave 6 — only when retrieval is genuinely up. The line steers the
+  // model toward the tool for the questions it exists for (policy, procedure,
+  // "which item is this"); figures are deliberately NOT mentioned because they
+  // never live in a vector.
+  if (ctx.mode === "dashboard" && ctx.retrieval) {
+    lines.push(
+      "برای سؤال دربارهٔ دانش ثبت‌شدهٔ کسب‌وکار — شرح آیتم‌های منو و کالاها، نام‌ها و یادداشت‌های پروژه‌ها — اول search_business_knowledge را صدا بزن تا نزدیک‌ترین موارد با ذکر منبع بیایند. اعداد فروش و مالی در این دانش نیستند و همیشه باید از ابزارهای گزارش خوانده شوند.",
     );
   }
 
@@ -676,6 +693,37 @@ export interface ToolDefinitionsOptions {
    * category. Ignored outside autopilot mode, where the full catalogue applies.
    */
   actionTypes?: ActionType[];
+  /**
+   * Phase 36 Wave 6 — declare `search_business_knowledge`. The caller only
+   * sets this after `isRetrievalAvailable()` *and* `isEmbeddingAvailable()`
+   * answered true (see runAgentTurn), so the tool is never declared on a
+   * desktop install whose embedded Postgres has no pgvector — and never
+   * declared when it cannot be served.
+   */
+  retrieval?: boolean;
+}
+
+/** Phase 36 Wave 6 — semantic search over the business's own embedded knowledge. */
+export const KNOWLEDGE_TOOL_NAME = "search_business_knowledge";
+
+function knowledgeTool(): OpenAiTool {
+  return {
+    type: "function",
+    function: {
+      name: KNOWLEDGE_TOOL_NAME,
+      description:
+        "جست‌وجوی معنایی در دانش متنی ثبت‌شدهٔ همین کسب‌وکار: شرح آیتم‌های منو و کالاها، نام کالاها و مشتریان و یادداشت‌های پروژه‌ها. نتیجه با ذکر منبع می‌آید. برای سؤال‌های «فلان کالا چیست/کدام است» یا پرسش از شرح ثبت‌شدهٔ یک آیتم اول همین را صدا بزن. اعداد فروش، موجودی و مالی اینجا نیستند و باید از ابزارهای گزارش خوانده شوند.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "عبارت جست‌وجو؛ همان چیزی که کاربر پرسید کافی است" },
+          limit: { type: "number", description: "تعداد نتیجه، پیش‌فرض ۵ و حداکثر ۲۰" },
+        },
+        required: ["query"],
+        additionalProperties: false,
+      },
+    },
+  };
 }
 
 /** OpenAI-compatible tool list. Read tools run server-side; propose_action is the confirm gate. */
@@ -985,7 +1033,13 @@ export function toolDefinitions(mode: AgentMode, opts: ToolDefinitionsOptions = 
 
   if (mode === "wizard") return [readTools[0], proposeTool];
   if (mode === "dashboard") {
-    return opts.hasAttachment ? [...readTools, receiptTool, proposeTool] : [...readTools, proposeTool];
+    const base = opts.hasAttachment
+      ? [...readTools, receiptTool]
+      : [...readTools];
+    // Wave 6 — the retrieval tool rides between the read tools and
+    // propose_action, and only when the caller proved it can be served.
+    if (opts.retrieval) base.push(knowledgeTool());
+    return [...base, proposeTool];
   }
   if (mode === "floor") return floorReadTools;
   if (mode === "proactive") return [];

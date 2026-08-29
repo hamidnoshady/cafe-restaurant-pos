@@ -14,6 +14,8 @@ interface AiChatMessagesProps {
   applyProposal: (message: AiChatMessage) => void;
   dismissProposal: (message: AiChatMessage) => void;
   sendMessage: (prompt?: string) => void;
+  /** Phase 36 Wave 7 — «دوباره بپرس» on a cached answer. Optional for older callers. */
+  askAgain?: (text: string) => void;
 }
 
 /** Three dots, not a sentence — a chat says "typing", it does not narrate. */
@@ -41,6 +43,7 @@ export function AiChatMessages({
   applyProposal,
   dismissProposal,
   sendMessage,
+  askAgain,
 }: AiChatMessagesProps) {
   const showSuggestions =
     messages.length === 1 && messages[0]?.role === "assistant" && !busy;
@@ -74,6 +77,29 @@ export function AiChatMessages({
             {message.role === "assistant" && typeof message.costRial === "number" && message.costRial > 0 ? (
               <p className="px-1 text-[10px] text-muted-foreground">
                 هزینهٔ این پاسخ: {Math.round(message.costRial / 10).toLocaleString("fa-IR")} تومان
+              </p>
+            ) : null}
+            {/* Phase 36 Wave 7 — a cached answer is labelled, never passed off
+                as fresh, and always comes with a way to ask for a real one. */}
+            {message.role === "assistant" && message.cacheNotice ? (
+              <p className="flex flex-wrap items-center gap-1.5 px-1 text-[10px] text-muted-foreground">
+                <span>{message.cacheNotice}</span>
+                {askAgain ? (
+                  <button
+                    type="button"
+                    className="rounded-full border border-stone-300/70 px-2 py-0.5 text-[10px] text-foreground/80 transition-colors hover:bg-muted disabled:opacity-50"
+                    disabled={busy}
+                    onClick={() => {
+                      const question = [...messages]
+                        .slice(0, Math.max(0, messages.indexOf(message)))
+                        .reverse()
+                        .find((item) => item.role === "user")?.content;
+                      if (question) askAgain(question);
+                    }}
+                  >
+                    دوباره بپرس
+                  </button>
+                ) : null}
               </p>
             ) : null}
             {canPropose && message.proposal ? (

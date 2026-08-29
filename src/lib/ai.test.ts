@@ -7,6 +7,7 @@ import {
   defaultConfig,
   isKnownAction,
   isProvider,
+  KNOWLEDGE_TOOL_NAME,
   PROVIDERS,
   resolveActionEndpoint,
   toolDefinitions,
@@ -439,5 +440,53 @@ describe("Phase 31 — autopilot tagging of the action catalogue", () => {
     expect(prompt).toContain("menu.item.priceUpdate");
     expect(prompt).not.toContain("expense.categorize");
     expect(prompt).toContain("هیچ کانال ارسالی وجود ندارد");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 36 Wave 6 — the retrieval tool rides along only when it can be served.
+// ---------------------------------------------------------------------------
+
+describe("search_business_knowledge declaration", () => {
+  it("is absent by default — pre-wave behaviour everywhere", () => {
+    const names = toolDefinitions("dashboard").map((tool) => tool.function.name);
+    expect(names).not.toContain(KNOWLEDGE_TOOL_NAME);
+  });
+
+  it("is declared for dashboard mode only when retrieval is up", () => {
+    const names = toolDefinitions("dashboard", { retrieval: true }).map((tool) => tool.function.name);
+    expect(names).toContain(KNOWLEDGE_TOOL_NAME);
+    // propose_action stays last of the declared set — it is the confirm gate.
+    expect(names[names.length - 1]).toBe("propose_action");
+  });
+
+  it("is never declared for wizard, floor or platform modes", () => {
+    for (const mode of ["wizard", "floor", "platform"] as const) {
+      expect(
+        toolDefinitions(mode, { retrieval: true }).map((tool) => tool.function.name),
+      ).not.toContain(KNOWLEDGE_TOOL_NAME);
+    }
+  });
+
+  it("the dashboard prompt points at it only when retrieval is up", () => {
+    expect(buildSystemPrompt({ mode: "dashboard", retrieval: true })).toContain(
+      KNOWLEDGE_TOOL_NAME,
+    );
+    expect(buildSystemPrompt({ mode: "dashboard", retrieval: false })).not.toContain(
+      KNOWLEDGE_TOOL_NAME,
+    );
+    // And never for modes without the tool at all.
+    expect(buildSystemPrompt({ mode: "floor", retrieval: true })).not.toContain(
+      KNOWLEDGE_TOOL_NAME,
+    );
+  });
+
+  it("keeps the receipt attachment rule intact alongside retrieval", () => {
+    const names = toolDefinitions("dashboard", { retrieval: true, hasAttachment: true }).map(
+      (tool) => tool.function.name,
+    );
+    expect(names).toContain("draft_expense_from_receipt");
+    expect(names).toContain(KNOWLEDGE_TOOL_NAME);
+    expect(names).toContain("propose_action");
   });
 });

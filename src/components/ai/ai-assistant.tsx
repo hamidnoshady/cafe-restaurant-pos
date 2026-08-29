@@ -39,6 +39,7 @@ export function AiAssistant({ mode, currentStep }: Props) {
     ensureGreeting,
     loadConversation,
     sendMessage,
+    askAgain,
     applyProposal,
     dismissProposal,
   } = useAiChat({ mode, currentStep });
@@ -158,6 +159,7 @@ export function AiAssistant({ mode, currentStep }: Props) {
             applyProposal={applyProposal}
             dismissProposal={dismissProposal}
             sendMessage={sendMessage}
+            askAgain={askAgain}
           />
           <AiChatInput
             mode={mode}
