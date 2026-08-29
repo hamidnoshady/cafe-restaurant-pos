@@ -3,6 +3,7 @@
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ScanBarcodeIcon } from "lucide-react";
+import { CameraScanTrigger } from "@/components/scanner/camera-barcode-scanner";
 import { formatQuantity, toPersianDigits } from "@/lib/digits";
 import { api, Field, inputClass } from "../ui";
 
@@ -130,7 +131,7 @@ export function CountScanField({
         بارکد هر قلم را اسکن کنید؛ مقدار شمارش‌شدهٔ همان قلم به‌طور خودکار
         افزوده می‌شود. نیازی به لمس صفحه بین اسکن‌ها نیست.
       </p>
-      <div className="grid gap-3 sm:grid-cols-[1fr_8rem]">
+      <div className="grid gap-3 sm:grid-cols-[1fr_8rem_auto]">
         <Field label="بارکد">
           <input
             ref={inputRef}
@@ -158,6 +159,14 @@ export function CountScanField({
             onChange={(e) => setQtyPerScan(e.target.value)}
           />
         </Field>
+        <div className="mb-4 flex items-end">
+          <CameraScanTrigger
+            label="دوربین"
+            title="اسکن بارکد انبار"
+            description="بارکد یا QR قلم انبار را با دوربین موبایل بخوانید؛ به شمارش افزوده می‌شود."
+            onScan={(scanned) => void resolve(scanned)}
+          />
+        </div>
       </div>
       {feedback ? (
         <p

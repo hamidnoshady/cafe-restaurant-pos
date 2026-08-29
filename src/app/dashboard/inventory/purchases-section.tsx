@@ -10,6 +10,10 @@ import { JalaliDatePicker } from "../jalali-date-picker";
 import { api, Field, inputClass, PrimaryButton, SecondaryButton } from "../ui";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import type { InventoryItem, Runner, Supplier } from "./inventory-manager";
+import {
+  InvoiceOcrPanel,
+  type InvoiceOcrApplyPayload,
+} from "./invoice-ocr-panel";
 
 interface Purchase {
   id: string;
@@ -421,9 +425,38 @@ export function PurchasesSection({
     });
   }
 
+  function applyOcrDraft(payload: InvoiceOcrApplyPayload) {
+    if (payload.supplierId) setSupplierId(payload.supplierId);
+    if (payload.purchaseDate) setPurchaseDate(payload.purchaseDate);
+    if (payload.note) setNote(payload.note);
+    if (payload.lines.length > 0) {
+      setLines(
+        payload.lines.map((l) => ({
+          inventoryItemId: l.inventoryItemId,
+          purchaseQty: l.purchaseQty,
+          totalCost: l.totalCost,
+        })),
+      );
+    }
+    // Scroll the manual form into view so the operator sees the filled lines.
+    if (typeof document !== "undefined") {
+      document.getElementById("purchase-draft-form")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }
+
   return (
     <div className="space-y-6">
-      <section className="min-w-0 rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-5">
+      <InvoiceOcrPanel
+        items={items}
+        supplierOptions={activeSuppliersOptions}
+        disabled={busy}
+        onApply={applyOcrDraft}
+      />
+
+      <section
+        id="purchase-draft-form"
+        className="min-w-0 rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-5"
+      >
         <h2 className="mb-3 font-semibold">ثبت خرید (رسید ورود کالا)</h2>
         <form onSubmit={submit} className="space-y-3">
           <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-3">

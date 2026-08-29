@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { CameraScanTrigger } from "@/components/scanner/camera-barcode-scanner";
 import { toPersianDigits } from "@/lib/digits";
 import { printLabel } from "@/lib/print-agent-client";
 import type { LabelData } from "@/lib/label-template";
 import { firstPrinter, useBusinessInfo, usePrinters } from "../use-printers";
-import { EmptyState, SectionCard } from "../page-chrome";
+import { SectionCard } from "../page-chrome";
 import { api, Field, inputClass } from "../ui";
 import type { InventoryItem, Runner } from "./inventory-manager";
 
@@ -198,13 +199,21 @@ export function BarcodesSection({
               ))}
           </select>
         </Field>
-        <div className="mt-3 grid grid-cols-[1fr_auto] gap-2">
+        <div className="mt-3 grid grid-cols-[1fr_auto] gap-2 sm:grid-cols-[1fr_auto_auto]">
           <input
             className={inventoryInputClass}
             dir="ltr"
             value={manualCode}
             onChange={(e) => setManualCode(e.target.value)}
             placeholder="بارکد تأمین‌کننده (EAN-13 یا UPC)"
+          />
+          <CameraScanTrigger
+            label="دوربین"
+            disabled={busy || !selected}
+            className={`${actionClass} gap-1.5`}
+            title="خواندن بارکد تأمین‌کننده"
+            description="بارکد روی بسته‌بندی را با دوربین بخوانید تا روی این قلم ثبت شود."
+            onScan={(scanned) => setManualCode(scanned)}
           />
           <Button
             type="button"
