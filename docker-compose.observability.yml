@@ -1,0 +1,85 @@
+# OpenObserve overlay — one command turns the central server into an
+# observable fleet. Pair it with the KOMODO (central) stack:
+#
+#   docker compose -f docker-compose.komodo.yml -f docker-compose.observability.yml up -d
+#
+# OpenObserve (https://openobserve.ai) is a single-container observability
+# store — logs, metrics, traces, queried with SQL. It is not a dependency of
+# the POS app: the app ships a small optional shipper (src/lib/observability.ts)
+# that activates exactly when the OPENOBSERVE_* env vars exist. Unset, every
+# boot is unchanged.
+#
+# What it buys the super-admin console:
+#   • «پایش» tab (/platform/system/logs) — live tail of errors + slow/failed
+#     requests from EVERY server feeding this collector: the central VPS, each
+#     café's local box, staging. All «سلامت» can ever see is the one database
+#     answering the request; this sees the fleet.
+#   • Alert queries ("backup failed 3x in an hour", "pool queue > 0 for 10
+#     minutes", "5xx burst") wired to email/Telegram/webhooks inside
+#     OpenObserve itself.
+#   • Long retention of operational history without growing Postgres.
+#
+# Before first boot, set in the stack's environment (Komodo) or a .env beside
+# these files: OPENOBSERVE_ROOT_EMAIL and OPENOBSERVE_ROOT_PASSWORD.
+#
+# To have an ON-SITE café box report up to this collector, do NOT run this
+# overlay there — set three env vars in its .env (see the local header note)
+# or use docker-compose.observability.local.yml for a self-contained LAN box.
+#
+# Full walkthrough, alert recipes, retention: docs/openobserve.md
+
+services:
+  observability:
+    # Pin this tag in production, same idea as POS_IMAGE_TAG: "latest" should
+    # be a choice, not a default that fires during someone's dinner rush.
+    image: public.ecr.aws/zinclabs/openobserve:${OPENOBSERVE_VERSION:-latest}
+    restart: unless-stopped
+    environment:
+      # First-run root account; afterwards credentials live in the data dir.
+      ZO_ROOT_USER_EMAIL: ${OPENOBSERVE_ROOT_EMAIL:?set OPENOBSERVE_ROOT_EMAIL}
+      ZO_ROOT_USER_PASSWORD: ${OPENOBSERVE_ROOT_PASSWORD:?set OPENOBSERVE_ROOT_PASSWORD}
+      ZO_DATA_DIR: /data
+      # Keep raw logs N days, then auto-prune. 60 covers an incident review
+      # plus a month of month-end noise; this single volume is the footprint.
+      ZO_COMPACT_DATA_RETENTION_DAYS: ${OPENOBSERVE_RETENTION_DAYS:-60}
+      ZO_COMPACT_LOCAL_STORAGE: "true"
+    volumes:
+      - zo-data:/data
+    networks:
+      # Joins the same project-internal network the app (and db) ride, so the
+      # app reaches it at http://observability:5080 without any open port.
+      - internal
+    # ── To expose the OpenObserve UI (dashboards, alerts, SQL console) through
+    #    the same Traefik as the app, uncomment and give it its own host, then
+    #    set OPENOBSERVE_PUBLIC_URL=https://obs.<root-domain> here:
+    # labels:
+    #   - "traefik.enable=true"
+    #   - "traefik.http.routers.pos-obs.rule=Host(`${OPENOBSERVE_HOST:-obs.localhost}`)"
+    #   - "traefik.http.routers.pos-obs.entrypoints=websecure"
+    #   - "traefik.http.routers.pos-obs.tls.certresolver=${TRAEFIK_CERTRESOLVER:-letsencrypt}"
+    #   - "traefik.http.services.pos-obs.loadbalancer.server.port=5080"
+
+  app:
+    environment:
+      # The POS process starts shipping the moment these exist; the console's
+      # پایش tab reads the collector through /api/platform/observability, so
+      # the credentials live only in this container's env, never the browser.
+      OPENOBSERVE_URL: http://observability:5080
+      OPENOBSERVE_USER: ${OPENOBSERVE_ROOT_EMAIL}
+      OPENOBSERVE_PASSWORD: ${OPENOBSERVE_ROOT_PASSWORD}
+      OPENOBSERVE_ORG: ${OPENOBSERVE_ORG:-default}
+      OPENOBSERVE_LOG_STREAM: ${OPENOBSERVE_LOG_STREAM:-pos_app_logs}
+      OPENOBSERVE_SERVICE: ${OPENOBSERVE_SERVICE:-pos-central}
+      OPENOBSERVE_ENV: ${OPENOBSERVE_ENV:-production}
+      # Address the console links out to for the full UI. Leave empty if the
+      # Traefik labels above stay commented (defaults to the internal URL,
+      # which only works from the server itself).
+      OPENOBSERVE_PUBLIC_URL: ${OPENOBSERVE_PUBLIC_URL:-}
+    depends_on:
+      # Soft dependency on purpose: an observability outage must never block
+      # the POS from booting. The shipper just counts drops until it returns.
+      observability:
+        condition: service_started
+
+volumes:
+  zo-data:
