@@ -31,6 +31,8 @@ import {
   X,
 } from "lucide-react";
 import { toPersianDigits, formatPersianNumber } from "@/lib/digits";
+import { formatJalali } from "@/lib/jalali";
+import { JalaliDatePicker } from "@/app/dashboard/jalali-date-picker";
 import {
   api,
   errorMessage,
@@ -113,7 +115,7 @@ function dayLabel(ts: number): string {
   try {
     return toPersianDigits(new Intl.DateTimeFormat("fa-IR", { dateStyle: "full" }).format(new Date(ts)));
   } catch {
-    return new Date(ts).toISOString().slice(0, 10);
+    return toPersianDigits(formatJalali(new Date(ts)));
   }
 }
 
@@ -390,30 +392,28 @@ function AuditTimeline() {
               <span className="mx-1 h-5 w-px bg-white/10" aria-hidden />
               <label className="flex items-center gap-1 text-xs text-white/45">
                 از
-                <input
-                  type="date"
-                  dir="ltr"
+                <JalaliDatePicker
+                  className={`${inputClass} !h-8 w-[9rem] text-xs`}
+                  popoverClass="dark absolute z-50 mt-1 w-64 rounded-xl border border-border bg-popover p-3 text-popover-foreground shadow-lg"
                   value={from}
-                  onChange={(e) => {
-                    setFrom(e.target.value);
+                  onChange={(v) => {
+                    setFrom(v);
                     setPreset(0);
                     setLimit(PAGE);
                   }}
-                  className={`${inputClass} !h-8 w-[9rem] text-xs`}
                 />
               </label>
               <label className="flex items-center gap-1 text-xs text-white/45">
                 تا
-                <input
-                  type="date"
-                  dir="ltr"
+                <JalaliDatePicker
+                  className={`${inputClass} !h-8 w-[9rem] text-xs`}
+                  popoverClass="dark absolute z-50 mt-1 w-64 rounded-xl border border-border bg-popover p-3 text-popover-foreground shadow-lg"
                   value={to}
-                  onChange={(e) => {
-                    setTo(e.target.value);
+                  onChange={(v) => {
+                    setTo(v);
                     setPreset(0);
                     setLimit(PAGE);
                   }}
-                  className={`${inputClass} !h-8 w-[9rem] text-xs`}
                 />
               </label>
             </div>

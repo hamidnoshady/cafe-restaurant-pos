@@ -13,6 +13,7 @@ import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useEffect, useMemo, useState } from "react";
 import { MinusIcon, PlusIcon } from "lucide-react";
 import { toPersianDigits } from "@/lib/digits";
+import { formatJalali } from "@/lib/jalali";
 import { useMoney } from "@/components/money/money-context";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import type { PaymentMethodView } from "@/lib/payment-methods";
@@ -468,7 +469,7 @@ export function ClosedOrderAmendment({
           {history.map((row) => (
             <li key={row.id}>
               {KIND_LABELS[row.kind]} در{" "}
-              {toPersianDigits(row.createdAt.slice(0, 10))}
+              {toPersianDigits(formatJalali(row.createdAt))}
               {row.createdByName ? ` توسط ${row.createdByName}` : ""} —{" "}
               {money.format(row.previousTotal)} ← {money.format(row.newTotal)} —{" "}
               {row.reason}

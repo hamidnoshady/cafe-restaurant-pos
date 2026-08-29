@@ -23,6 +23,7 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import { formatPersianNumber } from "@/lib/digits";
+import { formatJalali } from "@/lib/jalali";
 import { api, errorMessage, ErrorBox, Card, StatCard, InfoBox, fmtDate } from "../ui";
 
 interface SystemStatus {
@@ -90,7 +91,7 @@ export default function SystemPage() {
       `کسب‌وکار: ${counts.businesses} | کاربران: ${counts.platformUsers} | مدیران: ${counts.platformAdmins}`,
       `مهاجرت معلق: ${pending} | RLS: ${status?.rlsEffective ? "فعال" : "غیرفعال"}`,
       `استخر اتصال: ${busy}/${pool.total} درگیر، ${pool.waiting} در صف`,
-      `برداشت: ${new Date(loadedAt ?? Date.now()).toISOString()}`,
+      `برداشت: ${formatJalali(new Date(loadedAt ?? Date.now()))}`,
     ].join("\n");
     try {
       await navigator.clipboard.writeText(text);

@@ -8,6 +8,7 @@ import { formatJalali } from "@/lib/jalali";
 import { useMoney } from "@/components/money/money-context";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { api, Field, inputClass } from "../ui";
+import { JalaliDatePicker } from "../jalali-date-picker";
 
 const accInputClass = `${inputClass} min-h-[52px] !border-stone-200 !bg-white shadow-none placeholder:text-stone-400 focus-visible:border-amber-500 focus-visible:ring-amber-400/30`;
 
@@ -167,7 +168,7 @@ export function BatchesSection() {
               <input className={accInputClass} value={batchNumber} onChange={(e) => setBatchNumber(e.target.value)} dir="ltr" />
             </Field>
             <Field label="تاریخ انقضا">
-              <input className={accInputClass} type="date" value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} dir="ltr" />
+              <JalaliDatePicker className={accInputClass} value={expiryDate} onChange={setExpiryDate} />
             </Field>
             <Field label="تعداد">
               <PersianNumberInput className={accInputClass} value={quantity} onChange={(e) => setQuantity(e.target.value)} dir="ltr" inputMode="decimal" />

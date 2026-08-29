@@ -143,6 +143,35 @@ date instead of splitting it at midnight. See the "The business day" section of
 - **Ending a day is display-only, by decision.** A cash-up or a manual close moves the live window,
   never a report's bucket — don't "fix" reports to honour them.
 
+## Shamsi-only dates — read before showing a date anywhere
+
+This is a hard rule, not a preference. **Every date a user sees must be Shamsi (Jalali).** Gregorian
+is an internal implementation detail only.
+
+- **Storage stays Gregorian/ISO.** Dates are stored as `timestamptz`/`date` — do NOT change that.
+  Shamsi is a *presentation* rule; it is not a storage migration.
+- **Every screen shows Shamsi.** This covers the user/dashboard section and the super-admin/platform
+  console, and every module — accounting/ledger, loyalty & marketing, inventory, reports, exports
+  (CSV/Excel/PDF), receipts, kitchen tickets, labels, notifications and the AI assistant. There is no
+  "user section" exemption and no "superadmin section" exemption.
+- **Never render a raw ISO/Gregorian date to a user.** A string like `2026-08-29`, `new Date(x)
+  .toISOString().slice(0, 10)`, `.toString()`, `.toDateString()`, or a Gregorian-looking column is a
+  bug. Format it through `src/lib/jalali.ts` — `formatJalali`, `formatShiftWindow`, `jalaliToIsoDate`
+  — or `Intl.DateTimeFormat` with the `fa-IR` locale (which resolves to the Persian/Shamsi calendar).
+- **Never use the native `<input type="date">`.** It opens a Gregorian calendar. Use
+  `JalaliDatePicker` (`src/app/dashboard/jalali-date-picker.tsx`), whose `value`/`onChange` contract
+  is still an ISO date string so callers keep storing ISO while the user only ever sees a Jalali
+  calendar. It is theme-agnostic and importable from the platform console too.
+- **The AI speaks Shamsi.** The assistant's system prompt already says dates are Shamsi
+  (`src/lib/ai.ts`). Keep tool descriptions as ISO parameters (that is the storage contract), but the
+  *answer* the model gives must phrase dates in Shamsi — never hand the model a raw Gregorian date to
+  repeat back.
+- **"Today" is the business's today.** Use `businessToday` / `getBusinessDayStatus`
+  (`src/lib/business-day-service.ts`) or `todayJalali` for "today", never a bare `new Date()` UTC
+  slice, so a branch working 18:00→03:00 keeps the right day.
+- **When you add or touch any date display, add Shamsi coverage.** Prefer `formatJalali` over
+  re-implementing conversion; keep `src/lib/jalali.test.ts` green.
+
 ## Pull requests — check in until merged, not just at open
 
 Every PR from work in this repo gets watched through to a terminal state, not just opened
