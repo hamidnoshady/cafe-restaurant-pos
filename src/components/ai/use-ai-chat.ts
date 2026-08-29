@@ -27,6 +27,12 @@ export interface AiChatMessage {
   applied?: boolean;
   /** Actual Rial charged for this turn, shown quietly once it finishes. */
   costRial?: number | null;
+  /**
+   * Phase 36 Wave 7 — set when this answer came from the semantic cache.
+   * Never silent: the notice is shown under the reply, with a «دوباره بپرس»
+   * that rebuilds the turn from scratch.
+   */
+  cacheNotice?: string | null;
 }
 
 export interface TurnEstimate {
@@ -240,7 +246,18 @@ export function useAiChat({
     await startStream(text);
   }
 
-  async function startStream(text: string) {
+  /**
+   * Phase 36 Wave 7 — «دوباره بپرس» on a cached answer: the same question,
+   * resent with `bypassCache`, so the turn is built fresh and the cache never
+   * answers its own criticism.
+   */
+  async function askAgain(text: string) {
+    const question = text.trim();
+    if (!question || busy) return;
+    await startStream(question, true);
+  }
+
+  async function startStream(text: string, bypassCache = false) {
     if (busy) return;
     const userMsg: AiChatMessage = { id: uid(), role: "user", content: text };
     const replyId = uid();
@@ -295,6 +312,8 @@ export function useAiChat({
             : null,
           auditId: typeof payload.auditId === "string" ? payload.auditId : null,
           costRial: typeof payload.costRial === "number" ? payload.costRial : null,
+          cacheNotice:
+            typeof payload.cacheNotice === "string" ? payload.cacheNotice : null,
         }));
         if (typeof payload.conversationId === "string")
           setConversation(payload.conversationId);
@@ -327,6 +346,7 @@ export function useAiChat({
           })),
           attachment: attachment ? { dataUrl: attachment.dataUrl } : undefined,
           allowActions: actionsAllowed,
+          bypassCache: bypassCache === true,
         }),
       });
       if (!response.ok) {
@@ -488,6 +508,7 @@ export function useAiChat({
     loadConversation,
     sendMessage,
     startStream,
+    askAgain,
     applyProposal,
     dismissProposal,
   };

@@ -24,15 +24,6 @@ type LedgerKind =
   | "usage_refund"
   | "usage_cancelled";
 
-export interface AiCreditPackage {
-  id: string;
-  name: string;
-  priceRial: number;
-  creditAmountRial: number;
-  isActive: boolean;
-  sortOrder: number;
-}
-
 export interface AiSubscriptionPlan {
   id: string;
   name: string;
@@ -111,24 +102,6 @@ function positiveInteger(value: number): boolean {
   return Number.isSafeInteger(value) && value > 0;
 }
 
-function packageFromRow(row: {
-  id: string;
-  name: string;
-  price_rial: string | number;
-  credit_amount_rial: string | number;
-  is_active: boolean;
-  sort_order: number;
-}): AiCreditPackage {
-  return {
-    id: row.id,
-    name: row.name,
-    priceRial: numberValue(row.price_rial),
-    creditAmountRial: numberValue(row.credit_amount_rial),
-    isActive: row.is_active,
-    sortOrder: row.sort_order,
-  };
-}
-
 function subscriptionFromRow(row: {
   id: string;
   name: string;
@@ -145,24 +118,6 @@ function subscriptionFromRow(row: {
     isActive: row.is_active,
     sortOrder: row.sort_order,
   };
-}
-
-export async function listAiCreditPackages(options: { activeOnly?: boolean } = {}): Promise<AiCreditPackage[]> {
-  const { rows } = await query<{
-    id: string;
-    name: string;
-    price_rial: string;
-    credit_amount_rial: string;
-    is_active: boolean;
-    sort_order: number;
-  }>(
-    `SELECT id, name, price_rial, credit_amount_rial, is_active, sort_order
-       FROM ai_credit_packages
-      WHERE ($1::boolean = false OR is_active)
-      ORDER BY sort_order, created_at, id`,
-    [options.activeOnly ?? false],
-  );
-  return rows.map(packageFromRow);
 }
 
 export async function listAiSubscriptionPlans(
@@ -183,45 +138,6 @@ export async function listAiSubscriptionPlans(
     [options.activeOnly ?? false],
   );
   return rows.map(subscriptionFromRow);
-}
-
-export async function saveAiCreditPackage(input: {
-  id?: string;
-  name: string;
-  priceRial: number;
-  creditAmountRial: number;
-  isActive: boolean;
-  sortOrder: number;
-}): Promise<AiCreditPackage> {
-  const name = input.name.trim();
-  if (!name || !positiveInteger(input.priceRial) || !positiveInteger(input.creditAmountRial)) {
-    throw new Error("invalid_ai_catalogue");
-  }
-  const sortOrder = Number.isSafeInteger(input.sortOrder) ? input.sortOrder : 0;
-  const { rows } = await query<{
-    id: string;
-    name: string;
-    price_rial: string;
-    credit_amount_rial: string;
-    is_active: boolean;
-    sort_order: number;
-  }>(
-    input.id
-      ? `UPDATE ai_credit_packages
-            SET name = $2, price_rial = $3, credit_amount_rial = $4,
-                is_active = $5, sort_order = $6, updated_at = now()
-          WHERE id = $1
-          RETURNING id, name, price_rial, credit_amount_rial, is_active, sort_order`
-      : `INSERT INTO ai_credit_packages
-           (name, price_rial, credit_amount_rial, is_active, sort_order)
-         VALUES ($1, $2, $3, $4, $5)
-         RETURNING id, name, price_rial, credit_amount_rial, is_active, sort_order`,
-    input.id
-      ? [input.id, name, input.priceRial, input.creditAmountRial, input.isActive, sortOrder]
-      : [name, input.priceRial, input.creditAmountRial, input.isActive, sortOrder],
-  );
-  if (!rows[0]) throw new Error("not_found");
-  return packageFromRow(rows[0]);
 }
 
 export async function saveAiSubscriptionPlan(input: {
@@ -327,25 +243,17 @@ export async function listRecentAiLedger(businessId: string, limit = 20): Promis
   }));
 }
 
+/**
+ * Records a business's request for a specific amount of credit. The package
+ * catalogue is gone — the business states the amount it has agreed to pay
+ * for; approving the request grants exactly that credit.
+ */
 export async function createAiTopUpRequest(input: {
   businessId: string;
-  packageId: string;
+  amountRial: number;
   note?: string;
 }): Promise<AiTopUpRequest> {
-  const { rows: packages } = await query<{
-    id: string;
-    name: string;
-    price_rial: string;
-    credit_amount_rial: string;
-  }>(
-    `SELECT id, name, price_rial, credit_amount_rial
-       FROM ai_credit_packages
-      WHERE id = $1 AND is_active`,
-    [input.packageId],
-  );
-  const selected = packages[0];
-  if (!selected) throw new Error("not_found");
-
+  if (!positiveInteger(input.amountRial)) throw new Error("invalid_amount");
   const { rows } = await query<{
     id: string;
     business_id: string;
@@ -360,17 +268,10 @@ export async function createAiTopUpRequest(input: {
   }>(
     `INSERT INTO ai_top_up_requests
        (business_id, package_id, package_name, price_rial, credit_amount_rial, note)
-     VALUES ($1, $2, $3, $4, $5, $6)
+     VALUES ($1, NULL, 'مبلغ دلخواه', $2, $2, $3)
      RETURNING id, business_id, package_id, package_name, price_rial, credit_amount_rial,
                note, status, reviewed_at, created_at`,
-    [
-      input.businessId,
-      selected.id,
-      selected.name,
-      selected.price_rial,
-      selected.credit_amount_rial,
-      input.note?.trim() || null,
-    ],
+    [input.businessId, input.amountRial, input.note?.trim() || null],
   );
   const row = rows[0];
   return {
@@ -904,4 +805,72 @@ export async function runAiSubscriptionRenewalTick(): Promise<number> {
     if (didRenew) renewed += 1;
   }
   return renewed;
+}
+
+// ---------------------------------------------------------------------------
+// The costing manager — every business's AI cost, from the ledger, plus the
+// platform's revenue on top (migration 0116: price = cost + margin).
+// ---------------------------------------------------------------------------
+
+export interface AiCostingRow {
+  businessId: string;
+  businessName: string;
+  inputTokens30d: number;
+  outputTokens30d: number;
+  /** What the business was actually charged, from `ai_credit_ledger`. */
+  chargedRial30d: number;
+  /** The provider's own cost for the same tokens, at today's cost rates. */
+  providerCostRial30d: number;
+  /** charged − provider cost: the platform's gross revenue on this business. */
+  revenueRial30d: number;
+}
+
+/**
+ * Per-business AI cost over the last 30 days, read from the ledger via the
+ * same sums the billing pages show, with the provider-cost side recomputed at
+ * the platform's current cost rates so revenue is visible per business.
+ */
+export async function listPlatformAiCosting(costRates: {
+  inputCostRialPerMillion: number;
+  outputCostRialPerMillion: number;
+}): Promise<AiCostingRow[]> {
+  return withoutTenantScope("platform", async () => {
+    const { rows } = await query<{
+      business_id: string;
+      business_name: string;
+      input_tokens: string | null;
+      output_tokens: string | null;
+      charged_rial: string | null;
+    }>(
+      `SELECT b.id AS business_id,
+              b.name AS business_name,
+              coalesce(sum(l.input_tokens), 0)  AS input_tokens,
+              coalesce(sum(l.output_tokens), 0) AS output_tokens,
+              coalesce(sum(l.actual_cost_rial), 0) AS charged_rial
+         FROM businesses b
+         JOIN ai_credit_ledger l
+           ON l.business_id = b.id AND l.kind = 'usage'
+        WHERE l.created_at >= now() - interval '30 days'
+        GROUP BY b.id, b.name
+        ORDER BY charged_rial DESC`,
+    );
+    return rows.map((row) => {
+      const inputTokens = numberValue(row.input_tokens);
+      const outputTokens = numberValue(row.output_tokens);
+      const providerCostRial = Math.ceil(
+        (inputTokens / 1_000_000) * costRates.inputCostRialPerMillion +
+          (outputTokens / 1_000_000) * costRates.outputCostRialPerMillion,
+      );
+      const chargedRial = numberValue(row.charged_rial);
+      return {
+        businessId: row.business_id,
+        businessName: row.business_name,
+        inputTokens30d: inputTokens,
+        outputTokens30d: outputTokens,
+        chargedRial30d: chargedRial,
+        providerCostRial30d: providerCostRial,
+        revenueRial30d: chargedRial - providerCostRial,
+      };
+    });
+  });
 }

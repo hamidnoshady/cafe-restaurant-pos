@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Loader2Icon, SparklesIcon } from "lucide-react";
 import { toast } from "sonner";
 import { creditUnitsForRial } from "@/lib/ai-billing";
 import { formatPersianNumber } from "@/lib/digits";
 import { useMoney } from "@/components/money/money-context";
 import { Button } from "@/components/ui/button";
-import { SearchableSelect } from "@/components/ui/searchable-select";
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useFeatureLocked } from "@/components/feature-lock";
 import { cn } from "@/lib/utils";
 import { inputClass } from "../ui";
@@ -30,17 +30,9 @@ interface LedgerEntry {
   createdAt: string;
 }
 
-interface CreditPackage {
-  id: string;
-  name: string;
-  priceRial: number;
-  creditAmountRial: number;
-}
-
 interface Data {
   billing: Billing;
   ledger: LedgerEntry[];
-  packages: CreditPackage[];
   creditUnitRial: number;
   providerReady: boolean;
   error?: string;
@@ -63,7 +55,7 @@ export function AiBillingDashboard() {
   const money = useMoney();
   const [data, setData] = useState<Data | null>(null);
   const [loading, setLoading] = useState(true);
-  const [selectedPackageId, setSelectedPackageId] = useState("");
+  const [amountToman, setAmountToman] = useState("");
   const [note, setNote] = useState("");
   const [requesting, setRequesting] = useState(false);
   const locked = useFeatureLocked();
@@ -75,11 +67,6 @@ export function AiBillingDashboard() {
       const body = (await res.json().catch(() => ({}))) as Data;
       if (!res.ok) throw new Error(body.error ?? "خواندن اعتبار ممکن نشد.");
       setData(body);
-      setSelectedPackageId((current) =>
-        current && body.packages.some((pkg) => pkg.id === current)
-          ? current
-          : body.packages[0]?.id ?? "",
-      );
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "خواندن اعتبار ممکن نشد.");
     } finally {
@@ -94,7 +81,6 @@ export function AiBillingDashboard() {
       setData({
         billing: { balanceRial: 0, subscriptionPlan: null, subscriptionRenewsAt: null },
         ledger: [],
-        packages: [],
         creditUnitRial: 0,
         providerReady: false,
       });
@@ -105,24 +91,26 @@ export function AiBillingDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locked]);
 
-  const selected = useMemo(
-    () => data?.packages.find((pkg) => pkg.id === selectedPackageId) ?? null,
-    [data?.packages, selectedPackageId],
-  );
+  function toRial(toman: string): number {
+    const value = Number(toman.replace(/[\u066C٬,\s]/g, ""));
+    return Number.isSafeInteger(value) && value > 0 ? value * 10 : 0;
+  }
 
   async function requestTopUp() {
-    if (!selectedPackageId || requesting) return;
+    const amountRial = toRial(amountToman);
+    if (!amountRial || requesting) return;
     setRequesting(true);
     try {
       const res = await fetch("/api/ai/billing", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ packageId: selectedPackageId, note }),
+        body: JSON.stringify({ amountRial, note }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error ?? "ثبت درخواست انجام نشد.");
       toast.success("درخواست شارژ ثبت شد و پس از تأیید مدیر پلتفرم، اعتبار شما اضافه می‌شود.");
       setNote("");
+      setAmountToman("");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "ثبت درخواست انجام نشد.");
     } finally {
@@ -182,45 +170,36 @@ export function AiBillingDashboard() {
 
       <SectionCard
         title="درخواست شارژ اعتبار"
-        description="پس از پرداخت توافق‌شده، درخواست شما به مدیر پلتفرم ارسال می‌شود و اعتبار پس از تأیید اضافه خواهد شد."
+        description="مبلغ دلخواه را به تومان وارد کنید؛ پس از پرداخت توافق‌شده، درخواست شما به مدیر پلتفرم ارسال می‌شود و اعتبار پس از تأیید اضافه خواهد شد."
       >
-        {data.packages.length === 0 ? (
-          <p className="text-sm text-muted-foreground">هنوز بستهٔ شارژی برای این سرویس فعال نشده است.</p>
-        ) : (
-          <div className="grid gap-3 lg:grid-cols-[1fr_1fr_auto]">
-            <label className="block">
-              <span className="mb-1 block text-sm font-medium">بستهٔ شارژ</span>
-              <SearchableSelect
-                value={selectedPackageId}
-                onChange={setSelectedPackageId}
-                options={data.packages.map((pkg) => ({
-                  value: pkg.id,
-                  label: `${pkg.name} — ${money.format(pkg.priceRial)}`,
-                }))}
-              />
-            </label>
-            <label className="block">
-              <span className="mb-1 block text-sm font-medium">یادداشت پرداخت (اختیاری)</span>
-              <input
-                className={inputClass}
-                value={note}
-                onChange={(event) => setNote(event.target.value)}
-                placeholder="مثلاً شماره پیگیری انتقال"
-              />
-            </label>
-            <div className="self-end">
-              <Button onClick={() => void requestTopUp()} disabled={!selected || requesting} className="w-full lg:w-auto">
-                {requesting ? <Loader2Icon className="animate-spin" /> : null}
-                ثبت درخواست
-              </Button>
-            </div>
+        <div className="grid gap-3 lg:grid-cols-[1fr_1fr_auto]">
+          <label className="block">
+            <span className="mb-1 block text-sm font-medium">مبلغ اعتبار (تومان)</span>
+            <PersianNumberInput
+              className={inputClass}
+              type="number"
+              min="1"
+              value={amountToman}
+              onChange={(event) => setAmountToman(event.target.value)}
+              placeholder="مثلاً ۵۰۰۰۰۰"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-sm font-medium">یادداشت پرداخت (اختیاری)</span>
+            <input
+              className={inputClass}
+              value={note}
+              onChange={(event) => setNote(event.target.value)}
+              placeholder="مثلاً شماره پیگیری انتقال"
+            />
+          </label>
+          <div className="self-end">
+            <Button onClick={() => void requestTopUp()} disabled={!toRial(amountToman) || requesting} className="w-full lg:w-auto">
+              {requesting ? <Loader2Icon className="animate-spin" /> : null}
+              ثبت درخواست
+            </Button>
           </div>
-        )}
-        {selected ? (
-          <p className="mt-3 text-xs text-muted-foreground">
-            با تأیید این بسته، {money.format(selected.creditAmountRial)} اعتبار به ماندهٔ شما افزوده می‌شود.
-          </p>
-        ) : null}
+        </div>
       </SectionCard>
 
       <SectionCard title="تاریخچهٔ اعتبار و مصرف">

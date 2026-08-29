@@ -143,6 +143,62 @@ fresh turn.
 Like Wave 6, the whole thing is conditional on pgvector, and off means precisely
 today's behaviour.
 
+## Follow-up — wiring Waves 6 and 7 into the chat path
+
+The waves shipped as schema + modules; this follow-up connects them to the
+live assistant, on the same degradation rules:
+
+- **Embeddings over the shared Phase 18 connection** (`ai-embeddings.ts`):
+  OpenAI-compatible `/embeddings` on the platform `{baseUrl}`, model
+  `AI_EMBEDDING_MODEL` (default `text-embedding-3-small`, matching
+  `vector(1536)`). `isEmbeddingAvailable()` probes once per process; a provider
+  with no `/embeddings` turns both waves off, never breaks the turn. Embedding
+  tokens are metered into the same turn's `ai_credit_ledger` row.
+- **The retrieval tool** (`ai-service.ts`): `search_business_knowledge` is
+  declared for dashboard mode only when `isRetrievalAvailable()` *and*
+  `isEmbeddingAvailable()` are both true; it is executed inside the agent loop
+  (like the receipt extraction), embeds the question, retrieves via
+  `retrieveKnowledge()`, and answers with source-named prose.
+- **The indexing tick** (`ai-rag-indexer.ts` + `POST /api/ai/rag/reindex`,
+  manager-only): embeds menu-item descriptions, item/customer *names* and
+  project notes, drops vectors whose source row vanished, and reports counts.
+  `help`/`policy`/`procedure` stay unindexed until tables exist for them.
+- **The cache in the chat route**: the question is embedded once; a hit
+  (same business, branch, business day, any stored signature, similarity ≥
+  0.94, TTL live) settles for the embedding cost only and is labelled
+  `CACHE_NOTICE` with a «دوباره بپرس» that bypasses the lookup. A read-only
+  miss (no proposal, only read tools, no attachment) is stored with its true
+  `tool_signature`, built from the turn's traced tool calls.
+- **Invalidation on writes**: a fresh order (`createOrder`) drops answers
+  covering the current trading day; a backdated order drops answers covering
+  its `entry_date`. `*..*` signatures (range-less tool calls) are covered by
+  both, because `signatureTouchesRange` treats them as unbounded.
+
+## Follow-up — the prompt manager (two layers) and cost-plus pricing
+
+Prompt management became a real subsystem, wired into every chat turn:
+
+- **Platform layer** (`ai_prompt_templates`, migration 0112): an active row
+  keyed `surface:<mode>` replaces the code-built system prompt for that
+  surface on every install. Managed from `/platform/ai/prompts`
+  (`ai.config.manage`; version-stacked, revert by clearing back to the code
+  default). Superadmin owns all six surfaces, proactive/autopilot/platform
+  included.
+- **Business layer** (`ai_prompt_overrides`, migration 0115): a business
+  manager appends standing instructions per surface (dashboard / floor /
+  wizard only) from the AI settings page — appended under their own heading,
+  never able to replace the platform prompt or its confirm-before-write rules.
+- `resolveSystemPrompt()` in `ai-prompt-service.ts` is the single door both
+  layers are read through; `/api/ai/chat` resolves it per turn, and any read
+  failure degrades to the plain code default. Both layers cache for 15s.
+
+Pricing moved to cost-plus (migration 0116): the platform stores the
+provider's own per-million cost plus a revenue margin percent; the sale rate
+is derived (`effectiveRate`, rounded up). The credit-package catalogue and its
+management are gone — top-up requests now state an amount directly — and the
+credit unit is fixed at 1 Rial. `/api/platform/ai` also returns a per-business
+costing report (tokens, charged, provider cost, revenue) read from the ledger.
+
 ## Measurement — the ten questions, before and after
 
 Ten representative questions, run against the same seeded books before the phase

@@ -61,6 +61,7 @@ export function AiChatHub({
     startNewConversation,
     loadConversation,
     sendMessage,
+    askAgain,
     applyProposal,
     dismissProposal,
   } = chat;
@@ -165,6 +166,27 @@ export function AiChatHub({
                     </div>
                     {message.role === "assistant" && typeof message.costRial === "number" && message.costRial > 0 ? (
                       <p className="px-1 text-[10px] text-muted-foreground">هزینهٔ این پاسخ: {money.format(message.costRial)}</p>
+                    ) : null}
+                    {/* Phase 36 Wave 7 — a cached answer is labelled, never passed
+                        off as fresh, and always comes with a way to ask for a real one. */}
+                    {message.role === "assistant" && message.cacheNotice ? (
+                      <p className="flex flex-wrap items-center gap-1.5 px-1 text-[10px] text-muted-foreground">
+                        <span>{message.cacheNotice}</span>
+                        <button
+                          type="button"
+                          className="rounded-full border border-stone-300/70 px-2 py-0.5 text-[10px] text-foreground/80 transition-colors hover:bg-muted disabled:opacity-50"
+                          disabled={busy}
+                          onClick={() => {
+                            const question = messages
+                              .slice(0, Math.max(0, index))
+                              .reverse()
+                              .find((item) => item.role === "user")?.content;
+                            if (question) void askAgain(question);
+                          }}
+                        >
+                          دوباره بپرس
+                        </button>
+                      </p>
                     ) : null}
                     {canPropose && message.proposal ? (
                       <AiProposalCard

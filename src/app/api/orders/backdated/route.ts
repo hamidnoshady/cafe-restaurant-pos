@@ -6,6 +6,7 @@ import {
   recordBackdatedOrder,
 } from "@/lib/backdated-order-service";
 import { validateBackdatedOrder, type BackdatedOrderInput } from "@/lib/backdated-orders";
+import { invalidateByRange } from "@/lib/ai-answer-cache";
 import { getPool, query } from "@/lib/db";
 import { MissingLedgerAccountError } from "@/lib/ledger-service";
 import { paymentFailureFor } from "@/lib/order-payment-errors";
@@ -96,6 +97,12 @@ export const POST = withTenantScope(async (request: NextRequest) => {
       input: validated.value,
     });
     await client.query("COMMIT");
+    // Phase 36 Wave 7 — a sale typed in late changes the very window a cached
+    // answer summarised, so every cached answer whose tool signature covers
+    // this entry date is dropped before the route answers. Awaited but
+    // self-contained: it runs after COMMIT and never throws, so a committed
+    // sale cannot be failed by its own cache maintenance.
+    await invalidateByRange(session.businessId, { from: result.entryDate, to: result.entryDate });
     // Deliberately no realtime broadcast: nothing on a live screen — the POS
     // queue, the KDS, the floor — is showing a sale from last Tuesday, and
     // waking them for one would only make a finished order flash past.

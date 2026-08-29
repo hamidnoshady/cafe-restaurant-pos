@@ -12,9 +12,11 @@ import {
   buildToolSignature,
   clearCache,
   invalidateByRange,
+  invalidateTodayForBusiness,
   isAnswerCacheAvailable,
   isCacheableTurn,
   lookupCachedAnswer,
+  normalizeRangeDate,
   resetAnswerCacheAvailability,
   signatureTouchesRange,
   storeCachedAnswer,
@@ -309,5 +311,70 @@ describe("manual clearing and sweeping", () => {
   it("is a no-op when the cache is off", async () => {
     mockQuery.mockResolvedValueOnce({ rows: [{ ok: false }] } as never);
     await expect(sweepExpiredAnswers("b1")).resolves.toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 36 wiring — signature-agnostic lookup, range normalisation, and the
+// fresh-order invalidation hook.
+// ---------------------------------------------------------------------------
+
+describe("lookupCachedAnswer with a null signature", () => {
+  it("matches any stored signature but keeps every other key part", async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [{ ok: true }] } as never);
+    mockQuery.mockResolvedValueOnce({ rows: [] } as never);
+    await lookupCachedAnswer({ ...key, toolSignature: null }, vector());
+    const [sql, params] = mockQuery.mock.calls[1];
+    expect(sql).toContain("($4::text IS NULL OR tool_signature = $4)");
+    expect((params as unknown[])[3]).toBeNull();
+    expect((params as unknown[])[2]).toBe("2026-08-27");
+  });
+});
+
+describe("normalizeRangeDate", () => {
+  it("keeps a plain ISO date", () => {
+    expect(normalizeRangeDate("2026-08-27")).toBe("2026-08-27");
+  });
+
+  it("trims a timestamp down to its date", () => {
+    expect(normalizeRangeDate("2026-08-27T18:30:00.000Z")).toBe("2026-08-27");
+  });
+
+  it("normalises an unparseable value to null, which renders as the unbounded *", () => {
+    expect(normalizeRangeDate("دیروز")).toBeNull();
+    expect(normalizeRangeDate(undefined)).toBeNull();
+    // And * in the signature is what every write invalidates:
+    expect(signatureTouchesRange("run_report:*..*", { from: "2026-01-01", to: "2026-01-01" })).toBe(
+      true,
+    );
+  });
+});
+
+describe("invalidateTodayForBusiness — the fresh-order hook", () => {
+  it("invalidates the business's current trading day", async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [{ ok: true }] } as never); // cache available
+    mockQuery.mockResolvedValueOnce({ rows: [{ today: "2026-08-27" }] } as never); // businessToday
+    mockQuery.mockResolvedValueOnce({
+      rows: [{ id: "c1", tool_signature: "run_report:2026-08-20..2026-08-27" }],
+    } as never); // candidate rows
+    mockQuery.mockResolvedValueOnce({ rowCount: 1 } as never); // delete
+    await expect(invalidateTodayForBusiness("b1")).resolves.toBe(1);
+    expect(mockQuery.mock.calls[1][0]).toContain("app_business_date");
+    // The delete is scoped to the tenant and to the touching rows only.
+    const [deleteSql, deleteParams] = mockQuery.mock.calls[3];
+    expect(deleteSql).toContain("DELETE FROM ai_answer_cache");
+    expect((deleteParams as unknown[])[0]).toBe("b1");
+  });
+
+  it("is a silent no-op when the business date cannot be read", async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [{ ok: true }] } as never);
+    mockQuery.mockRejectedValueOnce(new Error("boom"));
+    await expect(invalidateTodayForBusiness("b1")).resolves.toBe(0);
+  });
+
+  it("does nothing when the cache is off", async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [{ ok: false }] } as never);
+    await expect(invalidateTodayForBusiness("b1")).resolves.toBe(0);
+    expect(mockQuery).toHaveBeenCalledTimes(1);
   });
 });

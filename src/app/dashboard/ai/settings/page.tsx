@@ -6,12 +6,14 @@ import { PageHeader, PageShell } from "../../page-chrome";
 import { AiAutopilotSettings } from "../ai-autopilot-settings";
 import { AiProactiveSettings } from "../ai-proactive-settings";
 import { AiBillingDashboard } from "../ai-billing";
+import { AiPromptSettings } from "@/components/ai/ai-prompt-settings";
 
 /**
  * The assistant's settings, opened from the sidebar footer («تنظیمات هوش
- * مصنوعی»): what the assistant may run on its own, the background digests,
- * and the credit it spends. Each section is the same component the console
- * already ships; this page just gives the owner one place for all of it.
+ * مصنوعی»): the business's own prompt shapes, what the assistant may run on
+ * its own, the background digests, and the credit it spends. Each section is
+ * the same component the console already ships; this page just gives the
+ * owner one place for all of it.
  */
 export default async function AiSettingsPage() {
   const session = await getSession();
@@ -25,10 +27,11 @@ export default async function AiSettingsPage() {
     <PageShell>
       <PageHeader
         title="تنظیمات هوش مصنوعی"
-        description="اجرای خودکار، گزارش‌های پس‌زمینه و اعتبار دستیار — در یک جا."
+        description="پرامپت اختصاصی، اجرای خودکار، گزارش‌های پس‌زمینه و اعتبار دستیار — در یک جا."
       />
       <FeatureLock locked={locked} title="دستیار هوشمند">
         <div className="space-y-6">
+          <AiPromptSettings />
           <AiAutopilotSettings />
           <AiProactiveSettings />
           <AiBillingDashboard />

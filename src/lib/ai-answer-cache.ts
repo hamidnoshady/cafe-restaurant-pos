@@ -152,7 +152,15 @@ export interface CacheKey {
   locationId: string | null;
   /** The branch's trading day from `app_business_date`, `YYYY-MM-DD`. */
   businessDate: string;
-  toolSignature: string;
+  /**
+   * The exact tool signature a lookup demands, or null to match any. Storing
+   * always records the turn's true signature; it is the *lookup* that cannot
+   * know which tools a not-yet-run turn would use, so the chat path looks up
+   * with null: similarity ≥ threshold over a same-day, same-branch question is
+   * the premise that the previous answer's tools are the ones this question
+   * needs. Invalidation still works off each row's stored signature.
+   */
+  toolSignature: string | null;
 }
 
 export interface CacheHit {
@@ -173,9 +181,10 @@ export interface LookupOptions {
 
 /**
  * Looks for an answer already built today from the same tools. A hit requires
- * **all four**: similarity over the threshold, the same `business_date`, the
- * same `tool_signature`, and `expires_at` not passed. The first three are the
- * correctness argument; the fourth is the safety net.
+ * **all four**: similarity over the threshold, the same `business_date`, a
+ * matching `tool_signature` (any, when the key's is null), and `expires_at`
+ * not passed. The first three are the correctness argument; the fourth is the
+ * safety net.
  */
 export async function lookupCachedAnswer(
   key: CacheKey,
@@ -200,7 +209,7 @@ export async function lookupCachedAnswer(
         WHERE business_id = $1
           AND location_id IS NOT DISTINCT FROM $2
           AND business_date = $3
-          AND tool_signature = $4
+          AND ($4::text IS NULL OR tool_signature = $4)
           AND expires_at > now()
           AND 1 - (question_embedding <=> $5::vector) >= $6
         ORDER BY question_embedding <=> $5::vector
@@ -327,4 +336,54 @@ export async function sweepExpiredAnswers(businessId: string): Promise<number> {
     [businessId],
   );
   return rowCount ?? 0;
+}
+
+// ---------------------------------------------------------------------------
+// Write-path hook
+// ---------------------------------------------------------------------------
+
+/**
+ * Normalises a tool-call date argument into the `YYYY-MM-DD` the signature
+ * speaks, or null when it is absent/unparseable — null renders as `*` in the
+ * signature, i.e. "no bound", which every write invalidates. Failing open to
+ * *invalidation* rather than to *staleness* is the conservative direction.
+ */
+export function normalizeRangeDate(value: string | undefined | null): string | null {
+  if (typeof value !== "string") return null;
+  const match = /^(\d{4}-\d{2}-\d{2})/.exec(value.trim());
+  return match ? match[1] : null;
+}
+
+/**
+ * Invalidates cached answers whose signature covers the business's *current*
+ * trading day — the hook a fresh order hangs off. `*..*` signatures (tools
+ * called with no range, like a live stock valuation) are covered too, because
+ * `signatureTouchesRange` treats an unbounded signature as touching every
+ * write. Never throws; a silent 0 means "nothing to invalidate".
+ */
+export async function invalidateTodayForBusiness(businessId: string): Promise<number> {
+  if (!(await isAnswerCacheAvailable())) return 0;
+  try {
+    const { rows } = await query<{ today: string }>(
+      `SELECT app_business_date(
+                now(),
+                coalesce(l.timezone, 'Asia/Tehran'),
+                l.business_day_start_minutes
+              )::text AS today
+         FROM (SELECT 1) one
+         LEFT JOIN LATERAL (
+           SELECT timezone, business_day_start_minutes
+             FROM locations
+            WHERE business_id = $1 AND is_active
+            ORDER BY created_at
+            LIMIT 1
+         ) l ON true`,
+      [businessId],
+    );
+    const today = rows[0]?.today;
+    if (!today) return 0;
+    return await invalidateByRange(businessId, { from: today, to: today });
+  } catch {
+    return 0;
+  }
 }

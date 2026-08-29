@@ -4,18 +4,8 @@ import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { formatToman } from "@/lib/money";
 import { formatPersianNumber } from "@/lib/digits";
-import {
-  api,
-  Button,
-  Card,
-  ErrorBox,
-  Field,
-  InfoBox,
-  inputClass,
-  useCan,
-} from "../ui";
+import { api, Button, Card, ErrorBox, Field, InfoBox, inputClass, useCan } from "../ui";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import { PlatformSupportAssistant } from "./platform-support-assistant";
 import { Loader2Icon } from "lucide-react";
 
 interface AiConfig {
@@ -25,21 +15,14 @@ interface AiConfig {
   baseUrl: string;
   temperature: number;
   maxOutputTokens: number;
+  inputCostRialPerMillion: number;
+  outputCostRialPerMillion: number;
+  revenueMarginPercent: number;
   inputTokenRialPerMillion: number;
   outputTokenRialPerMillion: number;
   maxTurnRial: number;
-  creditUnitRial: number;
   hasApiKey: boolean;
   configured: boolean;
-}
-
-interface CreditPackage {
-  id: string;
-  name: string;
-  priceRial: number;
-  creditAmountRial: number;
-  isActive: boolean;
-  sortOrder: number;
 }
 
 interface SubscriptionPlan {
@@ -63,6 +46,16 @@ interface Business {
   pendingTopUps: number;
 }
 
+interface CostingRow {
+  businessId: string;
+  businessName: string;
+  inputTokens30d: number;
+  outputTokens30d: number;
+  chargedRial30d: number;
+  providerCostRial30d: number;
+  revenueRial30d: number;
+}
+
 interface TopUp {
   id: string;
   businessId: string;
@@ -77,8 +70,8 @@ interface TopUp {
 
 interface DashboardData {
   businesses: Business[];
-  packages: CreditPackage[];
   subscriptions: SubscriptionPlan[];
+  costing: CostingRow[];
   topUps: TopUp[];
   config: AiConfig | null;
   error?: string;
@@ -107,9 +100,6 @@ export default function PlatformAiPage() {
   const [grantToman, setGrantToman] = useState("");
   const [grantNote, setGrantNote] = useState("");
   const [subscriptionPlanId, setSubscriptionPlanId] = useState("");
-  const [packageName, setPackageName] = useState("");
-  const [packagePrice, setPackagePrice] = useState("");
-  const [packageCredit, setPackageCredit] = useState("");
   const [planName, setPlanName] = useState("");
   const [planPrice, setPlanPrice] = useState("");
   const [planCredit, setPlanCredit] = useState("");
@@ -146,7 +136,7 @@ export default function PlatformAiPage() {
     setError("");
     setNotice("");
     const result = await api<{ error?: string }>("/api/platform/ai", {
-      method: body.action === "config" || body.action === "credit_package" || body.action === "subscription_plan" ? "PUT" : "POST",
+      method: body.action === "config" || body.action === "subscription_plan" ? "PUT" : "POST",
       body: JSON.stringify(body),
     });
     setBusy("");
@@ -167,27 +157,6 @@ export default function PlatformAiPage() {
       "config",
     );
     setApiKey("");
-  }
-
-  async function addPackage(event: FormEvent) {
-    event.preventDefault();
-    if (
-      await write(
-        {
-          action: "credit_package",
-          name: packageName,
-          priceRial: toRial(packagePrice),
-          creditAmountRial: toRial(packageCredit),
-          isActive: true,
-          sortOrder: data?.packages.length ?? 0,
-        },
-        "package",
-      )
-    ) {
-      setPackageName("");
-      setPackagePrice("");
-      setPackageCredit("");
-    }
   }
 
   async function addPlan(event: FormEvent) {
@@ -216,26 +185,26 @@ export default function PlatformAiPage() {
   }
 
   const businesses = data?.businesses ?? [];
-  const packages = data?.packages ?? [];
   const subscriptions = data?.subscriptions ?? [];
+  const costing = data?.costing ?? [];
   const topUps = data?.topUps ?? [];
   const pending = topUps.filter((request) => request.status === "pending");
   const totalBalance = businesses.reduce((total, business) => total + business.balanceRial, 0);
   const totalUsage = businesses.reduce((total, business) => total + business.usageRialLast30Days, 0);
+  const totalRevenue = costing.reduce((total, row) => total + row.revenueRial30d, 0);
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-4 sm:space-y-6">
       <header>
         <h1 className="text-xl font-bold">مدیریت هوش مصنوعی</h1>
         <p className="mt-1 text-sm text-white/50">
-          اتصال واحد سرویس، اعتبار کسب‌وکارها، اشتراک‌ها، درخواست‌های شارژ و مصرف سراسری.
+          اتصال واحد سرویس، هزینه و حاشیهٔ درآمد، اعتبار کسب‌وکارها، اشتراک‌ها و درخواست‌های شارژ.
+          مدیریت پرامپت‌ها در بخش <a className="underline" href="/platform/ai/prompts">پرامپت‌ها</a> است.
         </p>
       </header>
 
       <ErrorBox>{error}</ErrorBox>
       {notice ? <InfoBox>{notice}</InfoBox> : null}
-
-      {can("ai.read") ? <PlatformSupportAssistant /> : null}
 
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Card title="کسب‌وکارهای AI">
@@ -247,18 +216,18 @@ export default function PlatformAiPage() {
         <Card title="مصرف ۳۰ روز اخیر">
           <p className="text-lg font-bold">{formatToman(totalUsage)}</p>
         </Card>
-        <Card title="درخواست در انتظار">
-          <p className="text-2xl font-bold">{formatPersianNumber(pending.length)}</p>
+        <Card title="درآمد ناخالص AI (۳۰ روز)">
+          <p className="text-lg font-bold">{formatToman(totalRevenue)}</p>
         </Card>
       </section>
 
       {can("ai.config.manage") && configDraft ? (
-        <Card title="اتصال و نرخ‌گذاری سراسری">
+        <Card title="اتصال و هزینهٔ سراسری">
           <p className="mb-4 text-sm text-white/50">
-            این اتصال برای همهٔ کسب‌وکارهاست. کلید API هرگز به داشبورد کسب‌وکار ارسال نمی‌شود.
+            این اتصال برای همهٔ کسب‌وکارهاست. نرخ فروش به‌صورت خودکار از هزینهٔ واقعی به‌علاوهٔ حاشیهٔ درآمد محاسبه می‌شود؛ کلید API هرگز به داشبورد کسب‌وکار ارسال نمی‌شود.
           </p>
           {!configDraft.configured ? (
-            <InfoBox>تا تکمیل کلید، نرخ ورودی/خروجی، سقف هر درخواست و واحد اعتبار، سرویس برای کسب‌وکارها فعال نمی‌شود.</InfoBox>
+            <InfoBox>تا تکمیل کلید و هزینه‌ها، سرویس برای کسب‌وکارها فعال نمی‌شود.</InfoBox>
           ) : null}
           <form onSubmit={saveConfig} className="grid gap-4 lg:grid-cols-2">
             <Field label="ارائه‌دهنده">
@@ -281,17 +250,17 @@ export default function PlatformAiPage() {
             <Field label="کلید API" hint={configDraft.hasApiKey ? "کلید ذخیره شده است؛ برای حفظ آن خالی بگذارید." : "کلید سراسری را وارد کنید."}>
               <input className={inputClass} dir="ltr" type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} autoComplete="off" />
             </Field>
-            <Field label={"نرخ ورودی (ریال / یک‌میلیون توکن)"}>
-              <PersianNumberInput className={inputClass} type="number" min="1" value={configDraft.inputTokenRialPerMillion} onChange={(event) => setConfigDraft({ ...configDraft, inputTokenRialPerMillion: Number(event.target.value) })} />
+            <Field label={"هزینهٔ ورودی (ریال / یک‌میلیون توکن)"} hint="هزینهٔ واقعی ارائه‌دهنده؛ نرخ فروش از روی این عدد ساخته می‌شود.">
+              <PersianNumberInput className={inputClass} type="number" min="1" value={configDraft.inputCostRialPerMillion} onChange={(event) => setConfigDraft({ ...configDraft, inputCostRialPerMillion: Number(event.target.value) })} />
             </Field>
-            <Field label={"نرخ خروجی (ریال / یک‌میلیون توکن)"}>
-              <PersianNumberInput className={inputClass} type="number" min="1" value={configDraft.outputTokenRialPerMillion} onChange={(event) => setConfigDraft({ ...configDraft, outputTokenRialPerMillion: Number(event.target.value) })} />
+            <Field label={"هزینهٔ خروجی (ریال / یک‌میلیون توکن)"}>
+              <PersianNumberInput className={inputClass} type="number" min="1" value={configDraft.outputCostRialPerMillion} onChange={(event) => setConfigDraft({ ...configDraft, outputCostRialPerMillion: Number(event.target.value) })} />
+            </Field>
+            <Field label={"حاشیهٔ درآمد (٪)"} hint={`نرخ فروش فعلی: ورودی ${formatToman(configDraft.inputTokenRialPerMillion)} و خروجی ${formatToman(configDraft.outputTokenRialPerMillion)} به‌ازای هر میلیون توکن.`}>
+              <PersianNumberInput className={inputClass} type="number" min="0" max="1000" step="0.5" value={configDraft.revenueMarginPercent} onChange={(event) => setConfigDraft({ ...configDraft, revenueMarginPercent: Number(event.target.value) })} />
             </Field>
             <Field label="حداکثر رزرو هر پاسخ (ریال)" hint="پیش از تماس با مدل رزرو می‌شود؛ باقی‌مانده پس از محاسبهٔ مصرف واقعی برمی‌گردد.">
               <PersianNumberInput className={inputClass} type="number" min="1" value={configDraft.maxTurnRial} onChange={(event) => setConfigDraft({ ...configDraft, maxTurnRial: Number(event.target.value) })} />
-            </Field>
-            <Field label="هر اعتبار چند ریال است">
-              <PersianNumberInput className={inputClass} type="number" min="1" value={configDraft.creditUnitRial} onChange={(event) => setConfigDraft({ ...configDraft, creditUnitRial: Number(event.target.value) })} />
             </Field>
             <Field label="حداکثر توکن خروجی">
               <PersianNumberInput className={inputClass} type="number" min="64" max="8192" value={configDraft.maxOutputTokens} onChange={(event) => setConfigDraft({ ...configDraft, maxOutputTokens: Number(event.target.value) })} />
@@ -304,86 +273,76 @@ export default function PlatformAiPage() {
               فعال بودن سرویس هوش مصنوعی
             </label>
             <div className="lg:col-span-2">
-              <Button type="submit" disabled={busy === "config"}>{busy === "config" ? "در حال ذخیره…" : "ذخیره اتصال و نرخ‌ها"}</Button>
+              <Button type="submit" disabled={busy === "config"}>{busy === "config" ? "در حال ذخیره…" : "ذخیره اتصال و هزینه‌ها"}</Button>
             </div>
           </form>
         </Card>
       ) : null}
 
-      {can("ai.config.manage") ? (
-        <section className="grid gap-4 xl:grid-cols-2">
-          <Card title="بسته‌های شارژ">
-            <p className="mb-3 text-sm text-white/50">قیمت فروش و مبلغ اعتباری هر بسته به تومان وارد می‌شود؛ ذخیره‌سازی داخلی ریال است.</p>
-            <ul className="mb-4 space-y-2">
-              {packages.length === 0 ? <li className="text-sm text-white/40">هنوز بسته‌ای تعریف نشده است.</li> : packages.map((pkg) => (
-                <li key={pkg.id} className="flex items-center justify-between rounded-lg border border-white/10 bg-white/2 p-3 text-sm">
-                  <span>{pkg.name} {pkg.isActive ? null : <span className="text-white/40">— غیرفعال</span>}</span>
-                  <div className="flex items-center gap-3">
-                    <span className="text-white/60">{formatToman(pkg.priceRial)} ← {formatToman(pkg.creditAmountRial)} اعتبار</span>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      onClick={() => void write({
-                        action: "credit_package",
-                        id: pkg.id,
-                        name: pkg.name,
-                        priceRial: pkg.priceRial,
-                        creditAmountRial: pkg.creditAmountRial,
-                        isActive: !pkg.isActive,
-                        sortOrder: pkg.sortOrder,
-                      }, "package-" + pkg.id)}
-                      disabled={Boolean(busy)}
-                    >
-                      {pkg.isActive ? "غیرفعال‌کردن" : "فعال‌کردن"}
-                    </Button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-            <form onSubmit={addPackage} className="grid gap-2 sm:grid-cols-3">
-              <input className={inputClass} placeholder="نام بسته" value={packageName} onChange={(event) => setPackageName(event.target.value)} />
-              <PersianNumberInput className={inputClass} type="number" min="1" placeholder="قیمت (تومان)" value={packagePrice} onChange={(event) => setPackagePrice(event.target.value)} />
-              <PersianNumberInput className={inputClass} type="number" min="1" placeholder="اعتبار (تومان)" value={packageCredit} onChange={(event) => setPackageCredit(event.target.value)} />
-              <Button type="submit" disabled={busy === "package"} className="sm:col-span-3">{busy === "package" ? <Loader2Icon className="animate-spin" /> : "افزودن بسته"}</Button>
-            </form>
-          </Card>
+      <Card title="مدیریت هزینه — هر کسب‌وکار (۳۰ روز اخیر)">
+        <p className="mb-3 text-sm text-white/50">
+          هزینه از دفتر مصرف هر کسب‌وکار خوانده می‌شود؛ درآمد، تفاضل مبلغ قطعی‌شده و هزینهٔ ارائه‌دهنده در نرخ فعلی است.
+        </p>
+        {costing.length === 0 ? (
+          <p className="text-sm text-white/40">در ۳۰ روز اخیر مصرفی ثبت نشده است.</p>
+        ) : (
+          <ul className="space-y-2">
+            {costing.map((row) => (
+              <li key={row.businessId} className="flex flex-col gap-1 rounded-lg border border-white/10 bg-white/2 p-3 text-sm md:flex-row md:items-center md:justify-between">
+                <div>
+                  <p className="font-medium">{row.businessName}</p>
+                  <p className="mt-1 text-xs text-white/50">
+                    {formatPersianNumber(row.inputTokens30d + row.outputTokens30d)} توکن · هزینهٔ ارائه‌دهنده: {formatToman(row.providerCostRial30d)}
+                  </p>
+                </div>
+                <div className="text-xs text-white/60 md:text-right">
+                  <p>مبلغ قطعی‌شده: <span className="font-semibold text-white">{formatToman(row.chargedRial30d)}</span></p>
+                  <p className={row.revenueRial30d >= 0 ? "text-emerald-300" : "text-rose-300"}>
+                    درآمد: {formatToman(row.revenueRial30d)}
+                  </p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
 
-          <Card title="اشتراک‌های ماهانه">
-            <p className="mb-3 text-sm text-white/50">هر تمدید، اعتبار ماهانه را به همان موجودی واحد کسب‌وکار اضافه می‌کند.</p>
-            <ul className="mb-4 space-y-2">
-              {subscriptions.length === 0 ? <li className="text-sm text-white/40">هنوز اشتراکی تعریف نشده است.</li> : subscriptions.map((plan) => (
-                <li key={plan.id} className="flex items-center justify-between rounded-lg border border-white/10 bg-white/2 p-3 text-sm">
-                  <span>{plan.name} {plan.isActive ? null : <span className="text-white/40">— غیرفعال</span>}</span>
-                  <div className="flex items-center gap-3">
-                    <span className="text-white/60">{formatToman(plan.priceRial)} / {formatToman(plan.monthlyCreditRial)} اعتبار ماهانه</span>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      onClick={() => void write({
-                        action: "subscription_plan",
-                        id: plan.id,
-                        name: plan.name,
-                        priceRial: plan.priceRial,
-                        monthlyCreditRial: plan.monthlyCreditRial,
-                        isActive: !plan.isActive,
-                        sortOrder: plan.sortOrder,
-                      }, "plan-" + plan.id)}
-                      disabled={Boolean(busy)}
-                    >
-                      {plan.isActive ? "غیرفعال‌کردن" : "فعال‌کردن"}
-                    </Button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-            <form onSubmit={addPlan} className="grid gap-2 sm:grid-cols-3">
-              <input className={inputClass} placeholder="نام اشتراک" value={planName} onChange={(event) => setPlanName(event.target.value)} />
-              <PersianNumberInput className={inputClass} type="number" min="1" placeholder="قیمت ماهانه (تومان)" value={planPrice} onChange={(event) => setPlanPrice(event.target.value)} />
-              <PersianNumberInput className={inputClass} type="number" min="1" placeholder="اعتبار ماهانه (تومان)" value={planCredit} onChange={(event) => setPlanCredit(event.target.value)} />
-              <Button type="submit" disabled={busy === "plan"} className="sm:col-span-3">{busy === "plan" ? <Loader2Icon className="animate-spin" /> : "افزودن اشتراک"}</Button>
-            </form>
-          </Card>
-        </section>
+      {can("ai.config.manage") ? (
+        <Card title="اشتراک‌های ماهانه">
+          <p className="mb-3 text-sm text-white/50">هر تمدید، اعتبار ماهانه را به همان موجودی واحد کسب‌وکار اضافه می‌کند.</p>
+          <ul className="mb-4 space-y-2">
+            {subscriptions.length === 0 ? <li className="text-sm text-white/40">هنوز اشتراکی تعریف نشده است.</li> : subscriptions.map((plan) => (
+              <li key={plan.id} className="flex items-center justify-between rounded-lg border border-white/10 bg-white/2 p-3 text-sm">
+                <span>{plan.name} {plan.isActive ? null : <span className="text-white/40">— غیرفعال</span>}</span>
+                <div className="flex items-center gap-3">
+                  <span className="text-white/60">{formatToman(plan.priceRial)} / {formatToman(plan.monthlyCreditRial)} اعتبار ماهانه</span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => void write({
+                      action: "subscription_plan",
+                      id: plan.id,
+                      name: plan.name,
+                      priceRial: plan.priceRial,
+                      monthlyCreditRial: plan.monthlyCreditRial,
+                      isActive: !plan.isActive,
+                      sortOrder: plan.sortOrder,
+                    }, "plan-" + plan.id)}
+                    disabled={Boolean(busy)}
+                  >
+                    {plan.isActive ? "غیرفعال‌کردن" : "فعال‌کردن"}
+                  </Button>
+                </div>
+              </li>
+            ))}
+          </ul>
+          <form onSubmit={addPlan} className="grid gap-2 sm:grid-cols-3">
+            <input className={inputClass} placeholder="نام اشتراک" value={planName} onChange={(event) => setPlanName(event.target.value)} />
+            <PersianNumberInput className={inputClass} type="number" min="1" placeholder="قیمت ماهانه (تومان)" value={planPrice} onChange={(event) => setPlanPrice(event.target.value)} />
+            <PersianNumberInput className={inputClass} type="number" min="1" placeholder="اعتبار ماهانه (تومان)" value={planCredit} onChange={(event) => setPlanCredit(event.target.value)} />
+            <Button type="submit" disabled={busy === "plan"} className="sm:col-span-3">{busy === "plan" ? <Loader2Icon className="animate-spin" /> : "افزودن اشتراک"}</Button>
+          </form>
+        </Card>
       ) : null}
 
       <Card title="کنترل کسب‌وکار">
@@ -446,8 +405,8 @@ export default function PlatformAiPage() {
             {topUps.map((request) => (
               <li key={request.id} className="flex flex-col gap-3 rounded-lg border border-white/10 bg-white/2 p-3 text-sm md:flex-row md:items-center md:justify-between">
                 <div>
-                  <p className="font-medium">{request.businessName} — {request.packageName}</p>
-                  <p className="mt-1 text-xs text-white/50">{formatToman(request.priceRial)} برای {formatToman(request.creditAmountRial)} اعتبار · {fmtDate(request.createdAt)}</p>
+                  <p className="font-medium">{request.businessName} — {formatToman(request.creditAmountRial)} اعتبار</p>
+                  <p className="mt-1 text-xs text-white/50">{formatToman(request.priceRial)} · {fmtDate(request.createdAt)}</p>
                   {request.note ? <p className="mt-1 text-xs text-white/40">{request.note}</p> : null}
                 </div>
                 {request.status === "pending" && can("ai.credits.manage") ? (
