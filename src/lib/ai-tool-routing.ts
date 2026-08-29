@@ -45,11 +45,21 @@ const TOOL_APP_MAP: Record<string, AppKey> = {
   "get_stock_valuation": "sales",
   "get_supplier_performance": "sales",
 
-  // Growth app
+  // Growth app — the audience *engines*. The customer record itself moved to
+  // the CRM in Phase 36; these two stayed because they are about a campaign
+  // and a payroll-adjacent payout, not about who a customer is.
   "get_repurchase_candidates": "growth",
   "get_staff_commission": "growth",
-  "get_customer_profile": "growth",
-  "get_at_risk_customers": "growth",
+
+  // CRM app (Phase 36). `get_customer_profile` and `get_at_risk_customers`
+  // moved here from Growth with the record they read: a question about one
+  // customer's history now routes the same way the screens do.
+  "get_customer_profile": "crm",
+  "get_at_risk_customers": "crm",
+  "find_customers": "crm",
+  "get_customer_timeline": "crm",
+  "list_customer_segments": "crm",
+  "preview_customer_segment": "crm",
 
   // Operations app
   "get_reservation_conflicts": "operations",

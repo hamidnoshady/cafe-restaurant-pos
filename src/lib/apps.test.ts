@@ -21,10 +21,21 @@ describe("appForModule", () => {
     expect(appForModule("commission")).toBe("growth");
   });
 
-  it("places the future-phase keys under Growth & Marketing as forward references", () => {
-    // Their pages land in phases 36–38 (CRM, website manager, SMS/email), but
-    // Phase 35 builds the module key and its place in the app list now.
-    expect(appForModule("crm")).toBe("growth");
+  it("gives the customer record its own app, and keeps selling to them in Sales", () => {
+    // Phase 35 seated `crm` under Growth as a forward reference. Phase 36 built
+    // it and moved it out, together with `customers`: the customer record is
+    // read by every app (Sales creates it, Growth messages it, the service desk
+    // argues with it), so it cannot live behind the door of the one department
+    // that markets to them. One app owns the record; the rest read it.
+    expect(appForModule("crm")).toBe("crm");
+    expect(appForModule("customers")).toBe("crm");
+    expect(appForModule("pos")).toBe("sales");
+    expect(appForModule("orders")).toBe("sales");
+  });
+
+  it("keeps the still-unbuilt phase keys under Growth & Marketing", () => {
+    // The website manager and SMS/email act *on* an audience rather than owning
+    // the customer record, so they stay with the engines that will use them.
     expect(appForModule("website")).toBe("growth");
     expect(appForModule("messaging")).toBe("growth");
   });
@@ -73,14 +84,21 @@ describe("appForKey / modulesForApp", () => {
     const growth = appForKey("growth");
     expect(growth.label).toBe("رشد و بازاریابی");
     expect(modulesForApp("growth")).toEqual(
-      expect.arrayContaining(["loyalty", "promotions", "commission", "crm", "website", "messaging"]),
+      expect.arrayContaining(["loyalty", "promotions", "commission", "website", "messaging"]),
     );
+    // The engines act on customers; they do not own the record.
+    expect(modulesForApp("growth")).not.toContain("crm");
+    expect(modulesForApp("growth")).not.toContain("customers");
   });
 
-  it("returns the Sales app grouping dashboard, orders, pos and customers", () => {
-    expect(modulesForApp("sales")).toEqual(
-      expect.arrayContaining(["dashboard", "orders", "pos", "customers"]),
-    );
+  it("returns the CRM app owning both the customer record and the CRM surfaces", () => {
+    const crm = appForKey("crm");
+    expect(crm.label).toBe("ارتباط با مشتری");
+    expect(modulesForApp("crm")).toEqual(expect.arrayContaining(["crm", "customers"]));
+  });
+
+  it("returns the Sales app grouping dashboard, orders and pos", () => {
+    expect(modulesForApp("sales")).toEqual(expect.arrayContaining(["dashboard", "orders", "pos"]));
   });
 });
 

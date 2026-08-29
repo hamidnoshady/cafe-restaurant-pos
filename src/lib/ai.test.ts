@@ -381,8 +381,29 @@ describe("Phase 31 — autopilot tagging of the action catalogue", () => {
         // discovery. The next test pins that half.
         "inventory.production.run",
         "inventory.waste.log",
+        // Phase 36 — the CRM's two writes. Both are internal marks on the
+        // business's own record that reach nobody, which is the same test
+        // `customer.note.add` passes. Both are also exactly reversible: a tag
+        // by removing it, a note by deleting the row it inserted.
+        "crm.customer.tag",
+        "crm.customer.note",
       ].sort(),
     );
+  });
+
+  it("gives the assistant no way to change consent or merge a customer", () => {
+    // Phase 36's hard line, pinned where it cannot be crossed by accident. The
+    // CRM has endpoints for both — a human uses them from the customer's file
+    // and the duplicates screen. They are absent from the catalogue entirely,
+    // so `propose_action` cannot name them however the model is asked: consent
+    // is a promise to a person, and a merge destroys one of two records.
+    for (const forbidden of ["crm.customer.consent", "crm.customer.merge", "crm.consent.set"]) {
+      expect(isKnownAction(forbidden), forbidden).toBe(false);
+    }
+    for (const type of ACTION_TYPES) {
+      expect(ACTION_CATALOG[type].endpoint).not.toContain("/consent");
+      expect(ACTION_CATALOG[type].endpoint).not.toContain("/merge");
+    }
   });
 
   it("keeps waste out of an autopilot run's own catalogue — only a human-authored job may log it", () => {

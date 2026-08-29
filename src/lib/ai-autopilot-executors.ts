@@ -24,6 +24,7 @@ import { applyOrderDiscount, normalizeDiscountInput } from "./order-discount-ser
 import { recordExpense, ExpenseError } from "./expense-service";
 import { createDraft, deleteDraft, ManualJournalError } from "./manual-journal-service";
 import { updateCustomer } from "./customers-service";
+import { addCustomerNote, deleteCustomerNote, setCustomerTag } from "./crm-service";
 import { isWasteReason, recordWaste } from "./waste-service";
 import { recordProductionRun, reverseProductionRun, ProductionError } from "./production-service";
 import { positiveQuantityText, type QuantityText, type RialText } from "./inventory-exact";
@@ -332,6 +333,53 @@ const customerNote: AutopilotExecutor = async (ctx) => {
 };
 
 /**
+ * Phase 36 — put one tag on a customer, or take one off.
+ *
+ * The narrowness is deliberate. `customerNote` above has to read the whole
+ * `notes` field, concatenate, and write it back, which is why its undo has to
+ * stash the previous text; this one names a single tag and the database does
+ * the rest, so a concurrent tag by a person at the counter survives. Undo is
+ * exactly the inverse call.
+ */
+const customerTag: AutopilotExecutor = async (ctx) => {
+  const customerId = str(ctx.payload.customerId);
+  const tag = str(ctx.payload.tag);
+  const action = str(ctx.payload.action);
+  if (!customerId || !tag || (action !== "add" && action !== "remove")) return fail("invalid_payload");
+
+  const tags = await setCustomerTag(ctx.businessId, customerId, tag, action);
+  if (tags === null) return fail("not_found");
+  return { ok: true, priorState: { customerId, tag, action }, result: { customerId, tags } };
+};
+
+/**
+ * Phase 36 — append a dated, attributed note to a customer's file.
+ *
+ * Distinct from `customerNote`, which rewrites the single free-text field on
+ * the customer record. This one only ever inserts, so it cannot destroy what
+ * someone else wrote, and the undo is a delete of the row it created rather
+ * than a restoration of prior text.
+ */
+const crmCustomerNote: AutopilotExecutor = async (ctx) => {
+  const customerId = str(ctx.payload.customerId);
+  const body = str(ctx.payload.body);
+  if (!customerId || !body) return fail("invalid_payload");
+
+  const { rows } = await query<{ id: string }>(
+    `SELECT id FROM customers WHERE id = $1 AND business_id = $2`,
+    [customerId, ctx.businessId],
+  );
+  if (!rows[0]) return fail("not_found");
+
+  const note = await addCustomerNote(ctx.businessId, customerId, {
+    body,
+    isPinned: ctx.payload.isPinned === true,
+    createdBy: `${AUTOPILOT_NOTE_PREFIX}دستیار`,
+  });
+  return { ok: true, result: { customerId, noteId: note.id } };
+};
+
+/**
  * Phase 32. Reached only from a coworker job — `inventory.waste.log` is
  * `coworkerOnly`, so a model that decided on its own that some stock should go
  * can never get here. What makes this a legitimate unattended write is that the
@@ -451,6 +499,8 @@ export const AUTOPILOT_EXECUTORS: Record<AutopilotExecutorKey, AutopilotExecutor
   expense,
   journalDraft,
   customerNote,
+  customerTag,
+  crmCustomerNote,
   wasteLog,
   productionRun,
 };
@@ -554,6 +604,30 @@ const revertCustomerNote: AutopilotReverter = async (ctx) => {
   return restored ? { ok: true, result: { customerId, restored: true } } : fail("not_found");
 };
 
+const revertCustomerTag: AutopilotReverter = async (ctx) => {
+  const customerId = str(ctx.priorState?.customerId) ?? str(ctx.payload.customerId);
+  const tag = str(ctx.priorState?.tag) ?? str(ctx.payload.tag);
+  const action = str(ctx.priorState?.action) ?? str(ctx.payload.action);
+  if (!customerId || !tag || !action) return fail("no_prior_state");
+  // The inverse call, which is the whole reason this action is safe to
+  // automate: removing a tag that was added restores the exact prior state,
+  // whatever else has happened to the customer's other tags in between.
+  const tags = await setCustomerTag(
+    ctx.businessId,
+    customerId,
+    tag,
+    action === "add" ? "remove" : "add",
+  );
+  return tags === null ? fail("not_found") : { ok: true, result: { customerId, tags } };
+};
+
+const revertCrmCustomerNote: AutopilotReverter = async (ctx) => {
+  const noteId = str(ctx.result?.noteId);
+  if (!noteId) return fail("no_prior_state");
+  const removed = await deleteCustomerNote(ctx.businessId, noteId);
+  return removed ? { ok: true, result: { noteId, removed: true } } : fail("not_found");
+};
+
 const revertProductionRun: AutopilotReverter = async (ctx) => {
   const runId = str(ctx.result?.productionRunId);
   const locationId = str(ctx.result?.locationId);
@@ -589,5 +663,7 @@ export const AUTOPILOT_REVERTERS: Partial<Record<AutopilotExecutorKey, Autopilot
   orderDiscount: revertOrderDiscount,
   journalDraft: revertJournalDraft,
   customerNote: revertCustomerNote,
+  customerTag: revertCustomerTag,
+  crmCustomerNote: revertCrmCustomerNote,
   productionRun: revertProductionRun,
 };

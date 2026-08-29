@@ -70,10 +70,10 @@ describe("module sets", () => {
       )
         continue;
       // Phase 35 module keys that exist but are not yet wired into any industry:
-      // `workspace` is the ecosystem shell (feature-flag gated), and `crm`/
-      // `website`/`messaging` get their pages in phases 36–38.
-      if (module === "workspace" || module === "crm" || module === "website" || module === "messaging")
-        continue;
+      // `workspace` is the ecosystem shell (feature-flag gated), and `website`/
+      // `messaging` get their pages in phases 37–38. `crm` left this list in
+      // Phase 36, which built the app.
+      if (module === "workspace" || module === "website" || module === "messaging") continue;
       expect(modules, module).toContain(module);
     }
   });
@@ -203,16 +203,25 @@ describe("defaultDisabledFeatures", () => {
 describe("Phase 35 module keys", () => {
   it("declares the ecosystem and future-phase keys without assigning them to any industry yet", () => {
     // These keys exist so the app registry (src/lib/apps.ts) can give them a
-    // place, but none is wired into a trade until later phases: `workspace` is
-    // the ecosystem shell (feature-flag gated) and `crm`/`website`/`messaging`
-    // get their pages in phases 36–38. Locking this prevents a profile from
-    // silently gaining one and changing module-gated routing.
-    const futureKeys = ["workspace", "crm", "website", "messaging"] as const;
+    // place, but neither is wired into a trade yet: `workspace` is the
+    // ecosystem shell (feature-flag gated) and `website`/`messaging` get their
+    // pages in phases 37–38. Locking this prevents a profile from silently
+    // gaining one and changing module-gated routing.
+    const futureKeys = ["workspace", "website", "messaging"] as const;
     for (const key of futureKeys) {
       expect(MODULE_KEYS, key).toContain(key);
       for (const industry of INDUSTRIES) {
         expect(hasModule(industry, key as ModuleKey), `${industry} should not yet have ${key}`).toBe(false);
       }
+    }
+  });
+
+  it("gives every trade the CRM, now that Phase 36 has built it", () => {
+    // The CRM is core, like `customers`: it is built on records every profile
+    // already has, and a jeweller keeps a customer file exactly as a café does.
+    // A trade that lost this key would 403 on every /api/crm route.
+    for (const industry of INDUSTRIES) {
+      expect(hasModule(industry, "crm"), `${industry} should have crm`).toBe(true);
     }
   });
 });

@@ -25,6 +25,7 @@ import { hasModule, MODULE_KEYS, type ModuleKey } from "./industry-profile";
 
 export const APP_KEYS = [
   "sales",
+  "crm",
   "growth",
   "operations",
   "accounting",
@@ -50,8 +51,37 @@ export const APPS: AppDef[] = [
   {
     key: "sales",
     label: "فروش",
-    description: "فروش، سفارش‌ها، صندوق و مشتریان — میز کار روزانهٔ کسب‌وکار.",
-    modules: ["dashboard", "orders", "pos", "customers"],
+    description: "فروش، سفارش‌ها و صندوق — میز کار روزانهٔ کسب‌وکار.",
+    // `customers` used to be here. It moved to the CRM app in Phase 36 — see
+    // the note on that entry. Selling to a customer still happens here; the
+    // customer *record* is the CRM's.
+    modules: ["dashboard", "orders", "pos"],
+  },
+  {
+    key: "crm",
+    label: "ارتباط با مشتری",
+    description:
+      "پروندهٔ مشتری، بخش‌بندی، قیف فروش، کارها و پیگیری‌ها، تیکت‌های خدمات و رضایت‌نامهٔ ارتباط.",
+    // Phase 36 — the CRM is its own app, not a section of Growth.
+    //
+    // Phase 35 seated `crm` under Growth as a forward reference, on the
+    // reasonable assumption that CRM would be an audience-builder for
+    // campaigns. Building it showed the assumption was wrong in a way worth
+    // recording: the CRM's subject is the *customer record* — who they are,
+    // what they bought, what they asked for, what they agreed to be contacted
+    // about — and every other app reads that record. Growth sends to it, the
+    // POS creates it, the service desk argues with it, the ledger settles
+    // against it. Making the record a folder inside the app that markets to it
+    // would put a shared source of truth behind one department's door, and
+    // would have left `customers` — a `sales` module — as the only "real" home
+    // of a customer while their file, notes, consent and history lived
+    // somewhere else.
+    //
+    // So `customers` moves here with `crm`: one app owns the customer, and
+    // /dashboard/customers redirects into it. Growth keeps the engines that
+    // *act* on customers (loyalty, promotions, commission) and reads the
+    // CRM's segments through `crm-segments-service.ts` rather than owning them.
+    modules: ["crm", "customers"],
   },
   {
     key: "growth",
@@ -62,11 +92,11 @@ export const APPS: AppDef[] = [
     // a management dashboard and one section per engine — the same shape the
     // accounting suite has — over the same services and posting rules the
     // three old flat pages used.
-    // `crm`, `website` and `messaging` are listed here as forward references:
-    // their pages land in the CRM/messaging/website phases, but the registry
-    // already seats them under Growth & Marketing rather than as new flat
-    // peers — CRM will grow this app's audience, not the sidebar.
-    modules: ["loyalty", "promotions", "commission", "crm", "website", "messaging"],
+    // `website` and `messaging` remain forward references here: both act *on*
+    // an audience rather than owning the customer record, so they stay with
+    // the engines that will use them. `crm` and `customers` left for the CRM
+    // app above — see the note there.
+    modules: ["loyalty", "promotions", "commission", "website", "messaging"],
   },
   {
     key: "operations",

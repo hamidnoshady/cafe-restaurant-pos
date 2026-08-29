@@ -35,6 +35,16 @@ import { evenSplit } from "./table-sessions";
 import { nearExpiryBatches } from "./cosmetics-service";
 import { staffCommissionReport } from "./commission-service";
 import { customersDueForRepurchase } from "./loyalty-service";
+import { getCustomerFile } from "./crm-service";
+import { customerTimeline } from "./customer-timeline-service";
+import { listSegmentsWithCounts, previewSegment } from "./crm-segments-service";
+import {
+  describeSegment,
+  validateSegmentDefinition,
+  type SegmentDefinition,
+  type SegmentPurpose,
+} from "./segments";
+import { normalizePhone } from "./phone";
 import { getBusinessIndustry } from "./industry-guard";
 import { runAccountingReview } from "./accounting-review-service";
 import { summarizeFindings } from "./accounting-review";
@@ -714,6 +724,185 @@ async function atRiskCustomers(businessId: string, args: Record<string, unknown>
 }
 
 // ---------------------------------------------------------------------------
+// Phase 36 — CRM read tools
+//
+// Four tools, and the shape of the set is the decision: the assistant may
+// *look* at the customer base in the CRM's own terms (segments, one person's
+// history, a search) and may not act on it beyond a tag and a note. Consent is
+// the line. There is no tool that grants or revokes permission to contact
+// someone, and no tool that merges two records, because both are irreversible
+// judgements about a real person that must carry a human's name.
+//
+// `preview_customer_segment` deserves its own note: it takes the same JSON
+// definition the builder writes, and it goes through `previewSegment`, so the
+// consent filter is the *service's*, applied in SQL. The model cannot ask for
+// an unfiltered audience by phrasing the request differently, because the
+// unfiltered path does not exist above the service layer.
+// ---------------------------------------------------------------------------
+
+async function listCustomerSegmentsTool(businessId: string) {
+  const segments = await listSegmentsWithCounts(businessId);
+  return {
+    segments: cap(
+      segments.map((segment) => ({
+        segmentId: segment.id,
+        name: segment.name,
+        description: segment.description,
+        memberCount: segment.memberCount,
+        isBuiltin: segment.isBuiltin,
+        // The rules in Persian, so the model can explain a segment without
+        // having to interpret the raw JSON out loud at an owner.
+        rules: describeSegment(segment.definition, (rial) => `${Math.round(rial / 10)} تومان`),
+      })),
+      30,
+    ),
+  };
+}
+
+async function previewCustomerSegmentTool(businessId: string, args: Record<string, unknown>) {
+  const problems = validateSegmentDefinition(args.definition ?? {});
+  if (problems.length > 0) return { error: `تعریف بخش نامعتبر است: ${problems.join("، ")}` };
+
+  const purpose: SegmentPurpose =
+    args.purpose === "sms" || args.purpose === "email" ? args.purpose : "view";
+
+  const preview = await previewSegment(businessId, args.definition as SegmentDefinition, {
+    purpose,
+    sampleSize: 10,
+  });
+
+  return {
+    purpose,
+    count: preview.count,
+    totalBeforeConsent: preview.totalBeforeConsent,
+    // Spelled out rather than left for the model to infer from two numbers: the
+    // gap between them is the fact an owner most needs said plainly.
+    consentNote:
+      purpose === "view"
+        ? "این عدد فیلتر رضایت ندارد و فقط برای دیدن است؛ برای ارسال، purpose را sms یا email بگذار."
+        : `${preview.totalBeforeConsent} نفر با این شرط‌ها همخوانی دارند، اما تنها ${preview.count} نفرشان اجازهٔ دریافت داده‌اند. تفاوت این دو عدد را به کاربر بگو.`,
+    sample: cap(
+      preview.sample.map((member) => ({
+        customerId: member.id,
+        name: member.name,
+        orderCount: member.orderCount,
+        totalSpentRial: member.totalSpentRial,
+        lastPurchaseDate: member.lastPurchaseDate,
+        lifecycleStage: member.lifecycleStage,
+      })),
+      10,
+    ),
+  };
+}
+
+async function customerTimelineTool(businessId: string, args: Record<string, unknown>) {
+  const customerId = typeof args.customerId === "string" ? args.customerId : "";
+  if (!customerId) return { error: "customerId لازم است." };
+
+  const file = await getCustomerFile(businessId, customerId);
+  if (!file) return { error: "مشتری یافت نشد." };
+
+  const limit = Number.isFinite(Number(args.limit)) ? Math.max(1, Number(args.limit)) : 25;
+  const events = await customerTimeline(businessId, customerId, { limit });
+
+  return {
+    customer: {
+      customerId: file.id,
+      name: file.name,
+      phone: file.phone,
+      tags: file.tags,
+      orderCount: file.stats.orderCount,
+      totalSpentRial: file.stats.totalSpentRial,
+      lastPurchaseDate: file.stats.lastPurchaseDate,
+      daysSinceLastPurchase: file.stats.daysSinceLastPurchase,
+      loyaltyPoints: file.stats.loyaltyPoints,
+      openCases: file.stats.openCases,
+      openDeals: file.stats.openDeals,
+      lifecycleStage: file.rfm.stage,
+      // Included so the model never suggests "پیامک بفرست" to someone who has
+      // not agreed to be messaged.
+      smsConsent: file.smsConsent,
+      marketingConsent: file.marketingConsent,
+    },
+    events: cap(
+      events.map((event) => ({
+        at: event.at,
+        kind: event.kind,
+        kindLabel: event.kindLabel,
+        summary: event.summary,
+        amount: event.amount ?? null,
+      })),
+      limit,
+    ),
+  };
+}
+
+async function findCustomersTool(businessId: string, args: Record<string, unknown>) {
+  const search = typeof args.query === "string" ? args.query.trim() : "";
+  if (!search) return { error: "عبارت جست‌وجو خالی است." };
+
+  // Search the canonical phone as well as the typed one: an owner reading
+  // «۰۹۱۲…» off a receipt must find the customer stored as «+98912…». That is
+  // the entire reason `phone_e164` exists.
+  const digits = search.replace(/[^\d+]/g, "");
+  const e164 = digits.length >= 4 ? normalizePhone(digits).e164 : null;
+
+  const { rows } = await query<{
+    id: string;
+    name: string;
+    phone: string | null;
+    email: string | null;
+    tags: string[] | null;
+    is_active: boolean;
+    merged_into_id: string | null;
+    order_count: string;
+    total_spent: string;
+    last_order: string | null;
+  }>(
+    `SELECT c.id, c.name, c.phone, c.email, c.tags, c.is_active, c.merged_into_id,
+            count(o.id)::text AS order_count,
+            COALESCE(sum(o.total), 0)::text AS total_spent,
+            max(o.closed_at)::text AS last_order
+       FROM customers c
+       LEFT JOIN orders o
+         ON o.customer_id = c.id AND o.status = 'completed'
+       LEFT JOIN locations l ON l.id = o.location_id AND l.business_id = c.business_id
+      WHERE c.business_id = $1
+        AND (c.name ILIKE $2 OR c.phone ILIKE $2 OR c.email ILIKE $2
+             OR ($3::text IS NOT NULL AND c.phone_e164 = $3))
+      GROUP BY c.id
+      ORDER BY c.is_active DESC, sum(o.total) DESC NULLS LAST, c.name
+      LIMIT 25`,
+    [businessId, `%${search}%`, e164],
+  );
+
+  return {
+    query: search,
+    customers: cap(
+      rows.map((row) => ({
+        customerId: row.id,
+        name: row.name,
+        phone: row.phone,
+        email: row.email,
+        tags: row.tags ?? [],
+        orderCount: Number(row.order_count),
+        totalSpentRial: Number(row.total_spent),
+        lastOrderAt: row.last_order,
+        isActive: row.is_active,
+        // A merged record is kept, not deleted, so it can still be found —
+        // saying so stops the model reporting a duplicate as a live customer.
+        statusLabel: row.merged_into_id
+          ? "ادغام‌شده در پروندهٔ دیگر"
+          : row.is_active
+            ? "فعال"
+            : "بایگانی‌شده",
+      })),
+      25,
+    ),
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Wave 1 — accounting suite
 // ---------------------------------------------------------------------------
 
@@ -1121,6 +1310,19 @@ export async function runReadTool(
     case "get_at_risk_customers":
       return { ok: true, data: await atRiskCustomers(businessId, args) };
 
+    // Phase 36 — the CRM's four read tools.
+    case "list_customer_segments":
+      return { ok: true, data: await listCustomerSegmentsTool(businessId) };
+
+    case "preview_customer_segment":
+      return { ok: true, data: await previewCustomerSegmentTool(businessId, args) };
+
+    case "get_customer_timeline":
+      return { ok: true, data: await customerTimelineTool(businessId, args) };
+
+    case "find_customers":
+      return { ok: true, data: await findCustomersTool(businessId, args) };
+
     case "get_ar_aging": {
       const asOfDate = typeof args.asOfDate === "string" ? args.asOfDate : undefined;
       const report = await getArAging(businessId, asOfDate);
@@ -1258,6 +1460,10 @@ export const READ_TOOL_NAMES = new Set([
   "get_courier_performance",
   "get_customer_profile",
   "get_at_risk_customers",
+  "list_customer_segments",
+  "preview_customer_segment",
+  "get_customer_timeline",
+  "find_customers",
   "get_ar_aging",
   "get_ap_upcoming",
   "get_unreconciled_bank_lines",
