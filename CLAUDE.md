@@ -323,7 +323,11 @@ Two more, because both of these are load-bearing and easy to undo by accident:
   (`growth-overview.ts`), and marketing moves money only through the posting rules its
   services already own (`GROWTH_BRIDGE_CODES` is exactly ۲۳۰۰/۲۴۱۰/۲۴۲۰/۵۲۱۰). The old flat
   routes (`/dashboard/{loyalty,promotions,commission}`) redirect into the app — keep them
-  that way; bookmarks and saved bottom-nav slots depend on them.
+  that way; bookmarks and saved bottom-nav slots depend on them. **It owns its sidebar**
+  (`src/lib/app-shells.ts` + `app-shell-nav.ts`): inside `/dashboard/growth*` the dashboard's
+  nav slot is the app's own menu (`growth/growth-nav.ts`), with nothing from accounting listed
+  beside it. A new section means an entry in that list — never a new flat page, and never a
+  second menu drawn inside the page.
 
 ## The assistant's replies — read before adding an AI tool or touching the chat
 

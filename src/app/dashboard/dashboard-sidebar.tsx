@@ -43,6 +43,9 @@ import {
   type DashboardSidebarPreference,
 } from "@/lib/sidebar-state";
 import { isAssistantSurface } from "@/lib/assistant-route";
+import { appShellForPathname, isInsideAnyAppShell, type AppShellDef } from "@/lib/app-shells";
+import { APP_NAV_BUTTON_CLASS } from "./sidebar-nav-styles";
+import { appShellNavFor, type AppShellNavProps } from "./app-shell-nav";
 import type { ModuleKey } from "@/lib/industry-profile";
 import type { Permission } from "@/lib/permissions";
 import { toPersianDigits } from "@/lib/digits";
@@ -92,10 +95,6 @@ const SIDEBAR_DEFAULT_WIDTH = 256;
 const SIDEBAR_MIN_WIDTH = 240;
 const SIDEBAR_MAX_WIDTH = 460;
 const SIDEBAR_KEYBOARD_STEP = 16;
-
-/** One button skin for every rail entry — «گفت‌وگوی جدید», «پروژه‌ها» and the apps are peers. */
-const RAIL_BUTTON_CLASS =
-  "min-h-12 rounded-xl text-stone-700 hover:bg-amber-50 hover:text-amber-700 data-[active=true]:bg-amber-100 data-[active=true]:font-semibold data-[active=true]:text-amber-700";
 
 const ROLE_LABELS: Record<string, string> = {
   owner: "مالک",
@@ -193,7 +192,7 @@ function NavLinks({
                 asChild
                 isActive={pathname === "/dashboard"}
                 tooltip="میز کار"
-                className={RAIL_BUTTON_CLASS}
+                className={APP_NAV_BUTTON_CLASS}
               >
                 <Link href="/dashboard" onClick={onNavigate} aria-current={pathname === "/dashboard" ? "page" : undefined}>
                   <LayoutGridIcon aria-hidden="true" className="size-5 shrink-0" />
@@ -212,7 +211,7 @@ function NavLinks({
                   asChild
                   isActive={active}
                   tooltip={item.label}
-                  className="min-h-12 rounded-xl text-stone-700 hover:bg-amber-50 hover:text-amber-700 data-[active=true]:bg-amber-100 data-[active=true]:font-semibold data-[active=true]:text-amber-700"
+                  className={APP_NAV_BUTTON_CLASS}
                 >
                   <Link
                     href={item.href}
@@ -278,7 +277,7 @@ function WorkspaceRail({ navItems, pathname }: { navItems: NavItem[]; pathname: 
               asChild
               isActive={pathname === "/dashboard"}
               tooltip="گفت‌وگوی جدید"
-              className={RAIL_BUTTON_CLASS}
+              className={APP_NAV_BUTTON_CLASS}
             >
               <Link href="/dashboard">
                 <MessageSquarePlusIcon aria-hidden="true" className="size-5 shrink-0" />
@@ -291,7 +290,7 @@ function WorkspaceRail({ navItems, pathname }: { navItems: NavItem[]; pathname: 
               asChild
               isActive={pathname.startsWith("/dashboard/projects")}
               tooltip="پروژه‌ها"
-              className={RAIL_BUTTON_CLASS}
+              className={APP_NAV_BUTTON_CLASS}
             >
               <Link href="/dashboard/projects">
                 <FolderIcon aria-hidden="true" className="size-5 shrink-0" />
@@ -307,7 +306,7 @@ function WorkspaceRail({ navItems, pathname }: { navItems: NavItem[]; pathname: 
             <SidebarMenu className="space-y-1.5">
               {accountingHref ? (
                 <SidebarMenuItem>
-                  <SidebarMenuButton asChild isActive={accountingActive} tooltip="حسابداری" className={RAIL_BUTTON_CLASS}>
+                  <SidebarMenuButton asChild isActive={accountingActive} tooltip="حسابداری" className={APP_NAV_BUTTON_CLASS}>
                     <Link href={accountingHref}>
                       <CalculatorIcon aria-hidden="true" className="size-5 shrink-0" />
                       <span className="group-data-[state=collapsed]/sidebar:hidden">حسابداری</span>
@@ -317,7 +316,7 @@ function WorkspaceRail({ navItems, pathname }: { navItems: NavItem[]; pathname: 
               ) : null}
               {growthHref ? (
                 <SidebarMenuItem>
-                  <SidebarMenuButton asChild isActive={growthActive} tooltip="رشد و بازاریابی" className={RAIL_BUTTON_CLASS}>
+                  <SidebarMenuButton asChild isActive={growthActive} tooltip="رشد و بازاریابی" className={APP_NAV_BUTTON_CLASS}>
                     <Link href={growthHref}>
                       <TrendingUpIcon aria-hidden="true" className="size-5 shrink-0" />
                       <span className="group-data-[state=collapsed]/sidebar:hidden">رشد و بازاریابی</span>
@@ -542,6 +541,55 @@ function SidebarNavigation({ navItems, pathname, showWorkspaceHome }: Pick<Sideb
   );
 }
 
+/**
+ * The app that owns the sidebar slot on this route — its registry def and the
+ * component that draws its menu, resolved together so the pair can never
+ * disagree (a def whose app forgot to register a menu, or a menu with no app).
+ * Null means the business's flat nav keeps the slot, which is what every page
+ * outside a shell shows.
+ */
+function appShellForSlot(
+  pathname: string,
+  showWorkspaceRail: boolean,
+): { shell: AppShellDef; nav: (props: AppShellNavProps) => React.ReactElement } | null {
+  if (showWorkspaceRail) return null;
+  const shell = appShellForPathname(pathname);
+  const nav = shell ? appShellNavFor(shell.app) : undefined;
+  return shell && nav ? { shell, nav } : null;
+}
+
+/**
+ * An app's own main sidebar, in the slot the business nav would otherwise take.
+ *
+ * Same deal as `SidebarNavigation`: `useSidebar()` is below the provider, so the
+ * drawer-closing callback is wired here rather than in the app's component — an
+ * app that owns a menu should not have to know the shell's plumbing.
+ */
+function AppShellNavigation({
+  nav: Nav,
+  shell,
+  role,
+  pathname,
+  workspaceShell,
+}: {
+  nav: (props: AppShellNavProps) => React.ReactElement;
+  shell: AppShellDef;
+  role: string;
+  pathname: string;
+  workspaceShell: boolean;
+}) {
+  const { setOpenMobile } = useSidebar();
+  return (
+    <Nav
+      shell={shell}
+      role={role}
+      pathname={pathname}
+      workspaceShell={workspaceShell}
+      onNavigate={() => setOpenMobile(false)}
+    />
+  );
+}
+
 function MobileDashboardHeader({ navItems, pathname }: Pick<SidebarProps, "navItems"> & { pathname: string }) {
   const [online, setOnline] = useState(true);
   const active = navItems.find((item) => item.href && isActive(pathname, item.href));
@@ -736,20 +784,27 @@ export function DashboardSidebar({
   const assistantPage = pathname === "/dashboard/ai" || pathname.startsWith("/dashboard/ai/");
   const availableHrefs = navItems.flatMap((item) => (item.href ? [item.href] : []));
   // The rail is the workspace *home* — the chat plus the projects surface.
-  // Inside an app the shell is the classic sidebar, so «حسابداری» and «رشد و
-  // بازاریابی» open the main product with the nav the business already knows.
+  // Everywhere else the sidebar is an app's nav: either the app that owns the
+  // route has a shell of its own (رشد و بازاریابی), or it is the business's flat
+  // nav, which is what the accounting suite is.
   const showWorkspaceRail =
     workspaceShell && (pathname === "/dashboard" || pathname.startsWith("/dashboard/projects"));
   const showAiSettings = (role === "owner" || role === "manager") && navItems.some((item) => item.module === "ai");
-  // Inside an app the classic sidebar is that app's own navigation. «رشد و
-  // بازاریابی» and «دستیار هوشمند» are not entries there: they are separate
-  // products launched from the workspace rail (the growth app has its own side
-  // menu inside its shell, and the assistant is the chat home itself). Keeping
-  // them in the accounting suite's sidebar made the growth app look like a
-  // corner of accounting — the complaint this filter removes.
+  // The app whose routes own the sidebar slot, if this route is one of them.
+  // `app-shells.ts` is the registry, so adding a separate app never means
+  // editing this file again.
+  const appShell = appShellForSlot(pathname, showWorkspaceRail);
+  // «رشد و بازاریابی» and «دستیار هوشمند» are not entries in the business's flat
+  // nav when the workspace shell is on: they are separate products launched from
+  // the rail, and the growth app now carries its own main menu. Listing them
+  // alongside حسابداری and گزارش‌ها is what made a separate app read as a page of
+  // accounting. In the classic shell, with no rail to launch from, the growth
+  // entry stays — it is the only door into the app.
   const appNavItems =
     workspaceShell && !showWorkspaceRail
-      ? navItems.filter((item) => item.module !== "ai" && item.module !== "loyalty")
+      ? navItems.filter(
+          (item) => item.module !== "ai" && !(item.href && isInsideAnyAppShell(item.href)),
+        )
       : navItems;
 
   useEffect(() => {
@@ -834,6 +889,14 @@ export function DashboardSidebar({
         <SidebarBrand title={brandTitle} subtitle={brandSubtitle} />
         {showWorkspaceRail ? (
           <WorkspaceRail navItems={navItems} pathname={pathname} />
+        ) : appShell ? (
+          <AppShellNavigation
+            nav={appShell.nav}
+            shell={appShell.shell}
+            role={role}
+            pathname={pathname}
+            workspaceShell={workspaceShell}
+          />
         ) : (
           <SidebarNavigation navItems={appNavItems} pathname={pathname} showWorkspaceHome={workspaceShell} />
         )}

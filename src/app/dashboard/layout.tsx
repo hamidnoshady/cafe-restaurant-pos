@@ -54,9 +54,10 @@ function navItemsFor(industry: Industry): NavItem[] {
     // Phase 36b — loyalty, campaigns/gift cards and commission are one app
     // now («رشد و بازاریابی», /dashboard/growth), with its own dashboard the
     // way accounting has one. The entry is anchored on the `loyalty` module —
-    // core for every trade — and the app's rail restricts its sections by
-    // role: a cashier lands on loyalty, the surface the old flat page gave
-    // them, and never sees commission or the KPIs. The old routes redirect.
+    // core for every trade — and the app's own main sidebar restricts its
+    // sections by role (src/lib/app-shells.ts hands that sidebar over): a cashier
+    // lands on loyalty, the surface the old flat page gave them, and never sees
+    // commission or the KPIs. The old routes redirect.
     {
       label: "رشد و بازاریابی",
       module: "loyalty",

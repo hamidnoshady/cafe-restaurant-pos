@@ -2,15 +2,15 @@
  * The Growth & Marketing app's section routing (Phase 36b, revised).
  *
  * The app used to be one route with an in-page section rail. It is now a real
- * app with its own side menu and one page per section — the same shape the
- * accounting suite has — so each surface (overview, campaigns, gift cards,
- * loyalty, commission) is a route of its own under `/dashboard/growth`.
+ * app with one page per section, and — since the sidebar was handed to it —
+ * its own **main** menu in the dashboard's app slot (src/lib/app-shells.ts),
+ * rather than a second menu drawn inside the page next to the accounting nav.
  *
- * These keys are the single source of truth for both the client side menu and
- * the server-side role gate: a cashier may open only `loyalty`, the one floor
- * surface the old flat pages gave them; the management dashboard and the
- * compensation data stay owner/manager, exactly the way the ledger's payroll
- * tab draws its line.
+ * These keys are the single source of truth for that menu (`growth-nav.ts`
+ * labels them) and for the server-side role gate: a cashier may open only
+ * `loyalty`, the one floor surface the old flat pages gave them; the management
+ * dashboard and the compensation data stay owner/manager, exactly the way the
+ * ledger's payroll tab draws its line.
  */
 
 export const GROWTH_SECTION_KEYS = [
@@ -37,4 +37,18 @@ export function growthSectionHref(key: GrowthSectionKey): string {
 export function canViewGrowthSection(role: string, key: GrowthSectionKey): boolean {
   if (role === "cashier") return key === "loyalty";
   return ["owner", "manager"].includes(role);
+}
+
+/**
+ * Whether a dashboard path is a given section — the app's own sidebar's idea of
+ * "you are here". The overview is the app root, so it is *only* active on
+ * `/dashboard/growth` itself; a section lights up on its page and anything
+ * nested under it. Without the exact match on the root, every section page would
+ * highlight «میز کار رشد» as well and the menu would have two answers.
+ */
+export function isGrowthSectionPathname(pathname: string, key: GrowthSectionKey): boolean {
+  const href = growthSectionHref(key);
+  return key === "overview"
+    ? pathname === href
+    : pathname === href || pathname.startsWith(`${href}/`);
 }
