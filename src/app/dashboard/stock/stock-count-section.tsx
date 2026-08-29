@@ -4,6 +4,7 @@ import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Decimal from "decimal.js";
 import { Button } from "@/components/ui/button";
+import { CameraScanTrigger } from "@/components/scanner/camera-barcode-scanner";
 import { formatPersianNumber, formatQuantity, toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import { useMoney } from "@/components/money/money-context";
@@ -198,7 +199,7 @@ export function StockCountSection({
         title="انبارگردانی"
         description="بارکد هر کالا را اسکن کنید؛ مقدار شمارش‌شده جمع می‌شود. پس از ثبت، موجودی سیستم برابر مقدار شمارش‌شده می‌شود و اختلاف به‌عنوان کسری یا اضافهٔ انبارگردانی در دفتر ثبت می‌گردد."
       >
-        <div className="grid gap-3 sm:grid-cols-[1fr_7rem]">
+        <div className="grid gap-3 sm:grid-cols-[1fr_7rem_auto]">
           <Field label="بارکد">
             <input
               ref={inputRef}
@@ -225,6 +226,14 @@ export function StockCountSection({
               onChange={(e) => setQtyPerScan(e.target.value)}
             />
           </Field>
+          <div className="mb-4 flex items-end">
+            <CameraScanTrigger
+              label="دوربین"
+              title="اسکن بارکد انبارگردانی"
+              description="بارکد کالا را با دوربین موبایل بخوانید تا به شمارش افزوده شود."
+              onScan={(scanned) => void resolveScan(scanned)}
+            />
+          </div>
         </div>
         {scanFeedback ? (
           <p

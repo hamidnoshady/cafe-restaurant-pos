@@ -29,6 +29,7 @@ import { hasCapability, labelFor } from "@/lib/industry-profile";
 import type { Industry } from "@/lib/industries";
 import { Button } from "@/components/ui/button";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { CameraScanTrigger } from "@/components/scanner/camera-barcode-scanner";
 import { ledgerSettlementFor } from "@/lib/payment-methods";
 import { api, ErrorBox, Field, inputClass } from "../ui";
 import { usePaymentMethods } from "../payment-ways";
@@ -551,19 +552,29 @@ function BarcodeScanField({
   }
 
   return (
-    <Panel title="بارکدخوان" hint="بارکد را اسکن کنید؛ کالا بدون لمس کیبورد به فاکتور اضافه می‌شود.">
-      <input
-        className={inputClass}
-        dir="ltr"
-        value={code}
-        disabled={scanBusy}
-        autoFocus
-        placeholder="اسکن بارکد…"
-        onChange={(e) => setCode(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") void resolve(code);
-        }}
-      />
+    <Panel title="بارکدخوان" hint="بارکد را با بارکدخوان دستی یا دوربین موبایل اسکن کنید؛ کالا بدون لمس کیبورد به فاکتور اضافه می‌شود.">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
+        <input
+          className={inputClass}
+          dir="ltr"
+          value={code}
+          disabled={scanBusy}
+          autoFocus
+          placeholder="اسکن بارکد…"
+          onChange={(e) => setCode(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") void resolve(code);
+          }}
+        />
+        <CameraScanTrigger
+          label="دوربین"
+          disabled={scanBusy}
+          className="min-h-11 shrink-0 gap-1.5 sm:min-w-28"
+          title="اسکن بارکد فروش"
+          description="بارکد یا QR کالا را با دوربین بخوانید تا به فاکتور اضافه شود."
+          onScan={(scanned) => void resolve(scanned)}
+        />
+      </div>
       {scanBusy ? <p className="mt-2 text-xs text-muted-foreground">در حال جستجو…</p> : null}
       {scanError ? <p className="mt-2 text-xs leading-5 text-rose-700">{scanError}</p> : null}
     </Panel>
