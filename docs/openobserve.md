@@ -112,7 +112,46 @@ ZO_DATA_DIR=/var/lib/openobserve ZO_COMPACT_DATA_RETENTION_DAYS=60 \
 
 and set the four `OPENOBSERVE_*` vars on the app service unit. Restart both.
 
-### D. Local development — no Docker at all
+### D. RunFlare (managed Docker PaaS — no compose file)
+
+Platforms like [RunFlare](https://runflare.com) deploy **one service at a time**
+(a Docker image, or a folder pushed with `runflare deploy` / GitHub-GitLab CI)
+instead of a full compose file, so the overlay from **A** cannot be applied
+directly. Nothing changes in the app image — you replicate the same wiring
+with platform features: a second service, a disk, env vars, and an optional
+subdomain.
+
+1. **Create an OpenObserve service in the same project as the app.** Service
+   type Docker, image `openobserve/openobserve:latest` (Docker Hub is covered
+   by RunFlare's `mirror-docker.runflare.com`, so the pull is fast; the
+   upstream ECR registry is not mirrored). If the dashboard has no image
+   field, deploy a folder containing a one-line Dockerfile —
+   `FROM openobserve/openobserve:latest` — via CLI/CI. Set the app port to
+   **5080** (OpenObserve's only port) and ≥ 1 GB RAM.
+2. **Attach a persistent disk** («ساخت دیسک جدید» / add a disk to the project,
+   mounted on the service) at `/data`, and set `ZO_DATA_DIR=/data` — otherwise
+   the log store is wiped on every redeploy. RunFlare's disk backups then
+   cover the log archive too.
+3. **Env vars on the collector service** (root pair is read on first boot
+   only; change the password in the UI afterwards):
+   `ZO_ROOT_USER_EMAIL`, `ZO_ROOT_USER_PASSWORD`, `ZO_DATA_DIR=/data`,
+   `ZO_COMPACT_DATA_RETENTION_DAYS=30`.
+4. **Env vars on the app service**, then redeploy it (the shipper reads env
+   at boot): `OPENOBSERVE_URL=http://<openobserve-service-name>:5080` if the
+   project's internal network resolves service names, else attach a subdomain
+   to the collector («اتصال دامنه به سرویس», e.g. `https://obs.yourdomain.com`)
+   and use that — the UI and ingestion both sit behind OpenObserve's own
+   login. Either way add `OPENOBSERVE_USER` / `OPENOBSERVE_PASSWORD`, and
+   `OPENOBSERVE_SERVICE=pos-central` per project if you run more than one.
+5. **Verify:** `GET /api/platform/observability?mode=config` → `configured:
+   true`, `shipper.sent` climbing; or the console page «پایش» shows rows.
+   If the internal hostname does not resolve, fall back to the subdomain.
+
+The compose overlays and `docker-compose.observability.yml` remain the
+reference for what these services do; RunFlare just assembles them from its
+own building blocks.
+
+### E. Local development — no Docker at all
 
 ```bash
 node scripts/dev-openobserve.mjs     # contract-faithful in-memory mock on :5080
