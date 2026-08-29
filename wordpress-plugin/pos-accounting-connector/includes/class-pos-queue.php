@@ -26,6 +26,17 @@ class POS_Connector_Queue {
 	/** Give up after this many tries and leave the row for an operator to see. */
 	const MAX_ATTEMPTS = 8;
 
+	/**
+	 * Exponential backoff between attempts: 1, 2, 4, 8 … minutes, capped.
+	 *
+	 * Without it a row that cannot be delivered is retried on every single
+	 * cron run — eight attempts inside forty minutes, each one spending a
+	 * slot in the batch on a row that has already failed seven times, while
+	 * the events behind it wait their turn.
+	 */
+	const BACKOFF_BASE_SECONDS = 60;
+	const BACKOFF_MAX_SECONDS  = 3600;
+
 	public static function table_name() {
 		global $wpdb;
 		return $wpdb->prefix . self::TABLE;
@@ -49,9 +60,15 @@ class POS_Connector_Queue {
 				last_error TEXT NULL,
 				created_at DATETIME NOT NULL,
 				updated_at DATETIME NOT NULL,
+				-- Earliest moment this row should be tried again. Set on
+				-- failure, reset on success; `due()` refuses rows whose time
+				-- has not come, which is what keeps one broken event from
+				-- consuming every batch until it gives up.
+				available_at DATETIME NOT NULL,
 				PRIMARY KEY  (id),
 				UNIQUE KEY delivery_id (delivery_id),
-				KEY status_created (status, created_at)
+				KEY status_created (status, created_at),
+				KEY due_lookup (status, available_at)
 			) {$charset};"
 		);
 	}
@@ -98,26 +115,47 @@ class POS_Connector_Queue {
 				'remote_id'   => (string) $remote_id,
 				'delivery_id' => wp_generate_uuid4(),
 				'payload'     => wp_json_encode( $payload ),
-				'status'      => 'pending',
-				'attempts'    => 0,
-				'created_at'  => $now,
-				'updated_at'  => $now,
+				'status'       => 'pending',
+				'attempts'     => 0,
+				'created_at'   => $now,
+				'updated_at'   => $now,
+				'available_at' => $now,
 			),
-			array( '%s', '%s', '%s', '%s', '%s', '%d', '%s', '%s' )
+			array( '%s', '%s', '%s', '%s', '%s', '%d', '%s', '%s', '%s' )
 		);
 		return (int) $wpdb->insert_id;
 	}
 
-	/** The next batch to send, oldest first so events reach the app in the order they happened. */
+	/**
+	 * The next batch to send: pending rows whose backoff has expired, oldest
+	 * first, so events reach the app in the order they happened.
+	 */
 	public static function due( $limit = 50 ) {
 		global $wpdb;
 		$table = self::table_name();
+		$now   = current_time( 'mysql', true );
 		return $wpdb->get_results(
 			$wpdb->prepare(
-				"SELECT * FROM {$table} WHERE status = 'pending' ORDER BY id ASC LIMIT %d",
+				"SELECT * FROM {$table}
+					WHERE status = 'pending' AND available_at <= %s
+					ORDER BY id ASC LIMIT %d",
+				$now,
 				$limit
 			),
 			ARRAY_A
+		);
+	}
+
+	/** How many rows are waiting their turn, for the admin screen's summary. */
+	public static function deferred_count() {
+		global $wpdb;
+		$table = self::table_name();
+		$now   = current_time( 'mysql', true );
+		return (int) $wpdb->get_var(
+			$wpdb->prepare(
+				"SELECT COUNT(*) FROM {$table} WHERE status = 'pending' AND available_at > %s",
+				$now
+			)
 		);
 	}
 
@@ -169,7 +207,8 @@ class POS_Connector_Queue {
 		$table = self::table_name();
 		return (int) $wpdb->query(
 			$wpdb->prepare(
-				"UPDATE {$table} SET status = 'pending', attempts = 0, updated_at = %s WHERE status = 'failed'",
+				"UPDATE {$table} SET status = 'pending', attempts = 0, available_at = %s, updated_at = %s WHERE status = 'failed'",
+				current_time( 'mysql', true ),
 				current_time( 'mysql', true )
 			)
 		);

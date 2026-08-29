@@ -473,6 +473,7 @@ export async function resolveOrderCustomerId(
   }
 
   const e164 = phoneE164(order.billing?.phone ?? null);
+  const email = order.billing?.email?.trim().toLowerCase() || null;
   if (e164) {
     const { rows } = await query<{ id: string }>(
       `SELECT id FROM customers WHERE business_id = $1 AND phone_e164 = $2 AND merged_into_id IS NULL
@@ -483,11 +484,21 @@ export async function resolveOrderCustomerId(
       if (remoteCustomerId > 0) {
         await upsertMapping(businessId, connection.id, "customer", String(remoteCustomerId), rows[0].id);
       }
+      // Fill in what this order knows and the record did not. COALESCE, not
+      // an overwrite: a checkout that typed a work address must not replace
+      // the one the shop already had.
+      await query(
+        `UPDATE customers
+            SET email = COALESCE($3, email),
+                address = COALESCE($4, address),
+                updated_at = now()
+          WHERE id = $1 AND business_id = $2`,
+        [rows[0].id, businessId, email ?? null, order.billing?.address_1?.trim() || null],
+      );
       return rows[0].id;
     }
   }
 
-  const email = order.billing?.email?.trim().toLowerCase();
   if (email) {
     const { rows } = await query<{ id: string }>(
       `SELECT id FROM customers WHERE business_id = $1 AND lower(email) = $2 AND merged_into_id IS NULL

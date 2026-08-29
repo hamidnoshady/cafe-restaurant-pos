@@ -26,6 +26,12 @@ class POS_Connector_Settings {
 		add_action( 'admin_post_pos_connector_test', array( __CLASS__, 'handle_test' ) );
 		add_action( 'admin_post_pos_connector_sync_now', array( __CLASS__, 'handle_sync_now' ) );
 		add_action( 'admin_post_pos_connector_retry', array( __CLASS__, 'handle_retry' ) );
+		// 1.1.0 — the two scheduled sweeps, runnable by hand. A cron that has
+		// never fired is indistinguishable from one that is misconfigured
+		// until somebody presses the button and watches what happens.
+		add_action( 'admin_post_pos_connector_resync_products', array( __CLASS__, 'handle_resync_products' ) );
+		add_action( 'admin_post_pos_connector_resync_orders', array( __CLASS__, 'handle_resync_orders' ) );
+		add_action( 'admin_post_pos_connector_schedule', array( __CLASS__, 'handle_schedule' ) );
 	}
 
 	public static function register_page() {
@@ -122,6 +128,68 @@ class POS_Connector_Settings {
 		self::redirect_back( 'retried' );
 	}
 
+	public static function handle_resync_products() {
+		self::guard( 'pos_connector_resync_products' );
+		self::queue_products_export();
+		self::redirect_back( 'products_queued' );
+	}
+
+	public static function handle_resync_orders() {
+		self::guard( 'pos_connector_resync_orders' );
+		$settings = pos_connector_settings();
+		POS_Connector_Sync::export_orders( (int) $settings['resync_orders_days'] );
+		POS_Connector_Log::info( 'export', 'بازخوانی دستی سفارش‌ها در صف قرار گرفت.' );
+		self::redirect_back( 'orders_queued' );
+	}
+
+	/**
+	 * Save the sweep cadences and re-arm WP-Cron to match.
+	 *
+	 * The re-arm is the part that matters: `wp_schedule_event()` ignores a
+	 * changed interval for a hook that is already scheduled, so without the
+	 * clear-then-schedule in `pos_connector_schedule_event()` the screen would
+	 * show «هر ساعت» while WP-Cron went on firing daily.
+	 */
+	public static function handle_schedule() {
+		self::guard( 'pos_connector_schedule' );
+
+		$products = isset( $_POST['resync_products_schedule'] )
+			? sanitize_key( wp_unslash( $_POST['resync_products_schedule'] ) )
+			: '';
+		$orders = isset( $_POST['resync_orders_schedule'] )
+			? sanitize_key( wp_unslash( $_POST['resync_orders_schedule'] ) )
+			: '';
+		$days = isset( $_POST['resync_orders_days'] ) ? (int) $_POST['resync_orders_days'] : 7;
+		$days = max( 1, min( 365, $days ) );
+
+		if ( ! array_key_exists( $products, pos_connector_resync_schedules() ) ) {
+			$products = '';
+		}
+		if ( ! array_key_exists( $orders, pos_connector_order_resync_schedules() ) ) {
+			$orders = '';
+		}
+
+		pos_connector_update_settings(
+			array(
+				'resync_products_schedule' => $products,
+				'resync_orders_schedule'   => $orders,
+				'resync_orders_days'       => $days,
+			)
+		);
+		pos_connector_schedule_event( POS_CONNECTOR_CRON_RESYNC_PRODUCTS, $products );
+		pos_connector_schedule_event( POS_CONNECTOR_CRON_RESYNC_ORDERS, $orders );
+
+		POS_Connector_Log::info( 'schedule', 'زمان‌بندی به‌روز شد.' );
+		self::redirect_back( 'schedule_saved' );
+	}
+
+	/** Queue a catalogue export without waiting for the sweep's turn. */
+	private static function queue_products_export() {
+		POS_Connector_Sync::export_products();
+		pos_connector_update_settings( array( 'last_products_sweep_at' => current_time( 'mysql', true ) ) );
+		POS_Connector_Log::info( 'export', 'بازخوانی دستی محصولات در صف قرار گرفت.' );
+	}
+
 	private static function notice_text( $key ) {
 		$map = array(
 			'saved'              => array( 'success', 'تنظیمات ذخیره شد.' ),
@@ -130,6 +198,9 @@ class POS_Connector_Settings {
 			'test_not_configured' => array( 'error', 'ابتدا آدرس سامانه و توکن را وارد و ذخیره کنید.' ),
 			'synced'             => array( 'success', 'همگام‌سازی اجرا شد.' ),
 			'retried'            => array( 'success', 'رویدادهای ناموفق دوباره در صف قرار گرفتند.' ),
+			'products_queued'    => array( 'success', 'کل کاتالوگ (با تنوع‌ها) در صف ارسال قرار گرفت.' ),
+			'orders_queued'      => array( 'success', 'سفارش‌های بازهٔ انتخابی در صف ارسال قرار گرفتند.' ),
+			'schedule_saved'     => array( 'success', 'زمان‌بندی ذخیره شد.' ),
 		);
 		return isset( $map[ $key ] ) ? $map[ $key ] : null;
 	}
@@ -138,7 +209,6 @@ class POS_Connector_Settings {
 		$settings = pos_connector_settings();
 		$counts   = POS_Connector_Queue::counts();
 		$notice   = isset( $_GET['pos_notice'] ) ? self::notice_text( sanitize_key( wp_unslash( $_GET['pos_notice'] ) ) ) : null;
-		$next_run = wp_next_scheduled( POS_CONNECTOR_CRON_HOOK );
 		?>
 		<div class="wrap">
 			<h1><?php esc_html_e( 'اتصال به سامانهٔ حسابداری', 'pos-accounting-connector' ); ?></h1>
@@ -213,32 +283,154 @@ class POS_Connector_Settings {
 				<?php endforeach; ?>
 			</p>
 
+			<h2><?php esc_html_e( 'زمان‌بندی همگام‌سازی', 'pos-accounting-connector' ); ?></h2>
+
+			<p class="description">
+
+				<?php esc_html_e( 'سه کارِ متفاوت، با سه هزینه و سه تحمل متفاوت برای تأخیر — برای همین جداگانه زمان‌بندی می‌شوند.', 'pos-accounting-connector' ); ?>
+
+			</p>
+
+			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+
+				<?php wp_nonce_field( 'pos_connector_schedule' ); ?>
+
+				<input type="hidden" name="action" value="pos_connector_schedule" />
+
+				<table class="form-table" role="presentation">
+
+					<tr>
+
+						<th scope="row"><label for="pos-orders-schedule"><?php esc_html_e( 'بازخوانی سفارش‌ها', 'pos-accounting-connector' ); ?></label></th>
+
+						<td>
+
+							<select name="resync_orders_schedule" id="pos-orders-schedule">
+
+								<?php foreach ( pos_connector_order_resync_schedules() as $key => $label ) : ?>
+
+									<option value="<?php echo esc_attr( $key ); ?>" <?php selected( $settings['resync_orders_schedule'], $key ); ?>>
+
+										<?php echo esc_html( $label ); ?>
+
+									</option>
+
+								<?php endforeach; ?>
+
+							</select>
+
+							<p class="description">
+
+								<?php esc_html_e( 'سفارش‌هایی که در این بازه تغییر کرده‌اند دوباره فرستاده می‌شوند؛ پشتیبانِ قلاب‌هایی است که اجرا نشده باشند.', 'pos-accounting-connector' ); ?>
+
+							</p>
+
+						</td>
+
+					</tr>
+
+					<tr>
+
+						<th scope="row"><label for="pos-orders-days"><?php esc_html_e( 'بازهٔ بازخوانی سفارش‌ها', 'pos-accounting-connector' ); ?></label></th>
+
+						<td>
+
+							<input name="resync_orders_days" id="pos-orders-days" type="number" min="1" max="365" dir="ltr"
+
+								value="<?php echo esc_attr( (int) $settings['resync_orders_days'] ); ?>" />
+
+							<?php esc_html_e( 'روز', 'pos-accounting-connector' ); ?>
+
+						</td>
+
+					</tr>
+
+					<tr>
+
+						<th scope="row"><label for="pos-products-schedule"><?php esc_html_e( 'بازخوانی کاتالوگ', 'pos-accounting-connector' ); ?></label></th>
+
+						<td>
+
+							<select name="resync_products_schedule" id="pos-products-schedule">
+
+								<?php foreach ( pos_connector_resync_schedules() as $key => $label ) : ?>
+
+									<option value="<?php echo esc_attr( $key ); ?>" <?php selected( $settings['resync_products_schedule'], $key ); ?>>
+
+										<?php echo esc_html( $label ); ?>
+
+									</option>
+
+								<?php endforeach; ?>
+
+							</select>
+
+							<p class="description">
+
+								<?php esc_html_e( 'کل کاتالوگ، با همهٔ تنوع‌ها، دوباره فرستاده می‌شود. در فروشگاه‌های بزرگ آن را کمتر (یا خاموش) نگه دارید؛ محصول هنگام هر ذخیره هم جداگانه ارسال می‌شود.', 'pos-accounting-connector' ); ?>
+
+							</p>
+
+						</td>
+
+					</tr>
+
+				</table>
+
+				<?php submit_button( __( 'ذخیرهٔ زمان‌بندی', 'pos-accounting-connector' ) ); ?>
+
+			</form>
+
+
 			<table class="widefat striped" style="max-width:720px">
 				<tbody>
 					<tr>
 						<th><?php esc_html_e( 'آخرین ارتباط موفق', 'pos-accounting-connector' ); ?></th>
 						<td><?php echo esc_html( $settings['last_ok_at'] ? $settings['last_ok_at'] : '—' ); ?></td>
 					</tr>
-					<tr>
-						<th><?php esc_html_e( 'اجرای بعدی خودکار', 'pos-accounting-connector' ); ?></th>
-						<td>
-							<?php
-							echo $next_run
-								? esc_html( gmdate( 'Y-m-d H:i:s', $next_run ) . ' UTC' )
-								: esc_html__( 'زمان‌بندی نشده — افزونه را غیرفعال و دوباره فعال کنید.', 'pos-accounting-connector' );
+						<?php
+						$schedules = array(
+							POS_CONNECTOR_CRON_HOOK            => __( 'همگام‌سازی سریع (ارسال و دریافت)', 'pos-accounting-connector' ),
+							POS_CONNECTOR_CRON_RESYNC_ORDERS   => __( 'بازخوانی سفارش‌ها', 'pos-accounting-connector' ),
+							POS_CONNECTOR_CRON_RESYNC_PRODUCTS => __( 'بازخوانی کاتالوگ', 'pos-accounting-connector' ),
+						);
+						foreach ( $schedules as $hook => $label ) :
+							$at = wp_next_scheduled( $hook );
 							?>
-						</td>
-					</tr>
+							<tr>
+								<th>
+									<?php echo esc_html( $label ); ?><br />
+									<span class="description"><?php esc_html_e( 'اجرای بعدی', 'pos-accounting-connector' ); ?></span>
+								</th>
+								<td>
+									<?php if ( $at ) : ?>
+										<?php echo esc_html( gmdate( 'Y-m-d H:i:s', $at ) . ' UTC' ); ?>
+										<code dir="ltr"><?php echo esc_html( $hook ); ?></code>
+									<?php else : ?>
+										<?php esc_html_e( 'زمان‌بندی نشده (خاموش)', 'pos-accounting-connector' ); ?>
+									<?php endif; ?>
+								</td>
+							</tr>
+						<?php endforeach; ?>
+						<tr>
+							<th><?php esc_html_e( 'آخرین بازخوانی کاتالوگ', 'pos-accounting-connector' ); ?></th>
+							<td><?php echo esc_html( $settings['last_products_sweep_at'] ? $settings['last_products_sweep_at'] : '—' ); ?></td>
+						</tr>
+						<tr>
+							<th><?php esc_html_e( 'آخرین بازخوانی سفارش‌ها', 'pos-accounting-connector' ); ?></th>
+							<td><?php echo esc_html( $settings['last_orders_sweep_at'] ? $settings['last_orders_sweep_at'] : '—' ); ?></td>
+						</tr>
 					<tr>
 						<th><?php esc_html_e( 'صف ارسال', 'pos-accounting-connector' ); ?></th>
 						<td>
 							<?php
 							printf(
-								/* translators: 1: pending count, 2: sent count, 3: failed count */
-								esc_html__( 'در انتظار: %1$d — ارسال‌شده: %2$d — ناموفق: %3$d', 'pos-accounting-connector' ),
+								/* translators: 1: pending count, 2: sent count, 3: failed count, 4: deferred count */
+								esc_html__( 'در انتظار: %1$d — ارسال‌شده: %2$d — ناموفق: %3$d — در انتظارِ بازگشت: %4$d', 'pos-accounting-connector' ),
 								(int) $counts['pending'],
 								(int) $counts['sent'],
-								(int) $counts['failed']
+								(int) $counts['failed'],
+								(int) POS_Connector_Queue::deferred_count()
 							);
 							?>
 						</td>
@@ -264,6 +456,59 @@ class POS_Connector_Settings {
 					</tr>
 				</tbody>
 			</table>
+
+			<h2><?php esc_html_e( 'کرون واقعی', 'pos-accounting-connector' ); ?></h2>
+
+			<table class="widefat striped" style="max-width:720px">
+
+				<tbody>
+
+					<tr>
+
+						<th style="width:230px"><?php esc_html_e( 'اجرای هر پنج دقیقه', 'pos-accounting-connector' ); ?></th>
+
+						<td><code dir="ltr">*/5 * * * * wp --path=<?php echo esc_html( ABSPATH ); ?> pos-connector sync &gt; /dev/null 2&gt;&amp;1</code></td>
+
+					</tr>
+
+					<tr>
+
+						<th><?php esc_html_e( 'یا: تخلیهٔ صف وردپرس', 'pos-accounting-connector' ); ?></th>
+
+						<td><code dir="ltr">*/5 * * * * wp --path=<?php echo esc_html( ABSPATH ); ?> cron event run --due-now &gt; /dev/null 2&gt;&amp;1</code></td>
+
+					</tr>
+
+					<tr>
+
+						<th><?php esc_html_e( 'وضعیت فعلی WP-Cron', 'pos-accounting-connector' ); ?></th>
+
+						<td>
+
+							<?php if ( defined( 'DISABLE_WP_CRON' ) && DISABLE_WP_CRON ) : ?>
+
+								<span style="color:#1e8e3e"><?php esc_html_e( 'غیرفعال است — یک کرون واقعی در حال اجراست.', 'pos-accounting-connector' ); ?></span>
+
+							<?php else : ?>
+
+								<span style="color:#9a6700"><?php esc_html_e( 'فعال است: فقط هنگام بازدید از سایت اجرا می‌شود.', 'pos-accounting-connector' ); ?></span>
+
+							<?php endif; ?>
+
+						</td>
+
+					</tr>
+
+				</tbody>
+
+			</table>
+
+			<p class="description">
+
+				<?php esc_html_e( 'دستور wp pos-connector status وضعیت اتصال، صف و زمان اجرای هر سه رویداد را چاپ می‌کند.', 'pos-accounting-connector' ); ?>
+
+			</p>
+
 
 			<h2><?php esc_html_e( 'گزارش رویدادها', 'pos-accounting-connector' ); ?></h2>
 			<table class="widefat striped">
