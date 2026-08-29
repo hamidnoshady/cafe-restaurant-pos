@@ -62,6 +62,7 @@ const NAV: NavItem[] = [
     ],
   },
   { label: "به‌روزرسانی‌ها", href: "/platform/updates" },
+  { label: "پایگاه دانش", href: "/platform/knowledge" },
   { label: "مدیران", href: "/platform/admins", cap: "admins.manage" },
 ];
 

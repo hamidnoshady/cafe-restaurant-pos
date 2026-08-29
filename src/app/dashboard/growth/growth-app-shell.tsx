@@ -15,6 +15,7 @@
  */
 
 import { PageHeader, PageShell } from "../page-chrome";
+import { KnowledgeHelpButton } from "../knowledge-help";
 import { AskAssistant } from "@/components/ai/ask-assistant";
 
 export function GrowthAppShell({ children }: { children: React.ReactNode }) {
@@ -24,10 +25,15 @@ export function GrowthAppShell({ children }: { children: React.ReactNode }) {
         title="رشد و بازاریابی"
         description="برنامهٔ نگه‌داشتن و رشد مشتریان: میز کار، کمپین‌ها و کارت هدیه، وفاداری و پورسانت فروشندگان."
         actions={
-          <AskAssistant
-            app="growth"
-            context="وضعیت بازاریابی را بررسی کن: کمپین‌های فعال، تخفیف مصرفی سی روز گذشته، مانده کارت هدیه و اعتبار فروشگاهی، و پورسانت فروشندگان."
-          />
+          <>
+            {/* No `section`: this header serves every Growth sub-page, so the
+                button resolves the current route (home / loyalty / …) itself. */}
+            <KnowledgeHelpButton />
+            <AskAssistant
+              app="growth"
+              context="وضعیت بازاریابی را بررسی کن: کمپین‌های فعال، تخفیف مصرفی سی روز گذشته، مانده کارت هدیه و اعتبار فروشگاهی، و پورسانت فروشندگان."
+            />
+          </>
         }
       />
       <div className="min-w-0">{children}</div>

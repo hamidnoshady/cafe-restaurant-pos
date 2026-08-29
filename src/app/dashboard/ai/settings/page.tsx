@@ -3,6 +3,7 @@ import { getSession } from "@/lib/auth";
 import { featureLockedForPage } from "@/lib/features";
 import { FeatureLock } from "@/components/feature-lock";
 import { PageHeader, PageShell } from "../../page-chrome";
+import { KnowledgeHelpButton } from "../../knowledge-help";
 import { AiAutopilotSettings } from "../ai-autopilot-settings";
 import { AiProactiveSettings } from "../ai-proactive-settings";
 import { AiBillingDashboard } from "../ai-billing";
@@ -28,6 +29,7 @@ export default async function AiSettingsPage() {
       <PageHeader
         title="تنظیمات هوش مصنوعی"
         description="پرامپت اختصاصی، اجرای خودکار، گزارش‌های پس‌زمینه و اعتبار دستیار — در یک جا."
+        actions={<KnowledgeHelpButton section="ai" />}
       />
       <FeatureLock locked={locked} title="دستیار هوشمند">
         <div className="space-y-6">

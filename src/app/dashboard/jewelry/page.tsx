@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { requireIndustryForPage } from "@/lib/industry-guard";
 import { PageHeader, PageShell } from "../page-chrome";
+import { KnowledgeHelpButton } from "../knowledge-help";
 import { JewelryManager } from "./jewelry-manager";
 
 export default async function JewelryPage() {
@@ -15,6 +16,7 @@ export default async function JewelryPage() {
       <PageHeader
         title="طلا و جواهر"
         description="کالاهای وزنی، نرخ روز طلا، امانت‌گذاران و فروش قطعات طلا."
+        actions={<KnowledgeHelpButton section="jewelry" />}
       />
       <JewelryManager />
     </PageShell>

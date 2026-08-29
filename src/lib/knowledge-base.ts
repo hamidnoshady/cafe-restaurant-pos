@@ -1,0 +1,113 @@
+/**
+ * The knowledge base — the section catalogue shared by both sides of the app.
+ *
+ * A `knowledge_base_entries` row (migration 0117) attaches one learning page —
+ * a URL the super-admin maintains — to a dashboard section. The super-admin
+ * console (`/platform/knowledge`) offers the URL for every section, and the
+ * «آموزش» icon on each important dashboard page (knowledge-help.tsx) opens the
+ * stored URL in a modal so a member can learn the section they are on.
+ *
+ * Both sides must name the same sections, so the catalogue lives in this one
+ * pure module instead of on either side. Adding a page to the catalogue is
+ * enough for it to appear in the console's list and to be learnable from its
+ * route — the icon itself is mounted on the page's header.
+ *
+ * The table is a platform catalogue in the `feature_flags`/`plans` shape
+ * (migrations 0021/0034): it holds no `business_id`, because the same pages
+ * teach every business. Tenant routes read it (active rows only, via
+ * `GET /api/knowledge`); it is written only through `/api/platform/knowledge`
+ * under a platform session.
+ */
+
+export interface KnowledgeSection {
+  /** Stable key stored in `knowledge_base_entries.section`. */
+  key: string;
+  /** Persian label, shown in the console and in the learning modal. */
+  label: string;
+  /** The dashboard route this section's learning icon lives on. */
+  route: string;
+}
+
+/**
+ * Every dashboard surface that carries a learning icon. Order is the console's
+ * list order — top to bottom, the way a member meets the app: the daily
+ * screens first, then money and people, then the growth app, then the retail
+ * trades' screens (only one of the last four is ever visible to a business).
+ */
+export const KNOWLEDGE_SECTIONS: readonly KnowledgeSection[] = [
+  { key: "overview", label: "نمای کلی", route: "/dashboard/overview" },
+  { key: "pos", label: "فروش (صندوق)", route: "/dashboard/pos" },
+  { key: "orders", label: "سفارش‌ها", route: "/dashboard/orders" },
+  { key: "customers", label: "مشتریان", route: "/dashboard/customers" },
+  { key: "inventory", label: "انبار", route: "/dashboard/inventory" },
+  { key: "stock", label: "خرید و انبار", route: "/dashboard/stock" },
+  { key: "reports", label: "گزارش‌ها", route: "/dashboard/reports" },
+  { key: "settings", label: "تنظیمات", route: "/dashboard/settings" },
+  { key: "ledger", label: "حسابداری", route: "/dashboard/ledger" },
+  { key: "reservations", label: "رزروها", route: "/dashboard/reservations" },
+  { key: "delivery", label: "ارسال سفارش", route: "/dashboard/delivery" },
+  { key: "connections", label: "اتصال‌ها", route: "/dashboard/connections" },
+  { key: "projects", label: "پروژه‌ها", route: "/dashboard/projects" },
+  { key: "ai", label: "دستیار هوشمند", route: "/dashboard/ai" },
+  { key: "kitchen", label: "آشپزخانه", route: "/dashboard/kitchen" },
+  { key: "floor", label: "نقشهٔ سالن", route: "/dashboard/floor" },
+  { key: "waiter", label: "میزهای من", route: "/dashboard/waiter" },
+  { key: "growth", label: "رشد و بازاریابی", route: "/dashboard/growth" },
+  { key: "loyalty", label: "وفاداری", route: "/dashboard/growth/loyalty" },
+  { key: "campaigns", label: "کمپین‌ها", route: "/dashboard/growth/campaigns" },
+  { key: "gift-cards", label: "کارت هدیه", route: "/dashboard/growth/gift-cards" },
+  { key: "commission", label: "پورسانت فروشندگان", route: "/dashboard/growth/commission" },
+  { key: "jewelry", label: "طلا و جواهر", route: "/dashboard/jewelry" },
+  { key: "watch", label: "ساعت", route: "/dashboard/watch" },
+  { key: "accessories", label: "اکسسوری", route: "/dashboard/accessories" },
+  { key: "cosmetics", label: "آرایشی و بهداشتی", route: "/dashboard/cosmetics" },
+];
+
+/** The catalogue entry for a key, or undefined for a key the code does not know. */
+export function knowledgeSection(key: string): KnowledgeSection | undefined {
+  return KNOWLEDGE_SECTIONS.find((s) => s.key === key);
+}
+
+export function isKnownKnowledgeSection(key: string): boolean {
+  return knowledgeSection(key) !== undefined;
+}
+
+/**
+ * Which section a dashboard pathname belongs to — the longest matching route
+ * wins, so `/dashboard/growth/loyalty` resolves to «وفاداری», not to the
+ * growth home it sits under, and an order detail stays in «سفارش‌ها». Routes
+ * the catalogue does not know (the chat home, …) resolve to undefined: their
+ * pages simply carry no learning icon.
+ */
+export function sectionForPathname(pathname: string): KnowledgeSection | undefined {
+  let best: KnowledgeSection | undefined;
+  for (const section of KNOWLEDGE_SECTIONS) {
+    const hit = pathname === section.route || pathname.startsWith(`${section.route}/`);
+    if (!hit) continue;
+    if (!best || section.route.length > best.route.length) best = section;
+  }
+  return best;
+}
+
+export interface ParsedKnowledgeUrl {
+  ok: true;
+  url: string;
+}
+
+/**
+ * A learning page is a page the member's browser will load in the modal, so
+ * only http(s) URLs are accepted. Trimmed of surrounding whitespace; the
+ * check runs on the wire value the console sent, not on anything the browser
+ * already knows.
+ */
+export function parseKnowledgeUrl(raw: unknown): ParsedKnowledgeUrl | { ok: false; error: "invalid_url" } {
+  if (typeof raw !== "string") return { ok: false, error: "invalid_url" };
+  const url = raw.trim();
+  if (!/^https?:\/\/\S+$/i.test(url)) return { ok: false, error: "invalid_url" };
+  try {
+    new URL(url);
+  } catch {
+    return { ok: false, error: "invalid_url" };
+  }
+  return { ok: true, url };
+}

@@ -18,6 +18,7 @@ import { useMoney } from "@/components/money/money-context";
 import { TABLE_STATUS_LABELS, type TableStatus } from "@/lib/table-sessions";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useRealtime } from "../use-realtime";
+import { KnowledgeHelpButton } from "../knowledge-help";
 import { PageShell } from "../page-chrome";
 import {
   api,
@@ -201,6 +202,7 @@ export function FloorPlan({ canEdit }: { canEdit: boolean }) {
             </div>
           </div>
           <div className="flex items-center justify-between gap-2 lg:justify-end">
+            <KnowledgeHelpButton section="floor" />
             <span
               className="text-xs text-stone-500"
               role="status"

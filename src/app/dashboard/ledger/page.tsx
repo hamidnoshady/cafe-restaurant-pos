@@ -4,6 +4,7 @@ import { effectiveFeatures, requireFeatureForPage } from "@/lib/features";
 import { withTenant } from "@/lib/db";
 import { hasActiveHolooCompanion } from "@/lib/integrations/holoo/connection-service";
 import { PageHeader, PageShell } from "../page-chrome";
+import { KnowledgeHelpButton } from "../knowledge-help";
 import { LedgerManager } from "./ledger-manager";
 import { AskAssistant } from "@/components/ai/ask-assistant";
 
@@ -26,12 +27,15 @@ export default async function LedgerPage() {
         title="حسابداری"
         description="تراز آزمایشی، دفتر روزنامه، اسناد دستی و عملیات مالی کسب‌وکار."
         actions={
-          features.ai_assistant ? (
-            <AskAssistant
-              app="growth"
-              context="وضعیت حسابداری را بررسی کن: تراز آزمایشی، دفتر روزنامه و اسناد ثبت‌شده."
-            />
-          ) : null
+          <>
+            <KnowledgeHelpButton section="ledger" />
+            {features.ai_assistant ? (
+              <AskAssistant
+                app="growth"
+                context="وضعیت حسابداری را بررسی کن: تراز آزمایشی، دفتر روزنامه و اسناد ثبت‌شده."
+              />
+            ) : null}
+          </>
         }
       />
       <LedgerManager role={session.role} />

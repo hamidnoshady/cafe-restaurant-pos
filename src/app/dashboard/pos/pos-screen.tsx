@@ -89,6 +89,7 @@ import {
   type SelectOption,
 } from "@/components/ui/searchable-select";
 import { BranchSwitcher } from "../branch-switcher";
+import { KnowledgeHelpButton } from "../knowledge-help";
 import { apiOrQueue, useOfflineQueue } from "../offline-queue";
 import { api, ErrorBox, errorMessage, inputClass } from "../ui";
 import { firstPrinter, useBusinessInfo, usePrinters } from "../use-printers";
@@ -1086,6 +1087,7 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
                 </p>
               </div>
             </div>
+            <KnowledgeHelpButton section="pos" />
             <BranchSwitcher compact />
             <span
               className={
@@ -1138,7 +1140,8 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
           <label className="sr-only" htmlFor="pos-product-search">
             جستجوی محصول یا کد کالا
           </label>
-          <div className="relative">
+          <div className="flex items-center gap-2">
+            <div className="relative min-w-0 flex-1">
             <SearchIcon
               className="pointer-events-none absolute inset-y-0 start-3 my-auto size-4 text-stone-500"
               aria-hidden="true"
@@ -1211,6 +1214,12 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
                   : undefined
               }
             />
+            </div>
+            {/* Mobile: the top bar above is desktop-only, so the learning icon
+                rides beside the search row on phones. */}
+            <span className="shrink-0 md:hidden">
+              <KnowledgeHelpButton section="pos" />
+            </span>
           </div>
           <div
             className="mt-3 flex min-h-14 gap-2 overflow-x-auto pb-1"
