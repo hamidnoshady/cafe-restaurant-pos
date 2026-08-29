@@ -107,6 +107,7 @@ const ROLE_LABELS: Record<string, string> = {
 
 const NAV_ICONS: Record<string, LucideIcon> = {
   "/dashboard": LayoutDashboardIcon,
+  "/dashboard/overview": LayoutDashboardIcon,
   "/dashboard/orders": ClipboardListIcon,
   "/dashboard/pos": ShoppingCartIcon,
   "/dashboard/customers": UsersIcon,
@@ -253,9 +254,11 @@ function NavLinks({
 function WorkspaceRail({ navItems, pathname }: { navItems: NavItem[]; pathname: string }) {
   const router = useRouter();
   const hrefs = navItems.flatMap((item) => (item.href ? [item.href] : []));
-  // First available page of each app, in order of preference — a business
-  // without the ledger flag still lands somewhere real inside حسابداری.
-  const accountingHref = ["/dashboard/ledger", "/dashboard/reports"].find((href) => hrefs.includes(href));
+  // App launchers always open the app's dashboard/overview, not a detail
+  // section. The accounting overview is available to every member who can
+  // see this rail; the ledger and reports routes remain available from the
+  // accounting app's sidebar.
+  const accountingHref = ["/dashboard/overview", "/dashboard/ledger", "/dashboard/reports"].find((href) => hrefs.includes(href));
   // Phase 36b — the Growth app has a home of its own; the old flat pages
   // (loyalty/promotions/commission) redirect into it, so a member whose saved
   // bottom-nav still holds one lands in the app rather than on a 404.
