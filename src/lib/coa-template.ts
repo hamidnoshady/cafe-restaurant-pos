@@ -199,6 +199,24 @@ export const WELL_KNOWN_CODES = {
   cosmeticSalesRevenue: "4570",
   cosmeticCogs: "5150",
   cosmeticExpiredAndTester: "5160",
+  // Phase 38 — wholesale (عمده‌فروشی). Same finished-goods shape as
+  // accessories, but with its own accounts so a wholesale business reports
+  // its inventory and gross margin separately from a retail counter.
+  wholesaleInventory: "1371",
+  wholesaleSalesRevenue: "4581",
+  wholesaleCogs: "5181",
+  // Phase 38 — tools & fittings (ابزار و یراق‌آلات). A tools/hardware shop
+  // stocks countable items (tools, locks, hinges, fittings), so it is the
+  // same finished-goods triple with its own accounts.
+  toolsInventory: "1372",
+  toolsSalesRevenue: "4582",
+  toolsCogs: "5182",
+  // Phase 38 — haberdashery (خرازی). Sewing notions are sold in units and,
+  // for threads/ribbons, in fractional quantities; `item_stock` is numeric
+  // so both work, and these are the trade's own finished-goods accounts.
+  haberdasheryInventory: "1373",
+  haberdasherySalesRevenue: "4583",
+  haberdasheryCogs: "5183",
   // Phase 27 Wave 8 — the retail trades' in-transit account for inter-branch
   // transfers. F&B's 1350 (inventoryInTransit) is the same code cosmetics
   // uses for its *own* inventory, so the retail trades get their own 1360
@@ -271,6 +289,21 @@ const COST_OF_SALES_CODES_BY_INDUSTRY: Record<Industry, readonly string[]> = {
   cosmetics: [
     WELL_KNOWN_CODES.cosmeticCogs,
     WELL_KNOWN_CODES.cosmeticExpiredAndTester,
+    WELL_KNOWN_CODES.inventoryWriteDownExpense,
+    WELL_KNOWN_CODES.retailCountShortageExpense,
+  ],
+  wholesale: [
+    WELL_KNOWN_CODES.wholesaleCogs,
+    WELL_KNOWN_CODES.inventoryWriteDownExpense,
+    WELL_KNOWN_CODES.retailCountShortageExpense,
+  ],
+  tools_fittings: [
+    WELL_KNOWN_CODES.toolsCogs,
+    WELL_KNOWN_CODES.inventoryWriteDownExpense,
+    WELL_KNOWN_CODES.retailCountShortageExpense,
+  ],
+  haberdashery: [
+    WELL_KNOWN_CODES.haberdasheryCogs,
     WELL_KNOWN_CODES.inventoryWriteDownExpense,
     WELL_KNOWN_CODES.retailCountShortageExpense,
   ],
@@ -698,6 +731,177 @@ export const COSMETICS_COA_TEMPLATE: TemplateAccount[] = [
   ...SHARED_EXPENSE_ACCOUNTS,
 ];
 
+/**
+ * Phase 38 — wholesale (عمده‌فروشی) chart of accounts. Built from the same
+ * generic retail skeleton as accessories/cosmetics: cash/bank/AR/AP, VAT,
+ * payroll, fixed assets, cheques, inventory count variance — and the trade's
+ * own inventory/revenue/COGS triple. A wholesale business also uses the shared
+ * «تخفیفات فروش» (4350) and «برگشت از فروش» (4400) accounts, which is where
+ * bulk/trade discounts and wholesale returns land.
+ */
+export const WHOLESALE_COA_TEMPLATE: TemplateAccount[] = [
+  { code: "1000", name: "دارایی‌ها", type: "asset" },
+  { code: "1100", name: "صندوق", type: "asset", parentCode: "1000" },
+  { code: "1110", name: "بانک", type: "asset", parentCode: "1000" },
+  { code: "1120", name: "کارت‌خوان (در راه)", type: "asset", parentCode: "1000" },
+  { code: "1200", name: "حساب‌های دریافتنی", type: "asset", parentCode: "1000" },
+  { code: "1220", name: "مالیات بر ارزش افزوده خرید (قابل استرداد)", type: "asset", parentCode: "1000" },
+  { code: "1371", name: "موجودی کالای عمده‌فروشی", type: "asset", parentCode: "1000" },
+  { code: "1360", name: "کالای در راه", type: "asset", parentCode: "1000" },
+  { code: "1400", name: "پیش‌پرداخت‌ها", type: "asset", parentCode: "1000" },
+  { code: "1500", name: "اثاثه و تجهیزات", type: "asset", parentCode: "1000" },
+
+  ...RETAIL_ASSET_ACCOUNTS,
+  ...SHARED_ASSET_ACCOUNTS,
+
+  { code: "2000", name: "بدهی‌ها", type: "liability" },
+  { code: "2100", name: "حساب‌های پرداختنی", type: "liability", parentCode: "2000" },
+  { code: "2200", name: "مالیات بر ارزش افزوده پرداختنی", type: "liability", parentCode: "2000" },
+  { code: "2300", name: "حقوق پرداختنی", type: "liability", parentCode: "2000" },
+  { code: "2410", name: "اعتبار فروشگاهی", type: "liability", parentCode: "2000" },
+  { code: "2420", name: "کارت هدیه", type: "liability", parentCode: "2000" },
+
+  ...SHARED_LIABILITY_ACCOUNTS,
+
+  { code: "3000", name: "حقوق صاحبان سرمایه", type: "equity" },
+  { code: "3100", name: "سرمایه", type: "equity", parentCode: "3000" },
+  { code: "3800", name: "سود (زیان) انباشته", type: "equity", parentCode: "3000" },
+  { code: "3900", name: "تراز افتتاحیه", type: "equity", parentCode: "3000" },
+
+  ...SHARED_EQUITY_ACCOUNTS,
+
+  { code: "4000", name: "درآمدها", type: "revenue" },
+  { code: "4581", name: "فروش عمده", type: "revenue", parentCode: "4000" },
+  { code: "4900", name: "سایر درآمدها", type: "revenue", parentCode: "4000" },
+  { code: "4400", name: "برگشت از فروش", type: "revenue", parentCode: "4000", isContra: true },
+
+  ...RETAIL_REVENUE_ACCOUNTS,
+  ...SHARED_REVENUE_ACCOUNTS,
+
+  { code: "5000", name: "هزینه‌ها", type: "expense" },
+  { code: "5181", name: "بهای تمام‌شده کالای فروخته‌شده عمده", type: "expense", parentCode: "5000" },
+  { code: "5210", name: "پورسانت فروش", type: "expense", parentCode: "5000" },
+  { code: "5300", name: "اجاره", type: "expense", parentCode: "5000" },
+  { code: "5400", name: "آب، برق و گاز", type: "expense", parentCode: "5000" },
+  { code: "5600", name: "بازاریابی و تبلیغات", type: "expense", parentCode: "5000" },
+  { code: "5900", name: "سایر هزینه‌ها", type: "expense", parentCode: "5000" },
+  ...RETAIL_EXPENSE_ACCOUNTS,
+  ...SHARED_EXPENSE_ACCOUNTS,
+];
+
+/**
+ * Phase 38 — tools & fittings (ابزار و یراق‌آلات) chart of accounts. Same
+ * generic retail skeleton as wholesale; only the inventory/revenue/COGS
+ * accounts differ. The count-variance and markdown accounts are the shared
+ * retail ones, so reorder/low-stock and physical counts post in this trade
+ * exactly as they do in accessories.
+ */
+export const TOOLS_FITTINGS_COA_TEMPLATE: TemplateAccount[] = [
+  { code: "1000", name: "دارایی‌ها", type: "asset" },
+  { code: "1100", name: "صندوق", type: "asset", parentCode: "1000" },
+  { code: "1110", name: "بانک", type: "asset", parentCode: "1000" },
+  { code: "1120", name: "کارت‌خوان (در راه)", type: "asset", parentCode: "1000" },
+  { code: "1200", name: "حساب‌های دریافتنی", type: "asset", parentCode: "1000" },
+  { code: "1220", name: "مالیات بر ارزش افزوده خرید (قابل استرداد)", type: "asset", parentCode: "1000" },
+  { code: "1372", name: "موجودی ابزار و یراق‌آلات", type: "asset", parentCode: "1000" },
+  { code: "1360", name: "کالای در راه", type: "asset", parentCode: "1000" },
+  { code: "1400", name: "پیش‌پرداخت‌ها", type: "asset", parentCode: "1000" },
+  { code: "1500", name: "اثاثه و تجهیزات", type: "asset", parentCode: "1000" },
+
+  ...RETAIL_ASSET_ACCOUNTS,
+  ...SHARED_ASSET_ACCOUNTS,
+
+  { code: "2000", name: "بدهی‌ها", type: "liability" },
+  { code: "2100", name: "حساب‌های پرداختنی", type: "liability", parentCode: "2000" },
+  { code: "2200", name: "مالیات بر ارزش افزوده پرداختنی", type: "liability", parentCode: "2000" },
+  { code: "2300", name: "حقوق پرداختنی", type: "liability", parentCode: "2000" },
+  { code: "2410", name: "اعتبار فروشگاهی", type: "liability", parentCode: "2000" },
+  { code: "2420", name: "کارت هدیه", type: "liability", parentCode: "2000" },
+
+  ...SHARED_LIABILITY_ACCOUNTS,
+
+  { code: "3000", name: "حقوق صاحبان سرمایه", type: "equity" },
+  { code: "3100", name: "سرمایه", type: "equity", parentCode: "3000" },
+  { code: "3800", name: "سود (زیان) انباشته", type: "equity", parentCode: "3000" },
+  { code: "3900", name: "تراز افتتاحیه", type: "equity", parentCode: "3000" },
+
+  ...SHARED_EQUITY_ACCOUNTS,
+
+  { code: "4000", name: "درآمدها", type: "revenue" },
+  { code: "4582", name: "فروش ابزار و یراق", type: "revenue", parentCode: "4000" },
+  { code: "4900", name: "سایر درآمدها", type: "revenue", parentCode: "4000" },
+  { code: "4400", name: "برگشت از فروش", type: "revenue", parentCode: "4000", isContra: true },
+
+  ...RETAIL_REVENUE_ACCOUNTS,
+  ...SHARED_REVENUE_ACCOUNTS,
+
+  { code: "5000", name: "هزینه‌ها", type: "expense" },
+  { code: "5182", name: "بهای تمام‌شده ابزار و یراق فروخته‌شده", type: "expense", parentCode: "5000" },
+  { code: "5210", name: "پورسانت فروش", type: "expense", parentCode: "5000" },
+  { code: "5300", name: "اجاره", type: "expense", parentCode: "5000" },
+  { code: "5400", name: "آب، برق و گاز", type: "expense", parentCode: "5000" },
+  { code: "5600", name: "بازاریابی و تبلیغات", type: "expense", parentCode: "5000" },
+  { code: "5900", name: "سایر هزینه‌ها", type: "expense", parentCode: "5000" },
+  ...RETAIL_EXPENSE_ACCOUNTS,
+  ...SHARED_EXPENSE_ACCOUNTS,
+];
+
+/**
+ * Phase 38 — haberdashery (خرازی) chart of accounts. Again the generic retail
+ * skeleton plus the trade's own inventory/revenue/COGS triple. Haberdashery
+ * often sells fractional lengths (thread, ribbon, trim), but that is a
+ * quantity convention of the `item_stock` model, not an extra account.
+ */
+export const HABERDASHERY_COA_TEMPLATE: TemplateAccount[] = [
+  { code: "1000", name: "دارایی‌ها", type: "asset" },
+  { code: "1100", name: "صندوق", type: "asset", parentCode: "1000" },
+  { code: "1110", name: "بانک", type: "asset", parentCode: "1000" },
+  { code: "1120", name: "کارت‌خوان (در راه)", type: "asset", parentCode: "1000" },
+  { code: "1200", name: "حساب‌های دریافتنی", type: "asset", parentCode: "1000" },
+  { code: "1220", name: "مالیات بر ارزش افزوده خرید (قابل استرداد)", type: "asset", parentCode: "1000" },
+  { code: "1373", name: "موجودی لوازم خرازی", type: "asset", parentCode: "1000" },
+  { code: "1360", name: "کالای در راه", type: "asset", parentCode: "1000" },
+  { code: "1400", name: "پیش‌پرداخت‌ها", type: "asset", parentCode: "1000" },
+  { code: "1500", name: "اثاثه و تجهیزات", type: "asset", parentCode: "1000" },
+
+  ...RETAIL_ASSET_ACCOUNTS,
+  ...SHARED_ASSET_ACCOUNTS,
+
+  { code: "2000", name: "بدهی‌ها", type: "liability" },
+  { code: "2100", name: "حساب‌های پرداختنی", type: "liability", parentCode: "2000" },
+  { code: "2200", name: "مالیات بر ارزش افزوده پرداختنی", type: "liability", parentCode: "2000" },
+  { code: "2300", name: "حقوق پرداختنی", type: "liability", parentCode: "2000" },
+  { code: "2410", name: "اعتبار فروشگاهی", type: "liability", parentCode: "2000" },
+  { code: "2420", name: "کارت هدیه", type: "liability", parentCode: "2000" },
+
+  ...SHARED_LIABILITY_ACCOUNTS,
+
+  { code: "3000", name: "حقوق صاحبان سرمایه", type: "equity" },
+  { code: "3100", name: "سرمایه", type: "equity", parentCode: "3000" },
+  { code: "3800", name: "سود (زیان) انباشته", type: "equity", parentCode: "3000" },
+  { code: "3900", name: "تراز افتتاحیه", type: "equity", parentCode: "3000" },
+
+  ...SHARED_EQUITY_ACCOUNTS,
+
+  { code: "4000", name: "درآمدها", type: "revenue" },
+  { code: "4583", name: "فروش لوازم خرازی", type: "revenue", parentCode: "4000" },
+  { code: "4900", name: "سایر درآمدها", type: "revenue", parentCode: "4000" },
+  { code: "4400", name: "برگشت از فروش", type: "revenue", parentCode: "4000", isContra: true },
+
+  ...RETAIL_REVENUE_ACCOUNTS,
+  ...SHARED_REVENUE_ACCOUNTS,
+
+  { code: "5000", name: "هزینه‌ها", type: "expense" },
+  { code: "5183", name: "بهای تمام‌شده لوازم خرازی فروخته‌شده", type: "expense", parentCode: "5000" },
+  { code: "5210", name: "پورسانت فروش", type: "expense", parentCode: "5000" },
+  { code: "5300", name: "اجاره", type: "expense", parentCode: "5000" },
+  { code: "5400", name: "آب، برق و گاز", type: "expense", parentCode: "5000" },
+  { code: "5600", name: "بازاریابی و تبلیغات", type: "expense", parentCode: "5000" },
+  { code: "5900", name: "سایر هزینه‌ها", type: "expense", parentCode: "5000" },
+  ...RETAIL_EXPENSE_ACCOUNTS,
+  ...SHARED_EXPENSE_ACCOUNTS,
+];
+
 export const ACCOUNT_TYPES: AccountType[] = ["asset", "liability", "equity", "revenue", "expense"];
 
 /**
@@ -718,6 +922,12 @@ export function coaTemplateForIndustry(industry: Industry): readonly TemplateAcc
       return ACCESSORIES_COA_TEMPLATE;
     case "cosmetics":
       return COSMETICS_COA_TEMPLATE;
+    case "wholesale":
+      return WHOLESALE_COA_TEMPLATE;
+    case "tools_fittings":
+      return TOOLS_FITTINGS_COA_TEMPLATE;
+    case "haberdashery":
+      return HABERDASHERY_COA_TEMPLATE;
     case "food_service":
       return FNB_COA_TEMPLATE;
   }

@@ -26,6 +26,7 @@ import { computeAccessorySalePrice } from "@/lib/accessories";
 import { computeCosmeticSalePrice } from "@/lib/cosmetics";
 import { computeWatchSalePrice } from "@/lib/watch-pricing";
 import { hasCapability, labelFor } from "@/lib/industry-profile";
+import { isTradeGoodsIndustry } from "@/lib/trade-goods";
 import type { Industry } from "@/lib/industries";
 import { Button } from "@/components/ui/button";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -95,7 +96,7 @@ interface CartLine {
   key: string;
   label: string;
   /** Discriminates which payload shape goes to the API. */
-  payload: Record<string, unknown> & { kind: "gold" | "watch" | "accessory" | "cosmetic" };
+  payload: Record<string, unknown> & { kind: "gold" | "watch" | "accessory" | "cosmetic" | "stocked" };
   net: number;
   vat: number;
   total: number;
@@ -109,6 +110,28 @@ const PURITY_LABELS: Record<Purity, string> = {
   "21": "۲۱ عیار",
   "24": "۲۴ عیار",
 };
+
+/**
+ * The variant-catalogue API for a trade-goods/variant retail industry. These
+ * all share the same board shape (families + variants with item_stock), so the
+ * POS loads them through the same client code; only the URL namespace differs.
+ */
+function variantApiFor(industry: Industry): string | null {
+  switch (industry) {
+    case "accessories":
+      return "/api/accessories";
+    case "cosmetics":
+      return "/api/cosmetics";
+    case "wholesale":
+      return "/api/wholesale";
+    case "tools_fittings":
+      return "/api/tools-fittings";
+    case "haberdashery":
+      return "/api/haberdashery";
+    default:
+      return null;
+  }
+}
 
 function newKey(): string {
   return crypto.randomUUID();
@@ -170,16 +193,10 @@ export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
         }),
       );
     }
-    if (industry === "accessories") {
+    const variantApi = variantApiFor(industry);
+    if (variantApi) {
       requests.push(
-        api<{ items?: Variant[] }>("/api/accessories/items").then(({ ok, data }) => {
-          if (ok) setVariants(data.items ?? []);
-        }),
-      );
-    }
-    if (industry === "cosmetics") {
-      requests.push(
-        api<{ items?: Variant[] }>("/api/cosmetics/items").then(({ ok, data }) => {
+        api<{ items?: Variant[] }>(`${variantApi}/items`).then(({ ok, data }) => {
           if (ok) setVariants(data.items ?? []);
         }),
       );
@@ -282,8 +299,9 @@ export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
             <GoldLineForm items={weightItems} prices={prices} onAdd={addLine} />
           ) : null}
           {industry === "watch" ? <WatchLineForm units={units} onAdd={addLine} /> : null}
-          {industry === "accessories" ? <AccessoryLineForm variants={variants} onAdd={addLine} /> : null}
+          {industry === "accessories" ? <AccessoryLineForm variants={variants} onAdd={addLine} kind="accessory" /> : null}
           {industry === "cosmetics" ? <CosmeticsLineForm variants={variants} onAdd={addLine} /> : null}
+          {isTradeGoodsIndustry(industry) ? <AccessoryLineForm variants={variants} onAdd={addLine} kind="stocked" /> : null}
 
           <RecentInvoices invoices={invoices} loading={loading} />
         </div>
@@ -459,7 +477,7 @@ function BarcodeScanField({
     }
     const match = matches[0];
 
-    if (industry === "cosmetics" || industry === "accessories") {
+    if (variantApiFor(industry)) {
       const variant = variants.find((v) => v.id === match.itemId);
       if (!variant || !variant.unitPrice) {
         setScanError("این کالا قیمت یا موجودی ندارد؛ از فرم کالا استفاده کنید.");
@@ -474,7 +492,7 @@ function BarcodeScanField({
           key: newKey(),
           label: variant.name,
           payload: {
-            kind: industry === "cosmetics" ? "cosmetic" : "accessory",
+            kind: industry === "cosmetics" ? "cosmetic" : isTradeGoodsIndustry(industry) ? "stocked" : "accessory",
             itemId: variant.id,
             quantity: "1",
             discount: 0,
@@ -867,8 +885,21 @@ function WatchLineForm({ units, onAdd }: { units: SerialUnit[]; onAdd: (line: Ca
   );
 }
 
-/** An accessories line: a quantity of one variant, at its standard price unless overridden. */
-function AccessoryLineForm({ variants, onAdd }: { variants: Variant[]; onAdd: (line: CartLine) => void }) {
+/**
+ * A fungible catalogue line: a quantity of one variant, at its standard price
+ * unless overridden. Used by accessories (`kind = "accessory"`) and by the
+ * trade-goods industries (`kind = "stocked"`); the payload shape is the same
+ * and the server routes it to the trade's own posting rule.
+ */
+function AccessoryLineForm({
+  variants,
+  onAdd,
+  kind = "accessory",
+}: {
+  variants: Variant[];
+  onAdd: (line: CartLine) => void;
+  kind?: "accessory" | "stocked";
+}) {
   const money = useMoney();
   const [itemId, setItemId] = useState("");
   const [quantity, setQuantity] = useState("1");
@@ -957,7 +988,7 @@ function AccessoryLineForm({ variants, onAdd }: { variants: Variant[]; onAdd: (l
             key: newKey(),
             label: `${variant.name} × ${formatQuantity(quantity)}`,
             payload: {
-              kind: "accessory",
+              kind,
               itemId: variant.id,
               quantity,
               unitPrice: unitPrice.trim() ? effectivePrice : undefined,

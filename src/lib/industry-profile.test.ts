@@ -23,7 +23,15 @@ const LABEL_KEYS: LabelKey[] = [
   "catalogueItem",
 ];
 
-const RETAIL_INDUSTRIES: Industry[] = ["jewelry", "watch", "accessories", "cosmetics"];
+const RETAIL_INDUSTRIES: Industry[] = [
+  "jewelry",
+  "watch",
+  "accessories",
+  "cosmetics",
+  "wholesale",
+  "tools_fittings",
+  "haberdashery",
+];
 
 describe("INDUSTRY_PROFILES", () => {
   it("covers every industry the app can create", () => {
@@ -66,6 +74,9 @@ describe("module sets", () => {
         module === "watch" ||
         module === "accessories" ||
         module === "cosmetics" ||
+        module === "wholesale" ||
+        module === "tools_fittings" ||
+        module === "haberdashery" ||
         module === "stock"
       )
         continue;

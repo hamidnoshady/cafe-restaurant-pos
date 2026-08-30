@@ -23,6 +23,7 @@ import { importableTransactions, type HolooTransaction, type TransactionDiscrepa
 import { writeIntegrationAudit } from "../audit";
 import { recordBackdatedOrder } from "../../backdated-order-service";
 import { createRetailInvoice, type RetailInvoiceLineInput } from "../../retail-invoice-service";
+import { isTradeGoodsIndustry } from "../../trade-goods";
 import { receiveItemPurchase } from "../../retail-stock-service";
 import { applyPurchaseReceiptCosting } from "../../purchase-receipt-costing";
 import { positiveQuantityText, rialText } from "../../inventory-exact";
@@ -119,10 +120,10 @@ async function importSale(
         },
       });
       await upsertMapping(businessId, connectionId, "holoo_invoice", tx.remoteId, sale.orderId, importRunId);
-    } else if (industry === "accessories" || industry === "cosmetics") {
+    } else if (industry === "accessories" || industry === "cosmetics" || isTradeGoodsIndustry(industry)) {
       const quantity = positiveQuantity(tx);
       const line: RetailInvoiceLineInput = {
-        kind: industry === "cosmetics" ? "cosmetic" : "accessory",
+        kind: industry === "cosmetics" ? "cosmetic" : isTradeGoodsIndustry(industry) ? "stocked" : "accessory",
         itemId: localGoodsId,
         quantity,
         unitPrice: unitCostFrom(tx) || undefined,
@@ -193,7 +194,7 @@ async function importPurchase(
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
-    if (industry === "accessories" || industry === "cosmetics") {
+    if (industry === "accessories" || industry === "cosmetics" || isTradeGoodsIndustry(industry)) {
       const purchase = await receiveItemPurchase(client, {
         businessId,
         locationId,
@@ -297,7 +298,7 @@ async function importStockMovement(
       [businessId, locationId, eventSourceType, createdBy, JSON.stringify({ remoteId: tx.remoteId })],
     );
     const eventId = eventRows[0].id;
-    if (industry === "accessories" || industry === "cosmetics") {
+    if (industry === "accessories" || industry === "cosmetics" || isTradeGoodsIndustry(industry)) {
       await client.query(
         `UPDATE item_stock SET quantity = quantity + $2, updated_at = now() WHERE item_id = $1`,
         [localGoodsId, quantity.toString()],

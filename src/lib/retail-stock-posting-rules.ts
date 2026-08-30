@@ -28,6 +28,9 @@ const INVENTORY_CODE_BY_INDUSTRY: Record<Industry, string> = {
   watch: WELL_KNOWN_CODES.watchInventory,
   accessories: WELL_KNOWN_CODES.accessoryInventory,
   cosmetics: WELL_KNOWN_CODES.cosmeticInventory,
+  wholesale: WELL_KNOWN_CODES.wholesaleInventory,
+  tools_fittings: WELL_KNOWN_CODES.toolsInventory,
+  haberdashery: WELL_KNOWN_CODES.haberdasheryInventory,
 };
 
 async function inventoryCodeForBusiness(client: PoolClient, businessId: string): Promise<string> {

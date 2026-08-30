@@ -53,6 +53,9 @@ export const MODULE_KEYS = [
   "watch",
   "accessories",
   "cosmetics",
+  "wholesale",
+  "tools_fittings",
+  "haberdashery",
   "stock",
   "ledger",
   "integrations",
@@ -252,6 +255,35 @@ export const INDUSTRY_PROFILES: Record<Industry, IndustryProfile> = {
     defaultDisabledFeatures: ["inventory", "reservations", "delivery"],
     capabilities: ["batch_expiry", "barcode"],
   },
+  wholesale: {
+    brandTitle: "عمده‌فروشی",
+    brandSubtitle: "مدیریت خرید عمده، موجودی و فروش",
+    modules: [...CORE_MODULES, "pos", "wholesale", ...RETAIL_STOCK_MODULES],
+    labels: RETAIL_LABELS,
+    salesModel: "retail_invoice",
+    // Same F&B-only modules off as the other retail trades; a wholesale
+    // business also has no tables, kitchen, reservations or delivery flow.
+    defaultDisabledFeatures: ["inventory", "reservations", "delivery"],
+    capabilities: ["barcode"],
+  },
+  tools_fittings: {
+    brandTitle: "ابزار و یراق‌آلات",
+    brandSubtitle: "مدیریت کالا، موجودی و فروش ابزار و یراق",
+    modules: [...CORE_MODULES, "pos", "tools_fittings", ...RETAIL_STOCK_MODULES],
+    labels: RETAIL_LABELS,
+    salesModel: "retail_invoice",
+    defaultDisabledFeatures: ["inventory", "reservations", "delivery"],
+    capabilities: ["barcode"],
+  },
+  haberdashery: {
+    brandTitle: "خرازی",
+    brandSubtitle: "مدیریت لوازم خیاطی، موجودی و فروش",
+    modules: [...CORE_MODULES, "pos", "haberdashery", ...RETAIL_STOCK_MODULES],
+    labels: RETAIL_LABELS,
+    salesModel: "retail_invoice",
+    defaultDisabledFeatures: ["inventory", "reservations", "delivery"],
+    capabilities: ["barcode"],
+  },
 };
 
 export function industryProfile(industry: Industry): IndustryProfile {
@@ -292,6 +324,9 @@ export const PAGE_MODULE_PREFIXES: readonly (readonly [string, ModuleKey])[] = [
   ["/dashboard/watch", "watch"],
   ["/dashboard/accessories", "accessories"],
   ["/dashboard/cosmetics", "cosmetics"],
+  ["/dashboard/wholesale", "wholesale"],
+  ["/dashboard/tools-fittings", "tools_fittings"],
+  ["/dashboard/haberdashery", "haberdashery"],
   ["/dashboard/loyalty", "loyalty"],
   ["/dashboard/promotions", "promotions"],
   ["/dashboard/commission", "commission"],
