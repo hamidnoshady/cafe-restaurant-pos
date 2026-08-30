@@ -227,10 +227,11 @@ export async function createConnection(
        (business_id, location_id, name, base_url, link_mode,
         consumer_key_ciphertext, consumer_secret_ciphertext, webhook_secret_ciphertext,
         link_token_hash, link_token_ciphertext, link_token_set_at,
-        currency_unit, sync_orders, sync_products, sync_customers, push_stock, push_prices, created_by)
+        currency_unit, sync_orders, sync_products, sync_customers, push_stock, push_prices,
+        sync_categories, auto_pull_orders, order_lookback_days, created_by)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
              CASE WHEN $9::text IS NULL THEN NULL ELSE now() END,
-             $11, $12, $13, $14, $15, $16, $17)
+             $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
      RETURNING ${CONNECTION_COLUMNS}`,
     [
       businessId,
