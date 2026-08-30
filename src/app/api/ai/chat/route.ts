@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import type { AgentMode, PromptContext } from "@/lib/ai";
-import { getPlatformAiConfig, isPlatformAiConfigured } from "@/lib/ai-config";
+import { isPlatformAiConfigured } from "@/lib/ai-config";
+import { resolveAiConfigFor } from "@/lib/ai-runtime";
 import {
   AiInsufficientCreditError,
   cancelAiTurnReservation,
@@ -137,7 +138,10 @@ export const POST = withTenantScope(async (request: NextRequest) => {
     mode,
   });
 
-  const config = await getPlatformAiConfig();
+  // Phase 37 — resolved through the gateway when one is configured: the
+  // virtual key, the model alias and the failover chain for THIS business are
+  // applied here, so nothing downstream has to know a gateway exists.
+  const config = await resolveAiConfigFor(session.businessId);
   if (!isPlatformAiConfigured(config)) {
     return NextResponse.json(
       { error: "ai_unavailable", message: "سرویس هوش مصنوعی هنوز توسط مدیر پلتفرم آماده نشده است." },

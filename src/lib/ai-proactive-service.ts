@@ -23,6 +23,7 @@ import {
   type LocalBusinessClock,
 } from "./ai-proactive";
 import { getPlatformAiConfig, isPlatformAiConfigured, type PlatformAiConfig } from "./ai-config";
+import { decorateAiConfig } from "./ai-runtime";
 import { runBusinessAutopilot } from "./ai-autopilot-service";
 import {
   AiInsufficientCreditError,
@@ -849,7 +850,11 @@ export async function runAiProactiveTick(now = new Date()): Promise<number> {
     const configuredAi = isPlatformAiConfigured(aiConfig) ? aiConfig : null;
     let jobsCompleted = 0;
     await runTenantScopedProactiveJobs(businessIds, withTenant, async (businessId) => {
-      jobsCompleted += await runBusinessProactiveJobs(businessId, now, configuredAi);
+      // Phase 37 — decorate per business, inside that business's own tenant
+      // scope, so a business's digests are sent with its own virtual key and
+      // charged to the gateway budget the platform gave it.
+      const perBusiness = configuredAi ? await decorateAiConfig(configuredAi, businessId) : null;
+      jobsCompleted += await runBusinessProactiveJobs(businessId, now, perBusiness);
     });
     return jobsCompleted;
   } finally {

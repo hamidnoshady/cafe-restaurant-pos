@@ -65,7 +65,10 @@ interface ProviderMessage {
 function providerHeaders(config: AiConfig): Record<string, string> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    Authorization: `Bearer ${config.apiKey}`,
+    // Phase 37 — a gateway deployment authenticates the call with the calling
+    // business's virtual key when one has been provisioned; every other
+    // deployment sends the platform key exactly as it always has.
+    Authorization: `Bearer ${config.gateway?.authKey || config.apiKey}`,
   };
   if (config.provider === "openrouter") {
     headers["HTTP-Referer"] = process.env.APP_URL ?? "https://cafe-pos.local";
@@ -109,6 +112,9 @@ async function callVision(config: AiConfig, dataUrl: string): Promise<{ text: st
         messages,
         temperature: Math.min(config.temperature, 0.2),
         max_tokens: Math.max(config.maxOutputTokens ?? 1000, 2048),
+        // Phase 37 — the gateway's failover chain, when one is configured.
+        // Empty for every deployment that talks to a vendor directly.
+        ...(config.gateway?.body ?? {}),
       }),
       signal: controller.signal,
     });

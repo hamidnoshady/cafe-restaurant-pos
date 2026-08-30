@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import type { AgentMode, PromptContext } from "@/lib/ai";
-import { getPlatformAiConfig, isPlatformAiConfigured } from "@/lib/ai-config";
+import { isPlatformAiConfigured } from "@/lib/ai-config";
+import { resolveAiConfigFor } from "@/lib/ai-runtime";
 import { estimateAiTurn } from "@/lib/ai-estimate";
 import { parseReceiptImageDataUrl } from "@/lib/ai-receipt";
 import type { InboundMessage } from "@/lib/ai-service";
@@ -74,7 +75,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   }
   const allowActions = body.allowActions !== false;
 
-  const config = await getPlatformAiConfig();
+  const config = await resolveAiConfigFor(session.businessId);
   if (!isPlatformAiConfigured(config)) {
     return NextResponse.json(
       { error: "ai_unavailable", message: "سرویس هوش مصنوعی هنوز توسط مدیر پلتفرم آماده نشده است." },

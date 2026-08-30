@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getPlatformAiConfig, isPlatformAiConfigured } from "@/lib/ai-config";
+import { isPlatformAiConfigured } from "@/lib/ai-config";
+import { resolveAiConfigFor } from "@/lib/ai-runtime";
 import { reindexBusinessKnowledge } from "@/lib/ai-rag-indexer";
 import { requireManager } from "@/lib/setup-state";
 import { withTenantScope } from "@/lib/auth";
@@ -18,7 +19,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   const guard = await requireManager();
   if (guard.error) return guard.error;
 
-  const config = await getPlatformAiConfig();
+  const config = await resolveAiConfigFor(guard.session.businessId);
   if (!isPlatformAiConfigured(config)) {
     return NextResponse.json(
       { error: "ai_unavailable", message: "سرویس هوش مصنوعی هنوز توسط مدیر پلتفرم آماده نشده است." },

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getPlatformAiConfig, isPlatformAiConfigured } from "@/lib/ai-config";
+import { isPlatformAiConfigured } from "@/lib/ai-config";
+import { resolveAiConfigFor } from "@/lib/ai-runtime";
 import {
   AiInsufficientCreditError,
   cancelAiTurnReservation,
@@ -52,7 +53,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
     return NextResponse.json({ error: "no_location", message: "شعبه‌ای ثبت نشده است." }, { status: 409 });
   }
 
-  const config = await getPlatformAiConfig();
+  const config = await resolveAiConfigFor(session.businessId);
   if (!isPlatformAiConfigured(config)) {
     return NextResponse.json(
       { error: "ai_unavailable", message: "سرویس هوش مصنوعی هنوز توسط مدیر پلتفرم آماده نشده است." },

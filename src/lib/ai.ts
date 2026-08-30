@@ -2,7 +2,8 @@
  * Framework-free core for the AI assistant: provider metadata, the confirmed-
  * action allowlist, system prompts, and the OpenAI-compatible tool definitions.
  *
- * Both supported providers (OpenRouter and ArvanCloud AI) speak the OpenAI
+ * Every supported provider (OpenRouter and ArvanCloud AI directly, or LiteLLM
+ * as a gateway in front of any number of them) speaks the OpenAI
  * `/chat/completions` shape, so the whole design is a single provider-agnostic
  * client whose base URL / model / key are configurable. Nothing here touches the
  * DB, the network, or `next/*` — that lives in ai-service.ts / ai-config.ts so
@@ -13,7 +14,7 @@
 // ACTION_CATALOG from here, never the reverse.
 import type { AutopilotCategory } from "./ai-autopilot";
 
-export type AiProvider = "openrouter" | "arvan";
+export type AiProvider = "openrouter" | "arvan" | "litellm";
 
 export interface ProviderMeta {
   id: AiProvider;
@@ -25,6 +26,14 @@ export interface ProviderMeta {
   defaultModel: string;
   /** Env var the key falls back to when no DB value is stored. */
   keyEnv: string;
+  /**
+   * Phase 37 — whether this provider is a gateway that fronts other models
+   * rather than one vendor's own catalogue. Gateways additionally accept the
+   * virtual-key/alias/fallback features in `AiGatewayRuntime` below; a direct
+   * vendor connection ignores them, so nothing downstream has to branch on
+   * the provider id to decide whether to send them.
+   */
+  isGateway?: boolean;
 }
 
 export const PROVIDERS: Record<AiProvider, ProviderMeta> = {
@@ -44,10 +53,46 @@ export const PROVIDERS: Record<AiProvider, ProviderMeta> = {
     defaultModel: "gpt-4o-mini",
     keyEnv: "ARVAN_AI_API_KEY",
   },
+  litellm: {
+    id: "litellm",
+    label: "LiteLLM (دروازهٔ یکپارچه)",
+    // Default matches the compose service name so `docker compose --profile ai
+    // up` works with no further configuration. The proxy is expected to sit on
+    // the internal network only — it holds every upstream vendor key.
+    defaultBaseUrl: "http://litellm:4000/v1",
+    defaultModel: "gpt-4o-mini",
+    keyEnv: "LITELLM_MASTER_KEY",
+    isGateway: true,
+  },
 };
 
 export function isProvider(v: unknown): v is AiProvider {
-  return v === "openrouter" || v === "arvan";
+  return v === "openrouter" || v === "arvan" || v === "litellm";
+}
+
+/**
+ * Phase 37 — everything a gateway needs *per call*, resolved before the
+ * request leaves the server and attached to `AiConfig` so no caller in
+ * ai-service.ts / ai-embeddings.ts has to know a gateway exists.
+ *
+ * Both halves are optional on purpose. A deployment pointing straight at
+ * OpenRouter or Arvan produces an `AiConfig` with no runtime at all and gets
+ * byte-for-byte today's behaviour; a gateway deployment fills in whichever
+ * half it has configured.
+ */
+export interface AiGatewayRuntime {
+  /**
+   * The credential for this call: the business's virtual key when one has
+   * been provisioned, otherwise the gateway master key, otherwise nothing
+   * (and the caller falls back to `AiConfig.apiKey`).
+   */
+  authKey?: string;
+  /**
+   * Extra top-level fields forwarded in the request body — currently LiteLLM's
+   * client-side `fallbacks` chain. Sent only to a gateway; a direct vendor
+   * would reject unknown fields.
+   */
+  body?: Record<string, unknown>;
 }
 
 export interface AiConfig {
@@ -60,6 +105,19 @@ export interface AiConfig {
   temperature: number;
   /** Platform cap sent to the provider for one completion. */
   maxOutputTokens?: number;
+  /**
+   * Phase 36 Wave 6 / Phase 37 — the model used for `/embeddings`, which need
+   * not be the chat model. Falls back to `model` (then to `AI_EMBEDDING_MODEL`)
+   * when a deployment has not separated them.
+   */
+  embeddingModel?: string;
+  /** Phase 37 — resolved per call; see `AiGatewayRuntime`. */
+  gateway?: AiGatewayRuntime;
+}
+
+/** The provider ids that are gateways, for UI that offers gateway-only fields. */
+export function isGatewayProvider(provider: AiProvider): boolean {
+  return PROVIDERS[provider]?.isGateway === true;
 }
 
 /** Config safe to send to the browser — the key is never exposed, only a hint. */

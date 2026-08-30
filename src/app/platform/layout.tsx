@@ -59,6 +59,7 @@ const NAV: NavItem[] = [
     children: [
       { label: "تنظیمات و اشتراک‌ها", href: "/platform/ai", exact: true },
       { label: "پرامپت‌ها", href: "/platform/ai/prompts" },
+      { label: "دروازهٔ مدل", href: "/platform/ai/gateway" },
     ],
   },
   { label: "به‌روزرسانی‌ها", href: "/platform/updates" },

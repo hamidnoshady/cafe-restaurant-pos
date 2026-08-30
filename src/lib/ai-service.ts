@@ -88,7 +88,10 @@ const REQUEST_TIMEOUT_MS = 60_000;
 function providerHeaders(config: AiConfig): Record<string, string> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    Authorization: `Bearer ${config.apiKey}`,
+    // Phase 37 — a gateway deployment authenticates the call with the calling
+    // business's virtual key when one has been provisioned; every other
+    // deployment sends the platform key exactly as it always has.
+    Authorization: `Bearer ${config.gateway?.authKey || config.apiKey}`,
   };
   if (config.provider === "openrouter") {
     // Optional attribution headers OpenRouter recommends.
@@ -254,6 +257,10 @@ async function callProvider(
       temperature: config.temperature,
       max_tokens: config.maxOutputTokens,
       stream: Boolean(stream),
+      // Phase 37 — the gateway's failover chain, when one is configured.
+      // Empty for every deployment that talks to a vendor directly, which is
+      // the whole reason it is merged here rather than branched on above.
+      ...(config.gateway?.body ?? {}),
     };
     if (stream) {
       // OpenAI-compatible APIs include final usage in the terminal stream
