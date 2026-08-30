@@ -22,7 +22,11 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import type { AssistantMode } from "./use-ai-chat";
 
 interface SearchResponse {
@@ -72,7 +76,11 @@ export function AiComposerTools({
   if (!canPropose && mode !== "dashboard") return null;
 
   const noResults =
-    !searching && query.trim() && results && !results.conversations?.length && !results.reports?.length;
+    !searching &&
+    query.trim() &&
+    results &&
+    !results.conversations?.length &&
+    !results.reports?.length;
 
   return (
     <div className="flex items-center gap-0.5">
@@ -112,16 +120,26 @@ export function AiComposerTools({
                 <Loader2Icon className="size-3 animate-spin" /> در حال جست‌وجو…
               </p>
             ) : null}
-            {noResults ? <p className="px-1 py-1 text-[11px] text-muted-foreground">نتیجه‌ای یافت نشد.</p> : null}
+            {noResults ? (
+              <p className="px-1 py-1 text-[11px] text-muted-foreground">
+                نتیجه‌ای یافت نشد.
+              </p>
+            ) : null}
             {results?.reports?.length ? (
               <div className="mb-1.5">
-                <p className="px-1 pb-1 text-[10px] font-medium text-muted-foreground">گزارش‌ها</p>
+                <p className="px-1 pb-1 text-[10px] font-medium text-muted-foreground">
+                  گزارش‌ها
+                </p>
                 {results.reports.map((report) => (
                   <button
                     key={report.key}
                     type="button"
-                    onClick={() => onSelectReportPrompt(`گزارش «${report.label}» را اجرا و خلاصه کن.`)}
-                    className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-right text-xs hover:bg-muted"
+                    onClick={() =>
+                      onSelectReportPrompt(
+                        `گزارش «${report.label}» را اجرا و خلاصه کن.`,
+                      )
+                    }
+                    className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-right text-xs hover:bg-muted outline-none focus-visible:ring focus-visible:ring-ring/50"
                   >
                     <BarChart3Icon className="size-3.5 shrink-0 text-muted-foreground" />
                     <span className="truncate">{report.label}</span>
@@ -131,13 +149,15 @@ export function AiComposerTools({
             ) : null}
             {results?.conversations?.length ? (
               <div>
-                <p className="px-1 pb-1 text-[10px] font-medium text-muted-foreground">گفتگوهای قبلی</p>
+                <p className="px-1 pb-1 text-[10px] font-medium text-muted-foreground">
+                  گفتگوهای قبلی
+                </p>
                 {results.conversations.map((conversation) => (
                   <button
                     key={conversation.id}
                     type="button"
                     onClick={() => onSelectConversation(conversation.id)}
-                    className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-right text-xs hover:bg-muted"
+                    className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-right text-xs hover:bg-muted outline-none focus-visible:ring focus-visible:ring-ring/50"
                   >
                     <MessageSquareIcon className="size-3.5 shrink-0 text-muted-foreground" />
                     <span className="truncate">{conversation.title}</span>
@@ -169,10 +189,14 @@ export function AiComposerTools({
               <span className="leading-5">
                 اجازهٔ اقدام در این پیام
                 <span className="block text-[10px] text-muted-foreground">
-                  خاموش‌کردن یعنی دستیار فقط پاسخ می‌دهد و در این پیام هیچ پیشنهاد تغییری نمی‌سازد.
+                  خاموش‌کردن یعنی دستیار فقط پاسخ می‌دهد و در این پیام هیچ
+                  پیشنهاد تغییری نمی‌سازد.
                 </span>
               </span>
-              <Switch checked={actionsAllowed} onCheckedChange={onActionsAllowedChange} />
+              <Switch
+                checked={actionsAllowed}
+                onCheckedChange={onActionsAllowedChange}
+              />
             </label>
           </DropdownMenuContent>
         </DropdownMenu>

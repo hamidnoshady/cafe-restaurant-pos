@@ -15,7 +15,11 @@ import { useGSAP } from "@gsap/react";
 import { cn } from "@/lib/utils";
 import { AiMarkdown } from "./ai-markdown";
 import { AiProposalCard } from "./ai-proposal-card";
-import { animateBubbleIn, animateTypingDots, reducedMotion } from "./chat-animations";
+import {
+  animateBubbleIn,
+  animateTypingDots,
+  reducedMotion,
+} from "./chat-animations";
 import type { AiChatMessage } from "./use-ai-chat";
 
 export interface BubbleAttachment {
@@ -42,7 +46,11 @@ export function TypingDots() {
     { scope: ref },
   );
   return (
-    <span ref={ref} className="inline-flex items-center gap-1 py-1" aria-label="در حال نوشتن">
+    <span
+      ref={ref}
+      className="inline-flex items-center gap-1 py-1"
+      aria-label="در حال نوشتن"
+    >
       {[0, 1, 2].map((index) => (
         <span
           key={index}
@@ -83,9 +91,15 @@ export function ChatBubble({
 }: ChatBubbleProps) {
   const rowRef = useRef<HTMLDivElement>(null);
   const isUser = message.role === "user";
-  const cost = formatCost ?? ((rial: number) => `${Math.round(rial / 10).toLocaleString("fa-IR")} تومان`);
+  const cost =
+    formatCost ??
+    ((rial: number) =>
+      `${Math.round(rial / 10).toLocaleString("fa-IR")} تومان`);
   const time = message.createdAt
-    ? new Date(message.createdAt).toLocaleTimeString("fa-IR", { hour: "2-digit", minute: "2-digit" })
+    ? new Date(message.createdAt).toLocaleTimeString("fa-IR", {
+        hour: "2-digit",
+        minute: "2-digit",
+      })
     : null;
 
   useGSAP(
@@ -108,7 +122,10 @@ export function ChatBubble({
   return (
     <div
       ref={rowRef}
-      className={cn("flex min-w-0 gap-2", isUser ? "justify-end" : "justify-start")}
+      className={cn(
+        "flex min-w-0 gap-2",
+        isUser ? "justify-end" : "justify-start",
+      )}
     >
       {!isUser ? (
         <span
@@ -122,11 +139,20 @@ export function ChatBubble({
         </span>
       ) : null}
 
-      <div className={cn("group min-w-0 space-y-1.5", isUser ? "max-w-[85%]" : "max-w-[82%]")}>
+      <div
+        className={cn(
+          "group min-w-0 space-y-1.5",
+          isUser ? "max-w-[85%]" : "max-w-[82%]",
+        )}
+      >
         {!isUser ? (
           <div className="flex items-center gap-2 px-1">
-            <span className="text-[11px] font-semibold text-foreground/80">دستیار هوشمند</span>
-            {time ? <span className="text-[10px] text-muted-foreground">{time}</span> : null}
+            <span className="text-[11px] font-semibold text-foreground/80">
+              دستیار هوشمند
+            </span>
+            {time ? (
+              <span className="text-[10px] text-muted-foreground">{time}</span>
+            ) : null}
           </div>
         ) : null}
 
@@ -162,7 +188,9 @@ export function ChatBubble({
                   )}
                 </div>
               ) : null}
-              <span className="whitespace-pre-wrap break-words">{message.content}</span>
+              <span className="whitespace-pre-wrap break-words">
+                {message.content}
+              </span>
             </>
           ) : message.content ? (
             <AiMarkdown content={message.content} />
@@ -173,8 +201,12 @@ export function ChatBubble({
 
         {/* The charge, after the fact and in passing — never a gate in front
             of the reply. See sendMessage in use-ai-chat.ts. */}
-        {!isUser && typeof message.costRial === "number" && message.costRial > 0 ? (
-          <p className="px-1 text-[10px] text-muted-foreground">هزینهٔ این پاسخ: {cost(message.costRial)}</p>
+        {!isUser &&
+        typeof message.costRial === "number" &&
+        message.costRial > 0 ? (
+          <p className="px-1 text-[10px] text-muted-foreground">
+            هزینهٔ این پاسخ: {cost(message.costRial)}
+          </p>
         ) : null}
 
         {/* Phase 36 Wave 7 — a cached answer is labelled, never passed off
@@ -185,7 +217,7 @@ export function ChatBubble({
             {onAskAgain ? (
               <button
                 type="button"
-                className="rounded-full border border-stone-300/70 px-2 py-0.5 text-[10px] text-foreground/80 transition-colors hover:bg-muted disabled:opacity-50"
+                className="rounded-full border border-stone-300/70 px-2 py-0.5 text-[10px] text-foreground/80 transition-colors hover:bg-muted disabled:opacity-50 outline-none focus-visible:ring focus-visible:ring-ring/50"
                 disabled={busy}
                 onClick={onAskAgain}
               >
@@ -202,7 +234,7 @@ export function ChatBubble({
               onClick={() => void copyContent()}
               aria-label="کپی پاسخ"
               title="کپی پاسخ"
-              className="grid size-6 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              className="grid size-6 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground outline-none focus-visible:ring focus-visible:ring-ring/50"
             >
               <CopyIcon className="size-3.5" />
             </button>
@@ -215,7 +247,9 @@ export function ChatBubble({
         ) : null}
 
         {isUser && time ? (
-          <p className="px-1 text-start text-[10px] text-muted-foreground">{time}</p>
+          <p className="px-1 text-start text-[10px] text-muted-foreground">
+            {time}
+          </p>
         ) : null}
 
         {canPropose && message.proposal ? (

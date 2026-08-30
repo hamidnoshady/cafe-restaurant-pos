@@ -16,3 +16,6 @@
 ## 2024-05-24 - Missing Focus Rings due to Non-Standard Tailwind Class
 **Learning:** Using `ring-3` for focus states (`focus-visible:ring-3`) causes the focus ring to be entirely missing because it is not a standard Tailwind CSS class. Standard classes are `ring`, `ring-0`, `ring-1`, `ring-2`, `ring-4`, etc.
 **Action:** Always use standard Tailwind classes like `focus-visible:ring` or `focus-visible:ring-2` (along with `focus-visible:ring-ring/50 outline-none`) when building custom interactive components or fixing focus accessibility to ensure the ring renders correctly.
+## 2026-08-30 - Ensure Custom Buttons Have Focus States
+**Learning:** Interactive elements like custom `button` tags used in complex AI UI components often miss keyboard focus states, reducing accessibility for keyboard users navigating chat tools.
+**Action:** Always append `outline-none focus-visible:ring focus-visible:ring-ring/50` to custom `<button>` elements to ensure standard Tailwind focus rings are applied for keyboard navigation.
