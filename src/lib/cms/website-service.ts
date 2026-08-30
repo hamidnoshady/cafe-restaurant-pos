@@ -310,10 +310,6 @@ export async function cmsWebsiteDns(businessId: string): Promise<WebsiteResult<C
   };
 }
 
-/** One-line Persian guidance for the checklist card. */
-export function cmsDnsHint(status: CmsDnsStatus): string {
-  if (!status.dns.resolved) return dnsHint(status.dns);
-  if (!status.dns.pointingToCms) return dnsHint(status.dns);
-  if (!status.domainVerified) return dnsHint(status.dns);
-  return "دامنه به سرور CMS اشاره می‌کند و در پنل تأیید شده است — سایت روی اینترنت فعال است.";
-}
+// `cmsDnsHint` lives in ./dns (pure) so the dashboard's client component can
+// render it without pulling this DB-backed module into the browser bundle.
+export { cmsDnsHint } from "./dns";

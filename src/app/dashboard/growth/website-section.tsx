@@ -23,7 +23,8 @@ import type { CmsConnectionSummary } from "@/lib/cms/connections";
 import type { CmsOrder, SiteDescriptor } from "@/lib/cms/types";
 import { cardClass, EmptyState, SectionCard, StatusBadge } from "../page-chrome";
 import { api, errorMessageOrRaw, Field, inputClass, PrimaryButton, SecondaryButton, ErrorBox } from "../ui";
-import { cmsDnsHint, type CmsDnsStatus, type WebsiteOverview } from "@/lib/cms/website-service";
+import { cmsDnsHint } from "@/lib/cms/dns";
+import type { CmsDnsStatus, WebsiteOverview } from "@/lib/cms/website-service";
 
 const TYPE_LABELS: Record<string, string> = {
   business: "کسب‌وکار",
