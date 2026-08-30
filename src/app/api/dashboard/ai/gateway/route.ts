@@ -18,8 +18,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { withTenantScope } from "@/lib/auth";
 import { requireManager } from "@/lib/setup-state";
 import { getPlatformAiConfig } from "@/lib/ai-config";
-import { getAiGatewayConfig, getBusinessGateway, saveBusinessGateway } from "@/lib/ai-gateway-service";
-import { isGatewayActive, resolveChatModel, validateBusinessGatewayInput } from "@/lib/ai-gateway";
+import {
+  getAiGatewayConfig,
+  getBusinessGateway,
+  listBusinessGatewayUsage,
+  resolveGatewayCosting,
+  saveBusinessGateway,
+} from "@/lib/ai-gateway-service";
+import { isGatewayActive, rialFromGatewayUsd, resolveChatModel, validateBusinessGatewayInput } from "@/lib/ai-gateway";
 import { isFeatureEnabled } from "@/lib/features";
 
 export const GET = withTenantScope(async () => {
@@ -32,6 +38,31 @@ export const GET = withTenantScope(async () => {
 
   const active = isGatewayActive(gateway) && platform.provider === "litellm";
   const allowed = active && gateway.allowBusinessModels;
+
+  // Phase 38b — this business's own gateway usage, last 30 days. The read is
+  // tenant-scoped (RLS confines it to this business's rows) and the Rial
+  // conversion uses the same rate the settlement does; the figure is a
+  // transparency view of what the assistant consumed, never a charge.
+  let usage: { day: string; model: string; spendUsd: number; spendRial: number | null; promptTokens: number; completionTokens: number; apiRequests: number }[] = [];
+  if (active) {
+    try {
+      const costing = await resolveGatewayCosting();
+      const toDay = new Date().toISOString().slice(0, 10);
+      const fromDay = new Date(Date.now() - 29 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      const rows = await listBusinessGatewayUsage({ fromDay, toDay });
+      usage = rows.map((row) => ({
+        day: row.day,
+        model: row.model,
+        spendUsd: row.spendUsd,
+        spendRial: costing ? rialFromGatewayUsd(row.spendUsd, costing.usdRialRate) : null,
+        promptTokens: row.promptTokens,
+        completionTokens: row.completionTokens,
+        apiRequests: row.apiRequests,
+      }));
+    } catch (err) {
+      console.error("ai gateway usage unavailable for business", err);
+    }
+  }
 
   return NextResponse.json({
     // False when the platform has no gateway, or has one but is not routing
@@ -49,6 +80,8 @@ export const GET = withTenantScope(async () => {
     /** Whether this business's calls carry a key of its own at the gateway. */
     hasVirtualKey: Boolean(business?.virtualKey),
     syncError: business?.syncError ?? null,
+    /** Phase 38b — this business's daily gateway usage, newest day first. */
+    usage,
   });
 });
 

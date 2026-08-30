@@ -22,7 +22,9 @@
  */
 import { query, withoutTenantScope } from "./db";
 import {
+  aggregateSpendLogs,
   defaultGatewayConfig,
+  gatewayTurnPricing,
   emptyBusinessGateway,
   gatewayManagementUrl,
   gatewayStatusMessage,
@@ -33,10 +35,14 @@ import {
   keyUpdateUrl,
   livelinessUrl,
   modelInfoUrl,
+  normalizeMcpServers,
+  normalizePromptBindings,
   parseGatewayModels,
   parseGeneratedKey,
   parseKeySpend,
+  parseSpendLogs,
   resolveChatModel,
+  spendLogsUrl,
   toPublicGatewayConfig,
   toStringList,
   validateBusinessGatewayInput,
@@ -51,6 +57,7 @@ import {
   type PublicAiGatewayConfig,
   type PublicBusinessGateway,
 } from "./ai-gateway";
+import type { AiGatewayTurnPricing } from "./ai-billing-service";
 
 /** Management calls are operator-facing: fail them fast rather than hang a page. */
 const MANAGEMENT_TIMEOUT_MS = 10_000;
@@ -94,6 +101,11 @@ type GatewayRow = {
   default_budget_duration: string;
   default_tpm_limit: number | null;
   default_rpm_limit: number | null;
+  usd_rial_rate: string | null;
+  gateway_costing_enabled: boolean;
+  prompt_bindings: unknown;
+  mcp_enabled: boolean;
+  mcp_servers: unknown;
 };
 
 function rowToGateway(row: GatewayRow): AiGatewayConfig {
@@ -113,6 +125,11 @@ function rowToGateway(row: GatewayRow): AiGatewayConfig {
     defaultBudgetDuration: textOr(row.default_budget_duration, fallback.defaultBudgetDuration),
     defaultTpmLimit: optionalInteger(row.default_tpm_limit),
     defaultRpmLimit: optionalInteger(row.default_rpm_limit),
+    usdRialRate: optionalNumber(row.usd_rial_rate),
+    gatewayCostingEnabled: row.gateway_costing_enabled,
+    promptBindings: normalizePromptBindings(row.prompt_bindings),
+    mcpEnabled: row.mcp_enabled,
+    mcpServers: normalizeMcpServers(row.mcp_servers),
   };
 }
 
@@ -122,7 +139,9 @@ export async function getAiGatewayConfig(): Promise<AiGatewayConfig> {
     `SELECT enabled, base_url, master_key, chat_model, embedding_model,
             fallback_models, routing_strategy, virtual_keys_enabled,
             allow_business_models, published_models, default_max_budget_usd,
-            default_budget_duration, default_tpm_limit, default_rpm_limit
+            default_budget_duration, default_tpm_limit, default_rpm_limit,
+            usd_rial_rate, gateway_costing_enabled, prompt_bindings,
+            mcp_enabled, mcp_servers
        FROM platform_ai_gateway
       WHERE id = true`,
   );
@@ -139,6 +158,7 @@ function envGatewayConfig(): Partial<AiGatewayInput> {
   const budget = Number(env.LITELLM_DEFAULT_MAX_BUDGET_USD ?? "");
   const tpm = Number(env.LITELLM_DEFAULT_TPM_LIMIT ?? "");
   const rpm = Number(env.LITELLM_DEFAULT_RPM_LIMIT ?? "");
+  const usdRate = Number(env.LITELLM_USD_RIAL_RATE ?? "");
   return {
     enabled: env.LITELLM_ENABLED === "true",
     baseUrl: env.LITELLM_BASE_URL?.trim() || undefined,
@@ -149,6 +169,7 @@ function envGatewayConfig(): Partial<AiGatewayInput> {
     defaultMaxBudgetUsd: Number.isFinite(budget) && budget > 0 ? budget : null,
     defaultTpmLimit: Number.isSafeInteger(tpm) && tpm > 0 ? tpm : null,
     defaultRpmLimit: Number.isSafeInteger(rpm) && rpm > 0 ? rpm : null,
+    usdRialRate: Number.isFinite(usdRate) && usdRate > 0 ? usdRate : null,
   };
 }
 
@@ -176,6 +197,14 @@ export function mergeGatewayConfig(draft: AiGatewayInput, current: AiGatewayConf
     defaultBudgetDuration: (draft.defaultBudgetDuration ?? current.defaultBudgetDuration).trim() || current.defaultBudgetDuration,
     defaultTpmLimit: pickOptionalNumber(draft.defaultTpmLimit, current.defaultTpmLimit),
     defaultRpmLimit: pickOptionalNumber(draft.defaultRpmLimit, current.defaultRpmLimit),
+    usdRialRate: pickOptionalNumber(draft.usdRialRate, current.usdRialRate),
+    gatewayCostingEnabled: draft.gatewayCostingEnabled ?? current.gatewayCostingEnabled,
+    promptBindings:
+      draft.promptBindings === undefined
+        ? current.promptBindings
+        : normalizePromptBindings(draft.promptBindings),
+    mcpEnabled: draft.mcpEnabled ?? current.mcpEnabled,
+    mcpServers: draft.mcpServers === undefined ? current.mcpServers : normalizeMcpServers(draft.mcpServers),
   };
 }
 
@@ -207,9 +236,12 @@ export async function saveAiGatewayConfig(input: AiGatewayInput): Promise<AiGate
        (id, enabled, base_url, master_key, chat_model, embedding_model,
         fallback_models, routing_strategy, virtual_keys_enabled,
         allow_business_models, published_models, default_max_budget_usd,
-        default_budget_duration, default_tpm_limit, default_rpm_limit, updated_at)
+        default_budget_duration, default_tpm_limit, default_rpm_limit,
+        usd_rial_rate, gateway_costing_enabled, prompt_bindings,
+        mcp_enabled, mcp_servers, updated_at)
      VALUES
-       (true, $1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10::jsonb, $11, $12, $13, $14, now())
+       (true, $1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10::jsonb, $11, $12, $13, $14,
+        $15, $16, $17::jsonb, $18, $19::jsonb, now())
      ON CONFLICT (id)
      DO UPDATE SET enabled = EXCLUDED.enabled,
                    base_url = EXCLUDED.base_url,
@@ -225,6 +257,11 @@ export async function saveAiGatewayConfig(input: AiGatewayInput): Promise<AiGate
                    default_budget_duration = EXCLUDED.default_budget_duration,
                    default_tpm_limit = EXCLUDED.default_tpm_limit,
                    default_rpm_limit = EXCLUDED.default_rpm_limit,
+                   usd_rial_rate = EXCLUDED.usd_rial_rate,
+                   gateway_costing_enabled = EXCLUDED.gateway_costing_enabled,
+                   prompt_bindings = EXCLUDED.prompt_bindings,
+                   mcp_enabled = EXCLUDED.mcp_enabled,
+                   mcp_servers = EXCLUDED.mcp_servers,
                    updated_at = now()`,
     [
       input.enabled ?? current.enabled,
@@ -241,6 +278,17 @@ export async function saveAiGatewayConfig(input: AiGatewayInput): Promise<AiGate
       (input.defaultBudgetDuration ?? current.defaultBudgetDuration).trim(),
       pickOptionalNumber(input.defaultTpmLimit, current.defaultTpmLimit),
       pickOptionalNumber(input.defaultRpmLimit, current.defaultRpmLimit),
+      pickOptionalNumber(input.usdRialRate, current.usdRialRate),
+      input.gatewayCostingEnabled ?? current.gatewayCostingEnabled,
+      JSON.stringify(
+        input.promptBindings === undefined
+          ? current.promptBindings
+          : normalizePromptBindings(input.promptBindings),
+      ),
+      input.mcpEnabled ?? current.mcpEnabled,
+      JSON.stringify(
+        input.mcpServers === undefined ? current.mcpServers : normalizeMcpServers(input.mcpServers),
+      ),
     ],
   );
   return getAiGatewayConfig();
@@ -612,6 +660,234 @@ async function getBusinessGatewayOrEmpty(businessId: string): Promise<BusinessGa
 }
 
 // ---------------------------------------------------------------------------
+// Phase 38b — costing resolution and usage sync
+//
+// The costing helper is called on every settlement path, so it fails soft and
+// returns null on anything unexpected: a turn that would have settled on the
+// token rates must keep settling on them, not fail because the gateway row
+// is unreadable. The sync is an explicit operator action and is allowed to
+// report failure loudly in its result object.
+// ---------------------------------------------------------------------------
+
+/** Gateway costing in force right now, or null when turns settle on the token rates. */
+export interface GatewayCosting {
+  usdRialRate: number;
+}
+
+/**
+ * The costing policy for settlements: the platform's cost source is the
+ * gateway only when the platform runs through it, the switch is on, and a
+ * USD→Rial rate is configured. Anything else is null — the exact precedence
+ * the runtime uses before attaching gateway fields to a call.
+ */
+export async function resolveGatewayCosting(): Promise<GatewayCosting | null> {
+  try {
+    const gateway = await getAiGatewayConfig();
+    if (!gateway.gatewayCostingEnabled || !gateway.usdRialRate) return null;
+    return { usdRialRate: gateway.usdRialRate };
+  } catch (err) {
+    console.error("ai gateway costing unavailable; settling on the token rates", err);
+    return null;
+  }
+}
+
+/**
+ * The settlement figures for one turn the gateway priced: USD in, Rial out
+ * (cost plus the platform's margin). Null whenever there is nothing to
+ * price from — no reported cost, costing off, or a conversion that lands at
+ * zero — which the caller reads as "use the token rates", never as free.
+ */
+export async function resolveGatewayTurnPricing(
+  costUsd: number | null | undefined,
+  marginPercent: number,
+): Promise<AiGatewayTurnPricing | null> {
+  if (costUsd === null || costUsd === undefined || !(costUsd > 0)) return null;
+  const costing = await resolveGatewayCosting();
+  if (!costing) return null;
+  const { costRial, chargedRial } = gatewayTurnPricing(costUsd, costing.usdRialRate, marginPercent);
+  if (chargedRial <= 0) return null;
+  return { costUsd, costRial, chargedRial };
+}
+
+type UsageRollupRow = {
+  id: string;
+  day: string;
+  key_alias: string;
+  business_id: string | null;
+  model: string;
+  spend_usd: string | number;
+  prompt_tokens: string | number;
+  completion_tokens: string | number;
+  api_requests: number;
+};
+
+export interface GatewayUsageEntry {
+  day: string;
+  keyAlias: string;
+  businessId: string | null;
+  model: string;
+  spendUsd: number;
+  promptTokens: number;
+  completionTokens: number;
+  apiRequests: number;
+}
+
+function rowToUsageEntry(row: UsageRollupRow): GatewayUsageEntry {
+  return {
+    day: typeof row.day === "string" ? row.day.slice(0, 10) : String(row.day).slice(0, 10),
+    keyAlias: row.key_alias,
+    businessId: row.business_id,
+    model: row.model,
+    spendUsd: numberValue(row.spend_usd),
+    promptTokens: numberValue(row.prompt_tokens),
+    completionTokens: numberValue(row.completion_tokens),
+    apiRequests: numberValue(row.api_requests),
+  };
+}
+
+/** Stored rollups for a day window. Platform scope; the console reads it. */
+export async function listGatewayUsage(options: { fromDay: string; toDay: string }): Promise<GatewayUsageEntry[]> {
+  const { rows } = await withoutTenantScope("platform", () =>
+    query<UsageRollupRow>(
+      `SELECT id, day, key_alias, business_id, model, spend_usd,
+              prompt_tokens, completion_tokens, api_requests
+         FROM ai_gateway_usage
+        WHERE day BETWEEN $1 AND $2
+        ORDER BY day DESC, key_alias, model`,
+      [options.fromDay, options.toDay],
+    ),
+  );
+  return rows.map(rowToUsageEntry);
+}
+
+/**
+ * This business's own rollups, read under the ambient tenant scope: RLS
+ * confines the read to the session's business, so the settings page can show
+ * usage without a platform bypass.
+ */
+export async function listBusinessGatewayUsage(options: {
+  fromDay: string;
+  toDay: string;
+}): Promise<GatewayUsageEntry[]> {
+  const { rows } = await query<UsageRollupRow>(
+    `SELECT id, day, key_alias, business_id, model, spend_usd,
+            prompt_tokens, completion_tokens, api_requests
+       FROM ai_gateway_usage
+      WHERE day BETWEEN $1 AND $2
+      ORDER BY day DESC, model`,
+    [options.fromDay, options.toDay],
+  );
+  return rows.map(rowToUsageEntry);
+}
+
+export interface GatewayUsageSyncResult {
+  ok: boolean;
+  /** Wall-clock milliseconds for the whole pull-aggregate-store pass. */
+  durationMs: number;
+  /** Spend-log entries the gateway returned for the window. */
+  entries: number;
+  /** Rollup rows written (upserted) — zero when the gateway said nothing. */
+  rows: number;
+  /** A short, human-readable failure reason — Persian, shown in the console. */
+  error: string | null;
+}
+
+/** UTC day N days ago, as the spend-log window's inclusive start. */
+function utcDayNDaysAgo(days: number): string {
+  const date = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  return date.toISOString().slice(0, 10);
+}
+
+/**
+ * Pull the proxy's spend logs for the last `days` days, aggregate them into
+ * the daily rollup, and store them.
+ *
+ * Two deliberate properties. The window always starts `days` ago and ends
+ * *tomorrow*: the proxy logs in UTC while an operator presses the button at
+ * any hour, so the rolling window re-reads recent days rather than
+ * maintaining a cursor that could silently stop advancing. And the write is
+ * an upsert — re-syncing a day replaces its rows in place, so a partial
+ * gateway log followed by a complete one converges instead of double
+ * counting.
+ */
+export async function syncGatewayUsage(
+  config: AiGatewayConfig,
+  options: { days?: number } = {},
+): Promise<GatewayUsageSyncResult> {
+  const started = Date.now();
+  const days = Number.isSafeInteger(options.days) && (options.days ?? 0) > 0 ? (options.days as number) : 7;
+  const failure = (error: string): GatewayUsageSyncResult => ({
+    ok: false,
+    durationMs: Date.now() - started,
+    entries: 0,
+    rows: 0,
+    error,
+  });
+
+  if (!config.masterKey) return failure("کلید مدیر دروازه تنظیم نشده است؛ همگام‌سازی مصرف ممکن نشد.");
+  const startDate = `${utcDayNDaysAgo(days)}T00:00:00`;
+  const endDate = `${new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10)}T23:59:59`;
+  const res = await gatewayRequest(config, spendLogsUrl(config.baseUrl, startDate, endDate), { method: "GET" });
+  if (res.status === 0) return failure("دروازه در دسترس نیست (اتصال برقرار نشد).");
+  if (res.status === 401 || res.status === 403) return failure(gatewayStatusMessage(res.status));
+  if (res.status < 200 || res.status >= 300) return failure(gatewayStatusMessage(res.status));
+
+  const entries = parseSpendLogs(res.body);
+  const rollups = aggregateSpendLogs(entries);
+
+  // Alias → business: the app mints aliases itself (`pos-<id sans dashes>`),
+  // so the mapping resolves without asking the gateway.
+  const businessRows = await withoutTenantScope("platform", () =>
+    query<{ key_alias: string | null; business_id: string }>(
+      `SELECT key_alias, business_id FROM ai_business_gateway WHERE key_alias IS NOT NULL`,
+    ),
+  );
+  const aliasToBusiness = new Map<string, string>();
+  for (const row of businessRows.rows) {
+    if (row.key_alias) aliasToBusiness.set(row.key_alias, row.business_id);
+  }
+
+  let stored = 0;
+  if (rollups.length > 0) {
+    await withoutTenantScope("platform", async () => {
+      for (const rollup of rollups) {
+        await query(
+          `INSERT INTO ai_gateway_usage
+             (day, key_alias, business_id, model, spend_usd,
+              prompt_tokens, completion_tokens, api_requests, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())
+           ON CONFLICT (day, key_alias, model)
+           DO UPDATE SET business_id = EXCLUDED.business_id,
+                         spend_usd = EXCLUDED.spend_usd,
+                         prompt_tokens = EXCLUDED.prompt_tokens,
+                         completion_tokens = EXCLUDED.completion_tokens,
+                         api_requests = EXCLUDED.api_requests,
+                         updated_at = now()`,
+          [
+            rollup.day,
+            rollup.keyAlias,
+            aliasToBusiness.get(rollup.keyAlias) ?? null,
+            rollup.model,
+            rollup.spendUsd,
+            rollup.promptTokens,
+            rollup.completionTokens,
+            rollup.apiRequests,
+          ],
+        );
+        stored += 1;
+      }
+    });
+  }
+
+  // The per-key cumulative spend (`ai_business_gateway.spend_usd`) is
+  // deliberately NOT touched here: it is a lifetime figure from /key/info,
+  // and this function only ever sees a rolling window. Mixing the two would
+  // quietly rewrite a cumulative diagnostic with a weekly one.
+
+  return { ok: true, durationMs: Date.now() - started, entries: entries.length, rows: stored, error: null };
+}
+
+// ---------------------------------------------------------------------------
 // Presentation helpers
 // ---------------------------------------------------------------------------
 
@@ -629,5 +905,5 @@ export function toPublicBusinessGateway(
   };
 }
 
-export { envGatewayConfig };
+export { defaultGatewayConfig, envGatewayConfig };
 export type { AiGatewayConfig, BusinessGateway, GatewayProbe };

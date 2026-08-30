@@ -9,6 +9,7 @@ import {
   type AiConfig,
 } from "./ai";
 import { estimateTokens, type AiTokenUsage } from "./ai-billing";
+import { parseResponseCostHeader } from "./ai-gateway";
 import {
   INVOICE_EXTRACTION_SYSTEM_PROMPT,
   INVOICE_EXTRACTION_USER_PROMPT,
@@ -51,6 +52,12 @@ export interface InvoiceOcrResult {
   supplierId: string | null;
   supplierName: string | null;
   usage: AiTokenUsage;
+  /**
+   * Phase 38b — the gateway's own cost figure for the vision call (USD),
+   * null when the responder did not report one. Settlement falls back to the
+   * token rates without it.
+   */
+  costUsd: number | null;
 }
 
 type ProviderContentPart =
@@ -88,7 +95,10 @@ function fallbackUsage(messages: ProviderMessage[], content: string): AiTokenUsa
   };
 }
 
-async function callVision(config: AiConfig, dataUrl: string): Promise<{ text: string; usage: AiTokenUsage }> {
+async function callVision(
+  config: AiConfig,
+  dataUrl: string,
+): Promise<{ text: string; usage: AiTokenUsage; costUsd: number | null }> {
   const messages: ProviderMessage[] = [
     { role: "system", content: INVOICE_EXTRACTION_SYSTEM_PROMPT },
     {
@@ -153,7 +163,12 @@ async function callVision(config: AiConfig, dataUrl: string): Promise<{ text: st
         }
       : fallbackUsage(messages, text);
 
-  return { text, usage };
+  return {
+    text,
+    usage,
+    // Phase 38b — the gateway's own price for this call, when it reports one.
+    costUsd: parseResponseCostHeader(res.headers.get("x-litellm-response-cost")),
+  };
 }
 
 export class InvoiceOcrError extends Error {
@@ -261,7 +276,7 @@ export async function runInvoiceOcr(input: {
   locationId: string;
   dataUrl: string;
 }): Promise<InvoiceOcrResult> {
-  const { text, usage } = await callVision(input.config, input.dataUrl);
+  const { text, usage, costUsd } = await callVision(input.config, input.dataUrl);
   const extraction = parseInvoiceExtractionReply(text);
   if (!extraction) {
     throw new InvoiceOcrError(
@@ -340,5 +355,6 @@ export async function runInvoiceOcr(input: {
     supplierId: supplier.id,
     supplierName: supplier.name ?? extraction.vendor,
     usage,
+    costUsd,
   };
 }

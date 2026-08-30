@@ -16,7 +16,7 @@
  * and stays there. `spendUsd` below is a diagnostic to reconcile the two.
  */
 
-import type { AiConfig } from "./ai";
+import type { AgentMode, AiConfig } from "./ai";
 
 // ---------------------------------------------------------------------------
 // Configuration shapes
@@ -57,6 +57,16 @@ export interface AiGatewayConfig {
   defaultBudgetDuration: string;
   defaultTpmLimit: number | null;
   defaultRpmLimit: number | null;
+  /** Phase 38b — FX rate turning the gateway's USD cost figures into Rial. */
+  usdRialRate: number | null;
+  /** Phase 38b — settle turns on the gateway's own reported cost. */
+  gatewayCostingEnabled: boolean;
+  /** Phase 38b — agent surface → LiteLLM prompt_id (the gateway's prompt registry). */
+  promptBindings: Partial<Record<AgentMode, string>>;
+  /** Phase 38b — whether the proxy may front MCP servers at all. */
+  mcpEnabled: boolean;
+  /** Phase 38b — the MCP servers the proxy may front (agentic tools). */
+  mcpServers: GatewayMcpServer[];
 }
 
 /** Gateway config with the master key replaced by a boolean, as `platform_ai_config` does. */
@@ -79,6 +89,26 @@ export interface AiGatewayInput {
   defaultBudgetDuration?: string;
   defaultTpmLimit?: number | null;
   defaultRpmLimit?: number | null;
+  usdRialRate?: number | null;
+  gatewayCostingEnabled?: boolean;
+  promptBindings?: unknown;
+  mcpEnabled?: boolean;
+  mcpServers?: unknown;
+}
+
+/**
+ * Phase 38b — one MCP server the LiteLLM proxy fronts. The proxy turns the
+ * server's tools into OpenAI function tools and (with `require_approval`
+ * "never", the only mode this platform sends) executes them mid-turn, which
+ * is what makes a gateway turn agentic beyond the app's own read tools.
+ */
+export interface GatewayMcpServer {
+  /** Stable identifier — becomes the proxy's `server_label` and its URL path. */
+  name: string;
+  /** Persian display name for the console. */
+  label: string;
+  /** The server's MCP endpoint (streamable HTTP). */
+  url: string;
 }
 
 /** One business's slice of the gateway: its key, its ceilings, its model choice. */
@@ -135,6 +165,11 @@ export function defaultGatewayConfig(): AiGatewayConfig {
     defaultBudgetDuration: "30d",
     defaultTpmLimit: null,
     defaultRpmLimit: null,
+    usdRialRate: null,
+    gatewayCostingEnabled: false,
+    promptBindings: {},
+    mcpEnabled: false,
+    mcpServers: [],
   };
 }
 
@@ -182,6 +217,276 @@ export function toStringList(value: unknown): string[] {
 export function toListText(values: string[]): string {
   return values.join("\n");
 }
+
+// ---------------------------------------------------------------------------
+// Phase 38b — costing, prompts/skills, MCP and usage
+//
+// Everything here is a pure function of configuration or gateway payloads, so
+// the same invariant as the rest of the file holds: the request path can be
+// tested without a proxy, and a shape nobody recognises degrades to "nothing
+// to send" instead of throwing into a turn that worked before.
+// ---------------------------------------------------------------------------
+
+/**
+ * The agent surfaces a gateway prompt may be bound to — exactly the prompt
+ * manager's platform surfaces. A binding for anything else is refused on
+ * write so the map can never grow a second taxonomy.
+ */
+export const GATEWAY_PROMPT_SURFACES: readonly AgentMode[] = [
+  "wizard",
+  "dashboard",
+  "floor",
+  "proactive",
+  "autopilot",
+  "platform",
+];
+
+/** `name | label | url`, one server per line — the console's MCP editor format. */
+export function mcpServersToText(servers: GatewayMcpServer[]): string {
+  return servers.map((server) => [server.name, server.label, server.url].join(" | ")).join("\n");
+}
+
+/**
+ * Normalise the stored/configured prompt bindings into a surface → prompt_id
+ * map. Unknown surfaces and blank values are dropped rather than preserved:
+ * the map is read on every chat turn and a stale key must never send a
+ * prompt_id for a surface the assistant no longer has.
+ */
+export function normalizePromptBindings(value: unknown): Partial<Record<AgentMode, string>> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const result: Partial<Record<AgentMode, string>> = {};
+  for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
+    if (!(GATEWAY_PROMPT_SURFACES as readonly string[]).includes(key)) continue;
+    const promptId = trimmed(raw);
+    if (promptId) result[key as AgentMode] = promptId;
+  }
+  return result;
+}
+
+/**
+ * Normalise the MCP server list. A server is kept only with a sane name (the
+ * proxy's URL path is built from it), a URL and a label; anything else is
+ * dropped, because a half-defined server would reach the request body.
+ */
+export function normalizeMcpServers(value: unknown): GatewayMcpServer[] {
+  if (!Array.isArray(value)) return [];
+  const servers: GatewayMcpServer[] = [];
+  const seen = new Set<string>();
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object") continue;
+    const row = entry as Record<string, unknown>;
+    const name = trimmed(row.name).toLowerCase().replace(/[^a-z0-9_-]/g, "");
+    const url = trimmed(row.url);
+    if (!name || !url || seen.has(name)) continue;
+    seen.add(name);
+    servers.push({ name, label: trimmed(row.label) || name, url });
+  }
+  return servers;
+}
+
+/** Parse the console's `name | label | url` textarea into server rows. */
+export function mcpServersFromText(text: string): GatewayMcpServer[] {
+  return normalizeMcpServers(
+    text
+      .split("\n")
+      .map((line) => {
+        const [name, label, url] = line.split("|");
+        return { name, label, url };
+      }),
+  );
+}
+
+/**
+ * The top-level request fields that bind this call to a gateway-held prompt
+ * (LiteLLM prompt management): `prompt_id` selects the template,
+ * `prompt_variables` fills it. `system_context` is the full system prompt the
+ * app would have sent — a template that drops it drops the guardrails, which
+ * is why the console names the variable in its help text.
+ */
+export function gatewayPromptBody(promptId: string, context: PromptVariables): Record<string, unknown> {
+  const id = trimmed(promptId);
+  if (!id) return {};
+  return {
+    prompt_id: id,
+    prompt_variables: {
+      system_context: context.systemContext,
+      business_name: context.businessName ?? "",
+      user_name: context.userName ?? "",
+      mode: context.mode ?? "",
+    },
+  };
+}
+
+/** The values a gateway prompt template may reference for one turn. */
+export interface PromptVariables {
+  systemContext: string;
+  businessName: string | null;
+  userName: string | null;
+  mode: AgentMode | null;
+}
+
+/**
+ * The `tools` entries that hand the proxy's MCP servers to one call. LiteLLM
+ * transforms these into the servers' own function tools and, with
+ * `require_approval: "never"`, executes the calls it gets back before the
+ * model replies — delegated agency, configured here and enforced at the
+ * proxy. Empty unless MCP is switched on AND servers are configured: a
+ * direct vendor must never receive a `tools` entry it cannot parse.
+ */
+export function gatewayMcpToolsBody(gateway: AiGatewayConfig | null): Record<string, unknown> {
+  if (!gateway || !gateway.enabled || !gateway.mcpEnabled || gateway.mcpServers.length === 0) {
+    return {};
+  }
+  return {
+    tools: gateway.mcpServers.map((server) => ({
+      type: "mcp",
+      server_url: `litellm_proxy/${server.name}/mcp`,
+      server_label: server.name,
+      require_approval: "never",
+    })),
+  };
+}
+
+/**
+ * LiteLLM's per-response cost header, in USD. Absent on direct vendor
+ * responses and on proxy deployments with cost tracking off — both mean
+ * "no figure", which the settlement treats as "use the token rates".
+ */
+export function parseResponseCostHeader(value: string | null | undefined): number | null {
+  if (value === null || value === undefined || value.trim() === "") return null;
+  const cost = Number(value);
+  return Number.isFinite(cost) && cost >= 0 ? cost : null;
+}
+
+/** The gateway's USD figure in integer Rial, rounded once, never negative. */
+export function rialFromGatewayUsd(costUsd: number, usdRialRate: number): number {
+  const cost = Number.isFinite(costUsd) && costUsd > 0 ? costUsd : 0;
+  const rate = Number.isFinite(usdRialRate) && usdRialRate > 0 ? usdRialRate : 0;
+  if (cost <= 0 || rate <= 0) return 0;
+  return Math.ceil(cost * rate);
+}
+
+/**
+ * The settlement figures for one turn priced by the gateway: the cost is the
+ * gateway's USD figure converted to Rial, and the charge applies the
+ * platform's existing margin on top — Phase 18's cost-plus policy with a
+ * measured cost. `effectiveRate`'s ceil-everything rule is mirrored so the
+ * platform never sells below cost by a rounding.
+ */
+export function gatewayTurnPricing(
+  costUsd: number,
+  usdRialRate: number,
+  marginPercent: number,
+): { costRial: number; chargedRial: number } {
+  const costRial = rialFromGatewayUsd(costUsd, usdRialRate);
+  if (costRial <= 0) return { costRial: 0, chargedRial: 0 };
+  const margin = Number.isFinite(marginPercent) && marginPercent > 0 ? marginPercent : 0;
+  const chargedRial = Math.ceil((costRial * (100 + margin)) / 100);
+  return { costRial, chargedRial: Math.max(chargedRial, costRial) };
+}
+
+/** `GET /spend/logs` — the proxy's per-request spend trail. */
+export function spendLogsUrl(baseUrl: string, startDate: string, endDate: string): string {
+  const params = new URLSearchParams({ start_date: startDate, end_date: endDate });
+  return `${gatewayManagementUrl(baseUrl)}/spend/logs?${params.toString()}`;
+}
+
+/** One normalised spend-log row: what the proxy says one request cost. */
+export interface GatewaySpendLogEntry {
+  requestId: string | null;
+  model: string;
+  keyAlias: string | null;
+  spendUsd: number;
+  promptTokens: number;
+  completionTokens: number;
+  /** UTC day the request belongs to — the gateway has no trading-day notion. */
+  day: string;
+}
+
+function wholeToken(value: unknown): number {
+  const n = Number(value);
+  return Number.isSafeInteger(n) && n > 0 ? n : 0;
+}
+
+function utcDay(value: unknown): string | null {
+  if (typeof value !== "string" && !(value instanceof Date)) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toISOString().slice(0, 10);
+}
+
+/**
+ * Parse `/spend/logs` (documented shape: an array of rows with `metadata`
+ * naming the calling key's alias). Fails soft: an unrecognised payload is
+ * simply no entries, which the caller treats as "nothing new to store".
+ */
+export function parseSpendLogs(payload: unknown): GatewaySpendLogEntry[] {
+  if (!Array.isArray(payload)) return [];
+  const entries: GatewaySpendLogEntry[] = [];
+  for (const row of payload) {
+    if (!row || typeof row !== "object") continue;
+    const record = row as Record<string, unknown>;
+    const day = utcDay(record.startTime ?? record.start_time ?? record.createdAt ?? record.created_at);
+    if (!day) continue;
+    const metadata = (record.metadata && typeof record.metadata === "object" ? record.metadata : {}) as
+      Record<string, unknown>;
+    const alias = trimmed(metadata.user_api_key_alias ?? metadata.key_alias);
+    entries.push({
+      requestId: typeof record.request_id === "string" ? record.request_id : null,
+      model: trimmed(record.model_group ?? record.model) || "unknown",
+      keyAlias: alias || null,
+      spendUsd: Number.isFinite(Number(record.spend)) ? Math.max(Number(record.spend), 0) : 0,
+      promptTokens: wholeToken(record.prompt_tokens),
+      completionTokens: wholeToken(record.completion_tokens),
+      day,
+    });
+  }
+  return entries;
+}
+
+/** One daily rollup row: what the app stores per (day, key alias, model). */
+export interface GatewayUsageRollup {
+  day: string;
+  keyAlias: string;
+  model: string;
+  spendUsd: number;
+  promptTokens: number;
+  completionTokens: number;
+  apiRequests: number;
+}
+
+/**
+ * Aggregate spend logs into daily rollups. Logs without a key alias roll up
+ * under a fixed marker rather than being dropped: the master key's calls are
+ * real spend the console must see even before virtual keys are provisioned.
+ */
+export const UNKEYED_USAGE_ALIAS = "(master)";
+
+export function aggregateSpendLogs(entries: GatewaySpendLogEntry[]): GatewayUsageRollup[] {
+  const rolls = new Map<string, GatewayUsageRollup>();
+  for (const entry of entries) {
+    const alias = entry.keyAlias ?? UNKEYED_USAGE_ALIAS;
+    const key = `${entry.day}|${alias}|${entry.model}`;
+    const current = rolls.get(key) ?? {
+      day: entry.day,
+      keyAlias: alias,
+      model: entry.model,
+      spendUsd: 0,
+      promptTokens: 0,
+      completionTokens: 0,
+      apiRequests: 0,
+    };
+    current.spendUsd += entry.spendUsd;
+    current.promptTokens += entry.promptTokens;
+    current.completionTokens += entry.completionTokens;
+    current.apiRequests += 1;
+    rolls.set(key, current);
+  }
+  return [...rolls.values()].sort((a, b) =>
+    a.day === b.day ? (a.keyAlias === b.keyAlias ? a.model.localeCompare(b.model) : a.keyAlias.localeCompare(b.keyAlias)) : a.day < b.day ? 1 : -1,
+  );
+}
+
 
 function positiveNumberOrNull(value: unknown): number | null {
   const n = typeof value === "number" ? value : Number(value);
@@ -468,6 +773,32 @@ export function validateGatewayInput(input: AiGatewayInput): string[] {
   ) {
     errors.push("ai_gateway_bad_rpm");
   }
+  // Phase 38b — gateway costing needs a rate to convert USD into Rial; a
+  // switch without one would settle every turn at zero.
+  if (
+    input.usdRialRate !== undefined &&
+    input.usdRialRate !== null &&
+    !(Number.isFinite(input.usdRialRate) && input.usdRialRate > 0)
+  ) {
+    errors.push("ai_gateway_bad_usd_rate");
+  }
+  if (input.gatewayCostingEnabled && !(Number(input.usdRialRate) > 0)) {
+    errors.push("ai_gateway_costing_needs_rate");
+  }
+  if (input.promptBindings !== undefined) {
+    const bindings = input.promptBindings as Record<string, unknown> | null;
+    if (!bindings || typeof bindings !== "object" || Array.isArray(bindings)) {
+      errors.push("ai_gateway_bad_prompt_bindings");
+    } else {
+      const unknown = Object.keys(bindings).filter(
+        (surface) => !(GATEWAY_PROMPT_SURFACES as readonly string[]).includes(surface),
+      );
+      if (unknown.length > 0) errors.push("ai_gateway_bad_prompt_bindings");
+    }
+  }
+  if (input.mcpServers !== undefined && !Array.isArray(input.mcpServers)) {
+    errors.push("ai_gateway_bad_mcp_servers");
+  }
   return errors;
 }
 
@@ -558,27 +889,53 @@ export function isGatewayActive(gateway: AiGatewayConfig | null | undefined): bo
  * Build the `AiConfig.gateway` runtime for one call. Returns undefined — not
  * an empty object — when there is nothing gateway-specific to send, so the
  * common single-vendor deployment keeps a byte-identical request body.
+ *
+ * Phase 38b — the body now also carries the proxy's MCP tool declarations
+ * and, when the call's surface is bound to a gateway prompt, the call's
+ * `promptId` (the variables themselves are per-turn, so `ai-service.ts`
+ * fills them in where the system prompt is actually built). An unbound
+ * surface with no MCP servers produces exactly Phase 37's body.
  */
 export function buildGatewayRuntime(input: {
   config: AiConfig;
   gateway: AiGatewayConfig | null;
   business: BusinessGateway | null;
-}): { model: string; embeddingModel: string; authKey?: string; body: Record<string, unknown> } | undefined {
-  if (!isGatewayActive(input.gateway)) return undefined;
+  /** The agent surface this call answers on, for prompt binding. */
+  mode?: string | null;
+}): {
+  model: string;
+  embeddingModel: string;
+  authKey?: string;
+  body: Record<string, unknown>;
+  promptId?: string;
+} | undefined {
+  if (!input.gateway || !isGatewayActive(input.gateway)) return undefined;
+  const gateway = input.gateway;
+  const mcpBody = gatewayMcpToolsBody(gateway);
+  const binding = input.mode ? gateway.promptBindings[input.mode as AgentMode] : undefined;
+  const promptId = typeof binding === "string" ? binding.trim() : "";
+  const body = {
+    ...gatewayRequestBody(gateway),
+    ...mcpBody,
+  };
   return {
     model: resolveChatModel({
       platformModel: input.config.model,
-      gateway: input.gateway,
+      gateway,
       business: input.business,
     }),
     embeddingModel: resolveEmbeddingModel({
       platformModel: input.config.model,
-      gateway: input.gateway,
+      gateway,
     }),
     ...(() => {
-      const key = resolveGatewayAuthKey({ gateway: input.gateway, business: input.business });
+      const key = resolveGatewayAuthKey({ gateway, business: input.business });
       return key ? { authKey: key } : {};
     })(),
-    body: gatewayRequestBody(input.gateway),
+    body,
+    // The prompt fields themselves are per-turn — ai-service.ts builds the
+    // system prompt after this runs, so it fills `prompt_variables` and adds
+    // `prompt_id` from this flag.
+    ...(promptId ? { promptId } : {}),
   };
 }

@@ -36,6 +36,11 @@ interface GatewayConfig {
   defaultBudgetDuration: string;
   defaultTpmLimit: number | null;
   defaultRpmLimit: number | null;
+  usdRialRate: number | null;
+  gatewayCostingEnabled: boolean;
+  promptBindings: Record<string, string>;
+  mcpEnabled: boolean;
+  mcpServers: { name: string; label: string; url: string }[];
   hasMasterKey: boolean;
 }
 
@@ -92,6 +97,42 @@ const DURATION_OPTIONS = [
   { value: "30d", label: "ماهانه (30d)" },
 ];
 
+/** Phase 38b — the surfaces a gateway prompt (a «مهارت») can be bound to. */
+const PROMPT_SURFACES = [
+  { value: "wizard", label: "ویزارد راه‌اندازی" },
+  { value: "dashboard", label: "داشبورد" },
+  { value: "floor", label: "سالن" },
+  { value: "proactive", label: "پیام‌های پیشنهادی" },
+  { value: "autopilot", label: "خلبان خودکار" },
+  { value: "platform", label: "پشتیبانی پلتفرم" },
+];
+
+interface GatewayUsageEntry {
+  day: string;
+  keyAlias: string;
+  businessId: string | null;
+  model: string;
+  spendUsd: number;
+  spendRial: number | null;
+  promptTokens: number;
+  completionTokens: number;
+  apiRequests: number;
+}
+
+interface GatewayUsageData {
+  days: number;
+  usage: GatewayUsageEntry[];
+  totals: {
+    spendUsd: number;
+    spendRial: number | null;
+    promptTokens: number;
+    completionTokens: number;
+    apiRequests: number;
+  };
+  gatewayCosting: { enabled: boolean; usdRialRate: number | null };
+  error?: string;
+}
+
 function listText(values: string[]): string {
   return values.join("\n");
 }
@@ -106,6 +147,29 @@ function parseList(text: string): string[] {
 function numericOrNull(value: string): number | null {
   const n = Number(value.replace(/[٬,\s]/g, ""));
   return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/** `name | label | url`, one server per line — same shape the service stores. */
+function parseMcpServers(text: string): { name: string; label: string; url: string }[] {
+  const servers: { name: string; label: string; url: string }[] = [];
+  const seen = new Set<string>();
+  for (const line of text.split("\n")) {
+    const [name, label, url] = line.split("|").map((part) => part.trim());
+    const slug = (name ?? "").toLowerCase().replace(/[^a-z0-9_-]/g, "");
+    if (!slug || !url || seen.has(slug)) continue;
+    seen.add(slug);
+    servers.push({ name: slug, label: label || slug, url });
+  }
+  return servers;
+}
+
+function mcpServersToText(servers: { name: string; label: string; url: string }[]): string {
+  return servers.map((server) => `${server.name} | ${server.label} | ${server.url}`).join("\n");
+}
+
+function fmtUsd(value: number): string {
+  const rounded = Math.round(value * 1_000_000) / 1_000_000;
+  return formatPersianNumber(rounded);
 }
 
 function fmtDate(value: string | null): string {
@@ -126,6 +190,9 @@ export default function PlatformAiGatewayPage() {
   const [selectedBusinessId, setSelectedBusinessId] = useState("");
   const [fallbackText, setFallbackText] = useState("");
   const [publishedText, setPublishedText] = useState("");
+  const [promptBindings, setPromptBindings] = useState<Record<string, string>>({});
+  const [mcpText, setMcpText] = useState("");
+  const [usage, setUsage] = useState<GatewayUsageData | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -140,6 +207,11 @@ export default function PlatformAiGatewayPage() {
     }
     setData(gatewayResult.data);
     setDraft(gatewayResult.data.gateway);
+    if (gatewayResult.data.gateway) {
+      const config = gatewayResult.data.gateway;
+      setPromptBindings({ ...config.promptBindings });
+      setMcpText(mcpServersToText(config.mcpServers));
+    }
     if (businessResult.ok) setBusinesses(businessResult.data.businesses ?? []);
     setSelectedBusinessId((current) =>
       current && (businessResult.data.businesses ?? []).some((b) => b.businessId === current) ? current : "",
@@ -147,9 +219,39 @@ export default function PlatformAiGatewayPage() {
     setLoading(false);
   }, []);
 
+  const loadUsage = useCallback(async () => {
+    const result = await api<GatewayUsageData>("/api/platform/ai/gateway/usage?days=30");
+    setUsage(result.ok ? result.data : null);
+  }, []);
+
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    void loadUsage();
+  }, [loadUsage]);
+
+  async function syncUsage() {
+    setBusy("usage-sync");
+    setError("");
+    setNotice("");
+    const result = await api<{ sync: { ok: boolean; entries: number; rows: number; error: string | null }; error?: string }>(
+      "/api/platform/ai/gateway/usage",
+      { method: "POST", body: JSON.stringify({ days: 7 }) },
+    );
+    setBusy("");
+    if (!result.ok) {
+      setError(result.data.error ?? "همگام‌سازی مصرف ممکن نشد.");
+      return;
+    }
+    setNotice(
+      result.data.sync.ok
+        ? `مصرف به‌روزرسانی شد (${formatPersianNumber(result.data.sync.entries)} رکورد از دروازه خوانده شد).`
+        : `همگام‌سازی ناموفق بود: ${result.data.sync.error ?? "خطای نامشخص"}`,
+    );
+    await loadUsage();
+  }
 
   const selectedName = useMemo(
     () => businesses.find((business) => business.businessId === selectedBusinessId)?.businessName ?? "",
@@ -189,6 +291,11 @@ export default function PlatformAiGatewayPage() {
           ...draft,
           fallbackModels: parseList(fallbackText),
           publishedModels: parseList(publishedText),
+          promptBindings: Object.fromEntries(
+            Object.entries(promptBindings).filter(([, value]) => value.trim()),
+          ),
+          mcpEnabled: draft.mcpEnabled,
+          mcpServers: parseMcpServers(mcpText),
           masterKey: masterKey || undefined,
         },
       },
@@ -415,6 +522,18 @@ export default function PlatformAiGatewayPage() {
                 onChange={(event) => setDraft({ ...draft, defaultRpmLimit: numericOrNull(event.target.value) })}
               />
             </Field>
+            <Field
+              label="نرخ تبدیل دلار به ریال"
+              hint="مبنای محاسبهٔ هزینهٔ واقعی از گزارش خود دروازه (دلار) به ریال. بدون این نرخ، تسویهٔ هزینه‌ای ممکن نیست."
+            >
+              <PersianNumberInput
+                className={inputClass}
+                type="number"
+                min="0"
+                value={draft.usdRialRate ?? ""}
+                onChange={(event) => setDraft({ ...draft, usdRialRate: numericOrNull(event.target.value) })}
+              />
+            </Field>
             <div className="space-y-2">
               <label className="flex items-center gap-2 text-sm text-white/80">
                 <input
@@ -440,6 +559,67 @@ export default function PlatformAiGatewayPage() {
                 />
                 اجازهٔ انتخاب مدل به کسب‌وکار
               </label>
+              <label className="flex items-center gap-2 text-sm text-white/80">
+                <input
+                  type="checkbox"
+                  checked={draft.gatewayCostingEnabled}
+                  onChange={(event) => setDraft({ ...draft, gatewayCostingEnabled: event.target.checked })}
+                />
+                محاسبهٔ هزینه از گزارش خود دروازه (به‌جای نرخ دستی توکن)
+              </label>
+              <label className="flex items-center gap-2 text-sm text-white/80">
+                <input
+                  type="checkbox"
+                  checked={draft.mcpEnabled}
+                  onChange={(event) => setDraft({ ...draft, mcpEnabled: event.target.checked })}
+                />
+                ابزارهای MCP از راه دروازه
+              </label>
+            </div>
+            {draft.gatewayCostingEnabled && !draft.usdRialRate ? (
+              <div className="lg:col-span-2">
+                <ErrorBox>برای محاسبهٔ هزینه از گزارش دروازه، ابتدا نرخ تبدیل دلار به ریال را وارد کنید.</ErrorBox>
+              </div>
+            ) : null}
+            <div className="lg:col-span-2 border-t border-white/10 pt-4">
+              <p className="mb-3 text-sm font-medium">مهارت‌ها — پرامپت‌های دروازه</p>
+              <p className="mb-3 text-xs text-white/50">
+                هر سطح گفت‌وگو می‌تواند به یک پرامپت ثبت‌شده در دروازه (پوشهٔ prompts در LiteLLM) وصل شود.
+                پرامپتِ دروازه جای پیام سیستمی برنامه را می‌گیرد؛ متن دستورهای سیستم به‌عنوان متغیر
+                <span dir="ltr"> {"{{system_context}}"} </span>
+                همراه بقیهٔ متغیرها (نام کسب‌وکار، نام کاربر، mode) ارسال می‌شود — قالبی که این متغیر را حذف کند،
+                قواعد تأیید پیش از نوشتن را هم حذف کرده است.
+              </p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {PROMPT_SURFACES.map((surface) => (
+                  <Field key={surface.value} label={surface.label}>
+                    <input
+                      className={inputClass}
+                      dir="ltr"
+                      value={promptBindings[surface.value] ?? ""}
+                      placeholder="prompt_id"
+                      onChange={(event) =>
+                        setPromptBindings({ ...promptBindings, [surface.value]: event.target.value })
+                      }
+                    />
+                  </Field>
+                ))}
+              </div>
+            </div>
+            <div className="lg:col-span-2 border-t border-white/10 pt-4">
+              <Field
+                label="سرورهای MCP دروازه"
+                hint="هر سطر: name | برچسب | نشانی. این سرورها در هر نوبت گفت‌وگو به مدل معرفی می‌شوند و دروازه خودشان اجرایشان می‌کند؛ از جمله اتصال‌دهندهٔ MCP همین سامانه (‎/api/mcp)."
+              >
+                <textarea
+                  className={inputClass}
+                  dir="ltr"
+                  rows={3}
+                  placeholder={"pos-mcp | اتصال‌دهندهٔ POS | https://pos.example.ir/api/mcp"}
+                  value={mcpText}
+                  onChange={(event) => setMcpText(event.target.value)}
+                />
+              </Field>
             </div>
             {draft.allowBusinessModels ? (
               <div className="lg:col-span-2">
@@ -460,6 +640,91 @@ export default function PlatformAiGatewayPage() {
               </Button>
             </div>
           </form>
+        </Card>
+      ) : null}
+
+      {can("ai.read") ? (
+        <Card title="مصرف از دید دروازه — ۳۰ روز گذشته">
+          <p className="mb-3 text-sm text-white/50">
+            جمع‌بندی روزانهٔ گزارش‌های مصرف خود دروازه (به تفکیک کلید مجازی و مدل). ارقام دلاری تشخیصی‌اند؛
+            مبلغ ریالیِ محاسبه‌شده با نرخ تبدیل، تنها برای مقایسه با دفتر اعتبار است و جای آن را نمی‌گیرد.
+            روزها بر پایهٔ UTC است — دروازه از روز کاری شعبه‌ها بی‌خبر است.
+          </p>
+          {can("ai.config.manage") ? (
+            <div className="mb-4">
+              <Button onClick={() => void syncUsage()} disabled={Boolean(busy)}>
+                {busy === "usage-sync" ? <Loader2Icon className="animate-spin" /> : "همگام‌سازی مصرف از دروازه"}
+              </Button>
+            </div>
+          ) : null}
+          {!usage ? (
+            <p className="text-sm text-white/40">مصرفی خوانده نشده است؛ دکمهٔ همگام‌سازی را بزنید.</p>
+          ) : (
+            <>
+              <div className="mb-4 grid gap-2 text-sm sm:grid-cols-4">
+                <p>
+                  هزینه: <strong>{fmtUsd(usage.totals.spendUsd)}</strong> دلار
+                  {usage.totals.spendRial !== null
+                    ? ` (≈ ${formatPersianNumber(usage.totals.spendRial)} ریال)`
+                    : ""}
+                </p>
+                <p>درخواست: {formatPersianNumber(usage.totals.apiRequests)}</p>
+                <p>توکن ورودی: {formatPersianNumber(usage.totals.promptTokens)}</p>
+                <p>توکن خروجی: {formatPersianNumber(usage.totals.completionTokens)}</p>
+              </div>
+              {usage.usage.length === 0 ? (
+                <p className="text-sm text-white/40">برای این بازه رکوردی ثبت نشده است.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-right text-sm">
+                    <thead className="text-xs text-white/50">
+                      <tr>
+                        <th className="px-2 py-1 font-medium">روز (UTC)</th>
+                        <th className="px-2 py-1 font-medium">کلید</th>
+                        <th className="px-2 py-1 font-medium">مدل</th>
+                        <th className="px-2 py-1 font-medium">درخواست</th>
+                        <th className="px-2 py-1 font-medium">توکن‌ها</th>
+                        <th className="px-2 py-1 font-medium">هزینه</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {usage.usage.slice(0, 100).map((row) => (
+                        <tr key={`${row.day}|${row.keyAlias}|${row.model}`} className="border-t border-white/5">
+                          <td className="px-2 py-1" dir="ltr">{row.day}</td>
+                          <td className="px-2 py-1" dir="ltr">{row.keyAlias}</td>
+                          <td className="px-2 py-1" dir="ltr">{row.model}</td>
+                          <td className="px-2 py-1">{formatPersianNumber(row.apiRequests)}</td>
+                          <td className="px-2 py-1">
+                            {formatPersianNumber(row.promptTokens)} / {formatPersianNumber(row.completionTokens)}
+                          </td>
+                          <td className="px-2 py-1">
+                            {fmtUsd(row.spendUsd)} دلار
+                            {row.spendRial !== null ? ` · ${formatPersianNumber(row.spendRial)} ریال` : ""}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {usage.usage.length > 100 ? (
+                    <p className="mt-2 text-xs text-white/40">
+                      {formatPersianNumber(usage.usage.length - 100)} سطر دیگر نمایش داده نشده است.
+                    </p>
+                  ) : null}
+                </div>
+              )}
+              {usage.gatewayCosting.enabled ? (
+                <p className="mt-3 text-xs text-white/50">
+                  محاسبهٔ هزینه از گزارش دروازه فعال است؛ نرخ تبدیل:
+                  {" "}
+                  {formatPersianNumber(usage.gatewayCosting.usdRialRate ?? 0)} ریال به ازای هر دلار.
+                </p>
+              ) : (
+                <p className="mt-3 text-xs text-white/50">
+                  محاسبهٔ هزینه از گزارش دروازه خاموش است؛ تسویه با نرخ‌های دستی توکن انجام می‌شود.
+                </p>
+              )}
+            </>
+          )}
         </Card>
       ) : null}
 

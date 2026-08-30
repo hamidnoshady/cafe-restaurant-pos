@@ -42,6 +42,32 @@ model_list:
       model: openai/text-embedding-3-small
       api_key: os.environ/OPENAI_API_KEY
 
+# ---------------------------------------------------------------------------
+# Prompt management (Phase 38b).
+#
+# The platform binds agent surfaces (wizard, dashboard, floor, proactive,
+# autopilot, platform) to prompt_ids here; a bound turn sends `prompt_id` +
+# `prompt_variables` instead of its own system message, so re-engineering a
+# prompt is an edit in this directory, not a deploy of the application.
+#
+# The GitOps shape: dotprompt files in a mounted directory. A template MUST
+# render `{{system_context}}` — that variable carries the application's
+# system prompt for the turn, including the confirm-before-write rules; a
+# template that drops it drops the guardrails. `{{business_name}}`,
+# `{{user_name}}` and `{{mode}}` are also provided.
+#
+# prompts:
+#   - prompt_id: pos-dashboard
+#     litellm_params:
+#       prompt_id: pos-dashboard
+#       prompt_integration: dotprompt
+#
+# litellm_settings:
+#   global_prompt_directory: "/app/prompts"   # mount ./prompts there
+#
+# Store prompts in the DB as well when you want them editable through the
+# proxy API rather than files on disk (requires the database above):
+#
 general_settings:
   # MUST be set. Without a master key the proxy accepts unauthenticated
   # requests, and anyone who can reach port 4000 can create keys and read
@@ -51,6 +77,36 @@ general_settings:
   database_url: os.environ/LITELLM_DATABASE_URL
   # Do not let a virtual key rewrite the gateway's own configuration.
   disable_add_model_via_api: true
+
+# ---------------------------------------------------------------------------
+# MCP servers (Phase 38b).
+#
+# The application's gateway settings list these same servers by name; a chat
+# turn may then arrive with `tools: [{type: "mcp", server_url:
+# "litellm_proxy/<name>/mcp", server_label: "<name>", require_approval:
+# "never"}]`, and the proxy transforms that server's tools into OpenAI
+# function tools and executes the calls the model makes before answering.
+# Keep this list a superset of what the application declares — a name the
+# proxy does not know is a 404 mid-turn.
+#
+# The POS's own MCP connector (Phase 34) can be listed like any server, which
+# makes the proxy the hub for both directions: external MCP clients dial the
+# app's /api/mcp directly with their own OAuth token, while the assistant
+# reaches third-party MCP tools through this proxy.
+#
+# mcp_servers:
+#   pos_mcp:
+#     url: "os.environ/POS_MCP_URL"          # e.g. http://app:3000/api/mcp
+#     transport: "http"
+#     auth_type: "bearer_token"              # a connector token the app issued
+#     bearer_token: "os.environ/POS_MCP_TOKEN"
+#   github_mcp:
+#     url: "https://api.githubcopilot.com/mcp"
+#     transport: "http"
+#     auth_type: "oauth2"
+#     oauth2_flow: "authorization_code"
+#     client_id: "os.environ/GITHUB_OAUTH_CLIENT_ID"
+#     client_secret: "os.environ/GITHUB_OAUTH_CLIENT_SECRET"
 
 litellm_settings:
   # Retry a failing deployment before falling back to the next model group.

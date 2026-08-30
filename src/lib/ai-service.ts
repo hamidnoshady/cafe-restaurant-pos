@@ -17,6 +17,7 @@ import {
 } from "./ai";
 import { runReadTool, type FloorReadScope, type ToolResult } from "./ai-tools";
 import { estimateTokens, type AiTokenUsage } from "./ai-billing";
+import { gatewayPromptBody, parseResponseCostHeader } from "./ai-gateway";
 import { clampRetrievalLimit, formatRetrievalForPrompt, isRetrievalAvailable, retrieveKnowledge } from "./ai-rag";
 import { embedOne, isEmbeddingAvailable } from "./ai-embeddings";
 import {
@@ -32,6 +33,13 @@ export interface AgentReply {
   content: string;
   proposedAction: ProposedAction | null;
   usage: AiTokenUsage;
+  /**
+   * Phase 38b — the gateway's own cost figure for this turn, summed across
+   * every provider round (USD). Null whenever the responder did not report
+   * one — a direct vendor, or a proxy with cost tracking off — which the
+   * settlement reads as "price from the token rates instead", never as free.
+   */
+  costUsd: number | null;
   /**
    * Phase 36 Wave 7 — every tool this turn invoked, with the date range it was
    * given, so the caller can build the semantic cache's tool signature and
@@ -145,6 +153,16 @@ function providerUsage(
 }
 
 /**
+ * Phase 38b — the gateway prices every completion from its own model-cost map
+ * and reports the figure on the response. A direct vendor never sets the
+ * header, which is exactly the fallback: no figure means the settlement
+ * prices from the token rates, never from zero.
+ */
+function responseCostUsd(response: Response): number | null {
+  return parseResponseCostHeader(response.headers.get("x-litellm-response-cost"));
+}
+
+/**
  * Reads one OpenAI-compatible SSE response. Tool-call fragments are reassembled
  * before the normal agent loop sees them; visible text is forwarded immediately
  * so the dashboard can render a genuine streamed answer.
@@ -153,7 +171,7 @@ async function readStreamingProviderResponse(
   response: Response,
   messages: ProviderMessage[],
   callbacks: ProviderStreamCallbacks,
-): Promise<{ message: ProviderMessage; usage: AiTokenUsage }> {
+): Promise<ProviderResult> {
   if (!response.body) throw new AiError("ai_provider", "پاسخ جریانی سرویس هوش مصنوعی نامعتبر بود.");
 
   const reader = response.body.getReader();
@@ -235,7 +253,15 @@ async function readStreamingProviderResponse(
   return {
     message,
     usage: providerUsage(providerReportedUsage, fallbackUsage(messages, content)),
+    costUsd: responseCostUsd(response),
   };
+}
+
+/** One completed provider round: its message, tokens, and any gateway cost. */
+interface ProviderResult {
+  message: ProviderMessage;
+  usage: AiTokenUsage;
+  costUsd: number | null;
 }
 
 async function callProvider(
@@ -243,14 +269,21 @@ async function callProvider(
   messages: ProviderMessage[],
   tools: ReturnType<typeof toolDefinitions>,
   stream?: ProviderStreamCallbacks,
-): Promise<{ message: ProviderMessage; usage: AiTokenUsage }> {
+): Promise<ProviderResult> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   let res: Response;
   try {
-    // Some OpenAI-compatible providers reject an explicit empty tools array.
-    // Proactive Wave 4 digests deliberately have no tools, because their
-    // tenant-scoped facts are collected before the provider is called.
+    // Phase 38b — MCP tool declarations arrive inside the gateway body, but
+    // they must share one `tools` array with the agent's own function tools
+    // (the proxy tells them apart by `type`), so they are pulled out before
+    // the spread and merged below — never silently overwritten by it.
+    const gatewayBody = { ...(config.gateway?.body ?? {}) };
+    const gatewayMcpTools = Array.isArray(gatewayBody.tools)
+      ? (gatewayBody.tools as Record<string, unknown>[])
+      : [];
+    if (Array.isArray(gatewayBody.tools)) delete gatewayBody.tools;
+
     const body: Record<string, unknown> = {
       model: config.model,
       messages,
@@ -260,7 +293,7 @@ async function callProvider(
       // Phase 37 — the gateway's failover chain, when one is configured.
       // Empty for every deployment that talks to a vendor directly, which is
       // the whole reason it is merged here rather than branched on above.
-      ...(config.gateway?.body ?? {}),
+      ...gatewayBody,
     };
     if (stream) {
       // OpenAI-compatible APIs include final usage in the terminal stream
@@ -268,8 +301,11 @@ async function callProvider(
       // in place for gateways that omit it.
       body.stream_options = { include_usage: true };
     }
-    if (tools.length > 0) {
-      body.tools = tools;
+    // Some OpenAI-compatible providers reject an explicit empty tools array.
+    // Proactive Wave 4 digests deliberately have no tools, because their
+    // tenant-scoped facts are collected before the provider is called.
+    if (tools.length > 0 || gatewayMcpTools.length > 0) {
+      body.tools = [...gatewayMcpTools, ...tools];
       body.tool_choice = "auto";
     }
     res = await fetch(chatCompletionsUrl(config.baseUrl), {
@@ -322,6 +358,7 @@ async function callProvider(
   return {
     message,
     usage: providerUsage(json.usage, fallbackUsage(messages, textOf(message.content))),
+    costUsd: responseCostUsd(res),
   };
 }
 
@@ -404,6 +441,7 @@ function normalizeAttachments(
 interface ReceiptExtractionResult {
   fields: ReceiptDraftFields | null;
   usage: AiTokenUsage;
+  costUsd: number | null;
 }
 
 /**
@@ -426,9 +464,13 @@ async function extractReceiptDraft(config: AiConfig, dataUrl: string): Promise<R
   ];
   try {
     const result = await callProvider(config, convo, []);
-    return { fields: parseReceiptExtractionReply(textOf(result.message.content)), usage: result.usage };
+    return {
+      fields: parseReceiptExtractionReply(textOf(result.message.content)),
+      usage: result.usage,
+      costUsd: result.costUsd,
+    };
   } catch {
-    return { fields: null, usage: { inputTokens: 0, outputTokens: 0 } };
+    return { fields: null, usage: { inputTokens: 0, outputTokens: 0 }, costUsd: null };
   }
 }
 
@@ -570,22 +612,49 @@ function traceOf(name: string, args: Record<string, unknown>): AgentToolCallTrac
     opts.executeReadTool ??
     (businessId ? (name, args) => runReadTool(name, args, businessId, floorScope) : null);
   const usage: AiTokenUsage = { inputTokens: 0, outputTokens: 0 };
+  let costUsd: number | null = null;
   const toolTrace: AgentToolCallTrace[] = [];
 
+  // Phase 38b — a surface bound to a gateway prompt sends `prompt_id` +
+  // `prompt_variables` instead of its own system message: the prose lives in
+  // the gateway's prompt registry, and the text the code would have sent
+  // travels as `system_context` so the template keeps the guardrails. The
+  // variables ride on the same per-call body the failover chain uses.
+  const gatewayPromptId = config.gateway?.promptId?.trim() || "";
+  const systemContent =
+    opts.systemPrompt?.trim() ||
+    buildSystemPrompt({ ...promptContext, hasAttachment, retrieval: retrievalReady });
+
   const convo: ProviderMessage[] = [
-    {
-      role: "system",
-      content:
-        opts.systemPrompt?.trim() ||
-        buildSystemPrompt({ ...promptContext, hasAttachment, retrieval: retrievalReady }),
-    },
+    ...(gatewayPromptId
+      ? []
+      : [{ role: "system" as const, content: systemContent }]),
     ...messages.map((m) => ({ role: m.role, content: m.content })),
   ];
 
+  const callConfig: AiConfig = gatewayPromptId
+    ? {
+        ...config,
+        gateway: {
+          ...config.gateway,
+          body: {
+            ...(config.gateway?.body ?? {}),
+            ...gatewayPromptBody(gatewayPromptId, {
+              systemContext: systemContent,
+              businessName: promptContext.businessName ?? null,
+              userName: promptContext.userName ?? null,
+              mode,
+            }),
+          },
+        },
+      }
+    : config;
+
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-    const result = await callProvider(config, convo, tools, opts.stream);
+    const result = await callProvider(callConfig, convo, tools, opts.stream);
     usage.inputTokens += result.usage.inputTokens;
     usage.outputTokens += result.usage.outputTokens;
+    if (result.costUsd !== null) costUsd = (costUsd ?? 0) + result.costUsd;
     const message = result.message;
     const toolCalls = message.tool_calls ?? [];
 
@@ -594,6 +663,7 @@ function traceOf(name: string, args: Record<string, unknown>): AgentToolCallTrac
         content: textOf(message.content).trim() || "متوجه نشدم؛ لطفاً دوباره بپرسید.",
         proposedAction: null,
         usage,
+        costUsd,
         toolCalls: toolTrace,
       };
     }
@@ -606,7 +676,7 @@ function traceOf(name: string, args: Record<string, unknown>): AgentToolCallTrac
       const parsed = toProposedAction(parseArgs(proposal.function.arguments));
       const action = parsed && (!allowedActionTypes || allowedActionTypes.has(parsed.type)) ? parsed : null;
       const text = textOf(message.content).trim() || (action ? action.summary : "پیشنهاد آماده است.");
-      return { content: text, proposedAction: action, usage, toolCalls: toolTrace };
+      return { content: text, proposedAction: action, usage, costUsd, toolCalls: toolTrace };
     }
 
     // Otherwise every call must be a read tool — run them and feed results back.
@@ -627,6 +697,7 @@ function traceOf(name: string, args: Record<string, unknown>): AgentToolCallTrac
           const extraction = await extractReceiptDraft(config, image.dataUrl!);
           usage.inputTokens += extraction.usage.inputTokens;
           usage.outputTokens += extraction.usage.outputTokens;
+          if (extraction.costUsd !== null) costUsd = (costUsd ?? 0) + extraction.costUsd;
           result = extraction.fields
             ? {
                 ok: true,
@@ -683,6 +754,7 @@ function traceOf(name: string, args: Record<string, unknown>): AgentToolCallTrac
     content: "برای پاسخ به این درخواست به مراحل زیادی نیاز بود. لطفاً سؤال را ساده‌تر بپرسید.",
     proposedAction: null,
     usage,
+    costUsd,
     toolCalls: toolTrace,
   };
 }

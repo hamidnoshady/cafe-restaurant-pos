@@ -347,17 +347,34 @@ export async function reserveAiTurn(input: {
   }
 }
 
+/**
+ * Phase 38b — the settlement figures when the platform prices the turn from
+ * the gateway's own reported cost: the USD figure, its Rial conversion (the
+ * platform's real cost) and the charge with the platform's margin on top.
+ * Computed by the pure `gatewayTurnPricing`; here it only has to be recorded
+ * and clamped, exactly as the token-rate price always was.
+ */
+export interface AiGatewayTurnPricing {
+  costUsd: number;
+  costRial: number;
+  chargedRial: number;
+}
+
 export async function settleAiTurn(input: {
   businessId: string;
   reservation: AiTurnReservation;
   usage: AiTokenUsage;
   inputTokenRialPerMillion: number;
   outputTokenRialPerMillion: number;
+  /** Present when the gateway reported this turn's cost and costing is on. */
+  gatewayPricing?: AiGatewayTurnPricing | null;
 }): Promise<{ chargedRial: number; refundedRial: number; overageRial: number }> {
-  const actualRial = calculateAiUsageCostRial(input.usage, {
-    inputTokenRialPerMillion: input.inputTokenRialPerMillion,
-    outputTokenRialPerMillion: input.outputTokenRialPerMillion,
-  });
+  const actualRial = input.gatewayPricing
+    ? Math.max(0, Math.ceil(input.gatewayPricing.chargedRial))
+    : calculateAiUsageCostRial(input.usage, {
+        inputTokenRialPerMillion: input.inputTokenRialPerMillion,
+        outputTokenRialPerMillion: input.outputTokenRialPerMillion,
+      });
   const chargedRial = Math.min(actualRial, input.reservation.reservedRial);
   const refundedRial = input.reservation.reservedRial - chargedRial;
   const overageRial = Math.max(actualRial - input.reservation.reservedRial, 0);
@@ -379,7 +396,18 @@ export async function settleAiTurn(input: {
         chargedRial,
         Math.max(0, Math.floor(input.usage.inputTokens)),
         Math.max(0, Math.floor(input.usage.outputTokens)),
-        JSON.stringify({ actualRial, overageRial, phase: "settled" }),
+        JSON.stringify({
+          actualRial,
+          overageRial,
+          phase: "settled",
+          ...(input.gatewayPricing
+            ? {
+                gatewayCostUsd: input.gatewayPricing.costUsd,
+                gatewayCostRial: input.gatewayPricing.costRial,
+                pricedBy: "gateway",
+              }
+            : {}),
+        }),
       ],
     );
     if (!rows[0]) throw new Error("ai_reservation_not_found");

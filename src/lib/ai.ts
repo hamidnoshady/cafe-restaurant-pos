@@ -89,10 +89,17 @@ export interface AiGatewayRuntime {
   authKey?: string;
   /**
    * Extra top-level fields forwarded in the request body — currently LiteLLM's
-   * client-side `fallbacks` chain. Sent only to a gateway; a direct vendor
-   * would reject unknown fields.
+   * client-side `fallbacks` chain, plus Phase 38b's MCP tool declarations.
+   * Sent only to a gateway; a direct vendor would reject unknown fields.
    */
   body?: Record<string, unknown>;
+  /**
+   * Phase 38b — the gateway prompt this call's surface is bound to. When
+   * present the request carries `prompt_id` + `prompt_variables` (with the
+   * built system prompt as `system_context`) and no system message of its
+   * own: the prose lives in the gateway's prompt registry.
+   */
+  promptId?: string;
 }
 
 export interface AiConfig {

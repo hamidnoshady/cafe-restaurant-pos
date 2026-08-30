@@ -740,6 +740,7 @@ async function runBusinessProactiveJobs(
   businessId: string,
   now: Date,
   aiConfig: PlatformAiConfig | null,
+  autopilotConfig?: PlatformAiConfig | null,
 ): Promise<number> {
   if (!(await isFeatureEnabled(businessId, "ai_assistant"))) return 0;
   const settings = await getAiProactiveSettings(businessId);
@@ -767,7 +768,7 @@ async function runBusinessProactiveJobs(
   // switches, and must never take down the digests if it throws.
   let autopilotCompleted = 0;
   try {
-    autopilotCompleted = await runBusinessAutopilot(businessId, clock, aiConfig);
+    autopilotCompleted = await runBusinessAutopilot(businessId, clock, autopilotConfig ?? aiConfig);
   } catch (error) {
     console.error(`autopilot run failed for business ${businessId}:`, errorText(error));
   }
@@ -852,9 +853,15 @@ export async function runAiProactiveTick(now = new Date()): Promise<number> {
     await runTenantScopedProactiveJobs(businessIds, withTenant, async (businessId) => {
       // Phase 37 — decorate per business, inside that business's own tenant
       // scope, so a business's digests are sent with its own virtual key and
-      // charged to the gateway budget the platform gave it.
-      const perBusiness = configuredAi ? await decorateAiConfig(configuredAi, businessId) : null;
-      jobsCompleted += await runBusinessProactiveJobs(businessId, now, perBusiness);
+      // charged to the gateway budget the platform gave it. Phase 38b — the
+      // decoration is per *surface* as well: the digests and the autopilot
+      // ride one tick but answer on different surfaces, so each gets its own
+      // gateway prompt binding.
+      const perBusiness = configuredAi ? await decorateAiConfig(configuredAi, businessId, "proactive") : null;
+      const perBusinessAutopilot = configuredAi
+        ? await decorateAiConfig(configuredAi, businessId, "autopilot")
+        : null;
+      jobsCompleted += await runBusinessProactiveJobs(businessId, now, perBusiness, perBusinessAutopilot);
     });
     return jobsCompleted;
   } finally {
