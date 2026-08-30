@@ -12,6 +12,7 @@
  * `connections-service.ts` uses. DB-touching, per repo convention not unit
  * tested directly; the client it leans on is (client.test.ts).
  */
+import { promises as dns } from "node:dns";
 import {
   CmsApiError,
   CmsNetworkError,
@@ -26,6 +27,7 @@ import {
 } from "./client";
 import type { CmsOrder, CmsPage, CmsProduct, SiteDescriptor } from "./types";
 import { cmsPlatformConfig } from "./config";
+import { dnsHint, ipsOverlap, type DnsCheck } from "./dns";
 import {
   CmsConnectionError,
   deleteCmsConnection,
@@ -221,3 +223,97 @@ export async function updateCmsOrderStatus(
 }
 
 type Provisioned = Awaited<ReturnType<typeof provisionSite>>;
+
+/* ------------------------------------------------------------------ */
+/* DNS checklist + in-app preview                                      */
+/* ------------------------------------------------------------------ */
+
+const DNS_TIMEOUT_MS = 4_000;
+
+/**
+ * Resolve a host's A/AAAA addresses with a short timeout. An empty array is
+ * "did not resolve" — never an exception: a missing record is the thing the
+ * checklist exists to surface, not a crash.
+ */
+async function resolveAddresses(host: string): Promise<string[]> {
+  const lookup = async (): Promise<string[]> => {
+    const [a, aaaa] = await Promise.allSettled([
+      dns.resolve4(host).catch(() => []),
+      dns.resolve6(host).catch(() => []),
+    ]);
+    const v4 = a.status === "fulfilled" ? a.value : [];
+    const v6 = aaaa.status === "fulfilled" ? aaaa.value : [];
+    return [...v4, ...v6];
+  };
+  try {
+    return await Promise.race([
+      lookup(),
+      new Promise<string[]>((resolve) => setTimeout(() => resolve([]), DNS_TIMEOUT_MS)),
+    ]);
+  } catch {
+    return [];
+  }
+}
+
+export interface CmsDnsStatus {
+  dns: DnsCheck;
+  /** The CMS's own confirmation (descriptor `domainVerified`), if readable. */
+  domainVerified: boolean | null;
+  /** `https://{domain}/` — what the live site (and the iframe) loads on. */
+  previewUrl: string;
+}
+
+/**
+ * The DNS checklist's two observable facts for the connected site: does the
+ * domain resolve to the CMS server, and has the operator verified it in the
+ * CMS admin. The server does the resolution (same resolver family browsers
+ * use); the client only renders the result.
+ */
+export async function cmsWebsiteDns(businessId: string): Promise<WebsiteResult<CmsDnsStatus>> {
+  let config: CmsConfig;
+  try {
+    config = await getCmsConfigForBusiness(businessId);
+  } catch (error) {
+    return { ok: false, error: error instanceof CmsConnectionError ? "not_connected" : "cms_config_error" };
+  }
+
+  const siteDomain = config.siteDomain ?? "";
+  const cmsHost = new URL(config.baseUrl).hostname;
+  const [domainAddresses, cmsAddresses] = await Promise.all([
+    resolveAddresses(siteDomain),
+    resolveAddresses(cmsHost),
+  ]);
+  const dnsCheck: DnsCheck = {
+    resolved: domainAddresses.length > 0,
+    pointingToCms: ipsOverlap(domainAddresses, cmsAddresses),
+    cmsHost,
+    domainAddresses,
+    cmsAddresses,
+  };
+
+  let domainVerified: boolean | null = null;
+  try {
+    const site = await fetchSiteDescriptor(config);
+    domainVerified = Boolean(site.domainVerified);
+  } catch {
+    // The descriptor is not required for the DNS side of the answer.
+    domainVerified = null;
+  }
+
+  return {
+    ok: true,
+    data: {
+      dns: dnsCheck,
+      domainVerified,
+      previewUrl: `https://${siteDomain}/`,
+    },
+  };
+}
+
+/** One-line Persian guidance for the checklist card. */
+export function cmsDnsHint(status: CmsDnsStatus): string {
+  if (!status.dns.resolved) return dnsHint(status.dns);
+  if (!status.dns.pointingToCms) return dnsHint(status.dns);
+  if (!status.domainVerified) return dnsHint(status.dns);
+  return "دامنه به سرور CMS اشاره می‌کند و در پنل تأیید شده است — سایت روی اینترنت فعال است.";
+}

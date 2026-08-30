@@ -127,7 +127,32 @@ this screen answers "is my site connected, and what does my store look like".
 | `POST /api/cms/website/provision` | Create a new site + issue its key + connect, in one action. |
 | `DELETE /api/cms/website/connection` | Disconnect (the CMS site and its content remain). |
 | `GET /api/cms/website/overview` | Descriptor + pages + products + orders (private, 30s SWR). |
+| `GET /api/cms/website/dns` | DNS checklist state: does the domain resolve to the CMS (A/AAAA from here) + descriptor `domainVerified`. |
 | `PATCH /api/cms/website/orders/[id]` | Move an order status; the CMS settles stock & snapshot. |
+
+### DNS checklist + live preview
+
+The Website Manager shows a three-step checklist («دامنه و انتشار سایت»):
+1. A/CNAME record for the customer domain exists — checked by resolving the
+   domain from this server (the same resolver family browsers use).
+2. It points to the CMS server — the resolved addresses overlap the CMS
+   origin's addresses (`src/lib/cms/dns.ts`).
+3. The operator has ticked **تأیید دامنه** in the CMS admin — read from the
+   site descriptor (`domainVerified`, added to `/api/site` by the patch).
+
+Once all three are green, an **in-app iframe preview** of the live site is
+shown (`https://{domain}/`). Since the CMS's site pages send
+`frame-ancestors 'self' <admin>` CSP, the POS origin must be added on the CMS:
+
+```
+# eshobe-cms .env — comma-separated origins allowed to frame customer sites
+SITE_PREVIEW_ORIGINS=https://pos.eshobe.com
+```
+
+(The patch extends that header from this env var; empty = admin origin only,
+the previous behaviour. Note: the CMS's own `/api/domain-check` is
+Caddy-internal and answered 404 publicly, so the builder deliberately uses
+DNS resolution + `domainVerified` instead of it.)
 
 All owner/manager, all server-side — the browser never sees a CMS key.
 On the CMS, the site descriptor (`GET /api/site`) also returns `id` so the

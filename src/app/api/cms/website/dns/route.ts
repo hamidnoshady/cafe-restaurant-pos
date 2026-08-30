@@ -1,0 +1,23 @@
+import { NextResponse } from "next/server";
+import { requireRole, withTenantScope } from "@/lib/auth";
+import { cmsWebsiteDns } from "@/lib/cms/website-service";
+
+/**
+ * `GET /api/cms/website/dns` — the Website Manager's DNS checklist state for
+ * the connected site: does the domain resolve to the CMS server (checked
+ * from here, server-side) and has the operator verified it in the CMS admin
+ * (descriptor `domainVerified`).
+ */
+export const GET = withTenantScope(async () => {
+  const { session, error } = await requireRole("owner", "manager");
+  if (error) return error;
+
+  const result = await cmsWebsiteDns(session.businessId);
+  if (!result.ok) {
+    return NextResponse.json({ error: result.error }, { status: result.error === "not_connected" ? 404 : 502 });
+  }
+
+  const response = NextResponse.json({ status: result.data });
+  response.headers.set("Cache-Control", "no-store");
+  return response;
+});

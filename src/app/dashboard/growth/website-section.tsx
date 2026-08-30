@@ -14,8 +14,8 @@
  * their own hooks settle stock and snapshot the change.
  */
 
-import { useCallback, useEffect, useState } from "react";
-import { ExternalLinkIcon, GlobeIcon, PlugZapIcon, RefreshCwIcon, Trash2Icon } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { CircleCheckIcon, ExternalLinkIcon, GlobeIcon, PlugZapIcon, RefreshCwIcon, ShieldCheckIcon, Trash2Icon } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { formatPersianNumber, toPersianDigits } from "@/lib/digits";
@@ -23,7 +23,7 @@ import type { CmsConnectionSummary } from "@/lib/cms/connections";
 import type { CmsOrder, SiteDescriptor } from "@/lib/cms/types";
 import { cardClass, EmptyState, SectionCard, StatusBadge } from "../page-chrome";
 import { api, errorMessageOrRaw, Field, inputClass, PrimaryButton, SecondaryButton, ErrorBox } from "../ui";
-import type { WebsiteOverview } from "@/lib/cms/website-service";
+import { cmsDnsHint, type CmsDnsStatus, type WebsiteOverview } from "@/lib/cms/website-service";
 
 const TYPE_LABELS: Record<string, string> = {
   business: "کسب‌وکار",
@@ -72,6 +72,9 @@ export function WebsiteSection() {
   const [overviewError, setOverviewError] = useState("");
   const [busy, setBusy] = useState(false);
   const [updatingOrder, setUpdatingOrder] = useState("");
+  const [dnsStatus, setDnsStatus] = useState<CmsDnsStatus | null>(null);
+  const [dnsLoading, setDnsLoading] = useState(false);
+  const [previewReady, setPreviewReady] = useState(false);
 
   const loadOverview = useCallback(() => {
     api<{ overview: WebsiteOverview }>("/api/cms/website/overview").then(({ ok, data }) => {
@@ -85,6 +88,15 @@ export function WebsiteSection() {
     });
   }, []);
 
+  const checkDns = useCallback(() => {
+    setDnsLoading(true);
+    api<{ status: CmsDnsStatus }>("/api/cms/website/dns").then(({ ok, data }) => {
+      setDnsLoading(false);
+      if (ok) setDnsStatus(data.status);
+      else toast.error("بررسی DNS ناموفق بود.");
+    });
+  }, []);
+
   const reload = useCallback(() => {
     setLoading(true);
     api<{ connected: boolean; connection: CmsConnectionSummary | null }>("/api/cms/website/state").then(
@@ -92,11 +104,16 @@ export function WebsiteSection() {
         setLoading(false);
         if (!ok) return;
         setConnection(data.connection);
-        if (data.connection) loadOverview();
-        else setOverview(null);
+        if (data.connection) {
+          loadOverview();
+          checkDns();
+        } else {
+          setOverview(null);
+          setDnsStatus(null);
+        }
       },
     );
-  }, [loadOverview]);
+  }, [loadOverview, checkDns]);
 
   useEffect(reload, [reload]);
 
@@ -170,6 +187,20 @@ export function WebsiteSection() {
           <p className="text-sm text-muted-foreground">اتصال برقرار است؛ برای بارگذاری محتوا بروزرسانی را بزنید.</p>
         )}
       </SectionCard>
+
+      <DnsChecklistCard
+        status={dnsStatus}
+        loading={dnsLoading}
+        onCheck={checkDns}
+        baseUrl={connection.baseUrl}
+      />
+
+      <PreviewCard
+        status={dnsStatus}
+        ready={previewReady}
+        onLoad={() => setPreviewReady(true)}
+        onRefresh={() => setPreviewReady(false)}
+      />
 
       {overview ? (
         <>
@@ -341,6 +372,149 @@ function OrdersCard({
             </li>
           ))}
         </ul>
+      )}
+    </SectionCard>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* DNS checklist + live preview                                        */
+/* ------------------------------------------------------------------ */
+
+function DnsChecklistCard({
+  status,
+  loading,
+  onCheck,
+  baseUrl,
+}: {
+  status: CmsDnsStatus | null;
+  loading: boolean;
+  onCheck: () => void;
+  baseUrl: string;
+}) {
+  if (!status) {
+    return (
+      <SectionCard title="دامنه و انتشار سایت" description="سه قدم تا فعال‌شدن سایت روی اینترنت.">
+        <EmptyState>برای بررسی، «بررسی DNS» را بزنید.</EmptyState>
+        <div className="mt-3">
+          <SecondaryButton onClick={onCheck} disabled={loading}>
+            <RefreshCwIcon className="size-4" />
+            {loading ? "در حال بررسی…" : "بررسی DNS"}
+          </SecondaryButton>
+        </div>
+      </SectionCard>
+    );
+  }
+
+  const steps = [
+    { done: status.dns.resolved, label: `رکورد DNS برای «${status.dns.cmsHost}» ساخته شود (A/CNAME)` },
+    { done: status.dns.pointingToCms, label: `دامنه به سرور CMS اشاره کند (${status.dns.cmsHost})` },
+    { done: Boolean(status.domainVerified), label: "در پنل CMS مدیریت سایت → تأیید دامنه روشن شود" },
+  ];
+
+  return (
+    <SectionCard
+      title="دامنه و انتشار سایت"
+      description="هر گام سبز شده یعنی آن بخش انجام شده است."
+      actions={
+        <SecondaryButton onClick={onCheck} disabled={loading}>
+          <RefreshCwIcon className="size-4" />
+          {loading ? "در حال بررسی…" : "بررسی DNS"}
+        </SecondaryButton>
+      }
+    >
+      <ol className="space-y-2">
+        {steps.map((step) => (
+          <li key={step.label} className="flex items-start gap-2.5 text-sm">
+            {step.done ? (
+              <CircleCheckIcon className="mt-0.5 size-4 shrink-0 text-emerald-600" />
+            ) : (
+              <span className="mt-1 size-2 shrink-0 rounded-full bg-amber-400" />
+            )}
+            <span className={step.done ? "text-muted-foreground line-through decoration-stone-300" : "text-stone-950"}>
+              {step.label}
+            </span>
+          </li>
+        ))}
+      </ol>
+      <p className="mt-3 rounded-xl bg-stone-50 px-3 py-2.5 text-xs leading-5 text-stone-600">
+        {cmsDnsHint(status)}
+      </p>
+      <div className="mt-3">
+        <Button type="button" variant="outline" className="px-4" onClick={() => window.open(`${baseUrl}/admin`, "_blank", "noopener")}>
+          <ExternalLinkIcon className="size-4" />
+          باز کردن مدیریت CMS
+        </Button>
+      </div>
+    </SectionCard>
+  );
+}
+
+function PreviewCard({
+  status,
+  ready,
+  onLoad,
+  onRefresh,
+}: {
+  status: CmsDnsStatus | null;
+  ready: boolean;
+  onLoad: () => void;
+  onRefresh: () => void;
+}) {
+  const live = Boolean(status?.dns.resolved && status?.dns.pointingToCms && status?.domainVerified);
+  const url = status?.previewUrl ?? "#";
+
+  return (
+    <SectionCard
+      title="پیش‌نمایش سایت"
+      description="سایت واقعی، همان‌طور که بازدیدکننده می‌بیند."
+      actions={
+        <div className="flex gap-2">
+          {live ? (
+            <SecondaryButton onClick={onRefresh}>
+              <RefreshCwIcon className="size-4" />
+              بارگذاری مجدد
+            </SecondaryButton>
+          ) : null}
+          <Button
+            type="button"
+            variant="outline"
+            className="px-4"
+            onClick={() => window.open(url, "_blank", "noopener")}
+          >
+            <ExternalLinkIcon className="size-4" />
+            باز کردن سایت
+          </Button>
+        </div>
+      }
+    >
+      {!live ? (
+        <div className="space-y-2">
+          <EmptyState>
+            {status
+              ? "برای فعال‌شدن پیش‌نمایش، مراحل «دامنه و انتشار سایت» را کامل کنید (DNS + تأیید دامنه)."
+              : "برای فعال‌شدن پیش‌نمایش، اتصال را بررسی کنید."}
+          </EmptyState>
+          <p className="text-xs leading-5 text-muted-foreground">
+            پیش‌نمایش از همان دامنهٔ سایت بارگذاری می‌شود، پس تا وقتی DNS و تأیید کامل نشده‌اند باز نمی‌شود. برای
+            اجازهٔ جاسازی، خاستگاه این پنل باید در متغیر <code dir="ltr">SITE_PREVIEW_ORIGINS</code> سرور CMS باشد.
+          </p>
+        </div>
+      ) : (
+        <div className="overflow-hidden rounded-xl border border-stone-200">
+          <div dir="ltr" className="flex items-center gap-2 border-b border-stone-200 bg-stone-50 px-3 py-2 text-xs text-stone-600">
+            <ShieldCheckIcon className="size-3.5 text-emerald-600" />
+            <span className="truncate">{url}</span>
+          </div>
+          {/* key remounts the frame on refresh so the page reloads cleanly */}
+          <iframe
+            key={String(ready)}
+            src={url}
+            title="پیش‌نمایش سایت"
+            className="h-[560px] w-full bg-white"
+            onLoad={onLoad}
+          />
+        </div>
       )}
     </SectionCard>
   );
