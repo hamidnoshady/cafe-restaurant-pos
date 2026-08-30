@@ -11,12 +11,16 @@ import {
 } from "@/lib/ai-billing-service";
 import { createAiActionAudit } from "@/lib/ai-action-audit";
 import { appendMessage, getOrCreateConversation } from "@/lib/ai-conversations";
-import { parseReceiptImageDataUrl } from "@/lib/ai-receipt";
+import {
+  parseChatAttachments,
+  prepareAttachments,
+  withAttachmentContext,
+} from "@/lib/ai-attachment";
+import { taskDirectiveFor } from "@/lib/ai-tasks";
 import {
   AiError,
   retrievalReadyForMode,
   runAgentTurn,
-  type ChatAttachment,
   type InboundMessage,
 } from "@/lib/ai-service";
 import { resolveSystemPrompt } from "@/lib/ai-prompt-service";
@@ -36,20 +40,6 @@ import { requireFloorAssistant, withTenantScope } from "@/lib/auth";
 
 const MAX_MESSAGES = 24;
 const MAX_CONTENT = 8_000;
-
-/**
- * Wave 5 (issue #145) — only dashboard mode (owner/manager) may attach a
- * receipt/invoice image, matching expense.categorize's existing scope. The
- * image is never persisted; on an invalid data URL the whole request is
- * refused rather than silently dropping the attachment.
- */
-function parseAttachment(mode: AgentMode, raw: unknown): { attachment: ChatAttachment | null; error: boolean } {
-  if (mode !== "dashboard" || !raw || typeof raw !== "object") return { attachment: null, error: false };
-  const dataUrl = (raw as { dataUrl?: unknown }).dataUrl;
-  if (dataUrl === undefined) return { attachment: null, error: false };
-  const parsed = parseReceiptImageDataUrl(dataUrl);
-  return parsed ? { attachment: { dataUrl: parsed.dataUrl }, error: false } : { attachment: null, error: true };
-}
 
 function sanitizeMessages(raw: unknown): InboundMessage[] {
   if (!Array.isArray(raw)) return [];
@@ -81,7 +71,13 @@ export const POST = withTenantScope(async (request: NextRequest) => {
     currentStep?: unknown;
     conversationId?: unknown;
     attachment?: unknown;
+    /** Wave 5 extension — one or more attachments (image and/or PDF). */
+    attachments?: unknown;
     allowActions?: unknown;
+    /** Phase 36c — the selected task lens (see ai-tasks.ts). */
+    task?: unknown;
+    /** Phase 36c — a free-form custom task description, wins over `task`. */
+    customTask?: unknown;
     /** Phase 36 Wave 7 — «دوباره بپرس»: build a fresh turn, skip the cache. */
     bypassCache?: unknown;
   };
@@ -114,14 +110,32 @@ export const POST = withTenantScope(async (request: NextRequest) => {
     return NextResponse.json({ error: "empty_messages" }, { status: 400 });
   }
 
-  const { attachment, error: attachmentError } = parseAttachment(mode, body.attachment);
+  // Wave 5 (issue #145, extended) — only dashboard mode (owner/manager) may
+  // attach files (receipt/invoice images and PDF documents), matching
+  // expense.categorize's existing scope. Nothing is persisted; on an invalid
+  // data URL the whole request is refused rather than silently dropping the
+  // attachment. The legacy single-object shape is still accepted.
+  const { attachments, error: attachmentError } = parseChatAttachments(
+    mode,
+    body.attachments ?? body.attachment,
+  );
   if (attachmentError) {
     return NextResponse.json(
-      { error: "attachment_invalid", message: "فرمت یا حجم تصویر پیوست پشتیبانی نمی‌شود." },
+      {
+        error: "attachment_invalid",
+        message: "فرمت یا حجم پیوست پشتیبانی نمی‌شود (تصویر حداکثر ۵ مگابایت، PDF حداکثر ۱۰ مگابایت).",
+      },
       { status: 400 },
     );
   }
+  // PDF text layers are extracted once, before the turn starts.
+  const preparedAttachments = await prepareAttachments(attachments);
   const allowActions = body.allowActions !== false;
+  const taskDirective = taskDirectiveFor({
+    task: body.task,
+    customTask: body.customTask,
+    mode,
+  });
 
   const config = await getPlatformAiConfig();
   if (!isPlatformAiConfigured(config)) {
@@ -188,7 +202,8 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   // caching). Failed embedding turns the cache off for this turn, never the
   // assistant.
   const bypassCache = body.bypassCache === true;
-  const cacheCandidate = (mode === "dashboard" || mode === "floor") && !attachment && latestPrompt.trim();
+  const cacheCandidate =
+    (mode === "dashboard" || mode === "floor") && attachments.length === 0 && latestPrompt.trim();
   let questionEmbedding: number[] | null = null;
   let questionEmbeddingTokens = 0;
   if (cacheCandidate && (await isEmbeddingAvailable(config))) {
@@ -212,15 +227,21 @@ export const POST = withTenantScope(async (request: NextRequest) => {
           // code default, plus the business's standing instructions. The ctx is
           // built with the same attachment/retrieval facts runAgentTurn would
           // use, so the fallback prompt is identical to the pre-manager one.
-          const systemPrompt = await resolveSystemPrompt({
+          // Phase 36c — the turn's task lens rides on top, after the managed
+          // prompt, so no platform or business layer can overwrite it and no
+          // invalid task can leak into the prompt.
+          const resolvedPrompt = await resolveSystemPrompt({
             mode,
             ctx: {
               ...promptContext,
-              hasAttachment: Boolean(attachment),
+              hasAttachment: attachments.length > 0,
               retrieval: await retrievalReadyForMode(config, mode, session.businessId),
             },
             businessId: session.businessId,
           });
+          const systemPrompt = taskDirective
+            ? `${resolvedPrompt}\n\n${taskDirective}`
+            : resolvedPrompt;
 
           // Wave 7 — a repeated read-only question inside this trading day
           // answers from the cache, labelled, for the price of an embedding.
@@ -285,8 +306,8 @@ export const POST = withTenantScope(async (request: NextRequest) => {
                   }
                 : undefined,
             promptContext,
-            messages,
-            attachment: attachment ?? undefined,
+            messages: withAttachmentContext(messages, preparedAttachments),
+            attachments: preparedAttachments,
             allowActions,
             stream: {
               onDelta: (content) => emit("delta", { content }),

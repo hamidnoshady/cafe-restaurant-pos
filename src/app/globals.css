@@ -301,3 +301,29 @@
     transform: none;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   AI chat surfaces (Phase 36c) — a slim, quiet scrollbar so the thread feels
+   like a chat app rather than a document pane.
+--------------------------------------------------------------------------- */
+.ai-chat-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(168 162 158 / 0.45) transparent;
+}
+
+.ai-chat-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.ai-chat-scroll::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgb(168 162 158 / 0.45);
+}
+
+.ai-chat-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgb(168 162 158 / 0.7);
+}
+
+.ai-chat-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
