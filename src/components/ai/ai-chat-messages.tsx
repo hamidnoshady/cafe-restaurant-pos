@@ -1,132 +1,93 @@
-import { RefObject } from "react";
-import { cn } from "@/lib/utils";
-import { AiMarkdown } from "./ai-markdown";
-import { AiProposalCard } from "./ai-proposal-card";
-import { SUGGESTED_PROMPTS, type AiChatMessage, type AssistantMode } from "./use-ai-chat";
+"use client";
+
+/**
+ * The floating launcher's message thread — a stack of `ChatBubble`s plus the
+ * starter chips shown while the conversation is still just the greeting.
+ */
+import { useRef, type RefObject } from "react";
+import { useGSAP } from "@gsap/react";
+import { ChatBubble, TypingDots } from "./chat-bubble";
+import { animateStaggerIn } from "./chat-animations";
+import type { AiChatMessage } from "./use-ai-chat";
+
+export { TypingDots };
 
 interface AiChatMessagesProps {
-  mode: AssistantMode;
   messages: AiChatMessage[];
   busy: boolean;
   canPropose: boolean;
   applyingId?: string | null;
   scrollRef: RefObject<HTMLDivElement | null>;
+  /** Starter chips — the caller picks task-aware ones. */
+  suggestions?: string[];
   applyProposal: (message: AiChatMessage) => void;
   dismissProposal: (message: AiChatMessage) => void;
   sendMessage: (prompt?: string) => void;
-  /** Phase 36 Wave 7 — «دوباره بپرس» on a cached answer. Optional for older callers. */
+  /** Phase 36 Wave 7 — «دوباره بپرس» on a cached answer. */
   askAgain?: (text: string) => void;
 }
 
-/** Three dots, not a sentence — a chat says "typing", it does not narrate. */
-export function TypingDots() {
-  return (
-    <span className="inline-flex items-center gap-1 py-1" aria-label="در حال نوشتن">
-      {[0, 150, 300].map((delay) => (
-        <span
-          key={delay}
-          className="size-1.5 animate-bounce rounded-full bg-current opacity-60"
-          style={{ animationDelay: `${delay}ms` }}
-        />
-      ))}
-    </span>
-  );
-}
-
 export function AiChatMessages({
-  mode,
   messages,
   busy,
   canPropose,
   applyingId,
   scrollRef,
+  suggestions,
   applyProposal,
   dismissProposal,
   sendMessage,
   askAgain,
 }: AiChatMessagesProps) {
+  const suggestionsRef = useRef<HTMLDivElement>(null);
   const showSuggestions =
-    messages.length === 1 && messages[0]?.role === "assistant" && !busy;
+    messages.length === 1 && messages[0]?.role === "assistant" && !busy && (suggestions?.length ?? 0) > 0;
+
+  useGSAP(
+    () => {
+      if (suggestionsRef.current) animateStaggerIn(suggestionsRef.current, "[data-suggestion]");
+    },
+    { scope: suggestionsRef, dependencies: [showSuggestions] },
+  );
 
   return (
-    <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-3 py-3">
-      {messages.map((message) => (
-        <div
+    <div ref={scrollRef} className="ai-chat-scroll flex-1 space-y-4 overflow-y-auto px-3 py-4">
+      {messages.map((message, index) => (
+        <ChatBubble
           key={message.id}
-          className={cn("flex min-w-0", message.role === "user" ? "justify-start" : "justify-end")}
-        >
-          <div className="min-w-0 max-w-[85%] space-y-2">
-            <div
-              className={cn(
-                "min-w-0 overflow-hidden rounded-2xl px-3 py-2 text-sm leading-relaxed",
-                message.role === "user"
-                  ? "whitespace-pre-wrap break-words bg-primary text-primary-foreground"
-                  : "bg-muted text-foreground",
-              )}
-            >
-              {message.role === "user" ? (
-                message.content
-              ) : message.content ? (
-                <AiMarkdown content={message.content} />
-              ) : (
-                <TypingDots />
-              )}
-            </div>
-            {/* The charge, after the fact and in passing — never a gate in front
-                of the reply. See sendMessage in use-ai-chat.ts. */}
-            {message.role === "assistant" && typeof message.costRial === "number" && message.costRial > 0 ? (
-              <p className="px-1 text-[10px] text-muted-foreground">
-                هزینهٔ این پاسخ: {Math.round(message.costRial / 10).toLocaleString("fa-IR")} تومان
-              </p>
-            ) : null}
-            {/* Phase 36 Wave 7 — a cached answer is labelled, never passed off
-                as fresh, and always comes with a way to ask for a real one. */}
-            {message.role === "assistant" && message.cacheNotice ? (
-              <p className="flex flex-wrap items-center gap-1.5 px-1 text-[10px] text-muted-foreground">
-                <span>{message.cacheNotice}</span>
-                {askAgain ? (
-                  <button
-                    type="button"
-                    className="rounded-full border border-stone-300/70 px-2 py-0.5 text-[10px] text-foreground/80 transition-colors hover:bg-muted disabled:opacity-50"
-                    disabled={busy}
-                    onClick={() => {
-                      const question = [...messages]
-                        .slice(0, Math.max(0, messages.indexOf(message)))
-                        .reverse()
-                        .find((item) => item.role === "user")?.content;
-                      if (question) askAgain(question);
-                    }}
-                  >
-                    دوباره بپرس
-                  </button>
-                ) : null}
-              </p>
-            ) : null}
-            {canPropose && message.proposal ? (
-              <AiProposalCard
-                proposal={message.proposal}
-                applied={message.applied}
-                applying={applyingId === message.id}
-                onApply={() => void applyProposal(message)}
-                onDismiss={() => dismissProposal(message)}
-              />
-            ) : null}
-          </div>
-        </div>
+          message={message}
+          busy={busy && index === messages.length - 1}
+          canPropose={canPropose}
+          applyingId={applyingId}
+          applyProposal={applyProposal}
+          dismissProposal={dismissProposal}
+          onAskAgain={
+            message.cacheNotice && askAgain
+              ? () => {
+                  const question = messages
+                    .slice(0, Math.max(0, index))
+                    .reverse()
+                    .find((item) => item.role === "user")?.content;
+                  if (question) askAgain(question);
+                }
+              : undefined
+          }
+        />
       ))}
 
-      {showSuggestions ? (
-        <div className="rounded-xl border border-dashed bg-muted/30 p-2.5">
-          <p className="mb-2 text-xs font-medium text-muted-foreground">
+      {showSuggestions && suggestions ? (
+        <div ref={suggestionsRef} className="rounded-2xl border border-dashed border-stone-300/70 bg-muted/30 p-3">
+          <p className="mb-2 px-1 text-[11px] font-medium text-muted-foreground">
             برای شروع، یکی را انتخاب کنید:
           </p>
           <div className="flex flex-wrap gap-1.5">
-            {SUGGESTED_PROMPTS[mode].map((suggestion) => (
+            {suggestions.map((suggestion) => (
               <button
                 key={suggestion}
+                data-suggestion
                 type="button"
                 onClick={() => void sendMessage(suggestion)}
-                className="rounded-full border bg-background px-2.5 py-1.5 text-right text-[11px] leading-4 transition-colors hover:border-primary/40 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="rounded-full border border-stone-200/80 bg-background px-3 py-1.5 text-right text-[11px] leading-4 text-foreground/80 transition-all hover:-translate-y-px hover:border-primary/40 hover:bg-primary/5 hover:text-foreground hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:border-stone-700/60"
               >
                 {suggestion}
               </button>

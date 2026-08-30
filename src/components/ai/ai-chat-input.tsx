@@ -1,8 +1,13 @@
+"use client";
+
+/**
+ * The floating launcher's composer — the shared `ChatComposer` in popup
+ * sizing plus the mode-specific fine print under the field.
+ */
 import Link from "next/link";
-import { SendIcon } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { AiAttachmentChip, AiComposerTools } from "./ai-composer-tools";
-import type { ChatAttachment, AssistantMode } from "./use-ai-chat";
+import { ChatComposer } from "./chat-composer";
+import type { AiTaskId } from "@/lib/ai-tasks";
+import type { AssistantMode, ChatAttachment } from "./use-ai-chat";
 
 interface AiChatInputProps {
   mode: AssistantMode;
@@ -10,11 +15,15 @@ interface AiChatInputProps {
   setInput: (value: string) => void;
   busy: boolean;
   canPropose: boolean;
-  attachment: ChatAttachment | null;
+  attachments: ChatAttachment[];
+  onAttachFiles: (files: File[]) => void;
+  onClearAttachment: (id?: string) => void;
+  task: AiTaskId;
+  onTaskChange: (id: AiTaskId) => void;
+  customTask: string;
+  onCustomTaskChange: (text: string) => void;
   actionsAllowed: boolean;
   setActionsAllowed: (allowed: boolean) => void;
-  attachReceiptImage: (file: File) => void;
-  clearAttachment: () => void;
   loadConversation: (id: string) => void;
   sendMessage: (prompt?: string) => void;
 }
@@ -25,70 +34,58 @@ export function AiChatInput({
   setInput,
   busy,
   canPropose,
-  attachment,
+  attachments,
+  onAttachFiles,
+  onClearAttachment,
+  task,
+  onTaskChange,
+  customTask,
+  onCustomTaskChange,
   actionsAllowed,
   setActionsAllowed,
-  attachReceiptImage,
-  clearAttachment,
   loadConversation,
   sendMessage,
 }: AiChatInputProps) {
   return (
-    <div className="border-t p-2">
-      <AiAttachmentChip attachment={attachment} onClear={clearAttachment} />
-      <div className="mb-1.5">
-        <AiComposerTools
-          mode={mode}
-          canPropose={canPropose}
-          disabled={busy}
-          onAttach={(file) => void attachReceiptImage(file)}
-          actionsAllowed={actionsAllowed}
-          onActionsAllowedChange={setActionsAllowed}
-          onSelectConversation={(id) => void loadConversation(id)}
-          onSelectReportPrompt={(prompt) => setInput(prompt)}
-        />
-      </div>
-      <div className="flex items-end gap-2">
-        <textarea
-          value={input}
-          onChange={(event) => setInput(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey) {
-              event.preventDefault();
-              void sendMessage();
-            }
-          }}
-          rows={1}
-          disabled={busy}
-          placeholder="پیام خود را بنویسید…"
-          className="max-h-28 min-h-9 flex-1 resize-none rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-input/30"
-        />
-        <Button
-          size="icon"
-          onClick={() => void sendMessage()}
-          disabled={busy || !input.trim()}
-          aria-label="ارسال پیام"
-        >
-          <SendIcon className="rtl:-scale-x-100" />
-        </Button>
-      </div>
-      {mode === "floor" ? (
-        <p className="mt-1 px-1 text-[10px] text-muted-foreground">
-          این دستیار فقط راهنمایی و پیش‌نمایش می‌دهد؛ هیچ پرداخت، تقسیم یا
-          تغییری ثبت نمی‌شود.
-        </p>
-      ) : (
-        <p className="mt-1 px-1 text-[10px] text-muted-foreground">
-          هزینهٔ هر پاسخ زیر همان پاسخ نوشته می‌شود؛ تغییرها فقط با تأیید شما ثبت
-          می‌شوند.{" "}
-          <Link
-            href="/dashboard/ai?tab=settings"
-            className="underline underline-offset-2 hover:text-foreground"
-          >
-            اعتبار، اشتراک و گزارش ممیزی
-          </Link>
-        </p>
-      )}
+    <div className="border-t border-stone-200/70 bg-card/90 p-2 pt-2.5 backdrop-blur dark:border-stone-700/50">
+      <ChatComposer
+        variant="popup"
+        mode={mode}
+        input={input}
+        setInput={setInput}
+        busy={busy}
+        canPropose={canPropose}
+        attachments={attachments}
+        onAttachFiles={onAttachFiles}
+        onClearAttachment={onClearAttachment}
+        task={task}
+        onTaskChange={onTaskChange}
+        customTask={customTask}
+        onCustomTaskChange={onCustomTaskChange}
+        actionsAllowed={actionsAllowed}
+        setActionsAllowed={setActionsAllowed}
+        loadConversation={loadConversation}
+        sendMessage={sendMessage}
+        footer={
+          mode === "floor" ? (
+            <p className="mt-1.5 px-1.5 text-[10px] text-muted-foreground">
+              این دستیار فقط راهنمایی و پیش‌نمایش می‌دهد؛ هیچ پرداخت، تقسیم یا
+              تغییری ثبت نمی‌شود.
+            </p>
+          ) : (
+            <p className="mt-1.5 px-1.5 text-[10px] text-muted-foreground">
+              هزینهٔ هر پاسخ زیر همان پاسخ نوشته می‌شود؛ تغییرها فقط با تأیید شما ثبت
+              می‌شوند.{" "}
+              <Link
+                href="/dashboard/ai?tab=settings"
+                className="underline underline-offset-2 hover:text-foreground"
+              >
+                اعتبار، اشتراک و گزارش ممیزی
+              </Link>
+            </p>
+          )
+        }
+      />
     </div>
   );
 }

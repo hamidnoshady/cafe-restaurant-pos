@@ -1,29 +1,30 @@
 "use client";
 
 /**
- * The AI assistant's chat surface, refactored to a responsive, ChatGPT-like
- * column (Phase 36b revision).
+ * The AI assistant's chat surface — a ChatGPT-style column (Phase 36b
+ * revision, redesigned again in Phase 36c with the shared bubble/composer
+ * components).
  *
- * It is now a self-contained panel that fills its parent: a slim header
- * (new-chat + an optional nav toggle on phones), a scrollable message thread,
- * and a composer pinned to the bottom of the column — never an overlay that a
- * mobile navbar would sit on top of. The conversation state can be owned by a
- * parent (the new `AiWorkspace`, which pairs this panel with the assistant's own
- * in-app nav) or, when rendered standalone on the workspace home, created here.
+ * A slim header (nav toggle + new chat), a scrollable bubble thread, and the
+ * shared composer pinned to the bottom of the column. The welcome state is a
+ * hero with floating gradient orbs and task-aware starter cards. The
+ * conversation state can be owned by a parent (AiWorkspace) or, when rendered
+ * standalone, created here.
  */
 
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Loader2Icon, MenuIcon, MessageSquarePlusIcon, SendIcon, SparklesIcon } from "lucide-react";
+import { Loader2Icon, MenuIcon, MessageSquarePlusIcon, SparklesIcon } from "lucide-react";
+import { useGSAP } from "@gsap/react";
 import { useMoney } from "@/components/money/money-context";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useFeatureLocked } from "@/components/feature-lock";
-import { AiAttachmentChip, AiComposerTools } from "@/components/ai/ai-composer-tools";
-import { AiMarkdown } from "@/components/ai/ai-markdown";
-import { TypingDots } from "@/components/ai/ai-chat-messages";
-import { AiProposalCard } from "@/components/ai/ai-proposal-card";
-import { SUGGESTED_PROMPTS, useAiChat, type AiChatState } from "@/components/ai/use-ai-chat";
+import { ChatComposer } from "@/components/ai/chat-composer";
+import { ChatBubble } from "@/components/ai/chat-bubble";
+import { animateFloat, animateStaggerIn } from "@/components/ai/chat-animations";
+import { SUGGESTED_PROMPTS, taskById, taskSuggestions } from "@/lib/ai-tasks";
+import { useAiChat, type AiChatState } from "@/components/ai/use-ai-chat";
 import { cardClass } from "../page-chrome";
 
 export function AiChatHub({
@@ -41,8 +42,10 @@ export function AiChatHub({
   const searchParams = useSearchParams();
   const money = useMoney();
   const scrollRef = useRef<HTMLDivElement>(null);
+  const heroRef = useRef<HTMLDivElement>(null);
+  const orbLeftRef = useRef<HTMLDivElement>(null);
+  const orbRightRef = useRef<HTMLDivElement>(null);
   const initialized = useRef(false);
-  const [composerFocused, setComposerFocused] = useState(false);
 
   const {
     canPropose,
@@ -52,11 +55,15 @@ export function AiChatHub({
     busy,
     applyingId,
     loadingConversation,
-    attachment,
-    attachReceiptImage,
+    attachments,
+    attachFiles,
     clearAttachment,
     actionsAllowed,
     setActionsAllowed,
+    task,
+    setTask,
+    customTask,
+    setCustomTask,
     ensureGreeting,
     startNewConversation,
     loadConversation,
@@ -89,6 +96,20 @@ export function AiChatHub({
   const isWelcome =
     messages.length === 1 && messages[0]?.role === "assistant" && !busy && !loadingConversation;
 
+  // Hero choreography: cards stagger up while two gradient orbs drift.
+  useGSAP(
+    () => {
+      if (!isWelcome) return;
+      if (heroRef.current) animateStaggerIn(heroRef.current, "[data-hero]");
+      if (orbLeftRef.current) animateFloat(orbLeftRef.current, { x: 24, y: -18 }, 7);
+      if (orbRightRef.current) animateFloat(orbRightRef.current, { x: -30, y: 22 }, 9);
+    },
+    { scope: heroRef, dependencies: [isWelcome] },
+  );
+
+  const suggestions = taskSuggestions(task, "dashboard", SUGGESTED_PROMPTS.dashboard);
+  const taskLabel = task === "custom" && customTask ? "وظیفهٔ سفارشی" : taskById(task)?.label;
+
   return (
     <section className="flex h-full min-h-0 w-full flex-col">
       <header className="flex min-h-12 items-center gap-2 border-b border-stone-200/80 bg-white/80 px-2 py-1.5 backdrop-blur sm:px-3">
@@ -103,7 +124,12 @@ export function AiChatHub({
             <MenuIcon />
           </Button>
         ) : null}
-        <div className="min-w-0 flex-1 truncate text-sm font-semibold text-stone-950">دستیار هوشمند</div>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-semibold text-stone-950">دستیار هوشمند</p>
+          {taskLabel ? (
+            <p className="truncate text-[10px] text-muted-foreground">وظیفهٔ فعلی: {taskLabel}</p>
+          ) : null}
+        </div>
         <Button
           variant="outline"
           size="sm"
@@ -115,29 +141,51 @@ export function AiChatHub({
         </Button>
       </header>
 
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-1 pb-4 pt-4 sm:px-6">
+      <div ref={scrollRef} className="ai-chat-scroll min-h-0 flex-1 overflow-y-auto px-2 pb-4 pt-4 sm:px-6">
         {loadingConversation ? (
           <div className="flex min-h-[55vh] items-center justify-center gap-2 text-sm text-muted-foreground">
             <Loader2Icon className="size-4 animate-spin" /> در حال بازکردن مکالمه…
           </div>
         ) : isWelcome ? (
-          <div className="mx-auto flex min-h-[52vh] max-w-3xl flex-col items-center justify-center text-center">
-            <div className="grid size-14 place-items-center rounded-2xl bg-primary/10 text-primary">
-              <SparklesIcon className="size-7" aria-hidden />
+          <div ref={heroRef} className="relative mx-auto flex min-h-[60vh] max-w-3xl flex-col items-center justify-center overflow-hidden text-center">
+            {/* Drifting gradient orbs — pure decoration. */}
+            <div
+              ref={orbLeftRef}
+              aria-hidden="true"
+              className="pointer-events-none absolute -top-10 right-[12%] size-56 rounded-full bg-primary/15 blur-3xl"
+            />
+            <div
+              ref={orbRightRef}
+              aria-hidden="true"
+              className="pointer-events-none absolute bottom-0 left-[8%] size-44 rounded-full bg-amber-300/20 blur-3xl"
+            />
+
+            <div
+              data-hero
+              className="grid size-16 place-items-center rounded-3xl bg-gradient-to-br from-primary to-primary/70 text-primary-foreground shadow-[0_1px_2px_rgb(41_37_36/0.035)]"
+            >
+              <SparklesIcon className="size-8" aria-hidden />
             </div>
-            <h1 className="mt-5 text-2xl font-bold tracking-tight text-stone-950 sm:text-[1.7rem]">
+            <h1
+              data-hero
+              className="mt-6 bg-gradient-to-b from-stone-900 to-stone-600 bg-clip-text text-2xl font-bold tracking-tight text-transparent sm:text-[1.8rem]"
+            >
               امروز چطور می‌توانم کمکتان کنم؟
             </h1>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              درباره فروش، موجودی، هزینه‌ها و عملکرد کسب‌وکارتان سؤال کنید.
+            <p data-hero className="mt-2 text-sm leading-6 text-muted-foreground">
+              درباره فروش، موجودی، هزینه‌ها و عملکرد کسب‌وکارتان سؤال کنید — یا
+              وظیفهٔ دستیار را از کادر پایین عوض کنید.
             </p>
-            <div className="mt-8 grid w-full gap-3 sm:grid-cols-3">
-              {SUGGESTED_PROMPTS.dashboard.map((suggestion) => (
+            <div data-hero className="mt-8 grid w-full gap-3 sm:grid-cols-3">
+              {suggestions.map((suggestion) => (
                 <button
                   key={suggestion}
                   type="button"
                   onClick={() => void sendMessage(suggestion)}
-                  className={cn(cardClass, "min-h-24 p-4 text-start text-sm leading-6 text-stone-700 transition-colors hover:bg-stone-50 hover:text-stone-950 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-amber-400/40")}
+                  className={cn(
+                    cardClass,
+                    "min-h-24 p-4 text-start text-sm leading-6 text-stone-700 transition-colors hover:bg-stone-50 hover:text-stone-950 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-amber-400/40",
+                  )}
                 >
                   <span className="mb-3 grid size-8 place-items-center rounded-xl bg-amber-100/70 text-amber-700">
                     <SparklesIcon className="size-4" aria-hidden />
@@ -148,107 +196,63 @@ export function AiChatHub({
             </div>
           </div>
         ) : (
-          <div className="mx-auto w-full max-w-3xl space-y-6">
+          <div className="mx-auto w-full max-w-3xl space-y-5">
             {messages.map((message, index) => {
               if (index === 0 && message.role === "assistant") return null;
               return (
-                <div key={message.id} className={cn("flex min-w-0", message.role === "user" ? "justify-start" : "justify-end")}>
-                  <div className="min-w-0 max-w-[88%] space-y-2 sm:max-w-[82%]">
-                    <div
-                      className={cn(
-                        "min-w-0 overflow-hidden text-sm leading-7",
-                        message.role === "user"
-                          ? "rounded-2xl bg-primary px-4 py-2.5 text-primary-foreground"
-                          : "px-1 text-foreground",
-                      )}
-                    >
-                      {message.role === "user" ? message.content : message.content ? <AiMarkdown content={message.content} /> : <TypingDots />}
-                    </div>
-                    {message.role === "assistant" && typeof message.costRial === "number" && message.costRial > 0 ? (
-                      <p className="px-1 text-[10px] text-muted-foreground">هزینهٔ این پاسخ: {money.format(message.costRial)}</p>
-                    ) : null}
-                    {/* Phase 36 Wave 7 — a cached answer is labelled, never passed
-                        off as fresh, and always comes with a way to ask for a real one. */}
-                    {message.role === "assistant" && message.cacheNotice ? (
-                      <p className="flex flex-wrap items-center gap-1.5 px-1 text-[10px] text-muted-foreground">
-                        <span>{message.cacheNotice}</span>
-                        <button
-                          type="button"
-                          className="rounded-full border border-stone-300/70 px-2 py-0.5 text-[10px] text-foreground/80 transition-colors hover:bg-muted disabled:opacity-50"
-                          disabled={busy}
-                          onClick={() => {
-                            const question = messages
-                              .slice(0, Math.max(0, index))
-                              .reverse()
-                              .find((item) => item.role === "user")?.content;
-                            if (question) void askAgain(question);
-                          }}
-                        >
-                          دوباره بپرس
-                        </button>
-                      </p>
-                    ) : null}
-                    {canPropose && message.proposal ? (
-                      <AiProposalCard
-                        proposal={message.proposal}
-                        applied={message.applied}
-                        applying={applyingId === message.id}
-                        onApply={() => void applyProposal(message)}
-                        onDismiss={() => dismissProposal(message)}
-                      />
-                    ) : null}
-                  </div>
-                </div>
+                <ChatBubble
+                  key={message.id}
+                  message={message}
+                  busy={busy && index === messages.length - 1}
+                  canPropose={canPropose}
+                  applyingId={applyingId}
+                  formatCost={(rial) => money.format(rial)}
+                  applyProposal={applyProposal}
+                  dismissProposal={dismissProposal}
+                  onAskAgain={
+                    message.cacheNotice
+                      ? () => {
+                          const question = messages
+                            .slice(0, Math.max(0, index))
+                            .reverse()
+                            .find((item) => item.role === "user")?.content;
+                          if (question) void askAgain(question);
+                        }
+                      : undefined
+                  }
+                />
               );
             })}
           </div>
         )}
       </div>
 
-      <div className="border-t border-stone-200/80 bg-white/80 px-1 py-2 backdrop-blur sm:px-4 sm:py-3">
+      <div className="border-t border-stone-200/80 bg-white/80 px-2 py-2 backdrop-blur sm:px-4 sm:py-3">
         <div className="mx-auto max-w-3xl">
-          <AiAttachmentChip attachment={attachment} onClear={clearAttachment} />
-          <div
-            className={cn(
-              "rounded-2xl border bg-card p-3 shadow-[0_1px_2px_rgb(41_37_36/0.035)] transition-colors",
-              composerFocused ? "border-ring ring-3 ring-ring/50" : "border-stone-200/80",
-            )}
-          >
-            <textarea
-              value={input}
-              onChange={(event) => setInput(event.target.value)}
-              onFocus={() => setComposerFocused(true)}
-              onBlur={() => setComposerFocused(false)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey) {
-                  event.preventDefault();
-                  void sendMessage();
-                }
-              }}
-              rows={2}
-              disabled={busy || loadingConversation}
-              placeholder="پیام خود را بنویسید…"
-              className="max-h-40 min-h-14 w-full resize-none bg-transparent px-1 py-1 text-sm leading-6 outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-60"
-            />
-            <div className="mt-2 flex items-end justify-between gap-2">
-              <AiComposerTools
-                mode="dashboard"
-                canPropose={canPropose}
-                disabled={busy || loadingConversation}
-                onAttach={(file) => void attachReceiptImage(file)}
-                actionsAllowed={actionsAllowed}
-                onActionsAllowedChange={setActionsAllowed}
-                onSelectConversation={(id) => void loadConversation(id)}
-                onSelectReportPrompt={(prompt) => setInput(prompt)}
-              />
-              <Button size="icon" onClick={() => void sendMessage()} disabled={busy || !input.trim() || loadingConversation} aria-label="ارسال پیام">
-                <SendIcon className="rtl:-scale-x-100" />
-              </Button>
-            </div>
-          </div>
-          <p className="mt-2 text-center text-[11px] text-muted-foreground">
-            پاسخ‌ها بر اساس داده‌های ثبت‌شده کسب‌وکار شما ارائه می‌شوند.
-          </p>
+          <ChatComposer
+            variant="page"
+            mode="dashboard"
+            input={input}
+            setInput={setInput}
+            busy={busy || loadingConversation}
+            canPropose={canPropose}
+            attachments={attachments}
+            onAttachFiles={(files) => void attachFiles(files)}
+            onClearAttachment={clearAttachment}
+            task={task}
+            onTaskChange={setTask}
+            customTask={customTask}
+            onCustomTaskChange={setCustomTask}
+            actionsAllowed={actionsAllowed}
+            setActionsAllowed={setActionsAllowed}
+            loadConversation={loadConversation}
+            sendMessage={sendMessage}
+            footer={
+              <p className="mt-2 text-center text-[11px] text-muted-foreground">
+                پاسخ‌ها بر اساس داده‌های ثبت‌شده کسب‌وکار شما ارائه می‌شوند.
+              </p>
+            }
+          />
         </div>
       </div>
     </section>

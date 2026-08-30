@@ -10,11 +10,14 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 import { ACTION_CATALOG, type ProposedAction } from "@/lib/ai";
-import { applyProposalRequest } from "./apply-proposal";
 import {
-  MAX_RECEIPT_IMAGE_BYTES,
-  parseReceiptImageDataUrl,
-} from "@/lib/ai-receipt";
+  MAX_ATTACHMENT_IMAGE_BYTES,
+  MAX_ATTACHMENT_PDF_BYTES,
+  MAX_ATTACHMENTS,
+} from "@/lib/ai-attachment-limits";
+import type { AiTaskId } from "@/lib/ai-tasks";
+import { applyProposalRequest } from "./apply-proposal";
+import { parseReceiptImageDataUrl } from "@/lib/ai-receipt";
 
 export type AssistantMode = "wizard" | "dashboard" | "floor";
 
@@ -33,6 +36,10 @@ export interface AiChatMessage {
    * that rebuilds the turn from scratch.
    */
   cacheNotice?: string | null;
+  /** Client-side send time, shown as a small clock under the bubble. */
+  createdAt?: number;
+  /** Snapshot of the attachments this turn carried (rendered in the bubble). */
+  attachments?: ChatAttachment[];
 }
 
 export interface TurnEstimate {
@@ -44,10 +51,16 @@ export interface TurnEstimate {
   hasTools: boolean;
 }
 
-/** Wave 5 (issue #145) — a receipt/invoice image attached to the next turn only; never persisted. */
+/**
+ * Wave 5 (issue #145, extended) — files attached to the next turn only, held
+ * client-side as data URLs; never uploaded to storage, never persisted.
+ */
 export interface ChatAttachment {
+  id: string;
+  kind: "image" | "pdf";
   dataUrl: string;
   name: string;
+  sizeBytes: number;
 }
 
 export const uid = (): string => crypto.randomUUID();
@@ -64,23 +77,7 @@ export const CHAT_ERROR: Record<string, string> = {
   empty_messages: "پیامی برای ارسال نیست.",
 };
 
-export const SUGGESTED_PROMPTS: Record<AssistantMode, string[]> = {
-  wizard: [
-    "برای تکمیل این مرحله چه اطلاعاتی لازم است؟",
-    "یک منوی اولیهٔ ساده برای کافه پیشنهاد بده.",
-    "تنظیمات مالیات و روش قیمت‌گذاری را بررسی کن.",
-  ],
-  dashboard: [
-    "فروش هفتهٔ اخیر را خلاصه و با هفتهٔ قبل مقایسه کن.",
-    "کدام آیتم‌های منو عملکرد ضعیف‌تری دارند؟",
-    "موجودی کم و پیشنهادهای خرید را بررسی کن.",
-  ],
-  floor: [
-    "مواد اولیهٔ ثبت‌شدهٔ یک آیتم منو را بگو.",
-    "صورت‌حساب میز ۳ را برای ۴ نفر تقسیم کن.",
-    "برای سؤال حساسیت غذایی چه داده‌ای ثبت شده است؟",
-  ],
-};
+export { SUGGESTED_PROMPTS } from "@/lib/ai-tasks";
 
 export function greeting(mode: AssistantMode): string {
   if (mode === "wizard") {
@@ -141,41 +138,81 @@ export function useAiChat({
   const [applyingId, setApplyingId] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [loadingConversation, setLoadingConversation] = useState(false);
-  const [attachment, setAttachmentState] = useState<ChatAttachment | null>(
-    null,
-  );
+  const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
   const [actionsAllowed, setActionsAllowed] = useState(true);
+  const [task, setTask] = useState<AiTaskId>("general");
+  const [customTask, setCustomTask] = useState("");
 
-  function clearAttachment() {
-    setAttachmentState(null);
+  /** Removes one attachment, or all of them when no id is given. */
+  function clearAttachment(id?: string) {
+    setAttachments((current) =>
+      id ? current.filter((attachment) => attachment.id !== id) : [],
+    );
   }
 
-  /** Reads an image file client-side into a data URL; nothing is ever uploaded to storage. */
-  async function attachReceiptImage(file: File) {
+  function readAsDataUrl(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(reader.error ?? new Error("read_failed"));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  /**
+   * Reads image/PDF files client-side into data URLs; nothing is ever
+   * uploaded to storage. Dashboard mode only, at most MAX_ATTACHMENTS per
+   * message — each invalid file is explained, never silently dropped.
+   */
+  async function attachFiles(files: File[]) {
     if (mode !== "dashboard") return;
-    if (!file.type.startsWith("image/")) {
-      toast.error("فقط فایل تصویری (jpg، png یا webp) پذیرفته می‌شود.");
-      return;
-    }
-    if (file.size > MAX_RECEIPT_IMAGE_BYTES) {
-      toast.error("حجم تصویر بیش از حد مجاز است (حداکثر ۵ مگابایت).");
-      return;
-    }
-    try {
-      const dataUrl = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result));
-        reader.onerror = () => reject(reader.error ?? new Error("read_failed"));
-        reader.readAsDataURL(file);
-      });
-      if (!parseReceiptImageDataUrl(dataUrl)) {
-        toast.error("فرمت تصویر پشتیبانی نمی‌شود.");
-        return;
+    const accepted: ChatAttachment[] = [];
+    for (const file of files) {
+      const isImage = file.type.startsWith("image/");
+      const isPdf = file.type === "application/pdf";
+      if (!isImage && !isPdf) {
+        toast.error(`«${file.name}» پشتیبانی نمی‌شود؛ فقط تصویر (jpg، png یا webp) یا PDF.`);
+        continue;
       }
-      setAttachmentState({ dataUrl, name: file.name });
-    } catch {
-      toast.error("خواندن تصویر ممکن نشد.");
+      const limit = isImage ? MAX_ATTACHMENT_IMAGE_BYTES : MAX_ATTACHMENT_PDF_BYTES;
+      if (file.size > limit) {
+        toast.error(
+          isImage
+            ? `«${file.name}» بزرگ‌تر از ۵ مگابایت است.`
+            : `«${file.name}» بزرگ‌تر از ۱۰ مگابایت است.`,
+        );
+        continue;
+      }
+      try {
+        const dataUrl = await readAsDataUrl(file);
+        if (isImage && !parseReceiptImageDataUrl(dataUrl)) {
+          toast.error(`فرمت «${file.name}» پشتیبانی نمی‌شود.`);
+          continue;
+        }
+        accepted.push({
+          id: uid(),
+          kind: isImage ? "image" : "pdf",
+          dataUrl,
+          name: file.name,
+          sizeBytes: file.size,
+        });
+      } catch {
+        toast.error(`خواندن «${file.name}» ممکن نشد.`);
+      }
     }
+    if (accepted.length === 0) return;
+    setAttachments((current) => {
+      const room = MAX_ATTACHMENTS - current.length;
+      if (room <= 0) {
+        toast.error(`حداکثر ${MAX_ATTACHMENTS} پیوست در هر پیام مجاز است.`);
+        return current;
+      }
+      const taking = accepted.slice(0, room);
+      if (taking.length < accepted.length) {
+        toast.error(`حداکثر ${MAX_ATTACHMENTS} پیوست در هر پیام مجاز است.`);
+      }
+      return [...current, ...taking];
+    });
   }
 
   function setConversation(id: string | null) {
@@ -259,10 +296,19 @@ export function useAiChat({
 
   async function startStream(text: string, bypassCache = false) {
     if (busy) return;
-    const userMsg: AiChatMessage = { id: uid(), role: "user", content: text };
+    const userMsg: AiChatMessage = {
+      id: uid(),
+      role: "user",
+      content: text,
+      createdAt: Date.now(),
+      attachments: attachments.length > 0 ? [...attachments] : undefined,
+    };
     const replyId = uid();
     const history = [...messages, userMsg];
-    setMessages([...history, { id: replyId, role: "assistant", content: "" }]);
+    setMessages([
+      ...history,
+      { id: replyId, role: "assistant", content: "", createdAt: Date.now() },
+    ]);
     setBusy(true);
 
     function setReply(update: (current: AiChatMessage) => AiChatMessage) {
@@ -344,7 +390,12 @@ export function useAiChat({
             role: message.role,
             content: message.content,
           })),
-          attachment: attachment ? { dataUrl: attachment.dataUrl } : undefined,
+          attachments: attachments.map((attachment) => ({
+            dataUrl: attachment.dataUrl,
+            name: attachment.name,
+          })),
+          task,
+          customTask: customTask.trim() || undefined,
           allowActions: actionsAllowed,
           bypassCache: bypassCache === true,
         }),
@@ -498,11 +549,15 @@ export function useAiChat({
     applyingId,
     conversationId,
     loadingConversation,
-    attachment,
-    attachReceiptImage,
+    attachments,
+    attachFiles,
     clearAttachment,
     actionsAllowed,
     setActionsAllowed,
+    task,
+    setTask,
+    customTask,
+    setCustomTask,
     ensureGreeting,
     startNewConversation,
     loadConversation,
