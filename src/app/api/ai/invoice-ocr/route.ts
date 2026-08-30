@@ -54,7 +54,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
     return NextResponse.json({ error: "no_location", message: "شعبه‌ای ثبت نشده است." }, { status: 409 });
   }
 
-  const config = await resolveAiConfigFor(session.businessId);
+  const config = await resolveAiConfigFor(session.businessId, location.id);
   if (!isPlatformAiConfigured(config)) {
     return NextResponse.json(
       { error: "ai_unavailable", message: "سرویس هوش مصنوعی هنوز توسط مدیر پلتفرم آماده نشده است." },

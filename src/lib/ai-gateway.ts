@@ -1,5 +1,5 @@
 /**
- * Phase 37 — the gateway half of the AI connection, kept free of the network,
+ * Phase 37 & Phase 39 — the gateway half of the AI connection, kept free of the network,
  * the database and `next/*`.
  *
  * A gateway (LiteLLM) fronts many upstream vendors behind one OpenAI-shaped
@@ -10,10 +10,9 @@
  * function of configuration, so they live here where they can be tested
  * without a proxy, a socket or a Postgres (see ai-gateway.test.ts).
  *
- * The one thing this module deliberately does NOT do is money. LiteLLM's
- * budgets are USD and are enforced by the gateway as a backstop; the amount a
- * business actually owes has always been the integer-Rial ledger in Phase 18
- * and stays there. `spendUsd` below is a diagnostic to reconcile the two.
+ * Phase 39 introduces branch-level overrides:
+ * Model resolution: branch override -> business override -> gateway alias -> platform default.
+ * Virtual key resolution: branch key -> business key -> gateway master key -> none.
  */
 
 import type { AgentMode, AiConfig } from "./ai";
@@ -48,7 +47,7 @@ export interface AiGatewayConfig {
   /** Failover chain, tried in order after the primary model errors. */
   fallbackModels: string[];
   routingStrategy: GatewayRoutingStrategy;
-  /** Mint and use one virtual key per business. */
+  /** Mint and use one virtual key per business or branch. */
   virtualKeysEnabled: boolean;
   /** Whether a business owner may choose a model, and from which list. */
   allowBusinessModels: boolean;
@@ -97,10 +96,7 @@ export interface AiGatewayInput {
 }
 
 /**
- * Phase 38b — one MCP server the LiteLLM proxy fronts. The proxy turns the
- * server's tools into OpenAI function tools and (with `require_approval`
- * "never", the only mode this platform sends) executes them mid-turn, which
- * is what makes a gateway turn agentic beyond the app's own read tools.
+ * Phase 38b — one MCP server the LiteLLM proxy fronts.
  */
 export interface GatewayMcpServer {
   /** Stable identifier — becomes the proxy's `server_label` and its URL path. */
@@ -111,9 +107,11 @@ export interface GatewayMcpServer {
   url: string;
 }
 
-/** One business's slice of the gateway: its key, its ceilings, its model choice. */
+/** One business or branch's slice of the gateway: its key, its ceilings, its model choice. */
 export interface BusinessGateway {
+  id?: string;
   businessId: string;
+  locationId: string | null;
   virtualKey: string | null;
   keyAlias: string | null;
   modelOverride: string | null;
@@ -173,9 +171,10 @@ export function defaultGatewayConfig(): AiGatewayConfig {
   };
 }
 
-export function emptyBusinessGateway(businessId: string): BusinessGateway {
+export function emptyBusinessGateway(businessId: string, locationId: string | null = null): BusinessGateway {
   return {
     businessId,
+    locationId,
     virtualKey: null,
     keyAlias: null,
     modelOverride: null,
@@ -219,18 +218,12 @@ export function toListText(values: string[]): string {
 }
 
 // ---------------------------------------------------------------------------
-// Phase 38b — costing, prompts/skills, MCP and usage
-//
-// Everything here is a pure function of configuration or gateway payloads, so
-// the same invariant as the rest of the file holds: the request path can be
-// tested without a proxy, and a shape nobody recognises degrades to "nothing
-// to send" instead of throwing into a turn that worked before.
+// Prompts/skills, MCP and usage
 // ---------------------------------------------------------------------------
 
 /**
  * The agent surfaces a gateway prompt may be bound to — exactly the prompt
- * manager's platform surfaces. A binding for anything else is refused on
- * write so the map can never grow a second taxonomy.
+ * manager's platform surfaces.
  */
 export const GATEWAY_PROMPT_SURFACES: readonly AgentMode[] = [
   "wizard",
@@ -247,16 +240,13 @@ export function mcpServersToText(servers: GatewayMcpServer[]): string {
 }
 
 /**
- * Normalise the stored/configured prompt bindings into a surface → prompt_id
- * map. Unknown surfaces and blank values are dropped rather than preserved:
- * the map is read on every chat turn and a stale key must never send a
- * prompt_id for a surface the assistant no longer has.
+ * Normalise the stored/configured prompt bindings into a surface → prompt_id map.
  */
 export function normalizePromptBindings(value: unknown): Partial<Record<AgentMode, string>> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   const result: Partial<Record<AgentMode, string>> = {};
   for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
-    if (!(GATEWAY_PROMPT_SURFACES as readonly string[]).includes(key)) continue;
+    if (!(GATEWAY_PROMPT_SURFACES as readonly string[]).includes(key as AgentMode)) continue;
     const promptId = trimmed(raw);
     if (promptId) result[key as AgentMode] = promptId;
   }
@@ -264,9 +254,7 @@ export function normalizePromptBindings(value: unknown): Partial<Record<AgentMod
 }
 
 /**
- * Normalise the MCP server list. A server is kept only with a sane name (the
- * proxy's URL path is built from it), a URL and a label; anything else is
- * dropped, because a half-defined server would reach the request body.
+ * Normalise the MCP server list.
  */
 export function normalizeMcpServers(value: unknown): GatewayMcpServer[] {
   if (!Array.isArray(value)) return [];
@@ -297,11 +285,7 @@ export function mcpServersFromText(text: string): GatewayMcpServer[] {
 }
 
 /**
- * The top-level request fields that bind this call to a gateway-held prompt
- * (LiteLLM prompt management): `prompt_id` selects the template,
- * `prompt_variables` fills it. `system_context` is the full system prompt the
- * app would have sent — a template that drops it drops the guardrails, which
- * is why the console names the variable in its help text.
+ * The top-level request fields that bind this call to a gateway-held prompt.
  */
 export function gatewayPromptBody(promptId: string, context: PromptVariables): Record<string, unknown> {
   const id = trimmed(promptId);
@@ -326,12 +310,7 @@ export interface PromptVariables {
 }
 
 /**
- * The `tools` entries that hand the proxy's MCP servers to one call. LiteLLM
- * transforms these into the servers' own function tools and, with
- * `require_approval: "never"`, executes the calls it gets back before the
- * model replies — delegated agency, configured here and enforced at the
- * proxy. Empty unless MCP is switched on AND servers are configured: a
- * direct vendor must never receive a `tools` entry it cannot parse.
+ * The `tools` entries that hand the proxy's MCP servers to one call.
  */
 export function gatewayMcpToolsBody(gateway: AiGatewayConfig | null): Record<string, unknown> {
   if (!gateway || !gateway.enabled || !gateway.mcpEnabled || gateway.mcpServers.length === 0) {
@@ -348,9 +327,7 @@ export function gatewayMcpToolsBody(gateway: AiGatewayConfig | null): Record<str
 }
 
 /**
- * LiteLLM's per-response cost header, in USD. Absent on direct vendor
- * responses and on proxy deployments with cost tracking off — both mean
- * "no figure", which the settlement treats as "use the token rates".
+ * LiteLLM's per-response cost header, in USD.
  */
 export function parseResponseCostHeader(value: string | null | undefined): number | null {
   if (value === null || value === undefined || value.trim() === "") return null;
@@ -367,11 +344,7 @@ export function rialFromGatewayUsd(costUsd: number, usdRialRate: number): number
 }
 
 /**
- * The settlement figures for one turn priced by the gateway: the cost is the
- * gateway's USD figure converted to Rial, and the charge applies the
- * platform's existing margin on top — Phase 18's cost-plus policy with a
- * measured cost. `effectiveRate`'s ceil-everything rule is mirrored so the
- * platform never sells below cost by a rounding.
+ * The settlement figures for one turn priced by the gateway.
  */
 export function gatewayTurnPricing(
   costUsd: number,
@@ -399,7 +372,7 @@ export interface GatewaySpendLogEntry {
   spendUsd: number;
   promptTokens: number;
   completionTokens: number;
-  /** UTC day the request belongs to — the gateway has no trading-day notion. */
+  /** UTC day the request belongs to. */
   day: string;
 }
 
@@ -416,9 +389,7 @@ function utcDay(value: unknown): string | null {
 }
 
 /**
- * Parse `/spend/logs` (documented shape: an array of rows with `metadata`
- * naming the calling key's alias). Fails soft: an unrecognised payload is
- * simply no entries, which the caller treats as "nothing new to store".
+ * Parse `/spend/logs`.
  */
 export function parseSpendLogs(payload: unknown): GatewaySpendLogEntry[] {
   if (!Array.isArray(payload)) return [];
@@ -455,11 +426,6 @@ export interface GatewayUsageRollup {
   apiRequests: number;
 }
 
-/**
- * Aggregate spend logs into daily rollups. Logs without a key alias roll up
- * under a fixed marker rather than being dropped: the master key's calls are
- * real spend the console must see even before virtual keys are provisioned.
- */
 export const UNKEYED_USAGE_ALIAS = "(master)";
 
 export function aggregateSpendLogs(entries: GatewaySpendLogEntry[]): GatewayUsageRollup[] {
@@ -483,10 +449,15 @@ export function aggregateSpendLogs(entries: GatewaySpendLogEntry[]): GatewayUsag
     rolls.set(key, current);
   }
   return [...rolls.values()].sort((a, b) =>
-    a.day === b.day ? (a.keyAlias === b.keyAlias ? a.model.localeCompare(b.model) : a.keyAlias.localeCompare(b.keyAlias)) : a.day < b.day ? 1 : -1,
+    a.day === b.day
+      ? a.keyAlias === b.keyAlias
+        ? a.model.localeCompare(b.model)
+        : a.keyAlias.localeCompare(b.keyAlias)
+      : a.day < b.day
+        ? 1
+        : -1,
   );
 }
-
 
 function positiveNumberOrNull(value: unknown): number | null {
   const n = typeof value === "number" ? value : Number(value);
@@ -507,10 +478,6 @@ export function toPublicGatewayConfig(config: AiGatewayConfig): PublicAiGatewayC
 
 // ---------------------------------------------------------------------------
 // Gateway REST endpoints
-//
-// The chat/embeddings calls keep using `platform_ai_config.base_url` unchanged
-// (it already ends in /v1); the *management* API lives one level up, which is
-// why these are derived rather than stored.
 // ---------------------------------------------------------------------------
 
 export function gatewayManagementUrl(baseUrl: string): string {
@@ -544,10 +511,6 @@ export function keyInfoUrl(baseUrl: string, key: string): string {
 
 // ---------------------------------------------------------------------------
 // Parsing gateway responses
-//
-// Every parser fails soft: a gateway is an optional component, and a shape we
-// do not recognise must degrade to "no information", never throw into a
-// request path that was working before the gateway existed.
 // ---------------------------------------------------------------------------
 
 /** `/model/info` returns `{ data: [{ model_name, litellm_params }] }`. */
@@ -566,7 +529,7 @@ export function parseGatewayModels(payload: unknown): string[] {
   return [...new Set(names)].sort((a, b) => a.localeCompare(b));
 }
 
-/** `/key/generate` answers `{ key: "sk-…", … }`; older builds used `token`. */
+/** `/key/generate` answers `{ key: "sk-…", … }`. */
 export function parseGeneratedKey(payload: unknown): string | null {
   const row = payload as Record<string, unknown> | null;
   if (!row) return null;
@@ -610,37 +573,34 @@ export function gatewayStatusMessage(status: number): string {
 }
 
 // ---------------------------------------------------------------------------
-// Per-call resolution
+// Per-call resolution with Branch -> Business -> Platform fallback
 // ---------------------------------------------------------------------------
 
 /**
  * The chat model for one call.
- *
- * Precedence is deliberately narrow: a business may override only when the
- * platform has switched overrides on AND the value is one the platform
- * published. The second half is enforced here as well as on write, because a
- * row written before the allowlist was tightened must not keep reaching a
- * model the platform no longer sells.
+ * Precedence: Branch override -> Business override -> Gateway alias -> Platform default.
  */
 export function resolveChatModel(input: {
   platformModel: string;
   gateway: AiGatewayConfig | null;
-  business: BusinessGateway | null;
+  business?: BusinessGateway | null;
+  branch?: BusinessGateway | null;
 }): string {
-  const { platformModel, gateway, business } = input;
+  const { platformModel, gateway, business, branch } = input;
   if (!gateway || !gateway.enabled) return platformModel;
   const published = gateway.publishedModels;
-  const override = trimmed(business?.modelOverride);
-  if (gateway.allowBusinessModels && override && published.includes(override)) return override;
+  if (gateway.allowBusinessModels) {
+    const branchOverride = trimmed(branch?.modelOverride);
+    if (branchOverride && published.includes(branchOverride)) return branchOverride;
+    const businessOverride = trimmed(business?.modelOverride);
+    if (businessOverride && published.includes(businessOverride)) return businessOverride;
+  }
   const alias = trimmed(gateway.chatModel);
   return alias || platformModel;
 }
 
 /**
- * The embedding model for one call. Falls through to the chat model, which is
- * what `ai-embeddings.ts` already does today: separating the two is a gateway
- * capability (one alias may route embeddings to a different vendor than chat),
- * not something a direct single-vendor connection can express.
+ * The embedding model for one call. Falls through to the chat model.
  */
 export function resolveEmbeddingModel(input: {
   platformModel: string;
@@ -654,28 +614,25 @@ export function resolveEmbeddingModel(input: {
 
 /**
  * The credential for one call.
- *
- * A virtual key is preferred whenever one exists: it is the only way the
- * gateway can attribute spend, enforce a budget or rate-limit per business
- * rather than for the whole deployment. Falls back to the master key, then to
- * no override at all — in which case the caller's own `apiKey` stands, so a
- * gateway with no master key configured still works if the proxy runs open.
+ * Precedence: Branch virtual key -> Business virtual key -> Gateway master key -> undefined.
  */
 export function resolveGatewayAuthKey(input: {
   gateway: AiGatewayConfig | null;
-  business: BusinessGateway | null;
+  business?: BusinessGateway | null;
+  branch?: BusinessGateway | null;
 }): string | undefined {
-  const { gateway, business } = input;
+  const { gateway, business, branch } = input;
   if (!gateway || !gateway.enabled) return undefined;
-  if (gateway.virtualKeysEnabled && trimmed(business?.virtualKey)) return trimmed(business?.virtualKey);
+  if (gateway.virtualKeysEnabled) {
+    if (trimmed(branch?.virtualKey)) return trimmed(branch?.virtualKey);
+    if (trimmed(business?.virtualKey)) return trimmed(business?.virtualKey);
+  }
   if (trimmed(gateway.masterKey)) return trimmed(gateway.masterKey);
   return undefined;
 }
 
 /**
- * Extra top-level request fields for one call — LiteLLM's client-side
- * `fallbacks` chain. Empty when there is no gateway, so a direct vendor never
- * receives a field it would reject.
+ * Extra top-level request fields for one call — LiteLLM's client-side `fallbacks` chain.
  */
 export function gatewayRequestBody(gateway: AiGatewayConfig | null): Record<string, unknown> {
   if (!gateway || !gateway.enabled || gateway.fallbackModels.length === 0) return {};
@@ -686,12 +643,14 @@ export function gatewayRequestBody(gateway: AiGatewayConfig | null): Record<stri
 export function keyModelsFor(input: {
   platformModel: string;
   gateway: AiGatewayConfig;
-  business: BusinessGateway | null;
+  business?: BusinessGateway | null;
+  branch?: BusinessGateway | null;
 }): string[] {
   const primary = resolveChatModel({
     platformModel: input.platformModel,
     gateway: input.gateway,
     business: input.business,
+    branch: input.branch,
   });
   const models = [primary, ...input.gateway.fallbackModels];
   const embedding = trimmed(input.gateway.embeddingModel);
@@ -699,30 +658,14 @@ export function keyModelsFor(input: {
   return [...new Set(models.filter((model) => model.length > 0))];
 }
 
-/**
- * The address management calls go to.
- *
- * There is deliberately only ONE address in a gateway deployment, and it is
- * the provider connection's: when the platform's provider *is* the gateway,
- * `platform_ai_config.base_url` is already the gateway's `/v1` endpoint, so a
- * second stored address could only ever drift from it — chat would go to one
- * host while keys were minted on another. The gateway row's own address is
- * used only when the provider is something else (i.e. the gateway features are
- * configured ahead of switching the connection over).
- */
-export function resolveGatewayBaseUrl(input: {
-  platformBaseUrl: string;
-  providerIsGateway: boolean;
-  gatewayBaseUrl: string;
-}): string {
-  const platform = trimmed(input.platformBaseUrl);
-  if (input.providerIsGateway && platform) return platform;
-  return trimmed(input.gatewayBaseUrl) || platform || DEFAULT_GATEWAY_BASE_URL;
-}
-
-/** LiteLLM `key_alias` for a business — stable, short and traceable back to the row. */
-export function virtualKeyAlias(businessId: string): string {
-  return `pos-${businessId.replace(/-/g, "").slice(0, 20)}`;
+/** LiteLLM `key_alias` for a business or branch — stable, short and traceable. */
+export function virtualKeyAlias(businessId: string, locationId?: string | null): string {
+  const b = businessId.replace(/-/g, "").slice(0, 16);
+  if (locationId) {
+    const loc = locationId.replace(/-/g, "").slice(0, 8);
+    return `pos-${b}-${loc}`;
+  }
+  return `pos-${b}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -773,8 +716,6 @@ export function validateGatewayInput(input: AiGatewayInput): string[] {
   ) {
     errors.push("ai_gateway_bad_rpm");
   }
-  // Phase 38b — gateway costing needs a rate to convert USD into Rial; a
-  // switch without one would settle every turn at zero.
   if (
     input.usdRialRate !== undefined &&
     input.usdRialRate !== null &&
@@ -791,7 +732,7 @@ export function validateGatewayInput(input: AiGatewayInput): string[] {
       errors.push("ai_gateway_bad_prompt_bindings");
     } else {
       const unknown = Object.keys(bindings).filter(
-        (surface) => !(GATEWAY_PROMPT_SURFACES as readonly string[]).includes(surface),
+        (surface) => !(GATEWAY_PROMPT_SURFACES as readonly string[]).includes(surface as AgentMode),
       );
       if (unknown.length > 0) errors.push("ai_gateway_bad_prompt_bindings");
     }
@@ -802,12 +743,6 @@ export function validateGatewayInput(input: AiGatewayInput): string[] {
   return errors;
 }
 
-/**
- * LiteLLM's budget duration is a free-text window (`30d`, `12h`, `1mo`).
- * Constrain it to digits plus a known unit: it reaches the gateway verbatim,
- * and an arbitrary string is at best a rejected write and at worst a
- * nonsensical budget window nobody can reason about later.
- */
 export function isValidBudgetDuration(value: unknown): boolean {
   if (value === undefined || value === null) return true;
   const text = trimmed(value);
@@ -823,13 +758,6 @@ export interface BusinessGatewayInput {
   rpmLimit?: number | null;
 }
 
-/**
- * Validate one business's gateway settings.
- *
- * `allowedModels` is the platform's published list; an override outside it is
- * refused here so the check exists in one place and holds for both the
- * platform console and the business's own settings page.
- */
 export function validateBusinessGatewayInput(
   input: BusinessGatewayInput,
   options: { allowBusinessModels: boolean; allowedModels: string[] },
@@ -859,12 +787,12 @@ export function validateBusinessGatewayInput(
   return errors;
 }
 
-/** Coerce a validated business-gateway patch into the row's own shape. */
 export function normaliseBusinessGatewayInput(
   businessId: string,
   input: BusinessGatewayInput,
+  locationId: string | null = null,
 ): BusinessGateway {
-  const base = emptyBusinessGateway(businessId);
+  const base = emptyBusinessGateway(businessId, locationId);
   return {
     ...base,
     modelOverride: input.modelOverride === undefined ? base.modelOverride : trimmed(input.modelOverride) || null,
@@ -876,30 +804,15 @@ export function normaliseBusinessGatewayInput(
   };
 }
 
-/**
- * Whether a gateway is actually serving this configuration — the test the
- * runtime uses before it attaches any gateway fields to a call. A gateway row
- * that exists but is switched off must behave exactly as if it were absent.
- */
 export function isGatewayActive(gateway: AiGatewayConfig | null | undefined): boolean {
   return Boolean(gateway?.enabled) && Boolean(trimmed(gateway?.baseUrl));
 }
 
-/**
- * Build the `AiConfig.gateway` runtime for one call. Returns undefined — not
- * an empty object — when there is nothing gateway-specific to send, so the
- * common single-vendor deployment keeps a byte-identical request body.
- *
- * Phase 38b — the body now also carries the proxy's MCP tool declarations
- * and, when the call's surface is bound to a gateway prompt, the call's
- * `promptId` (the variables themselves are per-turn, so `ai-service.ts`
- * fills them in where the system prompt is actually built). An unbound
- * surface with no MCP servers produces exactly Phase 37's body.
- */
 export function buildGatewayRuntime(input: {
   config: AiConfig;
   gateway: AiGatewayConfig | null;
-  business: BusinessGateway | null;
+  business?: BusinessGateway | null;
+  branch?: BusinessGateway | null;
   /** The agent surface this call answers on, for prompt binding. */
   mode?: string | null;
 }): {
@@ -923,19 +836,17 @@ export function buildGatewayRuntime(input: {
       platformModel: input.config.model,
       gateway,
       business: input.business,
+      branch: input.branch,
     }),
     embeddingModel: resolveEmbeddingModel({
       platformModel: input.config.model,
       gateway,
     }),
     ...(() => {
-      const key = resolveGatewayAuthKey({ gateway, business: input.business });
+      const key = resolveGatewayAuthKey({ gateway, business: input.business, branch: input.branch });
       return key ? { authKey: key } : {};
     })(),
     body,
-    // The prompt fields themselves are per-turn — ai-service.ts builds the
-    // system prompt after this runs, so it fills `prompt_variables` and adds
-    // `prompt_id` from this flag.
     ...(promptId ? { promptId } : {}),
   };
 }

@@ -1,19 +1,10 @@
 "use client";
 
 /**
- * Phase 37 — the super-admin's gateway console.
+ * Phase 37 & Phase 39 — the super-admin's gateway console.
  *
- * This page exists because the gateway is a *deployment-wide* component: the
- * address, the admin credential, the failover chain and the default budgets
- * belong to the platform, not to any business. Per-business keys live on the
- * same page because provisioning one is the action that makes the rest mean
- * anything — without a per-business key there is no per-business spend inside
- * the gateway at all.
- *
- * Two boundaries are held deliberately. The gateway's admin key is typed but
- * never displayed (only acknowledged, like the provider key on /platform/ai),
- * and a business's virtual key is never rendered either — the console shows
- * whether one exists and what it has spent.
+ * This page manages the platform-wide LiteLLM gateway, master key, default budgets,
+ * routing, and per-business/per-branch virtual keys and model overrides.
  */
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { formatPersianNumber } from "@/lib/digits";
@@ -44,8 +35,15 @@ interface GatewayConfig {
   hasMasterKey: boolean;
 }
 
+interface LocationSummary {
+  id: string;
+  businessId: string;
+  name: string;
+}
+
 interface BusinessGateway {
   businessId: string;
+  locationId: string | null;
   keyAlias: string | null;
   modelOverride: string | null;
   maxBudgetUsd: number | null;
@@ -75,6 +73,7 @@ interface GatewayData {
   active: boolean;
   status: GatewayStatus | null;
   gateways: BusinessGateway[];
+  locations: LocationSummary[];
   error?: string;
 }
 
@@ -97,7 +96,6 @@ const DURATION_OPTIONS = [
   { value: "30d", label: "ماهانه (30d)" },
 ];
 
-/** Phase 38b — the surfaces a gateway prompt (a «مهارت») can be bound to. */
 const PROMPT_SURFACES = [
   { value: "wizard", label: "ویزارد راه‌اندازی" },
   { value: "dashboard", label: "داشبورد" },
@@ -111,6 +109,7 @@ interface GatewayUsageEntry {
   day: string;
   keyAlias: string;
   businessId: string | null;
+  locationId: string | null;
   model: string;
   spendUsd: number;
   spendRial: number | null;
@@ -149,7 +148,6 @@ function numericOrNull(value: string): number | null {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
-/** `name | label | url`, one server per line — same shape the service stores. */
 function parseMcpServers(text: string): { name: string; label: string; url: string }[] {
   const servers: { name: string; label: string; url: string }[] = [];
   const seen = new Set<string>();
@@ -188,6 +186,7 @@ export default function PlatformAiGatewayPage() {
   const [draft, setDraft] = useState<GatewayConfig | null>(null);
   const [masterKey, setMasterKey] = useState("");
   const [selectedBusinessId, setSelectedBusinessId] = useState("");
+  const [selectedLocationId, setSelectedLocationId] = useState("");
   const [fallbackText, setFallbackText] = useState("");
   const [publishedText, setPublishedText] = useState("");
   const [promptBindings, setPromptBindings] = useState<Record<string, string>>({});
@@ -258,10 +257,18 @@ export default function PlatformAiGatewayPage() {
     [businesses, selectedBusinessId],
   );
 
-  const selectedRow = useMemo(
-    () => data?.gateways.find((row) => row.businessId === selectedBusinessId) ?? null,
-    [data?.gateways, selectedBusinessId],
+  const businessLocations = useMemo(
+    () => (data?.locations ?? []).filter((loc) => loc.businessId === selectedBusinessId),
+    [data?.locations, selectedBusinessId],
   );
+
+  const selectedRow = useMemo(() => {
+    if (!data?.gateways || !selectedBusinessId) return null;
+    const loc = selectedLocationId || null;
+    return (
+      data.gateways.find((row) => row.businessId === selectedBusinessId && row.locationId === loc) ?? null
+    );
+  }, [data?.gateways, selectedBusinessId, selectedLocationId]);
 
   async function write(body: Record<string, unknown>, key: string, method: "PUT" | "POST" = "POST") {
     setBusy(key);
@@ -348,9 +355,7 @@ export default function PlatformAiGatewayPage() {
       <header>
         <h1 className="text-xl font-bold">دروازهٔ مدل (LiteLLM)</h1>
         <p className="mt-1 text-sm text-white/50">
-          یک نشانی OpenAI-سازگار در برابر چند ارائه‌دهنده: کلید مجازی برای هر کسب‌وکار، سقف هزینه، زنجیرهٔ
-          جایگزین و نام مستعار مدل. مدیریت در <a className="underline" href="/platform/ai">هوش مصنوعی</a> است؛
-          اینجا فقط تنظیمات دروازه است.
+          ارائه‌دهندهٔ واحد و یکپارچهٔ هوش مصنوعی: صدور کلیدهای مجازی برای کسب‌وکارها و شعبه‌ها، سقف بودجه، زنجیرهٔ جایگزین، مدل‌های منتشرشده و ابزارهای MCP.
         </p>
       </header>
 
@@ -360,9 +365,9 @@ export default function PlatformAiGatewayPage() {
       <Card title="وضعیت">
         <dl className="grid gap-3 text-sm sm:grid-cols-3">
           <div>
-            <dt className="text-white/50">ارائه‌دهندهٔ فعلی</dt>
+            <dt className="text-white/50">ارائه‌دهنده</dt>
             <dd className="mt-1 font-medium" dir="ltr">
-              {data?.provider ?? "—"}
+              LiteLLM (دروازهٔ یکپارچه)
             </dd>
           </div>
           <div>
@@ -370,24 +375,18 @@ export default function PlatformAiGatewayPage() {
             <dd className="mt-1 font-medium">{data?.active ? "بله" : "خیر"}</dd>
           </div>
           <div>
-            <dt className="text-white/50">مدل پلتفرم</dt>
+            <dt className="text-white/50">مدل پیش‌فرض پلتفرم</dt>
             <dd className="mt-1 font-medium" dir="ltr">
               {data?.platformModel ?? "—"}
             </dd>
           </div>
           <div className="sm:col-span-3">
-            <dt className="text-white/50">نشانی</dt>
+            <dt className="text-white/50">نشانی Base URL</dt>
             <dd className="mt-1 font-medium" dir="ltr">
               {data?.platformBaseUrl ?? "—"}
             </dd>
           </div>
         </dl>
-        {!data?.providerIsGateway ? (
-          <InfoBox>
-            ارائه‌دهندهٔ فعلی یک دروازه نیست. برای استفاده از این بخش، در صفحهٔ مدیریت هوش مصنوعی گزینهٔ
-            «LiteLLM» را انتخاب کنید.
-          </InfoBox>
-        ) : null}
         {status ? (
           <div className="mt-3 rounded-lg border border-white/10 bg-white/2 p-3 text-sm">
             {status.ok ? (
@@ -421,28 +420,19 @@ export default function PlatformAiGatewayPage() {
         <Card title="تنظیمات دروازه">
           <p className="mb-4 text-sm text-white/50">
             این نشانی برای همهٔ کسب‌وکارهاست. کلید مدیر فقط برای صدور کلید مجازی استفاده می‌شود و هرگز به
-            داشبورد کسب‌وکار ارسال نمی‌شود. بودجه‌ها به دلار و فقط یک سقف ایمنی‌اند؛ مبلغی که کسب‌وکار
-            می‌پردازد همچنان همان اعتبار ریالی است.
+            داشبورد کسب‌وکار ارسال نمی‌شود. بودجه‌ها به دلار و سقف ایمنی‌اند؛ مبلغ پرداختی کسب‌وکار
+            همان اعتبار ریالی است.
           </p>
           <form onSubmit={saveConfig} className="grid gap-4 lg:grid-cols-2">
-            {data?.providerIsGateway ? (
-              <Field
-                label="نشانی دروازه"
-                hint="از اتصال ارائه‌دهنده گرفته می‌شود؛ برای تغییر آن به صفحهٔ مدیریت هوش مصنوعی بروید. یک نشانی بیشتر وجود ندارد، وگرنه گفت‌وگو به میزبان و صدور کلید به میزبان دیگری می‌رفت."
-              >
-                <input className={inputClass} dir="ltr" value={draft.baseUrl} readOnly />
-              </Field>
-            ) : (
-              <Field label="نشانی دروازه">
-                <input
-                  className={inputClass}
-                  dir="ltr"
-                  value={draft.baseUrl}
-                  onChange={(event) => setDraft({ ...draft, baseUrl: event.target.value })}
-                />
-              </Field>
-            )}
-            <Field label="کلید مدیر" hint={draft.hasMasterKey ? "کلید ذخیره شده است؛ برای حفظ آن خالی بگذارید." : "کلید مدیر دروازه را وارد کنید."}>
+            <Field label="نشانی دروازه">
+              <input
+                className={inputClass}
+                dir="ltr"
+                value={draft.baseUrl}
+                onChange={(event) => setDraft({ ...draft, baseUrl: event.target.value })}
+              />
+            </Field>
+            <Field label="کلید مدیر (Master Key)" hint={draft.hasMasterKey ? "کلید ذخیره شده است؛ برای حفظ آن خالی بگذارید." : "کلید مدیر دروازه را وارد کنید."}>
               <input
                 className={inputClass}
                 dir="ltr"
@@ -460,7 +450,7 @@ export default function PlatformAiGatewayPage() {
                 onChange={(event) => setDraft({ ...draft, chatModel: event.target.value })}
               />
             </Field>
-            <Field label="نام مستعار مدل بردارسازی" hint="می‌تواند از ارائه‌دهندهٔ دیگری بیاید؛ با این کار جست‌وجوی دانش روی دروازه‌هایی که فقط مدل گفت‌وگو دارند هم کار می‌کند.">
+            <Field label="نام مستعار مدل بردارسازی (Embeddings)" hint="می‌تواند از ارائه‌دهندهٔ دیگری بیاید.">
               <input
                 className={inputClass}
                 dir="ltr"
@@ -469,7 +459,7 @@ export default function PlatformAiGatewayPage() {
               />
             </Field>
             <div className="lg:col-span-2">
-              <Field label="زنجیرهٔ جایگزین" hint="هر سطر یا کاما یک مدل؛ به ترتیب پس از خطای مدل اصلی امتحان می‌شود.">
+              <Field label="زنجیرهٔ جایگزین (Fallbacks)" hint="هر سطر یا کاما یک مدل؛ به ترتیب پس از خطای مدل اصلی امتحان می‌شود.">
                 <textarea
                   className={inputClass}
                   dir="ltr"
@@ -504,7 +494,7 @@ export default function PlatformAiGatewayPage() {
                 options={DURATION_OPTIONS}
               />
             </Field>
-            <Field label="سقف پیش‌فرض توکن در دقیقه">
+            <Field label="سقف پیش‌فرض توکن در دقیقه (TPM)">
               <PersianNumberInput
                 className={inputClass}
                 type="number"
@@ -513,7 +503,7 @@ export default function PlatformAiGatewayPage() {
                 onChange={(event) => setDraft({ ...draft, defaultTpmLimit: numericOrNull(event.target.value) })}
               />
             </Field>
-            <Field label="سقف پیش‌فرض درخواست در دقیقه">
+            <Field label="سقف پیش‌فرض درخواست در دقیقه (RPM)">
               <PersianNumberInput
                 className={inputClass}
                 type="number"
@@ -549,7 +539,7 @@ export default function PlatformAiGatewayPage() {
                   checked={draft.virtualKeysEnabled}
                   onChange={(event) => setDraft({ ...draft, virtualKeysEnabled: event.target.checked })}
                 />
-                صدور کلید مجازی برای هر کسب‌وکار
+                صدور کلید مجازی برای هر کسب‌وکار و شعبه
               </label>
               <label className="flex items-center gap-2 text-sm text-white/80">
                 <input
@@ -557,7 +547,7 @@ export default function PlatformAiGatewayPage() {
                   checked={draft.allowBusinessModels}
                   onChange={(event) => setDraft({ ...draft, allowBusinessModels: event.target.checked })}
                 />
-                اجازهٔ انتخاب مدل به کسب‌وکار
+                اجازهٔ انتخاب مدل به کسب‌وکار و شعبه‌ها
               </label>
               <label className="flex items-center gap-2 text-sm text-white/80">
                 <input
@@ -584,11 +574,7 @@ export default function PlatformAiGatewayPage() {
             <div className="lg:col-span-2 border-t border-white/10 pt-4">
               <p className="mb-3 text-sm font-medium">مهارت‌ها — پرامپت‌های دروازه</p>
               <p className="mb-3 text-xs text-white/50">
-                هر سطح گفت‌وگو می‌تواند به یک پرامپت ثبت‌شده در دروازه (پوشهٔ prompts در LiteLLM) وصل شود.
-                پرامپتِ دروازه جای پیام سیستمی برنامه را می‌گیرد؛ متن دستورهای سیستم به‌عنوان متغیر
-                <span dir="ltr"> {"{{system_context}}"} </span>
-                همراه بقیهٔ متغیرها (نام کسب‌وکار، نام کاربر، mode) ارسال می‌شود — قالبی که این متغیر را حذف کند،
-                قواعد تأیید پیش از نوشتن را هم حذف کرده است.
+                هر سطح گفت‌وگو می‌تواند به یک پرامپت ثبت‌شده در دروازه وصل شود.
               </p>
               <div className="grid gap-3 sm:grid-cols-2">
                 {PROMPT_SURFACES.map((surface) => (
@@ -609,7 +595,7 @@ export default function PlatformAiGatewayPage() {
             <div className="lg:col-span-2 border-t border-white/10 pt-4">
               <Field
                 label="سرورهای MCP دروازه"
-                hint="هر سطر: name | برچسب | نشانی. این سرورها در هر نوبت گفت‌وگو به مدل معرفی می‌شوند و دروازه خودشان اجرایشان می‌کند؛ از جمله اتصال‌دهندهٔ MCP همین سامانه (‎/api/mcp)."
+                hint="هر سطر: name | برچسب | نشانی."
               >
                 <textarea
                   className={inputClass}
@@ -646,9 +632,7 @@ export default function PlatformAiGatewayPage() {
       {can("ai.read") ? (
         <Card title="مصرف از دید دروازه — ۳۰ روز گذشته">
           <p className="mb-3 text-sm text-white/50">
-            جمع‌بندی روزانهٔ گزارش‌های مصرف خود دروازه (به تفکیک کلید مجازی و مدل). ارقام دلاری تشخیصی‌اند؛
-            مبلغ ریالیِ محاسبه‌شده با نرخ تبدیل، تنها برای مقایسه با دفتر اعتبار است و جای آن را نمی‌گیرد.
-            روزها بر پایهٔ UTC است — دروازه از روز کاری شعبه‌ها بی‌خبر است.
+            جمع‌بندی روزانهٔ گزارش‌های مصرف خود دروازه (به تفکیک کلید مجازی و مدل).
           </p>
           {can("ai.config.manage") ? (
             <div className="mb-4">
@@ -705,23 +689,7 @@ export default function PlatformAiGatewayPage() {
                       ))}
                     </tbody>
                   </table>
-                  {usage.usage.length > 100 ? (
-                    <p className="mt-2 text-xs text-white/40">
-                      {formatPersianNumber(usage.usage.length - 100)} سطر دیگر نمایش داده نشده است.
-                    </p>
-                  ) : null}
                 </div>
-              )}
-              {usage.gatewayCosting.enabled ? (
-                <p className="mt-3 text-xs text-white/50">
-                  محاسبهٔ هزینه از گزارش دروازه فعال است؛ نرخ تبدیل:
-                  {" "}
-                  {formatPersianNumber(usage.gatewayCosting.usdRialRate ?? 0)} ریال به ازای هر دلار.
-                </p>
-              ) : (
-                <p className="mt-3 text-xs text-white/50">
-                  محاسبهٔ هزینه از گزارش دروازه خاموش است؛ تسویه با نرخ‌های دستی توکن انجام می‌شود.
-                </p>
               )}
             </>
           )}
@@ -729,19 +697,33 @@ export default function PlatformAiGatewayPage() {
       ) : null}
 
       {can("ai.credits.manage") ? (
-        <Card title="کلید مجازی — هر کسب‌وکار">
+        <Card title="کلید مجازی و سقف‌ها — کسب‌وکار و شعبه‌ها">
           <p className="mb-3 text-sm text-white/50">
-            کلید مجازی همان چیزی است که مصرف را در دروازه به نام کسب‌وکار ثبت می‌کند. بدون آن، همهٔ
-            کسب‌وکارها روی یک شمارنده مشترک می‌نشینند.
+            می‌توانید برای کل کسب‌وکار یا به‌صورت مجزا برای هر یک از شعبه‌های آن کلید مجازی و مدل تعیین کنید.
           </p>
-          <div className="mb-4">
+          <div className="grid gap-3 sm:grid-cols-2 mb-4">
             <Field label="کسب‌وکار">
               <SearchableSelect
                 value={selectedBusinessId}
-                onChange={setSelectedBusinessId}
+                onChange={(value) => {
+                  setSelectedBusinessId(value);
+                  setSelectedLocationId("");
+                }}
                 options={businesses.map((business) => ({ value: business.businessId, label: business.businessName }))}
               />
             </Field>
+            {businessLocations.length > 0 ? (
+              <Field label="شعبه (اختیاری)">
+                <SearchableSelect
+                  value={selectedLocationId}
+                  onChange={setSelectedLocationId}
+                  options={[
+                    { value: "", label: "کل کسب‌وکار (پیش‌فرض)" },
+                    ...businessLocations.map((loc) => ({ value: loc.id, label: loc.name })),
+                  ]}
+                />
+              </Field>
+            ) : null}
           </div>
 
           {selectedBusinessId ? (
@@ -771,21 +753,48 @@ export default function PlatformAiGatewayPage() {
 
               <div className="flex flex-wrap gap-2">
                 <Button
-                  onClick={() => void write({ action: "sync_key", businessId: selectedBusinessId }, "sync")}
+                  onClick={() =>
+                    void write(
+                      {
+                        action: "sync_key",
+                        businessId: selectedBusinessId,
+                        locationId: selectedLocationId || null,
+                      },
+                      "sync",
+                    )
+                  }
                   disabled={Boolean(busy)}
                 >
                   {busy === "sync" ? <Loader2Icon className="animate-spin" /> : "صدور / به‌روزرسانی کلید"}
                 </Button>
                 <Button
                   variant="ghost"
-                  onClick={() => void write({ action: "refresh_spend", businessId: selectedBusinessId }, "spend")}
+                  onClick={() =>
+                    void write(
+                      {
+                        action: "refresh_spend",
+                        businessId: selectedBusinessId,
+                        locationId: selectedLocationId || null,
+                      },
+                      "spend",
+                    )
+                  }
                   disabled={Boolean(busy) || !selectedRow?.hasVirtualKey}
                 >
                   {busy === "spend" ? <Loader2Icon className="animate-spin" /> : "به‌روزرسانی مصرف"}
                 </Button>
                 <Button
                   variant="danger"
-                  onClick={() => void write({ action: "revoke_key", businessId: selectedBusinessId }, "revoke")}
+                  onClick={() =>
+                    void write(
+                      {
+                        action: "revoke_key",
+                        businessId: selectedBusinessId,
+                        locationId: selectedLocationId || null,
+                      },
+                      "revoke",
+                    )
+                  }
                   disabled={Boolean(busy) || !selectedRow?.hasVirtualKey}
                 >
                   {busy === "revoke" ? <Loader2Icon className="animate-spin" /> : "لغو کلید"}
@@ -794,12 +803,17 @@ export default function PlatformAiGatewayPage() {
 
               {draft?.allowBusinessModels && draft.publishedModels.length > 0 ? (
                 <div className="grid gap-3 border-t border-white/10 pt-4 sm:grid-cols-2">
-                  <Field label={`مدل اختصاصی ${selectedName}`}>
+                  <Field label={`مدل اختصاصی ${selectedName}${selectedLocationId ? " (این شعبه)" : ""}`}>
                     <SearchableSelect
                       value={selectedRow?.modelOverride ?? ""}
                       onChange={(value) =>
                         void write(
-                          { action: "business", businessId: selectedBusinessId, modelOverride: value || null },
+                          {
+                            action: "business",
+                            businessId: selectedBusinessId,
+                            locationId: selectedLocationId || null,
+                            modelOverride: value || null,
+                          },
                           "model",
                         )
                       }
@@ -811,9 +825,6 @@ export default function PlatformAiGatewayPage() {
                   </Field>
                 </div>
               ) : null}
-              <p className="text-xs text-white/40">
-                بودجه و سقف نرخ را هنگام صدور کلید، از مقادیر پیش‌فرض بالا می‌گیرد.
-              </p>
             </div>
           ) : (
             <p className="text-sm text-white/40">یک کسب‌وکار را انتخاب کنید.</p>
@@ -821,19 +832,20 @@ export default function PlatformAiGatewayPage() {
         </Card>
       ) : null}
 
-      <Card title="همهٔ کسب‌وکارها">
+      <Card title="همهٔ کلیدهای مجازی">
         {!data?.gateways.length ? (
-          <p className="text-sm text-white/40">هنوز کلیدی برای کسب‌وکاری صادر نشده است.</p>
+          <p className="text-sm text-white/40">هنوز کلیدی صادر نشده است.</p>
         ) : (
           <ul className="space-y-2">
-            {data.gateways.map((row) => (
+            {data.gateways.map((row, idx) => (
               <li
-                key={row.businessId}
+                key={`${row.businessId}-${row.locationId || "biz"}-${idx}`}
                 className="flex flex-col gap-1 rounded-lg border border-white/10 bg-white/2 p-3 text-sm md:flex-row md:items-center md:justify-between"
               >
                 <div>
                   <p className="font-medium" dir="ltr">
                     {row.keyAlias ?? row.businessId}
+                    {row.locationId ? ` (شعبه: ${row.locationId.slice(0, 8)})` : " (کل کسب‌وکار)"}
                   </p>
                   <p className="mt-1 text-xs text-white/50">
                     مدل: <span dir="ltr">{row.effectiveModel}</span>

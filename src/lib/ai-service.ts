@@ -94,19 +94,13 @@ const MAX_TOOL_ROUNDS = 6;
 const REQUEST_TIMEOUT_MS = 60_000;
 
 function providerHeaders(config: AiConfig): Record<string, string> {
-  const headers: Record<string, string> = {
+  return {
     "Content-Type": "application/json",
     // Phase 37 — a gateway deployment authenticates the call with the calling
     // business's virtual key when one has been provisioned; every other
     // deployment sends the platform key exactly as it always has.
     Authorization: `Bearer ${config.gateway?.authKey || config.apiKey}`,
   };
-  if (config.provider === "openrouter") {
-    // Optional attribution headers OpenRouter recommends.
-    headers["HTTP-Referer"] = process.env.APP_URL ?? "https://cafe-pos.local";
-    headers["X-Title"] = "Cafe/Restaurant POS";
-  }
-  return headers;
 }
 
 interface ProviderStreamCallbacks {

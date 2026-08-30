@@ -857,9 +857,9 @@ export async function runAiProactiveTick(now = new Date()): Promise<number> {
       // decoration is per *surface* as well: the digests and the autopilot
       // ride one tick but answer on different surfaces, so each gets its own
       // gateway prompt binding.
-      const perBusiness = configuredAi ? await decorateAiConfig(configuredAi, businessId, "proactive") : null;
+      const perBusiness = configuredAi ? await decorateAiConfig(configuredAi, businessId, null, "proactive") : null;
       const perBusinessAutopilot = configuredAi
-        ? await decorateAiConfig(configuredAi, businessId, "autopilot")
+        ? await decorateAiConfig(configuredAi, businessId, null, "autopilot")
         : null;
       jobsCompleted += await runBusinessProactiveJobs(businessId, now, perBusiness, perBusinessAutopilot);
     });

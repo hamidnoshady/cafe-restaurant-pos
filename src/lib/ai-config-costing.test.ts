@@ -46,9 +46,9 @@ describe("effectiveRate — cost plus margin, never below cost", () => {
 describe("validatePlatformAiConfigInput — the costing manager's fields", () => {
   const base = {
     enabled: true,
-    provider: "arvan",
+    provider: "litellm",
     model: "gpt-4o-mini",
-    baseUrl: "https://ai.example.com/v1",
+    baseUrl: "http://litellm:4000/v1",
     temperature: 0.3,
     inputCostRialPerMillion: 40_000,
     outputCostRialPerMillion: 80_000,

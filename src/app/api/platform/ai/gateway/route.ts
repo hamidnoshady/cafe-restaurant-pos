@@ -1,17 +1,7 @@
 /**
- * Phase 37 — the console's gateway operations.
+ * Phase 37 & Phase 39 — the console's gateway operations.
  *
- * Deliberately its own route rather than another `action` branch on
- * /api/platform/ai: that handler already owns the provider connection, the
- * credit catalogue and top-up reviews, and the gateway adds four more verbs
- * plus a network call. Mixing them would put an operator's "test connection"
- * button in the same request path that grants money.
- *
- * The capability split follows the one /api/platform/ai already uses:
- * `ai.config.manage` (owner) for the gateway connection itself, because it
- * holds the gateway's admin credential, and `ai.credits.manage` (owner and
- * engineer) for per-business keys, budgets and rate limits — those are spend
- * controls, not connection secrets.
+ * Supports global LiteLLM settings, business virtual keys, and branch-level overrides.
  */
 import { NextRequest, NextResponse } from "next/server";
 import { getPlatformAiConfig } from "@/lib/ai-config";
@@ -31,7 +21,6 @@ import {
 } from "@/lib/ai-gateway-service";
 import {
   isGatewayActive,
-  resolveGatewayBaseUrl,
   toStringList,
   validateGatewayInput,
   type AiGatewayConfig,
@@ -39,52 +28,42 @@ import {
   type BusinessGatewayInput,
 } from "@/lib/ai-gateway";
 import { platformAudit, requirePlatformCapability, withPlatformScope } from "@/lib/platform-auth";
-
-/**
- * The gateway config as management calls will use it: the address resolved to
- * the one authoritative endpoint, so keys are never minted on a different host
- * than the one chat goes to.
- */
-function effectiveGateway(platform: { provider: string; baseUrl: string }, gateway: AiGatewayConfig) {
-  return {
-    ...gateway,
-    baseUrl: resolveGatewayBaseUrl({
-      platformBaseUrl: platform.baseUrl,
-      providerIsGateway: platform.provider === "litellm",
-      gatewayBaseUrl: gateway.baseUrl,
-    }),
-  };
-}
+import { query, withoutTenantScope } from "@/lib/db";
 
 /** Gateway state, plus a live probe when the operator asked for one. */
 export const GET = withPlatformScope(async (request: NextRequest) => {
   const { session, error } = await requirePlatformCapability("ai.read");
   if (error) return error;
 
-  const [platform, gateway, gateways] = await Promise.all([
+  const [platform, gateway, gateways, locationsRes] = await Promise.all([
     getPlatformAiConfig(),
     getAiGatewayConfig(),
     listBusinessGateways(),
+    withoutTenantScope("platform", () =>
+      query<{ id: string; business_id: string; name: string }>(
+        `SELECT id, business_id, name FROM locations ORDER BY name`,
+      ),
+    ),
   ]);
 
-  const resolved = effectiveGateway(platform, gateway);
   const canManage = session.role === "owner";
   const wantsProbe = request.nextUrl.searchParams.get("probe") === "1";
-  const status = canManage && wantsProbe ? await probeGateway(resolved) : null;
+  const status = canManage && wantsProbe ? await probeGateway(gateway) : null;
 
   return NextResponse.json({
-    // A support/engineer admin may see that a gateway is in play, but not its
-    // address, its aliases or even whether an admin key is stored — the same
-    // carve-out /api/platform/ai already applies to the provider connection.
-    gateway: canManage ? toPublicAiGatewayConfig(resolved) : null,
+    gateway: canManage ? toPublicAiGatewayConfig(gateway) : null,
     provider: platform.provider,
     platformModel: platform.model,
-    // The console needs to show where the address actually comes from.
-    platformBaseUrl: platform.baseUrl,
-    providerIsGateway: platform.provider === "litellm",
-    active: isGatewayActive(gateway) && platform.provider === "litellm",
+    platformBaseUrl: gateway.baseUrl,
+    providerIsGateway: true,
+    active: isGatewayActive(gateway),
     status,
     gateways: gateways.map((row) => toPublicBusinessGateway(row, gateway, platform.model)),
+    locations: locationsRes.rows.map((r) => ({
+      id: r.id,
+      businessId: r.business_id,
+      name: r.name,
+    })),
   });
 });
 
@@ -114,16 +93,13 @@ export const PUT = withPlatformScope(async (request: NextRequest) => {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
 
-  // A probe writes nothing: it is the operator pressing "test connection"
-  // before saving, and it must work against the draft in the form as well as
-  // against what is stored.
   if (body.action === "probe") {
     const draft = body.gateway;
     if (!draft || typeof draft !== "object") {
       return NextResponse.json({ error: "bad_request" }, { status: 400 });
     }
-    const [current, platform] = await Promise.all([getAiGatewayConfig(), getPlatformAiConfig()]);
-    const merged = effectiveGateway(platform, mergeGatewayConfig(draft as AiGatewayInput, current));
+    const current = await getAiGatewayConfig();
+    const merged = mergeGatewayConfig(draft as AiGatewayInput, current);
     return NextResponse.json({ status: await probeGateway(merged) });
   }
 
@@ -155,7 +131,7 @@ export const PUT = withPlatformScope(async (request: NextRequest) => {
   return NextResponse.json({ error: "bad_request" }, { status: 400 });
 });
 
-/** Engineer/owner: per-business key lifecycle and spend controls. */
+/** Engineer/owner: per-business and per-branch key lifecycle and spend controls. */
 export const POST = withPlatformScope(async (request: NextRequest) => {
   const { session, error } = await requirePlatformCapability("ai.credits.manage");
   if (error) return error;
@@ -168,16 +144,18 @@ export const POST = withPlatformScope(async (request: NextRequest) => {
   }
 
   const businessId = typeof body.businessId === "string" ? body.businessId : "";
+  const locationId = typeof body.locationId === "string" && body.locationId ? body.locationId : null;
   if (!businessId) return NextResponse.json({ error: "bad_request" }, { status: 400 });
 
   const platform = await getPlatformAiConfig();
-  const gateway = effectiveGateway(platform, await getAiGatewayConfig());
+  const gateway = await getAiGatewayConfig();
 
   if (body.action === "sync_key") {
-    const existing = await getBusinessGateway(businessId);
+    const existing = await getBusinessGateway(businessId, locationId);
     try {
       const row = await provisionVirtualKey(gateway, platform.model, {
         businessId,
+        locationId,
         models: toStringList(body.models),
         maxBudgetUsd: pickNumber(body.maxBudgetUsd, gateway.defaultMaxBudgetUsd),
         budgetDuration: optionalText(body.budgetDuration) ?? gateway.defaultBudgetDuration,
@@ -189,8 +167,8 @@ export const POST = withPlatformScope(async (request: NextRequest) => {
         businessId,
         action: existing?.virtualKey ? "ai.gateway.key.update" : "ai.gateway.key.create",
         entity: "ai_business_gateway",
-        entityId: businessId,
-        payload: { keyAlias: row.keyAlias, syncError: row.syncError },
+        entityId: locationId ? `${businessId}:${locationId}` : businessId,
+        payload: { keyAlias: row.keyAlias, locationId, syncError: row.syncError },
       });
       return NextResponse.json({ gateway: toPublicBusinessGateway(row, gateway, platform.model) });
     } catch (err) {
@@ -202,19 +180,20 @@ export const POST = withPlatformScope(async (request: NextRequest) => {
   }
 
   if (body.action === "revoke_key") {
-    await revokeVirtualKey(gateway, businessId);
+    await revokeVirtualKey(gateway, businessId, locationId);
     await platformAudit({
       adminId: session.padmin,
       businessId,
       action: "ai.gateway.key.revoke",
       entity: "ai_business_gateway",
-      entityId: businessId,
+      entityId: locationId ? `${businessId}:${locationId}` : businessId,
+      payload: { locationId },
     });
     return NextResponse.json({ ok: true });
   }
 
   if (body.action === "refresh_spend") {
-    const row = await refreshKeySpend(gateway, businessId);
+    const row = await refreshKeySpend(gateway, businessId, locationId);
     if (!row) return NextResponse.json({ error: "not_found" }, { status: 404 });
     return NextResponse.json({ gateway: toPublicBusinessGateway(row, gateway, platform.model) });
   }
@@ -222,14 +201,14 @@ export const POST = withPlatformScope(async (request: NextRequest) => {
   if (body.action === "business") {
     try {
       const input = businessInput(body);
-      const row = await saveBusinessGateway(businessId, input, gateway);
+      const row = await saveBusinessGateway(businessId, input, gateway, locationId);
       await platformAudit({
         adminId: session.padmin,
         businessId,
         action: "ai.gateway.business.save",
         entity: "ai_business_gateway",
-        entityId: businessId,
-        payload: { ...input },
+        entityId: locationId ? `${businessId}:${locationId}` : businessId,
+        payload: { ...input, locationId },
       });
       return NextResponse.json({ gateway: toPublicBusinessGateway(row, gateway, platform.model) });
     } catch (err) {

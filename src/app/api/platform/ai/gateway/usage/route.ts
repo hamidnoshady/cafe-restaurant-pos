@@ -43,8 +43,12 @@ export const GET = withPlatformScope(async (request: NextRequest) => {
   if (error) return error;
 
   const requested = Number(request.nextUrl.searchParams.get("days"));
+  const locationId = request.nextUrl.searchParams.get("locationId")?.trim() || null;
   const days = Number.isSafeInteger(requested) && requested > 0 ? Math.min(requested, MAX_DAYS) : DEFAULT_DAYS;
-  const [usage, costing] = await Promise.all([listGatewayUsage(windowFor(days)), resolveGatewayCosting()]);
+  const [usage, costing] = await Promise.all([
+    listGatewayUsage({ ...windowFor(days), locationId }),
+    resolveGatewayCosting(),
+  ]);
   const rate = costing?.usdRialRate ?? null;
 
   // Totals over the window, with the same USD→Rial conversion the settlement

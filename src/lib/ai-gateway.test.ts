@@ -61,15 +61,9 @@ function business(overrides: Partial<BusinessGateway> = {}): BusinessGateway {
 const platform: AiConfig = { ...defaultConfig("litellm"), apiKey: "sk-platform", model: "gpt-4o-mini" };
 
 describe("provider catalogue", () => {
-  it("accepts litellm as a provider and marks it as a gateway", () => {
+  it("accepts litellm as the sole provider", () => {
     expect(isProvider("litellm")).toBe(true);
-    expect(PROVIDERS.litellm.isGateway).toBe(true);
-    expect(PROVIDERS.openrouter.isGateway).toBeUndefined();
-  });
-
-  it("keeps the two direct vendors' defaults untouched", () => {
-    expect(PROVIDERS.openrouter.defaultBaseUrl).toBe("https://openrouter.ai/api/v1");
-    expect(PROVIDERS.arvan.defaultBaseUrl).toBe("https://ai.arvancloud.ir/v1");
+    expect(PROVIDERS.litellm.defaultBaseUrl).toBe("http://litellm:4000/v1");
   });
 });
 
@@ -131,6 +125,22 @@ describe("model resolution", () => {
     ).toBe("pos-smart");
   });
 
+  it("prefers a branch override over a business override", () => {
+    const allowed = gateway({
+      chatModel: "pos-chat",
+      allowBusinessModels: true,
+      publishedModels: ["pos-fast", "pos-smart", "pos-pro"],
+    });
+    expect(
+      resolveChatModel({
+        platformModel: "gpt-4o-mini",
+        gateway: allowed,
+        business: business({ modelOverride: "pos-fast" }),
+        branch: business({ modelOverride: "pos-pro" }),
+      }),
+    ).toBe("pos-pro");
+  });
+
   it("refuses an override that is no longer published, even if the row still says it", () => {
     const tightened = gateway({
       chatModel: "pos-chat",
@@ -173,7 +183,16 @@ describe("model resolution", () => {
 });
 
 describe("credential resolution", () => {
-  it("prefers the business virtual key when virtual keys are on", () => {
+  it("prefers the branch virtual key over business key when virtual keys are on", () => {
+    const key = resolveGatewayAuthKey({
+      gateway: gateway({ virtualKeysEnabled: true, masterKey: "sk-master" }),
+      business: business({ virtualKey: "sk-biz" }),
+      branch: business({ virtualKey: "sk-branch" }),
+    });
+    expect(key).toBe("sk-branch");
+  });
+
+  it("prefers the business virtual key when virtual keys are on and branch has none", () => {
     const key = resolveGatewayAuthKey({
       gateway: gateway({ virtualKeysEnabled: true, masterKey: "sk-master" }),
       business: business({ virtualKey: "sk-tenant" }),
@@ -247,9 +266,10 @@ describe("key scoping", () => {
     ).toEqual(["pos-fast", "pos-cheap"]);
   });
 
-  it("derives a stable alias from the business id", () => {
+  it("derives a stable alias from the business id and branch id", () => {
     expect(virtualKeyAlias("3f2a-9c")).toBe("pos-3f2a9c");
     expect(virtualKeyAlias("3f2a-9c")).toBe(virtualKeyAlias("3f2a-9c"));
+    expect(virtualKeyAlias("3f2a-9c", "loc-1234-5678")).toBe("pos-3f2a9c-loc12345");
   });
 });
 

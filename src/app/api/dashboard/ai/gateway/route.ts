@@ -1,55 +1,54 @@
 /**
- * Phase 37 — the business's own view of the gateway.
+ * Phase 37 & Phase 39 — the business's own view of the gateway.
  *
- * A business owner sees exactly two things here: which model their assistant
- * is actually using, and — when the platform has enabled it — the ability to
- * choose a different one from the list the platform published. Nothing else
- * crosses the boundary: no gateway address, no admin key, no virtual key, no
- * other business. Virtual keys and USD budgets are provisioned by the platform
- * console and are invisible here on purpose; the number a business pays
- * attention to is its Rial balance, which /api/ai/billing already serves.
- *
- * The choice is deliberately narrow. The platform buys the tokens and bills
- * the business afterwards, so an open-ended model picker would be an open
- * invoice — the value is validated against `published_models` and rejected if
- * the platform has since withdrawn that model.
+ * A business owner sees: which model their assistant is using (globally, or
+ * overridden per branch), and when permitted, can choose an override per business
+ * or branch.
  */
 import { NextRequest, NextResponse } from "next/server";
 import { withTenantScope } from "@/lib/auth";
-import { requireManager } from "@/lib/setup-state";
+import { requireManager, resolveActiveLocation } from "@/lib/setup-state";
 import { getPlatformAiConfig } from "@/lib/ai-config";
 import {
   getAiGatewayConfig,
   getBusinessGateway,
+  listBranchGateways,
   listBusinessGatewayUsage,
   resolveGatewayCosting,
   saveBusinessGateway,
 } from "@/lib/ai-gateway-service";
 import { isGatewayActive, rialFromGatewayUsd, resolveChatModel, validateBusinessGatewayInput } from "@/lib/ai-gateway";
 import { isFeatureEnabled } from "@/lib/features";
+import { query } from "@/lib/db";
 
-export const GET = withTenantScope(async () => {
+export const GET = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireManager();
   if (error) return error;
 
+  const url = new URL(request.url);
+  const locationIdParam = url.searchParams.get("locationId")?.trim() || null;
+
   const platform = await getPlatformAiConfig();
   const gateway = await getAiGatewayConfig();
-  const business = await getBusinessGateway(session.businessId);
+  const business = await getBusinessGateway(session.businessId, null);
+  const branch = locationIdParam ? await getBusinessGateway(session.businessId, locationIdParam) : null;
+  const branchGateways = await listBranchGateways(session.businessId);
 
-  const active = isGatewayActive(gateway) && platform.provider === "litellm";
+  const { rows: locations } = await query<{ id: string; name: string }>(
+    `SELECT id, name FROM locations WHERE business_id = $1 ORDER BY name`,
+    [session.businessId],
+  );
+
+  const active = isGatewayActive(gateway);
   const allowed = active && gateway.allowBusinessModels;
 
-  // Phase 38b — this business's own gateway usage, last 30 days. The read is
-  // tenant-scoped (RLS confines it to this business's rows) and the Rial
-  // conversion uses the same rate the settlement does; the figure is a
-  // transparency view of what the assistant consumed, never a charge.
   let usage: { day: string; model: string; spendUsd: number; spendRial: number | null; promptTokens: number; completionTokens: number; apiRequests: number }[] = [];
   if (active) {
     try {
       const costing = await resolveGatewayCosting();
       const toDay = new Date().toISOString().slice(0, 10);
       const fromDay = new Date(Date.now() - 29 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-      const rows = await listBusinessGatewayUsage({ fromDay, toDay });
+      const rows = await listBusinessGatewayUsage({ fromDay, toDay, locationId: locationIdParam });
       usage = rows.map((row) => ({
         day: row.day,
         model: row.model,
@@ -64,28 +63,38 @@ export const GET = withTenantScope(async () => {
     }
   }
 
+  const effectiveModel = active
+    ? resolveChatModel({
+        platformModel: platform.model,
+        gateway,
+        business,
+        branch,
+      })
+    : platform.model;
+
   return NextResponse.json({
-    // False when the platform has no gateway, or has one but is not routing
-    // through it: in both cases there is nothing here for the owner to see,
-    // and the panel hides itself rather than showing an empty control.
     available: active,
     allowBusinessModels: allowed,
-    /** The model in force right now — the platform's, or this business's own. */
-    effectiveModel: active
-      ? resolveChatModel({ platformModel: platform.model, gateway, business })
-      : platform.model,
+    effectiveModel,
     platformModel: platform.model,
     publishedModels: allowed ? gateway.publishedModels : [],
-    modelOverride: business?.modelOverride ?? null,
-    /** Whether this business's calls carry a key of its own at the gateway. */
-    hasVirtualKey: Boolean(business?.virtualKey),
-    syncError: business?.syncError ?? null,
-    /** Phase 38b — this business's daily gateway usage, newest day first. */
+    modelOverride: branch ? branch.modelOverride : (business?.modelOverride ?? null),
+    businessModelOverride: business?.modelOverride ?? null,
+    branchModelOverride: branch?.modelOverride ?? null,
+    hasVirtualKey: Boolean(branch ? branch.virtualKey : business?.virtualKey),
+    syncError: branch ? branch.syncError : (business?.syncError ?? null),
     usage,
+    locations,
+    selectedLocationId: locationIdParam,
+    branchOverrides: branchGateways.map((bg) => ({
+      locationId: bg.locationId,
+      modelOverride: bg.modelOverride,
+      hasVirtualKey: Boolean(bg.virtualKey),
+    })),
   });
 });
 
-/** Set (or clear) this business's model choice. */
+/** Set (or clear) model choice for business or branch. */
 export const POST = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireManager();
   if (error) return error;
@@ -107,6 +116,18 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   }
 
   const raw = body.modelOverride;
+  const locationId = typeof body.locationId === "string" && body.locationId.trim() ? body.locationId.trim() : null;
+
+  if (locationId) {
+    const { rows } = await query(`SELECT 1 FROM locations WHERE id = $1 AND business_id = $2`, [
+      locationId,
+      session.businessId,
+    ]);
+    if (rows.length === 0) {
+      return NextResponse.json({ error: "location_not_found" }, { status: 404 });
+    }
+  }
+
   const input = {
     modelOverride: raw === null || raw === "" ? null : typeof raw === "string" ? raw : undefined,
   };
@@ -116,6 +137,6 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   });
   if (errors.length > 0) return NextResponse.json({ error: errors[0], errors }, { status: 400 });
 
-  const row = await saveBusinessGateway(session.businessId, input, gateway);
-  return NextResponse.json({ modelOverride: row.modelOverride });
+  const row = await saveBusinessGateway(session.businessId, input, gateway, locationId);
+  return NextResponse.json({ modelOverride: row.modelOverride, locationId: row.locationId });
 });

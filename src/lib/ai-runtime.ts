@@ -1,21 +1,10 @@
 /**
- * Phase 37 — the one place that turns stored configuration into the `AiConfig`
+ * Phase 37 & Phase 39 — the one place that turns stored configuration into the `AiConfig`
  * a call actually goes out with.
  *
- * Every AI surface in the product (the chat turn, the receipt extraction, the
- * RAG embedding, the proactive digests, autopilot, the estimate) currently
- * calls `getPlatformAiConfig()` and hands the result straight to the provider
- * client. This module is the seam they should call instead: it returns the
- * same object, with the gateway's per-call decisions already applied, and it
- * is a no-op unless the platform is actually running through a gateway.
- *
- * The failure policy is the important part. A gateway is a component the
- * deployment added on purpose, but it is still a component that can be down,
- * unreachable, or misconfigured while the upstream connection itself is fine.
- * Anything that goes wrong resolving gateway state therefore degrades to the
- * platform configuration and logs — it never takes the assistant down with it,
- * because before this phase existed there was no gateway to fail and the
- * assistant worked.
+ * Resolves AI configuration with branch -> business -> platform fallback hierarchy.
+ * In Phase 39 (LiteLLM-only), if the gateway or DB state fails to resolve, we fail closed
+ * (enabled: false) to prevent unbilled or uncontrolled vendor execution.
  */
 import { getPlatformAiConfig, type PlatformAiConfig } from "./ai-config";
 import { getAiGatewayConfig, getBusinessGateway } from "./ai-gateway-service";
@@ -23,50 +12,61 @@ import { buildGatewayRuntime, isGatewayActive } from "./ai-gateway";
 import type { AiConfig } from "./ai";
 
 /**
- * The config for a tenant call. `businessId` scopes which virtual key is used;
- * pass null for the platform support agent, which runs on the shared
- * connection by definition. `mode` is the agent surface the call answers on —
- * Phase 38b's prompt bindings are per surface, so a bound surface's runtime
- * carries its gateway `promptId`.
+ * The config for a tenant call.
+ * `businessId` scopes which virtual key is used; pass null for platform support.
+ * `locationId` scopes branch-level model overrides and branch virtual keys.
+ * `mode` is the agent surface the call answers on (wizard, dashboard, floor, proactive, autopilot, platform).
  */
 export async function resolveAiConfigFor(
   businessId: string | null,
+  locationId?: string | null,
   mode?: string | null,
 ): Promise<PlatformAiConfig> {
   const config = await getPlatformAiConfig();
-  return decorate(config, businessId, mode);
+  return decorate(config, businessId, locationId, mode);
 }
 
 /**
- * Apply gateway state to an already-loaded config. Exported for the surfaces
- * that fetch the platform config themselves for other reasons (the proactive
- * service checks `isPlatformAiConfigured` first, for instance) and would
- * otherwise read it twice.
+ * Apply gateway state to an already-loaded config.
  */
 export async function decorateAiConfig(
   config: PlatformAiConfig,
   businessId: string | null,
+  locationId?: string | null,
   mode?: string | null,
 ): Promise<PlatformAiConfig> {
-  return decorate(config, businessId, mode);
+  return decorate(config, businessId, locationId, mode);
 }
 
-async function decorate(config: PlatformAiConfig, businessId: string | null, mode?: string | null): Promise<PlatformAiConfig> {
-  if (!businessId) return config;
+async function decorate(
+  config: PlatformAiConfig,
+  businessId: string | null,
+  locationId?: string | null,
+  mode?: string | null,
+): Promise<PlatformAiConfig> {
+  if (!config.enabled) return config;
+
   let gateway;
   let business = null;
+  let branch = null;
   try {
     gateway = await getAiGatewayConfig();
-    if (!isGatewayActive(gateway)) return config;
-    business = await getBusinessGateway(businessId);
+    if (!isGatewayActive(gateway)) {
+      // Gateway is disabled or has no base_url
+      return { ...config, enabled: false };
+    }
+    if (businessId) {
+      business = await getBusinessGateway(businessId, null);
+      if (locationId) {
+        branch = await getBusinessGateway(businessId, locationId);
+      }
+    }
   } catch (err) {
-    // The gateway is an addition, not a dependency: a failure to read its
-    // state must leave the existing connection exactly as it was.
-    console.error("ai gateway state unavailable; using the platform connection unchanged", err);
-    return config;
+    console.error("ai gateway state unavailable; failing closed", err);
+    return { ...config, enabled: false };
   }
 
-  const runtime = buildGatewayRuntime({ config, gateway, business, mode });
+  const runtime = buildGatewayRuntime({ config, gateway, business, branch, mode });
   if (!runtime) return config;
 
   const { model, embeddingModel, body, authKey, promptId } = runtime;
