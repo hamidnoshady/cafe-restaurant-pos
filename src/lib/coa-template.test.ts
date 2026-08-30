@@ -7,10 +7,13 @@ import {
   COSMETICS_COA_TEMPLATE,
   costOfSalesCodesForIndustry,
   FNB_COA_TEMPLATE,
+  HABERDASHERY_COA_TEMPLATE,
   JEWELRY_COA_TEMPLATE,
   isNonCurrentCode,
   nextAccountLevel,
+  TOOLS_FITTINGS_COA_TEMPLATE,
   WATCH_COA_TEMPLATE,
+  WHOLESALE_COA_TEMPLATE,
   normalBalanceForType,
   validateAccounts,
   WELL_KNOWN_CODES,
@@ -123,6 +126,27 @@ const TRADE_REQUIRED_CODES: Record<Industry, readonly string[]> = {
     WELL_KNOWN_CODES.retailInventoryInTransit,
     WELL_KNOWN_CODES.retailCountShortageExpense,
   ],
+  wholesale: [
+    WELL_KNOWN_CODES.wholesaleInventory,
+    WELL_KNOWN_CODES.wholesaleSalesRevenue,
+    WELL_KNOWN_CODES.wholesaleCogs,
+    WELL_KNOWN_CODES.retailInventoryInTransit,
+    WELL_KNOWN_CODES.retailCountShortageExpense,
+  ],
+  tools_fittings: [
+    WELL_KNOWN_CODES.toolsInventory,
+    WELL_KNOWN_CODES.toolsSalesRevenue,
+    WELL_KNOWN_CODES.toolsCogs,
+    WELL_KNOWN_CODES.retailInventoryInTransit,
+    WELL_KNOWN_CODES.retailCountShortageExpense,
+  ],
+  haberdashery: [
+    WELL_KNOWN_CODES.haberdasheryInventory,
+    WELL_KNOWN_CODES.haberdasherySalesRevenue,
+    WELL_KNOWN_CODES.haberdasheryCogs,
+    WELL_KNOWN_CODES.retailInventoryInTransit,
+    WELL_KNOWN_CODES.retailCountShortageExpense,
+  ],
 };
 
 describe.each(INDUSTRIES)("%s chart of accounts", (industry) => {
@@ -161,11 +185,14 @@ describe.each(INDUSTRIES)("%s chart of accounts", (industry) => {
 });
 
 describe("the retail templates carry no F&B recipe-shaped accounts", () => {
-  it.each(["jewelry", "watch", "accessories", "cosmetics"] as const)("%s", (industry) => {
-    const codes = new Set(coaTemplateForIndustry(industry).map((a) => a.code));
-    expect(codes.has(WELL_KNOWN_CODES.inventory)).toBe(false);
-    expect(codes.has(WELL_KNOWN_CODES.cogs)).toBe(false);
-  });
+  it.each(["jewelry", "watch", "accessories", "cosmetics", "wholesale", "tools_fittings", "haberdashery"] as const)(
+    "%s",
+    (industry) => {
+      const codes = new Set(coaTemplateForIndustry(industry).map((a) => a.code));
+      expect(codes.has(WELL_KNOWN_CODES.inventory)).toBe(false);
+      expect(codes.has(WELL_KNOWN_CODES.cogs)).toBe(false);
+    },
+  );
 });
 
 describe("coaTemplateForIndustry", () => {
@@ -175,6 +202,9 @@ describe("coaTemplateForIndustry", () => {
     expect(coaTemplateForIndustry("watch")).toBe(WATCH_COA_TEMPLATE);
     expect(coaTemplateForIndustry("accessories")).toBe(ACCESSORIES_COA_TEMPLATE);
     expect(coaTemplateForIndustry("cosmetics")).toBe(COSMETICS_COA_TEMPLATE);
+    expect(coaTemplateForIndustry("wholesale")).toBe(WHOLESALE_COA_TEMPLATE);
+    expect(coaTemplateForIndustry("tools_fittings")).toBe(TOOLS_FITTINGS_COA_TEMPLATE);
+    expect(coaTemplateForIndustry("haberdashery")).toBe(HABERDASHERY_COA_TEMPLATE);
   });
 });
 
@@ -313,6 +343,9 @@ describe("costOfSalesCodesForIndustry", () => {
     expect(costOfSalesCodesForIndustry("watch")).toContain(WELL_KNOWN_CODES.watchCogs);
     expect(costOfSalesCodesForIndustry("accessories")).toContain(WELL_KNOWN_CODES.accessoryCogs);
     expect(costOfSalesCodesForIndustry("cosmetics")).toContain(WELL_KNOWN_CODES.cosmeticCogs);
+    expect(costOfSalesCodesForIndustry("wholesale")).toContain(WELL_KNOWN_CODES.wholesaleCogs);
+    expect(costOfSalesCodesForIndustry("tools_fittings")).toContain(WELL_KNOWN_CODES.toolsCogs);
+    expect(costOfSalesCodesForIndustry("haberdashery")).toContain(WELL_KNOWN_CODES.haberdasheryCogs);
   });
 
   it("never lands a trade's cost of sales in another trade's list", () => {

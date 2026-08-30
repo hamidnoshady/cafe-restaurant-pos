@@ -15,17 +15,14 @@ export const INDUSTRIES = [
   "watch",
   "accessories",
   "cosmetics",
+  "wholesale",
+  "tools_fittings",
+  "haberdashery",
 ] as const;
 export type Industry = (typeof INDUSTRIES)[number];
 
 /** Which industries the setup UI actually offers a new business, vs. reserved for a later wave. */
-export const ENABLED_INDUSTRIES: Industry[] = [
-  "food_service",
-  "jewelry",
-  "watch",
-  "accessories",
-  "cosmetics",
-];
+export const ENABLED_INDUSTRIES: Industry[] = [...INDUSTRIES];
 
 export const INDUSTRY_LABELS: Record<Industry, string> = {
   food_service: "کافه و رستوران",
@@ -33,6 +30,9 @@ export const INDUSTRY_LABELS: Record<Industry, string> = {
   watch: "ساعت",
   accessories: "بدلیجات",
   cosmetics: "آرایشی و بهداشتی",
+  wholesale: "عمده‌فروشی",
+  tools_fittings: "ابزار و یراق‌آلات",
+  haberdashery: "خرازی",
 };
 
 export function isIndustry(value: string): value is Industry {

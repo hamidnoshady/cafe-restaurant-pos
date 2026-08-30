@@ -30,6 +30,8 @@ import { sellWeightedItem } from "./gold-sales-service";
 import { sellSerializedUnit } from "./watch-sales-service";
 import { getStock, sellAccessoryUnits } from "./accessories-service";
 import { sellCosmeticUnits } from "./cosmetics-service";
+import { sellTradeGoodsUnits } from "./trade-goods-service";
+import { isTradeGoodsIndustry } from "./trade-goods";
 import { getItem } from "./items-service";
 import { accrueCommissionForLine } from "./commission-service";
 import { earnPoints } from "./loyalty-service";
@@ -72,6 +74,14 @@ export type RetailInvoiceLineInput =
     }
   | {
       kind: "cosmetic";
+      itemId: string;
+      quantity: string;
+      unitPrice?: number;
+      discount?: number;
+      vatPercent: number;
+    }
+  | {
+      kind: "stocked";
       itemId: string;
       quantity: string;
       unitPrice?: number;
@@ -125,6 +135,9 @@ const LINE_KINDS_BY_INDUSTRY: Record<Industry, readonly RetailInvoiceLineInput["
   watch: ["watch"],
   accessories: ["accessory"],
   cosmetics: ["cosmetic"],
+  wholesale: ["stocked"],
+  tools_fittings: ["stocked"],
+  haberdashery: ["stocked"],
 };
 
 export class RetailInvoiceError extends Error {}
@@ -358,7 +371,7 @@ async function retailPromotionDiscounts(
 
   for (let i = 0; i < input.lines.length; i++) {
     const line = input.lines[i];
-    if (line.kind !== "accessory" && line.kind !== "cosmetic") continue;
+    if (line.kind !== "accessory" && line.kind !== "cosmetic" && line.kind !== "stocked") continue;
     itemIds.push(line.itemId);
     indexes.push(i);
   }
@@ -374,7 +387,7 @@ async function retailPromotionDiscounts(
 
   for (let n = 0; n < indexes.length; n++) {
     const lineIndex = indexes[n];
-    const line = input.lines[lineIndex] as Extract<RetailInvoiceLineInput, { kind: "accessory" | "cosmetic" }>;
+    const line = input.lines[lineIndex] as Extract<RetailInvoiceLineInput, { kind: "accessory" | "cosmetic" | "stocked" }>;
     const stock = await getStock(line.itemId, client);
     const unitPrice = line.unitPrice ?? stock?.unitPrice ?? 0;
     items.push({
@@ -495,6 +508,39 @@ async function settleLine(
           createdBy: input.createdBy ?? null,
         })
       : null;
+
+  // The trade-goods industries (wholesale/tools & fittings/haberdashery) share
+  // the same item_stock shape but post through their own `{trade}.sale_*`
+  // events and accounts, so the line goes to `sellTradeGoodsUnits` rather than
+  // the accessory service.
+  if (line.kind === "stocked") {
+    if (!isTradeGoodsIndustry(input.industry)) {
+      throw new RetailInvoiceError("این نوع کالا در این کسب‌وکار قابل فروش نیست.");
+    }
+    const tradeSale = await sellTradeGoodsUnits(client, {
+      trade: input.industry,
+      businessId: input.businessId,
+      locationId: input.locationId,
+      itemId: line.itemId,
+      quantity: line.quantity,
+      unitPrice: line.unitPrice,
+      discount: (line.discount ?? 0) + promotionDiscount,
+      vatPercent: line.vatPercent,
+      paymentMethod: input.paymentMethod,
+      createdBy: input.createdBy ?? null,
+    });
+    return {
+      itemId: line.itemId,
+      name: item.name,
+      quantity: line.quantity,
+      net: tradeSale.breakdown.net,
+      vat: tradeSale.breakdown.vat,
+      total: tradeSale.breakdown.total,
+      cost: tradeSale.cost,
+      brandId: item.brandId,
+    };
+  }
+
   const { breakdown, cost } = cosmeticSale
     ? cosmeticSale
     : await sellAccessoryUnits(client, {

@@ -7,6 +7,9 @@ import { sellThroughByCollection } from "@/lib/merchandising-service";
 const EVENT_PREFIX: Record<string, string> = {
   accessories: "accessory",
   cosmetics: "cosmetic",
+  wholesale: "wholesale",
+  tools_fittings: "tools_fittings",
+  haberdashery: "haberdashery",
 };
 
 /** Sell-through by collection/season, off the same sale events the sales report reads. */

@@ -12,6 +12,9 @@ import {
 const INVENTORY_ACCOUNT_CODE: Record<string, string> = {
   accessories: WELL_KNOWN_CODES.accessoryInventory,
   cosmetics: WELL_KNOWN_CODES.cosmeticInventory,
+  wholesale: WELL_KNOWN_CODES.wholesaleInventory,
+  tools_fittings: WELL_KNOWN_CODES.toolsInventory,
+  haberdashery: WELL_KNOWN_CODES.haberdasheryInventory,
 };
 
 function inventoryCodeFor(industry: string | null): string | null {

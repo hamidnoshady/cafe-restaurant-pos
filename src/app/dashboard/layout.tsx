@@ -80,6 +80,9 @@ function navItemsFor(industry: Industry): NavItem[] {
     { label: INDUSTRY_LABELS.watch, module: "watch", href: "/dashboard/watch", roles: ["owner", "manager"] },
     { label: INDUSTRY_LABELS.accessories, module: "accessories", href: "/dashboard/accessories", roles: ["owner", "manager"] },
     { label: INDUSTRY_LABELS.cosmetics, module: "cosmetics", href: "/dashboard/cosmetics", roles: ["owner", "manager"] },
+    { label: INDUSTRY_LABELS.wholesale, module: "wholesale", href: "/dashboard/wholesale", roles: ["owner", "manager"] },
+    { label: INDUSTRY_LABELS.tools_fittings, module: "tools_fittings", href: "/dashboard/tools-fittings", roles: ["owner", "manager"] },
+    { label: INDUSTRY_LABELS.haberdashery, module: "haberdashery", href: "/dashboard/haberdashery", roles: ["owner", "manager"] },
     { label: "حسابداری", module: "ledger", href: "/dashboard/ledger", roles: ["owner", "manager", "accountant"], flag: "ledger" },
     // Not flag-gated, unlike the WooCommerce page it replaced: the hub's three
     // tabs have three different entitlements and one — connecting the desktop

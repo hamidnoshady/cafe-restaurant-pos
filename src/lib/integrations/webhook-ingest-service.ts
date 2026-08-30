@@ -65,6 +65,21 @@ const RETAIL_ACCOUNT_CODES: Record<Exclude<Industry, "food_service">, { revenue:
     cogs: WELL_KNOWN_CODES.cosmeticCogs,
     inventory: WELL_KNOWN_CODES.cosmeticInventory,
   },
+  wholesale: {
+    revenue: WELL_KNOWN_CODES.wholesaleSalesRevenue,
+    cogs: WELL_KNOWN_CODES.wholesaleCogs,
+    inventory: WELL_KNOWN_CODES.wholesaleInventory,
+  },
+  tools_fittings: {
+    revenue: WELL_KNOWN_CODES.toolsSalesRevenue,
+    cogs: WELL_KNOWN_CODES.toolsCogs,
+    inventory: WELL_KNOWN_CODES.toolsInventory,
+  },
+  haberdashery: {
+    revenue: WELL_KNOWN_CODES.haberdasherySalesRevenue,
+    cogs: WELL_KNOWN_CODES.haberdasheryCogs,
+    inventory: WELL_KNOWN_CODES.haberdasheryInventory,
+  },
 };
 
 export async function handleWooCommerceWebhook(

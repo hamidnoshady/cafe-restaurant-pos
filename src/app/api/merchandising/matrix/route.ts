@@ -4,7 +4,7 @@ import { getBusinessIndustry } from "@/lib/industry-guard";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { bulkUpdateVariantMatrix, withMerchandisingTransaction, type MatrixVariantUpdate } from "@/lib/merchandising-service";
 
-const MATRIX_TRADES = ["accessories", "cosmetics"];
+const MATRIX_TRADES = ["accessories", "cosmetics", "wholesale", "tools_fittings", "haberdashery"];
 
 /** Sets price and/or stock across a whole variant grid in one transaction; a failure on one cell rolls back the whole grid. */
 export const POST = withTenantScope(async (request: NextRequest) => {
