@@ -1,0 +1,1141 @@
+diff --git a/.env.example b/.env.example
+index 4ee9e54c466a3a3449a737b33518c0c572313bac..c602acd0b1b7dc01e8dedee2000b712eed660fef 100644
+--- a/.env.example
++++ b/.env.example
+@@ -13,6 +13,11 @@ CRON_SECRET=YOUR_CRON_SECRET_HERE
+ # Used to validate preview requests
+ PREVIEW_SECRET=YOUR_SECRET_HERE
+ 
++# Extra origins allowed to frame customer sites (in-app preview from the site
++# builder, a separate deployment). Comma-separated, e.g.
++# https://pos.eshobe.com,https://app.eshobe.com. Empty = admin origin only.
++# SITE_PREVIEW_ORIGINS=
++
+ # Cloudflare R2 for media. All four or none — a partial set is ignored and uploads
+ # stay on local disk. Leave unset in development.
+ # R2_ACCOUNT_ID=
+diff --git a/next.config.ts b/next.config.ts
+index 7522ce709bf06c2fe7502ac4c016f52a79ba523f..d9af776c90074c6aa132d65de5c4fc62ee6985cf 100644
+--- a/next.config.ts
++++ b/next.config.ts
+@@ -17,6 +17,22 @@ const NEXT_PUBLIC_SERVER_URL =
+     ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+     : process.env.__NEXT_PRIVATE_ORIGIN || 'http://localhost:3000')
+ 
++/**
++ * Origins allowed to frame the rendered customer sites, beyond the admin and
++ * same-origin. The site builder is a *separate* deployment (WAVE-9): it
++ * embeds each customer's site for in-app preview, so its origin must be in
++ * `frame-ancestors` or the iframe is blank with only a console warning.
++ * Comma-separated origins, e.g. `https://pos.eshobe.com,https://app.eshobe.com`.
++ * Whitespace-tolerant; empty/unset means "only the admin origin", the
++ * previous behaviour. Runtime-read (headers() runs per request), so no
++ * rebuild is needed to change it.
++ */
++const SITE_PREVIEW_ORIGINS = (process.env.SITE_PREVIEW_ORIGINS ?? '')
++  .split(',')
++  .map((origin) => origin.trim())
++  .filter(Boolean)
++  .join(' ')
++
+ const nextConfig: NextConfig = {
+   // The production Dockerfile copies `.next/standalone` and runs `node server.js`;
+   // without this the image build fails at that COPY step.
+@@ -61,7 +77,7 @@ const nextConfig: NextConfig = {
+         headers: [
+           {
+             key: 'Content-Security-Policy',
+-            value: `frame-ancestors 'self' ${NEXT_PUBLIC_SERVER_URL}`,
++            value: `frame-ancestors 'self' ${NEXT_PUBLIC_SERVER_URL}${SITE_PREVIEW_ORIGINS ? ` ${SITE_PREVIEW_ORIGINS}` : ''}`,
+           },
+         ],
+         // Payload's admin sets its own headers; this is for the rendered sites.
+diff --git a/src/access/siteApiKey.ts b/src/access/siteApiKey.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..3e7ed8371af5a38e538c18451747dd7e5b089183
+--- /dev/null
++++ b/src/access/siteApiKey.ts
+@@ -0,0 +1,177 @@
++import { createHash, randomBytes } from 'node:crypto'
++import type { Access, CollectionBeforeValidateHook, PayloadRequest } from 'payload'
++
++import { idOf } from '@/lib/ids'
++
++/**
++ * Per-site API keys — WAVE-9 slice 9.4 ("per-site read API keys"), extended
++ * to writes because the site builder (a separate deployment) must be able to
++ * *operate* a customer's site, not only read it.
++ *
++ * ## The rule this exists to keep (WAVE-9 §6)
++ *
++ * "The tenant comes from the socket, or from a credential, never from a filter."
++ *
++ * A key resolves to a site *server-side*: `Authorization: Bearer eshobe_live_…`
++ * is hashed, looked up in `api-keys`, and the site is taken from the row.
++ * The caller never names a tenant — a `where[site][equals]=<other>` filter
++ * intersects with the key's site and yields nothing, exactly like the host
++ * header does for anonymous reads (`src/access/siteRead.ts`).
++ *
++ * ## Roles
++ *
++ * - `role: 'site'` — ONE site: read (including drafts, it is the builder's
++ *   editor) and write (content, catalogue, order status) its own rows. The
++ *   `site` field of anything it creates is overwritten by
++ *   `forceApiKeySite` — the caller cannot place a document on another site.
++ * - `role: 'platform'` — the operator console's credential: provisioning
++ *   (`POST /api/provision-site`) and API-key lifecycle only. It deliberately
++ *   does NOT read site content directly; a platform key has no `site`.
++ *
++ * ## Why this is not a Payload auth strategy
++ *
++ * `customAuth` would make the key a *user*, and WAVE-9 §4.3 is explicit:
++ * "nothing public may authenticate as a shadow user" — a key that can be
++ * placed in a config file must never get `userHasAccessToAllTenants`
++ * semantics or a tenants array the admin panel can edit. Keys are credentials,
++ * users are people; the two stay separate.
++ */
++
++export const API_KEY_PREFIX = 'eshobe_live_'
++
++export interface ApiKeyAuth {
++  role: 'site' | 'platform'
++  /** The key's site — `null` for a platform key. */
++  siteId: null | string
++  keyId: string
++}
++
++const CONTEXT_KEY = 'eshobeApiKeyAuth'
++
++/** 32 random bytes, base64url — the full key never leaves this process except once, at issue. */
++export const generateApiKey = (): string => `${API_KEY_PREFIX}${randomBytes(32).toString('base64url')}`
++
++/** Only the hash is stored — a leaked `api-keys` table is useless. */
++export const hashApiKey = (key: string): string => createHash('sha256').update(key, 'utf8').digest('hex')
++
++export const isSiteApiKey = (auth: null | ApiKeyAuth): auth is ApiKeyAuth & { role: 'site'; siteId: string } =>
++  auth?.role === 'site' && Boolean(auth.siteId)
++
++export const isPlatformApiKey = (req: PayloadRequest): Promise<boolean> =>
++  apiKeyAuth(req).then((auth) => auth?.role === 'platform')
++
++/**
++ * Resolve the request's API key, memoised on `req.context` (one lookup per
++ * request, shared by every collection's access function on it).
++ *
++ * The lookup itself is `overrideAccess: true` for the same reason
++ * `findSiteByHost` is (WAVE-9 §1): it is the lookup that *establishes* the
++ * tenant, nothing tenant-scoped can constrain it.
++ */
++export const apiKeyAuth = async (req: PayloadRequest): Promise<null | ApiKeyAuth> => {
++  const cached = req.context[CONTEXT_KEY] as undefined | null | ApiKeyAuth
++  if (cached !== undefined) return cached
++
++  const header = req.headers?.get?.('authorization')
++  if (!header?.startsWith('Bearer ')) return cache(req, null)
++
++  const key = header.slice('Bearer '.length).trim()
++  if (!key.startsWith(API_KEY_PREFIX)) return cache(req, null)
++
++  // Cast to `unknown`-args until `pnpm generate:types` knows the `api-keys`
++  // collection (the same escape the tests use for dynamic collection slugs).
++  const { docs } = await (
++    req.payload.find as unknown as (args: unknown) => Promise<{ docs: unknown[] }>
++  )({
++    collection: 'api-keys',
++    depth: 0,
++    limit: 1,
++    overrideAccess: true,
++    pagination: false,
++    req,
++    where: { keyHash: { equals: hashApiKey(key) } },
++  })
++
++  const doc = docs[0] as
++    | { id: unknown; role: 'site' | 'platform'; site: unknown; disabledAt: unknown; lastUsedAt: unknown }
++    | undefined
++
++  // A revoked key is a 401-logged miss, not an error, and not a lookup retry.
++  if (!doc || doc.disabledAt) return cache(req, null)
++
++  const auth: ApiKeyAuth = {
++    role: doc.role === 'platform' ? 'platform' : 'site',
++    siteId: doc.role === 'platform' ? null : idOf(doc.site),
++    keyId: String(doc.id),
++  }
++  if (auth.role === 'site' && !auth.siteId) return cache(req, null)
++
++  // `lastUsedAt` is observability, not data — throttled to once a minute per
++  // key so a busy site does not write a row per request. Best effort on top:
++  // a failed write must never break the request it rode in on.
++  if (!doc.lastUsedAt || Date.now() - new Date(String(doc.lastUsedAt)).getTime() > 60_000) {
++    void (req.payload as unknown as { update: (args: unknown) => Promise<unknown> })
++      .update({
++        collection: 'api-keys',
++        id: auth.keyId,
++        data: { lastUsedAt: new Date().toISOString() },
++        overrideAccess: true,
++        req,
++      })
++      .catch(() => {})
++  }
++
++  return cache(req, auth)
++}
++
++const cache = (req: PayloadRequest, value: null | ApiKeyAuth): null | ApiKeyAuth => {
++  req.context[CONTEXT_KEY] = value
++  return value
++}
++
++/**
++ * Read/update/delete access on tenant collections: a site key is confined to
++ * its own site (a where clause, so Payload ANDs it with the collection's own
++ * logic); a platform key is DENIED — its uses are the operator endpoints
++ * (provisioning, key lifecycle), never customer content. No key: the base
++ * access decides, exactly as before.
++ */
++export const apiKeyAware = (base: Access): Access => async (args) => {
++  const auth = await apiKeyAuth(args.req)
++  if (!auth) return base(args)
++  if (auth.role === 'platform') return false
++  return { site: { equals: auth.siteId ?? '' } }
++}
++
++/**
++ * Create access on tenant collections. A where clause is meaningless on
++ * create, so the site key is allowed and `forceApiKeySite` stamps the row's
++ * `site` a moment later — the caller never names the tenant, and a payload
++ * that *does* is overwritten. Platform keys do not create content.
++ */
++export const apiKeyCreateAware = (base: Access): Access => async (args) => {
++  const auth = await apiKeyAuth(args.req)
++  if (!auth) return base(args)
++  if (auth.role === 'platform') return false
++  return true
++}
++
++/** For collections without a `site` field (sites, users, api-keys): platform keys only. */
++export const platformApiKeyAware = (base: Access): Access => async (args) => {
++  const auth = await apiKeyAuth(args.req)
++  if (auth?.role === 'platform') return true
++  return base(args)
++}
++
++/**
++ * `beforeValidate` — runs before field validation, so a `site` field that is
++ * required (the multi-tenant plugin makes it so) is already set when the
++ * document is validated. Create only: updates are already confined by
++ * `apiKeyAware`'s where clause, and never move a document across sites.
++ */
++export const forceApiKeySite: CollectionBeforeValidateHook = async ({ data, operation, req }) => {
++  if (operation !== 'create') return data
++  const auth = await apiKeyAuth(req)
++  if (auth?.role !== 'site' || !auth.siteId) return data
++  return { ...(data ?? {}), site: auth.siteId }
++}
+diff --git a/src/access/siteRead.ts b/src/access/siteRead.ts
+index a2bd25cd4d066b495bdbfb9c49e673e8d9f055be..6ed5337975a11ac3d223ed1da2e4361abd84cd35 100644
+--- a/src/access/siteRead.ts
++++ b/src/access/siteRead.ts
+@@ -1,5 +1,6 @@
+ import type { Access, PayloadRequest } from 'payload'
+ 
++import { apiKeyAuth } from './siteApiKey'
+ import { idOf } from '@/lib/ids'
+ import { siteFromRequest } from '@/lib/site-query'
+ 
+@@ -48,6 +49,17 @@ export const requestSiteId = async (req: PayloadRequest): Promise<null | string>
+ 
+   if (typeof cached === 'string') return cached || null
+ 
++  // A validated per-site API key *is* the tenant — the credential path
++  // WAVE-9 §9.4 exists for: a builder calling from a non-customer origin has
++  // no `Host` that resolves, and it must still be confined to one site. The
++  // key's site wins over the `Host` header; the caller can narrow with a
++  // `where`, never widen (see siteApiKey.ts).
++  const keyAuth = await apiKeyAuth(req)
++  if (keyAuth?.role === 'site' && keyAuth.siteId) {
++    req.context[SITE_CONTEXT_KEY] = keyAuth.siteId
++    return keyAuth.siteId
++  }
++
+   // No `Host` at all means a Local API call from a script, a job task or a hook —
+   // there is no request to attribute, so there is nothing to scope. Checked before the
+   // lookup rather than inside it so those contexts never touch the database twice.
+@@ -85,6 +97,11 @@ const siteConstraint = async (req: PayloadRequest): Promise<null | { site: { equ
+ export const scopedPublicRead =
+   (base: Access = () => true): Access =>
+   async (args) => {
++    // A platform key is an operator credential, not a content reader — deny
++    // it here before the base access can answer anything.
++    const keyAuth = await apiKeyAuth(args.req)
++    if (keyAuth?.role === 'platform') return false
++
+     const allowed = await base(args)
+     const site = await siteConstraint(args.req)
+ 
+@@ -105,6 +122,17 @@ export const scopedPublicRead =
+ export const scopedPublishedRead =
+   (base: Access): Access =>
+   async (args) => {
++    // A site key is the builder's editor token: it sees drafts (a builder that
++    // cannot read a draft cannot preview it) but is bounded to ITS site — the
++    // key supplies the tenant where the Host may not (control-plane origin).
++    // A *platform* key has no business on a tenant content collection —
++    // least privilege, see siteApiKey.ts.
++    const keyAuth = await apiKeyAuth(args.req)
++    if (keyAuth?.role === 'platform') return false
++    if (keyAuth?.role === 'site') {
++      const site = await siteConstraint(args.req)
++      return site ?? false
++    }
+     if (args.req.user) return base(args)
+ 
+     const allowed = await base(args)
+diff --git a/src/collections/ApiKeys.ts b/src/collections/ApiKeys.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..358e74a2022243c8f49f568f09efd1f258a7c9e6
+--- /dev/null
++++ b/src/collections/ApiKeys.ts
+@@ -0,0 +1,126 @@
++import type { CollectionConfig } from 'payload'
++
++import { platformAdmin } from '../access/platformAdmin'
++
++/**
++ * API keys — the credential a headless consumer (the site builder) presents
++ * as `Authorization: Bearer eshobe_live_…`.
++ *
++ * ## Deliberately NOT in the multi-tenant plugin's `collections` map
++ *
++ * Every other tenant-scoped collection is registered there (see the rule in
++ * CLAUDE.md), but this one is the exception, and it is a deliberate one:
++ * the plugin's only contribution is a tenant constraint for *logged-in
++ * users*, and this collection has no such audience — access is
++ * `platformAdmin` on all four operations, so the admin panel never lists a
++ * key for a customer. What matters here is the *credential* path, which does
++ * not go through this collection's read access at all: `apiKeyAuth`
++ * (`src/access/siteApiKey.ts`) looks the key up with `overrideAccess: true`
++ * and the tenant is derived from the matched row, never from the caller.
++ * Registering it would also force the plugin's `site` field (required) onto
++ * every row, which would make a `role: 'platform'` key — the operator
++ * credential, necessarily site-less — unrepresentable.
++ *
++ * The raw key is never stored. `keyHash` (sha256 hex) is the lookup key;
++ * `prefix` is the first 20 characters, enough for an operator to tell two
++ * keys apart in the admin. `lastUsedAt` is updated by `apiKeyAuth`.
++ */
++export const ApiKeys: CollectionConfig = {
++  slug: 'api-keys',
++  access: {
++    create: platformAdmin,
++    delete: platformAdmin,
++    read: platformAdmin,
++    update: platformAdmin,
++  },
++  admin: {
++    defaultColumns: ['name', 'role', 'prefix', 'lastUsedAt'],
++    description: 'کلید API برای اتصال سازندهٔ سایت. کلید خام فقط هنگام ساخت نمایش داده می‌شود.',
++    group: 'پلتفرم',
++    useAsTitle: 'name',
++  },
++  labels: {
++    singular: 'کلید API',
++    plural: 'کلیدهای API',
++  },
++  fields: [
++    {
++      name: 'name',
++      type: 'text',
++      label: 'نام',
++      required: true,
++      admin: {
++        description: 'مثلاً «اتصال پنل مدیریت» — فقط برای اینکه دو کلید از هم تشخیص داده شوند.',
++      },
++    },
++    {
++      name: 'role',
++      type: 'select',
++      label: 'نقش',
++      required: true,
++      defaultValue: 'site',
++      options: [
++        { label: 'سایت (یکی)', value: 'site' },
++        { label: 'پلتفرم (پروویژن و کلیدها)', value: 'platform' },
++      ],
++      admin: {
++        position: 'sidebar',
++        description: 'سایت: دسترسی کامل به محتوای یک سایت. پلتفرم: ساخت سایت و مدیریت کلیدها.',
++      },
++    },
++    {
++      name: 'site',
++      type: 'relationship',
++      label: 'سایت',
++      relationTo: 'sites',
++      admin: {
++        position: 'sidebar',
++        description: 'فقط برای کلیدهای نقشی «سایت»؛ برای کلید پلتفرم خالی بماند.',
++        condition: (_, siblingData) => siblingData?.role === 'site',
++      },
++      // Enforced at issue time by the endpoint, not by `required: true`: a
++      // platform key must be able to exist without one, and the admin form
++      // hides this field for that role anyway.
++    },
++    {
++      name: 'prefix',
++      type: 'text',
++      label: 'پیشوند',
++      admin: {
++        readOnly: true,
++        position: 'sidebar',
++        description: 'برای تشخیص دو کلید از هم؛ کلید کامل فقط در همان لحظهٔ ساخت نمایش داده می‌شود.',
++      },
++    },
++    {
++      name: 'keyHash',
++      type: 'text',
++      label: 'نشانهٔ کلید',
++      index: true,
++      admin: {
++        readOnly: true,
++        description: 'sha256 کلید — برای همان‌جا که رمز عبور ذخیره نمی‌شود.',
++      },
++    },
++    {
++      name: 'lastUsedAt',
++      type: 'date',
++      label: 'آخرین استفاده',
++      admin: {
++        readOnly: true,
++        position: 'sidebar',
++      },
++    },
++    {
++      name: 'disabledAt',
++      type: 'date',
++      label: 'ابطال شده در',
++      admin: {
++        readOnly: true,
++        position: 'sidebar',
++        description: 'یک کلید ابطال‌شده بلافاصله از کار می‌افتد؛ ردیف برای حسابرسی می‌ماند.',
++      },
++    },
++  ],
++  timestamps: true,
++}
+diff --git a/src/collections/Categories.ts b/src/collections/Categories.ts
+index 3105fc8c4bf1751a0db70d3bd24195a3cbf415e5..da9022fde1bcaa8635bf96d8ca177d1ce3516368 100644
+--- a/src/collections/Categories.ts
++++ b/src/collections/Categories.ts
+@@ -2,6 +2,7 @@ import type { CollectionConfig } from 'payload'
+ 
+ import { anyone } from '../access/anyone'
+ import { scopedPublicRead } from '../access/siteRead'
++import { apiKeyCreateAware, apiKeyAware, forceApiKeySite } from '../access/siteApiKey'
+ import { authenticated } from '../access/authenticated'
+ import { uniqueSlugPerSite } from '../hooks/uniqueSlugPerSite'
+ import { slugifyField } from '@/lib/slug'
+@@ -10,12 +11,12 @@ import { slugField } from 'payload'
+ export const Categories: CollectionConfig = {
+   slug: 'categories',
+   access: {
+-    create: authenticated,
+-    delete: authenticated,
++    create: apiKeyCreateAware(authenticated),
++    delete: apiKeyAware(authenticated),
+     // Public and host-scoped: a post list is a taxonomy of one customer's content,
+     // not of the platform's (`src/access/siteRead.ts`).
+     read: scopedPublicRead(anyone),
+-    update: authenticated,
++    update: apiKeyAware(authenticated),
+   },
+   admin: {
+     useAsTitle: 'title',
+@@ -40,6 +41,6 @@ export const Categories: CollectionConfig = {
+     }),
+   ],
+   hooks: {
+-    beforeValidate: [uniqueSlugPerSite],
++    beforeValidate: [forceApiKeySite, uniqueSlugPerSite],
+   },
+ }
+diff --git a/src/collections/Media.ts b/src/collections/Media.ts
+index b9b59896cef9fce806eae34d034a8f84c8a615d8..cee6957092198dc41ba900bb8510d9f64ae4af52 100644
+--- a/src/collections/Media.ts
++++ b/src/collections/Media.ts
+@@ -10,6 +10,7 @@ import { fileURLToPath } from 'url'
+ 
+ import { anyone } from '../access/anyone'
+ import { scopedPublicRead } from '../access/siteRead'
++import { apiKeyCreateAware, apiKeyAware, forceApiKeySite } from '../access/siteApiKey'
+ import { authenticated } from '../access/authenticated'
+ import { setMediaPrefix } from '../hooks/mediaPrefix'
+ 
+@@ -20,12 +21,12 @@ export const Media: CollectionConfig = {
+   slug: 'media',
+   folders: true,
+   access: {
+-    create: authenticated,
+-    delete: authenticated,
++    create: apiKeyCreateAware(authenticated),
++    delete: apiKeyAware(authenticated),
+     // Public and host-scoped: a media library belongs to one customer, and its file
+     // route is served on their domain (`/api/media/file/*` is a Caddy carve-out).
+     read: scopedPublicRead(anyone),
+-    update: authenticated,
++    update: apiKeyAware(authenticated),
+   },
+   labels: {
+     singular: 'رسانه',
+@@ -55,6 +56,8 @@ export const Media: CollectionConfig = {
+   hooks: {
+     // Namespaces the file's key in R2 by site. No-op while uploads are local.
+     beforeChange: [setMediaPrefix],
++    // Uploads carry no `site` from a key holder — it comes from the key.
++    beforeValidate: [forceApiKeySite],
+   },
+   upload: {
+     // Dev: public/media in the repo. Production: MEDIA_DIR, an absolute path the
+diff --git a/src/collections/Orders.ts b/src/collections/Orders.ts
+index c827e65b9a0dd4664221b5ae2f2e5ac691f6eed0..0f87d11b1f5e0b35bba26afd696039eefa5a8826 100644
+--- a/src/collections/Orders.ts
++++ b/src/collections/Orders.ts
+@@ -2,6 +2,7 @@ import type { CollectionConfig } from 'payload'
+ 
+ import { authenticated } from '../access/authenticated'
+ import { platformAdmin } from '../access/platformAdmin'
++import { apiKeyAware } from '../access/siteApiKey'
+ import { MAX_ORDER_QUANTITY } from '../lib/checkout'
+ import { currencyCodes, validatePriceMinor } from '../lib/money'
+ import { paymentProviderOptions } from '../payments'
+@@ -33,9 +34,13 @@ export const Orders: CollectionConfig<'orders'> = {
+     // builder's submissions had — an anonymous POST choosing which site the document
+     // belongs to — with money on the other end of it.
+     create: authenticated,
++    // A site key may read its own site's orders and move their status (paid /
++    // cancelled / refunded) — that is the builder's e-commerce management. It
++    // never creates orders (the checkout endpoint does) and never hard-deletes
++    // them (platform admin only).
+     delete: platformAdmin,
+-    read: authenticated,
+-    update: authenticated,
++    read: apiKeyAware(authenticated),
++    update: apiKeyAware(authenticated),
+   },
+   admin: {
+     defaultColumns: ['reference', 'productTitle', 'total', 'status', 'createdAt'],
+diff --git a/src/collections/Pages/index.ts b/src/collections/Pages/index.ts
+index df0a2f6dd2c31dcd8a188f13a3925ac26fa3cc09..b45c0f426179b36dd96e45d8969733ba6a5a02ef 100644
+--- a/src/collections/Pages/index.ts
++++ b/src/collections/Pages/index.ts
+@@ -3,6 +3,7 @@ import type { CollectionConfig } from 'payload'
+ import { authenticated } from '../../access/authenticated'
+ import { authenticatedOrPublished } from '../../access/authenticatedOrPublished'
+ import { scopedPublishedRead } from '../../access/siteRead'
++import { apiKeyCreateAware, apiKeyAware, forceApiKeySite } from '../../access/siteApiKey'
+ import { writeUnlessPublishing } from '../../access/publish'
+ import { allowedBlocks, siteBlocks } from '../../blocks'
+ import { hero } from '@/heros/config'
+@@ -25,12 +26,15 @@ import {
+ export const Pages: CollectionConfig<'pages'> = {
+   slug: 'pages',
+   access: {
+-    create: writeUnlessPublishing('pages'),
+-    delete: authenticated,
++    // A site API key is the builder's own credential: it may create, edit
++    // and publish its own site's pages (apiKeyAware confines update/delete
++    // to the key's site; forceApiKeySite stamps `site` on create).
++    create: apiKeyCreateAware(writeUnlessPublishing('pages')),
++    delete: apiKeyAware(authenticated),
+     // Host-scoped as well as publish-gated: this collection is readable over the
+     // public REST/GraphQL API by a second renderer (`src/access/siteRead.ts`).
+     read: scopedPublishedRead(authenticatedOrPublished),
+-    update: writeUnlessPublishing('pages'),
++    update: apiKeyAware(writeUnlessPublishing('pages')),
+   },
+   // This config controls what's populated by default when a page is referenced
+   // https://payloadcms.com/docs/queries/select#defaultpopulate-collection-config-property
+@@ -133,7 +137,7 @@ export const Pages: CollectionConfig<'pages'> = {
+   hooks: {
+     afterChange: [revalidateSiteDoc()],
+     beforeChange: [populatePublishedAt],
+-    beforeValidate: [uniqueSlugPerSite, reservedPageSlug],
++    beforeValidate: [forceApiKeySite, uniqueSlugPerSite, reservedPageSlug],
+     afterDelete: [revalidateSiteDocDelete()],
+   },
+   versions: {
+diff --git a/src/collections/Posts/index.ts b/src/collections/Posts/index.ts
+index b35ff756a7addc812b3f01436eba15c64a9ad790..3f56e6827c61b8bf2c3222e41dd0ae80a8411f27 100644
+--- a/src/collections/Posts/index.ts
++++ b/src/collections/Posts/index.ts
+@@ -12,6 +12,7 @@ import {
+ import { authenticated } from '../../access/authenticated'
+ import { authenticatedOrPublished } from '../../access/authenticatedOrPublished'
+ import { scopedPublishedRead } from '../../access/siteRead'
++import { apiKeyCreateAware, apiKeyAware, forceApiKeySite } from '../../access/siteApiKey'
+ import { writeUnlessPublishing } from '../../access/publish'
+ import { Banner } from '../../blocks/Banner/config'
+ import { Code } from '../../blocks/Code/config'
+@@ -35,10 +36,10 @@ import { slugField } from 'payload'
+ export const Posts: CollectionConfig<'posts'> = {
+   slug: 'posts',
+   access: {
+-    create: writeUnlessPublishing('posts'),
+-    delete: authenticated,
++    create: apiKeyCreateAware(writeUnlessPublishing('posts')),
++    delete: apiKeyAware(authenticated),
+     read: scopedPublishedRead(authenticatedOrPublished),
+-    update: writeUnlessPublishing('posts'),
++    update: apiKeyAware(writeUnlessPublishing('posts')),
+   },
+   // This config controls what's populated by default when a post is referenced
+   // https://payloadcms.com/docs/queries/select#defaultpopulate-collection-config-property
+@@ -235,7 +236,7 @@ export const Posts: CollectionConfig<'posts'> = {
+     afterChange: [revalidateSiteDoc(POSTS_BASE)],
+     afterDelete: [revalidateSiteDocDelete(POSTS_BASE)],
+     afterRead: [populateAuthors],
+-    beforeValidate: [uniqueSlugPerSite],
++    beforeValidate: [forceApiKeySite, uniqueSlugPerSite],
+   },
+   versions: {
+     drafts: {
+diff --git a/src/collections/Products.ts b/src/collections/Products.ts
+index b907b3d40aad1c69dab294719c88eaf8c8c11a2a..5370aefb434881b536e528694192557a267fb706 100644
+--- a/src/collections/Products.ts
++++ b/src/collections/Products.ts
+@@ -3,6 +3,7 @@ import type { CollectionConfig } from 'payload'
+ import { authenticated } from '../access/authenticated'
+ import { authenticatedOrPublished } from '../access/authenticatedOrPublished'
+ import { scopedPublishedRead } from '../access/siteRead'
++import { apiKeyCreateAware, apiKeyAware, forceApiKeySite } from '../access/siteApiKey'
+ import { writeUnlessPublishing } from '../access/publish'
+ import { validatePriceMinor } from '../lib/money'
+ 
+@@ -24,13 +25,13 @@ import { validatePriceMinor } from '../lib/money'
+ export const Products: CollectionConfig<'products'> = {
+   slug: 'products',
+   access: {
+-    create: writeUnlessPublishing('products'),
+-    delete: authenticated,
++    create: apiKeyCreateAware(writeUnlessPublishing('products')),
++    delete: apiKeyAware(authenticated),
+     // Public for published rows only, and always scoped: the storefront reads this
+     // through `findForSite`, which adds the `site` constraint. `draft: true` does not
+     // filter drafts — this where-clause is what does.
+     read: scopedPublishedRead(authenticatedOrPublished),
+-    update: writeUnlessPublishing('products'),
++    update: apiKeyAware(writeUnlessPublishing('products')),
+   },
+   admin: {
+     defaultColumns: ['title', 'price', 'inventory', 'updatedAt'],
+@@ -142,6 +143,10 @@ export const Products: CollectionConfig<'products'> = {
+       required: true,
+     },
+   ],
++  hooks: {
++    // A site key's create never names the tenant — the key's site is stamped here.
++    beforeValidate: [forceApiKeySite],
++  },
+   versions: {
+     drafts: {
+       /** Same interval as pages — see the note in `src/collections/Pages/index.ts`. */
+diff --git a/src/collections/Sites.ts b/src/collections/Sites.ts
+index 1c5ef04549ada63436b9b067d95f12e34acc646b..115fd5fa1b08486682cb9f27b8493ef9f2130036 100644
+--- a/src/collections/Sites.ts
++++ b/src/collections/Sites.ts
+@@ -4,6 +4,7 @@ import { slugField } from 'payload'
+ 
+ import { authenticated } from '../access/authenticated'
+ import { platformAdmin, platformAdminFieldAccess } from '../access/platformAdmin'
++import { platformApiKeyAware } from '../access/siteApiKey'
+ import { locales } from '../lib/locales'
+ import { slugifyField } from '../lib/slug'
+ 
+@@ -21,11 +22,14 @@ const localeOptions = locales.map(({ code, label }) => ({ label, value: code }))
+ export const Sites: CollectionConfig = {
+   slug: 'sites',
+   access: {
+-    create: platformAdmin,
+-    delete: platformAdmin,
++    // The builder's platform key is the operator console: it provisions sites
++    // and manages keys. A *site* key never touches the sites collection —
++    // its own identity is not metadata it may rewrite.
++    create: platformApiKeyAware(platformAdmin),
++    delete: platformApiKeyAware(platformAdmin),
+     // The plugin narrows this to the user's own sites (`useTenantsCollectionAccess`).
+-    read: authenticated,
+-    update: authenticated,
++    read: platformApiKeyAware(authenticated),
++    update: platformApiKeyAware(authenticated),
+   },
+   admin: {
+     defaultColumns: ['name', 'domain', 'domainVerified', 'type', 'status'],
+diff --git a/src/endpoints/apiKeys.ts b/src/endpoints/apiKeys.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..b899caa4adc355c5984521283e3f4af9f63132f6
+--- /dev/null
++++ b/src/endpoints/apiKeys.ts
+@@ -0,0 +1,165 @@
++import type { Endpoint } from 'payload'
++import { APIError } from 'payload'
++
++import { isPlatformAdmin } from '@/access/platformAdmin'
++import { generateApiKey, hashApiKey, isPlatformApiKey } from '@/access/siteApiKey'
++import { idOf, isUuid } from '@/lib/ids'
++
++/**
++ * The HTTP face of API-key lifecycle — WAVE-9 slice 9.4, consumed by the site
++ * builder (a separate deployment) and by the admin.
++ *
++ * Auth on all three: a platform-admin user **or** a `role: 'platform'` API
++ * key. Site keys can never issue or revoke keys — a key that creates keys is
++ * a key that escalates, and this platform's whole §6 rule is "the caller
++ * never names the tenant".
++ *
++ * The casts to `unknown`-args payload calls below exist only until
++ * `pnpm generate:types` adds the `api-keys` collection to
++ * `src/payload-types.ts`; after that they can be dropped.
++ */
++
++const deny = (): Response =>
++  Response.json(
++    { message: 'ساخت و مدیریت کلیدهای API فقط برای مدیر پلتفرم ممکن است.' },
++    { status: 403, headers: { 'cache-control': 'no-store' } },
++  )
++const authorized = async (req: Parameters<Endpoint['handler']>[0]): Promise<boolean> =>
++  isPlatformAdmin(req.user) || (await isPlatformApiKey(req))
++
++export const issueApiKeyEndpoint: Endpoint = {
++  path: '/api-keys/issue',
++  method: 'post',
++  handler: async (req) => {
++    if (!(await authorized(req))) return deny()
++
++    const body = (await req.json?.()) as { name?: unknown; role?: unknown; siteId?: unknown } | undefined
++    if (!body || typeof body.name !== 'string' || !body.name.trim() || body.name.trim().length > 120) {
++      throw new APIError('نام کلید الزامی است.', 400, undefined, true)
++    }
++    const role = body.role === 'platform' ? 'platform' : body.role === 'site' ? 'site' : null
++    if (!role) throw new APIError('نقش باید «site» یا «platform» باشد.', 400, undefined, true)
++
++    let siteId: null | string = null
++    if (role === 'site') {
++      if (typeof body.siteId !== 'string' || !isUuid(body.siteId)) {
++        throw new APIError('برای کلید نقشی «سایت»، باید شناسهٔ uuid سایت داده شود.', 400, undefined, true)
++      }
++      siteId = body.siteId
++      const { docs } = await req.payload.find({
++        collection: 'sites',
++        depth: 0,
++        limit: 1,
++        pagination: false,
++        overrideAccess: true,
++        req,
++        where: { id: { equals: siteId } },
++      })
++      if (!docs.length) throw new APIError('سایت پیدا نشد.', 404, undefined, true)
++    }
++
++    const key = generateApiKey()
++    const doc = await (
++      req.payload as unknown as { create: (args: unknown) => Promise<Record<string, unknown>> }
++    ).create({
++      collection: 'api-keys',
++      data: {
++        name: body.name.trim(),
++        role,
++        site: siteId,
++        prefix: key.slice(0, 20),
++        keyHash: hashApiKey(key),
++      },
++      overrideAccess: true,
++      req,
++    })
++
++    return Response.json(
++      {
++        // The raw key, exactly once — the admin never shows it again.
++        id: doc.id,
++        key,
++        name: doc.name,
++        prefix: doc.prefix,
++        role: doc.role,
++      },
++      { status: 201, headers: { 'cache-control': 'no-store' } },
++    )
++  },
++}
++
++export const listApiKeysEndpoint: Endpoint = {
++  path: '/api-keys/list',
++  method: 'get',
++  handler: async (req) => {
++    if (!(await authorized(req))) return deny()
++
++    const rawSiteId = String(req.query.siteId ?? '')
++    if (rawSiteId && !isUuid(rawSiteId)) throw new APIError('شناسهٔ سایت نامعتبر است.', 400, undefined, true)
++
++    const { docs } = await (
++      req.payload.find as unknown as (args: unknown) => Promise<{ docs: Record<string, unknown>[] }>
++    )({
++      collection: 'api-keys',
++      depth: 0,
++      limit: 200,
++      overrideAccess: true,
++      req,
++      sort: '-createdAt',
++      where: rawSiteId ? { site: { equals: rawSiteId } } : {},
++    })
++
++    return Response.json({
++      docs: docs.map((doc) => ({
++        id: doc.id,
++        name: doc.name,
++        role: doc.role,
++        prefix: doc.prefix,
++        siteId: idOf(doc.site),
++        lastUsedAt: (doc.lastUsedAt as string | null | undefined) ?? null,
++        disabledAt: (doc.disabledAt as string | null | undefined) ?? null,
++        createdAt: doc.createdAt,
++      })),
++      // `keyHash` is deliberately not serialised — it is the lookup key and
++      // nothing a client or an admin screen needs to see.
++    })
++  },
++}
++
++export const revokeApiKeyEndpoint: Endpoint = {
++  path: '/api-keys/revoke',
++  method: 'post',
++  handler: async (req) => {
++    if (!(await authorized(req))) return deny()
++
++    const body = (await req.json?.()) as { id?: unknown } | undefined
++    if (typeof body?.id !== 'string' || !isUuid(body.id)) {
++      throw new APIError('شناسهٔ uuid کلید الزامی است.', 400, undefined, true)
++    }
++
++    const { docs } = await (
++      req.payload.find as unknown as (args: unknown) => Promise<{ docs: unknown[] }>
++    )({
++      collection: 'api-keys',
++      depth: 0,
++      limit: 1,
++      pagination: false,
++      overrideAccess: true,
++      req,
++      where: { id: { equals: body.id } },
++    })
++    if (!docs.length) throw new APIError('کلید پیدا نشد.', 404, undefined, true)
++
++    await (
++      req.payload as unknown as { update: (args: unknown) => Promise<unknown> }
++    ).update({
++      collection: 'api-keys',
++      id: body.id,
++      data: { disabledAt: new Date().toISOString() },
++      overrideAccess: true,
++      req,
++    })
++
++    return Response.json({ ok: true }, { status: 200, headers: { 'cache-control': 'no-store' } })
++  },
++}
+diff --git a/src/endpoints/provisionSite.ts b/src/endpoints/provisionSite.ts
+index b7032df5949c3a7fafd90a382513333385eb0454..fecbcce8366d10b14241677191ea6f9db0931688 100644
+--- a/src/endpoints/provisionSite.ts
++++ b/src/endpoints/provisionSite.ts
+@@ -2,6 +2,7 @@ import type { Endpoint } from 'payload'
+ import { APIError, ValidationError } from 'payload'
+ 
+ import { isPlatformAdmin } from '@/access/platformAdmin'
++import { isPlatformApiKey } from '@/access/siteApiKey'
+ import { provisionSite, type ProvisionSiteInput } from '@/provisioning/provisionSite'
+ import { siteOrigin } from '@/lib/site-url'
+ 
+@@ -17,7 +18,9 @@ export const provisionSiteEndpoint: Endpoint = {
+   path: '/provision-site',
+   method: 'post',
+   handler: async (req) => {
+-    if (!isPlatformAdmin(req.user)) {
++    // Platform-admin user, or the builder's `role: 'platform'` API key — the
++    // operator console provisions sites without holding a person's session.
++    if (!(isPlatformAdmin(req.user) || (await isPlatformApiKey(req)))) {
+       return Response.json(
+         { message: 'ساخت سایت فقط برای مدیر پلتفرم ممکن است.' },
+         { status: 403, headers: { 'cache-control': 'no-store' } },
+diff --git a/src/endpoints/siteDescriptor.ts b/src/endpoints/siteDescriptor.ts
+index cffc18ca4a31e9f17aa5194d682bf5afdf02d133..81cc512a82da6d76dda68adc0245e710a65bf0a7 100644
+--- a/src/endpoints/siteDescriptor.ts
++++ b/src/endpoints/siteDescriptor.ts
+@@ -72,6 +72,17 @@ export const siteDescriptor: Endpoint = {
+ 
+     return Response.json(
+       {
++        // The site's own id. On the site's origin the renderer never needs it,
++        // but a headless client that carries a per-site API key does: it is
++        // what cache tags and the connection store key on (WAVE-9 §9.4 — the
++        // builder keeps `siteId` per customer without ever listing sites).
++        id: site.id,
++        // Whether this site's domain has been verified in the admin ("DNS
++        // points here AND an operator ticked the box"). The builder shows it
++        // as the last step of its own DNS checklist — a headless client
++        // cannot call `/api/domain-check` (Caddy serves it 404 publicly; it
++        // is Caddy-internal), so the descriptor is its source of truth.
++        domainVerified: Boolean(site.domainVerified),
+         // Both locales and the default: a renderer must 404 `/de` on a `fa`+`en` site
+         // rather than falling back and duplicating the home page under a URL that
+         // does not exist (`src/app/(site)/[domain]/[[...path]]/page.tsx` does exactly
+diff --git a/src/payload.config.ts b/src/payload.config.ts
+index 85e6edab0e80da4b2e3f1c4b31d0f96f1a2b7b6a..f3b88b41a725c0aa57dd26320b9a2bcf7a482b81 100644
+--- a/src/payload.config.ts
++++ b/src/payload.config.ts
+@@ -7,6 +7,7 @@ import path from 'path'
+ import { buildConfig, PayloadRequest } from 'payload'
+ import { fileURLToPath } from 'url'
+ 
++import { ApiKeys } from './collections/ApiKeys'
+ import { Categories } from './collections/Categories'
+ import { Media } from './collections/Media'
+ import { Orders } from './collections/Orders'
+@@ -28,13 +29,14 @@ import { getServerSideURL } from './utilities/getURL'
+ import { checkoutEndpoints } from './endpoints/checkout'
+ import { domainCheck } from './endpoints/domainCheck'
+ import { provisionSiteEndpoint } from './endpoints/provisionSite'
++import { issueApiKeyEndpoint, listApiKeysEndpoint, revokeApiKeyEndpoint } from './endpoints/apiKeys'
+ import { siteDescriptor } from './endpoints/siteDescriptor'
+ 
+ const filename = fileURLToPath(import.meta.url)
+ const dirname = path.dirname(filename)
+ 
+ export default buildConfig({
+-  endpoints: [domainCheck, siteDescriptor, provisionSiteEndpoint, ...checkoutEndpoints],
++  endpoints: [domainCheck, siteDescriptor, provisionSiteEndpoint, issueApiKeyEndpoint, listApiKeysEndpoint, revokeApiKeyEndpoint, ...checkoutEndpoints],
+   admin: {
+     components: {
+       beforeLogin: ['@/components/BeforeLogin'],
+@@ -85,6 +87,9 @@ export default buildConfig({
+     Categories,
+     Users,
+     Sites,
++    // Headless credentials (WAVE-9 §9.4). Deliberately NOT in the
++    // multi-tenant plugin's map — see the comment in src/collections/ApiKeys.ts.
++    ApiKeys,
+     Theme,
+     Header,
+     Footer,
+diff --git a/tests/int/api-keys.int.spec.ts b/tests/int/api-keys.int.spec.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..732509964cc454d091f2a5f56458e9a21a999638
+--- /dev/null
++++ b/tests/int/api-keys.int.spec.ts
+@@ -0,0 +1,208 @@
++import type { Payload, PayloadRequest } from 'payload'
++
++import { createLocalReq, getPayload } from 'payload'
++import { afterEach, beforeAll, describe, expect, it } from 'vitest'
++
++import config from '@/payload.config'
++import { generateApiKey, hashApiKey } from '@/access/siteApiKey'
++import { idOf } from '@/lib/ids'
++
++/**
++ * Per-site API keys — WAVE-9 slice 9.4.
++ *
++ * What a headless consumer with a `Bearer eshobe_live_…` key may see and do.
++ * The control-plane host is used on purpose: an *anonymous* read there is the
++ * documented fail-open (WAVE-9 §1), which is exactly what a key has to close —
++ * "attached by API" must mean "scoped by credential, not by memory".
++ */
++let payload: Payload
++
++/**
++ * The `api-keys` collection is not in payload-types.ts until `pnpm
++ * generate:types` runs, so call it through a loose alias — same escape the
++ * other dynamic-slug tests use.
++ */
++const api = {
++  create: (args: object) => (payload.create as unknown as (a: unknown) => Promise<Record<string, unknown>>)(args),
++  update: (args: object) => (payload.update as unknown as (a: unknown) => Promise<Record<string, unknown>>)(args),
++  delete: (args: object) => (payload.delete as unknown as (a: unknown) => Promise<Record<string, unknown>>)(args),
++  find: (args: object) =>
++    (payload.find as unknown as (a: unknown) => Promise<{ docs: Record<string, unknown>[] }>)(args),
++}
++
++const acmeId = { value: '' }
++const studioId = { value: '' }
++
++/** Control-plane host: no site resolves from it, so only the key can scope. */
++const CMS_HOST = 'cms.localhost'
++
++const readWithKey = async (
++  collection: string,
++  key: string,
++  where?: Record<string, unknown>,
++): Promise<Record<string, unknown>[]> => {
++  const req = await createLocalReq(
++    {
++      req: {
++        headers: new Headers({ accept: 'application/json', authorization: `Bearer ${key}` }),
++        method: 'GET',
++        url: `http://${CMS_HOST}/api/${collection}`,
++      } as Partial<PayloadRequest>,
++    },
++    payload,
++  )
++  const { docs } = await api.find({ collection, depth: 0, overrideAccess: false, pagination: false, req, where })
++  return docs
++}
++
++const makeKey = async (role: 'site' | 'platform', siteId?: string): Promise<string> => {
++  const key = generateApiKey()
++  await api.create({
++    collection: 'api-keys',
++    data: {
++      name: `${role} test key`,
++      role,
++      site: siteId ?? null,
++      prefix: key.slice(0, 20),
++      keyHash: hashApiKey(key),
++    },
++  })
++  return key
++}
++
++const draftPage = async (slug: string): Promise<void> => {
++  await payload.create({
++    collection: 'pages',
++    data: { title: 'Key draft', slug, site: acmeId.value },
++    draft: true,
++  })
++}
++
++beforeAll(async () => {
++  payload = await getPayload({ config: await config })
++
++  const { docs } = await payload.find({ collection: 'sites', depth: 0, pagination: false })
++  for (const site of docs as { domain: string; id: string }[]) {
++    if (site.domain === 'acme.localhost') acmeId.value = site.id
++    if (site.domain === 'studio.localhost') studioId.value = site.id
++  }
++}, 180_000)
++
++afterEach(async () => {
++  await api.delete({ collection: 'api-keys', where: { name: { equals: 'site test key' } } })
++  await api.delete({ collection: 'api-keys', where: { name: { equals: 'platform test key' } } })
++})
++
++describe('site API keys on the control-plane host', () => {
++  it('see only the key’s own site, where an anonymous read would see everything', async () => {
++    const key = await makeKey('site', acmeId.value)
++
++    const docs = await readWithKey('pages', key)
++    expect(docs.length).toBeGreaterThan(0)
++    for (const doc of docs) expect(idOf(doc.site)).toBe(acmeId.value)
++  })
++
++  it('cannot widen with a where filter naming another site', async () => {
++    const key = await makeKey('site', acmeId.value)
++
++    const docs = await readWithKey('pages', key, { site: { equals: studioId.value } })
++    expect(docs).toHaveLength(0)
++  })
++
++  it('cannot switch sites by switching the Host header', async () => {
++    const key = await makeKey('site', acmeId.value)
++    const req = await createLocalReq(
++      {
++        req: {
++          headers: new Headers({
++            accept: 'application/json',
++            authorization: `Bearer ${key}`,
++            host: 'studio.localhost',
++          }),
++          method: 'GET',
++          url: 'http://studio.localhost/api/pages',
++        } as Partial<PayloadRequest>,
++      },
++      payload,
++    )
++    const { docs } = await api.find({ collection: 'pages', depth: 0, overrideAccess: false, pagination: false, req })
++    for (const doc of docs) expect(idOf(doc.site)).toBe(acmeId.value)
++  })
++
++  it('see drafts (the builder is the editor), anonymous readers do not', async () => {
++    const draftSlug = `key-draft-${Date.now()}`
++    await draftPage(draftSlug)
++    const key = await makeKey('site', acmeId.value)
++
++    const asKey = await readWithKey('pages', key, { slug: { equals: draftSlug } })
++    expect(asKey).toHaveLength(1)
++
++    const anonReq = await createLocalReq(
++      {
++        req: {
++          headers: new Headers({ accept: 'application/json', host: 'acme.localhost' }),
++          method: 'GET',
++          url: 'http://acme.localhost/api/pages',
++        } as Partial<PayloadRequest>,
++      },
++      payload,
++    )
++    const { docs } = await api.find({
++      collection: 'pages',
++      depth: 0,
++      overrideAccess: false,
++      pagination: false,
++      req: anonReq,
++      where: { slug: { equals: draftSlug } },
++    })
++    expect(docs).toHaveLength(0)
++  })
++
++  it('stamp the key’s site on create, ignoring a site named in the payload', async () => {
++    const key = await makeKey('site', acmeId.value)
++    const req = await createLocalReq(
++      {
++        req: {
++          headers: new Headers({ accept: 'application/json', authorization: `Bearer ${key}` }),
++          method: 'POST',
++          url: `http://${CMS_HOST}/api/products`,
++        } as Partial<PayloadRequest>,
++      },
++      payload,
++    )
++
++    const doc = await api.create({
++      collection: 'products',
++      data: { title: 'Key product', price: 1000, trackInventory: false, site: studioId.value },
++      overrideAccess: false,
++      req,
++    })
++
++    expect(idOf(doc.site)).toBe(acmeId.value)
++    await api.delete({ collection: 'products', where: { id: { equals: doc.id } } })
++  })
++})
++
++describe('revoked keys and platform keys', () => {
++  it('a revoked key stops working immediately', async () => {
++    const key = await makeKey('site', acmeId.value)
++    const { docs } = await api.find({ collection: 'api-keys', where: { name: { equals: 'site test key' } } })
++    await api.update({
++      collection: 'api-keys',
++      id: docs[0].id,
++      data: { disabledAt: new Date().toISOString() },
++    })
++
++    const reads = await readWithKey('pages', key)
++    expect(reads).toHaveLength(0)
++  })
++
++  it('a platform key cannot read site content', async () => {
++    const key = await makeKey('platform')
++
++    const pages = await readWithKey('pages', key)
++    const products = await readWithKey('products', key)
++    expect(pages).toHaveLength(0)
++    expect(products).toHaveLength(0)
++  })
++})
