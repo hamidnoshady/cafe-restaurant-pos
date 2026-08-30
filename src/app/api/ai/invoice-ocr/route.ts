@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isPlatformAiConfigured } from "@/lib/ai-config";
 import { resolveAiConfigFor } from "@/lib/ai-runtime";
+import { resolveGatewayTurnPricing } from "@/lib/ai-gateway-service";
 import {
   AiInsufficientCreditError,
   cancelAiTurnReservation,
@@ -86,12 +87,17 @@ export const POST = withTenantScope(async (request: NextRequest) => {
       dataUrl: parsed.dataUrl,
     });
 
+    const gatewayPricing = await resolveGatewayTurnPricing(
+      result.costUsd,
+      config.revenueMarginPercent,
+    );
     const settlement = await settleAiTurn({
       businessId: session.businessId,
       reservation,
       usage: result.usage,
       inputTokenRialPerMillion: config.inputTokenRialPerMillion,
       outputTokenRialPerMillion: config.outputTokenRialPerMillion,
+      gatewayPricing,
     });
 
     return NextResponse.json({

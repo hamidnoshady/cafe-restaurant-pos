@@ -25,11 +25,16 @@ import type { AiConfig } from "./ai";
 /**
  * The config for a tenant call. `businessId` scopes which virtual key is used;
  * pass null for the platform support agent, which runs on the shared
- * connection by definition.
+ * connection by definition. `mode` is the agent surface the call answers on —
+ * Phase 38b's prompt bindings are per surface, so a bound surface's runtime
+ * carries its gateway `promptId`.
  */
-export async function resolveAiConfigFor(businessId: string | null): Promise<PlatformAiConfig> {
+export async function resolveAiConfigFor(
+  businessId: string | null,
+  mode?: string | null,
+): Promise<PlatformAiConfig> {
   const config = await getPlatformAiConfig();
-  return decorate(config, businessId);
+  return decorate(config, businessId, mode);
 }
 
 /**
@@ -41,11 +46,12 @@ export async function resolveAiConfigFor(businessId: string | null): Promise<Pla
 export async function decorateAiConfig(
   config: PlatformAiConfig,
   businessId: string | null,
+  mode?: string | null,
 ): Promise<PlatformAiConfig> {
-  return decorate(config, businessId);
+  return decorate(config, businessId, mode);
 }
 
-async function decorate(config: PlatformAiConfig, businessId: string | null): Promise<PlatformAiConfig> {
+async function decorate(config: PlatformAiConfig, businessId: string | null, mode?: string | null): Promise<PlatformAiConfig> {
   if (!businessId) return config;
   let gateway;
   let business = null;
@@ -60,10 +66,10 @@ async function decorate(config: PlatformAiConfig, businessId: string | null): Pr
     return config;
   }
 
-  const runtime = buildGatewayRuntime({ config, gateway, business });
+  const runtime = buildGatewayRuntime({ config, gateway, business, mode });
   if (!runtime) return config;
 
-  const { model, embeddingModel, body, authKey } = runtime;
+  const { model, embeddingModel, body, authKey, promptId } = runtime;
   const decorated: AiConfig = {
     ...config,
     model,
@@ -71,6 +77,7 @@ async function decorate(config: PlatformAiConfig, businessId: string | null): Pr
     gateway: {
       ...(authKey ? { authKey } : {}),
       body,
+      ...(promptId ? { promptId } : {}),
     },
   };
   return decorated as PlatformAiConfig;

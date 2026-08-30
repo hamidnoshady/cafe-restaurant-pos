@@ -166,19 +166,13 @@ describe("the gateway singleton", () => {
 
 describe("one business's gateway row", () => {
   const config = {
+    ...gateway.defaultGatewayConfig(),
     enabled: true,
     baseUrl: "http://litellm:4000/v1",
     chatModel: "pos-chat",
-    embeddingModel: "",
-    fallbackModels: [] as string[],
-    routingStrategy: "simple-shuffle" as const,
     virtualKeysEnabled: true,
     allowBusinessModels: true,
     publishedModels: ["pos-chat", "pos-fast"],
-    defaultMaxBudgetUsd: null,
-    defaultBudgetDuration: "30d",
-    defaultTpmLimit: null,
-    defaultRpmLimit: null,
     masterKey: "sk-master",
   };
 

@@ -335,3 +335,155 @@ describe("Phase 18b Wave 5 streaming", () => {
     expect(payload.stream_options).toEqual({ include_usage: true });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 38b — gateway-priced turns and prompt-bound surfaces
+// ---------------------------------------------------------------------------
+
+function gatewayReply(message: Record<string, unknown>, costUsd: string) {
+  return new Response(
+    JSON.stringify({
+      choices: [{ message }],
+      usage: { prompt_tokens: 10, completion_tokens: 5 },
+    }),
+    {
+      status: 200,
+      headers: { "Content-Type": "application/json", "x-litellm-response-cost": costUsd },
+    },
+  );
+}
+
+describe("Phase 38b gateway cost capture", () => {
+  it("sums the proxy's per-response cost across tool rounds", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        gatewayReply(
+          {
+            content: null,
+            tool_calls: [
+              {
+                id: "read-1",
+                type: "function",
+                function: { name: "get_sales_summary", arguments: "{}" },
+              },
+            ],
+          },
+          "0.001",
+        ),
+      )
+      .mockResolvedValueOnce(gatewayReply({ content: "خلاصه آماده است." }, "0.002"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const reply = await runAgentTurn({
+      config,
+      mode: "dashboard",
+      promptContext: { mode: "dashboard" },
+      messages: [{ role: "user", content: "فروش امروز چطور بود؟" }],
+      executeReadTool: vi.fn(async () => ({ ok: true, data: { total: 1 } })),
+    });
+
+    expect(reply.costUsd).toBeCloseTo(0.003, 10);
+  });
+
+  it("a direct vendor that sends no cost header reports null, not zero", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(providerReply({ content: "پاسخ ساده." }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const reply = await runAgentTurn({
+      config,
+      mode: "dashboard",
+      promptContext: { mode: "dashboard" },
+      messages: [{ role: "user", content: "سلام" }],
+    });
+
+    expect(reply.costUsd).toBeNull();
+  });
+
+  it("the gateway config the runtime builds is what the request carries", async () => {
+    // A bound surface sends prompt_id + prompt_variables and NO system message;
+    // the system prompt travels as a variable so the template keeps the rules.
+    const gatewayConfig = {
+      ...config,
+      gateway: {
+        authKey: "sk-virtual",
+        body: { fallbacks: ["pos-cheap"] },
+        promptId: "pos-dashboard",
+      },
+    };
+    const fetchMock = vi.fn().mockResolvedValueOnce(providerReply({ content: "پاسخ با پرامپت دروازه." }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await runAgentTurn({
+      config: gatewayConfig,
+      mode: "dashboard",
+      promptContext: { mode: "dashboard", businessName: "کافه آزمون", userName: "مدیر" },
+      systemPrompt: "نظم سیستمی",
+      messages: [{ role: "user", content: "سلام" }],
+    });
+
+    const payload = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+    expect(payload.prompt_id).toBe("pos-dashboard");
+    expect(payload.prompt_variables).toEqual({
+      system_context: "نظم سیستمی",
+      business_name: "کافه آزمون",
+      user_name: "مدیر",
+      mode: "dashboard",
+    });
+    expect(payload.fallbacks).toEqual(["pos-cheap"]);
+    expect(payload.messages.every((message: { role: string }) => message.role !== "system")).toBe(true);
+  });
+
+  it("an unbound surface keeps its system message and no prompt fields", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(providerReply({ content: "پاسخ معمولی." }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await runAgentTurn({
+      config,
+      mode: "dashboard",
+      promptContext: { mode: "dashboard" },
+      systemPrompt: "نظم سیستمی",
+      messages: [{ role: "user", content: "سلام" }],
+    });
+
+    const payload = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+    expect(payload.prompt_id).toBeUndefined();
+    expect(payload.prompt_variables).toBeUndefined();
+    expect(payload.messages[0]).toEqual({ role: "system", content: "نظم سیستمی" });
+  });
+
+  it("MCP servers declared by the runtime reach the tools array", async () => {
+    const mcpConfig = {
+      ...config,
+      gateway: {
+        body: {
+          tools: [
+            {
+              type: "mcp",
+              server_url: "litellm_proxy/pos_mcp/mcp",
+              server_label: "pos_mcp",
+              require_approval: "never",
+            },
+          ],
+        },
+      },
+    };
+    const fetchMock = vi.fn().mockResolvedValueOnce(providerReply({ content: "با ابزارها پاسخ دادم." }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await runAgentTurn({
+      config: mcpConfig,
+      mode: "dashboard",
+      promptContext: { mode: "dashboard" },
+      messages: [{ role: "user", content: "سلام" }],
+    });
+
+    const payload = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+    const tools = payload.tools as { type: string }[];
+    // The proxy's MCP entries lead; the agent's own function tools follow in
+    // the same array — one `tools` field, distinguished by `type`.
+    expect(tools[0]).toEqual(mcpConfig.gateway.body.tools[0]);
+    expect(tools.slice(1).every((tool) => tool.type === "function")).toBe(true);
+    expect(tools.length).toBeGreaterThan(1);
+  });
+});

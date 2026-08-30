@@ -3,6 +3,7 @@ import { query } from "@/lib/db";
 import type { AgentMode, PromptContext } from "@/lib/ai";
 import { isPlatformAiConfigured } from "@/lib/ai-config";
 import { resolveAiConfigFor } from "@/lib/ai-runtime";
+import { resolveGatewayTurnPricing } from "@/lib/ai-gateway-service";
 import {
   AiInsufficientCreditError,
   cancelAiTurnReservation,
@@ -141,7 +142,8 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   // Phase 37 — resolved through the gateway when one is configured: the
   // virtual key, the model alias and the failover chain for THIS business are
   // applied here, so nothing downstream has to know a gateway exists.
-  const config = await resolveAiConfigFor(session.businessId);
+  // Phase 38b — the mode resolves this surface's gateway prompt binding.
+  const config = await resolveAiConfigFor(session.businessId, mode);
   if (!isPlatformAiConfigured(config)) {
     return NextResponse.json(
       { error: "ai_unavailable", message: "سرویس هوش مصنوعی هنوز توسط مدیر پلتفرم آماده نشده است." },
@@ -318,12 +320,21 @@ export const POST = withTenantScope(async (request: NextRequest) => {
               onToolCalls: () => emit("reset", {}),
             },
           });
+          // Phase 38b — when the platform prices turns from the gateway and
+          // the gateway reported this turn's cost, that figure (plus the
+          // platform margin) is the settlement. Null — direct vendor, costing
+          // off, no figure reported — falls back to the token rates below.
+          const gatewayPricing = await resolveGatewayTurnPricing(
+            reply.costUsd,
+            config.revenueMarginPercent,
+          );
           const settlement = await settleAiTurn({
             businessId: session.businessId,
             reservation,
             usage: reply.usage,
             inputTokenRialPerMillion: config.inputTokenRialPerMillion,
             outputTokenRialPerMillion: config.outputTokenRialPerMillion,
+            gatewayPricing,
           });
           settled = true;
 

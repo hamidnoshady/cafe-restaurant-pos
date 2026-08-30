@@ -26,6 +26,7 @@ import { AUTOPILOT_EXECUTORS, AUTOPILOT_REVERTERS } from "./ai-autopilot-executo
 import { autopilotAmountContext } from "./ai-amount-context";
 import { createAiActionAudit } from "./ai-action-audit";
 import { runAgentTurn } from "./ai-service";
+import { resolveGatewayTurnPricing } from "./ai-gateway-service";
 import { runReadTool } from "./ai-tools";
 import { compactProactiveFacts, type LocalBusinessClock } from "./ai-proactive";
 import {
@@ -576,12 +577,19 @@ async function runCategory(input: {
 
     const activeReservation = reservation;
     if (!activeReservation) throw new Error("ai_reservation_not_created");
+    // Phase 38b — gateway-priced when the gateway reported the turn's cost
+    // and the platform switched costing over; the token rates otherwise.
+    const gatewayPricing = await resolveGatewayTurnPricing(
+      reply.costUsd,
+      config.revenueMarginPercent,
+    );
     await settleAiTurn({
       businessId,
       reservation: activeReservation,
       usage: reply.usage,
       inputTokenRialPerMillion: config.inputTokenRialPerMillion,
       outputTokenRialPerMillion: config.outputTokenRialPerMillion,
+      gatewayPricing,
     });
 
     if (!reply.proposedAction) {

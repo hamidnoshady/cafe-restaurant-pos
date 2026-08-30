@@ -19,6 +19,16 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Button } from "@/components/ui/button";
 import { SectionCard } from "../page-chrome";
 
+interface GatewayUsageRow {
+  day: string;
+  model: string;
+  spendUsd: number;
+  spendRial: number | null;
+  promptTokens: number;
+  completionTokens: number;
+  apiRequests: number;
+}
+
 interface GatewayInfo {
   available: boolean;
   allowBusinessModels: boolean;
@@ -28,6 +38,8 @@ interface GatewayInfo {
   modelOverride: string | null;
   hasVirtualKey: boolean;
   syncError: string | null;
+  /** Phase 38b — this business's own gateway usage, newest day first. */
+  usage?: GatewayUsageRow[];
   error?: string;
 }
 
@@ -112,6 +124,45 @@ export function AiGatewayPanel() {
             این مدل را پلتفرم تعیین می‌کند. برای تغییر آن با پشتیبانی تماس بگیرید.
           </p>
         )}
+
+        {info.usage && info.usage.length > 0 ? (
+          <div className="space-y-1 border-t border-stone-200 pt-3">
+            <p className="text-sm text-stone-600">مصرف دستیار در ۳۰ روز گذشته</p>
+            <div className="overflow-x-auto">
+              <table className="w-full text-right text-xs">
+                <thead className="text-stone-500">
+                  <tr>
+                    <th className="px-2 py-1 font-medium">روز</th>
+                    <th className="px-2 py-1 font-medium">درخواست</th>
+                    <th className="px-2 py-1 font-medium">توکن ورودی/خروجی</th>
+                    <th className="px-2 py-1 font-medium">هزینهٔ مصرف</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {info.usage.slice(0, 15).map((row) => (
+                    <tr key={`${row.day}|${row.model}`} className="border-t border-stone-100">
+                      <td className="px-2 py-1" dir="ltr">{row.day}</td>
+                      <td className="px-2 py-1">{new Intl.NumberFormat("fa-IR").format(row.apiRequests)}</td>
+                      <td className="px-2 py-1">
+                        {new Intl.NumberFormat("fa-IR").format(row.promptTokens)} /{" "}
+                        {new Intl.NumberFormat("fa-IR").format(row.completionTokens)}
+                      </td>
+                      <td className="px-2 py-1">
+                        {row.spendRial !== null
+                          ? `${new Intl.NumberFormat("fa-IR").format(row.spendRial)} ریال`
+                          : `${new Intl.NumberFormat("fa-IR", { maximumFractionDigits: 6 }).format(row.spendUsd)} دلار`}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="text-xs text-stone-500">
+              گزارش مصرف دروازه برای شفافیت است؛ مبلغ کسرشده از اعتبار شما همان است که در دفتر اعتبار
+              هوش مصنوعی می‌بینید.
+            </p>
+          </div>
+        ) : null}
 
         {info.syncError ? <p className="text-xs text-rose-600">{info.syncError}</p> : null}
         {error ? (

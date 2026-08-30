@@ -52,3 +52,22 @@ export function dnsHint(check: DnsCheck): string {
   }
   return "DNS به سرور CMS اشاره می‌کند. برای فعال‌شدن کامل، در پنل CMS تأیید دامنه را روشن کنید.";
 }
+
+/**
+ * One-line Persian guidance for the Website Manager's checklist card.
+ *
+ * Lives in this pure module rather than `website-service.ts` because the
+ * dashboard's client component renders it — a client bundle cannot follow an
+ * import into the DB-backed service (it would drag `pg` into the browser).
+ * The shape is structural, so the service's richer status object satisfies it
+ * without this module ever importing from that one.
+ */
+export function cmsDnsHint(status: {
+  dns: DnsCheck;
+  domainVerified: boolean | null;
+}): string {
+  if (!status.dns.resolved) return dnsHint(status.dns);
+  if (!status.dns.pointingToCms) return dnsHint(status.dns);
+  if (!status.domainVerified) return dnsHint(status.dns);
+  return "دامنه به سرور CMS اشاره می‌کند و در پنل تأیید شده است — سایت روی اینترنت فعال است.";
+}
