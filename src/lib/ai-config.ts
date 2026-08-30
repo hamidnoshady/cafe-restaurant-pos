@@ -169,8 +169,15 @@ export async function getPlatformAiConfig(): Promise<PlatformAiConfig> {
         WHERE id = true`,
     );
     return rows[0] ? rowToConfig(rows[0]) : defaultPlatformConfig();
-  } catch {
-    return defaultPlatformConfig();
+  } catch (err) {
+    // Fail closed, not into the environment's defaults: a query error here
+    // (a column missing because 0124 hasn't run yet, a connection blip) is a
+    // real fault, and `defaultPlatformConfig()`'s `AI_ENABLED` env fallback
+    // could silently report the assistant as on when the actual DB-backed
+    // config just failed to load. Log it and disable, matching ai-runtime.ts's
+    // own fail-closed rule for gateway/branch state.
+    console.error("platform AI config unavailable; failing closed", err);
+    return { ...defaultPlatformConfig(), enabled: false };
   }
 }
 

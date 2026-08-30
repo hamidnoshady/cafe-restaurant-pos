@@ -42,7 +42,16 @@ BEGIN
                output_cost_rial_per_million = c.output_cost_rial_per_million,
                revenue_margin_percent = c.revenue_margin_percent,
                max_turn_rial = c.max_turn_rial,
-               enabled = CASE WHEN c.provider = 'litellm' THEN (g.enabled AND c.enabled) ELSE false END,
+               -- A deployment already on provider='litellm' was working before this
+               -- migration purely off platform_ai_config.enabled: platform_ai_gateway.enabled
+               -- was Phase 37's *separate*, default-false toggle for the optional extras
+               -- (virtual keys, aliases, failover), not a gate on the connection itself.
+               -- ANDing the two would go dark for every already-litellm deployment that
+               -- never opted into those extras, which is exactly the continuity this
+               -- migration is supposed to preserve. Only a deployment that was NOT already
+               -- on litellm goes disabled here, pending a manual re-enable (see the INSERT
+               -- branch below, which never ANDs against a nonexistent gateway row either).
+               enabled = CASE WHEN c.provider = 'litellm' THEN c.enabled ELSE false END,
                chat_model = CASE WHEN c.provider = 'litellm' AND (g.chat_model IS NULL OR g.chat_model = '') THEN c.model ELSE g.chat_model END,
                base_url = CASE WHEN c.provider = 'litellm' AND c.base_url IS NOT NULL AND c.base_url <> '' THEN c.base_url ELSE g.base_url END,
                master_key = CASE WHEN c.provider = 'litellm' AND (g.master_key IS NULL OR g.master_key = '') THEN c.api_key ELSE g.master_key END
