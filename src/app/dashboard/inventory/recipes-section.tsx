@@ -31,45 +31,9 @@ export function RecipesSection({
   busy: boolean;
   run: Runner;
 }) {
-  return (
-    <div className="space-y-6">
-      <MenuItemRecipeCard
-        items={items}
-        menuItems={menuItems}
-        recipes={recipes}
-        busy={busy}
-        run={run}
-      />
-      <ModifierRecipeCard
-        items={items}
-        modifiers={modifiers}
-        modifierRecipes={modifierRecipes}
-        busy={busy}
-        run={run}
-      />
-    </div>
-  );
-}
-
-function MenuItemRecipeCard({
-  items,
-  menuItems,
-  recipes,
-  busy,
-  run,
-}: {
-  items: InventoryItem[];
-  menuItems: MenuItemRef[];
-  recipes: RecipeLink[];
-  busy: boolean;
-  run: Runner;
-}) {
-  const [menuItemId, setMenuItemId] = useState("");
-  const [inventoryItemId, setInventoryItemId] = useState("");
-  const [quantity, setQuantity] = useState("");
-
-  const lines = recipes.filter((r) => r.menu_item_id === menuItemId);
-
+  // ⚡ Bolt: Cache derived expensive options array at the parent level
+  // so we don't recreate identical arrays mapping O(N) inventory items
+  // in multiple child recipe card components.
   const inventoryOptions = useMemo(() => {
     return [
       { value: "", label: "قلم انبار را انتخاب کنید…" },
@@ -84,6 +48,49 @@ function MenuItemRecipeCard({
         })),
     ];
   }, [items]);
+
+  return (
+    <div className="space-y-6">
+      <MenuItemRecipeCard
+        items={items}
+        inventoryOptions={inventoryOptions}
+        menuItems={menuItems}
+        recipes={recipes}
+        busy={busy}
+        run={run}
+      />
+      <ModifierRecipeCard
+        items={items}
+        inventoryOptions={inventoryOptions}
+        modifiers={modifiers}
+        modifierRecipes={modifierRecipes}
+        busy={busy}
+        run={run}
+      />
+    </div>
+  );
+}
+
+function MenuItemRecipeCard({
+  items,
+  inventoryOptions,
+  menuItems,
+  recipes,
+  busy,
+  run,
+}: {
+  items: InventoryItem[];
+  inventoryOptions: { value: string; label: string; searchString?: string }[];
+  menuItems: MenuItemRef[];
+  recipes: RecipeLink[];
+  busy: boolean;
+  run: Runner;
+}) {
+  const [menuItemId, setMenuItemId] = useState("");
+  const [inventoryItemId, setInventoryItemId] = useState("");
+  const [quantity, setQuantity] = useState("");
+
+  const lines = recipes.filter((r) => r.menu_item_id === menuItemId);
 
   const menuItemOptions = useMemo(() => {
     return [
@@ -193,12 +200,14 @@ function MenuItemRecipeCard({
 
 function ModifierRecipeCard({
   items,
+  inventoryOptions,
   modifiers,
   modifierRecipes,
   busy,
   run,
 }: {
   items: InventoryItem[];
+  inventoryOptions: { value: string; label: string; searchString?: string }[];
   modifiers: ModifierRef[];
   modifierRecipes: ModifierRecipeLink[];
   busy: boolean;
@@ -209,21 +218,6 @@ function ModifierRecipeCard({
   const [delta, setDelta] = useState("");
 
   const lines = modifierRecipes.filter((r) => r.modifier_id === modifierId);
-
-  const inventoryOptions = useMemo(() => {
-    return [
-      { value: "", label: "قلم انبار را انتخاب کنید…" },
-      ...items
-        .filter((i) => i.is_active)
-        .map((i) => ({
-          value: i.id,
-          // A produced item (a cake made in-house) sits in the same
-          // list as the raw materials, so it is marked to be findable.
-          label: `${i.name} (${i.unit})${i.is_produced ? " — ساخت داخلی" : ""}`,
-          searchString: [i.name, i.sku, i.unit].filter(Boolean).join(" "),
-        })),
-    ];
-  }, [items]);
 
   const modifierOptions = useMemo(() => {
     return [
