@@ -49,7 +49,13 @@ const TASK_ICONS: Record<AiTaskId, LucideIcon> = {
   custom: PenLineIcon,
 };
 
-export function TaskIcon({ id, className }: { id: AiTaskId; className?: string }) {
+export function TaskIcon({
+  id,
+  className,
+}: {
+  id: AiTaskId;
+  className?: string;
+}) {
   const Icon = TASK_ICONS[id] ?? SparklesIcon;
   return <Icon className={className} />;
 }
@@ -81,8 +87,12 @@ export function AiTaskSelector({
   const available = AI_TASKS.filter((item) => item.modes.includes(mode));
   const current =
     task === "custom" && customTask
-      ? { id: "custom" as AiTaskId, label: "وظیفهٔ سفارشی", description: customTask }
-      : taskById(task) ?? taskById("general")!;
+      ? {
+          id: "custom" as AiTaskId,
+          label: "وظیفهٔ سفارشی",
+          description: customTask,
+        }
+      : (taskById(task) ?? taskById("general")!);
 
   return (
     <DropdownMenu
@@ -99,9 +109,12 @@ export function AiTaskSelector({
           disabled={disabled}
           aria-label={`وظیفهٔ دستیار: ${current.label}`}
           title={current.description}
-          className="flex max-w-44 items-center gap-1.5 rounded-full border border-stone-200/80 bg-background px-2.5 py-1.5 text-[11px] font-medium text-foreground/80 transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-60 dark:border-stone-700/60"
+          className="flex max-w-44 items-center gap-1.5 rounded-full border border-stone-200/80 bg-background px-2.5 py-1.5 text-[11px] font-medium text-foreground/80 transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-60 dark:border-stone-700/60 outline-none focus-visible:ring focus-visible:ring-ring/50"
         >
-          <TaskIcon id={current.id} className="size-3.5 shrink-0 text-primary" />
+          <TaskIcon
+            id={current.id}
+            className="size-3.5 shrink-0 text-primary"
+          />
           <span className="truncate">{current.label}</span>
           <ChevronsUpDownIcon className="size-3 shrink-0 text-muted-foreground" />
         </button>
@@ -159,7 +172,7 @@ export function AiTaskSelector({
                   setCustomOpen(false);
                   setDraft("");
                 }}
-                className="rounded-md px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
+                className="rounded-md px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground outline-none focus-visible:ring focus-visible:ring-ring/50"
               >
                 انصراف
               </button>

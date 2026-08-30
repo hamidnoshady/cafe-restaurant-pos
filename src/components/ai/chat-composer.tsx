@@ -11,7 +11,13 @@
  * breaks the line.
  */
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowUpIcon, FileTextIcon, ImageIcon, PlusIcon, XIcon } from "lucide-react";
+import {
+  ArrowUpIcon,
+  FileTextIcon,
+  ImageIcon,
+  PlusIcon,
+  XIcon,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -103,8 +109,10 @@ export function ChatComposer({
   function onDrop(event: React.DragEvent<HTMLDivElement>) {
     event.preventDefault();
     setDragOver(false);
-    const files = Array.from(event.dataTransfer.files).filter((file) =>
-      /^image\/(jpeg|png|webp)$/.test(file.type) || file.type === "application/pdf",
+    const files = Array.from(event.dataTransfer.files).filter(
+      (file) =>
+        /^image\/(jpeg|png|webp)$/.test(file.type) ||
+        file.type === "application/pdf",
     );
     if (files.length > 0) onAttachFiles(files);
   }
@@ -142,7 +150,7 @@ export function ChatComposer({
                 type="button"
                 onClick={() => onClearAttachment(attachment.id)}
                 aria-label={`حذف پیوست ${attachment.name}`}
-                className="absolute end-1.5 top-1/2 grid size-5 -translate-y-1/2 place-items-center rounded-full text-muted-foreground opacity-0 transition-opacity hover:bg-background hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100"
+                className="absolute end-1.5 top-1/2 grid size-5 -translate-y-1/2 place-items-center rounded-full text-muted-foreground opacity-0 transition-opacity hover:bg-background hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100 outline-none focus-visible:ring focus-visible:ring-ring/50"
               >
                 <XIcon className="size-3" />
               </button>
@@ -200,7 +208,9 @@ export function ChatComposer({
                 multiple
                 className="hidden"
                 onChange={(event) => {
-                  const files = event.target.files ? Array.from(event.target.files) : [];
+                  const files = event.target.files
+                    ? Array.from(event.target.files)
+                    : [];
                   if (files.length > 0) onAttachFiles(files);
                   event.target.value = "";
                 }}
@@ -212,7 +222,9 @@ export function ChatComposer({
                 multiple
                 className="hidden"
                 onChange={(event) => {
-                  const files = event.target.files ? Array.from(event.target.files) : [];
+                  const files = event.target.files
+                    ? Array.from(event.target.files)
+                    : [];
                   if (files.length > 0) onAttachFiles(files);
                   event.target.value = "";
                 }}
@@ -231,7 +243,11 @@ export function ChatComposer({
                     <PlusIcon />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" side="top" className="w-60 p-1.5">
+                <DropdownMenuContent
+                  align="start"
+                  side="top"
+                  className="w-60 p-1.5"
+                >
                   <DropdownMenuItem
                     onClick={() => imageInputRef.current?.click()}
                     className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-2"
@@ -240,7 +256,9 @@ export function ChatComposer({
                       <ImageIcon className="size-4" />
                     </span>
                     <span>
-                      <span className="block text-xs font-semibold">تصویر فاکتور / رسید</span>
+                      <span className="block text-xs font-semibold">
+                        تصویر فاکتور / رسید
+                      </span>
                       <span className="block text-[10px] text-muted-foreground">
                         JPG، PNG یا WebP — حداکثر ۵ مگابایت
                       </span>
@@ -254,7 +272,9 @@ export function ChatComposer({
                       <FileTextIcon className="size-4" />
                     </span>
                     <span>
-                      <span className="block text-xs font-semibold">سند PDF</span>
+                      <span className="block text-xs font-semibold">
+                        سند PDF
+                      </span>
                       <span className="block text-[10px] text-muted-foreground">
                         متن سند خوانده می‌شود — حداکثر ۱۰ مگابایت
                       </span>
@@ -286,8 +306,15 @@ export function ChatComposer({
 
           <div className="flex-1" />
 
-          <span className="hidden text-[10px] text-muted-foreground/70 sm:block" aria-hidden="true">
-            {input.trim() ? (busy ? "در حال پاسخ‌گویی…" : "Enter برای ارسال") : "پیوست با آیکون + یا کشیدن فایل"}
+          <span
+            className="hidden text-[10px] text-muted-foreground/70 sm:block"
+            aria-hidden="true"
+          >
+            {input.trim()
+              ? busy
+                ? "در حال پاسخ‌گویی…"
+                : "Enter برای ارسال"
+              : "پیوست با آیکون + یا کشیدن فایل"}
           </span>
 
           <Button
