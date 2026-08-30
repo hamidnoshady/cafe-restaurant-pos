@@ -1,0 +1,354 @@
+import { describe, expect, it } from "vitest";
+import {
+  classifyWooProductType,
+  inferWooProductType,
+  isSellableWooProduct,
+  isWooAttributeTaxonomy,
+  planWooCatalogueWrite,
+  resolveWooOrderLine,
+  sortWooTerms,
+  wooAttributeSlug,
+  wooLineCandidateIds,
+  wooLineParentFallback,
+  wooProductShape,
+  wooTaxonomyLabel,
+  wooTermPath,
+  wooUpdatePath,
+  wooVariationAttributes,
+  wooVariationDisplayName,
+} from "./woo-catalogue";
+import type { WooOrderLineItem, WooProduct } from "./woocommerce-client";
+
+function line(overrides: Partial<WooOrderLineItem> = {}): WooOrderLineItem {
+  return {
+    id: 1,
+    name: "تی‌شرت",
+    product_id: 10,
+    quantity: 1,
+    price: "100",
+    total: "100",
+    ...overrides,
+  };
+}
+
+function product(overrides: Partial<WooProduct> = {}): WooProduct {
+  return {
+    id: 1,
+    type: "simple",
+    name: "تی‌شرت",
+    sku: "TS-1",
+    price: "100",
+    regular_price: "100",
+    manage_stock: true,
+    stock_quantity: 5,
+    stock_status: "instock",
+    status: "publish",
+    ...overrides,
+  };
+}
+
+describe("classifyWooProductType", () => {
+  it("names every core WooCommerce type", () => {
+    expect(classifyWooProductType("simple")).toBe("simple");
+    expect(classifyWooProductType("variable")).toBe("variable");
+    expect(classifyWooProductType("variation")).toBe("variation");
+    expect(classifyWooProductType("grouped")).toBe("grouped");
+    expect(classifyWooProductType("external")).toBe("external");
+  });
+
+  it("is case- and whitespace-insensitive, because WooCommerce is not consistent", () => {
+    expect(classifyWooProductType("  Variable ")).toBe("variable");
+    expect(classifyWooProductType("VARIATION")).toBe("variation");
+  });
+
+  it("folds the extension aliases onto the shape they behave like", () => {
+    expect(classifyWooProductType("affiliate")).toBe("external");
+    expect(classifyWooProductType("yith_bundle")).toBe("bundle");
+    expect(classifyWooProductType("variable-subscription")).toBe("variable");
+    expect(classifyWooProductType("subscription_variation")).toBe("variation");
+  });
+
+  it("returns unknown rather than throwing for a type it has never heard of", () => {
+    expect(classifyWooProductType("woosb")).toBe("unknown");
+    expect(classifyWooProductType("")).toBe("unknown");
+    expect(classifyWooProductType(undefined)).toBe("unknown");
+  });
+});
+
+describe("wooProductShape", () => {
+  it("treats a variable product as an unsellable container", () => {
+    const shape = wooProductShape("variable");
+    expect(shape.sellable).toBe(false);
+    expect(shape.container).toBe(true);
+    expect(shape.itemKind).toBe("variant_parent");
+    expect(shape.stockTracked).toBe(false);
+  });
+
+  it("treats a variation as the sellable unit", () => {
+    const shape = wooProductShape("variation");
+    expect(shape.sellable).toBe(true);
+    expect(shape.container).toBe(false);
+    expect(shape.itemKind).toBe("variant_child");
+    expect(shape.stockTracked).toBe(true);
+  });
+
+  it("sells an external product but never tracks stock for it", () => {
+    const shape = wooProductShape("external");
+    expect(shape.sellable).toBe(true);
+    expect(shape.stockTracked).toBe(false);
+  });
+
+  it("defaults an unrecognised type to sellable simple, never to skipped", () => {
+    // The alternative is dropping the product from the catalogue entirely,
+    // which is a worse answer for a shop running an extension we don't know.
+    expect(wooProductShape("woosb")).toMatchObject({ sellable: true, itemKind: "simple" });
+  });
+});
+
+describe("inferWooProductType", () => {
+  it("trusts the declared type when it is one it knows", () => {
+    expect(inferWooProductType({ type: "variable", parent_id: 7 })).toBe("variable");
+  });
+
+  it("reads a missing type from parent_id — the one inference that is always safe", () => {
+    expect(inferWooProductType({ parent_id: 7 })).toBe("variation");
+    expect(inferWooProductType({ type: "", parent_id: 7 })).toBe("variation");
+  });
+
+  it("falls back to unknown for an orphan with no type", () => {
+    expect(inferWooProductType({})).toBe("unknown");
+  });
+
+  it("decides sellability from the inferred type", () => {
+    expect(isSellableWooProduct({ type: "variable" })).toBe(false);
+    expect(isSellableWooProduct({ type: "variation" })).toBe(true);
+    expect(isSellableWooProduct({ type: "grouped" })).toBe(false);
+    expect(isSellableWooProduct({ parent_id: 3 })).toBe(true);
+  });
+});
+
+describe("resolveWooOrderLine", () => {
+  it("prefers variation_id — the row that actually carries the stock", () => {
+    // This is the whole fix: the old code read product_id, which on a
+    // variation line is the *parent*, and the parent is a container with no
+    // stock row. Revenue posted; stock and COGS vanished.
+    expect(resolveWooOrderLine(line({ product_id: 10, variation_id: 42 }))).toEqual({
+      remoteId: "42",
+      via: "variation",
+      variationId: 42,
+      productId: 10,
+    });
+  });
+
+  it("uses product_id for a simple product line", () => {
+    expect(resolveWooOrderLine(line({ product_id: 10, variation_id: 0 }))).toEqual({
+      remoteId: "10",
+      via: "product",
+      productId: 10,
+    });
+  });
+
+  it("tolerates a variation_id that arrived as a string", () => {
+    // The plugin serialises through JSON; WooCommerce is not strict about
+    // numeric types across REST versions.
+    expect(resolveWooOrderLine(line({ product_id: 10, variation_id: "42" as unknown as number }))).toMatchObject({
+      remoteId: "42",
+      via: "variation",
+    });
+  });
+
+  it("ignores a variation_id equal to the product_id", () => {
+    expect(resolveWooOrderLine(line({ product_id: 10, variation_id: 10 }))).toMatchObject({
+      remoteId: "10",
+      via: "product",
+    });
+  });
+
+  it("reports a line with nothing to resolve rather than resolving to 0", () => {
+    expect(resolveWooOrderLine(line({ product_id: 0, variation_id: 0 }))).toEqual({ remoteId: null, via: "none" });
+  });
+});
+
+describe("wooLineCandidateIds", () => {
+  it("lists the variation before the parent, deduped", () => {
+    expect(wooLineCandidateIds(line({ product_id: 10, variation_id: 42 }))).toEqual(["42", "10"]);
+    expect(wooLineCandidateIds(line({ product_id: 10, variation_id: 10 }))).toEqual(["10"]);
+  });
+
+  it("names the parent as the fallback for an unmapped variation", () => {
+    expect(wooLineParentFallback(line({ product_id: 10, variation_id: 42 }))).toBe("10");
+    expect(wooLineParentFallback(line({ product_id: 10 }))).toBeNull();
+  });
+});
+
+describe("variation naming", () => {
+  it("renders a variation as its parent plus its attributes", () => {
+    expect(
+      wooVariationDisplayName("تی‌شرت", [
+        { name: "رنگ", option: "قرمز" },
+        { name: "سایز", option: "L" },
+      ]),
+    ).toBe("تی‌شرت • رنگ: قرمز، سایز: L");
+  });
+
+  it("returns the bare parent name when there are no attributes", () => {
+    expect(wooVariationDisplayName("تی‌شرت", [])).toBe("تی‌شرت");
+    expect(wooVariationDisplayName("تی‌شرت", undefined)).toBe("تی‌شرت");
+  });
+
+  it("skips an attribute with a missing half rather than printing a dangling colon", () => {
+    expect(wooVariationDisplayName("تی‌شرت", [{ name: "رنگ", option: "" }])).toBe("تی‌شرت");
+  });
+});
+
+describe("wooVariationAttributes", () => {
+  it("reads the normalised shape the plugin sends", () => {
+    expect(wooVariationAttributes({ variation_attributes: [{ name: "رنگ", option: "قرمز" }] })).toEqual([
+      { name: "رنگ", option: "قرمز" },
+    ]);
+  });
+
+  it("reads a variation resource's attributes array", () => {
+    expect(wooVariationAttributes({ attributes: [{ name: "رنگ", option: "آبی" }] })).toEqual([
+      { name: "رنگ", option: "آبی" },
+    ]);
+  });
+
+  it("reads attribute_* meta_data, the shape a raw order line carries", () => {
+    expect(
+      wooVariationAttributes({
+        meta_data: [
+          { key: "attribute_pa_colour", value: "قرمز" },
+          { key: "attribute_size", value: "L" },
+          { key: "_reduced_stock", value: "2" },
+        ],
+      }),
+    ).toEqual([
+      { name: "pa_colour", option: "قرمز" },
+      { name: "size", option: "L" },
+    ]);
+  });
+
+  it("strips the attribute_ prefix from a raw key", () => {
+    expect(wooAttributeSlug("attribute_pa_colour")).toBe("pa_colour");
+    expect(wooAttributeSlug("colour")).toBe("colour");
+  });
+});
+
+describe("taxonomies", () => {
+  it("labels the built-ins in Persian and derives a label for an attribute", () => {
+    expect(wooTaxonomyLabel("product_cat")).toBe("دسته‌بندی‌ها");
+    expect(wooTaxonomyLabel("pa_colour")).toBe("ویژگی: colour");
+    expect(wooTaxonomyLabel("brand")).toBe("brand");
+  });
+
+  it("recognises an attribute taxonomy by its pa_ prefix", () => {
+    expect(isWooAttributeTaxonomy("pa_colour")).toBe(true);
+    expect(isWooAttributeTaxonomy("product_cat")).toBe(false);
+  });
+
+  it("renders a term's path through its tree", () => {
+    const byId = new Map([
+      ["1", { remoteId: "1", parentRemoteId: null, name: "پوشاک" }],
+      ["2", { remoteId: "2", parentRemoteId: "1", name: "تی‌شرت" }],
+      ["3", { remoteId: "3", parentRemoteId: "2", name: "یقه‌دار" }],
+    ]);
+    expect(wooTermPath(byId.get("3")!, byId)).toBe("پوشاک › تی‌شرت › یقه‌دار");
+  });
+
+  it("terminates instead of hanging when a store has made a term its own ancestor", () => {
+    // A bad import can do this. The guarantee worth testing is that it
+    // returns — a term whose parent chain loops would otherwise spin forever
+    // while rendering the taxonomy browser.
+    const byId = new Map([
+      ["1", { remoteId: "1", parentRemoteId: "2", name: "الف" }],
+      ["2", { remoteId: "2", parentRemoteId: "1", name: "ب" }],
+    ]);
+    const path = wooTermPath(byId.get("1")!, byId);
+    expect(path).toContain("الف");
+    expect(path).toContain("ب");
+    expect(path.split("›")).toHaveLength(2);
+  });
+
+  it("sorts a flat list into tree order — parents first, siblings by menu_order", () => {
+    const terms = [
+      { remoteId: "3", parentRemoteId: "1", name: "یقه‌دار", menuOrder: 1 },
+      { remoteId: "2", parentRemoteId: "1", name: "آستین‌کوتاه", menuOrder: 0 },
+      { remoteId: "1", parentRemoteId: null, name: "تی‌شرت", menuOrder: 0 },
+    ];
+    expect(sortWooTerms(terms).map((t) => t.remoteId)).toEqual(["1", "2", "3"]);
+  });
+
+  it("breaks a menu_order tie by name", () => {
+    const terms = [
+      { remoteId: "2", parentRemoteId: null, name: "ب", menuOrder: 0 },
+      { remoteId: "1", parentRemoteId: null, name: "الف", menuOrder: 0 },
+    ];
+    expect(sortWooTerms(terms).map((t) => t.remoteId)).toEqual(["1", "2"]);
+  });
+});
+
+describe("planWooCatalogueWrite", () => {
+  it("writes containers before the variations that need them", () => {
+    const parent = product({ id: 5, type: "variable" });
+    const child = product({ id: 6, type: "variation", parent_id: 5 });
+    const plan = planWooCatalogueWrite([child, parent]);
+    expect(plan.containers.map((p) => p.id)).toEqual([5]);
+    expect(plan.sellables.map((p) => p.id)).toEqual([6]);
+  });
+
+  it("writes a variation whose parent is not in this batch straight away", () => {
+    // Its parent had to have been written by an earlier page, or the mapping
+    // lookup fails and the product is retried next run — the pre-Phase-38
+    // behaviour, kept only for the case where it is genuinely true.
+    const child = product({ id: 6, type: "variation", parent_id: 99 });
+    const plan = planWooCatalogueWrite([child]);
+    expect(plan.containers.map((p) => p.id)).toEqual([6]);
+    expect(plan.sellables).toHaveLength(0);
+  });
+
+  it("keeps simple products in the first pass alongside the containers", () => {
+    const plan = planWooCatalogueWrite([
+      product({ id: 1, type: "simple" }),
+      product({ id: 5, type: "variable" }),
+      product({ id: 6, type: "variation", parent_id: 5 }),
+    ]);
+    expect(plan.containers.map((p) => p.id)).toEqual([5, 1]);
+    expect(plan.sellables.map((p) => p.id)).toEqual([6]);
+  });
+
+  it("treats a grouped product as a container but does not re-parent its members", () => {
+    const group = product({ id: 8, type: "grouped", grouped_products: [1, 2] });
+    const plan = planWooCatalogueWrite([group, product({ id: 1, type: "simple" })]);
+    expect(plan.containers.map((p) => p.id)).toEqual([8, 1]);
+    expect(plan.sellables).toHaveLength(0);
+  });
+
+  it("skips nothing, because every type now has an answer", () => {
+    const plan = planWooCatalogueWrite([
+      product({ id: 1, type: "simple" }),
+      product({ id: 2, type: "external" }),
+      product({ id: 3, type: "bundle" }),
+      product({ id: 4, type: "mystery-extension-type" }),
+      product({ id: 5, type: "variable" }),
+      product({ id: 6, type: "variation", parent_id: 5 }),
+      product({ id: 7, type: "grouped" }),
+    ]);
+    expect(plan.skipped).toHaveLength(0);
+    expect(plan.containers.length + plan.sellables.length).toBe(7);
+  });
+});
+
+describe("wooUpdatePath", () => {
+  it("sends a variation's update to the nested endpoint", () => {
+    // products/{id} with a variation id is a 404. The old outbox retried it
+    // six times and dead-lettered, which is why stock pushes to variations
+    // never landed.
+    expect(wooUpdatePath("42", "10")).toBe("products/10/variations/42");
+  });
+
+  it("sends a plain product's update to the flat endpoint", () => {
+    expect(wooUpdatePath("10", null)).toBe("products/10");
+    expect(wooUpdatePath("10")).toBe("products/10");
+  });
+});

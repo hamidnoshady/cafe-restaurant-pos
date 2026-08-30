@@ -8,6 +8,7 @@ import { OperationsOverview } from "../operations-overview";
 import { RetailOverview } from "../retail-overview";
 import { PinnedReports } from "../pinned-reports";
 import { SetupBanner } from "../setup-banner";
+import { KnowledgeHelpButton } from "../knowledge-help";
 import { PageHeader, PageShell } from "../page-chrome";
 
 const BACKUP_ALERT_LABELS: Record<string, string> = {
@@ -52,7 +53,12 @@ export function DashboardOverview({
       {!hasOperationalOverview && !isRetail ? (
         <PageHeader
           title="داشبورد"
-          actions={<p className="text-sm text-muted-foreground">امروز: {today}</p>}
+          actions={
+            <>
+              <p className="text-sm text-muted-foreground">امروز: {today}</p>
+              <KnowledgeHelpButton section="overview" />
+            </>
+          }
         />
       ) : null}
 

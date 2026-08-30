@@ -1,63 +1,39 @@
 "use client";
 
 /**
- * AI Hub Wave 5 (issue #145) — the composer's three icons, shared by the
- * floating launcher and the full-page hub so the two never drift: attach a
- * receipt/invoice image (dashboard mode only), search restricted to this
- * business's own reports and the caller's own past conversations (replacing
- * a general "web" icon per Phase 18b's own out-of-scope decision), and a
- * per-message "allow action" toggle (client/prompt-only, no architecture
- * change — the confirm-before-apply flow is unaffected either way).
+ * AI Hub Wave 5 (issue #145) — the composer's message-level tools, shared by
+ * the floating launcher and the full-page hub so the two never drift: search
+ * restricted to this business's own reports and the caller's own past
+ * conversations (replacing a general "web" icon per Phase 18b's own
+ * out-of-scope decision), and a per-message "allow action" toggle
+ * (client/prompt-only, no architecture change — the confirm-before-apply flow
+ * is unaffected either way).
+ *
+ * Phase 36c — uploading moved to the composer's own + menu; these are the two
+ * that configure the *message* itself.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   BarChart3Icon,
   Loader2Icon,
   MessageSquareIcon,
-  PaperclipIcon,
   SearchIcon,
   SettingsIcon,
-  XIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import type { AssistantMode, ChatAttachment } from "./use-ai-chat";
+import type { AssistantMode } from "./use-ai-chat";
 
 interface SearchResponse {
   conversations?: { id: string; title: string }[];
   reports?: { key: string; label: string }[];
 }
 
-export function AiAttachmentChip({
-  attachment,
-  onClear,
-}: {
-  attachment: ChatAttachment | null;
-  onClear: () => void;
-}) {
-  if (!attachment) return null;
-  return (
-    <div className="mb-2 flex items-center gap-2 rounded-lg border bg-muted/40 px-2.5 py-1.5 text-xs">
-      <PaperclipIcon className="size-3.5 shrink-0 text-muted-foreground" />
-      <span className="min-w-0 flex-1 truncate">{attachment.name}</span>
-      <button
-        type="button"
-        onClick={onClear}
-        aria-label="حذف پیوست"
-        className="shrink-0 text-muted-foreground hover:text-foreground"
-      >
-        <XIcon className="size-3.5" />
-      </button>
-    </div>
-  );
-}
-
 export function AiComposerTools({
   mode,
   canPropose,
   disabled,
-  onAttach,
   actionsAllowed,
   onActionsAllowedChange,
   onSelectConversation,
@@ -66,13 +42,11 @@ export function AiComposerTools({
   mode: AssistantMode;
   canPropose: boolean;
   disabled?: boolean;
-  onAttach: (file: File) => void;
   actionsAllowed: boolean;
   onActionsAllowedChange: (allowed: boolean) => void;
   onSelectConversation: (id: string) => void;
   onSelectReportPrompt: (prompt: string) => void;
 }) {
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResponse | null>(null);
   const [searching, setSearching] = useState(false);
@@ -101,34 +75,7 @@ export function AiComposerTools({
     !searching && query.trim() && results && !results.conversations?.length && !results.reports?.length;
 
   return (
-    <div className="flex items-center gap-1">
-      {mode === "dashboard" ? (
-        <>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/png,image/jpeg,image/webp"
-            className="hidden"
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (file) onAttach(file);
-              event.target.value = "";
-            }}
-          />
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            disabled={disabled}
-            onClick={() => fileInputRef.current?.click()}
-            aria-label="پیوست تصویر فاکتور/رسید"
-            title="پیوست فاکتور/رسید برای پیش‌نویس هزینه"
-          >
-            <PaperclipIcon />
-          </Button>
-        </>
-      ) : null}
-
+    <div className="flex items-center gap-0.5">
       {canPropose ? (
         <DropdownMenu
           onOpenChange={(open) => {
@@ -146,11 +93,12 @@ export function AiComposerTools({
               disabled={disabled}
               aria-label="جست‌وجو در گزارش‌ها و گفتگوهای قبلی"
               title="جست‌وجو در گزارش‌ها و گفتگوهای قبلی همین کسب‌وکار"
+              className="rounded-full text-muted-foreground hover:text-foreground"
             >
               <SearchIcon />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-72 p-2">
+          <DropdownMenuContent align="start" side="top" className="w-72 p-2">
             <input
               autoFocus
               value={query}
@@ -211,11 +159,12 @@ export function AiComposerTools({
               disabled={disabled}
               aria-label="تنظیمات این پیام"
               title="تنظیمات این پیام"
+              className="rounded-full text-muted-foreground hover:text-foreground"
             >
               <SettingsIcon />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-64 p-2.5">
+          <DropdownMenuContent align="start" side="top" className="w-64 p-2.5">
             <label className="flex items-center justify-between gap-2 text-xs">
               <span className="leading-5">
                 اجازهٔ اقدام در این پیام

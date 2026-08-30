@@ -11,6 +11,8 @@ export type MappingEntityType =
   | "customer"
   | "order"
   | "refund"
+  // Phase 38 — a WooCommerce product_cat term bridged into `menu_categories`.
+  | "category"
   // Phase 26 — Holoo entity kinds (Waves 3–8). See migrations/0104.
   | "holoo_goods"
   | "holoo_customer"
@@ -78,6 +80,46 @@ export async function listMappings(
     localId: r.local_id,
     lastPushedPayload: r.last_pushed_payload,
   }));
+}
+
+/**
+ * Merge a few keys into a mapping's metadata without discarding the rest.
+ *
+ * Needed because `last_pushed_payload` carries two different things: the
+ * value last pushed to the store (stock, price) and facts about the remote
+ * object itself — a variation's parent id, without which a later push goes to
+ * `products/{variation}` and 404s. `setLastPushedPayload` replaces wholesale,
+ * which would let a stock push silently erase the parent id.
+ */
+export async function mergeMappingMeta(
+  businessId: string,
+  connectionId: string,
+  entityType: MappingEntityType,
+  remoteId: string,
+  patch: Record<string, unknown>,
+): Promise<void> {
+  await query(
+    `UPDATE integration_mappings
+        SET last_pushed_payload = COALESCE(last_pushed_payload, '{}'::jsonb) || $5::jsonb,
+            updated_at = now()
+      WHERE business_id = $1 AND connection_id = $2 AND entity_type = $3 AND remote_id = $4`,
+    [businessId, connectionId, entityType, remoteId, JSON.stringify(patch)],
+  );
+}
+
+/** Reads a mapping's metadata, or an empty object when there is none. */
+export async function mappingMeta(
+  businessId: string,
+  connectionId: string,
+  entityType: MappingEntityType,
+  remoteId: string,
+): Promise<Record<string, unknown>> {
+  const { rows } = await query<{ last_pushed_payload: Record<string, unknown> | null }>(
+    `SELECT last_pushed_payload FROM integration_mappings
+      WHERE business_id = $1 AND connection_id = $2 AND entity_type = $3 AND remote_id = $4`,
+    [businessId, connectionId, entityType, remoteId],
+  );
+  return rows[0]?.last_pushed_payload ?? {};
 }
 
 /** Records the value that was last successfully pushed to the store. */

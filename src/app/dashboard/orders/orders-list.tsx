@@ -24,6 +24,7 @@ import {
 } from "@/lib/modifier-display";
 import { ModifierBadges } from "../modifier-badges";
 import { useRealtime } from "../use-realtime";
+import { KnowledgeHelpButton } from "../knowledge-help";
 import { PageShell } from "../page-chrome";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { JalaliDatePicker } from "../jalali-date-picker";
@@ -823,6 +824,7 @@ export function OrdersList({
           </div>
         </div>
         <div className="flex items-center justify-between gap-2 md:justify-end">
+          <KnowledgeHelpButton section="orders" />
           <span
             className="text-xs text-stone-500"
             role="status"

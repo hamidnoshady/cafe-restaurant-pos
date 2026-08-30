@@ -366,13 +366,39 @@ function toProposedAction(args: Record<string, unknown>): ProposedAction | null 
 }
 
 /**
- * A receipt/invoice image attached to one turn only (Wave 5, issue #145). The
- * data URL is never persisted anywhere — not to the conversation transcript,
- * not to any table or object storage — it is used for exactly one isolated
- * provider call and then discarded.
+ * A file attached to one turn only (Wave 5, issue #145, extended to PDFs).
+ * Nothing here is ever persisted — not to the conversation transcript, not to
+ * any table or object storage. An image is used for exactly one isolated
+ * vision call; a PDF has its text extracted server-side and travels inline.
+ * `kind` is optional so callers predating the PDF extension keep working —
+ * it is derived from the data URL when absent.
  */
 export interface ChatAttachment {
-  dataUrl: string;
+  kind?: "image" | "pdf";
+  dataUrl?: string;
+  /** PDF only — the extracted text layer, ready to hand to the model. */
+  extractedText?: string | null;
+  /** PDF only — the extraction hit MAX_PDF_TEXT_CHARS. */
+  truncated?: boolean;
+  name?: string;
+}
+
+/** Derives the kind for legacy attachments that only carry a data URL. */
+export function attachmentKind(attachment: ChatAttachment): "image" | "pdf" {
+  if (attachment.kind) return attachment.kind;
+  return attachment.dataUrl?.startsWith("data:application/pdf") ? "pdf" : "image";
+}
+
+/** Normalizes the legacy single-attachment option into the attachment list. */
+function normalizeAttachments(
+  attachments: ChatAttachment[] | undefined,
+  legacy: ChatAttachment | undefined,
+): ChatAttachment[] {
+  const list = attachments && attachments.length > 0 ? attachments : legacy ? [legacy] : [];
+  return list.map((attachment) => ({
+    ...attachment,
+    kind: attachmentKind(attachment),
+  }));
 }
 
 interface ReceiptExtractionResult {
@@ -502,6 +528,8 @@ function traceOf(name: string, args: Record<string, unknown>): AgentToolCallTrac
   messages: InboundMessage[];
   /** Wave 5 (issue #145) — a receipt/invoice image attached to this turn only. */
   attachment?: ChatAttachment;
+  /** Wave 5 extension — one or more attachments (images and/or PDFs). */
+  attachments?: ChatAttachment[];
   /**
    * Wave 5 (issue #145) — the composer's "allow action in this message"
    * toggle. Only drops propose_action from this turn's own tool list; no
@@ -516,9 +544,10 @@ function traceOf(name: string, args: Record<string, unknown>): AgentToolCallTrac
    */
   actionTypes?: ActionType[];
 }): Promise<AgentReply> {
-  const { config, mode, businessId, floorScope, promptContext, messages, attachment } = opts;
+  const { config, mode, businessId, floorScope, promptContext, messages } = opts;
   const allowActions = opts.allowActions ?? true;
-  const hasAttachment = Boolean(attachment);
+  const attachments = normalizeAttachments(opts.attachments, opts.attachment);
+  const hasAttachment = attachments.length > 0;
 
   // Phase 36 Wave 6 — the retrieval tool is declared only when the whole chain
   // can actually serve it: pgvector + the 0113 table (isRetrievalAvailable)
@@ -586,10 +615,16 @@ function traceOf(name: string, args: Record<string, unknown>): AgentToolCallTrac
       let result: ToolResult;
       const callArgs = parseArgs(call.function.arguments);
       if (call.function.name === "draft_expense_from_receipt" && allowedReadToolNames.has(call.function.name)) {
-        if (!attachment) {
-          result = { ok: false, data: { error: "پیوستی برای این پیام وجود ندارد." } };
-        } else {
-          const extraction = await extractReceiptDraft(config, attachment.dataUrl);
+        // Images still go through the isolated vision call. A PDF's text was
+        // already extracted by the route and travels here — the model reads
+        // the same structured draft out of it, and the same
+        // "check before you propose" note applies.
+        const image = attachments.find((item) => item.kind === "image" && item.dataUrl);
+        const pdf = attachments.find(
+          (item) => item.kind === "pdf" && typeof item.extractedText === "string" && item.extractedText,
+        );
+        if (image) {
+          const extraction = await extractReceiptDraft(config, image.dataUrl!);
           usage.inputTokens += extraction.usage.inputTokens;
           usage.outputTokens += extraction.usage.outputTokens;
           result = extraction.fields
@@ -601,6 +636,25 @@ function traceOf(name: string, args: Record<string, unknown>): AgentToolCallTrac
                 },
               }
             : { ok: false, data: { error: "استخراج اطلاعات از تصویر پیوست ممکن نشد؛ می‌توانی مقادیر را از کاربر بپرسی." } };
+        } else if (pdf) {
+          result = {
+            ok: true,
+            data: {
+              source: "pdf",
+              receiptText: pdf.extractedText,
+              note: "این متن از سند PDF استخراج شده است؛ مبالغ و تاریخ را از داخل همین متن بخوان، هرگز عددی حدس نزن و پیش از پیشنهاد نهایی مقادیر را با کاربر چک کن.",
+            },
+          };
+        } else if (attachments.some((item) => item.kind === "pdf")) {
+          result = {
+            ok: false,
+            data: {
+              error:
+                "سند PDF پیوست متن قابل استخراج نداشت (احتمالاً اسکن تصویری است)؛ این را به کاربر بگو و مقادیر را از او بپرس.",
+            },
+          };
+        } else {
+          result = { ok: false, data: { error: "پیوستی برای این پیام وجود ندارد." } };
         }
       } else if (
         call.function.name === KNOWLEDGE_TOOL_NAME &&

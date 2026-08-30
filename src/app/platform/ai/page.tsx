@@ -194,16 +194,7 @@ export default function PlatformAiPage() {
   const totalRevenue = costing.reduce((total, row) => total + row.revenueRial30d, 0);
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-4 sm:space-y-6">
-      <header>
-        <h1 className="text-xl font-bold">مدیریت هوش مصنوعی</h1>
-        <p className="mt-1 text-sm text-white/50">
-          اتصال واحد سرویس، هزینه و حاشیهٔ درآمد، اعتبار کسب‌وکارها، اشتراک‌ها و درخواست‌های شارژ.
-          مدیریت پرامپت‌ها در بخش <a className="underline" href="/platform/ai/prompts">پرامپت‌ها</a> و تنظیمات
-          دروازهٔ مدل (LiteLLM) در بخش <a className="underline" href="/platform/ai/gateway">دروازهٔ مدل</a> است.
-        </p>
-      </header>
-
+    <div className="space-y-4 sm:space-y-6">
       <ErrorBox>{error}</ErrorBox>
       {notice ? <InfoBox>{notice}</InfoBox> : null}
 

@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { requireIndustryForPage } from "@/lib/industry-guard";
 import { PageHeader, PageShell } from "../page-chrome";
+import { KnowledgeHelpButton } from "../knowledge-help";
 import { WatchManager } from "./watch-manager";
 
 export default async function WatchPage() {
@@ -15,6 +16,7 @@ export default async function WatchPage() {
       <PageHeader
         title="ساعت"
         description="مدل‌ها و دستگاه‌های سریال‌دار، فروش با گارانتی، و تیکت‌های تعمیر."
+        actions={<KnowledgeHelpButton section="watch" />}
       />
       <WatchManager />
     </PageShell>

@@ -1,0 +1,85 @@
+import { NextRequest, NextResponse } from "next/server";
+import { requirePermission, withTenantScope } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
+import { listCases, upsertCase } from "@/lib/crm-service";
+import {
+  isCasePriority,
+  isCaseStatus,
+  type CasePriority,
+  type CaseStatus,
+} from "@/lib/crm-shared";
+
+/**
+ * Service cases — complaints and requests (Phase 36).
+ *
+ * Floor-accessible on purpose. The person who hears the complaint is the person
+ * at the counter, and a service desk a cashier cannot open is a service desk
+ * that never gets used: the complaint stays in someone's head and the customer
+ * never hears back.
+ *
+ * Priority drives a target response time (`CASE_PRIORITY_TARGET_HOURS`), not a
+ * contractual SLA — a café signs none. It exists so «کدام شکایت معطل مانده؟»
+ * has an answer that does not require reading every ticket.
+ */
+export const GET = withTenantScope(async (request: NextRequest) => {
+  const { session, error } = await requirePermission(PERMISSIONS.customersView);
+  if (error) return error;
+
+  const search = request.nextUrl.searchParams;
+  const status = search.get("status");
+  const cases = await listCases(session.businessId, {
+    customerId: search.get("customerId") ?? undefined,
+    status: status && isCaseStatus(status) ? (status as CaseStatus) : undefined,
+    openOnly: search.get("open") === "1",
+  });
+  return NextResponse.json({ cases });
+});
+
+interface CaseBody {
+  id?: string;
+  customerId?: string | null;
+  subject?: string;
+  body?: string;
+  status?: string;
+  priority?: string;
+  category?: string;
+  orderId?: string | null;
+  assignedTo?: string;
+  resolution?: string;
+}
+
+export const POST = withTenantScope(async (request: NextRequest) => {
+  const { session, error } = await requirePermission(PERMISSIONS.customersManage);
+  if (error) return error;
+
+  let body: CaseBody;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "bad_request" }, { status: 400 });
+  }
+
+  const subject = body.subject?.trim();
+  if (!subject) return NextResponse.json({ error: "case_subject_required" }, { status: 400 });
+  if (body.status !== undefined && !isCaseStatus(body.status)) {
+    return NextResponse.json({ error: "case_status_invalid" }, { status: 400 });
+  }
+  if (body.priority !== undefined && !isCasePriority(body.priority)) {
+    return NextResponse.json({ error: "case_priority_invalid" }, { status: 400 });
+  }
+
+  const record = await upsertCase(session.businessId, {
+    id: body.id,
+    customerId: body.customerId ?? null,
+    subject,
+    body: body.body,
+    status: body.status as CaseStatus | undefined,
+    priority: body.priority as CasePriority | undefined,
+    category: body.category,
+    orderId: body.orderId ?? null,
+    assignedTo: body.assignedTo,
+    resolution: body.resolution,
+    createdBy: session.fullName,
+  });
+  return NextResponse.json({ case: record }, { status: body.id ? 200 : 201 });
+});

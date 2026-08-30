@@ -3,6 +3,7 @@ import { getSession } from "@/lib/auth";
 import { requireModuleForPage } from "@/lib/industry-guard";
 import { requireFeatureForPage } from "@/lib/features";
 import { PageHeader, PageShell } from "../page-chrome";
+import { KnowledgeHelpButton } from "../knowledge-help";
 import { DeliveryBoard } from "./delivery-board";
 
 export default async function DeliveryPage() {
@@ -19,6 +20,7 @@ export default async function DeliveryPage() {
       <PageHeader
         title="ارسال و پیک"
         description="تخصیص سفارش‌های ارسالی به پیک‌ها و پیگیری وضعیت تحویل."
+        actions={<KnowledgeHelpButton section="delivery" />}
       />
       <DeliveryBoard canManageCouriers={canManageCouriers} />
     </PageShell>

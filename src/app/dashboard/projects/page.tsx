@@ -15,6 +15,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { cardClass, EmptyState, PageHeader, PageShell, SectionCard } from "../page-chrome";
+import { KnowledgeHelpButton } from "../knowledge-help";
 import { api, inputClass } from "../ui";
 
 interface Project {
@@ -78,10 +79,13 @@ export default function ProjectsPage() {
         title="پروژه‌ها"
         description="پوشه‌های هدف: گفت‌وگوها، یادداشت‌ها و دستور ایستا را کنار هم نگه دارید."
         actions={
-          <Button onClick={() => setCreating(true)} size="sm">
-            <PlusIcon className="size-4" />
-            پروژه جدید
-          </Button>
+          <>
+            <KnowledgeHelpButton section="projects" />
+            <Button onClick={() => setCreating(true)} size="sm">
+              <PlusIcon className="size-4" />
+              پروژه جدید
+            </Button>
+          </>
         }
       />
 

@@ -2,6 +2,13 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   /**
+   * `unpdf` (the server-side PDF text extractor used by /api/ai/chat) ships
+   * pdf.js with dynamic optional-worker imports that bundlers cannot fold in.
+   * Keep both packages external so Node resolves them natively at runtime —
+   * the import is lazy and only the chat route ever loads them.
+   */
+  serverExternalPackages: ["unpdf", "pdfjs-dist"],
+  /**
    * Phase 34 — the OAuth discovery documents live at `/.well-known/…`, which is
    * where RFC 8414 and RFC 9728 say to look and where every MCP client goes
    * first. Next's app router will not serve a dot-prefixed route folder, so the

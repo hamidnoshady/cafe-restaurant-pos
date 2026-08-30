@@ -109,13 +109,10 @@ export default function PlatformPromptsPage() {
 
   return (
     <div className="mx-auto w-full max-w-5xl space-y-4 sm:space-y-6">
-      <header>
-        <h1 className="text-xl font-bold">مدیریت پرامپت‌ها</h1>
-        <p className="mt-1 text-sm text-white/50">
-          پرامپت سیستم هر سطحی که دستیار در آن پاسخ می‌دهد. نسخهٔ فعال جایگزین پیش‌فرض کد می‌شود؛
-          حذف آن همیشه به پیش‌فرض بازمی‌گردد. حاشیهٔ کسب‌وکارها از بخش تنظیمات هوش مصنوعی خودشان اضافه می‌شود، نه از این‌جا.
-        </p>
-      </header>
+      <p className="text-sm leading-6 text-white/50">
+        پرامپت سیستم هر سطحی که دستیار در آن پاسخ می‌دهد. نسخهٔ فعال جایگزین پیش‌فرض کد می‌شود؛
+        حذف آن همیشه به پیش‌فرض بازمی‌گردد. حاشیهٔ درآمد و اتصال سرویس در تب «تنظیمات و اشتراک‌ها» است.
+      </p>
 
       <ErrorBox>{error}</ErrorBox>
       {notice ? <InfoBox>{notice}</InfoBox> : null}

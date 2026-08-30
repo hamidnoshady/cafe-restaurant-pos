@@ -20,7 +20,9 @@ import { useMoney } from "@/components/money/money-context";
 import { formatJalali } from "@/lib/jalali";
 import { classifyCampaign, rollingWindow, type CampaignState } from "@/lib/growth-shared";
 import { cardClass, EmptyState, SectionCard, StatusBadge } from "../page-chrome";
+import { CampaignAudiencePanel } from "./campaign-audience-panel";
 import { api, ErrorBox, Field, InfoBox, inputClass } from "../ui";
+import { JalaliDatePicker } from "../jalali-date-picker";
 
 interface PromotionRow {
   id: string;
@@ -118,6 +120,13 @@ export function CampaignsSection() {
     <div className="space-y-4 sm:space-y-5">
       <ErrorBox>{error}</ErrorBox>
       {done ? <InfoBox>{done}</InfoBox> : null}
+
+      {/*
+        Phase 36d — who a campaign reaches, from the CRM's segments, sitting
+        next to the form that creates the campaign. Placed above the promotion
+        list because audience is the question an owner asks first.
+      */}
+      <CampaignAudiencePanel />
 
       <div className="grid gap-4 lg:grid-cols-2">
         <PromotionForm
@@ -297,11 +306,11 @@ function PromotionForm({ onSaved, onError }: { onSaved: (m: string) => void; onE
           </Field>
         </div>
         <div className="grid grid-cols-2 gap-2">
-          <Field label="از تاریخ (میلادی)">
-            <input className={inputClass} dir="ltr" type="date" value={activeFrom} onChange={(e) => setActiveFrom(e.target.value)} />
+          <Field label="از تاریخ (شمسی)">
+            <JalaliDatePicker className={inputClass} value={activeFrom} onChange={setActiveFrom} />
           </Field>
-          <Field label="تا تاریخ (میلادی)">
-            <input className={inputClass} dir="ltr" type="date" value={activeTo} onChange={(e) => setActiveTo(e.target.value)} />
+          <Field label="تا تاریخ (شمسی)">
+            <JalaliDatePicker className={inputClass} value={activeTo} onChange={setActiveTo} />
           </Field>
         </div>
         <div className="grid grid-cols-2 gap-2">

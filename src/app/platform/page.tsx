@@ -7,13 +7,22 @@
  * `business.provision` — opens the provision form inline. Provisioning here
  * seeds the chart of accounts, so the owner it creates can log straight in and
  * sell (exit criterion 1).
+ *
+ * The list is a real operations surface now: a search box, plan / status /
+ * industry filters, a creation-date range, and sorting — all mirrored into
+ * the query string so a filtered view survives refresh and can be pasted into
+ * a support thread. Filtering happens client-side over the list the console
+ * already fetches; a deployment's tenant count is small enough that this is
+ * both simpler and snappier than a round-trip per keystroke.
  */
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toPersianDigits, formatPersianNumber } from "@/lib/digits";
 import { INDUSTRY_LABELS, type Industry } from "@/lib/industries";
 import { validateSubdomain } from "@/lib/slug";
 import { IndustryPicker } from "./industry-picker";
+import { JalaliDatePicker } from "@/app/dashboard/jalali-date-picker";
 import {
   api,
   errorMessage,
@@ -23,8 +32,15 @@ import {
   Button,
   Card,
   StatusBadge,
+  EmptyState,
+  SkeletonRows,
+  PlanBadge,
+  StatCard,
   inputClass,
+  selectClass,
+  fmtDate,
   useCan,
+  PLAN_LABELS,
 } from "./ui";
 
 interface Business {
@@ -37,6 +53,8 @@ interface Business {
   industry: Industry;
   locationCount: number;
   memberCount: number;
+  orderCount: number;
+  lastActivityAt: string | null;
   createdAt: string;
 }
 
@@ -57,22 +75,103 @@ function PlaceholderSubdomainBadge() {
   );
 }
 
-function formatDate(iso: string): string {
-  try {
-    return toPersianDigits(
-      new Intl.DateTimeFormat("fa-IR", { dateStyle: "medium" }).format(new Date(iso)),
-    );
-  } catch {
-    return iso;
-  }
+type SortKey = "newest" | "oldest" | "name" | "orders" | "members" | "activity";
+
+const SORT_OPTIONS: { value: SortKey; label: string }[] = [
+  { value: "newest", label: "جدیدترین" },
+  { value: "oldest", label: "قدیمی‌ترین" },
+  { value: "name", label: "نام (الفبا)" },
+  { value: "orders", label: "بیشترین سفارش" },
+  { value: "members", label: "بیشترین اعضا" },
+  { value: "activity", label: "آخرین فعالیت" },
+];
+
+/** Date-range presets, in days back from now; `0` disables the range. */
+const DATE_PRESETS = [
+  { days: 0, label: "همه" },
+  { days: 1, label: "امروز" },
+  { days: 7, label: "۷ روز اخیر" },
+  { days: 30, label: "۳۰ روز اخیر" },
+  { days: 90, label: "۹۰ روز اخیر" },
+  { days: 365, label: "یک سال اخیر" },
+];
+
+interface Filters {
+  q: string;
+  plan: string; // "" = all
+  status: string; // "" = all
+  industry: string; // "" = all
+  from: string; // yyyy-mm-dd (inclusive, local)
+  to: string; // yyyy-mm-dd (inclusive, local)
+  sort: SortKey;
 }
 
-export default function BusinessesPage() {
+const EMPTY_FILTERS: Filters = {
+  q: "",
+  plan: "",
+  status: "",
+  industry: "",
+  from: "",
+  to: "",
+  sort: "newest",
+};
+
+function filtersFromParams(params: URLSearchParams): Filters {
+  const sort = params.get("sort");
+  return {
+    q: params.get("q") ?? "",
+    plan: params.get("plan") ?? "",
+    status: params.get("status") ?? "",
+    industry: params.get("industry") ?? "",
+    from: params.get("from") ?? "",
+    to: params.get("to") ?? "",
+    sort: SORT_OPTIONS.some((o) => o.value === sort) ? (sort as SortKey) : "newest",
+  };
+}
+
+function isFiltered(f: Filters): boolean {
+  return Boolean(f.q || f.plan || f.status || f.industry || f.from || f.to);
+}
+
+function BusinessesListInner() {
   const can = useCan();
+  const router = useRouter();
+  const pathname = usePathname();
+  const params = useSearchParams();
+
   const [businesses, setBusinesses] = useState<Business[] | null>(null);
   const [rootDomain, setRootDomain] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [filters, setFilters] = useState<Filters>(() => filtersFromParams(params));
+  const [preset, setPreset] = useState(0);
+
+  // Filters live in state so typing stays instant; the URL mirrors them on
+  // every change (shareable, refresh-safe) and the state re-hydrates when the
+  // operator uses the browser back/forward buttons. `params` is read only for
+  // the initial value + popstate — a per-keystroke round-trip would lag.
+  useEffect(() => {
+    const onPop = () => {
+      setFilters(filtersFromParams(new URLSearchParams(window.location.search)));
+      setPreset(0);
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+
+  const patch = useCallback(
+    (next: Partial<Filters>) => {
+      const merged = { ...filters, ...next };
+      const qs = new URLSearchParams();
+      for (const key of ["q", "plan", "status", "industry", "from", "to"] as const) {
+        if (merged[key]) qs.set(key, merged[key]);
+      }
+      if (merged.sort !== EMPTY_FILTERS.sort) qs.set("sort", merged.sort);
+      const query = qs.toString();
+      router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+    },
+    [filters, pathname, router],
+  );
 
   const load = useCallback(async () => {
     const { ok, data } = await api<{ businesses: Business[]; rootDomain?: string; error?: string }>(
@@ -88,13 +187,73 @@ export default function BusinessesPage() {
     void load();
   }, [load]);
 
+  const allPlans = useMemo(() => {
+    const keys = new Set((businesses ?? []).map((b) => b.plan));
+    return Array.from(keys).sort();
+  }, [businesses]);
+
+  const allIndustries = useMemo(() => {
+    const keys = new Set((businesses ?? []).map((b) => String(b.industry)));
+    return Array.from(keys).sort();
+  }, [businesses]);
+
+  const visible = useMemo(() => {
+    const list = businesses ?? [];
+    const q = filters.q.trim().toLowerCase();
+    const fromTs = filters.from ? new Date(`${filters.from}T00:00:00`).getTime() : null;
+    const toTs = filters.to ? new Date(`${filters.to}T23:59:59.999`).getTime() : null;
+    const presetTs =
+      !fromTs && !toTs && preset > 0 ? Date.now() - preset * 24 * 60 * 60 * 1000 : null;
+
+    const filtered = list.filter((b) => {
+      if (q && !`${b.name} ${b.slug} ${b.subdomain}`.toLowerCase().includes(q)) return false;
+      if (filters.plan && b.plan !== filters.plan) return false;
+      if (filters.status && b.status !== filters.status) return false;
+      if (filters.industry && String(b.industry) !== filters.industry) return false;
+      const created = new Date(b.createdAt).getTime();
+      if (fromTs !== null && created < fromTs) return false;
+      if (toTs !== null && created > toTs) return false;
+      if (presetTs !== null && created < presetTs) return false;
+      return true;
+    });
+
+    const by: Record<SortKey, (a: Business, b: Business) => number> = {
+      newest: (a, b) => +new Date(b.createdAt) - +new Date(a.createdAt),
+      oldest: (a, b) => +new Date(a.createdAt) - +new Date(b.createdAt),
+      name: (a, b) => a.name.localeCompare(b.name, "fa"),
+      orders: (a, b) => b.orderCount - a.orderCount,
+      members: (a, b) => b.memberCount - a.memberCount,
+      activity: (a, b) =>
+        +new Date(b.lastActivityAt ?? 0) - +new Date(a.lastActivityAt ?? 0),
+    };
+    return filtered.sort(by[filters.sort]);
+  }, [businesses, filters, preset]);
+
+  const stats = useMemo(() => {
+    const list = businesses ?? [];
+    return {
+      total: list.length,
+      active: list.filter((b) => b.status === "active").length,
+      suspended: list.filter((b) => b.status === "suspended").length,
+      archived: list.filter((b) => b.status === "archived").length,
+      tempSub: list.filter((b) => isPlaceholderSubdomain(b.subdomain)).length,
+      noActivity: list.filter((b) => !b.lastActivityAt).length,
+    };
+  }, [businesses]);
+
+  const hasFilters = isFiltered(filters);
+
   return (
-    <div className="mx-auto w-full max-w-5xl">
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+    <div className="mx-auto w-full max-w-6xl">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold">کسب‌وکارها</h1>
           <p className="mt-1 text-sm text-white/40">
-            {businesses ? `${toPersianDigits(businesses.length)} کسب‌وکار` : "…"}
+            {businesses
+              ? hasFilters
+                ? `${toPersianDigits(visible.length)} از ${toPersianDigits(businesses.length)} کسب‌وکار`
+                : `${toPersianDigits(businesses.length)} کسب‌وکار`
+              : "…"}
           </p>
         </div>
         {can("business.provision") ? (
@@ -103,6 +262,26 @@ export default function BusinessesPage() {
           </Button>
         ) : null}
       </div>
+
+      {businesses ? (
+        <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
+          <StatCard label="کل کسب‌وکارها" value={formatPersianNumber(stats.total)} />
+          <StatCard label="فعال" value={formatPersianNumber(stats.active)} tone="ok" />
+          <StatCard label="معلق" value={formatPersianNumber(stats.suspended)} tone={stats.suspended ? "warn" : "neutral"} />
+          <StatCard label="بایگانی" value={formatPersianNumber(stats.archived)} />
+          <StatCard
+            label="زیردامنه موقت"
+            value={formatPersianNumber(stats.tempSub)}
+            tone={stats.tempSub ? "warn" : "neutral"}
+            hint={stats.tempSub ? "منتظر انتخاب نشانی انگلیسی" : undefined}
+          />
+          <StatCard
+            label="بدون سفارش"
+            value={formatPersianNumber(stats.noActivity)}
+            hint="هر سفارشی ثبت نکرده‌اند"
+          />
+        </div>
+      ) : null}
 
       <ErrorBox>{error}</ErrorBox>
 
@@ -119,68 +298,286 @@ export default function BusinessesPage() {
       ) : null}
 
       {businesses === null ? (
-        <p className="text-sm text-white/50">در حال بارگذاری…</p>
-      ) : businesses.length === 0 ? (
-        <Card>
-          <p className="text-sm text-white/50">هنوز کسب‌وکاری ثبت نشده است.</p>
-        </Card>
+        <SkeletonRows rows={5} />
       ) : (
         <>
-          <div className="space-y-3 md:hidden">
-            {businesses.map((b) => (
-              <BusinessListCard key={b.id} business={b} />
-            ))}
-          </div>
-          <div className="hidden overflow-x-auto rounded-xl border border-white/10 md:block">
-            <table className="min-w-[680px] w-full text-sm">
-              <thead className="bg-white/3 text-white/50">
-                <tr>
-                  <th className="px-4 py-3 text-start font-medium">نام</th>
-                  <th className="px-4 py-3 text-start font-medium">نوع</th>
-                  <th className="px-4 py-3 text-start font-medium">وضعیت</th>
-                  <th className="px-4 py-3 text-start font-medium">پلن</th>
-                  <th className="px-4 py-3 text-start font-medium">شعبه</th>
-                  <th className="px-4 py-3 text-start font-medium">اعضا</th>
-                  <th className="px-4 py-3 text-start font-medium">ایجاد</th>
-                </tr>
-              </thead>
-              <tbody>
-                {businesses.map((b) => (
-                  <tr
-                    key={b.id}
-                    className="border-t border-white/5 transition-colors hover:bg-white/3"
-                  >
-                    <td className="px-4 py-3">
-                      <Link
-                        href={"/platform/businesses/" + b.id}
-                        className="font-medium text-sky-300 hover:underline"
-                      >
-                        {b.name}
-                      </Link>
-                      <span className="mt-0.5 flex items-center gap-2 text-xs text-white/30">
-                        <span dir="ltr">{b.subdomain}</span>
-                        {isPlaceholderSubdomain(b.subdomain) ? <PlaceholderSubdomainBadge /> : null}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-white/70">{INDUSTRY_LABELS[b.industry]}</td>
-                    <td className="px-4 py-3">
-                      <StatusBadge status={b.status} />
-                    </td>
-                    <td className="px-4 py-3 text-white/70">{b.plan}</td>
-                    <td className="px-4 py-3 text-white/70">
-                      {formatPersianNumber(b.locationCount)}
-                    </td>
-                    <td className="px-4 py-3 text-white/70">{formatPersianNumber(b.memberCount)}</td>
-                    <td className="px-4 py-3 text-white/50">{formatDate(b.createdAt)}</td>
-                  </tr>
+          <FilterBar
+            filters={filters}
+            onPatch={patch}
+            preset={preset}
+            onPreset={(d) => {
+              setPreset(d);
+              patch({ from: "", to: "" });
+            }}
+            onDateEdit={() => setPreset(0)}
+            onClear={() => {
+              setPreset(0);
+              setFilters(EMPTY_FILTERS);
+              router.replace(pathname, { scroll: false });
+            }}
+            plans={allPlans}
+            industries={allIndustries}
+            resultCount={visible.length}
+            totalCount={businesses.length}
+          />
+
+          {businesses.length === 0 ? (
+            <Card>
+              <p className="text-sm text-white/50">هنوز کسب‌وکاری ثبت نشده است.</p>
+            </Card>
+          ) : visible.length === 0 ? (
+            <EmptyState
+              title="هیچ کسب‌وکاری با این فیلترها پیدا نشد."
+              hint="عبارت جستجو یا یکی از فیلترها را بردارید."
+              action={
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    setPreset(0);
+                    setFilters(EMPTY_FILTERS);
+                    router.replace(pathname, { scroll: false });
+                  }}
+                >
+                  حذف فیلترها
+                </Button>
+              }
+            />
+          ) : (
+            <>
+              <div className="space-y-3 md:hidden">
+                {visible.map((b) => (
+                  <BusinessListCard key={b.id} business={b} />
                 ))}
-              </tbody>
-            </table>
-          </div>
+              </div>
+              <div className="hidden overflow-x-auto rounded-xl border border-white/10 md:block">
+                <table className="min-w-[760px] w-full text-sm">
+                  <thead className="bg-white/3 text-white/50">
+                    <tr>
+                      <th className="px-4 py-3 text-start font-medium">نام</th>
+                      <th className="px-4 py-3 text-start font-medium">نوع</th>
+                      <th className="px-4 py-3 text-start font-medium">وضعیت</th>
+                      <th className="px-4 py-3 text-start font-medium">پلن</th>
+                      <th className="px-4 py-3 text-start font-medium">شعبه</th>
+                      <th className="px-4 py-3 text-start font-medium">اعضا</th>
+                      <th className="px-4 py-3 text-start font-medium">سفارش</th>
+                      <th className="px-4 py-3 text-start font-medium">ایجاد</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visible.map((b) => (
+                      <tr
+                        key={b.id}
+                        className="border-t border-white/5 transition-colors hover:bg-white/3"
+                      >
+                        <td className="px-4 py-3">
+                          <Link
+                            href={"/platform/businesses/" + b.id}
+                            className="font-medium text-sky-300 hover:underline"
+                          >
+                            {b.name}
+                          </Link>
+                          <span className="mt-0.5 flex items-center gap-2 text-xs text-white/30">
+                            <span dir="ltr">{b.subdomain}</span>
+                            {isPlaceholderSubdomain(b.subdomain) ? <PlaceholderSubdomainBadge /> : null}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-white/70">{INDUSTRY_LABELS[b.industry]}</td>
+                        <td className="px-4 py-3">
+                          <StatusBadge status={b.status} />
+                        </td>
+                        <td className="px-4 py-3">
+                          <PlanBadge plan={b.plan} />
+                        </td>
+                        <td className="px-4 py-3 text-white/70 tabular-nums">
+                          {formatPersianNumber(b.locationCount)}
+                        </td>
+                        <td className="px-4 py-3 text-white/70 tabular-nums">
+                          {formatPersianNumber(b.memberCount)}
+                        </td>
+                        <td className="px-4 py-3 text-white/70 tabular-nums">
+                          {formatPersianNumber(b.orderCount)}
+                        </td>
+                        <td className="px-4 py-3 text-white/50 whitespace-nowrap">
+                          {fmtDate(b.createdAt, true)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
         </>
       )}
     </div>
   );
+}
+
+export default function BusinessesPage() {
+  // useSearchParams needs a Suspense boundary at prerender; the shell keeps
+  // the fallback cheap because the real list only ever depends on data anyway.
+  return (
+    <Suspense>
+      <BusinessesListInner />
+    </Suspense>
+  );
+}
+
+function FilterBar({
+  filters,
+  onPatch,
+  preset,
+  onPreset,
+  onDateEdit,
+  onClear,
+  plans,
+  industries,
+  resultCount,
+  totalCount,
+}: {
+  filters: Filters;
+  onPatch: (next: Partial<Filters>) => void;
+  preset: number;
+  onPreset: (days: number) => void;
+  onDateEdit: () => void;
+  onClear: () => void;
+  plans: string[];
+  industries: string[];
+  resultCount: number;
+  totalCount: number;
+}) {
+  const hasFilters = isFiltered(filters);
+  return (
+    <Card>
+      <div className="grid gap-3 lg:grid-cols-[minmax(0,2fr)_repeat(3,minmax(0,1fr))]">
+        <Field label="جستجو">
+          <input
+            value={filters.q}
+            onChange={(e) => onPatch({ q: e.target.value })}
+            className={inputClass}
+            placeholder="نام، شناسه یا زیردامنه…"
+          />
+        </Field>
+        <Field label="پلن">
+          <select
+            value={filters.plan}
+            onChange={(e) => onPatch({ plan: e.target.value })}
+            className={selectClass}
+          >
+            <option value="">همه پلن‌ها</option>
+            {plans.map((p) => (
+              <option key={p} value={p}>
+                {planOptionLabel(p)}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="وضعیت">
+          <select
+            value={filters.status}
+            onChange={(e) => onPatch({ status: e.target.value })}
+            className={selectClass}
+          >
+            <option value="">همه وضعیت‌ها</option>
+            <option value="active">فعال</option>
+            <option value="suspended">معلق</option>
+            <option value="archived">بایگانی</option>
+          </select>
+        </Field>
+        <Field label="نوع کسب‌وکار">
+          <select
+            value={filters.industry}
+            onChange={(e) => onPatch({ industry: e.target.value })}
+            className={selectClass}
+          >
+            <option value="">همه انواع</option>
+            {industries.map((i) => (
+              <option key={i} value={i}>
+                {INDUSTRY_LABELS[i as Industry] ?? i}
+              </option>
+            ))}
+          </select>
+        </Field>
+      </div>
+
+      <div className="mt-1 flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
+        <div>
+          <p className="mb-1 text-sm font-medium text-white/80">تاریخ ایجاد</p>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {DATE_PRESETS.map((p) => (
+              <button
+                key={p.days}
+                type="button"
+                onClick={() => onPreset(p.days)}
+                className={
+                  preset === p.days && !filters.from && !filters.to
+                    ? "rounded-full border border-sky-400/50 bg-sky-500/15 px-3 py-1 text-xs font-medium text-sky-300"
+                    : "rounded-full border border-white/15 px-3 py-1 text-xs text-white/55 transition-colors hover:bg-white/5 hover:text-white"
+                }
+              >
+                {p.label}
+              </button>
+            ))}
+            <span className="mx-1 h-5 w-px bg-white/10" aria-hidden />
+            <label className="flex items-center gap-1 text-xs text-white/45">
+              از
+              <JalaliDatePicker
+                className={`${inputClass} !h-8 w-[9.5rem] text-xs`}
+                popoverClass="dark absolute z-50 mt-1 w-64 rounded-xl border border-border bg-popover p-3 text-popover-foreground shadow-lg"
+                value={filters.from}
+                onChange={(v) => {
+                  onDateEdit();
+                  onPatch({ from: v });
+                }}
+              />
+            </label>
+            <label className="flex items-center gap-1 text-xs text-white/45">
+              تا
+              <JalaliDatePicker
+                className={`${inputClass} !h-8 w-[9.5rem] text-xs`}
+                popoverClass="dark absolute z-50 mt-1 w-64 rounded-xl border border-border bg-popover p-3 text-popover-foreground shadow-lg"
+                value={filters.to}
+                onChange={(v) => {
+                  onDateEdit();
+                  onPatch({ to: v });
+                }}
+              />
+            </label>
+          </div>
+        </div>
+
+        <div className="flex items-end gap-2">
+          <label className="flex items-center gap-2 text-xs text-white/45">
+            مرتب‌سازی
+            <select
+              value={filters.sort}
+              onChange={(e) => onPatch({ sort: e.target.value as SortKey })}
+              className={`${selectClass} !h-8 w-auto text-xs`}
+            >
+              {SORT_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          {hasFilters ? (
+            <Button variant="ghost" onClick={onClear} className="!h-8 text-xs">
+              حذف فیلترها
+            </Button>
+          ) : (
+            <span className="whitespace-nowrap pb-1 text-[11px] text-white/30">
+              {toPersianDigits(resultCount)} از {toPersianDigits(totalCount)}
+            </span>
+          )}
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function planOptionLabel(key: string): string {
+  return PLAN_LABELS[key] ?? key;
 }
 
 function BusinessListCard({ business }: { business: Business }) {
@@ -210,19 +607,27 @@ function BusinessListCard({ business }: { business: Business }) {
         </div>
         <div>
           <dt className="text-xs text-white/40">پلن</dt>
-          <dd className="mt-1 text-white/80">{business.plan}</dd>
+          <dd className="mt-1 text-white/80">
+            <PlanBadge plan={business.plan} />
+          </dd>
         </div>
         <div>
-          <dt className="text-xs text-white/40">شعبه</dt>
-          <dd className="mt-1 text-white/80">{formatPersianNumber(business.locationCount)}</dd>
+          <dt className="text-xs text-white/40">شعبه / اعضا</dt>
+          <dd className="mt-1 text-white/80 tabular-nums">
+            {formatPersianNumber(business.locationCount)} / {formatPersianNumber(business.memberCount)}
+          </dd>
         </div>
         <div>
-          <dt className="text-xs text-white/40">اعضا</dt>
-          <dd className="mt-1 text-white/80">{formatPersianNumber(business.memberCount)}</dd>
+          <dt className="text-xs text-white/40">سفارش‌ها</dt>
+          <dd className="mt-1 text-white/80 tabular-nums">{formatPersianNumber(business.orderCount)}</dd>
+        </div>
+        <div>
+          <dt className="text-xs text-white/40">آخرین فعالیت</dt>
+          <dd className="mt-1 text-white/60">{fmtDate(business.lastActivityAt, true)}</dd>
         </div>
         <div>
           <dt className="text-xs text-white/40">ایجاد</dt>
-          <dd className="mt-1 text-white/60">{formatDate(business.createdAt)}</dd>
+          <dd className="mt-1 text-white/60">{fmtDate(business.createdAt, true)}</dd>
         </div>
       </dl>
     </Link>

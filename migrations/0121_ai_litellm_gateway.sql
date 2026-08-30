@@ -1,5 +1,5 @@
 -- ============================================================================
--- 0117_ai_litellm_gateway.sql — Phase 37: an LLM gateway as a provider.
+-- 0121_ai_litellm_gateway.sql — Phase 37: an LLM gateway as a provider.
 --
 -- Until this migration the platform-owned AI connection (Phase 18) could only
 -- ever be *one* upstream: a provider id, a base URL, a model and a key, all

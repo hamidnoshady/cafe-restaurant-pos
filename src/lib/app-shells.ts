@@ -51,6 +51,12 @@ export const APP_SHELLS: readonly AppShellDef[] = [
     label: "رشد و بازاریابی",
     description: "میز کار، کمپین‌ها و کارت هدیه، وفاداری و پورسانت.",
   },
+  {
+    app: "crm",
+    prefix: "/dashboard/crm",
+    label: "ارتباط با مشتری",
+    description: "پرونده و بخش‌بندی مشتری، قیف فروش، کارها و تیکت‌ها.",
+  },
 ];
 
 /**

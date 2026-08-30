@@ -61,7 +61,14 @@ const EXEMPT_TABLES = new Set([
   // location_id column, nothing to scope by; a row overrides the code default
   // for a fragment key + version and falls back to code when absent.
   "ai_prompt_templates",
-  // Phase 37 — deployment-wide LLM gateway settings (migration 0117). A
+  // Knowledge base (migration 0117): the super-admin-maintained learning page
+  // (a URL) per dashboard section. Same shape as feature_flags/plans: a
+  // platform catalogue with no business_id — the same pages teach every
+  // business. Tenant routes read it (active rows only, GET /api/knowledge);
+  // it is written only through /api/platform/knowledge under a platform
+  // session.
+  "knowledge_base_entries",
+  // Phase 37 — deployment-wide LLM gateway settings (migration 0121). A
   // singleton holding the gateway's address and admin credential, with no
   // tenant column: rotating it is a deployment-wide act by definition, which
   // is the same exemption as platform_ai_config and platform_push_config.

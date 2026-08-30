@@ -163,6 +163,12 @@ const FOOD_SERVICE_MODULES: readonly ModuleKey[] = [
 const CORE_MODULES: readonly ModuleKey[] = [
   "dashboard",
   "customers",
+  // Phase 36 — the CRM ships to every trade, for the same reason `customers`
+  // does: a jeweller keeps a customer file exactly as a café does, and the
+  // whole app is built on records (`customers`, `orders`, `payments`) every
+  // profile already has. Phase 35 declared this key without assigning it,
+  // because its pages did not exist yet; they do now.
+  "crm",
   "loyalty",
   "promotions",
   "commission",
@@ -294,6 +300,11 @@ export const PAGE_MODULE_PREFIXES: readonly (readonly [string, ModuleKey])[] = [
   // loyalty, promotions and commission, and a business that had any of the
   // three has loyalty.
   ["/dashboard/growth", "loyalty"],
+  // Phase 36 — the CRM app's home. Anchored on `customers` (core for every
+  // trade, exactly like the flat «مشتریان» page it absorbs) rather than on the
+  // `crm` module key: a business that has customers has a CRM, and gating the
+  // app on a module no industry profile lists yet would hide it from everyone.
+  ["/dashboard/crm", "customers"],
   ["/dashboard/stock", "stock"],
 ];
 
@@ -321,6 +332,11 @@ const API_MODULE_PREFIXES: readonly (readonly [string, ModuleKey])[] = [
   ["/api/loyalty", "loyalty"],
   ["/api/promotions", "promotions"],
   ["/api/commission", "commission"],
+  // Phase 36 — the CRM app's routes. The customer *directory* (`/api/customers`)
+  // stays ungated: every trade has customers, and the POS's credit-payment
+  // picker calls it. What the `crm` module gates is the CRM's own surfaces —
+  // segments, the pipeline, cases, consent history.
+  ["/api/crm", "crm"],
   ["/api/stock", "stock"],
 ];
 

@@ -3,6 +3,7 @@ import { getSession } from "@/lib/auth";
 import { requireModuleForPage } from "@/lib/industry-guard";
 import { requireFeatureForPage } from "@/lib/features";
 import { PageHeader, PageShell } from "../page-chrome";
+import { KnowledgeHelpButton } from "../knowledge-help";
 import { WaiterBoard } from "./waiter-board";
 
 export default async function WaiterPage() {
@@ -14,7 +15,11 @@ export default async function WaiterPage() {
 
   return (
     <PageShell>
-      <PageHeader title="میزهای من" description="میزهای تخصیص‌داده‌شده به شما" />
+      <PageHeader
+        title="میزهای من"
+        description="میزهای تخصیص‌داده‌شده به شما"
+        actions={<KnowledgeHelpButton section="waiter" />}
+      />
       <WaiterBoard />
     </PageShell>
   );

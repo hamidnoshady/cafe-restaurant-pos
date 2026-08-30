@@ -361,9 +361,11 @@ describe("buildReportQuery", () => {
 });
 
 describe("STANDARD_REPORTS", () => {
-  it("has 18 pre-built reports with unique keys", () => {
-    expect(STANDARD_REPORTS).toHaveLength(18);
-    expect(new Set(STANDARD_REPORTS.map((r) => r.key)).size).toBe(18);
+  it("has 22 pre-built reports with unique keys", () => {
+    // 18 through Phase 35, plus Phase 36's four CRM reports (acquisition,
+    // retention, lifetime value, consent coverage).
+    expect(STANDARD_REPORTS).toHaveLength(22);
+    expect(new Set(STANDARD_REPORTS.map((r) => r.key)).size).toBe(22);
   });
 
   it("every non-null view is a whitelisted reporting view", () => {

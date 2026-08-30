@@ -51,8 +51,17 @@ export interface ConnectionRow extends Record<string, unknown> {
   sync_customers: boolean;
   push_stock: boolean;
   push_prices: boolean;
+  /** Phase 38 — mirror the store's product_cat into the local menu (F&B). */
+  sync_categories: boolean;
+  /** Phase 38 — pull recent orders on a schedule, not only by webhook. */
+  auto_pull_orders: boolean;
+  /** How far back a scheduled order pull looks, in days. */
+  order_lookback_days: number;
   status: "active" | "paused" | "error";
   last_sync_at: string | null;
+  /** Phase 38 — split from last_sync_at: the two jobs fail independently. */
+  last_catalogue_sync_at: string | null;
+  last_order_sync_at: string | null;
   last_error: string | null;
   created_at: string;
   updated_at: string;
@@ -73,8 +82,13 @@ export interface Connection {
   syncCustomers: boolean;
   pushStock: boolean;
   pushPrices: boolean;
+  syncCategories: boolean;
+  autoPullOrders: boolean;
+  orderLookbackDays: number;
   status: "active" | "paused" | "error";
   lastSyncAt: string | null;
+  lastCatalogueSyncAt: string | null;
+  lastOrderSyncAt: string | null;
   lastError: string | null;
   createdAt: string;
   updatedAt: string;
@@ -108,8 +122,13 @@ function mapConnection(row: ConnectionRow): Connection {
     syncCustomers: row.sync_customers,
     pushStock: row.push_stock,
     pushPrices: row.push_prices,
+    syncCategories: row.sync_categories,
+    autoPullOrders: row.auto_pull_orders,
+    orderLookbackDays: row.order_lookback_days,
     status: row.status,
     lastSyncAt: row.last_sync_at,
+    lastCatalogueSyncAt: row.last_catalogue_sync_at,
+    lastOrderSyncAt: row.last_order_sync_at,
     lastError: row.last_error,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -127,7 +146,8 @@ export const CONNECTION_COLUMNS = `id, business_id, location_id, name, provider,
   link_token_hash, link_token_ciphertext, link_token_set_at,
   plugin_version, plugin_site_url, last_plugin_seen_at,
   currency_unit, sync_orders, sync_products, sync_customers, push_stock, push_prices,
-  status, last_sync_at, last_error, created_at, updated_at`;
+  sync_categories, auto_pull_orders, order_lookback_days,
+  status, last_sync_at, last_catalogue_sync_at, last_order_sync_at, last_error, created_at, updated_at`;
 
 export async function listConnections(businessId: string): Promise<Connection[]> {
   const { rows } = await query<ConnectionRow>(
@@ -160,6 +180,11 @@ export interface CreateConnectionInput {
   syncCustomers?: boolean;
   pushStock?: boolean;
   pushPrices?: boolean;
+  /** Phase 38 — mirror the store's categories into the local menu. Opt-in. */
+  syncCategories?: boolean;
+  /** Phase 38 — scheduled order pull, in addition to webhooks. */
+  autoPullOrders?: boolean;
+  orderLookbackDays?: number;
 }
 
 export type CreateConnectionResult =
@@ -224,6 +249,9 @@ export async function createConnection(
       input.syncCustomers ?? true,
       input.pushStock ?? true,
       input.pushPrices ?? true,
+      input.syncCategories ?? false,
+      input.autoPullOrders ?? true,
+      Math.min(365, Math.max(1, Math.round(input.orderLookbackDays ?? 7))),
       createdBy,
     ],
   );
@@ -278,6 +306,9 @@ export interface UpdateConnectionInput {
   syncCustomers?: boolean;
   pushStock?: boolean;
   pushPrices?: boolean;
+  syncCategories?: boolean;
+  autoPullOrders?: boolean;
+  orderLookbackDays?: number;
   /** New credentials, only when the owner is re-authenticating the store. */
   consumerKey?: string;
   consumerSecret?: string;
@@ -313,6 +344,11 @@ export async function updateConnection(
   if (input.syncCustomers !== undefined) add("sync_customers", input.syncCustomers);
   if (input.pushStock !== undefined) add("push_stock", input.pushStock);
   if (input.pushPrices !== undefined) add("push_prices", input.pushPrices);
+  if (input.syncCategories !== undefined) add("sync_categories", input.syncCategories);
+  if (input.autoPullOrders !== undefined) add("auto_pull_orders", input.autoPullOrders);
+  if (input.orderLookbackDays !== undefined) {
+    add("order_lookback_days", Math.min(365, Math.max(1, Math.round(input.orderLookbackDays))));
+  }
   if (input.consumerKey !== undefined) add("consumer_key_ciphertext", encryptSecret(input.consumerKey.trim(), key));
   if (input.consumerSecret !== undefined) add("consumer_secret_ciphertext", encryptSecret(input.consumerSecret.trim(), key));
   if (sets.length === 0) return { ok: true, connection: mapConnection(existing) };

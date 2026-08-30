@@ -19,6 +19,7 @@ import {
 import { type KitchenQueueStatus } from "@/lib/kitchen-priority";
 import { apiOrQueue, useOfflineQueue } from "../offline-queue";
 import { useRealtime } from "../use-realtime";
+import { KnowledgeHelpButton } from "../knowledge-help";
 import { api, errorMessage } from "../ui";
 
 interface TicketItem {
@@ -664,6 +665,7 @@ export function KdsBoard() {
             </p>
           </div>
           <div className="flex min-w-0 items-center justify-between gap-3">
+            <KnowledgeHelpButton section="kitchen" />
             <p
               className="flex min-h-11 min-w-0 items-center gap-2 text-sm text-stone-600"
               role="status"

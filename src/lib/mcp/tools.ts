@@ -112,6 +112,12 @@ export const MCP_READ_TOOL_SUMMARIES: Record<string, string> = {
   get_waste_history: "Recorded waste by item and reason, with quantity, occurrences, date range and cost.",
   describe_app: "What this installation is: the trade, its branches, which modules and features it has, the words it uses for things, and what you are able to do here. Call this first when you are unsure whether a part of the app exists for this business.",
   list_coworker_jobs: "The standing «همکار هوشمند» jobs this business has defined, and how many runs are waiting for approval.",
+  // Phase 36 — the CRM's read tools. `find_customers` is the id-resolution
+  // entry point for people, exactly as `find_items` is for products.
+  find_customers: "Resolve a partial name, phone number or email to a customer id, with their order count, lifetime spend, tags and whether the record is active, archived or merged into another. Use this instead of ever asking the user for a customer id.",
+  get_customer_timeline: "One customer's full file: purchase summary, loyalty points, lifecycle stage, contact-consent state, and their recent events (orders, payments, tickets, notes) newest first.",
+  list_customer_segments: "Saved customer segments with their member counts and a plain-Persian description of each segment's rules.",
+  preview_customer_segment: "Count and sample a segment definition without saving it. With purpose 'sms' or 'email' only customers who have granted that permission are counted; the unfiltered total is returned alongside so the gap can be reported.",
 };
 
 function readDescriptor(tool: OpenAiTool): McpToolDescriptor {
@@ -312,6 +318,44 @@ const WRITE_TOOL_SPECS: WriteToolSpec[] = [
         notes: { type: "string", description: "کل متن یادداشت‌ها — جایگزین متن قبلی می‌شود" },
       },
       required: ["customerId", "notes"],
+      additionalProperties: false,
+    },
+  },
+  // Phase 36. Prefer `write_crm_customer_note` over `write_customer_note`
+  // above: the older one replaces a single free-text field (which is why its
+  // description has to warn about overwriting), whereas this one appends a
+  // dated, attributed row that cannot destroy what someone else wrote.
+  {
+    name: "write_crm_customer_note",
+    actionType: "crm.customer.note",
+    english:
+      "Append a dated, attributed note to a customer's CRM file. Only ever inserts — it cannot overwrite an existing note. Internal only; nothing is sent to the customer.",
+    destructive: false,
+    inputSchema: {
+      type: "object",
+      properties: {
+        customerId: id("شناسهٔ مشتری — از find_customers بگیر"),
+        body: { type: "string", description: "متن یادداشت" },
+        isPinned: { type: "boolean", description: "بالای پرونده سنجاق شود، اختیاری" },
+      },
+      required: ["customerId", "body"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "write_crm_customer_tag",
+    actionType: "crm.customer.tag",
+    english:
+      "Add or remove ONE tag on a customer. The other tags are untouched, so this can never clobber a label someone else applied.",
+    destructive: false,
+    inputSchema: {
+      type: "object",
+      properties: {
+        customerId: id("شناسهٔ مشتری — از find_customers بگیر"),
+        tag: { type: "string", description: "یک برچسب" },
+        action: { type: "string", enum: ["add", "remove"], description: "افزودن یا برداشتن" },
+      },
+      required: ["customerId", "tag", "action"],
       additionalProperties: false,
     },
   },

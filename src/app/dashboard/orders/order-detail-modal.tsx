@@ -57,6 +57,7 @@ import {
 } from "@/lib/payment-draft";
 import { PaymentWays, usePaymentMethods } from "../payment-ways";
 import { formatQueueLabel } from "@/lib/orders";
+import { crmCustomerHref } from "../crm/crm-routes";
 import { kickDrawer, printReceipt } from "@/lib/print-agent-client";
 import type { ReceiptData } from "@/lib/receipt-template";
 import {
@@ -1331,6 +1332,20 @@ export function OrderDetailModal({
                               حذف
                             </button>
                           </div>
+                        ) : null}
+                        {selectedCustomer ? (
+                          /*
+                            Phase 36d — from the till to the whole person. The
+                            cashier looking at this order can see the open
+                            complaint or the unpaid balance before handing over
+                            the receipt, instead of finding out afterwards.
+                          */
+                          <a
+                            href={crmCustomerHref(selectedCustomer.id)}
+                            className="mt-2 inline-block text-xs font-semibold text-teal-700 underline-offset-4 hover:underline"
+                          >
+                            پروندهٔ مشتری در CRM
+                          </a>
                         ) : (
                           <>
                             <input

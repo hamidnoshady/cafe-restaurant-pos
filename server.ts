@@ -59,6 +59,12 @@ app.prepare().then(async () => {
   const { runHolooReconciliationTick, HOLOO_RECONCILIATION_TICK_INTERVAL_MS } = await import("./src/lib/integrations/holoo/reconciliation-service");
   const { runNotificationTick, NOTIFICATION_TICK_INTERVAL_MS } = await import("./src/lib/notifications-service");
   const { runLowStockScanTick, LOW_STOCK_SCAN_INTERVAL_MS } = await import("./src/lib/notification-scans");
+  // OpenObserve integration (docs/openobserve.md): taps console.* and
+  // records errors/slow requests. No-op unless OPENOBSERVE_URL +
+  // OPENOBSERVE_USER/PASSWORD are set — an install without a collector
+  // boots exactly as before.
+  const { installObservability, shipHttpEvent } = await import("./src/lib/observability");
+  installObservability();
 
   // Phase 12: tenant isolation is enforced by Postgres row-level security,
   // which superusers and BYPASSRLS roles ignore outright — silently, with no
@@ -165,7 +171,26 @@ app.prepare().then(async () => {
   setTimeout(lowStockScan, 120_000).unref();
 
   const server = createServer((req, res) => {
-    handle(req, res, parse(req.url ?? "/", true));
+    const t0 = Date.now();
+    const parsed = parse(req.url ?? "/", true);
+    res.on("finish", () => {
+      // Only noteworthy requests get shipped: a status >= 400 (something
+      // broke) or a response over a second slow (something is about to).
+      // Every line of the app's own logging goes through the console tap
+      // installed above, so shipping all request records would only pay
+      // ingestion for noise between the two.
+      const ms = Date.now() - t0;
+      if (res.statusCode >= 400 || ms >= 1000) {
+        shipHttpEvent({
+          method: req.method ?? "GET",
+          path: String(parsed.pathname ?? "/"),
+          status: res.statusCode,
+          durationMs: ms,
+          host: req.headers.host ?? "",
+        });
+      }
+    });
+    handle(req, res, parsed);
   });
 
   const wss = new WebSocketServer({ noServer: true });

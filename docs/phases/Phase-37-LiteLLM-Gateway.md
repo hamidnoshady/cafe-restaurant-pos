@@ -46,7 +46,7 @@ third value of the existing `provider` column.** `litellm` joins `openrouter` an
 
 - **A `litellm` provider**, selectable in `/platform/ai` like any other. Base URL defaults to
   `http://litellm:4000/v1`; the key falls back to `LITELLM_MASTER_KEY`.
-- **A gateway settings singleton** (`platform_ai_gateway`, migration 0117): address, admin
+- **A gateway settings singleton** (`platform_ai_gateway`, migration 0121): address, admin
   credential, chat and embedding model aliases, a failover chain, routing strategy, virtual-key
   defaults, and whether a business may choose its own model — plus the published list it may
   choose from.
@@ -150,7 +150,7 @@ third value of the existing `provider` column.** `litellm` joins `openrouter` an
 
 ## Status
 
-Implemented. Migration `0117_ai_litellm_gateway.sql` widens the provider catalogue and adds both
+Implemented. Migration `0121_ai_litellm_gateway.sql` widens the provider catalogue and adds both
 tables; `src/lib/ai-gateway.ts` holds the pure resolution and parsing logic (40 unit tests in
 `ai-gateway.test.ts`); `src/lib/ai-gateway-service.ts` holds the row access and the management-API
 calls; `src/lib/ai-runtime.ts` is the single seam the request path goes through.

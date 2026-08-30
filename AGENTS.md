@@ -14,6 +14,16 @@ and applies to you whatever tool you run in. Two things cause the most damage wh
 - **Tenancy**: a new tenant-scoped table needs an RLS policy in the same migration, and
   `withoutTenantScope()` is a documented, countable hole — never add one without matching an
   already-justified shape in `src/lib/db.ts`.
+- **Shamsi-only dates**: every date shown to a user — in every function and every screen (the
+  user/dashboard section and the super-admin/platform section alike), in accounting, loyalty,
+  marketing, AI, reports, exports, receipts and notifications — MUST be **Shamsi (Jalali)**.
+  Gregorian is only ever internal storage (`timestamptz`/`date`) and the wire/API. Never render a
+  raw ISO/Gregorian date to a user, never show a date in a Gregorian calendar, and never use the
+  native `<input type="date">` (it opens a Gregorian calendar) — use `JalaliDatePicker`
+  (`src/app/dashboard/jalali-date-picker.tsx`). Format every displayed date through
+  `src/lib/jalali.ts` (`formatJalali`, `formatShiftWindow`, `jalaliToIsoDate`, `todayJalali`) or
+  `Intl.DateTimeFormat` with the `fa-IR` locale (which resolves to the Persian/Shamsi calendar).
+  Read the "Shamsi-only dates" section of CLAUDE.md before touching any date.
 
 ## Design system
 

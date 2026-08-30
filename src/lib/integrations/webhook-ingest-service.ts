@@ -31,8 +31,9 @@ import {
 import { wooAmountToRial } from "./woo-money";
 import { writeIntegrationAudit } from "./audit";
 import { getBusinessIndustry } from "../industry-guard";
-import { connectionLocationId, upsertCustomerFromWoo, upsertProductFromWoo } from "./sync-service";
-import type { WooCustomer, WooOrder, WooProduct, WooRefund } from "./woocommerce-client";
+import { connectionLocationId, resolveOrderCustomerId, upsertCustomerFromWoo, upsertProductFromWoo } from "./sync-service";
+import { wooLineCandidateIds } from "./woo-catalogue";
+import type { WooCustomer, WooOrder, WooOrderLineItem, WooProduct, WooRefund } from "./woocommerce-client";
 import type { Industry } from "../industries";
 
 const zero = "0" as RialText;
@@ -110,7 +111,7 @@ interface WebhookEvent {
 }
 
 /** What one event did, in the form both doors report it. */
-type IngestOutcome =
+export type IngestOutcome =
   | { status: "processed" }
   | { status: "duplicate" }
   | { status: "failed"; error: string };
@@ -229,12 +230,176 @@ export async function ingestPluginEvent(
     : { deliveryId, status: outcome.status };
 }
 
+/**
+ * Ingest an order this app went and *fetched* rather than one the store
+ * pushed.
+ *
+ * The scheduled pull (sync-service.ts's `syncOrders`) and a manual
+ * «همگام‌سازی سفارش‌ها» both land here, which is the point: they run the
+ * identical `applyIngestEvent` a webhook delivery runs, so an order that
+ * arrives by pull and the same order arriving by webhook cannot end up
+ * recorded two different ways.
+ *
+ * The caller supplies the delivery id, and it matters that it is derived
+ * from the order's own `date_modified`: an unchanged order re-pulled is a
+ * duplicate (free, by the inbox's unique key), while an order that changed
+ * since the last pull is re-ingested — and then dropped at the order level by
+ * its mapping row, because `order.updated` after `order.created` is a no-op.
+ *
+ * `sync_orders` is honoured here rather than by the caller: a connection with
+ * order sync switched off must not acquire orders through a back door.
+ */
+export async function ingestRemoteOrder(
+  connection: ConnectionRow,
+  order: WooOrder,
+  deliveryId: string,
+): Promise<IngestOutcome> {
+  if (!connection.sync_orders) return { status: "duplicate" };
+  return applyIngestEvent(connection, {
+    topic: "order.created",
+    deliveryId,
+    payload: order as unknown as Record<string, unknown>,
+  });
+}
+
+/** The refund twin of `ingestRemoteOrder` — same reasoning, same path. */
+export async function ingestRemoteRefund(
+  connection: ConnectionRow,
+  refund: WooRefund,
+  deliveryId: string,
+): Promise<IngestOutcome> {
+  return applyIngestEvent(connection, {
+    topic: "refund.created",
+    deliveryId,
+    payload: refund as unknown as Record<string, unknown>,
+  });
+}
+
 /** The branch an integration writes to: the connection's own, else the primary. */
 async function resolveLocationId(connection: ConnectionRow): Promise<string> {
   if (connection.location_id) return connection.location_id;
   const primary = await getPrimaryLocation(connection.business_id);
   if (!primary) throw new Error("no_location");
   return primary.id;
+}
+
+
+/**
+ * How one order line resolved to a local product.
+ *
+ * `via` is the part that used not to exist. A variation line whose variation
+ * is mapped is a real sale of a real sellable row; one that only resolved to
+ * its variable parent is revenue with no stock movement, and the two must not
+ * be treated alike. Collapsing them into one nullable id — as every path did
+ * before Phase 38 — is how an order for a variation recorded revenue and
+ * silently dropped its COGS.
+ */
+export interface ResolvedOrderLine {
+  localId: string | null;
+  remoteId: string | null;
+  via: "variation" | "product" | "parent_fallback" | "none";
+}
+
+/**
+ * Resolve every line of an order to a local product, in one query.
+ *
+ * Candidate ids are `variation_id` before `product_id`: for a variable
+ * product they are different rows and only the variation carries a SKU, a
+ * price and stock. Reading `product_id` alone — which is what the webhook,
+ * the REST pull and the plugin push each did — resolved the line to the
+ * parent, and the parent is created as a non-sellable container.
+ */
+async function resolveOrderLineItems(
+  db: import("pg").PoolClient,
+  connection: ConnectionRow,
+  order: WooOrder,
+): Promise<ResolvedOrderLine[]> {
+  const lines = order.line_items ?? [];
+  const candidates = [...new Set(lines.flatMap(wooLineCandidateIds))];
+  const mapped = new Map<string, string>();
+  if (candidates.length > 0) {
+    const { rows } = await db.query<{ remote_id: string; local_id: string }>(
+      `SELECT remote_id, local_id FROM integration_mappings
+        WHERE business_id = $1 AND connection_id = $2 AND entity_type = 'product'
+          AND remote_id = ANY($3::text[])`,
+      [connection.business_id, connection.id, candidates],
+    );
+    for (const row of rows) mapped.set(row.remote_id, row.local_id);
+  }
+
+  return lines.map((line) => {
+    const variationId = Number(line.variation_id ?? 0) || 0;
+    for (const id of wooLineCandidateIds(line)) {
+      const localId = mapped.get(id);
+      if (!localId) continue;
+      const via: ResolvedOrderLine["via"] =
+        variationId > 0 && id === String(variationId)
+          ? "variation"
+          : variationId > 0
+            ? "parent_fallback"
+            : "product";
+      return { localId, remoteId: id, via };
+    }
+    // Nothing mapped. The remote id is still worth carrying, so an operator
+    // reading the audit can see exactly which store row failed to resolve.
+    const remoteId = variationId > 0 ? String(variationId) : line.product_id ? String(line.product_id) : null;
+    return { localId: null, remoteId, via: variationId > 0 ? "parent_fallback" : "none" };
+  });
+}
+
+/**
+ * Create the sellable child an unmapped variation line refers to.
+ *
+ * A store whose catalogue was never fully synced — or whose new variation
+ * arrived after the last one — would otherwise attribute every sale of that
+ * variation to its parent, which by design holds no stock and posts no COGS.
+ * Making the child is what lets the *next* sale of it behave correctly, and
+ * it carries the only facts an order line knows: the name the customer saw,
+ * the SKU, and the price they paid.
+ *
+ * Best-effort: if it cannot be made, the caller keeps the parent and the
+ * order still imports. Losing a stock movement is not a reason to lose a
+ * sale.
+ */
+async function ensureVariationStub(
+  db: import("pg").PoolClient,
+  connection: ConnectionRow,
+  locationId: string,
+  line: WooOrderLineItem,
+  parentLocalId: string,
+  priceRial: bigint,
+): Promise<string | null> {
+  const variationId = Number(line.variation_id ?? 0) || 0;
+  if (variationId <= 0) return null;
+  try {
+    const { rows } = await db.query<{ id: string }>(
+      `INSERT INTO items (location_id, parent_item_id, name, sku, kind, tracking)
+       VALUES ($1, $2, $3, $4, 'variant_child', 'none') RETURNING id`,
+      [locationId, parentLocalId, line.name?.trim() || `Variation #${variationId}`, line.sku?.trim() || null],
+    );
+    const itemId = rows[0].id;
+    await db.query(
+      `INSERT INTO item_stock (item_id, quantity, unit_price) VALUES ($1, 0, $2)`,
+      [itemId, priceRial > 0n ? Number(priceRial) : null],
+    );
+    await db.query(
+      `INSERT INTO integration_mappings (business_id, connection_id, entity_type, remote_id, local_id)
+       VALUES ($1, $2, 'product', $3, $4)
+       ON CONFLICT (connection_id, entity_type, remote_id)
+       DO UPDATE SET local_id = EXCLUDED.local_id, updated_at = now()`,
+      [connection.business_id, connection.id, String(variationId), itemId],
+    );
+    return itemId;
+  } catch {
+    // A duplicate SKU, a constraint from an extension — none of it is worth
+    // failing the order over.
+    return null;
+  }
+}
+
+/** True only for a line that resolved to the row that actually holds stock. */
+function relievesStock(line: ResolvedOrderLine): boolean {
+  return line.via === "variation" || line.via === "product";
 }
 
 async function ingestOrder(connection: ConnectionRow, order: WooOrder): Promise<void> {
@@ -264,6 +429,11 @@ async function ingestFnBOrder(connection: ConnectionRow, order: WooOrder): Promi
   const note = order.billing
     ? `مشتری: ${[order.billing.first_name, order.billing.last_name].filter(Boolean).join(" ")}`
     : null;
+  // Who bought it. Linked on the order rather than only named in a note,
+  // because that link is what puts an online sale into the CRM's customer
+  // timeline, its RFM population and Growth's segments — none of which could
+  // see a WooCommerce buyer before Phase 38.
+  const customerId = await resolveOrderCustomerId(connection, order);
 
   const client = await getPool().connect();
   try {
@@ -296,10 +466,10 @@ async function ingestFnBOrder(connection: ConnectionRow, order: WooOrder): Promi
     // closed to 'completed' below, after items and payment are recorded,
     // mirroring the POS checkout flow.
     const { rows: orderRows } = await client.query<{ id: string }>(
-      `INSERT INTO orders (location_id, order_number, type, status, subtotal, discount, service_charge, tax, total, note)
-       VALUES ($1, $2, 'delivery', 'open', $3, 0, 0, $4, $5, $6)
+      `INSERT INTO orders (location_id, order_number, type, status, subtotal, discount, service_charge, tax, total, note, customer_id)
+       VALUES ($1, $2, 'delivery', 'open', $3, 0, 0, $4, $5, $6, $7)
        RETURNING id`,
-      [locationId, orderNumber, net.toString(), tax.toString(), total.toString(), note],
+      [locationId, orderNumber, net.toString(), tax.toString(), total.toString(), note, customerId],
     );
     const orderId = orderRows[0].id;
 
@@ -308,24 +478,17 @@ async function ingestFnBOrder(connection: ConnectionRow, order: WooOrder): Promi
     // online sales exactly like a POS sale. Unmapped lines are still recorded
     // — revenue is never missed — but contribute no stock movement, the POS
     // equivalent of an order item with no recipe.
-    const remoteProductIds = (order.line_items ?? [])
-      .map((line) => String(line.product_id))
-      .filter((id): id is string => Boolean(id));
-    const menuItemByRemote = new Map<string, string>();
-    if (remoteProductIds.length > 0) {
-      const { rows: productMappings } = await client.query<{ remote_id: string; local_id: string }>(
-        `SELECT remote_id, local_id FROM integration_mappings
-          WHERE business_id = $1 AND connection_id = $2 AND entity_type = 'product'
-            AND remote_id = ANY($3::text[])`,
-        [businessId, connection.id, remoteProductIds],
-      );
-      for (const m of productMappings) menuItemByRemote.set(m.remote_id, m.local_id);
-    }
-
-    for (const line of order.line_items ?? []) {
+    //
+    // A variation line resolves to the variation, not to its parent: F&B
+    // skips variable/grouped containers entirely (see sync-service), so
+    // reading `product_id` alone meant a variation never resolved at all.
+    const resolution = await resolveOrderLineItems(client, connection, order);
+    let unmappedLines = 0;
+    for (const [index, line] of (order.line_items ?? []).entries()) {
       const unitPrice = wooAmountToRial(line.price ?? "0", connection.currency_unit);
       const quantity = Math.max(1, Math.round(line.quantity ?? 1));
-      const menuItemId = menuItemByRemote.get(String(line.product_id)) ?? null;
+      const menuItemId = resolution[index]?.localId ?? null;
+      if (!menuItemId) unmappedLines += 1;
       await client.query(
         `INSERT INTO order_items (location_id, order_id, menu_item_id, name_snapshot, unit_price, quantity, status)
          VALUES ($1, $2, $3, $4, $5, $6, 'served')`,
@@ -359,7 +522,9 @@ async function ingestFnBOrder(connection: ConnectionRow, order: WooOrder): Promi
     // exist yet), the same shape as a POS item with no recipe.
     let inventoryEventId: string | null = null;
     let cogsRial = "0";
-    if (menuItemByRemote.size > 0) {
+    // Deduct only when at least one line resolved to a real menu item — the
+    // POS rule is "no recipe, no COGS", and an unmapped line has no recipe.
+    if (resolution.some((r) => r.via === "variation" || r.via === "product")) {
       const { rows: eventRows } = await client.query<{ id: string }>(
         `INSERT INTO inventory_events
            (business_id, location_id, event_type, source_type, source_id, created_by, idempotency_key, costing_version)
@@ -421,7 +586,12 @@ async function ingestFnBOrder(connection: ConnectionRow, order: WooOrder): Promi
       entityType: "order",
       remoteId,
       localId: orderId,
-      payload: { orderNumber: order.number ?? remoteId, totalRial: total.toString(), cogsRial },
+      payload: {
+        orderNumber: order.number ?? remoteId,
+        totalRial: total.toString(),
+        cogsRial,
+        unmappedLines,
+      },
     });
   } catch (err) {
     await client.query("ROLLBACK");
@@ -457,6 +627,8 @@ async function ingestRetailOrder(
   const note = order.billing
     ? `مشتری: ${[order.billing.first_name, order.billing.last_name].filter(Boolean).join(" ")}`
     : null;
+  // The CRM bridge — see ingestFnBOrder for why the link, not just the name.
+  const customerId = await resolveOrderCustomerId(connection, order);
 
   const client = await getPool().connect();
   try {
@@ -481,34 +653,39 @@ async function ingestRetailOrder(
     const orderNumber = Number(counter[0].next_number);
 
     const { rows: orderRows } = await client.query<{ id: string }>(
-      `INSERT INTO orders (location_id, order_number, type, status, subtotal, discount, service_charge, tax, total, note)
-       VALUES ($1, $2, 'retail', 'open', $3, 0, 0, $4, $5, $6)
+      `INSERT INTO orders (location_id, order_number, type, status, subtotal, discount, service_charge, tax, total, note, customer_id)
+       VALUES ($1, $2, 'retail', 'open', $3, 0, 0, $4, $5, $6, $7)
        RETURNING id`,
-      [locationId, orderNumber, net.toString(), tax.toString(), total.toString(), note],
+      [locationId, orderNumber, net.toString(), tax.toString(), total.toString(), note, customerId],
     );
     const orderId = orderRows[0].id;
 
     // Resolve each line's WooCommerce product to its mapped local item. A
     // variation line resolves to the exact sellable variant_child; a simple
-    // product to its item. Unmapped lines are still recorded (revenue is never
-    // missed) but contribute no stock movement or COGS.
-    const remoteProductIds = (order.line_items ?? [])
-      .map((line) => String(line.product_id))
-      .filter((id): id is string => Boolean(id));
-    const itemByRemote = new Map<string, string>();
-    if (remoteProductIds.length > 0) {
-      const { rows: productMappings } = await client.query<{ remote_id: string; local_id: string }>(
-        `SELECT remote_id, local_id FROM integration_mappings
-          WHERE business_id = $1 AND connection_id = $2 AND entity_type = 'product'
-            AND remote_id = ANY($3::text[])`,
-        [businessId, connection.id, remoteProductIds],
+    // product to its item; a variation whose row has never been synced falls
+    // back to its parent and is recorded without stock movement, because
+    // there is no way to know which child left the shelf.
+    const resolution = await resolveOrderLineItems(client, connection, order);
+
+    // Which resolved rows are containers (a variable/grouped parent). A line
+    // that landed on one gets a real item id so the sale is attributed to the
+    // family, but no stock relief, and a variation stub is made under it so
+    // the *next* sale of that variation behaves properly.
+    const containerIds = new Set<string>();
+    const resolvedIds = [...new Set(resolution.map((r) => r.localId).filter((id): id is string => Boolean(id)))];
+    if (resolvedIds.length > 0) {
+      const { rows: kinds } = await client.query<{ id: string; kind: string }>(
+        `SELECT id, kind FROM items WHERE id = ANY($1::uuid[])`,
+        [resolvedIds],
       );
-      for (const m of productMappings) itemByRemote.set(m.remote_id, m.local_id);
+      for (const row of kinds) {
+        if (row.kind === "variant_parent") containerIds.add(row.id);
+      }
     }
 
     // The cost basis for every mapped line, fetched once so COGS and stock
     // relief use the exact weighted-average cost the counter sale would.
-    const itemIds = [...new Set(itemByRemote.values())];
+    const itemIds = resolvedIds;
     const costById = new Map<string, bigint>();
     if (itemIds.length > 0) {
       const { rows: stockRows } = await client.query<{ item_id: string; unit_cost: string | null }>(
@@ -519,10 +696,27 @@ async function ingestRetailOrder(
     }
 
     let cogsRial = "0";
-    for (const line of order.line_items ?? []) {
+    let stubbedVariations = 0;
+    for (const [index, line] of (order.line_items ?? []).entries()) {
       const unitPrice = wooAmountToRial(line.price ?? "0", connection.currency_unit);
       const quantity = Math.max(1, Math.round(line.quantity ?? 1));
-      const itemId = itemByRemote.get(String(line.product_id)) ?? null;
+      const resolved = resolution[index];
+      let itemId = resolved?.localId ?? null;
+
+      // A variation line that landed on its parent: make the child, inside
+      // this transaction, so the sale is attributed to the sellable row and
+      // every later sale of it relieves stock and posts COGS.
+      if (itemId && resolved?.via === "parent_fallback" && containerIds.has(itemId)) {
+        const stubId = await ensureVariationStub(client, connection, locationId, line, itemId, unitPrice);
+        if (stubId) {
+          itemId = stubId;
+          stubbedVariations += 1;
+          // Re-read: the stub's stock row has no cost yet, so this line posts
+          // no COGS — correct, and the same rule a counter sale follows.
+          resolution[index] = { localId: stubId, remoteId: resolved.remoteId, via: "variation" };
+        }
+      }
+
       await client.query(
         `INSERT INTO order_items (location_id, order_id, item_id, name_snapshot, unit_price, quantity, status)
          VALUES ($1, $2, $3, $4, $5, $6, 'served')`,
@@ -530,8 +724,9 @@ async function ingestRetailOrder(
       );
 
       // COGS + stock relief only for a mapped item with a known cost basis —
-      // the retail analogue of F&B's "no recipe, no COGS".
-      const unitCost = itemId ? costById.get(itemId) : undefined;
+      // the retail analogue of F&B's "no recipe, no COGS" — and only when the
+      // line resolved to the row that actually carries stock.
+      const unitCost = itemId && relievesStock(resolution[index]) ? costById.get(itemId) : undefined;
       if (unitCost != null && unitCost > 0n) {
         cogsRial = (BigInt(cogsRial) + unitCost * BigInt(quantity)).toString();
         // GREATEST(0, …) so a stock picture already synced post-sale (WooCommerce
@@ -619,7 +814,12 @@ async function ingestRetailOrder(
       entityType: "order",
       remoteId,
       localId: orderId,
-      payload: { orderNumber: order.number ?? remoteId, totalRial: total.toString(), cogsRial },
+      payload: {
+        orderNumber: order.number ?? remoteId,
+        totalRial: total.toString(),
+        cogsRial,
+        stubbedVariations,
+      },
     });
   } catch (err) {
     await client.query("ROLLBACK");
@@ -649,9 +849,20 @@ async function buildRefundReturnLines(
   refund: WooRefund,
 ): Promise<(ReturnLine & { itemId?: string })[]> {
   const lines: (ReturnLine & { itemId?: string })[] = [];
-  const remoteProductIds = (refund.line_items ?? [])
-    .map((line) => String(line.product_id))
-    .filter((id): id is string => Boolean(id));
+  // A refunded line identifies its variation the same way the order line
+  // did — `variation_id` when there is one. Matching on `product_id` alone
+  // would look for a return against the variable parent, which holds no
+  // stock and was never on the order as a sellable row.
+  const remoteProductIds = [
+    ...new Set(
+      (refund.line_items ?? [])
+        .flatMap((line) => [
+          Number(line.variation_id ?? 0) || 0 ? String(line.variation_id) : "",
+          line.product_id ? String(line.product_id) : "",
+        ])
+        .filter(Boolean),
+    ),
+  ];
   if (remoteProductIds.length === 0) return lines;
   const { rows: productMappings } = await client.query<{ remote_id: string; local_id: string }>(
     `SELECT remote_id, local_id FROM integration_mappings
@@ -662,7 +873,10 @@ async function buildRefundReturnLines(
   const localByRemote = new Map(productMappings.map((m) => [m.remote_id, m.local_id]));
 
   for (const line of refund.line_items ?? []) {
-    const localId = localByRemote.get(String(line.product_id));
+    const variationId = Number(line.variation_id ?? 0) || 0;
+    const localId =
+      (variationId > 0 ? localByRemote.get(String(variationId)) : undefined) ??
+      localByRemote.get(String(line.product_id));
     if (!localId) continue;
     // WooCommerce refund quantities are negative.
     let remaining = Math.max(0, Math.abs(Math.round(line.quantity ?? 0)));

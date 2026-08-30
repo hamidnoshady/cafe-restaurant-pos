@@ -21,6 +21,7 @@
 
 import type { AppKey } from "@/lib/apps";
 import type { AppShellDef } from "@/lib/app-shells";
+import { CrmAppNav } from "./crm/crm-app-nav";
 import { GrowthAppNav } from "./growth/growth-app-nav";
 
 export interface AppShellNavProps {
@@ -37,6 +38,7 @@ export interface AppShellNavProps {
 export const APP_SHELL_NAV: Partial<
   Record<AppKey, (props: AppShellNavProps) => React.ReactElement>
 > = {
+  crm: CrmAppNav,
   growth: GrowthAppNav,
 };
 

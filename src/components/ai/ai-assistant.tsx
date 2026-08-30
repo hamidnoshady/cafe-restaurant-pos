@@ -1,28 +1,59 @@
 "use client";
 
 /**
- * Floating AI launcher. The chat core (streaming, cost preview, propose→
- * confirm, conversation persistence) lives in `useAiChat` and is shared with
- * the `/dashboard/ai` hub (Wave 2, issue #142); this component is just the
- * small popup window plus a link that hands the same conversation off to the
- * full-page hub.
+ * Floating AI launcher — the chat core (streaming, proposals, conversation
+ * persistence, task lens) lives in `useAiChat` and is shared with the
+ * /dashboard/ai hub; this component is the small popup window plus a link
+ * that hands the same conversation off to the full-page hub.
+ *
+ * Phase 36c redesign: on phones it opens as a full bottom sheet with a dimmer
+ * (chat-app behaviour), on larger screens as a window that springs out of the
+ * launcher's corner. Both paths are GSAP-animated and honour
+ * prefers-reduced-motion.
  */
 import { useEffect, useRef, useState } from "react";
 import { SparklesIcon } from "lucide-react";
+import { useGSAP } from "@gsap/react";
 import { AiChatHeader } from "./ai-chat-header";
 import { AiChatMessages } from "./ai-chat-messages";
 import { AiChatInput } from "./ai-chat-input";
 import { useAiChat, type AssistantMode } from "./use-ai-chat";
+import { SUGGESTED_PROMPTS, taskById, taskSuggestions } from "@/lib/ai-tasks";
+import {
+  animateBackdropIn,
+  animateBackdropOut,
+  animateBadgeBump,
+  animatePanelIn,
+  animatePanelOut,
+} from "./chat-animations";
 
 interface Props {
   mode: AssistantMode;
   currentStep?: string | null;
 }
 
+function useIsMobile(): boolean {
+  const [mobile, setMobile] = useState(false);
+  useEffect(() => {
+    const query = window.matchMedia("(max-width: 639px)");
+    const update = () => setMobile(query.matches);
+    update();
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
+  return mobile;
+}
+
 export function AiAssistant({ mode, currentStep }: Props) {
   const [open, setOpen] = useState(false);
+  const [closing, setClosing] = useState(false);
   const [unseenCount, setUnseenCount] = useState(0);
+  const isMobile = useIsMobile();
   const scrollRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const backdropRef = useRef<HTMLDivElement>(null);
+  const launcherRef = useRef<HTMLButtonElement>(null);
+  const badgeRef = useRef<HTMLSpanElement>(null);
   const {
     canPropose,
     messages,
@@ -31,12 +62,17 @@ export function AiAssistant({ mode, currentStep }: Props) {
     busy,
     applyingId,
     conversationId,
-    attachment,
-    attachReceiptImage,
+    attachments,
+    attachFiles,
     clearAttachment,
     actionsAllowed,
     setActionsAllowed,
+    task,
+    setTask,
+    customTask,
+    setCustomTask,
     ensureGreeting,
+    startNewConversation,
     loadConversation,
     sendMessage,
     askAgain,
@@ -114,10 +150,58 @@ export function AiAssistant({ mode, currentStep }: Props) {
     };
   }, [mode]);
 
+  // Launcher entrance + badge bump.
+  useGSAP(
+    () => {
+      if (launcherRef.current) {
+        animatePanelIn(launcherRef.current, { fromBottomSheet: false });
+      }
+    },
+    { scope: launcherRef },
+  );
+  useGSAP(
+    () => {
+      if (badgeRef.current && unseenCount > 0) animateBadgeBump(badgeRef.current);
+    },
+    { scope: badgeRef, dependencies: [unseenCount] },
+  );
+
+  // Panel + backdrop entrance.
+  useGSAP(
+    () => {
+      if (!open) return;
+      if (panelRef.current) animatePanelIn(panelRef.current, { fromBottomSheet: isMobile });
+      if (isMobile && backdropRef.current) animateBackdropIn(backdropRef.current);
+    },
+    { scope: panelRef, dependencies: [open, isMobile] },
+  );
+
+  function close() {
+    if (closing) return;
+    setClosing(true);
+    const finish = () => {
+      setOpen(false);
+      setClosing(false);
+    };
+    if (panelRef.current) {
+      animatePanelOut(panelRef.current, { fromBottomSheet: isMobile }, finish);
+    } else {
+      finish();
+    }
+    if (isMobile && backdropRef.current) animateBackdropOut(backdropRef.current);
+  }
+
+  const suggestions = taskSuggestions(task, mode, SUGGESTED_PROMPTS[mode]);
+  const taskLabel =
+    task === "custom" && customTask
+      ? "وظیفهٔ سفارشی"
+      : taskById(task)?.label;
+
   return (
     <>
       {!open && (
         <button
+          ref={launcherRef}
           type="button"
           onClick={() => setOpen(true)}
           aria-label={unseenCount > 0 ? `دستیار هوشمند — ${unseenCount} مورد نیازمند توجه شما` : "دستیار هوشمند"}
@@ -131,11 +215,14 @@ export function AiAssistant({ mode, currentStep }: Props) {
             and comes to full strength on touch/hover/focus, so the control you
             are actually reaching for is the solid one.
           */
-          className="fixed bottom-[calc(var(--app-bottom-nav)+var(--app-bottom-dock)+0.75rem)] left-4 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground opacity-70 shadow-lg ring-1 ring-foreground/10 transition-[transform,opacity] hover:scale-105 hover:opacity-100 focus-visible:opacity-100 active:scale-95 active:opacity-100 md:bottom-5 md:left-5"
+          className="fixed bottom-[calc(var(--app-bottom-nav)+var(--app-bottom-dock)+0.75rem)] left-4 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-primary to-primary/80 text-primary-foreground opacity-70 shadow-lg shadow-primary/30 ring-1 ring-foreground/10 transition-[transform,opacity] hover:scale-105 hover:opacity-100 focus-visible:opacity-100 active:scale-95 active:opacity-100 md:bottom-5 md:left-5"
         >
           <SparklesIcon className="size-6" />
           {unseenCount > 0 && (
-            <span className="absolute -end-1 -top-1 flex min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-[11px] font-semibold text-destructive-foreground ring-2 ring-background">
+            <span
+              ref={badgeRef}
+              className="absolute -end-1 -top-1 flex min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-[11px] font-semibold text-destructive-foreground ring-2 ring-background"
+            >
               {unseenCount > 9 ? "۹+" : unseenCount.toLocaleString("fa-IR")}
             </span>
           )}
@@ -143,39 +230,69 @@ export function AiAssistant({ mode, currentStep }: Props) {
       )}
 
       {open && (
-        <div className="fixed bottom-[calc(var(--app-bottom-nav)+var(--app-bottom-dock)+0.75rem)] left-4 z-50 flex h-[min(68dvh,610px)] w-[min(92vw,410px)] flex-col overflow-hidden rounded-2xl border border-stone-200/80 bg-card shadow-2xl ring-1 ring-foreground/10 md:bottom-5 md:left-5 md:h-[min(74vh,610px)]">
-          <AiChatHeader
-            mode={mode}
-            conversationId={conversationId}
-            onClose={() => setOpen(false)}
+        <>
+          {/* Phone dimmer — the sheet is modal, like every chat app's. */}
+          <div
+            ref={backdropRef}
+            aria-hidden="true"
+            onClick={close}
+            className="fixed inset-0 z-50 bg-black/40 backdrop-blur-[2px] sm:hidden"
           />
-          <AiChatMessages
-            mode={mode}
-            messages={messages}
-            busy={busy}
-            canPropose={canPropose}
-            applyingId={applyingId}
-            scrollRef={scrollRef}
-            applyProposal={applyProposal}
-            dismissProposal={dismissProposal}
-            sendMessage={sendMessage}
-            askAgain={askAgain}
-          />
-          <AiChatInput
-            mode={mode}
-            input={input}
-            setInput={setInput}
-            busy={busy}
-            canPropose={canPropose}
-            attachment={attachment}
-            actionsAllowed={actionsAllowed}
-            setActionsAllowed={setActionsAllowed}
-            attachReceiptImage={attachReceiptImage}
-            clearAttachment={clearAttachment}
-            loadConversation={loadConversation}
-            sendMessage={sendMessage}
-          />
-        </div>
+
+          <div
+            ref={panelRef}
+            role="dialog"
+            aria-label="دستیار هوشمند"
+            className="fixed z-50 flex flex-col overflow-hidden border-stone-200/80 bg-card shadow-2xl ring-1 ring-foreground/10
+              inset-x-0 bottom-0 h-[min(88dvh,720px)] rounded-t-3xl border-t
+              dark:border-stone-700/60
+              sm:inset-x-auto sm:bottom-[calc(var(--app-bottom-nav)+var(--app-bottom-dock)+0.75rem)] sm:left-4 sm:h-[min(76dvh,660px)] sm:w-[min(94vw,420px)] sm:rounded-3xl sm:border md:bottom-5 md:left-5"
+          >
+            {/* Grab handle, phones only. */}
+            <div className="flex justify-center pt-2 sm:hidden" aria-hidden="true">
+              <span className="h-1.5 w-10 rounded-full bg-stone-300 dark:bg-stone-600" />
+            </div>
+
+            <AiChatHeader
+              mode={mode}
+              conversationId={conversationId}
+              taskLabel={mode === "wizard" ? undefined : taskLabel}
+              busy={busy}
+              onNewChat={startNewConversation}
+              onClose={close}
+            />
+            <AiChatMessages
+              messages={messages}
+              busy={busy}
+              canPropose={canPropose}
+              applyingId={applyingId}
+              scrollRef={scrollRef}
+              suggestions={suggestions}
+              applyProposal={applyProposal}
+              dismissProposal={dismissProposal}
+              sendMessage={sendMessage}
+              askAgain={askAgain}
+            />
+            <AiChatInput
+              mode={mode}
+              input={input}
+              setInput={setInput}
+              busy={busy}
+              canPropose={canPropose}
+              attachments={attachments}
+              onAttachFiles={(files) => void attachFiles(files)}
+              onClearAttachment={clearAttachment}
+              task={task}
+              onTaskChange={setTask}
+              customTask={customTask}
+              onCustomTaskChange={setCustomTask}
+              actionsAllowed={actionsAllowed}
+              setActionsAllowed={setActionsAllowed}
+              loadConversation={loadConversation}
+              sendMessage={sendMessage}
+            />
+          </div>
+        </>
       )}
     </>
   );
