@@ -44,36 +44,24 @@ const EXEMPT_TABLES = new Set([
   // distribution (migration 0038) — carries no business_id/location_id,
   // nothing to scope by, same shape as feature_flags/plans.
   "platform_update_config",
-  // Phase 18 — singleton platform provider config plus globally shared priced
-  // catalogues. They hold no business/location column; the three billing
-  // tables that do carry business data are deliberately not in this list.
-  "platform_ai_config",
+  // Phase 18 & Phase 39 — singleton platform provider config (platform_ai_gateway)
+  // plus globally shared priced catalogues.
   "ai_credit_packages",
   "ai_subscription_plans",
   // Phase 35 — one deployment-wide VAPID key pair for Web Push (migration
-  // 0102). Same shape as platform_ai_config: a singleton with no business_id,
+  // 0102). Same shape as platform_ai_gateway: a singleton with no business_id,
   // and rotating it would invalidate every business's registered devices at
   // once, which is exactly why it is not per-tenant. The five notification_*
   // tables that DO carry business data are deliberately not in this list.
   "platform_push_config",
   // Phase 35 — platform-wide prompt-fragment overrides for the assistant
-  // (migration 0112). Same shape as platform_ai_config: no business_id /
-  // location_id column, nothing to scope by; a row overrides the code default
-  // for a fragment key + version and falls back to code when absent.
+  // (migration 0112). Same shape: no business_id / location_id column,
+  // nothing to scope by.
   "ai_prompt_templates",
   // Knowledge base (migration 0117): the super-admin-maintained learning page
-  // (a URL) per dashboard section. Same shape as feature_flags/plans: a
-  // platform catalogue with no business_id — the same pages teach every
-  // business. Tenant routes read it (active rows only, GET /api/knowledge);
-  // it is written only through /api/platform/knowledge under a platform
-  // session.
+  // (a URL) per dashboard section.
   "knowledge_base_entries",
-  // Phase 37 — deployment-wide LLM gateway settings (migration 0121). A
-  // singleton holding the gateway's address and admin credential, with no
-  // tenant column: rotating it is a deployment-wide act by definition, which
-  // is the same exemption as platform_ai_config and platform_push_config.
-  // `ai_business_gateway` — the per-business virtual key, budgets and model
-  // choice — is deliberately NOT exempt and must keep proving isolation.
+  // Phase 37 & Phase 39 — deployment-wide LLM gateway settings.
   "platform_ai_gateway",
 ]);
 
@@ -223,18 +211,10 @@ describe("every tenant table is protected", () => {
       .map((r) => r.relname);
 
     expect(unprotected, `tables missing tenant isolation: ${unprotected.join(", ")}`).toEqual([]);
-    // Guards against the exempt list quietly swallowing the whole schema.
     expect(rows.length).toBeGreaterThan(50);
   });
 
   it("every policy's actual expression scopes by business, not just exists", async () => {
-    // Phase 17 — the previous test proves every table HAS a policy; this
-    // proves each policy's own USING/WITH CHECK boolean actually references
-    // the tenant boundary rather than, say, `USING (true)` or a copy-paste
-    // that checks the wrong column. Generated straight from pg_policy, so it
-    // covers every shape (direct business_id, location_id-via-locations,
-    // and every EXISTS-based child-table traversal) in one pass — no
-    // per-table synthetic data required, unlike a live read/write attempt.
     const { rows } = await ownerClient.query<{
       relname: string;
       using_expr: string | null;
@@ -251,10 +231,6 @@ describe("every tenant table is protected", () => {
     );
     expect(rows.length).toBeGreaterThan(50);
 
-    // platform_users' WITH CHECK is deliberately bypass-only: a fresh row is
-    // created before any business exists to link it to (signup), and its
-    // USING clause (checked here like every other table's) is what actually
-    // confines a *read* to members of the caller's own business.
     const SKIP_CHECK_CLAUSE = new Set(["platform_users"]);
 
     const BYPASS = /app_rls_bypass\(\)/;
@@ -276,12 +252,6 @@ describe("every tenant table is protected", () => {
   });
 
   it("exempts only infrastructure and the platform realm", async () => {
-    // Two different justifications, and the distinction matters:
-    //   - infrastructure/catalogue tables hold no tenant column at all;
-    //   - platform_* tables are the super-user realm, which spans tenants by
-    //     definition (platform_audit_log records *which* business an admin
-    //     acted on, so it does carry business_id) and is only ever reached
-    //     through a platform session.
     for (const table of EXEMPT_TABLES) {
       if (table.startsWith("platform_")) continue;
 
@@ -296,15 +266,8 @@ describe("every tenant table is protected", () => {
       expect(rows[0].has_business, `${table} is exempt but carries a tenant column`).toBe(false);
     }
 
-    // The platform realm must stay unreachable from a tenant-scoped session,
-    // which is only true while no route hands it a tenant connection. Assert
-    // it at least isn't in the tenant-table set by accident.
     expect([...EXEMPT_TABLES].filter((t) => t.startsWith("platform_")).sort()).toEqual([
       "platform_admins",
-      "platform_ai_config",
-      // Phase 37 — the deployment-wide LLM gateway settings. The per-business
-      // table it provisions keys into (`ai_business_gateway`) is deliberately
-      // absent from EXEMPT_TABLES and is asserted by the coverage test above.
       "platform_ai_gateway",
       "platform_audit_log",
       "platform_push_config",
@@ -313,8 +276,6 @@ describe("every tenant table is protected", () => {
   });
 
   it("makes reporting views follow the caller rather than their owner", async () => {
-    // A view without security_invoker runs with its owner's rights and would
-    // re-open every boundary the policies close.
     const { rows } = await ownerClient.query<{ viewname: string; options: string[] | null }>(
       `SELECT c.relname AS viewname, c.reloptions AS options
          FROM pg_class c
@@ -417,7 +378,6 @@ describe("writes are confined to the current business", () => {
       expect(deleted.rowCount).toBe(0);
     });
 
-    // And Beta's row is still intact, checked from outside the boundary.
     const { rows } = await ownerClient.query<{ name: string }>(
       "SELECT name FROM menu_categories WHERE id = $1",
       [beta.categoryId],
@@ -426,8 +386,6 @@ describe("writes are confined to the current business", () => {
   });
 
   it("protects child rows reachable only through a parent", async () => {
-    // journal_lines carries no tenant column at all — it is reachable only via
-    // journal_entries, which is the shape most likely to be missed.
     const entry = await ownerClient.query<{ id: string }>(
       `INSERT INTO journal_entries (business_id, entry_date, memo)
        VALUES ($1, current_date, 'beta only') RETURNING id`,
@@ -461,9 +419,6 @@ describe("writes are confined to the current business", () => {
   });
 
   it("protects a direct business_id table (business_features) from cross-tenant read and write", async () => {
-    // Shape 1 — carries business_id itself, no parent traversal needed. Also
-    // the exact table Phase 17's feature-gating enforcement reads per
-    // request, so proving its isolation here is directly load-bearing.
     const override = await ownerClient.query<{ business_id: string; flag_key: string }>(
       `INSERT INTO business_features (business_id, flag_key, enabled)
        VALUES ($1, 'inventory', false) RETURNING business_id, flag_key`,
@@ -500,7 +455,6 @@ describe("writes are confined to the current business", () => {
 
   it("cannot switch off its own isolation", async () => {
     await asBusiness(alpha.businessId, async () => {
-      // The app role owns no tables, so it cannot drop a policy or disable RLS.
       await expect(
         appClient.query("ALTER TABLE menu_categories DISABLE ROW LEVEL SECURITY"),
       ).rejects.toThrow();
@@ -541,16 +495,12 @@ describe("cross-business identity", () => {
       );
     }
 
-    // The same email now exists twice, which the old global UNIQUE forbade.
-    // Ordered by role::text — `role` is an enum, so a bare ORDER BY sorts it
-    // in declaration order (owner before manager), not alphabetically.
     const { rows } = await ownerClient.query<{ role: string; business_id: string }>(
       "SELECT role, business_id FROM users WHERE platform_user_id = $1 ORDER BY role::text",
       [platformUserId],
     );
     expect(rows.map((r) => r.role)).toEqual(["manager", "owner"]);
 
-    // …and each business sees only its own membership row.
     await asBusiness(alpha.businessId, async () => {
       const { rows: alphaRows } = await appClient.query<{ role: string }>(
         "SELECT role FROM users WHERE platform_user_id = $1",

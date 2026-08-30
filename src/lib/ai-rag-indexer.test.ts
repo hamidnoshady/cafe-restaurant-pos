@@ -31,7 +31,7 @@ const mockUpsert = vi.mocked(upsertEmbedding);
 
 const config: AiConfig = {
   enabled: true,
-  provider: "arvan",
+  provider: "litellm",
   model: "gpt-4o-mini",
   baseUrl: "https://ai.example.com/v1",
   apiKey: "sk-test",

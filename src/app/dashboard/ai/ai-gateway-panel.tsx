@@ -1,19 +1,12 @@
 "use client";
 
 /**
- * Phase 37 — the business's own view of the gateway.
+ * Phase 37 & Phase 39 — the business and branch view of the AI Gateway.
  *
- * Everything a business is allowed to know about the deployment's model
- * routing, and nothing else: which model its assistant is using right now,
- * and — only if the platform has published a list — the ability to pick a
- * different one from it.
- *
- * The panel hides itself entirely when the platform runs without a gateway.
- * That is the point: a café on a direct OpenRouter or Arvan connection has no
- * model choice to make, and a control that explains a component the
- * deployment does not have is noise on a screen a cashier also looks at.
+ * Allows viewing effective model per branch or for the entire business,
+ * and setting model overrides per branch when permitted.
  */
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Loader2Icon } from "lucide-react";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Button } from "@/components/ui/button";
@@ -29,6 +22,11 @@ interface GatewayUsageRow {
   apiRequests: number;
 }
 
+interface LocationOption {
+  id: string;
+  name: string;
+}
+
 interface GatewayInfo {
   available: boolean;
   allowBusinessModels: boolean;
@@ -36,23 +34,28 @@ interface GatewayInfo {
   platformModel: string;
   publishedModels: string[];
   modelOverride: string | null;
+  businessModelOverride: string | null;
+  branchModelOverride: string | null;
   hasVirtualKey: boolean;
   syncError: string | null;
-  /** Phase 38b — this business's own gateway usage, newest day first. */
   usage?: GatewayUsageRow[];
+  locations?: LocationOption[];
+  selectedLocationId?: string | null;
   error?: string;
 }
 
 export function AiGatewayPanel() {
   const [info, setInfo] = useState<GatewayInfo | null>(null);
+  const [selectedLocationId, setSelectedLocationId] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  async function load() {
+  const load = useCallback(async (locId?: string) => {
     setLoading(true);
     try {
-      const res = await fetch("/api/dashboard/ai/gateway");
+      const url = locId ? `/api/dashboard/ai/gateway?locationId=${encodeURIComponent(locId)}` : "/api/dashboard/ai/gateway";
+      const res = await fetch(url);
       const body = (await res.json().catch(() => ({}))) as GatewayInfo;
       if (!res.ok) throw new Error(body.error ?? "خواندن تنظیمات مدل ممکن نشد.");
       setInfo(body);
@@ -61,11 +64,11 @@ export function AiGatewayPanel() {
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
 
   useEffect(() => {
-    void load();
-  }, []);
+    void load(selectedLocationId);
+  }, [load, selectedLocationId]);
 
   async function chooseModel(value: string) {
     setSaving(true);
@@ -74,11 +77,14 @@ export function AiGatewayPanel() {
       const res = await fetch("/api/dashboard/ai/gateway", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ modelOverride: value === "" ? null : value }),
+        body: JSON.stringify({
+          modelOverride: value === "" ? null : value,
+          locationId: selectedLocationId || null,
+        }),
       });
       const body = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) throw new Error(body.error ?? "ذخیرهٔ انتخاب مدل انجام نشد.");
-      await load();
+      await load(selectedLocationId);
     } catch (err) {
       setError(err instanceof Error ? err.message : "ذخیرهٔ انتخاب مدل انجام نشد.");
     } finally {
@@ -86,19 +92,37 @@ export function AiGatewayPanel() {
     }
   }
 
-  // No gateway, no panel: the platform has not enabled one, so there is
-  // nothing here for this business to see or change.
-  if (loading) return null;
+  if (loading && !info) return null;
   if (error || !info || !info.available) return null;
+
+  const locations = info.locations ?? [];
 
   return (
     <SectionCard
-      title="مدل دستیار"
-      description="مدلی که پاسخ‌های دستیار این کسب‌وکار را می‌نویسد."
+      title="مدل دستیار هوشمند"
+      description="مدلی که پاسخ‌های دستیار هوشمند این کسب‌وکار و شعبه‌ها را می‌نویسد."
     >
-      <div className="space-y-3">
-        <div className="flex flex-wrap items-baseline justify-between gap-2 text-sm">
-          <span className="text-stone-500">مدل فعلی</span>
+      <div className="space-y-4">
+        {locations.length > 1 ? (
+          <div className="space-y-1">
+            <label className="block text-sm font-medium text-stone-700">شعبه</label>
+            <SearchableSelect
+              value={selectedLocationId}
+              onChange={(value) => {
+                setSelectedLocationId(value);
+              }}
+              options={[
+                { value: "", label: "کل کسب‌وکار (پیش‌فرض)" },
+                ...locations.map((loc) => ({ value: loc.id, label: loc.name })),
+              ]}
+            />
+          </div>
+        ) : null}
+
+        <div className="flex flex-wrap items-baseline justify-between gap-2 text-sm rounded-lg border border-stone-200 bg-stone-50 p-3">
+          <span className="text-stone-500">
+            {selectedLocationId ? "مدل مؤثر برای این شعبه" : "مدل مؤثر برای کسب‌وکار"}
+          </span>
           <span className="font-medium text-stone-900" dir="ltr">
             {info.effectiveModel}
           </span>
@@ -106,12 +130,19 @@ export function AiGatewayPanel() {
 
         {info.allowBusinessModels && info.publishedModels.length > 0 ? (
           <div className="space-y-1">
-            <label className="block text-sm text-stone-600">انتخاب مدل</label>
+            <label className="block text-sm text-stone-600">
+              {selectedLocationId ? "انتخاب مدل اختصاصی این شعبه" : "انتخاب مدل اختصاصی کسب‌وکار"}
+            </label>
             <SearchableSelect
               value={info.modelOverride ?? ""}
               onChange={(value) => void chooseModel(value)}
               options={[
-                { value: "", label: `پیش‌فرض پلتفرم (${info.platformModel})` },
+                {
+                  value: "",
+                  label: selectedLocationId
+                    ? `ارث‌بری از کسب‌وکار (${info.businessModelOverride || info.platformModel})`
+                    : `پیش‌فرض پلتفرم (${info.platformModel})`,
+                },
                 ...info.publishedModels.map((model) => ({ value: model, label: model })),
               ]}
             />
@@ -168,7 +199,7 @@ export function AiGatewayPanel() {
         {error ? (
           <div className="flex items-center gap-2 text-sm text-rose-600">
             <span>{error}</span>
-            <Button variant="ghost" onClick={() => void load()} disabled={saving}>
+            <Button variant="ghost" onClick={() => void load(selectedLocationId)} disabled={saving}>
               {saving ? <Loader2Icon className="animate-spin" /> : "تلاش دوباره"}
             </Button>
           </div>

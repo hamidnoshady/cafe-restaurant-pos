@@ -139,11 +139,11 @@ export const POST = withTenantScope(async (request: NextRequest) => {
     mode,
   });
 
-  // Phase 37 — resolved through the gateway when one is configured: the
-  // virtual key, the model alias and the failover chain for THIS business are
-  // applied here, so nothing downstream has to know a gateway exists.
-  // Phase 38b — the mode resolves this surface's gateway prompt binding.
-  const config = await resolveAiConfigFor(session.businessId, mode);
+  const activeLocation = await resolveActiveLocation(session);
+  const locationId = floorLocation?.id ?? activeLocation?.id ?? null;
+  // Phase 37 & 39 — resolved through the gateway: the virtual key, the model alias
+  // and the failover chain for THIS business and branch are applied here.
+  const config = await resolveAiConfigFor(session.businessId, locationId, mode);
   if (!isPlatformAiConfigured(config)) {
     return NextResponse.json(
       { error: "ai_unavailable", message: "سرویس هوش مصنوعی هنوز توسط مدیر پلتفرم آماده نشده است." },

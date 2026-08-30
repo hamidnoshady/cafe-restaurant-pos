@@ -1,13 +1,12 @@
 /**
- * Phase 18 — one platform-owned AI provider connection.
+ * Phase 18 & Phase 39 — platform-owned AI provider connection (LiteLLM unified gateway).
  *
- * The old per-business settings row is deliberately gone. This singleton is
- * read by tenant assistant calls but can only be written through the platform
- * console; no business-facing response includes its API key.
+ * All platform AI settings are stored in `platform_ai_gateway`.
+ * This module provides the standard `PlatformAiConfig` reader and predicates
+ * used by runtime resolvers, billing/costing, and the platform admin console.
  */
 import {
   defaultConfig,
-  isProvider,
   PROVIDERS,
   validateConfigInput,
   type AiConfig,
@@ -50,7 +49,7 @@ export interface PublicPlatformAiConfig {
 
 export interface PlatformAiConfigInput {
   enabled: boolean;
-  provider: string;
+  provider?: string;
   model: string;
   baseUrl: string;
   apiKey?: string;
@@ -62,12 +61,11 @@ export interface PlatformAiConfigInput {
   maxOutputTokens: number;
 }
 
-type ConfigRow = {
+type GatewayConfigRow = {
   enabled: boolean;
-  provider: string;
-  model: string;
+  chat_model: string;
   base_url: string;
-  api_key: string | null;
+  master_key: string | null;
   temperature: string | number;
   input_cost_rial_per_million: string | number;
   output_cost_rial_per_million: string | number;
@@ -85,8 +83,12 @@ function envNumber(name: string): number {
   return numberValue(process.env[name]);
 }
 
-function envKeyFor(provider: AiProvider): string {
-  return process.env[PROVIDERS[provider].keyEnv]?.trim() ?? "";
+function envKey(): string {
+  return (
+    process.env.LITELLM_MASTER_KEY?.trim() ||
+    process.env.AI_API_KEY?.trim() ||
+    ""
+  );
 }
 
 /**
@@ -98,19 +100,16 @@ export function effectiveRate(costRialPerMillion: number, marginPercent: number)
   return Math.ceil(costRialPerMillion * (1 + (marginPercent || 0) / 100));
 }
 
-function defaultPlatformConfig(): PlatformAiConfig {
-  const provider: AiProvider = isProvider(process.env.AI_PROVIDER)
-    ? (process.env.AI_PROVIDER as AiProvider)
-    : "openrouter";
-  const base = defaultConfig(provider);
+export function defaultPlatformConfig(): PlatformAiConfig {
+  const base = defaultConfig("litellm");
   const temp = envNumber("AI_TEMPERATURE");
   const maxOutputTokens = envNumber("AI_MAX_OUTPUT_TOKENS");
   return {
     ...base,
     enabled: process.env.AI_ENABLED === "true",
     model: process.env.AI_MODEL?.trim() || base.model,
-    baseUrl: process.env.AI_BASE_URL?.trim() || base.baseUrl,
-    apiKey: envKeyFor(provider),
+    baseUrl: process.env.AI_BASE_URL?.trim() || process.env.LITELLM_BASE_URL?.trim() || base.baseUrl,
+    apiKey: envKey(),
     temperature: temp >= 0 && temp <= 2 ? temp : base.temperature,
     inputCostRialPerMillion: envNumber("AI_INPUT_COST_RIAL_PER_MILLION"),
     outputCostRialPerMillion: envNumber("AI_OUTPUT_COST_RIAL_PER_MILLION"),
@@ -124,8 +123,6 @@ function defaultPlatformConfig(): PlatformAiConfig {
       envNumber("AI_REVENUE_MARGIN_PERCENT"),
     ),
     maxTurnRial: envNumber("AI_MAX_TURN_RIAL"),
-    // A credit is a Rial. The display-unit setting left with the credit
-    // package catalogue; the field stays so billing code keeps one shape.
     creditUnitRial: 1,
     maxOutputTokens:
       Number.isInteger(maxOutputTokens) && maxOutputTokens >= 64 && maxOutputTokens <= 8192
@@ -134,16 +131,15 @@ function defaultPlatformConfig(): PlatformAiConfig {
   };
 }
 
-function rowToConfig(row: ConfigRow): PlatformAiConfig {
+function rowToConfig(row: GatewayConfigRow): PlatformAiConfig {
   const fallback = defaultPlatformConfig();
-  const provider = isProvider(row.provider) ? row.provider : fallback.provider;
-  const base = defaultConfig(provider);
+  const base = defaultConfig("litellm");
   return {
     enabled: row.enabled,
-    provider,
-    model: row.model?.trim() || base.model,
-    baseUrl: row.base_url?.trim() || base.baseUrl,
-    apiKey: row.api_key?.trim() || envKeyFor(provider),
+    provider: "litellm",
+    model: row.chat_model?.trim() || fallback.model || base.model,
+    baseUrl: row.base_url?.trim() || fallback.baseUrl || base.baseUrl,
+    apiKey: row.master_key?.trim() || fallback.apiKey || "",
     temperature: numberValue(row.temperature),
     inputCostRialPerMillion: numberValue(row.input_cost_rial_per_million),
     outputCostRialPerMillion: numberValue(row.output_cost_rial_per_million),
@@ -158,20 +154,24 @@ function rowToConfig(row: ConfigRow): PlatformAiConfig {
     ),
     maxTurnRial: numberValue(row.max_turn_rial),
     creditUnitRial: 1,
-    maxOutputTokens: row.max_output_tokens,
+    maxOutputTokens: row.max_output_tokens || 1000,
   };
 }
 
 /** The global config used by every business's assistant call. */
 export async function getPlatformAiConfig(): Promise<PlatformAiConfig> {
-  const { rows } = await query<ConfigRow>(
-    `SELECT enabled, provider, model, base_url, api_key, temperature,
-            input_cost_rial_per_million, output_cost_rial_per_million,
-            revenue_margin_percent, max_turn_rial, max_output_tokens
-       FROM platform_ai_config
-      WHERE id = true`,
-  );
-  return rows[0] ? rowToConfig(rows[0]) : defaultPlatformConfig();
+  try {
+    const { rows } = await query<GatewayConfigRow>(
+      `SELECT enabled, chat_model, base_url, master_key, temperature,
+              input_cost_rial_per_million, output_cost_rial_per_million,
+              revenue_margin_percent, max_turn_rial, max_output_tokens
+         FROM platform_ai_gateway
+        WHERE id = true`,
+    );
+    return rows[0] ? rowToConfig(rows[0]) : defaultPlatformConfig();
+  } catch {
+    return defaultPlatformConfig();
+  }
 }
 
 /** A provider connection that may serve the platform support agent. */
@@ -213,7 +213,7 @@ function positiveInteger(value: number): boolean {
 }
 
 export function validatePlatformAiConfigInput(input: PlatformAiConfigInput): string[] {
-  const errors = validateConfigInput(input);
+  const errors = validateConfigInput({ ...input, provider: "litellm" });
   if (typeof input.enabled !== "boolean") errors.push("ai_bad_enabled");
   if (!positiveInteger(input.inputCostRialPerMillion)) errors.push("ai_bad_input_cost");
   if (!positiveInteger(input.outputCostRialPerMillion)) errors.push("ai_bad_output_cost");
@@ -242,20 +242,18 @@ export function validatePlatformAiConfigInput(input: PlatformAiConfigInput): str
 export async function savePlatformAiConfig(input: PlatformAiConfigInput): Promise<PlatformAiConfig> {
   const current = await getPlatformAiConfig();
   const apiKey = input.apiKey?.trim() || current.apiKey || null;
-  const provider = input.provider as AiProvider;
   await query(
-    `INSERT INTO platform_ai_config
-       (id, enabled, provider, model, base_url, api_key, temperature,
+    `INSERT INTO platform_ai_gateway
+       (id, enabled, chat_model, base_url, master_key, temperature,
         input_cost_rial_per_million, output_cost_rial_per_million,
         revenue_margin_percent, max_turn_rial, max_output_tokens, updated_at)
      VALUES
-       (true, $1, $2, $3, $4, $5, $6, $7, $8, $9::numeric, $10, $11, now())
+       (true, $1, $2, $3, $4, $5, $6, $7, $8::numeric, $9, $10, now())
      ON CONFLICT (id)
      DO UPDATE SET enabled = EXCLUDED.enabled,
-                   provider = EXCLUDED.provider,
-                   model = EXCLUDED.model,
+                   chat_model = EXCLUDED.chat_model,
                    base_url = EXCLUDED.base_url,
-                   api_key = EXCLUDED.api_key,
+                   master_key = EXCLUDED.master_key,
                    temperature = EXCLUDED.temperature,
                    input_cost_rial_per_million = EXCLUDED.input_cost_rial_per_million,
                    output_cost_rial_per_million = EXCLUDED.output_cost_rial_per_million,
@@ -265,7 +263,6 @@ export async function savePlatformAiConfig(input: PlatformAiConfigInput): Promis
                    updated_at = now()`,
     [
       input.enabled,
-      provider,
       input.model.trim(),
       input.baseUrl.trim(),
       apiKey,

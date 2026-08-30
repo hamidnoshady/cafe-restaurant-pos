@@ -17,18 +17,19 @@ import {
 import { actionTypesForCategory } from "./ai-autopilot";
 
 describe("provider metadata", () => {
-  it("knows both providers and only those", () => {
-    expect(isProvider("openrouter")).toBe(true);
-    expect(isProvider("arvan")).toBe(true);
+  it("knows litellm as the only provider", () => {
+    expect(isProvider("litellm")).toBe(true);
+    expect(isProvider("openrouter")).toBe(false);
+    expect(isProvider("arvan")).toBe(false);
     expect(isProvider("openai")).toBe(false);
     expect(isProvider(null)).toBe(false);
   });
 
   it("defaultConfig uses the provider's defaults and is disabled with no key", () => {
-    const c = defaultConfig("arvan");
-    expect(c.provider).toBe("arvan");
-    expect(c.model).toBe(PROVIDERS.arvan.defaultModel);
-    expect(c.baseUrl).toBe(PROVIDERS.arvan.defaultBaseUrl);
+    const c = defaultConfig("litellm");
+    expect(c.provider).toBe("litellm");
+    expect(c.model).toBe(PROVIDERS.litellm.defaultModel);
+    expect(c.baseUrl).toBe(PROVIDERS.litellm.defaultBaseUrl);
     expect(c.enabled).toBe(false);
     expect(c.apiKey).toBe("");
   });
@@ -36,11 +37,11 @@ describe("provider metadata", () => {
 
 describe("chatCompletionsUrl", () => {
   it("appends the path and tolerates a trailing slash", () => {
-    expect(chatCompletionsUrl("https://openrouter.ai/api/v1")).toBe(
-      "https://openrouter.ai/api/v1/chat/completions",
+    expect(chatCompletionsUrl("http://litellm:4000/v1")).toBe(
+      "http://litellm:4000/v1/chat/completions",
     );
-    expect(chatCompletionsUrl("https://openrouter.ai/api/v1/")).toBe(
-      "https://openrouter.ai/api/v1/chat/completions",
+    expect(chatCompletionsUrl("http://litellm:4000/v1/")).toBe(
+      "http://litellm:4000/v1/chat/completions",
     );
   });
 });
@@ -48,7 +49,7 @@ describe("chatCompletionsUrl", () => {
 describe("toPublicConfig", () => {
   it("never leaks the key, only a hint", () => {
     const pub = toPublicConfig({
-      ...defaultConfig("openrouter"),
+      ...defaultConfig("litellm"),
       apiKey: "sk-or-secret-abcd1234",
       enabled: true,
     });
@@ -58,7 +59,7 @@ describe("toPublicConfig", () => {
   });
 
   it("reports no key when empty", () => {
-    const pub = toPublicConfig(defaultConfig("openrouter"));
+    const pub = toPublicConfig(defaultConfig("litellm"));
     expect(pub.hasKey).toBe(false);
     expect(pub.keyHint).toBeNull();
   });
@@ -68,9 +69,9 @@ describe("validateConfigInput", () => {
   it("accepts a well-formed config", () => {
     expect(
       validateConfigInput({
-        provider: "openrouter",
-        model: "openai/gpt-4o-mini",
-        baseUrl: "https://openrouter.ai/api/v1",
+        provider: "litellm",
+        model: "gpt-4o-mini",
+        baseUrl: "http://litellm:4000/v1",
         temperature: 0.3,
       }),
     ).toEqual([]);

@@ -10,7 +10,7 @@ import { Loader2Icon } from "lucide-react";
 
 interface AiConfig {
   enabled: boolean;
-  provider: "openrouter" | "arvan" | "litellm";
+  provider: "litellm";
   model: string;
   baseUrl: string;
   temperature: number;
@@ -230,16 +230,7 @@ export default function PlatformAiPage() {
           ) : null}
           <form onSubmit={saveConfig} className="grid gap-4 lg:grid-cols-2">
             <Field label="ارائه‌دهنده">
-              <SearchableSelect
-                className={inputClass}
-                value={configDraft.provider}
-                onChange={(value) => setConfigDraft({ ...configDraft, provider: value as AiConfig["provider"] })}
-                options={[
-                  { value: "openrouter", label: "OpenRouter" },
-                  { value: "arvan", label: "آروان‌کلاد" },
-                  { value: "litellm", label: "LiteLLM (دروازهٔ یکپارچه)" },
-                ]}
-              />
+              <input className={inputClass} dir="ltr" value="LiteLLM (دروازهٔ یکپارچه)" readOnly />
             </Field>
             <Field label="مدل">
               <input className={inputClass} dir="ltr" value={configDraft.model} onChange={(event) => setConfigDraft({ ...configDraft, model: event.target.value })} />

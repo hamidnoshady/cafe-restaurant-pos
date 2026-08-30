@@ -72,15 +72,11 @@ interface ProviderMessage {
 function providerHeaders(config: AiConfig): Record<string, string> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    // Phase 37 — a gateway deployment authenticates the call with the calling
-    // business's virtual key when one has been provisioned; every other
-    // deployment sends the platform key exactly as it always has.
+    // Phase 37 & 39 — a gateway deployment authenticates the call with the calling
+    // branch or business's virtual key when one has been provisioned; every other
+    // deployment sends the platform key.
     Authorization: `Bearer ${config.gateway?.authKey || config.apiKey}`,
   };
-  if (config.provider === "openrouter") {
-    headers["HTTP-Referer"] = process.env.APP_URL ?? "https://cafe-pos.local";
-    headers["X-Title"] = "Cafe/Restaurant POS";
-  }
   return headers;
 }
 
@@ -166,7 +162,6 @@ async function callVision(
   return {
     text,
     usage,
-    // Phase 38b — the gateway's own price for this call, when it reports one.
     costUsd: parseResponseCostHeader(res.headers.get("x-litellm-response-cost")),
   };
 }
@@ -236,9 +231,6 @@ async function matchSupplier(
 function collapseCandidates(
   rows: InventoryCandidate[],
 ): Array<{ id: string; name: string; unit: string; purchaseUnit: string | null; code: string | null }> {
-  // pickBestInventoryMatch wants one entry per item for name scoring, but
-  // barcode hits need every code. Build a code-aware list and a unique-by-id
-  // list; the picker handles both.
   const byId = new Map<
     string,
     { id: string; name: string; unit: string; purchaseUnit: string | null; code: string | null }
@@ -262,7 +254,6 @@ function collapseCandidates(
     if (row.code) withCodes.push(shaped);
     if (!byId.has(row.id)) byId.set(row.id, { ...shaped, code: null });
   }
-  // Name candidates first (unique), then code-bearing rows for barcode hits.
   return [...byId.values(), ...withCodes];
 }
 
@@ -298,7 +289,6 @@ export async function runInvoiceOcr(input: {
         ? [picked.item, ...picked.candidates.filter((c) => c.id !== picked.item!.id)]
         : picked.candidates
     )
-      // De-dupe by id for the picker UI.
       .filter((c, i, arr) => arr.findIndex((x) => x.id === c.id) === i)
       .slice(0, 8)
       .map((c) => ({

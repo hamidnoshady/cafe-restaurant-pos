@@ -1,6 +1,6 @@
 /**
- * Phase 37 — the gateway's server half: the singleton gateway row, each
- * business's slice of it, and the calls to the gateway's own management API.
+ * Phase 37 & Phase 39 — the gateway's server half: the singleton gateway row,
+ * each business and branch's slice of it, and the calls to the gateway's own management API.
  *
  * Two rules shape this file.
  *
@@ -13,10 +13,10 @@
  *    did not happen.
  *
  * 2. **Tenant scope is the caller's, not this module's.** `saveBusinessGateway`
- *    takes an explicit `business_id` and writes through the ordinary
- *    `query()`, exactly as Phase 18's credit writes do: from the platform
+ *    takes explicit `business_id` and optional `location_id` and writes through the
+ *    ordinary `query()`, exactly as Phase 18's credit writes do: from the platform
  *    console the ambient scope is the documented `platform` bypass and any
- *    business may be addressed, while from a business's own settings page RLS
+ *    business/branch may be addressed, while from a business's own settings page RLS
  *    confines the write to the session's business — so a forged business id is
  *    refused rather than merely ignored.
  */
@@ -175,10 +175,6 @@ function envGatewayConfig(): Partial<AiGatewayInput> {
 
 /**
  * Overlay a partial draft onto the stored settings.
- *
- * Used by the console's "test connection" button, which must probe the
- * connection as the operator has typed it — including an address or admin key
- * that has not been saved yet — without writing anything.
  */
 export function mergeGatewayConfig(draft: AiGatewayInput, current: AiGatewayConfig): AiGatewayConfig {
   return {
@@ -208,12 +204,6 @@ export function mergeGatewayConfig(draft: AiGatewayInput, current: AiGatewayConf
   };
 }
 
-/**
- * `undefined` means "not mentioned, keep the stored value"; `null` means
- * "explicitly cleared". Without that distinction an operator could set a
- * budget and never remove it, because the null would be silently replaced by
- * the value it was meant to erase.
- */
 function pickOptionalNumber(value: number | null | undefined, current: number | null): number | null {
   if (value === undefined) return current;
   return optionalNumber(value);
@@ -221,10 +211,6 @@ function pickOptionalNumber(value: number | null | undefined, current: number | 
 
 /**
  * Persist the gateway settings.
- *
- * A blank master key preserves the stored one, mirroring `savePlatformAiConfig`:
- * an operator adjusting the failover chain must not have to re-send the
- * gateway's admin credential to do it.
  */
 export async function saveAiGatewayConfig(input: AiGatewayInput): Promise<AiGatewayConfig> {
   const errors = validateGatewayInput(input);
@@ -295,11 +281,13 @@ export async function saveAiGatewayConfig(input: AiGatewayInput): Promise<AiGate
 }
 
 // ---------------------------------------------------------------------------
-// One business's slice
+// Business & Branch Gateways
 // ---------------------------------------------------------------------------
 
 type BusinessGatewayRow = {
+  id?: string;
   business_id: string;
+  location_id: string | null;
   virtual_key: string | null;
   key_alias: string | null;
   model_override: string | null;
@@ -314,7 +302,9 @@ type BusinessGatewayRow = {
 
 function rowToBusinessGateway(row: BusinessGatewayRow): BusinessGateway {
   return {
+    id: row.id,
     businessId: row.business_id,
+    locationId: row.location_id ?? null,
     virtualKey: row.virtual_key ?? null,
     keyAlias: row.key_alias ?? null,
     modelOverride: row.model_override ?? null,
@@ -329,55 +319,108 @@ function rowToBusinessGateway(row: BusinessGatewayRow): BusinessGateway {
 }
 
 /**
- * This business's gateway row, read under whatever scope the caller already
- * has. Returns null when the business has none — which is a normal state, not
- * an error, and means "use the shared connection".
+ * Get gateway row for a business or a specific branch.
+ * If locationId is provided, queries for that branch.
+ * If locationId is null/undefined, queries for the business-level gateway (location_id IS NULL).
  */
-export async function getBusinessGateway(businessId: string): Promise<BusinessGateway | null> {
+export async function getBusinessGateway(
+  businessId: string,
+  locationId?: string | null,
+): Promise<BusinessGateway | null> {
+  const loc = locationId?.trim() || null;
   const { rows } = await query<BusinessGatewayRow>(
-    `SELECT business_id, virtual_key, key_alias, model_override, max_budget_usd,
+    `SELECT id, business_id, location_id, virtual_key, key_alias, model_override, max_budget_usd,
             budget_duration, tpm_limit, rpm_limit, spend_usd, synced_at, sync_error
        FROM ai_business_gateway
-      WHERE business_id = $1`,
-    [businessId],
+      WHERE business_id = $1
+        AND (
+          ($2::uuid IS NOT NULL AND location_id = $2::uuid)
+          OR
+          ($2::uuid IS NULL AND location_id IS NULL)
+        )`,
+    [businessId, loc],
   );
   return rows[0] ? rowToBusinessGateway(rows[0]) : null;
 }
 
-/** Every business's gateway row, for the console. Platform scope only. */
-export async function listBusinessGateways(): Promise<BusinessGateway[]> {
+/** Get gateway row for a specific branch. */
+export async function getBranchGateway(
+  businessId: string,
+  locationId: string,
+): Promise<BusinessGateway | null> {
+  return getBusinessGateway(businessId, locationId);
+}
+
+/** List all branch gateways for a business. */
+export async function listBranchGateways(businessId: string): Promise<BusinessGateway[]> {
+  const { rows } = await query<BusinessGatewayRow>(
+    `SELECT id, business_id, location_id, virtual_key, key_alias, model_override, max_budget_usd,
+            budget_duration, tpm_limit, rpm_limit, spend_usd, synced_at, sync_error
+       FROM ai_business_gateway
+      WHERE business_id = $1
+        AND location_id IS NOT NULL`,
+    [businessId],
+  );
+  return rows.map(rowToBusinessGateway);
+}
+
+/** List business/branch gateway rows. Platform scope. */
+export async function listBusinessGateways(
+  businessId?: string,
+  locationId?: string | null,
+): Promise<BusinessGateway[]> {
   return withoutTenantScope("platform", async () => {
-    const { rows } = await query<BusinessGatewayRow>(
-      `SELECT business_id, virtual_key, key_alias, model_override, max_budget_usd,
-              budget_duration, tpm_limit, rpm_limit, spend_usd, synced_at, sync_error
-         FROM ai_business_gateway`,
-    );
+    let sql = `SELECT id, business_id, location_id, virtual_key, key_alias, model_override, max_budget_usd,
+                      budget_duration, tpm_limit, rpm_limit, spend_usd, synced_at, sync_error
+                 FROM ai_business_gateway`;
+    const params: unknown[] = [];
+    const conditions: string[] = [];
+
+    if (businessId) {
+      params.push(businessId);
+      conditions.push(`business_id = $${params.length}`);
+    }
+
+    if (locationId !== undefined) {
+      if (locationId === null) {
+        conditions.push(`location_id IS NULL`);
+      } else {
+        params.push(locationId);
+        conditions.push(`location_id = $${params.length}`);
+      }
+    }
+
+    if (conditions.length > 0) {
+      sql += ` WHERE ` + conditions.join(" AND ");
+    }
+
+    sql += ` ORDER BY business_id, location_id NULLS FIRST`;
+    const { rows } = await query<BusinessGatewayRow>(sql, params);
     return rows.map(rowToBusinessGateway);
   });
 }
 
 /**
- * Upsert one business's gateway settings.
- *
- * The model override is validated against the platform's published list here
- * as well as in the route: this is the last place before the write, and a
- * check that only existed in the route could be bypassed by any future caller.
+ * Upsert gateway settings for a business or branch.
  */
 export async function saveBusinessGateway(
   businessId: string,
   input: BusinessGatewayInput,
   gateway: AiGatewayConfig,
+  locationId?: string | null,
 ): Promise<BusinessGateway> {
+  const loc = locationId?.trim() || null;
   const errors = validateBusinessGatewayInput(input, {
     allowBusinessModels: gateway.allowBusinessModels,
     allowedModels: gateway.publishedModels,
   });
   if (errors.length > 0) throw new Error(errors[0]);
+
   await query(
     `INSERT INTO ai_business_gateway
-       (business_id, model_override, max_budget_usd, budget_duration, tpm_limit, rpm_limit, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, now())
-     ON CONFLICT (business_id)
+       (business_id, location_id, model_override, max_budget_usd, budget_duration, tpm_limit, rpm_limit, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, now())
+     ON CONFLICT (business_id, location_id)
      DO UPDATE SET model_override = EXCLUDED.model_override,
                    max_budget_usd = EXCLUDED.max_budget_usd,
                    budget_duration = EXCLUDED.budget_duration,
@@ -386,6 +429,7 @@ export async function saveBusinessGateway(
                    updated_at = now()`,
     [
       businessId,
+      loc,
       input.modelOverride === undefined ? null : (input.modelOverride ?? "").trim() || null,
       optionalNumber(input.maxBudgetUsd),
       (input.budgetDuration ?? "").trim() || null,
@@ -393,12 +437,13 @@ export async function saveBusinessGateway(
       optionalInteger(input.rpmLimit),
     ],
   );
-  return (await getBusinessGateway(businessId)) ?? emptyBusinessGateway(businessId);
+  return (await getBusinessGateway(businessId, loc)) ?? emptyBusinessGateway(businessId, loc);
 }
 
-/** Record a virtual key against a business. Platform scope. */
+/** Record a virtual key against a business or branch. Platform scope. */
 async function storeVirtualKey(input: {
   businessId: string;
+  locationId?: string | null;
   virtualKey: string;
   keyAlias: string;
   maxBudgetUsd: number | null;
@@ -407,24 +452,26 @@ async function storeVirtualKey(input: {
   rpmLimit: number | null;
   syncError?: string | null;
 }): Promise<BusinessGateway> {
+  const loc = input.locationId?.trim() || null;
   return withoutTenantScope("platform", async () => {
     await query(
       `INSERT INTO ai_business_gateway
-         (business_id, virtual_key, key_alias, max_budget_usd, budget_duration,
+         (business_id, location_id, virtual_key, key_alias, max_budget_usd, budget_duration,
           tpm_limit, rpm_limit, synced_at, sync_error, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, CASE WHEN $8::text IS NULL THEN now() ELSE NULL END, $8, now())
-       ON CONFLICT (business_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CASE WHEN $9::text IS NULL THEN now() ELSE NULL END, $9, now())
+       ON CONFLICT (business_id, location_id)
        DO UPDATE SET virtual_key = EXCLUDED.virtual_key,
                      key_alias = EXCLUDED.key_alias,
                      max_budget_usd = COALESCE(EXCLUDED.max_budget_usd, ai_business_gateway.max_budget_usd),
                      budget_duration = COALESCE(EXCLUDED.budget_duration, ai_business_gateway.budget_duration),
                      tpm_limit = EXCLUDED.tpm_limit,
                      rpm_limit = EXCLUDED.rpm_limit,
-                     synced_at = CASE WHEN $8::text IS NULL THEN now() ELSE ai_business_gateway.synced_at END,
+                     synced_at = CASE WHEN $9::text IS NULL THEN now() ELSE ai_business_gateway.synced_at END,
                      sync_error = EXCLUDED.sync_error,
                      updated_at = now()`,
       [
         input.businessId,
+        loc,
         input.virtualKey,
         input.keyAlias,
         input.maxBudgetUsd,
@@ -434,14 +481,24 @@ async function storeVirtualKey(input: {
         input.syncError ?? null,
       ],
     );
-    return (await getBusinessGateway(input.businessId)) ?? emptyBusinessGateway(input.businessId);
+    return (await getBusinessGateway(input.businessId, loc)) ?? emptyBusinessGateway(input.businessId, loc);
   });
 }
 
 /** Forget the virtual key and the row that held it. Platform scope. */
-export async function clearVirtualKey(businessId: string): Promise<void> {
+export async function clearVirtualKey(businessId: string, locationId?: string | null): Promise<void> {
+  const loc = locationId?.trim() || null;
   await withoutTenantScope("platform", async () => {
-    await query("DELETE FROM ai_business_gateway WHERE business_id = $1", [businessId]);
+    await query(
+      `DELETE FROM ai_business_gateway
+        WHERE business_id = $1
+          AND (
+            ($2::uuid IS NOT NULL AND location_id = $2::uuid)
+            OR
+            ($2::uuid IS NULL AND location_id IS NULL)
+          )`,
+      [businessId, loc],
+    );
   });
 }
 
@@ -454,11 +511,6 @@ interface GatewayResponse {
   body: unknown;
 }
 
-/**
- * One call to the gateway. Never throws: `status: 0` means the gateway could
- * not be reached at all, which every caller treats as "not available" rather
- * than as an error to propagate.
- */
 async function gatewayRequest(
   config: AiGatewayConfig,
   url: string,
@@ -530,8 +582,9 @@ export async function listGatewayModels(config: AiGatewayConfig): Promise<string
 
 export interface VirtualKeyInput {
   businessId: string;
+  locationId?: string | null;
   /** The model the platform will send, plus its fallbacks — the key's allowlist. */
-  models: string[];
+  models?: string[];
   maxBudgetUsd: number | null;
   budgetDuration: string | null;
   tpmLimit: number | null;
@@ -539,20 +592,23 @@ export interface VirtualKeyInput {
 }
 
 /**
- * Mint (or refresh) the virtual key for one business and store it.
- *
- * Throws a `GatewayCallError`-shaped object's message through `Error` only for
- * the operator-initiated provisioning path, where silence would be worse than
- * a failure: an admin pressing "sync" is entitled to know it did not happen.
+ * Mint (or refresh) the virtual key for one business or branch and store it.
  */
 export async function provisionVirtualKey(
   config: AiGatewayConfig,
   platformModel: string,
   input: VirtualKeyInput,
 ): Promise<BusinessGateway> {
-  const alias = virtualKeyAlias(input.businessId);
-  const existing = await getBusinessGatewayOrEmpty(input.businessId);
-  const models = input.models.length > 0 ? input.models : keyModelsFor({ platformModel, gateway: config, business: existing });
+  const loc = input.locationId?.trim() || null;
+  const alias = virtualKeyAlias(input.businessId, loc);
+  const existing = await getBusinessGatewayOrEmpty(input.businessId, loc);
+  const models = input.models && input.models.length > 0
+    ? input.models
+    : keyModelsFor({
+        platformModel,
+        gateway: config,
+        business: existing,
+      });
   const limits = {
     models,
     max_budget: input.maxBudgetUsd ?? undefined,
@@ -570,6 +626,7 @@ export async function provisionVirtualKey(
       const error = asError(res.status);
       return storeVirtualKey({
         businessId: input.businessId,
+        locationId: loc,
         virtualKey: existing.virtualKey,
         keyAlias: alias,
         maxBudgetUsd: input.maxBudgetUsd,
@@ -581,6 +638,7 @@ export async function provisionVirtualKey(
     }
     return storeVirtualKey({
       businessId: input.businessId,
+      locationId: loc,
       virtualKey: existing.virtualKey,
       keyAlias: alias,
       maxBudgetUsd: input.maxBudgetUsd,
@@ -594,7 +652,11 @@ export async function provisionVirtualKey(
     method: "POST",
     body: {
       key_alias: alias,
-      metadata: { business_id: input.businessId, source: "cafe-pos" },
+      metadata: {
+        business_id: input.businessId,
+        ...(loc ? { location_id: loc } : {}),
+        source: "cafe-pos",
+      },
       ...limits,
     },
   });
@@ -606,6 +668,7 @@ export async function provisionVirtualKey(
   if (!key) throw new Error("ai_gateway_bad_response");
   return storeVirtualKey({
     businessId: input.businessId,
+    locationId: loc,
     virtualKey: key,
     keyAlias: alias,
     maxBudgetUsd: input.maxBudgetUsd,
@@ -615,30 +678,33 @@ export async function provisionVirtualKey(
   });
 }
 
-/** Revoke a business's virtual key at the gateway and drop the row. */
+/** Revoke a business or branch's virtual key at the gateway and drop the row. */
 export async function revokeVirtualKey(
   config: AiGatewayConfig,
   businessId: string,
+  locationId?: string | null,
 ): Promise<void> {
-  const existing = await getBusinessGatewayOrEmpty(businessId);
+  const loc = locationId?.trim() || null;
+  const existing = await getBusinessGatewayOrEmpty(businessId, loc);
   if (existing?.virtualKey) {
     await gatewayRequest(config, keyDeleteUrl(config.baseUrl), {
       method: "POST",
       body: { keys: [existing.virtualKey] },
     });
   }
-  await clearVirtualKey(businessId);
+  await clearVirtualKey(businessId, loc);
 }
 
 /**
- * Ask the gateway what this key has spent. Diagnostic only — the figure the
- * business is billed remains the Rial ledger.
+ * Ask the gateway what this key has spent. Diagnostic only.
  */
 export async function refreshKeySpend(
   config: AiGatewayConfig,
   businessId: string,
+  locationId?: string | null,
 ): Promise<BusinessGateway | null> {
-  const existing = await getBusinessGatewayOrEmpty(businessId);
+  const loc = locationId?.trim() || null;
+  const existing = await getBusinessGatewayOrEmpty(businessId, loc);
   if (!existing?.virtualKey) return existing ?? null;
   const res = await gatewayRequest(config, keyInfoUrl(config.baseUrl, existing.virtualKey), { method: "GET" });
   const spend = ok(res.status) ? parseKeySpend(res.body) : null;
@@ -646,40 +712,35 @@ export async function refreshKeySpend(
   await withoutTenantScope("platform", async () => {
     await query(
       `UPDATE ai_business_gateway
-          SET spend_usd = $2, updated_at = now()
-        WHERE business_id = $1`,
-      [businessId, spend.spendUsd],
+          SET spend_usd = $3, updated_at = now()
+        WHERE business_id = $1
+          AND (
+            ($2::uuid IS NOT NULL AND location_id = $2::uuid)
+            OR
+            ($2::uuid IS NULL AND location_id IS NULL)
+          )`,
+      [businessId, loc, spend.spendUsd],
     );
   });
-  return (await getBusinessGateway(businessId)) ?? existing;
+  return (await getBusinessGateway(businessId, loc)) ?? existing;
 }
 
 /** Platform-scoped read used by the provisioning path before a write. */
-async function getBusinessGatewayOrEmpty(businessId: string): Promise<BusinessGateway | null> {
-  return withoutTenantScope("platform", () => getBusinessGateway(businessId));
+async function getBusinessGatewayOrEmpty(
+  businessId: string,
+  locationId?: string | null,
+): Promise<BusinessGateway | null> {
+  return withoutTenantScope("platform", () => getBusinessGateway(businessId, locationId));
 }
 
 // ---------------------------------------------------------------------------
-// Phase 38b — costing resolution and usage sync
-//
-// The costing helper is called on every settlement path, so it fails soft and
-// returns null on anything unexpected: a turn that would have settled on the
-// token rates must keep settling on them, not fail because the gateway row
-// is unreadable. The sync is an explicit operator action and is allowed to
-// report failure loudly in its result object.
+// Costing resolution and usage sync
 // ---------------------------------------------------------------------------
 
-/** Gateway costing in force right now, or null when turns settle on the token rates. */
 export interface GatewayCosting {
   usdRialRate: number;
 }
 
-/**
- * The costing policy for settlements: the platform's cost source is the
- * gateway only when the platform runs through it, the switch is on, and a
- * USD→Rial rate is configured. Anything else is null — the exact precedence
- * the runtime uses before attaching gateway fields to a call.
- */
 export async function resolveGatewayCosting(): Promise<GatewayCosting | null> {
   try {
     const gateway = await getAiGatewayConfig();
@@ -691,12 +752,6 @@ export async function resolveGatewayCosting(): Promise<GatewayCosting | null> {
   }
 }
 
-/**
- * The settlement figures for one turn the gateway priced: USD in, Rial out
- * (cost plus the platform's margin). Null whenever there is nothing to
- * price from — no reported cost, costing off, or a conversion that lands at
- * zero — which the caller reads as "use the token rates", never as free.
- */
 export async function resolveGatewayTurnPricing(
   costUsd: number | null | undefined,
   marginPercent: number,
@@ -714,6 +769,7 @@ type UsageRollupRow = {
   day: string;
   key_alias: string;
   business_id: string | null;
+  location_id: string | null;
   model: string;
   spend_usd: string | number;
   prompt_tokens: string | number;
@@ -725,6 +781,7 @@ export interface GatewayUsageEntry {
   day: string;
   keyAlias: string;
   businessId: string | null;
+  locationId: string | null;
   model: string;
   spendUsd: number;
   promptTokens: number;
@@ -737,6 +794,7 @@ function rowToUsageEntry(row: UsageRollupRow): GatewayUsageEntry {
     day: typeof row.day === "string" ? row.day.slice(0, 10) : String(row.day).slice(0, 10),
     keyAlias: row.key_alias,
     businessId: row.business_id,
+    locationId: row.location_id ?? null,
     model: row.model,
     spendUsd: numberValue(row.spend_usd),
     promptTokens: numberValue(row.prompt_tokens),
@@ -746,53 +804,61 @@ function rowToUsageEntry(row: UsageRollupRow): GatewayUsageEntry {
 }
 
 /** Stored rollups for a day window. Platform scope; the console reads it. */
-export async function listGatewayUsage(options: { fromDay: string; toDay: string }): Promise<GatewayUsageEntry[]> {
+export async function listGatewayUsage(options: {
+  fromDay: string;
+  toDay: string;
+  locationId?: string | null;
+}): Promise<GatewayUsageEntry[]> {
+  const loc = options.locationId?.trim() || null;
   const { rows } = await withoutTenantScope("platform", () =>
     query<UsageRollupRow>(
-      `SELECT id, day, key_alias, business_id, model, spend_usd,
+      `SELECT id, day, key_alias, business_id, location_id, model, spend_usd,
               prompt_tokens, completion_tokens, api_requests
          FROM ai_gateway_usage
         WHERE day BETWEEN $1 AND $2
+          AND (
+            $3::uuid IS NULL
+            OR location_id = $3::uuid
+          )
         ORDER BY day DESC, key_alias, model`,
-      [options.fromDay, options.toDay],
+      [options.fromDay, options.toDay, loc],
     ),
   );
   return rows.map(rowToUsageEntry);
 }
 
 /**
- * This business's own rollups, read under the ambient tenant scope: RLS
- * confines the read to the session's business, so the settings page can show
- * usage without a platform bypass.
+ * This business's own rollups, read under the ambient tenant scope.
  */
 export async function listBusinessGatewayUsage(options: {
   fromDay: string;
   toDay: string;
+  locationId?: string | null;
 }): Promise<GatewayUsageEntry[]> {
+  const loc = options.locationId?.trim() || null;
   const { rows } = await query<UsageRollupRow>(
-    `SELECT id, day, key_alias, business_id, model, spend_usd,
+    `SELECT id, day, key_alias, business_id, location_id, model, spend_usd,
             prompt_tokens, completion_tokens, api_requests
        FROM ai_gateway_usage
       WHERE day BETWEEN $1 AND $2
+        AND (
+          $3::uuid IS NULL
+          OR location_id = $3::uuid
+        )
       ORDER BY day DESC, model`,
-    [options.fromDay, options.toDay],
+    [options.fromDay, options.toDay, loc],
   );
   return rows.map(rowToUsageEntry);
 }
 
 export interface GatewayUsageSyncResult {
   ok: boolean;
-  /** Wall-clock milliseconds for the whole pull-aggregate-store pass. */
   durationMs: number;
-  /** Spend-log entries the gateway returned for the window. */
   entries: number;
-  /** Rollup rows written (upserted) — zero when the gateway said nothing. */
   rows: number;
-  /** A short, human-readable failure reason — Persian, shown in the console. */
   error: string | null;
 }
 
-/** UTC day N days ago, as the spend-log window's inclusive start. */
 function utcDayNDaysAgo(days: number): string {
   const date = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
   return date.toISOString().slice(0, 10);
@@ -800,15 +866,7 @@ function utcDayNDaysAgo(days: number): string {
 
 /**
  * Pull the proxy's spend logs for the last `days` days, aggregate them into
- * the daily rollup, and store them.
- *
- * Two deliberate properties. The window always starts `days` ago and ends
- * *tomorrow*: the proxy logs in UTC while an operator presses the button at
- * any hour, so the rolling window re-reads recent days rather than
- * maintaining a cursor that could silently stop advancing. And the write is
- * an upsert — re-syncing a day replaces its rows in place, so a partial
- * gateway log followed by a complete one converges instead of double
- * counting.
+ * the daily rollup, and store them with business_id and location_id.
  */
 export async function syncGatewayUsage(
   config: AiGatewayConfig,
@@ -835,29 +893,35 @@ export async function syncGatewayUsage(
   const entries = parseSpendLogs(res.body);
   const rollups = aggregateSpendLogs(entries);
 
-  // Alias → business: the app mints aliases itself (`pos-<id sans dashes>`),
-  // so the mapping resolves without asking the gateway.
+  // Alias → { business_id, location_id }
   const businessRows = await withoutTenantScope("platform", () =>
-    query<{ key_alias: string | null; business_id: string }>(
-      `SELECT key_alias, business_id FROM ai_business_gateway WHERE key_alias IS NOT NULL`,
+    query<{ key_alias: string | null; business_id: string; location_id: string | null }>(
+      `SELECT key_alias, business_id, location_id FROM ai_business_gateway WHERE key_alias IS NOT NULL`,
     ),
   );
-  const aliasToBusiness = new Map<string, string>();
+  const aliasToInfo = new Map<string, { businessId: string; locationId: string | null }>();
   for (const row of businessRows.rows) {
-    if (row.key_alias) aliasToBusiness.set(row.key_alias, row.business_id);
+    if (row.key_alias) {
+      aliasToInfo.set(row.key_alias, {
+        businessId: row.business_id,
+        locationId: row.location_id ?? null,
+      });
+    }
   }
 
   let stored = 0;
   if (rollups.length > 0) {
     await withoutTenantScope("platform", async () => {
       for (const rollup of rollups) {
+        const info = aliasToInfo.get(rollup.keyAlias);
         await query(
           `INSERT INTO ai_gateway_usage
-             (day, key_alias, business_id, model, spend_usd,
+             (day, key_alias, business_id, location_id, model, spend_usd,
               prompt_tokens, completion_tokens, api_requests, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())
            ON CONFLICT (day, key_alias, model)
            DO UPDATE SET business_id = EXCLUDED.business_id,
+                         location_id = EXCLUDED.location_id,
                          spend_usd = EXCLUDED.spend_usd,
                          prompt_tokens = EXCLUDED.prompt_tokens,
                          completion_tokens = EXCLUDED.completion_tokens,
@@ -866,7 +930,8 @@ export async function syncGatewayUsage(
           [
             rollup.day,
             rollup.keyAlias,
-            aliasToBusiness.get(rollup.keyAlias) ?? null,
+            info?.businessId ?? null,
+            info?.locationId ?? null,
             rollup.model,
             rollup.spendUsd,
             rollup.promptTokens,
@@ -879,11 +944,6 @@ export async function syncGatewayUsage(
     });
   }
 
-  // The per-key cumulative spend (`ai_business_gateway.spend_usd`) is
-  // deliberately NOT touched here: it is a lifetime figure from /key/info,
-  // and this function only ever sees a rolling window. Mixing the two would
-  // quietly rewrite a cumulative diagnostic with a weekly one.
-
   return { ok: true, durationMs: Date.now() - started, entries: entries.length, rows: stored, error: null };
 }
 
@@ -891,7 +951,7 @@ export async function syncGatewayUsage(
 // Presentation helpers
 // ---------------------------------------------------------------------------
 
-/** Join a business's gateway row to the model its calls will actually use. */
+/** Join a business or branch's gateway row to the model its calls will actually use. */
 export function toPublicBusinessGateway(
   business: BusinessGateway,
   config: AiGatewayConfig,
@@ -901,7 +961,12 @@ export function toPublicBusinessGateway(
   return {
     ...rest,
     hasVirtualKey: Boolean(business.virtualKey),
-    effectiveModel: resolveChatModel({ platformModel, gateway: config, business }),
+    effectiveModel: resolveChatModel({
+      platformModel,
+      gateway: config,
+      business: business.locationId ? null : business,
+      branch: business.locationId ? business : null,
+    }),
   };
 }
 

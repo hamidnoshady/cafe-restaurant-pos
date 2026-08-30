@@ -3,7 +3,7 @@ import { defaultConfig } from "./ai";
 import { runAgentTurn } from "./ai-service";
 
 const config = {
-  ...defaultConfig("openrouter"),
+  ...defaultConfig("litellm"),
   enabled: true,
   apiKey: "test-key",
   baseUrl: "https://provider.example/v1",
