@@ -14,6 +14,17 @@ import { query } from "../db";
 import { decryptSecret, encryptSecret, resolveEncryptionKey } from "../integrations/secrets";
 import type { CmsConfig } from "./client";
 
+/** Thrown by the connection store; `code` is what the API layer maps to a status. */
+export class CmsConnectionError extends Error {
+  readonly code: "not_connected";
+
+  constructor() {
+    super("no_eshobe_cms_connection");
+    this.name = "CmsConnectionError";
+    this.code = "not_connected";
+  }
+}
+
 /** Row shape of `eshobe_cms_connections` (migration 0122). */
 export interface CmsConnectionRow extends Record<string, unknown> {
   id: string;
@@ -94,7 +105,7 @@ export async function getCmsConfigForBusiness(businessId: string): Promise<CmsCo
     [businessId],
   );
   const row = rows[0];
-  if (!row) throw new Error(`no_eshobe_cms_connection: ${businessId}`);
+  if (!row) throw new CmsConnectionError();
   return cmsConfigFromRow(row, key);
 }
 
@@ -103,13 +114,14 @@ export interface CmsConnectionSummary {
   id: string;
   siteId: string;
   siteDomain: string;
+  baseUrl: string;
   status: string;
   updatedAt: string;
 }
 
 export async function listCmsConnections(businessId: string): Promise<CmsConnectionSummary[]> {
   const { rows } = await query<CmsConnectionRow>(
-    `SELECT id, site_id, site_domain, status, updated_at
+    `SELECT id, site_id, site_domain, base_url, status, updated_at
        FROM eshobe_cms_connections WHERE business_id = $1 ORDER BY created_at DESC`,
     [businessId],
   );
@@ -117,6 +129,7 @@ export async function listCmsConnections(businessId: string): Promise<CmsConnect
     id: row.id,
     siteId: row.site_id,
     siteDomain: row.site_domain,
+    baseUrl: row.base_url,
     status: row.status,
     updatedAt: row.updated_at,
   }));

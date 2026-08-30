@@ -114,6 +114,12 @@ const PUBLIC_ROUTES: Record<string, string> = {
   "integrations/wordpress/events": "WordPress plugin channel — see integrations/wordpress/ping",
   "integrations/wordpress/jobs": "WordPress plugin channel — see integrations/wordpress/ping",
   "integrations/wordpress/jobs/ack": "WordPress plugin channel — see integrations/wordpress/ping",
+  // Eshobe headless CMS revalidation: the CMS (a separate deployment) POSTs
+  // a signed notice on every publish; authentication is the HMAC over the raw
+  // body (`x-eshobe-signature`, eshobe-cms src/lib/renderer-webhook.ts), never
+  // a tenant session — the CMS has no session here, and the route only purges
+  // cache tags, no tenant data.
+  "cms/revalidate": "server-to-server webhook from the Eshobe CMS — authenticated by the x-eshobe-signature HMAC, not a session",
   // Phase 34 — the MCP connector's OAuth 2.1 flow. Every one of these is
   // reached BEFORE any credential exists (that is what the flow is for), and
   // the only step that makes a decision — the owner pressing "allow" — is

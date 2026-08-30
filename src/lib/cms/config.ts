@@ -38,3 +38,16 @@ export function cmsWebhookSecret(env: Record<string, string | undefined>): strin
   const secret = env.ESHOBE_CMS_WEBHOOK_SECRET?.trim();
   return secret || null;
 }
+
+/**
+ * The platform-level config (provisioning + key lifecycle). Returns `null`
+ * when either required variable is missing, so a route can answer
+ * `cms_not_configured` instead of the whole app failing to boot — a business
+ * never gets to provision its site before the operator has deployed a key.
+ */
+export function cmsPlatformConfig(env: Record<string, string | undefined>): CmsConfig | null {
+  const baseUrl = env.ESHOBE_CMS_URL?.trim();
+  const apiKey = env.ESHOBE_CMS_PLATFORM_API_KEY?.trim();
+  if (!baseUrl || !apiKey) return null;
+  return { baseUrl: normalizeCmsBaseUrl(baseUrl), apiKey };
+}

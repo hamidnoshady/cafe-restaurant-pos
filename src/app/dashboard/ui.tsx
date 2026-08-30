@@ -250,6 +250,21 @@ const ERROR_MESSAGES: Record<string, string> = {
     case_subject_required: "موضوع تیکت را بنویسید.",
     case_status_invalid: "وضعیت تیکت معتبر نیست.",
     case_priority_invalid: "اولویت تیکت معتبر نیست.",
+    // Website manager (Eshobe headless CMS) — issue #378
+    invalid_cms_base_url: "آدرس سرور CMS معتبر نیست؛ باید با https:// شروع شود.",
+    invalid_domain: "دامنهٔ سایت معتبر نیست؛ فقط میزبان — مثل acme.ir.",
+    invalid_api_key: "کلید API معتبر نیست؛ باید با eshobe_live_ شروع شود.",
+    invalid_type: "نوع سایت معتبر نیست.",
+    connection_failed: "اتصال برقرار نشد؛ آدرس، دامنه یا کلید را بررسی کنید.",
+    cms_unreachable: "سرور CMS در دسترس نیست. بعداً دوباره تلاش کنید.",
+    cms_old_version: "نسخهٔ CMS از این اتصال پشتیبانی نمی‌کند؛ سرور را به‌روزرسانی کنید.",
+    domain_mismatch: "کلید متعلق به دامنهٔ دیگری است؛ دامنهٔ سایت را بررسی کنید.",
+    cms_not_configured: "اتصال به پلتفرم سایت هنوز پیکربندی نشده است؛ با مدیر سیستم تماس بگیرید.",
+    provision_failed: "ساخت سایت ناموفق بود؛ اطلاعات را بررسی و دوباره تلاش کنید.",
+    key_issue_failed: "صادرکردن کلید سایت ناموفق بود.",
+    not_connected: "هنوز اتصالی به سایت برقرار نشده است.",
+    cms_config_error: "مشکل در دادهٔ ذخیره‌شدهٔ اتصال؛ دوباره متصل شوید.",
+    cms_error: "خطا از سمت سرور سایت؛ بعداً دوباره تلاش کنید.",
 };
 
 export function errorMessage(code: string | undefined): string {

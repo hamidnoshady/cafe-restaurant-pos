@@ -15,6 +15,7 @@
 
 import {
   CreditCardIcon,
+  GlobeIcon,
   HandCoinsIcon,
   HeartIcon,
   MegaphoneIcon,
@@ -62,6 +63,12 @@ export const GROWTH_NAV_ITEMS: readonly GrowthNavItem[] = [
     label: "پورسانت فروشندگان",
     description: "قواعد و رتبه‌بندی",
     icon: HandCoinsIcon,
+  },
+  {
+    key: "website",
+    label: "وب‌سایت",
+    description: "سایت اینترنتی و فروشگاه آنلاین",
+    icon: GlobeIcon,
   },
 ];
 

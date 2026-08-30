@@ -113,6 +113,26 @@ await updateOrderStatus(cms, orderId, "paid");           // e-commerce ops
 3. Store both: `saveCmsConnection({ businessId, siteId, siteDomain, baseUrl, apiKey, keyName })`.
 4. From then on everything uses `getCmsConfigForBusiness(businessId)`.
 
+## 5. The Website Manager screen (issue #378)
+
+The owner/manager surface lives in the Growth & Marketing app
+(`/dashboard/growth/website`, «وب‌سایت»). It is a **connections-style**
+screen, not a second CMS admin: the CMS stays the content source of truth,
+this screen answers "is my site connected, and what does my store look like".
+
+| Route | What it does |
+|---|---|
+| `GET /api/cms/website/state` | Masked connection state (never the key). |
+| `POST /api/cms/website/connect` | Attach an existing site (probe descriptor → store key encrypted). |
+| `POST /api/cms/website/provision` | Create a new site + issue its key + connect, in one action. |
+| `DELETE /api/cms/website/connection` | Disconnect (the CMS site and its content remain). |
+| `GET /api/cms/website/overview` | Descriptor + pages + products + orders (private, 30s SWR). |
+| `PATCH /api/cms/website/orders/[id]` | Move an order status; the CMS settles stock & snapshot. |
+
+All owner/manager, all server-side — the browser never sees a CMS key.
+On the CMS, the site descriptor (`GET /api/site`) also returns `id` so the
+connect flow can record which site the key belongs to.
+
 ## 5. The CMS-side patch (`eshobe-cms-api-keys.patch`)
 
 Slice 9.4 as implemented against the eshobe-cms main branch:

@@ -32,6 +32,7 @@ export type CmsLocale = "fa" | "en";
 
 /** `GET /api/site` — the descriptor a renderer needs before first paint. */
 export interface SiteDescriptor {
+  id: string;
   availableLocales: CmsLocale[];
   blocks: string[];
   defaultLocale: CmsLocale;
