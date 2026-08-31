@@ -157,7 +157,8 @@ describe("the encrypted-column registry matches the live schema", () => {
     for (const [table, spec] of Object.entries(ENCRYPTED_TABLES)) {
       const registered = new Set(
         spec.columns.flatMap(
-          (c) => [c.column, c.encColumn, c.bidxColumn, c.last4Column].filter(Boolean) as string[],
+          (c) =>
+            [c.column, c.encColumn, c.bidxColumn, c.last4Column, c.kindColumn].filter(Boolean) as string[],
         ),
       );
       const { rows } = await raw.query<{ column_name: string }>(
@@ -550,6 +551,179 @@ describe("duplicate detection after the phone_e164 → phone_bidx move", () => {
     // The count beside the list has to agree with the list.
     const summary = await dbLib.withTenant(dupId, () => overview.crmOverview(dupId));
     expect(summary.duplicates).toBeGreaterThan(0);
+  });
+});
+
+describe("phone_kind — 'can this number receive an SMS', once the number is ciphertext", () => {
+  it("classifies on create and re-classifies on update", async () => {
+    const mobile = await dbLib.withTenant(biz.id, () =>
+      customers.createCustomer(biz.id, { name: "همراه", phone: "09123334444" }),
+    );
+    const landline = await dbLib.withTenant(biz.id, () =>
+      customers.createCustomer(biz.id, { name: "ثابت", phone: "02112345678" }),
+    );
+    const noPhone = await dbLib.withTenant(biz.id, () =>
+      customers.createCustomer(biz.id, { name: "بی‌شماره" }),
+    );
+
+    const kindOf = async (id: string) => {
+      const { rows } = await raw.query<{ phone_kind: string | null }>(
+        "SELECT phone_kind FROM customers WHERE id = $1",
+        [id],
+      );
+      return rows[0].phone_kind;
+    };
+    expect(await kindOf(mobile.id)).toBe("mobile");
+    expect(await kindOf(landline.id)).toBe("landline");
+    // NULL, not 'unknown': nothing to classify is not the same as a number we
+    // could not read, and only the second one is worth investigating.
+    expect(await kindOf(noPhone.id)).toBeNull();
+
+    await dbLib.withTenant(biz.id, () =>
+      customers.updateCustomer(biz.id, mobile.id, { phone: "02133334444" }),
+    );
+    expect(await kindOf(mobile.id)).toBe("landline");
+  });
+
+  it("is nulled by the 0125 trigger and refilled by the backfill", async () => {
+    // Same contract as phone_enc/phone_bidx/phone_last4: a writer that knows
+    // nothing about encryption must not be able to leave a stale
+    // classification behind, because a stale one is worse than none — it would
+    // keep counting a number that is no longer there.
+    const created = await dbLib.withTenant(biz.id, () =>
+      customers.createCustomer(biz.id, { name: "طبقه‌بندی کهنه", phone: "09125556666" }),
+    );
+    await raw.query("UPDATE customers SET phone = '02155556666' WHERE id = $1", [created.id]);
+
+    const stale = await raw.query<{ phone_kind: string | null; phone_bidx: string | null }>(
+      "SELECT phone_kind, phone_bidx FROM customers WHERE id = $1",
+      [created.id],
+    );
+    expect(stale.rows[0].phone_kind).toBeNull();
+    expect(stale.rows[0].phone_bidx).toBeNull();
+
+    await backfill.backfillBusiness(biz.id);
+    const repaired = await raw.query<{ phone_kind: string | null }>(
+      "SELECT phone_kind FROM customers WHERE id = $1",
+      [created.id],
+    );
+    expect(repaired.rows[0].phone_kind).toBe("landline");
+  });
+
+  it("counts a mobile as SMS-reachable and a landline as not", async () => {
+    // The bug this column exists for: `phone_e164 IS NOT NULL` means "parses
+    // as an Iranian number", and a landline parses. Both rows below have a
+    // phone_e164 and a phone_bidx, so neither of the two previous spellings of
+    // this predicate could tell them apart.
+    const crm = await import("../src/lib/crm-service");
+    const overview = await import("../src/lib/crm-overview");
+
+    const smsBiz = await raw.query<{ id: string }>(
+      "INSERT INTO businesses (name, slug) VALUES ('SMS Co', $1) RETURNING id",
+      [`crypto-sms-${randomUUID().slice(0, 8)}`],
+    );
+    const smsId = smsBiz.rows[0].id;
+    await raw.query("INSERT INTO locations (business_id, name) VALUES ($1, 'Main')", [smsId]);
+
+    const mobile = await dbLib.withTenant(smsId, () =>
+      customers.createCustomer(smsId, { name: "موبایل", phone: "09121112222" }),
+    );
+    const landline = await dbLib.withTenant(smsId, () =>
+      customers.createCustomer(smsId, { name: "تلفن ثابت", phone: "02188889999" }),
+    );
+    await dbLib.withTenant(smsId, () => customers.createCustomer(smsId, { name: "بدون تلفن" }));
+    for (const id of [mobile.id, landline.id]) {
+      await raw.query("UPDATE customers SET sms_consent = true WHERE id = $1", [id]);
+    }
+    // Consent alone is not reachability, and the raw UPDATE above just proved
+    // it does not disturb the classification (it does not touch `phone`).
+
+    const coverage = await dbLib.withTenant(smsId, () => crm.consentCoverage(smsId));
+    expect(coverage.total).toBe(3);
+    expect(coverage.smsGranted).toBe(2);
+    expect(coverage.withMobile).toBe(1);
+    expect(coverage.smsReachable).toBe(1);
+
+    const summary = await dbLib.withTenant(smsId, () => overview.crmOverview(smsId));
+    expect(summary.consent.smsReachable).toBe(1);
+
+    // Both halves of the predicate, separately.
+    //
+    // First the half that has to survive step 3: with `phone_e164` gone the
+    // count may only come from `phone_kind`. (Nulling `phone_e164` alone does
+    // not fire the 0125 trigger, which watches `phone` — so this leaves the
+    // classification intact, which is the point.)
+    await raw.query("UPDATE customers SET phone_e164 = NULL WHERE business_id = $1", [smsId]);
+    const onKindAlone = await dbLib.withTenant(smsId, () => crm.consentCoverage(smsId));
+    expect(onKindAlone.withMobile).toBe(1);
+    expect(onKindAlone.smsReachable).toBe(1);
+
+    // Then the fallback, for rows the backfill has not reached: no
+    // classification, canonical number restored, and the shape rule in
+    // `mobileReachableSql` has to reach the same verdict as `phone.ts` did.
+    await raw.query(
+      `UPDATE customers SET phone_kind = NULL,
+              phone_e164 = CASE WHEN id = $2 THEN '+989121112222' ELSE '+982188889999' END
+        WHERE business_id = $1 AND phone IS NOT NULL`,
+      [smsId, mobile.id],
+    );
+    const onFallback = await dbLib.withTenant(smsId, () => crm.consentCoverage(smsId));
+    expect(onFallback.withMobile).toBe(1);
+    expect(onFallback.smsReachable).toBe(1);
+  });
+});
+
+describe("the other two phone lookups converted in step 3's preparation", () => {
+  it("the AI's find_customers matches an encrypted row through the blind index", async () => {
+    const aiTools = await import("../src/lib/ai-tools");
+    await dbLib.withTenant(biz.id, () =>
+      customers.createCustomer(biz.id, { name: "جست‌وجوی هوشمند", phone: "09127778899" }),
+    );
+
+    for (const typed of ["09127778899", "+98 912 777 8899", "8899"]) {
+      const result = await dbLib.withTenant(biz.id, () =>
+        aiTools.runReadTool("find_customers", { query: typed }, biz.id),
+      );
+      const found = JSON.stringify(result);
+      expect(found).toContain("جست‌وجوی هوشمند");
+    }
+  });
+
+  it("the WooCommerce sync recognises a shopper whether or not their row is encrypted yet", async () => {
+    // The reason `phoneMatchSql` falls back on `phone_e164` only for a row
+    // with no blind index: mid-backfill, a miss here does not degrade a
+    // suggestion, it creates a second copy of a real person.
+    const sync = await import("../src/lib/integrations/sync-service");
+
+    const encrypted = await dbLib.withTenant(biz.id, () =>
+      customers.createCustomer(biz.id, { name: "خریدار رمزشده", phone: "09124445566" }),
+    );
+    const legacy = await raw.query<{ id: string }>(
+      `INSERT INTO customers (business_id, name, phone, phone_e164)
+       VALUES ($1, 'خریدار قدیمی', '09126667788', '+989126667788') RETURNING id`,
+      [biz.id],
+    );
+    const legacyId = legacy.rows[0].id;
+    const { rows: legacyRow } = await raw.query<{ phone_bidx: string | null }>(
+      "SELECT phone_bidx FROM customers WHERE id = $1",
+      [legacyId],
+    );
+    expect(legacyRow[0].phone_bidx).toBeNull(); // the not-yet-backfilled state
+
+    const connection = { id: randomUUID(), business_id: biz.id } as unknown as Parameters<
+      typeof sync.resolveOrderCustomerId
+    >[0];
+
+    for (const [phone, expected] of [
+      ["09124445566", encrypted.id],
+      ["+98 912 444 5566", encrypted.id],
+      ["09126667788", legacyId],
+    ] as const) {
+      const resolved = await dbLib.withTenant(biz.id, () =>
+        sync.resolveOrderCustomerId(connection, { customer_id: 0, billing: { phone } }),
+      );
+      expect(resolved).toBe(expected);
+    }
   });
 });
 

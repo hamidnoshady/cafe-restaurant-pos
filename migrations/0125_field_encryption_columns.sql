@@ -74,11 +74,24 @@
 -- because the digits have to be folded from Persian numerals first
 -- (`phoneDigits` in src/lib/phone.ts) and a `regexp_replace` on `\D` would
 -- silently disagree with the application on exactly those rows.
+--
+-- `phone_kind` is the second plaintext remnant, and it fixes a bug rather than
+-- preserving a feature. The CRM's «قابل پیامک» / with-mobile statistics count
+-- `phone_e164 IS NOT NULL`, which means "parses as an Iranian number" — a
+-- landline included. That was already wrong; it becomes *invisibly* wrong at
+-- step 3, because a landline gets a blind index exactly like a mobile does, so
+-- `phone_bidx IS NOT NULL` would keep counting front desks as SMS-reachable
+-- with no column left to tell them apart. Storing `phone.ts`'s own
+-- classification — the same `kind` `isMobilePhone()` already computes on every
+-- write — answers "can this number receive an SMS" without decrypting
+-- anything. It is a policy classification, not PII: it says what sort of line
+-- this is, never whose.
 -- ---------------------------------------------------------------------------
 ALTER TABLE customers
     ADD COLUMN phone_enc   bytea,
     ADD COLUMN phone_bidx  text,
     ADD COLUMN phone_last4 text,
+    ADD COLUMN phone_kind  text CHECK (phone_kind IN ('mobile', 'landline', 'unknown')),
     ADD COLUMN address_enc bytea,
     ADD COLUMN notes_enc   bytea;
 
@@ -126,6 +139,7 @@ BEGIN
         NEW.phone_enc := NULL;
         NEW.phone_bidx := NULL;
         NEW.phone_last4 := NULL;
+        NEW.phone_kind := NULL;
     END IF;
     IF NEW.address IS DISTINCT FROM OLD.address AND NEW.address_enc IS NOT DISTINCT FROM OLD.address_enc THEN
         NEW.address_enc := NULL;

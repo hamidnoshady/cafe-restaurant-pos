@@ -34,6 +34,8 @@ import { listMappings, localIdForRemote, mergeMappingMeta, upsertMapping } from 
 import { wooAmountToRial } from "./woo-money";
 import { writeIntegrationAudit } from "./audit";
 import { phoneE164 } from "../phone";
+import { phoneMatchKeys, phoneMatchSql } from "../customers-service";
+import { syncCustomerPhone } from "../crm-service";
 import {
   inferWooProductType,
   isSellableWooProduct,
@@ -401,6 +403,13 @@ export async function upsertCustomerFromWoo(
         WHERE id = $1 AND business_id = $2`,
       [existing, businessId, name, phone, e164, email, address],
     );
+    // Phase 24 Wave 3 — this statement writes the plaintext phone, so the 0125
+    // trigger has just invalidated the row's ciphertext and derived columns.
+    // Re-derive them now rather than leaving the row to the next backfill run:
+    // an integration sync is exactly when a customer's number changes, and the
+    // window where they cannot be found by phone should not last until
+    // somebody remembers to run a script.
+    await syncCustomerPhone(businessId, existing, phone);
     return "updated";
   }
 
@@ -408,11 +417,12 @@ export async function upsertCustomerFromWoo(
   // a record from a counter sale must not become a second person because
   // they typed «۰۹۱۲…» in the checkout once.
   if (e164) {
+    const keys = await phoneMatchKeys(businessId, phone);
     const { rows: byPhone } = await query<{ id: string }>(
       `SELECT id FROM customers
-        WHERE business_id = $1 AND phone_e164 = $2 AND merged_into_id IS NULL
+        WHERE business_id = $1 AND ${phoneMatchSql("", "$2", "$3")} AND merged_into_id IS NULL
         ORDER BY created_at LIMIT 1`,
-      [businessId, e164],
+      [businessId, keys.bidx, keys.e164],
     );
     if (byPhone[0]) {
       await upsertMapping(businessId, connection.id, "customer", String(customer.id), byPhone[0].id);
@@ -438,6 +448,7 @@ export async function upsertCustomerFromWoo(
           WHERE id = $1 AND business_id = $2`,
         [byEmail[0].id, businessId, phone, e164, address],
       );
+      if (phone) await syncCustomerPhone(businessId, byEmail[0].id, phone);
       return "updated";
     }
   }
@@ -447,6 +458,10 @@ export async function upsertCustomerFromWoo(
      VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
     [businessId, name, phone, e164, email, address],
   );
+  // The invalidation trigger is BEFORE UPDATE only — an INSERT that knows
+  // nothing about encryption leaves a row with no ciphertext at all, which the
+  // backfill would eventually fix. Do it now, for the same reason as above.
+  await syncCustomerPhone(businessId, rows[0].id, phone);
   await upsertMapping(businessId, connection.id, "customer", String(customer.id), rows[0].id);
   return "created";
 }
@@ -475,10 +490,11 @@ export async function resolveOrderCustomerId(
   const e164 = phoneE164(order.billing?.phone ?? null);
   const email = order.billing?.email?.trim().toLowerCase() || null;
   if (e164) {
+    const keys = await phoneMatchKeys(businessId, order.billing?.phone ?? null);
     const { rows } = await query<{ id: string }>(
-      `SELECT id FROM customers WHERE business_id = $1 AND phone_e164 = $2 AND merged_into_id IS NULL
+      `SELECT id FROM customers WHERE business_id = $1 AND ${phoneMatchSql("", "$2", "$3")} AND merged_into_id IS NULL
         ORDER BY created_at LIMIT 1`,
-      [businessId, e164],
+      [businessId, keys.bidx, keys.e164],
     );
     if (rows[0]) {
       if (remoteCustomerId > 0) {
@@ -534,6 +550,7 @@ export async function resolveOrderCustomerId(
       order.billing?.address_1?.trim() || null,
     ],
   );
+  await syncCustomerPhone(businessId, rows[0].id, order.billing?.phone?.trim() || null);
   if (remoteCustomerId > 0) {
     await upsertMapping(businessId, connection.id, "customer", String(remoteCustomerId), rows[0].id);
   }

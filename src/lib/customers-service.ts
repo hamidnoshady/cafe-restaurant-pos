@@ -7,7 +7,7 @@
  */
 import { getBusinessDek } from "./business-keys";
 import { query } from "./db";
-import { decryptOptional, encryptOptional, phoneBlindIndex, phoneLast4 } from "./field-crypto";
+import { decryptOptional, encryptOptional, phoneBlindIndex, phoneKind, phoneLast4 } from "./field-crypto";
 import { phoneDigits, phoneE164 } from "./phone";
 
 export interface Customer extends Record<string, unknown> {
@@ -78,6 +78,7 @@ interface PhoneColumns {
   bidx: string | null;
   e164: string | null;
   last4: string | null;
+  kind: string | null;
 }
 
 function phoneColumns(phone: string | null, dek: Buffer | null): PhoneColumns {
@@ -85,11 +86,80 @@ function phoneColumns(phone: string | null, dek: Buffer | null): PhoneColumns {
     enc: dek ? encryptOptional(phone, dek) : null,
     bidx: dek && phone ? phoneBlindIndex(phone, dek) : null,
     e164: phone ? phoneE164(phone) : null,
-    // Written unconditionally, key or no key: it is the plaintext remnant that
-    // keeps last-four search alive after step 3, and a business that enables
-    // encryption later should not have to re-derive it.
+    // Written unconditionally, key or no key: these are the plaintext remnants
+    // that keep last-four search and SMS-reachability alive after step 3, and
+    // a business that enables encryption later should not have to re-derive
+    // them.
+    last4: phoneLast4(phone),
+    kind: phoneKind(phone),
+  };
+}
+
+/**
+ * The two keys a *lookup* needs to find the customer holding a given number,
+ * whichever state the row is in. Exported because three callers outside this
+ * file do exactly this lookup — `ai-tools.ts`'s customer search and
+ * `integrations/sync-service.ts`'s two "is this shopper already here" probes —
+ * and they must agree with the writes above, or an integration sync quietly
+ * creates a second copy of a customer it failed to recognise.
+ */
+export interface PhoneMatchKeys {
+  bidx: string | null;
+  e164: string | null;
+  last4: string | null;
+}
+
+export async function phoneMatchKeys(businessId: string, phone: string | null): Promise<PhoneMatchKeys> {
+  const dek = await getBusinessDek(businessId);
+  return {
+    bidx: dek && phone ? phoneBlindIndex(phone, dek) : null,
+    e164: phone ? phoneE164(phone) : null,
     last4: phoneLast4(phone),
   };
+}
+
+/**
+ * SQL for "this row holds that number", true in either state.
+ *
+ * Prefer the blind index; fall back to the canonical plaintext **only for a
+ * row that has no blind index yet**. That asymmetry is deliberate and differs
+ * from the `coalesce(...) = coalesce(...)` used by the duplicate self-joins: a
+ * self-join compares two rows that are almost always in the same state, and a
+ * transient miss there costs one delayed suggestion. A lookup compares a typed
+ * number against a row mid-backfill, and a miss there makes the caller decide
+ * the customer does not exist — which, in the WooCommerce sync, means creating
+ * a duplicate person.
+ */
+export function phoneMatchSql(alias: string, bidxParam: string, e164Param: string): string {
+  const a = alias ? `${alias}.` : "";
+  return (
+    `((${bidxParam}::text IS NOT NULL AND ${a}phone_bidx = ${bidxParam})` +
+    ` OR (${a}phone_bidx IS NULL AND ${e164Param}::text IS NOT NULL AND ${a}phone_e164 = ${e164Param}))`
+  );
+}
+
+/** Row-to-row key, for the duplicate self-joins. Collapses to `phone_bidx` at step 3. */
+export function phonePairKeySql(alias: string): string {
+  const a = alias ? `${alias}.` : "";
+  return `coalesce(${a}phone_bidx, ${a}phone_e164)`;
+}
+
+/**
+ * "Can this number actually receive an SMS."
+ *
+ * Not `phone_e164 IS NOT NULL`, which is what the CRM counted before and means
+ * merely "parses as an Iranian number" — a landline included. Reads
+ * `phone_kind` where the row has been classified and falls back to the shape
+ * of the canonical number where it has not: an Iranian mobile is `+989` plus
+ * nine digits, which is the same rule `phone.ts` applies. Yields NULL for a
+ * customer with no phone, which `count(*) FILTER` correctly declines to count.
+ */
+export function mobileReachableSql(alias = ""): string {
+  const a = alias ? `${alias}.` : "";
+  return (
+    `(CASE WHEN ${a}phone_kind IS NOT NULL THEN ${a}phone_kind = 'mobile'` +
+    ` ELSE ${a}phone_e164 LIKE '+989%' AND length(${a}phone_e164) = 13 END)`
+  );
 }
 
 /**
@@ -213,8 +283,8 @@ export async function createCustomer(businessId: string, input: CreateCustomerIn
 
   const { rows } = await query<Customer & EncryptedCustomerRow>(
     `INSERT INTO customers (business_id, name, phone, address, notes, email, birthday, tags, marketing_consent, sms_consent,
-                            phone_enc, phone_bidx, phone_e164, phone_last4, address_enc, notes_enc)
-     VALUES ($1, $2, $3, $4, $5, $6, $7::date, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+                            phone_enc, phone_bidx, phone_e164, phone_last4, phone_kind, address_enc, notes_enc)
+     VALUES ($1, $2, $3, $4, $5, $6, $7::date, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
      RETURNING ${DIRECTORY_COLUMNS}`,
     [
       businessId,
@@ -231,6 +301,7 @@ export async function createCustomer(businessId: string, input: CreateCustomerIn
       phoneCols.bidx,
       phoneCols.e164,
       phoneCols.last4,
+      phoneCols.kind,
       dek ? encryptOptional(address, dek) : null,
       dek ? encryptOptional(notes, dek) : null,
     ],
@@ -288,6 +359,7 @@ export async function updateCustomer(
     add("phone_bidx", cols.bidx);
     add("phone_e164", cols.e164);
     add("phone_last4", cols.last4);
+    add("phone_kind", cols.kind);
   }
   if (input.address !== undefined) {
     const address = input.address?.trim() || null;

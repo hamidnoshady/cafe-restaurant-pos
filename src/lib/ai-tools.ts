@@ -15,6 +15,7 @@
  */
 import { businessToday } from "./business-day-service";
 import { shiftIsoDate } from "./business-day";
+import { phoneMatchKeys, phoneMatchSql } from "./customers-service";
 import { query } from "./db";
 import { WELL_KNOWN_CODES } from "./coa-template";
 import { STANDARD_REPORTS } from "./reports";
@@ -44,7 +45,6 @@ import {
   type SegmentDefinition,
   type SegmentPurpose,
 } from "./segments";
-import { normalizePhone } from "./phone";
 import { getBusinessIndustry } from "./industry-guard";
 import { runAccountingReview } from "./accounting-review-service";
 import { summarizeFindings } from "./accounting-review";
@@ -842,10 +842,16 @@ async function findCustomersTool(businessId: string, args: Record<string, unknow
   if (!search) return { error: "عبارت جست‌وجو خالی است." };
 
   // Search the canonical phone as well as the typed one: an owner reading
-  // «۰۹۱۲…» off a receipt must find the customer stored as «+98912…». That is
-  // the entire reason `phone_e164` exists.
-  const digits = search.replace(/[^\d+]/g, "");
-  const e164 = digits.length >= 4 ? normalizePhone(digits).e164 : null;
+  // «۰۹۱۲…» off a receipt must find the customer stored as «+98912…».
+  //
+  // Phase 24 Wave 3 — three phone predicates now, in the order they will
+  // outlive each other. `phoneMatchSql` is the exact match, on the blind index
+  // where the row is encrypted and on `phone_e164` where it is not.
+  // `phone_last4` is the last-four lookup, which is the one partial search
+  // kept alive past step 3. `c.phone ILIKE` is arbitrary substring and dies
+  // with the plaintext column — the same accepted loss recorded for
+  // customers-service.ts, and the reason last-four is here at all.
+  const keys = await phoneMatchKeys(businessId, search);
 
   const { rows } = await query<{
     id: string;
@@ -869,11 +875,12 @@ async function findCustomersTool(businessId: string, args: Record<string, unknow
        LEFT JOIN locations l ON l.id = o.location_id AND l.business_id = c.business_id
       WHERE c.business_id = $1
         AND (c.name ILIKE $2 OR c.phone ILIKE $2 OR c.email ILIKE $2
-             OR ($3::text IS NOT NULL AND c.phone_e164 = $3))
+             OR ${phoneMatchSql("c", "$3", "$4")}
+             OR ($5::text IS NOT NULL AND c.phone_last4 = $5))
       GROUP BY c.id
       ORDER BY c.is_active DESC, sum(o.total) DESC NULLS LAST, c.name
       LIMIT 25`,
-    [businessId, `%${search}%`, e164],
+    [businessId, `%${search}%`, keys.bidx, keys.e164, keys.last4],
   );
 
   return {

@@ -53,15 +53,44 @@ What is actually true of the code today:
     invisible to duplicate detection, segments and the SMS-reachable count until somebody ran
     `npm run db:normalize-phones` by hand.
 
+  - **The lookups, and two shapes of phone match.** Every equality lookup on `phone_e164` now
+    goes through one of two helpers exported by `customers-service.ts`, and the difference
+    between them is deliberate. `phonePairKeySql(alias)` is *row to row* — the duplicate
+    self-joins in `crm-service.findDuplicates` and `crm-overview` — and is
+    `coalesce(phone_bidx, phone_e164)` on both sides, because the two rows are almost always in
+    the same state and a transient miss costs one delayed merge suggestion.
+    `phoneMatchSql(alias, $bidx, $e164)` is *input to row* — `ai-tools.findCustomersTool` and
+    `integrations/sync-service.ts`'s two "is this shopper already here" probes — and prefers
+    the blind index, falling back to `phone_e164` **only for a row that has no blind index
+    yet**. A lookup compares a typed number against a row that may be mid-backfill, and a miss
+    there does not degrade a suggestion: in the WooCommerce sync it creates a second copy of a
+    real person. `phoneMatchKeys(businessId, phone)` computes both forms plus `last4` from one
+    input. The sync's own writers now call `crm-service.syncCustomerPhone` after every
+    `INSERT`/`UPDATE` of a plaintext phone, so a synced shopper is searchable immediately
+    rather than at the next backfill.
+  - **`with_mobile` / `sms_reachable` was a semantic bug, not a rename.** Both counted
+    `phone_e164 IS NOT NULL`, which means "parses as an Iranian number" — a front-desk landline
+    parses, and was being counted as SMS-reachable. `phone_bidx IS NOT NULL` would have
+    preserved the bug (a landline gets a blind index too) while making it invisible. The fix is
+    a classification column: `customers.phone_kind` (`mobile` | `landline` | `unknown`,
+    CHECK-constrained, plaintext, nulled by the same invalidation trigger and filled by the
+    same backfill), written from `phone.ts`'s existing `kind` on every service write. It is a
+    policy classification rather than a number, so it is not PII on its own, and it is cheap:
+    the alternative — decrypting every phone on the reporting path to count them — is not.
+    `mobileReachableSql(alias)` reads it, falling back to the shape of `phone_e164` for rows
+    the backfill has not reached, and yields NULL (uncounted) for a customer with no phone.
+
   **Step 3 — dropping the plaintext columns — has NOT happened, and prerequisites remain.**
-  In order: the remaining equality lookups on `phone_e164` have to move to `phone_bidx`
-  (`ai-tools.ts:872`, and `integrations/sync-service.ts`'s customer matching at :413 and :479);
-  `with_mobile` / `sms_reachable` count `phone_e164 IS NOT NULL`, which is "has a parseable
-  phone" and does not survive as `phone_bidx IS NOT NULL` (a blind index is written for
-  landlines too), so those need their own flag; and the writers that still touch the plaintext
-  directly (`crm-service.ts`'s merge, the Holoo import, the integrations sync) should dual-write
-  rather than lean on the invalidation trigger. Tier A (the platform-scope secrets) is also
-  still plaintext — see `TIER_A_PENDING` in `src/lib/encrypted-columns.ts`.
+  What is left, in order: `segments.ts`'s `consentPredicate("sms")` still gates a send on
+  `c.phone IS NOT NULL AND btrim(c.phone) <> ''`, which is a plaintext read and, separately,
+  the same landline question the counts just answered — the audience of a real SMS campaign,
+  so changing who receives one is its own decision and not folded in here; the writers that
+  still touch the plaintext directly (`crm-service.ts`'s merge, the Holoo import) should
+  dual-write rather than lean on the invalidation trigger; and `ai-tools`' and
+  `customers-service`'s `phone ILIKE '%…%'` disappears with the column, which is the accepted
+  loss recorded above (`phone_last4` covers the till workflow, and only that). Tier A (the
+  platform-scope secrets) is also still plaintext — see `TIER_A_PENDING` in
+  `src/lib/encrypted-columns.ts`.
 
   **`migrations/0126_business_encryption_keys_rls.sql`** fixes a latent bug in 0072's
   scaffolding, found only once Wave 3 gave that table its first reader: its RLS policy omitted

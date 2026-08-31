@@ -28,7 +28,8 @@ import { query, withTenant } from "./db";
 import { listCustomerBalances } from "./ar-service";
 import { businessToday } from "./business-day-service";
 import { getBusinessDek } from "./business-keys";
-import { encryptOptional, phoneBlindIndex, phoneLast4 } from "./field-crypto";
+import { encryptOptional, phoneBlindIndex, phoneKind, phoneLast4 } from "./field-crypto";
+import { mobileReachableSql, phonePairKeySql } from "./customers-service";
 import { normalizePhone } from "./phone";
 import {
   duplicateConfidence,
@@ -403,12 +404,18 @@ export async function consentCoverage(businessId: string): Promise<{
   emailReachable: number;
 }> {
   const { rows } = await query<Record<string, string>>(
+    // `with_mobile` / `sms_reachable` ask "can this number receive an SMS", and
+    // used to answer `phone_e164 IS NOT NULL` — which is "parses as an Iranian
+    // number" and counted every front-desk landline as reachable. Phase 24
+    // Wave 3 gave the classification its own column (`phone_kind`), so the
+    // question can be asked honestly, and can go on being asked once the
+    // number itself is ciphertext.
     `SELECT count(*)::text AS total,
             count(*) FILTER (WHERE sms_consent)::text AS sms_granted,
             count(*) FILTER (WHERE marketing_consent)::text AS email_granted,
-            count(*) FILTER (WHERE phone_e164 IS NOT NULL)::text AS with_mobile,
+            count(*) FILTER (WHERE ${mobileReachableSql()})::text AS with_mobile,
             count(*) FILTER (WHERE email IS NOT NULL AND btrim(email) <> '')::text AS with_email,
-            count(*) FILTER (WHERE sms_consent AND phone_e164 IS NOT NULL)::text AS sms_reachable,
+            count(*) FILTER (WHERE sms_consent AND ${mobileReachableSql()})::text AS sms_reachable,
             count(*) FILTER (WHERE marketing_consent AND email IS NOT NULL AND btrim(email) <> '')::text AS email_reachable
        FROM customers
       WHERE business_id = $1 AND merged_into_id IS NULL`,
@@ -518,13 +525,14 @@ export async function findDuplicates(
   // Mid-backfill, a pair where only one side has been encrypted yet does not
   // match. That direction is deliberate: the cost is a duplicate suggestion
   // that appears one backfill run later, not a wrong pair offered for merge.
-  const phoneKey = "coalesce(%s.phone_bidx, %s.phone_e164)";
+  const leftPhone = phonePairKeySql("a");
+  const rightPhone = phonePairKeySql("b");
   const { rows: byPhone } = await query<Record<string, unknown>>(
     `SELECT ${selectPair} FROM customers a JOIN customers b
         ON b.business_id = a.business_id
-       AND ${phoneKey.replace(/%s/g, "b")} = ${phoneKey.replace(/%s/g, "a")}
+       AND ${rightPhone} = ${leftPhone}
        AND a.id < b.id
-      WHERE a.business_id = $1 AND ${phoneKey.replace(/%s/g, "a")} IS NOT NULL
+      WHERE a.business_id = $1 AND ${leftPhone} IS NOT NULL
         AND a.merged_into_id IS NULL AND b.merged_into_id IS NULL
       LIMIT $2`,
     [businessId, limit],
@@ -538,8 +546,7 @@ export async function findDuplicates(
         AND a.merged_into_id IS NULL AND b.merged_into_id IS NULL
         -- Already reported by the stronger phone rule; reporting the same pair
         -- twice would make the list look worse than the data is.
-        AND (${phoneKey.replace(/%s/g, "a")} IS NULL OR ${phoneKey.replace(/%s/g, "b")} IS NULL
-             OR ${phoneKey.replace(/%s/g, "a")} <> ${phoneKey.replace(/%s/g, "b")})
+        AND (${leftPhone} IS NULL OR ${rightPhone} IS NULL OR ${leftPhone} <> ${rightPhone})
       LIMIT $2`,
     [businessId, limit],
   );
@@ -551,8 +558,7 @@ export async function findDuplicates(
        AND lower(btrim(b.name)) = lower(btrim(a.name)) AND a.id < b.id
       WHERE a.business_id = $1 AND btrim(a.name) <> ''
         AND a.merged_into_id IS NULL AND b.merged_into_id IS NULL
-        AND (${phoneKey.replace(/%s/g, "a")} IS NULL OR ${phoneKey.replace(/%s/g, "b")} IS NULL
-             OR ${phoneKey.replace(/%s/g, "a")} <> ${phoneKey.replace(/%s/g, "b")})
+        AND (${leftPhone} IS NULL OR ${rightPhone} IS NULL OR ${leftPhone} <> ${rightPhone})
         AND (a.email IS NULL OR b.email IS NULL OR lower(a.email) <> lower(b.email))
       LIMIT $2`,
     [businessId, limit],
@@ -935,7 +941,7 @@ export async function syncCustomerPhone(
   const e164 = phone ? normalizePhone(phone).e164 : null;
   const dek = await getBusinessDek(businessId);
   await query(
-    `UPDATE customers SET phone_e164 = $3, phone_enc = $4, phone_bidx = $5, phone_last4 = $6
+    `UPDATE customers SET phone_e164 = $3, phone_enc = $4, phone_bidx = $5, phone_last4 = $6, phone_kind = $7
       WHERE business_id = $1 AND id = $2`,
     [
       businessId,
@@ -944,6 +950,7 @@ export async function syncCustomerPhone(
       dek ? encryptOptional(phone, dek) : null,
       dek && phone ? phoneBlindIndex(phone, dek) : null,
       phoneLast4(phone),
+      phoneKind(phone),
     ],
   );
 }

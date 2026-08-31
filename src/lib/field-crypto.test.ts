@@ -9,6 +9,7 @@ import {
   isEncryptedField,
   MAGIC,
   phoneBlindIndex,
+  phoneKind,
   phoneLast4,
 } from "./field-crypto";
 import { generateDek, unwrapDek, wrapDek } from "./business-keys";
@@ -148,6 +149,40 @@ describe("phoneLast4", () => {
 
   it("never leaks more than four digits", () => {
     expect(phoneLast4("00989121234567")).toHaveLength(4);
+  });
+});
+
+describe("phoneKind", () => {
+  it("tells a mobile from a landline, however the number was written", () => {
+    for (const mobile of ["09121234567", "+98 912 123 4567", "۰۹۱۲۱۲۳۴۵۶۷", "00989121234567"]) {
+      expect(phoneKind(mobile)).toBe("mobile");
+    }
+    for (const landline of ["02112345678", "+98 21 1234 5678", "۰۲۱۱۲۳۴۵۶۷۸"]) {
+      expect(phoneKind(landline)).toBe("landline");
+    }
+  });
+
+  it("says unknown rather than guessing at something that is neither", () => {
+    expect(phoneKind("12345")).toBe("unknown");
+  });
+
+  it("distinguishes no phone from an unclassifiable one", () => {
+    // NULL is "there is nothing here"; 'unknown' is "there is something and we
+    // could not read it". The reachability counts treat them differently.
+    expect(phoneKind(null)).toBeNull();
+    expect(phoneKind("")).toBeNull();
+    expect(phoneKind("بدون شماره")).toBeNull();
+  });
+
+  it("needs no key — it is a classification, not a secret", () => {
+    expect(phoneKind.length).toBe(1);
+  });
+
+  it("only ever returns a value the CHECK constraint in 0125 allows", () => {
+    const allowed = new Set(["mobile", "landline", "unknown"]);
+    for (const input of ["09121234567", "02112345678", "12345", "+1 415 555 0100"]) {
+      expect(allowed.has(phoneKind(input)!)).toBe(true);
+    }
   });
 });
 

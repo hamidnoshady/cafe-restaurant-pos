@@ -27,7 +27,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { getPool, query, withTenant, withoutTenantScope } from "../src/lib/db";
 import { getBusinessDek } from "../src/lib/business-keys";
-import { encryptField, phoneBlindIndex, phoneLast4 } from "../src/lib/field-crypto";
+import { encryptField, phoneBlindIndex, phoneKind, phoneLast4 } from "../src/lib/field-crypto";
 import { ENCRYPTED_TABLES } from "../src/lib/encrypted-columns";
 import { isFieldEncryptionEnabled, masterKeyStatus } from "../src/lib/master-key";
 
@@ -153,6 +153,10 @@ export async function encryptTable(
         setColumns.push(`${col.last4Column} = v.${col.last4Column}`);
         valueColumns.push(col.last4Column);
       }
+      if (col.kindColumn) {
+        setColumns.push(`${col.kindColumn} = v.${col.kindColumn}`);
+        valueColumns.push(col.kindColumn);
+      }
     }
 
     const params: unknown[] = [businessId];
@@ -170,6 +174,7 @@ export async function encryptTable(
         push(text ? encryptField(text, dek) : null, "bytea");
         if (col.bidxColumn) push(text ? phoneBlindIndex(text, dek) : null, "text");
         if (col.last4Column) push(text ? phoneLast4(text) : null, "text");
+        if (col.kindColumn) push(text ? phoneKind(text) : null, "text");
       }
       tuples.push(`(${placeholders.join(", ")})`);
     }

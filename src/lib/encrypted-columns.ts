@@ -33,6 +33,12 @@ export interface EncryptedColumn {
    * `migrations/0125_field_encryption_columns.sql`.
    */
   last4Column?: string;
+  /**
+   * Present only on `customers.phone`: mobile / landline / unknown, so that
+   * "is this number SMS-reachable" can still be asked of a column nobody can
+   * read. Also argued in the 0125 migration header.
+   */
+  kindColumn?: string;
   tier: EncryptionTier;
   /** Why this column is encrypted / what the blind index costs. */
   note: string;
@@ -53,6 +59,7 @@ export const ENCRYPTED_TABLES: Record<string, EncryptedTable> = {
         encColumn: "phone_enc",
         bidxColumn: "phone_bidx",
         last4Column: "phone_last4",
+        kindColumn: "phone_kind",
         tier: "Tier B",
         note:
           "Backs lookup at the till. The blind index keeps exact match working and phone_last4 " +
@@ -131,6 +138,7 @@ export function encryptedPhysicalColumns(): { table: string; column: string; dat
       out.push({ table, column: col.encColumn, dataType: "bytea" });
       if (col.bidxColumn) out.push({ table, column: col.bidxColumn, dataType: "text" });
       if (col.last4Column) out.push({ table, column: col.last4Column, dataType: "text" });
+      if (col.kindColumn) out.push({ table, column: col.kindColumn, dataType: "text" });
     }
   }
   return out;

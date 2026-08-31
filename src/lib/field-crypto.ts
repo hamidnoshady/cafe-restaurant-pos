@@ -15,7 +15,7 @@
  */
 import { createCipheriv, createDecipheriv, createHmac, hkdfSync, randomBytes } from "node:crypto";
 import { ENCRYPTED_COLUMNS } from "./encrypted-columns";
-import { phoneDigits, phoneE164 } from "./phone";
+import { normalizePhone, phoneDigits, phoneE164 } from "./phone";
 
 export { ENCRYPTED_COLUMNS } from "./encrypted-columns";
 
@@ -144,6 +144,20 @@ export function blindIndex(value: string, dek: Buffer): string {
 export function phoneLast4(phone: string | null | undefined): string | null {
   const digits = phoneDigits(phone);
   return digits.length >= 4 ? digits.slice(-4) : null;
+}
+
+/**
+ * What sort of line this is — `phone.ts`'s own classification, stored so that
+ * "can this number receive an SMS" survives the plaintext column. Needs no
+ * key, for the same reason `phoneLast4` does not: a statistic nobody can
+ * compute is a statistic that quietly returns the wrong number.
+ *
+ * Null when there is no number at all, so that "no phone" and "a phone we
+ * could not classify" stay distinguishable.
+ */
+export function phoneKind(phone: string | null | undefined): "mobile" | "landline" | "unknown" | null {
+  if (!phoneDigits(phone)) return null;
+  return normalizePhone(phone).kind;
 }
 
 export function phoneBlindIndex(phone: string | null | undefined, dek: Buffer): string | null {

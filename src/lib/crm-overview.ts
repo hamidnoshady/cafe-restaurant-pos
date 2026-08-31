@@ -19,6 +19,7 @@
  */
 
 import { query } from "./db";
+import { mobileReachableSql, phonePairKeySql } from "./customers-service";
 import { businessToday } from "./business-day-service";
 import { WELL_KNOWN_CODES } from "./coa-template";
 import { accountBalance } from "./growth-shared";
@@ -107,9 +108,12 @@ export async function crmOverview(businessId: string): Promise<CrmOverview> {
       [businessId, window.from, window.to, prior.from, prior.to],
     ),
     query<Record<string, string>>(
+      // Same "is it actually a mobile" predicate as crm-service's reachability
+      // stats — a landline is not SMS-reachable, and after step 3 there is no
+      // plaintext number left to notice that with.
       `SELECT count(*) FILTER (WHERE sms_consent)::text AS sms_granted,
               count(*) FILTER (WHERE marketing_consent)::text AS email_granted,
-              count(*) FILTER (WHERE sms_consent AND phone_e164 IS NOT NULL)::text AS sms_reachable,
+              count(*) FILTER (WHERE sms_consent AND ${mobileReachableSql()})::text AS sms_reachable,
               count(*) FILTER (WHERE marketing_consent AND email IS NOT NULL AND btrim(email) <> '')::text AS email_reachable,
               count(*)::text AS total
          FROM customers
@@ -182,9 +186,9 @@ export async function crmOverview(businessId: string): Promise<CrmOverview> {
       `SELECT count(*)::text AS count
          FROM customers a JOIN customers b
            ON b.business_id = a.business_id
-          AND coalesce(b.phone_bidx, b.phone_e164) = coalesce(a.phone_bidx, a.phone_e164)
+          AND ${phonePairKeySql("b")} = ${phonePairKeySql("a")}
           AND a.id < b.id
-        WHERE a.business_id = $1 AND coalesce(a.phone_bidx, a.phone_e164) IS NOT NULL
+        WHERE a.business_id = $1 AND ${phonePairKeySql("a")} IS NOT NULL
           AND a.merged_into_id IS NULL AND b.merged_into_id IS NULL`,
       [businessId],
     ),
