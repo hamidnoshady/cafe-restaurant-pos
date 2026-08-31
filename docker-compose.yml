@@ -16,9 +16,6 @@ services:
       timeout: 3s
       retries: 10
 
-volumes:
-  pos-pgdata:
-
   # Phase 37 — optional LLM gateway (LiteLLM).
   #
   # Not started by `docker compose up -d`: it sits behind a profile, because a
@@ -57,3 +54,6 @@ volumes:
       interval: 30s
       timeout: 5s
       retries: 5
+
+volumes:
+  pos-pgdata:
