@@ -9,7 +9,7 @@
  * being filed.
  *
  * The caller is responsible for hiding any overlay UI (the report dialog, the
- * floating button) before calling this; here we capture the viewport the user
+ * sidebar dialog) before calling this; here we capture the viewport the user
  * is looking at (`scrollX`/`scrollY` + `windowWidth`/`windowHeight`), then
  * downscale to a max width so the data URL stays a few hundred KB at most.
  */

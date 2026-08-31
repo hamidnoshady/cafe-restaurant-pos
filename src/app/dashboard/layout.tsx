@@ -4,10 +4,9 @@ import { query, withTenant } from "@/lib/db";
 import { effectiveFeatures, isLockableFeature } from "@/lib/features";
 import { INDUSTRY_LABELS, type Industry } from "@/lib/industries";
 import { hasModule, industryProfile, labelFor } from "@/lib/industry-profile";
-import { effectivePermissions, parseOverrides, PERMISSIONS, type Permission } from "@/lib/permissions";
+import { effectivePermissions, parseOverrides, type Permission } from "@/lib/permissions";
 import { getSetting, SETTING_KEYS } from "@/lib/settings";
 import { visibleSettingsTabs } from "@/lib/settings-tabs";
-import { AiAssistant } from "@/components/ai/ai-assistant";
 import { MoneyProvider } from "@/components/money/money-context";
 import { BugReportProvider } from "@/components/bug-report/bug-report-provider";
 import { LockProvider } from "./lock-screen";
@@ -153,19 +152,9 @@ export default async function DashboardLayout({
     .filter((item) => canSee(item, member.role, permissions, features, industry))
     .filter((item) => item.href !== "/dashboard/settings" || settingsTabs.length > 0)
     .map((item) => ({ ...item, locked: Boolean(item.flag && !features[item.flag]) }));
-  const assistantMode =
-    member.role === "cashier" || member.role === "waiter"
-      ? "floor"
-      : member.role === "owner" || member.role === "manager"
-        ? "dashboard"
-        : null;
-  const canUseAssistant =
-    assistantMode === "dashboard" ||
-    (assistantMode === "floor" && permissions.has(PERMISSIONS.menuView));
   // Phase 35 Wave 2 — the workspace shell is gated on this flag. Off (the
-  // default) means today's flat sidebar and the floating bubble; on means the
-  // rail and a bubble only on the floor (operational) surfaces, which have no
-  // page header to hang a thin "ask" link from.
+  // default) keeps the classic sidebar; on means the workspace rail is used
+  // for the chat home and projects surface.
   const workspaceEnabled = Boolean(features.workspace);
 
   return (
@@ -202,9 +191,6 @@ export default async function DashboardLayout({
           industry={industry}
         />
         <DashboardMain workspaceEnabled={workspaceEnabled}>{children}</DashboardMain>
-        {assistantMode && canUseAssistant && features.ai_assistant && (assistantMode === "floor" || !workspaceEnabled) ? (
-          <AiAssistant mode={assistantMode} />
-        ) : null}
         </div>
         </BugReportProvider>
       </MoneyProvider>

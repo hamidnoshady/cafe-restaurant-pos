@@ -43,6 +43,7 @@ interface NavItem {
 const NAV: NavItem[] = [
   { label: "کسب‌وکارها", href: "/platform", exact: true, alsoActive: ["/platform/businesses"] },
   { label: "رویدادها", href: "/platform/audit" },
+  { label: "گزارش‌های خطا", href: "/platform/bug-reports", cap: "audit.read" },
   {
     label: "سیستم",
     href: "/platform/system",

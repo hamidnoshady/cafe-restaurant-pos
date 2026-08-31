@@ -6,7 +6,6 @@ import { getSetting, SETTING_KEYS } from "@/lib/settings";
 import { MoneyProvider } from "@/components/money/money-context";
 import { cardClass } from "@/app/dashboard/page-chrome";
 import { StepNav } from "./step-nav";
-import { SetupAssistant } from "./setup-assistant";
 import { SetupIndustryProvider } from "./industry-context";
 import { isSetupComplete } from "@/lib/setup-state";
 
@@ -49,7 +48,6 @@ export default async function SetupLayout({
           </div>
         </aside>
           <main className={`min-w-0 flex-1 ${cardClass} p-6`}>{children}</main>
-          <SetupAssistant />
         </div>
       </MoneyProvider>
     </SetupIndustryProvider>

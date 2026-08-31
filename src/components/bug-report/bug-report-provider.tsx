@@ -1,23 +1,19 @@
 "use client";
 
 import { createContext, useCallback, useContext, useMemo, useState } from "react";
-import { BugIcon } from "lucide-react";
 import { useShakeDetection } from "./use-shake";
 import { BugReportDialog } from "./bug-report-dialog";
 
 /**
  * Bug reporting, wired once around the dashboard.
  *
- * Three ways in, one dialog out:
+ * Two ways in, one dialog out:
  *   - shake the phone (device motion),
- *   - the floating "report" button (mobile),
- *   - the small bug icon in the footer (sidebar footer on desktop, bottom bar
- *     on mobile).
+ *   - the small bug icon at the bottom of the sidebar.
  *
  * The provider owns the dialog's open state and the "is a screenshot being
- * captured" flag, so the floating button can hide itself while the snapshot is
- * taken. `useBugReport()` lets any descendant (the footer icon in
- * dashboard-sidebar.tsx) open the dialog without knowing the plumbing.
+ * captured" flag. `useBugReport()` lets the sidebar footer open the dialog
+ * without knowing the plumbing.
  */
 
 interface BugReportContextValue {
@@ -52,20 +48,6 @@ export function BugReportProvider({ children }: { children: React.ReactNode }) {
   return (
     <BugReportContext.Provider value={value}>
       {children}
-
-      {/* Floating "report" button — mobile only; desktop reaches the dialog via the sidebar footer. */}
-      <button
-        type="button"
-        onClick={openReport}
-        aria-label="گزارش مشکل"
-        title="گزارش مشکل"
-        className={`fixed start-4 bottom-[calc(var(--app-bottom-nav)+0.75rem)] z-40 flex h-12 items-center gap-2 rounded-full bg-destructive px-4 text-sm font-semibold text-white shadow-[0_12px_32px_-6px_rgb(41_37_36/0.25)] ring-1 ring-foreground/10 transition-[transform,opacity] hover:scale-105 focus-visible:opacity-100 active:scale-95 md:hidden ${
-          capturing ? "hidden" : ""
-        }`}
-      >
-        <BugIcon aria-hidden="true" className="size-5 shrink-0" />
-        گزارش خطا
-      </button>
 
       <BugReportDialog open={open} onOpenChange={setOpen} capturing={capturing} onCapturingChange={setCapturing} />
     </BugReportContext.Provider>
