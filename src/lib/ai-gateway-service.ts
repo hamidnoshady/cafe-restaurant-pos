@@ -22,7 +22,6 @@
  */
 import { query, withoutTenantScope } from "./db";
 import {
-  aggregateSpendLogs,
   defaultGatewayConfig,
   gatewayTurnPricing,
   emptyBusinessGateway,
@@ -36,13 +35,10 @@ import {
   livelinessUrl,
   modelInfoUrl,
   normalizeMcpServers,
-  normalizePromptBindings,
   parseGatewayModels,
   parseGeneratedKey,
   parseKeySpend,
-  parseSpendLogs,
   resolveChatModel,
-  spendLogsUrl,
   toPublicGatewayConfig,
   toStringList,
   validateBusinessGatewayInput,
@@ -103,7 +99,6 @@ type GatewayRow = {
   default_rpm_limit: number | null;
   usd_rial_rate: string | null;
   gateway_costing_enabled: boolean;
-  prompt_bindings: unknown;
   mcp_enabled: boolean;
   mcp_servers: unknown;
 };
@@ -127,7 +122,6 @@ function rowToGateway(row: GatewayRow): AiGatewayConfig {
     defaultRpmLimit: optionalInteger(row.default_rpm_limit),
     usdRialRate: optionalNumber(row.usd_rial_rate),
     gatewayCostingEnabled: row.gateway_costing_enabled,
-    promptBindings: normalizePromptBindings(row.prompt_bindings),
     mcpEnabled: row.mcp_enabled,
     mcpServers: normalizeMcpServers(row.mcp_servers),
   };
@@ -140,7 +134,7 @@ export async function getAiGatewayConfig(): Promise<AiGatewayConfig> {
             fallback_models, routing_strategy, virtual_keys_enabled,
             allow_business_models, published_models, default_max_budget_usd,
             default_budget_duration, default_tpm_limit, default_rpm_limit,
-            usd_rial_rate, gateway_costing_enabled, prompt_bindings,
+            usd_rial_rate, gateway_costing_enabled,
             mcp_enabled, mcp_servers
        FROM platform_ai_gateway
       WHERE id = true`,
@@ -195,10 +189,6 @@ export function mergeGatewayConfig(draft: AiGatewayInput, current: AiGatewayConf
     defaultRpmLimit: pickOptionalNumber(draft.defaultRpmLimit, current.defaultRpmLimit),
     usdRialRate: pickOptionalNumber(draft.usdRialRate, current.usdRialRate),
     gatewayCostingEnabled: draft.gatewayCostingEnabled ?? current.gatewayCostingEnabled,
-    promptBindings:
-      draft.promptBindings === undefined
-        ? current.promptBindings
-        : normalizePromptBindings(draft.promptBindings),
     mcpEnabled: draft.mcpEnabled ?? current.mcpEnabled,
     mcpServers: draft.mcpServers === undefined ? current.mcpServers : normalizeMcpServers(draft.mcpServers),
   };
@@ -223,11 +213,11 @@ export async function saveAiGatewayConfig(input: AiGatewayInput): Promise<AiGate
         fallback_models, routing_strategy, virtual_keys_enabled,
         allow_business_models, published_models, default_max_budget_usd,
         default_budget_duration, default_tpm_limit, default_rpm_limit,
-        usd_rial_rate, gateway_costing_enabled, prompt_bindings,
+        usd_rial_rate, gateway_costing_enabled,
         mcp_enabled, mcp_servers, updated_at)
      VALUES
        (true, $1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10::jsonb, $11, $12, $13, $14,
-        $15, $16, $17::jsonb, $18, $19::jsonb, now())
+        $15, $16, $17, $18::jsonb, now())
      ON CONFLICT (id)
      DO UPDATE SET enabled = EXCLUDED.enabled,
                    base_url = EXCLUDED.base_url,
@@ -245,7 +235,6 @@ export async function saveAiGatewayConfig(input: AiGatewayInput): Promise<AiGate
                    default_rpm_limit = EXCLUDED.default_rpm_limit,
                    usd_rial_rate = EXCLUDED.usd_rial_rate,
                    gateway_costing_enabled = EXCLUDED.gateway_costing_enabled,
-                   prompt_bindings = EXCLUDED.prompt_bindings,
                    mcp_enabled = EXCLUDED.mcp_enabled,
                    mcp_servers = EXCLUDED.mcp_servers,
                    updated_at = now()`,
@@ -266,11 +255,6 @@ export async function saveAiGatewayConfig(input: AiGatewayInput): Promise<AiGate
       pickOptionalNumber(input.defaultRpmLimit, current.defaultRpmLimit),
       pickOptionalNumber(input.usdRialRate, current.usdRialRate),
       input.gatewayCostingEnabled ?? current.gatewayCostingEnabled,
-      JSON.stringify(
-        input.promptBindings === undefined
-          ? current.promptBindings
-          : normalizePromptBindings(input.promptBindings),
-      ),
       input.mcpEnabled ?? current.mcpEnabled,
       JSON.stringify(
         input.mcpServers === undefined ? current.mcpServers : normalizeMcpServers(input.mcpServers),
@@ -734,7 +718,7 @@ async function getBusinessGatewayOrEmpty(
 }
 
 // ---------------------------------------------------------------------------
-// Costing resolution and usage sync
+// Costing resolution (settlement support for the billing ledger)
 // ---------------------------------------------------------------------------
 
 export interface GatewayCosting {
@@ -762,189 +746,6 @@ export async function resolveGatewayTurnPricing(
   const { costRial, chargedRial } = gatewayTurnPricing(costUsd, costing.usdRialRate, marginPercent);
   if (chargedRial <= 0) return null;
   return { costUsd, costRial, chargedRial };
-}
-
-type UsageRollupRow = {
-  id: string;
-  day: string;
-  key_alias: string;
-  business_id: string | null;
-  location_id: string | null;
-  model: string;
-  spend_usd: string | number;
-  prompt_tokens: string | number;
-  completion_tokens: string | number;
-  api_requests: number;
-};
-
-export interface GatewayUsageEntry {
-  day: string;
-  keyAlias: string;
-  businessId: string | null;
-  locationId: string | null;
-  model: string;
-  spendUsd: number;
-  promptTokens: number;
-  completionTokens: number;
-  apiRequests: number;
-}
-
-function rowToUsageEntry(row: UsageRollupRow): GatewayUsageEntry {
-  return {
-    day: typeof row.day === "string" ? row.day.slice(0, 10) : String(row.day).slice(0, 10),
-    keyAlias: row.key_alias,
-    businessId: row.business_id,
-    locationId: row.location_id ?? null,
-    model: row.model,
-    spendUsd: numberValue(row.spend_usd),
-    promptTokens: numberValue(row.prompt_tokens),
-    completionTokens: numberValue(row.completion_tokens),
-    apiRequests: numberValue(row.api_requests),
-  };
-}
-
-/** Stored rollups for a day window. Platform scope; the console reads it. */
-export async function listGatewayUsage(options: {
-  fromDay: string;
-  toDay: string;
-  locationId?: string | null;
-}): Promise<GatewayUsageEntry[]> {
-  const loc = options.locationId?.trim() || null;
-  const { rows } = await withoutTenantScope("platform", () =>
-    query<UsageRollupRow>(
-      `SELECT id, day, key_alias, business_id, location_id, model, spend_usd,
-              prompt_tokens, completion_tokens, api_requests
-         FROM ai_gateway_usage
-        WHERE day BETWEEN $1 AND $2
-          AND (
-            $3::uuid IS NULL
-            OR location_id = $3::uuid
-          )
-        ORDER BY day DESC, key_alias, model`,
-      [options.fromDay, options.toDay, loc],
-    ),
-  );
-  return rows.map(rowToUsageEntry);
-}
-
-/**
- * This business's own rollups, read under the ambient tenant scope.
- */
-export async function listBusinessGatewayUsage(options: {
-  fromDay: string;
-  toDay: string;
-  locationId?: string | null;
-}): Promise<GatewayUsageEntry[]> {
-  const loc = options.locationId?.trim() || null;
-  const { rows } = await query<UsageRollupRow>(
-    `SELECT id, day, key_alias, business_id, location_id, model, spend_usd,
-            prompt_tokens, completion_tokens, api_requests
-       FROM ai_gateway_usage
-      WHERE day BETWEEN $1 AND $2
-        AND (
-          $3::uuid IS NULL
-          OR location_id = $3::uuid
-        )
-      ORDER BY day DESC, model`,
-    [options.fromDay, options.toDay, loc],
-  );
-  return rows.map(rowToUsageEntry);
-}
-
-export interface GatewayUsageSyncResult {
-  ok: boolean;
-  durationMs: number;
-  entries: number;
-  rows: number;
-  error: string | null;
-}
-
-function utcDayNDaysAgo(days: number): string {
-  const date = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-  return date.toISOString().slice(0, 10);
-}
-
-/**
- * Pull the proxy's spend logs for the last `days` days, aggregate them into
- * the daily rollup, and store them with business_id and location_id.
- */
-export async function syncGatewayUsage(
-  config: AiGatewayConfig,
-  options: { days?: number } = {},
-): Promise<GatewayUsageSyncResult> {
-  const started = Date.now();
-  const days = Number.isSafeInteger(options.days) && (options.days ?? 0) > 0 ? (options.days as number) : 7;
-  const failure = (error: string): GatewayUsageSyncResult => ({
-    ok: false,
-    durationMs: Date.now() - started,
-    entries: 0,
-    rows: 0,
-    error,
-  });
-
-  if (!config.masterKey) return failure("کلید مدیر دروازه تنظیم نشده است؛ همگام‌سازی مصرف ممکن نشد.");
-  const startDate = `${utcDayNDaysAgo(days)}T00:00:00`;
-  const endDate = `${new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10)}T23:59:59`;
-  const res = await gatewayRequest(config, spendLogsUrl(config.baseUrl, startDate, endDate), { method: "GET" });
-  if (res.status === 0) return failure("دروازه در دسترس نیست (اتصال برقرار نشد).");
-  if (res.status === 401 || res.status === 403) return failure(gatewayStatusMessage(res.status));
-  if (res.status < 200 || res.status >= 300) return failure(gatewayStatusMessage(res.status));
-
-  const entries = parseSpendLogs(res.body);
-  const rollups = aggregateSpendLogs(entries);
-
-  // Alias → { business_id, location_id }
-  const businessRows = await withoutTenantScope("platform", () =>
-    query<{ key_alias: string | null; business_id: string; location_id: string | null }>(
-      `SELECT key_alias, business_id, location_id FROM ai_business_gateway WHERE key_alias IS NOT NULL`,
-    ),
-  );
-  const aliasToInfo = new Map<string, { businessId: string; locationId: string | null }>();
-  for (const row of businessRows.rows) {
-    if (row.key_alias) {
-      aliasToInfo.set(row.key_alias, {
-        businessId: row.business_id,
-        locationId: row.location_id ?? null,
-      });
-    }
-  }
-
-  let stored = 0;
-  if (rollups.length > 0) {
-    await withoutTenantScope("platform", async () => {
-      for (const rollup of rollups) {
-        const info = aliasToInfo.get(rollup.keyAlias);
-        await query(
-          `INSERT INTO ai_gateway_usage
-             (day, key_alias, business_id, location_id, model, spend_usd,
-              prompt_tokens, completion_tokens, api_requests, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())
-           ON CONFLICT (day, key_alias, model)
-           DO UPDATE SET business_id = EXCLUDED.business_id,
-                         location_id = EXCLUDED.location_id,
-                         spend_usd = EXCLUDED.spend_usd,
-                         prompt_tokens = EXCLUDED.prompt_tokens,
-                         completion_tokens = EXCLUDED.completion_tokens,
-                         api_requests = EXCLUDED.api_requests,
-                         updated_at = now()`,
-          [
-            rollup.day,
-            rollup.keyAlias,
-            info?.businessId ?? null,
-            info?.locationId ?? null,
-            rollup.model,
-            rollup.spendUsd,
-            rollup.promptTokens,
-            rollup.completionTokens,
-            rollup.apiRequests,
-          ],
-        );
-        stored += 1;
-      }
-    });
-  }
-
-  return { ok: true, durationMs: Date.now() - started, entries: entries.length, rows: stored, error: null };
 }
 
 // ---------------------------------------------------------------------------

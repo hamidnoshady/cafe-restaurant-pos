@@ -15,15 +15,13 @@ import type { AiConfig } from "./ai";
  * The config for a tenant call.
  * `businessId` scopes which virtual key is used; pass null for platform support.
  * `locationId` scopes branch-level model overrides and branch virtual keys.
- * `mode` is the agent surface the call answers on (wizard, dashboard, floor, proactive, autopilot, platform).
  */
 export async function resolveAiConfigFor(
   businessId: string | null,
   locationId?: string | null,
-  mode?: string | null,
 ): Promise<PlatformAiConfig> {
   const config = await getPlatformAiConfig();
-  return decorate(config, businessId, locationId, mode);
+  return decorate(config, businessId, locationId);
 }
 
 /**
@@ -33,16 +31,14 @@ export async function decorateAiConfig(
   config: PlatformAiConfig,
   businessId: string | null,
   locationId?: string | null,
-  mode?: string | null,
 ): Promise<PlatformAiConfig> {
-  return decorate(config, businessId, locationId, mode);
+  return decorate(config, businessId, locationId);
 }
 
 async function decorate(
   config: PlatformAiConfig,
   businessId: string | null,
   locationId?: string | null,
-  mode?: string | null,
 ): Promise<PlatformAiConfig> {
   if (!config.enabled) return config;
 
@@ -66,10 +62,10 @@ async function decorate(
     return { ...config, enabled: false };
   }
 
-  const runtime = buildGatewayRuntime({ config, gateway, business, branch, mode });
+  const runtime = buildGatewayRuntime({ config, gateway, business, branch });
   if (!runtime) return config;
 
-  const { model, embeddingModel, body, authKey, promptId } = runtime;
+  const { model, embeddingModel, body, authKey } = runtime;
   const decorated: AiConfig = {
     ...config,
     model,
@@ -77,7 +73,6 @@ async function decorate(
     gateway: {
       ...(authKey ? { authKey } : {}),
       body,
-      ...(promptId ? { promptId } : {}),
     },
   };
   return decorated as PlatformAiConfig;

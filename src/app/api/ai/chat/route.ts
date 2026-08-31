@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
-import type { AgentMode, PromptContext } from "@/lib/ai";
+import { buildSystemPrompt, type AgentMode, type PromptContext } from "@/lib/ai";
 import { isPlatformAiConfigured } from "@/lib/ai-config";
 import { resolveAiConfigFor } from "@/lib/ai-runtime";
 import { resolveGatewayTurnPricing } from "@/lib/ai-gateway-service";
@@ -25,7 +25,6 @@ import {
   runAgentTurn,
   type InboundMessage,
 } from "@/lib/ai-service";
-import { resolveSystemPrompt } from "@/lib/ai-prompt-service";
 import {
   buildToolSignature,
   isCacheableTurn,
@@ -143,7 +142,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   const locationId = floorLocation?.id ?? activeLocation?.id ?? null;
   // Phase 37 & 39 — resolved through the gateway: the virtual key, the model alias
   // and the failover chain for THIS business and branch are applied here.
-  const config = await resolveAiConfigFor(session.businessId, locationId, mode);
+  const config = await resolveAiConfigFor(session.businessId, locationId);
   if (!isPlatformAiConfigured(config)) {
     return NextResponse.json(
       { error: "ai_unavailable", message: "سرویس هوش مصنوعی هنوز توسط مدیر پلتفرم آماده نشده است." },
@@ -229,21 +228,14 @@ export const POST = withTenantScope(async (request: NextRequest) => {
 
       void (async () => {
         try {
-          // The prompt manager's prompt for this surface: platform override or
-          // code default, plus the business's standing instructions. The ctx is
-          // built with the same attachment/retrieval facts runAgentTurn would
-          // use, so the fallback prompt is identical to the pre-manager one.
-          // Phase 36c — the turn's task lens rides on top, after the managed
-          // prompt, so no platform or business layer can overwrite it and no
-          // invalid task can leak into the prompt.
-          const resolvedPrompt = await resolveSystemPrompt({
-            mode,
-            ctx: {
-              ...promptContext,
-              hasAttachment: attachments.length > 0,
-              retrieval: await retrievalReadyForMode(config, mode, session.businessId),
-            },
-            businessId: session.businessId,
+          // The code-built system prompt for this surface. The ctx is built
+          // with the same attachment/retrieval facts runAgentTurn would use.
+          // Phase 36c — the turn's task lens rides on top of it, so no invalid
+          // task can leak into the prompt.
+          const resolvedPrompt = buildSystemPrompt({
+            ...promptContext,
+            hasAttachment: attachments.length > 0,
+            retrieval: await retrievalReadyForMode(config, mode, session.businessId),
           });
           const systemPrompt = taskDirective
             ? `${resolvedPrompt}\n\n${taskDirective}`

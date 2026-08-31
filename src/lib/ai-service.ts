@@ -17,7 +17,7 @@ import {
 } from "./ai";
 import { runReadTool, type FloorReadScope, type ToolResult } from "./ai-tools";
 import { estimateTokens, type AiTokenUsage } from "./ai-billing";
-import { gatewayPromptBody, parseResponseCostHeader } from "./ai-gateway";
+import { parseResponseCostHeader } from "./ai-gateway";
 import { clampRetrievalLimit, formatRetrievalForPrompt, isRetrievalAvailable, retrieveKnowledge } from "./ai-rag";
 import { embedOne, isEmbeddingAvailable } from "./ai-embeddings";
 import {
@@ -555,10 +555,8 @@ function traceOf(name: string, args: Record<string, unknown>): AgentToolCallTrac
   stream?: ProviderStreamCallbacks;
   promptContext: PromptContext;
   /**
-   * The prompt manager's resolved system prompt. When present it replaces the
-   * code-built one (`buildSystemPrompt`) for this turn — see
-   * `resolveSystemPrompt` in ai-prompt-service.ts. Absent means today's
-   * behaviour, which is also what any failure in the resolver degrades to.
+   * An explicit system prompt for this turn; when absent the code-built one
+   * (`buildSystemPrompt`) is used.
    */
   systemPrompt?: string;
   messages: InboundMessage[];
@@ -609,43 +607,17 @@ function traceOf(name: string, args: Record<string, unknown>): AgentToolCallTrac
   let costUsd: number | null = null;
   const toolTrace: AgentToolCallTrace[] = [];
 
-  // Phase 38b — a surface bound to a gateway prompt sends `prompt_id` +
-  // `prompt_variables` instead of its own system message: the prose lives in
-  // the gateway's prompt registry, and the text the code would have sent
-  // travels as `system_context` so the template keeps the guardrails. The
-  // variables ride on the same per-call body the failover chain uses.
-  const gatewayPromptId = config.gateway?.promptId?.trim() || "";
   const systemContent =
     opts.systemPrompt?.trim() ||
     buildSystemPrompt({ ...promptContext, hasAttachment, retrieval: retrievalReady });
 
   const convo: ProviderMessage[] = [
-    ...(gatewayPromptId
-      ? []
-      : [{ role: "system" as const, content: systemContent }]),
+    { role: "system" as const, content: systemContent },
     ...messages.map((m) => ({ role: m.role, content: m.content })),
   ];
 
-  const callConfig: AiConfig = gatewayPromptId
-    ? {
-        ...config,
-        gateway: {
-          ...config.gateway,
-          body: {
-            ...(config.gateway?.body ?? {}),
-            ...gatewayPromptBody(gatewayPromptId, {
-              systemContext: systemContent,
-              businessName: promptContext.businessName ?? null,
-              userName: promptContext.userName ?? null,
-              mode,
-            }),
-          },
-        },
-      }
-    : config;
-
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-    const result = await callProvider(callConfig, convo, tools, opts.stream);
+    const result = await callProvider(config, convo, tools, opts.stream);
     usage.inputTokens += result.usage.inputTokens;
     usage.outputTokens += result.usage.outputTokens;
     if (result.costUsd !== null) costUsd = (costUsd ?? 0) + result.costUsd;

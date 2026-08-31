@@ -77,7 +77,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
 
   const activeLocation = await resolveActiveLocation(session);
   const locationId = activeLocation?.id ?? null;
-  const config = await resolveAiConfigFor(session.businessId, locationId, mode);
+  const config = await resolveAiConfigFor(session.businessId, locationId);
   if (!isPlatformAiConfigured(config)) {
     return NextResponse.json(
       { error: "ai_unavailable", message: "سرویس هوش مصنوعی هنوز توسط مدیر پلتفرم آماده نشده است." },

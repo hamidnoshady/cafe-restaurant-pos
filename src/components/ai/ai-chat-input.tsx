@@ -4,7 +4,6 @@
  * The floating launcher's composer — the shared `ChatComposer` in popup
  * sizing plus the mode-specific fine print under the field.
  */
-import Link from "next/link";
 import { ChatComposer } from "./chat-composer";
 import type { AiTaskId } from "@/lib/ai-tasks";
 import type { AssistantMode, ChatAttachment } from "./use-ai-chat";
@@ -75,13 +74,7 @@ export function AiChatInput({
           ) : (
             <p className="mt-1.5 px-1.5 text-[10px] text-muted-foreground">
               هزینهٔ هر پاسخ زیر همان پاسخ نوشته می‌شود؛ تغییرها فقط با تأیید شما ثبت
-              می‌شوند.{" "}
-              <Link
-                href="/dashboard/ai?tab=settings"
-                className="underline underline-offset-2 hover:text-foreground"
-              >
-                اعتبار، اشتراک و گزارش ممیزی
-              </Link>
+              می‌شوند.
             </p>
           )
         }

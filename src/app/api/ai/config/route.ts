@@ -5,7 +5,7 @@ import { requireManager } from "@/lib/setup-state";
 /**
  * Kept as a safe compatibility endpoint after Phase 18 removed the
  * per-business provider/key form. It intentionally never returns or accepts
- * provider credentials; businesses use /api/ai/billing instead.
+ * provider credentials; the AI connection is platform-managed (LiteLLM).
  */
 export const GET = withTenantScope(async () => {
   const { error } = await requireManager();

@@ -9,6 +9,18 @@ const nextConfig: NextConfig = {
    */
   serverExternalPackages: ["unpdf", "pdfjs-dist"],
   /**
+   * The AI console was slimmed down to the LiteLLM gateway settings only: the
+   * platform's AI section is one page, and every user-level AI settings
+   * surface is gone. Old bookmarks land on the pages that remain.
+   */
+  async redirects() {
+    return [
+      { source: "/platform/ai/gateway", destination: "/platform/ai", permanent: false },
+      { source: "/platform/ai/prompts", destination: "/platform/ai", permanent: false },
+      { source: "/dashboard/ai/settings", destination: "/dashboard/ai", permanent: false },
+    ];
+  },
+  /**
    * Phase 34 — the OAuth discovery documents live at `/.well-known/…`, which is
    * where RFC 8414 and RFC 9728 say to look and where every MCP client goes
    * first. Next's app router will not serve a dot-prefixed route folder, so the
