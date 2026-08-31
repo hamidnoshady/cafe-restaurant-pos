@@ -29,6 +29,7 @@ export const APP_KEYS = [
   "growth",
   "operations",
   "accounting",
+  "wp",
   "connections",
   "settings",
 ] as const;
@@ -128,11 +129,28 @@ export const APPS: AppDef[] = [
     modules: ["ledger", "reports"],
   },
   {
+    key: "wp",
+    label: "مدیریت وردپرس و ووکامرس",
+    description:
+      "مدیریت کامل فروشگاه آنلاین: محصولات، سفارش‌ها، مشتریان، دسته‌بندی‌ها، محتوا و رسانه‌های سایت وردپرسی.",
+    // Phase 40 — the fifth app. It owns the `integrations` module (the store
+    // connection surfaces that used to sit as a «اتصال‌ها» section): products,
+    // orders, customers, taxonomies, WordPress content and media, and the
+    // outbox queue are all its management surfaces. The integration *engines*
+    // stay in src/lib/integrations so the other apps keep using them — the
+    // POS pushes stock, CRM reads store customers, Growth segments them — but
+    // the owner-facing management lives here.
+    modules: ["integrations"],
+  },
+  {
     key: "connections",
     label: "اتصال‌ها",
     description:
-      "اتصال کسب‌وکار به خدمات بیرونی: فروشگاه آنلاین، همگام‌سازی دسکتاپ و دستیارهای هوشمند.",
-    modules: ["integrations"],
+      "اتصال کسب‌وکار به خدمات بیرونی: همگام‌سازی دسکتاپ و دستیارهای هوشمند. فروشگاه آنلاین به «مدیریت وردپرس» منتقل شد.",
+    // The WooCommerce/WordPress surfaces moved to the wp app above; this
+    // entry stays so the registry keeps its shape and any future non-store
+    // connection (desktop sync, MCP assistants) has an app to live in.
+    modules: [],
   },
   {
     key: "settings",

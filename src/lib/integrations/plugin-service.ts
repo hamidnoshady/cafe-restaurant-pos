@@ -152,7 +152,14 @@ export async function pluginHandshake(
   return withTenant(connection.business_id, async () => {
     const siteUrl = input.siteUrl?.trim().slice(0, 500) || null;
     const version = input.pluginVersion?.trim().slice(0, 40) || null;
-    await query(
+    // Read the pre-handshake value first: an UPDATE ... RETURNING hands back
+    // the *new* row, where last_plugin_seen_at is already now(), so the
+    // first-contact test below would always be false.
+    const { rows: beforeRows } = await query<{ last_plugin_seen_at: Date | null }>(
+      `SELECT last_plugin_seen_at FROM integration_connections WHERE id = $1 AND business_id = $2`,
+      [connection.id, connection.business_id],
+    );
+    const { rows: handshakeRows } = await query<{ sync_orders: boolean; sync_products: boolean; sync_customers: boolean }>(
       `UPDATE integration_connections
           SET plugin_site_url = COALESCE($3, plugin_site_url),
               plugin_version = COALESCE($4, plugin_version),
@@ -160,14 +167,43 @@ export async function pluginHandshake(
               last_error = NULL,
               last_plugin_seen_at = now(),
               updated_at = now()
-        WHERE id = $1 AND business_id = $2`,
+        WHERE id = $1 AND business_id = $2
+        RETURNING sync_orders, sync_products, sync_customers`,
       [connection.id, connection.business_id, siteUrl, version],
     );
+
+    // First-contact bootstrap. The plugin only sends what it observes from
+    // this moment on; nothing in the plugin link ever asked it for the
+    // *historical* catalogue, customer book or order book on its own. So a
+    // store with six hundred customers connected and, three days later, the
+    // app held only the ~20 accounts created after connect — the rest arrived
+    // by no path at all (the orders sweep covered orders; products had a
+    // hourly sweep; customers had neither a sweep nor an initial request).
+    // On the very first handshake we queue the three full exports; each is
+    // upserted on a unique key, so the button a later handshake's owner
+    // presses just refreshes the one row.
+    const firstContact = !beforeRows[0]?.last_plugin_seen_at;
+    if (firstContact) {
+      await enqueuePluginExport(connection.business_id, connection.id, "catalogue_export");
+      await enqueuePluginExport(connection.business_id, connection.id, "customer_export");
+      await enqueuePluginExport(connection.business_id, connection.id, "orders_export");
+      await writeIntegrationAudit({
+        businessId: connection.business_id,
+        connectionId: connection.id,
+        action: "plugin.bootstrap_exports_queued",
+        payload: {
+          products: handshakeRows[0]?.sync_products ?? true,
+          customers: handshakeRows[0]?.sync_customers ?? true,
+          orders: handshakeRows[0]?.sync_orders ?? true,
+        },
+      });
+    }
+
     await writeIntegrationAudit({
       businessId: connection.business_id,
       connectionId: connection.id,
       action: "plugin.handshake",
-      payload: { siteUrl, version },
+      payload: { siteUrl, version, firstContact },
     });
 
     return NextResponse.json({
@@ -204,6 +240,11 @@ export async function pluginHandshake(
           "catalogue_export",
           "customer_export",
           "orders_export",
+          // Phase 40 — the WordPress manager: content export + content
+          // operations an older plugin acks as unknown-and-done.
+          "content_export",
+          "post_upsert",
+          "media_create",
         ],
       },
     });

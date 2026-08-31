@@ -473,7 +473,10 @@ export async function listCosmeticBoard(locationId: string): Promise<CosmeticVar
        LEFT JOIN items p ON p.id = i.parent_item_id
        LEFT JOIN item_stock s ON s.item_id = i.id
        LEFT JOIN item_brands b ON b.id = i.brand_id
-      WHERE i.location_id = $1 AND i.tracking IN ('none', 'batch') AND i.kind <> 'simple'
+      -- Standalone ('simple') items included — same WooCommerce sync fix as
+      -- accessories-service's board: a simple product the integration
+      -- imported must appear on the management screen it belongs to.
+      WHERE i.location_id = $1 AND i.tracking IN ('none', 'batch')
       ORDER BY COALESCE(p.name, i.name), i.kind DESC, i.name`,
     [locationId],
   );

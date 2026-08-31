@@ -28,6 +28,7 @@ import {
   TruckIcon,
   UsersIcon,
   WatchIcon,
+  GlobeIcon,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -136,6 +137,8 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   // Phase 36 — the CRM app's home. `/dashboard/customers` keeps the plain
   // people glyph above; this is the app that now owns that record.
   "/dashboard/crm": ContactIcon,
+  // Phase 40 — the WordPress & WooCommerce manager's home.
+  "/dashboard/wp": GlobeIcon,
 };
 
 /**
@@ -184,6 +187,18 @@ const WORKSPACE_APP_LAUNCHERS: readonly {
       "/dashboard/loyalty",
       "/dashboard/promotions",
       "/dashboard/commission",
+    ],
+  },
+  {
+    key: "wp",
+    label: "مدیریت وردپرس",
+    icon: GlobeIcon,
+    // The old flat connection page still exists (module-gated); it and the
+    // store sections launch into the manager app.
+    hrefs: [
+      "/dashboard/wp",
+      "/dashboard/connections",
+      "/dashboard/integrations",
     ],
   },
 ];

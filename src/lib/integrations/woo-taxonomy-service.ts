@@ -181,6 +181,84 @@ export async function syncTaxonomyTree(
   return { taxonomies, terms: total, truncated };
 }
 
+/**
+ * Record one term the store told us about *inline* with a product payload.
+ *
+ * The REST sync reads the whole tree from `products/categories` and the
+ * attribute/tag endpoints, but in plugin mode the app never dials the store:
+ * the only taxonomy facts that ever arrive are the `categories`/`tags`
+ * arrays carried on each pushed product. Without this, a plugin-connected
+ * store's taxonomy browser stayed empty forever and the «دسته‌بندی‌ها» column
+ * on the catalogue was blank even though every product named its categories.
+ *
+ * Upsert (never delete) is the right semantics here: a term omitted from one
+ * product's payload is not a term that stopped existing, and the full tree
+ * replace stays the job of `replaceTerms`. The remote product count is left
+ * as-is on conflict because a product payload only proves membership, not the
+ * store's authoritative count.
+ */
+export async function upsertTermFromPayload(
+  businessId: string,
+  connectionId: string,
+  taxonomy: string,
+  term: { id: number | string; name?: string; slug?: string },
+): Promise<void> {
+  const remoteId = String(term.id ?? "");
+  if (!taxonomy || !remoteId || remoteId === "0") return;
+  const name = (term.name ?? "").trim();
+  const slug = (term.slug ?? "").trim();
+  if (!name && !slug) return;
+  await query(
+    `INSERT INTO integration_woo_terms
+       (business_id, connection_id, taxonomy, remote_id, name, slug, payload)
+     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
+     ON CONFLICT (connection_id, taxonomy, remote_id)
+     DO UPDATE SET name = CASE WHEN $5 <> '' THEN $5 ELSE integration_woo_terms.name END,
+                   slug = CASE WHEN $6 <> '' THEN $6 ELSE integration_woo_terms.slug END,
+                   updated_at = now()`,
+    [
+      businessId,
+      connectionId,
+      taxonomy,
+      remoteId,
+      name,
+      slug,
+      JSON.stringify({ id: Number(remoteId) || remoteId, name: term.name ?? "", slug: term.slug ?? "" }),
+    ],
+  );
+}
+
+/**
+ * Mirror every category and tag a pushed product carries, then record the
+ * product→term assignments. Called by the single product ingest path so REST
+ * pulls, webhooks and plugin pushes all keep the taxonomy mirror populated.
+ */
+export async function recordProductTermsFromPayload(
+  businessId: string,
+  connectionId: string,
+  remoteProductId: string,
+  product: {
+    categories?: { id: number; name?: string; slug?: string }[];
+    tags?: { id: number; name?: string; slug?: string }[];
+  },
+): Promise<void> {
+  for (const category of product.categories ?? []) {
+    await upsertTermFromPayload(businessId, connectionId, "product_cat", category);
+  }
+  for (const tag of product.tags ?? []) {
+    await upsertTermFromPayload(businessId, connectionId, "product_tag", tag);
+  }
+  await replaceProductTerms(
+    businessId,
+    connectionId,
+    remoteProductId,
+    [
+      ...(product.categories ?? []).map((c) => ({ taxonomy: "product_cat", termRemoteId: String(c.id) })),
+      ...(product.tags ?? []).map((t) => ({ taxonomy: "product_tag", termRemoteId: String(t.id) })),
+    ],
+  );
+}
+
 /** Which remote terms one remote product carries. */
 export async function replaceProductTerms(
   businessId: string,

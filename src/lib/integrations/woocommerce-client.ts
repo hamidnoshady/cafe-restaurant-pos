@@ -395,12 +395,38 @@ export interface WooCommerceClient {
   listTaxonomies(): Promise<WooTaxonomy[]>;
   listTerms(taxonomy: string, query?: Record<string, string | number | boolean>): Promise<WooTerm[]>;
   listOrders(query?: Record<string, string | number | boolean>): Promise<WooOrder[]>;
+  /** One page of orders plus the store's page count — the scheduled pull pages with it. */
+  listOrdersPage(
+    query: Record<string, string | number | boolean> & { page: number },
+  ): Promise<WooList<WooOrder>>;
   getOrder(id: number): Promise<WooOrder>;
   updateOrder(id: number, patch: Record<string, unknown>): Promise<WooOrder>;
   listRefunds(query?: Record<string, string | number | boolean>): Promise<WooRefund[]>;
   listOrderRefunds(orderId: number): Promise<WooRefund[]>;
   createRefund(orderId: number, body: Record<string, unknown>): Promise<WooRefund>;
   listCustomers(query?: Record<string, string | number | boolean>): Promise<WooCustomer[]>;
+  /** One page of WordPress core content (posts/pages/media) over wp/v2. */
+  wpListPage(
+    type: "posts" | "pages" | "media" | string,
+    query: Record<string, string | number | boolean> & { page: number },
+  ): Promise<WooList<Record<string, unknown>>>;
+  /** Create or update one WordPress post/page over wp/v2 (id omitted = create). */
+  wpUpsertPost(
+    type: "posts" | "pages",
+    body: Record<string, unknown>,
+    id?: number,
+  ): Promise<Record<string, unknown>>;
+  /**
+   * One page of customers plus the store's page count.
+   *
+   * `listCustomers` is a one-page convenience read; a full sync that called
+   * it with `per_page=100` still only ever saw the first hundred — which is
+   * how a store with six hundred customers synced twenty of them. The sync
+   * loop pages with this instead, the same way products and variations do.
+   */
+  listCustomersPage(
+    query: Record<string, string | number | boolean> & { page: number },
+  ): Promise<WooList<WooCustomer>>;
   /** Write to any REST path — used for variation paths the typed helpers wrap. */
   updateAt(path: string, patch: Record<string, unknown>): Promise<WooProduct>;
 }
@@ -527,6 +553,7 @@ export function createWooCommerceClient(
     },
 
     listOrders: (query) => get<WooOrder[]>("orders", query),
+    listOrdersPage: (query) => requestPage<WooOrder>(credentials, fetchImpl, "orders", { query }),
     getOrder: (id) => get<WooOrder>(`orders/${id}`),
     updateOrder: (id, patch) =>
       request<WooOrder>(credentials, fetchImpl, "PUT", `orders/${id}`, { body: patch }),
@@ -535,6 +562,23 @@ export function createWooCommerceClient(
     createRefund: (orderId, body) =>
       request<WooRefund>(credentials, fetchImpl, "POST", `orders/${orderId}/refunds`, { body }),
     listCustomers: (query) => get<WooCustomer[]>("customers", query),
+    listCustomersPage: (query) => requestPage<WooCustomer>(credentials, fetchImpl, "customers", { query }),
+    // WordPress core content. wp/v2 uses the same Basic auth: a WooCommerce
+    // consumer key with read/write scope is accepted by the core REST API on
+    // any standard WooCommerce install, so no second credential pair.
+    wpListPage: (type, query) =>
+      requestPage<Record<string, unknown>>(credentials, fetchImpl, type, {
+        query: { context: "view", ...query },
+        namespace: "wp/v2",
+      }),
+    wpUpsertPost: (type, body, id) =>
+      request<Record<string, unknown>>(
+        credentials,
+        fetchImpl,
+        id ? "POST" : "POST",
+        id ? `${type}/${id}` : type,
+        { body, namespace: "wp/v2" },
+      ),
     updateAt: (path, patch) => request<WooProduct>(credentials, fetchImpl, "PUT", path, { body: patch }),
   };
 }

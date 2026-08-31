@@ -23,6 +23,7 @@ import type { AppKey } from "@/lib/apps";
 import type { AppShellDef } from "@/lib/app-shells";
 import { CrmAppNav } from "./crm/crm-app-nav";
 import { GrowthAppNav } from "./growth/growth-app-nav";
+import { WpAppNav } from "./wp/wp-app-nav";
 
 export interface AppShellNavProps {
   /** The shell that owns this route — its label and description head the menu. */
@@ -40,6 +41,7 @@ export const APP_SHELL_NAV: Partial<
 > = {
   crm: CrmAppNav,
   growth: GrowthAppNav,
+  wp: WpAppNav,
 };
 
 /** The nav component that owns the sidebar slot for an app, if it has one. */

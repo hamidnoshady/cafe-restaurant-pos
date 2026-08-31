@@ -57,6 +57,12 @@ export const APP_SHELLS: readonly AppShellDef[] = [
     label: "ارتباط با مشتری",
     description: "پرونده و بخش‌بندی مشتری، قیف فروش، کارها و تیکت‌ها.",
   },
+  {
+    app: "wp",
+    prefix: "/dashboard/wp",
+    label: "مدیریت وردپرس و ووکامرس",
+    description: "محصولات، سفارش‌ها، مشتریان، دسته‌بندی‌ها، محتوا و رسانه‌های فروشگاه آنلاین.",
+  },
 ];
 
 /**

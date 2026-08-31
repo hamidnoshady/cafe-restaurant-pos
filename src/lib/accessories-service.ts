@@ -274,7 +274,7 @@ export async function listVariantBoard(locationId: string): Promise<VariantSumma
        FROM items i
        LEFT JOIN items p ON p.id = i.parent_item_id
        LEFT JOIN item_stock s ON s.item_id = i.id
-      WHERE i.location_id = $1 AND i.tracking = 'none' AND i.kind <> 'simple'
+      WHERE i.location_id = $1 AND i.tracking = 'none'
       ORDER BY COALESCE(p.name, i.name), i.kind DESC, i.name`,
     [locationId],
   );
