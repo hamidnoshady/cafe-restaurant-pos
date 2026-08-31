@@ -40,8 +40,10 @@ import {
   encryptBackup,
   isBackupDue,
   isEncryptedBackup,
+  isFailedRunRetryDue,
   isPlainArtifactName,
   makeArtifactName,
+  parseArtifactTimestamp,
   selectPrunable,
   backupPassphrase,
   type BackupAlert,
@@ -159,9 +161,9 @@ async function finishRun(
       [runId, outcome.artifact ?? null, outcome.sizeBytes, outcome.sha256],
     );
   } else {
-    const { rows } = await query<{ business_id: string; kind: string }>(
+    const { rows } = await query<{ business_id: string; kind: string; artifact: string | null }>(
       `UPDATE backup_runs SET status = 'failed', error = $2, finished_at = now()
-        WHERE id = $1 RETURNING business_id, kind`,
+        WHERE id = $1 RETURNING business_id, kind, artifact`,
       [runId, outcome.error.slice(0, 1000)],
     );
 
@@ -169,8 +171,16 @@ async function finishRun(
     // wrong hour. A backup that has silently failed for a week is discovered
     // exactly when it is too late to matter, which is why this is the
     // catalogue's only `critical` event and why it ignores quiet hours.
+    //
+    // Keyed on (kind, UTC day) rather than the run id: the scheduler retries a
+    // failed backup every LOCAL_RETRY_MS, and every retry gets its own run row
+    // (and its own artifact name), so keying on either would re-notify once per
+    // attempt. The day bucket collapses all of a day's retries into one alert,
+    // while a failure on a later day still re-alerts — the right behaviour for
+    // a critical, recurring condition.
     const failed = rows[0];
     if (failed) {
+      const artifactDay = failed.artifact ? parseArtifactTimestamp(failed.artifact)?.slice(0, 10) : null;
       await recordNotification({
         businessId: failed.business_id,
         locationId: null,
@@ -179,9 +189,7 @@ async function finishRun(
         title: "پشتیبان‌گیری ناموفق بود",
         body: outcome.error.slice(0, 200),
         url: "/dashboard/backup",
-        // Keyed on the run, so one failed run is one notification however many
-        // times the tick re-reads it.
-        dedupeKey: notificationDedupeKey("backup.failed", runId),
+        dedupeKey: notificationDedupeKey("backup.failed", failed.kind, artifactDay ?? runId),
         payload: { runId, kind: failed.kind },
       });
     }
@@ -278,22 +286,54 @@ export async function runLocalBackup(businessId: string, trigger: RunTrigger): P
       
       await runPgDump(tmpPath);
       let data = await fs.readFile(tmpPath);
-      
+
       if (doEncryptLocal) {
         data = encryptBackup(data, pp) as any;
         await fs.writeFile(tmpPath, data);
       }
-      
+
+      // The header's "dump to *.tmp, fsync, rename" is a real promise: flush
+      // the artifact to stable storage before the rename makes it visible under
+      // its final name, then fsync the directory so the rename itself survives
+      // a power cut (a crash in between would otherwise leave a zero-length
+      // artifact sitting at the final name). The directory sync is best-effort
+      // — some platforms (Windows) refuse to open a directory handle to sync.
+      const tmpFh = await fs.open(tmpPath, "r+");
+      try {
+        await tmpFh.sync();
+      } finally {
+        await tmpFh.close();
+      }
       await fs.rename(tmpPath, finalPath);
+      try {
+        const dirFh = await fs.open(dir, "r");
+        try {
+          await dirFh.sync();
+        } finally {
+          await dirFh.close();
+        }
+      } catch {
+        // directory fsync unsupported on this platform — the file fsync above
+        // already protected the artifact's contents.
+      }
 
       const secondary = backupSecondaryDir();
       if (secondary) {
         await fs.mkdir(secondary, { recursive: true });
-        await fs.copyFile(finalPath, path.join(secondary, finalArtifactName), fsConstants.COPYFILE_FICLONE).catch(
+        const secondaryPath = path.join(secondary, finalArtifactName);
+        await fs.copyFile(finalPath, secondaryPath, fsConstants.COPYFILE_FICLONE).catch(
           (err) => {
             throw new Error(`secondary copy to ${secondary} failed: ${errText(err)}`);
           },
         );
+        // A USB/NAS copy is exactly the artifact a power cut or a yanked cable
+        // can tear — fsync it too before counting the run as a success.
+        const secondaryFh = await fs.open(secondaryPath, "r+");
+        try {
+          await secondaryFh.sync();
+        } finally {
+          await secondaryFh.close();
+        }
         await pruneDirectory(secondary, config.localRetention);
       }
       await pruneDirectory(dir, config.localRetention);
@@ -406,8 +446,9 @@ async function maybeCatchUpCloud(businessId: string, config: BackupConfig): Prom
 
 /**
  * Timer entry point (server.ts, every BACKUP_TICK_INTERVAL_MS): for each
- * business, take a backup if a schedule slot has passed uncovered, and keep
- * nudging any not-yet-uploaded artifact toward the cloud.
+ * business, take a backup if a schedule slot has passed uncovered, retry a
+ * slot whose run failed (with backoff), and keep nudging any not-yet-uploaded
+ * artifact toward the cloud.
  */
 export async function runBackupTick(): Promise<void> {
   // Enumerating businesses spans tenants; each business's backup then runs
@@ -423,14 +464,19 @@ export async function runBackupTick(): Promise<void> {
         const config = await getBackupConfig(businessId);
         if (!config.enabled) return;
 
-        const { rows: lastRows } = await query<{ started_at: Date }>(
-          `SELECT started_at FROM backup_runs
+        const { rows: lastRows } = await query<{ started_at: Date; status: string }>(
+          `SELECT started_at, status FROM backup_runs
             WHERE business_id = $1 AND kind = 'local'
             ORDER BY started_at DESC LIMIT 1`,
           [businessId],
         );
+        const last = lastRows[0] ?? null;
         const timeZone = await getBusinessTimezone(businessId);
-        if (isBackupDue(lastRows[0]?.started_at ?? null, new Date(), config, timeZone)) {
+        const now = new Date();
+        if (
+          isBackupDue(last?.started_at ?? null, now, config, timeZone) ||
+          isFailedRunRetryDue(last?.started_at ?? null, last?.status ?? null, now, config, timeZone)
+        ) {
           const local = await runLocalBackup(businessId, "scheduled");
           if (local.status === "ok" && config.cloud.enabled) {
             await runCloudUpload(businessId, local.artifact, "scheduled");
@@ -865,9 +911,14 @@ export async function restoreFromArtifact(
       }
     }
     if (isEncryptedBackup(data)) {
-      if (!config.cloud.passphrase) return { status: "failed", error: "passphrase_required" };
+      // The same passphrase the backup/upload paths encrypt with — top-level,
+      // then the legacy cloud slot, then BACKUP_PASSPHRASE. Using only the
+      // cloud slot here broke restore of every artifact encrypted via the
+      // top-level passphrase (the dashboard's one and only passphrase field).
+      const passphrase = backupPassphrase(config);
+      if (!passphrase) return { status: "failed", error: "passphrase_required" };
       try {
-        data = decryptBackup(data, config.cloud.passphrase);
+        data = decryptBackup(data, passphrase);
       } catch (err) {
         return { status: "failed", error: `decrypt_failed:${errText(err)}` };
       }
@@ -888,7 +939,6 @@ export async function restoreFromArtifact(
       const verified = await verifyIntoScratch(databaseUrl, scratchDb, pgRestore, dumpPath, sourceName);
 
       if (!opts.apply) {
-        await dropDatabase(databaseUrl, scratchDb);
         return { status: "verified", summary: verified };
       }
 
@@ -908,9 +958,13 @@ export async function restoreFromArtifact(
       await runPgRestore(pgRestore, ["--no-owner", "--no-privileges", `--dbname=${databaseUrl}`, dumpPath]);
       await regrantAppRole(databaseUrl);
       const summary = await validateRestoredDb(databaseUrl, sourceName);
-      await dropDatabase(databaseUrl, scratchDb);
       return { status: "applied", summary };
     } finally {
+      // Drop the scratch database on every path, success or failure — a failed
+      // pg_restore used to leave a half-populated `<targetDb>_restore_verify`
+      // behind (reclaimed only by the next attempt). Best-effort, like the temp
+      // file cleanup beside it, and no-op when it is already gone.
+      await dropDatabase(databaseUrl, scratchDb);
       await fs.rm(workDir, { recursive: true, force: true }).catch(() => {});
     }
   } catch (err) {

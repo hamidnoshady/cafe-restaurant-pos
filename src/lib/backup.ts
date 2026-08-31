@@ -24,6 +24,8 @@ import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from "node:
 export const BACKUP_TICK_INTERVAL_MS = 60 * 1000;
 /** Wait this long before re-trying a failed cloud upload of the same artifact (ms). */
 export const CLOUD_RETRY_MS = 10 * 60 * 1000;
+/** Back off this long before re-running a scheduled local backup whose last run failed (ms). */
+export const LOCAL_RETRY_MS = 10 * 60 * 1000;
 /** Recent-runs page size for the dashboard history table. */
 export const BACKUP_RUNS_SHOWN = 20;
 
@@ -342,6 +344,32 @@ export function isBackupDue(
   const last = new Date(lastStartedAt);
   if (Number.isNaN(last.getTime())) return true;
   return compareWall(toWallClock(last, timeZone), slot) < 0;
+}
+
+/**
+ * Whether a slot that a *failed* run "covered" should be retried.
+ *
+ * `isBackupDue` keys off when a run *started*, so a run that started inside
+ * the slot and then failed would otherwise silence the scheduler until the
+ * next slot — a transient pg_dump failure (a momentary lock, a disk hiccup)
+ * would push the RPO out by a full interval. This retries such a run after
+ * LOCAL_RETRY_MS, so a persistently broken dump is neither hammered nor
+ * re-notified every tick, and a fresh slot that has genuinely passed is left
+ * to `isBackupDue` (that is the "run a new backup" case, not a retry).
+ */
+export function isFailedRunRetryDue(
+  lastStartedAt: string | Date | null,
+  lastStatus: string | null,
+  now: Date,
+  config: Pick<BackupConfig, "enabled" | "anchorTime" | "intervalHours">,
+  timeZone: string,
+): boolean {
+  if (!config.enabled) return false;
+  if (lastStatus !== "failed") return false;
+  if (isBackupDue(lastStartedAt, now, config, timeZone)) return false;
+  const last = new Date(lastStartedAt ?? "");
+  if (Number.isNaN(last.getTime())) return false;
+  return now.getTime() - last.getTime() >= LOCAL_RETRY_MS;
 }
 
 // ---------------------------------------------------------------------------

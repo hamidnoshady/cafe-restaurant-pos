@@ -442,10 +442,13 @@ function RestoreCard({ onChanged }: { onChanged: () => void }) {
 // Per-tenant export (Phase 17, Owner only)
 // ---------------------------------------------------------------------------
 
-async function downloadExport(format: "sql" | "xlsx"): Promise<string | null> {
-  const res = await fetch(`/api/backup/export?format=${format}`);
+async function downloadExport(format: "sql" | "xlsx", encrypt: boolean): Promise<string | null> {
+  const res = await fetch(`/api/backup/export?format=${format}${encrypt ? "&encrypt=1" : ""}`);
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
+    if (data.error === "passphrase_required") {
+      return "برای رمزنگاری فایل خروجی، ابتدا عبارت عبور رمزنگاری را در تنظیمات پشتیبان‌گیری ذخیره کنید.";
+    }
     return data.error ?? "دریافت خروجی ناموفق بود.";
   }
   const disposition = res.headers.get("content-disposition") ?? "";
@@ -465,12 +468,13 @@ async function downloadExport(format: "sql" | "xlsx"): Promise<string | null> {
 
 function ExportCard() {
   const [busy, setBusy] = useState<"sql" | "xlsx" | null>(null);
+  const [encrypt, setEncrypt] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function run(format: "sql" | "xlsx") {
     setBusy(format);
     setError(null);
-    const err = await downloadExport(format);
+    const err = await downloadExport(format, encrypt);
     if (err) setError(err);
     setBusy(null);
   }
@@ -482,6 +486,15 @@ function ExportCard() {
         سایر کسب‌وکارهای این سامانه. فایل SQL برای بازگردانی در پایگاه‌دادهٔ دیگر و فایل اکسل برای
         مشاهده و بایگانی مناسب است.
       </p>
+      <label className="mb-4 flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={encrypt}
+          onChange={(e) => setEncrypt(e.target.checked)}
+          className="size-4"
+        />
+        رمزنگاری فایل خروجی با عبارت عبور پشتیبان‌گیری
+      </label>
       {error ? <ErrorBox>{error}</ErrorBox> : null}
       <div className="flex flex-wrap gap-3">
         <PrimaryButton type="button" disabled={busy !== null} onClick={() => run("sql")}>
