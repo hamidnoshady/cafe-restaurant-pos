@@ -17,6 +17,7 @@ import {
   type ChartType,
   type ReportRow,
 } from "./report-ui";
+import { cardClass } from "../page-chrome";
 
 interface ViewMeta {
   key: string;
@@ -47,7 +48,7 @@ const AGG_LABELS: Record<Aggregation, string> = {
 };
 const CONTROL_CLASS = [
   inputClass,
-  "min-h-[52px] border-stone-200/80 bg-white text-stone-950",
+  "min-h-[52px] border-stone-200/80 bg-card text-stone-950",
 ].join(" ");
 
 export function ReportBuilderSection() {
@@ -202,7 +203,7 @@ export function ReportBuilderSection() {
       <section
         aria-labelledby="report-builder-heading"
         aria-busy={busy}
-        className="rounded-2xl border border-stone-200/80 bg-white p-4 shadow-[0_1px_2px_rgb(41_37_36/0.03)] sm:p-5"
+        className={`${cardClass} p-4 shadow-[0_1px_2px_rgb(41_37_36/0.03)] sm:p-5`}
       >
         <header className="border-b border-stone-100 pb-4">
           <p className="text-xs font-semibold text-amber-700">گزارش سفارشی</p>
@@ -356,7 +357,7 @@ export function ReportBuilderSection() {
                 size="lg"
                 onClick={save}
                 disabled={busy}
-                className="min-h-[52px] border-stone-200/80 bg-white px-4 font-semibold text-stone-950 hover:bg-stone-50"
+                className="min-h-[52px] border-stone-200/80 bg-card px-4 font-semibold text-stone-950 hover:bg-stone-50"
               >
                 {editingId ? "به‌روزرسانی گزارش" : "ذخیرهٔ گزارش"}
               </Button>
@@ -407,7 +408,7 @@ export function ReportBuilderSection() {
 
       <section
         aria-labelledby="saved-reports-heading"
-        className="rounded-2xl border border-stone-200/80 bg-white p-4 shadow-[0_1px_2px_rgb(41_37_36/0.03)] sm:p-5"
+        className={`${cardClass} p-4 shadow-[0_1px_2px_rgb(41_37_36/0.03)] sm:p-5`}
       >
         <header className="border-b border-stone-100 pb-4">
           <p className="text-xs font-semibold text-amber-700">گزارش‌های شخصی</p>
@@ -440,7 +441,7 @@ export function ReportBuilderSection() {
                   variant="outline"
                   size="lg"
                   onClick={() => loadIntoBuilder(report)}
-                  className="min-h-[52px] border-stone-200/80 bg-white px-4 text-stone-950 hover:bg-stone-50"
+                  className="min-h-[52px] border-stone-200/80 bg-card px-4 text-stone-950 hover:bg-stone-50"
                 >
                   ویرایش
                 </Button>
@@ -454,7 +455,7 @@ export function ReportBuilderSection() {
                   variant="outline"
                   size="lg"
                   onClick={() => remove(report.id)}
-                  className="min-h-[52px] border-destructive/30 bg-white px-4 text-destructive hover:bg-destructive/10"
+                  className="min-h-[52px] border-destructive/30 bg-card px-4 text-destructive hover:bg-destructive/10"
                 >
                   حذف
                 </Button>

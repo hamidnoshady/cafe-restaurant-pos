@@ -7,7 +7,7 @@ import { labelFor } from "@/lib/industry-profile";
 import { effectivePermissions, parseOverrides } from "@/lib/permissions";
 import { visibleSettingsTabs } from "@/lib/settings-tabs";
 import { KnowledgeHelpButton } from "../knowledge-help";
-import { PageShell } from "../page-chrome";
+import { PageHeader, PageShell } from "../page-chrome";
 import { SettingsManager } from "./settings-manager";
 
 export default async function SettingsPage() {
@@ -43,18 +43,16 @@ export default async function SettingsPage() {
 
   return (
     <PageShell className="max-w-[1500px]">
-      <header className="mb-5 border-b border-stone-200/80 pb-5 sm:mb-6 sm:pb-6">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h1 className="text-2xl font-bold tracking-tight text-stone-950 sm:text-[1.7rem]">تنظیمات</h1>
-            <p className="mt-2 max-w-4xl text-sm leading-6 text-muted-foreground">
-              مدیریت اطلاعات کسب‌وکار، امور مالی، دسترسی‌ها، {labelFor(industry, "catalogue")} و تجهیزات.
-              <span className="hidden sm:inline"> بخش‌هایی که مجوزشان را ندارید نمایش داده نمی‌شوند.</span>
-            </p>
-          </div>
-          <KnowledgeHelpButton section="settings" />
-        </div>
-      </header>
+      <PageHeader
+        title="تنظیمات"
+        description={
+          <>
+            مدیریت اطلاعات کسب‌وکار، امور مالی، دسترسی‌ها، {labelFor(industry, "catalogue")} و تجهیزات.
+            <span className="hidden sm:inline"> بخش‌هایی که مجوزشان را ندارید نمایش داده نمی‌شوند.</span>
+          </>
+        }
+        actions={<KnowledgeHelpButton section="settings" />}
+      />
       <SettingsManager tabs={tabs} features={features} currentUserId={session.sub} isOwner={member.role === "owner"} />
     </PageShell>
   );

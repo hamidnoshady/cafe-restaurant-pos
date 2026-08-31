@@ -8,6 +8,7 @@ import { toPersianDigits } from "@/lib/digits";
 import { todayJalali } from "@/lib/jalali";
 import { api, ErrorBox, inputClass } from "../ui";
 import type { Runner } from "./ledger-manager";
+import { cardClass } from "../page-chrome";
 
 interface FiscalYear {
   id: string;
@@ -39,8 +40,8 @@ const STATUS_LABELS: Record<PeriodStatus, string> = {
 };
 
 const STATUS_STYLES: Record<PeriodStatus, string> = {
-  open: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300",
-  soft_closed: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
+  open: "bg-emerald-100 text-emerald-800",
+  soft_closed: "bg-amber-100 text-amber-800",
   locked: "bg-destructive/10 text-destructive",
 };
 
@@ -142,7 +143,7 @@ export function FiscalPeriodsSection({
     <section className="space-y-4">
       <ErrorBox>{error}</ErrorBox>
 
-      <div className="rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-4 sm:p-5">
+      <div className={`${cardClass} p-4 sm:p-5`}>
         <p className="text-xs font-semibold text-amber-700">تقویم مالی</p>
         <h2 className="mt-1">سال‌های مالی</h2>
         <p className="mt-2 text-sm text-muted-foreground">سال مالی و دوره‌های آن را با همان محدودیت‌های ثبت و قفل موجود مدیریت کنید.</p>
@@ -198,7 +199,7 @@ export function FiscalPeriodsSection({
       </div>
 
       {periods ? (
-        <div className="rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-4 sm:p-5">
+        <div className={`${cardClass} p-4 sm:p-5`}>
           <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
             <div>
               <p className="text-xs font-semibold text-amber-700">کنترل دوره</p>

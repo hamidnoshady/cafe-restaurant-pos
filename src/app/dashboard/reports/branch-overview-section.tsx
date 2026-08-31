@@ -15,6 +15,7 @@ import { toPersianDigits } from "@/lib/digits";
 import { formatMoney, type MoneyUnit } from "@/lib/money";
 import { useMoney } from "@/components/money/money-context";
 import { ErrorBox, api, errorMessage } from "../ui";
+import { cardClass } from "../page-chrome";
 
 interface BranchRow {
   locationId: string;
@@ -117,7 +118,7 @@ export function BranchOverviewSection() {
   return (
     <section
       aria-labelledby="branch-overview-heading"
-      className="overflow-hidden rounded-2xl border border-stone-200/80 bg-white shadow-[0_1px_2px_rgb(41_37_36/0.03)]"
+      className={`overflow-hidden ${cardClass} shadow-[0_1px_2px_rgb(41_37_36/0.03)]`}
     >
       <header className="border-b border-stone-100 px-4 py-4 sm:px-5">
         <p className="text-xs font-semibold text-amber-700">نمای یکپارچه</p>

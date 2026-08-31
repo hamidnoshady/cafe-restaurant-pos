@@ -50,7 +50,7 @@ export function AiSidebar({
   }, []);
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-white">
+    <div className="flex h-full min-h-0 flex-col bg-card">
       <div className="flex items-center justify-between border-b border-stone-200/80 px-3 py-3">
         <span className="font-bold text-stone-950">دستیار هوشمند</span>
         <button

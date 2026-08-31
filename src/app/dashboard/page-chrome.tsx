@@ -2,9 +2,9 @@
  * The chrome every dashboard page is built from.
  *
  * The dashboard's look was set by the newest screens (Phase 25/27/29 —
- * `inventory`, `jewelry`, `watch`, `accessories`, `cosmetics`): a warm stone
+ *`inventory`,`jewelry`,`watch`,`accessories`,`cosmetics`): a warm stone
  * canvas, one 1600px column, an underlined page header, amber-accented tab
- * pills tall enough for a touch screen, and `rounded-2xl` section cards. Every
+ * pills tall enough for a touch screen, and`rounded-2xl` section cards. Every
  * page written before that language settled had its own header spacing, its own
  * tab style and its own card border, so moving between two screens of the same
  * product looked like moving between two products.
@@ -14,7 +14,7 @@
  * edit, and a new page cannot drift by accident. See docs/ui-conventions.md.
  *
  * Deliberately not a client component: a page shell is markup, and every server
- * page can import it directly. Nothing here takes a callback except `TabBar`,
+ * page can import it directly. Nothing here takes a callback except`TabBar`,
  * which is only ever rendered from a client manager.
  */
 import type { ReactNode } from "react";
@@ -54,11 +54,11 @@ export function PageHeader({
       </div>
       {actions ? <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div> : null}
     </header>
-  );
+ );
 }
 
 /**
- * The card skin — border, radius and the one-pixel warm shadow. `SectionCard` is
+ * The card skin — border, radius and the one-pixel warm shadow.`SectionCard` is
  * built from it; a surface whose *layout* is bespoke (a chat panel that fills a
  * fixed height, a canvas that scrolls) composes this instead of restating the
  * classes, so there is still exactly one definition of what a card looks like.
@@ -66,11 +66,31 @@ export function PageHeader({
 export const cardClass = "rounded-2xl border border-stone-200/80 bg-card shadow-[0_1px_2px_rgb(41_37_36/0.035)]";
 
 /**
- * A titled surface. Two shapes, one component: pass `flush` for a card whose
+ * The floating-panel skin — modals, statement panels, date-picker popovers: the
+ * one surface allowed to sit *above* the page rather than on it, so it is the
+ * one surface with more than a one-pixel shadow. Same warm ink as`cardClass`,
+ * just deeper and softer, still on a 1px hairline. Compose it (`className={
+ *`${overlayPanelClass} p-5` }`) instead of hand-rolling`shadow-lg` — a modal
+ * that restates its elevation drifts from every other dialog the moment one of
+ * them is tuned.
+ */
+export const overlayPanelClass =
+ "rounded-2xl border border-stone-200/80 bg-card shadow-[0_12px_32px_-6px_rgb(41_37_36/0.18)]";
+
+/**
+ * The dropdown-popover skin — the shadcn popover spelling (`rounded-lg`,
+ *`border-border`,`bg-popover`, the one sanctioned`shadow-md`) stated once so
+ * app-level popovers (the Jalali date picker, inline menus) match the ones the
+ * shadcn layer renders. Compose it rather than restating it.
+ */
+export const popoverPanelClass = "rounded-lg border border-border bg-popover text-popover-foreground shadow-md";
+
+/**
+ * A titled surface. Two shapes, one component: pass`flush` for a card whose
  * body is an edge-to-edge list or table (the divider lines reach the card's
  * edges), otherwise the body gets the standard padding.
  *
- * The `<section>` takes its accessible name from a string `title`, which makes
+ * The`<section>` takes its accessible name from a string`title`, which makes
  * it a landmark a screen reader can jump to without the caller inventing an id.
  */
 export function SectionCard({
@@ -124,13 +144,13 @@ export function SectionCard({
 
 export interface Tab<K extends string> {
   key: K;
-  label: string;
+ label: string;
 }
 
 /**
  * The dashboard's tab strip: a card of pills, two per row on a phone and a
- * single wrapping row from `sm` up. 52px tall because these are pressed on
- * tablets at a counter, and `aria-pressed` rather than `role="tab"` because the
+ * single wrapping row from`sm` up. 52px tall because these are pressed on
+ * tablets at a counter, and`aria-pressed` rather than`role="tab"` because the
  * panel below is a plain region, not a tabpanel widget.
  */
 export function TabBar<K extends string>({
@@ -163,10 +183,10 @@ export function TabBar<K extends string>({
           return (
             <button
               key={tab.key}
-              id={`${idPrefix}-tab-${tab.key}`}
+             id={`${idPrefix}-tab-${tab.key}`}
               type="button"
               aria-pressed={isActive}
-              aria-controls={`${idPrefix}-tabpanel`}
+             aria-controls={`${idPrefix}-tabpanel`}
               onClick={() => onChange(tab.key)}
               className={cn(
                 "min-h-[52px] rounded-xl border px-3 text-center text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring focus-visible:ring-amber-400/40 sm:px-4",
@@ -181,11 +201,11 @@ export function TabBar<K extends string>({
         })}
       </div>
     </nav>
-  );
+ );
 }
 
 /**
- * The region a `TabBar` controls. Separate from `TabBar` so a manager can put
+ * The region a`TabBar` controls. Separate from`TabBar` so a manager can put
  * an error box or a warning banner between the strip and the panel.
  */
 export function TabPanel<K extends string>({
@@ -199,9 +219,9 @@ export function TabPanel<K extends string>({
 }) {
   return (
     <div
-      id={`${idPrefix}-tabpanel`}
+     id={`${idPrefix}-tabpanel`}
       role="region"
-      aria-labelledby={`${idPrefix}-tab-${active}`}
+     aria-labelledby={`${idPrefix}-tab-${active}`}
       className="min-w-0"
     >
       {children}
@@ -285,6 +305,47 @@ export function SectionCardSkeleton({
     >
       <LoadingSkeleton rows={rows} label={label} />
     </SectionCard>
+ );
+}
+
+/**
+ * The KPI stat row while its numbers are still being read — the element-level
+ * counterpart of`LoadingSkeleton`, for the stat cards that sit above a page's
+ * lists. Reserves the exact grid and card shape so a loading page and a loaded
+ * one keep the same height.
+ */
+export function KpiRowSkeleton({
+  count = 4,
+  label = "در حال بارگذاری نشانگرها",
+  className,
+  standalone = true,
+}: {
+  count?: number;
+  label?: string;
+  className?: string;
+  /**
+   * Announce itself to assistive tech (its own loading region). Pass false when
+  * it is composed inside a larger`role="status"` fallback such as
+  *`DashboardPageSkeleton`, so the region is not announced twice.
+   */
+  standalone?: boolean;
+}) {
+  return (
+    <div
+      role={standalone ? "status" : undefined}
+      aria-live={standalone ? "polite" : undefined}
+      aria-busy={standalone ? "true" : undefined}
+      aria-label={standalone ? label : undefined}
+      className={cn("grid gap-3 sm:grid-cols-2 xl:grid-cols-4", className)}
+    >
+      {Array.from({ length: count }, (_, index) => (
+        <div key={index} aria-hidden="true" className={cn(cardClass, "space-y-3 p-4 sm:p-5")}>
+          <Skeleton className="h-4 w-24" />
+          <Skeleton className="h-8 w-28" />
+          <Skeleton className="h-3 w-36 max-w-full" />
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -304,14 +365,8 @@ export function DashboardPageSkeleton() {
           </div>
           <Skeleton aria-hidden="true" className="h-10 w-24 shrink-0 rounded-lg" />
         </header>
-        <div aria-hidden="true" className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {Array.from({ length: 4 }, (_, index) => (
-            <div key={index} className={cn(cardClass, "space-y-3 p-4 sm:p-5")}>
-              <Skeleton className="h-4 w-24" />
-              <Skeleton className="h-8 w-28" />
-              <Skeleton className="h-3 w-36 max-w-full" />
-            </div>
-          ))}
+        <div aria-hidden="true" className="mb-5">
+          <KpiRowSkeleton standalone={false} />
         </div>
         <SectionCardSkeleton rows={5} label="در حال بارگذاری محتوای صفحه" />
       </div>

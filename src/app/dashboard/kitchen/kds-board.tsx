@@ -191,7 +191,7 @@ function QueueSkeleton() {
       {[0, 1].map((column) => (
         <section
           key={column}
-          className="rounded-xl border border-stone-200/80 bg-white p-4"
+          className="rounded-xl border border-stone-200/80 bg-card p-4"
         >
           <div className="ops-skeleton h-5 w-28 rounded" />
           <div className="mt-4 space-y-3">
@@ -250,7 +250,7 @@ function TicketCard({
 
   return (
     <article
-      className={`overflow-hidden rounded-xl border bg-white shadow-[0_1px_2px_rgba(37,37,34,0.03)] transition-colors motion-reduce:transition-none ${
+      className={`overflow-hidden rounded-xl border bg-card shadow-[0_1px_2px_rgb(41_37_36/0.03)] transition-colors motion-reduce:transition-none ${
         selected
           ? "border-amber-500 ring-2 ring-amber-500/20"
           : late
@@ -313,7 +313,7 @@ function TicketDetails({
 
   return (
     <section
-      className="rounded-xl border border-stone-200/80 bg-white p-4 shadow-[0_1px_2px_rgba(37,37,34,0.03)]"
+      className="rounded-xl border border-stone-200/80 bg-card p-4 shadow-[0_1px_2px_rgb(41_37_36/0.03)]"
       aria-label={`جزئیات سفارش ${toPersianDigits(ticket.orderNumber)}`}
     >
       <div className="flex items-start justify-between gap-3">
@@ -654,7 +654,7 @@ export function KdsBoard() {
 
   return (
     <div className="space-y-4" dir="rtl">
-      <header className="rounded-xl border border-stone-200/80 bg-white p-4 shadow-[0_1px_2px_rgba(37,37,34,0.03)]">
+      <header className="rounded-xl border border-stone-200/80 bg-card p-4 shadow-[0_1px_2px_rgb(41_37_36/0.03)]">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div className="hidden min-w-0 md:block">
             <h1 className="text-2xl font-bold text-stone-950">آشپزخانه</h1>
@@ -699,7 +699,7 @@ export function KdsBoard() {
             type="button"
             variant="outline"
             onClick={() => void load({ showRefresh: true })}
-            className="min-h-[48px] shrink-0 border-destructive/30 bg-white text-red-800 hover:bg-red-50"
+            className="min-h-[48px] shrink-0 border-destructive/30 bg-card text-red-800 hover:bg-red-50"
           >
             تلاش دوباره
           </Button>
@@ -750,7 +750,7 @@ export function KdsBoard() {
                 className={`min-h-[52px] gap-2 rounded-lg px-4 font-semibold ${
                   active
                     ? "border-amber-500 bg-amber-100 text-amber-800 hover:bg-amber-100"
-                    : "border-stone-200/80 bg-white text-stone-600 hover:bg-stone-50"
+                    : "border-stone-200/80 bg-card text-stone-600 hover:bg-stone-50"
                 }`}
               >
                 <span>{item.label}</span>

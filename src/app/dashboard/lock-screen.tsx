@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useEffect, useState } from "react";
 import { PinPad } from "@/components/auth/pin-pad";
+import { overlayPanelClass } from "./page-chrome";
 
 /**
  * Phase 20 Wave 2 — a client-side-only "step away from the till" convenience,
@@ -76,7 +77,7 @@ function LockOverlay({ fullName, onUnlock }: { fullName: string; onUnlock: () =>
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/95 p-4 backdrop-blur-sm">
-      <div className="w-full max-w-xs rounded-2xl bg-card p-6 text-center shadow-lg">
+      <div className={`${overlayPanelClass} w-full max-w-xs p-6 text-center`}>
         <p className="mb-1 text-sm text-muted-foreground">صفحه قفل است</p>
         <p className="mb-4 font-semibold">{fullName}</p>
         <PinPad onComplete={submit} busy={busy} error={error} resetKey={attempt} />

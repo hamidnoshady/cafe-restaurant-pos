@@ -16,6 +16,7 @@ import {
   InvoiceOcrPanel,
   type InvoiceOcrApplyPayload,
 } from "./invoice-ocr-panel";
+import { cardClass } from "../page-chrome";
 
 interface Purchase {
   id: string;
@@ -457,7 +458,7 @@ export function PurchasesSection({
 
       <section
         id="purchase-draft-form"
-        className="min-w-0 rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-5"
+        className={`min-w-0 ${cardClass} p-5`}
       >
         <h2 className="mb-3 font-semibold">ثبت خرید (رسید ورود کالا)</h2>
         <form onSubmit={submit} className="space-y-3">
@@ -487,7 +488,7 @@ export function PurchasesSection({
         </form>
       </section>
 
-      <section className="min-w-0 rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-5">
+      <section className={`min-w-0 ${cardClass} p-5`}>
         <h2 className="mb-3 font-semibold">خریدهای اخیر</h2>
 
         <div className="mb-4 grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">

@@ -402,7 +402,7 @@ function WorkspaceRail({ navItems, pathname }: { navItems: NavItem[]; pathname: 
 
 function SidebarBrand({ title, subtitle }: { title: string; subtitle: string }) {
   return (
-    <SidebarHeader className="border-stone-200/80 bg-white p-4">
+    <SidebarHeader className="border-stone-200/80 bg-card p-4">
       <div className="flex items-start justify-between gap-2 group-data-[state=collapsed]/sidebar:justify-center">
         <div className="min-w-0 group-data-[state=collapsed]/sidebar:hidden">
           <p className="truncate font-bold text-stone-950">{title}</p>
@@ -517,7 +517,7 @@ function DashboardSidebarFooter({
   onSaveBottomNav: (hrefs: string[]) => void;
 }) {
   return (
-    <SidebarFooter className="border-stone-200/80 bg-white">
+    <SidebarFooter className="border-stone-200/80 bg-card">
       <div className="group-data-[state=collapsed]/sidebar:hidden">
         <BranchSwitcher />
         <p className="font-semibold text-stone-950">{fullName}</p>
@@ -656,7 +656,7 @@ function MobileBottomNavigation({
         this bar offsets from that variable, so the bar has to be what the
         variable says it is.
       */
-      className="fixed inset-x-0 bottom-0 z-40 flex h-[var(--app-bottom-nav)] border-t border-stone-200/80 bg-white/95 px-1 pb-[env(safe-area-inset-bottom)] pt-1 shadow-[0_-1px_8px_rgba(37,37,34,0.04)] backdrop-blur md:hidden"
+      className="fixed inset-x-0 bottom-0 z-40 flex h-[var(--app-bottom-nav)] border-t border-stone-200/80 bg-white/95 px-1 pb-[env(safe-area-inset-bottom)] pt-1 shadow-[0_-1px_8px_rgb(41_37_36/0.04)] backdrop-blur md:hidden"
       aria-label="ناوبری اصلی"
     >
       {primaryItems.map((item) => {
@@ -891,7 +891,7 @@ export function DashboardSidebar({
       {!assistantPage ? <MobileDashboardHeader navItems={navItems} pathname={pathname} /> : null}
       <Sidebar
         side="right"
-        className={`border-stone-200/80 bg-white text-stone-950 ${draggingWidth ? "transition-none" : ""}`}
+        className={`border-stone-200/80 bg-card text-stone-950 ${draggingWidth ? "transition-none" : ""}`}
         style={
           mode === "expanded" && sidebarWidth !== null && sidebarWidth !== SIDEBAR_DEFAULT_WIDTH
             ? { width: sidebarWidth }

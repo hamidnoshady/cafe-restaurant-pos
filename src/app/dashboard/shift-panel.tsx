@@ -16,6 +16,7 @@ import { toPersianDigits } from "@/lib/digits";
 import { useMoney } from "@/components/money/money-context";
 import { ErrorBox, Field, InfoBox, PrimaryButton, api, errorMessage, inputClass } from "./ui";
 import { Skeleton } from "@/components/ui/skeleton";
+import { overlayPanelClass } from "./page-chrome";
 
 interface Shift {
   id: string;
@@ -164,7 +165,7 @@ function ShiftModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/95 p-4 backdrop-blur-sm">
-      <div className="w-full max-w-sm rounded-2xl bg-card p-6 shadow-lg">
+      <div className={`${overlayPanelClass} w-full max-w-sm p-6`}>
         <div className="mb-4 flex items-center justify-between">
           <h2 className="font-semibold">{shift ? "پایان شیفت" : "شروع شیفت"}</h2>
           <button type="button" onClick={onClose} className="text-sm text-muted-foreground hover:text-foreground">

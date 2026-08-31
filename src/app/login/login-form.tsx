@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Loader2Icon } from "lucide-react";
+import { cardClass } from "@/app/dashboard/page-chrome";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   browserSupportsWebAuthn,
@@ -48,7 +48,7 @@ export default function LoginForm() {
 
   return (
     <main className="flex min-h-screen items-center justify-center p-4">
-      <div className="w-full max-w-sm rounded-2xl bg-card p-8 shadow-sm">
+      <div className={`w-full max-w-sm ${cardClass} p-8`}>
         <h1 className="mb-1 text-center text-xl font-bold">
           سیستم فروش کافه و رستوران
         </h1>
@@ -62,8 +62,8 @@ export default function LoginForm() {
             onClick={() => setMode("password")}
             className={`rounded-md py-2 transition outline-none focus-visible:ring focus-visible:ring-ring/50 ${
               mode === "password"
-                ? "bg-card font-semibold shadow-sm"
-                : "text-muted-foreground"
+                ? "bg-amber-100 font-semibold text-amber-950"
+                : "text-muted-foreground hover:text-foreground"
             }`}
           >
             مدیر / مالک
@@ -73,8 +73,8 @@ export default function LoginForm() {
             onClick={() => setMode("pin")}
             className={`rounded-md py-2 transition outline-none focus-visible:ring focus-visible:ring-ring/50 ${
               mode === "pin"
-                ? "bg-card font-semibold shadow-sm"
-                : "text-muted-foreground"
+                ? "bg-amber-100 font-semibold text-amber-950"
+                : "text-muted-foreground hover:text-foreground"
             }`}
           >
             ورود سریع با پین
@@ -244,13 +244,7 @@ function PasswordForm() {
         disabled={busy}
         className="w-full rounded-lg bg-primary py-2.5 font-semibold text-primary-foreground transition hover:bg-primary/85 disabled:opacity-50 outline-none focus-visible:ring focus-visible:ring-ring/50"
       >
-        {busy ? (
-          <span className="flex items-center justify-center gap-2">
-            <Loader2Icon className="size-4 animate-spin" /> در حال ورود…
-          </span>
-        ) : (
-          "ورود"
-        )}
+        {busy ? "در حال ورود…" : "ورود"}
       </button>
     </form>
   );

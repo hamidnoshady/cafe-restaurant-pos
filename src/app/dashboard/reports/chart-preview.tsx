@@ -42,7 +42,7 @@ export function DataTable({
 }) {
   return (
     <section aria-label="داده‌های گزارش">
-      <div className="hidden overflow-hidden rounded-xl border border-stone-200/80 bg-white sm:block">
+      <div className="hidden overflow-hidden rounded-xl border border-stone-200/80 bg-card sm:block">
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
             <caption className="sr-only">داده‌های گزارش</caption>

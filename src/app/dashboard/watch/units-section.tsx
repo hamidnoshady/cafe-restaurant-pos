@@ -16,10 +16,11 @@ import {
   type SerialUnit,
   type WatchModel,
 } from "./watch-manager";
+import { cardClass } from "../page-chrome";
 
-const watchInputClass = `${inputClass} min-h-[52px] !border-stone-200 !bg-white shadow-none placeholder:text-stone-400 focus-visible:border-amber-500 focus-visible:ring-amber-400/30`;
+const watchInputClass = `${inputClass} min-h-[52px] !border-stone-200 !bg-card shadow-none placeholder:text-stone-400 focus-visible:border-amber-500 focus-visible:ring-amber-400/30`;
 const secondaryActionClass =
-  "min-h-[44px] border-stone-200 bg-white px-3 text-xs text-stone-700 hover:border-amber-300 hover:bg-amber-50 hover:text-stone-950 focus-visible:border-amber-500 focus-visible:ring-amber-400/30";
+  "min-h-[44px] border-stone-200 bg-card px-3 text-xs text-stone-700 hover:border-amber-300 hover:bg-amber-50 hover:text-stone-950 focus-visible:border-amber-500 focus-visible:ring-amber-400/30";
 
 const STATUS_BADGE_CLASS: Record<SerialUnit["status"], string> = {
   in_stock: "bg-emerald-100 text-emerald-900",
@@ -92,7 +93,7 @@ export function UnitsSection({
     <div className="grid min-w-0 gap-4 md:grid-cols-[minmax(0,1fr)_18rem] lg:gap-5 lg:grid-cols-[minmax(0,1fr)_21rem] xl:grid-cols-[minmax(0,1fr)_24rem]">
       <section
         aria-labelledby="watch-units-heading"
-        className="order-2 min-w-0 overflow-hidden rounded-2xl bg-card md:order-1"
+        className={`order-2 min-w-0 overflow-hidden ${cardClass} md:order-1`}
       >
         <div className="border-b border-stone-200/80 px-4 py-4 sm:px-5">
           <h2 id="watch-units-heading" className="font-semibold text-stone-950">
@@ -114,7 +115,7 @@ export function UnitsSection({
       </section>
 
       <aside className="order-1 min-w-0 space-y-4 md:order-2">
-        <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-[0_1px_2px_rgb(41_37_36/0.035)] sm:p-5">
+        <div className={`${cardClass} p-4 sm:p-5`}>
           <h2 className="font-semibold text-stone-950">افزودن مدل</h2>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">
             مدل، خودِ کالاست؛ دستگاه‌های فیزیکی زیر همان مدل ثبت می‌شوند.
@@ -158,7 +159,7 @@ export function UnitsSection({
           </form>
         </div>
 
-        <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-[0_1px_2px_rgb(41_37_36/0.035)] sm:p-5">
+        <div className={`${cardClass} p-4 sm:p-5`}>
           <h2 className="font-semibold text-stone-950">ثبت دستگاه</h2>
           <form onSubmit={addUnit} className="mt-4">
             <Field label="مدل">

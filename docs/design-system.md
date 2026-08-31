@@ -6,7 +6,9 @@ are the ground truth; when prose and screenshot disagree, match the screenshot. 
 quoted here are copied from the shared primitives, which are the other normative half:
 
 - [`src/app/dashboard/page-chrome.tsx`](../src/app/dashboard/page-chrome.tsx) — `PageShell`,
-  `PageHeader`, `SectionCard`/`cardClass`, `TabBar`/`TabPanel`, `EmptyState`, `StatusBadge`
+  `PageHeader`, `SectionCard`/`cardClass`, `overlayPanelClass`/`popoverPanelClass`,
+  `TabBar`/`TabPanel`, `EmptyState`, `StatusBadge`, and the skeleton family
+  (`LoadingSkeleton`, `SectionCardSkeleton`, `KpiRowSkeleton`, `DashboardPageSkeleton`)
 - [`src/app/dashboard/section-nav.tsx`](../src/app/dashboard/section-nav.tsx) — the in-page
   rail/strip menu
 - [`src/app/dashboard/ui.tsx`](../src/app/dashboard/ui.tsx) — `inputClass`, `Field`,
@@ -47,10 +49,22 @@ Hovers are quiet washes, never overlays or zooms. Motion is short, eased and fun
 1. **Dashboard** (`src/app/dashboard/**`) — this document, fully. Built from the primitives.
 2. **Full-screen operational surfaces** (POS, orders queue, floor plan, KDS, reservations) —
    same palette, denser chrome, smaller headers, touch-height targets. See
-   [pos-sell-screen.png](design/reference/pos-sell-screen.png). Not `PageHeader` pages.
-3. **Platform console** (`src/app/platform/**`) — separate realm with its own `ui.tsx`.
-4. **The shadcn layer** (`src/components/ui/*`) — change tokens/variants there, never
-   one-off classes at call sites.
+   [pos-sell-screen.png](design/reference/pos-sell-screen.png). Not `PageHeader` pages —
+   but still framed by `PageShell` or its equivalents in `ops-styles.ts`, which composes
+   `cardClass`.
+3. **Entry surfaces** (`src/app/login`, `src/app/welcome`, `src/app/setup`,
+   `src/app/invite`, `src/app/mcp/consent`, `src/app/business-directory.tsx`, the root
+   fallbacks) — the screens every business type walks before it ever reaches حسابداری.
+   Same language: a centred `cardClass` panel on the warm canvas, amber selection,
+   `FormLoadingSkeleton` while resolving, busy buttons that swap their label. They import
+   the primitives from `@/app/dashboard/page-chrome` — there is exactly one design system,
+   not one per realm.
+4. **Platform console** (`src/app/platform/**`) — deliberately a separate identity with its
+   own `ui.tsx` (a darker chrome, so an operator never mistakes it for a tenant screen).
+   Excluded from the lint on purpose.
+5. **The shadcn layer** (`src/components/ui/*`) — change tokens/variants there, never
+   one-off classes at call sites. The rest of `src/components/**` (AI chat, auth, bug
+   report, feature lock) is tenant-facing and speaks this language.
 
 ## Foundations
 
@@ -80,6 +94,22 @@ shadows, no hover lift on cards.
   "colored border" rule.
 - Popovers/dropdowns are the one exception with a visible shadow: `shadow-md` on a
   `rounded-lg border border-border bg-popover` panel.
+
+### Floating surfaces — the only sanctioned elevation above a card
+
+Modals, statement panels, the assistant sheet and floating docks are the one place the
+language allows more than a one-pixel shadow. Their skins are stated once in
+`page-chrome.tsx` and composed, never restated:
+
+| Surface | Primitive | Skin |
+| --- | --- | --- |
+| Modal / side statement panel | `overlayPanelClass` | `rounded-2xl border border-stone-200/80 bg-card shadow-[0_12px_32px_-6px_rgb(41_37_36/0.18)]` |
+| Dropdown popover (date picker, inline menus) | `popoverPanelClass` | `rounded-lg border border-border bg-popover text-popover-foreground shadow-md` |
+| Floating action dock (assistant, bug report) | — | `shadow-[0_12px_32px_-6px_rgb(41_37_36/0.25)]` + `ring-1 ring-foreground/10` |
+
+Scrims stay quiet: `bg-black/40` for modal sheets, `bg-background/95 backdrop-blur-sm` for
+in-product locks. Everything else sits on the canvas — `shadow-sm`/`lg`/`2xl` anywhere
+outside these three rows (and the shadcn layer) is drift the lint will fail.
 
 ### Radius scale (`--radius: 0.625rem`)
 
@@ -313,10 +343,18 @@ until data lands.
   (staggered ~45 ms), trend line `stroke-amber-600 strokeWidth="2.4" strokeLinecap="round"`,
   gridlines `stroke-stone-100` 1px, axis labels `text-[10px] sm:text-xs text-stone-400` —
   the amber family, nothing else.
-- Loading is **skeleton, not spinner**: text rows use `.ops-skeleton` (warm gray shimmer,
-  1200 ms); charts show dashed amber placeholders; tables show 3–4 skeleton rows in the same
-  column grid. A lone «در حال بارگذاری…» `text-sm text-muted-foreground` is acceptable only
-  for a sub-panel.
+- Loading is **skeleton, not spinner** — everywhere, on any element that waits:
+  - lists/tables: `LoadingSkeleton` / `SectionCardSkeleton` (`page-chrome.tsx`), or a
+    bespoke `*Skeleton` component (e.g. `ReservationSkeleton`, `SetupDataSkeleton`);
+  - KPI rows: `KpiRowSkeleton`; whole routes: `DashboardPageSkeleton` /
+    `PlatformPageSkeleton` / `FormLoadingSkeleton` for entry forms;
+  - text rows may use the `.ops-skeleton` shimmer; charts show dashed amber placeholders;
+  - tables show 3–4 skeleton rows in the same column grid.
+- A button whose action is in flight **swaps its label** («در حال ثبت…», «در حال ورود…»)
+  and disables — it never grows a spinner. `animate-spin` is not in the vocabulary and the
+  lint bans it.
+- A lone «در حال بارگذاری…» sentence is not a loading state; the sentence belongs on the
+  skeleton's `aria-label`, the shape belongs to the skeleton.
 
 ## Interaction states — the contract
 
@@ -410,21 +448,34 @@ token, alpha preserved:
 
 ## Checking your work
 
-The bans on this page are **executable** — `src/app/dashboard/design-lint.test.ts` greps
-every non-test dashboard file on every `npm test` run and fails on a banned pattern outside
-its documented baseline; fixing a file means deleting its baseline entry. Run just the lint
-with:
+The bans on this page are **executable**, and there is no baseline anywhere — every file
+must pass every rule:
+
+- `src/app/dashboard/design-lint.test.ts` greps every non-test dashboard file for the
+  banned patterns (cool neutrals, heavy shadows, restated card/page skins, `dark:` variants,
+  raw hex, raw `bg-white`, comma-rgba shadow spellings, `animate-spin`, bare loading copy,
+  a bare `<h1>` on a route), and checks that **every dashboard route carries the frame** —
+  `PageShell` in the page or in a component it imports.
+- `src/app/design-lint.test.ts` holds the same line on every other tenant-facing surface:
+  login, welcome, setup, invite, consent, the business directory and `src/components`
+  (minus the shadcn layer and the deliberately separate platform console).
+- `src/app/loading-coverage.test.ts` requires a skeleton boundary above every layout realm,
+  and that every client component which starts a fetch also renders a `*Skeleton`.
+
+Run the lints with:
 
 ```bash
-npx vitest run src/app/dashboard/design-lint.test.ts
+npx vitest run src/app/dashboard/design-lint.test.ts src/app/design-lint.test.ts src/app/loading-coverage.test.ts
 ```
 
 The equivalent greps, if you want to see the violations yourself:
 
 ```bash
-grep -rn 'shadow-sm\|shadow-md\|shadow-lg' src/app/dashboard/ && echo "card shadow drifted"
+grep -rn 'shadow-sm\|shadow-md\|shadow-lg' src/app/dashboard/ src/app/login src/app/welcome src/app/setup && echo "card shadow drifted"
 grep -rnE 'text-(gray|slate|zinc|neutral)-|bg-(gray|slate|zinc|neutral)-' src/app/dashboard/ && echo "cool neutral drifted"
 grep -rnE -- '-\[#[0-9a-fA-F]{3,8}\]' src/app/dashboard/ && echo "raw hex drifted"
+grep -rn 'animate-spin' src/app/dashboard/ src/app/login src/app/welcome src/app/components && echo "spinner drifted"
+grep -rn ' dark:' src/app/dashboard/ src/app/login src/app/welcome src/app/setup src/app/components && echo "dark variant drifted"
 grep -rn 'mx-auto w-full max-w-\[' src/app/dashboard/ --include='*.tsx' | grep -v page-chrome && echo "PageShell bypassed"
 grep -rn '<h1' src/app/dashboard/ --include='page.tsx' && echo "PageHeader bypassed"
 ```

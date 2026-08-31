@@ -7,6 +7,7 @@ import { useMoney } from "@/components/money/money-context";
 import { formatJalali } from "@/lib/jalali";
 import { api, SecondaryButton } from "../ui";
 import type { Runner } from "./ledger-manager";
+import { cardClass } from "../page-chrome";
 
 interface JournalLineRow {
   entry_id: string;
@@ -61,14 +62,14 @@ export function EntriesSection({ refreshKey, busy, run }: { refreshKey: number; 
 
   return (
     <section className="space-y-4">
-      <header className="rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-5">
+      <header className={`${cardClass} p-5`}>
         <p className="text-xs font-semibold text-amber-700">دفاتر مالی</p>
         <h2 className="mt-1">دفتر روزنامه</h2>
         <p className="mt-1 text-sm text-muted-foreground">اسناد خودکار و دستیِ ثبت‌شده، با امکان برگشت فقط برای اسناد دستی مجاز.</p>
       </header>
 
       {entries.length === 0 ? (
-        <p className="rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-8 text-center text-sm text-muted-foreground">هنوز سندی ثبت نشده است.</p>
+        <p className={`${cardClass} p-8 text-center text-sm text-muted-foreground`}>هنوز سندی ثبت نشده است.</p>
       ) : (
         <div className="space-y-3">
           {entries.map((e) => {
@@ -76,7 +77,7 @@ export function EntriesSection({ refreshKey, busy, run }: { refreshKey: number; 
             const isReversed = !!e.reversed_at;
             const canReverse = e.source_type === "manual" && !isReversal && !isReversed;
             return (
-              <article key={e.id} className="rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-4 sm:p-5">
+              <article key={e.id} className={`${cardClass} p-4 sm:p-5`}>
                 <div className="mb-4 flex flex-wrap items-start justify-between gap-3 border-b border-stone-100 pb-3">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">

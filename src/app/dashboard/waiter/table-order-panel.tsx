@@ -29,6 +29,7 @@ import {
   SecondaryButton,
 } from "../ui";
 import { firstPrinter, usePrinters } from "../use-printers";
+import { cardClass } from "../page-chrome";
 
 interface Category {
   id: string;
@@ -104,7 +105,7 @@ const STATUS_BADGE: Record<OrderItemStatus, string> = {
   sent: "bg-muted text-muted-foreground",
   preparing: "bg-primary/10 text-primary",
   ready:
-    "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300",
+    "bg-emerald-100 text-emerald-800",
   served: "bg-muted text-muted-foreground",
   voided: "bg-destructive/10 text-destructive",
 };
@@ -367,7 +368,7 @@ export function TableOrderPanel({
                       <button
                         type="button"
                         onClick={() => markServed(it.id)}
-                        className="mt-2 w-full rounded-lg bg-emerald-700 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-emerald-800 dark:bg-emerald-600 dark:hover:bg-emerald-500"
+                        className="mt-2 w-full rounded-lg bg-emerald-700 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-emerald-800"
                       >
                         تحویل داده شد
                       </button>
@@ -378,7 +379,7 @@ export function TableOrderPanel({
             )}
           </div>
 
-          <div className="flex-1 rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-4">
+          <div className={`flex-1 ${cardClass} p-4`}>
             <ErrorBox>{error}</ErrorBox>
             {info ? <InfoBox>{info}</InfoBox> : null}
             {!menu ? (

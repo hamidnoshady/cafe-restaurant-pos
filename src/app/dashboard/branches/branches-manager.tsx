@@ -1,6 +1,6 @@
 "use client";
 
-import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
+import { EmptyState, LoadingSkeleton, SectionCard, StatusBadge } from "@/app/dashboard/page-chrome";
 
 import { useCallback, useEffect, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
@@ -110,40 +110,44 @@ export function BranchesManager() {
     <div className="space-y-6">
       <ErrorBox>{error}</ErrorBox>
 
-      <section className="rounded-lg border p-4">
-        <h2 className="mb-3 font-semibold">شعب</h2>
-        <div className="space-y-2">
-          {branches.map((branch) => (
-            <div
-              key={branch.id}
-              className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-3"
-            >
-              <div>
-                <p className="font-medium">
-                  {branch.name}
-                  {!branch.isActive && (
-                    <span className="ms-2 rounded bg-muted px-2 py-0.5 text-xs">غیرفعال</span>
-                  )}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {[branch.address, branch.phone].filter(Boolean).join(" · ") || "بدون آدرس/تلفن ثبت‌شده"}
-                  {" · ایجاد "}
-                  {toPersianDigits(formatJalali(new Date(branch.createdAt)))}
-                </p>
-              </div>
-              <div className="flex gap-2">
-                <SecondaryButton onClick={() => rename(branch)}>تغییر نام</SecondaryButton>
-                <SecondaryButton onClick={() => toggleActive(branch)}>
-                  {branch.isActive ? "غیرفعال‌سازی" : "فعال‌سازی"}
-                </SecondaryButton>
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
+      <SectionCard title="شعب" flush>
+        {branches.length === 0 ? (
+          <div className="p-4 sm:p-5">
+            <EmptyState>هنوز شعبه‌ای ثبت نشده است.</EmptyState>
+          </div>
+        ) : (
+          <ul className="space-y-2 p-4 sm:p-5">
+            {branches.map((branch) => (
+              <li
+                key={branch.id}
+                className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-stone-100 bg-stone-50/60 px-4 py-3"
+              >
+                <div className="min-w-0">
+                  <p className="flex flex-wrap items-center gap-2 font-medium text-stone-950">
+                    {branch.name}
+                    <StatusBadge tone={branch.isActive ? "positive" : "neutral"}>
+                      {branch.isActive ? "فعال" : "غیرفعال"}
+                    </StatusBadge>
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {[branch.address, branch.phone].filter(Boolean).join(" · ") || "بدون آدرس/تلفن ثبت‌شده"}
+                    {" · ایجاد "}
+                    {toPersianDigits(formatJalali(new Date(branch.createdAt)))}
+                  </p>
+                </div>
+                <div className="flex shrink-0 gap-2">
+                  <SecondaryButton onClick={() => rename(branch)}>تغییر نام</SecondaryButton>
+                  <SecondaryButton onClick={() => toggleActive(branch)}>
+                    {branch.isActive ? "غیرفعال‌سازی" : "فعال‌سازی"}
+                  </SecondaryButton>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </SectionCard>
 
-      <section className="rounded-lg border p-4">
-        <h2 className="mb-3 font-semibold">افزودن شعبهٔ جدید</h2>
+      <SectionCard title="افزودن شعبهٔ جدید" description="شعبهٔ جدید با همان سرفصل حساب‌ها و تنظیمات مالی کسب‌وکار کار می‌کند.">
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="نام شعبه">
             <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} />
@@ -177,10 +181,10 @@ export function BranchesManager() {
         </p>
         <div className="mt-3">
           <PrimaryButton onClick={createBranch} disabled={busy || !name.trim()}>
-            ایجاد شعبه
+            {busy ? "در حال ایجاد…" : "ایجاد شعبه"}
           </PrimaryButton>
         </div>
-      </section>
+      </SectionCard>
     </div>
   );
 }

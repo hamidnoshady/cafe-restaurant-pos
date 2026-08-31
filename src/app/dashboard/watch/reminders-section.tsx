@@ -7,6 +7,7 @@ import {
   type ServiceReminder,
   type ServiceReminderState,
 } from "./watch-manager";
+import { cardClass } from "../page-chrome";
 
 const STATE_BADGE_CLASS: Record<ServiceReminderState, string> = {
   overdue: "bg-rose-100 text-rose-900",
@@ -20,7 +21,7 @@ const STATE_BADGE_CLASS: Record<ServiceReminderState, string> = {
  */
 export function RemindersSection({ reminders }: { reminders: ServiceReminder[] }) {
   return (
-    <section aria-labelledby="watch-reminders-heading" className="min-w-0 overflow-hidden rounded-2xl bg-card">
+    <section aria-labelledby="watch-reminders-heading" className={`min-w-0 overflow-hidden ${cardClass} `}>
       <div className="border-b border-stone-200/80 px-4 py-4 sm:px-5">
         <h2 id="watch-reminders-heading" className="font-semibold text-stone-950">
           یادآوری سرویس

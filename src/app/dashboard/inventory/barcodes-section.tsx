@@ -38,9 +38,9 @@ interface PendingItem {
   unit: string;
 }
 
-const inventoryInputClass = `${inputClass} min-h-[52px] !border-stone-200 !bg-white shadow-none placeholder:text-stone-400 focus-visible:border-amber-500 focus-visible:ring-amber-400/30`;
+const inventoryInputClass = `${inputClass} min-h-[52px] !border-stone-200 !bg-card shadow-none placeholder:text-stone-400 focus-visible:border-amber-500 focus-visible:ring-amber-400/30`;
 const actionClass =
-  "min-h-[52px] border-stone-200 bg-white px-4 text-stone-700 hover:border-amber-300 hover:bg-amber-50 hover:text-stone-950";
+  "min-h-[52px] border-stone-200 bg-card px-4 text-stone-700 hover:border-amber-300 hover:bg-amber-50 hover:text-stone-950";
 
 export function BarcodesSection({
   items,

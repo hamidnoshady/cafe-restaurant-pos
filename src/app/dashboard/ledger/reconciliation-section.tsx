@@ -9,6 +9,7 @@ import { formatJalali } from "@/lib/jalali";
 import { useMoney } from "@/components/money/money-context";
 import { api, ErrorBox, errorMessage, inputClass, PrimaryButton } from "../ui";
 import { JalaliDatePicker } from "../jalali-date-picker";
+import { cardClass } from "../page-chrome";
 
 type AccountCode = "cash" | "bankClearing";
 
@@ -132,7 +133,7 @@ export function ReconciliationSection({ busy, run }: { busy: boolean; run: (fn: 
     <section className="space-y-4">
       <ErrorBox>{error}</ErrorBox>
 
-      <div className="rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-4 sm:p-5">
+      <div className={`${cardClass} p-4 sm:p-5`}>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <p className="text-xs font-semibold text-amber-700">کنترل وجوه</p>
@@ -234,7 +235,7 @@ export function ReconciliationSection({ busy, run }: { busy: boolean; run: (fn: 
       </div>
 
       {history && history.some((r) => r.status === "completed") ? (
-        <div className="rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-4 sm:p-5">
+        <div className={`${cardClass} p-4 sm:p-5`}>
           <p className="text-xs font-semibold text-amber-700">سوابق</p>
           <h2 className="mt-1">تاریخچه تطبیق‌ها</h2>
           <ul className="mt-4 divide-y divide-border rounded-xl border border-border text-sm">

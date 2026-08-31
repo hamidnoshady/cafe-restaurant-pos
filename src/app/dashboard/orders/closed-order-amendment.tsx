@@ -235,7 +235,7 @@ export function ClosedOrderAmendment({
 
       {error ? (
         <p
-          className="mt-3 rounded-xl border border-destructive/25 bg-white px-3 py-2.5 text-sm text-destructive"
+          className="mt-3 rounded-xl border border-destructive/25 bg-card px-3 py-2.5 text-sm text-destructive"
           role="status"
         >
           {error}
@@ -252,7 +252,7 @@ export function ClosedOrderAmendment({
 
       {open ? (
         <div className="mt-4 space-y-4 border-t border-destructive/30 pt-4">
-          <ul className="divide-y divide-destructive/10 overflow-hidden rounded-xl border border-destructive/30 bg-white">
+          <ul className="divide-y divide-destructive/10 overflow-hidden rounded-xl border border-destructive/30 bg-card">
             {draft.map((line) => (
               <li
                 key={line.orderItemId}
@@ -436,7 +436,7 @@ export function ClosedOrderAmendment({
               </span>
             </span>
             <input
-              className={`${OPS_INPUT} bg-white`}
+              className={`${OPS_INPUT} bg-card`}
               value={reason}
               onChange={(event) => setReason(event.target.value)}
               placeholder="مثلاً: یک فنجان سرو نشده بود"

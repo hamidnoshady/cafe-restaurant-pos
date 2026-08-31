@@ -134,7 +134,7 @@ export function KnowledgeHelpButton({ section }: { section?: string }) {
               src={state.entry.url}
               title={`آموزش ${label}`}
               onLoad={() => setFrameLoaded(true)}
-              className={`h-full w-full rounded-xl border border-stone-200/80 bg-white transition-opacity motion-reduce:transition-none ${frameLoaded ? "opacity-100" : "opacity-0"}`}
+              className={`h-full w-full rounded-xl border border-stone-200/80 bg-card transition-opacity motion-reduce:transition-none ${frameLoaded ? "opacity-100" : "opacity-0"}`}
             />
           </div>
         ) : (

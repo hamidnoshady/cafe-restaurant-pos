@@ -9,9 +9,9 @@ import { useMoney } from "@/components/money/money-context";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { api, Field, inputClass } from "../ui";
 import { JalaliDatePicker } from "../jalali-date-picker";
-import { SectionCardSkeleton } from "../page-chrome";
+import { SectionCardSkeleton, cardClass } from "../page-chrome";
 
-const accInputClass = `${inputClass} min-h-[52px] !border-stone-200 !bg-white shadow-none placeholder:text-stone-400 focus-visible:border-amber-500 focus-visible:ring-amber-400/30`;
+const accInputClass = `${inputClass} min-h-[52px] !border-stone-200 !bg-card shadow-none placeholder:text-stone-400 focus-visible:border-amber-500 focus-visible:ring-amber-400/30`;
 
 interface BatchItem {
   id: string;
@@ -125,7 +125,7 @@ export function BatchesSection() {
 
   return (
     <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_24rem]">
-      <section className="min-w-0 overflow-hidden rounded-2xl bg-card">
+      <section className={`min-w-0 overflow-hidden ${cardClass} `}>
         <div className="border-b border-stone-200/80 px-4 py-4 sm:px-5">
           <h2 className="font-semibold text-stone-950">بچ‌های نزدیک به انقضا</h2>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">
@@ -167,7 +167,7 @@ export function BatchesSection() {
       </section>
 
       <aside className="min-w-0">
-        <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-[0_1px_2px_rgb(41_37_36/0.035)] sm:p-5">
+        <div className={`${cardClass} p-4 sm:p-5`}>
           <h2 className="font-semibold text-stone-950">ورود بچ</h2>
           <form onSubmit={receive} className="mt-4 space-y-3">
             <Field label="کالا">

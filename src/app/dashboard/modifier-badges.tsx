@@ -41,7 +41,7 @@ export const MODIFIER_TONE: Record<
     chipPrice: "text-amber-700",
     caption: "text-stone-400",
     option:
-      "border-stone-200/80 bg-white text-stone-600 hover:border-amber-200 hover:bg-amber-50",
+      "border-stone-200/80 bg-card text-stone-600 hover:border-amber-200 hover:bg-amber-50",
     optionSelected: "border-amber-500 bg-amber-100 text-amber-700",
     accent: "text-amber-700",
     surface: "border-amber-200/60 bg-amber-50",

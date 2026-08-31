@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { browserSupportsWebAuthn, startRegistration } from "@simplewebauthn/browser";
 import { formatJalali } from "@/lib/jalali";
 import { toPersianDigits } from "@/lib/digits";
+import { overlayPanelClass } from "./page-chrome";
 
 interface Credential {
   id: string;
@@ -129,7 +130,7 @@ function BiometricPanel({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/95 p-4 backdrop-blur-sm">
-      <div className="w-full max-w-sm rounded-2xl bg-card p-6 shadow-lg">
+      <div className={`${overlayPanelClass} w-full max-w-sm p-6`}>
         <div className="mb-4 flex items-center justify-between">
           <h2 className="font-semibold">ورود بیومتریک</h2>
           <button type="button" onClick={onClose} className="text-sm text-muted-foreground hover:text-foreground">

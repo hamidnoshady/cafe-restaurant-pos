@@ -146,7 +146,7 @@ export function SessionPanel({
         {!session.bill_requested_at ? (
           <SecondaryButton onClick={() => void action({ action: "request_bill" })} disabled={busy}>درخواست صورتحساب</SecondaryButton>
         ) : (
-          <span className="rounded-lg bg-purple-50 px-3 py-2 text-xs text-purple-700 dark:bg-purple-950 dark:text-purple-300">صورتحساب درخواست شد</span>
+          <span className="rounded-lg bg-purple-50 px-3 py-2 text-xs text-purple-700">صورتحساب درخواست شد</span>
         )}
         <SecondaryButton onClick={() => setShowSplit(true)} disabled={busy || bill.total <= 0}>تقسیم صورتحساب</SecondaryButton>
         <PrimaryButton

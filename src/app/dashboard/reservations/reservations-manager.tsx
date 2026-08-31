@@ -11,6 +11,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { JalaliDatePicker } from "../jalali-date-picker";
 import { KnowledgeHelpButton } from "../knowledge-help";
 import { api, ErrorBox, errorMessage, Field, inputClass } from "../ui";
+import { PageHeader, PageShell } from "../page-chrome";
 
 // Iran no longer observes DST, so wall-clock Tehran time is a fixed +03:30.
 const TEHRAN_OFFSET = "+03:30";
@@ -130,7 +131,7 @@ function ReservationSkeleton() {
   return (
     <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_20rem] lg:grid-cols-[minmax(0,1fr)_23rem]">
       <section
-        className="rounded-xl border border-stone-200/80 bg-white p-4 md:col-start-1"
+        className="rounded-xl border border-stone-200/80 bg-card p-4 md:col-start-1"
         aria-busy="true"
       >
         <div className="flex items-center justify-between gap-3">
@@ -153,7 +154,7 @@ function ReservationSkeleton() {
         </div>
       </section>
       <aside
-        className="hidden rounded-xl border border-stone-200/80 bg-white p-4 md:col-start-2 md:block"
+        className="hidden rounded-xl border border-stone-200/80 bg-card p-4 md:col-start-2 md:block"
         aria-hidden="true"
       >
         <div className="h-5 w-28 animate-pulse rounded bg-stone-100 motion-reduce:animate-none" />
@@ -231,7 +232,7 @@ function ReservationRow({
   return (
     <article
       className={
-        "overflow-hidden rounded-xl border bg-white shadow-[0_1px_2px_rgba(37,37,34,0.03)] transition-colors motion-reduce:transition-none " +
+        "overflow-hidden rounded-xl border bg-card shadow-[0_1px_2px_rgb(41_37_36/0.03)] transition-colors motion-reduce:transition-none " +
         (selected
           ? "border-amber-500 ring-2 ring-amber-500/20"
           : overdue
@@ -298,7 +299,7 @@ function ReservationDetails({
 
   return (
     <section
-      className="rounded-xl border border-stone-200/80 bg-white p-4 shadow-[0_1px_2px_rgba(37,37,34,0.03)]"
+      className="rounded-xl border border-stone-200/80 bg-card p-4 shadow-[0_1px_2px_rgb(41_37_36/0.03)]"
       aria-label={"جزئیات رزرو " + reservation.customer_name}
     >
       <div className="flex items-start justify-between gap-3">
@@ -404,7 +405,7 @@ function ReservationDetails({
               variant="outline"
               onClick={() => onAction(reservation.id, "cancel")}
               disabled={pendingAction !== null}
-              className="min-h-[52px] border-destructive/30 bg-white text-red-800 hover:bg-red-50"
+              className="min-h-[52px] border-destructive/30 bg-card text-red-800 hover:bg-red-50"
             >
               {pendingAction === actionKey("cancel")
                 ? "در حال لغو…"
@@ -516,7 +517,7 @@ function BookingForm({
 
   return (
     <form
-      className="rounded-xl border border-stone-200/80 bg-white p-4 shadow-[0_1px_2px_rgba(37,37,34,0.03)]"
+      className="rounded-xl border border-stone-200/80 bg-card p-4 shadow-[0_1px_2px_rgb(41_37_36/0.03)]"
       onSubmit={(event) => {
         event.preventDefault();
         void submit(false);
@@ -627,7 +628,7 @@ function BookingForm({
             variant="outline"
             onClick={() => void submit(true)}
             disabled={busy}
-            className="mt-3 min-h-[52px] border-amber-300 bg-white text-amber-900 hover:bg-amber-50"
+            className="mt-3 min-h-[52px] border-amber-300 bg-card text-amber-900 hover:bg-amber-50"
           >
             به‌هرحال ثبت کن
           </Button>
@@ -819,14 +820,12 @@ export function ReservationsManager({ canBook }: { canBook: boolean }) {
     );
 
   return (
-    <div className="space-y-4" dir="rtl">
-      <header className="rounded-xl border border-stone-200/80 bg-white p-4 shadow-[0_1px_2px_rgba(37,37,34,0.03)]">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-          <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-end sm:gap-5">
-            <div className="min-w-0">
-              <h1 className="text-2xl font-bold text-stone-950">رزروها</h1>
-              <p className="mt-1 text-sm text-stone-500">{scheduleLabel}</p>
-            </div>
+    <PageShell className="space-y-4">
+      <PageHeader
+        title="رزروها"
+        description={scheduleLabel}
+        actions={
+          <>
             <label className="block min-w-0 sm:w-56">
               <span className="mb-1.5 flex items-center gap-1.5 text-sm font-medium text-stone-600">
                 <CalendarDaysIcon className="size-4" aria-hidden="true" />
@@ -841,9 +840,6 @@ export function ReservationsManager({ canBook }: { canBook: boolean }) {
                 className="min-h-[52px] border-stone-200/80 bg-stone-50 px-3 text-stone-700 focus-visible:border-amber-500 focus-visible:ring-amber-500/30"
               />
             </label>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-3">
             <KnowledgeHelpButton section="reservations" />
             <p
               className="flex min-h-[44px] min-w-0 flex-1 items-center gap-2 text-sm text-stone-600 sm:flex-none"
@@ -865,16 +861,8 @@ export function ReservationsManager({ canBook }: { canBook: boolean }) {
               onClick={() => void load({ showRefresh: true })}
               className="min-h-[52px] shrink-0 border-stone-200/80 bg-stone-50 px-4 text-stone-700 hover:bg-amber-50"
             >
-              <RefreshCwIcon
-                className={
-                  "size-4 " +
-                  (isRefreshing
-                    ? "animate-spin motion-reduce:animate-none"
-                    : "")
-                }
-                aria-hidden="true"
-              />
-              {isRefreshing ? "در حال به‌روزرسانی" : "به‌روزرسانی"}
+              <RefreshCwIcon className="size-4" aria-hidden="true" />
+              {isRefreshing ? "در حال به‌روزرسانی…" : "به‌روزرسانی"}
             </Button>
             {canBook ? (
               <Button
@@ -885,9 +873,9 @@ export function ReservationsManager({ canBook }: { canBook: boolean }) {
                 رزرو جدید
               </Button>
             ) : null}
-          </div>
-        </div>
-      </header>
+          </>
+        }
+      />
 
       {loadError ? (
         <section
@@ -899,7 +887,7 @@ export function ReservationsManager({ canBook }: { canBook: boolean }) {
             type="button"
             variant="outline"
             onClick={() => void load({ showRefresh: true })}
-            className="min-h-[48px] shrink-0 border-destructive/30 bg-white text-red-800 hover:bg-red-50"
+            className="min-h-[48px] shrink-0 border-destructive/30 bg-card text-red-800 hover:bg-red-50"
           >
             تلاش دوباره
           </Button>
@@ -964,6 +952,6 @@ export function ReservationsManager({ canBook }: { canBook: boolean }) {
           </aside>
         </div>
       )}
-    </div>
+    </PageShell>
   );
 }

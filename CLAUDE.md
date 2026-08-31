@@ -240,6 +240,16 @@ Full-screen operational surfaces (POS, orders, floor plan, KDS, reservations) ke
 compact icon-led chrome on purpose, and `src/app/platform/**` is a separate realm with its own
 `ui.tsx`. Both are documented exceptions — don't extend them to a new dashboard page.
 
+The canon is **executable and app-wide**: `src/app/dashboard/design-lint.test.ts` bans the
+drift patterns in every dashboard file and requires every route to carry the `PageShell`
+frame; `src/app/design-lint.test.ts` holds the same bans on the entry surfaces every
+business type walks (login, welcome, setup, invite, consent, business directory) and on
+`src/components` minus the shadcn layer; `src/app/loading-coverage.test.ts` requires a
+skeleton boundary above every layout realm and a `*Skeleton` in every client component
+that fetches on mount. Loading is skeletons for regions and busy-label words («در حال ثبت…»)
+for actions — never `animate-spin`. Neither lint keeps a baseline, so any new violation
+fails `npm test`.
+
 ## Counting stock — read before touching barcodes or a physical count
 
 Both item models can now be counted with a scanner, and they stay **two separate

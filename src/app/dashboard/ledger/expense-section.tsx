@@ -11,6 +11,7 @@ import { JalaliDatePicker } from "../jalali-date-picker";
 import { api, inputClass, PrimaryButton } from "../ui";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import type { AccountRow, Runner } from "./ledger-manager";
+import { cardClass } from "../page-chrome";
 
 interface ExpenseRow {
   id: string;
@@ -96,7 +97,7 @@ export function ExpenseSection({
 
   return (
     <div className="space-y-4">
-      <section className="rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-4 sm:p-5">
+      <section className={`${cardClass} p-4 sm:p-5`}>
         <p className="text-xs font-semibold text-amber-700">عملیات هزینه</p>
         <h2 className="mt-1">ثبت هزینه</h2>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
@@ -152,7 +153,7 @@ export function ExpenseSection({
         </form>
       </section>
 
-      <section className="rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-4 sm:p-5">
+      <section className={`${cardClass} p-4 sm:p-5`}>
         <div className="mb-4">
           <p className="text-xs font-semibold text-amber-700">سوابق عملیاتی</p>
           <h2 className="mt-1">هزینه‌های اخیر</h2>

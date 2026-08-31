@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { useMoney } from "@/components/money/money-context";
 import { JalaliDatePicker } from "../jalali-date-picker";
 import { api } from "../ui";
+import { cardClass } from "../page-chrome";
 
 interface VatReport {
   periodFrom: string | null;
@@ -40,7 +41,7 @@ export function VatReportSection({ refreshKey }: { refreshKey: number }) {
   }, [dateFrom, dateTo, refreshKey]);
 
   return (
-    <section aria-labelledby="vat-report-heading" className="rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-4 sm:p-5">
+    <section aria-labelledby="vat-report-heading" className={`${cardClass} p-4 sm:p-5`}>
       <header className="border-b border-border pb-4">
         <p className="text-xs font-semibold text-amber-700">گزارش مالی</p>
         <h2 id="vat-report-heading" className="mt-1 text-lg font-bold">گزارش مالیات بر ارزش افزوده</h2>

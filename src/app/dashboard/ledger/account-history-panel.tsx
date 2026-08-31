@@ -7,6 +7,7 @@ import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import { auditActionLabel } from "@/lib/audit";
 import { api } from "../ui";
+import { overlayPanelClass } from "../page-chrome";
 
 interface HistoryEntry {
   id: number;
@@ -68,7 +69,7 @@ export function AccountHistoryPanel({
         role="dialog"
         aria-modal="true"
         aria-labelledby="account-history-heading"
-        className="max-h-[88vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-card p-4 shadow-lg sm:max-h-[80vh] sm:p-5"
+        className={`${overlayPanelClass} max-h-[88vh] w-full max-w-2xl overflow-y-auto p-4 sm:max-h-[80vh] sm:p-5`}
         onClick={(e) => e.stopPropagation()}
       >
         <header className="mb-4 flex items-start justify-between gap-3 border-b border-border pb-4">

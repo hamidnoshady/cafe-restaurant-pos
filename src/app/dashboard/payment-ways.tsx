@@ -66,7 +66,7 @@ const CHIP_ON = "border-amber-200 bg-amber-100 text-amber-700";
 const CHIP_OFF = "border-stone-200/80 text-stone-600 hover:bg-stone-50";
 
 const AMOUNT_INPUT =
-  "h-10 w-full min-w-0 rounded-lg border border-stone-200/80 bg-white px-2 text-sm tabular-nums outline-none focus-visible:border-amber-500 focus-visible:ring-2 focus-visible:ring-amber-500/30";
+  "h-10 w-full min-w-0 rounded-lg border border-stone-200/80 bg-card px-2 text-sm tabular-nums outline-none focus-visible:border-amber-500 focus-visible:ring-2 focus-visible:ring-amber-500/30";
 
 export interface PaymentWaysProps {
   methods: PaymentMethodView[];
@@ -205,7 +205,7 @@ export function PaymentWays({ methods, draft, onChange, due, disabled, loaded = 
                     type="button"
                     onClick={() => removeRow(row.key)}
                     disabled={disabled}
-                    className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-stone-200/80 text-stone-400 hover:bg-white disabled:opacity-55"
+                    className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-stone-200/80 text-stone-400 hover:bg-card disabled:opacity-55"
                     aria-label={`حذف ${method?.name ?? ""}`}
                   >
                     <XIcon className="size-4" aria-hidden="true" />

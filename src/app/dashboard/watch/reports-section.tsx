@@ -1,6 +1,6 @@
 "use client";
 
-import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
+import {LoadingSkeleton, cardClass } from "@/app/dashboard/page-chrome";
 
 import { useCallback, useEffect, useState } from "react";
 import { formatPersianNumber, toPersianDigits } from "@/lib/digits";
@@ -70,7 +70,7 @@ export function ReportsSection() {
 
   return (
     <div className="min-w-0 space-y-4">
-      <section aria-labelledby="watch-warranty-heading" className="min-w-0 overflow-hidden rounded-2xl bg-card">
+      <section aria-labelledby="watch-warranty-heading" className={`min-w-0 overflow-hidden ${cardClass} `}>
         <div className="border-b border-stone-200/80 px-4 py-4 sm:px-5">
           <h2 id="watch-warranty-heading" className="font-semibold text-stone-950">
             گارانتی‌ها
@@ -106,7 +106,7 @@ export function ReportsSection() {
         </ul>
       </section>
 
-      <section aria-labelledby="watch-repair-report-heading" className="min-w-0 overflow-hidden rounded-2xl bg-card">
+      <section aria-labelledby="watch-repair-report-heading" className={`min-w-0 overflow-hidden ${cardClass} `}>
         <div className="border-b border-stone-200/80 px-4 py-4 sm:px-5">
           <h2 id="watch-repair-report-heading" className="font-semibold text-stone-950">
             تعمیرات

@@ -935,7 +935,7 @@ export function OrderDetailModal({
           showCloseButton={false}
           className="flex h-[100dvh] max-h-[100dvh] w-screen max-w-none flex-col gap-0 overflow-hidden rounded-none bg-stone-50 p-0 ring-0 sm:h-auto sm:max-h-[92dvh] sm:w-[calc(100%-2rem)] sm:max-w-5xl sm:rounded-2xl sm:ring-1 sm:ring-stone-200/80"
         >
-          <DialogHeader className="shrink-0 gap-0 border-b border-stone-200/80 bg-white px-4 py-3 sm:px-5">
+          <DialogHeader className="shrink-0 gap-0 border-b border-stone-200/80 bg-card px-4 py-3 sm:px-5">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
@@ -1011,7 +1011,7 @@ export function OrderDetailModal({
                   type="button"
                   onClick={() => onOpenChange(false)}
                   aria-label="بستن"
-                  className={`flex size-11 shrink-0 items-center justify-center rounded-xl border border-stone-200/80 bg-white text-stone-600 transition-colors hover:bg-stone-50 ${FOCUS} active:scale-[0.95]`}
+                  className={`flex size-11 shrink-0 items-center justify-center rounded-xl border border-stone-200/80 bg-card text-stone-600 transition-colors hover:bg-stone-50 ${FOCUS} active:scale-[0.95]`}
                 >
                   <XIcon className="size-4" aria-hidden="true" />
                 </button>
@@ -1082,7 +1082,7 @@ export function OrderDetailModal({
                     <button
                       type="button"
                       onClick={() => setError("")}
-                      className="min-h-11 shrink-0 rounded-lg border border-destructive/25 bg-white px-3 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/35"
+                      className="min-h-11 shrink-0 rounded-lg border border-destructive/25 bg-card px-3 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/35"
                     >
                       باشد
                     </button>
@@ -1432,7 +1432,7 @@ export function OrderDetailModal({
                             {customerResultsLoading ? (
                               <LoadingSkeleton rows={2} compact className="mt-2" label="در حال جست‌وجوی مشتری" />
                             ) : customerResults.length > 0 ? (
-                              <ul className="mt-2 max-h-44 overscroll-contain overflow-y-auto rounded-xl border border-stone-200/80 bg-white" onWheel={(event) => event.stopPropagation()}>
+                              <ul className="mt-2 max-h-44 overscroll-contain overflow-y-auto rounded-xl border border-stone-200/80 bg-card" onWheel={(event) => event.stopPropagation()}>
                                 {customerResults.map((candidate) => (
                                   <li key={candidate.id}>
                                     <button type="button" onClick={() => setSelectedCustomer(candidate)} className={`min-h-12 w-full px-3 text-start text-sm ${FOCUS}`}>
@@ -1449,7 +1449,7 @@ export function OrderDetailModal({
                             ) : null}
                             {showNewCustomer ? (
                               <div className="mt-2 flex flex-col gap-2">
-                                <input className={`${OPS_INPUT} bg-white`} dir="ltr" placeholder="شماره تماس (اختیاری)" value={newCustomerPhone} onChange={(event) => setNewCustomerPhone(event.target.value)} />
+                                <input className={`${OPS_INPUT} bg-card`} dir="ltr" placeholder="شماره تماس (اختیاری)" value={newCustomerPhone} onChange={(event) => setNewCustomerPhone(event.target.value)} />
                                 <button type="button" onClick={createCustomer} disabled={!customerQuery.trim()} className={`${SECONDARY_BUTTON} min-h-12 w-full`}>ثبت مشتری</button>
                               </div>
                             ) : null}
@@ -1621,7 +1621,7 @@ export function OrderDetailModal({
                             ) : (
                               <>
                                 <input
-                                  className={`${OPS_INPUT} bg-white`}
+                                  className={`${OPS_INPUT} bg-card`}
                                   placeholder="جستجوی نام یا شماره تماس مشتری…"
                                   value={customerQuery}
                                   onChange={(event) =>
@@ -1631,7 +1631,7 @@ export function OrderDetailModal({
                                 {customerResultsLoading ? (
                                   <LoadingSkeleton rows={2} compact className="mt-2" label="در حال جست‌وجوی مشتری" />
                                 ) : customerResults.length > 0 ? (
-                                  <ul className="mt-2 max-h-44 divide-y divide-stone-100 overflow-y-auto rounded-xl border border-stone-200/80 bg-white">
+                                  <ul className="mt-2 max-h-44 divide-y divide-stone-100 overflow-y-auto rounded-xl border border-stone-200/80 bg-card">
                                     {customerResults.map((customer) => (
                                       <li key={customer.id}>
                                         <button
@@ -1662,7 +1662,7 @@ export function OrderDetailModal({
                                 {showNewCustomer ? (
                                   <div className="mt-2 flex flex-col gap-2">
                                     <input
-                                      className={`${OPS_INPUT} bg-white`}
+                                      className={`${OPS_INPUT} bg-card`}
                                       dir="ltr"
                                       placeholder="شماره تماس (اختیاری)"
                                       value={newCustomerPhone}
@@ -1740,7 +1740,7 @@ export function OrderDetailModal({
               collected off-screen — the same reason the POS cart pins its own
               total. */}
           {order ? (
-            <div className="flex shrink-0 items-center justify-between gap-3 border-t border-stone-200/80 bg-white px-4 py-3 sm:px-5">
+            <div className="flex shrink-0 items-center justify-between gap-3 border-t border-stone-200/80 bg-card px-4 py-3 sm:px-5">
               <div className="flex items-baseline gap-2">
                 <span className="text-sm font-bold text-stone-950">جمع کل</span>
                 <span className="text-xs text-stone-500">

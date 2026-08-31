@@ -25,7 +25,7 @@ import {
 import { ModifierBadges } from "../modifier-badges";
 import { useRealtime } from "../use-realtime";
 import { KnowledgeHelpButton } from "../knowledge-help";
-import { PageShell } from "../page-chrome";
+import { PageShell, cardClass } from "../page-chrome";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { JalaliDatePicker } from "../jalali-date-picker";
 import { api } from "../ui";
@@ -294,7 +294,7 @@ function OrderDetailsPanel({
 
   return (
     <aside
-      className="rounded-2xl border border-stone-200/80 bg-white p-4 shadow-[0_1px_3px_rgba(37,37,34,0.03)] md:sticky md:top-0 md:max-h-[calc(100dvh-4.5rem)] md:overflow-y-auto"
+      className={`${cardClass} p-4 shadow-[0_1px_3px_rgb(41_37_36/0.03)] md:sticky md:top-0 md:max-h-[calc(100dvh-4.5rem)] md:overflow-y-auto`}
       aria-label="جزئیات سفارش انتخاب‌شده"
     >
       <div className="flex items-start justify-between gap-3 border-b border-stone-200/80 pb-4">
@@ -480,7 +480,7 @@ function OrderDetailsPanel({
             )}
           </section>
 
-          <div className="pt-4 md:sticky md:bottom-0 md:-mx-4 md:-mb-4 md:border-t md:border-stone-200/80 md:bg-white md:px-4 md:pb-4">
+          <div className="pt-4 md:sticky md:bottom-0 md:-mx-4 md:-mb-4 md:border-t md:border-stone-200/80 md:bg-card md:px-4 md:pb-4">
             <p className="mb-3 text-xs text-stone-500">
               {closed && order.closed_at
                 ? `${order.status === "voided" ? "باطل‌شده" : "بسته‌شده"} در ${orderDateLabel(order.closed_at)}، ساعت ${orderTimeLabel(order.closed_at)}`
@@ -809,7 +809,7 @@ export function OrdersList({
 
   return (
     <PageShell>
-      <header className="mb-3 flex flex-col gap-3 rounded-2xl border border-stone-200/80 bg-white p-3 shadow-[0_1px_3px_rgba(37,37,34,0.03)] sm:p-4 md:flex-row md:items-center md:justify-between">
+      <header className={`mb-3 flex flex-col gap-3 ${cardClass} p-3 shadow-[0_1px_3px_rgb(41_37_36/0.03)] sm:p-4 md:flex-row md:items-center md:justify-between`}>
         <div className="flex min-w-0 items-center gap-3">
           <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700">
             <ShoppingBagIcon className="size-5" aria-hidden="true" />
@@ -842,7 +842,7 @@ export function OrdersList({
               type="button"
               onClick={() => setShowBackdated((open) => !open)}
               aria-expanded={showBackdated}
-              className="flex min-h-12 items-center gap-2 rounded-xl border border-stone-200/80 bg-white px-3 text-xs font-bold text-stone-600 transition duration-200 hover:bg-stone-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 active:scale-[0.98] xl:min-h-[52px] motion-reduce:transition-none"
+              className="flex min-h-12 items-center gap-2 rounded-xl border border-stone-200/80 bg-card px-3 text-xs font-bold text-stone-600 transition duration-200 hover:bg-stone-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 active:scale-[0.98] xl:min-h-[52px] motion-reduce:transition-none"
             >
               {showBackdated ? "بستن فرم گذشته" : "ثبت سفارش گذشته"}
             </button>
@@ -851,7 +851,7 @@ export function OrdersList({
             type="button"
             onClick={() => void load()}
             disabled={isRefreshing}
-            className="flex min-h-12 items-center gap-2 rounded-xl border border-stone-200/80 bg-white px-3 text-xs font-bold text-stone-600 transition duration-200 hover:bg-stone-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 active:scale-[0.98] disabled:opacity-60 xl:min-h-[52px] motion-reduce:transition-none"
+            className="flex min-h-12 items-center gap-2 rounded-xl border border-stone-200/80 bg-card px-3 text-xs font-bold text-stone-600 transition duration-200 hover:bg-stone-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 active:scale-[0.98] disabled:opacity-60 xl:min-h-[52px] motion-reduce:transition-none"
             aria-label={
               isRefreshing
                 ? "در حال به‌روزرسانی سفارش‌ها"
@@ -890,7 +890,7 @@ export function OrdersList({
       ) : null}
 
       <section
-        className="mb-3 rounded-2xl border border-stone-200/80 bg-white p-3 shadow-[0_1px_3px_rgba(37,37,34,0.03)]"
+        className={`mb-3 ${cardClass} p-3 shadow-[0_1px_3px_rgb(41_37_36/0.03)]`}
         aria-label="جستجو و فیلتر سفارش‌ها"
       >
         <label className="sr-only" htmlFor="orders-search">
@@ -920,7 +920,7 @@ export function OrdersList({
             className={`min-h-12 shrink-0 rounded-xl border px-3.5 text-sm font-bold transition duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 active:scale-[0.98] xl:min-h-[52px] motion-reduce:transition-none ${
               statusFilter === "all"
                 ? "border-amber-200 bg-amber-100 text-amber-700"
-                : "border-stone-200/80 bg-white text-stone-600 hover:bg-stone-50"
+                : "border-stone-200/80 bg-card text-stone-600 hover:bg-stone-50"
             }`}
           >
             همه
@@ -933,7 +933,7 @@ export function OrdersList({
               className={`min-h-12 shrink-0 rounded-xl border px-3.5 text-sm font-bold transition duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 active:scale-[0.98] xl:min-h-[52px] motion-reduce:transition-none ${
                 statusFilter === status
                   ? "border-amber-200 bg-amber-100 text-amber-700"
-                  : "border-stone-200/80 bg-white text-stone-600 hover:bg-stone-50"
+                  : "border-stone-200/80 bg-card text-stone-600 hover:bg-stone-50"
               }`}
             >
               {STATUS_LABELS[status]}
@@ -949,7 +949,7 @@ export function OrdersList({
               className={`min-h-12 shrink-0 rounded-xl border px-3.5 text-sm font-bold transition duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 active:scale-[0.98] xl:min-h-[52px] motion-reduce:transition-none ${
                 typeFilter === type
                   ? "border-amber-200 bg-amber-100 text-amber-700"
-                  : "border-stone-200/80 bg-white text-stone-600 hover:bg-stone-50"
+                  : "border-stone-200/80 bg-card text-stone-600 hover:bg-stone-50"
               }`}
             >
               {TYPE_LABELS[type]}
@@ -958,7 +958,7 @@ export function OrdersList({
         </div>
 
         {shifts.length > 0 ? (
-          <label className="mt-2 flex min-h-12 min-w-0 items-center gap-2 rounded-xl border border-stone-200/80 bg-white px-3 text-xs text-stone-500 xl:min-h-[52px]">
+          <label className="mt-2 flex min-h-12 min-w-0 items-center gap-2 rounded-xl border border-stone-200/80 bg-card px-3 text-xs text-stone-500 xl:min-h-[52px]">
             <span className="shrink-0">شیفت</span>
             <SearchableSelect
               value={shiftFilter}
@@ -984,7 +984,7 @@ export function OrdersList({
         ) : null}
 
         <div className="mt-2 flex flex-col gap-2 sm:flex-row">
-          <label className="flex min-h-12 min-w-0 flex-1 items-center gap-2 rounded-xl border border-stone-200/80 bg-white px-3 text-xs text-stone-500 xl:min-h-[52px]">
+          <label className="flex min-h-12 min-w-0 flex-1 items-center gap-2 rounded-xl border border-stone-200/80 bg-card px-3 text-xs text-stone-500 xl:min-h-[52px]">
             <span className="shrink-0">میز</span>
             <SearchableSelect
               value={tableFilter}
@@ -1000,7 +1000,7 @@ export function OrdersList({
               ]}
             />
           </label>
-          <div className="flex min-h-12 min-w-0 flex-1 items-center gap-2 rounded-xl border border-stone-200/80 bg-white px-3 text-xs text-stone-500 xl:min-h-[52px]">
+          <div className="flex min-h-12 min-w-0 flex-1 items-center gap-2 rounded-xl border border-stone-200/80 bg-card px-3 text-xs text-stone-500 xl:min-h-[52px]">
             <span className="shrink-0">تاریخ</span>
             <div className="min-w-0 flex-1">
               <JalaliDatePicker
@@ -1025,7 +1025,7 @@ export function OrdersList({
 
       <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(19rem,0.9fr)] xl:grid-cols-[minmax(0,1fr)_minmax(22rem,26rem)]">
         <section
-          className="min-w-0 overflow-hidden rounded-2xl border border-stone-200/80 bg-white shadow-[0_1px_3px_rgba(37,37,34,0.03)]"
+          className={`min-w-0 overflow-hidden ${cardClass} shadow-[0_1px_3px_rgb(41_37_36/0.03)]`}
           aria-label="فهرست سفارش‌ها"
         >
           <div className="flex items-center justify-between gap-3 border-b border-stone-200/80 px-4 py-3">
@@ -1146,7 +1146,7 @@ export function OrdersList({
                     className={`flex min-h-[76px] w-full items-center justify-between gap-3 px-4 py-3 text-start transition duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-500/45 active:scale-[0.995] md:min-h-[82px] xl:min-h-[88px] motion-reduce:transition-none ${
                       isSelected
                         ? "bg-amber-50"
-                        : "bg-white hover:bg-stone-50"
+                        : "bg-card hover:bg-stone-50"
                     }`}
                   >
                     <div className="min-w-0">

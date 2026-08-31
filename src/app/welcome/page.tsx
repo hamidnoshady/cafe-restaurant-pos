@@ -2,8 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Loader2Icon } from "lucide-react";
 import { FormLoadingSkeleton } from "@/components/form-loading-skeleton";
+import { cardClass } from "@/app/dashboard/page-chrome";
 import { ModeChoice } from "./mode-choice";
 import { PairForm } from "./pair-form";
 import {
@@ -42,7 +42,7 @@ export default function WelcomePage() {
   if (checking) {
     return (
       <main className="flex min-h-screen items-center justify-center p-4">
-        <div className="w-full max-w-md rounded-2xl border border-stone-200/80 bg-card p-6 shadow-[0_1px_2px_rgb(41_37_36/0.035)]">
+        <div className={`w-full max-w-md ${cardClass} p-6`}>
           <FormLoadingSkeleton rows={3} label="در حال بررسی وضعیت راه‌اندازی" />
         </div>
       </main>
@@ -137,7 +137,7 @@ function LocalBootstrapForm({ onBack }: { onBack: () => void }) {
   }
 
   return (
-    <div className="w-full max-w-md rounded-2xl bg-card p-8 shadow-sm">
+    <div className={`w-full max-w-md ${cardClass} p-8`}>
       <button
         type="button"
         onClick={onBack}
@@ -186,9 +186,9 @@ function LocalBootstrapForm({ onBack }: { onBack: () => void }) {
                   onClick={() => enabled && setIndustry(option)}
                   className={`relative rounded-lg border px-3 py-2 text-sm transition-colors outline-none focus-visible:ring focus-visible:ring-ring/50 ${
                     selected
-                      ? "border-primary bg-primary/10 font-medium text-primary"
+                      ? "border-amber-300 bg-amber-100 font-medium text-amber-950"
                       : "border-input text-foreground"
-                  } ${enabled ? "hover:border-primary/60" : "cursor-not-allowed opacity-50"}`}
+                  } ${enabled ? "hover:border-amber-400" : "cursor-not-allowed opacity-50"}`}
                 >
                   {INDUSTRY_LABELS[option]}
                   {!enabled ? (
@@ -256,13 +256,7 @@ function LocalBootstrapForm({ onBack }: { onBack: () => void }) {
           disabled={busy}
           className="w-full rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/85 disabled:opacity-50 outline-none focus-visible:ring focus-visible:ring-ring/50"
         >
-          {busy ? (
-            <span className="flex items-center justify-center gap-2">
-              <Loader2Icon className="size-4 animate-spin" /> در حال ساخت…
-            </span>
-          ) : (
-            "ساخت و شروع راه‌اندازی"
-          )}
+          {busy ? "در حال ساخت…" : "ساخت و شروع راه‌اندازی"}
         </button>
       </form>
     </div>
@@ -298,7 +292,7 @@ function MfaHandoverCard({ mfa, onDone }: { mfa: MfaHandover; onDone: () => void
   const [copied, setCopied] = useState(false);
 
   return (
-    <div className="w-full max-w-md rounded-2xl bg-card p-8 shadow-sm">
+    <div className={`w-full max-w-md ${cardClass} p-8`}>
       <h1 className="mb-1 text-2xl font-bold">ورود دومرحله‌ای مالک</h1>
       <p className="mb-6 text-sm text-muted-foreground">
         روی نصب محلی، ورود مالک با «برنامهٔ رمزساز» محافظت می‌شود؛ چون بدون اینترنت پیامکی ارسال
@@ -311,7 +305,7 @@ function MfaHandoverCard({ mfa, onDone }: { mfa: MfaHandover; onDone: () => void
           <img
             src={mfa.totpQr}
             alt="کد QR ورود دومرحله‌ای"
-            className="size-52 rounded-lg bg-white p-2"
+            className="size-52 rounded-lg bg-card p-2 ring-1 ring-stone-200/80"
           />
         </div>
       ) : null}

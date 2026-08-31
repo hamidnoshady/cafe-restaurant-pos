@@ -34,7 +34,7 @@ export function FeatureLockNotice({ title }: { title: string }) {
   return (
     <div
       role="status"
-      className="mb-4 flex items-start gap-3 rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200"
+      className="mb-4 flex items-start gap-3 rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-900"
     >
       <LockIcon className="mt-0.5 size-5 shrink-0" aria-hidden="true" />
       <div className="min-w-0 text-sm leading-6">

@@ -8,7 +8,7 @@ import { formatJalali } from "@/lib/jalali";
 import { api, Field, inputClass, PrimaryButton } from "../ui";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import type { InventoryItem, Runner } from "./inventory-manager";
-import { LoadingSkeleton } from "../page-chrome";
+import { LoadingSkeleton, cardClass } from "../page-chrome";
 
 interface WasteEntry {
   id: string;
@@ -68,7 +68,7 @@ export function WasteSection({ items, busy, run }: { items: InventoryItem[]; bus
 
   return (
     <div className="space-y-6">
-      <section className="min-w-0 rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-5">
+      <section className={`min-w-0 ${cardClass} p-5`}>
         <h2 className="mb-3 font-semibold">ثبت ضایعات</h2>
         <p className="mb-3 text-xs text-muted-foreground">
           ضایعات مستقل از فروش است و تنها موجودی را کاهش می‌دهد؛ در ارقام فروش اثری ندارد.
@@ -114,7 +114,7 @@ export function WasteSection({ items, busy, run }: { items: InventoryItem[]; bus
         </form>
       </section>
 
-      <section className="min-w-0 rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-5">
+      <section className={`min-w-0 ${cardClass} p-5`}>
         <h2 className="mb-3 font-semibold">ضایعات اخیر</h2>
         {entries === null ? (
           <LoadingSkeleton rows={4} label="در حال بارگذاری ضایعات اخیر" />

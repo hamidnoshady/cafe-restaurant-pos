@@ -1,4 +1,5 @@
 import { Skeleton } from "@/components/ui/skeleton";
+import { cardClass } from "./dashboard/page-chrome";
 
 /** Root fallback for public routes and for the first render while a realm layout resolves. */
 export default function RootLoading() {
@@ -9,7 +10,7 @@ export default function RootLoading() {
         aria-live="polite"
         aria-busy="true"
         aria-label="در حال بارگذاری صفحه"
-        className="w-full max-w-md rounded-2xl border border-stone-200/80 bg-card p-5 shadow-[0_1px_2px_rgb(41_37_36/0.035)]"
+        className={`w-full max-w-md ${cardClass} p-5`}
       >
         <div aria-hidden="true" className="space-y-5">
           <div className="flex items-center gap-3">

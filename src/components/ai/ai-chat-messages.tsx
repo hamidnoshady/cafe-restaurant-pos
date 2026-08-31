@@ -87,7 +87,7 @@ export function AiChatMessages({
                 data-suggestion
                 type="button"
                 onClick={() => void sendMessage(suggestion)}
-                className="rounded-full border border-stone-200/80 bg-background px-3 py-1.5 text-right text-[11px] leading-4 text-foreground/80 transition-all hover:-translate-y-px hover:border-primary/40 hover:bg-primary/5 hover:text-foreground hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:border-stone-700/60"
+                className="rounded-full border border-stone-200/80 bg-background px-3 py-1.5 text-right text-[11px] leading-4 text-foreground/80 transition-all hover:border-primary/40 hover:bg-primary/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 {suggestion}
               </button>

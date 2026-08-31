@@ -21,6 +21,7 @@ import {
 import { useRealtime } from "../use-realtime";
 import { api } from "../ui";
 import { TableOrderPanel } from "./table-order-panel";
+import { cardClass } from "../page-chrome";
 
 interface WaiterTable {
   id: string;
@@ -198,7 +199,7 @@ export function WaiterBoard() {
 
   return (
     <section className="space-y-4" aria-label="فضای کاری میزهای من">
-      <div className="flex flex-col gap-3 rounded-2xl border border-stone-200/80 bg-white p-3 sm:flex-row sm:items-center sm:justify-between sm:p-4">
+      <div className={`flex flex-col gap-3 ${cardClass} p-3 sm:flex-row sm:items-center sm:justify-between sm:p-4`}>
         <div className="min-w-0">
           <p className="text-sm font-bold text-stone-950">
             {toPersianDigits(tables.length)} میز تخصیص‌داده‌شده به شما
@@ -228,10 +229,7 @@ export function WaiterBoard() {
           disabled={refreshing}
           className="inline-flex min-h-12 shrink-0 items-center justify-center gap-2 rounded-xl border border-stone-200/80 bg-stone-50 px-4 text-sm font-semibold text-stone-600 transition hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 disabled:cursor-wait disabled:opacity-70 motion-reduce:transition-none"
         >
-          <RefreshCwIcon
-            className={`size-4 ${refreshing ? "animate-spin motion-reduce:animate-none" : ""}`}
-            aria-hidden="true"
-          />
+          <RefreshCwIcon className="size-4" aria-hidden="true" />
           {refreshing ? "در حال به‌روزرسانی…" : "به‌روزرسانی"}
         </button>
       </div>
@@ -249,7 +247,7 @@ export function WaiterBoard() {
               <button
                 type="button"
                 onClick={() => void load(true)}
-                className="min-h-11 rounded-lg border border-destructive/30 bg-white px-3 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45"
+                className="min-h-11 rounded-lg border border-destructive/30 bg-card px-3 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45"
               >
                 تلاش دوباره
               </button>
@@ -308,7 +306,7 @@ export function WaiterBoard() {
                     onOpen={() => setViewingId(selected.id)}
                   />
                 ) : (
-                  <div className="sticky top-4 rounded-2xl border border-stone-200/80 bg-white p-5 text-right">
+                  <div className={`sticky top-4 ${cardClass} p-5 text-right`}>
                     <CircleDotIcon
                       className="size-5 text-amber-700"
                       aria-hidden="true"
@@ -331,7 +329,7 @@ export function WaiterBoard() {
               <SheetContent
                 side="bottom"
                 showCloseButton={false}
-                className="max-h-[88dvh] overflow-y-auto rounded-t-3xl border-stone-200/80 bg-white p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] data-[state=open]:duration-200 data-[state=closed]:duration-150"
+                className="max-h-[88dvh] overflow-y-auto rounded-t-3xl border-stone-200/80 bg-card p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] data-[state=open]:duration-200 data-[state=closed]:duration-150"
               >
                 <SheetHeader className="sr-only">
                   <SheetTitle>جزئیات میز انتخاب‌شده</SheetTitle>
@@ -372,7 +370,7 @@ function TableCard({
       onClick={onSelect}
       aria-pressed={selected}
       aria-label={label}
-      className={`min-h-36 rounded-2xl border p-4 text-right transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50 active:scale-[0.99] motion-reduce:transition-none ${style.card} ${selected ? "border-amber-500 bg-amber-50 ring-2 ring-amber-500/25" : "hover:border-amber-500/70 hover:shadow-[0_5px_16px_rgba(37,37,34,0.05)]"}`}
+      className={`min-h-36 rounded-2xl border p-4 text-right transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50 active:scale-[0.99] motion-reduce:transition-none ${style.card} ${selected ? "border-amber-500 bg-amber-50 ring-2 ring-amber-500/25" : "hover:border-amber-500/70 hover:shadow-[0_5px_16px_rgb(41_37_36/0.05)]"}`}
     >
       <div className="flex items-start justify-between gap-3">
         <span className="text-base font-bold text-stone-950">{table.name}</span>
@@ -427,7 +425,7 @@ function TableDetails({
 
   return (
     <section
-      className="sticky top-4 rounded-2xl border border-stone-200/80 bg-white p-4 shadow-[0_6px_20px_rgba(37,37,34,0.04)] sm:p-5"
+      className={`sticky top-4 ${cardClass} p-4 shadow-[0_6px_20px_rgb(41_37_36/0.04)] sm:p-5`}
       aria-labelledby={`table-details-${table.id}`}
     >
       <div className="flex items-start justify-between gap-3">
@@ -574,7 +572,7 @@ function WaiterBoardSkeleton() {
       aria-busy="true"
       aria-label="در حال بارگذاری میزهای من"
     >
-      <div className="flex flex-col gap-3 rounded-2xl border border-stone-200/80 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className={`flex flex-col gap-3 ${cardClass} p-4 sm:flex-row sm:items-center sm:justify-between`}>
         <div className="space-y-2">
           <div className="ops-skeleton h-5 w-44 rounded-lg" />
           <div className="ops-skeleton h-4 w-56 rounded-lg" />
@@ -600,7 +598,7 @@ function WaiterBoardSkeleton() {
             </div>
           ))}
         </div>
-        <aside className="hidden rounded-2xl border border-stone-200/80 bg-white p-5 md:block">
+        <aside className={`hidden ${cardClass} p-5 md:block`}>
           <div className="ops-skeleton h-5 w-28 rounded-lg" />
           <div className="mt-4 space-y-3">
             <div className="ops-skeleton h-12 rounded-xl" />

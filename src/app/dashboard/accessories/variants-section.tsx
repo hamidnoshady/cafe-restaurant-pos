@@ -9,10 +9,11 @@ import { useMoney } from "@/components/money/money-context";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { api, Field, inputClass } from "../ui";
 import type { Runner, VariantRow } from "./accessories-manager";
+import { cardClass } from "../page-chrome";
 
-const accInputClass = `${inputClass} min-h-[52px] !border-stone-200 !bg-white shadow-none placeholder:text-stone-400 focus-visible:border-amber-500 focus-visible:ring-amber-400/30`;
+const accInputClass = `${inputClass} min-h-[52px] !border-stone-200 !bg-card shadow-none placeholder:text-stone-400 focus-visible:border-amber-500 focus-visible:ring-amber-400/30`;
 const secondaryActionClass =
-  "min-h-[44px] border-stone-200 bg-white px-3 text-xs text-stone-700 hover:border-amber-300 hover:bg-amber-50 hover:text-stone-950 focus-visible:border-amber-500 focus-visible:ring-amber-400/30";
+  "min-h-[44px] border-stone-200 bg-card px-3 text-xs text-stone-700 hover:border-amber-300 hover:bg-amber-50 hover:text-stone-950 focus-visible:border-amber-500 focus-visible:ring-amber-400/30";
 
 export function VariantsSection({
   items,
@@ -68,7 +69,7 @@ export function VariantsSection({
     <div className="grid min-w-0 gap-4 md:grid-cols-[minmax(0,1fr)_18rem] lg:gap-5 lg:grid-cols-[minmax(0,1fr)_21rem] xl:grid-cols-[minmax(0,1fr)_24rem]">
       <section
         aria-labelledby="accessories-items-heading"
-        className="order-2 min-w-0 overflow-hidden rounded-2xl bg-card md:order-1"
+        className={`order-2 min-w-0 overflow-hidden ${cardClass} md:order-1`}
       >
         <div className="border-b border-stone-200/80 px-4 py-4 sm:px-5">
           <h2 id="accessories-items-heading" className="font-semibold text-stone-950">
@@ -90,7 +91,7 @@ export function VariantsSection({
       </section>
 
       <aside className="order-1 min-w-0 space-y-4 md:order-2">
-        <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-[0_1px_2px_rgb(41_37_36/0.035)] sm:p-5">
+        <div className={`${cardClass} p-4 sm:p-5`}>
           <h2 className="font-semibold text-stone-950">افزودن خانوادهٔ کالا</h2>
           <form onSubmit={addFamily} className="mt-4">
             <Field label="نام خانواده">
@@ -113,7 +114,7 @@ export function VariantsSection({
           </form>
         </div>
 
-        <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-[0_1px_2px_rgb(41_37_36/0.035)] sm:p-5">
+        <div className={`${cardClass} p-4 sm:p-5`}>
           <h2 className="font-semibold text-stone-950">افزودن تنوع</h2>
           <form onSubmit={addVariant} className="mt-4">
             <Field label="خانواده">

@@ -41,7 +41,7 @@ const PRESETS: { key: BusinessDateRangePreset; label: string }[] = [
 ];
 
 const CHIP_CLASS =
-  "min-h-9 rounded-lg border border-stone-200/80 bg-white px-3 text-xs font-medium text-stone-600 transition-colors hover:bg-stone-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 active:scale-[0.98]";
+  "min-h-9 rounded-lg border border-stone-200/80 bg-card px-3 text-xs font-medium text-stone-600 transition-colors hover:bg-stone-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 active:scale-[0.98]";
 
 export function BusinessDayRangePresets({
   onSelect,

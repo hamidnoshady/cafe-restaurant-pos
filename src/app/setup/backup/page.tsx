@@ -10,7 +10,7 @@ import { PersianNumberInput } from "@/components/ui/persian-number-input";
  * it degrades to typing the path, which is the only thing a browser can do.
  */
 import { useEffect, useState } from "react";
-import { SetupDataSkeleton } from "../ui";
+import { SetupDataSkeleton, StepShell } from "../ui";
 import { useRouter } from "next/navigation";
 import { nextPath, prevPath } from "../steps";
 
@@ -109,12 +109,13 @@ export default function BackupStepPage() {
   if (!loaded || !localOnly) return <SetupDataSkeleton rows={4} />;
 
   return (
-    <div>
-      <h1 className="mb-1 text-xl font-bold">مقصد پشتیبان‌گیری</h1>
-      <p className="mb-6 text-sm text-muted-foreground">
-        این نصب محلی است، بنابراین نسخه‌های پشتیبان روی همین دستگاه ساخته می‌شوند. یک پوشه —
-        ترجیحاً روی یک درایو دیگر یا حافظهٔ خارجی — انتخاب کنید.
-      </p>
+    <StepShell
+      step="backup"
+      description={
+        "این نصب محلی است، بنابراین نسخه‌های پشتیبان روی همین دستگاه ساخته می‌شوند. یک پوشه — " +
+        "ترجیحاً روی یک درایو دیگر یا حافظهٔ خارجی — انتخاب کنید."
+      }
+    >
 
       {error ? (
         <div className="mb-4 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
@@ -208,6 +209,6 @@ export default function BackupStepPage() {
           </button>
         </div>
       </div>
-    </div>
+    </StepShell>
   );
 }

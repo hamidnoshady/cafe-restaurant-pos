@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { api, Field, inputClass, PrimaryButton, SecondaryButton } from "../ui";
 import type { Runner, Supplier } from "./inventory-manager";
+import { cardClass } from "../page-chrome";
 
 export function SuppliersSection({ suppliers, busy, run }: { suppliers: Supplier[]; busy: boolean; run: Runner }) {
   const [name, setName] = useState("");
@@ -21,7 +22,7 @@ export function SuppliersSection({ suppliers, busy, run }: { suppliers: Supplier
   }
 
   return (
-    <section className="min-w-0 rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-5">
+    <section className={`min-w-0 ${cardClass} p-5`}>
       <h2 className="mb-3 font-semibold">تأمین‌کنندگان</h2>
       <form onSubmit={add} className="mb-4 grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-3">
         <Field label="نام تأمین‌کننده">

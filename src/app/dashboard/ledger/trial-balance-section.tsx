@@ -5,6 +5,7 @@ import { SectionCardSkeleton } from "@/app/dashboard/page-chrome";
 import { useEffect, useState } from "react";
 import { useMoney } from "@/components/money/money-context";
 import { api } from "../ui";
+import { cardClass } from "../page-chrome";
 
 interface TrialBalanceRow {
   id: string;
@@ -53,7 +54,7 @@ export function TrialBalanceSection({ refreshKey }: { refreshKey: number }) {
   return (
     <section
       aria-labelledby="trial-balance-heading"
-      className="rounded-2xl border border-stone-200/80 bg-white p-4 shadow-[0_1px_2px_rgb(41_37_36/0.03)] sm:p-5"
+      className={`${cardClass} p-4 shadow-[0_1px_2px_rgb(41_37_36/0.03)] sm:p-5`}
     >
       <header className="mb-4 flex flex-wrap items-start justify-between gap-3 border-b border-stone-100 pb-4">
         <div>

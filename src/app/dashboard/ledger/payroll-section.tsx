@@ -10,6 +10,7 @@ import { useMoney } from "@/components/money/money-context";
 import { JalaliDatePicker } from "../jalali-date-picker";
 import { api, errorMessage, inputClass, PrimaryButton, SecondaryButton } from "../ui";
 import type { Runner } from "./ledger-manager";
+import { cardClass } from "../page-chrome";
 
 interface StaffWage {
   id: string;
@@ -112,7 +113,7 @@ export function PayrollSection({ busy, run, refreshKey }: { busy: boolean; run: 
 
   return (
     <div className="space-y-5">
-      <section aria-labelledby="payroll-wages-heading" className="rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-4 sm:p-5">
+      <section aria-labelledby="payroll-wages-heading" className={`${cardClass} p-4 sm:p-5`}>
         <header className="mb-5 border-b border-border pb-4">
           <p className="text-xs font-semibold text-amber-700">تنظیمات حقوق</p>
           <h2 id="payroll-wages-heading" className="mt-1 text-lg font-bold">حقوق ماهانه کارکنان</h2>
@@ -160,7 +161,7 @@ export function PayrollSection({ busy, run, refreshKey }: { busy: boolean; run: 
         )}
       </section>
 
-      <section aria-labelledby="payroll-accrual-heading" className="rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-4 sm:p-5">
+      <section aria-labelledby="payroll-accrual-heading" className={`${cardClass} p-4 sm:p-5`}>
         <header className="mb-5 border-b border-border pb-4">
           <p className="text-xs font-semibold text-amber-700">ثبت دوره</p>
           <h2 id="payroll-accrual-heading" className="mt-1 text-lg font-bold">تعهد حقوق و دستمزد جدید</h2>
@@ -187,7 +188,7 @@ export function PayrollSection({ busy, run, refreshKey }: { busy: boolean; run: 
         </form>
       </section>
 
-      <section aria-labelledby="payroll-history-heading" className="rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-4 sm:p-5">
+      <section aria-labelledby="payroll-history-heading" className={`${cardClass} p-4 sm:p-5`}>
         <header className="mb-5 border-b border-border pb-4">
           <p className="text-xs font-semibold text-amber-700">سوابق</p>
           <h2 id="payroll-history-heading" className="mt-1 text-lg font-bold">تاریخچه حقوق و دستمزد</h2>

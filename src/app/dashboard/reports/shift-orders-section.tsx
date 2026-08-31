@@ -14,6 +14,7 @@ import { PAYMENT_METHOD_LABELS } from "@/lib/receipt-template";
 import type { ShiftOrder, ShiftOrderLine } from "@/lib/shift-orders";
 import { ModifierBadges } from "../modifier-badges";
 import { api, inputClass } from "../ui";
+import { cardClass } from "../page-chrome";
 
 /** Mirrors shift-orders-service.ts's ShiftOrdersReport — declared here rather than imported so the client bundle never reaches a module that imports db.ts. */
 interface ShiftOption {
@@ -169,7 +170,7 @@ function Row({ label, value, accent = false }: { label: string; value: string; a
 function MoneySummary({ order }: { order: ShiftOrder }) {
   const money = useMoney();
   return (
-    <dl className="space-y-1.5 rounded-xl border border-stone-100 bg-white px-3 py-2.5">
+    <dl className="space-y-1.5 rounded-xl border border-stone-100 bg-card px-3 py-2.5">
       <Row label="جمع جزء" value={money.format(order.subtotal)} />
       {order.addOnTotal !== 0 ? (
         <Row label="از این مبلغ، افزودنی‌ها" value={formatModifierDelta(order.addOnTotal, { unit: money.unit })} accent />
@@ -192,7 +193,7 @@ function NotePanel({ label, value, danger = false }: { label: string; value: str
   return (
     <div
       className={`rounded-xl border px-3 py-2 ${
-        danger ? "border-destructive/30 bg-destructive/5" : "border-stone-100 bg-white"
+        danger ? "border-destructive/30 bg-destructive/5" : "border-stone-100 bg-card"
       }`}
     >
       <p className={`text-[11px] font-semibold ${danger ? "text-destructive" : "text-stone-400"}`}>{label}</p>
@@ -345,7 +346,7 @@ export function ShiftOrdersSection() {
   return (
     <section
       aria-labelledby="shift-orders-heading"
-      className="rounded-2xl border border-stone-200/80 bg-white shadow-[0_1px_2px_rgb(41_37_36/0.03)]"
+      className={`${cardClass} shadow-[0_1px_2px_rgb(41_37_36/0.03)]`}
     >
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-stone-100 p-4 sm:p-5">
         <div className="min-w-0">
@@ -375,7 +376,7 @@ export function ShiftOrdersSection() {
             type="button"
             onClick={() => void load(shiftId)}
             disabled={refreshing}
-            className="flex min-h-11 items-center gap-2 rounded-xl border border-stone-200/80 bg-white px-3 text-xs font-bold text-stone-600 transition-colors hover:bg-stone-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 disabled:opacity-60"
+            className="flex min-h-11 items-center gap-2 rounded-xl border border-stone-200/80 bg-card px-3 text-xs font-bold text-stone-600 transition-colors hover:bg-stone-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 disabled:opacity-60"
           >
             <RefreshCwIcon className="size-4" aria-hidden="true" />
             به‌روزرسانی
