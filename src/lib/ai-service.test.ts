@@ -401,14 +401,13 @@ describe("Phase 38b gateway cost capture", () => {
   });
 
   it("the gateway config the runtime builds is what the request carries", async () => {
-    // A bound surface sends prompt_id + prompt_variables and NO system message;
-    // the system prompt travels as a variable so the template keeps the rules.
+    // The runtime's virtual key and failover chain ride on the request while
+    // the code-built system message stays in place.
     const gatewayConfig = {
       ...config,
       gateway: {
         authKey: "sk-virtual",
         body: { fallbacks: ["pos-cheap"] },
-        promptId: "pos-dashboard",
       },
     };
     const fetchMock = vi.fn().mockResolvedValueOnce(providerReply({ content: "پاسخ با پرامپت دروازه." }));
@@ -423,15 +422,10 @@ describe("Phase 38b gateway cost capture", () => {
     });
 
     const payload = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
-    expect(payload.prompt_id).toBe("pos-dashboard");
-    expect(payload.prompt_variables).toEqual({
-      system_context: "نظم سیستمی",
-      business_name: "کافه آزمون",
-      user_name: "مدیر",
-      mode: "dashboard",
-    });
+    expect(payload.prompt_id).toBeUndefined();
+    expect(payload.prompt_variables).toBeUndefined();
     expect(payload.fallbacks).toEqual(["pos-cheap"]);
-    expect(payload.messages.every((message: { role: string }) => message.role !== "system")).toBe(true);
+    expect(payload.messages[0]).toEqual({ role: "system", content: "نظم سیستمی" });
   });
 
   it("an unbound surface keeps its system message and no prompt fields", async () => {

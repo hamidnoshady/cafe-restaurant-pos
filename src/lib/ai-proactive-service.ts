@@ -853,13 +853,10 @@ export async function runAiProactiveTick(now = new Date()): Promise<number> {
     await runTenantScopedProactiveJobs(businessIds, withTenant, async (businessId) => {
       // Phase 37 — decorate per business, inside that business's own tenant
       // scope, so a business's digests are sent with its own virtual key and
-      // charged to the gateway budget the platform gave it. Phase 38b — the
-      // decoration is per *surface* as well: the digests and the autopilot
-      // ride one tick but answer on different surfaces, so each gets its own
-      // gateway prompt binding.
-      const perBusiness = configuredAi ? await decorateAiConfig(configuredAi, businessId, null, "proactive") : null;
+      // charged to the gateway budget the platform gave it.
+      const perBusiness = configuredAi ? await decorateAiConfig(configuredAi, businessId, null) : null;
       const perBusinessAutopilot = configuredAi
-        ? await decorateAiConfig(configuredAi, businessId, null, "autopilot")
+        ? await decorateAiConfig(configuredAi, businessId, null)
         : null;
       jobsCompleted += await runBusinessProactiveJobs(businessId, now, perBusiness, perBusinessAutopilot);
     });

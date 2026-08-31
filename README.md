@@ -176,15 +176,14 @@ the prompting user, proposed payload summary, and applied/failed/dismissed outco
 available to Owner/Manager at `/dashboard/ai`. No real WhatsApp, Telegram, voice,
 SMS, or automatic customer-message channel is introduced.
 
-**Platform-owned providers and billing.** Three OpenAI-compatible providers are supported — **OpenRouter**,
-**ArvanCloud AI**, and **LiteLLM** — through one platform-owned connection configured only at
-`/platform/ai`. Businesses never enter or receive a provider key: `/dashboard/ai`
-shows their balance, subscription, usage history, and package-based top-up request
-flow. Each assistant turn atomically reserves a configured maximum, settles its
-actual provider token usage, and refunds unused credit; a business with insufficient
-credit is blocked before a provider request. The platform console also owns package
-pricing, subscription grants, pending request approval, feature overrides and
-cross-business usage. Deployment-level env variables remain bootstrap fallbacks;
+**Platform-owned providers and billing.** One OpenAI-compatible provider is
+supported — **LiteLLM** — through one platform-owned connection configured only at
+`/platform/ai`. Businesses never enter or receive a provider key. Each assistant turn
+atomically reserves a configured maximum, settles its actual provider token usage, and
+refunds unused credit; a business with insufficient credit is blocked before a provider
+request. Credit, subscription and top-up management is not a console surface anymore:
+the ledger keeps working, and the platform console's AI section is just the LiteLLM
+gateway settings. Deployment-level env variables remain bootstrap fallbacks;
 see `.env.example`.
 
 **Optional model gateway (LiteLLM, Phase 37).** Selecting the LiteLLM provider puts
@@ -206,12 +205,12 @@ stopped, falling back to the platform connection.
 
 The gateway is optional and off by default. Start it with
 `docker compose --profile ai up -d litellm` (config template at
-`docker/litellm/config.yaml`), then finish the setup in `/platform/ai/gateway` —
+`docker/litellm/config.yaml`), then finish the setup in `/platform/ai` —
 connection, failover chain, model aliases, and per-business keys. It is bound to the
 compose network only, never published to the host, because it holds every upstream
-vendor key and its management API can mint keys and read spend. A business may choose
-its own model only from a list the platform published (`/dashboard/ai/settings` →
-«مدل دستیار»). See [Phase 37](docs/phases/Phase-37-LiteLLM-Gateway.md).
+vendor key and its management API can mint keys and read spend. A business's model is
+chosen by the platform (from the published list) in `/platform/ai`; there is no
+user-level AI settings page. See [Phase 37](docs/phases/Phase-37-LiteLLM-Gateway.md).
 
 ## On-site deployment (café laptop / mini PC)
 

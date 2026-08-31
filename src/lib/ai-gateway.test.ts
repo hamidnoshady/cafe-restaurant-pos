@@ -8,13 +8,11 @@
  */
 import { describe, expect, it } from "vitest";
 import {
-  aggregateSpendLogs,
   buildGatewayRuntime,
   defaultGatewayConfig,
   emptyBusinessGateway,
   gatewayManagementUrl,
   gatewayMcpToolsBody,
-  gatewayPromptBody,
   gatewayTurnPricing,
   gatewayRequestBody,
   gatewayStatusMessage,
@@ -27,20 +25,16 @@ import {
   mcpServersToText,
   normaliseBusinessGatewayInput,
   normalizeMcpServers,
-  normalizePromptBindings,
   parseGatewayModels,
   parseGeneratedKey,
   parseKeySpend,
   parseResponseCostHeader,
-  parseSpendLogs,
   resolveChatModel,
   rialFromGatewayUsd,
-  spendLogsUrl,
   resolveEmbeddingModel,
   resolveGatewayAuthKey,
   toListText,
   toPublicGatewayConfig,
-  UNKEYED_USAGE_ALIAS,
   toStringList,
   validateBusinessGatewayInput,
   validateGatewayInput,
@@ -461,51 +455,6 @@ describe("gateway cost capture and conversion", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Phase 38b — prompt management (skills)
-// ---------------------------------------------------------------------------
-
-describe("gateway prompt bindings", () => {
-  it("keeps only known surfaces with non-empty prompt ids", () => {
-    const bindings = normalizePromptBindings({
-      dashboard: " pos-dashboard ",
-      floor: "",
-      madeup: "pos-x",
-      wizard: 42,
-    });
-    // A non-string value is as good as a blank one: dropped, not coerced.
-    expect(bindings).toEqual({ dashboard: "pos-dashboard" });
-  });
-
-  it("ignores arrays, nulls and other non-objects", () => {
-    expect(normalizePromptBindings(null)).toEqual({});
-    expect(normalizePromptBindings(["dashboard"])).toEqual({});
-    expect(normalizePromptBindings("dashboard")).toEqual({});
-  });
-
-  it("builds the prompt body with the turn's variables", () => {
-    const body = gatewayPromptBody("pos-dashboard", {
-      systemContext: "SYS",
-      businessName: "کافه آزمایشی",
-      userName: "صاحب کافه",
-      mode: "dashboard",
-    });
-    expect(body).toEqual({
-      prompt_id: "pos-dashboard",
-      prompt_variables: {
-        system_context: "SYS",
-        business_name: "کافه آزمایشی",
-        user_name: "صاحب کافه",
-        mode: "dashboard",
-      },
-    });
-  });
-
-  it("an empty prompt id sends nothing at all", () => {
-    expect(gatewayPromptBody("  ", { systemContext: "SYS", businessName: null, userName: null, mode: null })).toEqual({});
-  });
-});
-
-// ---------------------------------------------------------------------------
 // Phase 38b — MCP through the gateway
 // ---------------------------------------------------------------------------
 
@@ -554,107 +503,17 @@ describe("gateway MCP servers", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Phase 38b — usage from the gateway's spend logs
-// ---------------------------------------------------------------------------
-
-describe("gateway spend logs", () => {
-  const log = {
-    request_id: "chatcmpl-1",
-    model_group: "pos-chat",
-    spend: 0.002,
-    prompt_tokens: 100,
-    completion_tokens: 50,
-    startTime: "2026-08-29T21:30:00Z",
-    metadata: { user_api_key_alias: "pos-b1" },
-  };
-
-  it("normalises the documented /spend/logs shape", () => {
-    const entries = parseSpendLogs([log, "junk", null]);
-    expect(entries).toHaveLength(1);
-    expect(entries[0]).toEqual({
-      requestId: "chatcmpl-1",
-      model: "pos-chat",
-      keyAlias: "pos-b1",
-      spendUsd: 0.002,
-      promptTokens: 100,
-      completionTokens: 50,
-      day: "2026-08-29", // UTC day — 21:30Z is the 29th in UTC
-    });
-  });
-
-  it("fails soft on anything unrecognised", () => {
-    expect(parseSpendLogs(null)).toEqual([]);
-    expect(parseSpendLogs({ data: [] })).toEqual([]);
-    expect(parseSpendLogs([{ spend: 1 }])).toEqual([]); // no timestamp → no row
-  });
-
-  it("aggregates to one row per day, alias and model, newest first", () => {
-    const rollups = aggregateSpendLogs([
-      { ...logSpend("2026-08-28", "pos-b1", "pos-chat", 0.001) },
-      { ...logSpend("2026-08-28", "pos-b1", "pos-chat", 0.002) },
-      { ...logSpend("2026-08-28", "pos-b1", "pos-embed", 0.0001) },
-      { ...logSpend("2026-08-29", "pos-b1", "pos-chat", 0.003) },
-      { ...logSpend("2026-08-29", null, "pos-chat", 0.5) },
-    ]);
-    expect(rollups).toEqual([
-      { day: "2026-08-29", keyAlias: UNKEYED_USAGE_ALIAS, model: "pos-chat", spendUsd: 0.5, promptTokens: 0, completionTokens: 0, apiRequests: 1 },
-      { day: "2026-08-29", keyAlias: "pos-b1", model: "pos-chat", spendUsd: 0.003, promptTokens: 0, completionTokens: 0, apiRequests: 1 },
-      { day: "2026-08-28", keyAlias: "pos-b1", model: "pos-chat", spendUsd: 0.003, promptTokens: 0, completionTokens: 0, apiRequests: 2 },
-      { day: "2026-08-28", keyAlias: "pos-b1", model: "pos-embed", spendUsd: 0.0001, promptTokens: 0, completionTokens: 0, apiRequests: 1 },
-    ]);
-  });
-
-  it("keeps master-key spend visible under a fixed marker instead of dropping it", () => {
-    const rollups = aggregateSpendLogs([logSpend("2026-08-29", null, "pos-chat", 1)]);
-    expect(rollups[0].keyAlias).toBe(UNKEYED_USAGE_ALIAS);
-  });
-
-  function logSpend(day: string, alias: string | null, model: string, spend: number) {
-    return {
-      requestId: "r",
-      model,
-      keyAlias: alias,
-      spendUsd: spend,
-      promptTokens: 0,
-      completionTokens: 0,
-      day,
-    };
-  }
-
-  it("the spend-log URL lands on the management root with the window", () => {
-    expect(spendLogsUrl("http://litellm:4000/v1", "2026-08-23T00:00:00", "2026-08-30T00:00:00")).toBe(
-      "http://litellm:4000/spend/logs?start_date=2026-08-23T00%3A00%3A00&end_date=2026-08-30T00%3A00%3A00",
-    );
-  });
-});
-
-// ---------------------------------------------------------------------------
 // Phase 38b — the runtime assembles the new body pieces
 // ---------------------------------------------------------------------------
 
-describe("the runtime carries prompts and MCP only through a gateway", () => {
-  it("a bound surface returns its promptId; an unbound one does not", () => {
-    const bound = buildGatewayRuntime({
+describe("the runtime carries MCP only through a gateway", () => {
+  it("a gateway without extras sends an empty body", () => {
+    const runtime = buildGatewayRuntime({
       config: platform,
-      gateway: gateway({ promptBindings: { dashboard: "pos-dashboard" } }),
+      gateway: gateway(),
       business: null,
-      mode: "dashboard",
     });
-    expect(bound?.promptId).toBe("pos-dashboard");
-
-    const unbound = buildGatewayRuntime({
-      config: platform,
-      gateway: gateway({ promptBindings: { dashboard: "pos-dashboard" } }),
-      business: null,
-      mode: "floor",
-    });
-    expect(unbound?.promptId).toBeUndefined();
-    expect(unbound?.body).toEqual({});
-  });
-
-  it("mode is optional — the proactive path calls without one", () => {
-    const runtime = buildGatewayRuntime({ config: platform, gateway: gateway(), business: null });
-    expect(runtime?.promptId).toBeUndefined();
+    expect(runtime?.body).toEqual({});
   });
 
   it("MCP servers ride in the body next to the fallback chain", () => {
@@ -689,16 +548,6 @@ describe("validation of the phase 38b fields", () => {
     expect(validateGatewayInput({ baseUrl: "http://x", usdRialRate: -1 })).toContain("ai_gateway_bad_usd_rate");
     expect(validateGatewayInput({ baseUrl: "http://x", usdRialRate: 0 })).toContain("ai_gateway_bad_usd_rate");
     expect(validateGatewayInput({ baseUrl: "http://x", usdRialRate: null })).toEqual([]);
-  });
-
-  it("prompt bindings must be an object of known surfaces", () => {
-    expect(validateGatewayInput({ baseUrl: "http://x", promptBindings: { dashboard: "p" } })).toEqual([]);
-    expect(validateGatewayInput({ baseUrl: "http://x", promptBindings: { nonsense: "p" } })).toContain(
-      "ai_gateway_bad_prompt_bindings",
-    );
-    expect(validateGatewayInput({ baseUrl: "http://x", promptBindings: ["dashboard"] })).toContain(
-      "ai_gateway_bad_prompt_bindings",
-    );
   });
 
   it("MCP servers must be an array", () => {

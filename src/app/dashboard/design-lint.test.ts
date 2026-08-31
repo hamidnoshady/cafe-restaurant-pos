@@ -130,10 +130,6 @@ const RULES: readonly Rule[] = [
     why: "Dark mode is not supported in the dashboard; screens hardcode light warm values, so piecemeal dark: variants render half-converted UI. docs/design-system.md §The old look; docs/ui-conventions.md §What is deliberately not covered.",
     pattern: /\bdark:/,
     allowed: [
-      "ai/ai-action-audit.tsx",
-      "ai/ai-agent-cards.tsx",
-      "ai/ai-billing.tsx",
-      "ai/ai-today-tasks.tsx",
       "backup/backup-manager.tsx",
       "floor/session-panel.tsx",
       "ledger/fiscal-periods-section.tsx",

@@ -2,16 +2,11 @@
  * Phase 18 & Phase 39 — platform-owned AI provider connection (LiteLLM unified gateway).
  *
  * All platform AI settings are stored in `platform_ai_gateway`.
- * This module provides the standard `PlatformAiConfig` reader and predicates
- * used by runtime resolvers, billing/costing, and the platform admin console.
+ * This module is the runtime's read side: the standard `PlatformAiConfig`
+ * reader and the predicates used by runtime resolvers and billing. The only
+ * editor of that row is the LiteLLM settings page in the platform console.
  */
-import {
-  defaultConfig,
-  PROVIDERS,
-  validateConfigInput,
-  type AiConfig,
-  type AiProvider,
-} from "./ai";
+import { defaultConfig, type AiConfig, type AiProvider } from "./ai";
 import { query } from "./db";
 
 export interface PlatformAiConfig extends AiConfig {
@@ -27,37 +22,6 @@ export interface PlatformAiConfig extends AiConfig {
   maxTurnRial: number;
   /** Fixed at 1 since the credit-package catalogue was removed: a credit is a Rial. */
   creditUnitRial: number;
-  maxOutputTokens: number;
-}
-
-export interface PublicPlatformAiConfig {
-  enabled: boolean;
-  provider: AiProvider;
-  model: string;
-  baseUrl: string;
-  temperature: number;
-  maxOutputTokens: number;
-  inputCostRialPerMillion: number;
-  outputCostRialPerMillion: number;
-  revenueMarginPercent: number;
-  inputTokenRialPerMillion: number;
-  outputTokenRialPerMillion: number;
-  maxTurnRial: number;
-  hasApiKey: boolean;
-  configured: boolean;
-}
-
-export interface PlatformAiConfigInput {
-  enabled: boolean;
-  provider?: string;
-  model: string;
-  baseUrl: string;
-  apiKey?: string;
-  temperature: number;
-  inputCostRialPerMillion: number;
-  outputCostRialPerMillion: number;
-  revenueMarginPercent: number;
-  maxTurnRial: number;
   maxOutputTokens: number;
 }
 
@@ -194,92 +158,4 @@ export function isPlatformAiConfigured(config: PlatformAiConfig): boolean {
     config.outputCostRialPerMillion > 0 &&
     config.maxTurnRial > 0
   );
-}
-
-export function toPublicPlatformAiConfig(config: PlatformAiConfig): PublicPlatformAiConfig {
-  return {
-    enabled: config.enabled,
-    provider: config.provider,
-    model: config.model,
-    baseUrl: config.baseUrl,
-    temperature: config.temperature,
-    maxOutputTokens: config.maxOutputTokens,
-    inputCostRialPerMillion: config.inputCostRialPerMillion,
-    outputCostRialPerMillion: config.outputCostRialPerMillion,
-    revenueMarginPercent: config.revenueMarginPercent,
-    inputTokenRialPerMillion: config.inputTokenRialPerMillion,
-    outputTokenRialPerMillion: config.outputTokenRialPerMillion,
-    maxTurnRial: config.maxTurnRial,
-    hasApiKey: Boolean(config.apiKey),
-    configured: isPlatformAiConfigured(config),
-  };
-}
-
-function positiveInteger(value: number): boolean {
-  return Number.isSafeInteger(value) && value > 0;
-}
-
-export function validatePlatformAiConfigInput(input: PlatformAiConfigInput): string[] {
-  const errors = validateConfigInput({ ...input, provider: "litellm" });
-  if (typeof input.enabled !== "boolean") errors.push("ai_bad_enabled");
-  if (!positiveInteger(input.inputCostRialPerMillion)) errors.push("ai_bad_input_cost");
-  if (!positiveInteger(input.outputCostRialPerMillion)) errors.push("ai_bad_output_cost");
-  if (
-    !Number.isFinite(input.revenueMarginPercent) ||
-    input.revenueMarginPercent < 0 ||
-    input.revenueMarginPercent > 1000
-  ) {
-    errors.push("ai_bad_margin");
-  }
-  if (!positiveInteger(input.maxTurnRial)) errors.push("ai_bad_max_turn");
-  if (
-    !Number.isSafeInteger(input.maxOutputTokens) ||
-    input.maxOutputTokens < 64 ||
-    input.maxOutputTokens > 8192
-  ) {
-    errors.push("ai_bad_max_tokens");
-  }
-  return errors;
-}
-
-/**
- * Persist platform configuration. A blank key preserves the existing key so an
- * owner can change model/pricing without sending a secret back through the UI.
- */
-export async function savePlatformAiConfig(input: PlatformAiConfigInput): Promise<PlatformAiConfig> {
-  const current = await getPlatformAiConfig();
-  const apiKey = input.apiKey?.trim() || current.apiKey || null;
-  await query(
-    `INSERT INTO platform_ai_gateway
-       (id, enabled, chat_model, base_url, master_key, temperature,
-        input_cost_rial_per_million, output_cost_rial_per_million,
-        revenue_margin_percent, max_turn_rial, max_output_tokens, updated_at)
-     VALUES
-       (true, $1, $2, $3, $4, $5, $6, $7, $8::numeric, $9, $10, now())
-     ON CONFLICT (id)
-     DO UPDATE SET enabled = EXCLUDED.enabled,
-                   chat_model = EXCLUDED.chat_model,
-                   base_url = EXCLUDED.base_url,
-                   master_key = EXCLUDED.master_key,
-                   temperature = EXCLUDED.temperature,
-                   input_cost_rial_per_million = EXCLUDED.input_cost_rial_per_million,
-                   output_cost_rial_per_million = EXCLUDED.output_cost_rial_per_million,
-                   revenue_margin_percent = EXCLUDED.revenue_margin_percent,
-                   max_turn_rial = EXCLUDED.max_turn_rial,
-                   max_output_tokens = EXCLUDED.max_output_tokens,
-                   updated_at = now()`,
-    [
-      input.enabled,
-      input.model.trim(),
-      input.baseUrl.trim(),
-      apiKey,
-      input.temperature,
-      input.inputCostRialPerMillion,
-      input.outputCostRialPerMillion,
-      input.revenueMarginPercent,
-      input.maxTurnRial,
-      input.maxOutputTokens,
-    ],
-  );
-  return getPlatformAiConfig();
 }

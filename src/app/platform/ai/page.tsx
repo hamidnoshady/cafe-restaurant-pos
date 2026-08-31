@@ -1,123 +1,169 @@
 "use client";
 
-import { PersianNumberInput } from "@/components/ui/persian-number-input";
+/**
+ * The super-admin's AI settings — LiteLLM, and only LiteLLM.
+ *
+ * This single page manages the platform-wide LiteLLM gateway: the master key,
+ * model aliases, routing, budgets, and per-business/per-branch virtual keys
+ * and model overrides. Provider costing, prompt management, subscriptions and
+ * credit handling are deliberately not part of this console anymore.
+ */
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
-import { formatToman } from "@/lib/money";
 import { formatPersianNumber } from "@/lib/digits";
-import { api, Button, Card, ErrorBox, Field, InfoBox, inputClass, useCan } from "../ui";
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Loader2Icon } from "lucide-react";
+import { api, Button, Card, ErrorBox, Field, InfoBox, inputClass, useCan } from "../ui";
 
-interface AiConfig {
+interface GatewayConfig {
   enabled: boolean;
-  provider: "litellm";
-  model: string;
   baseUrl: string;
-  temperature: number;
-  maxOutputTokens: number;
-  inputCostRialPerMillion: number;
-  outputCostRialPerMillion: number;
-  revenueMarginPercent: number;
-  inputTokenRialPerMillion: number;
-  outputTokenRialPerMillion: number;
-  maxTurnRial: number;
-  hasApiKey: boolean;
-  configured: boolean;
+  chatModel: string;
+  embeddingModel: string;
+  fallbackModels: string[];
+  routingStrategy: string;
+  virtualKeysEnabled: boolean;
+  allowBusinessModels: boolean;
+  publishedModels: string[];
+  defaultMaxBudgetUsd: number | null;
+  defaultBudgetDuration: string;
+  defaultTpmLimit: number | null;
+  defaultRpmLimit: number | null;
+  mcpEnabled: boolean;
+  mcpServers: { name: string; label: string; url: string }[];
+  hasMasterKey: boolean;
 }
 
-interface SubscriptionPlan {
+interface LocationSummary {
   id: string;
+  businessId: string;
   name: string;
-  priceRial: number;
-  monthlyCreditRial: number;
-  isActive: boolean;
-  sortOrder: number;
 }
 
-interface Business {
+interface BusinessGateway {
   businessId: string;
-  businessName: string;
-  businessStatus: string;
-  balanceRial: number;
-  subscriptionPlanId: string | null;
-  subscriptionPlanName: string | null;
-  subscriptionRenewsAt: string | null;
-  usageRialLast30Days: number;
-  pendingTopUps: number;
+  locationId: string | null;
+  keyAlias: string | null;
+  modelOverride: string | null;
+  maxBudgetUsd: number | null;
+  budgetDuration: string | null;
+  tpmLimit: number | null;
+  rpmLimit: number | null;
+  spendUsd: number;
+  syncedAt: string | null;
+  syncError: string | null;
+  hasVirtualKey: boolean;
+  effectiveModel: string;
 }
 
-interface CostingRow {
-  businessId: string;
-  businessName: string;
-  inputTokens30d: number;
-  outputTokens30d: number;
-  chargedRial30d: number;
-  providerCostRial30d: number;
-  revenueRial30d: number;
+interface GatewayStatus {
+  ok: boolean;
+  latencyMs: number | null;
+  models: string[];
+  error: string | null;
 }
 
-interface TopUp {
-  id: string;
-  businessId: string;
-  businessName: string | null;
-  packageName: string;
-  priceRial: number;
-  creditAmountRial: number;
-  note: string | null;
-  status: "pending" | "approved" | "rejected";
-  createdAt: string;
-}
-
-interface DashboardData {
-  businesses: Business[];
-  subscriptions: SubscriptionPlan[];
-  costing: CostingRow[];
-  topUps: TopUp[];
-  config: AiConfig | null;
+interface GatewayData {
+  gateway: GatewayConfig | null;
+  provider: string;
+  platformModel: string;
+  platformBaseUrl: string;
+  providerIsGateway: boolean;
+  active: boolean;
+  status: GatewayStatus | null;
+  gateways: BusinessGateway[];
+  businesses: BusinessSummary[];
+  locations: LocationSummary[];
   error?: string;
+}
+
+interface BusinessSummary {
+  businessId: string;
+  businessName: string;
+}
+
+const ROUTING_OPTIONS = [
+  { value: "simple-shuffle", label: "simple-shuffle — توزیع ساده" },
+  { value: "least-busy", label: "least-busy — کم‌ترین بار" },
+  { value: "usage-based-router", label: "usage-based-router — بر پایهٔ مصرف" },
+  { value: "latency-based-routing", label: "latency-based-routing — کم‌ترین تأخیر" },
+  { value: "cost-based-routing", label: "cost-based-routing — کم‌ترین هزینه" },
+];
+
+const DURATION_OPTIONS = [
+  { value: "1d", label: "روزانه (1d)" },
+  { value: "7d", label: "هفتگی (7d)" },
+  { value: "30d", label: "ماهانه (30d)" },
+];
+
+function listText(values: string[]): string {
+  return values.join("\n");
+}
+
+function parseList(text: string): string[] {
+  return text
+    .split(/[\n,]/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+function numericOrNull(value: string): number | null {
+  const n = Number(value.replace(/[٬,\s]/g, ""));
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function parseMcpServers(text: string): { name: string; label: string; url: string }[] {
+  const servers: { name: string; label: string; url: string }[] = [];
+  const seen = new Set<string>();
+  for (const line of text.split("\n")) {
+    const [name, label, url] = line.split("|").map((part) => part.trim());
+    const slug = (name ?? "").toLowerCase().replace(/[^a-z0-9_-]/g, "");
+    if (!slug || !url || seen.has(slug)) continue;
+    seen.add(slug);
+    servers.push({ name: slug, label: label || slug, url });
+  }
+  return servers;
+}
+
+function mcpServersToText(servers: { name: string; label: string; url: string }[]): string {
+  return servers.map((server) => `${server.name} | ${server.label} | ${server.url}`).join("\n");
 }
 
 function fmtDate(value: string | null): string {
   if (!value) return "—";
-  return new Intl.DateTimeFormat("fa-IR", { dateStyle: "medium" }).format(new Date(value));
-}
-
-function toRial(toman: string): number {
-  const value = Number(toman.replace(/[٬,\s]/g, ""));
-  return Number.isSafeInteger(value) && value > 0 ? value * 10 : 0;
+  return new Intl.DateTimeFormat("fa-IR", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 }
 
 export default function PlatformAiPage() {
   const can = useCan();
-  const [data, setData] = useState<DashboardData | null>(null);
+  const [data, setData] = useState<GatewayData | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [draft, setDraft] = useState<GatewayConfig | null>(null);
+  const [masterKey, setMasterKey] = useState("");
   const [selectedBusinessId, setSelectedBusinessId] = useState("");
-  const [configDraft, setConfigDraft] = useState<AiConfig | null>(null);
-  const [apiKey, setApiKey] = useState("");
-  const [grantToman, setGrantToman] = useState("");
-  const [grantNote, setGrantNote] = useState("");
-  const [subscriptionPlanId, setSubscriptionPlanId] = useState("");
-  const [planName, setPlanName] = useState("");
-  const [planPrice, setPlanPrice] = useState("");
-  const [planCredit, setPlanCredit] = useState("");
+  const [selectedLocationId, setSelectedLocationId] = useState("");
+  const [fallbackText, setFallbackText] = useState("");
+  const [publishedText, setPublishedText] = useState("");
+  const [mcpText, setMcpText] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
-    const result = await api<DashboardData>("/api/platform/ai");
+    const result = await api<GatewayData>("/api/platform/ai/gateway");
     if (!result.ok) {
-      setError(result.data.error ?? "خواندن اطلاعات هوش مصنوعی ممکن نشد.");
+      setError(result.data.error ?? "خواندن تنظیمات دروازه ممکن نشد.");
       setLoading(false);
       return;
     }
     setData(result.data);
-    setConfigDraft(result.data.config);
+    setDraft(result.data.gateway);
+    if (result.data.gateway) {
+      setMcpText(mcpServersToText(result.data.gateway.mcpServers));
+    }
     setSelectedBusinessId((current) =>
-      current && result.data.businesses.some((b) => b.businessId === current)
-        ? current
-        : result.data.businesses[0]?.businessId ?? "",
+      current && (result.data.businesses ?? []).some((b) => b.businessId === current) ? current : "",
     );
     setLoading(false);
   }, []);
@@ -126,22 +172,36 @@ export default function PlatformAiPage() {
     void load();
   }, [load]);
 
-  const selected = useMemo(
-    () => data?.businesses.find((business) => business.businessId === selectedBusinessId) ?? null,
+  const selectedName = useMemo(
+    () =>
+      (data?.businesses ?? []).find((business) => business.businessId === selectedBusinessId)?.businessName ?? "",
     [data?.businesses, selectedBusinessId],
   );
 
-  async function write(body: Record<string, unknown>, key: string) {
+  const businessLocations = useMemo(
+    () => (data?.locations ?? []).filter((loc) => loc.businessId === selectedBusinessId),
+    [data?.locations, selectedBusinessId],
+  );
+
+  const selectedRow = useMemo(() => {
+    if (!data?.gateways || !selectedBusinessId) return null;
+    const loc = selectedLocationId || null;
+    return (
+      data.gateways.find((row) => row.businessId === selectedBusinessId && row.locationId === loc) ?? null
+    );
+  }, [data?.gateways, selectedBusinessId, selectedLocationId]);
+
+  async function write(body: Record<string, unknown>, key: string, method: "PUT" | "POST" = "POST") {
     setBusy(key);
     setError("");
     setNotice("");
-    const result = await api<{ error?: string }>("/api/platform/ai", {
-      method: body.action === "config" || body.action === "subscription_plan" ? "PUT" : "POST",
+    const result = await api<{ error?: string }>("/api/platform/ai/gateway", {
+      method,
       body: JSON.stringify(body),
     });
     setBusy("");
     if (!result.ok) {
-      setError(result.data.error ?? "ذخیره‌سازی انجام نشد.");
+      setError(result.data.error ?? "انجام عملیات ممکن نشد.");
       return false;
     }
     setNotice("تغییرات ذخیره شد.");
@@ -151,261 +211,455 @@ export default function PlatformAiPage() {
 
   async function saveConfig(event: FormEvent) {
     event.preventDefault();
-    if (!configDraft) return;
+    if (!draft) return;
     await write(
-      { action: "config", config: { ...configDraft, apiKey: apiKey || undefined } },
+      {
+        action: "config",
+        gateway: {
+          ...draft,
+          fallbackModels: parseList(fallbackText),
+          publishedModels: parseList(publishedText),
+          mcpEnabled: draft.mcpEnabled,
+          mcpServers: parseMcpServers(mcpText),
+          masterKey: masterKey || undefined,
+        },
+      },
       "config",
+      "PUT",
     );
-    setApiKey("");
+    setMasterKey("");
   }
 
-  async function addPlan(event: FormEvent) {
-    event.preventDefault();
-    if (
-      await write(
-        {
-          action: "subscription_plan",
-          name: planName,
-          priceRial: toRial(planPrice),
-          monthlyCreditRial: toRial(planCredit),
-          isActive: true,
-          sortOrder: data?.subscriptions.length ?? 0,
+  async function probe() {
+    if (!draft) return;
+    setBusy("probe");
+    setError("");
+    setNotice("");
+    const result = await api<{ status: GatewayStatus; error?: string }>("/api/platform/ai/gateway", {
+      method: "PUT",
+      body: JSON.stringify({
+        action: "probe",
+        gateway: {
+          ...draft,
+          fallbackModels: parseList(fallbackText),
+          publishedModels: parseList(publishedText),
+          masterKey: masterKey || undefined,
         },
-        "plan",
-      )
-    ) {
-      setPlanName("");
-      setPlanPrice("");
-      setPlanCredit("");
+      }),
+    });
+    setBusy("");
+    if (!result.ok) {
+      setError(result.data.error ?? "بررسی ارتباط ممکن نشد.");
+      return;
     }
+    setData((current) => (current ? { ...current, status: result.data.status } : current));
   }
+
+  useEffect(() => {
+    if (draft) {
+      setFallbackText(listText(draft.fallbackModels));
+      setPublishedText(listText(draft.publishedModels));
+    }
+  }, [draft]);
 
   if (loading) {
-    return <p className="text-sm text-white/50">در حال بارگذاری مدیریت هوش مصنوعی…</p>;
+    return <p className="text-sm text-white/50">در حال بارگذاری تنظیمات دروازه…</p>;
   }
 
-  const businesses = data?.businesses ?? [];
-  const subscriptions = data?.subscriptions ?? [];
-  const costing = data?.costing ?? [];
-  const topUps = data?.topUps ?? [];
-  const pending = topUps.filter((request) => request.status === "pending");
-  const totalBalance = businesses.reduce((total, business) => total + business.balanceRial, 0);
-  const totalUsage = businesses.reduce((total, business) => total + business.usageRialLast30Days, 0);
-  const totalRevenue = costing.reduce((total, row) => total + row.revenueRial30d, 0);
+  const status = data?.status;
 
   return (
-    <div className="space-y-4 sm:space-y-6">
+    <div className="mx-auto w-full max-w-6xl space-y-4 sm:space-y-6">
+      <header>
+        <h1 className="text-xl font-bold">تنظیمات هوش مصنوعی (LiteLLM)</h1>
+        <p className="mt-1 text-sm text-white/50">
+          ارائه‌دهندهٔ واحد و یکپارچهٔ هوش مصنوعی: نشانی و کلید مدیر، نام مستعار مدل‌ها، زنجیرهٔ جایگزین،
+          سقف بودجه و کلیدهای مجازی کسب‌وکارها و شعبه‌ها و ابزارهای MCP.
+        </p>
+      </header>
+
       <ErrorBox>{error}</ErrorBox>
       {notice ? <InfoBox>{notice}</InfoBox> : null}
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Card title="کسب‌وکارهای AI">
-          <p className="text-2xl font-bold">{formatPersianNumber(businesses.length)}</p>
-        </Card>
-        <Card title="اعتبار فعال">
-          <p className="text-lg font-bold">{formatToman(totalBalance)}</p>
-        </Card>
-        <Card title="مصرف ۳۰ روز اخیر">
-          <p className="text-lg font-bold">{formatToman(totalUsage)}</p>
-        </Card>
-        <Card title="درآمد ناخالص AI (۳۰ روز)">
-          <p className="text-lg font-bold">{formatToman(totalRevenue)}</p>
-        </Card>
-      </section>
-
-      {can("ai.config.manage") && configDraft ? (
-        <Card title="اتصال و هزینهٔ سراسری">
-          <p className="mb-4 text-sm text-white/50">
-            این اتصال برای همهٔ کسب‌وکارهاست. نرخ فروش به‌صورت خودکار از هزینهٔ واقعی به‌علاوهٔ حاشیهٔ درآمد محاسبه می‌شود؛ کلید API هرگز به داشبورد کسب‌وکار ارسال نمی‌شود.
-          </p>
-          {!configDraft.configured ? (
-            <InfoBox>تا تکمیل کلید و هزینه‌ها، سرویس برای کسب‌وکارها فعال نمی‌شود.</InfoBox>
-          ) : null}
-          {configDraft.provider === "litellm" ? (
-            <InfoBox>
-              با انتخاب LiteLLM، نشانی و کلید همین‌جا تنظیم می‌شود و امکانات دروازه — کلید مجازی برای هر
-              کسب‌وکار، سقف هزینه، زنجیرهٔ جایگزین و نام مستعار مدل — در بخش{" "}
-              <a className="underline" href="/platform/ai/gateway">دروازهٔ مدل</a> است.
-            </InfoBox>
-          ) : null}
-          <form onSubmit={saveConfig} className="grid gap-4 lg:grid-cols-2">
-            <Field label="ارائه‌دهنده">
-              <input className={inputClass} dir="ltr" value="LiteLLM (دروازهٔ یکپارچه)" readOnly />
-            </Field>
-            <Field label="مدل">
-              <input className={inputClass} dir="ltr" value={configDraft.model} onChange={(event) => setConfigDraft({ ...configDraft, model: event.target.value })} />
-            </Field>
-            <Field label="Base URL">
-              <input className={inputClass} dir="ltr" value={configDraft.baseUrl} onChange={(event) => setConfigDraft({ ...configDraft, baseUrl: event.target.value })} />
-            </Field>
-            <Field label="کلید API" hint={configDraft.hasApiKey ? "کلید ذخیره شده است؛ برای حفظ آن خالی بگذارید." : "کلید سراسری را وارد کنید."}>
-              <input className={inputClass} dir="ltr" type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} autoComplete="off" />
-            </Field>
-            <Field label={"هزینهٔ ورودی (ریال / یک‌میلیون توکن)"} hint="هزینهٔ واقعی ارائه‌دهنده؛ نرخ فروش از روی این عدد ساخته می‌شود.">
-              <PersianNumberInput className={inputClass} type="number" min="1" value={configDraft.inputCostRialPerMillion} onChange={(event) => setConfigDraft({ ...configDraft, inputCostRialPerMillion: Number(event.target.value) })} />
-            </Field>
-            <Field label={"هزینهٔ خروجی (ریال / یک‌میلیون توکن)"}>
-              <PersianNumberInput className={inputClass} type="number" min="1" value={configDraft.outputCostRialPerMillion} onChange={(event) => setConfigDraft({ ...configDraft, outputCostRialPerMillion: Number(event.target.value) })} />
-            </Field>
-            <Field label={"حاشیهٔ درآمد (٪)"} hint={`نرخ فروش فعلی: ورودی ${formatToman(configDraft.inputTokenRialPerMillion)} و خروجی ${formatToman(configDraft.outputTokenRialPerMillion)} به‌ازای هر میلیون توکن.`}>
-              <PersianNumberInput className={inputClass} type="number" min="0" max="1000" step="0.5" value={configDraft.revenueMarginPercent} onChange={(event) => setConfigDraft({ ...configDraft, revenueMarginPercent: Number(event.target.value) })} />
-            </Field>
-            <Field label="حداکثر رزرو هر پاسخ (ریال)" hint="پیش از تماس با مدل رزرو می‌شود؛ باقی‌مانده پس از محاسبهٔ مصرف واقعی برمی‌گردد.">
-              <PersianNumberInput className={inputClass} type="number" min="1" value={configDraft.maxTurnRial} onChange={(event) => setConfigDraft({ ...configDraft, maxTurnRial: Number(event.target.value) })} />
-            </Field>
-            <Field label="حداکثر توکن خروجی">
-              <PersianNumberInput className={inputClass} type="number" min="64" max="8192" value={configDraft.maxOutputTokens} onChange={(event) => setConfigDraft({ ...configDraft, maxOutputTokens: Number(event.target.value) })} />
-            </Field>
-            <Field label={"دما"}>
-              <PersianNumberInput className={inputClass} type="number" min="0" max="2" step="0.1" value={configDraft.temperature} onChange={(event) => setConfigDraft({ ...configDraft, temperature: Number(event.target.value) })} />
-            </Field>
-            <label className="flex items-center gap-2 text-sm text-white/80">
-              <input type="checkbox" checked={configDraft.enabled} onChange={(event) => setConfigDraft({ ...configDraft, enabled: event.target.checked })} />
-              فعال بودن سرویس هوش مصنوعی
-            </label>
-            <div className="lg:col-span-2">
-              <Button type="submit" disabled={busy === "config"}>{busy === "config" ? "در حال ذخیره…" : "ذخیره اتصال و هزینه‌ها"}</Button>
-            </div>
-          </form>
-        </Card>
-      ) : null}
-
-      <Card title="مدیریت هزینه — هر کسب‌وکار (۳۰ روز اخیر)">
-        <p className="mb-3 text-sm text-white/50">
-          هزینه از دفتر مصرف هر کسب‌وکار خوانده می‌شود؛ درآمد، تفاضل مبلغ قطعی‌شده و هزینهٔ ارائه‌دهنده در نرخ فعلی است.
-        </p>
-        {costing.length === 0 ? (
-          <p className="text-sm text-white/40">در ۳۰ روز اخیر مصرفی ثبت نشده است.</p>
-        ) : (
-          <ul className="space-y-2">
-            {costing.map((row) => (
-              <li key={row.businessId} className="flex flex-col gap-1 rounded-lg border border-white/10 bg-white/2 p-3 text-sm md:flex-row md:items-center md:justify-between">
-                <div>
-                  <p className="font-medium">{row.businessName}</p>
-                  <p className="mt-1 text-xs text-white/50">
-                    {formatPersianNumber(row.inputTokens30d + row.outputTokens30d)} توکن · هزینهٔ ارائه‌دهنده: {formatToman(row.providerCostRial30d)}
-                  </p>
-                </div>
-                <div className="text-xs text-white/60 md:text-right">
-                  <p>مبلغ قطعی‌شده: <span className="font-semibold text-white">{formatToman(row.chargedRial30d)}</span></p>
-                  <p className={row.revenueRial30d >= 0 ? "text-emerald-300" : "text-rose-300"}>
-                    درآمد: {formatToman(row.revenueRial30d)}
-                  </p>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
-
-      {can("ai.config.manage") ? (
-        <Card title="اشتراک‌های ماهانه">
-          <p className="mb-3 text-sm text-white/50">هر تمدید، اعتبار ماهانه را به همان موجودی واحد کسب‌وکار اضافه می‌کند.</p>
-          <ul className="mb-4 space-y-2">
-            {subscriptions.length === 0 ? <li className="text-sm text-white/40">هنوز اشتراکی تعریف نشده است.</li> : subscriptions.map((plan) => (
-              <li key={plan.id} className="flex items-center justify-between rounded-lg border border-white/10 bg-white/2 p-3 text-sm">
-                <span>{plan.name} {plan.isActive ? null : <span className="text-white/40">— غیرفعال</span>}</span>
-                <div className="flex items-center gap-3">
-                  <span className="text-white/60">{formatToman(plan.priceRial)} / {formatToman(plan.monthlyCreditRial)} اعتبار ماهانه</span>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={() => void write({
-                      action: "subscription_plan",
-                      id: plan.id,
-                      name: plan.name,
-                      priceRial: plan.priceRial,
-                      monthlyCreditRial: plan.monthlyCreditRial,
-                      isActive: !plan.isActive,
-                      sortOrder: plan.sortOrder,
-                    }, "plan-" + plan.id)}
-                    disabled={Boolean(busy)}
-                  >
-                    {plan.isActive ? "غیرفعال‌کردن" : "فعال‌کردن"}
-                  </Button>
-                </div>
-              </li>
-            ))}
-          </ul>
-          <form onSubmit={addPlan} className="grid gap-2 sm:grid-cols-3">
-            <input className={inputClass} placeholder="نام اشتراک" value={planName} onChange={(event) => setPlanName(event.target.value)} />
-            <PersianNumberInput className={inputClass} type="number" min="1" placeholder="قیمت ماهانه (تومان)" value={planPrice} onChange={(event) => setPlanPrice(event.target.value)} />
-            <PersianNumberInput className={inputClass} type="number" min="1" placeholder="اعتبار ماهانه (تومان)" value={planCredit} onChange={(event) => setPlanCredit(event.target.value)} />
-            <Button type="submit" disabled={busy === "plan"} className="sm:col-span-3">{busy === "plan" ? <Loader2Icon className="animate-spin" /> : "افزودن اشتراک"}</Button>
-          </form>
-        </Card>
-      ) : null}
-
-      <Card title="کنترل کسب‌وکار">
-        <div className="mb-4 grid gap-3 md:grid-cols-2">
-          <Field label="کسب‌وکار">
-            <SearchableSelect
-              value={selectedBusinessId}
-              onChange={setSelectedBusinessId}
-              options={businesses.map((business) => ({
-                value: business.businessId,
-                label: business.businessName,
-              }))}
-            />
-          </Field>
-          {selected ? (
-            <div className="rounded-lg border border-white/10 bg-white/2 p-3 text-sm text-white/70">
-              <p>مانده: <strong className="text-white">{formatToman(selected.balanceRial)}</strong></p>
-              <p className="mt-1">مصرف ۳۰ روز: {formatToman(selected.usageRialLast30Days)}</p>
-              <p className="mt-1">اشتراک: {selected.subscriptionPlanName ?? "ندارد"}</p>
-            </div>
-          ) : null}
-        </div>
-        {selected && can("ai.credits.manage") ? (
-          <div className="grid gap-4 border-t border-white/10 pt-4 lg:grid-cols-3">
-            <div>
-              <p className="mb-2 text-sm font-medium">فعال‌سازی ویژگی</p>
-              <div className="flex flex-wrap gap-2">
-                <Button variant="ghost" onClick={() => void write({ action: "feature", businessId: selected.businessId, enabled: true }, "feature-on")} disabled={Boolean(busy)}>فعال</Button>
-                <Button variant="ghost" onClick={() => void write({ action: "feature", businessId: selected.businessId, enabled: false }, "feature-off")} disabled={Boolean(busy)}>غیرفعال</Button>
-                <Button variant="ghost" onClick={() => void write({ action: "feature", businessId: selected.businessId, enabled: null }, "feature-default")} disabled={Boolean(busy)}>پیش‌فرض</Button>
-              </div>
-            </div>
-            <form onSubmit={(event) => { event.preventDefault(); void write({ action: "grant", businessId: selected.businessId, amountRial: toRial(grantToman), note: grantNote }, "grant"); }} className="space-y-2">
-              <p className="text-sm font-medium">اعطای اعتبار دستی</p>
-              <PersianNumberInput className={inputClass} type="number" min="1" placeholder="اعتبار (تومان)" value={grantToman} onChange={(event) => setGrantToman(event.target.value)} />
-              <input className={inputClass} placeholder="یادداشت (اختیاری)" value={grantNote} onChange={(event) => setGrantNote(event.target.value)} />
-              <Button type="submit" disabled={busy === "grant"}>{busy === "grant" ? <Loader2Icon className="animate-spin" /> : "افزودن اعتبار"}</Button>
-            </form>
-            <form onSubmit={(event) => { event.preventDefault(); void write({ action: "subscription", businessId: selected.businessId, subscriptionPlanId: subscriptionPlanId || null }, "subscription"); }} className="space-y-2">
-              <p className="text-sm font-medium">اشتراک</p>
-              <SearchableSelect
-                value={subscriptionPlanId}
-                onChange={setSubscriptionPlanId}
-                options={[
-                  { value: "", label: "بدون اشتراک" },
-                  ...subscriptions
-                    .filter((plan) => plan.isActive)
-                    .map((plan) => ({ value: plan.id, label: plan.name })),
-                ]}
-              />
-              <Button type="submit" disabled={busy === "subscription"}>{busy === "subscription" ? <Loader2Icon className="animate-spin" /> : "ثبت اشتراک"}</Button>
-            </form>
+      <Card title="وضعیت">
+        <dl className="grid gap-3 text-sm sm:grid-cols-3">
+          <div>
+            <dt className="text-white/50">ارائه‌دهنده</dt>
+            <dd className="mt-1 font-medium" dir="ltr">
+              LiteLLM (دروازهٔ یکپارچه)
+            </dd>
+          </div>
+          <div>
+            <dt className="text-white/50">دروازه فعال است</dt>
+            <dd className="mt-1 font-medium">{data?.active ? "بله" : "خیر"}</dd>
+          </div>
+          <div>
+            <dt className="text-white/50">مدل پیش‌فرض پلتفرم</dt>
+            <dd className="mt-1 font-medium" dir="ltr">
+              {data?.platformModel ?? "—"}
+            </dd>
+          </div>
+          <div className="sm:col-span-3">
+            <dt className="text-white/50">نشانی Base URL</dt>
+            <dd className="mt-1 font-medium" dir="ltr">
+              {data?.platformBaseUrl ?? "—"}
+            </dd>
+          </div>
+        </dl>
+        {status ? (
+          <div className="mt-3 rounded-lg border border-white/10 bg-white/2 p-3 text-sm">
+            {status.ok ? (
+              <p>
+                ارتباط برقرار است
+                {status.latencyMs !== null ? ` · ${formatPersianNumber(status.latencyMs)} میلی‌ثانیه` : ""}
+                {status.models.length > 0
+                  ? ` · ${formatPersianNumber(status.models.length)} مدل`
+                  : " · فهرست مدل‌ها در دسترس نبود"}
+              </p>
+            ) : (
+              <p className="text-rose-300">{status.error}</p>
+            )}
+            {status.models.length > 0 ? (
+              <p className="mt-2 text-xs text-white/50" dir="ltr">
+                {status.models.join("، ")}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+        {can("ai.config.manage") ? (
+          <div className="mt-3">
+            <Button type="button" variant="ghost" onClick={() => void probe()} disabled={Boolean(busy)}>
+              {busy === "probe" ? <Loader2Icon className="animate-spin" /> : "بررسی ارتباط"}
+            </Button>
           </div>
         ) : null}
       </Card>
 
-      <Card title="درخواست‌های شارژ">
-        {topUps.length === 0 ? <p className="text-sm text-white/50">درخواستی ثبت نشده است.</p> : (
-          <ul className="space-y-2">
-            {topUps.map((request) => (
-              <li key={request.id} className="flex flex-col gap-3 rounded-lg border border-white/10 bg-white/2 p-3 text-sm md:flex-row md:items-center md:justify-between">
-                <div>
-                  <p className="font-medium">{request.businessName} — {formatToman(request.creditAmountRial)} اعتبار</p>
-                  <p className="mt-1 text-xs text-white/50">{formatToman(request.priceRial)} · {fmtDate(request.createdAt)}</p>
-                  {request.note ? <p className="mt-1 text-xs text-white/40">{request.note}</p> : null}
+      {can("ai.config.manage") && draft ? (
+        <Card title="تنظیمات دروازه">
+          <p className="mb-4 text-sm text-white/50">
+            این نشانی برای همهٔ کسب‌وکارهاست. کلید مدیر فقط برای صدور کلید مجازی استفاده می‌شود و هرگز به
+            داشبورد کسب‌وکار ارسال نمی‌شود.
+          </p>
+          <form onSubmit={saveConfig} className="grid gap-4 lg:grid-cols-2">
+            <Field label="نشانی دروازه">
+              <input
+                className={inputClass}
+                dir="ltr"
+                value={draft.baseUrl}
+                onChange={(event) => setDraft({ ...draft, baseUrl: event.target.value })}
+              />
+            </Field>
+            <Field label="کلید مدیر (Master Key)" hint={draft.hasMasterKey ? "کلید ذخیره شده است؛ برای حفظ آن خالی بگذارید." : "کلید مدیر دروازه را وارد کنید."}>
+              <input
+                className={inputClass}
+                dir="ltr"
+                type="password"
+                value={masterKey}
+                onChange={(event) => setMasterKey(event.target.value)}
+                autoComplete="off"
+              />
+            </Field>
+            <Field label="نام مستعار مدل گفت‌وگو" hint="خالی یعنی همان مدل تنظیم‌شدهٔ پلتفرم.">
+              <input
+                className={inputClass}
+                dir="ltr"
+                value={draft.chatModel}
+                onChange={(event) => setDraft({ ...draft, chatModel: event.target.value })}
+              />
+            </Field>
+            <Field label="نام مستعار مدل بردارسازی (Embeddings)" hint="می‌تواند از ارائه‌دهندهٔ دیگری بیاید.">
+              <input
+                className={inputClass}
+                dir="ltr"
+                value={draft.embeddingModel}
+                onChange={(event) => setDraft({ ...draft, embeddingModel: event.target.value })}
+              />
+            </Field>
+            <div className="lg:col-span-2">
+              <Field label="زنجیرهٔ جایگزین (Fallbacks)" hint="هر سطر یا کاما یک مدل؛ به ترتیب پس از خطای مدل اصلی امتحان می‌شود.">
+                <textarea
+                  className={inputClass}
+                  dir="ltr"
+                  rows={3}
+                  value={fallbackText}
+                  onChange={(event) => setFallbackText(event.target.value)}
+                />
+              </Field>
+            </div>
+            <Field label="روش توزیع">
+              <SearchableSelect
+                className={inputClass}
+                value={draft.routingStrategy}
+                onChange={(value) => setDraft({ ...draft, routingStrategy: value })}
+                options={ROUTING_OPTIONS}
+              />
+            </Field>
+            <Field label="بودجهٔ پیش‌فرض هر کلید (دلار)">
+              <PersianNumberInput
+                className={inputClass}
+                type="number"
+                min="0"
+                value={draft.defaultMaxBudgetUsd ?? ""}
+                onChange={(event) => setDraft({ ...draft, defaultMaxBudgetUsd: numericOrNull(event.target.value) })}
+              />
+            </Field>
+            <Field label="دورهٔ بودجهٔ پیش‌فرض">
+              <SearchableSelect
+                className={inputClass}
+                value={draft.defaultBudgetDuration}
+                onChange={(value) => setDraft({ ...draft, defaultBudgetDuration: value })}
+                options={DURATION_OPTIONS}
+              />
+            </Field>
+            <Field label="سقف پیش‌فرض توکن در دقیقه (TPM)">
+              <PersianNumberInput
+                className={inputClass}
+                type="number"
+                min="0"
+                value={draft.defaultTpmLimit ?? ""}
+                onChange={(event) => setDraft({ ...draft, defaultTpmLimit: numericOrNull(event.target.value) })}
+              />
+            </Field>
+            <Field label="سقف پیش‌فرض درخواست در دقیقه (RPM)">
+              <PersianNumberInput
+                className={inputClass}
+                type="number"
+                min="0"
+                value={draft.defaultRpmLimit ?? ""}
+                onChange={(event) => setDraft({ ...draft, defaultRpmLimit: numericOrNull(event.target.value) })}
+              />
+            </Field>
+            <div className="space-y-2">
+              <label className="flex items-center gap-2 text-sm text-white/80">
+                <input
+                  type="checkbox"
+                  checked={draft.enabled}
+                  onChange={(event) => setDraft({ ...draft, enabled: event.target.checked })}
+                />
+                فعال بودن دروازه
+              </label>
+              <label className="flex items-center gap-2 text-sm text-white/80">
+                <input
+                  type="checkbox"
+                  checked={draft.virtualKeysEnabled}
+                  onChange={(event) => setDraft({ ...draft, virtualKeysEnabled: event.target.checked })}
+                />
+                صدور کلید مجازی برای هر کسب‌وکار و شعبه
+              </label>
+              <label className="flex items-center gap-2 text-sm text-white/80">
+                <input
+                  type="checkbox"
+                  checked={draft.allowBusinessModels}
+                  onChange={(event) => setDraft({ ...draft, allowBusinessModels: event.target.checked })}
+                />
+                اجازهٔ انتخاب مدل به کسب‌وکار و شعبه‌ها
+              </label>
+              <label className="flex items-center gap-2 text-sm text-white/80">
+                <input
+                  type="checkbox"
+                  checked={draft.mcpEnabled}
+                  onChange={(event) => setDraft({ ...draft, mcpEnabled: event.target.checked })}
+                />
+                ابزارهای MCP از راه دروازه
+              </label>
+            </div>
+            <div className="lg:col-span-2 border-t border-white/10 pt-4">
+              <Field
+                label="سرورهای MCP دروازه"
+                hint="هر سطر: name | برچسب | نشانی."
+              >
+                <textarea
+                  className={inputClass}
+                  dir="ltr"
+                  rows={3}
+                  placeholder={"pos-mcp | اتصال‌دهندهٔ POS | https://pos.example.ir/api/mcp"}
+                  value={mcpText}
+                  onChange={(event) => setMcpText(event.target.value)}
+                />
+              </Field>
+            </div>
+            {draft.allowBusinessModels ? (
+              <div className="lg:col-span-2">
+                <Field label="مدل‌های قابل انتخاب" hint="یک سطر برای هر مدل. فقط همین‌ها به کسب‌وکار پیشنهاد می‌شود.">
+                  <textarea
+                    className={inputClass}
+                    dir="ltr"
+                    rows={3}
+                    value={publishedText}
+                    onChange={(event) => setPublishedText(event.target.value)}
+                  />
+                </Field>
+              </div>
+            ) : null}
+            <div className="lg:col-span-2">
+              <Button type="submit" disabled={busy === "config"}>
+                {busy === "config" ? "در حال ذخیره…" : "ذخیره تنظیمات دروازه"}
+              </Button>
+            </div>
+          </form>
+        </Card>
+      ) : null}
+
+      {can("ai.credits.manage") ? (
+        <Card title="کلید مجازی و سقف‌ها — کسب‌وکار و شعبه‌ها">
+          <p className="mb-3 text-sm text-white/50">
+            می‌توانید برای کل کسب‌وکار یا به‌صورت مجزا برای هر یک از شعبه‌های آن کلید مجازی و مدل تعیین کنید.
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2 mb-4">
+            <Field label="کسب‌وکار">
+              <SearchableSelect
+                value={selectedBusinessId}
+                onChange={(value) => {
+                  setSelectedBusinessId(value);
+                  setSelectedLocationId("");
+                }}
+                options={(data?.businesses ?? []).map((business) => ({ value: business.businessId, label: business.businessName }))}
+              />
+            </Field>
+            {businessLocations.length > 0 ? (
+              <Field label="شعبه (اختیاری)">
+                <SearchableSelect
+                  value={selectedLocationId}
+                  onChange={setSelectedLocationId}
+                  options={[
+                    { value: "", label: "کل کسب‌وکار (پیش‌فرض)" },
+                    ...businessLocations.map((loc) => ({ value: loc.id, label: loc.name })),
+                  ]}
+                />
+              </Field>
+            ) : null}
+          </div>
+
+          {selectedBusinessId ? (
+            <div className="space-y-4 border-t border-white/10 pt-4">
+              <div className="grid gap-2 text-sm sm:grid-cols-3">
+                <p>
+                  مدل مؤثر:{" "}
+                  <strong dir="ltr" className="font-medium">
+                    {selectedRow?.effectiveModel ?? data?.platformModel ?? "—"}
+                  </strong>
+                </p>
+                <p>کلید مجازی: {selectedRow?.hasVirtualKey ? "دارد" : "ندارد"}</p>
+                <p>
+                  مصرف گزارش‌شده: {formatPersianNumber(Math.round((selectedRow?.spendUsd ?? 0) * 100) / 100)} دلار
+                </p>
+                <p>نام مستعار: <span dir="ltr">{selectedRow?.keyAlias ?? "—"}</span></p>
+                <p>آخرین همگام‌سازی: {fmtDate(selectedRow?.syncedAt ?? null)}</p>
+                <p>
+                  سقف‌ها:{" "}
+                  {selectedRow?.maxBudgetUsd ? `${formatPersianNumber(selectedRow.maxBudgetUsd)} دلار` : "بدون سقف"}
+                  {selectedRow?.tpmLimit ? ` · ${formatPersianNumber(selectedRow.tpmLimit)} توکن/دقیقه` : ""}
+                </p>
+              </div>
+              {selectedRow?.syncError ? (
+                <ErrorBox>{selectedRow.syncError}</ErrorBox>
+              ) : null}
+
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  onClick={() =>
+                    void write(
+                      {
+                        action: "sync_key",
+                        businessId: selectedBusinessId,
+                        locationId: selectedLocationId || null,
+                      },
+                      "sync",
+                    )
+                  }
+                  disabled={Boolean(busy)}
+                >
+                  {busy === "sync" ? <Loader2Icon className="animate-spin" /> : "صدور / به‌روزرسانی کلید"}
+                </Button>
+                <Button
+                  variant="ghost"
+                  onClick={() =>
+                    void write(
+                      {
+                        action: "refresh_spend",
+                        businessId: selectedBusinessId,
+                        locationId: selectedLocationId || null,
+                      },
+                      "spend",
+                    )
+                  }
+                  disabled={Boolean(busy) || !selectedRow?.hasVirtualKey}
+                >
+                  {busy === "spend" ? <Loader2Icon className="animate-spin" /> : "به‌روزرسانی مصرف"}
+                </Button>
+                <Button
+                  variant="danger"
+                  onClick={() =>
+                    void write(
+                      {
+                        action: "revoke_key",
+                        businessId: selectedBusinessId,
+                        locationId: selectedLocationId || null,
+                      },
+                      "revoke",
+                    )
+                  }
+                  disabled={Boolean(busy) || !selectedRow?.hasVirtualKey}
+                >
+                  {busy === "revoke" ? <Loader2Icon className="animate-spin" /> : "لغو کلید"}
+                </Button>
+              </div>
+
+              {draft?.allowBusinessModels && draft.publishedModels.length > 0 ? (
+                <div className="grid gap-3 border-t border-white/10 pt-4 sm:grid-cols-2">
+                  <Field label={`مدل اختصاصی ${selectedName}${selectedLocationId ? " (این شعبه)" : ""}`}>
+                    <SearchableSelect
+                      value={selectedRow?.modelOverride ?? ""}
+                      onChange={(value) =>
+                        void write(
+                          {
+                            action: "business",
+                            businessId: selectedBusinessId,
+                            locationId: selectedLocationId || null,
+                            modelOverride: value || null,
+                          },
+                          "model",
+                        )
+                      }
+                      options={[
+                        { value: "", label: "پیش‌فرض پلتفرم" },
+                        ...draft.publishedModels.map((model) => ({ value: model, label: model })),
+                      ]}
+                    />
+                  </Field>
                 </div>
-                {request.status === "pending" && can("ai.credits.manage") ? (
-                  <div className="flex gap-2">
-                    <Button onClick={() => void write({ action: "top_up_review", requestId: request.id, status: "approved" }, request.id + "-approve")} disabled={Boolean(busy)}>تأیید</Button>
-                    <Button variant="danger" onClick={() => void write({ action: "top_up_review", requestId: request.id, status: "rejected" }, request.id + "-reject")} disabled={Boolean(busy)}>رد</Button>
-                  </div>
-                ) : <span className="text-xs text-white/50">{request.status === "approved" ? "تأیید شده" : request.status === "rejected" ? "رد شده" : "در انتظار"}</span>}
+              ) : null}
+            </div>
+          ) : (
+            <p className="text-sm text-white/40">یک کسب‌وکار را انتخاب کنید.</p>
+          )}
+        </Card>
+      ) : null}
+
+      <Card title="همهٔ کلیدهای مجازی">
+        {!data?.gateways.length ? (
+          <p className="text-sm text-white/40">هنوز کلیدی صادر نشده است.</p>
+        ) : (
+          <ul className="space-y-2">
+            {data.gateways.map((row, idx) => (
+              <li
+                key={`${row.businessId}-${row.locationId || "biz"}-${idx}`}
+                className="flex flex-col gap-1 rounded-lg border border-white/10 bg-white/2 p-3 text-sm md:flex-row md:items-center md:justify-between"
+              >
+                <div>
+                  <p className="font-medium" dir="ltr">
+                    {row.keyAlias ?? row.businessId}
+                    {row.locationId ? ` (شعبه: ${row.locationId.slice(0, 8)})` : " (کل کسب‌وکار)"}
+                  </p>
+                  <p className="mt-1 text-xs text-white/50">
+                    مدل: <span dir="ltr">{row.effectiveModel}</span>
+                  </p>
+                </div>
+                <div className="text-xs text-white/60 md:text-right">
+                  <p>مصرف: {formatPersianNumber(Math.round(row.spendUsd * 100) / 100)} دلار</p>
+                  {row.syncError ? <p className="text-rose-300">{row.syncError}</p> : null}
+                </div>
               </li>
             ))}
           </ul>

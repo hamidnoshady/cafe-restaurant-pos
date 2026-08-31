@@ -501,42 +501,6 @@ function BottomNavSettings({
   );
 }
 
-/**
- * The assistant's own settings page, parked at the bottom of the sidebar next
- * to the member — the way the chat products do it — rather than as another
- * entry in the middle of the nav. Owner and manager only; the page itself
- * guards the same way. `iconOnly` is the collapsed-rail variant (a bare
- * sparkles button, the ChatGPT-style footprint at the bottom of a collapsed
- * sidebar).
- */
-function AiSettingsButton({ iconOnly = false }: { iconOnly?: boolean }) {
-  if (iconOnly) {
-    return (
-      <Button
-        asChild
-        variant="ghost"
-        size="icon"
-        aria-label="تنظیمات هوش مصنوعی"
-        title="تنظیمات هوش مصنوعی"
-        className="min-h-11 min-w-11 text-stone-600 hover:bg-amber-50 hover:text-amber-700"
-      >
-        <Link href="/dashboard/ai/settings">
-          <SparklesIcon aria-hidden="true" />
-        </Link>
-      </Button>
-    );
-  }
-  return (
-    <div className="mb-3">
-      <Button asChild variant="outline" className="w-full justify-start gap-2">
-        <Link href="/dashboard/ai/settings">
-          <SparklesIcon aria-hidden="true" className="size-4 shrink-0" />
-          تنظیمات هوش مصنوعی
-        </Link>
-      </Button>
-    </div>
-  );
-}
 
 function DashboardSidebarFooter({
   role,
@@ -544,15 +508,12 @@ function DashboardSidebarFooter({
   navItems,
   bottomNavHrefs,
   onSaveBottomNav,
-  showAiSettings,
 }: {
   role: string;
   fullName: string;
   navItems: NavItem[];
   bottomNavHrefs: string[];
   onSaveBottomNav: (hrefs: string[]) => void;
-  /** Owner/manager with the assistant on their nav — the settings entry is theirs. */
-  showAiSettings: boolean;
 }) {
   return (
     <SidebarFooter className="border-stone-200/80 bg-white">
@@ -569,15 +530,8 @@ function DashboardSidebarFooter({
         {PIN_ROLES.includes(role) && <ShiftButton />}
         {PIN_ROLES.includes(role) && <BiometricSettingsButton />}
         {PIN_ROLES.includes(role) && <LockButton />}
-        {showAiSettings && <AiSettingsButton />}
         <LogoutButton />
       </div>
-      {/* Collapsed: everything above hides; this stays as the one footer control. */}
-      {showAiSettings ? (
-        <div className="hidden justify-center group-data-[state=collapsed]/sidebar:flex">
-          <AiSettingsButton iconOnly />
-        </div>
-      ) : null}
     </SidebarFooter>
   );
 }
@@ -842,7 +796,6 @@ export function DashboardSidebar({
   // nav, which is what the accounting suite is.
   const showWorkspaceRail =
     workspaceShell && (pathname === "/dashboard" || pathname.startsWith("/dashboard/projects"));
-  const showAiSettings = (role === "owner" || role === "manager") && navItems.some((item) => item.module === "ai");
   // The app whose routes own the sidebar slot, if this route is one of them.
   // `app-shells.ts` is the registry, so adding a separate app never means
   // editing this file again.
@@ -962,7 +915,6 @@ export function DashboardSidebar({
           // not a saved choice, so offering it as one would silently freeze it.
           bottomNavHrefs={resolveBottomNavHrefs(bottomNav, availableHrefs, false)}
           onSaveBottomNav={saveBottomNav}
-          showAiSettings={showAiSettings}
         />
         {mode === "expanded" ? (
           <SidebarResizeHandle

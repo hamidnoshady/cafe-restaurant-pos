@@ -12,10 +12,9 @@
  * The login route is exempt: it has no session by definition, so this shell
  * renders its children bare (the login page paints its own full-screen card).
  *
- * Sections with sub-pages (AI) declare `children` and expand in place while
- * active. The business workspace expands the same way, dynamically: while a
- * business page is open, its own sections are nested under «کسب‌وکارها» so the
- * operator never loses the context of which tenant they are inside.
+ * The business workspace expands the same way, dynamically: while a business
+ * page is open, its own sections are nested under «کسب‌وکارها» so the operator
+ * never loses the context of which tenant they are inside.
  */
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -56,11 +55,6 @@ const NAV: NavItem[] = [
     label: "هوش مصنوعی",
     href: "/platform/ai",
     cap: "ai.read",
-    children: [
-      { label: "تنظیمات و اشتراک‌ها", href: "/platform/ai", exact: true },
-      { label: "پرامپت‌ها", href: "/platform/ai/prompts" },
-      { label: "دروازهٔ مدل", href: "/platform/ai/gateway" },
-    ],
   },
   { label: "به‌روزرسانی‌ها", href: "/platform/updates" },
   { label: "پایگاه دانش", href: "/platform/knowledge" },

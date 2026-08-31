@@ -3,8 +3,8 @@
 /**
  * The system section shell: «سلامت» (this deployment's database/migration
  * state) and «پایش» (OpenObserve — process logs, errors, slow requests,
- * across every host feeding the collector). Same SubNav pattern as the AI
- * section, so the sidebar nests the pair and mobile gets a tab strip.
+ * across every host feeding the collector). The sidebar nests the pair and
+ * mobile gets a tab strip.
  */
 import { SubNav } from "../ui";
 

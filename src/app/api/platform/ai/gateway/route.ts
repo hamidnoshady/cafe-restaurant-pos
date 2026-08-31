@@ -35,13 +35,18 @@ export const GET = withPlatformScope(async (request: NextRequest) => {
   const { session, error } = await requirePlatformCapability("ai.read");
   if (error) return error;
 
-  const [platform, gateway, gateways, locationsRes] = await Promise.all([
+  const [platform, gateway, gateways, locationsRes, businessesRes] = await Promise.all([
     getPlatformAiConfig(),
     getAiGatewayConfig(),
     listBusinessGateways(),
     withoutTenantScope("platform", () =>
       query<{ id: string; business_id: string; name: string }>(
         `SELECT id, business_id, name FROM locations ORDER BY name`,
+      ),
+    ),
+    withoutTenantScope("platform", () =>
+      query<{ id: string; name: string }>(
+        `SELECT id, name FROM businesses WHERE status <> 'archived' ORDER BY name`,
       ),
     ),
   ]);
@@ -63,6 +68,10 @@ export const GET = withPlatformScope(async (request: NextRequest) => {
       id: r.id,
       businessId: r.business_id,
       name: r.name,
+    })),
+    businesses: businessesRes.rows.map((r) => ({
+      businessId: r.id,
+      businessName: r.name,
     })),
   });
 });
