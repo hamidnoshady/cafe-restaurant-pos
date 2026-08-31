@@ -31,6 +31,8 @@ import { isMobilePhone, phoneE164 } from "./phone";
 import { generateSecret, generateURI } from "otplib";
 import { provisionMfaEnrolment } from "./mfa-service";
 import { issueRecoveryCodes } from "./mfa-recovery";
+import { CURRENT_KEY_VERSION, generateDek, wrapDek } from "./business-keys";
+import { getMasterKey } from "./master-key";
 import { totpQrDataUrl } from "./totp-qr";
 
 export interface ProvisionBusinessInput {
@@ -416,6 +418,20 @@ export async function provisionBusiness(
       // for an Owner whose phone (or authenticator) is gone, so an enrolment
       // without them is the lockout this wave exists to prevent.
       const recoveryCodes = await issueRecoveryCodes("platform_user", platformUserId, client);
+
+      // Phase 24 Wave 3 — mint the business's data-encryption key inside the
+      // same transaction as the business, so the very first customer written
+      // is written encrypted and there is never a window where a business
+      // exists without a key. Wrapped under the install's KEK; a no-op on an
+      // install that has not configured one.
+      const kek = getMasterKey();
+      if (kek) {
+        await client.query(
+          `INSERT INTO business_encryption_keys (business_id, key_version, wrapped_dek)
+           VALUES ($1, $2, $3) ON CONFLICT (business_id) DO NOTHING`,
+          [businessId, CURRENT_KEY_VERSION, wrapDek(generateDek(), kek)],
+        );
+      }
 
       await client.query("COMMIT");
       return {

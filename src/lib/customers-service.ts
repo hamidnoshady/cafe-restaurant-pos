@@ -5,7 +5,9 @@
  * the standalone customer-directory page (list/edit/deactivate/delete).
  * DB-touching, so per repo convention it has no direct unit test.
  */
+import { getBusinessDek } from "./business-keys";
 import { query } from "./db";
+import { decryptOptional, encryptOptional, phoneBlindIndex } from "./field-crypto";
 
 export interface Customer extends Record<string, unknown> {
   id: string;
@@ -24,27 +26,71 @@ export interface Customer extends Record<string, unknown> {
 }
 
 const DIRECTORY_COLUMNS = `id, name, phone, address, notes, email,
+       phone_enc AS "phoneEnc", address_enc AS "addressEnc", notes_enc AS "notesEnc",
        birthday::text AS "birthday", tags, marketing_consent AS "marketingConsent",
        sms_consent AS "smsConsent",
        is_active AS "isActive", created_at AS "createdAt", updated_at AS "updatedAt"`;
 
+/**
+ * Phase 24 Wave 3 — field-level encryption lives here, at the service layer,
+ * never in db.ts: a transparent database layer cannot know which column is
+ * which and would silently encrypt the wrong things.
+ *
+ * During the transition window every write is a dual write (plaintext twin +
+ * `*_enc` + `*_bidx`) and every read prefers the ciphertext, falling back to
+ * the plaintext twin for rows the backfill has not reached yet. On an install
+ * with no master key configured, `getBusinessDek` returns null and all of this
+ * collapses to exactly the behaviour that shipped before the wave.
+ */
+interface EncryptedCustomerRow {
+  phoneEnc?: unknown;
+  addressEnc?: unknown;
+  notesEnc?: unknown;
+}
+
+/** Replaces the plaintext fields with their decrypted values and drops the ciphertext from the result. */
+function decryptCustomerRow(row: Customer & EncryptedCustomerRow, dek: Buffer | null): Customer {
+  const { phoneEnc, addressEnc, notesEnc, ...rest } = row;
+  const customer: Customer = rest;
+  if ("phone" in row) customer.phone = decryptOptional(phoneEnc, dek, row.phone ?? null);
+  if ("address" in row) customer.address = decryptOptional(addressEnc, dek, row.address ?? null);
+  if ("notes" in row) customer.notes = decryptOptional(notesEnc, dek, row.notes ?? null);
+  return customer;
+}
+
+/** The encrypted twins for a phone value: `[ciphertext, blind index]`, both null when there is no key. */
+function phoneCiphertext(phone: string | null, dek: Buffer | null): [Buffer | null, string | null] {
+  if (!dek) return [null, null];
+  return [encryptOptional(phone, dek), phone ? phoneBlindIndex(phone, dek) : null];
+}
+
 /** Name/phone search for the checkout picker, active customers only, newest first, capped at 20. */
 export async function searchCustomers(businessId: string, q: string): Promise<Customer[]> {
   const term = q.trim();
+  const dek = await getBusinessDek(businessId);
   if (!term) {
-    const { rows } = await query<Customer>(
-      `SELECT id, name, phone FROM customers WHERE business_id = $1 AND is_active ORDER BY created_at DESC LIMIT 20`,
+    const { rows } = await query<Customer & EncryptedCustomerRow>(
+      `SELECT id, name, phone, phone_enc AS "phoneEnc" FROM customers
+        WHERE business_id = $1 AND is_active ORDER BY created_at DESC LIMIT 20`,
       [businessId],
     );
-    return rows;
+    return rows.map((row) => decryptCustomerRow(row, dek));
   }
-  const { rows } = await query<Customer>(
-    `SELECT id, name, phone FROM customers
-      WHERE business_id = $1 AND is_active AND (name ILIKE $2 OR phone ILIKE $2)
+  // Three ways to match, and they are not interchangeable. `name ILIKE` and
+  // `phone ILIKE` are the substring search that exists today; `phone_bidx =`
+  // is an exact match on the canonical number, which is the only phone search
+  // that will survive step 3 of the migration. A cashier typing the last four
+  // digits still finds the customer today and will not once the plaintext
+  // column is dropped — the accepted loss recorded in the phase doc.
+  const bidx = dek ? phoneBlindIndex(term, dek) : null;
+  const { rows } = await query<Customer & EncryptedCustomerRow>(
+    `SELECT id, name, phone, phone_enc AS "phoneEnc" FROM customers
+      WHERE business_id = $1 AND is_active
+        AND (name ILIKE $2 OR phone ILIKE $2 OR ($3::text IS NOT NULL AND phone_bidx = $3))
       ORDER BY created_at DESC LIMIT 20`,
-    [businessId, `%${term}%`],
+    [businessId, `%${term}%`, bidx],
   );
-  return rows;
+  return rows.map((row) => decryptCustomerRow(row, dek));
 }
 
 export interface CustomerListResult {
@@ -62,12 +108,17 @@ export async function listCustomers(
   const page = Math.max(options.page ?? 1, 1);
   const offset = (page - 1) * pageSize;
 
+  const dek = await getBusinessDek(businessId);
   const conditions = ["business_id = $1"];
   const params: unknown[] = [businessId];
   if (!options.includeInactive) conditions.push("is_active");
   if (term) {
     params.push(`%${term}%`);
-    conditions.push(`(name ILIKE $${params.length} OR phone ILIKE $${params.length})`);
+    const like = params.length;
+    params.push(dek ? phoneBlindIndex(term, dek) : null);
+    conditions.push(
+      `(name ILIKE $${like} OR phone ILIKE $${like} OR ($${params.length}::text IS NOT NULL AND phone_bidx = $${params.length}))`,
+    );
   }
   const where = conditions.join(" AND ");
 
@@ -77,12 +128,12 @@ export async function listCustomers(
   );
   const total = Number(countRows[0]?.count ?? 0);
 
-  const { rows } = await query<Customer>(
+  const { rows } = await query<Customer & EncryptedCustomerRow>(
     `SELECT ${DIRECTORY_COLUMNS} FROM customers WHERE ${where}
       ORDER BY created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
     [...params, pageSize, offset],
   );
-  return { customers: rows, total };
+  return { customers: rows.map((row) => decryptCustomerRow(row, dek)), total };
 }
 
 export interface CreateCustomerInput {
@@ -98,32 +149,44 @@ export interface CreateCustomerInput {
 }
 
 export async function createCustomer(businessId: string, input: CreateCustomerInput): Promise<Customer> {
-  const { rows } = await query<Customer>(
-    `INSERT INTO customers (business_id, name, phone, address, notes, email, birthday, tags, marketing_consent, sms_consent)
-     VALUES ($1, $2, $3, $4, $5, $6, $7::date, $8, $9, $10)
+  const dek = await getBusinessDek(businessId);
+  const phone = input.phone?.trim() || null;
+  const address = input.address?.trim() || null;
+  const notes = input.notes?.trim() || null;
+  const [phoneEnc, phoneBidx] = phoneCiphertext(phone, dek);
+
+  const { rows } = await query<Customer & EncryptedCustomerRow>(
+    `INSERT INTO customers (business_id, name, phone, address, notes, email, birthday, tags, marketing_consent, sms_consent,
+                            phone_enc, phone_bidx, address_enc, notes_enc)
+     VALUES ($1, $2, $3, $4, $5, $6, $7::date, $8, $9, $10, $11, $12, $13, $14)
      RETURNING ${DIRECTORY_COLUMNS}`,
     [
       businessId,
       input.name.trim(),
-      input.phone?.trim() || null,
-      input.address?.trim() || null,
-      input.notes?.trim() || null,
+      phone,
+      address,
+      notes,
       input.email?.trim() || null,
       input.birthday ?? null,
       input.tags ?? [],
       input.marketingConsent ?? false,
       input.smsConsent ?? false,
+      phoneEnc,
+      phoneBidx,
+      dek ? encryptOptional(address, dek) : null,
+      dek ? encryptOptional(notes, dek) : null,
     ],
   );
-  return rows[0];
+  return decryptCustomerRow(rows[0], dek);
 }
 
 export async function getCustomer(businessId: string, id: string): Promise<Customer | null> {
-  const { rows } = await query<Customer>(
+  const dek = await getBusinessDek(businessId);
+  const { rows } = await query<Customer & EncryptedCustomerRow>(
     `SELECT ${DIRECTORY_COLUMNS} FROM customers WHERE business_id = $1 AND id = $2`,
     [businessId, id],
   );
-  return rows[0] ?? null;
+  return rows[0] ? decryptCustomerRow(rows[0], dek) : null;
 }
 
 export interface UpdateCustomerInput {
@@ -145,6 +208,7 @@ export async function updateCustomer(
   id: string,
   input: UpdateCustomerInput,
 ): Promise<Customer | null> {
+  const dek = await getBusinessDek(businessId);
   const sets: string[] = [];
   const params: unknown[] = [businessId, id];
 
@@ -154,9 +218,27 @@ export async function updateCustomer(
   }
 
   if (input.name !== undefined) add("name", input.name.trim());
-  if (input.phone !== undefined) add("phone", input.phone?.trim() || null);
-  if (input.address !== undefined) add("address", input.address?.trim() || null);
-  if (input.notes !== undefined) add("notes", input.notes?.trim() || null);
+  // Each encrypted field is written as a set: plaintext twin, ciphertext, and
+  // (phone only) blind index. Writing the plaintext without the ciphertext
+  // would leave a row the next reader silently reads from the stale `_enc`
+  // value, which is the one failure mode of a dual-write window.
+  if (input.phone !== undefined) {
+    const phone = input.phone?.trim() || null;
+    const [phoneEnc, phoneBidx] = phoneCiphertext(phone, dek);
+    add("phone", phone);
+    add("phone_enc", phoneEnc);
+    add("phone_bidx", phoneBidx);
+  }
+  if (input.address !== undefined) {
+    const address = input.address?.trim() || null;
+    add("address", address);
+    add("address_enc", dek ? encryptOptional(address, dek) : null);
+  }
+  if (input.notes !== undefined) {
+    const notes = input.notes?.trim() || null;
+    add("notes", notes);
+    add("notes_enc", dek ? encryptOptional(notes, dek) : null);
+  }
   if (input.email !== undefined) add("email", input.email?.trim() || null);
   if (input.birthday !== undefined) add("birthday", input.birthday ?? null);
   if (input.tags !== undefined) add("tags", input.tags);
@@ -165,13 +247,13 @@ export async function updateCustomer(
   if (input.isActive !== undefined) add("is_active", input.isActive);
   if (sets.length === 0) return getCustomer(businessId, id);
 
-  const { rows } = await query<Customer>(
+  const { rows } = await query<Customer & EncryptedCustomerRow>(
     `UPDATE customers SET ${sets.join(", ")}, updated_at = now()
       WHERE business_id = $1 AND id = $2
       RETURNING ${DIRECTORY_COLUMNS}`,
     params,
   );
-  return rows[0] ?? null;
+  return rows[0] ? decryptCustomerRow(rows[0], dek) : null;
 }
 
 export type RemoveCustomerResult = "deleted" | "archived" | "not_found";

@@ -2,7 +2,7 @@
 
 Tracked by GitHub issue [#228](https://github.com/hamidnoshady/cafe-restaurant-pos/issues/228).
 
-## Status: Waves 1, 2, 4 and 5 implemented; Wave 3 is scaffolding only
+## Status: all five waves implemented; Wave 3 is at step 2 of its three-step migration
 
 This document was written as the specification before any of it was built, and the rest of
 it — file paths, function signatures, migration SQL — is still that original design. It has not
@@ -14,16 +14,35 @@ What is actually true of the code today:
 - **Waves 1, 2, 4 and 5** (perimeter/security headers, login lockout, MFA — TOTP and Kavenegar
   SMS OTP —, VPN-only/LAN HTTPS, and the Postgres-backed rate limiter) are implemented and
   covered by passing unit and integration tests against a real PostgreSQL 16/18.
-- **Wave 3 (field-level encryption at rest) is not implemented, only scaffolded.**
-  `business_encryption_keys` (migration 0072) exists and is RLS-protected, and
-  `src/lib/field-crypto.ts` / `src/lib/encrypted-columns.ts` provide the AES-256-GCM primitive
-  and the Tier A/B column registry this section describes — but nothing mints or wraps a DEK
-  (`POS_MASTER_KEY` is referenced nowhere in code), no `*_enc`/`*_bidx` columns exist on
-  `customers`/`reservations`, no `*-service.ts` reads or writes through `encryptField`/
-  `decryptField`, and `scripts/encrypt-fields.ts` is a literal no-op stub. `customers.phone`,
-  `customers.address`, `customers.notes` and `reservations.customer_phone` are plaintext in the
-  database exactly as before this phase. Picking this wave up is still execution against the
-  design below, not re-derivation — but it has not been started.
+- **Wave 2 is now complete end to end**, not just on the server: the login and platform-login
+  screens carry the challenge/verify second step (`src/components/auth/mfa-step.tsx`), grace
+  issues a real session and nags instead of blocking, recovery codes are issued and shown once
+  at enrolment (and accepted on verify), the first-run and create-business flows show the TOTP
+  QR once, `/platform/security` reads out who is enrolled and extends a single account's grace,
+  the Kavenegar key has its own configuration page, and its `return.status` codes map to
+  Persian.
+- **Wave 3 (field-level encryption at rest) is implemented through step 2 of the three-step
+  migration.** `POS_MASTER_KEY` / `POS_MASTER_PASSPHRASE` are read by `src/lib/master-key.ts`;
+  `src/lib/business-keys.ts` mints and wraps a per-business DEK into `business_encryption_keys`
+  (also minted inside `provisionBusiness`'s transaction);
+  `migrations/0125_field_encryption_columns.sql` adds `*_enc`/`*_bidx` to `customers` and
+  `reservations` with a blind index on the phone; `customers-service.ts` and the reservations
+  routes dual-write and read the ciphertext with a plaintext fallback;
+  `scripts/encrypt-fields.ts` (`npm run db:encrypt-fields`) is a real, idempotent, resumable,
+  batched backfill; `src/lib/tenant-export.ts` decrypts on export; and
+  `integration/field-encryption.integration.test.ts` asserts the registry against
+  `information_schema.columns`.
+
+  **Step 3 — dropping the plaintext columns — has NOT happened, and there is prerequisite work
+  before it can.** In order: partial/prefix phone search (`customers-service.ts`'s
+  `phone ILIKE '%…%'`) has to be accepted as lost, `customers.phone_e164` has to move to
+  `phone_bidx` (0118's duplicate detection and segment resolution self-join on it, so leaving
+  it plaintext would make encrypting `phone` theatre), and the writers that still touch the
+  plaintext directly (`crm-service.ts`'s merge and phone normalisation, the Holoo import, the
+  integrations sync) have to dual-write. Until then a BEFORE UPDATE trigger nulls a row's
+  ciphertext whenever its plaintext changes without it, so a stale ciphertext is impossible and
+  the next backfill run repairs the row. Tier A (the platform-scope secrets) is also still
+  plaintext — see `TIER_A_PENDING` in `src/lib/encrypted-columns.ts`.
 
 ## Context: what exists today
 
