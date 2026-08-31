@@ -426,12 +426,22 @@ export async function amendClosedOrder(
             ],
           );
         }
-        await captureInventorySnapshot(
-          client,
-          orderItemId,
-          item.menuItemId,
-          item.modifiers.map((m) => m.id),
-        );
+        try {
+          await captureInventorySnapshot(
+            client,
+            orderItemId,
+            item.menuItemId,
+            item.modifiers.map((m) => m.id),
+          );
+        } catch (snapshotError) {
+          if (
+            snapshotError instanceof Error &&
+            snapshotError.message === "negative_ingredient_requirement"
+          ) {
+            throw new OrderAmendmentError("negative_ingredient_requirement", 400);
+          }
+          throw snapshotError;
+        }
       }
     }
 

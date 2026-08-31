@@ -30,7 +30,7 @@ interface PatchBody {
   note?: string;
   discount?: { type?: "percent" | "amount" | null; value?: number };
   customerId?: string | null;
-  tableId?: string;
+  tableId?: string | null;
   void?: { reason?: string };
 }
 
@@ -96,23 +96,29 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
         await client.query("UPDATE orders SET customer_id = $2 WHERE id = $1", [id, body.customerId || null]);
       }
       if (body.tableId !== undefined) {
-        const { rows: tableRows } = await client.query<{ id: string; status: string }>(
-          `SELECT id, status FROM dining_tables WHERE id = $1 AND location_id = $2 AND is_active FOR UPDATE`,
-          [body.tableId, location.id],
-        );
-        if (tableRows.length === 0) {
-          await client.query("ROLLBACK");
-          return NextResponse.json({ error: "table_not_found" }, { status: 404 });
+        const rawTableId = (body.tableId as unknown as string | null) ?? null;
+        const normalizedTableId = typeof rawTableId === "string" ? rawTableId.trim() : rawTableId;
+        if (!normalizedTableId) {
+          await client.query(`UPDATE orders SET table_id = NULL, table_session_id = NULL WHERE id = $1`, [id]);
+        } else {
+          const { rows: tableRows } = await client.query<{ id: string; status: string }>(
+            `SELECT id, status FROM dining_tables WHERE id = $1 AND location_id = $2 AND is_active FOR UPDATE`,
+            [normalizedTableId, location.id],
+          );
+          if (tableRows.length === 0) {
+            await client.query("ROLLBACK");
+            return NextResponse.json({ error: "table_not_found" }, { status: 404 });
+          }
+          if (tableRows[0].status === "cleaning" || tableRows[0].status === "out_of_service") {
+            await client.query("ROLLBACK");
+            return NextResponse.json({ error: "table_unavailable" }, { status: 409 });
+          }
+          const tableSessionId = await ensureSessionForTable(client, location.id, normalizedTableId, session.sub, locked.order.guest_count);
+          await client.query(
+            `UPDATE orders SET table_id = $2, table_session_id = $3 WHERE id = $1`,
+            [id, normalizedTableId, tableSessionId],
+          );
         }
-        if (tableRows[0].status === "cleaning" || tableRows[0].status === "out_of_service") {
-          await client.query("ROLLBACK");
-          return NextResponse.json({ error: "table_unavailable" }, { status: 409 });
-        }
-        const tableSessionId = await ensureSessionForTable(client, location.id, body.tableId, session.sub, locked.order.guest_count);
-        await client.query(
-          `UPDATE orders SET table_id = $2, table_session_id = $3 WHERE id = $1`,
-          [id, body.tableId, tableSessionId],
-        );
       }
       if (body.note !== undefined) {
         await client.query("UPDATE orders SET note = $2 WHERE id = $1", [id, body.note?.trim() || null]);

@@ -35,6 +35,7 @@ const KNOWN_FAILURES: Record<string, number> = {
   consumption_reversal_inconsistent: 409,
   fiscal_period_locked: 409,
   fiscal_period_soft_closed: 409,
+  negative_ingredient_requirement: 400,
 };
 
 function failureFor(err: unknown): NextResponse | null {
