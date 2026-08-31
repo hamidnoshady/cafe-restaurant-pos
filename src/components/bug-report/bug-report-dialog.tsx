@@ -127,7 +127,7 @@ export function BugReportDialog({ open, onOpenChange, capturing, onCapturingChan
           </div>
 
           {screenshot ? (
-            <div className="relative overflow-hidden rounded-lg border border-stone-200/80">
+            <div className="relative overflow-hidden rounded-lg border border-border/80">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={screenshot} alt="تصویر صفحه هنگام گزارش" className="max-h-56 w-full object-cover" />
               <Button

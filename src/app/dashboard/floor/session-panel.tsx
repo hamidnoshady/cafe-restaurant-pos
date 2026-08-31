@@ -146,7 +146,7 @@ export function SessionPanel({
         {!session.bill_requested_at ? (
           <SecondaryButton onClick={() => void action({ action: "request_bill" })} disabled={busy}>درخواست صورتحساب</SecondaryButton>
         ) : (
-          <span className="rounded-lg bg-purple-50 px-3 py-2 text-xs text-purple-700">صورتحساب درخواست شد</span>
+          <span className="rounded-lg bg-purple-50 dark:bg-purple-950 px-3 py-2 text-xs text-purple-700 dark:text-purple-300">صورتحساب درخواست شد</span>
         )}
         <SecondaryButton onClick={() => setShowSplit(true)} disabled={busy || bill.total <= 0}>تقسیم صورتحساب</SecondaryButton>
         <PrimaryButton
@@ -320,10 +320,10 @@ function SplitDialog({
       <DialogContent className="max-h-[92dvh] max-w-lg overflow-y-auto">
         <DialogHeader><DialogTitle>تقسیم صورتحساب و مشتری‌ها</DialogTitle></DialogHeader>
 
-        <section className="rounded-xl border border-stone-200/80 bg-stone-50 p-3" aria-label="مشتری‌های میز">
+        <section className="rounded-xl border border-border/80 bg-muted p-3" aria-label="مشتری‌های میز">
           <div className="mb-3 flex items-center justify-between gap-2">
             <h3 className="text-sm font-bold">مشتری‌های این میز</h3>
-            <UsersIcon className="size-4 text-amber-700" aria-hidden="true" />
+            <UsersIcon className="size-4 text-amber-700 dark:text-amber-300" aria-hidden="true" />
           </div>
           <label className="mb-3 flex items-center gap-2 text-sm">
             <span className="shrink-0">تعداد نفر</span>
@@ -349,9 +349,9 @@ function SplitDialog({
           </div>
         </section>
 
-        <div className="flex gap-1 rounded-xl bg-stone-100 p-1 text-sm">
-          <button type="button" aria-pressed={mode === "even"} onClick={() => { setMode("even"); setShares(null); }} className={`min-h-11 flex-1 rounded-lg font-medium transition-colors ${mode === "even" ? "bg-amber-100 text-amber-950" : "text-stone-600 hover:bg-stone-50"}`}>تقسیم مساوی</button>
-          <button type="button" aria-pressed={mode === "itemized"} onClick={() => { setMode("itemized"); setShares(null); }} className={`min-h-11 flex-1 rounded-lg font-medium transition-colors ${mode === "itemized" ? "bg-amber-100 text-amber-950" : "text-stone-600 hover:bg-stone-50"}`}>به تفکیک اقلام</button>
+        <div className="flex gap-1 rounded-xl bg-muted p-1 text-sm">
+          <button type="button" aria-pressed={mode === "even"} onClick={() => { setMode("even"); setShares(null); }} className={`min-h-11 flex-1 rounded-lg font-medium transition-colors ${mode === "even" ? "bg-amber-100 dark:bg-amber-500/20 text-amber-950 dark:text-amber-200" : "text-muted-foreground hover:bg-muted"}`}>تقسیم مساوی</button>
+          <button type="button" aria-pressed={mode === "itemized"} onClick={() => { setMode("itemized"); setShares(null); }} className={`min-h-11 flex-1 rounded-lg font-medium transition-colors ${mode === "itemized" ? "bg-amber-100 dark:bg-amber-500/20 text-amber-950 dark:text-amber-200" : "text-muted-foreground hover:bg-muted"}`}>به تفکیک اقلام</button>
         </div>
 
         {mode === "itemized" ? (
@@ -391,9 +391,9 @@ function SplitDialog({
         <section className="border-t border-border pt-3" aria-label="پرداخت یکجای صورتحساب">
           <p className="mb-2 text-xs font-semibold text-muted-foreground">پرداخت کل با یک پرداخت</p>
           <div className="mb-2 grid grid-cols-3 gap-2">
-            <button type="button" onClick={() => setPaymentMethod("cash")} className={`flex min-h-12 items-center justify-center gap-1 rounded-lg border text-xs font-bold ${paymentMethod === "cash" ? "border-amber-500 bg-amber-100 text-amber-700" : "border-border"}`}><BanknoteIcon className="size-4" aria-hidden="true" />نقدی</button>
-            <button type="button" onClick={() => setPaymentMethod("card")} className={`flex min-h-12 items-center justify-center gap-1 rounded-lg border text-xs font-bold ${paymentMethod === "card" ? "border-amber-500 bg-amber-100 text-amber-700" : "border-border"}`}><CreditCardIcon className="size-4" aria-hidden="true" />کارت</button>
-            <button type="button" onClick={() => setPaymentMethod("card_to_card")} className={`flex min-h-12 items-center justify-center rounded-lg border text-xs font-bold ${paymentMethod === "card_to_card" ? "border-amber-500 bg-amber-100 text-amber-700" : "border-border"}`}>کارت‌به‌کارت</button>
+            <button type="button" onClick={() => setPaymentMethod("cash")} className={`flex min-h-12 items-center justify-center gap-1 rounded-lg border text-xs font-bold ${paymentMethod === "cash" ? "border-amber-500 dark:border-amber-500/60 bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300" : "border-border"}`}><BanknoteIcon className="size-4" aria-hidden="true" />نقدی</button>
+            <button type="button" onClick={() => setPaymentMethod("card")} className={`flex min-h-12 items-center justify-center gap-1 rounded-lg border text-xs font-bold ${paymentMethod === "card" ? "border-amber-500 dark:border-amber-500/60 bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300" : "border-border"}`}><CreditCardIcon className="size-4" aria-hidden="true" />کارت</button>
+            <button type="button" onClick={() => setPaymentMethod("card_to_card")} className={`flex min-h-12 items-center justify-center rounded-lg border text-xs font-bold ${paymentMethod === "card_to_card" ? "border-amber-500 dark:border-amber-500/60 bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300" : "border-border"}`}>کارت‌به‌کارت</button>
           </div>
           <PrimaryButton type="button" onClick={() => void payAll()} disabled={busy || bill.total <= 0}>پرداخت کل {money.format(bill.total)}</PrimaryButton>
         </section>

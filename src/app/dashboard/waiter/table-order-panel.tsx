@@ -105,7 +105,7 @@ const STATUS_BADGE: Record<OrderItemStatus, string> = {
   sent: "bg-muted text-muted-foreground",
   preparing: "bg-primary/10 text-primary",
   ready:
-    "bg-emerald-100 text-emerald-800",
+    "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-800 dark:text-emerald-200",
   served: "bg-muted text-muted-foreground",
   voided: "bg-destructive/10 text-destructive",
 };
@@ -346,7 +346,7 @@ export function TableOrderPanel({
             ) : (
               <ul className="space-y-2">
                 {orderItems.map((it) => (
-                  <li key={it.id} className="rounded-xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-3">
+                  <li key={it.id} className="rounded-xl border border-border/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-3">
                     <div className="flex items-start justify-between gap-2">
                       <div>
                         <p className="text-sm font-medium">
@@ -368,7 +368,7 @@ export function TableOrderPanel({
                       <button
                         type="button"
                         onClick={() => markServed(it.id)}
-                        className="mt-2 w-full rounded-lg bg-emerald-700 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-emerald-800"
+                        className="mt-2 w-full rounded-lg bg-emerald-700 dark:bg-emerald-300 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-emerald-800 dark:hover:bg-emerald-200"
                       >
                         تحویل داده شد
                       </button>

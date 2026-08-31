@@ -93,7 +93,7 @@ export function CasesSection() {
         description="شکایت‌ها و درخواست‌های مشتریان، با زمان هدف رسیدگی بر پایهٔ اولویت."
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            <label className="flex items-center gap-2 text-sm text-stone-600">
+            <label className="flex items-center gap-2 text-sm text-muted-foreground">
               <Checkbox
                 checked={openOnly}
                 onCheckedChange={(checked) => setOpenOnly(checked === true)}
@@ -115,7 +115,7 @@ export function CasesSection() {
             {openOnly ? "تیکت بازی نمانده است." : "هنوز تیکتی ثبت نشده است."}
           </EmptyState>
         ) : (
-          <ul className="divide-y divide-stone-200/80 text-sm">
+          <ul className="divide-y divide-border/80 text-sm">
             {cases.map((row) => {
               const breached = caseBreached(row, now);
               return (
@@ -124,7 +124,7 @@ export function CasesSection() {
                     <button
                       type="button"
                       onClick={() => setEditing(row)}
-                      className="text-right font-medium text-stone-950 hover:underline"
+                      className="text-right font-medium text-foreground hover:underline"
                     >
                       {row.subject}
                     </button>
@@ -279,7 +279,7 @@ function CaseDialog({
         <Field label="مشتری (اختیاری)">
           {customerId ? (
             <div className="flex items-center gap-2">
-              <span className="text-sm text-stone-950">{customerQuery}</span>
+              <span className="text-sm text-foreground">{customerQuery}</span>
               <Button
                 type="button"
                 variant="ghost"

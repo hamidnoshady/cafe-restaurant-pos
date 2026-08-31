@@ -68,15 +68,15 @@ const SKELETON_BAR_HEIGHTS = [28, 42, 55, 74, 88, 81, 67, 52, 45];
 const ORDER_STATUS: Record<KitchenStatus, { label: string; className: string }> = {
   new: {
     label: "جدید",
-    className: "border-stone-200/80 bg-stone-100 text-stone-500",
+    className: "border-border/80 bg-muted text-muted-foreground",
   },
   preparing: {
     label: "در حال آماده‌سازی",
-    className: "border-amber-500/25 bg-amber-50 text-amber-700",
+    className: "border-amber-500/25 dark:border-amber-500/60 bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300",
   },
   ready: {
     label: "آماده",
-    className: "border-emerald-500/25 bg-emerald-50 text-emerald-700",
+    className: "border-emerald-500/25 dark:border-emerald-500/25 bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
   },
 };
 
@@ -195,7 +195,7 @@ function KpiCard({
     >
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-sm font-medium text-stone-500">{label}</p>
+          <p className="text-sm font-medium text-muted-foreground">{label}</p>
           {loading ? (
             <div className="mt-3 space-y-2">
               <Skeleton className="h-8 w-40 max-w-[76%] rounded-lg" />
@@ -203,14 +203,14 @@ function KpiCard({
             </div>
           ) : (
             <div className="ops-data-resolve">
-              <p className="mt-2 text-[1.65rem] font-bold leading-tight tracking-[-0.03em] text-stone-950 sm:text-2xl">
+              <p className="mt-2 text-[1.65rem] font-bold leading-tight tracking-[-0.03em] text-foreground sm:text-2xl">
                 {money ? formatMoney(displayed, moneyApi.unit) : formatNumber(displayed)}
               </p>
-              <p className="mt-2 text-xs text-stone-500">{hint}</p>
+              <p className="mt-2 text-xs text-muted-foreground">{hint}</p>
             </div>
           )}
         </div>
-        <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-600" aria-hidden="true">
+        <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-amber-50 dark:bg-amber-500/15 text-amber-600 dark:text-amber-400" aria-hidden="true">
           <Icon className="size-5" strokeWidth={1.8} />
         </span>
       </div>
@@ -220,7 +220,7 @@ function KpiCard({
 
 function SalesTrendSkeleton() {
   return (
-    <div aria-hidden="true" className="h-[222px] rounded-xl border-b border-stone-200/80 px-2 pt-4">
+    <div aria-hidden="true" className="h-[222px] rounded-xl border-b border-border/80 px-2 pt-4">
       <div className="flex h-[172px] items-end justify-between gap-2">
         {SKELETON_BAR_HEIGHTS.map((height, index) => (
           <div key={index} className="flex h-full flex-1 items-end">
@@ -287,10 +287,10 @@ function SalesTrendChart({
 
   return (
     <div className="ops-data-resolve pt-3" role="img" aria-label={cumulative ? "روند تجمعی فروش امروز" : "روند ساعتی فروش امروز"}>
-      <div className="h-[202px] rounded-xl border-b border-stone-200/80 px-1 pt-1 sm:h-[222px]">
+      <div className="h-[202px] rounded-xl border-b border-border/80 px-1 pt-1 sm:h-[222px]">
         <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" className="h-[172px] w-full sm:h-[188px]" aria-hidden="true">
           {[44, 84, 124].map((line) => (
-            <line key={line} x1={paddingX} x2={width - paddingX} y1={line} y2={line} strokeWidth="1" className="stroke-stone-100" />
+            <line key={line} x1={paddingX} x2={width - paddingX} y1={line} y2={line} strokeWidth="1" className="stroke-border" />
           ))}
           {points.map((point, index) => (
             <rect
@@ -300,7 +300,7 @@ function SalesTrendChart({
               width={barWidth}
               height={point.height}
               rx="3"
-              className={`fill-amber-200 ${reducedMotion ? "" : "ops-chart-bar"}`}
+              className={`fill-amber-200 dark:fill-amber-800 ${reducedMotion ? "" : "ops-chart-bar"}`}
               style={reducedMotion ? undefined : ({ animationDelay: `${index * 45}ms` } as CSSProperties)}
             />
           ))}
@@ -312,10 +312,10 @@ function SalesTrendChart({
             strokeLinejoin="round"
             strokeDasharray="0.006 0.018"
             pathLength="1"
-            className={`stroke-amber-600 ${reducedMotion ? "" : "ops-chart-line"}`}
+            className={`stroke-amber-600 dark:stroke-amber-400 ${reducedMotion ? "" : "ops-chart-line"}`}
           />
         </svg>
-        <div className="mt-1 flex items-center justify-between px-1 text-[10px] text-stone-400 sm:text-xs">
+        <div className="mt-1 flex items-center justify-between px-1 text-[10px] text-muted-foreground sm:text-xs">
           {labelHours.map((hour) => (
             <span key={hour}>{formatChartHour(hour)}</span>
           ))}
@@ -336,24 +336,24 @@ function StatusChip({ status }: { status: KitchenStatus }) {
 function OrdersSkeleton() {
   return (
     <div aria-busy="true" aria-label="در حال آماده‌سازی سفارش‌ها">
-      <div className="hidden overflow-hidden rounded-xl border border-stone-200/80 md:block">
-        <div className="grid grid-cols-[minmax(5rem,.8fr)_minmax(7rem,1.1fr)_minmax(6rem,1fr)_5.5rem] gap-4 border-b border-stone-200/80 bg-stone-50 px-4 py-3 text-xs text-stone-500 lg:grid-cols-[minmax(6rem,.8fr)_minmax(8rem,1fr)_minmax(15rem,2.4fr)_minmax(7.5rem,1fr)_4.5rem]">
+      <div className="hidden overflow-hidden rounded-xl border border-border/80 md:block">
+        <div className="grid grid-cols-[minmax(5rem,.8fr)_minmax(7rem,1.1fr)_minmax(6rem,1fr)_5.5rem] gap-4 border-b border-border/80 bg-muted px-4 py-3 text-xs text-muted-foreground lg:grid-cols-[minmax(6rem,.8fr)_minmax(8rem,1fr)_minmax(15rem,2.4fr)_minmax(7.5rem,1fr)_4.5rem]">
           <span>شماره</span><span>میز / نوع</span><span className="hidden lg:block">اقلام</span><span>وضعیت</span><span>زمان</span>
         </div>
         {[0, 1, 2, 3].map((row) => (
-          <div key={row} className="grid min-h-[70px] grid-cols-[minmax(5rem,.8fr)_minmax(7rem,1.1fr)_minmax(6rem,1fr)_5.5rem] items-center gap-4 border-b border-stone-100 px-4 py-3 last:border-b-0 lg:grid-cols-[minmax(6rem,.8fr)_minmax(8rem,1fr)_minmax(15rem,2.4fr)_minmax(7.5rem,1fr)_4.5rem]">
+          <div key={row} className="grid min-h-[70px] grid-cols-[minmax(5rem,.8fr)_minmax(7rem,1.1fr)_minmax(6rem,1fr)_5.5rem] items-center gap-4 border-b border-border px-4 py-3 last:border-b-0 lg:grid-cols-[minmax(6rem,.8fr)_minmax(8rem,1fr)_minmax(15rem,2.4fr)_minmax(7.5rem,1fr)_4.5rem]">
             <Skeleton className={`h-4 rounded-full ${row % 2 ? "w-12" : "w-16"}`} />
             <Skeleton className={`h-4 rounded-full ${row % 2 ? "w-20" : "w-24"}`} />
             <Skeleton className={`hidden h-4 rounded-full lg:block ${row % 2 ? "w-40" : "w-52"}`} />
-            <span className="inline-flex w-fit rounded-full border border-stone-200/80 bg-stone-50 px-2 py-1 text-[11px] text-stone-500">در حال آماده‌سازی</span>
+            <span className="inline-flex w-fit rounded-full border border-border/80 bg-muted px-2 py-1 text-[11px] text-muted-foreground">در حال آماده‌سازی</span>
             <Skeleton className="h-4 w-10 rounded-full" />
           </div>
         ))}
       </div>
       <div className="space-y-3 md:hidden">
         {[0, 1, 2, 3].map((row) => (
-          <div key={row} className="rounded-xl border border-stone-200/80 bg-card p-4">
-            <div className="flex items-center justify-between gap-3"><Skeleton className="h-5 w-16 rounded-full" /><span className="inline-flex rounded-full border border-stone-200/80 bg-stone-50 px-2 py-1 text-[11px] text-stone-500">در حال آماده‌سازی</span></div>
+          <div key={row} className="rounded-xl border border-border/80 bg-card p-4">
+            <div className="flex items-center justify-between gap-3"><Skeleton className="h-5 w-16 rounded-full" /><span className="inline-flex rounded-full border border-border/80 bg-muted px-2 py-1 text-[11px] text-muted-foreground">در حال آماده‌سازی</span></div>
             <Skeleton className={`mt-4 h-4 rounded-full ${row % 2 ? "w-2/3" : "w-4/5"}`} />
             <div className="mt-4 flex justify-between"><Skeleton className="h-3 w-16 rounded-full" /><Skeleton className="h-3 w-12 rounded-full" /></div>
           </div>
@@ -365,29 +365,29 @@ function OrdersSkeleton() {
 
 function OrdersTable({ orders, timeZone }: { orders: OverviewData["activeOrders"]; timeZone: string }) {
   if (orders.length === 0) {
-    return <p className="flex min-h-[320px] items-center justify-center rounded-xl border border-dashed border-stone-200/80 bg-stone-50 px-4 py-8 text-center text-sm text-stone-500 md:min-h-[330px]">در حال حاضر سفارش بازی وجود ندارد.</p>;
+    return <p className="flex min-h-[320px] items-center justify-center rounded-xl border border-dashed border-border/80 bg-muted px-4 py-8 text-center text-sm text-muted-foreground md:min-h-[330px]">در حال حاضر سفارش بازی وجود ندارد.</p>;
   }
 
   return (
     <>
-      <div className="hidden overflow-hidden rounded-xl border border-stone-200/80 md:block" role="table" aria-label="سفارش‌های باز">
-        <div className="grid grid-cols-[minmax(5rem,.8fr)_minmax(7rem,1.1fr)_minmax(6rem,1fr)_5.5rem] gap-4 border-b border-stone-200/80 bg-stone-50 px-4 py-3 text-xs font-medium text-stone-500 lg:grid-cols-[minmax(6rem,.8fr)_minmax(8rem,1fr)_minmax(15rem,2.4fr)_minmax(7.5rem,1fr)_4.5rem]" role="row">
+      <div className="hidden overflow-hidden rounded-xl border border-border/80 md:block" role="table" aria-label="سفارش‌های باز">
+        <div className="grid grid-cols-[minmax(5rem,.8fr)_minmax(7rem,1.1fr)_minmax(6rem,1fr)_5.5rem] gap-4 border-b border-border/80 bg-muted px-4 py-3 text-xs font-medium text-muted-foreground lg:grid-cols-[minmax(6rem,.8fr)_minmax(8rem,1fr)_minmax(15rem,2.4fr)_minmax(7.5rem,1fr)_4.5rem]" role="row">
           <span role="columnheader">شماره</span><span role="columnheader">میز / نوع</span><span className="hidden lg:block" role="columnheader">اقلام</span><span role="columnheader">وضعیت</span><span role="columnheader">زمان</span>
         </div>
         {orders.map((order, index) => (
           <Link
             key={order.id}
             href={`/dashboard/orders/${order.id}`}
-            className="ops-order-row grid min-h-[70px] grid-cols-[minmax(5rem,.8fr)_minmax(7rem,1.1fr)_minmax(6rem,1fr)_5.5rem] items-center gap-4 border-b border-stone-100 px-4 py-3 text-sm transition-colors last:border-b-0 hover:bg-stone-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 active:scale-[0.99] lg:grid-cols-[minmax(6rem,.8fr)_minmax(8rem,1fr)_minmax(15rem,2.4fr)_minmax(7.5rem,1fr)_4.5rem]"
+            className="ops-order-row grid min-h-[70px] grid-cols-[minmax(5rem,.8fr)_minmax(7rem,1.1fr)_minmax(6rem,1fr)_5.5rem] items-center gap-4 border-b border-border px-4 py-3 text-sm transition-colors last:border-b-0 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 active:scale-[0.99] lg:grid-cols-[minmax(6rem,.8fr)_minmax(8rem,1fr)_minmax(15rem,2.4fr)_minmax(7.5rem,1fr)_4.5rem]"
             style={{ animationDelay: `${index * 60}ms` }}
             aria-label={`مشاهده سفارش ${toPersianDigits(order.orderNumber)}`}
             role="row"
           >
-            <span className="font-semibold text-stone-950" role="cell">#{toPersianDigits(order.orderNumber)}</span>
-            <span className="min-w-0 truncate text-stone-500" role="cell">{order.tableName ?? (order.type === "takeaway" ? "بیرون‌بر" : "ارسال")}</span>
-            <span className="hidden min-w-0 truncate text-stone-500 lg:block" role="cell">{order.items || "—"}</span>
+            <span className="font-semibold text-foreground" role="cell">#{toPersianDigits(order.orderNumber)}</span>
+            <span className="min-w-0 truncate text-muted-foreground" role="cell">{order.tableName ?? (order.type === "takeaway" ? "بیرون‌بر" : "ارسال")}</span>
+            <span className="hidden min-w-0 truncate text-muted-foreground lg:block" role="cell">{order.items || "—"}</span>
             <span role="cell"><StatusChip status={order.kitchenStatus} /></span>
-            <span className="text-xs tabular-nums text-stone-500" role="cell">{formatTime(order.openedAt, timeZone)}</span>
+            <span className="text-xs tabular-nums text-muted-foreground" role="cell">{formatTime(order.openedAt, timeZone)}</span>
           </Link>
         ))}
       </div>
@@ -396,13 +396,13 @@ function OrdersTable({ orders, timeZone }: { orders: OverviewData["activeOrders"
           <Link
             key={order.id}
             href={`/dashboard/orders/${order.id}`}
-            className="ops-order-row block rounded-xl border border-stone-200/80 bg-card p-4 shadow-[0_1px_2px_rgb(41_37_36/0.03)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 active:scale-[0.98]"
+            className="ops-order-row block rounded-xl border border-border/80 bg-card p-4 shadow-[0_1px_2px_rgb(41_37_36/0.03)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 active:scale-[0.98]"
             style={{ animationDelay: `${index * 60}ms` }}
             aria-label={`مشاهده سفارش ${toPersianDigits(order.orderNumber)}`}
           >
-            <div className="flex items-start justify-between gap-3"><span className="font-semibold text-stone-950">#{toPersianDigits(order.orderNumber)}</span><StatusChip status={order.kitchenStatus} /></div>
-            <p className="mt-3 text-sm leading-6 text-stone-950">{order.items || "بدون قلم"}</p>
-            <div className="mt-3 flex items-center justify-between border-t border-stone-100 pt-3 text-xs text-stone-500"><span>{order.tableName ?? (order.type === "takeaway" ? "بیرون‌بر" : "ارسال")}</span><span>{formatTime(order.openedAt, timeZone)}</span></div>
+            <div className="flex items-start justify-between gap-3"><span className="font-semibold text-foreground">#{toPersianDigits(order.orderNumber)}</span><StatusChip status={order.kitchenStatus} /></div>
+            <p className="mt-3 text-sm leading-6 text-foreground">{order.items || "بدون قلم"}</p>
+            <div className="mt-3 flex items-center justify-between border-t border-border pt-3 text-xs text-muted-foreground"><span>{order.tableName ?? (order.type === "takeaway" ? "بیرون‌بر" : "ارسال")}</span><span>{formatTime(order.openedAt, timeZone)}</span></div>
           </Link>
         ))}
       </div>
@@ -527,30 +527,30 @@ export function OperationsOverview({
       <header className={`mb-5 hidden items-start justify-between gap-4 ${cardClass} px-5 py-4 shadow-[0_1px_2px_rgb(41_37_36/0.03)] md:flex`}>
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-            <p className="text-2xl font-bold tracking-[-0.03em] text-stone-950">نمای کلی عملیات امروز</p>
-            <span className="rounded-full bg-stone-100 px-2.5 py-1 text-xs font-medium text-stone-500">{roleLabel}</span>
+            <p className="text-2xl font-bold tracking-[-0.03em] text-foreground">نمای کلی عملیات امروز</p>
+            <span className="rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">{roleLabel}</span>
           </div>
-          <p className="mt-2 flex items-center gap-1.5 text-sm text-stone-500"><CalendarDaysIcon className="size-4" aria-hidden="true" />{dayLabel}{businessDayNote ? <span className="rounded-full bg-stone-100 px-2 py-0.5 text-xs text-stone-500">{businessDayNote}</span> : null}</p>
+          <p className="mt-2 flex items-center gap-1.5 text-sm text-muted-foreground"><CalendarDaysIcon className="size-4" aria-hidden="true" />{dayLabel}{businessDayNote ? <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{businessDayNote}</span> : null}</p>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
-          <div className="flex min-h-11 items-center gap-2 rounded-xl border border-stone-200/80 bg-stone-50 px-3 text-sm font-medium text-stone-950">
-            <Building2Icon className="size-4 text-amber-600" aria-hidden="true" />
+          <div className="flex min-h-11 items-center gap-2 rounded-xl border border-border/80 bg-muted px-3 text-sm font-medium text-foreground">
+            <Building2Icon className="size-4 text-amber-600 dark:text-amber-400" aria-hidden="true" />
             <span className="max-w-36 truncate">{data?.businessName ?? "کسب‌وکار"}</span>
           </div>
           <BranchSwitcher compact />
-          <Link href="/dashboard/orders" className="relative inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl border border-stone-200/80 bg-card text-stone-600 transition-colors hover:bg-stone-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 active:scale-[0.98]" aria-label="مشاهده سفارش‌های باز">
+          <Link href="/dashboard/orders" className="relative inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl border border-border/80 bg-card text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 active:scale-[0.98]" aria-label="مشاهده سفارش‌های باز">
             <BellIcon className="size-5" aria-hidden="true" />
-            {data && data.activeOrderCount > 0 ? <span className="absolute -left-1 -top-1 inline-flex min-w-5 items-center justify-center rounded-full bg-amber-100 px-1 text-[10px] font-bold leading-5 text-amber-700">{toPersianDigits(String(data.activeOrderCount))}</span> : null}
+            {data && data.activeOrderCount > 0 ? <span className="absolute -left-1 -top-1 inline-flex min-w-5 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-500/20 px-1 text-[10px] font-bold leading-5 text-amber-700 dark:text-amber-300">{toPersianDigits(String(data.activeOrderCount))}</span> : null}
           </Link>
-          <div className="flex min-h-11 items-center gap-2 rounded-xl border border-emerald-100 bg-emerald-50 px-3 text-xs text-emerald-700" role="status">
+          <div className="flex min-h-11 items-center gap-2 rounded-xl border border-emerald-100 dark:border-emerald-900 bg-emerald-50 dark:bg-emerald-500/15 px-3 text-xs text-emerald-700 dark:text-emerald-300" role="status">
             {/* Both keys only force a remount so the animation replays. They must stay
                 namespaced: the two counters are equal on mount and again on every refresh
                 (refreshTick bumps before the fetch, successTick after), and bare numbers
                 made these two siblings collide on every poll. */}
             <RefreshCwIcon key={`sync-${refreshTick}`} className={`size-4 ${refreshTick > 0 && !reducedMotion ? "ops-sync-rotate" : ""}`} aria-hidden="true" />
-            <span key={`ok-${successTick}`} className={`flex size-2 rounded-full bg-emerald-500 ${successTick > 0 && !reducedMotion ? "ops-sync-pulse" : ""}`} aria-hidden="true" />
+            <span key={`ok-${successTick}`} className={`flex size-2 rounded-full bg-emerald-500 dark:bg-emerald-500 ${successTick > 0 && !reducedMotion ? "ops-sync-pulse" : ""}`} aria-hidden="true" />
             <span>{syncLabel}</span>
-            {data && !isRefreshing ? <span className="border-r border-emerald-200 pr-2 tabular-nums">{formatTime(data.generatedAt, data.timeZone)}</span> : null}
+            {data && !isRefreshing ? <span className="border-r border-emerald-200 dark:border-emerald-800 pr-2 tabular-nums">{formatTime(data.generatedAt, data.timeZone)}</span> : null}
           </div>
         </div>
       </header>
@@ -571,10 +571,10 @@ export function OperationsOverview({
 
       <section className={`mb-5 overflow-hidden ${cardClass} p-4 shadow-[0_1px_2px_rgb(41_37_36/0.03)] sm:p-5`} aria-labelledby="sales-trend-heading">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div><h2 id="sales-trend-heading" className="font-semibold text-stone-950">روند فروش امروز</h2><p className="mt-1 text-xs text-stone-500">فروش‌های تکمیل‌شده به تفکیک ساعت{businessDayNote ? ` — ${businessDayNote}` : ""}</p></div>
-          <div className="inline-flex min-h-11 w-fit rounded-xl border border-stone-200/80 bg-stone-50 p-1" role="group" aria-label="نمایش روند فروش">
-            <button type="button" onClick={() => setCumulative(false)} aria-pressed={!cumulative} className={`min-h-9 rounded-lg px-3 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 active:scale-[0.98] ${!cumulative ? "bg-card text-stone-950 shadow-[0_1px_2px_rgb(41_37_36/0.05)]" : "text-stone-500"}`}>ساعتی</button>
-            <button type="button" onClick={() => setCumulative(true)} aria-pressed={cumulative} className={`min-h-9 rounded-lg px-3 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 active:scale-[0.98] ${cumulative ? "bg-card text-stone-950 shadow-[0_1px_2px_rgb(41_37_36/0.05)]" : "text-stone-500"}`}>تجمعی</button>
+          <div><h2 id="sales-trend-heading" className="font-semibold text-foreground">روند فروش امروز</h2><p className="mt-1 text-xs text-muted-foreground">فروش‌های تکمیل‌شده به تفکیک ساعت{businessDayNote ? ` — ${businessDayNote}` : ""}</p></div>
+          <div className="inline-flex min-h-11 w-fit rounded-xl border border-border/80 bg-muted p-1" role="group" aria-label="نمایش روند فروش">
+            <button type="button" onClick={() => setCumulative(false)} aria-pressed={!cumulative} className={`min-h-9 rounded-lg px-3 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 active:scale-[0.98] ${!cumulative ? "bg-card text-foreground shadow-[0_1px_2px_rgb(41_37_36/0.05)]" : "text-muted-foreground"}`}>ساعتی</button>
+            <button type="button" onClick={() => setCumulative(true)} aria-pressed={cumulative} className={`min-h-9 rounded-lg px-3 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 active:scale-[0.98] ${cumulative ? "bg-card text-foreground shadow-[0_1px_2px_rgb(41_37_36/0.05)]" : "text-muted-foreground"}`}>تجمعی</button>
           </div>
         </div>
         {showChart ? <SalesTrendChart key={cumulative ? "cumulative" : "hourly"} hourly={data.hourly} cumulative={cumulative} reducedMotion={reducedMotion} startMinutes={data.businessDay?.enabled ? data.businessDay.startMinutes : null} /> : <SalesTrendSkeleton />}
@@ -582,11 +582,11 @@ export function OperationsOverview({
 
       <section className={`${cardClass} p-4 shadow-[0_1px_2px_rgb(41_37_36/0.03)] sm:p-5`} aria-labelledby="active-orders-heading">
         <div className="mb-4 flex items-start justify-between gap-3">
-          <div><h2 id="active-orders-heading" className="font-semibold text-stone-950">سفارش‌های فعال</h2><p className="mt-1 text-xs text-stone-500">وضعیت سفارش‌های باز همین شعبه</p></div>
-          <Link href="/dashboard/orders" className="hidden min-h-11 items-center gap-1 rounded-xl border border-stone-200/80 px-3 text-sm font-medium text-stone-950 transition-colors hover:bg-stone-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 active:scale-[0.98] sm:inline-flex">مشاهده همه<ChevronLeftIcon className="size-4" aria-hidden="true" /></Link>
+          <div><h2 id="active-orders-heading" className="font-semibold text-foreground">سفارش‌های فعال</h2><p className="mt-1 text-xs text-muted-foreground">وضعیت سفارش‌های باز همین شعبه</p></div>
+          <Link href="/dashboard/orders" className="hidden min-h-11 items-center gap-1 rounded-xl border border-border/80 px-3 text-sm font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 active:scale-[0.98] sm:inline-flex">مشاهده همه<ChevronLeftIcon className="size-4" aria-hidden="true" /></Link>
         </div>
         {showOrders ? <OrdersTable orders={data.activeOrders} timeZone={data.timeZone} /> : <OrdersSkeleton />}
-        <Link href="/dashboard/orders" className="mt-4 flex min-h-12 w-full items-center justify-center gap-1 rounded-xl border border-amber-500/35 bg-amber-50 px-4 text-sm font-semibold text-amber-800 transition-colors hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 active:scale-[0.98] sm:hidden">مشاهده همه سفارش‌ها<ChevronLeftIcon className="size-4" aria-hidden="true" /></Link>
+        <Link href="/dashboard/orders" className="mt-4 flex min-h-12 w-full items-center justify-center gap-1 rounded-xl border border-amber-500/35 dark:border-amber-500/60 bg-amber-50 dark:bg-amber-500/15 px-4 text-sm font-semibold text-amber-800 dark:text-amber-300 transition-colors hover:bg-amber-50 dark:hover:bg-amber-500/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 active:scale-[0.98] sm:hidden">مشاهده همه سفارش‌ها<ChevronLeftIcon className="size-4" aria-hidden="true" /></Link>
       </section>
 
       {error ? (

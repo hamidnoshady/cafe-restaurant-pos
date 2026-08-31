@@ -7,9 +7,12 @@
  * setup wizard, the invite and consent screens, the apex business directory,
  * and the shared `src/components` layer they are built from. Before this test
  * those realms spoke the previous dialect — `shadow-sm` cards, spinner
- * loaders, `dark:` variants, hand-rolled skins — so opening the app as a
+ * loaders, light-only colours, hand-rolled skins — so opening the app as a
  * jewellery or haberdashery business looked like a different product from the
- * accounting suite two screens later.
+ * accounting suite two screens later. Dark mode IS supported across the app:
+ * colours come from the theme tokens (which flip) plus paired `dark:` shades,
+ * so a hardcoded light colour with no token/no `dark:` counterpart is what
+ * must not drift back.
  *
  * Not scanned:
  *  - `src/app/dashboard/**` — its own test covers it.
@@ -32,6 +35,8 @@ interface Rule {
   id: string;
   why: string;
   pattern: RegExp;
+  /** Colour rules for dark mode: a light class on a line with a `dark:` counterpart is fine. */
+  darkMode?: boolean;
 }
 
 const RULES: readonly Rule[] = [
@@ -46,9 +51,18 @@ const RULES: readonly Rule[] = [
     pattern: /(?<![\w-])shadow-(?:sm|md|lg|xl|2xl)\b/,
   },
   {
-    id: "dark: variants",
-    why: "The product is light-only; dark: variants render half-converted UI. docs/design-system.md §The old look.",
-    pattern: /\bdark:/,
+    id: "light-only warm neutrals (dark mode)",
+    why: "Dark mode is supported: stone-* neutrals must use the theme tokens (bg-card, text-foreground, border-border, muted, …) which flip automatically. A residual hardcoded stone-*/solid bg-white with no token/dark: counterpart renders a light chip on a dark surface. QR-code images are allowed to stay bg-white for scannability.",
+    pattern:
+      /(?:(?:[a-z-]+:)*!?)(?:bg|text|border|ring|divide|from|to|via|decoration|caret)-stone-\d{2,3}|\bbg-white\b(?!\/)/,
+    darkMode: true,
+  },
+  {
+    id: "light-only accent/status colours (dark mode)",
+    why: "Dark mode is supported: amber (brand) and emerald/rose/red/sky status colours need a light-on-dark shade. A hardcoded colour class with no dark: counterpart is unreadable in dark mode. Pair it with a dark: shade.",
+    pattern:
+      /(?:(?:[a-z-]+:)*!?)(?:text|bg|border|ring|divide)-(?:amber|emerald|rose|red|sky)-(?:50|100|200|300|400|500|600|700|800|900|950)(?![\w/-])/,
+    darkMode: true,
   },
   {
     id: "spinner loading",
@@ -58,7 +72,7 @@ const RULES: readonly Rule[] = [
   {
     id: "restated card skin",
     why: "The card skin lives in cardClass; restating `rounded-2xl border … bg-card … shadow-[…]` forks it. Compose cardClass (import from @/app/dashboard/page-chrome). docs/design-system.md §Page frame.",
-    pattern: /rounded-2xl border border-stone-200\/80 bg-card|rounded-2xl bg-card|border border-input bg-card/,
+    pattern: /rounded-2xl border border-border\/80 bg-card|rounded-2xl bg-card|border border-input bg-card/,
   },
   {
     id: "raw hex colours",
@@ -116,6 +130,35 @@ describe("design lint — the same design system on every tenant-facing surface"
       const violations: string[] = [];
       for (const { relPath } of files) {
         const content = contents.get(relPath)!;
+        if (rule.darkMode) {
+          const lines = content.split("\n");
+          // The PLATFORM_MFA_THEME block in mfa-step.tsx styles the always-dark
+          // platform console login (white/sky-on-slate); its colours are meant
+          // for a dark surface in both themes, so exclude that block.
+          const platformBlock =
+            relPath === "components/auth/mfa-step.tsx"
+              ? (() => {
+                  const start = content.indexOf("PLATFORM_MFA_THEME");
+                  const end = content.indexOf("\n};", start);
+                  return { start, end };
+                })()
+              : null;
+          const offsetOf = (idx: number) => content.slice(0, idx).split("\n").length - 1;
+          lines.forEach((line, i) => {
+            if (platformBlock && i >= offsetOf(platformBlock.start) && i <= offsetOf(platformBlock.end)) return;
+            for (const match of line.matchAll(new RegExp(rule.pattern.source, "g"))) {
+              // A line already carrying a dark: counterpart flips correctly.
+              if (line.includes("dark:")) continue;
+              // QR-code images keep bg-white in both themes for scannability.
+              if (/bg-white/.test(match[0])) {
+                const nearby = lines.slice(Math.max(0, i - 3), i + 1).join("\n");
+                if (/totpQr|QR|qrCode/.test(nearby)) continue;
+              }
+              violations.push(`  ${relPath}:${i + 1}  ${match[0]}`);
+            }
+          });
+          continue;
+        }
         for (const match of content.matchAll(new RegExp(rule.pattern.source, "g"))) {
           violations.push(`  ${relPath}:${content.slice(0, match.index).split("\n").length}  ${match[0]}`);
         }

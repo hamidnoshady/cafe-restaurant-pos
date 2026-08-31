@@ -113,7 +113,7 @@ export function AiChatHub({
 
   return (
     <section className="flex h-full min-h-0 w-full flex-col">
-      <header className="flex min-h-12 items-center gap-2 border-b border-stone-200/80 bg-white/80 px-2 py-1.5 backdrop-blur sm:px-3">
+      <header className="flex min-h-12 items-center gap-2 border-b border-border/80 bg-card/80 backdrop-blur px-2 py-1.5 backdrop-blur sm:px-3">
         {onOpenNav ? (
           <Button
             variant="ghost"
@@ -126,7 +126,7 @@ export function AiChatHub({
           </Button>
         ) : null}
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold text-stone-950">دستیار هوشمند</p>
+          <p className="truncate text-sm font-semibold text-foreground">دستیار هوشمند</p>
           {taskLabel ? (
             <p className="truncate text-[10px] text-muted-foreground">وظیفهٔ فعلی: {taskLabel}</p>
           ) : null}
@@ -160,7 +160,7 @@ export function AiChatHub({
             <div
               ref={orbRightRef}
               aria-hidden="true"
-              className="pointer-events-none absolute bottom-0 left-[8%] size-44 rounded-full bg-amber-300/20 blur-3xl"
+              className="pointer-events-none absolute bottom-0 left-[8%] size-44 rounded-full bg-amber-300/20 dark:bg-amber-500/35 blur-3xl"
             />
 
             <div
@@ -171,7 +171,7 @@ export function AiChatHub({
             </div>
             <h1
               data-hero
-              className="mt-6 bg-gradient-to-b from-stone-900 to-stone-600 bg-clip-text text-2xl font-bold tracking-tight text-transparent sm:text-[1.8rem]"
+              className="mt-6 bg-gradient-to-b from-foreground to-foreground/60 bg-clip-text text-2xl font-bold tracking-tight text-transparent sm:text-[1.8rem]"
             >
               امروز چطور می‌توانم کمکتان کنم؟
             </h1>
@@ -187,10 +187,10 @@ export function AiChatHub({
                   onClick={() => void sendMessage(suggestion)}
                   className={cn(
                     cardClass,
-                    "min-h-24 p-4 text-start text-sm leading-6 text-stone-700 transition-colors hover:bg-stone-50 hover:text-stone-950 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-amber-400/40",
+                    "min-h-24 p-4 text-start text-sm leading-6 text-foreground/80 transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-amber-400/40 dark:focus-visible:ring-amber-400/40",
                   )}
                 >
-                  <span className="mb-3 grid size-8 place-items-center rounded-xl bg-amber-100/70 text-amber-700">
+                  <span className="mb-3 grid size-8 place-items-center rounded-xl bg-amber-100/70 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300">
                     <SparklesIcon className="size-4" aria-hidden />
                   </span>
                   {suggestion}
@@ -230,7 +230,7 @@ export function AiChatHub({
         )}
       </div>
 
-      <div className="border-t border-stone-200/80 bg-white/80 px-2 py-2 backdrop-blur sm:px-4 sm:py-3">
+      <div className="border-t border-border/80 bg-card/80 backdrop-blur px-2 py-2 backdrop-blur sm:px-4 sm:py-3">
         <div className="mx-auto max-w-3xl">
           <ChatComposer
             variant="page"

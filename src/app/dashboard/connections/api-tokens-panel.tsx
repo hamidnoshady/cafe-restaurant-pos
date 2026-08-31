@@ -151,18 +151,18 @@ export function ApiTokensPanel() {
       {message?.kind === "error" ? <ErrorBox>{message.text}</ErrorBox> : null}
 
       {secret ? (
-        <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm">
-          <p className="font-semibold text-amber-900">این کلید فقط همین یک بار نمایش داده می‌شود.</p>
-          <p className="mt-1 text-xs text-amber-800">
+        <div className="rounded-xl border border-amber-300 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-500/15 p-4 text-sm">
+          <p className="font-semibold text-amber-900 dark:text-amber-200">این کلید فقط همین یک بار نمایش داده می‌شود.</p>
+          <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">
             آن را در جای امنی ذخیره کنید. اگر گم شود قابل بازیابی نیست و باید کلید تازه‌ای بسازید.
           </p>
-          <code dir="ltr" className="mt-2 block select-all break-all rounded-lg bg-white/70 p-2 font-mono text-amber-900">
+          <code dir="ltr" className="mt-2 block select-all break-all rounded-lg bg-white/70 p-2 font-mono text-amber-900 dark:text-amber-200">
             {secret}
           </code>
           <Button
             type="button"
             size="sm"
-            className="mt-2 bg-amber-600 text-white hover:bg-amber-700"
+            className="mt-2 bg-amber-500 dark:bg-amber-400 text-amber-950 hover:bg-amber-600 dark:hover:bg-amber-300"
             onClick={() => {
               void navigator.clipboard.writeText(secret).catch(() => undefined);
               setSecret(null);
@@ -208,8 +208,8 @@ export function ApiTokensPanel() {
                 aria-pressed={selected.includes(scope)}
                 className={`min-h-9 rounded-lg border px-3 text-xs font-medium transition-colors ${
                   selected.includes(scope)
-                    ? "border-amber-200 bg-amber-100 text-amber-950"
-                    : "border-stone-200 text-stone-600 hover:bg-stone-50"
+                    ? "border-amber-200 dark:border-amber-500/30 bg-amber-100 dark:bg-amber-500/20 text-amber-950 dark:text-amber-200"
+                    : "border-border text-muted-foreground hover:bg-muted"
                 }`}
               >
                 {SCOPE_LABELS[scope] ?? scope}
@@ -236,10 +236,10 @@ export function ApiTokensPanel() {
         ) : (
           <ul className="space-y-2">
             {keys.map((key) => (
-              <li key={key.id} className="rounded-xl border border-stone-200/80 p-3 text-sm">
+              <li key={key.id} className="rounded-xl border border-border/80 p-3 text-sm">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-semibold">{key.name}</span>
-                  <code dir="ltr" className="rounded bg-stone-100 px-2 py-0.5 font-mono text-xs">
+                  <code dir="ltr" className="rounded bg-muted px-2 py-0.5 font-mono text-xs">
                     {key.keyPrefix}…
                   </code>
                   <StatusBadge tone={key.status === "active" ? "positive" : "neutral"}>
@@ -260,7 +260,7 @@ export function ApiTokensPanel() {
                 </div>
                 <div className="mt-1 flex flex-wrap gap-2 text-xs text-muted-foreground">
                   {key.scopes.map((scope) => (
-                    <span key={scope} className="rounded bg-stone-100 px-2 py-0.5">
+                    <span key={scope} className="rounded bg-muted px-2 py-0.5">
                       {SCOPE_LABELS[scope] ?? scope}
                     </span>
                   ))}
@@ -280,7 +280,7 @@ export function ApiTokensPanel() {
         <p className="mb-2 text-xs leading-6 text-muted-foreground">
           کلید را در سرآیند <code dir="ltr">Authorization</code> بفرستید. آدرس پایه، همین دامنه است.
         </p>
-        <pre dir="ltr" className="overflow-x-auto rounded-lg bg-stone-900 p-3 text-xs text-stone-100">
+        <pre dir="ltr" className="overflow-x-auto rounded-lg bg-primary p-3 text-xs text-primary-foreground/90">
 {`curl -H "Authorization: Bearer posk_live_..." \\
      ${typeof window !== "undefined" ? window.location.origin : "https://your-domain"}/api/v1/orders`}
         </pre>

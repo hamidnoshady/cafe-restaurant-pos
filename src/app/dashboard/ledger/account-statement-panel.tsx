@@ -73,7 +73,7 @@ export function AccountStatementPanel({
       >
         <header className="mb-4 flex items-start justify-between gap-3 border-b border-border pb-4">
           <div>
-            <p className="text-xs font-semibold text-amber-700">گردش حساب (دفتر معین)</p>
+            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">گردش حساب (دفتر معین)</p>
             <h3 id="account-statement-heading" className="mt-1 text-lg font-bold">
               {accountCode} — {accountName}
             </h3>
@@ -83,7 +83,7 @@ export function AccountStatementPanel({
           </button>
         </header>
 
-        <div className="grid gap-3 rounded-xl border border-border bg-stone-50 p-3 sm:grid-cols-[1fr_auto_1fr] sm:items-end sm:p-4">
+        <div className="grid gap-3 rounded-xl border border-border bg-muted p-3 sm:grid-cols-[1fr_auto_1fr] sm:items-end sm:p-4">
           <label className="block text-sm font-medium">
             <span className="mb-1.5 block text-xs text-muted-foreground">از تاریخ</span>
             <JalaliDatePicker value={dateFrom} onChange={setDateFrom} placeholder="از ابتدا" />
@@ -99,20 +99,20 @@ export function AccountStatementPanel({
           <LoadingSkeleton rows={3} />
         ) : (
           <div className="mt-4">
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-stone-50 px-4 py-3 text-sm">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-muted px-4 py-3 text-sm">
               <span className="text-muted-foreground">مانده افتتاحیه</span>
               <span className="font-semibold tabular-nums">{money.format(statement.openingBalance)}</span>
             </div>
 
             {statement.lines.length === 0 ? (
-              <p className="rounded-xl border border-dashed border-border bg-stone-50 px-4 py-8 text-center text-sm text-muted-foreground">
+              <p className="rounded-xl border border-dashed border-border bg-muted px-4 py-8 text-center text-sm text-muted-foreground">
                 در این بازه هیچ سندی به این حساب ثبت نشده است.
               </p>
             ) : (
               <>
                 <div className="hidden overflow-x-auto rounded-xl border border-border lg:block">
                   <table className="min-w-[700px] w-full text-sm">
-                    <thead className="bg-stone-50">
+                    <thead className="bg-muted">
                       <tr className="border-b border-border text-muted-foreground">
                         <th scope="col" className="px-3 py-3 text-start font-semibold">تاریخ</th>
                         <th scope="col" className="px-3 py-3 text-start font-semibold">شرح</th>
@@ -137,7 +137,7 @@ export function AccountStatementPanel({
 
                 <div className="space-y-3 lg:hidden">
                   {statement.lines.map((l) => (
-                    <article key={l.entryId} className="rounded-xl border border-border bg-stone-50 p-4">
+                    <article key={l.entryId} className="rounded-xl border border-border bg-muted p-4">
                       <div className="flex flex-wrap items-start justify-between gap-2">
                         <p className="text-xs text-muted-foreground">{toPersianDigits(formatJalali(l.date))}</p>
                       </div>
@@ -162,7 +162,7 @@ export function AccountStatementPanel({
               </>
             )}
 
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-stone-50 px-4 py-3 text-sm">
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-muted px-4 py-3 text-sm">
               <span className="text-muted-foreground">مانده اختتامیه</span>
               <span className="font-bold tabular-nums">{money.format(statement.closingBalance)}</span>
             </div>

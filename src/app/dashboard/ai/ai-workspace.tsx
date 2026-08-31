@@ -22,7 +22,7 @@ export function AiWorkspace() {
   return (
     <div className="flex h-full min-h-0 w-full">
       {/* Desktop rail */}
-      <aside className="hidden w-72 shrink-0 border-l border-stone-200/80 md:block">
+      <aside className="hidden w-72 shrink-0 border-l border-border/80 md:block">
         <AiSidebar chat={chat} onNavigate={() => setNavOpen(false)} />
       </aside>
 

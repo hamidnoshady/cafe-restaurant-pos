@@ -195,7 +195,7 @@ export function AiAutopilotActivity() {
                   <p className="mt-1 text-xs leading-6 text-muted-foreground">{entry.actionSummary}</p>
                 ) : null}
                 {entry.status === "proposed" && entry.deferredReason ? (
-                  <p className="mt-1 text-xs text-amber-800">
+                  <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">
                     {DEFERRED_REASON[entry.deferredReason] ?? "برای تأیید شما نگه داشته شد."}
                   </p>
                 ) : null}

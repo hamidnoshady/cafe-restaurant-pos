@@ -10,7 +10,7 @@ import { firstPrinter, useBusinessInfo, usePrinters } from "../use-printers";
 import { api, Field, inputClass } from "../ui";
 import { LoadingSkeleton, SectionCardSkeleton, cardClass } from "../page-chrome";
 
-const accInputClass = `${inputClass} min-h-[52px] !border-stone-200 !bg-card shadow-none placeholder:text-stone-400 focus-visible:border-amber-500 focus-visible:ring-amber-400/30`;
+const accInputClass = `${inputClass} min-h-[52px] !border-border !bg-card shadow-none placeholder:text-muted-foreground focus-visible:border-amber-500 dark:focus-visible:border-amber-500/60 focus-visible:ring-amber-400/30 dark:focus-visible:ring-amber-400/40`;
 
 interface ItemRow {
   id: string;
@@ -88,8 +88,8 @@ export function MerchandisingSection() {
         onDone={refreshDone}
       />
 
-      {error ? <p className="text-xs text-rose-700 xl:col-span-3">{error}</p> : null}
-      {done ? <p className="text-xs text-emerald-700 xl:col-span-3">{done}</p> : null}
+      {error ? <p className="text-xs text-rose-700 dark:text-rose-300 xl:col-span-3">{error}</p> : null}
+      {done ? <p className="text-xs text-emerald-700 dark:text-emerald-300 xl:col-span-3">{done}</p> : null}
 
       <TesterPanel items={items} busy={busy} setBusy={setBusy} setError={setError} onDone={refreshDone} />
       <BarcodesPanel items={items} busy={busy} setBusy={setBusy} setError={setError} onDone={refreshDone} />
@@ -100,7 +100,7 @@ export function MerchandisingSection() {
 function PanelShell({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className={`${cardClass} p-4 sm:p-5`}>
-      <h2 className="font-semibold text-stone-950">{title}</h2>
+      <h2 className="font-semibold text-foreground">{title}</h2>
       <div className="mt-4 space-y-3">{children}</div>
     </section>
   );
@@ -152,7 +152,7 @@ function BrandForm({
         <Field label="خط تولید">
           <input className={accInputClass} value={productLine} onChange={(e) => setProductLine(e.target.value)} />
         </Field>
-        <Button type="submit" disabled={busy} size="lg" className="min-h-[52px] w-full border border-amber-300 px-5 font-semibold">
+        <Button type="submit" disabled={busy} size="lg" className="min-h-[52px] w-full border border-amber-300 dark:border-amber-500/40 px-5 font-semibold">
           ثبت برند
         </Button>
       </form>
@@ -218,7 +218,7 @@ function MatrixForm({
         <Field label="محور دوم — مقادیر (با کاما)">
           <input className={accInputClass} dir="ltr" value={axisBValues} onChange={(e) => setAxisBValues(e.target.value)} placeholder="۳۰ میل، ۵۰ میل" />
         </Field>
-        <Button type="submit" disabled={busy} size="lg" className="min-h-[52px] w-full border border-amber-300 px-5 font-semibold">
+        <Button type="submit" disabled={busy} size="lg" className="min-h-[52px] w-full border border-amber-300 dark:border-amber-500/40 px-5 font-semibold">
           ساخت N×M تنوع
         </Button>
       </form>
@@ -313,7 +313,7 @@ function ItemProfileForm({
           <input className={accInputClass} value={tags} onChange={(e) => setTags(e.target.value)} placeholder="پوست چرب، موی رنگ‌شده" />
         </Field>
         {selected?.brandName ? <p className="text-xs text-muted-foreground">برند فعلی: {selected.brandName}</p> : null}
-        <Button type="submit" disabled={busy} size="lg" className="min-h-[52px] w-full border border-amber-300 px-5 font-semibold">
+        <Button type="submit" disabled={busy} size="lg" className="min-h-[52px] w-full border border-amber-300 dark:border-amber-500/40 px-5 font-semibold">
           ذخیره
         </Button>
       </form>
@@ -372,7 +372,7 @@ function TesterPanel({
       <p className="text-xs leading-5 text-muted-foreground">
         یک واحد فروختنی را به‌عنوان تستر باز می‌کند؛ بهای تمام‌شدهٔ آن به هزینهٔ بازاریابی (۵۱۶۰) می‌رود، نه بهای کالای فروخته‌شده.
       </p>
-      <Button type="button" disabled={busy || !selected} size="lg" className="min-h-[52px] w-full border border-amber-300 px-5 font-semibold" onClick={() => void open()}>
+      <Button type="button" disabled={busy || !selected} size="lg" className="min-h-[52px] w-full border border-amber-300 dark:border-amber-500/40 px-5 font-semibold" onClick={() => void open()}>
         باز کردن تستر
       </Button>
     </PanelShell>
@@ -502,21 +502,21 @@ function BarcodesPanel({
           onChange={(e) => setManualCode(e.target.value)}
           placeholder="بارکد فروشنده (اختیاری)"
         />
-        <Button type="button" disabled={busy || !selected} size="lg" className="min-h-[52px] border border-amber-300 px-4 font-semibold" onClick={() => void assign(false)}>
+        <Button type="button" disabled={busy || !selected} size="lg" className="min-h-[52px] border border-amber-300 dark:border-amber-500/40 px-4 font-semibold" onClick={() => void assign(false)}>
           ثبت
         </Button>
       </div>
-      <Button type="button" disabled={busy || !selected} size="lg" className="min-h-[52px] w-full border border-amber-300 px-5 font-semibold" onClick={() => void assign(true)}>
+      <Button type="button" disabled={busy || !selected} size="lg" className="min-h-[52px] w-full border border-amber-300 dark:border-amber-500/40 px-5 font-semibold" onClick={() => void assign(true)}>
         تولید بارکد داخلی
       </Button>
 
       {barcodesLoading ? (
         <LoadingSkeleton rows={2} compact label="در حال بارگذاری بارکدهای کالا" />
       ) : barcodes.length > 0 ? (
-        <ul className="divide-y divide-stone-200/80 text-sm">
+        <ul className="divide-y divide-border/80 text-sm">
           {barcodes.map((b) => (
             <li key={b.id} className="flex items-center justify-between gap-2 py-2">
-              <span dir="ltr" className="font-mono text-stone-900">{b.code}</span>
+              <span dir="ltr" className="font-mono text-foreground">{b.code}</span>
               <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => print(b.code)}>
                 چاپ لیبل
               </Button>

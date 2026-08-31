@@ -20,7 +20,7 @@ export default function RootLoading() {
               <Skeleton className="h-3 w-56 max-w-full" />
             </div>
           </div>
-          <div className="space-y-3 border-t border-stone-100 pt-5">
+          <div className="space-y-3 border-t border-border pt-5">
             <Skeleton className="h-4 w-24" />
             <Skeleton className="h-10 w-full rounded-lg" />
             <Skeleton className="h-4 w-20" />

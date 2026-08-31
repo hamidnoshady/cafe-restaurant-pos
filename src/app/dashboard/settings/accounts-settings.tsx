@@ -118,7 +118,7 @@ export function AccountsSettings() {
 
         <div className="space-y-3">
           {accounts.map((account, index) => (
-            <div key={`${account.code}-${index}`} className="grid gap-2 rounded-xl border border-stone-200/80 p-3 md:grid-cols-[7rem_1fr_9rem_1fr_auto]">
+            <div key={`${account.code}-${index}`} className="grid gap-2 rounded-xl border border-border/80 p-3 md:grid-cols-[7rem_1fr_9rem_1fr_auto]">
               <input className={inputClass} dir="ltr" value={account.code} onChange={(e) => change(index, { code: e.target.value })} placeholder="کد" aria-label="کد حساب" />
               <input className={inputClass} value={account.name} onChange={(e) => change(index, { name: e.target.value })} placeholder="نام حساب" aria-label="نام حساب" />
               <SearchableSelect

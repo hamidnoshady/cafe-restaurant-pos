@@ -72,10 +72,10 @@ interface Waiter {
 }
 
 const STATUS_STYLE: Record<TableStatus, string> = {
-  free: "border-emerald-200 bg-emerald-50 text-emerald-700",
-  seated: "border-amber-300 bg-amber-100 text-amber-800",
+  free: "border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
+  seated: "border-amber-300 dark:border-amber-500/40 bg-amber-100 dark:bg-amber-500/20 text-amber-800 dark:text-amber-300",
   bill_requested: "border-chart-7/25 bg-chart-7/5 text-chart-7",
-  cleaning: "border-stone-200/80 bg-stone-100 text-stone-500",
+  cleaning: "border-border/80 bg-muted text-muted-foreground",
   out_of_service: "border-destructive/30 bg-destructive/5 text-destructive",
 };
 /* Status is never color-only: each state also carries an icon (and label in the legend). */
@@ -97,7 +97,7 @@ const GRID = 10;
 const snap = (n: number) => Math.max(0, Math.round(n / GRID) * GRID);
 const SURFACE = cardClass;
 const CONTROL =
-  "min-h-12 rounded-xl border px-3 text-sm font-bold transition duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 active:scale-[0.98] motion-reduce:transition-none";
+  "min-h-12 rounded-xl border px-3 text-sm font-bold transition duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 active:scale-[0.98] motion-reduce:transition-none";
 
 export function FloorPlan({ canEdit }: { canEdit: boolean }) {
   const [sections, setSections] = useState<FloorSection[]>([]);
@@ -186,16 +186,16 @@ export function FloorPlan({ canEdit }: { canEdit: boolean }) {
         <div className="flex flex-col gap-3 p-3 sm:p-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex min-w-0 items-center gap-3">
             <span
-              className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700"
+              className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300"
               aria-hidden="true"
             >
               <UsersIcon className="size-5" />
             </span>
             <div className="min-w-0">
-              <h1 className="truncate text-lg font-bold text-stone-950">
+              <h1 className="truncate text-lg font-bold text-foreground">
                 میزها و پلان سالن
               </h1>
-              <p className="mt-0.5 truncate text-xs text-stone-500">
+              <p className="mt-0.5 truncate text-xs text-muted-foreground">
                 نمای عملیاتی سالن، نشست مهمان و چیدمان میزها
               </p>
             </div>
@@ -203,7 +203,7 @@ export function FloorPlan({ canEdit }: { canEdit: boolean }) {
           <div className="flex items-center justify-between gap-2 lg:justify-end">
             <KnowledgeHelpButton section="floor" />
             <span
-              className="text-xs text-stone-500"
+              className="text-xs text-muted-foreground"
               role="status"
               aria-live="polite"
             >
@@ -215,7 +215,7 @@ export function FloorPlan({ canEdit }: { canEdit: boolean }) {
               type="button"
               onClick={() => void load()}
               disabled={isRefreshing}
-              className={`${CONTROL} flex shrink-0 items-center gap-2 border-stone-200/80 bg-card text-stone-600 hover:bg-stone-50 disabled:opacity-60`}
+              className={`${CONTROL} flex shrink-0 items-center gap-2 border-border/80 bg-card text-muted-foreground hover:bg-muted disabled:opacity-60`}
               aria-label={
                 isRefreshing
                   ? "در حال به‌روزرسانی پلان سالن"
@@ -231,11 +231,11 @@ export function FloorPlan({ canEdit }: { canEdit: boolean }) {
           </div>
         </div>
 
-        <div className="border-t border-stone-200/80 px-3 py-3 sm:px-4">
+        <div className="border-t border-border/80 px-3 py-3 sm:px-4">
           <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
             {canEdit ? (
               <div
-                className="inline-flex min-h-12 self-start rounded-xl border border-stone-200/80 bg-stone-50 p-1"
+                className="inline-flex min-h-12 self-start rounded-xl border border-border/80 bg-muted p-1"
                 role="tablist"
                 aria-label="حالت نمایش پلان سالن"
               >
@@ -244,10 +244,10 @@ export function FloorPlan({ canEdit }: { canEdit: boolean }) {
                   role="tab"
                   aria-selected={mode === "view"}
                   onClick={() => setWorkspaceMode("view")}
-                  className={`min-h-10 rounded-lg px-3 text-sm font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 motion-reduce:transition-none ${
+                  className={`min-h-10 rounded-lg px-3 text-sm font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 motion-reduce:transition-none ${
                     mode === "view"
-                      ? "bg-amber-100 text-amber-700 shadow-[0_1px_2px_rgb(41_37_36/0.05)]"
-                      : "text-stone-500 hover:bg-card"
+                      ? "bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300 shadow-[0_1px_2px_rgb(41_37_36/0.05)]"
+                      : "text-muted-foreground hover:bg-card"
                   }`}
                 >
                   نمای سالن
@@ -257,17 +257,17 @@ export function FloorPlan({ canEdit }: { canEdit: boolean }) {
                   role="tab"
                   aria-selected={mode === "edit"}
                   onClick={() => setWorkspaceMode("edit")}
-                  className={`min-h-10 rounded-lg px-3 text-sm font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 motion-reduce:transition-none ${
+                  className={`min-h-10 rounded-lg px-3 text-sm font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 motion-reduce:transition-none ${
                     mode === "edit"
-                      ? "bg-amber-100 text-amber-700 shadow-[0_1px_2px_rgb(41_37_36/0.05)]"
-                      : "text-stone-500 hover:bg-card"
+                      ? "bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300 shadow-[0_1px_2px_rgb(41_37_36/0.05)]"
+                      : "text-muted-foreground hover:bg-card"
                   }`}
                 >
                   ویرایش پلان
                 </button>
               </div>
             ) : (
-              <span className="inline-flex min-h-12 items-center rounded-xl bg-amber-50 px-3 text-sm font-bold text-amber-700">
+              <span className="inline-flex min-h-12 items-center rounded-xl bg-amber-50 dark:bg-amber-500/15 px-3 text-sm font-bold text-amber-700 dark:text-amber-300">
                 نمای سالن
               </span>
             )}
@@ -277,14 +277,14 @@ export function FloorPlan({ canEdit }: { canEdit: boolean }) {
                 <button
                   type="button"
                   onClick={() => scrollToEditor("floor-sections-editor")}
-                  className={`${CONTROL} border-stone-200/80 bg-card text-stone-600 hover:bg-stone-50`}
+                  className={`${CONTROL} border-border/80 bg-card text-muted-foreground hover:bg-muted`}
                 >
                   بخش‌ها و گارسون‌ها
                 </button>
                 <button
                   type="button"
                   onClick={() => scrollToEditor("floor-add-table")}
-                  className={`${CONTROL} border-amber-200 bg-amber-100 text-amber-700 hover:bg-amber-100`}
+                  className={`${CONTROL} border-amber-200 dark:border-amber-500/30 bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-500/20`}
                 >
                   افزودن میز
                 </button>
@@ -315,14 +315,14 @@ export function FloorPlan({ canEdit }: { canEdit: boolean }) {
       <ErrorBox>{error}</ErrorBox>
       {loadError ? (
         <div
-          className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-amber-500/25 bg-amber-50 px-3 py-2 text-xs text-stone-600"
+          className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-amber-500/25 dark:border-amber-500/60 bg-amber-50 dark:bg-amber-500/15 px-3 py-2 text-xs text-muted-foreground"
           role="status"
         >
           <span>{loadError}</span>
           <button
             type="button"
             onClick={() => void load()}
-            className="min-h-11 shrink-0 px-2 font-bold text-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45"
+            className="min-h-11 shrink-0 px-2 font-bold text-amber-700 dark:text-amber-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45"
           >
             تلاش دوباره
           </button>
@@ -393,11 +393,11 @@ function FloorPlanSkeleton() {
       aria-label="در حال بارگذاری پلان سالن"
     >
       <section className={`${SURFACE} min-h-[500px] overflow-hidden`}>
-        <div className="flex items-center justify-between border-b border-stone-200/80 px-4 py-3">
-          <span className="h-4 w-28 animate-pulse rounded bg-stone-100 motion-reduce:animate-none" />
-          <span className="h-4 w-20 animate-pulse rounded bg-stone-100 motion-reduce:animate-none" />
+        <div className="flex items-center justify-between border-b border-border/80 px-4 py-3">
+          <span className="h-4 w-28 animate-pulse rounded bg-muted motion-reduce:animate-none" />
+          <span className="h-4 w-20 animate-pulse rounded bg-muted motion-reduce:animate-none" />
         </div>
-        <div className="relative min-h-[448px] bg-stone-50">
+        <div className="relative min-h-[448px] bg-muted">
           {[
             ["top-16", "end-12"],
             ["top-36", "end-1/3"],
@@ -413,9 +413,9 @@ function FloorPlanSkeleton() {
         </div>
       </section>
       <aside className={`${SURFACE} min-h-56 p-4`}>
-        <span className="block h-5 w-32 animate-pulse rounded bg-stone-100 motion-reduce:animate-none" />
-        <span className="mt-4 block h-12 w-full animate-pulse rounded-xl bg-stone-100 motion-reduce:animate-none" />
-        <span className="mt-3 block h-12 w-full animate-pulse rounded-xl bg-stone-100 motion-reduce:animate-none" />
+        <span className="block h-5 w-32 animate-pulse rounded bg-muted motion-reduce:animate-none" />
+        <span className="mt-4 block h-12 w-full animate-pulse rounded-xl bg-muted motion-reduce:animate-none" />
+        <span className="mt-3 block h-12 w-full animate-pulse rounded-xl bg-muted motion-reduce:animate-none" />
       </aside>
     </div>
   );
@@ -427,15 +427,15 @@ function NoSelectionPanel() {
       className={`${SURFACE} flex min-h-56 flex-col justify-center p-5 text-center`}
     >
       <span
-        className="mx-auto flex size-11 items-center justify-center rounded-xl bg-amber-100 text-amber-700"
+        className="mx-auto flex size-11 items-center justify-center rounded-xl bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300"
         aria-hidden="true"
       >
         <UsersIcon className="size-5" />
       </span>
-      <h2 className="mt-3 text-sm font-bold text-stone-950">
+      <h2 className="mt-3 text-sm font-bold text-foreground">
         یک میز را انتخاب کنید
       </h2>
-      <p className="mt-2 text-xs leading-6 text-stone-500">
+      <p className="mt-2 text-xs leading-6 text-muted-foreground">
         برای مشاهدهٔ وضعیت و انجام عملیات مجازِ همان میز، آن را از روی پلان لمس
         یا انتخاب کنید.
       </p>
@@ -530,16 +530,16 @@ function Canvas({
       className={`${SURFACE} min-w-0 overflow-hidden`}
       aria-label="پلان سالن"
     >
-      <div className="flex min-h-14 items-center justify-between gap-3 border-b border-stone-200/80 px-4 py-3">
+      <div className="flex min-h-14 items-center justify-between gap-3 border-b border-border/80 px-4 py-3">
         <div className="min-w-0">
-          <h2 className="text-sm font-bold text-stone-950">پلان سالن</h2>
-          <p className="mt-0.5 truncate text-xs text-stone-500">
+          <h2 className="text-sm font-bold text-foreground">پلان سالن</h2>
+          <p className="mt-0.5 truncate text-xs text-muted-foreground">
             {mode === "edit"
               ? "برای جابه‌جایی، میز را بکشید؛ تغییر مکان با همان سازوکار فعلی ذخیره می‌شود."
               : "برای مشاهدهٔ وضعیت یا عملیات مجاز، یک میز را انتخاب کنید."}
           </p>
         </div>
-        <span className="shrink-0 text-xs text-stone-500">
+        <span className="shrink-0 text-xs text-muted-foreground">
           {toPersianDigits(tables.length)} میز
         </span>
       </div>
@@ -548,7 +548,7 @@ function Canvas({
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerCancel}
-        className="relative min-h-[480px] overflow-hidden bg-stone-50 sm:min-h-[540px] xl:min-h-[620px]"
+        className="relative min-h-[480px] overflow-hidden bg-muted sm:min-h-[540px] xl:min-h-[620px]"
         style={{
           backgroundImage:
             mode === "edit"
@@ -560,17 +560,17 @@ function Canvas({
         {tables.length === 0 ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center px-6 text-center">
             <span
-              className="flex size-11 items-center justify-center rounded-xl bg-amber-100 text-amber-700"
+              className="flex size-11 items-center justify-center rounded-xl bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300"
               aria-hidden="true"
             >
               <UsersIcon className="size-5" />
             </span>
-            <h3 className="mt-3 text-sm font-bold text-stone-950">
+            <h3 className="mt-3 text-sm font-bold text-foreground">
               {loadError
                 ? "پلان سالن در دسترس نیست"
                 : "هنوز میزی روی پلان نیست"}
             </h3>
-            <p className="mt-2 max-w-80 text-xs leading-6 text-stone-500">
+            <p className="mt-2 max-w-80 text-xs leading-6 text-muted-foreground">
               {loadError ||
                 (mode === "edit"
                   ? "از بخش «افزودن میز» برای ساخت اولین میز استفاده کنید."
@@ -580,7 +580,7 @@ function Canvas({
               <button
                 type="button"
                 onClick={onRetry}
-                className="mt-4 min-h-12 rounded-xl bg-amber-100 px-4 text-sm font-bold text-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45"
+                className="mt-4 min-h-12 rounded-xl bg-amber-100 dark:bg-amber-500/20 px-4 text-sm font-bold text-amber-700 dark:text-amber-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45"
               >
                 تلاش دوباره
               </button>
@@ -601,9 +601,9 @@ function Canvas({
               onClick={() => onSelect(t.id)}
               aria-pressed={selectedId === t.id}
               aria-label={`میز ${t.name}، ${TABLE_STATUS_LABELS[t.status]}، ${toPersianDigits(t.capacity)} نفره${section ? `، بخش ${section}` : ""}`}
-              className={`absolute flex min-h-16 min-w-16 flex-col items-center justify-center border-2 p-1.5 text-center text-xs shadow-[0_1px_2px_rgb(41_37_36/0.08)] transition-[color,background-color,border-color,box-shadow,transform] duration-200 focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2 active:scale-[0.98] motion-reduce:transition-none ${STATUS_STYLE[t.status]} ${
+              className={`absolute flex min-h-16 min-w-16 flex-col items-center justify-center border-2 p-1.5 text-center text-xs shadow-[0_1px_2px_rgb(41_37_36/0.08)] transition-[color,background-color,border-color,box-shadow,transform] duration-200 focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 dark:focus-visible:ring-amber-400/45 focus-visible:ring-offset-2 active:scale-[0.98] motion-reduce:transition-none ${STATUS_STYLE[t.status]} ${
                 selectedId === t.id
-                  ? "z-10 ring-2 ring-amber-500 ring-offset-2 ring-offset-stone-50"
+                  ? "z-10 ring-2 ring-amber-500 dark:ring-amber-400/45 ring-offset-2 ring-offset-background"
                   : ""
               } ${mode === "edit" ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"}`}
               style={{
@@ -700,7 +700,7 @@ function ViewPanel({
       <div className="mb-4 flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-base font-bold text-stone-950">
+            <h2 className="text-base font-bold text-foreground">
               میز {table.name}
             </h2>
             <span
@@ -709,14 +709,14 @@ function ViewPanel({
               {TABLE_STATUS_LABELS[table.status]}
             </span>
           </div>
-          <p className="mt-1 text-xs text-stone-500">
+          <p className="mt-1 text-xs text-muted-foreground">
             {toPersianDigits(table.capacity)} نفره
           </p>
         </div>
         <button
           type="button"
           onClick={onClose}
-          className="flex size-11 shrink-0 items-center justify-center rounded-xl text-stone-500 transition hover:bg-stone-100 hover:text-stone-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 active:scale-[0.98] motion-reduce:transition-none"
+          className="flex size-11 shrink-0 items-center justify-center rounded-xl text-muted-foreground transition hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 active:scale-[0.98] motion-reduce:transition-none"
           aria-label="بستن جزئیات میز"
         >
           <XIcon className="size-4" aria-hidden="true" />
@@ -748,17 +748,17 @@ function ViewPanel({
       {table.status === "free" ? (
         seating ? (
           <div className="space-y-3">
-            <div className="rounded-xl border border-stone-200/80 bg-stone-50 p-3">
-              <h3 className="text-sm font-bold text-stone-950">نشاندن مهمان</h3>
-              <p className="mt-1 text-xs leading-5 text-stone-500">
+            <div className="rounded-xl border border-border/80 bg-muted p-3">
+              <h3 className="text-sm font-bold text-foreground">نشاندن مهمان</h3>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">
                 اطلاعات نشست فقط با همین جریان فعلی ثبت می‌شود.
               </p>
               <label className="mt-3 block">
-                <span className="mb-1.5 block text-xs font-bold text-stone-600">
+                <span className="mb-1.5 block text-xs font-bold text-muted-foreground">
                   تعداد نفرات
                 </span>
                 <PersianNumberInput
-                  className={`${inputClass} min-h-12 border-stone-200/80 bg-card`}
+                  className={`${inputClass} min-h-12 border-border/80 bg-card`}
                   inputMode="numeric"
                   dir="ltr"
                   value={partySize}
@@ -768,12 +768,12 @@ function ViewPanel({
                 />
               </label>
               <label className="mt-3 block">
-                <span className="mb-1.5 block text-xs font-bold text-stone-600">
+                <span className="mb-1.5 block text-xs font-bold text-muted-foreground">
                   نام مهمان{" "}
-                  <span className="font-normal text-stone-500">(اختیاری)</span>
+                  <span className="font-normal text-muted-foreground">(اختیاری)</span>
                 </span>
                 <input
-                  className={`${inputClass} min-h-12 border-stone-200/80 bg-card`}
+                  className={`${inputClass} min-h-12 border-border/80 bg-card`}
                   value={guestName}
                   onChange={(e) => setGuestName(e.target.value)}
                   placeholder="نام مهمان"
@@ -821,7 +821,7 @@ function ViewPanel({
         <button
           type="button"
           onClick={() => act({ status: "out_of_service" })}
-          className="mt-3 min-h-11 px-1 text-xs font-bold text-stone-500 transition hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45"
+          className="mt-3 min-h-11 px-1 text-xs font-bold text-muted-foreground transition hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45"
         >
           خارج کردن از سرویس
         </button>
@@ -872,12 +872,12 @@ function EditorPanel({
           setError={setError}
         />
       ) : (
-        <div className={`${SURFACE} p-4 text-xs leading-6 text-stone-500`}>
+        <div className={`${SURFACE} p-4 text-xs leading-6 text-muted-foreground`}>
           برای ویرایش یک میز، آن را روی پلان انتخاب کنید. برای جابه‌جایی، میز را
           بکشید.
         </div>
       )}
-      <p className="px-1 text-xs text-stone-500">
+      <p className="px-1 text-xs text-muted-foreground">
         تعداد میزهای فعال: {toPersianDigits(tables.length)}
       </p>
     </div>
@@ -936,25 +936,25 @@ function SectionEditor({
         <div>
           <h3
             id="floor-sections-title"
-            className="text-sm font-bold text-stone-950"
+            className="text-sm font-bold text-foreground"
           >
             بخش‌ها و گارسون‌ها
           </h3>
-          <p className="mt-1 text-xs text-stone-500">
+          <p className="mt-1 text-xs text-muted-foreground">
             مدیریت بخش‌های موجود و گارسون هر بخش
           </p>
         </div>
-        <span className="shrink-0 text-xs text-stone-500">
+        <span className="shrink-0 text-xs text-muted-foreground">
           {toPersianDigits(sections.length)} بخش
         </span>
       </div>
-      <div className="mb-4 rounded-xl border border-stone-200/80 bg-stone-50 p-3">
+      <div className="mb-4 rounded-xl border border-border/80 bg-muted p-3">
         <label className="block">
-          <span className="mb-1.5 block text-xs font-bold text-stone-600">
+          <span className="mb-1.5 block text-xs font-bold text-muted-foreground">
             نام بخش جدید
           </span>
           <input
-            className={`${inputClass} min-h-12 border-stone-200/80 bg-card`}
+            className={`${inputClass} min-h-12 border-border/80 bg-card`}
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="مثلاً سالن اصلی"
@@ -965,7 +965,7 @@ function SectionEditor({
           type="button"
           onClick={addSection}
           disabled={busy}
-          className={`mt-3 w-full ${CONTROL} border-stone-200/80 bg-card text-stone-600 hover:bg-stone-100 disabled:opacity-60`}
+          className={`mt-3 w-full ${CONTROL} border-border/80 bg-card text-muted-foreground hover:bg-muted disabled:opacity-60`}
         >
           افزودن بخش
         </button>
@@ -974,26 +974,26 @@ function SectionEditor({
         {sections.map((s) => (
           <li
             key={s.id}
-            className="rounded-xl border border-stone-200/80 bg-card p-3"
+            className="rounded-xl border border-border/80 bg-card p-3"
           >
             <div className="flex items-center justify-between gap-2">
-              <span className="min-w-0 truncate text-sm font-bold text-stone-950">
+              <span className="min-w-0 truncate text-sm font-bold text-foreground">
                 {s.name}
               </span>
               <button
                 type="button"
                 onClick={() => removeSection(s.id)}
-                className="min-h-10 shrink-0 px-1 text-xs font-bold text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45"
+                className="min-h-10 shrink-0 px-1 text-xs font-bold text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45"
               >
                 حذف
               </button>
             </div>
             <label className="mt-2 block">
-              <span className="mb-1 block text-[11px] font-bold text-stone-500">
+              <span className="mb-1 block text-[11px] font-bold text-muted-foreground">
                 گارسون بخش
               </span>
               <SearchableSelect
-                className={`${inputClass} min-h-11 border-stone-200/80 bg-stone-50 py-1 text-xs`}
+                className={`${inputClass} min-h-11 border-border/80 bg-muted py-1 text-xs`}
                 value={s.assigned_waiter_id ?? ""}
                 onChange={(value) => assignWaiter(s.id, value)}
                 ariaLabel={`گارسون بخش ${s.name}`}
@@ -1006,7 +1006,7 @@ function SectionEditor({
           </li>
         ))}
         {sections.length === 0 ? (
-          <li className="rounded-xl border border-dashed border-stone-200/80 bg-stone-50 p-3 text-xs leading-6 text-stone-500">
+          <li className="rounded-xl border border-dashed border-border/80 bg-muted p-3 text-xs leading-6 text-muted-foreground">
             هنوز بخشی تعریف نشده است.
           </li>
         ) : null}
@@ -1057,21 +1057,21 @@ function AddTable({
       <div className="mb-3">
         <h3
           id="floor-add-table-title"
-          className="text-sm font-bold text-stone-950"
+          className="text-sm font-bold text-foreground"
         >
           افزودن میز
         </h3>
-        <p className="mt-1 text-xs text-stone-500">
+        <p className="mt-1 text-xs text-muted-foreground">
           نام، ظرفیت، شکل و بخش با همان اعتبارسنجی فعلی ثبت می‌شوند.
         </p>
       </div>
       <div className="space-y-3">
         <label className="block">
-          <span className="mb-1.5 block text-xs font-bold text-stone-600">
+          <span className="mb-1.5 block text-xs font-bold text-muted-foreground">
             نام یا شمارهٔ میز
           </span>
           <input
-            className={`${inputClass} min-h-12 border-stone-200/80 bg-stone-50`}
+            className={`${inputClass} min-h-12 border-border/80 bg-muted`}
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="مثلاً ۱۲"
@@ -1079,11 +1079,11 @@ function AddTable({
           />
         </label>
         <label className="block">
-          <span className="mb-1.5 block text-xs font-bold text-stone-600">
+          <span className="mb-1.5 block text-xs font-bold text-muted-foreground">
             ظرفیت
           </span>
           <PersianNumberInput
-            className={`${inputClass} min-h-12 border-stone-200/80 bg-stone-50`}
+            className={`${inputClass} min-h-12 border-border/80 bg-muted`}
             inputMode="numeric"
             dir="ltr"
             value={capacity}
@@ -1093,11 +1093,11 @@ function AddTable({
           />
         </label>
         <label className="block">
-          <span className="mb-1.5 block text-xs font-bold text-stone-600">
+          <span className="mb-1.5 block text-xs font-bold text-muted-foreground">
             بخش
           </span>
           <SearchableSelect
-            className={`${inputClass} min-h-12 border-stone-200/80 bg-stone-50`}
+            className={`${inputClass} min-h-12 border-border/80 bg-muted`}
             value={sectionId}
             onChange={setSectionId}
             ariaLabel="بخش میز"
@@ -1108,11 +1108,11 @@ function AddTable({
           />
         </label>
         <label className="block">
-          <span className="mb-1.5 block text-xs font-bold text-stone-600">
+          <span className="mb-1.5 block text-xs font-bold text-muted-foreground">
             شکل میز
           </span>
           <SearchableSelect
-            className={`${inputClass} min-h-12 border-stone-200/80 bg-stone-50`}
+            className={`${inputClass} min-h-12 border-border/80 bg-muted`}
             value={shape}
             onChange={(value) => setShape(value as "rect" | "circle")}
             ariaLabel="شکل میز"
@@ -1127,7 +1127,7 @@ function AddTable({
         type="button"
         onClick={add}
         disabled={busy}
-        className={`mt-4 w-full ${CONTROL} border-amber-200 bg-amber-100 text-amber-700 hover:bg-amber-100 disabled:opacity-60`}
+        className={`mt-4 w-full ${CONTROL} border-amber-200 dark:border-amber-500/30 bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-500/20 disabled:opacity-60`}
       >
         افزودن میز
       </button>
@@ -1199,21 +1199,21 @@ function TableEditor({
       <div className="mb-3">
         <h3
           id="floor-table-editor-title"
-          className="text-sm font-bold text-stone-950"
+          className="text-sm font-bold text-foreground"
         >
           ویرایش میز {table.name}
         </h3>
-        <p className="mt-1 text-xs text-stone-500">
+        <p className="mt-1 text-xs text-muted-foreground">
           مشخصات و ابعاد با همان مدل ذخیره‌سازی پلان به‌روزرسانی می‌شوند.
         </p>
       </div>
       <div className="space-y-3">
         <label className="block">
-          <span className="mb-1.5 block text-xs font-bold text-stone-600">
+          <span className="mb-1.5 block text-xs font-bold text-muted-foreground">
             نام میز
           </span>
           <input
-            className={`${inputClass} min-h-12 border-stone-200/80 bg-stone-50`}
+            className={`${inputClass} min-h-12 border-border/80 bg-muted`}
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="نام میز"
@@ -1221,11 +1221,11 @@ function TableEditor({
           />
         </label>
         <label className="block">
-          <span className="mb-1.5 block text-xs font-bold text-stone-600">
+          <span className="mb-1.5 block text-xs font-bold text-muted-foreground">
             ظرفیت
           </span>
           <PersianNumberInput
-            className={`${inputClass} min-h-12 border-stone-200/80 bg-stone-50`}
+            className={`${inputClass} min-h-12 border-border/80 bg-muted`}
             inputMode="numeric"
             dir="ltr"
             value={capacity}
@@ -1235,11 +1235,11 @@ function TableEditor({
           />
         </label>
         <label className="block">
-          <span className="mb-1.5 block text-xs font-bold text-stone-600">
+          <span className="mb-1.5 block text-xs font-bold text-muted-foreground">
             بخش
           </span>
           <SearchableSelect
-            className={`${inputClass} min-h-12 border-stone-200/80 bg-stone-50`}
+            className={`${inputClass} min-h-12 border-border/80 bg-muted`}
             value={sectionId}
             onChange={setSectionId}
             ariaLabel="بخش میز"
@@ -1250,11 +1250,11 @@ function TableEditor({
           />
         </label>
         <label className="block">
-          <span className="mb-1.5 block text-xs font-bold text-stone-600">
+          <span className="mb-1.5 block text-xs font-bold text-muted-foreground">
             شکل میز
           </span>
           <SearchableSelect
-            className={`${inputClass} min-h-12 border-stone-200/80 bg-stone-50`}
+            className={`${inputClass} min-h-12 border-border/80 bg-muted`}
             value={shape}
             onChange={(value) => setShape(value as "rect" | "circle")}
             ariaLabel="شکل میز"
@@ -1266,11 +1266,11 @@ function TableEditor({
         </label>
         <div className="grid grid-cols-2 gap-2">
           <label className="block">
-            <span className="mb-1.5 block text-xs font-bold text-stone-600">
+            <span className="mb-1.5 block text-xs font-bold text-muted-foreground">
               عرض
             </span>
             <PersianNumberInput
-              className={`${inputClass} min-h-12 border-stone-200/80 bg-stone-50`}
+              className={`${inputClass} min-h-12 border-border/80 bg-muted`}
               inputMode="numeric"
               dir="ltr"
               value={width}
@@ -1280,11 +1280,11 @@ function TableEditor({
             />
           </label>
           <label className="block">
-            <span className="mb-1.5 block text-xs font-bold text-stone-600">
+            <span className="mb-1.5 block text-xs font-bold text-muted-foreground">
               ارتفاع
             </span>
             <PersianNumberInput
-              className={`${inputClass} min-h-12 border-stone-200/80 bg-stone-50`}
+              className={`${inputClass} min-h-12 border-border/80 bg-muted`}
               inputMode="numeric"
               dir="ltr"
               value={height}
@@ -1303,7 +1303,7 @@ function TableEditor({
           type="button"
           onClick={remove}
           disabled={busy}
-          className="min-h-11 self-start px-1 text-xs font-bold text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 disabled:opacity-60"
+          className="min-h-11 self-start px-1 text-xs font-bold text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 disabled:opacity-60"
         >
           حذف میز
         </button>

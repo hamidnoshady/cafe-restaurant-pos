@@ -19,10 +19,10 @@ const WARRANTY_STATE_LABELS: Record<WarrantyState, string> = {
 };
 
 const WARRANTY_BADGE_CLASS: Record<WarrantyState, string> = {
-  active: "bg-emerald-100 text-emerald-900",
-  expiring: "bg-amber-100 text-amber-900",
-  expired: "bg-stone-200 text-stone-600",
-  none: "bg-stone-100 text-stone-500",
+  active: "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-900 dark:text-emerald-100",
+  expiring: "bg-amber-100 dark:bg-amber-500/20 text-amber-900 dark:text-amber-200",
+  expired: "bg-muted text-muted-foreground",
+  none: "bg-muted text-muted-foreground",
 };
 
 interface WarrantyRow {
@@ -71,8 +71,8 @@ export function ReportsSection() {
   return (
     <div className="min-w-0 space-y-4">
       <section aria-labelledby="watch-warranty-heading" className={`min-w-0 overflow-hidden ${cardClass} `}>
-        <div className="border-b border-stone-200/80 px-4 py-4 sm:px-5">
-          <h2 id="watch-warranty-heading" className="font-semibold text-stone-950">
+        <div className="border-b border-border/80 px-4 py-4 sm:px-5">
+          <h2 id="watch-warranty-heading" className="font-semibold text-foreground">
             گارانتی‌ها
           </h2>
           <div className="mt-2 flex flex-wrap gap-2 text-xs">
@@ -84,13 +84,13 @@ export function ReportsSection() {
           </div>
         </div>
 
-        <ul className="divide-y divide-stone-200/80">
+        <ul className="divide-y divide-border/80">
           {data.warranty.rows.map((row) => (
             <li key={row.serialId} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-xs sm:px-5">
-              <span className="font-medium text-stone-800">
+              <span className="font-medium text-foreground">
                 {row.itemName} — <span dir="ltr">{row.serialNumber}</span>
               </span>
-              <span className="text-stone-600">
+              <span className="text-muted-foreground">
                 {formatJalali(row.startDate, { withMonthName: true })} تا{" "}
                 {formatJalali(row.endDate, { withMonthName: true })} (
                 {toPersianDigits(String(row.months))} ماه)
@@ -107,8 +107,8 @@ export function ReportsSection() {
       </section>
 
       <section aria-labelledby="watch-repair-report-heading" className={`min-w-0 overflow-hidden ${cardClass} `}>
-        <div className="border-b border-stone-200/80 px-4 py-4 sm:px-5">
-          <h2 id="watch-repair-report-heading" className="font-semibold text-stone-950">
+        <div className="border-b border-border/80 px-4 py-4 sm:px-5">
+          <h2 id="watch-repair-report-heading" className="font-semibold text-foreground">
             تعمیرات
           </h2>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">
@@ -117,39 +117,39 @@ export function ReportsSection() {
           </p>
           <div className="mt-2 flex flex-wrap gap-2 text-xs">
             {Object.entries(data.repairs.byStatus).map(([status, count]) => (
-              <span key={status} className="rounded-full bg-stone-100 px-2 py-0.5 font-medium text-stone-700">
+              <span key={status} className="rounded-full bg-muted px-2 py-0.5 font-medium text-foreground/80">
                 {REPAIR_STATUS_LABELS[status as RepairStatus] ?? status}: {toPersianDigits(String(count))}
               </span>
             ))}
           </div>
-          <dl className="mt-3 grid gap-x-5 gap-y-2 text-xs text-stone-600 sm:grid-cols-3">
+          <dl className="mt-3 grid gap-x-5 gap-y-2 text-xs text-muted-foreground sm:grid-cols-3">
             <div>
-              <dt className="text-stone-500">درآمد تعمیرات</dt>
-              <dd className="mt-0.5 font-medium text-stone-700">{money.format(data.repairs.totals.revenue)}</dd>
+              <dt className="text-muted-foreground">درآمد تعمیرات</dt>
+              <dd className="mt-0.5 font-medium text-foreground/80">{money.format(data.repairs.totals.revenue)}</dd>
             </div>
             <div>
-              <dt className="text-stone-500">بهای قطعات</dt>
-              <dd className="mt-0.5 font-medium text-stone-700">{money.format(data.repairs.totals.partsCost)}</dd>
+              <dt className="text-muted-foreground">بهای قطعات</dt>
+              <dd className="mt-0.5 font-medium text-foreground/80">{money.format(data.repairs.totals.partsCost)}</dd>
             </div>
             <div>
-              <dt className="text-stone-500">حاشیه</dt>
-              <dd className="mt-0.5 font-medium text-stone-700">{money.format(data.repairs.totals.margin)}</dd>
+              <dt className="text-muted-foreground">حاشیه</dt>
+              <dd className="mt-0.5 font-medium text-foreground/80">{money.format(data.repairs.totals.margin)}</dd>
             </div>
           </dl>
         </div>
 
-        <ul className="divide-y divide-stone-200/80">
+        <ul className="divide-y divide-border/80">
           {data.repairs.rows.map((row) => (
             <li key={row.ticketId} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-xs sm:px-5">
-              <span className="font-medium text-stone-800">
+              <span className="font-medium text-foreground">
                 تیکت {formatPersianNumber(row.ticketNumber)} — {row.itemDescription}
                 {row.underWarranty ? (
-                  <span className="ms-2 rounded-full bg-emerald-100 px-2 py-0.5 font-medium text-emerald-900">
+                  <span className="ms-2 rounded-full bg-emerald-100 dark:bg-emerald-500/20 px-2 py-0.5 font-medium text-emerald-900 dark:text-emerald-100">
                     گارانتی
                   </span>
                 ) : null}
               </span>
-              <span className="text-stone-600">
+              <span className="text-muted-foreground">
                 {REPAIR_STATUS_LABELS[row.status]} — دریافتی {money.format(row.net)} / بهای قطعات{" "}
                 {money.format(row.partsCost)}
               </span>

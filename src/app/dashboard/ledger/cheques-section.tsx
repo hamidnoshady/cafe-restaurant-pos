@@ -65,13 +65,13 @@ const ACTION_LABELS: Record<ChequeAction, string> = {
 
 /** A live cheque reads as neutral, a cleared one as settled, a bounced one as a problem. */
 const STATUS_CLASS: Record<ChequeStatus, string> = {
-  on_hand: "bg-amber-100 text-amber-700",
-  in_collection: "bg-amber-100 text-amber-700",
+  on_hand: "bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300",
+  in_collection: "bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300",
   endorsed: "bg-primary/10 text-primary",
-  issued: "bg-amber-100 text-amber-700",
-  cleared: "bg-emerald-50 text-emerald-700",
+  issued: "bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300",
+  cleared: "bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
   bounced: "bg-destructive/10 text-destructive",
-  cancelled: "bg-stone-100 text-stone-500",
+  cancelled: "bg-muted text-muted-foreground",
 };
 
 interface Counterparty {
@@ -135,7 +135,7 @@ export function ChequesSection({
       <div className={`${cardClass} p-4 sm:p-5`}>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="text-xs font-semibold text-amber-700">اسناد دریافتنی و پرداختنی</p>
+            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">اسناد دریافتنی و پرداختنی</p>
             <h2 className="mt-1">چک‌ها</h2>
             <p className="mt-1 text-sm text-muted-foreground">
               چک‌های دریافتی و صادرشده، سررسیدشان، و هر مرحله از وصول یا ظهرنویسی — هر مرحله سند حسابداری خودش را ثبت می‌کند.
@@ -153,8 +153,8 @@ export function ChequesSection({
                 }}
                 className={`min-h-12 rounded-xl border px-3 text-sm ${
                   direction === value
-                    ? "border-amber-200 bg-amber-100 font-semibold text-amber-700"
-                    : "border-transparent text-muted-foreground hover:border-stone-200/80 hover:bg-stone-50"
+                    ? "border-amber-200 dark:border-amber-500/30 bg-amber-100 dark:bg-amber-500/20 font-semibold text-amber-700 dark:text-amber-300"
+                    : "border-transparent text-muted-foreground hover:border-border/80 hover:bg-muted"
                 }`}
               >
                 {value === "receivable" ? "چک‌های دریافتی" : "چک‌های صادرشده"}
@@ -167,16 +167,16 @@ export function ChequesSection({
           {cheques === null ? (
             <LoadingSkeleton rows={3} />
           ) : cheques.length === 0 ? (
-            <p className="rounded-xl border border-dashed border-stone-200/80 bg-stone-50 px-4 py-8 text-center text-sm text-muted-foreground">
+            <p className="rounded-xl border border-dashed border-border/80 bg-muted px-4 py-8 text-center text-sm text-muted-foreground">
               چکی ثبت نشده است.
             </p>
           ) : (
             <ul className="space-y-2">
               {cheques.map((cheque) => (
-                <li key={cheque.id} className="rounded-xl border border-stone-200/80 bg-stone-50 p-4">
+                <li key={cheque.id} className="rounded-xl border border-border/80 bg-muted p-4">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="font-semibold text-stone-950">{cheque.counterpartyName}</p>
+                      <p className="font-semibold text-foreground">{cheque.counterpartyName}</p>
                       <p className="mt-1 text-xs text-muted-foreground">
                         {cheque.bankName} — شماره {toPersianDigits(cheque.serialNumber)}
                         {cheque.sayadId ? ` — صیاد ${toPersianDigits(cheque.sayadId)}` : ""}
@@ -186,7 +186,7 @@ export function ChequesSection({
                       </p>
                     </div>
                     <div className="text-end">
-                      <p className="tabular-nums font-bold text-stone-950">{money.format(cheque.amount)}</p>
+                      <p className="tabular-nums font-bold text-foreground">{money.format(cheque.amount)}</p>
                       <span className={`mt-1 inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${STATUS_CLASS[cheque.status]}`}>
                         {STATUS_LABELS[cheque.status]}
                       </span>
@@ -194,7 +194,7 @@ export function ChequesSection({
                   </div>
 
                   {availableActions(cheque.direction, cheque.status).length > 0 ? (
-                    <div className="mt-3 flex flex-wrap gap-2 border-t border-stone-100 pt-3">
+                    <div className="mt-3 flex flex-wrap gap-2 border-t border-border pt-3">
                       {availableActions(cheque.direction, cheque.status).map((action) => (
                         <SecondaryButton
                           key={action}
@@ -212,7 +212,7 @@ export function ChequesSection({
           )}
         </div>
 
-        <div className="mt-5 border-t border-stone-100 pt-4">
+        <div className="mt-5 border-t border-border pt-4">
           {adding ? (
             <ChequeForm
               direction={direction}
@@ -375,7 +375,7 @@ function EndorseDialog({
 
   return (
     <div className={`${cardClass} p-4 sm:p-5`}>
-      <h3 className="font-semibold text-stone-950">
+      <h3 className="font-semibold text-foreground">
         ظهرنویسی چک {toPersianDigits(cheque.serialNumber)} — {money.format(cheque.amount)}
       </h3>
       <p className="mt-1 text-sm text-muted-foreground">

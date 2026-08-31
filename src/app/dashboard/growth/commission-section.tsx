@@ -96,18 +96,18 @@ export function CommissionSection() {
           {report.length === 0 ? (
             <EmptyState>هنوز پورسانتی ثبت نشده است.</EmptyState>
           ) : (
-            <ul className="divide-y divide-stone-200/80 text-sm">
+            <ul className="divide-y divide-border/80 text-sm">
               {report.map((r, i) => (
                 <li key={r.employeeId} className="flex items-center justify-between gap-3 py-2.5">
                   <div className="min-w-0">
-                    <span className="font-medium text-stone-950">
+                    <span className="font-medium text-foreground">
                       {formatPersianNumber(i + 1)}. {r.employeeName}
                     </span>
                     <span className="mr-2 text-xs text-muted-foreground">
                       {formatPersianNumber(r.lineCount)} خط · مبنا {money.format(r.basisAmount)}
                     </span>
                   </div>
-                  <span className="shrink-0 font-semibold text-emerald-700">{money.format(r.amount)}</span>
+                  <span className="shrink-0 font-semibold text-emerald-700 dark:text-emerald-300">{money.format(r.amount)}</span>
                 </li>
               ))}
             </ul>
@@ -119,11 +119,11 @@ export function CommissionSection() {
         {rules.length === 0 ? (
           <EmptyState>هنوز قانونی تعریف نشده است.</EmptyState>
         ) : (
-          <ul className="divide-y divide-stone-200/80 text-sm">
+          <ul className="divide-y divide-border/80 text-sm">
             {rules.map((r) => (
               <li key={r.id} className="flex items-center justify-between gap-3 py-2.5">
                 <div className="min-w-0">
-                  <span className="font-medium text-stone-950">{r.employeeName ?? "نامشخص"}</span>
+                  <span className="font-medium text-foreground">{r.employeeName ?? "نامشخص"}</span>
                   <span className="mr-2 text-xs text-muted-foreground">
                     {r.kind === "percent" ? `${formatPersianNumber(r.value)}٪` : money.format(r.value)} ·{" "}
                     {BASIS_LABELS[r.basis]} · اولویت {formatPersianNumber(r.priority)}

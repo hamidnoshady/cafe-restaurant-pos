@@ -37,15 +37,15 @@ export const MODIFIER_TONE: Record<
   }
 > = {
   amber: {
-    chip: "border-amber-200 bg-amber-50 text-stone-600",
-    chipPrice: "text-amber-700",
-    caption: "text-stone-400",
+    chip: "border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/15 text-muted-foreground",
+    chipPrice: "text-amber-700 dark:text-amber-300",
+    caption: "text-muted-foreground",
     option:
-      "border-stone-200/80 bg-card text-stone-600 hover:border-amber-200 hover:bg-amber-50",
-    optionSelected: "border-amber-500 bg-amber-100 text-amber-700",
-    accent: "text-amber-700",
-    surface: "border-amber-200/60 bg-amber-50",
-    cta: "bg-amber-500 text-stone-950 hover:bg-amber-500 focus-visible:ring-amber-500/45",
+      "border-border/80 bg-card text-muted-foreground hover:border-amber-200 dark:hover:border-amber-500/30 hover:bg-amber-50 dark:hover:bg-amber-500/15",
+    optionSelected: "border-amber-500 dark:border-amber-500/60 bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300",
+    accent: "text-amber-700 dark:text-amber-300",
+    surface: "border-amber-200/60 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/15",
+    cta: "bg-amber-500 dark:bg-amber-400 text-amber-950 hover:bg-amber-500 dark:hover:bg-amber-400 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45",
   },
   brand: {
     chip: "border-primary/25 bg-primary/5 text-foreground",

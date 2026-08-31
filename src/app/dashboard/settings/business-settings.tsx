@@ -88,14 +88,14 @@ function CurrencyChoice({
             role="radio"
             aria-checked={active}
             onClick={() => onChange(option.key)}
-            className={`flex min-h-11 flex-col items-center justify-center rounded-xl border px-3 py-1.5 text-sm transition-colors focus-visible:outline-none focus-visible:ring focus-visible:ring-amber-400/40 ${
+            className={`flex min-h-11 flex-col items-center justify-center rounded-xl border px-3 py-1.5 text-sm transition-colors focus-visible:outline-none focus-visible:ring focus-visible:ring-amber-400/40 dark:focus-visible:ring-amber-400/40 ${
               active
-                ? "border-amber-200 bg-amber-100 font-semibold text-amber-950"
-                : "border-stone-200/80 bg-card text-stone-600 hover:bg-stone-50 hover:text-stone-950"
+                ? "border-amber-200 dark:border-amber-500/30 bg-amber-100 dark:bg-amber-500/20 font-semibold text-amber-950 dark:text-amber-200"
+                : "border-border/80 bg-card text-muted-foreground hover:bg-muted hover:text-foreground"
             }`}
           >
             <span>{option.label}</span>
-            <span className={`text-[11px] font-normal ${active ? "text-amber-800" : "text-muted-foreground"}`}>
+            <span className={`text-[11px] font-normal ${active ? "text-amber-800 dark:text-amber-300" : "text-muted-foreground"}`}>
               {option.hint}
             </span>
           </button>

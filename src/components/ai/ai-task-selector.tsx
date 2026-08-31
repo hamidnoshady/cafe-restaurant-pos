@@ -109,7 +109,7 @@ export function AiTaskSelector({
           disabled={disabled}
           aria-label={`وظیفهٔ دستیار: ${current.label}`}
           title={current.description}
-          className="flex max-w-44 items-center gap-1.5 rounded-full border border-stone-200/80 bg-background px-2.5 py-1.5 text-[11px] font-medium text-foreground/80 transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-60 outline-none focus-visible:ring focus-visible:ring-ring/50"
+          className="flex max-w-44 items-center gap-1.5 rounded-full border border-border/80 bg-background px-2.5 py-1.5 text-[11px] font-medium text-foreground/80 transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-60 outline-none focus-visible:ring focus-visible:ring-ring/50"
         >
           <TaskIcon
             id={current.id}

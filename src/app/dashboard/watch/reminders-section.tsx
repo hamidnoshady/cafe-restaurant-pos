@@ -10,8 +10,8 @@ import {
 import { cardClass } from "../page-chrome";
 
 const STATE_BADGE_CLASS: Record<ServiceReminderState, string> = {
-  overdue: "bg-rose-100 text-rose-900",
-  due: "bg-amber-100 text-amber-900",
+  overdue: "bg-rose-100 dark:bg-rose-500/20 text-rose-900 dark:text-rose-100",
+  due: "bg-amber-100 dark:bg-amber-500/20 text-amber-900 dark:text-amber-200",
 };
 
 /**
@@ -22,8 +22,8 @@ const STATE_BADGE_CLASS: Record<ServiceReminderState, string> = {
 export function RemindersSection({ reminders }: { reminders: ServiceReminder[] }) {
   return (
     <section aria-labelledby="watch-reminders-heading" className={`min-w-0 overflow-hidden ${cardClass} `}>
-      <div className="border-b border-stone-200/80 px-4 py-4 sm:px-5">
-        <h2 id="watch-reminders-heading" className="font-semibold text-stone-950">
+      <div className="border-b border-border/80 px-4 py-4 sm:px-5">
+        <h2 id="watch-reminders-heading" className="font-semibold text-foreground">
           یادآوری سرویس
         </h2>
         <p className="mt-1 text-xs leading-5 text-muted-foreground">
@@ -37,7 +37,7 @@ export function RemindersSection({ reminders }: { reminders: ServiceReminder[] }
           ساعتی که نیاز به سرویس داشته باشد وجود ندارد.
         </p>
       ) : (
-        <ul className="divide-y divide-stone-200/80">
+        <ul className="divide-y divide-border/80">
           {reminders.map((reminder) => (
             <li
               key={reminder.serialId}
@@ -45,7 +45,7 @@ export function RemindersSection({ reminders }: { reminders: ServiceReminder[] }
             >
               <div className="min-w-0">
                 <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
-                  <h3 className="min-w-0 break-words font-semibold text-stone-950">{reminder.itemName}</h3>
+                  <h3 className="min-w-0 break-words font-semibold text-foreground">{reminder.itemName}</h3>
                   <span className="text-xs text-muted-foreground" dir="ltr">
                     {reminder.serialNumber}
                   </span>

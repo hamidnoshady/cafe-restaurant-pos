@@ -40,8 +40,8 @@ const STATUS_LABELS: Record<PeriodStatus, string> = {
 };
 
 const STATUS_STYLES: Record<PeriodStatus, string> = {
-  open: "bg-emerald-100 text-emerald-800",
-  soft_closed: "bg-amber-100 text-amber-800",
+  open: "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-800 dark:text-emerald-200",
+  soft_closed: "bg-amber-100 dark:bg-amber-500/20 text-amber-800 dark:text-amber-300",
   locked: "bg-destructive/10 text-destructive",
 };
 
@@ -144,7 +144,7 @@ export function FiscalPeriodsSection({
       <ErrorBox>{error}</ErrorBox>
 
       <div className={`${cardClass} p-4 sm:p-5`}>
-        <p className="text-xs font-semibold text-amber-700">تقویم مالی</p>
+        <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">تقویم مالی</p>
         <h2 className="mt-1">سال‌های مالی</h2>
         <p className="mt-2 text-sm text-muted-foreground">سال مالی و دوره‌های آن را با همان محدودیت‌های ثبت و قفل موجود مدیریت کنید.</p>
 
@@ -170,7 +170,7 @@ export function FiscalPeriodsSection({
         </div>
 
         {years.length === 0 ? (
-          <p className="mt-5 rounded-xl border border-dashed border-stone-200/80 bg-stone-50 px-4 py-7 text-center text-sm text-muted-foreground">
+          <p className="mt-5 rounded-xl border border-dashed border-border/80 bg-muted px-4 py-7 text-center text-sm text-muted-foreground">
             هنوز سال مالی‌ای تعریف نشده است.
           </p>
         ) : (
@@ -185,8 +185,8 @@ export function FiscalPeriodsSection({
                   onClick={() => setSelectedYearId(y.id)}
                   className={`min-h-12 rounded-xl border px-4 text-sm ${
                     selectedYearId === y.id
-                      ? "border-amber-200 bg-amber-100 font-semibold text-amber-700"
-                      : "border-transparent text-muted-foreground hover:border-stone-200/80 hover:bg-stone-50"
+                      ? "border-amber-200 dark:border-amber-500/30 bg-amber-100 dark:bg-amber-500/20 font-semibold text-amber-700 dark:text-amber-300"
+                      : "border-transparent text-muted-foreground hover:border-border/80 hover:bg-muted"
                   }`}
                 >
                   {toPersianDigits(y.label)}
@@ -202,7 +202,7 @@ export function FiscalPeriodsSection({
         <div className={`${cardClass} p-4 sm:p-5`}>
           <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
             <div>
-              <p className="text-xs font-semibold text-amber-700">کنترل دوره</p>
+              <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">کنترل دوره</p>
               <h2 className="mt-1">دوره‌های سال مالی</h2>
             </div>
             {selectedYear && !selectedYear.closedAt ? (
@@ -219,7 +219,7 @@ export function FiscalPeriodsSection({
           </div>
 
           {periods.length === 0 ? (
-            <p className="rounded-xl border border-dashed border-stone-200/80 bg-stone-50 px-4 py-7 text-center text-sm text-muted-foreground">
+            <p className="rounded-xl border border-dashed border-border/80 bg-muted px-4 py-7 text-center text-sm text-muted-foreground">
               دوره‌ای برای سال انتخاب‌شده وجود ندارد.
             </p>
           ) : (
@@ -240,7 +240,7 @@ export function FiscalPeriodsSection({
                         <td className="py-3 pe-3"><span className={`rounded-full px-3 py-1 text-xs font-semibold ${STATUS_STYLES[p.status]}`}>{STATUS_LABELS[p.status]}</span></td>
                         <td className="py-3">
                           <div className="flex flex-wrap gap-2">
-                            {p.status === "open" ? <button type="button" onClick={() => setStatus(p.id, "soft_closed")} className="rounded-lg px-3 text-xs font-semibold text-amber-700 hover:bg-amber-100">بستن موقت</button> : null}
+                            {p.status === "open" ? <button type="button" onClick={() => setStatus(p.id, "soft_closed")} className="rounded-lg px-3 text-xs font-semibold text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-500/20">بستن موقت</button> : null}
                             {p.status === "soft_closed" ? (
                               <>
                                 <button type="button" onClick={() => setStatus(p.id, "locked")} className="rounded-lg px-3 text-xs font-semibold text-destructive hover:bg-destructive/10">قفل کردن</button>
@@ -258,13 +258,13 @@ export function FiscalPeriodsSection({
 
               <div className="space-y-3 lg:hidden">
                 {periods.map((p) => (
-                  <article key={p.id} className="rounded-xl border border-stone-200/80 bg-stone-50 p-4">
+                  <article key={p.id} className="rounded-xl border border-border/80 bg-muted p-4">
                     <div className="flex items-center justify-between gap-3">
                       <h3>{toPersianDigits(p.name)}</h3>
                       <span className={`rounded-full px-3 py-1 text-xs font-semibold ${STATUS_STYLES[p.status]}`}>{STATUS_LABELS[p.status]}</span>
                     </div>
-                    <div className="mt-3 flex flex-wrap gap-2 border-t border-stone-100 pt-3">
-                      {p.status === "open" ? <button type="button" onClick={() => setStatus(p.id, "soft_closed")} className="rounded-lg px-3 text-sm font-semibold text-amber-700 hover:bg-amber-100">بستن موقت</button> : null}
+                    <div className="mt-3 flex flex-wrap gap-2 border-t border-border pt-3">
+                      {p.status === "open" ? <button type="button" onClick={() => setStatus(p.id, "soft_closed")} className="rounded-lg px-3 text-sm font-semibold text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-500/20">بستن موقت</button> : null}
                       {p.status === "soft_closed" ? (
                         <>
                           <button type="button" onClick={() => setStatus(p.id, "locked")} className="rounded-lg px-3 text-sm font-semibold text-destructive hover:bg-destructive/10">قفل کردن</button>

@@ -77,7 +77,7 @@ export function BusinessDirectory() {
                 <li key={b.subdomain}>
                   <a
                     href={b.url ?? "#"}
-                    className="flex items-center justify-between rounded-xl border border-stone-200/80 bg-card px-4 py-3 transition hover:border-amber-300 hover:bg-amber-50/40 focus-visible:outline-none focus-visible:ring focus-visible:ring-amber-400/40"
+                    className="flex items-center justify-between rounded-xl border border-border/80 bg-card px-4 py-3 transition hover:border-amber-300 dark:hover:border-amber-500/40 hover:bg-amber-50/40 dark:hover:bg-amber-500/15 focus-visible:outline-none focus-visible:ring focus-visible:ring-amber-400/40 dark:focus-visible:ring-amber-400/40"
                   >
                     <span>
                       <span className="block font-semibold">{b.name}</span>

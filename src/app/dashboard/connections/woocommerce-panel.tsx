@@ -124,16 +124,16 @@ const PLUGIN_STALE_MS = 15 * 60 * 1000;
 /** A secret shown exactly once. Deliberately loud: there is no second chance to read it. */
 function ShowOnceSecret({ title, value, note, onDone }: { title: string; value: string; note: string; onDone: () => void }) {
   return (
-    <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm">
-      <p className="font-semibold text-amber-900">{title}</p>
-      <p className="mt-1 text-xs text-amber-800">{note}</p>
-      <code dir="ltr" className="mt-2 block select-all break-all rounded-lg bg-white/70 p-2 font-mono text-amber-900">
+    <div className="rounded-xl border border-amber-300 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-500/15 p-4 text-sm">
+      <p className="font-semibold text-amber-900 dark:text-amber-200">{title}</p>
+      <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">{note}</p>
+      <code dir="ltr" className="mt-2 block select-all break-all rounded-lg bg-white/70 p-2 font-mono text-amber-900 dark:text-amber-200">
         {value}
       </code>
       <Button
         type="button"
         size="sm"
-        className="mt-2 bg-amber-600 text-white hover:bg-amber-700"
+        className="mt-2 bg-amber-500 dark:bg-amber-400 text-amber-950 hover:bg-amber-600 dark:hover:bg-amber-300"
         onClick={() => {
           void navigator.clipboard.writeText(value).catch(() => undefined);
           onDone();
@@ -301,8 +301,8 @@ export function WooCommercePanel() {
               aria-pressed={form.linkMode === option.key}
               className={`min-h-9 rounded-lg border px-3 text-xs font-medium transition-colors ${
                 form.linkMode === option.key
-                  ? "border-amber-200 bg-amber-100 text-amber-950"
-                  : "border-stone-200 text-stone-600 hover:bg-stone-50"
+                  ? "border-amber-200 dark:border-amber-500/30 bg-amber-100 dark:bg-amber-500/20 text-amber-950 dark:text-amber-200"
+                  : "border-border text-muted-foreground hover:bg-muted"
               }`}
             >
               {option.label}
@@ -373,40 +373,40 @@ export function WooCommercePanel() {
                 c.linkMode === "plugin" && (lastSeenAt === 0 || Date.now() - lastSeenAt > PLUGIN_STALE_MS);
               const pluginStale = pluginSeenStale && queueCount > 0;
               return (
-              <li key={c.id} className="rounded-xl border border-stone-200/80 p-3">
+              <li key={c.id} className="rounded-xl border border-border/80 p-3">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-semibold">{c.name}</span>
                   <span className="text-xs text-muted-foreground" dir="ltr">
                     {c.baseUrl}
                   </span>
-                  <span className="rounded-full bg-stone-100 px-2 py-0.5 text-xs text-stone-700">
+                  <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-foreground/80">
                     {c.linkMode === "plugin" ? "افزونهٔ وردپرس" : "کلیدهای REST"}
                   </span>
                   <span
                     className={`rounded-full px-2 py-0.5 text-xs ${
                       c.status === "active"
-                        ? "bg-emerald-100 text-emerald-800"
+                        ? "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-800 dark:text-emerald-200"
                         : c.status === "error"
-                          ? "bg-red-100 text-red-800"
-                          : "bg-stone-200 text-stone-700"
+                          ? "bg-red-100 dark:bg-red-500/20 text-red-800 dark:text-red-200"
+                          : "bg-muted text-foreground/80"
                     }`}
                   >
                     {c.status === "active" ? "فعال" : c.status === "paused" ? "متوقف" : "خطا"}
                   </span>
-                  {c.lastError ? <span className="text-xs text-red-600">{c.lastError}</span> : null}
+                  {c.lastError ? <span className="text-xs text-red-600 dark:text-red-400">{c.lastError}</span> : null}
                 </div>
 
                 {c.linkMode === "plugin" ? (
-                  <div className="mt-2 space-y-1 rounded-md bg-stone-50 p-2 text-xs text-muted-foreground">
+                  <div className="mt-2 space-y-1 rounded-md bg-muted p-2 text-xs text-muted-foreground">
                     <div>
                       آدرس این سامانه برای افزونه: <span dir="ltr" className="select-all font-mono">{origin}</span>
                     </div>
-                    <div className={pluginSeenStale ? "text-amber-700" : ""}>
+                    <div className={pluginSeenStale ? "text-amber-700 dark:text-amber-300" : ""}>
                       آخرین ارتباط افزونه: {formatDateTime(c.lastPluginSeenAt)}
                       {c.pluginVersion ? ` • نسخهٔ افزونه ${c.pluginVersion}` : ""}
                     </div>
                     {!c.lastPluginSeenAt ? (
-                      <div className="text-amber-700">
+                      <div className="text-amber-700 dark:text-amber-300">
                         افزونه هنوز متصل نشده است. در وردپرس، آدرس بالا و توکن را وارد و «آزمایش اتصال» را بزنید.
                       </div>
                     ) : null}
@@ -419,7 +419,7 @@ export function WooCommercePanel() {
                 )}
 
                 {pluginStale ? (
-                  <div className="mt-2 rounded-md border border-amber-300 bg-amber-50 p-2 text-xs leading-5 text-amber-900">
+                  <div className="mt-2 rounded-md border border-amber-300 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-500/15 p-2 text-xs leading-5 text-amber-900 dark:text-amber-200">
                     <p className="font-semibold">این صف منتظر افزونهٔ وردپرس است.</p>
                     <p>
                       در حالت افزونه، سامانه به فروشگاه دسترسی مستقیم ندارد و خودِ افزونه صف را تخلیه می‌کند. بیش از ۱۵
@@ -589,13 +589,13 @@ export function WooCommercePanel() {
                 ) : null}
 
                 {auditFor === c.id ? (
-                  <div className="mt-2 max-h-48 overflow-y-auto rounded-md bg-stone-50 p-2 text-xs">
+                  <div className="mt-2 max-h-48 overflow-y-auto rounded-md bg-muted p-2 text-xs">
                     {audit.map((a) => (
-                      <div key={a.id} className="flex flex-wrap justify-between gap-2 border-b border-stone-100 py-1">
+                      <div key={a.id} className="flex flex-wrap justify-between gap-2 border-b border-border py-1">
                         <span>{ACTION_LABELS[a.action] ?? a.action}</span>
                         <span className="text-muted-foreground">{a.remoteId ?? a.entityType ?? ""}</span>
                         <span className="text-muted-foreground">{formatDateTime(a.createdAt)}</span>
-                        {a.error ? <span className="text-red-600">{a.error}</span> : null}
+                        {a.error ? <span className="text-red-600 dark:text-red-400">{a.error}</span> : null}
                       </div>
                     ))}
                     {audit.length === 0 ? <p>رویدادی ثبت نشده است.</p> : null}
@@ -603,7 +603,7 @@ export function WooCommercePanel() {
                 ) : null}
 
                 {outboxFor === c.id ? (
-                  <div className="mt-2 max-h-56 overflow-y-auto rounded-md bg-stone-50 p-2 text-xs">
+                  <div className="mt-2 max-h-56 overflow-y-auto rounded-md bg-muted p-2 text-xs">
                     {outboxJobs.length === 0 ? (
                       <p>صف خالی است.</p>
                     ) : (
@@ -611,7 +611,7 @@ export function WooCommercePanel() {
                         {outboxJobs.map((job) => (
                           <li
                             key={job.id}
-                            className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-100 py-1"
+                            className="flex flex-wrap items-center justify-between gap-2 border-b border-border py-1"
                           >
                             <span>
                               {OUTBOX_TYPE_LABELS[job.entityType] ?? job.entityType}
@@ -626,11 +626,11 @@ export function WooCommercePanel() {
                               <span
                                 className={
                                   job.status === "dead"
-                                    ? "text-red-600"
+                                    ? "text-red-600 dark:text-red-400"
                                     : job.status === "failed"
-                                      ? "text-amber-700"
+                                      ? "text-amber-700 dark:text-amber-300"
                                       : job.status === "sent"
-                                        ? "text-emerald-700"
+                                        ? "text-emerald-700 dark:text-emerald-300"
                                         : ""
                                 }
                               >
@@ -640,7 +640,7 @@ export function WooCommercePanel() {
                               <span className="text-muted-foreground">{formatDateTime(job.createdAt)}</span>
                             </span>
                             {job.lastError ? (
-                              <span className="w-full text-red-600" dir="ltr">
+                              <span className="w-full text-red-600 dark:text-red-400" dir="ltr">
                                 {job.lastError}
                               </span>
                             ) : null}

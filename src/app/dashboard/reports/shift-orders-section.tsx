@@ -67,8 +67,8 @@ function discountLabel(order: ShiftOrder): string {
 function Fact({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0">
-      <dt className="text-[11px] text-stone-400">{label}</dt>
-      <dd className="truncate text-xs font-semibold text-stone-950">{value}</dd>
+      <dt className="text-[11px] text-muted-foreground">{label}</dt>
+      <dd className="truncate text-xs font-semibold text-foreground">{value}</dd>
     </div>
   );
 }
@@ -108,24 +108,24 @@ function LineRow({ line }: { line: ShiftOrderLine }) {
   });
 
   return (
-    <tr className="border-t border-stone-100 align-top">
+    <tr className="border-t border-border align-top">
       <td className="py-2 pe-3">
-        <span className={line.voided ? "text-stone-500 line-through" : "text-stone-950"}>{line.name}</span>
+        <span className={line.voided ? "text-muted-foreground line-through" : "text-foreground"}>{line.name}</span>
         {line.voided ? <span className="ms-2 text-[11px] font-bold text-destructive">باطل‌شده</span> : null}
         <ModifierBadges modifiers={line.modifiers} tone="amber" className="mt-1.5" />
-        <p className="mt-1 text-[11px] tabular-nums text-stone-500">
+        <p className="mt-1 text-[11px] tabular-nums text-muted-foreground">
           {`هر واحد: ${money.format(breakdown.base)}`}
           {breakdown.addOns !== 0
             ? ` ${formatModifierDelta(breakdown.addOns, { withUnit: false, unit: money.unit })} = ${money.format(breakdown.unit)}`
             : ""}
         </p>
-        {line.note ? <p className="mt-1 text-xs text-stone-500">یادداشت: {line.note}</p> : null}
+        {line.note ? <p className="mt-1 text-xs text-muted-foreground">یادداشت: {line.note}</p> : null}
         {line.voidReason ? (
           <p className="mt-1 text-xs text-destructive">دلیل ابطال: {line.voidReason}</p>
         ) : null}
       </td>
-      <td className="py-2 pe-3 tabular-nums text-stone-600">×{toPersianDigits(line.quantity)}</td>
-      <td className="py-2 tabular-nums text-stone-600">{money.format(line.amount)}</td>
+      <td className="py-2 pe-3 tabular-nums text-muted-foreground">×{toPersianDigits(line.quantity)}</td>
+      <td className="py-2 tabular-nums text-muted-foreground">{money.format(line.amount)}</td>
     </tr>
   );
 }
@@ -135,7 +135,7 @@ function LineTable({ lines }: { lines: ShiftOrderLine[] }) {
   return (
     <table className="w-full text-sm">
       <thead>
-        <tr className="text-xs text-stone-500">
+        <tr className="text-xs text-muted-foreground">
           <th className="pb-2 pe-3 text-start font-medium">قلم</th>
           <th className="pb-2 pe-3 text-start font-medium">تعداد</th>
           <th className="pb-2 text-start font-medium">مبلغ</th>
@@ -153,8 +153,8 @@ function LineTable({ lines }: { lines: ShiftOrderLine[] }) {
 function Row({ label, value, accent = false }: { label: string; value: string; accent?: boolean }) {
   return (
     <div className="flex items-center justify-between gap-3">
-      <dt className="text-xs text-stone-500">{label}</dt>
-      <dd className={`text-xs tabular-nums ${accent ? "font-bold text-amber-700" : "text-stone-600"}`}>
+      <dt className="text-xs text-muted-foreground">{label}</dt>
+      <dd className={`text-xs tabular-nums ${accent ? "font-bold text-amber-700 dark:text-amber-300" : "text-muted-foreground"}`}>
         {value}
       </dd>
     </div>
@@ -170,7 +170,7 @@ function Row({ label, value, accent = false }: { label: string; value: string; a
 function MoneySummary({ order }: { order: ShiftOrder }) {
   const money = useMoney();
   return (
-    <dl className="space-y-1.5 rounded-xl border border-stone-100 bg-card px-3 py-2.5">
+    <dl className="space-y-1.5 rounded-xl border border-border bg-card px-3 py-2.5">
       <Row label="جمع جزء" value={money.format(order.subtotal)} />
       {order.addOnTotal !== 0 ? (
         <Row label="از این مبلغ، افزودنی‌ها" value={formatModifierDelta(order.addOnTotal, { unit: money.unit })} accent />
@@ -181,9 +181,9 @@ function MoneySummary({ order }: { order: ShiftOrder }) {
       {order.serviceCharge > 0 ? <Row label="هزینهٔ ارسال" value={money.format(order.serviceCharge)} /> : null}
       {order.tax > 0 ? <Row label="مالیات" value={money.format(order.tax)} /> : null}
       {order.tipAmount > 0 ? <Row label="انعام" value={money.format(order.tipAmount)} /> : null}
-      <div className="mt-1 flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2">
-        <dt className="text-xs font-bold text-stone-950">جمع کل</dt>
-        <dd className="text-sm font-bold tabular-nums text-amber-700">{money.format(order.total)}</dd>
+      <div className="mt-1 flex items-center justify-between gap-3 rounded-lg border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/15 px-2.5 py-2">
+        <dt className="text-xs font-bold text-foreground">جمع کل</dt>
+        <dd className="text-sm font-bold tabular-nums text-amber-700 dark:text-amber-300">{money.format(order.total)}</dd>
       </div>
     </dl>
   );
@@ -193,11 +193,11 @@ function NotePanel({ label, value, danger = false }: { label: string; value: str
   return (
     <div
       className={`rounded-xl border px-3 py-2 ${
-        danger ? "border-destructive/30 bg-destructive/5" : "border-stone-100 bg-card"
+        danger ? "border-destructive/30 bg-destructive/5" : "border-border bg-card"
       }`}
     >
-      <p className={`text-[11px] font-semibold ${danger ? "text-destructive" : "text-stone-400"}`}>{label}</p>
-      <p className="mt-0.5 text-xs leading-6 text-stone-600">{value}</p>
+      <p className={`text-[11px] font-semibold ${danger ? "text-destructive" : "text-muted-foreground"}`}>{label}</p>
+      <p className="mt-0.5 text-xs leading-6 text-muted-foreground">{value}</p>
     </div>
   );
 }
@@ -221,23 +221,23 @@ function OrderCard({ order }: { order: ShiftOrder }) {
         onClick={() => setExpanded((current) => !current)}
         aria-expanded={expanded}
         aria-controls={panelId}
-        className="flex min-h-[64px] w-full items-center justify-between gap-3 px-4 py-3 text-start transition-colors hover:bg-stone-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-500/45"
+        className="flex min-h-[64px] w-full items-center justify-between gap-3 px-4 py-3 text-start transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45"
       >
         <div className="flex min-w-0 items-center gap-2">
           <ChevronDownIcon
-            className={`size-4 shrink-0 text-amber-700 transition-transform ${expanded ? "" : "-rotate-90"}`}
+            className={`size-4 shrink-0 text-amber-700 dark:text-amber-300 transition-transform ${expanded ? "" : "-rotate-90"}`}
             aria-hidden="true"
           />
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="font-bold text-stone-950">
+              <span className="font-bold text-foreground">
                 {toPersianDigits(formatQueueLabel(order.type, order.orderNumber))}
               </span>
-              <span className="inline-flex min-h-6 items-center rounded-lg bg-amber-100 px-2 text-[11px] font-bold text-amber-700">
+              <span className="inline-flex min-h-6 items-center rounded-lg bg-amber-100 dark:bg-amber-500/20 px-2 text-[11px] font-bold text-amber-700 dark:text-amber-300">
                 {STATUS_LABELS[order.status] ?? order.status}
               </span>
             </div>
-            <p className="mt-1 truncate text-xs text-stone-500">
+            <p className="mt-1 truncate text-xs text-muted-foreground">
               {TYPE_LABELS[order.type]}
               {order.tableName ? ` · ${order.tableName}` : ""}
               {` · ${timeLabel(order.openedAt)}`}
@@ -245,15 +245,15 @@ function OrderCard({ order }: { order: ShiftOrder }) {
             </p>
           </div>
         </div>
-        <span className="shrink-0 text-sm font-bold text-amber-700">{money.format(order.total)}</span>
+        <span className="shrink-0 text-sm font-bold text-amber-700 dark:text-amber-300">{money.format(order.total)}</span>
       </button>
 
       {expanded ? (
-        <div id={panelId} className="space-y-4 border-t border-stone-100 bg-stone-50 px-4 py-3">
+        <div id={panelId} className="space-y-4 border-t border-border bg-muted px-4 py-3">
           <OrderFacts order={order} />
 
           {order.lines.length === 0 ? (
-            <p className="text-xs leading-6 text-stone-500">قلمی برای این سفارش ثبت نشده است.</p>
+            <p className="text-xs leading-6 text-muted-foreground">قلمی برای این سفارش ثبت نشده است.</p>
           ) : (
             <>
               <LineTable lines={liveLines} />
@@ -272,22 +272,22 @@ function OrderCard({ order }: { order: ShiftOrder }) {
 
           {order.payments.length > 0 ? (
             <div>
-              <p className="mb-1 text-[11px] font-semibold text-stone-400">پرداخت‌ها</p>
+              <p className="mb-1 text-[11px] font-semibold text-muted-foreground">پرداخت‌ها</p>
               <ul className="space-y-1">
                 {order.payments.map((payment, index) => (
                   <li
                     key={`${payment.receivedAt}-${index}`}
-                    className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 text-xs text-stone-600"
+                    className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 text-xs text-muted-foreground"
                   >
-                    <span className="min-w-0 font-semibold text-stone-950">
+                    <span className="min-w-0 font-semibold text-foreground">
                       {payment.methodName ?? PAYMENT_METHOD_LABELS[payment.method] ?? payment.method}
-                      <span className="ms-2 font-normal text-stone-500">
+                      <span className="ms-2 font-normal text-muted-foreground">
                         {toPersianDigits(timeLabel(payment.receivedAt))}
                         {payment.receivedByName ? ` · ${payment.receivedByName}` : ""}
                         {payment.reference ? ` · ${payment.reference}` : ""}
                       </span>
                     </span>
-                    <span className="shrink-0 font-bold tabular-nums text-amber-700">
+                    <span className="shrink-0 font-bold tabular-nums text-amber-700 dark:text-amber-300">
                       {money.format(payment.amount)}
                     </span>
                   </li>
@@ -348,14 +348,14 @@ export function ShiftOrdersSection() {
       aria-labelledby="shift-orders-heading"
       className={`${cardClass} shadow-[0_1px_2px_rgb(41_37_36/0.03)]`}
     >
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-stone-100 p-4 sm:p-5">
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border p-4 sm:p-5">
         <div className="min-w-0">
-          <p className="text-xs font-semibold text-amber-700">جزئیات قلم‌به‌قلم</p>
-          <h2 id="shift-orders-heading" className="mt-1 font-bold text-stone-950">
+          <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">جزئیات قلم‌به‌قلم</p>
+          <h2 id="shift-orders-heading" className="mt-1 font-bold text-foreground">
             سفارش‌های شیفت
           </h2>
           {report ? (
-            <p className="mt-1 text-xs text-stone-500">
+            <p className="mt-1 text-xs text-muted-foreground">
               {shiftLabel(report.shift)}
               {` · ${toPersianDigits(report.orders.length)} سفارش`}
             </p>
@@ -376,7 +376,7 @@ export function ShiftOrdersSection() {
             type="button"
             onClick={() => void load(shiftId)}
             disabled={refreshing}
-            className="flex min-h-11 items-center gap-2 rounded-xl border border-stone-200/80 bg-card px-3 text-xs font-bold text-stone-600 transition-colors hover:bg-stone-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 disabled:opacity-60"
+            className="flex min-h-11 items-center gap-2 rounded-xl border border-border/80 bg-card px-3 text-xs font-bold text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 disabled:opacity-60"
           >
             <RefreshCwIcon className="size-4" aria-hidden="true" />
             به‌روزرسانی
@@ -385,30 +385,30 @@ export function ShiftOrdersSection() {
       </header>
 
       {error ? (
-        <p role="status" className="border-b border-stone-100 bg-amber-50 px-4 py-2 text-xs text-stone-600">
+        <p role="status" className="border-b border-border bg-amber-50 dark:bg-amber-500/15 px-4 py-2 text-xs text-muted-foreground">
           {error}
         </p>
       ) : null}
 
       {!report ? (
         <div className="flex min-h-48 flex-col items-center justify-center p-6 text-center">
-          <span className="flex size-12 items-center justify-center rounded-2xl bg-amber-100 text-amber-700">
+          <span className="flex size-12 items-center justify-center rounded-2xl bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300">
             <ShoppingBagIcon className="size-5" aria-hidden="true" />
           </span>
-          <p className="mt-4 text-sm font-bold text-stone-950">شیفتی برای این شعبه ثبت نشده است</p>
-          <p className="mt-2 max-w-72 text-xs leading-6 text-stone-500">
+          <p className="mt-4 text-sm font-bold text-foreground">شیفتی برای این شعبه ثبت نشده است</p>
+          <p className="mt-2 max-w-72 text-xs leading-6 text-muted-foreground">
             با شروع نخستین شیفت، سفارش‌های هر شیفت قلم‌به‌قلم در این بخش نمایش داده می‌شود.
           </p>
         </div>
       ) : report.orders.length === 0 ? (
         <div className="flex min-h-48 flex-col items-center justify-center p-6 text-center">
-          <p className="text-sm font-bold text-stone-950">سفارشی در این شیفت ثبت نشده است</p>
-          <p className="mt-2 max-w-72 text-xs leading-6 text-stone-500">
+          <p className="text-sm font-bold text-foreground">سفارشی در این شیفت ثبت نشده است</p>
+          <p className="mt-2 max-w-72 text-xs leading-6 text-muted-foreground">
             سفارش‌های ثبت‌شده از شروع این شیفت اینجا فهرست می‌شوند.
           </p>
         </div>
       ) : (
-        <ul className="divide-y divide-stone-100">
+        <ul className="divide-y divide-border">
           {report.orders.map((order) => (
             <OrderCard key={order.id} order={order} />
           ))}

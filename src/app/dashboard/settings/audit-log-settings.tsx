@@ -87,8 +87,8 @@ export function AuditLogSettings() {
               className={
                 "min-h-9 rounded-lg border px-3 text-xs font-medium transition-colors " +
                 (entity === filter.value
-                  ? "border-amber-200 bg-amber-100 text-amber-950"
-                  : "border-stone-200/80 text-stone-600 hover:bg-stone-50")
+                  ? "border-amber-200 dark:border-amber-500/30 bg-amber-100 dark:bg-amber-500/20 text-amber-950 dark:text-amber-200"
+                  : "border-border/80 text-muted-foreground hover:bg-muted")
               }
             >
               {filter.label}

@@ -103,7 +103,7 @@ export function TaxSettings() {
         {categories.length === 0 ? <p className="text-sm text-muted-foreground">هنوز دسته‌ای در منو ثبت نشده است.</p> : null}
         <div className="space-y-2">
           {categories.map((category) => (
-            <div key={category.id} className="flex items-center gap-3 rounded-lg border border-stone-200/80 p-3">
+            <div key={category.id} className="flex items-center gap-3 rounded-lg border border-border/80 p-3">
               <span className="min-w-0 flex-1 text-sm font-medium">{category.name}</span>
               <div className="relative w-28">
                 <PersianNumberInput className={inputClass} dir="ltr" inputMode="decimal" value={rates[category.id] ?? ""} onChange={(e) => { setSaved(false); setRates((current) => ({ ...current, [category.id]: e.target.value })); }} />

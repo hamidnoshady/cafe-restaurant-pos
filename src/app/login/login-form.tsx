@@ -62,7 +62,7 @@ export default function LoginForm() {
             onClick={() => setMode("password")}
             className={`rounded-md py-2 transition outline-none focus-visible:ring focus-visible:ring-ring/50 ${
               mode === "password"
-                ? "bg-amber-100 font-semibold text-amber-950"
+                ? "bg-amber-100 dark:bg-amber-500/20 font-semibold text-amber-950 dark:text-amber-200"
                 : "text-muted-foreground hover:text-foreground"
             }`}
           >
@@ -73,7 +73,7 @@ export default function LoginForm() {
             onClick={() => setMode("pin")}
             className={`rounded-md py-2 transition outline-none focus-visible:ring focus-visible:ring-ring/50 ${
               mode === "pin"
-                ? "bg-amber-100 font-semibold text-amber-950"
+                ? "bg-amber-100 dark:bg-amber-500/20 font-semibold text-amber-950 dark:text-amber-200"
                 : "text-muted-foreground hover:text-foreground"
             }`}
           >

@@ -163,7 +163,7 @@ export function ConsentForm(props: {
         {ALL_MCP_SCOPES.map((scope) => (
           <label
             key={scope}
-            className="flex cursor-pointer items-start gap-3 rounded-xl border border-stone-200/80 p-3 hover:bg-stone-50"
+            className="flex cursor-pointer items-start gap-3 rounded-xl border border-border/80 p-3 hover:bg-muted"
           >
             <input
               type="checkbox"
@@ -182,8 +182,8 @@ export function ConsentForm(props: {
       </div>
 
       {canWrite ? (
-        <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/60 p-3">
-          <p className="mb-2 text-sm font-medium text-amber-950">تغییرها چطور اعمال شوند؟</p>
+        <div className="mt-4 rounded-xl border border-amber-200 dark:border-amber-500/30 bg-amber-50/60 dark:bg-amber-500/15 p-3">
+          <p className="mb-2 text-sm font-medium text-amber-950 dark:text-amber-200">تغییرها چطور اعمال شوند؟</p>
           <div className="space-y-2">
             {(["approve", "apply"] as McpWriteMode[]).map((mode) => (
               <label key={mode} className="flex cursor-pointer items-start gap-3">
@@ -196,7 +196,7 @@ export function ConsentForm(props: {
                 />
                 <span className="min-w-0">
                   <span className="block text-sm">{MCP_WRITE_MODE_LABELS[mode]}</span>
-                  <span className="mt-0.5 block text-xs leading-5 text-amber-900/80">
+                  <span className="mt-0.5 block text-xs leading-5 text-amber-900/80 dark:text-amber-200">
                     {mode === "approve"
                       ? "هر تغییری در فهرست انتظار می‌ماند تا شما در «اتصال‌ها» تأییدش کنید. تا آن لحظه هیچ چیزی عوض نمی‌شود."
                       : "تغییرها بلافاصله ثبت می‌شوند. همهٔ آن‌ها در «گزارش عملیات دستیار» ثبت و قابل بازبینی‌اند."}

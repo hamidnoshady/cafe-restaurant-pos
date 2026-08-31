@@ -210,10 +210,10 @@ function SourcePill({
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={`min-h-9 rounded-lg border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring focus-visible:ring-amber-400/40 ${
+      className={`min-h-9 rounded-lg border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring focus-visible:ring-amber-400/40 dark:focus-visible:ring-amber-400/40 ${
         active
-          ? "border-amber-200 bg-amber-100 text-amber-950"
-          : "border-transparent text-stone-600 hover:bg-stone-50 hover:text-stone-950"
+          ? "border-amber-200 dark:border-amber-500/30 bg-amber-100 dark:bg-amber-500/20 text-amber-950 dark:text-amber-200"
+          : "border-transparent text-muted-foreground hover:bg-muted hover:text-foreground"
       }`}
     >
       {children}
@@ -295,7 +295,7 @@ function RestoreCard({ onChanged }: { onChanged: () => void }) {
           <div
             role="group"
             aria-label="منبع بازگردانی"
-            className="flex gap-1 rounded-xl border border-stone-200/80 bg-stone-50/60 p-1"
+            className="flex gap-1 rounded-xl border border-border/80 bg-muted/60 p-1"
           >
             <SourcePill active={source === "local"} onClick={() => pickSource("local")}>
               محلی
@@ -337,14 +337,14 @@ function RestoreCard({ onChanged }: { onChanged: () => void }) {
             return (
               <li
                 key={artifact.key}
-                className="rounded-xl border border-stone-200/80 p-3 sm:p-3.5"
+                className="rounded-xl border border-border/80 p-3 sm:p-3.5"
               >
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="min-w-0">
                     <p
                       dir="ltr"
                       title={artifact.key}
-                      className="truncate text-start font-mono text-xs text-stone-950"
+                      className="truncate text-start font-mono text-xs text-foreground"
                     >
                       {artifact.key}
                     </p>
@@ -388,7 +388,7 @@ function RestoreCard({ onChanged }: { onChanged: () => void }) {
                 </div>
 
                 {isBusy && busyAction === "apply" ? (
-                  <p className="mt-3 rounded-lg border border-amber-500/25 bg-amber-500/[0.075] px-3 py-2 text-xs text-amber-800">
+                  <p className="mt-3 rounded-lg border border-amber-500/25 dark:border-amber-500/60 bg-amber-500/[0.075] dark:bg-amber-400/15 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
                     در حال بازگردانی — پایگاه‌داده به‌طور موقت از دسترس خارج است.
                   </p>
                 ) : null}
@@ -401,7 +401,7 @@ function RestoreCard({ onChanged }: { onChanged: () => void }) {
                       می‌رود. ابتدا همان بررسی اولیه انجام می‌شود و اگر فایل معتبر نباشد، چیزی تغییر
                       نمی‌کند.
                     </p>
-                    <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-stone-950">
+                    <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-foreground">
                       <input
                         type="checkbox"
                         checked={confirmed}
@@ -572,7 +572,7 @@ function StatusCard({
               health.alert.level === "ok"
                 ? "border-primary/30 bg-primary/5 text-primary"
                 : health.alert.level === "warning"
-                  ? "border-amber-500/40 bg-amber-500/10 text-amber-700"
+                  ? "border-amber-500/40 dark:border-amber-500/60 bg-amber-500/10 dark:bg-amber-400 text-amber-700 dark:text-amber-300"
                   : "border-destructive/40 bg-destructive/10 text-destructive"
             }`}
           >
@@ -694,7 +694,7 @@ function SettingsCard({ onSaved }: { onSaved: () => void }) {
   return (
     <SectionCard title="تنظیمات پشتیبان‌گیری">
       {config.warnings && config.warnings.length > 0 ? (
-        <div className="mb-6 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-700">
+        <div className="mb-6 rounded-lg border border-amber-500/40 dark:border-amber-500/60 bg-amber-500/10 dark:bg-amber-400 px-4 py-3 text-sm text-amber-700 dark:text-amber-300">
           <ul className="list-inside list-disc">
             {config.warnings.map((w, i) => (
               <li key={i}>{w}</li>
@@ -837,17 +837,17 @@ function SettingsCard({ onSaved }: { onSaved: () => void }) {
         ) : null}
         
         <div className="mt-8 pt-6 border-t">
-          <h3 className="mb-4 text-sm font-semibold text-stone-900">رمزنگاری و امنیت (Encryption)</h3>
+          <h3 className="mb-4 text-sm font-semibold text-foreground">رمزنگاری و امنیت (Encryption)</h3>
           
           <div className="mb-4">
             <label className="flex items-center gap-3">
               <input
                 type="checkbox"
-                className="h-4 w-4 rounded border-stone-300 text-amber-600 focus:ring-amber-500"
+                className="h-4 w-4 rounded border-border text-amber-600 dark:text-amber-400 focus:ring-amber-500 dark:focus:ring-amber-400/45"
                 checked={config.encryptLocal ?? true}
                 onChange={(e) => setConfig({ ...config, encryptLocal: e.target.checked })}
               />
-              <span className="text-sm font-medium text-stone-800">
+              <span className="text-sm font-medium text-foreground">
                 رمزنگاری نسخه‌های محلی و USB
               </span>
             </label>

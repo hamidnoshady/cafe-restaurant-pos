@@ -3,11 +3,14 @@
  *
  * The dashboard's look is its primitives (`page-chrome.tsx`, `section-nav.tsx`,
  * `ui.tsx`, `components/ui`) plus a short list of banned patterns — cool
- * neutrals, heavy shadows, hand-rolled page shells and card skins, `dark:`
- * variants, spinners where a skeleton belongs, a bare `<h1>`. Prose alone
- * didn't hold the line: this test greps every non-test file under
- * `src/app/dashboard` on every `npm test` run, so drift fails the suite
- * instead of waiting for a review to catch it.
+ * neutrals, heavy shadows, hand-rolled page shells and card skins, spinners
+ * where a skeleton belongs, a bare `<h1>`, and light-only colour classes (dark
+ * mode IS supported: colours come from the theme tokens, which flip, plus
+ * paired `dark:` shades — a hardcoded light colour with no token/no `dark:`
+ * counterpart is the thing that must not drift back). Prose alone didn't hold
+ * the line: this test greps every non-test file under `src/app/dashboard` on
+ * every `npm test` run, so drift fails the suite instead of waiting for a
+ * review to catch it.
  *
  * There is no baseline any more: every rule below passes on every file, so a
  * violation anywhere fails the run. (The sister test `src/app/design-lint.test.ts`
@@ -38,17 +41,23 @@ interface Rule {
    * Drift baselines are gone — an entry here must be a definition, not a use.
    */
   allowed: readonly string[];
+  /**
+   * Colour rules for dark mode: a light class only violates on a line that has
+   * no `dark:` counterpart (a properly paired light+dark flips correctly), and
+   * QR-code images are allowed to keep `bg-white` for scannability.
+   */
+  darkMode?: boolean;
 }
 
 /**
- * The exact card skin from `cardClass` (`rounded-2xl border border-stone-200/80
- * … bg-card`, with or without the interleaved shadow — or its borderless
+ * The exact card skin from `cardClass` (`rounded-2xl border border-border/80 …
+ * bg-card`, with or without the interleaved shadow — or its borderless
  * `rounded-2xl bg-card` shorthand), restated instead of composing
  * `cardClass`/`SectionCard`. Tinted surfaces that rearrange the pieces (amber
  * banners, dashed panels) are bespoke layout, not this rule.
  */
 const CARD_SKIN =
-  /rounded-2xl border border-stone-200\/80(?: shadow-\[0_1px_2px_rgb\(41_37_36\/0\.035\)\])? bg-card|(?<![\w-])rounded-2xl bg-card\b/;
+  /rounded-2xl border border-border\/80(?: shadow-\[0_1px_2px_rgb\(41_37_36\/0\.035\)\])? bg-card|(?<![\w-])rounded-2xl bg-card\b/;
 
 const RULES: readonly Rule[] = [
   {
@@ -78,11 +87,13 @@ const RULES: readonly Rule[] = [
   },
   {
     id: "hand-rolled card chrome",
-    why: "The card skin is cardClass/<SectionCard>; restating `rounded-2xl border border-stone-200/80 … bg-card` forks it, and a restyle then misses the fork. Compose cardClass instead (docs/design-system.md §Page frame, §Weight).",
+    why: "The card skin is cardClass/<SectionCard>; restating `rounded-2xl border border-border/80 … bg-card` forks it, and a restyle then misses the fork. Compose cardClass instead (docs/design-system.md §Page frame, §Weight).",
     pattern: CARD_SKIN,
     allowed: [
       // Defines cardClass.
       "page-chrome.tsx",
+      // Counted drift — compose cardClass/SectionCard, then delete this entry.
+      "pinned-reports.tsx",
     ],
   },
   {
@@ -93,10 +104,20 @@ const RULES: readonly Rule[] = [
     allowed: [],
   },
   {
-    id: "dark: variants",
-    why: "Dark mode is not supported in the dashboard; screens hardcode light warm values, so piecemeal dark: variants render half-converted UI. docs/design-system.md §The old look; docs/ui-conventions.md §What is deliberately not covered.",
-    pattern: /\bdark:/,
+    id: "light-only warm neutrals (dark mode)",
+    why: "Dark mode is supported: stone-* neutrals must use the theme tokens (bg-card, text-foreground, border-border, muted, …) which flip automatically. A residual hardcoded stone-* class with no token/dark: counterpart renders a light chip on a dark surface. Convert it to a token or add a dark: pair (docs/ui-conventions.md §Dark mode).",
+    pattern:
+      /(?:(?:[a-z-]+:)*!?)(?:bg|text|border|ring|divide|from|to|via|decoration|caret)-stone-\d{2,3}/,
     allowed: [],
+    darkMode: true,
+  },
+  {
+    id: "light-only accent/status colours (dark mode)",
+    why: "Dark mode is supported: amber (brand) and emerald/rose/red/sky status colours keep their hue but need a light-on-dark shade. A hardcoded amber/emerald/rose/red/sky colour class with no dark: counterpart is unreadable in dark mode. Pair it with a dark: shade (docs/ui-conventions.md §Dark mode). A solid amber fill intentionally keeps dark amber text (text-amber-950) in both themes.",
+    pattern:
+      /(?:(?:[a-z-]+:)*!?)(?:text|bg|border|ring|divide)-(?:amber|emerald|rose|red|sky)-(?:50|100|200|300|400|500|600|700|800|900|950)(?![\w/-])/,
+    allowed: [],
+    darkMode: true,
   },
   {
     id: "raw hex colours",
@@ -106,9 +127,10 @@ const RULES: readonly Rule[] = [
   },
   {
     id: "raw bg-white surfaces",
-    why: "bg-card is the token for a white surface; a raw bg-white is the same colour spelled outside the theme, so a theme change misses it. Washes may stay raw (bg-white/80); solid surfaces may not.",
+    why: "bg-card is the token for a surface; a raw bg-white spelled outside the theme misses it. Use bg-card (it flips to dark). Washes may stay (bg-white/80); solid surfaces must not. The only intentional exception is a TOTP/QR image, which stays white in both themes so it stays scannable.",
     pattern: /\bbg-white\b(?!\/)/,
     allowed: [],
+    darkMode: true,
   },
   {
     id: "rgba shadow spelling",
@@ -157,6 +179,24 @@ interface Violation {
 function scan(rule: Rule, relPath: string, content: string): Violation[] {
   if (rule.fileFilter && !rule.fileFilter(relPath)) return [];
   const violations: Violation[] = [];
+  if (rule.darkMode) {
+    const lines = content.split("\n");
+    lines.forEach((line, i) => {
+      for (const match of line.matchAll(new RegExp(rule.pattern.source, "g"))) {
+        // A properly paired light+dark class flips correctly, so a line that
+        // already carries a dark: counterpart is fine.
+        if (line.includes("dark:")) continue;
+        // QR-code images keep bg-white in both themes for scannability (the
+        // <img src={…totpQr}> sits a couple of lines above the class).
+        if (/bg-white/.test(match[0])) {
+          const nearby = lines.slice(Math.max(0, i - 3), i + 1).join("\n");
+          if (/totpQr/.test(nearby)) continue;
+        }
+        violations.push({ relPath, line: i + 1, matched: match[0] });
+      }
+    });
+    return violations;
+  }
   for (const match of content.matchAll(new RegExp(rule.pattern.source, "g"))) {
     violations.push({
       relPath,

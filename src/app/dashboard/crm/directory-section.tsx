@@ -170,7 +170,7 @@ export function DirectorySection({ role }: { role: string }) {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
-          <label className="flex items-center gap-2 text-sm text-stone-600">
+          <label className="flex items-center gap-2 text-sm text-muted-foreground">
             <Checkbox
               checked={includeInactive}
               onCheckedChange={(checked) => setIncludeInactive(checked === true)}
@@ -185,7 +185,7 @@ export function DirectorySection({ role }: { role: string }) {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-stone-200/80 text-muted-foreground">
+                <tr className="border-b border-border/80 text-muted-foreground">
                   <th className="py-2 pe-3 text-start font-medium">نام</th>
                   <th className="py-2 pe-3 text-start font-medium">تلفن</th>
                   <th className="py-2 pe-3 text-start font-medium">آدرس</th>
@@ -196,8 +196,8 @@ export function DirectorySection({ role }: { role: string }) {
               </thead>
               <tbody>
                 {customers.map((c) => (
-                  <tr key={c.id} className="border-b border-stone-200/80">
-                    <td className="py-2 pe-3 font-medium text-stone-950">
+                  <tr key={c.id} className="border-b border-border/80">
+                    <td className="py-2 pe-3 font-medium text-foreground">
                       {/* The name now opens the 360° file — the screen that
                           answers "who is this person" rather than only "what do
                           they owe". The statement is still one click away, in

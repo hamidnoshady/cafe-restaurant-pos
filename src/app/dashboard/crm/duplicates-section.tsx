@@ -115,7 +115,7 @@ export function DuplicatesSection() {
         {candidates.length === 0 ? (
           <EmptyState>پروندهٔ تکراری‌ای پیدا نشد.</EmptyState>
         ) : (
-          <ul className="divide-y divide-stone-200/80">
+          <ul className="divide-y divide-border/80">
             {candidates.map((candidate) => (
               <li
                 key={`${candidate.left.id}-${candidate.right.id}-${candidate.reason}`}
@@ -178,8 +178,8 @@ export function DuplicatesSection() {
 
 function SideCard({ side }: { side: Side }) {
   return (
-    <div className="min-w-0 rounded-xl border border-stone-200/80 p-2.5">
-      <Link href={crmCustomerHref(side.id)} className="font-medium text-stone-950 hover:underline">
+    <div className="min-w-0 rounded-xl border border-border/80 p-2.5">
+      <Link href={crmCustomerHref(side.id)} className="font-medium text-foreground hover:underline">
         {side.name}
       </Link>
       <p className="mt-0.5 truncate text-xs text-muted-foreground">
@@ -254,7 +254,7 @@ function MergeDialog({
         </DialogHeader>
         <ErrorBox>{error}</ErrorBox>
 
-        <p className="text-sm leading-6 text-stone-700">
+        <p className="text-sm leading-6 text-foreground/80">
           همه‌چیزِ «<span className="font-semibold">{loser.name}</span>» به «
           <span className="font-semibold">{winner.name}</span>» منتقل می‌شود و پروندهٔ اول بایگانی
           خواهد شد.
@@ -265,7 +265,7 @@ function MergeDialog({
         ) : preview ? (
           <div className="mt-3 space-y-3 text-sm">
             <div>
-              <p className="font-medium text-stone-950">چه چیزی منتقل می‌شود</p>
+              <p className="font-medium text-foreground">چه چیزی منتقل می‌شود</p>
               {moved.length === 0 ? (
                 <p className="mt-1 text-xs text-muted-foreground">
                   رکورد وابسته‌ای برای انتقال وجود ندارد.
@@ -284,7 +284,7 @@ function MergeDialog({
             </div>
 
             <div>
-              <p className="font-medium text-stone-950">رضایت ارتباط پس از ادغام</p>
+              <p className="font-medium text-foreground">رضایت ارتباط پس از ادغام</p>
               <ul className="mt-1 flex flex-wrap gap-1.5">
                 <li>
                   <StatusBadge tone={preview.resultingConsent.smsConsent ? "positive" : "neutral"}>
@@ -307,7 +307,7 @@ function MergeDialog({
 
             {preview.resultingTags.length > 0 ? (
               <div>
-                <p className="font-medium text-stone-950">برچسب‌ها پس از ادغام</p>
+                <p className="font-medium text-foreground">برچسب‌ها پس از ادغام</p>
                 <ul className="mt-1 flex flex-wrap gap-1.5">
                   {preview.resultingTags.map((tag) => (
                     <li key={tag}>

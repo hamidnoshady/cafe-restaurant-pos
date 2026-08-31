@@ -144,8 +144,8 @@ export function SectionNav<K extends string>({
       aria-labelledby={listHeadingId}
       className={cn("overflow-hidden", cardClass, variant === "strip" && "md:hidden")}
     >
-      <div className="border-b border-stone-200/80 px-5 py-4">
-        <h2 id={listHeadingId} className="text-base font-bold text-stone-950">
+      <div className="border-b border-border/80 px-5 py-4">
+        <h2 id={listHeadingId} className="text-base font-bold text-foreground">
           {title ?? label}
         </h2>
         {description ? (
@@ -156,7 +156,7 @@ export function SectionNav<K extends string>({
         {rendered.map((group, index) => (
           <div key={group.label ?? index} className="mb-3 last:mb-0">
             {group.label ? (
-              <p className="px-3 pb-1 pt-2 text-[11px] font-semibold tracking-wide text-stone-400">
+              <p className="px-3 pb-1 pt-2 text-[11px] font-semibold tracking-wide text-muted-foreground">
                 {group.label}
               </p>
             ) : null}
@@ -173,23 +173,23 @@ export function SectionNav<K extends string>({
                     aria-current={isActive ? "page" : undefined}
                     onClick={() => openSection(item.key)}
                     className={cn(
-                      "flex min-h-12 w-full items-center gap-3 rounded-xl px-3 text-right text-sm transition-colors focus-visible:outline-none focus-visible:ring focus-visible:ring-amber-400/40",
+                      "flex min-h-12 w-full items-center gap-3 rounded-xl px-3 text-right text-sm transition-colors focus-visible:outline-none focus-visible:ring focus-visible:ring-amber-400/40 dark:focus-visible:ring-amber-400/40",
                       isActive
-                        ? "bg-amber-100 font-semibold text-amber-950"
-                        : "text-stone-600 hover:bg-stone-50 hover:text-stone-950",
+                        ? "bg-amber-100 dark:bg-amber-500/20 font-semibold text-amber-950 dark:text-amber-200"
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground",
                     )}
                   >
                     {Icon ? (
                       <Icon
                         aria-hidden="true"
-                        className={cn("size-[18px] shrink-0", isActive ? "text-amber-800" : "text-stone-400")}
+                        className={cn("size-[18px] shrink-0", isActive ? "text-amber-800 dark:text-amber-300" : "text-muted-foreground")}
                       />
                     ) : null}
                     <span className="min-w-0 flex-1 truncate">{item.label}</span>
                     {isActive && listOwnsIds ? (
-                      <span className={cn("size-1.5 shrink-0 rounded-full bg-amber-700", bp.show)} aria-hidden="true" />
+                      <span className={cn("size-1.5 shrink-0 rounded-full bg-amber-700 dark:bg-amber-400", bp.show)} aria-hidden="true" />
                     ) : null}
-                    <ChevronLeftIcon aria-hidden="true" className={cn("size-4 shrink-0 text-stone-400", bp.only)} />
+                    <ChevronLeftIcon aria-hidden="true" className={cn("size-4 shrink-0 text-muted-foreground", bp.only)} />
                   </button>
                 );
               })}
@@ -236,11 +236,11 @@ export function SectionNav<K extends string>({
           type="button"
           onClick={back}
           className={cn(
-            "flex min-h-11 w-full items-center gap-2 rounded-xl border border-stone-200/80 bg-card px-3 text-sm font-semibold text-stone-700 shadow-[0_1px_2px_rgb(41_37_36/0.035)] transition-colors hover:bg-stone-50 focus-visible:outline-none focus-visible:ring focus-visible:ring-amber-400/40",
+            "flex min-h-11 w-full items-center gap-2 rounded-xl border border-border/80 bg-card px-3 text-sm font-semibold text-foreground/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring focus-visible:ring-amber-400/40 dark:focus-visible:ring-amber-400/40",
             bp.only,
           )}
         >
-          <ChevronRightIcon aria-hidden="true" className="size-4 shrink-0 text-stone-400" />
+          <ChevronRightIcon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
           <span className="min-w-0 flex-1 truncate text-right">{activeSection?.label ?? label}</span>
           <span className="shrink-0 text-xs font-normal text-muted-foreground">بازگشت</span>
         </button>

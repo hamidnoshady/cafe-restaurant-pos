@@ -45,9 +45,9 @@ export function PageHeader({
   actions?: ReactNode;
 }) {
   return (
-    <header className="mb-5 flex flex-wrap items-start justify-between gap-3 border-b border-stone-200/80 pb-5 sm:mb-6 sm:pb-6">
+    <header className="mb-5 flex flex-wrap items-start justify-between gap-3 border-b border-border/80 pb-5 sm:mb-6 sm:pb-6">
       <div className="min-w-0">
-        <h1 className="text-2xl font-bold tracking-tight text-stone-950 sm:text-[1.7rem]">{title}</h1>
+        <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-[1.7rem]">{title}</h1>
         {description ? (
           <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{description}</p>
         ) : null}
@@ -63,7 +63,7 @@ export function PageHeader({
  * fixed height, a canvas that scrolls) composes this instead of restating the
  * classes, so there is still exactly one definition of what a card looks like.
  */
-export const cardClass = "rounded-2xl border border-stone-200/80 bg-card shadow-[0_1px_2px_rgb(41_37_36/0.035)]";
+export const cardClass = "rounded-2xl border border-border/80 bg-card shadow-[0_1px_2px_rgb(41_37_36/0.035)]";
 
 /**
  * The floating-panel skin — modals, statement panels, date-picker popovers: the
@@ -75,7 +75,7 @@ export const cardClass = "rounded-2xl border border-stone-200/80 bg-card shadow-
  * them is tuned.
  */
 export const overlayPanelClass =
- "rounded-2xl border border-stone-200/80 bg-card shadow-[0_12px_32px_-6px_rgb(41_37_36/0.18)]";
+ "rounded-2xl border border-border/80 bg-card shadow-[0_12px_32px_-6px_rgb(41_37_36/0.18)]";
 
 /**
  * The dropdown-popover skin — the shadcn popover spelling (`rounded-lg`,
@@ -120,9 +120,9 @@ export function SectionCard({
       className={cn("min-w-0 overflow-hidden", cardClass, className)}
     >
       {title ? (
-        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-stone-200/80 px-4 py-4 sm:px-5">
+        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border/80 px-4 py-4 sm:px-5">
           <div className="min-w-0">
-            <h2 className="font-semibold text-stone-950">{title}</h2>
+            <h2 className="font-semibold text-foreground">{title}</h2>
             {description ? (
               <p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p>
             ) : null}
@@ -134,7 +134,7 @@ export function SectionCard({
         <div className={cn(flush ? "min-w-0" : "min-w-0 p-4 sm:p-5", bodyClassName)}>{children}</div>
       ) : null}
       {footer ? (
-        <div className="border-t border-stone-200/80 bg-stone-50/60 px-4 py-3 text-xs leading-5 text-stone-600 sm:px-5">
+        <div className="border-t border-border/80 bg-muted/60 px-4 py-3 text-xs leading-5 text-muted-foreground sm:px-5">
           {footer}
         </div>
       ) : null}
@@ -173,7 +173,7 @@ export function TabBar<K extends string>({
     <nav
       aria-label={label}
       className={cn(
-        "rounded-2xl border border-stone-200/80 bg-card p-2 shadow-[0_1px_2px_rgb(41_37_36/0.03)]",
+        "rounded-2xl border border-border/80 bg-card p-2 shadow-[0_1px_2px_rgb(41_37_36/0.03)]",
         className,
       )}
     >
@@ -189,10 +189,10 @@ export function TabBar<K extends string>({
              aria-controls={`${idPrefix}-tabpanel`}
               onClick={() => onChange(tab.key)}
               className={cn(
-                "min-h-[52px] rounded-xl border px-3 text-center text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring focus-visible:ring-amber-400/40 sm:px-4",
+                "min-h-[52px] rounded-xl border px-3 text-center text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring focus-visible:ring-amber-400/40 dark:focus-visible:ring-amber-400/40 sm:px-4",
                 isActive
-                  ? "border-amber-200 bg-amber-100 text-amber-950 shadow-[0_1px_2px_rgb(120_53_15/0.08)]"
-                  : "border-transparent bg-transparent text-stone-600 hover:border-stone-200 hover:bg-stone-50 hover:text-stone-950",
+                  ? "border-amber-200 dark:border-amber-500/30 bg-amber-100 dark:bg-amber-500/20 text-amber-950 dark:text-amber-200 shadow-[0_1px_2px_rgb(120_53_15/0.08)]"
+                  : "border-transparent bg-transparent text-muted-foreground hover:border-border hover:bg-muted hover:text-foreground",
               )}
             >
               {tab.label}
@@ -232,7 +232,7 @@ export function TabPanel<K extends string>({
 /** What a page shows where a list would be, before anything has been created. */
 export function EmptyState({ children }: { children: ReactNode }) {
   return (
-    <p className="rounded-xl border border-dashed border-stone-200 px-3 py-6 text-center text-sm text-muted-foreground">
+    <p className="rounded-xl border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">
       {children}
     </p>
   );
@@ -271,7 +271,7 @@ export function LoadingSkeleton({
           <div
             key={index}
             className={cn(
-              "flex items-center justify-between gap-4 rounded-xl border border-stone-100 bg-stone-50/60",
+              "flex items-center justify-between gap-4 rounded-xl border border-border bg-muted/60",
               compact ? "min-h-10 px-3 py-2" : "min-h-14 px-4 py-3",
             )}
           >
@@ -358,7 +358,7 @@ export function DashboardPageSkeleton() {
   return (
     <PageShell>
       <div role="status" aria-live="polite" aria-busy="true" aria-label="در حال بارگذاری صفحه">
-        <header className="mb-5 flex items-start justify-between gap-3 border-b border-stone-200/80 pb-5 sm:mb-6 sm:pb-6">
+        <header className="mb-5 flex items-start justify-between gap-3 border-b border-border/80 pb-5 sm:mb-6 sm:pb-6">
           <div aria-hidden="true" className="min-w-0 flex-1 space-y-3">
             <Skeleton className="h-8 w-48 max-w-2/3" />
             <Skeleton className="h-4 w-[32rem] max-w-full" />
@@ -390,9 +390,9 @@ export function StatusBadge({
     <span
       className={cn(
         "inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-medium",
-        tone === "active" && "bg-amber-100 text-amber-950",
-        tone === "positive" && "bg-emerald-100 text-emerald-900",
-        tone === "neutral" && "bg-stone-100 text-stone-600",
+        tone === "active" && "bg-amber-100 dark:bg-amber-500/20 text-amber-950 dark:text-amber-200",
+        tone === "positive" && "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-900 dark:text-emerald-100",
+        tone === "neutral" && "bg-muted text-muted-foreground",
         tone === "danger" && "bg-destructive/10 text-destructive",
       )}
     >

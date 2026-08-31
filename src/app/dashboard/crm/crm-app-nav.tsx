@@ -37,8 +37,8 @@ export function CrmAppNav({ shell, role, pathname, onNavigate, workspaceShell }:
     <SidebarContent className="px-3 py-4">
       <nav aria-label="بخش‌های ارتباط با مشتری" className="space-y-3">
         <div className="px-2 group-data-[state=collapsed]/sidebar:hidden">
-          <p className="text-sm font-bold text-stone-950">{shell.label}</p>
-          <p className="mt-0.5 text-[11px] leading-5 text-stone-500">{shell.description}</p>
+          <p className="text-sm font-bold text-foreground">{shell.label}</p>
+          <p className="mt-0.5 text-[11px] leading-5 text-muted-foreground">{shell.description}</p>
         </div>
 
         <SidebarMenu className="space-y-1.5">
@@ -61,7 +61,7 @@ export function CrmAppNav({ shell, role, pathname, onNavigate, workspaceShell }:
                     <Icon aria-hidden="true" className="size-5 shrink-0" />
                     <span className="min-w-0 flex-1 text-right group-data-[state=collapsed]/sidebar:hidden">
                       <span className="block truncate">{item.label}</span>
-                      <span className="block truncate text-[11px] font-normal leading-4 text-stone-500">
+                      <span className="block truncate text-[11px] font-normal leading-4 text-muted-foreground">
                         {item.description}
                       </span>
                     </span>
@@ -72,12 +72,12 @@ export function CrmAppNav({ shell, role, pathname, onNavigate, workspaceShell }:
           })}
         </SidebarMenu>
 
-        <SidebarMenu className="space-y-1.5 border-t border-stone-200/80 pt-3">
+        <SidebarMenu className="space-y-1.5 border-t border-border/80 pt-3">
           <SidebarMenuItem>
             <SidebarMenuButton
               asChild
               tooltip={backLabel}
-              className="min-h-12 rounded-xl text-stone-600 hover:bg-stone-50 hover:text-stone-950"
+              className="min-h-12 rounded-xl text-muted-foreground hover:bg-muted hover:text-foreground"
             >
               <Link href={backHref} onClick={onNavigate}>
                 <ArrowRightIcon aria-hidden="true" className="size-5 shrink-0 rtl:rotate-180" />

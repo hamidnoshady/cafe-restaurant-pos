@@ -62,11 +62,11 @@ export function usePaymentMethods(): {
   return { methods, loaded, reload };
 }
 
-const CHIP_ON = "border-amber-200 bg-amber-100 text-amber-700";
-const CHIP_OFF = "border-stone-200/80 text-stone-600 hover:bg-stone-50";
+const CHIP_ON = "border-amber-200 dark:border-amber-500/30 bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300";
+const CHIP_OFF = "border-border/80 text-muted-foreground hover:bg-muted";
 
 const AMOUNT_INPUT =
-  "h-10 w-full min-w-0 rounded-lg border border-stone-200/80 bg-card px-2 text-sm tabular-nums outline-none focus-visible:border-amber-500 focus-visible:ring-2 focus-visible:ring-amber-500/30";
+  "h-10 w-full min-w-0 rounded-lg border border-border/80 bg-card px-2 text-sm tabular-nums outline-none focus-visible:border-amber-500 dark:focus-visible:border-amber-500/60 focus-visible:ring-2 focus-visible:ring-amber-500/30 dark:focus-visible:ring-amber-400/45";
 
 export interface PaymentWaysProps {
   methods: PaymentMethodView[];
@@ -122,7 +122,7 @@ export function PaymentWays({ methods, draft, onChange, due, disabled, loaded = 
   return (
     <div>
       <div className="mb-2 flex items-center justify-between gap-2">
-        <p className="text-xs font-bold text-stone-600">روش دریافت وجه</p>
+        <p className="text-xs font-bold text-muted-foreground">روش دریافت وجه</p>
         <button
           type="button"
           onClick={toggleSplit}
@@ -160,7 +160,7 @@ export function PaymentWays({ methods, draft, onChange, due, disabled, loaded = 
                 onClick={() => chooseWay(method.id)}
                 disabled={disabled}
                 className={
-                  "flex min-h-14 items-center justify-center gap-2 rounded-xl border px-2 text-center text-sm font-bold transition duration-200 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 disabled:opacity-55 motion-reduce:transition-none " +
+                  "flex min-h-14 items-center justify-center gap-2 rounded-xl border px-2 text-center text-sm font-bold transition duration-200 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 disabled:opacity-55 motion-reduce:transition-none " +
                   (selected ? CHIP_ON : CHIP_OFF)
                 }
               >
@@ -172,13 +172,13 @@ export function PaymentWays({ methods, draft, onChange, due, disabled, loaded = 
         </div>
       )}
       {loaded && methods.length === 0 ? (
-        <p className="mt-2 text-xs text-stone-400">روشی برای دریافت وجه تعریف نشده است.</p>
+        <p className="mt-2 text-xs text-muted-foreground">روشی برای دریافت وجه تعریف نشده است.</p>
       ) : null}
 
       {draft.split ? (
-        <div className="mt-3 space-y-2 rounded-xl border border-stone-200/80 bg-stone-50 p-2">
+        <div className="mt-3 space-y-2 rounded-xl border border-border/80 bg-muted p-2">
           {draft.rows.length === 0 ? (
-            <p className="px-1 py-2 text-xs text-stone-400">
+            <p className="px-1 py-2 text-xs text-muted-foreground">
               یکی از روش‌های بالا را بزنید تا سهم آن از مبلغ اضافه شود.
             </p>
           ) : null}
@@ -187,7 +187,7 @@ export function PaymentWays({ methods, draft, onChange, due, disabled, loaded = 
             return (
               <div key={row.key} className="space-y-1">
                 <div className="flex items-center gap-2">
-                  <span className="min-w-0 flex-1 truncate text-xs font-bold text-stone-950">
+                  <span className="min-w-0 flex-1 truncate text-xs font-bold text-foreground">
                     {method?.name ?? "—"}
                   </span>
                   <PersianNumberInput
@@ -205,7 +205,7 @@ export function PaymentWays({ methods, draft, onChange, due, disabled, loaded = 
                     type="button"
                     onClick={() => removeRow(row.key)}
                     disabled={disabled}
-                    className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-stone-200/80 text-stone-400 hover:bg-card disabled:opacity-55"
+                    className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border/80 text-muted-foreground hover:bg-card disabled:opacity-55"
                     aria-label={`حذف ${method?.name ?? ""}`}
                   >
                     <XIcon className="size-4" aria-hidden="true" />
@@ -226,16 +226,16 @@ export function PaymentWays({ methods, draft, onChange, due, disabled, loaded = 
             );
           })}
 
-          <div className="flex items-center justify-between border-t border-stone-200/80 pt-2 text-xs font-bold">
-            <span className="text-stone-600">
+          <div className="flex items-center justify-between border-t border-border/80 pt-2 text-xs font-bold">
+            <span className="text-muted-foreground">
               {remaining > 0 ? "باقی‌مانده" : remaining < 0 ? "مازاد (بازگشت به مشتری)" : "تسویه شد"}
             </span>
-            <span className={remaining === 0 ? "text-emerald-700" : "text-destructive"}>
+            <span className={remaining === 0 ? "text-emerald-700 dark:text-emerald-300" : "text-destructive"}>
               {money.format(Math.abs(remaining))}
             </span>
           </div>
           {draft.rows.length > 0 && remaining > 0 ? (
-            <p className="flex items-center gap-1 text-[11px] text-stone-400">
+            <p className="flex items-center gap-1 text-[11px] text-muted-foreground">
               <PlusIcon className="size-3" aria-hidden="true" />
               روش دیگری را از بالا بزنید تا {money.format(remaining)} باقی‌مانده با آن دریافت شود.
             </p>

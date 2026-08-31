@@ -161,7 +161,7 @@ export function ChatBubble({
             "min-w-0 overflow-hidden text-sm leading-7 shadow-[0_1px_2px_rgb(41_37_36/0.04)]",
             isUser
               ? "rounded-2xl rounded-tl-md bg-gradient-to-br from-primary to-primary/85 px-4 py-2.5 text-primary-foreground"
-              : "rounded-2xl rounded-tr-md border border-stone-200/70 bg-card px-4 py-2.5 text-foreground",
+              : "rounded-2xl rounded-tr-md border border-border/70 bg-card px-4 py-2.5 text-foreground",
           )}
         >
           {isUser ? (
@@ -217,7 +217,7 @@ export function ChatBubble({
             {onAskAgain ? (
               <button
                 type="button"
-                className="rounded-full border border-stone-300/70 px-2 py-0.5 text-[10px] text-foreground/80 transition-colors hover:bg-muted disabled:opacity-50 outline-none focus-visible:ring focus-visible:ring-ring/50"
+                className="rounded-full border border-border/70 px-2 py-0.5 text-[10px] text-foreground/80 transition-colors hover:bg-muted disabled:opacity-50 outline-none focus-visible:ring focus-visible:ring-ring/50"
                 disabled={busy}
                 onClick={onAskAgain}
               >
@@ -239,7 +239,7 @@ export function ChatBubble({
               <CopyIcon className="size-3.5" />
             </button>
             {message.applied ? (
-              <span className="flex items-center gap-1 text-[10px] text-emerald-600">
+              <span className="flex items-center gap-1 text-[10px] text-emerald-600 dark:text-emerald-400">
                 <CheckIcon className="size-3" /> انجام شد
               </span>
             ) : null}

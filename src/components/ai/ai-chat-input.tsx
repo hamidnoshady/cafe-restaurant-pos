@@ -46,7 +46,7 @@ export function AiChatInput({
   sendMessage,
 }: AiChatInputProps) {
   return (
-    <div className="border-t border-stone-200/70 bg-card/90 p-2 pt-2.5 backdrop-blur">
+    <div className="border-t border-border/70 bg-card/90 p-2 pt-2.5 backdrop-blur">
       <ChatComposer
         variant="popup"
         mode={mode}

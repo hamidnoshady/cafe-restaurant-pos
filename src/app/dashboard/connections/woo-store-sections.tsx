@@ -163,7 +163,7 @@ export function CatalogueSection({ connectionId, busy, call }: SectionProps) {
   }
 
   return (
-    <div className="mt-2 space-y-2 rounded-md bg-stone-50 p-2 text-xs">
+    <div className="mt-2 space-y-2 rounded-md bg-muted p-2 text-xs">
       {loading ? <LoadingSkeleton rows={3} compact /> : null}
 
       {!loading && summary ? (
@@ -176,7 +176,7 @@ export function CatalogueSection({ connectionId, busy, call }: SectionProps) {
             { label: "ناموجود", value: summary.outOfStock ?? 0 },
             { label: "بدون دسته", value: summary.uncategorised ?? 0 },
           ].map((chip) => (
-            <span key={chip.label} className="rounded-full bg-card px-2 py-0.5 text-[11px] text-stone-700">
+            <span key={chip.label} className="rounded-full bg-card px-2 py-0.5 text-[11px] text-foreground/80">
               {chip.label}: {Number(chip.value).toLocaleString("fa-IR")}
             </span>
           ))}
@@ -214,15 +214,15 @@ export function CatalogueSection({ connectionId, busy, call }: SectionProps) {
 
       <ul className="max-h-80 space-y-1 overflow-y-auto">
         {visible.map((product) => (
-          <li key={product.remoteId} className="rounded-lg border border-stone-200/70 bg-card p-2">
+          <li key={product.remoteId} className="rounded-lg border border-border/70 bg-card p-2">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="font-medium">{product.name}</span>
               <span className="flex flex-wrap items-center gap-1">
-                <span className="rounded-full bg-stone-100 px-2 py-0.5 text-[10px] text-stone-700">
+                <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-foreground/80">
                   {WOO_TYPE_LABELS[product.wooType] ?? product.wooType}
                 </span>
                 {product.parentRemoteId ? (
-                  <span className="rounded-full bg-stone-100 px-2 py-0.5 text-[10px] text-stone-600" dir="ltr">
+                  <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground" dir="ltr">
                     والد #{product.parentRemoteId}
                   </span>
                 ) : null}
@@ -289,7 +289,7 @@ export function CatalogueSection({ connectionId, busy, call }: SectionProps) {
                 </Button>
               )
             ) : (
-              <p className="mt-1 text-[11px] text-amber-700">
+              <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-300">
                 این ردیف والدِ تنوع‌هاست؛ خودش فروخته نمی‌شود و موجودی و قیمت ندارد.
               </p>
             )}
@@ -342,7 +342,7 @@ export function TaxonomiesSection({ connectionId }: { connectionId: string }) {
 
   if (groups.length === 0) {
     return (
-      <div className="mt-2 rounded-md bg-stone-50 p-2 text-xs text-muted-foreground">
+      <div className="mt-2 rounded-md bg-muted p-2 text-xs text-muted-foreground">
         هنوز درخت دسته‌بندی دریافت نشده است. پس از «همگام‌سازی محصولات»، دسته‌ها، برچسب‌ها و ویژگی‌های فروشگاه اینجا
         دیده می‌شوند.
       </div>
@@ -350,9 +350,9 @@ export function TaxonomiesSection({ connectionId }: { connectionId: string }) {
   }
 
   return (
-    <div className="mt-2 max-h-80 space-y-1 overflow-y-auto rounded-md bg-stone-50 p-2 text-xs">
+    <div className="mt-2 max-h-80 space-y-1 overflow-y-auto rounded-md bg-muted p-2 text-xs">
       {groups.map((group) => (
-        <div key={group.taxonomy} className="rounded-lg border border-stone-200/70 bg-card">
+        <div key={group.taxonomy} className="rounded-lg border border-border/70 bg-card">
           <button
             type="button"
             className="flex w-full items-center justify-between gap-2 p-2 text-right"
@@ -361,7 +361,7 @@ export function TaxonomiesSection({ connectionId }: { connectionId: string }) {
           >
             <span className="font-medium">{group.label}</span>
             <span className="flex items-center gap-2 text-[11px] text-muted-foreground">
-              {group.isAttribute ? <span className="rounded-full bg-stone-100 px-2 py-0.5">ویژگی</span> : null}
+              {group.isAttribute ? <span className="rounded-full bg-muted px-2 py-0.5">ویژگی</span> : null}
               <span>
                 {group.termCount.toLocaleString("fa-IR")} مورد
               </span>
@@ -371,7 +371,7 @@ export function TaxonomiesSection({ connectionId }: { connectionId: string }) {
             </span>
           </button>
           {open === group.taxonomy ? (
-            <ul className="space-y-1 border-t border-stone-100 p-2">
+            <ul className="space-y-1 border-t border-border p-2">
               {group.terms.map((term) => (
                 <li key={term.remoteId} className="flex flex-wrap items-center justify-between gap-2">
                   <span>
@@ -432,7 +432,7 @@ export function StoreOrdersSection({ connectionId, busy, call }: SectionProps) {
   }, [load]);
 
   return (
-    <div className="mt-2 max-h-80 space-y-1 overflow-y-auto rounded-md bg-stone-50 p-2 text-xs">
+    <div className="mt-2 max-h-80 space-y-1 overflow-y-auto rounded-md bg-muted p-2 text-xs">
       {loading ? <LoadingSkeleton rows={3} compact /> : null}
       {!loading && orders.length === 0 ? (
         <p className="text-muted-foreground">
@@ -441,12 +441,12 @@ export function StoreOrdersSection({ connectionId, busy, call }: SectionProps) {
       ) : null}
 
       {orders.map((order) => (
-        <div key={order.remoteId} className="rounded-lg border border-stone-200/70 bg-card p-2">
+        <div key={order.remoteId} className="rounded-lg border border-border/70 bg-card p-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="font-medium" dir="ltr">
               #{order.number}
             </span>
-            <span className="rounded-full bg-stone-100 px-2 py-0.5 text-[10px] text-stone-700">
+            <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-foreground/80">
               {ORDER_STATUS_LABELS[order.status] ?? order.status}
             </span>
           </div>
@@ -461,11 +461,11 @@ export function StoreOrdersSection({ connectionId, busy, call }: SectionProps) {
                 ? `فاکتور داخلی: ${order.localOrderNumber.toLocaleString("fa-IR")}`
                 : "در حسابداری ثبت نشده"}
             </span>
-            <span className={order.ingestStatus === "failed" ? "text-red-600" : ""}>
+            <span className={order.ingestStatus === "failed" ? "text-red-600 dark:text-red-400" : ""}>
               {INGEST_STATUS_LABELS[order.ingestStatus] ?? order.ingestStatus}
             </span>
           </div>
-          {order.ingestError ? <p className="mt-1 text-red-600" dir="ltr">{order.ingestError}</p> : null}
+          {order.ingestError ? <p className="mt-1 text-red-600 dark:text-red-400" dir="ltr">{order.ingestError}</p> : null}
 
           <div className="mt-2 flex flex-wrap gap-2">
             <Button
@@ -602,9 +602,9 @@ export function SyncSettingsSection({
   };
 
   return (
-    <div className="mt-2 space-y-3 rounded-md bg-stone-50 p-2 text-xs">
+    <div className="mt-2 space-y-3 rounded-md bg-muted p-2 text-xs">
       <div className="grid gap-2 sm:grid-cols-2">
-        <label className="flex items-start gap-2 rounded-lg border border-stone-200/70 bg-card p-2">
+        <label className="flex items-start gap-2 rounded-lg border border-border/70 bg-card p-2">
           <input
             type="checkbox"
             className="mt-0.5"
@@ -622,7 +622,7 @@ export function SyncSettingsSection({
           </span>
         </label>
 
-        <label className="flex items-start gap-2 rounded-lg border border-stone-200/70 bg-card p-2">
+        <label className="flex items-start gap-2 rounded-lg border border-border/70 bg-card p-2">
           <input
             type="checkbox"
             className="mt-0.5"

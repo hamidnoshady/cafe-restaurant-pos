@@ -41,7 +41,7 @@ const PRESETS: { key: BusinessDateRangePreset; label: string }[] = [
 ];
 
 const CHIP_CLASS =
-  "min-h-9 rounded-lg border border-stone-200/80 bg-card px-3 text-xs font-medium text-stone-600 transition-colors hover:bg-stone-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 active:scale-[0.98]";
+  "min-h-9 rounded-lg border border-border/80 bg-card px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 active:scale-[0.98]";
 
 export function BusinessDayRangePresets({
   onSelect,
@@ -106,7 +106,7 @@ export function BusinessDayRangePresets({
       )}
 
       {info?.enabled && info.startMinutes !== null ? (
-        <p className="mt-2 text-xs text-stone-500">
+        <p className="mt-2 text-xs text-muted-foreground">
           روز کاری این شعبه از ساعت {toPersianDigits(formatStartTime(info.startMinutes))} شروع
           می‌شود، بنابراین تاریخ‌های این گزارش روز کاری هستند نه روز تقویمی؛ فروش بعد از نیمه‌شب
           در همان روز کاری قبل ثبت می‌شود. روز کاری جاری:{" "}

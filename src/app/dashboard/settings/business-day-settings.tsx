@@ -232,7 +232,7 @@ export function BusinessDaySettings() {
           </p>
 
           {status.enabled && canManage ? (
-            <div className="mt-6 border-t border-stone-200/80 pt-5">
+            <div className="mt-6 border-t border-border/80 pt-5">
               <h3 className="mb-1 text-sm font-semibold">بستن دستی روز کاری</h3>
               <p className="mb-3 text-xs text-muted-foreground">
                 معمولاً به این دکمه نیازی نیست: وقتی صندوق‌دار شیفتش را می‌بندد

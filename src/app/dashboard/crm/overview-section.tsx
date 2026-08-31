@@ -41,7 +41,7 @@ function StatCard({ label, value, hint }: { label: string; value: string; hint?:
   return (
     <div className={`min-w-0 p-4 sm:p-5 ${cardClass}`}>
       <p className="text-xs font-medium leading-5 text-muted-foreground">{label}</p>
-      <p className="mt-2 truncate text-xl font-bold tracking-tight text-stone-950 sm:text-2xl">{value}</p>
+      <p className="mt-2 truncate text-xl font-bold tracking-tight text-foreground sm:text-2xl">{value}</p>
       {hint ? <p className="mt-1 text-xs leading-5 text-muted-foreground">{hint}</p> : null}
     </div>
   );
@@ -52,7 +52,7 @@ function ShareBar({ parts }: { parts: { key: string; label: string; count: numbe
   const total = parts.reduce((sum, part) => sum + part.count, 0);
   if (total === 0) return null;
   return (
-    <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-stone-100">
+    <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-muted">
       {parts.map((part) => (
         <span
           key={part.key}
@@ -66,18 +66,18 @@ function ShareBar({ parts }: { parts: { key: string; label: string; count: numbe
 }
 
 const STAGE_TONES: Record<string, string> = {
-  champion: "bg-emerald-500",
-  loyal: "bg-emerald-400",
-  potential_loyalist: "bg-teal-400",
-  new: "bg-sky-400",
-  promising: "bg-sky-300",
-  needs_attention: "bg-amber-400",
-  about_to_sleep: "bg-amber-300",
-  at_risk: "bg-orange-400",
-  cant_lose: "bg-rose-500",
-  hibernating: "bg-stone-400",
-  lost: "bg-stone-300",
-  never_purchased: "bg-stone-200",
+  champion: "bg-emerald-500 dark:bg-emerald-500",
+  loyal: "bg-emerald-400 dark:bg-emerald-600",
+  potential_loyalist: "bg-teal-400 dark:bg-teal-600",
+  new: "bg-sky-400 dark:bg-sky-600",
+  promising: "bg-sky-300 dark:bg-sky-700",
+  needs_attention: "bg-amber-400 dark:bg-amber-400",
+  about_to_sleep: "bg-amber-300 dark:bg-amber-500/35",
+  at_risk: "bg-orange-400 dark:bg-orange-500",
+  cant_lose: "bg-rose-500 dark:bg-rose-500",
+  hibernating: "bg-muted-foreground/30",
+  lost: "bg-input",
+  never_purchased: "bg-muted",
 };
 
 export function CrmOverviewSection({
@@ -201,21 +201,21 @@ export function CrmOverviewSection({
                   key: row.stage,
                   label: LIFECYCLE_STAGES[row.stage as LifecycleStage]?.label ?? row.stage,
                   count: row.count,
-                  tone: STAGE_TONES[row.stage] ?? "bg-stone-300",
+                  tone: STAGE_TONES[row.stage] ?? "bg-input",
                 }))}
               />
-              <ul className="divide-y divide-stone-200/80 text-sm">
+              <ul className="divide-y divide-border/80 text-sm">
                 {overview.lifecycle.map((row) => {
                   const meta = LIFECYCLE_STAGES[row.stage as LifecycleStage];
                   return (
                     <li key={row.stage} className="flex items-center justify-between gap-3 py-2.5">
                       <div className="min-w-0">
-                        <span className="font-medium text-stone-950">{meta?.label ?? row.stage}</span>
+                        <span className="font-medium text-foreground">{meta?.label ?? row.stage}</span>
                         {meta?.action ? (
                           <span className="mr-2 text-xs text-muted-foreground">{meta.action}</span>
                         ) : null}
                       </div>
-                      <span className="shrink-0 tabular-nums text-stone-600">
+                      <span className="shrink-0 tabular-nums text-muted-foreground">
                         {formatPersianNumber(row.count)} نفر · {money.format(row.valueRial)}
                       </span>
                     </li>
@@ -248,20 +248,20 @@ export function CrmOverviewSection({
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div>
                   <p className="text-xs text-muted-foreground">ارزش خام</p>
-                  <p className="mt-1 font-semibold text-stone-950">{money.format(pipeline.openValueRial)}</p>
+                  <p className="mt-1 font-semibold text-foreground">{money.format(pipeline.openValueRial)}</p>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">ارزش وزنی (بر پایهٔ احتمال)</p>
-                  <p className="mt-1 font-semibold text-teal-700">{money.format(pipeline.weightedValueRial)}</p>
+                  <p className="mt-1 font-semibold text-teal-700 dark:text-teal-300">{money.format(pipeline.weightedValueRial)}</p>
                 </div>
               </div>
-              <ul className="divide-y divide-stone-200/80 text-sm">
+              <ul className="divide-y divide-border/80 text-sm">
                 {pipeline.byStage.map((row) => (
                   <li key={row.stage} className="flex items-center justify-between gap-3 py-2.5">
-                    <span className="min-w-0 font-medium text-stone-950">
+                    <span className="min-w-0 font-medium text-foreground">
                       {DEAL_STAGE_META[row.stage]?.label ?? row.stage}
                     </span>
-                    <span className="shrink-0 tabular-nums text-stone-600">
+                    <span className="shrink-0 tabular-nums text-muted-foreground">
                       {formatPersianNumber(row.count)} معامله · {money.format(row.valueRial)}
                     </span>
                   </li>
@@ -289,18 +289,18 @@ export function CrmOverviewSection({
           {overview.topCustomers.length === 0 ? (
             <EmptyState>هنوز خریدی به مشتری خاصی نسبت داده نشده است.</EmptyState>
           ) : (
-            <ul className="divide-y divide-stone-200/80 text-sm">
+            <ul className="divide-y divide-border/80 text-sm">
               {overview.topCustomers.map((row) => (
                 <li key={row.id} className="flex items-center justify-between gap-3 py-2.5">
                   <div className="min-w-0">
-                    <a href={crmCustomerHref(row.id)} className="font-medium text-stone-950 hover:underline">
+                    <a href={crmCustomerHref(row.id)} className="font-medium text-foreground hover:underline">
                       {row.name}
                     </a>
                     <span className="mr-2 text-xs text-muted-foreground">
                       {formatPersianNumber(row.orderCount)} خرید
                     </span>
                   </div>
-                  <span className="shrink-0 font-semibold text-emerald-700">{money.format(row.totalSpentRial)}</span>
+                  <span className="shrink-0 font-semibold text-emerald-700 dark:text-emerald-300">{money.format(row.totalSpentRial)}</span>
                 </li>
               ))}
             </ul>
@@ -320,15 +320,15 @@ export function CrmOverviewSection({
           <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
             <div>
               <p className="text-xs text-muted-foreground">تیکت باز</p>
-              <p className="mt-1 font-semibold text-stone-950">{formatPersianNumber(cases.open)}</p>
+              <p className="mt-1 font-semibold text-foreground">{formatPersianNumber(cases.open)}</p>
             </div>
             <div>
               <p className="text-xs text-muted-foreground">فوری</p>
-              <p className="mt-1 font-semibold text-rose-700">{formatPersianNumber(cases.urgent)}</p>
+              <p className="mt-1 font-semibold text-rose-700 dark:text-rose-300">{formatPersianNumber(cases.urgent)}</p>
             </div>
             <div>
               <p className="text-xs text-muted-foreground">حل‌شده · ۳۰ روز</p>
-              <p className="mt-1 font-semibold text-emerald-700">{formatPersianNumber(cases.resolved30d)}</p>
+              <p className="mt-1 font-semibold text-emerald-700 dark:text-emerald-300">{formatPersianNumber(cases.resolved30d)}</p>
             </div>
           </div>
           <p className="mt-3 text-xs text-muted-foreground">
@@ -350,16 +350,16 @@ export function CrmOverviewSection({
             </Button>
           }
         >
-          <ul className="divide-y divide-stone-200/80 text-sm">
+          <ul className="divide-y divide-border/80 text-sm">
             <li className="flex items-center justify-between gap-3 py-2.5">
-              <span className="text-stone-950">پیامک</span>
-              <span className="shrink-0 tabular-nums text-stone-600">
+              <span className="text-foreground">پیامک</span>
+              <span className="shrink-0 tabular-nums text-muted-foreground">
                 {formatPersianNumber(consent.smsReachable)} قابل ارسال از {formatPersianNumber(consent.smsGranted)} رضایت
               </span>
             </li>
             <li className="flex items-center justify-between gap-3 py-2.5">
-              <span className="text-stone-950">ایمیل</span>
-              <span className="shrink-0 tabular-nums text-stone-600">
+              <span className="text-foreground">ایمیل</span>
+              <span className="shrink-0 tabular-nums text-muted-foreground">
                 {formatPersianNumber(consent.emailReachable)} قابل ارسال از {formatPersianNumber(consent.emailGranted)} رضایت
               </span>
             </li>
@@ -374,13 +374,13 @@ export function CrmOverviewSection({
           title="پل حسابداری"
           description="اعدادی که این برنامه با دفتر حساب‌ها مشترک دارد"
         >
-          <ul className="divide-y divide-stone-200/80 text-sm">
+          <ul className="divide-y divide-border/80 text-sm">
             <li className="flex items-center justify-between gap-3 py-2.5">
               <div className="min-w-0">
-                <span className="font-medium text-stone-950">اعتبار فروشگاهی مشتریان</span>
+                <span className="font-medium text-foreground">اعتبار فروشگاهی مشتریان</span>
                 <span className="mr-2 text-xs text-muted-foreground">حساب ۲۴۱۰</span>
               </div>
-              <span className="shrink-0 font-semibold text-stone-950">{money.format(value.storeCreditRial)}</span>
+              <span className="shrink-0 font-semibold text-foreground">{money.format(value.storeCreditRial)}</span>
             </li>
           </ul>
           <p className="mt-3 text-xs leading-6 text-muted-foreground">
@@ -402,7 +402,7 @@ export function CrmOverviewSection({
             </Button>
           }
         >
-          <p className="text-sm leading-6 text-stone-700">
+          <p className="text-sm leading-6 text-foreground/80">
             <StatusBadge tone="neutral">{formatPersianNumber(overview.duplicates)} مورد</StatusBadge>{" "}
             جفت پروندهٔ احتمالاً تکراری پیدا شد. ادغام برگشت‌ناپذیر است و فقط با تأیید شما انجام می‌شود.
           </p>

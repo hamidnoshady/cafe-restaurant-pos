@@ -303,7 +303,7 @@ export default function OpeningStep() {
               <span>
                 جمع بستانکار: <b>{money.format(balTotals.credit)}</b>
               </span>
-              <span className={balTotals.debit === balTotals.credit ? "text-emerald-600" : "text-destructive"}>
+              <span className={balTotals.debit === balTotals.credit ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"}>
                 {balTotals.debit === balTotals.credit
                   ? "تراز است ✓"
                   : `اختلاف: ${money.format(Math.abs(balTotals.debit - balTotals.credit))}`}

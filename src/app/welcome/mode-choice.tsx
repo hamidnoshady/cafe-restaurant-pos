@@ -22,7 +22,7 @@ export function ModeChoice({ onChoose }: { onChoose: (mode: "local" | "connect")
         <button
           type="button"
           onClick={() => onChoose("local")}
-          className={`group ${cardClass} p-6 text-start transition hover:border-amber-300 hover:bg-amber-50/40 focus-visible:outline-none focus-visible:ring focus-visible:ring-amber-400/40`}
+          className={`group ${cardClass} p-6 text-start transition hover:border-amber-300 dark:hover:border-amber-500/40 hover:bg-amber-50/40 dark:hover:bg-amber-500/15 focus-visible:outline-none focus-visible:ring focus-visible:ring-amber-400/40 dark:focus-visible:ring-amber-400/40`}
         >
           <p className="mb-2 text-lg font-bold">راه‌اندازی محلی</p>
           <p className="mb-4 text-sm text-muted-foreground">
@@ -38,7 +38,7 @@ export function ModeChoice({ onChoose }: { onChoose: (mode: "local" | "connect")
         <button
           type="button"
           onClick={() => onChoose("connect")}
-          className={`group ${cardClass} p-6 text-start transition hover:border-amber-300 hover:bg-amber-50/40 focus-visible:outline-none focus-visible:ring focus-visible:ring-amber-400/40`}
+          className={`group ${cardClass} p-6 text-start transition hover:border-amber-300 dark:hover:border-amber-500/40 hover:bg-amber-50/40 dark:hover:bg-amber-500/15 focus-visible:outline-none focus-visible:ring focus-visible:ring-amber-400/40 dark:focus-visible:ring-amber-400/40`}
         >
           <p className="mb-2 text-lg font-bold">اتصال به پلتفرم آنلاین</p>
           <p className="mb-4 text-sm text-muted-foreground">

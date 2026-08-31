@@ -223,7 +223,7 @@ function PrinterCard({ printer, busy, onSave, onDelete, onAgentAction }: { print
   return (
     <SectionCard>
       <PrinterForm value={value} onChange={setValue} onSubmit={(event) => { event.preventDefault(); void onSave(printer, value); }} submitLabel="ذخیرهٔ چاپگر" busy={busy} />
-      <div className="mt-4 flex flex-wrap gap-2 border-t border-stone-200/80 pt-4">
+      <div className="mt-4 flex flex-wrap gap-2 border-t border-border/80 pt-4">
         <SecondaryButton disabled={busy} onClick={() => void onAgentAction({ ...printer, kind: value.kind, connection: { ...printer.connection, ip: value.ip, port: Number(value.port), paperWidthMm: Number(value.paperWidthMm) as 58 | 80 } }, "print")}>چاپ آزمایشی</SecondaryButton>
         {value.kind === "receipt" ? <SecondaryButton disabled={busy} onClick={() => void onAgentAction({ ...printer, kind: value.kind, connection: { ...printer.connection, ip: value.ip, port: Number(value.port), paperWidthMm: Number(value.paperWidthMm) as 58 | 80 } }, "drawer")}>آزمایش کشوی پول</SecondaryButton> : null}
         <SecondaryButton disabled={busy} onClick={() => void onDelete(printer)}>حذف چاپگر</SecondaryButton>

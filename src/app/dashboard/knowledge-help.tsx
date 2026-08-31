@@ -90,7 +90,7 @@ export function KnowledgeHelpButton({ section }: { section?: string }) {
         aria-label={`آموزش ${label}`}
         title={`آموزش ${label}`}
         onClick={openModal}
-        className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg px-2 text-sm text-muted-foreground transition-colors hover:bg-stone-100 hover:text-stone-950"
+        className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg px-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
       >
         <GraduationCapIcon className="size-5 shrink-0" aria-hidden="true" />
       </button>
@@ -105,14 +105,14 @@ export function KnowledgeHelpButton({ section }: { section?: string }) {
         {state.status === "loading" ? (
           <Skeleton className="h-[65svh] min-h-[320px] rounded-xl" />
         ) : state.status === "error" ? (
-          <div className="flex min-h-[320px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-stone-200 px-4 text-center">
+          <div className="flex min-h-[320px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border px-4 text-center">
             <p className="text-sm text-muted-foreground">
               صفحهٔ آموزشی بارگذاری نشد؛ دوباره تلاش کنید.
             </p>
             <button
               type="button"
               onClick={() => void fetchEntry()}
-              className="rounded-lg border border-stone-200/80 px-4 py-2 text-sm font-medium text-stone-700 transition-colors hover:bg-stone-50"
+              className="rounded-lg border border-border/80 px-4 py-2 text-sm font-medium text-foreground/80 transition-colors hover:bg-muted"
             >
               تلاش دوباره
             </button>
@@ -134,13 +134,13 @@ export function KnowledgeHelpButton({ section }: { section?: string }) {
               src={state.entry.url}
               title={`آموزش ${label}`}
               onLoad={() => setFrameLoaded(true)}
-              className={`h-full w-full rounded-xl border border-stone-200/80 bg-card transition-opacity motion-reduce:transition-none ${frameLoaded ? "opacity-100" : "opacity-0"}`}
+              className={`h-full w-full rounded-xl border border-border/80 bg-card transition-opacity motion-reduce:transition-none ${frameLoaded ? "opacity-100" : "opacity-0"}`}
             />
           </div>
         ) : (
-          <div className="flex min-h-[320px] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-stone-200 px-4 text-center">
-            <GraduationCapIcon className="size-8 text-stone-300" aria-hidden="true" />
-            <p className="text-sm font-medium text-stone-700">
+          <div className="flex min-h-[320px] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border px-4 text-center">
+            <GraduationCapIcon className="size-8 text-muted-foreground" aria-hidden="true" />
+            <p className="text-sm font-medium text-foreground/80">
               هنوز صفحهٔ آموزشی برای این بخش ثبت نشده است.
             </p>
             <p className="text-xs text-muted-foreground">
@@ -154,7 +154,7 @@ export function KnowledgeHelpButton({ section }: { section?: string }) {
             href={state.entry.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-stone-950"
+            className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
             dir="ltr"
           >
             <span className="truncate">{state.entry.url}</span>

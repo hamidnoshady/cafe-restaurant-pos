@@ -57,7 +57,7 @@ export function BranchManagementSettings({ features }: BranchManagementSettingsP
   return (
     <section className="min-w-0 space-y-4 sm:space-y-5">
       <header>
-        <h2 className="font-semibold text-stone-950">مدیریت شعب</h2>
+        <h2 className="font-semibold text-foreground">مدیریت شعب</h2>
         <p className="mt-1 text-sm leading-6 text-muted-foreground">
           ساختار شعب کسب‌وکار و همگام‌سازی داده‌های شعب را از یک بخش مدیریت کنید.
         </p>

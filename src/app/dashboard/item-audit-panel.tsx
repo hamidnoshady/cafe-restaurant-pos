@@ -53,26 +53,26 @@ export function ItemAuditPanel({ itemId }: { itemId: string }) {
   useEffect(load, [load]);
 
   return (
-    <div className="rounded-xl bg-amber-50/60 p-3 sm:p-4">
+    <div className="rounded-xl bg-amber-50/60 dark:bg-amber-500/15 p-3 sm:p-4">
       {trail === null ? <LoadingSkeleton rows={3} compact /> : null}
       {trail?.length === 0 ? (
         <p className="text-xs text-muted-foreground">رویدادی ثبت نشده است.</p>
       ) : null}
       <ol className="space-y-2">
         {(trail ?? []).map((entry) => (
-          <li key={entry.id} className="flex flex-wrap items-baseline justify-between gap-2 text-xs text-stone-700">
-            <span className="font-medium text-stone-900">
+          <li key={entry.id} className="flex flex-wrap items-baseline justify-between gap-2 text-xs text-foreground/80">
+            <span className="font-medium text-foreground">
               {EVENT_LABELS[entry.eventType] ?? entry.eventType}
-              {entry.createdByName ? <span className="text-stone-500"> — {entry.createdByName}</span> : null}
+              {entry.createdByName ? <span className="text-muted-foreground"> — {entry.createdByName}</span> : null}
             </span>
-            <span className="text-stone-600">
+            <span className="text-muted-foreground">
               {formatJalali(entry.createdAt.slice(0, 10), { withMonthName: true })}
               {entry.entryId ? (
-                <span className="ms-2 rounded-full bg-emerald-100 px-2 py-0.5 font-medium text-emerald-900">
+                <span className="ms-2 rounded-full bg-emerald-100 dark:bg-emerald-500/20 px-2 py-0.5 font-medium text-emerald-900 dark:text-emerald-100">
                   سند حسابداری{entry.memo ? `: ${entry.memo}` : ""}
                 </span>
               ) : (
-                <span className="ms-2 rounded-full bg-stone-100 px-2 py-0.5 font-medium text-stone-600">
+                <span className="ms-2 rounded-full bg-muted px-2 py-0.5 font-medium text-muted-foreground">
                   بدون اثر حسابداری
                 </span>
               )}

@@ -9,4 +9,4 @@
  * "you are here" looks like.
  */
 export const APP_NAV_BUTTON_CLASS =
-  "min-h-12 rounded-xl text-stone-700 hover:bg-amber-50 hover:text-amber-700 data-[active=true]:bg-amber-100 data-[active=true]:font-semibold data-[active=true]:text-amber-700";
+  "min-h-12 rounded-xl text-foreground/80 hover:bg-amber-50 dark:hover:bg-amber-500/15 hover:text-amber-700 dark:hover:text-amber-300 data-[active=true]:bg-amber-100 data-[active=true]:font-semibold data-[active=true]:text-amber-700";

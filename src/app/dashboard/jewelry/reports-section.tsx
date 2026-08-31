@@ -11,9 +11,9 @@ import { api, Field, inputClass } from "../ui";
 import { PURITY_LABELS, type Purity, type Runner } from "./jewelry-manager";
 import { SectionCardSkeleton, cardClass } from "../page-chrome";
 
-const jewelryInputClass = `${inputClass} min-h-[52px] !border-stone-200 !bg-card shadow-none placeholder:text-stone-400 focus-visible:border-amber-500 focus-visible:ring-amber-400/30`;
+const jewelryInputClass = `${inputClass} min-h-[52px] !border-border !bg-card shadow-none placeholder:text-muted-foreground focus-visible:border-amber-500 dark:focus-visible:border-amber-500/60 focus-visible:ring-amber-400/30 dark:focus-visible:ring-amber-400/40`;
 const secondaryActionClass =
-  "min-h-[44px] border-stone-200 bg-card px-3 text-xs text-stone-700 hover:border-amber-300 hover:bg-amber-50 hover:text-stone-950 focus-visible:border-amber-500 focus-visible:ring-amber-400/30";
+  "min-h-[44px] border-border bg-card px-3 text-xs text-foreground/80 hover:border-amber-300 dark:hover:border-amber-500/40 hover:bg-amber-50 dark:hover:bg-amber-500/15 hover:text-foreground focus-visible:border-amber-500 dark:focus-visible:border-amber-500/60 focus-visible:ring-amber-400/30 dark:focus-visible:ring-amber-400/40";
 
 interface WeightCount {
   id: string;
@@ -102,8 +102,8 @@ export function ReportsSection({ busy, run }: { busy: boolean; run: Runner }) {
     <div className="grid min-w-0 gap-4 md:grid-cols-[minmax(0,1fr)_18rem] lg:gap-5 lg:grid-cols-[minmax(0,1fr)_21rem] xl:grid-cols-[minmax(0,1fr)_24rem]">
       <div className="order-2 min-w-0 space-y-4 md:order-1">
         <section aria-labelledby="jewelry-reconciliation-heading" className={`min-w-0 overflow-hidden ${cardClass} `}>
-          <div className="border-b border-stone-200/80 px-4 py-4 sm:px-5">
-            <h2 id="jewelry-reconciliation-heading" className="font-semibold text-stone-950">
+          <div className="border-b border-border/80 px-4 py-4 sm:px-5">
+            <h2 id="jewelry-reconciliation-heading" className="font-semibold text-foreground">
               تطبیق وزنی
             </h2>
             <p className="mt-1 text-xs leading-5 text-muted-foreground">
@@ -112,24 +112,24 @@ export function ReportsSection({ busy, run }: { busy: boolean; run: Runner }) {
             </p>
           </div>
 
-          <ul className="divide-y divide-stone-200/80">
+          <ul className="divide-y divide-border/80">
             {reconciliation.map((row) => (
               <li key={row.purity} className="flex flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-5">
                 <div className="min-w-0">
-                  <h3 className="font-semibold text-stone-950">{PURITY_LABELS[row.purity]}</h3>
+                  <h3 className="font-semibold text-foreground">{PURITY_LABELS[row.purity]}</h3>
                   <p className="mt-1 text-xs text-muted-foreground">
                     {formatQuantity(row.systemWeight)} گرم در {toPersianDigits(String(row.pieces))} قطعه
                   </p>
                 </div>
-                <div className="text-xs text-stone-600">
+                <div className="text-xs text-muted-foreground">
                   {row.lastCount ? (
                     <>
                       <span>آخرین شمارش: {formatQuantity(row.lastCount.countedWeight)} گرم</span>
                       <span
                         className={`ms-2 rounded-full px-2 py-0.5 font-medium ${
                           Number(row.lastCount.variance) === 0
-                            ? "bg-emerald-100 text-emerald-900"
-                            : "bg-rose-100 text-rose-900"
+                            ? "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-900 dark:text-emerald-100"
+                            : "bg-rose-100 dark:bg-rose-500/20 text-rose-900 dark:text-rose-100"
                         }`}
                       >
                         مغایرت {formatQuantity(row.lastCount.variance)} گرم
@@ -148,18 +148,18 @@ export function ReportsSection({ busy, run }: { busy: boolean; run: Runner }) {
         </section>
 
         <section aria-labelledby="jewelry-counts-heading" className={`min-w-0 overflow-hidden ${cardClass} `}>
-          <div className="border-b border-stone-200/80 px-4 py-4 sm:px-5">
-            <h2 id="jewelry-counts-heading" className="font-semibold text-stone-950">
+          <div className="border-b border-border/80 px-4 py-4 sm:px-5">
+            <h2 id="jewelry-counts-heading" className="font-semibold text-foreground">
               تاریخچهٔ شمارش
             </h2>
           </div>
-          <ul className="divide-y divide-stone-200/80">
+          <ul className="divide-y divide-border/80">
             {counts.map((count) => (
               <li key={count.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-xs sm:px-5">
-                <span className="font-medium text-stone-800">
+                <span className="font-medium text-foreground">
                   {formatJalali(count.countDate, { withMonthName: true })} — {PURITY_LABELS[count.purity]}
                 </span>
-                <span className="text-stone-600">
+                <span className="text-muted-foreground">
                   شمارش {formatQuantity(count.countedWeight)} / سیستم {formatQuantity(count.systemWeight)} گرم — مغایرت{" "}
                   {formatQuantity(count.variance)}
                   {count.variancePercent != null ? ` (${toPersianDigits(String(count.variancePercent))}٪)` : ""}
@@ -173,8 +173,8 @@ export function ReportsSection({ busy, run }: { busy: boolean; run: Runner }) {
         </section>
 
         <section aria-labelledby="jewelry-consignor-statements-heading" className={`min-w-0 overflow-hidden ${cardClass} `}>
-          <div className="border-b border-stone-200/80 px-4 py-4 sm:px-5">
-            <h2 id="jewelry-consignor-statements-heading" className="font-semibold text-stone-950">
+          <div className="border-b border-border/80 px-4 py-4 sm:px-5">
+            <h2 id="jewelry-consignor-statements-heading" className="font-semibold text-foreground">
               صورت‌حساب امانت‌گذاران
             </h2>
             <p className="mt-1 text-xs leading-5 text-muted-foreground">
@@ -182,7 +182,7 @@ export function ReportsSection({ busy, run }: { busy: boolean; run: Runner }) {
               فروشگاه است و بدهی محسوب نمی‌شود.
             </p>
           </div>
-          <ul className="divide-y divide-stone-200/80">
+          <ul className="divide-y divide-border/80">
             {summaries.map((summary) => (
               <ConsignorStatementRow key={summary.consignorId} summary={summary} busy={busy} run={run} onPaid={load} />
             ))}
@@ -195,7 +195,7 @@ export function ReportsSection({ busy, run }: { busy: boolean; run: Runner }) {
 
       <aside className="order-1 min-w-0 md:order-2">
         <div className={`${cardClass} p-4 md:sticky md:top-4 sm:p-5`}>
-          <h2 className="font-semibold text-stone-950">ثبت شمارش فیزیکی</h2>
+          <h2 className="font-semibold text-foreground">ثبت شمارش فیزیکی</h2>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">
             وزن اندازه‌گیری‌شده با ترازو را ثبت کنید؛ وزن سیستمی همان لحظه ذخیره می‌شود.
           </p>
@@ -233,7 +233,7 @@ export function ReportsSection({ busy, run }: { busy: boolean; run: Runner }) {
               type="submit"
               disabled={busy}
               size="lg"
-              className="min-h-[52px] w-full border border-amber-300 px-5 font-semibold focus-visible:ring-amber-400/30"
+              className="min-h-[52px] w-full border border-amber-300 dark:border-amber-500/40 px-5 font-semibold focus-visible:ring-amber-400/30 dark:focus-visible:ring-amber-400/40"
             >
               ثبت شمارش
             </Button>
@@ -280,14 +280,14 @@ function ConsignorStatementRow({
     <li className="flex min-w-0 flex-col gap-3 px-4 py-4 sm:px-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="font-semibold text-stone-950">{summary.name}</h3>
+          <h3 className="font-semibold text-foreground">{summary.name}</h3>
           <p className="mt-1 text-xs text-muted-foreground">
             {toPersianDigits(String(summary.itemsOnHand))} قطعه نزد فروشگاه — فروش‌شده {money.format(summary.totalOwed)} /
             پرداخت‌شده {money.format(summary.totalPaid)}
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <span className="text-sm font-semibold text-stone-950">مانده {money.format(summary.balance)}</span>
+          <span className="text-sm font-semibold text-foreground">مانده {money.format(summary.balance)}</span>
           {summary.balance > 0 ? (
             <Button
               type="button"
@@ -304,7 +304,7 @@ function ConsignorStatementRow({
       </div>
 
       {open ? (
-        <div className="rounded-xl bg-amber-50/60 p-3 sm:p-4">
+        <div className="rounded-xl bg-amber-50/60 dark:bg-amber-500/15 p-3 sm:p-4">
           <form onSubmit={pay} className="grid min-w-0 gap-3 sm:grid-cols-3">
             <Field label={`مبلغ (${money.unitLabel})`}>
               <PersianNumberInput
@@ -328,7 +328,7 @@ function ConsignorStatementRow({
               />
             </Field>
             <div className="sm:col-span-3">
-              <Button type="submit" disabled={busy} size="sm" className="min-h-[44px] border border-amber-300 px-5 font-semibold">
+              <Button type="submit" disabled={busy} size="sm" className="min-h-[44px] border border-amber-300 dark:border-amber-500/40 px-5 font-semibold">
                 ثبت تسویه
               </Button>
             </div>

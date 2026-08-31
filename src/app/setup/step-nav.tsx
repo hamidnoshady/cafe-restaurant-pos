@@ -78,7 +78,7 @@ export function StepNav() {
             <span
               className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] ${
                 isDone
-                  ? "bg-emerald-700 text-white"
+                  ? "bg-emerald-700 dark:bg-emerald-500/80 text-white"
                   : active
                     ? "bg-primary text-primary-foreground"
                     : "bg-muted text-muted-foreground"

@@ -43,14 +43,14 @@ export function VatReportSection({ refreshKey }: { refreshKey: number }) {
   return (
     <section aria-labelledby="vat-report-heading" className={`${cardClass} p-4 sm:p-5`}>
       <header className="border-b border-border pb-4">
-        <p className="text-xs font-semibold text-amber-700">گزارش مالی</p>
+        <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">گزارش مالی</p>
         <h2 id="vat-report-heading" className="mt-1 text-lg font-bold">گزارش مالیات بر ارزش افزوده</h2>
         <p className="mt-1 text-sm text-muted-foreground">
           مالیات ستاندهٔ فروش در برابر مالیات پرداختیِ ثبت‌شده برای بازه انتخاب‌شده.
         </p>
       </header>
 
-      <div className="mt-5 grid gap-3 rounded-xl border border-border bg-stone-50 p-3 sm:grid-cols-[1fr_auto_1fr] sm:items-end sm:p-4">
+      <div className="mt-5 grid gap-3 rounded-xl border border-border bg-muted p-3 sm:grid-cols-[1fr_auto_1fr] sm:items-end sm:p-4">
         <label className="block text-sm font-medium">
           <span className="mb-1.5 block text-xs text-muted-foreground">از تاریخ</span>
           <JalaliDatePicker value={dateFrom} onChange={setDateFrom} placeholder="از تاریخ" />
@@ -67,19 +67,19 @@ export function VatReportSection({ refreshKey }: { refreshKey: number }) {
       ) : (
         <div className="mt-5 space-y-5">
           <div className="grid gap-3 sm:grid-cols-3">
-            <article className="rounded-xl border border-border bg-stone-50 p-4">
+            <article className="rounded-xl border border-border bg-muted p-4">
               <p className="text-sm text-muted-foreground">مالیات ستانده (فروش)</p>
               <p className="mt-2 text-xl font-bold tabular-nums">{money.format(report.outputVat)}</p>
             </article>
-            <article className="rounded-xl border border-border bg-stone-50 p-4">
+            <article className="rounded-xl border border-border bg-muted p-4">
               <p className="text-sm text-muted-foreground">مالیات پرداختی (خرید)</p>
               <p className="mt-2 text-xl font-bold tabular-nums">{money.format(report.inputVat)}</p>
             </article>
-            <article className="rounded-xl border border-border bg-stone-50 p-4">
+            <article className="rounded-xl border border-border bg-muted p-4">
               <p className="text-sm text-muted-foreground">
                 {report.netPayable >= 0 ? "خالص قابل پرداخت" : "خالص قابل استرداد"}
               </p>
-              <p className={"mt-2 text-xl font-bold tabular-nums " + (report.netPayable >= 0 ? "" : "text-emerald-700")}>
+              <p className={"mt-2 text-xl font-bold tabular-nums " + (report.netPayable >= 0 ? "" : "text-emerald-700 dark:text-emerald-300")}>
                 {money.format(Math.abs(report.netPayable))}
               </p>
             </article>
@@ -89,11 +89,11 @@ export function VatReportSection({ refreshKey }: { refreshKey: number }) {
             <h3 id="vat-balance-heading" className="text-sm font-semibold">مانده تجمعی حساب‌ها</h3>
             <p className="mt-1 text-xs text-muted-foreground">تا پایان بازه انتخاب‌شده</p>
             <dl className="mt-3 grid gap-3 sm:grid-cols-2">
-              <div className="rounded-xl border border-border bg-stone-50 p-4">
+              <div className="rounded-xl border border-border bg-muted p-4">
                 <dt className="text-sm text-muted-foreground">مالیات بر ارزش افزوده پرداختنی</dt>
                 <dd className="mt-2 text-lg font-bold tabular-nums">{money.format(report.vatPayableBalance)}</dd>
               </div>
-              <div className="rounded-xl border border-border bg-stone-50 p-4">
+              <div className="rounded-xl border border-border bg-muted p-4">
                 <dt className="text-sm text-muted-foreground">مالیات بر ارزش افزوده خرید (قابل استرداد)</dt>
                 <dd className="mt-2 text-lg font-bold tabular-nums">{money.format(report.vatReceivableBalance)}</dd>
               </div>
