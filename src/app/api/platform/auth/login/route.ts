@@ -7,6 +7,19 @@ import {
   signPlatformSession,
   type PlatformAdminRole,
 } from "@/lib/platform-auth";
+import {
+  checkAuthLockout,
+  recordAuthFailure,
+  recordAuthSuccess,
+} from "@/lib/login-lockout-service";
+import { PLATFORM_LOCKOUT_POLICY } from "@/lib/login-lockout";
+import { 
+  getAccountMfaEnrolments, 
+  getMfaGracePeriod, 
+  markMfaGracePeriod, 
+  signMfaPendingToken 
+} from "@/lib/mfa-service";
+import { enrolmentRequirement } from "@/lib/mfa";
 
 interface PlatformAdminRow extends Record<string, unknown> {
   id: string;
@@ -15,6 +28,7 @@ interface PlatformAdminRow extends Record<string, unknown> {
   password_hash: string;
   is_active: boolean;
   role: PlatformAdminRole;
+  token_version: number;
 }
 
 /** A bcrypt hash of nothing in particular, used to keep timing uniform. */
@@ -50,7 +64,7 @@ export async function POST(request: NextRequest) {
 
   return withoutTenantScope("platform", async () => {
     const { rows } = await query<PlatformAdminRow>(
-      `SELECT id, email::text AS email, full_name, password_hash, is_active, role::text AS role
+      `SELECT id, email::text AS email, full_name, password_hash, is_active, role::text AS role, token_version
          FROM platform_admins WHERE email = $1`,
       [email],
     );
@@ -60,17 +74,65 @@ export async function POST(request: NextRequest) {
     const admin = rows[0];
     const usable = admin?.is_active ? admin : null;
     const ok = await bcrypt.compare(password, usable?.password_hash ?? DUMMY_HASH);
+
+    // Gate on the lockout before the credential verdict — see the same
+    // ordering in /api/auth/login. A locked admin answers 423 whatever the
+    // password was, so the status code leaks nothing about it.
+    const lockout = await checkAuthLockout("platform_admin", email, PLATFORM_LOCKOUT_POLICY);
+    if (lockout.locked) {
+      return NextResponse.json(
+        { error: "account_locked", lockedUntil: lockout.lockedUntil },
+        { status: 423 },
+      );
+    }
+
     if (!usable || !ok) {
+      await recordAuthFailure("platform_admin", email);
       return NextResponse.json({ error: "invalid_credentials" }, { status: 401 });
     }
 
+    await recordAuthSuccess("platform_admin", email);
+
     await query(`UPDATE platform_admins SET last_login_at = now() WHERE id = $1`, [usable.id]);
+
+    const enrolments = await getAccountMfaEnrolments("platform_admin", usable.id);
+    let graceUntil = await getMfaGracePeriod("platform_admin", usable.id);
+    const hasGraceRecord = graceUntil !== null;
+
+    if (!hasGraceRecord && enrolments.length === 0) {
+      // 7 days for platform admins
+      await markMfaGracePeriod("platform_admin", usable.id, 7); 
+      graceUntil = await getMfaGracePeriod("platform_admin", usable.id);
+    }
+
+    const mfaState = {
+      hasPrimary: enrolments.length > 0,
+      graceUntil,
+      hasGraceRecord: true, // We just marked it if it was missing
+      role: usable.role
+    };
+
+    const req = enrolmentRequirement(mfaState);
+    if (req !== "not_required") {
+      const mfaToken = await signMfaPendingToken({
+        sub: usable.id,
+        method: enrolments.length > 0 ? enrolments[0].method : null,
+        authRealm: "platform_admin"
+      });
+      
+      return NextResponse.json({
+        mfaRequired: true,
+        mfaState: req,
+        mfaToken
+      });
+    }
 
     const token = await signPlatformSession({
       padmin: usable.id,
       role: usable.role,
       fullName: usable.full_name,
       email: usable.email,
+      tokenVersion: usable.token_version,
     });
 
     const res = NextResponse.json({

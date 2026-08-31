@@ -63,6 +63,10 @@ interface ConfigForm {
   anchorTime: string;
   localRetention: number;
   directory: string;
+  passphrase?: string;
+  encryptLocal?: boolean;
+  hasPassphrase?: boolean;
+  warnings?: string[];
   cloud: CloudForm;
 }
 
@@ -674,6 +678,15 @@ function SettingsCard({ onSaved }: { onSaved: () => void }) {
 
   return (
     <SectionCard title="تنظیمات پشتیبان‌گیری">
+      {config.warnings && config.warnings.length > 0 ? (
+        <div className="mb-6 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-400">
+          <ul className="list-inside list-disc">
+            {config.warnings.map((w, i) => (
+              <li key={i}>{w}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
       <p className="mb-4 text-sm text-muted-foreground">
         {localOnly ? (
           <>
@@ -805,25 +818,47 @@ function SettingsCard({ onSaved }: { onSaved: () => void }) {
                 />
               </Field>
             </div>
-            <Field
-              label="عبارت عبور رمزنگاری"
-              hint={
-                cloud.hasPassphrase
-                  ? "ذخیره شده — برای تغییر، مقدار جدید وارد کنید. بدون این عبارت، نسخهٔ ابری قابل بازگردانی نیست."
-                  : "دست‌کم ۸ نویسه. بدون این عبارت، نسخهٔ ابری قابل بازگردانی نیست — جای امنی نگه دارید."
-              }
-            >
-              <input
-                dir="ltr"
-                type="password"
-                className={inputClass}
-                value={cloud.passphrase}
-                onChange={(e) => setCloud({ passphrase: e.target.value })}
-                placeholder={cloud.hasPassphrase ? "••••••••" : ""}
-              />
-            </Field>
           </>
         ) : null}
+        
+        <div className="mt-8 pt-6 border-t">
+          <h3 className="mb-4 text-sm font-semibold text-stone-900">رمزنگاری و امنیت (Encryption)</h3>
+          
+          <div className="mb-4">
+            <label className="flex items-center gap-3">
+              <input
+                type="checkbox"
+                className="h-4 w-4 rounded border-stone-300 text-amber-600 focus:ring-amber-500"
+                checked={config.encryptLocal ?? true}
+                onChange={(e) => setConfig({ ...config, encryptLocal: e.target.checked })}
+              />
+              <span className="text-sm font-medium text-stone-800">
+                رمزنگاری نسخه‌های محلی و USB
+              </span>
+            </label>
+            <p className="mt-1 text-xs text-muted-foreground pr-7">
+              در صورت غیرفعال بودن، نسخه‌های محلی بدون رمزنگاری (Plaintext) ذخیره می‌شوند.
+            </p>
+          </div>
+          
+          <Field
+            label="عبارت عبور رمزنگاری"
+            hint={
+              config.hasPassphrase || config.cloud.hasPassphrase
+                ? "ذخیره شده — برای تغییر، مقدار جدید وارد کنید. بدون این عبارت، نسخه‌های پشتیبان (ابری و محلی) قابل بازگردانی نیستند."
+                : "دست‌کم ۸ نویسه. بدون این عبارت، نسخه‌های پشتیبان (ابری و محلی) قابل بازگردانی نیستند — جای امنی نگه دارید."
+            }
+          >
+            <input
+              dir="ltr"
+              type="password"
+              className={inputClass}
+              value={config.passphrase ?? config.cloud.passphrase ?? ""}
+              onChange={(e) => setConfig({ ...config, passphrase: e.target.value })}
+              placeholder={config.hasPassphrase || config.cloud.hasPassphrase ? "••••••••" : ""}
+            />
+          </Field>
+        </div>
 
         {localOnly ? (
           <p className="mb-4 rounded-lg border border-input bg-muted/40 px-4 py-3 text-sm text-muted-foreground">

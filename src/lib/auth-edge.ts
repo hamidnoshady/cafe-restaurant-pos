@@ -11,7 +11,7 @@
  * Everything in this file depends only on `jose`, which works in both runtimes.
  */
 import { SignJWT, jwtVerify } from "jose";
-import { getJwtSecret } from "./jwt-secret";
+import { getRealmSecret, verifyWithRealmSecret } from "./jwt-secret";
 
 export const SESSION_COOKIE = "pos_session";
 
@@ -83,6 +83,8 @@ export interface SessionPayload {
    * second authentication.
    */
   platformUserId?: string | null;
+  /** Phase 24 Wave 5 — used for password login revocation (checked against platform_users.token_version) */
+  tokenVersion?: number;
   /**
    * Phase 15 — set only when this tenant session was minted by the super-admin
    * console entering the business (impersonation). It names the grant, the
@@ -112,9 +114,7 @@ export interface SessionPayload {
 }
 
 
-function getSecret(): Uint8Array {
-  return getJwtSecret("sessions");
-}
+
 
 export function sessionHours(): number {
   const h = Number(process.env.SESSION_HOURS);
@@ -122,20 +122,18 @@ export function sessionHours(): number {
 }
 
 export async function signSession(payload: SessionPayload): Promise<string> {
+  const secret = await getRealmSecret("tenant");
   return new SignJWT({ ...payload, realm: REALM })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime(`${sessionHours()}h`)
-    .sign(getSecret());
+    .sign(secret);
 }
 
 export async function verifySession(token: string): Promise<SessionPayload | null> {
   try {
-    const { payload } = await jwtVerify(token, getSecret(), { algorithms: ["HS256"] });
-    // A platform-admin token verifies against the same secret, so the realm
-    // claim is what actually keeps the two apart. Reject anything not
-    // minted here — including a token from before this claim existed.
-    if ((payload as { realm?: string }).realm !== REALM) return null;
+    const payload = await verifyWithRealmSecret<{ realm?: string }>(token, "tenant");
+    if (!payload || payload.realm !== REALM) return null;
     return payload as unknown as SessionPayload;
   } catch {
     return null;

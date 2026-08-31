@@ -448,9 +448,13 @@ describe("runServerPull — dead letters", () => {
 describe("legacy REMOTE_SYNC_TOKEN fallback — usage is flagged", () => {
   const LEGACY_TOKEN = "legacy-shared-secret-0123456789";
   const originalEnv = process.env.REMOTE_SYNC_TOKEN;
+  const originalAllowLegacy = process.env.ALLOW_LEGACY_SYNC_TOKEN;
 
   beforeEach(async () => {
     process.env.REMOTE_SYNC_TOKEN = LEGACY_TOKEN;
+    // Phase 24 Wave 1 denies the shared legacy token by default — this suite
+    // is specifically exercising the opt-in fallback, so it has to opt in.
+    process.env.ALLOW_LEGACY_SYNC_TOKEN = "1";
     // This test is specifically about the business that has NOT configured
     // its own per-business token yet, so remove the one seeded by the outer
     // beforeEach.
@@ -459,6 +463,7 @@ describe("legacy REMOTE_SYNC_TOKEN fallback — usage is flagged", () => {
 
   afterEach(() => {
     process.env.REMOTE_SYNC_TOKEN = originalEnv;
+    process.env.ALLOW_LEGACY_SYNC_TOKEN = originalAllowLegacy;
   });
 
   it("records legacyTokenLastUsedAt when push authenticates via the legacy token", async () => {

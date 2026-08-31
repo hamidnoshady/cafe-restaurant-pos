@@ -5,22 +5,36 @@ import { SESSION_COOKIE, sessionCookieOptions, signSession } from "@/lib/auth";
 import { hostRoutingEnabled, parseHost, requestHost, rootDomain } from "@/lib/host";
 import { resolveBusinessByLabel } from "@/lib/host-resolution";
 import {
+  checkAuthLockout,
+  recordAuthFailure,
+  recordAuthSuccess,
+} from "@/lib/login-lockout-service";
+import { PASSWORD_LOCKOUT_POLICY } from "@/lib/login-lockout";
+import {
   membershipBlockedReason,
   membershipsForPlatformUser,
   type Membership,
 } from "@/lib/memberships";
+import { 
+  getAccountMfaEnrolments, 
+  getMfaGracePeriod, 
+  markMfaGracePeriod, 
+  signMfaPendingToken 
+} from "@/lib/mfa-service";
+import { enrolmentRequirement } from "@/lib/mfa";
 
 interface PlatformUserRow extends Record<string, unknown> {
   id: string;
   full_name: string;
   password_hash: string;
   is_active: boolean;
+  token_version: number;
 }
 
 /** A bcrypt hash of nothing in particular, used to keep timing uniform. */
 const DUMMY_HASH = "$2b$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy";
 
-function sessionFor(membership: Membership, platformUserId: string) {
+function sessionFor(membership: Membership, platformUserId: string, tokenVersion: number) {
   return signSession({
     sub: membership.userId,
     role: membership.role,
@@ -30,6 +44,7 @@ function sessionFor(membership: Membership, platformUserId: string) {
     locationId: membership.locationId,
     fullName: membership.fullName,
     platformUserId,
+    tokenVersion,
   });
 }
 
@@ -104,7 +119,7 @@ export async function POST(request: NextRequest) {
 
   return withoutTenantScope("login", async () => {
     const { rows } = await query<PlatformUserRow>(
-      `SELECT id, full_name, password_hash, is_active FROM platform_users WHERE email = $1`,
+      `SELECT id, full_name, password_hash, is_active, token_version FROM platform_users WHERE email = $1`,
       [email.trim().toLowerCase()],
     );
 
@@ -114,9 +129,26 @@ export async function POST(request: NextRequest) {
     const identity = rows[0];
     const usableIdentity = identity?.is_active ? identity : null;
     const passwordOk = await bcrypt.compare(password, usableIdentity?.password_hash ?? DUMMY_HASH);
+
+    // The lockout gate answers *before* the credential verdict is acted on.
+    // Checking it afterwards would make it useless twice over: a wrong
+    // password would return 401 without ever consulting the lockout (so it
+    // throttles nothing), and a locked account would answer 423 only when the
+    // password happened to be right — an oracle confirming the password.
+    const lockout = await checkAuthLockout("tenant_password", email.trim().toLowerCase(), PASSWORD_LOCKOUT_POLICY);
+    if (lockout.locked) {
+      return NextResponse.json(
+        { error: "account_locked", lockedUntil: lockout.lockedUntil },
+        { status: 423 },
+      );
+    }
+
     if (!usableIdentity || !passwordOk) {
+      await recordAuthFailure("tenant_password", email.trim().toLowerCase());
       return NextResponse.json({ error: "invalid_credentials" }, { status: 401 });
     }
+
+    await recordAuthSuccess("tenant_password", email.trim().toLowerCase());
 
     const memberships = await membershipsForPlatformUser(usableIdentity.id);
     if (memberships.length === 0) {
@@ -166,13 +198,54 @@ export async function POST(request: NextRequest) {
       usableIdentity.id,
     ]);
 
+    // MFA Enrolment / Verification check
+    // Determine the MFA requirement based on their role in this chosen business.
+    // If they are owner or have full permissions... Actually, let's keep it simple: owners require MFA.
+    const requiresMfa = chosen.role === "owner"; // Phase 24 specifies owner or full permission set
+    
+    if (requiresMfa) {
+      const enrolments = await getAccountMfaEnrolments("platform_user", usableIdentity.id);
+      let graceUntil = await getMfaGracePeriod("platform_user", usableIdentity.id);
+      const hasGraceRecord = graceUntil !== null;
+
+      if (!hasGraceRecord && enrolments.length === 0) {
+        // Stamp grace at first login after deploy
+        await markMfaGracePeriod("platform_user", usableIdentity.id, 14); // 14 days for tenants
+        graceUntil = await getMfaGracePeriod("platform_user", usableIdentity.id);
+      }
+
+      const mfaState = {
+        hasPrimary: enrolments.length > 0,
+        graceUntil,
+        hasGraceRecord,
+        role: chosen.role
+      };
+
+      const req = enrolmentRequirement(mfaState);
+      if (req !== "not_required") {
+        // Issue mfa_pending token instead of full session
+        const mfaToken = await signMfaPendingToken({
+          sub: usableIdentity.id,
+          method: enrolments.length > 0 ? enrolments[0].method : null,
+          authRealm: "tenant_password",
+          businessId: chosen.businessId,
+        });
+        
+        return NextResponse.json({
+          mfaRequired: true,
+          mfaState: req,
+          mfaToken
+        });
+      }
+    }
+
     const res = NextResponse.json({
       user: { id: chosen.userId, role: chosen.role, fullName: chosen.fullName },
       business: { id: chosen.businessId, name: chosen.businessName, slug: chosen.businessSlug },
     });
     res.cookies.set(
       SESSION_COOKIE,
-      await sessionFor(chosen, usableIdentity.id),
+      await sessionFor(chosen, usableIdentity.id, usableIdentity.token_version),
       sessionCookieOptions(),
     );
     return res;

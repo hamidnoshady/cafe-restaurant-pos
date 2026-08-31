@@ -2,11 +2,28 @@
 
 Tracked by GitHub issue [#228](https://github.com/hamidnoshady/cafe-restaurant-pos/issues/228).
 
-## Status: designed — all five waves specified, implementation not started
+## Status: Waves 1, 2, 4 and 5 implemented; Wave 3 is scaffolding only
 
-This document is the specification, not a record of shipped work. Nothing in it is built yet.
-It is written to the level of file paths, function signatures and migration SQL so that
-picking up a wave later is execution rather than re-derivation.
+This document was written as the specification before any of it was built, and the rest of
+it — file paths, function signatures, migration SQL — is still that original design. It has not
+been rewritten wave-by-wave against what actually shipped, so read it as intent, not as a
+record of the code.
+
+What is actually true of the code today:
+
+- **Waves 1, 2, 4 and 5** (perimeter/security headers, login lockout, MFA — TOTP and Kavenegar
+  SMS OTP —, VPN-only/LAN HTTPS, and the Postgres-backed rate limiter) are implemented and
+  covered by passing unit and integration tests against a real PostgreSQL 16/18.
+- **Wave 3 (field-level encryption at rest) is not implemented, only scaffolded.**
+  `business_encryption_keys` (migration 0072) exists and is RLS-protected, and
+  `src/lib/field-crypto.ts` / `src/lib/encrypted-columns.ts` provide the AES-256-GCM primitive
+  and the Tier A/B column registry this section describes — but nothing mints or wraps a DEK
+  (`POS_MASTER_KEY` is referenced nowhere in code), no `*_enc`/`*_bidx` columns exist on
+  `customers`/`reservations`, no `*-service.ts` reads or writes through `encryptField`/
+  `decryptField`, and `scripts/encrypt-fields.ts` is a literal no-op stub. `customers.phone`,
+  `customers.address`, `customers.notes` and `reservations.customer_phone` are plaintext in the
+  database exactly as before this phase. Picking this wave up is still execution against the
+  design below, not re-derivation — but it has not been started.
 
 ## Context: what exists today
 

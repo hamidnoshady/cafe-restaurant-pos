@@ -31,6 +31,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Client } from "pg";
+import { isEncryptedBackup, decryptBackup } from "../src/lib/backup";
 
 const HEADER = [
   "-- Per-tenant data export (Phase 17). Restore into an already-migrated,",
@@ -146,7 +147,14 @@ export async function main() {
   if (!args.file) fail("pass the exported .sql file's path");
   if (args.apply && !args.yes) fail("--apply commits the restore; add --yes to confirm (a dry run needs no flags)");
 
-  const sql = readFileSync(args.file, "utf8");
+  let sqlData = readFileSync(args.file);
+  if (isEncryptedBackup(sqlData)) {
+    const passphrase = process.env.BACKUP_PASSPHRASE;
+    if (!passphrase) fail("artifact is encrypted — set BACKUP_PASSPHRASE");
+    console.log("Decrypting …");
+    sqlData = decryptBackup(sqlData, passphrase) as any;
+  }
+  const sql = sqlData.toString("utf8");
   const client = new Client({ connectionString: databaseUrl });
   await client.connect();
   try {

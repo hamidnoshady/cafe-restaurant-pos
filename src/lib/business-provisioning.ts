@@ -27,6 +27,9 @@ import { coaTemplateForIndustry, nextAccountLevel, type AccountLevel, type Templ
 import { ENABLED_INDUSTRIES, INDUSTRIES, type Industry } from "./industries";
 import { industryProfile } from "./industry-profile";
 import { seedPaymentMethods } from "./payment-methods-service";
+import { isMobilePhone, phoneE164 } from "./phone";
+import { generateSecret, generateURI } from "otplib";
+import { provisionMfaEnrolment } from "./mfa-service";
 
 export interface ProvisionBusinessInput {
   businessName: string;
@@ -34,6 +37,7 @@ export interface ProvisionBusinessInput {
   address?: string | null;
   phone?: string | null;
   ownerName: string;
+  ownerPhone?: string | null;
   email: string;
   password: string;
   timezone?: string;
@@ -84,6 +88,8 @@ export interface ProvisionedBusiness {
   /** users.id — the owner's membership in the new business. */
   userId: string;
   platformUserId: string;
+  totpSecret?: string;
+  totpUrl?: string;
 }
 
 /** An email already registered, offered a *different* password. */
@@ -130,6 +136,7 @@ export interface ProvisionRequestBody {
   address?: string;
   phone?: string;
   ownerName?: string;
+  ownerPhone?: string;
   email?: string;
   password?: string;
   industry?: string;
@@ -145,10 +152,19 @@ export const MIN_PASSWORD_LENGTH = 8;
  * Lives here rather than in the route because Next.js route modules may only
  * export handlers — and because both entry points (bootstrap and signup) must
  * apply exactly the same rules. Pure, so it is unit-tested directly.
+ *
+ * `deploymentMode` decides whether the Owner's mobile is required, because it
+ * decides which second factor Phase 24 enrols them with: a connected install
+ * gets `sms_otp` and therefore needs a number to send to, while a local one
+ * gets TOTP (no signal in an offline café, so an SMS-only Owner would be
+ * locked out of their own till the first time the line dropped). Absent, it
+ * reads as `connected` — matching `resolveDeploymentMode`, where an install
+ * predating the setting is a connected one, and failing closed rather than
+ * silently skipping the enrolment.
  */
 export function validateProvisionBody(
   body: ProvisionRequestBody,
-  options: { requireSubdomain?: boolean } = {},
+  options: { requireSubdomain?: boolean; deploymentMode?: DeploymentModeName } = {},
 ): { input: ProvisionBusinessInput; error: null } | { input: null; error: string } {
   const businessName = body.businessName?.trim();
   const ownerName = body.ownerName?.trim();
@@ -163,6 +179,17 @@ export function validateProvisionBody(
   }
   if (password.length < MIN_PASSWORD_LENGTH) {
     return { input: null, error: "weak_password" };
+  }
+
+  // Checked after the fields above, not before them: an empty form should say
+  // "fill everything in", not single out the one field the visitor has never
+  // been asked for on this deployment before.
+  let ownerPhone: string | null = null;
+  if (options.deploymentMode !== "local") {
+    // Mobile only — this is who the SMS OTP goes to, and a landline can't
+    // receive one.
+    if (!isMobilePhone(body.ownerPhone)) return { input: null, error: "invalid_owner_phone" };
+    ownerPhone = phoneE164(body.ownerPhone);
   }
 
   const industry = (body.industry?.trim() || "food_service") as Industry;
@@ -194,6 +221,7 @@ export function validateProvisionBody(
       address: body.address?.trim() || null,
       phone: body.phone?.trim() || null,
       ownerName,
+      ownerPhone,
       email,
       password,
       industry,
@@ -341,9 +369,9 @@ export async function provisionBusiness(
         industryProfile(input.industry ?? "food_service").defaultDisabledFeatures,
       );
 
-      // Local-only installs record the mode and turn off the platform-dependent
-      // features in the same transaction that creates the business, so there is
-      // never a window where a local install looks like a connected one.
+      let totpSecret: string | undefined;
+      let totpUrl: string | undefined;
+
       if (input.deploymentMode === "local") {
         await client.query(
           `INSERT INTO settings (business_id, location_id, key, value)
@@ -351,10 +379,21 @@ export async function provisionBusiness(
           [businessId, SETTING_KEYS.deploymentMode, JSON.stringify({ mode: "local", pairedAt: null })],
         );
         await disableFeatures(client, businessId, LOCAL_DISABLED_FEATURES);
+        
+        totpSecret = generateSecret();
+        totpUrl = generateURI({
+          label: email,
+          issuer: "CafePOS",
+          secret: totpSecret,
+          strategy: "totp"
+        });
+        await provisionMfaEnrolment(client, "platform_user", platformUserId, "totp", true, null, Buffer.from(totpSecret || ""));
+      } else {
+        await provisionMfaEnrolment(client, "platform_user", platformUserId, "sms_otp", true, input.ownerPhone, null);
       }
 
       await client.query("COMMIT");
-      return { businessId, businessSlug: slug, businessSubdomain: subdomain, locationId, userId, platformUserId };
+      return { businessId, businessSlug: slug, businessSubdomain: subdomain, locationId, userId, platformUserId, totpSecret, totpUrl };
     } catch (err) {
       await client.query("ROLLBACK");
       throw err;

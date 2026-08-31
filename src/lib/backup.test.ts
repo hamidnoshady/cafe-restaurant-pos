@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  backupPassphrase,
   backupStaleAfterMs,
   cloudKeyFor,
   computeBackupAlert,
@@ -18,6 +19,7 @@ import {
   toWallClock,
   validateBackupConfig,
   type BackupAlertInput,
+  type BackupConfig,
 } from "./backup";
 
 const TEHRAN = "Asia/Tehran"; // UTC+03:30 year-round (no DST since 2022)
@@ -108,6 +110,39 @@ describe("validateBackupConfig", () => {
     });
   });
 
+  it("refuses to enable cloud with no passphrase at all", () => {
+    // Not merely a weak key: an empty one derives the AES key via
+    // scryptSync("", salt) — public knowledge — so the uploaded artifact is
+    // effectively plaintext to whoever obtains it. Neither the top-level nor
+    // the legacy cloud passphrase being set must fail closed.
+    const cloud = {
+      enabled: true,
+      endpoint: "https://s3.example.com",
+      region: "us-east-1",
+      bucket: "backups",
+      prefix: "pos-backups/",
+      accessKeyId: "AKIA123",
+      secretAccessKey: "secret",
+      passphrase: "",
+      retention: 30,
+    };
+    expect(validateBackupConfig(validBody({ cloud }))).toEqual({
+      ok: false,
+      error: "passphrase_required",
+    });
+    // Either slot satisfies it — the top-level one is the modern home.
+    expect(validateBackupConfig(validBody({ cloud, passphrase: "correct horse battery" })).ok).toBe(true);
+    expect(validateBackupConfig(validBody({ cloud: { ...cloud, passphrase: "correct horse" } })).ok).toBe(true);
+  });
+
+  it("still saves a local-only config with no passphrase", () => {
+    // encryptLocal defaults to on and documents a plaintext fallback with a
+    // visible warning (Phase 24 §5), so requiring a passphrase here would lock
+    // every pre-existing install out of its own settings page.
+    const v = validateBackupConfig(validBody({ encryptLocal: true, passphrase: "" }));
+    expect(v.ok).toBe(true);
+  });
+
   it("normalizes cloud prefix and endpoint", () => {
     const v = validateBackupConfig(
       validBody({
@@ -143,6 +178,44 @@ describe("artifact naming", () => {
       "pos-backups/pos-backup-20260721-033005.dump.enc",
     );
     expect(cloudKeyFor("", "a.dump")).toBe("a.dump.enc");
+  });
+
+  it("does not double-append .enc to an already-encrypted local artifact", () => {
+    // Phase 24 §5's sharpest trap: local artifacts are now encrypted before
+    // upload, so a blind append would ship `.dump.enc.enc`.
+    expect(cloudKeyFor("pos/", "file.dump")).toBe("pos/file.dump.enc");
+    expect(cloudKeyFor("pos/", "file.dump.enc")).toBe("pos/file.dump.enc");
+  });
+});
+
+describe("backupPassphrase", () => {
+  it("resolves top-level, then the legacy cloud slot, then the environment", () => {
+    const originalEnv = process.env.BACKUP_PASSPHRASE;
+    try {
+      process.env.BACKUP_PASSPHRASE = "env-pass";
+
+      const conf: BackupConfig = { ...DEFAULT_BACKUP_CONFIG };
+      expect(backupPassphrase(conf)).toBe("env-pass");
+
+      conf.cloud = { ...conf.cloud, passphrase: "cloud-pass" };
+      expect(backupPassphrase(conf)).toBe("cloud-pass");
+
+      conf.passphrase = "top-pass";
+      expect(backupPassphrase(conf)).toBe("top-pass");
+    } finally {
+      if (originalEnv === undefined) delete process.env.BACKUP_PASSPHRASE;
+      else process.env.BACKUP_PASSPHRASE = originalEnv;
+    }
+  });
+
+  it("is empty when nothing is configured — the caller must fail closed", () => {
+    const originalEnv = process.env.BACKUP_PASSPHRASE;
+    try {
+      delete process.env.BACKUP_PASSPHRASE;
+      expect(backupPassphrase({ ...DEFAULT_BACKUP_CONFIG })).toBe("");
+    } finally {
+      if (originalEnv !== undefined) process.env.BACKUP_PASSPHRASE = originalEnv;
+    }
   });
 });
 

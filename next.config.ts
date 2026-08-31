@@ -1,6 +1,35 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  async headers() {
+    const commonHeaders = [
+      { key: "X-Content-Type-Options", value: "nosniff" },
+      { key: "X-Frame-Options", value: "DENY" },
+      { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+      { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
+      { key: "X-DNS-Prefetch-Control", value: "off" },
+      { key: "Permissions-Policy", value: "publickey-credentials-get=(self)" },
+    ];
+    return [
+      {
+        source: "/(.*)",
+        headers: commonHeaders,
+      },
+      {
+        source: "/(.*)",
+        has: [
+          {
+            type: "header",
+            key: "x-forwarded-proto",
+            value: "https",
+          },
+        ],
+        headers: [
+          { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" },
+        ],
+      },
+    ];
+  },
   /**
    * `unpdf` (the server-side PDF text extractor used by /api/ai/chat) ships
    * pdf.js with dynamic optional-worker imports that bundlers cannot fold in.
