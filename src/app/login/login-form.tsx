@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2Icon } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   browserSupportsWebAuthn,
   startAuthentication,
@@ -518,9 +519,17 @@ function PinLogin() {
           </p>
         )}
         {!rosterError && !employees && (
-          <p className="text-center text-sm text-muted-foreground">
-            در حال بارگذاری…
-          </p>
+          <div
+            className="grid grid-cols-3 gap-2"
+            role="status"
+            aria-live="polite"
+            aria-busy="true"
+            aria-label="در حال بارگذاری فهرست کارکنان"
+          >
+            {Array.from({ length: 6 }, (_, index) => (
+              <Skeleton key={index} aria-hidden="true" className="h-16 rounded-xl" />
+            ))}
+          </div>
         )}
         {!rosterError && employees && employees.length === 0 && (
           <p className="text-center text-sm text-muted-foreground">
@@ -598,14 +607,27 @@ function EmployeeAvatar({
   size?: "sm" | "md";
 }) {
   const dims = size === "sm" ? "size-8 text-xs" : "size-14 text-lg";
-  if (employee.photoUrl) {
+  const [photoLoaded, setPhotoLoaded] = useState(false);
+  const [photoFailed, setPhotoFailed] = useState(false);
+
+  useEffect(() => {
+    setPhotoLoaded(false);
+    setPhotoFailed(false);
+  }, [employee.photoUrl]);
+
+  if (employee.photoUrl && !photoFailed) {
     // eslint-disable-next-line @next/next/no-img-element
     return (
-      <img
-        src={employee.photoUrl}
-        alt=""
-        className={`${dims} rounded-full object-cover`}
-      />
+      <span className={`${dims} relative inline-block shrink-0 overflow-hidden rounded-full`}>
+        {!photoLoaded ? <Skeleton aria-hidden="true" className="absolute inset-0 size-full rounded-full" /> : null}
+        <img
+          src={employee.photoUrl}
+          alt=""
+          onLoad={() => setPhotoLoaded(true)}
+          onError={() => setPhotoFailed(true)}
+          className={`size-full object-cover transition-opacity motion-reduce:transition-none ${photoLoaded ? "opacity-100" : "opacity-0"}`}
+        />
+      </span>
     );
   }
   const initials = employee.fullName.trim().slice(0, 1);

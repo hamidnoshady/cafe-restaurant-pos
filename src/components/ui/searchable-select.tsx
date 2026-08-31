@@ -17,6 +17,7 @@ import { Popover } from "radix-ui";
 import { CheckIcon, ChevronDownIcon, SearchIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import { normalizePosSearchText } from "@/lib/pos-selection";
 
 export interface SelectOption {
@@ -34,6 +35,8 @@ interface SearchableSelectProps {
   searchPlaceholder?: string;
   emptyText?: string;
   disabled?: boolean;
+  /** Shows content-shaped option placeholders while server-backed results are pending. */
+  loading?: boolean;
   className?: string;
   dir?: "rtl" | "ltr";
   /** Accessible name for the trigger button (a labeled-by-field select doesn't need it). */
@@ -56,6 +59,7 @@ export function SearchableSelect({
   searchPlaceholder = "جستجو…",
   emptyText = "نتیجهای یافت نشد.",
   disabled,
+  loading = false,
   className,
   dir = "rtl",
   ariaLabel,
@@ -179,11 +183,19 @@ export function SearchableSelect({
           </div>
           <ul
             role="listbox"
+            aria-busy={loading}
+            aria-label={loading ? "در حال بارگذاری گزینه‌ها" : undefined}
             className="max-h-[min(18rem,50dvh)] overscroll-contain overflow-y-auto p-1 touch-pan-y"
             onWheel={(event) => event.stopPropagation()}
             onTouchMove={(event) => event.stopPropagation()}
           >
-            {filtered.length === 0 ? (
+            {loading ? (
+              [0, 1, 2].map((item) => (
+                <li key={item} role="presentation" className="px-2 py-1.5">
+                  <Skeleton aria-hidden="true" className="h-8 rounded-md" />
+                </li>
+              ))
+            ) : filtered.length === 0 ? (
               <li className="px-2.5 py-2 text-sm text-muted-foreground">
                 {emptyText}
               </li>

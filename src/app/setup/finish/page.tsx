@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
-import { api, ErrorBox, errorMessage, PrimaryButton } from "../ui";
+import { api, ErrorBox, errorMessage, PrimaryButton, SetupDataSkeleton } from "../ui";
 import { stepsFor } from "../steps";
 import { useSetupIndustry } from "../industry-context";
 
@@ -48,7 +48,9 @@ export default function FinishPage() {
     router.replace("/dashboard/settings");
   }
 
-  const missing = state?.missingForCompletion ?? [];
+  if (state === null) return <SetupDataSkeleton rows={5} />;
+
+  const missing = state.missingForCompletion ?? [];
   // The backup-destination step only exists on a standalone install, so don't
   // review a row that would always read as incomplete on a connected one.
   const steps = stepsFor(industry).filter((s) => s.id !== "backup" || state?.localOnly);

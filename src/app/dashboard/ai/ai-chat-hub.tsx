@@ -14,7 +14,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Loader2Icon, MenuIcon, MessageSquarePlusIcon, SparklesIcon } from "lucide-react";
+import { MenuIcon, MessageSquarePlusIcon, SparklesIcon } from "lucide-react";
+import { LoadingSkeleton } from "../page-chrome";
 import { useGSAP } from "@gsap/react";
 import { useMoney } from "@/components/money/money-context";
 import { Button } from "@/components/ui/button";
@@ -143,9 +144,11 @@ export function AiChatHub({
 
       <div ref={scrollRef} className="ai-chat-scroll min-h-0 flex-1 overflow-y-auto px-2 pb-4 pt-4 sm:px-6">
         {loadingConversation ? (
-          <div className="flex min-h-[55vh] items-center justify-center gap-2 text-sm text-muted-foreground">
-            <Loader2Icon className="size-4 animate-spin" /> در حال بازکردن مکالمه…
-          </div>
+          <LoadingSkeleton
+            rows={6}
+            className="mx-auto w-full max-w-3xl py-6"
+            label="در حال بازکردن مکالمه"
+          />
         ) : isWelcome ? (
           <div ref={heroRef} className="relative mx-auto flex min-h-[60vh] max-w-3xl flex-col items-center justify-center overflow-hidden text-center">
             {/* Drifting gradient orbs — pure decoration. */}

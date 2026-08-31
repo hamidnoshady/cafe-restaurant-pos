@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { FormLoadingSkeleton } from "@/components/form-loading-skeleton";
 import { useRouter } from "next/navigation";
 import { ErrorBox, Field, InfoBox, PrimaryButton, api, errorMessage, inputClass } from "../../dashboard/ui";
 
@@ -53,9 +54,7 @@ export function AcceptInvite({ token }: { token: string }) {
     router.refresh();
   }
 
-  if (loading) {
-    return <p className="p-8 text-sm text-muted-foreground">در حال بارگذاری…</p>;
-  }
+  if (loading) return <FormLoadingSkeleton rows={3} className="p-8" label="در حال بارگذاری دعوت‌نامه" />;
 
   return (
     <div className="mx-auto max-w-md space-y-4 p-8">

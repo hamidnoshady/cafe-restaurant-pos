@@ -1,5 +1,9 @@
 "use client";
 
+import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
+import { Skeleton } from "@/components/ui/skeleton";
+import type { ReactNode } from "react";
+
 /**
  * Phase 25 Wave 4 — the retail industries' dashboard home.
  *
@@ -96,33 +100,33 @@ export function RetailOverview({ industry }: { industry: Industry }) {
           icon={BarChart3Icon}
           label="فروش امروز"
           hint={`جمع ${labelFor(industry, "saleDocumentPlural")} تکمیل‌شده`}
-          value={loading ? "…" : money.format(Number(data?.today.total ?? 0))}
+          value={loading ? <Skeleton className="h-7 w-28" /> : money.format(Number(data?.today.total ?? 0))}
         />
         <Kpi
           icon={ReceiptTextIcon}
           label={`تعداد ${labelFor(industry, "saleDocument")}`}
           hint="امروز"
-          value={loading ? "…" : formatPersianNumber(data?.today.invoiceCount ?? 0)}
+          value={loading ? <Skeleton className="h-7 w-20" /> : formatPersianNumber(data?.today.invoiceCount ?? 0)}
         />
         <Kpi
           icon={PackageIcon}
           label="کالای موجود"
           hint="آمادهٔ فروش در این شعبه"
-          value={loading ? "…" : formatPersianNumber(data?.stock.inStock ?? 0)}
+          value={loading ? <Skeleton className="h-7 w-20" /> : formatPersianNumber(data?.stock.inStock ?? 0)}
         />
         {industry === "watch" ? (
           <Kpi
             icon={WrenchIcon}
             label="تعمیرات باز"
             hint="پذیرش‌شده و بسته‌نشده"
-            value={loading ? "…" : formatPersianNumber(data?.openRepairs ?? 0)}
+            value={loading ? <Skeleton className="h-7 w-20" /> : formatPersianNumber(data?.openRepairs ?? 0)}
           />
         ) : (
           <Kpi
             icon={PackageIcon}
             label="کالای ناموجود"
             hint="موجودی صفر — نیاز به ورود کالا"
-            value={loading ? "…" : formatPersianNumber(data?.stock.lowStock ?? 0)}
+            value={loading ? <Skeleton className="h-7 w-20" /> : formatPersianNumber(data?.stock.lowStock ?? 0)}
           />
         )}
       </div>
@@ -139,7 +143,7 @@ export function RetailOverview({ industry }: { industry: Industry }) {
             </Link>
           </div>
           {loading ? (
-            <p className="text-sm text-stone-500">در حال بارگذاری…</p>
+            <LoadingSkeleton rows={3} />
           ) : nearExpiry.length === 0 ? (
             <p className="rounded-xl border border-dashed border-stone-200/80 px-3 py-6 text-center text-sm text-stone-500">
               هیچ بچی منقضی یا نزدیک به انقضا نیست.
@@ -185,7 +189,7 @@ export function RetailOverview({ industry }: { industry: Industry }) {
             </Link>
           </div>
           {loading ? (
-            <p className="text-sm text-stone-500">در حال بارگذاری…</p>
+            <LoadingSkeleton rows={3} />
           ) : data && data.goldPrices.length > 0 ? (
             <dl className="grid gap-3 sm:grid-cols-3">
               {data.goldPrices.map((price) => (
@@ -237,7 +241,7 @@ function Kpi({
   icon: typeof BarChart3Icon;
   label: string;
   hint: string;
-  value: string;
+  value: ReactNode;
 }) {
   return (
     <div className="rounded-2xl border border-stone-200/80 bg-white p-4 shadow-[0_1px_2px_rgba(37,37,34,0.03)]">

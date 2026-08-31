@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
 import { stepsFor } from "./steps";
 import { useSetupIndustry } from "./industry-context";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface StateResponse {
   progress?: { steps: Record<string, string>; completedAt: string | null };
@@ -17,9 +18,11 @@ export function StepNav() {
   const industry = useSetupIndustry();
   const [done, setDone] = useState<Record<string, string>>({});
   const [localOnly, setLocalOnly] = useState(false);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
+    setLoaded(false);
     fetch("/api/setup/state")
       .then((r) => r.json())
       .then((s: StateResponse) => {
@@ -27,7 +30,10 @@ export function StepNav() {
         if (s.progress) setDone(s.progress.steps);
         setLocalOnly(Boolean(s.localOnly));
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setLoaded(true);
+      });
     return () => {
       cancelled = true;
     };
@@ -37,6 +43,22 @@ export function StepNav() {
   // on a connected one its page steps aside, so don't offer a link that would
   // bounce straight to the next step.
   const steps = stepsFor(industry).filter((s) => s.id !== "backup" || localOnly);
+
+  if (!loaded) {
+    return (
+      <nav
+        role="status"
+        aria-live="polite"
+        aria-busy="true"
+        aria-label="در حال بارگذاری مراحل راه‌اندازی"
+        className="space-y-2"
+      >
+        {[0, 1, 2, 3, 4, 5].map((item) => (
+          <Skeleton key={item} aria-hidden="true" className="h-9 w-full rounded-lg" />
+        ))}
+      </nav>
+    );
+  }
 
   return (
     <nav className="space-y-1">

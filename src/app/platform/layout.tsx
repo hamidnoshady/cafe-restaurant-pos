@@ -21,7 +21,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { PlatformCapability } from "@/lib/platform-admin";
 import { PLATFORM_ROLE_LABELS, type PlatformAdminRole } from "@/lib/platform-admin";
-import { api, CapabilityContext, Button } from "./ui";
+import { api, CapabilityContext, Button, PlatformPageSkeleton } from "./ui";
 import { businessSections } from "./businesses/[id]/sections";
 
 interface Me {
@@ -132,11 +132,7 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
   }
 
   if (loading || !me?.admin) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-950 text-sm text-white/50">
-        در حال بارگذاری…
-      </div>
-    );
+    return <PlatformPageSkeleton fullScreen />;
   }
 
   const caps = me.capabilities ?? [];

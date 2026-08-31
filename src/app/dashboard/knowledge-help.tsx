@@ -15,7 +15,7 @@
  * may refuse to be embedded; the «باز کردن در تب جدید» link is always there
  * as the fallback that never can fail.
  */
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { ExternalLinkIcon, GraduationCapIcon } from "lucide-react";
 import {
@@ -49,18 +49,28 @@ export function KnowledgeHelpButton({ section }: { section?: string }) {
   const resolvedKey = resolved?.key;
   const [open, setOpen] = useState(false);
   const [state, setState] = useState<EntryState>({ status: "idle" });
+  const [frameLoaded, setFrameLoaded] = useState(false);
 
   const fetchEntry = useCallback(async () => {
     if (!resolvedKey) return;
     setState({ status: "loading" });
-    const { ok, data } = await api<{ entry: KnowledgeEntry | null }>(
-      `/api/knowledge?section=${encodeURIComponent(resolvedKey)}`,
-    );
-    if (!ok) {
+    try {
+      const { ok, data } = await api<{ entry: KnowledgeEntry | null }>(
+        `/api/knowledge?section=${encodeURIComponent(resolvedKey)}`,
+      );
+      if (!ok) {
+        setState({ status: "error" });
+        return;
+      }
+      setState({ status: "ready", entry: data.entry ?? null });
+    } catch {
       setState({ status: "error" });
-      return;
     }
-    setState({ status: "ready", entry: data.entry ?? null });
+  }, [resolvedKey]);
+
+  useEffect(() => {
+    setState({ status: "idle" });
+    setFrameLoaded(false);
   }, [resolvedKey]);
 
   if (!resolved) return null;
@@ -68,6 +78,7 @@ export function KnowledgeHelpButton({ section }: { section?: string }) {
   const label = resolved.label;
 
   function openModal() {
+    setFrameLoaded(false);
     setOpen(true);
     if (state.status === "idle" || state.status === "error") void fetchEntry();
   }
@@ -107,11 +118,25 @@ export function KnowledgeHelpButton({ section }: { section?: string }) {
             </button>
           </div>
         ) : state.status === "ready" && state.entry ? (
-          <iframe
-            src={state.entry.url}
-            title={`آموزش ${label}`}
-            className="h-[65svh] min-h-[320px] w-full rounded-xl border border-stone-200/80 bg-white"
-          />
+          <div className="relative h-[65svh] min-h-[320px]">
+            {!frameLoaded ? (
+              <div
+                role="status"
+                aria-live="polite"
+                aria-busy="true"
+                aria-label="در حال بارگذاری صفحه آموزشی"
+                className="absolute inset-0 z-10"
+              >
+                <Skeleton aria-hidden="true" className="h-full w-full rounded-xl" />
+              </div>
+            ) : null}
+            <iframe
+              src={state.entry.url}
+              title={`آموزش ${label}`}
+              onLoad={() => setFrameLoaded(true)}
+              className={`h-full w-full rounded-xl border border-stone-200/80 bg-white transition-opacity motion-reduce:transition-none ${frameLoaded ? "opacity-100" : "opacity-0"}`}
+            />
+          </div>
         ) : (
           <div className="flex min-h-[320px] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-stone-200 px-4 text-center">
             <GraduationCapIcon className="size-8 text-stone-300" aria-hidden="true" />

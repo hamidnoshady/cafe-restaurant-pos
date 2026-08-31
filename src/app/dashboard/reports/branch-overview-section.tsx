@@ -1,5 +1,7 @@
 "use client";
 
+import { SectionCardSkeleton } from "@/app/dashboard/page-chrome";
+
 /**
  * Phase 14 — consolidated numbers across a business's own branches.
  *
@@ -93,14 +95,7 @@ export function BranchOverviewSection() {
 
   if (loading) {
     return (
-      <section
-        role="status"
-        aria-live="polite"
-        aria-label="در حال بارگذاری مقایسه شعب"
-        className="rounded-2xl border border-stone-200/80 bg-white px-5 py-8 text-sm text-stone-500 shadow-[0_1px_2px_rgb(41_37_36/0.03)]"
-      >
-        در حال بارگذاری…
-      </section>
+      <SectionCardSkeleton rows={4} label="در حال بارگذاری مقایسه شعب" />
     );
   }
 

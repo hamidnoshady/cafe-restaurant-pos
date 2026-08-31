@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
+
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useEffect, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
@@ -157,7 +159,7 @@ export function ReconciliationSection({ busy, run }: { busy: boolean; run: (fn: 
         </div>
 
         {!history ? (
-          <p className="mt-5 text-sm text-muted-foreground">در حال بارگذاری…</p>
+          <LoadingSkeleton rows={3} className="mt-5" />
         ) : !current ? (
           <div className="mt-5 rounded-xl border border-stone-200/80 bg-stone-50 p-4">
             <h3>شروع تطبیق جدید</h3>
@@ -176,7 +178,7 @@ export function ReconciliationSection({ busy, run }: { busy: boolean; run: (fn: 
             </div>
           </div>
         ) : !detail ? (
-          <p className="mt-5 text-sm text-muted-foreground">در حال بارگذاری…</p>
+          <LoadingSkeleton rows={3} className="mt-5" />
         ) : (
           <div className="mt-5 space-y-4">
             <dl className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">

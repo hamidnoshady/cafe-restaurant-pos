@@ -10,6 +10,7 @@ import { PersianNumberInput } from "@/components/ui/persian-number-input";
  * it degrades to typing the path, which is the only thing a browser can do.
  */
 import { useEffect, useState } from "react";
+import { SetupDataSkeleton } from "../ui";
 import { useRouter } from "next/navigation";
 import { nextPath, prevPath } from "../steps";
 
@@ -105,9 +106,7 @@ export default function BackupStepPage() {
     router.push(nextPath("backup"));
   }
 
-  if (!loaded || !localOnly) {
-    return <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>;
-  }
+  if (!loaded || !localOnly) return <SetupDataSkeleton rows={4} />;
 
   return (
     <div>

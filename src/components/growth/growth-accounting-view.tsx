@@ -1,5 +1,7 @@
 "use client";
 
+import { SectionCardSkeleton } from "@/app/dashboard/page-chrome";
+
 /**
  * Growth & Marketing data as accounting sees it (Phase 36b, revised).
  *
@@ -59,7 +61,7 @@ export function GrowthAccountingView() {
   if (error) return <ErrorBox>{error}</ErrorBox>;
   if (!data) {
     return (
-      <div className={`px-5 py-6 text-sm text-stone-500 ${cardClass}`}>در حال بارگذاری…</div>
+      <SectionCardSkeleton rows={4} />
     );
   }
 

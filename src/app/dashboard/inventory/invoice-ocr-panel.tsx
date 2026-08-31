@@ -13,7 +13,6 @@ import {
   CameraIcon,
   CheckCircle2Icon,
   FileImageIcon,
-  Loader2Icon,
   TriangleAlertIcon,
   XCircleIcon,
 } from "lucide-react";
@@ -21,7 +20,7 @@ import { Button } from "@/components/ui/button";
 import { useMoney } from "@/components/money/money-context";
 import { formatQuantity, toPersianDigits } from "@/lib/digits";
 import { MAX_RECEIPT_IMAGE_BYTES, parseReceiptImageDataUrl } from "@/lib/ai-receipt";
-import { SectionCard } from "../page-chrome";
+import { LoadingSkeleton, SectionCard } from "../page-chrome";
 import { JalaliDatePicker } from "../jalali-date-picker";
 import { api, Field, inputClass } from "../ui";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -317,10 +316,12 @@ export function InvoiceOcrPanel({
       </div>
 
       {busy ? (
-        <p className="mt-3 flex items-center gap-2 text-sm text-muted-foreground" role="status">
-          <Loader2Icon className="size-4 animate-spin" aria-hidden="true" />
-          در حال خواندن فاکتور با هوش مصنوعی…
-        </p>
+        <LoadingSkeleton
+          rows={4}
+          compact
+          className="mt-3"
+          label="در حال خواندن فاکتور با هوش مصنوعی"
+        />
       ) : null}
 
       {error ? (

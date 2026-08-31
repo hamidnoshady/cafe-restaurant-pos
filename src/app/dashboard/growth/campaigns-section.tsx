@@ -1,5 +1,7 @@
 "use client";
 
+import { SectionCardSkeleton } from "@/app/dashboard/page-chrome";
+
 /**
  * The Growth app's campaigns section (Phase 36b).
  *
@@ -106,9 +108,7 @@ export function CampaignsSection() {
 
   if (!promotions) {
     return (
-      <div aria-live="polite" className={`px-5 py-6 text-sm text-stone-500 ${cardClass}`}>
-        در حال بارگذاری…
-      </div>
+      <SectionCardSkeleton rows={4} />
     );
   }
 

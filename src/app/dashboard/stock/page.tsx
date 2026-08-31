@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { formatPersianNumber } from "@/lib/digits";
 import { useMoney } from "@/components/money/money-context";
 import { api, ErrorBox, Field, inputClass } from "../ui";
-import { PageHeader, PageShell, SectionCard } from "../page-chrome";
+import { PageHeader, PageShell, SectionCard, SectionCardSkeleton } from "../page-chrome";
 import { KnowledgeHelpButton } from "../knowledge-help";
 import { JalaliDatePicker } from "../jalali-date-picker";
 import { StockCountSection } from "./stock-count-section";
@@ -47,11 +47,11 @@ interface ReportRow {
 
 export default function StockPage() {
   const money = useMoney();
-  const [items, setItems] = useState<StockItem[]>([]);
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [purchases, setPurchases] = useState<PurchaseRow[]>([]);
-  const [low, setLow] = useState<ReportRow[]>([]);
-  const [dead, setDead] = useState<ReportRow[]>([]);
+  const [items, setItems] = useState<StockItem[] | null>(null);
+  const [suppliers, setSuppliers] = useState<Supplier[] | null>(null);
+  const [purchases, setPurchases] = useState<PurchaseRow[] | null>(null);
+  const [low, setLow] = useState<ReportRow[] | null>(null);
+  const [dead, setDead] = useState<ReportRow[] | null>(null);
   const [error, setError] = useState("");
   const [done, setDone] = useState("");
 
@@ -71,6 +71,23 @@ export default function StockPage() {
     });
   }, []);
   useEffect(load, [load]);
+
+  if (items === null || suppliers === null || purchases === null || low === null || dead === null) {
+    return (
+      <PageShell className="max-w-[1100px]">
+        <PageHeader
+          title="خرید و انبار"
+          description="خرید، برگشت به تأمین‌کننده، انتقال بین شعبه‌ها، انبارگردانی و گزارش کمبود/راکد موجودی."
+          actions={<KnowledgeHelpButton section="stock" />}
+        />
+        <div className="grid gap-4 lg:grid-cols-2">
+          <SectionCardSkeleton rows={4} />
+          <SectionCardSkeleton rows={4} />
+        </div>
+        <SectionCardSkeleton rows={5} className="mt-4" />
+      </PageShell>
+    );
+  }
 
   return (
     <PageShell className="max-w-[1100px]">

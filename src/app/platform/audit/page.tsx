@@ -149,7 +149,7 @@ export default function AuditPage() {
   // `?businessId=` arrives from a business's overview page ("events of this
   // tenant"); hydrating the filter from the URL makes the two views one flow.
   return (
-    <Suspense>
+    <Suspense fallback={<SkeletonRows rows={8} label="در حال بارگذاری رویدادهای ممیزی" />}>
       <AuditTimeline />
     </Suspense>
   );

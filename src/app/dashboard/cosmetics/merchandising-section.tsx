@@ -8,6 +8,7 @@ import { printLabel } from "@/lib/print-agent-client";
 import { labelFieldsForTrade, type LabelData } from "@/lib/label-template";
 import { firstPrinter, useBusinessInfo, usePrinters } from "../use-printers";
 import { api, Field, inputClass } from "../ui";
+import { LoadingSkeleton, SectionCardSkeleton } from "../page-chrome";
 
 const accInputClass = `${inputClass} min-h-[52px] !border-stone-200 !bg-white shadow-none placeholder:text-stone-400 focus-visible:border-amber-500 focus-visible:ring-amber-400/30`;
 
@@ -42,21 +43,37 @@ export function MerchandisingSection() {
   const [error, setError] = useState("");
   const [done, setDone] = useState("");
   const [busy, setBusy] = useState(false);
+  const [loaded, setLoaded] = useState(false);
 
-  const load = useCallback(() => {
-    api<{ items: ItemRow[] }>("/api/cosmetics/items").then(({ ok, data }) => {
-      if (ok) setItems(data.items.filter((i) => i.kind !== "variant_parent"));
-    });
-    api<{ brands: BrandRow[] }>("/api/cosmetics/brands").then(({ ok, data }) => {
-      if (ok) setBrands(data.brands);
-    });
+  const load = useCallback(async () => {
+    const [itemsResult, brandsResult] = await Promise.allSettled([
+      api<{ items: ItemRow[] }>("/api/cosmetics/items"),
+      api<{ brands: BrandRow[] }>("/api/cosmetics/brands"),
+    ]);
+    if (itemsResult.status === "fulfilled" && itemsResult.value.ok) {
+      setItems(itemsResult.value.data.items.filter((i) => i.kind !== "variant_parent"));
+    }
+    if (brandsResult.status === "fulfilled" && brandsResult.value.ok) {
+      setBrands(brandsResult.value.data.brands);
+    }
+    setLoaded(true);
   }, []);
-  useEffect(load, [load]);
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   const refreshDone = (message: string) => {
     setDone(message);
     load();
   };
+
+  if (!loaded) {
+    return (
+      <div className="grid min-w-0 gap-4 xl:grid-cols-3">
+        {[0, 1, 2].map((item) => <SectionCardSkeleton key={item} rows={4} />)}
+      </div>
+    );
+  }
 
   return (
     <div className="grid min-w-0 gap-4 xl:grid-cols-3">
@@ -386,6 +403,7 @@ function BarcodesPanel({
   const [itemId, setItemId] = useState("");
   const [manualCode, setManualCode] = useState("");
   const [barcodes, setBarcodes] = useState<BarcodeRow[]>([]);
+  const [barcodesLoading, setBarcodesLoading] = useState(false);
   const printers = usePrinters();
   const businessInfo = useBusinessInfo();
 
@@ -394,11 +412,23 @@ function BarcodesPanel({
   useEffect(() => {
     if (!itemId) {
       setBarcodes([]);
+      setBarcodesLoading(false);
       return;
     }
-    api<{ barcodes: BarcodeRow[] }>(`/api/barcodes?itemId=${encodeURIComponent(itemId)}`).then(({ ok, data }) => {
-      if (ok) setBarcodes(data.barcodes);
-    });
+    let cancelled = false;
+    setBarcodes([]);
+    setBarcodesLoading(true);
+    void api<{ barcodes: BarcodeRow[] }>(`/api/barcodes?itemId=${encodeURIComponent(itemId)}`)
+      .then(({ ok, data }) => {
+        if (!cancelled && ok) setBarcodes(data.barcodes);
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) setBarcodesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [itemId]);
 
   async function assign(generate: boolean) {
@@ -480,7 +510,9 @@ function BarcodesPanel({
         تولید بارکد داخلی
       </Button>
 
-      {barcodes.length > 0 ? (
+      {barcodesLoading ? (
+        <LoadingSkeleton rows={2} compact label="در حال بارگذاری بارکدهای کالا" />
+      ) : barcodes.length > 0 ? (
         <ul className="divide-y divide-stone-200/80 text-sm">
           {barcodes.map((b) => (
             <li key={b.id} className="flex items-center justify-between gap-2 py-2">
@@ -491,8 +523,10 @@ function BarcodesPanel({
             </li>
           ))}
         </ul>
-      ) : (
+      ) : selected ? (
         <p className="text-xs text-muted-foreground">هنوز بارکدی برای این کالا ثبت نشده است.</p>
+      ) : (
+        <p className="text-xs text-muted-foreground">برای دیدن بارکدها، یک کالا انتخاب کنید.</p>
       )}
     </PanelShell>
   );

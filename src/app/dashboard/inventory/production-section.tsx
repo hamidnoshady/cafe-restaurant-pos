@@ -10,6 +10,7 @@ import { expectedMaterialCost, productionUnitCost } from "@/lib/production";
 import { quantityText, rialText } from "@/lib/inventory-exact";
 import { api, Field, inputClass, PrimaryButton, SecondaryButton } from "../ui";
 import type { InventoryItem, Runner } from "./inventory-manager";
+import { SectionCardSkeleton } from "../page-chrome";
 
 const productionInputClass = `${inputClass} min-h-[52px] !border-stone-200 !bg-white shadow-none placeholder:text-stone-400 focus-visible:border-amber-500 focus-visible:ring-amber-400/30`;
 
@@ -73,16 +74,24 @@ export function ProductionSection({
 }) {
   const [formulas, setFormulas] = useState<Formula[]>([]);
   const [runs, setRuns] = useState<Run[]>([]);
+  const [loaded, setLoaded] = useState(false);
 
-  const load = useCallback(() => {
-    void api<{ formulas: Formula[] }>("/api/inventory/production/formulas").then(({ ok, data }) => {
-      if (ok) setFormulas(data.formulas);
-    });
-    void api<{ runs: Run[] }>("/api/inventory/production/runs").then(({ ok, data }) => {
-      if (ok) setRuns(data.runs);
-    });
+  const load = useCallback(async () => {
+    const [formulaResult, runResult] = await Promise.allSettled([
+      api<{ formulas: Formula[] }>("/api/inventory/production/formulas"),
+      api<{ runs: Run[] }>("/api/inventory/production/runs"),
+    ]);
+    if (formulaResult.status === "fulfilled" && formulaResult.value.ok) {
+      setFormulas(formulaResult.value.data.formulas);
+    }
+    if (runResult.status === "fulfilled" && runResult.value.ok) {
+      setRuns(runResult.value.data.runs);
+    }
+    setLoaded(true);
   }, []);
-  useEffect(load, [load]);
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   // The shared runner reloads the inventory overview; production has its own
   // two lists, so wrap it to refresh those on the same success.
@@ -94,6 +103,15 @@ export function ProductionSection({
     },
     [run, load],
   );
+
+  if (!loaded) {
+    return (
+      <div className="space-y-5">
+        <SectionCardSkeleton rows={5} />
+        <SectionCardSkeleton rows={4} />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

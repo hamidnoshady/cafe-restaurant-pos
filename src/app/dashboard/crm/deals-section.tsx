@@ -1,5 +1,7 @@
 "use client";
 
+import { SectionCardSkeleton } from "@/app/dashboard/page-chrome";
+
 /**
  * The sales pipeline (Phase 36) — a kanban over `crm_deals`.
  *
@@ -85,9 +87,7 @@ export function DealsSection() {
 
   if (!deals) {
     return (
-      <div aria-live="polite" className={`px-5 py-6 text-sm text-stone-500 ${cardClass}`}>
-        در حال بارگذاری…
-      </div>
+      <SectionCardSkeleton rows={4} />
     );
   }
 

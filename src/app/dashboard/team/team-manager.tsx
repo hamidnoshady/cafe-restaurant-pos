@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
+
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
 
 /**
@@ -132,7 +134,7 @@ export function TeamManager({ currentUserId }: { currentUserId: string }) {
     return true;
   }
 
-  if (loading) return <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>;
+  if (loading) return <LoadingSkeleton rows={3} />;
 
   return (
     <div className="space-y-6">

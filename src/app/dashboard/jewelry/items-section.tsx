@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
+
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
@@ -456,7 +458,7 @@ function StonesPanel({ item, busy, run }: { item: WeightItem; busy: boolean; run
   return (
     <PanelShell>
       {loading ? (
-        <p className="text-xs text-muted-foreground">در حال بارگذاری…</p>
+        <LoadingSkeleton rows={3} compact />
       ) : (
         <ul className="mb-3 space-y-2">
           {(stones ?? []).map((s) => (

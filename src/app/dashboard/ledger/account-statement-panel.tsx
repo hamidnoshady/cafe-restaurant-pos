@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
+
 import { useEffect, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
@@ -93,7 +95,7 @@ export function AccountStatementPanel({
         </div>
 
         {statement === null ? (
-          <p aria-live="polite" className="py-8 text-center text-sm text-muted-foreground">در حال بارگذاری…</p>
+          <LoadingSkeleton rows={3} />
         ) : (
           <div className="mt-4">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-stone-50 px-4 py-3 text-sm">

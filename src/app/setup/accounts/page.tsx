@@ -1,5 +1,7 @@
 "use client";
 
+import { SetupDataSkeleton } from "../ui";
+
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -41,6 +43,7 @@ export default function AccountsStep() {
   const [existingCount, setExistingCount] = useState(0);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     api<AccountsResponse>("/api/setup/accounts").then(({ data }) => {
@@ -57,7 +60,7 @@ export default function AccountsStep() {
       } else if (data.template) {
         setRows(data.template);
       }
-    });
+    }).finally(() => setLoaded(true));
   }, []);
 
   function update(i: number, patch: Partial<TemplateAccount>) {
@@ -87,6 +90,8 @@ export default function AccountsStep() {
     }
     router.push(nextPath("accounts", steps));
   }
+
+  if (!loaded) return <SetupDataSkeleton rows={4} />;
 
   return (
     <StepShell

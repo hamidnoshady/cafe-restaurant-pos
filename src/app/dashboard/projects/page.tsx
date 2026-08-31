@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { cardClass, EmptyState, PageHeader, PageShell, SectionCard } from "../page-chrome";
+import { cardClass, EmptyState, PageHeader, PageShell, SectionCard, SectionCardSkeleton } from "../page-chrome";
 import { KnowledgeHelpButton } from "../knowledge-help";
 import { api, inputClass } from "../ui";
 
@@ -31,7 +31,7 @@ interface Project {
 
 export default function ProjectsPage() {
   const router = useRouter();
-  const [projects, setProjects] = useState<Project[]>([]);
+  const [projects, setProjects] = useState<Project[] | null>(null);
   const [showArchived, setShowArchived] = useState(false);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
@@ -68,6 +68,20 @@ export default function ProjectsPage() {
     const url = `/api/ai/projects/${id}${archived ? "?unarchive=true" : ""}`;
     await api(url, { method: "DELETE" });
     load();
+  }
+
+  if (projects === null) {
+    return (
+      <PageShell className="pb-6">
+        <PageHeader
+          title="پروژه‌ها"
+          description="پوشه‌های هدف: گفت‌وگوها، یادداشت‌ها و دستور ایستا را کنار هم نگه دارید."
+        />
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {[0, 1, 2].map((item) => <SectionCardSkeleton key={item} rows={2} />)}
+        </div>
+      </PageShell>
+    );
   }
 
   const activeProjects = projects.filter((p) => !p.archivedAt);

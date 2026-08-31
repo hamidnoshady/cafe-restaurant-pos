@@ -1,5 +1,7 @@
 "use client";
 
+import { SetupDataSkeleton } from "../ui";
+
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -27,6 +29,7 @@ export default function TaxStep() {
   const [categories, setCategories] = useState<{ id: string; name: string; rate: string }[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     api<TaxResponse>("/api/setup/tax").then(({ data }) => {
@@ -36,7 +39,7 @@ export default function TaxStep() {
           data.categories.map((c) => ({ id: c.id, name: c.name, rate: String(Number(c.tax_rate)) })),
         );
       }
-    });
+    }).finally(() => setLoaded(true));
   }, []);
 
   function parseRate(s: string): number {
@@ -61,6 +64,8 @@ export default function TaxStep() {
     }
     router.push(nextPath("tax"));
   }
+
+  if (!loaded) return <SetupDataSkeleton rows={4} />;
 
   return (
     <StepShell

@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
+
 /**
  * روز کاری — the management panel for the branch's trading day.
  *
@@ -160,7 +162,7 @@ export function BusinessDaySettings() {
       {notice ? <InfoBox>{notice}</InfoBox> : null}
 
       {!loaded ? (
-        <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>
+        <LoadingSkeleton rows={3} />
       ) : null}
 
       {loaded && status ? (

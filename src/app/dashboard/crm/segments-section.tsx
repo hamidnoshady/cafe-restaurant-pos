@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
+
 /**
  * Segment builder and list (Phase 36).
  *
@@ -132,7 +134,7 @@ export function SegmentsSection() {
         }
       >
         {!segments ? (
-          <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>
+          <LoadingSkeleton rows={3} />
         ) : segments.length === 0 ? (
           <EmptyState>
             هنوز بخشی تعریف نشده است. مثلاً «مشتریانی که بیش از ۹۰ روز خرید نکرده‌اند و مجموع خریدشان
@@ -205,6 +207,7 @@ function SegmentDialog({
   const [rules, setRules] = useState<SegmentRule[]>(segment?.definition.all ?? []);
   const [purpose, setPurpose] = useState<SegmentPurpose>("view");
   const [preview, setPreview] = useState<Preview | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(true);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -213,16 +216,26 @@ function SegmentDialog({
   // Preview on every edit, debounced. The count is the whole point of the
   // builder: a rule you cannot see the effect of is a rule you write blind.
   useEffect(() => {
+    let cancelled = false;
+    setPreview(null);
+    setPreviewLoading(true);
     const timer = setTimeout(() => {
-      api<{ preview: Preview; error?: string }>("/api/crm/segments/preview", {
+      void api<{ preview: Preview; error?: string }>("/api/crm/segments/preview", {
         method: "POST",
         body: JSON.stringify({ definition: { all: rules }, purpose }),
-      }).then(({ ok, data }) => {
-        if (ok) setPreview(data.preview);
-        else setPreview(null);
-      });
+      })
+        .then(({ ok, data }) => {
+          if (!cancelled && ok) setPreview(data.preview);
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          if (!cancelled) setPreviewLoading(false);
+        });
     }, 300);
-    return () => clearTimeout(timer);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [rules, purpose]);
 
   const save = async () => {
@@ -312,8 +325,10 @@ function SegmentDialog({
 
         <div className="rounded-2xl border border-stone-200/80 bg-stone-50/60 p-4">
           <p className="text-sm font-medium text-stone-950">برآورد</p>
-          {!preview ? (
-            <p className="mt-1 text-xs text-muted-foreground">در حال محاسبه…</p>
+          {previewLoading ? (
+            <LoadingSkeleton rows={2} compact className="mt-2" label="در حال محاسبه برآورد بخش" />
+          ) : !preview ? (
+            <p className="mt-1 text-xs text-muted-foreground">برآورد این بخش در دسترس نیست.</p>
           ) : (
             <>
               <p className="mt-1 text-sm text-stone-700">

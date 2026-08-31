@@ -9,6 +9,7 @@ import { formatJalali } from "@/lib/jalali";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { api, Field, inputClass } from "../ui";
 import { PURITY_LABELS, type Purity, type Runner } from "./jewelry-manager";
+import { SectionCardSkeleton } from "../page-chrome";
 
 const jewelryInputClass = `${inputClass} min-h-[52px] !border-stone-200 !bg-white shadow-none placeholder:text-stone-400 focus-visible:border-amber-500 focus-visible:ring-amber-400/30`;
 const secondaryActionClass =
@@ -46,25 +47,31 @@ export function ReportsSection({ busy, run }: { busy: boolean; run: Runner }) {
   const [reconciliation, setReconciliation] = useState<ReconciliationRow[]>([]);
   const [counts, setCounts] = useState<WeightCount[]>([]);
   const [summaries, setSummaries] = useState<ConsignorSummary[]>([]);
+  const [loaded, setLoaded] = useState(false);
 
   const [purity, setPurity] = useState<Purity>("18");
   const [countedWeight, setCountedWeight] = useState("");
   const [notes, setNotes] = useState("");
 
-  const load = useCallback(() => {
-    api<{ reconciliation: ReconciliationRow[]; counts: WeightCount[] }>(
-      "/api/jewelry/reports/weight-counts",
-    ).then(({ ok, data }) => {
-      if (ok) {
-        setReconciliation(data.reconciliation);
-        setCounts(data.counts);
-      }
-    });
-    api<{ summaries: ConsignorSummary[] }>("/api/jewelry/reports/consignors").then(({ ok, data }) => {
-      if (ok) setSummaries(data.summaries);
-    });
+  const load = useCallback(async () => {
+    const [countsResult, summariesResult] = await Promise.allSettled([
+      api<{ reconciliation: ReconciliationRow[]; counts: WeightCount[] }>(
+        "/api/jewelry/reports/weight-counts",
+      ),
+      api<{ summaries: ConsignorSummary[] }>("/api/jewelry/reports/consignors"),
+    ]);
+    if (countsResult.status === "fulfilled" && countsResult.value.ok) {
+      setReconciliation(countsResult.value.data.reconciliation);
+      setCounts(countsResult.value.data.counts);
+    }
+    if (summariesResult.status === "fulfilled" && summariesResult.value.ok) {
+      setSummaries(summariesResult.value.data.summaries);
+    }
+    setLoaded(true);
   }, []);
-  useEffect(load, [load]);
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   async function recordCount(e: React.FormEvent) {
     e.preventDefault();
@@ -80,6 +87,15 @@ export function ReportsSection({ busy, run }: { busy: boolean; run: Runner }) {
       setNotes("");
       load();
     }
+  }
+
+  if (!loaded) {
+    return (
+      <div className="grid min-w-0 gap-4 md:grid-cols-[minmax(0,1fr)_18rem]">
+        <SectionCardSkeleton rows={5} />
+        <SectionCardSkeleton rows={4} />
+      </div>
+    );
   }
 
   return (

@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
+
 /**
  * «نرم‌افزار هلو» — the Holoo connection panel (Phase 26).
  *
@@ -228,7 +230,7 @@ export function HolooPanel() {
 
       <SectionCard title="اتصال‌های هلو">
         {loading ? (
-          <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>
+          <LoadingSkeleton rows={3} />
         ) : connections.length === 0 ? (
           <p className="text-sm text-muted-foreground">هنوز اتصالی به هلو ایجاد نشده است.</p>
         ) : (

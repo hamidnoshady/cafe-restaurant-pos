@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
+
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useCallback, useEffect, useState } from "react";
 import { toLatinDigits } from "@/lib/digits";
@@ -75,7 +77,7 @@ export function PricingSettings() {
     setSaved(true);
   }
 
-  if (loading) return <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>;
+  if (loading) return <LoadingSkeleton rows={3} />;
 
   return (
     <form onSubmit={save} className="space-y-6">

@@ -22,6 +22,7 @@ import {
   Card,
   inputClass,
   useCan,
+  SkeletonRows,
 } from "../../ui";
 import { IndustryPicker } from "../../industry-picker";
 import { useBusiness } from "./context";
@@ -353,7 +354,7 @@ interface Plan {
 export function PlanPanel() {
   const { business, reload } = useBusiness();
   const can = useCan();
-  const [plans, setPlans] = useState<Plan[]>([]);
+  const [plans, setPlans] = useState<Plan[] | null>(null);
   const [plan, setPlan] = useState(business?.plan ?? "");
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -361,10 +362,9 @@ export function PlanPanel() {
   const editable = can("features.write");
 
   useEffect(() => {
-    (async () => {
-      const { ok, data } = await api<{ plans: Plan[] }>("/api/platform/plans");
-      if (ok) setPlans(data.plans);
-    })();
+    void api<{ plans: Plan[] }>("/api/platform/plans")
+      .then(({ ok, data }) => setPlans(ok ? data.plans : []))
+      .catch(() => setPlans([]));
   }, []);
 
   useEffect(() => {
@@ -389,6 +389,14 @@ export function PlanPanel() {
     } else {
       setError(errorMessage(data.error));
     }
+  }
+
+  if (plans === null) {
+    return (
+      <Card title="پلن اشتراک">
+        <SkeletonRows rows={3} label="در حال بارگذاری پلن‌ها" />
+      </Card>
+    );
   }
 
   const current = plans.find((p) => p.key === plan);
@@ -470,7 +478,7 @@ export function UsagePanel() {
   if (!usage) {
     return (
       <Card title="مصرف و فعالیت">
-        <p className="text-sm text-white/50">در حال بارگذاری…</p>
+        <SkeletonRows rows={3} />
       </Card>
     );
   }
@@ -550,7 +558,7 @@ export function FeaturesPanel() {
     <Card title="پرچم‌های ویژگی">
       <ErrorBox>{error}</ErrorBox>
       {features === null ? (
-        <p className="text-sm text-white/50">در حال بارگذاری…</p>
+        <SkeletonRows rows={3} />
       ) : features.length === 0 ? (
         <p className="text-sm text-white/50">پرچمی تعریف نشده است.</p>
       ) : (
@@ -737,7 +745,7 @@ export function ImpersonationPanel() {
       ) : null}
 
       {grants === null ? (
-        <p className="text-sm text-white/50">در حال بارگذاری…</p>
+        <SkeletonRows rows={3} />
       ) : grants.length === 0 ? (
         <p className="text-sm text-white/50">هنوز دسترسی پشتیبانی ثبت نشده است.</p>
       ) : (

@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
+
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
 /**
  * «کلیدهای API» — issuing and revoking the keys that authenticate `/api/v1/*`.
@@ -228,7 +230,7 @@ export function ApiTokensPanel() {
 
       <SectionCard title="کلیدهای موجود">
         {loading ? (
-          <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>
+          <LoadingSkeleton rows={3} />
         ) : keys.length === 0 ? (
           <p className="text-sm text-muted-foreground">هنوز کلیدی ساخته نشده است.</p>
         ) : (

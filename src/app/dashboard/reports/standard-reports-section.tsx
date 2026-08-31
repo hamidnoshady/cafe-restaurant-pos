@@ -1,5 +1,7 @@
 "use client";
 
+import { SectionCardSkeleton, LoadingSkeleton } from "@/app/dashboard/page-chrome";
+
 import { useCallback, useEffect, useState } from "react";
 import { SparklesIcon } from "lucide-react";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -162,14 +164,7 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
 
   if (!reports) {
     return (
-      <section
-        role="status"
-        aria-live="polite"
-        aria-label="در حال بارگذاری گزارش‌های آماده"
-        className="rounded-2xl border border-stone-200/80 bg-white px-5 py-8 text-sm text-stone-500 shadow-[0_1px_2px_rgb(41_37_36/0.03)]"
-      >
-        در حال بارگذاری…
-      </section>
+      <SectionCardSkeleton rows={4} label="در حال بارگذاری گزارش‌های آماده" />
     );
   }
 
@@ -348,20 +343,10 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
                   />
                 )
               ) : (
-                <p
-                  role="status"
-                  className="rounded-xl bg-stone-50 px-4 py-8 text-center text-sm text-stone-500"
-                >
-                  در حال بارگذاری…
-                </p>
+                <LoadingSkeleton rows={4} />
               )
             ) : rows === null ? (
-              <p
-                role="status"
-                className="rounded-xl bg-stone-50 px-4 py-8 text-center text-sm text-stone-500"
-              >
-                در حال بارگذاری…
-              </p>
+              <LoadingSkeleton rows={4} />
             ) : (
               <div className="space-y-5">
                 <ChartPreview

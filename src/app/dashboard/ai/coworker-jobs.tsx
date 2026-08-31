@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
+
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
 /**
  * Phase 32 — defining a job: pick a ready-made template, say when it should
@@ -255,10 +257,7 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
     <div className="space-y-4">
       <SectionCard title="کارهای سپرده‌شده" description="کارهایی که همکار هوشمند برای شما انجام می‌دهد." flush>
         {loading ? (
-          <div className="flex items-center justify-center px-4 py-8 text-sm text-muted-foreground">
-            <Loader2Icon className="ml-2 size-4 animate-spin" />
-            در حال بارگذاری…
-          </div>
+          <div className="p-4 sm:p-5"><LoadingSkeleton rows={4} /></div>
         ) : jobs.length === 0 ? (
           <div className="p-4 sm:p-5">
             <EmptyState>هنوز کاری به همکار هوشمند نسپرده‌اید. از پایین یکی را انتخاب کنید.</EmptyState>

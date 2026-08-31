@@ -12,7 +12,7 @@
 import { useEffect, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
 import { PLATFORM_ROLE_LABELS, type PlatformAdminRole } from "@/lib/platform-admin";
-import { api, errorMessage, ErrorBox, Card } from "../ui";
+import { api, errorMessage, ErrorBox, Card, SkeletonRows } from "../ui";
 
 interface Admin {
   id: string;
@@ -62,7 +62,7 @@ export default function AdminsPage() {
       <ErrorBox>{error}</ErrorBox>
 
       {admins === null ? (
-        <p className="text-sm text-white/50">در حال بارگذاری…</p>
+        <SkeletonRows rows={5} />
       ) : admins.length === 0 ? (
         <Card>
           <p className="text-sm text-white/50">مدیری ثبت نشده است.</p>

@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingSkeleton, SectionCardSkeleton } from "@/app/dashboard/page-chrome";
+
 /**
  * Duplicate detection and merge (Phase 36).
  *
@@ -92,9 +94,7 @@ export function DuplicatesSection() {
 
   if (!candidates) {
     return (
-      <div aria-live="polite" className={`px-5 py-6 text-sm text-stone-500 ${cardClass}`}>
-        در حال بارگذاری…
-      </div>
+      <SectionCardSkeleton rows={4} />
     );
   }
 
@@ -210,12 +210,21 @@ function MergeDialog({
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    api<{ preview: MergePreview; error?: string }>(
+    let cancelled = false;
+    void api<{ preview: MergePreview; error?: string }>(
       `/api/crm/customers/merge?winner=${winner.id}&loser=${loser.id}`,
-    ).then(({ ok, data }) => {
-      if (ok) setPreview(data.preview);
-      else setError(errorMessage(data.error));
-    });
+    )
+      .then(({ ok, data }) => {
+        if (cancelled) return;
+        if (ok) setPreview(data.preview);
+        else setError(errorMessage(data.error));
+      })
+      .catch(() => {
+        if (!cancelled) setError("آماده‌سازی پیش‌نمایش ممکن نشد.");
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [winner.id, loser.id]);
 
   const confirm = async () => {
@@ -251,9 +260,9 @@ function MergeDialog({
           خواهد شد.
         </p>
 
-        {!preview ? (
-          <p className="mt-3 text-sm text-muted-foreground">در حال آماده‌سازی پیش‌نمایش…</p>
-        ) : (
+        {!preview && !error ? (
+          <LoadingSkeleton rows={3} compact className="mt-3" label="در حال آماده‌سازی پیش‌نمایش ادغام" />
+        ) : preview ? (
           <div className="mt-3 space-y-3 text-sm">
             <div>
               <p className="font-medium text-stone-950">چه چیزی منتقل می‌شود</p>
@@ -309,7 +318,7 @@ function MergeDialog({
               </div>
             ) : null}
           </div>
-        )}
+        ) : null}
 
         <DialogFooter>
           <Button type="button" variant="outline" onClick={onClose} disabled={busy}>

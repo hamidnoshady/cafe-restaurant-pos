@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
+
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { CameraScanTrigger } from "@/components/scanner/camera-barcode-scanner";
@@ -145,7 +147,7 @@ export function BarcodesSection({
         description="شمارش با بارکدخوان تنها برای اقلامی کار می‌کند که بارکد داشته باشند. اقلامی که هنوز بارکد ندارند در فهرست زیر می‌آیند؛ با یک دکمه برای همهٔ آن‌ها بارکد داخلی تولید کنید و سپس لیبل‌ها را چاپ و روی قفسه‌ها نصب کنید."
       >
         {pending === null ? (
-          <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>
+          <LoadingSkeleton rows={3} />
         ) : pending.length === 0 ? (
           <p className="text-sm text-emerald-700">
             همهٔ اقلام فعال بارکد دارند؛ انبار آمادهٔ شمارش است.

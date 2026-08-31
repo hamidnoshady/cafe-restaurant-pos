@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
+
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -330,7 +332,7 @@ function PartsPanel({ ticket, busy, run }: { ticket: RepairTicket; busy: boolean
   return (
     <PanelShell>
       <ul className="mb-3 space-y-2">
-        {loading ? <li className="text-xs text-muted-foreground">در حال بارگذاری…</li> : null}
+        {loading ? <li><LoadingSkeleton rows={2} compact /></li> : null}
         {!loading && parts.length === 0 ? (
           <li className="text-xs text-muted-foreground">قطعه‌ای ثبت نشده است.</li>
         ) : null}

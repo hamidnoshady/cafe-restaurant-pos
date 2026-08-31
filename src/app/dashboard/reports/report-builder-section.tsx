@@ -1,5 +1,7 @@
 "use client";
 
+import { SectionCardSkeleton, LoadingSkeleton } from "@/app/dashboard/page-chrome";
+
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -191,14 +193,7 @@ export function ReportBuilderSection() {
 
   if (!views) {
     return (
-      <section
-        role="status"
-        aria-live="polite"
-        aria-label="در حال بارگذاری گزارش‌ساز"
-        className="rounded-2xl border border-stone-200/80 bg-white px-5 py-8 text-sm text-stone-500 shadow-[0_1px_2px_rgb(41_37_36/0.03)]"
-      >
-        در حال بارگذاری…
-      </section>
+      <SectionCardSkeleton rows={4} label="در حال بارگذاری گزارش‌ساز" />
     );
   }
 
@@ -426,11 +421,8 @@ export function ReportBuilderSection() {
 
         <ul className="divide-y divide-stone-100">
           {saved === null ? (
-            <li
-              role="status"
-              className="py-8 text-center text-sm text-stone-500"
-            >
-              در حال بارگذاری…
+            <li className="py-3">
+              <LoadingSkeleton rows={3} compact />
             </li>
           ) : null}
 

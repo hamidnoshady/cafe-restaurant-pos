@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
+
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
 /**
  * Phase 20 Wave 5 — admin review of every employee's shift history
@@ -105,7 +107,7 @@ export function ShiftHistorySettings() {
         <ErrorBox>{error}</ErrorBox>
         {notice ? <InfoBox>{notice}</InfoBox> : null}
 
-        {shifts === null && <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>}
+        {shifts === null && <LoadingSkeleton rows={3} />}
         {shifts !== null && shifts.length === 0 && (
           <p className="text-sm text-muted-foreground">هنوز شیفتی ثبت نشده است.</p>
         )}

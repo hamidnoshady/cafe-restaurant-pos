@@ -1,5 +1,7 @@
 "use client";
 
+import { SetupDataSkeleton } from "../ui";
+
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -44,6 +46,7 @@ export default function MenuStep() {
   const [items, setItems] = useState<Item[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     if (!available) router.replace(skipToPath("menu", steps));
@@ -64,7 +67,7 @@ export default function MenuStep() {
     api<{ categories: Category[]; items: Item[] }>("/api/setup/menu").then(({ data }) => {
       if (data.categories) setCategories(data.categories);
       if (data.items) setItems(data.items);
-    });
+    }).finally(() => setLoaded(true));
   }, []);
   useEffect(load, [load]);
 
@@ -140,6 +143,8 @@ export default function MenuStep() {
   }
 
   if (!available) return null;
+
+  if (!loaded) return <SetupDataSkeleton rows={4} />;
 
   return (
     <StepShell

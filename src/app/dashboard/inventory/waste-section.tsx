@@ -8,6 +8,7 @@ import { formatJalali } from "@/lib/jalali";
 import { api, Field, inputClass, PrimaryButton } from "../ui";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import type { InventoryItem, Runner } from "./inventory-manager";
+import { LoadingSkeleton } from "../page-chrome";
 
 interface WasteEntry {
   id: string;
@@ -38,9 +39,9 @@ export function WasteSection({ items, busy, run }: { items: InventoryItem[]; bus
   const [note, setNote] = useState("");
 
   const loadEntries = useCallback(() => {
-    api<{ entries: WasteEntry[] }>("/api/inventory/waste").then(({ ok, data }) => {
-      if (ok) setEntries(data.entries);
-    });
+    void api<{ entries: WasteEntry[] }>("/api/inventory/waste")
+      .then(({ ok, data }) => setEntries(ok ? data.entries : []))
+      .catch(() => setEntries([]));
   }, []);
   useEffect(loadEntries, [loadEntries]);
 
@@ -115,19 +116,23 @@ export function WasteSection({ items, busy, run }: { items: InventoryItem[]; bus
 
       <section className="min-w-0 rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-5">
         <h2 className="mb-3 font-semibold">ضایعات اخیر</h2>
-        <ul className="divide-y divide-border rounded-lg border border-border">
-          {(entries ?? []).map((e) => (
-            <li key={e.id} className="flex min-w-0 flex-col gap-2 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
-              <span className="min-w-0 break-words">
-                {e.inventory_item_name} — {formatQuantity(e.quantity)} {e.unit} ({REASON_LABELS[e.waste_reason] ?? e.waste_reason})
-              </span>
-              <span className="text-xs text-muted-foreground">
-                {money.format(Number(e.quantity) * Number(e.unit_cost))} — {formatJalali(e.occurred_at)}
-              </span>
-            </li>
-          ))}
-          {entries && entries.length === 0 ? <li className="p-3 text-sm text-muted-foreground">ضایعاتی ثبت نشده است.</li> : null}
-        </ul>
+        {entries === null ? (
+          <LoadingSkeleton rows={4} label="در حال بارگذاری ضایعات اخیر" />
+        ) : (
+          <ul className="divide-y divide-border rounded-lg border border-border">
+            {entries.map((e) => (
+              <li key={e.id} className="flex min-w-0 flex-col gap-2 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+                <span className="min-w-0 break-words">
+                  {e.inventory_item_name} — {formatQuantity(e.quantity)} {e.unit} ({REASON_LABELS[e.waste_reason] ?? e.waste_reason})
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  {money.format(Number(e.quantity) * Number(e.unit_cost))} — {formatJalali(e.occurred_at)}
+                </span>
+              </li>
+            ))}
+            {entries.length === 0 ? <li className="p-3 text-sm text-muted-foreground">ضایعاتی ثبت نشده است.</li> : null}
+          </ul>
+        )}
       </section>
     </div>
   );

@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
+
 /**
  * Phase 32 — the approval inbox.
  *
@@ -203,10 +205,7 @@ export function CoworkerInbox({ onChange }: { onChange?: () => void }) {
         flush
       >
         {loading ? (
-          <div className="flex items-center justify-center px-4 py-8 text-sm text-muted-foreground">
-            <Loader2Icon className="ml-2 size-4 animate-spin" />
-            در حال بارگذاری…
-          </div>
+          <div className="p-4 sm:p-5"><LoadingSkeleton rows={4} /></div>
         ) : pending.length === 0 ? (
           <div className="p-4 sm:p-5">
             <EmptyState>چیزی در انتظار تأیید نیست.</EmptyState>

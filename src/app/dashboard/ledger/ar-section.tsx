@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingSkeleton, SectionCardSkeleton } from "@/app/dashboard/page-chrome";
+
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useEffect, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
@@ -63,7 +65,7 @@ export function ArSection({ busy, run }: { busy: boolean; run: (fn: () => Promis
   }, [view, refreshKey]);
 
   if (!customers) {
-    return <section aria-live="polite" className="rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-5 text-sm text-muted-foreground">در حال بارگذاری…</section>;
+    return <SectionCardSkeleton rows={4} />;
   }
 
   return (
@@ -121,7 +123,7 @@ export function ArSection({ busy, run }: { busy: boolean; run: (fn: () => Promis
         ) : (
           <div className="mt-5">
             {!aging ? (
-              <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>
+              <LoadingSkeleton rows={3} />
             ) : aging.rows.length === 0 ? (
               <p className="rounded-xl border border-dashed border-stone-200/80 bg-stone-50 px-4 py-8 text-center text-sm text-muted-foreground">هیچ حساب دریافتنی بازی وجود ندارد.</p>
             ) : (

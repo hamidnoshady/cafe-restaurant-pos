@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
+
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useEffect, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
@@ -160,7 +162,7 @@ export function FixedAssetsSection({ busy, refreshKey }: { busy: boolean; refres
           <h2 className="mt-1">دارایی‌های ثابت</h2>
         </div>
         {!assets ? (
-          <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>
+          <LoadingSkeleton rows={3} />
         ) : assets.length === 0 ? (
           <p className="rounded-xl border border-dashed border-stone-200/80 bg-stone-50 px-4 py-8 text-center text-sm text-muted-foreground">
             هنوز دارایی ثابتی ثبت نشده است.

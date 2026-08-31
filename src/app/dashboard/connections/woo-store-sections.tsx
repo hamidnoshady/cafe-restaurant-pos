@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
+
 /**
  * Phase 38 — the four surfaces that turn «فروشگاه ووکامرس» from a connection
  * tester into somewhere an owner can actually work:
@@ -162,7 +164,7 @@ export function CatalogueSection({ connectionId, busy, call }: SectionProps) {
 
   return (
     <div className="mt-2 space-y-2 rounded-md bg-stone-50 p-2 text-xs">
-      {loading ? <p className="text-muted-foreground">در حال بارگذاری…</p> : null}
+      {loading ? <LoadingSkeleton rows={3} compact /> : null}
 
       {!loading && summary ? (
         <div className="flex flex-wrap gap-2">
@@ -334,7 +336,7 @@ export function TaxonomiesSection({ connectionId }: { connectionId: string }) {
 
   if (loading) {
     return (
-      <div className="mt-2 rounded-md bg-stone-50 p-2 text-xs text-muted-foreground">در حال بارگذاری…</div>
+      <LoadingSkeleton rows={3} compact className="mt-2" />
     );
   }
 
@@ -431,7 +433,7 @@ export function StoreOrdersSection({ connectionId, busy, call }: SectionProps) {
 
   return (
     <div className="mt-2 max-h-80 space-y-1 overflow-y-auto rounded-md bg-stone-50 p-2 text-xs">
-      {loading ? <p className="text-muted-foreground">در حال بارگذاری…</p> : null}
+      {loading ? <LoadingSkeleton rows={3} compact /> : null}
       {!loading && orders.length === 0 ? (
         <p className="text-muted-foreground">
           سفارشی از فروشگاه دریافت نشده است. «همگام‌سازی سفارش‌ها» را بزنید یا از برقراری وب‌هوک مطمئن شوید.

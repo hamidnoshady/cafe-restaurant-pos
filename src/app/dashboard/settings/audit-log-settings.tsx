@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
+
 /**
  * Phase 20 Wave 6 — admin read-only view of the business's audit trail
  * (team.manage-gated, same permission as shift history's review tab —
@@ -94,7 +96,7 @@ export function AuditLogSettings() {
           ))}
         </div>
 
-        {entries === null && <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>}
+        {entries === null && <LoadingSkeleton rows={3} />}
         {entries !== null && entries.length === 0 && (
           <p className="text-sm text-muted-foreground">رویدادی ثبت نشده است.</p>
         )}

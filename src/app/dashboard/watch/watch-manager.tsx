@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, errorMessage as sharedErrorMessage } from "../ui";
 import { IndustryManagerShell, type Runner } from "../industry-manager-shell";
+import { SectionCardSkeleton } from "../page-chrome";
 import { UnitsSection } from "./units-section";
 import { RepairsSection } from "./repairs-section";
 import { ReportsSection } from "./reports-section";
@@ -110,10 +111,10 @@ function watchErrorMessage(code: string | undefined): string {
 }
 
 export function WatchManager() {
-  const [models, setModels] = useState<WatchModel[]>([]);
-  const [units, setUnits] = useState<SerialUnit[]>([]);
-  const [tickets, setTickets] = useState<RepairTicket[]>([]);
-  const [reminders, setReminders] = useState<ServiceReminder[]>([]);
+  const [models, setModels] = useState<WatchModel[] | null>(null);
+  const [units, setUnits] = useState<SerialUnit[] | null>(null);
+  const [tickets, setTickets] = useState<RepairTicket[] | null>(null);
+  const [reminders, setReminders] = useState<ServiceReminder[] | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState<TabKey>("units");
@@ -174,12 +175,22 @@ export function WatchManager() {
       error={error}
     >
       {tab === "units" ? (
-        <UnitsSection models={models} units={units} busy={busy} run={run} />
+        models === null || units === null ? (
+          <SectionCardSkeleton rows={5} />
+        ) : (
+          <UnitsSection models={models} units={units} busy={busy} run={run} />
+        )
       ) : null}
       {tab === "repairs" ? (
-        <RepairsSection tickets={tickets} units={units} busy={busy} run={run} />
+        tickets === null || units === null ? (
+          <SectionCardSkeleton rows={5} />
+        ) : (
+          <RepairsSection tickets={tickets} units={units} busy={busy} run={run} />
+        )
       ) : null}
-      {tab === "reminders" ? <RemindersSection reminders={reminders} /> : null}
+      {tab === "reminders" ? (
+        reminders === null ? <SectionCardSkeleton rows={4} /> : <RemindersSection reminders={reminders} />
+      ) : null}
       {tab === "reports" ? <ReportsSection /> : null}
     </IndustryManagerShell>
   );

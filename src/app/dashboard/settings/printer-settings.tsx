@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
+
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useCallback, useEffect, useState } from "react";
 import { kickDrawer, testPrint } from "@/lib/print-agent-client";
@@ -133,7 +135,7 @@ export function PrinterSettings() {
     setNotice(action === "print" ? "فرمان چاپ آزمایشی ارسال شد." : "فرمان بازشدن کشوی پول ارسال شد.");
   }
 
-  if (loading) return <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>;
+  if (loading) return <LoadingSkeleton rows={3} />;
 
   return (
     <div className="space-y-6">

@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
+
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
 /**
  * Owner-only settings for the bidirectional server-to-server sync (Phase 11):
@@ -230,7 +232,7 @@ export function ServerSyncSettings() {
   }
 
   if (loading) {
-    return <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>;
+    return <LoadingSkeleton rows={3} />;
   }
 
   // A central server is the thing sites sync *to* — it has no peer of its own

@@ -27,7 +27,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { formatPersianNumber } from "@/lib/digits";
 import { CAMPAIGN_CHANNELS, CAMPAIGN_CHANNEL_LABELS, type CampaignChannel } from "@/lib/campaign-channels";
-import { cardClass, EmptyState, SectionCard } from "../page-chrome";
+import { cardClass, EmptyState, LoadingSkeleton, SectionCard } from "../page-chrome";
 import { api, ErrorBox, errorMessage, inputClass, SecondaryButton } from "../ui";
 import { crmSectionHref } from "../crm/crm-routes";
 
@@ -56,12 +56,16 @@ export function CampaignAudiencePanel() {
 
   useEffect(() => {
     let cancelled = false;
-    api<{ segments: SegmentOption[] }>("/api/crm/segments").then(({ ok, data }) => {
-      if (cancelled) return;
-      // A business with the CRM module off, or simply no segments yet, is not
-      // an error state — it is an empty state with a way forward.
-      setSegments(ok && data ? data.segments : []);
-    });
+    void api<{ segments: SegmentOption[] }>("/api/crm/segments")
+      .then(({ ok, data }) => {
+        if (cancelled) return;
+        // A business with the CRM module off, or simply no segments yet, is not
+        // an error state — it is an empty state with a way forward.
+        setSegments(ok && data ? data.segments : []);
+      })
+      .catch(() => {
+        if (!cancelled) setSegments([]);
+      });
     return () => {
       cancelled = true;
     };
@@ -70,18 +74,23 @@ export function CampaignAudiencePanel() {
   const check = useCallback(async () => {
     if (!segmentId) return;
     setBusy(true);
+    setAudience(null);
     setError(null);
-    const { ok, data } = await api<{ audience?: Audience; error?: string }>(
-      "/api/growth/campaign-audience",
-      { method: "POST", body: JSON.stringify({ segmentId, channel }) },
-    );
-    setBusy(false);
-    if (!ok || !data?.audience) {
-      setAudience(null);
-      setError(errorMessage(data?.error));
-      return;
+    try {
+      const { ok, data } = await api<{ audience?: Audience; error?: string }>(
+        "/api/growth/campaign-audience",
+        { method: "POST", body: JSON.stringify({ segmentId, channel }) },
+      );
+      if (!ok || !data?.audience) {
+        setError(errorMessage(data?.error));
+        return;
+      }
+      setAudience(data.audience);
+    } catch {
+      setError("محاسبهٔ مخاطبان ممکن نشد.");
+    } finally {
+      setBusy(false);
     }
-    setAudience(data.audience);
   }, [segmentId, channel]);
 
   // Re-resolve when the channel changes, so the numbers can never describe a
@@ -97,7 +106,9 @@ export function CampaignAudiencePanel() {
     >
       <ErrorBox>{error}</ErrorBox>
 
-      {segments !== null && segments.length === 0 ? (
+      {segments === null ? (
+        <LoadingSkeleton rows={3} label="در حال بارگذاری بخش‌های مشتریان" />
+      ) : segments.length === 0 ? (
         <EmptyState>
           هنوز بخشی از مشتریان تعریف نشده است.{" "}
           <a className="font-semibold text-teal-700 underline-offset-4 hover:underline" href={crmSectionHref("segments")}>
@@ -143,7 +154,9 @@ export function CampaignAudiencePanel() {
             {busy ? "در حال محاسبه…" : "محاسبهٔ مخاطبان"}
           </SecondaryButton>
 
-          {audience ? (
+          {busy ? (
+            <LoadingSkeleton rows={3} compact label="در حال محاسبه مخاطبان کمپین" />
+          ) : audience ? (
             <>
               <div className="grid gap-2 sm:grid-cols-3">
                 <Figure label="مطابق قاعده" value={audience.matched} />

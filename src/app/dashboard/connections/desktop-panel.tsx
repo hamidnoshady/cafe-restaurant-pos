@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
+
 /**
  * «برنامه دسکتاپ» — the screen that fixes the reported failure.
  *
@@ -155,7 +157,7 @@ export function DesktopPanel() {
     await load();
   }
 
-  if (loading) return <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>;
+  if (loading) return <LoadingSkeleton rows={3} />;
 
   // A site install (the café laptop itself) is the thing that *redeems* a
   // code. It holds a copy of the business, not the original, so issuing one

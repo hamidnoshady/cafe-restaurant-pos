@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
+
 import { useCallback, useEffect, useState } from "react";
 import { formatQuantity } from "@/lib/digits";
 import { useMoney } from "@/components/money/money-context";
@@ -27,7 +29,7 @@ export function ReportsSection({ apiBase = "/api/accessories" }: { apiBase?: str
   }, [apiBase]);
   useEffect(load, [load]);
 
-  if (!rows) return <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>;
+  if (!rows) return <LoadingSkeleton rows={3} />;
 
   return (
     <section aria-labelledby="accessories-reports-heading" className="min-w-0 overflow-hidden rounded-2xl bg-card">

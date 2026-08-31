@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
+
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import {
   useCallback,
@@ -479,12 +481,7 @@ function StockCountModal({
         </header>
 
         {detail === null ? (
-          <p
-            aria-live="polite"
-            className="py-8 text-center text-sm text-muted-foreground"
-          >
-            در حال بارگذاری…
-          </p>
+          <LoadingSkeleton rows={4} />
         ) : (
           <div className="space-y-4">
             {error ? (

@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
+
 import { useEffect, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
@@ -78,7 +80,7 @@ export function ArStatementPanel({
         </header>
 
         {lines === null ? (
-          <p aria-live="polite" className="py-8 text-center text-sm text-muted-foreground">در حال بارگذاری…</p>
+          <LoadingSkeleton rows={3} />
         ) : lines.length === 0 ? (
           <p className="rounded-xl border border-dashed border-border bg-stone-50 px-4 py-8 text-center text-sm text-muted-foreground">
             هنوز فعالیتی برای این مشتری ثبت نشده است.

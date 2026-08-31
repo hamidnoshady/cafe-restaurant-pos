@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { SectionCard, StatusBadge } from "../../page-chrome";
+import { LoadingSkeleton, SectionCard, SectionCardSkeleton, StatusBadge } from "../../page-chrome";
 import { api, ErrorBox, InfoBox, inputClass, errorMessageOrRaw } from "../../ui";
 
 interface Connection {
@@ -32,37 +32,57 @@ const EMPTY_MANIFEST = JSON.stringify(
 );
 
 export function HolooMigrationWizard({ initialConnectionId }: { initialConnectionId: string | null }) {
-  const [connections, setConnections] = useState<Connection[]>([]);
+  const [connections, setConnections] = useState<Connection[] | null>(null);
   const [connectionId, setConnectionId] = useState(initialConnectionId ?? "");
   const [manifestText, setManifestText] = useState(EMPTY_MANIFEST);
-  const [runs, setRuns] = useState<RunRow[]>([]);
+  const [runs, setRuns] = useState<RunRow[] | null>(null);
   const [selectedRunId, setSelectedRunId] = useState("");
   const [result, setResult] = useState<unknown>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
-  const selectedConnection = useMemo(() => connections.find((c) => c.id === connectionId) ?? null, [connections, connectionId]);
+  const selectedConnection = useMemo(
+    () => connections?.find((c) => c.id === connectionId) ?? null,
+    [connections, connectionId],
+  );
 
   const load = useCallback(async () => {
-    const res = await api<{ connections: Connection[] }>("/api/integrations/connections");
-    if (!res.ok) {
-      setError(errorMessageOrRaw((res.data as { error?: string }).error));
-      return;
+    try {
+      const res = await api<{ connections: Connection[] }>("/api/integrations/connections");
+      if (!res.ok) {
+        setError(errorMessageOrRaw((res.data as { error?: string }).error));
+        setConnections([]);
+        return;
+      }
+      const holoo = res.data.connections.filter((connection) => connection.provider === "holoo");
+      setConnections(holoo);
+      const nextConnectionId = initialConnectionId && holoo.some((c) => c.id === initialConnectionId)
+        ? initialConnectionId
+        : connectionId || holoo[0]?.id || "";
+      if (nextConnectionId !== connectionId) setConnectionId(nextConnectionId);
+    } catch {
+      setError("بارگذاری اتصال‌های هلو ممکن نشد.");
+      setConnections([]);
     }
-    const holoo = res.data.connections.filter((connection) => connection.provider === "holoo");
-    setConnections(holoo);
-    const nextConnectionId = initialConnectionId && holoo.some((c) => c.id === initialConnectionId)
-      ? initialConnectionId
-      : connectionId || holoo[0]?.id || "";
-    if (nextConnectionId !== connectionId) setConnectionId(nextConnectionId);
   }, [connectionId, initialConnectionId]);
 
   const loadRuns = useCallback(async (id: string) => {
-    if (!id) return;
-    const res = await api<{ runs: RunRow[] }>(`/api/integrations/connections/${id}/migration`);
-    if (res.ok) {
-      setRuns(res.data.runs);
-      setSelectedRunId((current) => current || res.data.runs[0]?.id || "");
+    if (!id) {
+      setRuns([]);
+      setSelectedRunId("");
+      return;
+    }
+    setRuns(null);
+    try {
+      const res = await api<{ runs: RunRow[] }>(`/api/integrations/connections/${id}/migration`);
+      const nextRuns = res.ok ? res.data.runs : [];
+      setRuns(nextRuns);
+      setSelectedRunId((current) =>
+        nextRuns.some((run) => run.id === current) ? current : nextRuns[0]?.id || "",
+      );
+    } catch {
+      setRuns([]);
+      setSelectedRunId("");
     }
   }, []);
 
@@ -137,6 +157,8 @@ export function HolooMigrationWizard({ initialConnectionId }: { initialConnectio
     await loadRuns(connectionId);
   }
 
+  if (connections === null) return <SectionCardSkeleton rows={5} />;
+
   return (
     <div className="space-y-5">
       {error ? <ErrorBox>{error}</ErrorBox> : null}
@@ -176,15 +198,19 @@ export function HolooMigrationWizard({ initialConnectionId }: { initialConnectio
       </SectionCard>
 
       <SectionCard title="۳) Rollback run" description="Rollback فقط ردیف‌هایی را برمی‌گرداند که mapping همان run را دارند؛ اگر بعداً مصرف شده باشند، دیتابیس جلوی برگشت خطرناک را می‌گیرد.">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <select className={inputClass} value={selectedRunId} onChange={(e) => setSelectedRunId(e.target.value)}>
-            <option value="">run را انتخاب کنید…</option>
-            {runs.map((run) => (
-              <option key={run.id} value={run.id}>{run.id} — {run.status}</option>
-            ))}
-          </select>
-          <Button type="button" variant="outline" disabled={!selectedRunId || busy === "rollback"} onClick={rollback}>Rollback</Button>
-        </div>
+        {runs === null ? (
+          <LoadingSkeleton rows={1} compact label="در حال بارگذاری اجرای مهاجرت" />
+        ) : (
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <select className={inputClass} value={selectedRunId} onChange={(e) => setSelectedRunId(e.target.value)}>
+              <option value="">run را انتخاب کنید…</option>
+              {runs.map((run) => (
+                <option key={run.id} value={run.id}>{run.id} — {run.status}</option>
+              ))}
+            </select>
+            <Button type="button" variant="outline" disabled={!selectedRunId || busy === "rollback"} onClick={rollback}>Rollback</Button>
+          </div>
+        )}
       </SectionCard>
 
       <SectionCard title="خروجی">

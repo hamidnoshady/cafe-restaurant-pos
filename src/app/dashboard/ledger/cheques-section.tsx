@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
+
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
 /**
  * The cheque register (چک‌ها).
@@ -162,7 +164,7 @@ export function ChequesSection({
 
         <div className="mt-5">
           {cheques === null ? (
-            <p aria-live="polite" className="text-sm text-muted-foreground">در حال بارگذاری…</p>
+            <LoadingSkeleton rows={3} />
           ) : cheques.length === 0 ? (
             <p className="rounded-xl border border-dashed border-stone-200/80 bg-stone-50 px-4 py-8 text-center text-sm text-muted-foreground">
               چکی ثبت نشده است.

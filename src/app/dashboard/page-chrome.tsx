@@ -18,6 +18,7 @@
  * which is only ever rendered from a client manager.
  */
 import type { ReactNode } from "react";
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
 /**
@@ -214,6 +215,107 @@ export function EmptyState({ children }: { children: ReactNode }) {
     <p className="rounded-xl border border-dashed border-stone-200 px-3 py-6 text-center text-sm text-muted-foreground">
       {children}
     </p>
+  );
+}
+
+/**
+ * A content-shaped placeholder for data that is still being read.
+ *
+ * Keep the loading state visually stable: rows have the same density as the
+ * lists and tables they replace, the animation is inherited from the shared
+ * Skeleton primitive, and the global reduced-motion rule disables its pulse.
+ * The spoken label means assistive technology receives useful progress while
+ * the decorative bars stay out of its accessibility tree.
+ */
+export function LoadingSkeleton({
+  rows = 4,
+  label = "در حال بارگذاری اطلاعات",
+  className,
+  compact = false,
+}: {
+  rows?: number;
+  label?: string;
+  className?: string;
+  compact?: boolean;
+}) {
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+      aria-label={label}
+      className={cn("min-w-0 space-y-3", className)}
+    >
+      <div aria-hidden="true" className="space-y-3">
+        {Array.from({ length: rows }, (_, index) => (
+          <div
+            key={index}
+            className={cn(
+              "flex items-center justify-between gap-4 rounded-xl border border-stone-100 bg-stone-50/60",
+              compact ? "min-h-10 px-3 py-2" : "min-h-14 px-4 py-3",
+            )}
+          >
+            <div className="min-w-0 flex-1 space-y-2">
+              <Skeleton className={cn("h-3.5", index % 3 === 0 ? "w-2/5" : "w-3/5")} />
+              {!compact ? <Skeleton className="h-3 w-4/5" /> : null}
+            </div>
+            <Skeleton className={cn("shrink-0", compact ? "h-5 w-12" : "h-7 w-16", "rounded-full")} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** A complete card placeholder, used while a client-rendered section hydrates its data. */
+export function SectionCardSkeleton({
+  rows = 4,
+  label,
+  className,
+}: {
+  rows?: number;
+  label?: string;
+  className?: string;
+}) {
+  return (
+    <SectionCard
+      className={className}
+      title={<Skeleton aria-hidden="true" className="h-5 w-36" />}
+      description={<Skeleton aria-hidden="true" className="h-3 w-56 max-w-full" />}
+    >
+      <LoadingSkeleton rows={rows} label={label} />
+    </SectionCard>
+  );
+}
+
+/**
+ * Route-level dashboard fallback. It mirrors the shared header, KPI cards and
+ * primary table so navigation never produces a blank canvas or a misleading
+ * empty state while a server page is resolving.
+ */
+export function DashboardPageSkeleton() {
+  return (
+    <PageShell>
+      <div role="status" aria-live="polite" aria-busy="true" aria-label="در حال بارگذاری صفحه">
+        <header className="mb-5 flex items-start justify-between gap-3 border-b border-stone-200/80 pb-5 sm:mb-6 sm:pb-6">
+          <div aria-hidden="true" className="min-w-0 flex-1 space-y-3">
+            <Skeleton className="h-8 w-48 max-w-2/3" />
+            <Skeleton className="h-4 w-[32rem] max-w-full" />
+          </div>
+          <Skeleton aria-hidden="true" className="h-10 w-24 shrink-0 rounded-lg" />
+        </header>
+        <div aria-hidden="true" className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {Array.from({ length: 4 }, (_, index) => (
+            <div key={index} className={cn(cardClass, "space-y-3 p-4 sm:p-5")}>
+              <Skeleton className="h-4 w-24" />
+              <Skeleton className="h-8 w-28" />
+              <Skeleton className="h-3 w-36 max-w-full" />
+            </div>
+          ))}
+        </div>
+        <SectionCardSkeleton rows={5} label="در حال بارگذاری محتوای صفحه" />
+      </div>
+    </PageShell>
   );
 }
 

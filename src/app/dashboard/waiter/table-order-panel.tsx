@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
+
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { toPersianDigits } from "@/lib/digits";
@@ -380,9 +382,7 @@ export function TableOrderPanel({
             <ErrorBox>{error}</ErrorBox>
             {info ? <InfoBox>{info}</InfoBox> : null}
             {!menu ? (
-              <p className="text-sm text-muted-foreground">
-                در حال بارگذاری منو…
-              </p>
+              <LoadingSkeleton rows={5} label="در حال بارگذاری منو" />
             ) : (
               <>
                 <div className="mb-3 flex gap-1 overflow-x-auto border-b border-border pb-3">

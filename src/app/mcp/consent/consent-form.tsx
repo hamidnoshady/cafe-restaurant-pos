@@ -11,6 +11,7 @@
  * button, and «اجازه بده» must never quietly mean "and it can change my prices".
  */
 import { useCallback, useEffect, useState } from "react";
+import { FormLoadingSkeleton } from "@/components/form-loading-skeleton";
 import { Button } from "@/components/ui/button";
 import { api, ErrorBox, InfoBox } from "@/app/dashboard/ui";
 import {
@@ -136,7 +137,7 @@ export function ConsentForm(props: {
   if (loading) {
     return (
       <ConsentShell title="اتصال برنامهٔ هوش مصنوعی">
-        <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>
+        <FormLoadingSkeleton rows={3} showHeading={false} label="در حال بارگذاری درخواست اتصال" />
       </ConsentShell>
     );
   }
