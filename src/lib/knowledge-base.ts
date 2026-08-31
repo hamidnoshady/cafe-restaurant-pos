@@ -47,6 +47,7 @@ export const KNOWLEDGE_SECTIONS: readonly KnowledgeSection[] = [
   { key: "reservations", label: "رزروها", route: "/dashboard/reservations" },
   { key: "delivery", label: "ارسال سفارش", route: "/dashboard/delivery" },
   { key: "connections", label: "اتصال‌ها", route: "/dashboard/connections" },
+  { key: "website", label: "وب‌سایت", route: "/dashboard/website" },
   { key: "projects", label: "پروژه‌ها", route: "/dashboard/projects" },
   { key: "ai", label: "دستیار هوشمند", route: "/dashboard/ai" },
   { key: "kitchen", label: "آشپزخانه", route: "/dashboard/kitchen" },

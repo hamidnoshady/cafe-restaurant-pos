@@ -27,6 +27,7 @@ export const APP_KEYS = [
   "sales",
   "crm",
   "growth",
+  "website",
   "operations",
   "accounting",
   "connections",
@@ -92,11 +93,27 @@ export const APPS: AppDef[] = [
     // a management dashboard and one section per engine — the same shape the
     // accounting suite has — over the same services and posting rules the
     // three old flat pages used.
-    // `website` and `messaging` remain forward references here: both act *on*
-    // an audience rather than owning the customer record, so they stay with
-    // the engines that will use them. `crm` and `customers` left for the CRM
-    // app above — see the note there.
-    modules: ["loyalty", "promotions", "commission", "website", "messaging"],
+    // `messaging` remains a forward reference here: it acts *on* an audience
+    // rather than owning the customer record, so it stays with the engines
+    // that will use it. `crm` and `customers` left for the CRM app above —
+    // see the note there. `website` left too, below — see its own note.
+    modules: ["loyalty", "promotions", "commission", "messaging"],
+  },
+  {
+    key: "website",
+    label: "وب‌سایت",
+    description: "سایت اینترنتی و فروشگاه آنلاین کسب‌وکار، روی پلتفرم سایت‌ساز مستقل.",
+    // Originally seated under Growth (#378) on the assumption that a website
+    // is an audience-growing surface like a campaign. It is really an
+    // integration with its own external system of record — a separate
+    // deployment (eshobe-cms) that this app holds one encrypted credential
+    // for, the same shape as the WooCommerce or MCP connections, not a
+    // marketing engine that reads and writes this app's own tables. Folding
+    // it into Growth would have made a page of a different product read as a
+    // section of this one's marketing tab. It is its own app instead, a peer
+    // of Growth rather than a folder inside it — see
+    // docs/eshobe-cms-integration.md for the connection this app owns.
+    modules: ["website"],
   },
   {
     key: "operations",

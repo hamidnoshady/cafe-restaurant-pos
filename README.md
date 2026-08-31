@@ -584,10 +584,34 @@ into the app's sections.
 - **Roles** — a cashier lands directly on «وفاداری و اعتبار», the one growth surface the sell
   side works with, and never sees commission (compensation data) or the KPI dashboard.
 
-CRM (customer segments, consent, the customer file), SMS/email marketing and the website manager
-grow this app rather than adding new sidebar peers.
+SMS/email marketing grows this app rather than adding a new sidebar peer. CRM (customer
+segments, consent, the customer file) and the website manager were both seated here as
+forward references and both later became their own apps instead — see "The Website app"
+below and [docs/phases/Phase-36c-CRM-App.md](docs/phases/Phase-36c-CRM-App.md).
 
 See [docs/phases/Phase-36b-Growth-Marketing-App.md](docs/phases/Phase-36b-Growth-Marketing-App.md).
+
+## The Website app (وب‌سایت)
+
+A peer app at `/dashboard/website` (`src/lib/apps.ts`), not a section of Growth & Marketing:
+it holds one encrypted credential to [`eshobe-cms`](https://github.com/hamidnoshady/eshobe-cms),
+a separately deployed, multi-tenant Payload 3 website platform — the same shape as the
+WooCommerce or MCP connections this app already keeps as their own peers, not a marketing
+engine over Growth's own tables. The two apps are connected over REST with a per-site API
+key, never embedded and never sharing a database; the full contract (credentials, endpoints,
+webhook, DNS/preview setup on both sides) is
+[docs/eshobe-cms-integration.md](docs/eshobe-cms-integration.md).
+
+- **Connect or provision** — attach an existing CMS site with a pasted key, or create one in
+  one action (`POST /api/cms/website/provision`); either way the key is stored encrypted
+  (`eshobe_cms_connections`, migration 0122) and the browser never sees it.
+- **One overview call** — the site's descriptor, pages, catalogue and orders
+  (`GET /api/cms/website/overview`), 30s SWR, owner/manager only.
+- **A DNS checklist and a live preview** — resolves the customer domain from this server,
+  checks it points at the CMS, and reads `domainVerified` from the CMS's own admin flag;
+  once all three are green, an in-app iframe shows the live site.
+- Order status changes (`PATCH /api/cms/website/orders/[id]`) are the one e-commerce write
+  here — the CMS's own hooks settle stock and snapshot the change.
 
 ## The business day (روز کاری)
 
