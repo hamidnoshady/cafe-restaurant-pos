@@ -2,7 +2,7 @@
 
 Tracked by GitHub issue [#228](https://github.com/hamidnoshady/cafe-restaurant-pos/issues/228).
 
-## Status: Waves 1, 2, 4 and 5 implemented; Wave 3 is scaffolding only
+## Status: all five waves implemented; Wave 3 is at step 2 of its three-step migration
 
 This document was written as the specification before any of it was built, and the rest of
 it — file paths, function signatures, migration SQL — is still that original design. It has not
@@ -14,16 +14,91 @@ What is actually true of the code today:
 - **Waves 1, 2, 4 and 5** (perimeter/security headers, login lockout, MFA — TOTP and Kavenegar
   SMS OTP —, VPN-only/LAN HTTPS, and the Postgres-backed rate limiter) are implemented and
   covered by passing unit and integration tests against a real PostgreSQL 16/18.
-- **Wave 3 (field-level encryption at rest) is not implemented, only scaffolded.**
-  `business_encryption_keys` (migration 0072) exists and is RLS-protected, and
-  `src/lib/field-crypto.ts` / `src/lib/encrypted-columns.ts` provide the AES-256-GCM primitive
-  and the Tier A/B column registry this section describes — but nothing mints or wraps a DEK
-  (`POS_MASTER_KEY` is referenced nowhere in code), no `*_enc`/`*_bidx` columns exist on
-  `customers`/`reservations`, no `*-service.ts` reads or writes through `encryptField`/
-  `decryptField`, and `scripts/encrypt-fields.ts` is a literal no-op stub. `customers.phone`,
-  `customers.address`, `customers.notes` and `reservations.customer_phone` are plaintext in the
-  database exactly as before this phase. Picking this wave up is still execution against the
-  design below, not re-derivation — but it has not been started.
+- **Wave 2 is now complete end to end**, not just on the server: the login and platform-login
+  screens carry the challenge/verify second step (`src/components/auth/mfa-step.tsx`), grace
+  issues a real session and nags instead of blocking, recovery codes are issued and shown once
+  at enrolment (and accepted on verify), the first-run and create-business flows show the TOTP
+  QR once, `/platform/security` reads out who is enrolled and extends a single account's grace,
+  the Kavenegar key has its own configuration page, and its `return.status` codes map to
+  Persian.
+- **Wave 3 (field-level encryption at rest) is implemented through step 2 of the three-step
+  migration.** `POS_MASTER_KEY` / `POS_MASTER_PASSPHRASE` are read by `src/lib/master-key.ts`;
+  `src/lib/business-keys.ts` mints and wraps a per-business DEK into `business_encryption_keys`
+  (also minted inside `provisionBusiness`'s transaction);
+  `migrations/0125_field_encryption_columns.sql` adds `*_enc`/`*_bidx` to `customers` and
+  `reservations` with a blind index on the phone; `customers-service.ts` and the reservations
+  routes dual-write and read the ciphertext with a plaintext fallback;
+  `scripts/encrypt-fields.ts` (`npm run db:encrypt-fields`) is a real, idempotent, resumable,
+  batched backfill; `src/lib/tenant-export.ts` decrypts on export; and
+  `integration/field-encryption.integration.test.ts` asserts the registry against
+  `information_schema.columns`.
+
+  Two decisions were settled rather than deferred, because both get harder after step 3:
+
+  - **Partial phone search.** A blind index does equality and nothing else, so encrypting
+    `phone` ends substring search on it. Rather than accept that wholesale, `customers` carries
+    `phone_last4` — the last four digits, plaintext and indexed — because reading the last four
+    off a receipt is the actual workflow at a till, and losing it silently is the sort of
+    regression noticed three weeks late. Arbitrary substring and *prefix* search are accepted
+    as lost: `0912…` matches half an Iranian customer base. The cost is four digits per
+    customer in a dump, beside a name that was already plaintext; four digits cannot be dialled
+    or messaged. The full argument is in the migration header.
+  - **`phone_e164` → `phone_bidx`.** Done now, not at step 3: `findDuplicates`
+    (`crm-service.ts`) and the duplicate count (`crm-overview.ts`) match on
+    `coalesce(phone_bidx, phone_e164)` — the same prefer-ciphertext-fall-back-to-plaintext rule
+    the read paths use, expressed as a join, collapsing to `phone_bidx` alone when the
+    plaintext columns go. Writing `phone_e164` also moved into `customers-service.ts`, which
+    fixed a pre-existing bug on the way: `crm-service.syncCustomerPhone` had **never had a
+    caller**, so a customer typed into the dashboard had a NULL canonical phone and was
+    invisible to duplicate detection, segments and the SMS-reachable count until somebody ran
+    `npm run db:normalize-phones` by hand.
+
+  - **The lookups, and two shapes of phone match.** Every equality lookup on `phone_e164` now
+    goes through one of two helpers exported by `customers-service.ts`, and the difference
+    between them is deliberate. `phonePairKeySql(alias)` is *row to row* — the duplicate
+    self-joins in `crm-service.findDuplicates` and `crm-overview` — and is
+    `coalesce(phone_bidx, phone_e164)` on both sides, because the two rows are almost always in
+    the same state and a transient miss costs one delayed merge suggestion.
+    `phoneMatchSql(alias, $bidx, $e164)` is *input to row* — `ai-tools.findCustomersTool` and
+    `integrations/sync-service.ts`'s two "is this shopper already here" probes — and prefers
+    the blind index, falling back to `phone_e164` **only for a row that has no blind index
+    yet**. A lookup compares a typed number against a row that may be mid-backfill, and a miss
+    there does not degrade a suggestion: in the WooCommerce sync it creates a second copy of a
+    real person. `phoneMatchKeys(businessId, phone)` computes both forms plus `last4` from one
+    input. The sync's own writers now call `crm-service.syncCustomerPhone` after every
+    `INSERT`/`UPDATE` of a plaintext phone, so a synced shopper is searchable immediately
+    rather than at the next backfill.
+  - **`with_mobile` / `sms_reachable` was a semantic bug, not a rename.** Both counted
+    `phone_e164 IS NOT NULL`, which means "parses as an Iranian number" — a front-desk landline
+    parses, and was being counted as SMS-reachable. `phone_bidx IS NOT NULL` would have
+    preserved the bug (a landline gets a blind index too) while making it invisible. The fix is
+    a classification column: `customers.phone_kind` (`mobile` | `landline` | `unknown`,
+    CHECK-constrained, plaintext, nulled by the same invalidation trigger and filled by the
+    same backfill), written from `phone.ts`'s existing `kind` on every service write. It is a
+    policy classification rather than a number, so it is not PII on its own, and it is cheap:
+    the alternative — decrypting every phone on the reporting path to count them — is not.
+    `mobileReachableSql(alias)` reads it, falling back to the shape of `phone_e164` for rows
+    the backfill has not reached, and yields NULL (uncounted) for a customer with no phone.
+
+  **Step 3 — dropping the plaintext columns — has NOT happened, and prerequisites remain.**
+  What is left, in order: `segments.ts`'s `consentPredicate("sms")` still gates a send on
+  `c.phone IS NOT NULL AND btrim(c.phone) <> ''`, which is a plaintext read and, separately,
+  the same landline question the counts just answered — the audience of a real SMS campaign,
+  so changing who receives one is its own decision and not folded in here; the writers that
+  still touch the plaintext directly (`crm-service.ts`'s merge, the Holoo import) should
+  dual-write rather than lean on the invalidation trigger; and `ai-tools`' and
+  `customers-service`'s `phone ILIKE '%…%'` disappears with the column, which is the accepted
+  loss recorded above (`phone_last4` covers the till workflow, and only that). Tier A (the
+  platform-scope secrets) is also still plaintext — see `TIER_A_PENDING` in
+  `src/lib/encrypted-columns.ts`.
+
+  **`migrations/0126_business_encryption_keys_rls.sql`** fixes a latent bug in 0072's
+  scaffolding, found only once Wave 3 gave that table its first reader: its RLS policy omitted
+  `app_rls_bypass()`, which every other tenant policy honours. On any install where the app
+  connects as the unprivileged `pos_app` role — i.e. every correctly configured one, and not
+  the docker-compose default where `pos` is a superuser and RLS is a silent no-op — minting a
+  DEK under the platform bypass failed with "new row violates row-level security policy", which
+  would have broken business creation outright once a master key was configured.
 
 ## Context: what exists today
 
@@ -686,6 +761,23 @@ cannot know which column is which and would silently encrypt the wrong things. A
 the registry against `information_schema.columns` — the same mechanism
 `tenant-isolation.integration.test.ts` uses against `pg_policy`, and the thing that stops a
 future migration quietly adding a plaintext PII column.
+
+**One deliberate exception to "no encryption logic in the database", and it is not the thing
+that rule prohibits.** `migrations/0125_field_encryption_columns.sql` installs a BEFORE UPDATE
+trigger on `customers` and `reservations` that nulls a row's `*_enc`/`*_bidx` (and
+`phone_last4`) whenever its plaintext column changes without them in the same statement. **Do
+not remove it as cleanup.** It holds no key, performs no cryptography, and knows two tables by
+name; what the rule above forbids is a *generic, transparent* layer guessing which columns to
+encrypt across the whole schema. The trigger exists because these tables are written from more
+places than the services this wave touched — `crm-service.ts`'s merge, the Holoo import, the
+integrations sync — and a writer that updates the plaintext alone would otherwise leave readers
+serving the *previous* value, since reads prefer the ciphertext. A silent wrong answer is worse
+than an unencrypted one. With the trigger, such a write degrades to "correct but not yet
+encrypted", and the next `npm run db:encrypt-fields` repairs the row, which is precisely what
+makes the backfill's `WHERE col_enc IS NULL` resumability load-bearing rather than decorative.
+`NEW.col_enc IS NOT DISTINCT FROM OLD.col_enc` is what distinguishes an aware writer (updates
+both, left alone) from an unaware one (nulled). Removing it does not fail any test that a
+green suite would catch quickly — it fails as stale data in production.
 
 **Interaction with RLS: none, by construction.** `business_id` stays plaintext, so every policy
 in `migrations/0021` is unaffected. The one real interaction is `src/lib/tenant-export.ts`,

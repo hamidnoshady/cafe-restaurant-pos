@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
 import { query } from "@/lib/db";
-import { parseDate, tableConflicts } from "@/lib/reservation-service";
+import {
+  decryptReservationPhones,
+  encryptReservationPhone,
+  parseDate,
+  tableConflicts,
+} from "@/lib/reservation-service";
 import { resolveActiveLocation } from "@/lib/setup-state";
 
 /**
@@ -19,8 +24,8 @@ export const GET = withTenantScope(async (request: NextRequest) => {
   const from = parseDate(url.searchParams.get("from")) ?? new Date(Date.now() - 60 * 60 * 1000);
   const to = parseDate(url.searchParams.get("to")) ?? new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
 
-  const { rows: reservations } = await query(
-    `SELECT r.id, r.table_id, dt.name AS table_name, r.customer_name, r.customer_phone,
+  const { rows: reservations } = await query<{ customer_phone: string | null; customer_phone_enc?: unknown }>(
+    `SELECT r.id, r.table_id, dt.name AS table_name, r.customer_name, r.customer_phone, r.customer_phone_enc,
             r.party_size, r.reserved_at, r.duration_minutes, r.status, r.note, r.seated_session_id
        FROM reservations r
        LEFT JOIN dining_tables dt ON dt.id = r.table_id
@@ -28,7 +33,9 @@ export const GET = withTenantScope(async (request: NextRequest) => {
       ORDER BY r.reserved_at`,
     [location.id, from.toISOString(), to.toISOString()],
   );
-  return NextResponse.json({ reservations });
+  return NextResponse.json({
+    reservations: await decryptReservationPhones(session.businessId, reservations),
+  });
 });
 
 interface CreateBody {
@@ -90,21 +97,27 @@ export const POST = withTenantScope(async (request: NextRequest) => {
     }
   }
 
+  const customerPhone = body.customerPhone?.trim() || null;
+  const phoneCipher = await encryptReservationPhone(session.businessId, customerPhone);
+
   const { rows } = await query<{ id: string }>(
     `INSERT INTO reservations
-        (location_id, table_id, customer_name, customer_phone, party_size, reserved_at, duration_minutes, note, created_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        (location_id, table_id, customer_name, customer_phone, party_size, reserved_at, duration_minutes, note, created_by,
+         customer_phone_enc, customer_phone_bidx)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
      RETURNING id`,
     [
       location.id,
       tableId,
       customerName,
-      body.customerPhone?.trim() || null,
+      customerPhone,
       partySize,
       reservedAt.toISOString(),
       duration,
       body.note?.trim() || null,
       session.sub,
+      phoneCipher.enc,
+      phoneCipher.bidx,
     ],
   );
   return NextResponse.json({ ok: true, id: rows[0].id });

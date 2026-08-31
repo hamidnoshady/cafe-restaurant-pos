@@ -39,6 +39,7 @@ import { PaymentMethodsSettings } from "./payment-methods-settings";
 import { PricingSettings } from "./pricing-settings";
 import { PrinterSettings } from "./printer-settings";
 import { SecurityCenterSettings } from "./security-center-settings";
+import { TwoFactorSettings } from "./two-factor-settings";
 import { ServerSyncSettings } from "./server-sync-settings";
 import { BusinessDaySettings } from "./business-day-settings";
 import { ShiftHistorySettings } from "./shift-history-settings";
@@ -163,7 +164,16 @@ export function SettingsManager({ tabs, features, currentUserId, isOwner }: Sett
         </div>
       ) : null}
       {activeTab === "audit-log" ? <AuditLogSettings /> : null}
-      {activeTab === "security-center" ? <SecurityCenterSettings /> : null}
+      {activeTab === "security-center" ? (
+        <div className="space-y-6">
+          {/* Phase 24 Wave 2 — two-factor enrolment for the signed-in
+              owner/manager, plus the business's manager opt-in. Placed first
+              because it is the one thing on this tab a grace-period nag sends
+              somebody here to do. */}
+          <TwoFactorSettings isOwner={isOwner} />
+          <SecurityCenterSettings />
+        </div>
+      ) : null}
       {activeTab === "backup" ? <BackupManager isOwner={isOwner} /> : null}
     </SectionNav>
   );

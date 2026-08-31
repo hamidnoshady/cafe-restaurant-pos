@@ -657,6 +657,15 @@ function ProvisionForm({ onDone, rootDomain }: { onDone: () => void; rootDomain:
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  /**
+   * Phase 24 Wave 2 — the one and only showing of the new Owner's recovery
+   * codes (and, on a local install, their TOTP secret).
+   *
+   * Held in state rather than auto-dismissed with the rest of the form,
+   * because these values cannot be recovered: the operator has to copy them
+   * out and hand them over before this panel is closed.
+   */
+  const [handover, setHandover] = useState<ProvisionMfaHandover | null>(null);
 
   // Only complain about what has actually been typed; "empty" is enforced by
   // the field being required, not by an error message under a pristine form.
@@ -667,26 +676,40 @@ function ProvisionForm({ onDone, rootDomain }: { onDone: () => void; rootDomain:
     setBusy(true);
     setError(null);
     setInfo(null);
-    const { ok, data } = await api<{ error?: string }>("/api/platform/businesses", {
-      method: "POST",
-      body: JSON.stringify({
-        businessName: businessName.trim(),
-        ownerName: ownerName.trim(),
-        email: email.trim().toLowerCase(),
-        password,
-        ownerPhone: ownerPhone.trim(),
-        locationName: locationName.trim() || undefined,
-        subdomain,
-        industry,
-      }),
-    });
+    const { ok, data } = await api<{ error?: string; mfa?: ProvisionMfaHandover }>(
+      "/api/platform/businesses",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          businessName: businessName.trim(),
+          ownerName: ownerName.trim(),
+          email: email.trim().toLowerCase(),
+          password,
+          ownerPhone: ownerPhone.trim(),
+          locationName: locationName.trim() || undefined,
+          subdomain,
+          industry,
+        }),
+      },
+    );
     setBusy(false);
     if (ok) {
       setInfo("کسب‌وکار ایجاد شد. مالک اکنون می‌تواند وارد شود.");
+      // The recovery codes stop the clock: the panel stays until the operator
+      // confirms they have passed them on, rather than the form closing itself
+      // after 800ms and taking the only copy with it.
+      if (data.mfa && (data.mfa.recoveryCodes?.length || data.mfa.totpSecret)) {
+        setHandover(data.mfa);
+        return;
+      }
       setTimeout(onDone, 800);
     } else {
       setError(errorMessage(data.error));
     }
+  }
+
+  if (handover) {
+    return <ProvisionMfaPanel handover={handover} ownerEmail={email.trim().toLowerCase()} onDone={onDone} />;
   }
 
   return (
@@ -790,6 +813,125 @@ function ProvisionForm({ onDone, rootDomain }: { onDone: () => void; rootDomain:
           </Button>
         </div>
       </form>
+    </Card>
+  );
+}
+
+/** The one-time second-factor material `/api/platform/businesses` returns on create. */
+interface ProvisionMfaHandover {
+  method: "totp" | "sms_otp";
+  totpSecret: string | null;
+  totpUrl: string | null;
+  totpQr: string | null;
+  recoveryCodes: string[];
+}
+
+/**
+ * Phase 24 Wave 2 — hand the new Owner's second-factor material over, once.
+ *
+ * Provisioning enrols the Owner's second factor in the same transaction that
+ * creates the business (so a business has working 2FA from the moment it
+ * exists, rather than depending on someone remembering later), and mints ten
+ * recovery codes. Nothing can show them again: the TOTP secret is stored
+ * encrypted and the codes only as bcrypt hashes.
+ *
+ * The operator is therefore holding, for the length of this panel, credentials
+ * that belong to someone else — so the copy says plainly that they are to be
+ * handed over and not kept, and the panel will not close on a timer.
+ */
+function ProvisionMfaPanel({
+  handover,
+  ownerEmail,
+  onDone,
+}: {
+  handover: ProvisionMfaHandover;
+  ownerEmail: string;
+  onDone: () => void;
+}) {
+  const [confirmed, setConfirmed] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  return (
+    <Card title="ورود دومرحله‌ای مالک — فقط یک بار نمایش داده می‌شود">
+      <InfoBox>
+        کسب‌وکار ساخته شد. موارد زیر را به مالک ({ownerEmail}) تحویل دهید و نزد خود نگه ندارید؛ پس
+        از بستن این پنجره دیگر قابل نمایش نیستند.
+      </InfoBox>
+
+      {handover.method === "sms_otp" ? (
+        <p className="mb-4 text-sm text-white/60">
+          روش اصلی ورود دومرحله‌ای این مالک، پیامک یک‌بارمصرف به شمارهٔ موبایلی است که وارد کردید.
+        </p>
+      ) : null}
+
+      {handover.totpQr ? (
+        <div className="mb-4 flex justify-center">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={handover.totpQr}
+            alt="کد QR ورود دومرحله‌ای"
+            className="size-48 rounded-lg bg-white p-2"
+          />
+        </div>
+      ) : null}
+
+      {handover.totpSecret ? (
+        <div className="mb-4">
+          <p className="mb-1 text-sm text-white/60">کد دستی برنامهٔ رمزساز:</p>
+          <p
+            dir="ltr"
+            className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 font-mono text-sm tracking-wider text-white"
+          >
+            {handover.totpSecret}
+          </p>
+        </div>
+      ) : null}
+
+      {handover.recoveryCodes.length > 0 ? (
+        <div className="mb-4">
+          <p className="mb-2 text-sm text-white/60">
+            ۱۰ کد بازیابی یک‌بارمصرف — تنها راه ورود مالک در صورت گم‌شدن گوشی:
+          </p>
+          <div
+            dir="ltr"
+            className="grid grid-cols-2 gap-1 rounded-lg border border-white/15 bg-white/5 px-3 py-2 font-mono text-sm tracking-wider text-white"
+          >
+            {handover.recoveryCodes.map((c) => (
+              <span key={c}>{c}</span>
+            ))}
+          </div>
+          <div className="mt-2">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(handover.recoveryCodes.join("\n"));
+                  setCopied(true);
+                } catch {
+                  setCopied(false);
+                }
+              }}
+            >
+              {copied ? "کپی شد" : "کپی کدها"}
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
+      <label className="mb-4 flex items-start gap-2 text-sm text-white/80">
+        <input
+          type="checkbox"
+          checked={confirmed}
+          onChange={(e) => setConfirmed(e.target.checked)}
+          className="mt-1 size-4"
+        />
+        <span>این اطلاعات را به مالک تحویل دادم.</span>
+      </label>
+
+      <Button type="button" disabled={!confirmed} onClick={onDone}>
+        بستن
+      </Button>
     </Card>
   );
 }

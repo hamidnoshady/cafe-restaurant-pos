@@ -80,6 +80,22 @@ export const POST = withPlatformScope(async (request: NextRequest) => {
           subdomain: provisioned.businessSubdomain,
           locationId: provisioned.locationId,
         },
+        // Phase 24 Wave 2 — the Owner's second factor, returned exactly once.
+        //
+        // A console-provisioned business is `connected`, so the Owner is
+        // enrolled in SMS OTP to `ownerPhone` and there is no TOTP secret to
+        // print; what there *is* is ten recovery codes, and this response is
+        // the only place they will ever exist in plaintext. The operator hands
+        // them to the Owner. Deliberately not written to the audit payload
+        // below: an audit log that contains the credentials it is auditing is
+        // worse than no audit log.
+        mfa: {
+          method: provisioned.totpSecret ? ("totp" as const) : ("sms_otp" as const),
+          totpSecret: provisioned.totpSecret ?? null,
+          totpUrl: provisioned.totpUrl ?? null,
+          totpQr: provisioned.totpQr ?? null,
+          recoveryCodes: provisioned.recoveryCodes ?? [],
+        },
       },
       { status: 201 },
     );

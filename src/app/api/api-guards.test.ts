@@ -201,6 +201,16 @@ const SELF_GUARDING_ROUTES: Record<string, string> = {
   // Phase 15 — the super-admin console bootstraps from this: it returns the
   // caller's own platform session (or null) and nothing else.
   "platform/auth/me": "returns the caller's own platform session (or null) — nothing else",
+  // Phase 24 Wave 2 — the signed-in user's own second factor. Every path reads
+  // `platformUserId` off the session and never from the body, so there is no
+  // shape of this route that touches another identity's enrolment; that
+  // ownership *is* the authorization, exactly as for auth/businesses. It exists
+  // because the /api/auth/mfa/{challenge,verify,enrol} trio authenticates on
+  // the pre-session `mfa_pending` token, which someone already signed in during
+  // their grace window does not have.
+  "auth/mfa/self":
+    "enrols / re-issues recovery codes for the caller's own identity — the session's own " +
+    "platformUserId is the authorization, and no other account is reachable",
   // AI Hub Wave 1 (issue #141) — a conversation is visible only to the member
   // who started it (actor_user_id), not by role, so ai-conversations.ts's own
   // ownership filter is the authorization, the same shape as auth/businesses.

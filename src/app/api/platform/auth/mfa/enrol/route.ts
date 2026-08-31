@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifyMfaPendingToken, provisionMfaEnrolment, getAccountMfaEnrolments } from "@/lib/mfa-service";
-import { withoutTenantScope } from "@/lib/db";
-import { isMobilePhone, phoneE164 } from "@/lib/phone";
-import { generateSecret, generateURI } from "otplib";
+import { verifyMfaPendingToken } from "@/lib/mfa-service";
+import { enrolMfaMethod } from "@/lib/mfa-enrol";
+import { query, withoutTenantScope } from "@/lib/db";
 
+/**
+ * Enrol a platform admin's second factor, from inside the `mfa_pending`
+ * interstitial. The console's counterpart to `/api/auth/mfa/enrol`; the two
+ * differ only in which identity table the email comes from and which realm the
+ * pending token must name.
+ */
 export async function POST(request: NextRequest) {
   const auth = request.headers.get("authorization");
   const bearer = auth?.startsWith("Bearer ") ? auth.slice("Bearer ".length).trim() : "";
@@ -21,54 +26,38 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
 
-  const method = body.method;
-  if (method !== "totp" && method !== "sms_otp") {
-    return NextResponse.json({ error: "invalid_method" }, { status: 400 });
-  }
-
-  const enrolments = await getAccountMfaEnrolments("platform_admin", payload.sub);
-  const existing = enrolments.find(e => e.method === method);
-  if (existing) {
-    return NextResponse.json({ error: "already_enrolled" }, { status: 409 });
-  }
-
   return withoutTenantScope("platform", async () => {
-    if (method === "totp") {
-      const { query } = await import("@/lib/db");
-      const { rows } = await query<{ email: string }>(`SELECT email FROM platform_admins WHERE id = $1`, [payload.sub]);
-      const email = rows[0]?.email || "admin@example.com";
+    const { rows } = await query<{ email: string }>(
+      `SELECT email::text AS email FROM platform_admins WHERE id = $1`,
+      [payload.sub],
+    );
+    const email = rows[0]?.email;
+    if (!email) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-      const totpSecret = generateSecret();
-      const totpUrl = generateURI({
-        label: email,
-        issuer: "CafePOS",
-        secret: totpSecret,
-        strategy: "totp"
-      });
+    const result = await enrolMfaMethod({
+      subjectRealm: "platform_admin",
+      subjectId: payload.sub,
+      email,
+      method: body.method,
+      phone: body.phone,
+    });
 
-      const isPrimary = enrolments.length === 0;
-      await provisionMfaEnrolment({ query }, "platform_admin", payload.sub, "totp", isPrimary, null, Buffer.from(totpSecret));
-
-      return NextResponse.json({
-        status: "provisioned",
-        totpSecret,
-        totpUrl
-      });
+    if (!result.ok) {
+      const status = result.error === "already_enrolled" ? 409 : 400;
+      return NextResponse.json({ error: result.error }, { status });
     }
 
-    if (method === "sms_otp") {
-      if (!isMobilePhone(body.phone)) {
-        return NextResponse.json({ error: "invalid_phone" }, { status: 400 });
-      }
-      const phone = phoneE164(body.phone);
-      
-      const { query } = await import("@/lib/db");
-      const isPrimary = enrolments.length === 0;
-      await provisionMfaEnrolment({ query }, "platform_admin", payload.sub, "sms_otp", isPrimary, phone, null);
-
-      return NextResponse.json({ status: "provisioned", phone });
-    }
-
-    return NextResponse.json({ error: "bad_request" }, { status: 400 });
+    // The super-admin realm is the one with nobody above it to perform a
+    // rescue, so these ten codes — plus scripts/reset-platform-mfa.ts — are
+    // the entire recovery story for the console. Shown once, here.
+    return NextResponse.json({
+      status: "provisioned",
+      method: result.method,
+      totpSecret: result.totpSecret,
+      totpUrl: result.totpUrl,
+      totpQr: result.totpQr,
+      phone: result.phone,
+      recoveryCodes: result.recoveryCodes,
+    });
   });
 }

@@ -1,11 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifyMfaPendingToken, getAccountMfaEnrolments, getMfaSecretKey } from "@/lib/mfa-service";
+import { verifyMfaPendingToken, getAccountMfaEnrolments } from "@/lib/mfa-service";
+import { verifyMfaCode } from "@/lib/mfa-verify";
+import { countRemainingRecoveryCodes } from "@/lib/mfa-recovery";
 import { query, withoutTenantScope } from "@/lib/db";
-import { createHmac, createDecipheriv, timingSafeEqual } from "node:crypto";
-import { getRealmSecret } from "@/lib/jwt-secret";
-import { TOTP, NobleCryptoPlugin, ScureBase32Plugin } from "otplib";
-import { signPlatformSession, PLATFORM_SESSION_COOKIE, platformSessionCookieOptions, type PlatformAdminRole } from "@/lib/platform-auth";
+import {
+  signPlatformSession,
+  PLATFORM_SESSION_COOKIE,
+  platformSessionCookieOptions,
+  type PlatformAdminRole,
+} from "@/lib/platform-auth";
 
+/**
+ * Second-factor verification for the super-admin realm.
+ *
+ * Same two paths as the tenant route — the enrolled factor, or a single-use
+ * recovery code — and here the recovery path carries the most weight in the
+ * product: there is no role above a platform admin to reset them, so the only
+ * ways back into a console whose phone is gone are one of these ten codes and
+ * `scripts/reset-platform-mfa.ts` run on the box itself.
+ */
 export async function POST(request: NextRequest) {
   const auth = request.headers.get("authorization");
   const bearer = auth?.startsWith("Bearer ") ? auth.slice("Bearer ".length).trim() : "";
@@ -16,7 +29,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  let body: { code?: string };
+  let body: { code?: string; useRecoveryCode?: boolean };
   try {
     body = await request.json();
   } catch {
@@ -28,95 +41,41 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "missing_code" }, { status: 400 });
   }
 
+  const useRecoveryCode = body.useRecoveryCode === true;
   const enrolments = await getAccountMfaEnrolments("platform_admin", payload.sub);
-  const activeEnrolment = enrolments.find(e => e.method === payload.method) || enrolments.find(e => e.is_primary);
+  const activeEnrolment =
+    enrolments.find((e) => e.method === payload.method) || enrolments.find((e) => e.is_primary);
 
-  if (!activeEnrolment) {
+  if (!activeEnrolment && !useRecoveryCode) {
     return NextResponse.json({ error: "not_enrolled" }, { status: 400 });
   }
 
-  const valid = await withoutTenantScope("platform", async () => {
-    if (activeEnrolment.method === "totp") {
-      const { rows } = await query<{ totp_secret: Buffer }>(
-        `SELECT totp_secret FROM mfa_enrolments WHERE subject_realm = 'platform_admin' AND subject_id = $1 AND method = 'totp'`,
-        [payload.sub]
-      );
-      if (rows.length === 0 || !rows[0].totp_secret) return false;
-      const data = rows[0].totp_secret;
-      const iv = data.subarray(0, 12);
-      const tag = data.subarray(12, 28);
-      const ciphertext = data.subarray(28);
-      
-      let totpSecretPlain = "";
-      try {
-        const key = await getMfaSecretKey();
-        const decipher = createDecipheriv("aes-256-gcm", key, iv);
-        decipher.setAuthTag(tag);
-        totpSecretPlain = Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8");
-      } catch (err) {
-        console.error("Failed to decrypt TOTP secret", err);
-        return false;
-      }
-
-
-
-
-
-      const totp = new TOTP({
-        crypto: new NobleCryptoPlugin(),
-        base32: new ScureBase32Plugin(),
-      });
-      const res = await totp.verify(code, { secret: totpSecretPlain });
-      const isValid = res.valid;
-      if (isValid) {
-        await query(`UPDATE mfa_enrolments SET confirmed_at = now() WHERE subject_realm = 'platform_admin' AND subject_id = $1 AND method = 'totp' AND confirmed_at IS NULL`, [payload.sub]);
-      }
-      return isValid;
-    }
-
-    if (activeEnrolment.method === "sms_otp") {
-      const secretKey = await getRealmSecret("platform");
-      const hmac = createHmac("sha256", secretKey).update(code).digest("hex");
-
-      const { rows } = await query<{ id: string; hashed_otp: string; attempts: number }>(
-        `SELECT id, hashed_otp, attempts 
-         FROM mfa_challenges 
-         WHERE subject_realm = 'platform_admin' AND subject_id = $1 AND expires_at > now() 
-         ORDER BY created_at DESC LIMIT 1`,
-        [payload.sub]
-      );
-
-      if (rows.length === 0) return false;
-      
-      const challenge = rows[0];
-      if (challenge.attempts >= 5) {
-        return false;
-      }
-
-      const isMatch = timingSafeEqual(Buffer.from(challenge.hashed_otp, "hex"), Buffer.from(hmac, "hex"));
-      
-      if (!isMatch) {
-        await query(`UPDATE mfa_challenges SET attempts = attempts + 1 WHERE id = $1`, [challenge.id]);
-        return false;
-      }
-
-      await query(`DELETE FROM mfa_challenges WHERE id = $1`, [challenge.id]);
-      await query(`UPDATE mfa_enrolments SET confirmed_at = now() WHERE subject_realm = 'platform_admin' AND subject_id = $1 AND method = 'sms_otp' AND confirmed_at IS NULL`, [payload.sub]);
-      return true;
-    }
-    return false;
+  const outcome = await verifyMfaCode({
+    subjectRealm: "platform_admin",
+    subjectId: payload.sub,
+    method: activeEnrolment?.method ?? null,
+    code,
+    useRecoveryCode,
   });
 
-  if (!valid) {
+  if (outcome === "rejected") {
     const { recordAuthFailure } = await import("@/lib/login-lockout-service");
-    const { rows } = await withoutTenantScope("platform", () => 
-      query(`SELECT email FROM platform_admins WHERE id = $1`, [payload.sub])
+    const { rows } = await withoutTenantScope("platform", () =>
+      query(`SELECT email FROM platform_admins WHERE id = $1`, [payload.sub]),
     );
     if (rows[0]) {
       await recordAuthFailure("platform_admin", rows[0].email as string);
     }
-    return NextResponse.json({ error: "invalid_code" }, { status: 401 });
+    return NextResponse.json(
+      { error: useRecoveryCode ? "invalid_recovery_code" : "invalid_code" },
+      { status: 401 },
+    );
   }
+
+  const recoveryCodesRemaining =
+    outcome === "recovery_code"
+      ? await countRemainingRecoveryCodes("platform_admin", payload.sub)
+      : null;
 
   return withoutTenantScope("platform", async () => {
     const { rows } = await query<{ role: PlatformAdminRole; full_name: string; email: string; token_version: number }>(
@@ -137,6 +96,8 @@ export async function POST(request: NextRequest) {
 
     const res = NextResponse.json({
       admin: { id: payload.sub, fullName: usable.full_name, role: usable.role },
+      usedRecoveryCode: outcome === "recovery_code",
+      recoveryCodesRemaining,
     });
     res.cookies.set(PLATFORM_SESSION_COOKIE, token, platformSessionCookieOptions());
     return res;
