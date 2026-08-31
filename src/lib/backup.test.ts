@@ -11,8 +11,10 @@ import {
   isBackupDue,
   isBackupStale,
   isEncryptedBackup,
+  isFailedRunRetryDue,
   isPlainArtifactName,
   latestSlotBefore,
+  LOCAL_RETRY_MS,
   makeArtifactName,
   parseArtifactTimestamp,
   selectPrunable,
@@ -282,6 +284,33 @@ describe("isBackupDue", () => {
     const afterAnchor = new Date("2026-07-21T00:10:00Z"); // 03:40 Tehran on the 21st
     expect(isBackupDue(ranYesterday, beforeAnchor, config, TEHRAN)).toBe(false);
     expect(isBackupDue(ranYesterday, afterAnchor, config, TEHRAN)).toBe(true);
+  });
+});
+
+describe("isFailedRunRetryDue", () => {
+  const config = { enabled: true, anchorTime: "03:30", intervalHours: 24 };
+
+  it("retries a covered-but-failed slot only after the backoff", () => {
+    const failedAt = "2026-07-21T00:01:00Z"; // 03:31 Tehran — started in the slot, then failed
+    const now = new Date("2026-07-21T00:05:00Z"); // 03:35 Tehran, same slot
+    // The slot is "covered" by started_at, so a plain isBackupDue says no…
+    expect(isBackupDue(failedAt, now, config, TEHRAN)).toBe(false);
+    // …and the retry is still inside its backoff window.
+    expect(isFailedRunRetryDue(failedAt, "failed", now, config, TEHRAN)).toBe(false);
+    // Once LOCAL_RETRY_MS elapses, the failed run becomes due again.
+    const afterBackoff = new Date(new Date(failedAt).getTime() + LOCAL_RETRY_MS);
+    expect(isFailedRunRetryDue(failedAt, "failed", afterBackoff, config, TEHRAN)).toBe(true);
+  });
+
+  it("never retries a success, an in-flight run, or a run from a previous slot", () => {
+    const now = new Date("2026-07-21T00:05:00Z");
+    expect(isFailedRunRetryDue("2026-07-21T00:01:00Z", "success", now, config, TEHRAN)).toBe(false);
+    expect(isFailedRunRetryDue("2026-07-21T00:01:00Z", "running", now, config, TEHRAN)).toBe(false);
+    // A run from before the slot is a fresh-slot case for isBackupDue, not a retry.
+    expect(isFailedRunRetryDue("2026-07-20T23:00:00Z", "failed", now, config, TEHRAN)).toBe(false);
+    expect(
+      isFailedRunRetryDue("2026-07-21T00:01:00Z", "failed", now, { ...config, enabled: false }, TEHRAN),
+    ).toBe(false);
   });
 });
 
