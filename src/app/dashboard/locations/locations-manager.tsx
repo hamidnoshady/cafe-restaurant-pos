@@ -203,7 +203,7 @@ function ComparisonCard() {
             <h3 className="mb-2 text-sm font-medium text-muted-foreground">برترین کارکنان هر شعبه</h3>
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               {overview.locations.map((l) => (
-                <div key={l.id} className="rounded-xl border border-stone-100 bg-stone-50/60 p-3">
+                <div key={l.id} className="rounded-xl border border-border bg-muted/60 p-3">
                   <p className="mb-2 text-sm font-semibold">{l.name}</p>
                   {l.topStaff.length === 0 ? (
                     <p className="text-xs text-muted-foreground">داده‌ای ثبت نشده است.</p>

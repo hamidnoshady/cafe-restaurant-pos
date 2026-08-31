@@ -65,15 +65,15 @@ function FindingList({ findings }: { findings: AccountingFinding[] }) {
   return (
     <ul className="space-y-2">
       {findings.map((finding) => (
-        <li key={finding.code} className="rounded-xl border border-stone-200/80 p-3">
+        <li key={finding.code} className="rounded-xl border border-border/80 p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="text-sm font-medium text-stone-950">{finding.title}</span>
+            <span className="text-sm font-medium text-foreground">{finding.title}</span>
             <StatusBadge tone={SEVERITY_TONE[finding.severity]}>
               {ACCOUNTING_REVIEW_SEVERITY_LABELS[finding.severity]}
             </StatusBadge>
           </div>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">{finding.detail}</p>
-          <p className="mt-1 text-xs leading-5 text-stone-700">{finding.suggestion}</p>
+          <p className="mt-1 text-xs leading-5 text-foreground/80">{finding.suggestion}</p>
         </li>
       ))}
     </ul>
@@ -137,11 +137,11 @@ export function CoworkerInbox({ onChange }: { onChange?: () => void }) {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="font-medium text-stone-950">{run.jobTitle}</span>
+              <span className="font-medium text-foreground">{run.jobTitle}</span>
               <StatusBadge tone={RUN_TONE[run.status]}>{COWORKER_RUN_STATUS_LABELS[run.status]}</StatusBadge>
             </div>
             <p className="mt-1 text-xs leading-5 text-muted-foreground">{run.summary}</p>
-            <p className="mt-1 text-xs text-stone-500">{formatDateTime(run.createdAt)}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{formatDateTime(run.createdAt)}</p>
           </div>
           {actionable ? (
             <div className="flex shrink-0 items-center gap-2">
@@ -165,16 +165,16 @@ export function CoworkerInbox({ onChange }: { onChange?: () => void }) {
         {run.actions.length > 0 ? (
           <ul className="mt-3 space-y-2">
             {run.actions.map((action) => (
-              <li key={action.id} className="rounded-xl border border-stone-200/80 p-3">
+              <li key={action.id} className="rounded-xl border border-border/80 p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-sm font-medium text-stone-950">{action.title}</span>
+                  <span className="text-sm font-medium text-foreground">{action.title}</span>
                   <StatusBadge tone={ACTION_TONE[action.status]}>{ACTION_LABEL[action.status]}</StatusBadge>
                 </div>
                 <p className="mt-1 text-xs leading-5 text-muted-foreground">{action.summary}</p>
                 {/* Why it is waiting, always — a silent hold is what makes an
                     owner stop trusting the feature. */}
                 {action.heldReason ? (
-                  <p className="mt-1 text-xs leading-5 text-amber-800">{action.heldReason}</p>
+                  <p className="mt-1 text-xs leading-5 text-amber-800 dark:text-amber-300">{action.heldReason}</p>
                 ) : null}
                 {action.error ? (
                   <p className="mt-1 text-xs leading-5 text-destructive">{action.error}</p>
@@ -207,7 +207,7 @@ export function CoworkerInbox({ onChange }: { onChange?: () => void }) {
             <EmptyState>چیزی در انتظار تأیید نیست.</EmptyState>
           </div>
         ) : (
-          <ul className="divide-y divide-stone-200/80">{pending.map((run) => renderRun(run, true))}</ul>
+          <ul className="divide-y divide-border/80">{pending.map((run) => renderRun(run, true))}</ul>
         )}
       </SectionCard>
 
@@ -217,7 +217,7 @@ export function CoworkerInbox({ onChange }: { onChange?: () => void }) {
             <EmptyState>هنوز اجرایی ثبت نشده است.</EmptyState>
           </div>
         ) : (
-          <ul className="divide-y divide-stone-200/80">{history.map((run) => renderRun(run, false))}</ul>
+          <ul className="divide-y divide-border/80">{history.map((run) => renderRun(run, false))}</ul>
         )}
       </SectionCard>
     </div>

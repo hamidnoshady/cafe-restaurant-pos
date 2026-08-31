@@ -269,7 +269,7 @@ export function HolooPanel() {
                   {testResult[c.id] ? <span className="text-xs text-muted-foreground">{testResult[c.id]}</span> : null}
                 </div>
                 {c.settings?.writeMode === "direct_sql" ? (
-                  <div className="mt-3 flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 sm:flex-row sm:items-center">
+                  <div className="mt-3 flex flex-col gap-2 rounded-lg border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/15 p-3 sm:flex-row sm:items-center">
                     <input
                       className={inputClass}
                       placeholder="برای مسلح‌سازی بنویسید: holoo-direct-sql"

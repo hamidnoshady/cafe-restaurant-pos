@@ -134,10 +134,10 @@ function isClosed(order: OrderRow): boolean {
 /** Voided orders are muted rather than amber: they are history, not takings. */
 function statusBadgeClass(status: OrderStatus): string {
   return status === "voided"
-    ? "bg-stone-100 text-stone-600"
+    ? "bg-muted text-muted-foreground"
     : status === "completed"
-      ? "bg-emerald-50 text-emerald-700"
-      : "bg-amber-100 text-amber-700";
+      ? "bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+      : "bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300";
 }
 
 const TYPE_LABELS: Record<OrderType, string> = {
@@ -191,7 +191,7 @@ function elapsedLabel(value: string): string | null {
 function OrderRowsSkeleton() {
   return (
     <div
-      className="divide-y divide-stone-200/80"
+      className="divide-y divide-border/80"
       aria-label="در حال بارگذاری سفارش‌ها"
       aria-busy="true"
     >
@@ -223,7 +223,7 @@ function DetailSkeleton() {
         <div className="ops-skeleton h-16 rounded-xl" />
         <div className="ops-skeleton h-16 rounded-xl" />
       </div>
-      <div className="space-y-3 border-y border-stone-200/80 py-4">
+      <div className="space-y-3 border-y border-border/80 py-4">
         {Array.from({ length: 3 }).map((_, index) => (
           <div key={index} className="flex items-center justify-between gap-3">
             <div className="ops-skeleton h-3 w-28 rounded" />
@@ -255,16 +255,16 @@ function OrderDetailsPanel({
   if (!selectedOrder) {
     return (
       <aside
-        className="flex min-h-72 flex-col items-center justify-center rounded-2xl border border-dashed border-stone-200/80 bg-stone-50 p-6 text-center"
+        className="flex min-h-72 flex-col items-center justify-center rounded-2xl border border-dashed border-border/80 bg-muted p-6 text-center"
         aria-label="جزئیات سفارش"
       >
-        <span className="flex size-12 items-center justify-center rounded-2xl bg-amber-100 text-amber-700">
+        <span className="flex size-12 items-center justify-center rounded-2xl bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300">
           <ShoppingBagIcon className="size-5" aria-hidden="true" />
         </span>
-        <h2 className="mt-4 text-sm font-bold text-stone-950">
+        <h2 className="mt-4 text-sm font-bold text-foreground">
           سفارشی برای نمایش نیست
         </h2>
-        <p className="mt-2 max-w-60 text-xs leading-6 text-stone-500">
+        <p className="mt-2 max-w-60 text-xs leading-6 text-muted-foreground">
           برای دیدن خلاصه و ادامهٔ پیگیری، یک سفارش را از فهرست انتخاب کنید.
         </p>
       </aside>
@@ -297,10 +297,10 @@ function OrderDetailsPanel({
       className={`${cardClass} p-4 shadow-[0_1px_3px_rgb(41_37_36/0.03)] md:sticky md:top-0 md:max-h-[calc(100dvh-4.5rem)] md:overflow-y-auto`}
       aria-label="جزئیات سفارش انتخاب‌شده"
     >
-      <div className="flex items-start justify-between gap-3 border-b border-stone-200/80 pb-4">
+      <div className="flex items-start justify-between gap-3 border-b border-border/80 pb-4">
         <div className="min-w-0">
-          <p className="text-xs font-medium text-stone-500">سفارش انتخاب‌شده</p>
-          <h2 className="mt-1 text-xl font-bold text-stone-950">
+          <p className="text-xs font-medium text-muted-foreground">سفارش انتخاب‌شده</p>
+          <h2 className="mt-1 text-xl font-bold text-foreground">
             {toPersianDigits(formatQueueLabel(order.type, order.order_number))}
           </h2>
         </div>
@@ -317,17 +317,17 @@ function OrderDetailsPanel({
         </div>
       ) : error && !selectedDetail ? (
         <div
-          className="mt-4 rounded-xl border border-amber-500/25 bg-amber-50 p-3"
+          className="mt-4 rounded-xl border border-amber-500/25 dark:border-amber-500/60 bg-amber-50 dark:bg-amber-500/15 p-3"
           role="status"
         >
-          <p className="text-sm font-semibold text-stone-600">
+          <p className="text-sm font-semibold text-muted-foreground">
             جزئیات سفارش به‌روز نشد
           </p>
-          <p className="mt-1 text-xs leading-5 text-stone-500">{error}</p>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">{error}</p>
           <button
             type="button"
             onClick={onRetry}
-            className="mt-3 min-h-11 rounded-lg px-2 text-xs font-bold text-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45"
+            className="mt-3 min-h-11 rounded-lg px-2 text-xs font-bold text-amber-700 dark:text-amber-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45"
           >
             تلاش دوباره
           </button>
@@ -336,47 +336,47 @@ function OrderDetailsPanel({
         <>
           {error ? (
             <div
-              className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-amber-500/25 bg-amber-50 p-3"
+              className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-amber-500/25 dark:border-amber-500/60 bg-amber-50 dark:bg-amber-500/15 p-3"
               role="status"
             >
-              <p className="text-xs leading-5 text-stone-600">{error}</p>
+              <p className="text-xs leading-5 text-muted-foreground">{error}</p>
               <button
                 type="button"
                 onClick={onRetry}
-                className="min-h-11 shrink-0 rounded-lg px-2 text-xs font-bold text-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45"
+                className="min-h-11 shrink-0 rounded-lg px-2 text-xs font-bold text-amber-700 dark:text-amber-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45"
               >
                 تلاش دوباره
               </button>
             </div>
           ) : null}
           <dl className="grid grid-cols-2 gap-2 py-4">
-            <div className="rounded-xl bg-stone-50 p-3">
-              <dt className="text-[11px] text-stone-500">نوع سفارش</dt>
-              <dd className="mt-1 text-sm font-bold text-stone-950">
+            <div className="rounded-xl bg-muted p-3">
+              <dt className="text-[11px] text-muted-foreground">نوع سفارش</dt>
+              <dd className="mt-1 text-sm font-bold text-foreground">
                 {TYPE_LABELS[order.type]}
               </dd>
             </div>
-            <div className="rounded-xl bg-stone-50 p-3">
-              <dt className="text-[11px] text-stone-500">مبلغ سفارش</dt>
-              <dd className="mt-1 text-sm font-bold text-amber-700">
+            <div className="rounded-xl bg-muted p-3">
+              <dt className="text-[11px] text-muted-foreground">مبلغ سفارش</dt>
+              <dd className="mt-1 text-sm font-bold text-amber-700 dark:text-amber-300">
                 {money.format(Number(order.total))}
               </dd>
             </div>
             {order.table_name ? (
-              <div className="rounded-xl bg-stone-50 p-3">
-                <dt className="text-[11px] text-stone-500">میز</dt>
-                <dd className="mt-1 truncate text-sm font-bold text-stone-950">
+              <div className="rounded-xl bg-muted p-3">
+                <dt className="text-[11px] text-muted-foreground">میز</dt>
+                <dd className="mt-1 truncate text-sm font-bold text-foreground">
                   {order.table_name}
                 </dd>
               </div>
             ) : null}
             {order.customer_name ? (
-              <div className="col-span-2 rounded-xl bg-stone-50 p-3">
-                <dt className="text-[11px] text-stone-500">مشتری</dt>
-                <dd className="mt-1 truncate text-sm font-bold text-stone-950">
+              <div className="col-span-2 rounded-xl bg-muted p-3">
+                <dt className="text-[11px] text-muted-foreground">مشتری</dt>
+                <dd className="mt-1 truncate text-sm font-bold text-foreground">
                   {order.customer_name}
                   {order.customer_phone ? (
-                    <span className="font-normal text-stone-500">
+                    <span className="font-normal text-muted-foreground">
                       {" · "}
                       {toPersianDigits(order.customer_phone)}
                     </span>
@@ -384,18 +384,18 @@ function OrderDetailsPanel({
                 </dd>
               </div>
             ) : null}
-            <div className="rounded-xl bg-stone-50 p-3">
-              <dt className="text-[11px] text-stone-500">زمان ثبت</dt>
-              <dd className="mt-1 text-sm font-bold text-stone-950">
+            <div className="rounded-xl bg-muted p-3">
+              <dt className="text-[11px] text-muted-foreground">زمان ثبت</dt>
+              <dd className="mt-1 text-sm font-bold text-foreground">
                 {orderTimeLabel(order.opened_at)}
               </dd>
             </div>
             {order.closed_at ? (
-              <div className="rounded-xl bg-stone-50 p-3">
-                <dt className="text-[11px] text-stone-500">
+              <div className="rounded-xl bg-muted p-3">
+                <dt className="text-[11px] text-muted-foreground">
                   {order.status === "voided" ? "زمان ابطال" : "زمان تسویه"}
                 </dt>
-                <dd className="mt-1 text-sm font-bold text-stone-950">
+                <dd className="mt-1 text-sm font-bold text-foreground">
                   {orderTimeLabel(order.closed_at)}
                 </dd>
               </div>
@@ -403,13 +403,13 @@ function OrderDetailsPanel({
           </dl>
 
           <section
-            className="border-y border-stone-200/80 py-4"
+            className="border-y border-border/80 py-4"
             aria-label="اقلام سفارش"
           >
             <div className="mb-3 flex items-center justify-between gap-3">
-              <h3 className="text-sm font-bold text-stone-950">اقلام سفارش</h3>
+              <h3 className="text-sm font-bold text-foreground">اقلام سفارش</h3>
               {selectedDetail ? (
-                <span className="text-xs text-stone-500">
+                <span className="text-xs text-muted-foreground">
                   {toPersianDigits(itemCount)} قلم
                 </span>
               ) : null}
@@ -429,23 +429,23 @@ function OrderDetailsPanel({
                       className={
                         "rounded-xl border p-2.5 text-sm " +
                         (addOns.length > 0
-                          ? "border-amber-200 bg-amber-50"
-                          : "border-stone-200/80 bg-stone-50")
+                          ? "border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/15"
+                          : "border-border/80 bg-muted")
                       }
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
-                          <p className="truncate font-bold text-stone-950">
+                          <p className="truncate font-bold text-foreground">
                             {item.name_snapshot}
-                            <span className="ms-1 text-xs font-semibold text-stone-500">
+                            <span className="ms-1 text-xs font-semibold text-muted-foreground">
                               × {toPersianDigits(item.quantity)}
                             </span>
                           </p>
-                          <p className="mt-0.5 text-[11px] text-stone-500">
+                          <p className="mt-0.5 text-[11px] text-muted-foreground">
                             {money.format(breakdown.unit)} هر واحد
                           </p>
                         </div>
-                        <span className="shrink-0 text-xs font-bold text-amber-700">
+                        <span className="shrink-0 text-xs font-bold text-amber-700 dark:text-amber-300">
                           {money.format(breakdown.total)}
                         </span>
                       </div>
@@ -455,7 +455,7 @@ function OrderDetailsPanel({
                         className="mt-2"
                       />
                       {item.note ? (
-                        <p className="mt-2 line-clamp-2 text-[11px] text-stone-500">
+                        <p className="mt-2 line-clamp-2 text-[11px] text-muted-foreground">
                           یادداشت: {item.note}
                         </p>
                       ) : null}
@@ -463,25 +463,25 @@ function OrderDetailsPanel({
                   );
                 })}
                 {activeItems.length > 5 ? (
-                  <li className="text-xs text-stone-500">
+                  <li className="text-xs text-muted-foreground">
                     و {toPersianDigits(activeItems.length - 5)} قلم دیگر
                   </li>
                 ) : null}
               </ul>
             ) : selectedDetail ? (
-              <p className="text-xs leading-6 text-stone-500">
+              <p className="text-xs leading-6 text-muted-foreground">
                 قلم فعالی برای این سفارش ثبت نشده است.
               </p>
             ) : (
-              <p className="text-xs leading-6 text-stone-500">
+              <p className="text-xs leading-6 text-muted-foreground">
                 خلاصهٔ سفارش آماده است؛ اقلام و عملیات کامل در صفحهٔ جزئیات در
                 دسترس‌اند.
               </p>
             )}
           </section>
 
-          <div className="pt-4 md:sticky md:bottom-0 md:-mx-4 md:-mb-4 md:border-t md:border-stone-200/80 md:bg-card md:px-4 md:pb-4">
-            <p className="mb-3 text-xs text-stone-500">
+          <div className="pt-4 md:sticky md:bottom-0 md:-mx-4 md:-mb-4 md:border-t md:border-border/80 md:bg-card md:px-4 md:pb-4">
+            <p className="mb-3 text-xs text-muted-foreground">
               {closed && order.closed_at
                 ? `${order.status === "voided" ? "باطل‌شده" : "بسته‌شده"} در ${orderDateLabel(order.closed_at)}، ساعت ${orderTimeLabel(order.closed_at)}`
                 : elapsed
@@ -491,7 +491,7 @@ function OrderDetailsPanel({
             <button
               type="button"
               onClick={() => onOpenDetail(order.id)}
-              className="flex min-h-12 w-full items-center justify-center rounded-xl bg-amber-500 px-4 text-sm font-bold text-stone-950 transition duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 active:scale-[0.98] xl:min-h-[52px] motion-reduce:transition-none"
+              className="flex min-h-12 w-full items-center justify-center rounded-xl bg-amber-500 dark:bg-amber-400 px-4 text-sm font-bold text-amber-950 transition duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 active:scale-[0.98] xl:min-h-[52px] motion-reduce:transition-none"
             >
               {/* A closed order can still be corrected — editing or removing it
                   reverses its accounting — and the detail dialog is where that
@@ -811,14 +811,14 @@ export function OrdersList({
     <PageShell>
       <header className={`mb-3 flex flex-col gap-3 ${cardClass} p-3 shadow-[0_1px_3px_rgb(41_37_36/0.03)] sm:p-4 md:flex-row md:items-center md:justify-between`}>
         <div className="flex min-w-0 items-center gap-3">
-          <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700">
+          <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300">
             <ShoppingBagIcon className="size-5" aria-hidden="true" />
           </span>
           <div className="min-w-0">
-            <h1 className="truncate text-lg font-bold text-stone-950">
+            <h1 className="truncate text-lg font-bold text-foreground">
               سفارش‌ها
             </h1>
-            <p className="mt-0.5 truncate text-xs text-stone-500">
+            <p className="mt-0.5 truncate text-xs text-muted-foreground">
               صف سفارش‌های باز و سفارش‌های بسته‌شدهٔ شعبهٔ فعال
             </p>
           </div>
@@ -826,7 +826,7 @@ export function OrdersList({
         <div className="flex items-center justify-between gap-2 md:justify-end">
           <KnowledgeHelpButton section="orders" />
           <span
-            className="text-xs text-stone-500"
+            className="text-xs text-muted-foreground"
             role="status"
             aria-live="polite"
           >
@@ -842,7 +842,7 @@ export function OrdersList({
               type="button"
               onClick={() => setShowBackdated((open) => !open)}
               aria-expanded={showBackdated}
-              className="flex min-h-12 items-center gap-2 rounded-xl border border-stone-200/80 bg-card px-3 text-xs font-bold text-stone-600 transition duration-200 hover:bg-stone-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 active:scale-[0.98] xl:min-h-[52px] motion-reduce:transition-none"
+              className="flex min-h-12 items-center gap-2 rounded-xl border border-border/80 bg-card px-3 text-xs font-bold text-muted-foreground transition duration-200 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 active:scale-[0.98] xl:min-h-[52px] motion-reduce:transition-none"
             >
               {showBackdated ? "بستن فرم گذشته" : "ثبت سفارش گذشته"}
             </button>
@@ -851,7 +851,7 @@ export function OrdersList({
             type="button"
             onClick={() => void load()}
             disabled={isRefreshing}
-            className="flex min-h-12 items-center gap-2 rounded-xl border border-stone-200/80 bg-card px-3 text-xs font-bold text-stone-600 transition duration-200 hover:bg-stone-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 active:scale-[0.98] disabled:opacity-60 xl:min-h-[52px] motion-reduce:transition-none"
+            className="flex min-h-12 items-center gap-2 rounded-xl border border-border/80 bg-card px-3 text-xs font-bold text-muted-foreground transition duration-200 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 active:scale-[0.98] disabled:opacity-60 xl:min-h-[52px] motion-reduce:transition-none"
             aria-label={
               isRefreshing
                 ? "در حال به‌روزرسانی سفارش‌ها"
@@ -875,14 +875,14 @@ export function OrdersList({
 
       {loadError && orders ? (
         <div
-          className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-amber-500/25 bg-amber-50 px-3 py-2 text-xs text-stone-600"
+          className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-amber-500/25 dark:border-amber-500/60 bg-amber-50 dark:bg-amber-500/15 px-3 py-2 text-xs text-muted-foreground"
           role="status"
         >
           <span>{loadError}</span>
           <button
             type="button"
             onClick={() => void load()}
-            className="min-h-11 shrink-0 px-2 font-bold text-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45"
+            className="min-h-11 shrink-0 px-2 font-bold text-amber-700 dark:text-amber-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45"
           >
             تلاش دوباره
           </button>
@@ -898,14 +898,14 @@ export function OrdersList({
         </label>
         <div className="relative">
           <SearchIcon
-            className="pointer-events-none absolute inset-y-0 start-3 my-auto size-4 text-stone-500"
+            className="pointer-events-none absolute inset-y-0 start-3 my-auto size-4 text-muted-foreground"
             aria-hidden="true"
           />
           <input
             id="orders-search"
             value={searchQuery}
             onChange={(event) => setSearchQuery(event.target.value)}
-            className="min-h-12 w-full rounded-xl border border-stone-200/80 bg-stone-50 py-2 pe-3 ps-10 text-sm text-stone-950 outline-none placeholder:text-stone-500 focus-visible:border-amber-500 focus-visible:ring-2 focus-visible:ring-amber-500/25"
+            className="min-h-12 w-full rounded-xl border border-border/80 bg-muted py-2 pe-3 ps-10 text-sm text-foreground outline-none placeholder:text-muted-foreground focus-visible:border-amber-500 dark:focus-visible:border-amber-500/60 focus-visible:ring-2 focus-visible:ring-amber-500/25 dark:focus-visible:ring-amber-400/45"
             placeholder="جستجو در شماره، نوع یا میز سفارش"
           />
         </div>
@@ -917,10 +917,10 @@ export function OrdersList({
           <button
             type="button"
             onClick={() => setStatusFilter("all")}
-            className={`min-h-12 shrink-0 rounded-xl border px-3.5 text-sm font-bold transition duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 active:scale-[0.98] xl:min-h-[52px] motion-reduce:transition-none ${
+            className={`min-h-12 shrink-0 rounded-xl border px-3.5 text-sm font-bold transition duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 active:scale-[0.98] xl:min-h-[52px] motion-reduce:transition-none ${
               statusFilter === "all"
-                ? "border-amber-200 bg-amber-100 text-amber-700"
-                : "border-stone-200/80 bg-card text-stone-600 hover:bg-stone-50"
+                ? "border-amber-200 dark:border-amber-500/30 bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300"
+                : "border-border/80 bg-card text-muted-foreground hover:bg-muted"
             }`}
           >
             همه
@@ -930,10 +930,10 @@ export function OrdersList({
               key={status}
               type="button"
               onClick={() => setStatusFilter(status)}
-              className={`min-h-12 shrink-0 rounded-xl border px-3.5 text-sm font-bold transition duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 active:scale-[0.98] xl:min-h-[52px] motion-reduce:transition-none ${
+              className={`min-h-12 shrink-0 rounded-xl border px-3.5 text-sm font-bold transition duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 active:scale-[0.98] xl:min-h-[52px] motion-reduce:transition-none ${
                 statusFilter === status
-                  ? "border-amber-200 bg-amber-100 text-amber-700"
-                  : "border-stone-200/80 bg-card text-stone-600 hover:bg-stone-50"
+                  ? "border-amber-200 dark:border-amber-500/30 bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300"
+                  : "border-border/80 bg-card text-muted-foreground hover:bg-muted"
               }`}
             >
               {STATUS_LABELS[status]}
@@ -946,10 +946,10 @@ export function OrdersList({
               onClick={() =>
                 setTypeFilter((current) => (current === type ? "all" : type))
               }
-              className={`min-h-12 shrink-0 rounded-xl border px-3.5 text-sm font-bold transition duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 active:scale-[0.98] xl:min-h-[52px] motion-reduce:transition-none ${
+              className={`min-h-12 shrink-0 rounded-xl border px-3.5 text-sm font-bold transition duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 active:scale-[0.98] xl:min-h-[52px] motion-reduce:transition-none ${
                 typeFilter === type
-                  ? "border-amber-200 bg-amber-100 text-amber-700"
-                  : "border-stone-200/80 bg-card text-stone-600 hover:bg-stone-50"
+                  ? "border-amber-200 dark:border-amber-500/30 bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300"
+                  : "border-border/80 bg-card text-muted-foreground hover:bg-muted"
               }`}
             >
               {TYPE_LABELS[type]}
@@ -958,12 +958,12 @@ export function OrdersList({
         </div>
 
         {shifts.length > 0 ? (
-          <label className="mt-2 flex min-h-12 min-w-0 items-center gap-2 rounded-xl border border-stone-200/80 bg-card px-3 text-xs text-stone-500 xl:min-h-[52px]">
+          <label className="mt-2 flex min-h-12 min-w-0 items-center gap-2 rounded-xl border border-border/80 bg-card px-3 text-xs text-muted-foreground xl:min-h-[52px]">
             <span className="shrink-0">شیفت</span>
             <SearchableSelect
               value={shiftFilter}
               onChange={setShiftFilter}
-              className="min-h-10 min-w-0 flex-1 border-0 bg-transparent text-sm text-stone-950 outline-none"
+              className="min-h-10 min-w-0 flex-1 border-0 bg-transparent text-sm text-foreground outline-none"
               ariaLabel="مرور سفارش‌های بسته‌شدهٔ یک شیفت"
               options={[
                 {
@@ -984,12 +984,12 @@ export function OrdersList({
         ) : null}
 
         <div className="mt-2 flex flex-col gap-2 sm:flex-row">
-          <label className="flex min-h-12 min-w-0 flex-1 items-center gap-2 rounded-xl border border-stone-200/80 bg-card px-3 text-xs text-stone-500 xl:min-h-[52px]">
+          <label className="flex min-h-12 min-w-0 flex-1 items-center gap-2 rounded-xl border border-border/80 bg-card px-3 text-xs text-muted-foreground xl:min-h-[52px]">
             <span className="shrink-0">میز</span>
             <SearchableSelect
               value={tableFilter}
               onChange={setTableFilter}
-              className="min-h-10 min-w-0 flex-1 border-0 bg-transparent text-sm text-stone-950 outline-none"
+              className="min-h-10 min-w-0 flex-1 border-0 bg-transparent text-sm text-foreground outline-none"
               ariaLabel="فیلتر میز سفارش"
               options={[
                 { value: "all", label: "همهٔ میزها" },
@@ -1000,14 +1000,14 @@ export function OrdersList({
               ]}
             />
           </label>
-          <div className="flex min-h-12 min-w-0 flex-1 items-center gap-2 rounded-xl border border-stone-200/80 bg-card px-3 text-xs text-stone-500 xl:min-h-[52px]">
+          <div className="flex min-h-12 min-w-0 flex-1 items-center gap-2 rounded-xl border border-border/80 bg-card px-3 text-xs text-muted-foreground xl:min-h-[52px]">
             <span className="shrink-0">تاریخ</span>
             <div className="min-w-0 flex-1">
               <JalaliDatePicker
                 value={dateFilter}
                 onChange={setDateFilter}
                 placeholder="همهٔ روزها"
-                className="min-h-10 w-full min-w-0 bg-transparent text-sm text-stone-950 outline-none"
+                className="min-h-10 w-full min-w-0 bg-transparent text-sm text-foreground outline-none"
               />
             </div>
           </div>
@@ -1015,7 +1015,7 @@ export function OrdersList({
             <button
               type="button"
               onClick={clearFilters}
-              className="min-h-12 rounded-xl px-3 text-sm font-bold text-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 xl:min-h-[52px]"
+              className="min-h-12 rounded-xl px-3 text-sm font-bold text-amber-700 dark:text-amber-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 xl:min-h-[52px]"
             >
               پاک‌کردن فیلترها
             </button>
@@ -1028,16 +1028,16 @@ export function OrdersList({
           className={`min-w-0 overflow-hidden ${cardClass} shadow-[0_1px_3px_rgb(41_37_36/0.03)]`}
           aria-label="فهرست سفارش‌ها"
         >
-          <div className="flex items-center justify-between gap-3 border-b border-stone-200/80 px-4 py-3">
-            <h2 className="text-sm font-bold text-stone-950">صف سفارش‌ها</h2>
-            <span className="text-xs text-stone-500">
+          <div className="flex items-center justify-between gap-3 border-b border-border/80 px-4 py-3">
+            <h2 className="text-sm font-bold text-foreground">صف سفارش‌ها</h2>
+            <span className="text-xs text-muted-foreground">
               {toPersianDigits(filteredOrders.length)} مورد
             </span>
           </div>
 
           {orders ? (
             <div
-              className="flex items-center gap-2 border-b border-stone-200/80 bg-stone-50 px-4 py-2 text-[11px] text-stone-500"
+              className="flex items-center gap-2 border-b border-border/80 bg-muted px-4 py-2 text-[11px] text-muted-foreground"
               role="status"
             >
               <span
@@ -1046,7 +1046,7 @@ export function OrdersList({
                 aria-label="راهنمای بازه سفارش‌ها"
               >
                 <InfoIcon
-                  className="size-4 text-amber-700"
+                  className="size-4 text-amber-700 dark:text-amber-300"
                   aria-hidden="true"
                 />
               </span>
@@ -1074,29 +1074,29 @@ export function OrdersList({
               className="flex min-h-64 flex-col items-center justify-center p-6 text-center"
               role="status"
             >
-              <p className="text-sm font-bold text-stone-950">
+              <p className="text-sm font-bold text-foreground">
                 بارگذاری سفارش‌ها ممکن نشد
               </p>
-              <p className="mt-2 max-w-72 text-xs leading-6 text-stone-500">
+              <p className="mt-2 max-w-72 text-xs leading-6 text-muted-foreground">
                 {loadError || "دوباره تلاش کنید."}
               </p>
               <button
                 type="button"
                 onClick={() => void load()}
-                className="mt-4 min-h-12 rounded-xl bg-amber-100 px-4 text-sm font-bold text-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45"
+                className="mt-4 min-h-12 rounded-xl bg-amber-100 dark:bg-amber-500/20 px-4 text-sm font-bold text-amber-700 dark:text-amber-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45"
               >
                 تلاش دوباره
               </button>
             </div>
           ) : orderRows.length === 0 ? (
             <div className="flex min-h-64 flex-col items-center justify-center p-6 text-center">
-              <span className="flex size-12 items-center justify-center rounded-2xl bg-amber-100 text-amber-700">
+              <span className="flex size-12 items-center justify-center rounded-2xl bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300">
                 <ShoppingBagIcon className="size-5" aria-hidden="true" />
               </span>
-              <p className="mt-4 text-sm font-bold text-stone-950">
+              <p className="mt-4 text-sm font-bold text-foreground">
                 سفارشی برای نمایش نیست
               </p>
-              <p className="mt-2 max-w-72 text-xs leading-6 text-stone-500">
+              <p className="mt-2 max-w-72 text-xs leading-6 text-muted-foreground">
                 با ثبت سفارش جدید، این صف به‌صورت خودکار به‌روز می‌شود.
                 سفارش‌های بسته‌شده تا پایان روز کاری همین‌جا می‌مانند.
               </p>
@@ -1104,22 +1104,22 @@ export function OrdersList({
           ) : filteredOrders.length === 0 ? (
             <div className="flex min-h-64 flex-col items-center justify-center p-6 text-center">
               <SearchIcon
-                className="size-6 text-stone-400"
+                className="size-6 text-muted-foreground"
                 aria-hidden="true"
               />
-              <p className="mt-3 text-sm font-bold text-stone-950">
+              <p className="mt-3 text-sm font-bold text-foreground">
                 سفارشی با این فیلتر پیدا نشد
               </p>
               <button
                 type="button"
                 onClick={clearFilters}
-                className="mt-3 min-h-11 px-3 text-sm font-bold text-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45"
+                className="mt-3 min-h-11 px-3 text-sm font-bold text-amber-700 dark:text-amber-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45"
               >
                 پاک‌کردن فیلترها
               </button>
             </div>
           ) : (
-            <div className="divide-y divide-stone-200/80">
+            <div className="divide-y divide-border/80">
               {filteredOrders.map((order) => {
                 const isSelected = order.id === selectedOrderId;
                 const closed = isClosed(order);
@@ -1143,15 +1143,15 @@ export function OrdersList({
                     onClick={() => openDetail(order.id)}
                     aria-pressed={isSelected}
                     aria-haspopup="dialog"
-                    className={`flex min-h-[76px] w-full items-center justify-between gap-3 px-4 py-3 text-start transition duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-500/45 active:scale-[0.995] md:min-h-[82px] xl:min-h-[88px] motion-reduce:transition-none ${
+                    className={`flex min-h-[76px] w-full items-center justify-between gap-3 px-4 py-3 text-start transition duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 active:scale-[0.995] md:min-h-[82px] xl:min-h-[88px] motion-reduce:transition-none ${
                       isSelected
-                        ? "bg-amber-50"
-                        : "bg-card hover:bg-stone-50"
+                        ? "bg-amber-50 dark:bg-amber-500/15"
+                        : "bg-card hover:bg-muted"
                     }`}
                   >
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-bold text-stone-950">
+                        <span className="font-bold text-foreground">
                           {toPersianDigits(
                             formatQueueLabel(order.type, order.order_number),
                           )}
@@ -1167,9 +1167,9 @@ export function OrdersList({
                           read at a glance off this list, and a name folded in
                           among the type, table and timings is not. */}
                       {order.customer_name ? (
-                        <p className="mt-1 flex items-center gap-1 text-sm font-bold text-stone-950">
+                        <p className="mt-1 flex items-center gap-1 text-sm font-bold text-foreground">
                           <UserIcon
-                            className="size-3.5 shrink-0 text-amber-700"
+                            className="size-3.5 shrink-0 text-amber-700 dark:text-amber-300"
                             aria-hidden="true"
                           />
                           <span className="truncate">
@@ -1177,7 +1177,7 @@ export function OrdersList({
                           </span>
                         </p>
                       ) : null}
-                      <p className="mt-1 truncate text-xs text-stone-500">
+                      <p className="mt-1 truncate text-xs text-muted-foreground">
                         {TYPE_LABELS[order.type]}
                         {order.table_name ? ` · ${order.table_name}` : ""}
                         {elapsed ? ` · ${elapsed}` : ""}
@@ -1186,11 +1186,11 @@ export function OrdersList({
                     </div>
                     <div className="shrink-0 text-end">
                       <p
-                        className={`text-sm font-bold ${closed ? "text-stone-500" : "text-amber-700"}`}
+                        className={`text-sm font-bold ${closed ? "text-muted-foreground" : "text-amber-700 dark:text-amber-300"}`}
                       >
                         {money.format(Number(order.total))}
                       </p>
-                      <p className="mt-1 text-[11px] text-stone-500">
+                      <p className="mt-1 text-[11px] text-muted-foreground">
                         {orderTimeLabel(order.opened_at)}
                       </p>
                     </div>

@@ -98,7 +98,7 @@ export default function StockPage() {
       />
 
       <ErrorBox>{error}</ErrorBox>
-      {done ? <p className="mb-3 text-xs text-emerald-700">{done}</p> : null}
+      {done ? <p className="mb-3 text-xs text-emerald-700 dark:text-emerald-300">{done}</p> : null}
 
       <div className="grid gap-4 lg:grid-cols-2">
         <PurchaseForm
@@ -123,13 +123,13 @@ export default function StockPage() {
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
         <SectionCard title="کمبود موجودی (زیر نقطهٔ سفارش)" bodyClassName="space-y-3">
           {low.length === 0 ? (
-            <p className="rounded-xl border border-dashed border-stone-200 px-3 py-6 text-center text-sm text-muted-foreground">چیزی زیر نقطهٔ سفارش نیست.</p>
+            <p className="rounded-xl border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">چیزی زیر نقطهٔ سفارش نیست.</p>
           ) : (
-            <ul className="divide-y divide-stone-200/80 text-sm">
+            <ul className="divide-y divide-border/80 text-sm">
               {low.map((r) => (
                 <li key={r.itemId} className="flex items-center justify-between gap-3 py-2">
-                  <span className="font-medium text-stone-950">{r.itemName}</span>
-                  <span className="text-xs text-amber-700">
+                  <span className="font-medium text-foreground">{r.itemName}</span>
+                  <span className="text-xs text-amber-700 dark:text-amber-300">
                     {formatPersianNumber(Number(r.quantity))} از {formatPersianNumber(Number(r.reorderPoint ?? "0"))} {r.level === "out" ? "· تمام شده" : ""}
                   </span>
                 </li>
@@ -139,12 +139,12 @@ export default function StockPage() {
         </SectionCard>
         <SectionCard title="کالای راکد (۹۰ روز بدون فروش)" bodyClassName="space-y-3">
           {dead.length === 0 ? (
-            <p className="rounded-xl border border-dashed border-stone-200 px-3 py-6 text-center text-sm text-muted-foreground">کالای راکدی نیست.</p>
+            <p className="rounded-xl border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">کالای راکدی نیست.</p>
           ) : (
-            <ul className="divide-y divide-stone-200/80 text-sm">
+            <ul className="divide-y divide-border/80 text-sm">
               {dead.map((r) => (
                 <li key={r.itemId} className="flex items-center justify-between gap-3 py-2">
-                  <span className="font-medium text-stone-950">{r.itemName}</span>
+                  <span className="font-medium text-foreground">{r.itemName}</span>
                   <span className="text-xs text-muted-foreground">{money.format(r.valueRial ?? 0)}</span>
                 </li>
               ))}
@@ -156,12 +156,12 @@ export default function StockPage() {
       <div className="mt-4">
         <SectionCard title="خریدهای اخیر" bodyClassName="space-y-3">
           {purchases.length === 0 ? (
-            <p className="rounded-xl border border-dashed border-stone-200 px-3 py-6 text-center text-sm text-muted-foreground">هنوز خریدی ثبت نشده است.</p>
+            <p className="rounded-xl border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">هنوز خریدی ثبت نشده است.</p>
           ) : (
-            <ul className="divide-y divide-stone-200/80 text-sm">
+            <ul className="divide-y divide-border/80 text-sm">
               {purchases.map((p) => (
                 <li key={p.id} className="flex items-center justify-between gap-3 py-2">
-                  <span className="font-medium text-stone-950">{p.supplierName ?? "بدون تأمین‌کننده"}</span>
+                  <span className="font-medium text-foreground">{p.supplierName ?? "بدون تأمین‌کننده"}</span>
                   <span className="text-xs text-muted-foreground">
                     {formatPersianNumber(p.lineCount)} قلم · {money.format(p.total)}
                   </span>

@@ -215,7 +215,7 @@ export function ClosedOrderAmendment({
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <h3 className="font-semibold text-destructive">اصلاح سفارش بسته‌شده</h3>
-          <p className="mt-1 text-xs leading-6 text-stone-500">
+          <p className="mt-1 text-xs leading-6 text-muted-foreground">
             ویرایش یا حذف این سفارش، سند فروش، مالیات، بهای تمام‌شده، موجودی
             انبار و صندوق را در
             <b> همان تاریخ فروش </b>
@@ -243,7 +243,7 @@ export function ClosedOrderAmendment({
       ) : null}
       {info ? (
         <p
-          className="mt-3 rounded-xl border border-amber-500/25 bg-amber-50 px-3 py-2.5 text-sm leading-6 text-amber-800"
+          className="mt-3 rounded-xl border border-amber-500/25 dark:border-amber-500/60 bg-amber-50 dark:bg-amber-500/15 px-3 py-2.5 text-sm leading-6 text-amber-800 dark:text-amber-300"
           role="status"
         >
           {info}
@@ -261,8 +261,8 @@ export function ClosedOrderAmendment({
                 <span
                   className={
                     line.removed
-                      ? "min-w-0 truncate text-stone-400 line-through"
-                      : "min-w-0 truncate font-semibold text-stone-950"
+                      ? "min-w-0 truncate text-muted-foreground line-through"
+                      : "min-w-0 truncate font-semibold text-foreground"
                   }
                 >
                   {line.name}
@@ -279,7 +279,7 @@ export function ClosedOrderAmendment({
                   >
                     <MinusIcon className="size-4" aria-hidden="true" />
                   </button>
-                  <span className="w-7 text-center text-sm font-bold tabular-nums text-stone-950">
+                  <span className="w-7 text-center text-sm font-bold tabular-nums text-foreground">
                     {toPersianDigits(line.quantity)}
                   </span>
                   <button
@@ -315,19 +315,19 @@ export function ClosedOrderAmendment({
             {additions.map((addition, index) => (
               <li
                 key={`addition-${index}`}
-                className="flex flex-wrap items-center justify-between gap-2 bg-amber-50 px-3 py-2.5 text-sm"
+                className="flex flex-wrap items-center justify-between gap-2 bg-amber-50 dark:bg-amber-500/15 px-3 py-2.5 text-sm"
               >
                 <span className="min-w-0 truncate">
-                  <span className="font-semibold text-stone-950">
+                  <span className="font-semibold text-foreground">
                     {menuItems.find((item) => item.id === addition.menuItemId)
                       ?.name ?? "—"}
                   </span>
-                  <span className="ms-1.5 text-xs text-amber-700">
+                  <span className="ms-1.5 text-xs text-amber-700 dark:text-amber-300">
                     (افزوده‌شده)
                   </span>
                 </span>
                 <div className="flex items-center gap-2">
-                  <span className="w-7 text-center text-sm font-bold tabular-nums text-stone-950">
+                  <span className="w-7 text-center text-sm font-bold tabular-nums text-foreground">
                     {toPersianDigits(addition.quantity)}
                   </span>
                   <button
@@ -429,9 +429,9 @@ export function ClosedOrderAmendment({
           </div>
 
           <label className="block">
-            <span className="mb-1.5 block text-xs font-semibold text-stone-600">
+            <span className="mb-1.5 block text-xs font-semibold text-muted-foreground">
               دلیل اصلاح{" "}
-              <span className="font-normal text-stone-400">
+              <span className="font-normal text-muted-foreground">
                 (الزامی، در گزارش حسابرسی ثبت می‌شود)
               </span>
             </span>
@@ -462,7 +462,7 @@ export function ClosedOrderAmendment({
             </button>
           </div>
           {nothingLeft ? (
-            <p className="text-xs leading-6 text-stone-500">
+            <p className="text-xs leading-6 text-muted-foreground">
               برای خالی کردن کامل سفارش، «حذف کامل سفارش» را بزنید.
             </p>
           ) : null}
@@ -472,7 +472,7 @@ export function ClosedOrderAmendment({
       {history === null ? (
         <LoadingSkeleton rows={2} compact className="mt-4 border-t border-destructive/30 pt-3" />
       ) : history.length > 0 ? (
-        <ul className="mt-4 space-y-1.5 border-t border-destructive/30 pt-3 text-xs leading-6 text-stone-500">
+        <ul className="mt-4 space-y-1.5 border-t border-destructive/30 pt-3 text-xs leading-6 text-muted-foreground">
           {history.map((row) => (
             <li key={row.id}>
               {KIND_LABELS[row.kind]} در{" "}

@@ -201,21 +201,21 @@ export function McpPanel() {
       {message?.kind === "error" ? <ErrorBox>{message.text}</ErrorBox> : null}
 
       {token ? (
-        <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm">
-          <p className="font-semibold text-amber-900">این توکن فقط همین یک بار نمایش داده می‌شود.</p>
-          <p className="mt-1 text-xs text-amber-800">
+        <div className="rounded-xl border border-amber-300 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-500/15 p-4 text-sm">
+          <p className="font-semibold text-amber-900 dark:text-amber-200">این توکن فقط همین یک بار نمایش داده می‌شود.</p>
+          <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">
             آن را در جای امنی ذخیره کنید. اگر گم شود قابل بازیابی نیست و باید اتصال تازه‌ای بسازید.
           </p>
           <code
             dir="ltr"
-            className="mt-2 block select-all break-all rounded-lg bg-white/70 p-2 font-mono text-amber-900"
+            className="mt-2 block select-all break-all rounded-lg bg-white/70 p-2 font-mono text-amber-900 dark:text-amber-200"
           >
             {token}
           </code>
           <Button
             type="button"
             size="sm"
-            className="mt-2 bg-amber-600 text-white hover:bg-amber-700"
+            className="mt-2 bg-amber-500 dark:bg-amber-400 text-amber-950 hover:bg-amber-600 dark:hover:bg-amber-300"
             onClick={() => {
               void navigator.clipboard.writeText(token).catch(() => undefined);
               setToken(null);
@@ -233,7 +233,7 @@ export function McpPanel() {
           </p>
           <ul className="space-y-2">
             {pending.map((action) => (
-              <li key={action.id} className="rounded-xl border border-amber-200 bg-amber-50/50 p-3 text-sm">
+              <li key={action.id} className="rounded-xl border border-amber-200 dark:border-amber-500/30 bg-amber-50/50 dark:bg-amber-500/15 p-3 text-sm">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-semibold">{action.actionLabel}</span>
                   {action.connectionName ? (
@@ -274,7 +274,7 @@ export function McpPanel() {
         <div className="flex flex-wrap items-center gap-2">
           <code
             dir="ltr"
-            className="min-w-0 flex-1 select-all break-all rounded-lg bg-stone-100 p-2 font-mono text-xs"
+            className="min-w-0 flex-1 select-all break-all rounded-lg bg-muted p-2 font-mono text-xs"
           >
             {endpoint || "—"}
           </code>
@@ -325,8 +325,8 @@ export function McpPanel() {
                 aria-pressed={selected.includes(scope)}
                 className={`min-h-9 rounded-lg border px-3 text-xs font-medium transition-colors ${
                   selected.includes(scope)
-                    ? "border-amber-200 bg-amber-100 text-amber-950"
-                    : "border-stone-200 text-stone-600 hover:bg-stone-50"
+                    ? "border-amber-200 dark:border-amber-500/30 bg-amber-100 dark:bg-amber-500/20 text-amber-950 dark:text-amber-200"
+                    : "border-border text-muted-foreground hover:bg-muted"
                 }`}
               >
                 {MCP_SCOPE_LABELS[scope]}
@@ -347,8 +347,8 @@ export function McpPanel() {
                   aria-pressed={writeMode === mode}
                   className={`min-h-9 rounded-lg border px-3 text-xs font-medium transition-colors ${
                     writeMode === mode
-                      ? "border-amber-200 bg-amber-100 text-amber-950"
-                      : "border-stone-200 text-stone-600 hover:bg-stone-50"
+                      ? "border-amber-200 dark:border-amber-500/30 bg-amber-100 dark:bg-amber-500/20 text-amber-950 dark:text-amber-200"
+                      : "border-border text-muted-foreground hover:bg-muted"
                   }`}
                 >
                   {MCP_WRITE_MODE_LABELS[mode]}
@@ -376,14 +376,14 @@ export function McpPanel() {
         ) : (
           <ul className="space-y-2">
             {connections.map((connection) => (
-              <li key={connection.id} className="rounded-xl border border-stone-200/80 p-3 text-sm">
+              <li key={connection.id} className="rounded-xl border border-border/80 p-3 text-sm">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-semibold">{connection.name}</span>
                   <StatusBadge tone="neutral">
                     {connection.origin === "oauth" ? "ورود مستقیم" : "توکن"}
                   </StatusBadge>
                   {connection.tokenPrefix ? (
-                    <code dir="ltr" className="rounded bg-stone-100 px-2 py-0.5 font-mono text-xs">
+                    <code dir="ltr" className="rounded bg-muted px-2 py-0.5 font-mono text-xs">
                       {connection.tokenPrefix}…
                     </code>
                   ) : null}
@@ -406,12 +406,12 @@ export function McpPanel() {
 
                 <div className="mt-1 flex flex-wrap gap-2 text-xs text-muted-foreground">
                   {connection.scopes.map((scope) => (
-                    <span key={scope} className="rounded bg-stone-100 px-2 py-0.5">
+                    <span key={scope} className="rounded bg-muted px-2 py-0.5">
                       {MCP_SCOPE_LABELS[scope]}
                     </span>
                   ))}
                   {connection.scopes.includes(MCP_SCOPES.write) ? (
-                    <span className="rounded bg-amber-100 px-2 py-0.5 text-amber-950">
+                    <span className="rounded bg-amber-100 dark:bg-amber-500/20 px-2 py-0.5 text-amber-950 dark:text-amber-200">
                       {MCP_WRITE_MODE_LABELS[connection.writeMode]}
                     </span>
                   ) : null}
@@ -483,7 +483,7 @@ export function McpPanel() {
         <p className="mb-2 text-xs leading-6 text-muted-foreground">
           توکن را در سرآیند <code dir="ltr">Authorization</code> بفرستید. نمونهٔ تنظیمات برای یک کلاینت MCP:
         </p>
-        <pre dir="ltr" className="overflow-x-auto rounded-lg bg-stone-900 p-3 text-xs text-stone-100">
+        <pre dir="ltr" className="overflow-x-auto rounded-lg bg-primary p-3 text-xs text-primary-foreground/90">
 {`{
   "mcpServers": {
     "cafe-pos": {

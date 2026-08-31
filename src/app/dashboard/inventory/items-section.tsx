@@ -11,9 +11,9 @@ import { api, Field, inputClass } from "../ui";
 import type { InventoryItem, Runner } from "./inventory-manager";
 import { cardClass } from "../page-chrome";
 
-const inventoryInputClass = `${inputClass} min-h-[52px] !border-stone-200 !bg-card shadow-none placeholder:text-stone-400 focus-visible:border-amber-500 focus-visible:ring-amber-400/30`;
+const inventoryInputClass = `${inputClass} min-h-[52px] !border-border !bg-card shadow-none placeholder:text-muted-foreground focus-visible:border-amber-500 dark:focus-visible:border-amber-500/60 focus-visible:ring-amber-400/30 dark:focus-visible:ring-amber-400/40`;
 const secondaryActionClass =
-  "min-h-[52px] border-stone-200 bg-card px-4 text-stone-700 hover:border-amber-300 hover:bg-amber-50 hover:text-stone-950 focus-visible:border-amber-500 focus-visible:ring-amber-400/30";
+  "min-h-[52px] border-border bg-card px-4 text-foreground/80 hover:border-amber-300 dark:hover:border-amber-500/40 hover:bg-amber-50 dark:hover:bg-amber-500/15 hover:text-foreground focus-visible:border-amber-500 dark:focus-visible:border-amber-500/60 focus-visible:ring-amber-400/30 dark:focus-visible:ring-amber-400/40";
 
 export function ItemsSection({
   items,
@@ -65,10 +65,10 @@ export function ItemsSection({
         aria-labelledby="inventory-items-heading"
         className={`order-2 min-w-0 overflow-hidden ${cardClass} md:order-1`}
       >
-        <div className="border-b border-stone-200/80 px-4 py-4 sm:px-5">
+        <div className="border-b border-border/80 px-4 py-4 sm:px-5">
           <h2
             id="inventory-items-heading"
-            className="font-semibold text-stone-950"
+            className="font-semibold text-foreground"
           >
             اقلام انبار (مواد اولیه)
           </h2>
@@ -87,7 +87,7 @@ export function ItemsSection({
           </div>
         </div>
 
-        <ul className="divide-y divide-stone-200/80">
+        <ul className="divide-y divide-border/80">
           {visibleItems.map((it) => (
             <ItemRow key={it.id} item={it} busy={busy} run={run} />
           ))}
@@ -105,7 +105,7 @@ export function ItemsSection({
 
       <aside className="order-1 min-w-0 md:order-2">
         <div className={`${cardClass} p-4 md:sticky md:top-4 sm:p-5`}>
-          <h2 className="font-semibold text-stone-950">افزودن قلم انبار</h2>
+          <h2 className="font-semibold text-foreground">افزودن قلم انبار</h2>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">
             اطلاعات پایهٔ قلم را وارد کنید؛ آستانه سفارش مجدد اختیاری است.
           </p>
@@ -161,7 +161,7 @@ export function ItemsSection({
               type="submit"
               disabled={busy}
               size="lg"
-              className="min-h-[52px] w-full border border-amber-300 px-5 font-semibold focus-visible:ring-amber-400/30"
+              className="min-h-[52px] w-full border border-amber-300 dark:border-amber-500/40 px-5 font-semibold focus-visible:ring-amber-400/30 dark:focus-visible:ring-amber-400/40"
             >
               افزودن
             </Button>
@@ -202,7 +202,7 @@ function ItemRow({
       <div className="min-w-0">
         <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
           <h3
-            className={`min-w-0 break-words font-semibold text-stone-950 ${item.is_active ? "" : "text-muted-foreground line-through"}`}
+            className={`min-w-0 break-words font-semibold text-foreground ${item.is_active ? "" : "text-muted-foreground line-through"}`}
           >
             {item.name}
           </h3>
@@ -215,14 +215,14 @@ function ItemRow({
             ever contradict the formulas that actually exist.
           */}
           {item.is_produced ? (
-            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[0.7rem] font-medium text-amber-950">
+            <span className="rounded-full bg-amber-100 dark:bg-amber-500/20 px-2 py-0.5 text-[0.7rem] font-medium text-amber-950 dark:text-amber-200">
               ساخت داخلی
             </span>
           ) : null}
           {!item.is_active ? <span className="sr-only">غیرفعال</span> : null}
         </div>
 
-        <dl className="mt-3 grid min-w-0 gap-x-5 gap-y-2 text-xs text-stone-600 sm:grid-cols-2 xl:grid-cols-3">
+        <dl className="mt-3 grid min-w-0 gap-x-5 gap-y-2 text-xs text-muted-foreground sm:grid-cols-2 xl:grid-cols-3">
           <MetaItem label="واحد پایه">{item.unit}</MetaItem>
           {reorderLevel !== null ? (
             <MetaItem label="آستانه سفارش مجدد">
@@ -306,8 +306,8 @@ function MetaItem({
 }) {
   return (
     <div className="min-w-0">
-      <dt className="text-stone-500">{label}</dt>
-      <dd className="mt-0.5 break-words font-medium text-stone-700">
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className="mt-0.5 break-words font-medium text-foreground/80">
         {children}
       </dd>
     </div>
@@ -356,7 +356,7 @@ function EditItemRow({
   }
 
   return (
-    <li className="bg-amber-50/50 px-4 py-4 sm:px-5">
+    <li className="bg-amber-50/50 dark:bg-amber-500/15 px-4 py-4 sm:px-5">
       <form
         onSubmit={save}
         className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-5"
@@ -409,7 +409,7 @@ function EditItemRow({
             type="submit"
             disabled={busy}
             size="lg"
-            className="min-h-[52px] w-full border border-amber-300 px-5 font-semibold focus-visible:ring-amber-400/30 sm:w-40"
+            className="min-h-[52px] w-full border border-amber-300 dark:border-amber-500/40 px-5 font-semibold focus-visible:ring-amber-400/30 dark:focus-visible:ring-amber-400/40 sm:w-40"
           >
             ذخیره
           </Button>

@@ -74,7 +74,7 @@ export function AccountHistoryPanel({
       >
         <header className="mb-4 flex items-start justify-between gap-3 border-b border-border pb-4">
           <div>
-            <p className="text-xs font-semibold text-amber-700">تاریخچهٔ تغییرات حساب</p>
+            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">تاریخچهٔ تغییرات حساب</p>
             <h3 id="account-history-heading" className="mt-1 text-lg font-bold">
               {accountCode} — {accountName}
             </h3>
@@ -87,13 +87,13 @@ export function AccountHistoryPanel({
         {entries === null ? (
           <LoadingSkeleton rows={3} />
         ) : entries.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-border bg-stone-50 px-4 py-8 text-center text-sm text-muted-foreground">
+          <p className="rounded-xl border border-dashed border-border bg-muted px-4 py-8 text-center text-sm text-muted-foreground">
             هیچ تغییری برای این حساب ثبت نشده است.
           </p>
         ) : (
           <ul className="space-y-2">
             {entries.map((entry) => (
-              <li key={entry.id} className="rounded-xl border border-border bg-stone-50 p-3 text-sm">
+              <li key={entry.id} className="rounded-xl border border-border bg-muted p-3 text-sm">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="font-semibold">{auditActionLabel(entry.action)}</p>
                   <p className="text-xs text-muted-foreground">{formatTime(entry.createdAt)}</p>

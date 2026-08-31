@@ -76,7 +76,7 @@ export function AiChatMessages({
       ))}
 
       {showSuggestions && suggestions ? (
-        <div ref={suggestionsRef} className="rounded-2xl border border-dashed border-stone-300/70 bg-muted/30 p-3">
+        <div ref={suggestionsRef} className="rounded-2xl border border-dashed border-border/70 bg-muted/30 p-3">
           <p className="mb-2 px-1 text-[11px] font-medium text-muted-foreground">
             برای شروع، یکی را انتخاب کنید:
           </p>
@@ -87,7 +87,7 @@ export function AiChatMessages({
                 data-suggestion
                 type="button"
                 onClick={() => void sendMessage(suggestion)}
-                className="rounded-full border border-stone-200/80 bg-background px-3 py-1.5 text-right text-[11px] leading-4 text-foreground/80 transition-all hover:border-primary/40 hover:bg-primary/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="rounded-full border border-border/80 bg-background px-3 py-1.5 text-right text-[11px] leading-4 text-foreground/80 transition-all hover:border-primary/40 hover:bg-primary/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 {suggestion}
               </button>

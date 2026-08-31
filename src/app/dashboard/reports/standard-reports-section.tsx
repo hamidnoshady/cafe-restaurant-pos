@@ -49,7 +49,7 @@ const LEDGER_KEYS = new Set(["profit_and_loss", "balance_sheet", "cash_flow", "f
 const COMPARABLE_LEDGER_KEYS = new Set(["profit_and_loss", "balance_sheet", "cash_flow"]);
 const CONTROL_CLASS = [
   inputClass,
-  "min-h-[52px] border-stone-200/80 bg-card text-stone-950",
+  "min-h-[52px] border-border/80 bg-card text-foreground",
 ].join(" ");
 
 type LedgerReportData =
@@ -175,13 +175,13 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
         aria-labelledby="prepared-reports-heading"
         className={`min-w-0 ${cardClass} p-3 shadow-[0_1px_2px_rgb(41_37_36/0.03)] md:sticky md:top-5`}
       >
-        <div className="border-b border-stone-100 px-2 pb-3">
-          <p className="text-xs font-semibold text-amber-700">
+        <div className="border-b border-border px-2 pb-3">
+          <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">
             کتابخانهٔ گزارش
           </p>
           <h2
             id="prepared-reports-heading"
-            className="mt-1 font-bold text-stone-950"
+            className="mt-1 font-bold text-foreground"
           >
             گزارش‌های آماده
           </h2>
@@ -201,10 +201,10 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
                   aria-pressed={isSelected}
                   onClick={() => select(report)}
                   className={[
-                    "min-h-[52px] shrink-0 rounded-xl border px-3 text-start text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 md:w-full",
+                    "min-h-[52px] shrink-0 rounded-xl border px-3 text-start text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 md:w-full",
                     isSelected
-                      ? "border-amber-200 bg-amber-100 font-bold text-amber-800"
-                      : "border-transparent text-stone-600 hover:border-stone-200/80 hover:bg-stone-50 hover:text-stone-950",
+                      ? "border-amber-200 dark:border-amber-500/30 bg-amber-100 dark:bg-amber-500/20 font-bold text-amber-800 dark:text-amber-300"
+                      : "border-transparent text-muted-foreground hover:border-border/80 hover:bg-muted hover:text-foreground",
                   ].join(" ")}
                 >
                   {report.label}
@@ -221,18 +221,18 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
         className={`min-w-0 ${cardClass} p-4 shadow-[0_1px_2px_rgb(41_37_36/0.03)] sm:p-5`}
       >
         {!selected ? (
-          <div className="flex min-h-48 items-center rounded-xl border border-dashed border-stone-200/80 bg-stone-50 px-5 text-sm text-stone-500">
+          <div className="flex min-h-48 items-center rounded-xl border border-dashed border-border/80 bg-muted px-5 text-sm text-muted-foreground">
             یک گزارش را از فهرست انتخاب کنید.
           </div>
         ) : (
           <div className="space-y-5">
-            <header className="border-b border-stone-100 pb-5">
-              <p className="text-xs font-semibold text-amber-700">
+            <header className="border-b border-border pb-5">
+              <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">
                 پیش‌نمایش گزارش
               </p>
               <h2
                 id="prepared-report-preview-heading"
-                className="mt-1 text-lg font-bold text-stone-950"
+                className="mt-1 text-lg font-bold text-foreground"
               >
                 {selected.label}
               </h2>
@@ -244,7 +244,7 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
                   {hasDateColumn || LEDGER_KEYS.has(selected.key) ? (
                     <>
                       <label className="block">
-                        <span className="mb-1.5 block text-xs font-medium text-stone-500">
+                        <span className="mb-1.5 block text-xs font-medium text-muted-foreground">
                           از تاریخ
                         </span>
                         <JalaliDatePicker
@@ -255,7 +255,7 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
                         />
                       </label>
                       <label className="block">
-                        <span className="mb-1.5 block text-xs font-medium text-stone-500">
+                        <span className="mb-1.5 block text-xs font-medium text-muted-foreground">
                           تا تاریخ
                         </span>
                         <JalaliDatePicker
@@ -285,7 +285,7 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
 
                   {selected.chartType ? (
                     <label className="block">
-                      <span className="mb-1.5 block text-xs font-medium text-stone-500">
+                      <span className="mb-1.5 block text-xs font-medium text-muted-foreground">
                         نوع نمایش
                       </span>
                       <SearchableSelect
@@ -305,12 +305,12 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
               ) : null}
 
               {COMPARABLE_LEDGER_KEYS.has(selected.key) ? (
-                <label className="mt-3 flex min-h-[52px] cursor-pointer items-center gap-3 rounded-xl border border-stone-200/80 bg-stone-50 px-3 text-sm text-stone-600 sm:w-fit">
+                <label className="mt-3 flex min-h-[52px] cursor-pointer items-center gap-3 rounded-xl border border-border/80 bg-muted px-3 text-sm text-muted-foreground sm:w-fit">
                   <input
                     type="checkbox"
                     checked={compare}
                     onChange={(event) => setCompare(event.target.checked)}
-                    className="size-5 rounded border-stone-400 text-amber-600 focus-visible:ring-amber-500/45"
+                    className="size-5 rounded border-input text-amber-600 dark:text-amber-400 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45"
                   />
                   مقایسه با دورهٔ قبل
                 </label>
@@ -362,7 +362,7 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
               </div>
             )}
 
-            <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-stone-100 pt-4">
+            <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
               {/* food_cost_variance has no export kind yet (see ExportRequest["kind"]) — a v1 scoping decision, not an oversight. */}
               {selected.key !== "food_cost_variance" ? (
                 <ExportButtons
@@ -397,7 +397,7 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
                 <button
                   type="button"
                   onClick={explainSelectedReport}
-                  className="inline-flex min-h-[44px] items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 px-3 text-sm font-semibold text-amber-800 transition-colors hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45"
+                  className="inline-flex min-h-[44px] items-center gap-1.5 rounded-xl border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/15 px-3 text-sm font-semibold text-amber-800 dark:text-amber-300 transition-colors hover:bg-amber-100 dark:hover:bg-amber-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45"
                 >
                   <SparklesIcon className="size-4" /> توضیح این عدد
                 </button>

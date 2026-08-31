@@ -19,16 +19,16 @@ import {
 } from "./watch-manager";
 import { cardClass } from "../page-chrome";
 
-const watchInputClass = `${inputClass} min-h-[52px] !border-stone-200 !bg-card shadow-none placeholder:text-stone-400 focus-visible:border-amber-500 focus-visible:ring-amber-400/30`;
+const watchInputClass = `${inputClass} min-h-[52px] !border-border !bg-card shadow-none placeholder:text-muted-foreground focus-visible:border-amber-500 dark:focus-visible:border-amber-500/60 focus-visible:ring-amber-400/30 dark:focus-visible:ring-amber-400/40`;
 const secondaryActionClass =
-  "min-h-[44px] border-stone-200 bg-card px-3 text-xs text-stone-700 hover:border-amber-300 hover:bg-amber-50 hover:text-stone-950 focus-visible:border-amber-500 focus-visible:ring-amber-400/30";
+  "min-h-[44px] border-border bg-card px-3 text-xs text-foreground/80 hover:border-amber-300 dark:hover:border-amber-500/40 hover:bg-amber-50 dark:hover:bg-amber-500/15 hover:text-foreground focus-visible:border-amber-500 dark:focus-visible:border-amber-500/60 focus-visible:ring-amber-400/30 dark:focus-visible:ring-amber-400/40";
 
 const STATUS_BADGE_CLASS: Record<RepairStatus, string> = {
-  received: "bg-sky-100 text-sky-900",
-  in_progress: "bg-amber-100 text-amber-900",
-  ready: "bg-emerald-100 text-emerald-900",
-  closed: "bg-stone-200 text-stone-600",
-  cancelled: "bg-rose-100 text-rose-900",
+  received: "bg-sky-100 dark:bg-sky-500/20 text-sky-900 dark:text-sky-100",
+  in_progress: "bg-amber-100 dark:bg-amber-500/20 text-amber-900 dark:text-amber-200",
+  ready: "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-900 dark:text-emerald-100",
+  closed: "bg-muted text-muted-foreground",
+  cancelled: "bg-rose-100 dark:bg-rose-500/20 text-rose-900 dark:text-rose-100",
 };
 
 /** The next status a ticket can be moved to by a bare status change — closing is a separate, posting action. */
@@ -87,8 +87,8 @@ export function RepairsSection({
         aria-labelledby="watch-repairs-heading"
         className={`order-2 min-w-0 overflow-hidden ${cardClass} md:order-1`}
       >
-        <div className="border-b border-stone-200/80 px-4 py-4 sm:px-5">
-          <h2 id="watch-repairs-heading" className="font-semibold text-stone-950">
+        <div className="border-b border-border/80 px-4 py-4 sm:px-5">
+          <h2 id="watch-repairs-heading" className="font-semibold text-foreground">
             تیکت‌های تعمیر
           </h2>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">
@@ -96,7 +96,7 @@ export function RepairsSection({
           </p>
         </div>
 
-        <ul className="divide-y divide-stone-200/80">
+        <ul className="divide-y divide-border/80">
           {tickets.map((ticket) => (
             <TicketRow key={ticket.id} ticket={ticket} busy={busy} run={run} />
           ))}
@@ -108,7 +108,7 @@ export function RepairsSection({
 
       <aside className="order-1 min-w-0 md:order-2">
         <div className={`${cardClass} p-4 md:sticky md:top-4 sm:p-5`}>
-          <h2 className="font-semibold text-stone-950">پذیرش تعمیر</h2>
+          <h2 className="font-semibold text-foreground">پذیرش تعمیر</h2>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">
             اگر دستگاه از همین فروشگاه فروخته شده باشد، با انتخاب سریال، گارانتی به‌صورت خودکار بررسی می‌شود.
           </p>
@@ -165,7 +165,7 @@ export function RepairsSection({
               type="submit"
               disabled={busy}
               size="lg"
-              className="min-h-[52px] w-full border border-amber-300 px-5 font-semibold focus-visible:ring-amber-400/30"
+              className="min-h-[52px] w-full border border-amber-300 dark:border-amber-500/40 px-5 font-semibold focus-visible:ring-amber-400/30 dark:focus-visible:ring-amber-400/40"
             >
               پذیرش
             </Button>
@@ -179,8 +179,8 @@ export function RepairsSection({
 function MetaItem({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="min-w-0">
-      <dt className="text-stone-500">{label}</dt>
-      <dd className="mt-0.5 break-words font-medium text-stone-700">{children}</dd>
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className="mt-0.5 break-words font-medium text-foreground/80">{children}</dd>
     </div>
   );
 }
@@ -197,20 +197,20 @@ function TicketRow({ ticket, busy, run }: { ticket: RepairTicket; busy: boolean;
       <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0">
           <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
-            <h3 className="min-w-0 break-words font-semibold text-stone-950">
+            <h3 className="min-w-0 break-words font-semibold text-foreground">
               تیکت {formatPersianNumber(ticket.ticketNumber)} — {ticket.itemDescription}
             </h3>
             <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_BADGE_CLASS[ticket.status]}`}>
               {REPAIR_STATUS_LABELS[ticket.status]}
             </span>
             {ticket.underWarranty ? (
-              <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-900">
+              <span className="rounded-full bg-emerald-100 dark:bg-emerald-500/20 px-2 py-0.5 text-xs font-medium text-emerald-900 dark:text-emerald-100">
                 در گارانتی
               </span>
             ) : null}
           </div>
 
-          <dl className="mt-3 grid min-w-0 gap-x-5 gap-y-2 text-xs text-stone-600 sm:grid-cols-2 xl:grid-cols-4">
+          <dl className="mt-3 grid min-w-0 gap-x-5 gap-y-2 text-xs text-muted-foreground sm:grid-cols-2 xl:grid-cols-4">
             {ticket.reportedIssue ? <MetaItem label="ایراد اعلامی">{ticket.reportedIssue}</MetaItem> : null}
             <MetaItem label="اجرت">{money.format(ticket.laborCharge)}</MetaItem>
             <MetaItem label="مالیات">{toPersianDigits(String(ticket.vatPercent))}٪</MetaItem>
@@ -264,7 +264,7 @@ function TicketRow({ ticket, busy, run }: { ticket: RepairTicket; busy: boolean;
             <Button
               type="button"
               size="sm"
-              className="min-h-[44px] border border-amber-300 px-3 text-xs font-semibold focus-visible:ring-amber-400/30"
+              className="min-h-[44px] border border-amber-300 dark:border-amber-500/40 px-3 text-xs font-semibold focus-visible:ring-amber-400/30 dark:focus-visible:ring-amber-400/40"
               disabled={busy}
               onClick={() => toggle("close")}
             >
@@ -284,7 +284,7 @@ function TicketRow({ ticket, busy, run }: { ticket: RepairTicket; busy: boolean;
 }
 
 function PanelShell({ children }: { children: React.ReactNode }) {
-  return <div className="rounded-xl bg-amber-50/60 p-3 sm:p-4">{children}</div>;
+  return <div className="rounded-xl bg-amber-50/60 dark:bg-amber-500/15 p-3 sm:p-4">{children}</div>;
 }
 
 function PartsPanel({ ticket, busy, run }: { ticket: RepairTicket; busy: boolean; run: Runner }) {
@@ -338,7 +338,7 @@ function PartsPanel({ ticket, busy, run }: { ticket: RepairTicket; busy: boolean
           <li className="text-xs text-muted-foreground">قطعه‌ای ثبت نشده است.</li>
         ) : null}
         {parts.map((part) => (
-          <li key={part.id} className="flex items-center justify-between gap-3 text-xs text-stone-700">
+          <li key={part.id} className="flex items-center justify-between gap-3 text-xs text-foreground/80">
             <span className="min-w-0 break-words">
               {part.description} × {formatQuantity(part.quantity)} — بهای تمام‌شده {money.format(part.unitCost)} / دریافتی{" "}
               {money.format(part.charge)}
@@ -402,7 +402,7 @@ function PartsPanel({ ticket, busy, run }: { ticket: RepairTicket; busy: boolean
             />
           </Field>
           <div className="sm:col-span-4">
-            <Button type="submit" disabled={busy} size="sm" className="min-h-[44px] border border-amber-300 px-5 font-semibold">
+            <Button type="submit" disabled={busy} size="sm" className="min-h-[44px] border border-amber-300 dark:border-amber-500/40 px-5 font-semibold">
               افزودن قطعه
             </Button>
           </div>
@@ -443,16 +443,16 @@ function EstimatePanel({ ticket, busy, run }: { ticket: RepairTicket; busy: bool
         برآورد هزینه باید پیش از شروع کار (در حال تعمیر) به تأیید مشتری برسد؛ با ثبت برآورد جدید، تأیید قبلی پاک می‌شود.
       </p>
       {hasEstimate ? (
-        <div className="mb-3 rounded-lg bg-white/70 p-3 text-xs text-stone-700">
+        <div className="mb-3 rounded-lg bg-white/70 p-3 text-xs text-foreground/80">
           <p>
             اجرت {money.format(ticket.estimatedLaborRial)} · قطعات {money.format(ticket.estimatedPartsRial)} · کل{" "}
             {money.format(ticket.estimatedTotalRial)}
           </p>
           <p className="mt-1">
             {approved ? (
-              <span className="font-semibold text-emerald-700">تأیید مشتری ثبت شده است.</span>
+              <span className="font-semibold text-emerald-700 dark:text-emerald-300">تأیید مشتری ثبت شده است.</span>
             ) : (
-              <span className="font-semibold text-amber-700">هنوز تأیید نشده است.</span>
+              <span className="font-semibold text-amber-700 dark:text-amber-300">هنوز تأیید نشده است.</span>
             )}
           </p>
         </div>
@@ -478,7 +478,7 @@ function EstimatePanel({ ticket, busy, run }: { ticket: RepairTicket; busy: bool
           />
         </Field>
         <div className="flex flex-wrap gap-2 sm:col-span-2">
-          <Button type="submit" disabled={busy} size="sm" className="min-h-[44px] border border-amber-300 px-5 font-semibold">
+          <Button type="submit" disabled={busy} size="sm" className="min-h-[44px] border border-amber-300 dark:border-amber-500/40 px-5 font-semibold">
             ثبت برآورد
           </Button>
           <Button
@@ -582,7 +582,7 @@ function ClosePanel({
           />
         </Field>
         <div className="sm:col-span-3">
-          <Button type="submit" disabled={busy} size="sm" className="min-h-[44px] border border-amber-300 px-5 font-semibold">
+          <Button type="submit" disabled={busy} size="sm" className="min-h-[44px] border border-amber-300 dark:border-amber-500/40 px-5 font-semibold">
             تسویه و بستن
           </Button>
         </div>

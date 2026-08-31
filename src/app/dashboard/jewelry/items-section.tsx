@@ -25,14 +25,14 @@ import {
 } from "./jewelry-manager";
 import { cardClass } from "../page-chrome";
 
-const jewelryInputClass = `${inputClass} min-h-[52px] !border-stone-200 !bg-card shadow-none placeholder:text-stone-400 focus-visible:border-amber-500 focus-visible:ring-amber-400/30`;
+const jewelryInputClass = `${inputClass} min-h-[52px] !border-border !bg-card shadow-none placeholder:text-muted-foreground focus-visible:border-amber-500 dark:focus-visible:border-amber-500/60 focus-visible:ring-amber-400/30 dark:focus-visible:ring-amber-400/40`;
 const secondaryActionClass =
-  "min-h-[44px] border-stone-200 bg-card px-3 text-xs text-stone-700 hover:border-amber-300 hover:bg-amber-50 hover:text-stone-950 focus-visible:border-amber-500 focus-visible:ring-amber-400/30";
+  "min-h-[44px] border-border bg-card px-3 text-xs text-foreground/80 hover:border-amber-300 dark:hover:border-amber-500/40 hover:bg-amber-50 dark:hover:bg-amber-500/15 hover:text-foreground focus-visible:border-amber-500 dark:focus-visible:border-amber-500/60 focus-visible:ring-amber-400/30 dark:focus-visible:ring-amber-400/40";
 
 const STATUS_BADGE_CLASS: Record<WeightItem["status"], string> = {
-  in_stock: "bg-emerald-100 text-emerald-900",
-  reserved: "bg-amber-100 text-amber-900",
-  sold: "bg-stone-200 text-stone-600",
+  in_stock: "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-900 dark:text-emerald-100",
+  reserved: "bg-amber-100 dark:bg-amber-500/20 text-amber-900 dark:text-amber-200",
+  sold: "bg-muted text-muted-foreground",
 };
 
 /** Rial-per-gram text → the per-gram number shown in the input for the chosen unit. */
@@ -117,8 +117,8 @@ export function ItemsSection({
         aria-labelledby="jewelry-items-heading"
         className={`order-2 min-w-0 overflow-hidden ${cardClass} md:order-1`}
       >
-        <div className="border-b border-stone-200/80 px-4 py-4 sm:px-5">
-          <h2 id="jewelry-items-heading" className="font-semibold text-stone-950">
+        <div className="border-b border-border/80 px-4 py-4 sm:px-5">
+          <h2 id="jewelry-items-heading" className="font-semibold text-foreground">
             کالاهای وزنی طلا
           </h2>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">
@@ -126,7 +126,7 @@ export function ItemsSection({
           </p>
         </div>
 
-        <ul className="divide-y divide-stone-200/80">
+        <ul className="divide-y divide-border/80">
           {items.map((item) => (
             <ItemRow key={item.id} item={item} consignors={consignors} busy={busy} run={run} />
           ))}
@@ -138,7 +138,7 @@ export function ItemsSection({
 
       <aside className="order-1 min-w-0 md:order-2">
         <div className={`${cardClass} p-4 md:sticky md:top-4 sm:p-5`}>
-          <h2 className="font-semibold text-stone-950">افزودن کالا</h2>
+          <h2 className="font-semibold text-foreground">افزودن کالا</h2>
 
           <form onSubmit={add} className="mt-4">
             <Field label="نام کالا">
@@ -203,7 +203,7 @@ export function ItemsSection({
               type="submit"
               disabled={busy}
               size="lg"
-              className="min-h-[52px] w-full border border-amber-300 px-5 font-semibold focus-visible:ring-amber-400/30"
+              className="min-h-[52px] w-full border border-amber-300 dark:border-amber-500/40 px-5 font-semibold focus-visible:ring-amber-400/30 dark:focus-visible:ring-amber-400/40"
             >
               افزودن
             </Button>
@@ -236,19 +236,19 @@ function ItemRow({
       <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0">
           <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
-            <h3 className="min-w-0 break-words font-semibold text-stone-950">{item.name}</h3>
+            <h3 className="min-w-0 break-words font-semibold text-foreground">{item.name}</h3>
             {item.sku ? <span className="text-xs text-muted-foreground">({item.sku})</span> : null}
             <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_BADGE_CLASS[item.status]}`}>
               {WEIGHT_ITEM_STATUS_LABELS[item.status]}
             </span>
             {item.consignorName ? (
-              <span className="rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-900">
+              <span className="rounded-full bg-sky-100 dark:bg-sky-500/20 px-2 py-0.5 text-xs font-medium text-sky-900 dark:text-sky-100">
                 امانی: {item.consignorName}
               </span>
             ) : null}
           </div>
 
-          <dl className="mt-3 grid min-w-0 gap-x-5 gap-y-2 text-xs text-stone-600 sm:grid-cols-2 xl:grid-cols-4">
+          <dl className="mt-3 grid min-w-0 gap-x-5 gap-y-2 text-xs text-muted-foreground sm:grid-cols-2 xl:grid-cols-4">
             <MetaItem label="عیار">{PURITY_LABELS[item.purity]}</MetaItem>
             <MetaItem label="وزن خالص / ناخالص">
               {formatQuantity(item.netWeight)} / {formatQuantity(item.grossWeight)} گرم
@@ -310,7 +310,7 @@ function ItemRow({
             // way to sell one piece straight to the ledger.
             <Link
               href="/dashboard/pos"
-              className="inline-flex min-h-[44px] items-center rounded-md border border-amber-300 bg-amber-100 px-3 text-xs font-semibold text-amber-950 transition-colors hover:bg-amber-200"
+              className="inline-flex min-h-[44px] items-center rounded-md border border-amber-300 dark:border-amber-500/40 bg-amber-100 dark:bg-amber-500/20 px-3 text-xs font-semibold text-amber-950 dark:text-amber-200 transition-colors hover:bg-amber-200 dark:hover:bg-amber-500/25"
             >
               فروش در فاکتور
             </Link>
@@ -333,14 +333,14 @@ function ItemRow({
 function MetaItem({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="min-w-0">
-      <dt className="text-stone-500">{label}</dt>
-      <dd className="mt-0.5 break-words font-medium text-stone-700">{children}</dd>
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className="mt-0.5 break-words font-medium text-foreground/80">{children}</dd>
     </div>
   );
 }
 
 function PanelShell({ children }: { children: React.ReactNode }) {
-  return <div className="rounded-xl bg-amber-50/60 p-3 sm:p-4">{children}</div>;
+  return <div className="rounded-xl bg-amber-50/60 dark:bg-amber-500/15 p-3 sm:p-4">{children}</div>;
 }
 
 function CostPanel({
@@ -408,7 +408,7 @@ function CostPanel({
           />
         </Field>
         <div className="sm:col-span-3">
-          <Button type="submit" disabled={busy} size="sm" className="min-h-[44px] border border-amber-300 px-5 font-semibold">
+          <Button type="submit" disabled={busy} size="sm" className="min-h-[44px] border border-amber-300 dark:border-amber-500/40 px-5 font-semibold">
             ذخیره
           </Button>
         </div>
@@ -509,7 +509,7 @@ function StonesPanel({ item, busy, run }: { item: WeightItem; busy: boolean; run
             />
           </Field>
           <div className="flex items-end">
-            <Button type="submit" disabled={busy} size="sm" className="min-h-[44px] w-full border border-amber-300 px-3 font-semibold">
+            <Button type="submit" disabled={busy} size="sm" className="min-h-[44px] w-full border border-amber-300 dark:border-amber-500/40 px-3 font-semibold">
               افزودن سنگ
             </Button>
           </div>
@@ -568,7 +568,7 @@ function ConsignPanel({
           />
         </Field>
         <div className="flex items-end">
-          <Button type="submit" disabled={busy} size="sm" className="min-h-[44px] border border-amber-300 px-5 font-semibold">
+          <Button type="submit" disabled={busy} size="sm" className="min-h-[44px] border border-amber-300 dark:border-amber-500/40 px-5 font-semibold">
             ثبت به‌عنوان امانی
           </Button>
         </div>

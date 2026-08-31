@@ -54,8 +54,8 @@ const components: Components = {
       <table className="w-max min-w-full border-collapse text-right text-[12px]">{children}</table>
     </div>
   ),
-  thead: ({ children }) => <thead className="bg-stone-100/70">{children}</thead>,
-  tr: ({ children }) => <tr className="border-b border-stone-200/80 last:border-0">{children}</tr>,
+  thead: ({ children }) => <thead className="bg-muted/70">{children}</thead>,
+  tr: ({ children }) => <tr className="border-b border-border/80 last:border-0">{children}</tr>,
   th: ({ children }) => (
     <th className="whitespace-nowrap px-2 py-1.5 text-right font-semibold">{children}</th>
   ),
@@ -73,11 +73,11 @@ const components: Components = {
       );
     }
     return (
-      <code className="rounded bg-stone-200/70 px-1 py-0.5 text-[12px] break-all">{children}</code>
+      <code className="rounded bg-muted/70 px-1 py-0.5 text-[12px] break-all">{children}</code>
     );
   },
   pre: ({ children }) => (
-    <pre className="my-2 overflow-hidden rounded-lg bg-stone-100 text-start" dir="ltr">
+    <pre className="my-2 overflow-hidden rounded-lg bg-muted text-start" dir="ltr">
       {children}
     </pre>
   ),
@@ -88,11 +88,11 @@ const components: Components = {
     </a>
   ),
   blockquote: ({ children }) => (
-    <blockquote className="my-2 border-e-2 border-stone-300 pe-2 text-muted-foreground">
+    <blockquote className="my-2 border-e-2 border-border pe-2 text-muted-foreground">
       {children}
     </blockquote>
   ),
-  hr: () => <hr className="my-3 border-stone-200" />,
+  hr: () => <hr className="my-3 border-border" />,
 };
 
 export function AiMarkdown({ content, className }: { content: string; className?: string }) {

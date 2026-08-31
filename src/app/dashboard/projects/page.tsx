@@ -153,13 +153,13 @@ export default function ProjectsPage() {
               href={`/dashboard/projects/${project.id}`}
               className={cn(
                 cardClass,
-                "group flex flex-col gap-2 p-4 transition hover:border-amber-300/60 hover:shadow-[0_2px_8px_rgb(41_37_36/0.06)]",
+                "group flex flex-col gap-2 p-4 transition hover:border-amber-300/60 dark:hover:border-amber-500/40 hover:shadow-[0_2px_8px_rgb(41_37_36/0.06)]",
               )}
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="flex items-center gap-2">
-                  <FolderOpenIcon className="size-5 shrink-0 text-amber-600" />
-                  <h3 className="font-semibold text-stone-900">{project.name}</h3>
+                  <FolderOpenIcon className="size-5 shrink-0 text-amber-600 dark:text-amber-400" />
+                  <h3 className="font-semibold text-foreground">{project.name}</h3>
                 </div>
                 <button
                   type="button"
@@ -207,12 +207,12 @@ export default function ProjectsPage() {
               {archivedProjects.map((project) => (
                 <div
                   key={project.id}
-                  className="flex flex-col gap-2 rounded-2xl border border-stone-200/60 bg-muted/30 p-4 opacity-70"
+                  className="flex flex-col gap-2 rounded-2xl border border-border/60 bg-muted/30 p-4 opacity-70"
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex items-center gap-2">
                       <FolderIcon className="size-5 shrink-0 text-muted-foreground" />
-                      <h3 className="font-medium text-stone-700">{project.name}</h3>
+                      <h3 className="font-medium text-foreground/80">{project.name}</h3>
                     </div>
                     <button
                       type="button"

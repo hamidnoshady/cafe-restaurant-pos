@@ -1084,17 +1084,17 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
         screen does; from `md` up the two-column till is unchanged.
       */}
       <div className={`flex flex-col overflow-hidden ${cardClass} shadow-[0_1px_3px_rgb(41_37_36/0.03)] md:min-h-0 md:flex-1`}>
-        <div className="border-b border-stone-200/80 p-3 md:p-4">
+        <div className="border-b border-border/80 p-3 md:p-4">
           <div className="mb-3 hidden flex-wrap items-center gap-2 md:flex">
             <div className="flex min-w-0 flex-1 items-center gap-2">
-              <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700">
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300">
                 <ShoppingBagIcon className="size-5" aria-hidden="true" />
               </span>
               <div className="min-w-0">
-                <h1 className="truncate text-base font-bold text-stone-950">
+                <h1 className="truncate text-base font-bold text-foreground">
                   صندوق فروش
                 </h1>
-                <p className="truncate text-xs text-stone-500">
+                <p className="truncate text-xs text-muted-foreground">
                   عملیات فروش جاری
                 </p>
               </div>
@@ -1105,8 +1105,8 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
               className={
                 "inline-flex min-h-11 items-center gap-1.5 rounded-xl px-3 text-xs font-semibold " +
                 (isOnline
-                  ? "bg-emerald-50 text-emerald-700"
-                  : "bg-amber-100 text-amber-700")
+                  ? "bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                  : "bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300")
               }
               role="status"
               aria-live="polite"
@@ -1126,7 +1126,7 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
               type="button"
               onClick={load}
               disabled={isRefreshing}
-              className="flex size-11 items-center justify-center rounded-xl border border-stone-200/80 bg-card text-stone-500 transition duration-200 hover:bg-stone-50 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 disabled:opacity-60 motion-reduce:transition-none"
+              className="flex size-11 items-center justify-center rounded-xl border border-border/80 bg-card text-muted-foreground transition duration-200 hover:bg-muted active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 disabled:opacity-60 motion-reduce:transition-none"
               aria-label={
                 isRefreshing ? "در حال به‌روزرسانی صندوق" : "به‌روزرسانی صندوق"
               }
@@ -1136,14 +1136,14 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
           </div>
           {loadError ? (
             <div
-              className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-amber-500/25 bg-amber-50 px-3 py-2 text-xs text-stone-600"
+              className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-amber-500/25 dark:border-amber-500/60 bg-amber-50 dark:bg-amber-500/15 px-3 py-2 text-xs text-muted-foreground"
               role="status"
             >
               <span>{loadError}</span>
               <button
                 type="button"
                 onClick={load}
-                className="min-h-11 px-2 font-bold text-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45"
+                className="min-h-11 px-2 font-bold text-amber-700 dark:text-amber-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45"
               >
                 تلاش دوباره
               </button>
@@ -1155,7 +1155,7 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
           <div className="flex items-center gap-2">
             <div className="relative min-w-0 flex-1">
             <SearchIcon
-              className="pointer-events-none absolute inset-y-0 start-3 my-auto size-4 text-stone-500"
+              className="pointer-events-none absolute inset-y-0 start-3 my-auto size-4 text-muted-foreground"
               aria-hidden="true"
             />
             <input
@@ -1163,7 +1163,7 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
               id="pos-product-search"
               className={
                 inputClass +
-                " min-h-12 border-stone-200/80 bg-stone-50 ps-10 shadow-none focus-visible:border-amber-500 focus-visible:ring-amber-500/25"
+                " min-h-12 border-border/80 bg-muted ps-10 shadow-none focus-visible:border-amber-500 dark:focus-visible:border-amber-500/60 focus-visible:ring-amber-500/25 dark:focus-visible:ring-amber-400/45"
               }
               value={searchQuery}
               onChange={(event) => {
@@ -1246,10 +1246,10 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
                   setSearchQuery("");
                   setSearchActiveIndex(0);
                 }}
-                className={`min-h-14 shrink-0 rounded-xl border px-4 text-sm font-bold transition duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 active:scale-[0.98] motion-reduce:transition-none ${
+                className={`min-h-14 shrink-0 rounded-xl border px-4 text-sm font-bold transition duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 active:scale-[0.98] motion-reduce:transition-none ${
                   activeCategory === category.id
-                    ? "border-amber-200 bg-amber-100 text-amber-700 shadow-none"
-                    : "border-stone-200/80 bg-card text-stone-600 hover:border-amber-200 hover:bg-stone-50"
+                    ? "border-amber-200 dark:border-amber-500/30 bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300 shadow-none"
+                    : "border-border/80 bg-card text-muted-foreground hover:border-amber-200 dark:hover:border-amber-500/30 hover:bg-muted"
                 }`}
                 aria-keyshortcuts={index < 9 ? `Alt+${index + 1}` : undefined}
               >
@@ -1304,12 +1304,12 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
                 className={
                   "group relative flex touch-manipulation flex-col overflow-hidden rounded-2xl border transition duration-200 motion-reduce:transition-none " +
                   (active
-                    ? "border-amber-500 bg-amber-50 ring-1 ring-amber-500/25"
+                    ? "border-amber-500 dark:border-amber-500/60 bg-amber-50 dark:bg-amber-500/15 ring-1 ring-amber-500/25 dark:ring-amber-400/45"
                     : inCart > 0
-                      ? "border-amber-200 bg-amber-50"
-                      : "border-stone-200/80 bg-card hover:border-amber-200 hover:bg-stone-50") +
+                      ? "border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/15"
+                      : "border-border/80 bg-card hover:border-amber-200 dark:hover:border-amber-500/30 hover:bg-muted") +
                   (flashItemId === item.id
-                    ? " ring-2 ring-amber-500 ring-offset-1"
+                    ? " ring-2 ring-amber-500 dark:ring-amber-400/45 ring-offset-1"
                     : "")
                 }
               >
@@ -1319,7 +1319,7 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
                   role="option"
                   aria-selected={active}
                   onClick={() => pickItem(item)}
-                  className="flex min-h-28 flex-1 flex-col items-stretch justify-between p-3 text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-500/45 active:scale-[0.99] md:min-h-32 lg:min-h-36"
+                  className="flex min-h-28 flex-1 flex-col items-stretch justify-between p-3 text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 active:scale-[0.99] md:min-h-32 lg:min-h-36"
                   aria-label={
                     "افزودن " +
                     item.name +
@@ -1336,14 +1336,14 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
                     wrapped price on every card. The count lives in the strip
                     below instead, where it is also adjustable.
                   */}
-                  <span className="line-clamp-2 pe-8 text-sm font-bold leading-6 text-stone-950">
+                  <span className="line-clamp-2 pe-8 text-sm font-bold leading-6 text-foreground">
                     {item.name}
                   </span>
                   <div className="mt-3">
-                    <span className="block truncate text-xs text-stone-500">
+                    <span className="block truncate text-xs text-muted-foreground">
                       {categoryLabel}
                     </span>
-                    <span className="mt-1 block text-base font-bold text-amber-700">
+                    <span className="mt-1 block text-base font-bold text-amber-700 dark:text-amber-300">
                       {money.format(Number(item.price))}
                     </span>
                   </div>
@@ -1351,18 +1351,18 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
                 <button
                   type="button"
                   onClick={() => setPickerItem(item)}
-                  className="absolute end-2 top-2 flex size-9 items-center justify-center rounded-lg text-amber-700 transition-colors hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45"
+                  className="absolute end-2 top-2 flex size-9 items-center justify-center rounded-lg text-amber-700 dark:text-amber-300 transition-colors hover:bg-amber-100 dark:hover:bg-amber-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45"
                   aria-label={"تعداد، افزودنی و یادداشت برای " + item.name}
                   title="تعداد، افزودنی و یادداشت"
                 >
                   <SlidersHorizontalIcon className="size-4" aria-hidden="true" />
                 </button>
                 {inCart > 0 ? (
-                  <div className="flex items-center justify-between gap-1 border-t border-amber-200 bg-white/70 px-1.5 py-1">
+                  <div className="flex items-center justify-between gap-1 border-t border-amber-200 dark:border-amber-500/30 bg-white/70 px-1.5 py-1">
                     <button
                       type="button"
                       onClick={() => stepTileQuantity(item, -1)}
-                      className="flex size-11 items-center justify-center rounded-lg text-stone-600 transition-colors hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45"
+                      className="flex size-11 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-amber-100 dark:hover:bg-amber-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45"
                       aria-label={
                         "کاهش تعداد آخرین " + item.name +
                         (variantCount > 1 ? " (تنظیمات افزودنی در سبد خرید)" : "")
@@ -1371,7 +1371,7 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
                       <MinusIcon className="size-4" aria-hidden="true" />
                     </button>
                     <span
-                      className="text-sm font-bold text-stone-950"
+                      className="text-sm font-bold text-foreground"
                       aria-live="polite"
                     >
                       {toPersianDigits(inCart)}
@@ -1380,8 +1380,8 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
                       type="button"
                       onClick={() => stepTileQuantity(item, 1)}
                       className={
-                        "flex size-11 items-center justify-center rounded-lg text-amber-700 transition-colors hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 " +
-                        (plusOpensPicker ? "ring-1 ring-amber-500/50" : "")
+                        "flex size-11 items-center justify-center rounded-lg text-amber-700 dark:text-amber-300 transition-colors hover:bg-amber-100 dark:hover:bg-amber-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 " +
+                        (plusOpensPicker ? "ring-1 ring-amber-500/50 dark:ring-amber-400/45" : "")
                       }
                       aria-label={
                         plusOpensPicker
@@ -1408,15 +1408,15 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
             );
           })}
           {visibleProducts.length === 0 ? (
-            <div className="col-span-full flex min-h-48 flex-col items-center justify-center rounded-2xl border border-dashed border-stone-200/80 bg-stone-50 p-4 text-center">
+            <div className="col-span-full flex min-h-48 flex-col items-center justify-center rounded-2xl border border-dashed border-border/80 bg-muted p-4 text-center">
               <SearchIcon
-                className="size-6 text-stone-400"
+                className="size-6 text-muted-foreground"
                 aria-hidden="true"
               />
-              <p className="mt-3 text-sm font-bold text-stone-600">
+              <p className="mt-3 text-sm font-bold text-muted-foreground">
                 آیتمی پیدا نشد
               </p>
-              <p className="mt-1 text-xs text-stone-500">
+              <p className="mt-1 text-xs text-muted-foreground">
                 عبارت جستجو یا دسته‌بندی را تغییر دهید.
               </p>
             </div>
@@ -1431,7 +1431,7 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
         scrolls once the three sections together outgrow the viewport.
       */}
       <div className={`hidden max-h-[46dvh] w-full shrink-0 flex-col overflow-y-auto ${cardClass} shadow-[0_1px_3px_rgb(41_37_36/0.03)] md:flex md:max-h-none md:w-[23rem] xl:w-[25rem]`}>
-        <div className="shrink-0 border-b border-stone-200/80 p-4">
+        <div className="shrink-0 border-b border-border/80 p-4">
           <ErrorBox>{error}</ErrorBox>
           <OrderTypeTabs value={orderType} onChange={changeOrderType} />
           {orderType === "dine_in" ? (
@@ -1442,11 +1442,11 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
                 occupied={isTableOccupied(selectedTable?.status)}
                 onPick={() => setTablePickerFor("select")}
               />
-              <label className="mt-3 block text-xs font-semibold text-stone-600" htmlFor="pos-guest-count">
+              <label className="mt-3 block text-xs font-semibold text-muted-foreground" htmlFor="pos-guest-count">
                 تعداد مهمان
                 <PersianNumberInput
                   id="pos-guest-count"
-                  className={inputClass + " mt-1 min-h-11 border-stone-200/80 bg-stone-50"}
+                  className={inputClass + " mt-1 min-h-11 border-border/80 bg-muted"}
                   dir="ltr"
                   inputMode="numeric"
                   value={guestCount}
@@ -1459,7 +1459,7 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
           {orderType === "delivery" ? (
             <div className="space-y-3">
               <label
-                className="block text-xs font-semibold text-stone-600"
+                className="block text-xs font-semibold text-muted-foreground"
                 htmlFor="pos-delivery-address"
               >
                 آدرس تحویل
@@ -1467,7 +1467,7 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
                   id="pos-delivery-address"
                   className={
                     inputClass +
-                    " mt-1 h-auto min-h-20 border-stone-200/80 bg-stone-50 py-2 focus-visible:border-amber-500 focus-visible:ring-amber-500/25"
+                    " mt-1 h-auto min-h-20 border-border/80 bg-muted py-2 focus-visible:border-amber-500 dark:focus-visible:border-amber-500/60 focus-visible:ring-amber-500/25 dark:focus-visible:ring-amber-400/45"
                   }
                   rows={2}
                   value={deliveryAddress}
@@ -1477,7 +1477,7 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
               </label>
               <div className="grid grid-cols-2 gap-2">
                 <label
-                  className="block text-xs font-semibold text-stone-600"
+                  className="block text-xs font-semibold text-muted-foreground"
                   htmlFor="pos-delivery-phone"
                 >
                   تلفن مشتری
@@ -1485,7 +1485,7 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
                     id="pos-delivery-phone"
                     className={
                       inputClass +
-                      " mt-1 min-h-11 border-stone-200/80 bg-stone-50"
+                      " mt-1 min-h-11 border-border/80 bg-muted"
                     }
                     dir="ltr"
                     inputMode="tel"
@@ -1495,7 +1495,7 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
                   />
                 </label>
                 <label
-                  className="block text-xs font-semibold text-stone-600"
+                  className="block text-xs font-semibold text-muted-foreground"
                   htmlFor="pos-delivery-fee"
                 >
                   هزینهٔ ارسال
@@ -1503,7 +1503,7 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
                     id="pos-delivery-fee"
                     className={
                       inputClass +
-                      " mt-1 min-h-11 border-stone-200/80 bg-stone-50"
+                      " mt-1 min-h-11 border-border/80 bg-muted"
                     }
                     dir="ltr"
                     inputMode="numeric"
@@ -1513,11 +1513,11 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
                   />
                 </label>
               </div>
-              <label className="block text-xs font-semibold text-stone-600">
+              <label className="block text-xs font-semibold text-muted-foreground">
                 پیک
                 <SearchableSelect
                   className={
-                    inputClass + " mt-1 min-h-11 border-stone-200/80 bg-stone-50"
+                    inputClass + " mt-1 min-h-11 border-border/80 bg-muted"
                   }
                   value={deliveryCourierId}
                   onChange={setDeliveryCourierId}
@@ -1554,12 +1554,12 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
         */}
         <div className="shrink-0 p-4">
           {cart.length === 0 ? (
-            <p className="rounded-xl border border-dashed border-stone-200/80 bg-stone-50 p-4 text-center text-sm text-stone-500">
+            <p className="rounded-xl border border-dashed border-border/80 bg-muted p-4 text-center text-sm text-muted-foreground">
               سبد خالی است. از فهرست محصولات، آیتم‌ها را اضافه کنید.
             </p>
           ) : (
             <>
-              <p className="mb-2 text-[11px] font-semibold text-stone-400">
+              <p className="mb-2 text-[11px] font-semibold text-muted-foreground">
                 هر ردیف یک ترکیب است. + روی کارت محصول یک واحد بدون افزودنی
                 اضافه می‌کند؛ + روی ردیف سبد همان ترکیب (با افزودنی) را زیاد
                 می‌کند.
@@ -1665,10 +1665,10 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
           type="button"
           onClick={() => setCartSheetOpen(true)}
           className={
-            "flex min-h-14 w-full items-center justify-between gap-3 rounded-2xl px-4 text-sm font-bold shadow-[0_8px_20px_rgba(233,161,27,0.22)] transition duration-200 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 motion-reduce:transition-none " +
+            "flex min-h-14 w-full items-center justify-between gap-3 rounded-2xl px-4 text-sm font-bold shadow-[0_8px_20px_rgba(233,161,27,0.22)] transition duration-200 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 motion-reduce:transition-none " +
             (cart.length === 0
-              ? "border border-stone-200/80 bg-card text-stone-600 shadow-none"
-              : "bg-amber-500 text-stone-950")
+              ? "border border-border/80 bg-card text-muted-foreground shadow-none"
+              : "bg-amber-500 dark:bg-amber-400 text-amber-950")
           }
           aria-label={
             cart.length === 0
@@ -1698,7 +1698,7 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
       <Sheet open={cartSheetOpen} onOpenChange={setCartSheetOpen}>
         <SheetContent
           side="bottom"
-          className="flex max-h-[92dvh] flex-col gap-0 rounded-t-3xl border-stone-200/80 p-0 data-[state=open]:duration-200 data-[state=closed]:duration-200 md:hidden"
+          className="flex max-h-[92dvh] flex-col gap-0 rounded-t-3xl border-border/80 p-0 data-[state=open]:duration-200 data-[state=closed]:duration-200 md:hidden"
         >
           <div className="shrink-0 border-b border-border px-4 py-3">
             <SheetTitle>سبد خرید</SheetTitle>
@@ -1716,11 +1716,11 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
                     occupied={isTableOccupied(selectedTable?.status)}
                     onPick={() => setTablePickerFor("select")}
                   />
-                  <label className="mt-3 block text-xs font-semibold text-stone-600" htmlFor="pos-mobile-guest-count">
+                  <label className="mt-3 block text-xs font-semibold text-muted-foreground" htmlFor="pos-mobile-guest-count">
                     تعداد مهمان
                     <PersianNumberInput
                       id="pos-mobile-guest-count"
-                      className={inputClass + " mt-1 min-h-11 border-stone-200/80 bg-stone-50"}
+                      className={inputClass + " mt-1 min-h-11 border-border/80 bg-muted"}
                       dir="ltr"
                       inputMode="numeric"
                       value={guestCount}
@@ -1733,7 +1733,7 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
               {orderType === "delivery" ? (
                 <div className="mt-3 space-y-3">
                   <label
-                    className="block text-xs font-semibold text-stone-600"
+                    className="block text-xs font-semibold text-muted-foreground"
                     htmlFor="pos-mobile-delivery-address"
                   >
                     آدرس تحویل
@@ -1741,7 +1741,7 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
                       id="pos-mobile-delivery-address"
                       className={
                         inputClass +
-                        " mt-1 h-auto min-h-20 border-stone-200/80 bg-stone-50 py-2"
+                        " mt-1 h-auto min-h-20 border-border/80 bg-muted py-2"
                       }
                       rows={2}
                       value={deliveryAddress}
@@ -1753,7 +1753,7 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
                   </label>
                   <div className="grid grid-cols-2 gap-2">
                     <label
-                      className="block text-xs font-semibold text-stone-600"
+                      className="block text-xs font-semibold text-muted-foreground"
                       htmlFor="pos-mobile-delivery-phone"
                     >
                       تلفن مشتری
@@ -1761,7 +1761,7 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
                         id="pos-mobile-delivery-phone"
                         className={
                           inputClass +
-                          " mt-1 min-h-11 border-stone-200/80 bg-stone-50"
+                          " mt-1 min-h-11 border-border/80 bg-muted"
                         }
                         dir="ltr"
                         inputMode="tel"
@@ -1773,7 +1773,7 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
                       />
                     </label>
                     <label
-                      className="block text-xs font-semibold text-stone-600"
+                      className="block text-xs font-semibold text-muted-foreground"
                       htmlFor="pos-mobile-delivery-fee"
                     >
                       هزینهٔ ارسال
@@ -1781,7 +1781,7 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
                         id="pos-mobile-delivery-fee"
                         className={
                           inputClass +
-                          " mt-1 min-h-11 border-stone-200/80 bg-stone-50"
+                          " mt-1 min-h-11 border-border/80 bg-muted"
                         }
                         dir="ltr"
                         inputMode="numeric"
@@ -1791,12 +1791,12 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
                       />
                     </label>
                   </div>
-                  <label className="block text-xs font-semibold text-stone-600">
+                  <label className="block text-xs font-semibold text-muted-foreground">
                     پیک
                     <SearchableSelect
                       className={
                         inputClass +
-                        " mt-1 min-h-11 border-stone-200/80 bg-stone-50"
+                        " mt-1 min-h-11 border-border/80 bg-muted"
                       }
                       value={deliveryCourierId}
                       onChange={setDeliveryCourierId}
@@ -1827,7 +1827,7 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
                 </p>
               ) : (
                 <>
-                  <p className="mb-2 text-[11px] font-semibold text-stone-400">
+                  <p className="mb-2 text-[11px] font-semibold text-muted-foreground">
                     هر ردیف یک ترکیب است. + روی کارت محصول یک واحد بدون افزودنی
                     اضافه می‌کند؛ + روی ردیف سبد همان ترکیب (با افزودنی) را زیاد
                     می‌کند.
@@ -1882,8 +1882,8 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
           </div>
           <div className="shrink-0 border-t border-border bg-card p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
             <div className="mb-3 flex items-center justify-between">
-              <span className="text-xs font-bold text-stone-600">جمع کل</span>
-              <span className="text-base font-bold text-stone-950">
+              <span className="text-xs font-bold text-muted-foreground">جمع کل</span>
+              <span className="text-base font-bold text-foreground">
                 {money.format(totals.total)}
               </span>
             </div>
@@ -1926,7 +1926,7 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
                 <ErrorBox>{error}</ErrorBox>
               </DialogHeader>
               <section aria-label="اقلام سفارش">
-                <h3 className="mb-2 text-xs font-bold text-stone-600">
+                <h3 className="mb-2 text-xs font-bold text-muted-foreground">
                   اقلام سفارش
                 </h3>
                 <ul className="space-y-2">
@@ -2001,17 +2001,17 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
                   />
                   <label
                     htmlFor="pos-checkout-tip"
-                    className="mt-3 block text-xs font-bold text-stone-600"
+                    className="mt-3 block text-xs font-bold text-muted-foreground"
                   >
                     انعام{" "}
-                    <span className="font-normal text-stone-400">
+                    <span className="font-normal text-muted-foreground">
                       (اختیاری، تومان)
                     </span>
                   </label>
                   <PersianNumberInput
                     id="pos-checkout-tip"
                     className={
-                      inputClass + " mt-1 min-h-11 border-stone-200/80 bg-stone-50"
+                      inputClass + " mt-1 min-h-11 border-border/80 bg-muted"
                     }
                     dir="ltr"
                     inputMode="numeric"
@@ -2035,7 +2035,7 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
                   onClick={() => {
                     void submit(checkoutIntent);
                   }}
-                  className="min-h-12 rounded-xl bg-amber-500 px-4 text-sm font-bold text-stone-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 disabled:opacity-55"
+                  className="min-h-12 rounded-xl bg-amber-500 dark:bg-amber-400 px-4 text-sm font-bold text-amber-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 disabled:opacity-55"
                 >
                   {busy
                     ? "در حال ثبت…"
@@ -2140,23 +2140,23 @@ function CheckoutLineRow({ line }: { line: CartUiLine }) {
       className={
         "rounded-xl border p-2.5 " +
         (line.modifiers.length > 0
-          ? "border-amber-200 bg-amber-50"
-          : "border-stone-200/80 bg-stone-50")
+          ? "border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/15"
+          : "border-border/80 bg-muted")
       }
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-sm font-bold text-stone-950">
+          <p className="text-sm font-bold text-foreground">
             {line.name}{" "}
-            <span className="text-xs font-semibold text-stone-500">
+            <span className="text-xs font-semibold text-muted-foreground">
               × {toPersianDigits(line.quantity)}
             </span>
           </p>
-          <p className="mt-0.5 text-[11px] text-stone-500">
+          <p className="mt-0.5 text-[11px] text-muted-foreground">
             {money.format(breakdown.unit)} هر واحد
           </p>
         </div>
-        <p className="shrink-0 text-sm font-bold text-amber-700">
+        <p className="shrink-0 text-sm font-bold text-amber-700 dark:text-amber-300">
           {money.format(breakdown.total)}
         </p>
       </div>
@@ -2166,7 +2166,7 @@ function CheckoutLineRow({ line }: { line: CartUiLine }) {
         className="mt-2"
       />
       {line.note ? (
-        <p className="mt-2 text-[11px] text-stone-500">یادداشت: {line.note}</p>
+        <p className="mt-2 text-[11px] text-muted-foreground">یادداشت: {line.note}</p>
       ) : null}
     </li>
   );
@@ -2194,8 +2194,8 @@ function CheckoutConfirmation({
             className={
               "flex size-11 shrink-0 items-center justify-center rounded-2xl " +
               (settled
-                ? "bg-emerald-50 text-emerald-700"
-                : "bg-amber-100 text-amber-700")
+                ? "bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                : "bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300")
             }
             aria-hidden="true"
           >
@@ -2231,29 +2231,29 @@ function CheckoutConfirmation({
         </div>
       </DialogHeader>
 
-      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-center">
-        <p className="text-2xl font-bold text-stone-950">
+      <div className="rounded-2xl border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/15 p-4 text-center">
+        <p className="text-2xl font-bold text-foreground">
           {toPersianDigits(
             result.orderNumber
               ? formatQueueLabel(result.type, result.orderNumber)
               : "سفارش جدید",
           )}
         </p>
-        <p className="mt-1 text-xs text-stone-500">
+        <p className="mt-1 text-xs text-muted-foreground">
           {result.type === "dine_in"
             ? "حضوری" + (result.tableName ? " — " + result.tableName : "")
             : result.type === "takeaway"
               ? "بیرون‌بر"
               : "ارسالی"}
         </p>
-        <p className="mt-2 text-lg font-bold text-amber-700">
+        <p className="mt-2 text-lg font-bold text-amber-700 dark:text-amber-300">
           {money.format(result.total)}
         </p>
       </div>
 
       {result.lines.length > 0 ? (
         <section aria-label="اقلام سفارش ثبت‌شده">
-          <h3 className="mb-2 text-xs font-bold text-stone-600">
+          <h3 className="mb-2 text-xs font-bold text-muted-foreground">
             اقلام ثبت‌شده
           </h3>
           <ul className="space-y-2">
@@ -2268,7 +2268,7 @@ function CheckoutConfirmation({
         <button
           type="button"
           onClick={onDone}
-          className="min-h-12 w-full rounded-xl bg-amber-500 px-5 text-sm font-bold text-stone-950 transition duration-200 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 motion-reduce:transition-none"
+          className="min-h-12 w-full rounded-xl bg-amber-500 dark:bg-amber-400 px-5 text-sm font-bold text-amber-950 transition duration-200 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 motion-reduce:transition-none"
         >
           بستن و شروع سفارش بعدی
         </button>
@@ -2289,15 +2289,15 @@ function PosLoadingState({
   if (!loading && error) {
     return (
       <section className={`mx-auto flex min-h-[55dvh] max-w-md flex-col items-center justify-center ${cardClass} p-6 text-center`}>
-        <WifiOffIcon className="size-7 text-amber-700" aria-hidden="true" />
-        <h1 className="mt-4 text-base font-bold text-stone-950">
+        <WifiOffIcon className="size-7 text-amber-700 dark:text-amber-300" aria-hidden="true" />
+        <h1 className="mt-4 text-base font-bold text-foreground">
           صندوق در دسترس نیست
         </h1>
-        <p className="mt-2 text-sm leading-6 text-stone-500">{error}</p>
+        <p className="mt-2 text-sm leading-6 text-muted-foreground">{error}</p>
         <button
           type="button"
           onClick={onRetry}
-          className="mt-5 min-h-12 rounded-xl bg-amber-500 px-5 text-sm font-bold text-stone-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45"
+          className="mt-5 min-h-12 rounded-xl bg-amber-500 dark:bg-amber-400 px-5 text-sm font-bold text-amber-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45"
         >
           تلاش دوباره
         </button>
@@ -2387,9 +2387,9 @@ function OrderTypeTabs({
           type="button"
           aria-pressed={value === tab.value}
           onClick={() => onChange(tab.value)}
-          className={`min-h-12 rounded-lg px-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 ${
+          className={`min-h-12 rounded-lg px-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 ${
             value === tab.value
-              ? "bg-amber-100 font-bold text-amber-700"
+              ? "bg-amber-100 dark:bg-amber-500/20 font-bold text-amber-700 dark:text-amber-300"
               : "bg-muted text-muted-foreground hover:text-foreground"
           }`}
         >
@@ -2436,7 +2436,7 @@ function CheckoutActions({
         type="button"
         onClick={onPay}
         disabled={disabled}
-        className="mt-3 flex min-h-14 w-full items-center justify-center gap-2 rounded-xl bg-amber-500 px-4 text-sm font-bold text-stone-950 transition duration-200 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 disabled:opacity-55 motion-reduce:transition-none"
+        className="mt-3 flex min-h-14 w-full items-center justify-center gap-2 rounded-xl bg-amber-500 dark:bg-amber-400 px-4 text-sm font-bold text-amber-950 transition duration-200 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 disabled:opacity-55 motion-reduce:transition-none"
       >
         <ReceiptTextIcon className="size-5" aria-hidden="true" />
         {blocker ? BLOCKER_LABELS[blocker] : "دریافت وجه و تکمیل"}
@@ -2445,7 +2445,7 @@ function CheckoutActions({
         type="button"
         onClick={onOpenOrder}
         disabled={disabled}
-        className="mt-2 min-h-12 w-full rounded-xl border border-stone-200/80 bg-card px-4 text-sm font-semibold text-stone-600 transition duration-200 hover:bg-stone-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 disabled:opacity-55 motion-reduce:transition-none"
+        className="mt-2 min-h-12 w-full rounded-xl border border-border/80 bg-card px-4 text-sm font-semibold text-muted-foreground transition duration-200 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 disabled:opacity-55 motion-reduce:transition-none"
       >
         {busy ? "در حال ثبت…" : "ثبت سفارش باز (بدون دریافت وجه)"}
       </button>
@@ -2472,24 +2472,24 @@ function TableField({
 }) {
   return (
     <div className="mt-3">
-      <span className="block text-xs font-semibold text-stone-600">میز</span>
+      <span className="block text-xs font-semibold text-muted-foreground">میز</span>
       <button
         type="button"
         onClick={onPick}
         className={
-          "mt-1 flex min-h-11 w-full items-center justify-between gap-2 rounded-lg border px-3 text-sm font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 " +
+          "mt-1 flex min-h-11 w-full items-center justify-between gap-2 rounded-lg border px-3 text-sm font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 " +
           (chosen
-            ? "border-amber-500 bg-amber-100 text-amber-700"
-            : "border-stone-200/80 bg-stone-50 text-stone-500 hover:border-amber-500/60")
+            ? "border-amber-500 dark:border-amber-500/60 bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300"
+            : "border-border/80 bg-muted text-muted-foreground hover:border-amber-500/60 dark:hover:border-amber-500/60")
         }
       >
         <span className="min-w-0 truncate">{label}</span>
-        <span className="shrink-0 text-xs font-semibold text-amber-700">
+        <span className="shrink-0 text-xs font-semibold text-amber-700 dark:text-amber-300">
           {chosen ? "تغییر میز" : "انتخاب میز"}
         </span>
       </button>
       {occupied ? (
-        <p className="mt-1 text-[11px] text-stone-500">
+        <p className="mt-1 text-[11px] text-muted-foreground">
           این میز مهمان دارد؛ این سفارش صورت‌حساب جداگانهٔ خودش را می‌گیرد.
         </p>
       ) : null}
@@ -2516,10 +2516,10 @@ function CustomerField({
   loading: boolean;
 }) {
   return (
-    <label className="mt-3 block text-xs font-semibold text-stone-600">
-      مشتری <span className="font-normal text-stone-400">(اختیاری)</span>
+    <label className="mt-3 block text-xs font-semibold text-muted-foreground">
+      مشتری <span className="font-normal text-muted-foreground">(اختیاری)</span>
       <SearchableSelect
-        className={inputClass + " mt-1 min-h-11 border-stone-200/80 bg-stone-50"}
+        className={inputClass + " mt-1 min-h-11 border-border/80 bg-muted"}
         value={value}
         onChange={onChange}
         onQueryChange={onQueryChange}

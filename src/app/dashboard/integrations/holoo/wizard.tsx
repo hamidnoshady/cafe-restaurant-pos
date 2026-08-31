@@ -215,7 +215,7 @@ export function HolooMigrationWizard({ initialConnectionId }: { initialConnectio
 
       <SectionCard title="خروجی">
         {result ? (
-          <pre className="max-h-96 overflow-auto rounded-xl bg-stone-950 p-4 text-xs leading-5 text-stone-50" dir="ltr">
+          <pre className="max-h-96 overflow-auto rounded-xl bg-primary p-4 text-xs leading-5 text-primary-foreground" dir="ltr">
             {JSON.stringify(result, null, 2)}
           </pre>
         ) : (

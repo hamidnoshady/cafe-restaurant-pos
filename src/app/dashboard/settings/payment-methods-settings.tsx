@@ -121,7 +121,7 @@ export function PaymentMethodsSettings() {
             return (
               <li
                 key={method.id}
-                className="flex flex-wrap items-center gap-2 rounded-xl border border-stone-200/80 p-3"
+                className="flex flex-wrap items-center gap-2 rounded-xl border border-border/80 p-3"
               >
                 <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
                   <Icon className="size-4" aria-hidden="true" />

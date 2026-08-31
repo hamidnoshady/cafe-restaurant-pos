@@ -280,7 +280,7 @@ export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
 
       <ErrorBox>{error}</ErrorBox>
       {done ? (
-        <div className="mb-4 rounded-xl border border-emerald-300/60 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+        <div className="mb-4 rounded-xl border border-emerald-300/60 dark:border-emerald-700/60 bg-emerald-50 dark:bg-emerald-500/15 px-4 py-3 text-sm text-emerald-900 dark:text-emerald-100">
           فاکتور شمارهٔ {toPersianDigits(done.orderNumber)} به مبلغ {money.format(done.total)} ثبت شد.
         </div>
       ) : null}
@@ -310,19 +310,19 @@ export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
 
         <aside className="min-w-0">
           <div className={`${cardClass} p-4lg:sticky lg:top-4 sm:p-5`}>
-            <h2 className="font-semibold text-stone-950">فاکتور جاری</h2>
+            <h2 className="font-semibold text-foreground">فاکتور جاری</h2>
 
             {lines.length === 0 ? (
-              <p className="mt-4 rounded-xl border border-dashed border-stone-200 px-3 py-6 text-center text-sm text-muted-foreground">
+              <p className="mt-4 rounded-xl border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">
                 هنوز کالایی اضافه نشده است.
               </p>
             ) : (
-              <ul className="mt-4 divide-y divide-stone-200/80">
+              <ul className="mt-4 divide-y divide-border/80">
                 {lines.map((line) => (
                   <li key={line.key} className="py-3">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-medium text-stone-950">{line.label}</p>
+                        <p className="truncate text-sm font-medium text-foreground">{line.label}</p>
                         {line.parts ? (
                           <p className="mt-0.5 text-[11px] leading-5 text-muted-foreground">
                             طلا {money.format(line.parts.metalValue)} · اجرت{" "}
@@ -334,13 +334,13 @@ export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
                         </p>
                       </div>
                       <div className="flex shrink-0 flex-col items-end gap-1">
-                        <span className="text-sm font-semibold text-stone-950">
+                        <span className="text-sm font-semibold text-foreground">
                           {money.format(line.total)}
                         </span>
                         <button
                           type="button"
                           onClick={() => removeLine(line.key)}
-                          className="inline-flex min-h-8 items-center gap-1 rounded-lg px-2 text-xs text-rose-700 hover:bg-rose-50"
+                          className="inline-flex min-h-8 items-center gap-1 rounded-lg px-2 text-xs text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-500/15"
                           aria-label={`حذف ${line.label}`}
                         >
                           <Trash2Icon aria-hidden="true" className="size-3.5" />
@@ -353,7 +353,7 @@ export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
               </ul>
             )}
 
-            <dl className="mt-4 space-y-1.5 border-t border-stone-200/80 pt-4 text-sm">
+            <dl className="mt-4 space-y-1.5 border-t border-border/80 pt-4 text-sm">
               <Row label="جمع جزء" value={money.format(totals.net)} />
               <Row label="مالیات" value={money.format(totals.vat)} />
               <Row label="جمع کل" value={money.format(totals.total)} strong />
@@ -383,8 +383,8 @@ export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
                         onClick={() => setPaymentWayId(way.id)}
                         className={`min-h-11 flex-1 rounded-xl border px-3 text-sm transition-colors ${
                           selectedWay?.id === way.id
-                            ? "border-amber-500 bg-amber-50 font-medium text-amber-900"
-                            : "border-stone-200 text-stone-700 hover:border-amber-300"
+                            ? "border-amber-500 dark:border-amber-500/60 bg-amber-50 dark:bg-amber-500/15 font-medium text-amber-900 dark:text-amber-200"
+                            : "border-border text-foreground/80 hover:border-amber-300 dark:hover:border-amber-500/40"
                         }`}
                       >
                         {way.name}
@@ -416,7 +416,7 @@ function Row({ label, value, strong }: { label: string; value: string; strong?: 
   return (
     <div className="flex items-center justify-between">
       <dt className="text-muted-foreground">{label}</dt>
-      <dd className={strong ? "font-bold text-stone-950" : "text-stone-800"}>{value}</dd>
+      <dd className={strong ? "font-bold text-foreground" : "text-foreground"}>{value}</dd>
     </div>
   );
 }
@@ -424,7 +424,7 @@ function Row({ label, value, strong }: { label: string; value: string; strong?: 
 function Panel({ title, hint, children }: { title: string; hint: string; children: React.ReactNode }) {
   return (
     <section className={`${cardClass} p-4 sm:p-5`}>
-      <h2 className="font-semibold text-stone-950">{title}</h2>
+      <h2 className="font-semibold text-foreground">{title}</h2>
       <p className="mt-1 text-xs leading-5 text-muted-foreground">{hint}</p>
       <div className="mt-4">{children}</div>
     </section>
@@ -602,7 +602,7 @@ function BarcodeScanField({
       {scanBusy ? (
         <LoadingSkeleton rows={1} compact className="mt-2" label="در حال جست‌وجوی کالا" />
       ) : null}
-      {scanError ? <p className="mt-2 text-xs leading-5 text-rose-700">{scanError}</p> : null}
+      {scanError ? <p className="mt-2 text-xs leading-5 text-rose-700 dark:text-rose-300">{scanError}</p> : null}
     </Panel>
   );
 }
@@ -753,18 +753,18 @@ function GoldLineForm({
       </div>
 
       {item && !rate ? (
-        <p className="mb-3 rounded-lg border border-amber-300/60 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+        <p className="mb-3 rounded-lg border border-amber-300/60 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-500/15 px-3 py-2 text-xs text-amber-900 dark:text-amber-200">
           نرخ طلای {PURITY_LABELS[item.purity]} ثبت نشده است؛ ابتدا نرخ روز را در صفحهٔ «طلا و جواهر» وارد کنید.
         </p>
       ) : null}
       {previewError ? (
-        <p className="mb-3 text-xs text-rose-700">{previewError}</p>
+        <p className="mb-3 text-xs text-rose-700 dark:text-rose-300">{previewError}</p>
       ) : null}
       {preview ? (
         <p className="mb-3 text-xs leading-6 text-muted-foreground">
           طلا {money.format(preview.parts!.metalValue)} · اجرت {money.format(preview.parts!.makingCharge)} · سود{" "}
           {money.format(preview.parts!.profit)} · مالیات {money.format(preview.vat)} —{" "}
-          <b className="text-stone-900">{money.format(preview.total)}</b>
+          <b className="text-foreground">{money.format(preview.total)}</b>
         </p>
       ) : null}
 
@@ -860,7 +860,7 @@ function WatchLineForm({ units, onAdd }: { units: SerialUnit[]; onAdd: (line: Ca
       {preview ? (
         <p className="mb-3 text-xs leading-6 text-muted-foreground">
           خالص {money.format(preview.net)} · مالیات {money.format(preview.vat)} —{" "}
-          <b className="text-stone-900">{money.format(preview.total)}</b>
+          <b className="text-foreground">{money.format(preview.total)}</b>
         </p>
       ) : null}
       <Button
@@ -985,7 +985,7 @@ function AccessoryLineForm({
       {preview ? (
         <p className="mb-3 text-xs leading-6 text-muted-foreground">
           خالص {money.format(preview.net)} · مالیات {money.format(preview.vat)} —{" "}
-          <b className="text-stone-900">{money.format(preview.total)}</b>
+          <b className="text-foreground">{money.format(preview.total)}</b>
         </p>
       ) : null}
       <Button
@@ -1102,7 +1102,7 @@ function CosmeticsLineForm({ variants, onAdd }: { variants: Variant[]; onAdd: (l
       {preview ? (
         <p className="mb-3 text-xs leading-6 text-muted-foreground">
           خالص {money.format(preview.net)} · مالیات {money.format(preview.vat)} —{" "}
-          <b className="text-stone-900">{money.format(preview.total)}</b>
+          <b className="text-foreground">{money.format(preview.total)}</b>
         </p>
       ) : null}
       <Button
@@ -1149,15 +1149,15 @@ function RecentInvoices({ invoices, loading }: { invoices: InvoiceSummary[]; loa
       {loading ? (
         <LoadingSkeleton rows={3} />
       ) : invoices.length === 0 ? (
-        <p className="rounded-xl border border-dashed border-stone-200 px-3 py-6 text-center text-sm text-muted-foreground">
+        <p className="rounded-xl border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">
           هنوز فاکتوری ثبت نشده است.
         </p>
       ) : (
-        <ul className="divide-y divide-stone-200/80">
+        <ul className="divide-y divide-border/80">
           {invoices.map((invoice) => (
             <li key={invoice.id} className="flex items-center justify-between gap-3 py-2.5 text-sm">
               <div className="min-w-0">
-                <span className="font-medium text-stone-950">
+                <span className="font-medium text-foreground">
                   فاکتور {toPersianDigits(invoice.orderNumber)}
                 </span>
                 <span className="mr-2 text-xs text-muted-foreground">
@@ -1165,7 +1165,7 @@ function RecentInvoices({ invoices, loading }: { invoices: InvoiceSummary[]; loa
                   {formatPersianNumber(invoice.lineCount)} قلم
                 </span>
               </div>
-              <span className="shrink-0 font-semibold text-stone-900">{money.format(invoice.total)}</span>
+              <span className="shrink-0 font-semibold text-foreground">{money.format(invoice.total)}</span>
             </li>
           ))}
         </ul>

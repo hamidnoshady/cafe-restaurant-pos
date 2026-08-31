@@ -136,7 +136,7 @@ export function ManualEntrySection({
   return (
     <div className="space-y-4">
       <section className={`${cardClass} p-4 sm:p-5`}>
-        <p className="text-xs font-semibold text-amber-700">سند دستی</p>
+        <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">سند دستی</p>
         <h2 className="mt-1">ثبت سند دستی (پیش‌نویس)</h2>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
           سند ابتدا به‌صورت پیش‌نویس ذخیره می‌شود و تا تأیید در فهرست پایین، اثری در دفاتر ندارد.
@@ -160,8 +160,8 @@ export function ManualEntrySection({
               <span className="text-xs text-muted-foreground">حداقل دو ردیف لازم است</span>
             </div>
             {lines.map((line, i) => (
-              <fieldset key={i} className="rounded-xl border border-stone-200/80 bg-stone-50 p-3">
-                <legend className="px-1 text-xs font-semibold text-stone-500">ردیف {toPersianDigits(String(i + 1))}</legend>
+              <fieldset key={i} className="rounded-xl border border-border/80 bg-muted p-3">
+                <legend className="px-1 text-xs font-semibold text-muted-foreground">ردیف {toPersianDigits(String(i + 1))}</legend>
                 <div className="grid gap-3 md:grid-cols-[minmax(0,2fr)_9rem_minmax(0,1fr)_auto] md:items-end">
                   <label className="block">
                     <span className="mb-1.5 block text-sm font-medium">حساب</span>
@@ -204,7 +204,7 @@ export function ManualEntrySection({
             ))}
           </div>
 
-          <div className="rounded-xl border border-stone-200/80 bg-stone-50 p-4">
+          <div className="rounded-xl border border-border/80 bg-muted p-4">
             <dl className="grid gap-3 text-sm sm:grid-cols-3">
               <div>
                 <dt className="text-muted-foreground">جمع بدهکار</dt>
@@ -216,7 +216,7 @@ export function ManualEntrySection({
               </div>
               <div>
                 <dt className="text-muted-foreground">وضعیت سند</dt>
-                <dd className={`mt-1 font-bold ${balanced ? "text-emerald-700" : "text-muted-foreground"}`}>
+                <dd className={`mt-1 font-bold ${balanced ? "text-emerald-700 dark:text-emerald-300" : "text-muted-foreground"}`}>
                   {balanced ? "متوازن" : "در انتظار توازن"}
                 </dd>
               </div>
@@ -235,7 +235,7 @@ export function ManualEntrySection({
       <section className={`${cardClass} p-4 sm:p-5`}>
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
           <div>
-            <p className="text-xs font-semibold text-amber-700">کنترل و تأیید</p>
+            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">کنترل و تأیید</p>
             <h2 className="mt-1">پیش‌نویس‌های در انتظار بررسی</h2>
           </div>
         </div>
@@ -243,13 +243,13 @@ export function ManualEntrySection({
         {!drafts ? (
           <LoadingSkeleton rows={3} />
         ) : drafts.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-stone-200/80 bg-stone-50 px-4 py-8 text-center text-sm text-muted-foreground">
+          <p className="rounded-xl border border-dashed border-border/80 bg-muted px-4 py-8 text-center text-sm text-muted-foreground">
             پیش‌نویسی در انتظار بررسی وجود ندارد.
           </p>
         ) : (
           <ul className="space-y-3">
             {drafts.map((d) => (
-              <li key={d.id} className="rounded-xl border border-stone-200/80 bg-stone-50 p-4">
+              <li key={d.id} className="rounded-xl border border-border/80 bg-muted p-4">
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div>
                     <h3>{d.memo}</h3>
@@ -261,7 +261,7 @@ export function ManualEntrySection({
                 </div>
                 <div className="mt-3 space-y-2">
                   {d.lines.map((l, i) => (
-                    <div key={i} className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-3 border-t border-stone-100 pt-2 text-sm">
+                    <div key={i} className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-3 border-t border-border pt-2 text-sm">
                       <span className="min-w-0 text-muted-foreground">{l.accountCode} {l.accountName}</span>
                       <span className="whitespace-nowrap">{l.debit ? money.format(l.debit) : "—"}</span>
                       <span className="whitespace-nowrap">{l.credit ? money.format(l.credit) : "—"}</span>

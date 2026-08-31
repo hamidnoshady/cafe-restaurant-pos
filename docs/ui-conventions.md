@@ -123,15 +123,22 @@ own bottom padding gets added to it and the bar drifts.
   Leave it alone; it is the super-admin console, not a tenant screen.
 - **`src/components/ui/*` is shadcn's** generated layer. Change a token or a variant there,
   never a one-off class at a call site.
-- **Dark mode is not supported in the dashboard.** Enough screens hardcode light warm values
-  that `dark:` variants only make things worse. Don't add them piecemeal; making dark mode work
-  is its own piece of work.
+- **Dark mode is supported.** The theme follows `next-themes` (`class` strategy, system
+  default; toggle in the sidebar). Write colours from the theme tokens so they flip
+  automatically — surfaces `bg-card`/`bg-background`/`bg-muted`, text `text-foreground`/
+  `text-muted-foreground`, rules `border-border`. The brand amber and the emerald/rose/red/sky
+  status colours keep their hue but need a light-on-dark shade, so pair them (e.g.
+  `bg-amber-100 dark:bg-amber-500/20 text-amber-950 dark:text-amber-200`). A solid amber fill
+  keeps dark amber text in both themes (`text-amber-950`). Never leave a hardcoded light-only
+  colour class without a token or a `dark:` counterpart. QR-code images stay white and the
+  camera viewfinder stays black (scannability/video), regardless of theme.
 
 ## Reviewing a change
 
 The design-system bans (cool neutrals, heavy shadows, hand-rolled shells and card chrome,
-`dark:` variants, raw hex classes, raw `bg-white`, spinner loaders, bare loading copy,
-bare `<h1>`) are **enforced by two tests that keep no baseline**:
+light-only colour classes without a token/`dark:` counterpart, raw hex classes, solid
+`bg-white` off a QR image, spinner loaders, bare loading copy, bare `<h1>`) are **enforced by
+two tests that keep no baseline**:
 
 - [`src/app/dashboard/design-lint.test.ts`](../src/app/dashboard/design-lint.test.ts) —
   every dashboard file, plus a page-frame rule: every route renders `PageShell` itself or

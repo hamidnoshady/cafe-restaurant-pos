@@ -111,7 +111,7 @@ export function CampaignAudiencePanel() {
       ) : segments.length === 0 ? (
         <EmptyState>
           هنوز بخشی از مشتریان تعریف نشده است.{" "}
-          <a className="font-semibold text-teal-700 underline-offset-4 hover:underline" href={crmSectionHref("segments")}>
+          <a className="font-semibold text-teal-700 dark:text-teal-300 underline-offset-4 hover:underline" href={crmSectionHref("segments")}>
             ساخت بخش در CRM
           </a>
         </EmptyState>
@@ -164,7 +164,7 @@ export function CampaignAudiencePanel() {
                 <Figure label="بدون اجازه" value={audience.excludedByConsent} tone="muted" />
               </div>
               {audience.missingContact > 0 ? (
-                <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                <p className="rounded-xl border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/15 px-3 py-2 text-xs text-amber-900 dark:text-amber-200">
                   {formatPersianNumber(audience.missingContact)} نفر اجازه داده‌اند اما شماره یا ایمیل ثبت‌شده ندارند.
                 </p>
               ) : null}
@@ -193,10 +193,10 @@ function Figure({
 }) {
   const toneClass =
     tone === "positive"
-      ? "text-teal-700"
+      ? "text-teal-700 dark:text-teal-300"
       : tone === "muted"
         ? "text-muted-foreground"
-        : "text-stone-950";
+        : "text-foreground";
   return (
     <div className={`${cardClass} p-3`}>
       <p className="text-xs text-muted-foreground">{label}</p>

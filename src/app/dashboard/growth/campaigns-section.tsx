@@ -143,16 +143,16 @@ export function CampaignsSection() {
           {!effect || effect.length === 0 ? (
             <EmptyState>هنوز کمپینی روی فروشی اعمال نشده است.</EmptyState>
           ) : (
-            <ul className="divide-y divide-stone-200/80 text-sm">
+            <ul className="divide-y divide-border/80 text-sm">
               {effect.map((row) => (
                 <li key={row.promotionId} className="flex items-center justify-between gap-3 py-2.5">
                   <div className="min-w-0">
-                    <span className="font-medium text-stone-950">{row.promotionName}</span>
+                    <span className="font-medium text-foreground">{row.promotionName}</span>
                     <span className="mr-2 text-xs text-muted-foreground">
                       {formatPersianNumber(row.applications)} بار اعمال
                     </span>
                   </div>
-                  <span className="shrink-0 font-semibold text-amber-700">{money.format(row.totalDiscountRial)}</span>
+                  <span className="shrink-0 font-semibold text-amber-700 dark:text-amber-300">{money.format(row.totalDiscountRial)}</span>
                 </li>
               ))}
             </ul>
@@ -171,14 +171,14 @@ export function CampaignsSection() {
         {promotions.length === 0 ? (
           <EmptyState>هنوز کمپینی تعریف نشده است.</EmptyState>
         ) : (
-          <ul className="divide-y divide-stone-200/80 text-sm">
+          <ul className="divide-y divide-border/80 text-sm">
             {promotions.map((p, i) => {
               const state = states[i];
               return (
                 <li key={p.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
                   <div className="min-w-0">
                     <p className="leading-6">
-                      <span className="font-medium text-stone-950">{p.name}</span>{" "}
+                      <span className="font-medium text-foreground">{p.name}</span>{" "}
                       <StatusBadge tone={stateTone(state)}>{STATE_LABELS[state]}</StatusBadge>
                     </p>
                     <p className="mt-0.5 text-xs leading-5 text-muted-foreground">

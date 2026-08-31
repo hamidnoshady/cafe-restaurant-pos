@@ -263,12 +263,12 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
             <EmptyState>هنوز کاری به همکار هوشمند نسپرده‌اید. از پایین یکی را انتخاب کنید.</EmptyState>
           </div>
         ) : (
-          <ul className="divide-y divide-stone-200/80">
+          <ul className="divide-y divide-border/80">
             {jobs.map((job) => (
               <li key={job.id} className="flex flex-wrap items-start justify-between gap-3 px-4 py-4 sm:px-5">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-medium text-stone-950">{job.title}</span>
+                    <span className="font-medium text-foreground">{job.title}</span>
                     <StatusBadge tone={job.enabled ? "positive" : "neutral"}>
                       {job.enabled ? "فعال" : "خاموش"}
                     </StatusBadge>
@@ -277,7 +277,7 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
                     </StatusBadge>
                   </div>
                   <p className="mt-1 text-xs leading-5 text-muted-foreground">{triggerSummary(job)}</p>
-                  <p className="mt-1 text-xs text-stone-500">آخرین اجرا: {formatDateTime(job.lastRunAt)}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">آخرین اجرا: {formatDateTime(job.lastRunAt)}</p>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                   <Button size="sm" variant="outline" onClick={() => void runNow(job)} disabled={busyId === job.id}>
@@ -309,8 +309,8 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
               onClick={() => startDraft(template)}
               className={`rounded-xl border p-3 text-right transition ${
                 draftTemplate?.key === template.key
-                  ? "border-amber-300 bg-amber-100 text-amber-950"
-                  : "border-stone-200/80 hover:bg-stone-50"
+                  ? "border-amber-300 dark:border-amber-500/40 bg-amber-100 dark:bg-amber-500/20 text-amber-950 dark:text-amber-200"
+                  : "border-border/80 hover:bg-muted"
               }`}
             >
               <span className="block text-sm font-medium">{template.title}</span>
@@ -320,7 +320,7 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
         </div>
 
         {draftTemplate ? (
-          <div className="mt-4 space-y-4 rounded-xl border border-stone-200/80 p-4">
+          <div className="mt-4 space-y-4 rounded-xl border border-border/80 p-4">
             <Field label="عنوان این کار">
               <input className={inputClass} value={title} onChange={(event) => setTitle(event.target.value)} />
             </Field>
@@ -400,7 +400,7 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
 
             {draftTemplate.key === "shift_close_waste" ? (
               <div className="space-y-2">
-                <span className="text-sm font-medium text-stone-950">کالاها و دلیل ضایعات</span>
+                <span className="text-sm font-medium text-foreground">کالاها و دلیل ضایعات</span>
                 {wasteLines.map((line, index) => (
                   <div key={index} className="grid gap-2 sm:grid-cols-4">
                     <select
@@ -481,7 +481,7 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
 
             {draftTemplate.key === "shift_open_production" ? (
               <div className="space-y-2">
-                <span className="text-sm font-medium text-stone-950">فرمول‌ها و تعداد بچ</span>
+                <span className="text-sm font-medium text-foreground">فرمول‌ها و تعداد بچ</span>
                 {formulaLines.map((line, index) => (
                   <div key={index} className="grid gap-2 sm:grid-cols-2">
                     <select
@@ -525,7 +525,7 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
 
             {draftTemplate.key === "shift_open_stock_topup" ? (
               <div className="space-y-2">
-                <span className="text-sm font-medium text-stone-950">کالاها، مقدار و بهای هر بار</span>
+                <span className="text-sm font-medium text-foreground">کالاها، مقدار و بهای هر بار</span>
                 {topUpLines.map((line, index) => (
                   <div key={index} className="grid gap-2 sm:grid-cols-3">
                     <select
@@ -618,7 +618,7 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
             ) : null}
 
             {approvalMode === "auto" ? (
-              <p className="text-xs leading-5 text-amber-800">
+              <p className="text-xs leading-5 text-amber-800 dark:text-amber-300">
                 حتی در این حالت، هر اقدام از سقف‌های «اجرای خودکار» شما رد می‌شود؛ هرچه از سقف بگذرد باز هم برای
                 تأیید شما کنار گذاشته می‌شود.
               </p>

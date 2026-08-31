@@ -401,7 +401,14 @@ The app had a previous dialect. If a screen looks like any of these, it is a reg
   borders or shadows (`rgb(15 23 42 / …)`). Neutrals are `stone-*` / the warm tokens.
 - **Heavy card chrome** — `shadow-sm`/`shadow-md`/`shadow-lg` on cards, 2px borders,
   `border-stone-300` frames, dark headers on tables (`bg-stone-800 text-white`).
-- **Dark-mode piecemeal** — `dark:` variants inside the dashboard. Not supported; don't add.
+- **Light-only colour classes** — dark mode IS supported. A hardcoded neutral
+  (`stone-*`, solid `bg-white`) or accent/status colour (`amber-*`, `emerald-*`,
+  `rose-*`, `red-*`, `sky-*`) with no theme token and no paired `dark:` shade
+  renders a light chip on a dark surface. Express neutrals with the tokens
+  (`bg-card`, `text-foreground`, `border-border`, `muted-*` — they flip
+  automatically) and pair the amber/status palettes with a `dark:` shade. The
+  only fixed-surface exceptions are TOTP/QR images (always white) and the
+  camera viewfinder (always black).
 - **Wrong accents** — a selected chip as `bg-stone-900 text-white` or teal-filled; a filled
   dashboard button in amber (that's the POS's alone); blue focus rings; a third accent color
   on one screen.
@@ -452,9 +459,10 @@ The bans on this page are **executable**, and there is no baseline anywhere — 
 must pass every rule:
 
 - `src/app/dashboard/design-lint.test.ts` greps every non-test dashboard file for the
-  banned patterns (cool neutrals, heavy shadows, restated card/page skins, `dark:` variants,
-  raw hex, raw `bg-white`, comma-rgba shadow spellings, `animate-spin`, bare loading copy,
-  a bare `<h1>` on a route), and checks that **every dashboard route carries the frame** —
+  banned patterns (cool neutrals, heavy shadows, restated card/page skins, light-only colour
+  classes with no token/`dark:` counterpart, raw hex, solid `bg-white` off a QR image,
+  comma-rgba shadow spellings, `animate-spin`, bare loading copy, a bare `<h1>` on a route),
+  and checks that **every dashboard route carries the frame** —
   `PageShell` in the page or in a component it imports.
 - `src/app/design-lint.test.ts` holds the same line on every other tenant-facing surface:
   login, welcome, setup, invite, consent, the business directory and `src/components`
@@ -475,7 +483,7 @@ grep -rn 'shadow-sm\|shadow-md\|shadow-lg' src/app/dashboard/ src/app/login src/
 grep -rnE 'text-(gray|slate|zinc|neutral)-|bg-(gray|slate|zinc|neutral)-' src/app/dashboard/ && echo "cool neutral drifted"
 grep -rnE -- '-\[#[0-9a-fA-F]{3,8}\]' src/app/dashboard/ && echo "raw hex drifted"
 grep -rn 'animate-spin' src/app/dashboard/ src/app/login src/app/welcome src/app/components && echo "spinner drifted"
-grep -rn ' dark:' src/app/dashboard/ src/app/login src/app/welcome src/app/setup src/app/components && echo "dark variant drifted"
+grep -rnE '(bg|text|border)-stone-[0-9]|(?<!/)bg-white\b' src/app/dashboard/ src/app/login src/app/welcome src/app/setup src/app/components | grep -v 'dark:' && echo "light-only colour drifted (dark mode)"
 grep -rn 'mx-auto w-full max-w-\[' src/app/dashboard/ --include='*.tsx' | grep -v page-chrome && echo "PageShell bypassed"
 grep -rn '<h1' src/app/dashboard/ --include='page.tsx' && echo "PageHeader bypassed"
 ```

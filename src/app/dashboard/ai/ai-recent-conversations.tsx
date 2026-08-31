@@ -87,7 +87,7 @@ export function AiRecentConversations({
         onClick={collapsible ? () => setCollapsed((current) => !current) : undefined}
         className={cn(
           "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-xs font-medium text-muted-foreground transition-colors",
-          collapsible && "hover:bg-amber-50 hover:text-amber-700",
+          collapsible && "hover:bg-amber-50 dark:hover:bg-amber-500/15 hover:text-amber-700 dark:hover:text-amber-300",
         )}
       >
         <MessageSquareIcon aria-hidden="true" className="size-3.5 shrink-0" />
@@ -113,11 +113,11 @@ export function AiRecentConversations({
                   type="button"
                   onClick={() => onSelect(item.id)}
                   className={cn(
-                    "flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-right text-xs transition-colors hover:bg-amber-50 hover:text-amber-700",
-                    activeId === item.id ? "bg-amber-100 font-medium text-amber-700" : "text-stone-700",
+                    "flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-right text-xs transition-colors hover:bg-amber-50 dark:hover:bg-amber-500/15 hover:text-amber-700 dark:hover:text-amber-300",
+                    activeId === item.id ? "bg-amber-100 dark:bg-amber-500/20 font-medium text-amber-700 dark:text-amber-300" : "text-foreground/80",
                   )}
                 >
-                  <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-stone-300" aria-hidden="true" />
+                  <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-input" aria-hidden="true" />
                   <span className="min-w-0">
                     <span className="block truncate font-medium">{item.title}</span>
                     <span className="block text-[10px] text-muted-foreground">{formatDate(item.lastMessageAt)}</span>
@@ -130,7 +130,7 @@ export function AiRecentConversations({
             <button
               type="button"
               onClick={() => setVisibleCount((count) => Math.min(items.length, count + initialLimit))}
-              className="flex w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium text-amber-700 transition-colors hover:bg-amber-50"
+              className="flex w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium text-amber-700 dark:text-amber-300 transition-colors hover:bg-amber-50 dark:hover:bg-amber-500/15"
             >
               <ChevronDownIcon aria-hidden="true" className="size-3.5 shrink-0" />
               نمایش بیشتر
@@ -140,7 +140,7 @@ export function AiRecentConversations({
             <button
               type="button"
               onClick={() => setVisibleCount(initialLimit)}
-              className="flex w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium text-stone-500 transition-colors hover:bg-stone-50 hover:text-stone-700"
+              className="flex w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground/80"
             >
               <ChevronUpIcon aria-hidden="true" className="size-3.5 shrink-0" />
               نمایش کمتر

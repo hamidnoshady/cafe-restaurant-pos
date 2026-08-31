@@ -37,7 +37,7 @@ function KpiTile({ label, value, hint }: { label: string; value: string; hint?: 
   return (
     <div className={`min-w-0 p-4 sm:p-5 ${cardClass}`}>
       <p className="text-xs font-medium leading-5 text-muted-foreground">{label}</p>
-      <p className="mt-2 truncate text-xl font-bold tracking-tight text-stone-950 sm:text-2xl">{value}</p>
+      <p className="mt-2 truncate text-xl font-bold tracking-tight text-foreground sm:text-2xl">{value}</p>
       {hint ? <p className="mt-1 text-xs leading-5 text-muted-foreground">{hint}</p> : null}
     </div>
   );
@@ -104,20 +104,20 @@ export function GrowthAccountingView() {
         <div className="overflow-x-auto">
           <table className="w-full min-w-[28rem] text-sm">
             <thead>
-              <tr className="border-b border-stone-200/80 text-xs text-muted-foreground">
+              <tr className="border-b border-border/80 text-xs text-muted-foreground">
                 <th className="px-3 py-2 text-right font-medium">حساب</th>
                 <th className="px-3 py-2 text-right font-medium">نام</th>
                 <th className="px-3 py-2 text-left font-medium" dir="ltr">کد</th>
                 <th className="px-3 py-2 text-left font-medium">مانده</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-stone-200/80">
+            <tbody className="divide-y divide-border/80">
               {data.bridge.map((row) => (
                 <tr key={row.code}>
-                  <td className="px-3 py-2.5 text-stone-950">{row.name}</td>
-                  <td className="px-3 py-2.5 text-stone-600">{row.type === "liability" ? "بدهی" : row.type === "expense" ? "هزینه" : row.type}</td>
+                  <td className="px-3 py-2.5 text-foreground">{row.name}</td>
+                  <td className="px-3 py-2.5 text-muted-foreground">{row.type === "liability" ? "بدهی" : row.type === "expense" ? "هزینه" : row.type}</td>
                   <td className="px-3 py-2.5 text-left text-muted-foreground" dir="ltr">{toPersianDigits(row.code)}</td>
-                  <td className="px-3 py-2.5 text-left font-semibold text-stone-950">{money.format(row.balance)}</td>
+                  <td className="px-3 py-2.5 text-left font-semibold text-foreground">{money.format(row.balance)}</td>
                 </tr>
               ))}
             </tbody>
@@ -127,11 +127,11 @@ export function GrowthAccountingView() {
 
       {data.commission.top.length > 0 ? (
         <SectionCard title="برترین فروشندگان" description="پورسانت انباشته در ۳۰ روز گذشته">
-          <ul className="divide-y divide-stone-200/80 text-sm">
+          <ul className="divide-y divide-border/80 text-sm">
             {data.commission.top.map((row) => (
               <li key={row.employeeId} className="flex items-center justify-between gap-3 py-2.5">
-                <span className="min-w-0 font-medium text-stone-950">{row.employeeName}</span>
-                <span className="shrink-0 font-semibold text-emerald-700">{money.format(row.amount)}</span>
+                <span className="min-w-0 font-medium text-foreground">{row.employeeName}</span>
+                <span className="shrink-0 font-semibold text-emerald-700 dark:text-emerald-300">{money.format(row.amount)}</span>
               </li>
             ))}
           </ul>

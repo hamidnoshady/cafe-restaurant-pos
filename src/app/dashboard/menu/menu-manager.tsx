@@ -337,7 +337,7 @@ function ItemSection({
               <button
                 type="button"
                 onClick={() => toggleCategory(c.id)}
-                className="mb-1 flex items-center gap-1.5 text-sm font-medium text-stone-950"
+                className="mb-1 flex items-center gap-1.5 text-sm font-medium text-foreground"
                 aria-expanded={!isCollapsed}
               >
                 <ChevronDown
@@ -350,7 +350,7 @@ function ItemSection({
                 </span>
               </button>
               {isCollapsed ? null : (
-                <ul className="divide-y divide-stone-200/80 rounded-xl border border-stone-200/80">
+                <ul className="divide-y divide-border/80 rounded-xl border border-border/80">
                   {items.map((i) => (
                     <ItemRow
                       key={i.id}
@@ -463,7 +463,7 @@ function ItemRow({
       </div>
       {pricingOpen ? <PricingPanel item={item} busy={busy} run={run} /> : null}
       {expanded ? (
-        <div className="mt-2 flex flex-wrap gap-2 border-t border-stone-200/80 pt-2">
+        <div className="mt-2 flex flex-wrap gap-2 border-t border-border/80 pt-2">
           {groups.length === 0 ? (
             <span className="text-xs text-muted-foreground">
               گروه افزودنی‌ای ثبت نشده است.
@@ -495,8 +495,8 @@ function ItemRow({
                   aria-pressed={isOn}
                   className={`min-h-9 rounded-lg border px-3 text-xs font-medium transition-colors ${
                     isOn
-                      ? "border-amber-200 bg-amber-100 text-amber-950"
-                      : "border-stone-200 text-stone-600 hover:bg-stone-50"
+                      ? "border-amber-200 dark:border-amber-500/30 bg-amber-100 dark:bg-amber-500/20 text-amber-950 dark:text-amber-200"
+                      : "border-border text-muted-foreground hover:bg-muted"
                   }`}
                 >
                   {g.name}
@@ -659,7 +659,7 @@ function PricingPanel({
   }
 
   return (
-    <div className="mt-2 space-y-2 rounded-xl border border-stone-200/80 bg-stone-50/60 p-3 text-xs">
+    <div className="mt-2 space-y-2 rounded-xl border border-border/80 bg-muted/60 p-3 text-xs">
       {loading ? (
         <LoadingSkeleton rows={2} compact label="در حال محاسبه قیمت پیشنهادی" />
       ) : !suggestion ? (
@@ -717,7 +717,7 @@ function PricingPanel({
         </>
       )}
 
-      <div className="grid min-w-0 gap-2 border-t border-stone-200/80 pt-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+      <div className="grid min-w-0 gap-2 border-t border-border/80 pt-2 sm:grid-cols-[minmax(0,1fr)_auto]">
         <Field label="حاشیه سود اختصاصی این آیتم (درصد)">
           <PersianNumberInput
             className={inputClass}
@@ -917,7 +917,7 @@ function ModifierGroupRow({
   }
 
   return (
-    <div className="min-w-0 rounded-xl border border-stone-200/80 p-3">
+    <div className="min-w-0 rounded-xl border border-border/80 p-3">
       {editing ? (
         <form
           className="mb-2 grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-3"

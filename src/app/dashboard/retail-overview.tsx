@@ -134,27 +134,27 @@ export function RetailOverview({ industry }: { industry: Industry }) {
       {industry === "cosmetics" ? (
         <section className={`mb-5 ${cardClass} p-4 sm:p-5`}>
           <div className="mb-3 flex items-center justify-between gap-2">
-            <h2 className="flex items-center gap-2 font-semibold text-stone-950">
+            <h2 className="flex items-center gap-2 font-semibold text-foreground">
               <AlertTriangleIcon aria-hidden="true" className="size-4" />
               بچ‌های نزدیک به انقضا
             </h2>
-            <Link href="/dashboard/cosmetics" className="text-sm font-semibold text-amber-800 hover:underline">
+            <Link href="/dashboard/cosmetics" className="text-sm font-semibold text-amber-800 dark:text-amber-300 hover:underline">
               مدیریت کالاها ←
             </Link>
           </div>
           {loading ? (
             <LoadingSkeleton rows={3} />
           ) : nearExpiry.length === 0 ? (
-            <p className="rounded-xl border border-dashed border-stone-200/80 px-3 py-6 text-center text-sm text-stone-500">
+            <p className="rounded-xl border border-dashed border-border/80 px-3 py-6 text-center text-sm text-muted-foreground">
               هیچ بچی منقضی یا نزدیک به انقضا نیست.
             </p>
           ) : (
-            <ul className="divide-y divide-stone-200/80">
+            <ul className="divide-y divide-border/80">
               {nearExpiry.slice(0, 10).map((row) => (
                 <li key={`${row.batchNumber}-${row.itemName}`} className="flex items-center justify-between gap-3 py-2.5 text-sm">
                   <div className="min-w-0">
-                    <span className="font-medium text-stone-950">{row.itemName}</span>
-                    <span className="mr-2 text-xs text-stone-500">
+                    <span className="font-medium text-foreground">{row.itemName}</span>
+                    <span className="mr-2 text-xs text-muted-foreground">
                       بچ {row.batchNumber}
                       {row.expiryDate ? ` · انقضا ${toPersianDigits(formatJalali(row.expiryDate))}` : ""}
                     </span>
@@ -162,10 +162,10 @@ export function RetailOverview({ industry }: { industry: Industry }) {
                   <span
                     className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${
                       row.bucket === "expired"
-                        ? "bg-rose-100 text-rose-800"
+                        ? "bg-rose-100 dark:bg-rose-500/20 text-rose-800 dark:text-rose-200"
                         : row.bucket === "under30"
-                          ? "bg-amber-100 text-amber-900"
-                          : "bg-stone-100 text-stone-700"
+                          ? "bg-amber-100 dark:bg-amber-500/20 text-amber-900 dark:text-amber-200"
+                          : "bg-muted text-foreground/80"
                     }`}
                   >
                     {EXPIRY_BUCKET_LABELS[row.bucket]}
@@ -180,11 +180,11 @@ export function RetailOverview({ industry }: { industry: Industry }) {
       {industry === "jewelry" ? (
         <section className={`mb-5 ${cardClass} p-4 sm:p-5`}>
           <div className="mb-3 flex items-center justify-between gap-2">
-            <h2 className="flex items-center gap-2 font-semibold text-stone-950">
+            <h2 className="flex items-center gap-2 font-semibold text-foreground">
               <GemIcon aria-hidden="true" className="size-4" />
               نرخ طلا
             </h2>
-            <Link href="/dashboard/jewelry" className="text-sm font-semibold text-amber-800 hover:underline">
+            <Link href="/dashboard/jewelry" className="text-sm font-semibold text-amber-800 dark:text-amber-300 hover:underline">
               ثبت نرخ روز ←
             </Link>
           </div>
@@ -193,12 +193,12 @@ export function RetailOverview({ industry }: { industry: Industry }) {
           ) : data && data.goldPrices.length > 0 ? (
             <dl className="grid gap-3 sm:grid-cols-3">
               {data.goldPrices.map((price) => (
-                <div key={price.purity} className="rounded-xl bg-stone-50 p-3">
-                  <dt className="text-[11px] text-stone-500">
+                <div key={price.purity} className="rounded-xl bg-muted p-3">
+                  <dt className="text-[11px] text-muted-foreground">
                     {PURITY_LABELS[price.purity] ?? price.purity} —{" "}
                     {toPersianDigits(formatJalali(price.priceDate))}
                   </dt>
-                  <dd className="mt-1 text-sm font-bold text-stone-950">
+                  <dd className="mt-1 text-sm font-bold text-foreground">
                     {money.format(price.pricePerGram)} بر گرم
                   </dd>
                 </div>
@@ -207,7 +207,7 @@ export function RetailOverview({ industry }: { industry: Industry }) {
           ) : (
             // Without a rate for today, `sellWeightedItem` refuses every sale —
             // so this is the one thing that must be obvious on the home page.
-            <p className="rounded-xl border border-amber-300/60 bg-amber-50 px-3 py-2.5 text-sm text-amber-900">
+            <p className="rounded-xl border border-amber-300/60 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-500/15 px-3 py-2.5 text-sm text-amber-900 dark:text-amber-200">
               نرخ طلا هنوز ثبت نشده است. تا زمانی که نرخ روز ثبت نشود، فروش ممکن نیست.
             </p>
           )}
@@ -217,13 +217,13 @@ export function RetailOverview({ industry }: { industry: Industry }) {
       <div className="flex flex-wrap gap-3">
         <Link
           href="/dashboard/pos"
-          className="inline-flex min-h-12 flex-1 items-center justify-center rounded-xl border border-amber-500/35 bg-amber-50 px-4 text-sm font-semibold text-amber-800 transition-colors hover:bg-amber-50"
+          className="inline-flex min-h-12 flex-1 items-center justify-center rounded-xl border border-amber-500/35 dark:border-amber-500/60 bg-amber-50 dark:bg-amber-500/15 px-4 text-sm font-semibold text-amber-800 dark:text-amber-300 transition-colors hover:bg-amber-50 dark:hover:bg-amber-500/15"
         >
           {labelFor(industry, "sellScreen")} ←
         </Link>
         <Link
           href={`/dashboard/${industry}`}
-          className="inline-flex min-h-12 flex-1 items-center justify-center rounded-xl border border-stone-200/80 bg-card px-4 text-sm font-semibold text-stone-600 transition-colors hover:bg-stone-50"
+          className="inline-flex min-h-12 flex-1 items-center justify-center rounded-xl border border-border/80 bg-card px-4 text-sm font-semibold text-muted-foreground transition-colors hover:bg-muted"
         >
           مدیریت {labelFor(industry, "catalogue")} ←
         </Link>
@@ -247,11 +247,11 @@ function Kpi({
     <div className={`${cardClass} p-4 shadow-[0_1px_2px_rgb(41_37_36/0.03)]`}>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className="text-sm font-medium text-stone-500">{label}</p>
-          <p className="mt-1.5 text-xl font-bold text-stone-950">{value}</p>
-          <p className="mt-1 text-[11px] text-stone-400">{hint}</p>
+          <p className="text-sm font-medium text-muted-foreground">{label}</p>
+          <p className="mt-1.5 text-xl font-bold text-foreground">{value}</p>
+          <p className="mt-1 text-[11px] text-muted-foreground">{hint}</p>
         </div>
-        <span className="shrink-0 rounded-xl bg-amber-50 p-2 text-amber-700">
+        <span className="shrink-0 rounded-xl bg-amber-50 dark:bg-amber-500/15 p-2 text-amber-700 dark:text-amber-300">
           <Icon aria-hidden="true" className="size-5" />
         </span>
       </div>

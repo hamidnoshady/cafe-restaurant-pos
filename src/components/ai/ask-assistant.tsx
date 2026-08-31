@@ -32,7 +32,7 @@ export function AskAssistant({
   return (
     <Link
       href={href}
-      className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-amber-800"
+      className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-amber-800 dark:hover:text-amber-300"
     >
       <SparklesIcon className="size-4 shrink-0" aria-hidden="true" />
       <span>{label}</span>

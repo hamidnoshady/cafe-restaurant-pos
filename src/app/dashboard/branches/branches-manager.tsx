@@ -120,10 +120,10 @@ export function BranchesManager() {
             {branches.map((branch) => (
               <li
                 key={branch.id}
-                className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-stone-100 bg-stone-50/60 px-4 py-3"
+                className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-muted/60 px-4 py-3"
               >
                 <div className="min-w-0">
-                  <p className="flex flex-wrap items-center gap-2 font-medium text-stone-950">
+                  <p className="flex flex-wrap items-center gap-2 font-medium text-foreground">
                     {branch.name}
                     <StatusBadge tone={branch.isActive ? "positive" : "neutral"}>
                       {branch.isActive ? "فعال" : "غیرفعال"}

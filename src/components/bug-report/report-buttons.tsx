@@ -21,7 +21,7 @@ export function BugReportFooterButton({ variant = "sidebar" }: { variant?: "side
         onClick={openReport}
         aria-label="گزارش مشکل"
         title="گزارش مشکل"
-        className="flex min-h-14 w-14 shrink-0 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[10px] font-medium text-stone-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 active:scale-[0.98]"
+        className="flex min-h-14 w-14 shrink-0 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[10px] font-medium text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 active:scale-[0.98]"
       >
         <BugIcon aria-hidden="true" className="size-5 shrink-0" />
         <span className="max-w-full truncate">گزارش</span>

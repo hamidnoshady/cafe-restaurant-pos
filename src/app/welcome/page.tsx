@@ -186,9 +186,9 @@ function LocalBootstrapForm({ onBack }: { onBack: () => void }) {
                   onClick={() => enabled && setIndustry(option)}
                   className={`relative rounded-lg border px-3 py-2 text-sm transition-colors outline-none focus-visible:ring focus-visible:ring-ring/50 ${
                     selected
-                      ? "border-amber-300 bg-amber-100 font-medium text-amber-950"
+                      ? "border-amber-300 dark:border-amber-500/40 bg-amber-100 dark:bg-amber-500/20 font-medium text-amber-950 dark:text-amber-200"
                       : "border-input text-foreground"
-                  } ${enabled ? "hover:border-amber-400" : "cursor-not-allowed opacity-50"}`}
+                  } ${enabled ? "hover:border-amber-400 dark:hover:border-amber-500/50" : "cursor-not-allowed opacity-50"}`}
                 >
                   {INDUSTRY_LABELS[option]}
                   {!enabled ? (
@@ -305,7 +305,7 @@ function MfaHandoverCard({ mfa, onDone }: { mfa: MfaHandover; onDone: () => void
           <img
             src={mfa.totpQr}
             alt="کد QR ورود دومرحله‌ای"
-            className="size-52 rounded-lg bg-card p-2 ring-1 ring-stone-200/80"
+            className="size-52 rounded-lg bg-white p-2 ring-1 ring-border/80"
           />
         </div>
       ) : null}

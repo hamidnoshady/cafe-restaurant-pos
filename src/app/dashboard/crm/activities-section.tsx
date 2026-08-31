@@ -113,7 +113,7 @@ export function ActivitiesSection() {
         }
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            <label className="flex items-center gap-2 text-sm text-stone-600">
+            <label className="flex items-center gap-2 text-sm text-muted-foreground">
               <Checkbox
                 checked={openOnly}
                 onCheckedChange={(checked) => setOpenOnly(checked === true)}
@@ -137,7 +137,7 @@ export function ActivitiesSection() {
               : "هنوز کاری ثبت نشده است. یک تماس پیگیری، یک یادآوری تولد، یا جلسه‌ای که باید گرفته شود."}
           </EmptyState>
         ) : (
-          <ul className="divide-y divide-stone-200/80 text-sm">
+          <ul className="divide-y divide-border/80 text-sm">
             {activities.map((activity) => {
               const state = activityState(activity, today);
               return (
@@ -151,7 +151,7 @@ export function ActivitiesSection() {
                   <div className="min-w-0 flex-1">
                     <p
                       className={`leading-6 ${
-                        activity.completedAt ? "text-muted-foreground line-through" : "text-stone-950"
+                        activity.completedAt ? "text-muted-foreground line-through" : "text-foreground"
                       }`}
                     >
                       {activity.subject}
@@ -306,7 +306,7 @@ function ActivityDialog({ onClose, onSaved }: { onClose: () => void; onSaved: ()
         <Field label="مشتری (اختیاری)" hint="با ثبت مشتری، این کار در پروندهٔ او هم دیده می‌شود.">
           {customerId ? (
             <div className="flex items-center gap-2">
-              <span className="text-sm text-stone-950">{customerQuery}</span>
+              <span className="text-sm text-foreground">{customerQuery}</span>
               <Button
                 type="button"
                 variant="ghost"

@@ -215,11 +215,11 @@ export function WebsiteSection() {
             {overview.pages.length === 0 ? (
               <EmptyState>هنوز صفحه‌ای ساخته نشده است.</EmptyState>
             ) : (
-              <ul className="divide-y divide-stone-100">
+              <ul className="divide-y divide-border">
                 {overview.pages.map((page) => (
                   <li key={page.id} className="flex items-center justify-between gap-3 py-2.5">
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-stone-950">{page.title}</p>
+                      <p className="truncate text-sm font-medium text-foreground">{page.title}</p>
                       <p dir="ltr" className="truncate text-xs text-muted-foreground">
                         /{page.slug}
                       </p>
@@ -237,15 +237,15 @@ export function WebsiteSection() {
             {overview.products.length === 0 ? (
               <EmptyState>فروشگاه هنوز محصولی ندارد.</EmptyState>
             ) : (
-              <ul className="divide-y divide-stone-100">
+              <ul className="divide-y divide-border">
                 {overview.products.map((product) => (
                   <li key={product.id} className="flex items-center justify-between gap-3 py-2.5">
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-stone-950">{product.title}</p>
+                      <p className="truncate text-sm font-medium text-foreground">{product.title}</p>
                       {product.sku ? <p className="truncate text-xs text-muted-foreground">{product.sku}</p> : null}
                     </div>
                     <div className="flex shrink-0 items-center gap-3">
-                      <p className="text-sm font-semibold text-stone-950">
+                      <p className="text-sm font-semibold text-foreground">
                         {formatPersianNumber(product.price)}{" "}
                         <span className="text-xs font-normal text-muted-foreground">
                           {CURRENCY_LABELS[overview.site.store.currency] ?? overview.site.store.currency}
@@ -299,17 +299,17 @@ function SiteSummary({ site }: { site: SiteDescriptor }) {
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
       <div>
         <p className="text-xs text-muted-foreground">نام سایت</p>
-        <p className="mt-0.5 truncate text-sm font-medium text-stone-950">{site.name}</p>
+        <p className="mt-0.5 truncate text-sm font-medium text-foreground">{site.name}</p>
       </div>
       <div>
         <p className="text-xs text-muted-foreground">دامنه</p>
-        <p dir="ltr" className="mt-0.5 truncate text-sm font-medium text-stone-950">
+        <p dir="ltr" className="mt-0.5 truncate text-sm font-medium text-foreground">
           {site.domain}
         </p>
       </div>
       <div>
         <p className="text-xs text-muted-foreground">نوع و وضعیت</p>
-        <p className="mt-0.5 flex items-center gap-2 text-sm font-medium text-stone-950">
+        <p className="mt-0.5 flex items-center gap-2 text-sm font-medium text-foreground">
           {TYPE_LABELS[site.type] ?? site.type}
           <StatusBadge tone={site.status === "active" ? "positive" : site.status === "suspended" ? "active" : "neutral"}>
             {STATUS_LABELS[site.status] ?? site.status}
@@ -318,7 +318,7 @@ function SiteSummary({ site }: { site: SiteDescriptor }) {
       </div>
       <div>
         <p className="text-xs text-muted-foreground">زبان‌ها و ارز</p>
-        <p className="mt-0.5 text-sm font-medium text-stone-950">
+        <p className="mt-0.5 text-sm font-medium text-foreground">
           {site.availableLocales.map((locale) => LOCALE_LABELS[locale] ?? locale).join("، ")}
           <span className="text-muted-foreground"> · </span>
           {CURRENCY_LABELS[site.store.currency] ?? site.store.currency}
@@ -344,11 +344,11 @@ function OrdersCard({
       {orders.length === 0 ? (
         <EmptyState>سفارشی ثبت نشده است.</EmptyState>
       ) : (
-        <ul className="divide-y divide-stone-100">
+        <ul className="divide-y divide-border">
           {orders.map((order) => (
             <li key={order.id} className="flex flex-wrap items-center justify-between gap-3 py-2.5">
               <div className="min-w-0">
-                <p className="truncate text-sm font-medium text-stone-950">
+                <p className="truncate text-sm font-medium text-foreground">
                   {toPersianDigits(order.reference)} — {order.productTitle ?? "محصول"}
                 </p>
                 <p className="truncate text-xs text-muted-foreground">
@@ -438,17 +438,17 @@ function DnsChecklistCard({
         {steps.map((step) => (
           <li key={step.label} className="flex items-start gap-2.5 text-sm">
             {step.done ? (
-              <CircleCheckIcon className="mt-0.5 size-4 shrink-0 text-emerald-600" />
+              <CircleCheckIcon className="mt-0.5 size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
             ) : (
-              <span className="mt-1 size-2 shrink-0 rounded-full bg-amber-400" />
+              <span className="mt-1 size-2 shrink-0 rounded-full bg-amber-400 dark:bg-amber-400" />
             )}
-            <span className={step.done ? "text-muted-foreground line-through decoration-stone-300" : "text-stone-950"}>
+            <span className={step.done ? "text-muted-foreground line-through decoration-muted-foreground/50" : "text-foreground"}>
               {step.label}
             </span>
           </li>
         ))}
       </ol>
-      <p className="mt-3 rounded-xl bg-stone-50 px-3 py-2.5 text-xs leading-5 text-stone-600">
+      <p className="mt-3 rounded-xl bg-muted px-3 py-2.5 text-xs leading-5 text-muted-foreground">
         {cmsDnsHint(status)}
       </p>
       <div className="mt-3">
@@ -514,9 +514,9 @@ function PreviewCard({
           </p>
         </div>
       ) : (
-        <div className="overflow-hidden rounded-xl border border-stone-200">
-          <div dir="ltr" className="flex items-center gap-2 border-b border-stone-200 bg-stone-50 px-3 py-2 text-xs text-stone-600">
-            <ShieldCheckIcon className="size-3.5 text-emerald-600" />
+        <div className="overflow-hidden rounded-xl border border-border">
+          <div dir="ltr" className="flex items-center gap-2 border-b border-border bg-muted px-3 py-2 text-xs text-muted-foreground">
+            <ShieldCheckIcon className="size-3.5 text-emerald-600 dark:text-emerald-400" />
             <span className="truncate">{url}</span>
           </div>
           {/* key remounts the frame on refresh so the page reloads cleanly */}

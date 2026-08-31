@@ -117,15 +117,15 @@ export function DealsSection() {
         <div className="mb-4 grid gap-3 sm:grid-cols-3">
           <div>
             <p className="text-xs text-muted-foreground">ارزش خام معامله‌های باز</p>
-            <p className="mt-1 font-semibold text-stone-950">{money.format(rawValue)}</p>
+            <p className="mt-1 font-semibold text-foreground">{money.format(rawValue)}</p>
           </div>
           <div>
             <p className="text-xs text-muted-foreground">ارزش وزنی (بر پایهٔ احتمال)</p>
-            <p className="mt-1 font-semibold text-teal-700">{money.format(weighted)}</p>
+            <p className="mt-1 font-semibold text-teal-700 dark:text-teal-300">{money.format(weighted)}</p>
           </div>
           <div>
             <p className="text-xs text-muted-foreground">نرخ موفقیت</p>
-            <p className="mt-1 font-semibold text-stone-950">
+            <p className="mt-1 font-semibold text-foreground">
               {toPersianDigits(String(winRate(deals)))}٪
             </p>
           </div>
@@ -148,11 +148,11 @@ export function DealsSection() {
                       if (dragging) move(dragging, stage);
                       setDragging(null);
                     }}
-                    className="flex w-64 shrink-0 flex-col gap-2 rounded-2xl border border-stone-200/80 bg-stone-50/60 p-3"
+                    className="flex w-64 shrink-0 flex-col gap-2 rounded-2xl border border-border/80 bg-muted/60 p-3"
                   >
                     <div>
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-sm font-semibold text-stone-950">{meta.label}</span>
+                        <span className="text-sm font-semibold text-foreground">{meta.label}</span>
                         <StatusBadge tone={meta.tone}>
                           {formatPersianNumber(column.length)}
                         </StatusBadge>
@@ -171,11 +171,11 @@ export function DealsSection() {
                         <button
                           type="button"
                           onClick={() => setEditing(deal)}
-                          className="block w-full text-right text-sm font-medium text-stone-950 hover:underline"
+                          className="block w-full text-right text-sm font-medium text-foreground hover:underline"
                         >
                           {deal.title}
                         </button>
-                        <p className="mt-1 text-sm font-semibold text-stone-700">
+                        <p className="mt-1 text-sm font-semibold text-foreground/80">
                           {money.format(deal.valueRial)}
                         </p>
                         {deal.customerId ? (
@@ -192,7 +192,7 @@ export function DealsSection() {
                           </p>
                         ) : null}
                         {deal.stage === "lost" && deal.lostReason ? (
-                          <p className="mt-1 text-xs text-rose-700">{deal.lostReason}</p>
+                          <p className="mt-1 text-xs text-rose-700 dark:text-rose-300">{deal.lostReason}</p>
                         ) : null}
                       </article>
                     ))}

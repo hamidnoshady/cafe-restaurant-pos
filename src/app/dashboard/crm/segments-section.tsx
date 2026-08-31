@@ -141,7 +141,7 @@ export function SegmentsSection() {
             بالای دو میلیون تومان بوده».
           </EmptyState>
         ) : (
-          <ul className="divide-y divide-stone-200/80">
+          <ul className="divide-y divide-border/80">
             {segments.map((segment) => (
               <li key={segment.id} className="flex flex-wrap items-start justify-between gap-3 py-3">
                 <div className="min-w-0 flex-1">
@@ -149,7 +149,7 @@ export function SegmentsSection() {
                     <button
                       type="button"
                       onClick={() => setEditing(segment)}
-                      className="font-medium text-stone-950 hover:underline"
+                      className="font-medium text-foreground hover:underline"
                     >
                       {segment.name}
                     </button>
@@ -323,22 +323,22 @@ function SegmentDialog({
           </select>
         </Field>
 
-        <div className="rounded-2xl border border-stone-200/80 bg-stone-50/60 p-4">
-          <p className="text-sm font-medium text-stone-950">برآورد</p>
+        <div className="rounded-2xl border border-border/80 bg-muted/60 p-4">
+          <p className="text-sm font-medium text-foreground">برآورد</p>
           {previewLoading ? (
             <LoadingSkeleton rows={2} compact className="mt-2" label="در حال محاسبه برآورد بخش" />
           ) : !preview ? (
             <p className="mt-1 text-xs text-muted-foreground">برآورد این بخش در دسترس نیست.</p>
           ) : (
             <>
-              <p className="mt-1 text-sm text-stone-700">
+              <p className="mt-1 text-sm text-foreground/80">
                 {purpose === "view" ? (
                   <>{formatPersianNumber(preview.count)} مشتری در این بخش قرار می‌گیرند.</>
                 ) : (
                   <>
                     {formatPersianNumber(preview.totalBeforeConsent)} مشتری با این قاعده‌ها هم‌خوانی
                     دارند؛ از این میان{" "}
-                    <span className="font-semibold text-teal-700">
+                    <span className="font-semibold text-teal-700 dark:text-teal-300">
                       {formatPersianNumber(preview.count)} نفر
                     </span>{" "}
                     اجازهٔ {PURPOSE_LABELS[purpose]} داده‌اند و راه ارتباطی‌شان ثبت است.
@@ -388,7 +388,7 @@ function RuleRow({
   const money = useMoney();
 
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-xl border border-stone-200/80 p-2">
+    <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border/80 p-2">
       <select
         className={`${inputClass} w-40`}
         value={rule.field}
@@ -449,7 +449,7 @@ function RuleValue({
   switch (meta.valueKind) {
     case "days":
       return (
-        <label className="flex items-center gap-1.5 text-sm text-stone-600">
+        <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
           <input
             className={`${inputClass} w-24`}
             value={toPersianDigits(String((rule as { days: number }).days))}
@@ -464,7 +464,7 @@ function RuleValue({
       // Converting here — the one place the two meet — is why a «۲٬۰۰۰٬۰۰۰
       // تومان» rule does not quietly become two million *Rial*.
       return (
-        <label className="flex items-center gap-1.5 text-sm text-stone-600">
+        <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
           <input
             className={`${inputClass} w-32`}
             value={toPersianDigits(String(money.toInput((rule as { value: number }).value)))}

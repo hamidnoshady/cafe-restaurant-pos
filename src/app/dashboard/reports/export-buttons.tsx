@@ -31,7 +31,7 @@ export function ExportButtons({
         size="lg"
         onClick={() => run("csv")}
         disabled={busy !== null}
-        className="min-h-[52px] border-stone-200/80 bg-card px-4 text-stone-950 hover:bg-stone-50"
+        className="min-h-[52px] border-border/80 bg-card px-4 text-foreground hover:bg-muted"
       >
         {busy === "csv" ? "در حال آماده‌سازی…" : "خروجی CSV"}
       </Button>
@@ -41,7 +41,7 @@ export function ExportButtons({
         size="lg"
         onClick={() => run("excel")}
         disabled={busy !== null}
-        className="min-h-[52px] border-stone-200/80 bg-card px-4 text-stone-950 hover:bg-stone-50"
+        className="min-h-[52px] border-border/80 bg-card px-4 text-foreground hover:bg-muted"
       >
         {busy === "excel" ? "در حال آماده‌سازی…" : "خروجی Excel"}
       </Button>
@@ -51,7 +51,7 @@ export function ExportButtons({
         size="lg"
         onClick={() => run("pdf")}
         disabled={busy !== null}
-        className="min-h-[52px] border-stone-200/80 bg-card px-4 text-stone-950 hover:bg-stone-50"
+        className="min-h-[52px] border-border/80 bg-card px-4 text-foreground hover:bg-muted"
       >
         {busy === "pdf" ? "در حال آماده‌سازی…" : "خروجی PDF"}
       </Button>

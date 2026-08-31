@@ -94,12 +94,12 @@ export function TablePickerDialog({
           <label className="relative block" htmlFor="pos-table-search">
             <span className="sr-only">جستجوی میز</span>
             <SearchIcon
-              className="pointer-events-none absolute end-3 top-1/2 size-4 -translate-y-1/2 text-stone-400"
+              className="pointer-events-none absolute end-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
               aria-hidden="true"
             />
             <input
               id="pos-table-search"
-              className={inputClass + " min-h-11 border-stone-200/80 bg-stone-50"}
+              className={inputClass + " min-h-11 border-border/80 bg-muted"}
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="نام میز"
@@ -108,12 +108,12 @@ export function TablePickerDialog({
         ) : null}
 
         {tables.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-stone-200/80 bg-stone-50 p-4 text-center text-sm text-stone-500">
+          <p className="rounded-xl border border-dashed border-border/80 bg-muted p-4 text-center text-sm text-muted-foreground">
             هنوز میزی ثبت نشده است. از بخش میزها میز اضافه کنید یا نوع سفارش را
             به بیرون‌بر تغییر دهید.
           </p>
         ) : choices.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-stone-200/80 bg-stone-50 p-4 text-center text-sm text-stone-500">
+          <p className="rounded-xl border border-dashed border-border/80 bg-muted p-4 text-center text-sm text-muted-foreground">
             میزی با این نام پیدا نشد.
           </p>
         ) : (
@@ -127,12 +127,12 @@ export function TablePickerDialog({
                     aria-pressed={draftTableId === table.id}
                     onClick={() => setDraftTableId(table.id)}
                     className={
-                      "flex min-h-16 w-full flex-col items-center justify-center gap-1 rounded-xl border px-2 text-sm font-bold transition duration-200 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 disabled:cursor-not-allowed motion-reduce:transition-none " +
+                      "flex min-h-16 w-full flex-col items-center justify-center gap-1 rounded-xl border px-2 text-sm font-bold transition duration-200 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 disabled:cursor-not-allowed motion-reduce:transition-none " +
                       (draftTableId === table.id
-                        ? "border-amber-500 bg-amber-100 text-amber-700"
+                        ? "border-amber-500 dark:border-amber-500/60 bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300"
                         : table.unavailable
-                          ? "border-stone-200/80 bg-stone-100 text-stone-400"
-                          : "border-stone-200/80 text-stone-600 hover:border-amber-500/60 hover:bg-stone-50")
+                          ? "border-border/80 bg-muted text-muted-foreground"
+                          : "border-border/80 text-muted-foreground hover:border-amber-500/60 dark:hover:border-amber-500/60 hover:bg-muted")
                     }
                   >
                     <span className="truncate">{table.name}</span>
@@ -153,21 +153,21 @@ export function TablePickerDialog({
               ))}
             </ul>
             {chosen?.occupied ? (
-              <p className="text-xs text-stone-500">
+              <p className="text-xs text-muted-foreground">
                 این میز مهمان دارد. این سفارش، صورت‌حساب جداگانهٔ خودش را
                 می‌گیرد و مستقل تسویه و چاپ می‌شود.
               </p>
             ) : null}
             <label
-              className="block text-xs font-semibold text-stone-600"
+              className="block text-xs font-semibold text-muted-foreground"
               htmlFor="pos-table-guest-count"
             >
               تعداد مهمان{" "}
-              <span className="font-normal text-stone-400">(اختیاری)</span>
+              <span className="font-normal text-muted-foreground">(اختیاری)</span>
               <PersianNumberInput
                 id="pos-table-guest-count"
                 className={
-                  inputClass + " mt-1 min-h-11 border-stone-200/80 bg-stone-50"
+                  inputClass + " mt-1 min-h-11 border-border/80 bg-muted"
                 }
                 dir="ltr"
                 inputMode="numeric"
@@ -191,7 +191,7 @@ export function TablePickerDialog({
             type="button"
             disabled={!draftTableId || chosen?.unavailable === true}
             onClick={() => onConfirm(draftTableId, draftGuestCount)}
-            className="min-h-12 rounded-xl bg-amber-500 px-4 text-sm font-bold text-stone-950 transition duration-200 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 disabled:opacity-55 motion-reduce:transition-none"
+            className="min-h-12 rounded-xl bg-amber-500 dark:bg-amber-400 px-4 text-sm font-bold text-amber-950 transition duration-200 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 disabled:opacity-55 motion-reduce:transition-none"
           >
             {intent === "payment"
               ? "ادامه و دریافت وجه"

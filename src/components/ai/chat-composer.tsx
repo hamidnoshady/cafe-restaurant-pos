@@ -125,7 +125,7 @@ export function ChatComposer({
           {attachments.map((attachment) => (
             <div
               key={attachment.id}
-              className="group relative flex items-center gap-2 rounded-xl border border-stone-200/80 bg-muted/40 py-1 pe-8 ps-1.5"
+              className="group relative flex items-center gap-2 rounded-xl border border-border/80 bg-muted/40 py-1 pe-8 ps-1.5"
             >
               {attachment.kind === "image" ? (
                 <img
@@ -134,7 +134,7 @@ export function ChatComposer({
                   className="size-9 rounded-lg border object-cover"
                 />
               ) : (
-                <span className="grid size-9 place-items-center rounded-lg bg-red-50 text-red-600 ring-1 ring-red-200/70">
+                <span className="grid size-9 place-items-center rounded-lg bg-red-50 dark:bg-red-500/15 text-red-600 dark:text-red-400 ring-1 ring-red-200/70 dark:ring-red-800/70">
                   <FileTextIcon className="size-4" />
                 </span>
               )}
@@ -173,7 +173,7 @@ export function ChatComposer({
             ? "border-primary ring-4 ring-primary/20"
             : focused
               ? "border-ring ring-3 ring-ring/40"
-              : "border-stone-200/80",
+              : "border-border/80",
         )}
       >
         {dragOver ? (
@@ -252,7 +252,7 @@ export function ChatComposer({
                     onClick={() => imageInputRef.current?.click()}
                     className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-2"
                   >
-                    <span className="grid size-8 place-items-center rounded-lg bg-emerald-50 text-emerald-600">
+                    <span className="grid size-8 place-items-center rounded-lg bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
                       <ImageIcon className="size-4" />
                     </span>
                     <span>
@@ -268,7 +268,7 @@ export function ChatComposer({
                     onClick={() => pdfInputRef.current?.click()}
                     className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-2"
                   >
-                    <span className="grid size-8 place-items-center rounded-lg bg-red-50 text-red-600">
+                    <span className="grid size-8 place-items-center rounded-lg bg-red-50 dark:bg-red-500/15 text-red-600 dark:text-red-400">
                       <FileTextIcon className="size-4" />
                     </span>
                     <span>

@@ -6,7 +6,7 @@ import { api, Field, inputClass } from "../ui";
 import type { Consignor, Runner } from "./jewelry-manager";
 import { cardClass } from "../page-chrome";
 
-const jewelryInputClass = `${inputClass} min-h-[52px] !border-stone-200 !bg-card shadow-none placeholder:text-stone-400 focus-visible:border-amber-500 focus-visible:ring-amber-400/30`;
+const jewelryInputClass = `${inputClass} min-h-[52px] !border-border !bg-card shadow-none placeholder:text-muted-foreground focus-visible:border-amber-500 dark:focus-visible:border-amber-500/60 focus-visible:ring-amber-400/30 dark:focus-visible:ring-amber-400/40`;
 
 export function ConsignorsSection({
   consignors,
@@ -43,8 +43,8 @@ export function ConsignorsSection({
         aria-labelledby="jewelry-consignors-heading"
         className={`order-2 min-w-0 overflow-hidden ${cardClass} md:order-1`}
       >
-        <div className="border-b border-stone-200/80 px-4 py-4 sm:px-5">
-          <h2 id="jewelry-consignors-heading" className="font-semibold text-stone-950">
+        <div className="border-b border-border/80 px-4 py-4 sm:px-5">
+          <h2 id="jewelry-consignors-heading" className="font-semibold text-foreground">
             امانت‌گذاران (امانی)
           </h2>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">
@@ -52,23 +52,23 @@ export function ConsignorsSection({
           </p>
         </div>
 
-        <ul className="divide-y divide-stone-200/80">
+        <ul className="divide-y divide-border/80">
           {consignors.map((c) => (
             <li key={c.id} className="px-4 py-4 sm:px-5">
-              <h3 className="font-semibold text-stone-950">{c.name}</h3>
-              <dl className="mt-2 grid gap-x-5 gap-y-1 text-xs text-stone-600 sm:grid-cols-2">
+              <h3 className="font-semibold text-foreground">{c.name}</h3>
+              <dl className="mt-2 grid gap-x-5 gap-y-1 text-xs text-muted-foreground sm:grid-cols-2">
                 {c.phone ? (
                   <div>
-                    <dt className="inline text-stone-500">تلفن: </dt>
-                    <dd className="inline font-medium text-stone-700" dir="ltr">
+                    <dt className="inline text-muted-foreground">تلفن: </dt>
+                    <dd className="inline font-medium text-foreground/80" dir="ltr">
                       {c.phone}
                     </dd>
                   </div>
                 ) : null}
                 {c.notes ? (
                   <div>
-                    <dt className="inline text-stone-500">یادداشت: </dt>
-                    <dd className="inline font-medium text-stone-700">{c.notes}</dd>
+                    <dt className="inline text-muted-foreground">یادداشت: </dt>
+                    <dd className="inline font-medium text-foreground/80">{c.notes}</dd>
                   </div>
                 ) : null}
               </dl>
@@ -82,7 +82,7 @@ export function ConsignorsSection({
 
       <aside className="order-1 min-w-0 md:order-2">
         <div className={`${cardClass} p-4 md:sticky md:top-4 sm:p-5`}>
-          <h2 className="font-semibold text-stone-950">افزودن امانت‌گذار</h2>
+          <h2 className="font-semibold text-foreground">افزودن امانت‌گذار</h2>
 
           <form onSubmit={add} className="mt-4">
             <Field label="نام">
@@ -114,7 +114,7 @@ export function ConsignorsSection({
               type="submit"
               disabled={busy}
               size="lg"
-              className="min-h-[52px] w-full border border-amber-300 px-5 font-semibold focus-visible:ring-amber-400/30"
+              className="min-h-[52px] w-full border border-amber-300 dark:border-amber-500/40 px-5 font-semibold focus-visible:ring-amber-400/30 dark:focus-visible:ring-amber-400/40"
             >
               افزودن
             </Button>

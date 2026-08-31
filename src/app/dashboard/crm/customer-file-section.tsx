@@ -236,7 +236,7 @@ export function CustomerFileSection({ customerId, role }: { customerId: string; 
 
         {stage ? (
           <p className="mt-3 text-xs leading-6 text-muted-foreground">
-            <span className="font-medium text-stone-700">{stage.label}:</span> {stage.description}{" "}
+            <span className="font-medium text-foreground/80">{stage.label}:</span> {stage.description}{" "}
             {stage.action}
           </p>
         ) : (
@@ -258,7 +258,7 @@ export function CustomerFileSection({ customerId, role }: { customerId: string; 
 
       <div className="grid gap-4 lg:grid-cols-2">
         <SectionCard title="رضایت ارتباط" description="پایهٔ هر ارسال آینده؛ تغییرش ثبت می‌شود.">
-          <ul className="divide-y divide-stone-200/80 text-sm">
+          <ul className="divide-y divide-border/80 text-sm">
             <ConsentRow
               label="پیامک"
               granted={file.smsConsent}
@@ -301,11 +301,11 @@ export function CustomerFileSection({ customerId, role }: { customerId: string; 
           {notes.length === 0 ? (
             <EmptyState>هنوز یادداشتی ثبت نشده است.</EmptyState>
           ) : (
-            <ul className="divide-y divide-stone-200/80 text-sm">
+            <ul className="divide-y divide-border/80 text-sm">
               {notes.map((note) => (
                 <li key={note.id} className="flex items-start justify-between gap-3 py-2.5">
                   <div className="min-w-0">
-                    <p className="leading-6 text-stone-950">{note.body}</p>
+                    <p className="leading-6 text-foreground">{note.body}</p>
                     <p className="mt-0.5 text-xs text-muted-foreground">
                       {note.createdBy || "—"} · {toPersianDigits(formatJalali(note.createdAt))}
                     </p>
@@ -317,7 +317,7 @@ export function CustomerFileSection({ customerId, role }: { customerId: string; 
                       size="icon-sm"
                       onClick={() => pinNote(note)}
                       aria-label={note.isPinned ? "برداشتن سنجاق" : "سنجاق کردن"}
-                      className={note.isPinned ? "text-amber-600" : "text-muted-foreground"}
+                      className={note.isPinned ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"}
                     >
                       <PinIcon aria-hidden="true" className="size-4" />
                     </Button>
@@ -368,11 +368,11 @@ export function CustomerFileSection({ customerId, role }: { customerId: string; 
         ) : events.length === 0 ? (
           <EmptyState>رویدادی برای نمایش نیست.</EmptyState>
         ) : (
-          <ul className="divide-y divide-stone-200/80 text-sm">
+          <ul className="divide-y divide-border/80 text-sm">
             {events.map((event, index) => (
               <li key={`${event.at}-${index}`} className="flex items-start justify-between gap-3 py-2.5">
                 <div className="min-w-0">
-                  <p className="leading-6 text-stone-950">
+                  <p className="leading-6 text-foreground">
                     {event.href ? (
                       <Link href={event.href} className="hover:underline">
                         {event.summary}
@@ -390,7 +390,7 @@ export function CustomerFileSection({ customerId, role }: { customerId: string; 
                   </p>
                 </div>
                 {event.amount ? (
-                  <span className="shrink-0 font-semibold text-stone-950">
+                  <span className="shrink-0 font-semibold text-foreground">
                     {money.format(event.amount.rial)}
                   </span>
                 ) : null}
@@ -421,7 +421,7 @@ function Metric({ label, value, hint }: { label: string; value: string; hint?: s
   return (
     <div className="min-w-0">
       <p className="text-xs font-medium leading-5 text-muted-foreground">{label}</p>
-      <p className="mt-1 truncate text-lg font-bold tracking-tight text-stone-950">{value}</p>
+      <p className="mt-1 truncate text-lg font-bold tracking-tight text-foreground">{value}</p>
       {hint ? <p className="mt-0.5 text-xs leading-5 text-muted-foreground">{hint}</p> : null}
     </div>
   );
@@ -451,9 +451,9 @@ function ConsentRow({
   return (
     <li className="flex flex-wrap items-center justify-between gap-2 py-2.5">
       <div className="min-w-0">
-        <span className="font-medium text-stone-950">{label}</span>
+        <span className="font-medium text-foreground">{label}</span>
         {granted && !reachable ? (
-          <span className="mr-2 text-xs text-amber-700">{unreachableHint}</span>
+          <span className="mr-2 text-xs text-amber-700 dark:text-amber-300">{unreachableHint}</span>
         ) : null}
       </div>
       <div className="flex shrink-0 items-center gap-2">

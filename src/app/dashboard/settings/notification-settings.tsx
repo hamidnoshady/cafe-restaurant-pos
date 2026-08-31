@@ -290,11 +290,11 @@ export function NotificationSettings() {
             انجام دهید.
           </EmptyState>
         ) : (
-          <ul className="divide-y divide-stone-200/80">
+          <ul className="divide-y divide-border/80">
             {devices.map((device) => (
               <li key={device.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
                 <div className="min-w-0">
-                  <p className="flex items-center gap-2 font-medium text-stone-950">
+                  <p className="flex items-center gap-2 font-medium text-foreground">
                     {device.label || "دستگاه"}
                     {device.failureCount > 0 ? (
                       <StatusBadge tone="danger">
@@ -326,19 +326,19 @@ export function NotificationSettings() {
               const preference = preferenceFor(event.key);
               if (!preference) return null;
               return (
-                <li key={event.key} className="rounded-xl border border-stone-200/80 p-3 sm:p-4">
+                <li key={event.key} className="rounded-xl border border-border/80 p-3 sm:p-4">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <label className="flex min-w-0 cursor-pointer items-start gap-3">
                       <input
                         type="checkbox"
-                        className="mt-1 size-4 shrink-0 accent-amber-600"
+                        className="mt-1 size-4 shrink-0 accent-amber-600 dark:accent-amber-400"
                         checked={preference.enabled}
                         onChange={(e) =>
                           void savePreference({ ...preference, enabled: e.target.checked })
                         }
                       />
                       <span className="min-w-0">
-                        <span className="flex flex-wrap items-center gap-2 font-medium text-stone-950">
+                        <span className="flex flex-wrap items-center gap-2 font-medium text-foreground">
                           {event.label}
                           {preference.isDefault ? <StatusBadge>پیش‌فرض</StatusBadge> : null}
                         </span>
@@ -359,13 +359,13 @@ export function NotificationSettings() {
                   </div>
 
                   {preference.enabled ? (
-                    <div className="mt-3 grid gap-3 border-t border-stone-200/80 pt-3 sm:grid-cols-2">
+                    <div className="mt-3 grid gap-3 border-t border-border/80 pt-3 sm:grid-cols-2">
                       <div className="flex flex-wrap gap-4 sm:col-span-2">
                         {(["push", "inapp"] as NotificationChannel[]).map((channel) => (
                           <label key={channel} className="flex cursor-pointer items-center gap-2 text-sm">
                             <input
                               type="checkbox"
-                              className="size-4 accent-amber-600"
+                              className="size-4 accent-amber-600 dark:accent-amber-400"
                               checked={preference.channels.includes(channel)}
                               onChange={(e) => {
                                 const channels = e.target.checked

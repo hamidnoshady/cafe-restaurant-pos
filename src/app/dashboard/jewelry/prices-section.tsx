@@ -11,7 +11,7 @@ import { api, Field, inputClass } from "../ui";
 import { PURITY_LABELS, type GoldPriceRow, type Purity, type Runner } from "./jewelry-manager";
 import { cardClass } from "../page-chrome";
 
-const jewelryInputClass = `${inputClass} min-h-[52px] !border-stone-200 !bg-card shadow-none placeholder:text-stone-400 focus-visible:border-amber-500 focus-visible:ring-amber-400/30`;
+const jewelryInputClass = `${inputClass} min-h-[52px] !border-border !bg-card shadow-none placeholder:text-muted-foreground focus-visible:border-amber-500 dark:focus-visible:border-amber-500/60 focus-visible:ring-amber-400/30 dark:focus-visible:ring-amber-400/40`;
 
 export function PricesSection({ prices, busy, run }: { prices: GoldPriceRow[]; busy: boolean; run: Runner }) {
   const money = useMoney();
@@ -36,8 +36,8 @@ export function PricesSection({ prices, busy, run }: { prices: GoldPriceRow[]; b
         aria-labelledby="jewelry-prices-heading"
         className={`order-2 min-w-0 overflow-hidden ${cardClass} md:order-1`}
       >
-        <div className="border-b border-stone-200/80 px-4 py-4 sm:px-5">
-          <h2 id="jewelry-prices-heading" className="font-semibold text-stone-950">
+        <div className="border-b border-border/80 px-4 py-4 sm:px-5">
+          <h2 id="jewelry-prices-heading" className="font-semibold text-foreground">
             تابلوی نرخ روز طلا
           </h2>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">
@@ -45,17 +45,17 @@ export function PricesSection({ prices, busy, run }: { prices: GoldPriceRow[]; b
           </p>
         </div>
 
-        <ul className="divide-y divide-stone-200/80">
+        <ul className="divide-y divide-border/80">
           {prices.map((p) => (
             <li key={p.id} className="flex items-center justify-between gap-4 px-4 py-4 sm:px-5">
               <div>
-                <h3 className="font-semibold text-stone-950">{PURITY_LABELS[p.purity]}</h3>
+                <h3 className="font-semibold text-foreground">{PURITY_LABELS[p.purity]}</h3>
                 <p className="mt-1 text-xs text-muted-foreground">
                   {formatJalali(p.priceDate, { withMonthName: true })}
                   {p.source === "external" ? " · دریافتی از سرویس بیرونی" : " · ثبت دستی"}
                 </p>
               </div>
-              <p className="font-semibold text-stone-950">{money.format(p.pricePerGram)} / گرم</p>
+              <p className="font-semibold text-foreground">{money.format(p.pricePerGram)} / گرم</p>
             </li>
           ))}
           {prices.length === 0 ? (
@@ -66,7 +66,7 @@ export function PricesSection({ prices, busy, run }: { prices: GoldPriceRow[]; b
 
       <aside className="order-1 min-w-0 md:order-2">
         <div className={`${cardClass} p-4 md:sticky md:top-4 sm:p-5`}>
-          <h2 className="font-semibold text-stone-950">ثبت نرخ امروز</h2>
+          <h2 className="font-semibold text-foreground">ثبت نرخ امروز</h2>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">نرخ هر گرم طلا ({money.unitLabel}) برای هر عیار جداگانه ثبت می‌شود.</p>
 
           <form onSubmit={record} className="mt-4">
@@ -96,7 +96,7 @@ export function PricesSection({ prices, busy, run }: { prices: GoldPriceRow[]; b
               type="submit"
               disabled={busy}
               size="lg"
-              className="min-h-[52px] w-full border border-amber-300 px-5 font-semibold focus-visible:ring-amber-400/30"
+              className="min-h-[52px] w-full border border-amber-300 dark:border-amber-500/40 px-5 font-semibold focus-visible:ring-amber-400/30 dark:focus-visible:ring-amber-400/40"
             >
               ثبت نرخ
             </Button>

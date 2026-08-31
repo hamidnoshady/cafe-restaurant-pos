@@ -285,7 +285,7 @@ function NavLinks({
                     {item.locked ? (
                       <LockIcon
                         aria-hidden="true"
-                        className="ms-auto size-3.5 shrink-0 text-stone-400 group-data-[state=collapsed]/sidebar:hidden"
+                        className="ms-auto size-3.5 shrink-0 text-muted-foreground group-data-[state=collapsed]/sidebar:hidden"
                       />
                     ) : null}
                   </Link>
@@ -402,15 +402,15 @@ function WorkspaceRail({ navItems, pathname }: { navItems: NavItem[]; pathname: 
 
 function SidebarBrand({ title, subtitle }: { title: string; subtitle: string }) {
   return (
-    <SidebarHeader className="border-stone-200/80 bg-card p-4">
+    <SidebarHeader className="border-border/80 bg-card p-4">
       <div className="flex items-start justify-between gap-2 group-data-[state=collapsed]/sidebar:justify-center">
         <div className="min-w-0 group-data-[state=collapsed]/sidebar:hidden">
-          <p className="truncate font-bold text-stone-950">{title}</p>
-          <p className="text-xs text-stone-500">{subtitle}</p>
+          <p className="truncate font-bold text-foreground">{title}</p>
+          <p className="text-xs text-muted-foreground">{subtitle}</p>
         </div>
         <div className="flex shrink-0 items-center gap-1">
           <span className="hidden md:block group-data-[state=collapsed]/sidebar:hidden"><ThemeToggle /></span>
-          <SidebarTrigger className="hidden text-stone-600 md:inline-flex" />
+          <SidebarTrigger className="hidden text-muted-foreground md:inline-flex" />
         </div>
       </div>
     </SidebarHeader>
@@ -476,7 +476,7 @@ function BottomNavSettings({
                   aria-pressed={picked}
                   onClick={() => setDraft((entries) => toggleBottomNavHref(entries, item.href))}
                   className={`flex min-h-11 w-full items-center gap-2 rounded-lg px-2 text-sm disabled:opacity-40 ${
-                    picked ? "bg-amber-100 font-semibold text-amber-700" : "text-stone-700"
+                    picked ? "bg-amber-100 dark:bg-amber-500/20 font-semibold text-amber-700 dark:text-amber-300" : "text-foreground/80"
                   }`}
                 >
                   <Icon aria-hidden="true" className="size-4 shrink-0" />
@@ -517,11 +517,11 @@ function DashboardSidebarFooter({
   onSaveBottomNav: (hrefs: string[]) => void;
 }) {
   return (
-    <SidebarFooter className="border-stone-200/80 bg-card">
+    <SidebarFooter className="border-border/80 bg-card">
       <div className="group-data-[state=collapsed]/sidebar:hidden">
         <BranchSwitcher />
-        <p className="font-semibold text-stone-950">{fullName}</p>
-        <p className="mb-3 text-xs text-stone-500">{ROLE_LABELS[role] ?? role}</p>
+        <p className="font-semibold text-foreground">{fullName}</p>
+        <p className="mb-3 text-xs text-muted-foreground">{ROLE_LABELS[role] ?? role}</p>
         <div className="mb-3 md:hidden"><ThemeToggle /></div>
         <BottomNavSettings
           navItems={navItems}
@@ -616,14 +616,14 @@ function MobileDashboardHeader({ navItems, pathname }: Pick<SidebarProps, "navIt
   }, []);
 
   return (
-    <header className="sticky top-0 z-30 flex min-h-14 items-center gap-2 border-b border-stone-200/80 bg-white/95 px-2 py-1 backdrop-blur md:hidden">
-      <SidebarTrigger className="text-stone-600" />
+    <header className="sticky top-0 z-30 flex min-h-14 items-center gap-2 border-b border-border/80 bg-card/95 backdrop-blur px-2 py-1 backdrop-blur md:hidden">
+      <SidebarTrigger className="text-muted-foreground" />
       <div className="min-w-0 flex-1 text-right">
-        <p className="truncate text-sm font-bold text-stone-950">{active?.label ?? "داشبورد"}</p>
-        <p className="mt-0.5 flex items-center gap-1 text-[10px] text-stone-500"><CalendarDaysIcon className="size-3" aria-hidden="true" />{today}</p>
+        <p className="truncate text-sm font-bold text-foreground">{active?.label ?? "داشبورد"}</p>
+        <p className="mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground"><CalendarDaysIcon className="size-3" aria-hidden="true" />{today}</p>
       </div>
       <span className="flex min-h-11 min-w-11 items-center justify-center" role="status" aria-label={online ? "اتصال برقرار است" : "اتصال قطع است"}>
-        <span className={`size-2.5 rounded-full ${online ? "bg-emerald-500" : "bg-destructive"}`} aria-hidden="true" />
+        <span className={`size-2.5 rounded-full ${online ? "bg-emerald-500 dark:bg-emerald-500" : "bg-destructive"}`} aria-hidden="true" />
       </span>
     </header>
   );
@@ -656,7 +656,7 @@ function MobileBottomNavigation({
         this bar offsets from that variable, so the bar has to be what the
         variable says it is.
       */
-      className="fixed inset-x-0 bottom-0 z-40 flex h-[var(--app-bottom-nav)] border-t border-stone-200/80 bg-white/95 px-1 pb-[env(safe-area-inset-bottom)] pt-1 shadow-[0_-1px_8px_rgb(41_37_36/0.04)] backdrop-blur md:hidden"
+      className="fixed inset-x-0 bottom-0 z-40 flex h-[var(--app-bottom-nav)] border-t border-border/80 bg-card/95 backdrop-blur px-1 pb-[env(safe-area-inset-bottom)] pt-1 shadow-[0_-1px_8px_rgb(41_37_36/0.04)] backdrop-blur md:hidden"
       aria-label="ناوبری اصلی"
     >
       {primaryItems.map((item) => {
@@ -667,7 +667,7 @@ function MobileBottomNavigation({
             key={item.href}
             href={item.href}
             aria-current={active ? "page" : undefined}
-            className={`flex min-h-14 min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[10px] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 active:scale-[0.98] ${active ? "bg-amber-100 text-amber-700" : "text-stone-500"}`}
+            className={`flex min-h-14 min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[10px] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 active:scale-[0.98] ${active ? "bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300" : "text-muted-foreground"}`}
           >
             <Icon className="size-5 shrink-0" aria-hidden="true" />
             <span className="max-w-full truncate">{item.label}</span>
@@ -761,7 +761,7 @@ function SidebarResizeHandle({
       onPointerCancel={endDrag}
       onDoubleClick={onReset}
       onKeyDown={onKeyDown}
-      className="absolute inset-y-0 end-0 z-10 hidden w-1.5 cursor-col-resize touch-none items-center justify-center outline-none transition-colors hover:bg-amber-200/70 focus-visible:bg-amber-200/70 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-400/60 md:flex"
+      className="absolute inset-y-0 end-0 z-10 hidden w-1.5 cursor-col-resize touch-none items-center justify-center outline-none transition-colors hover:bg-amber-200/70 dark:hover:bg-amber-500/25 focus-visible:bg-amber-200/70 dark:focus-visible:bg-amber-500/25 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-400/60 dark:focus-visible:ring-amber-400/40 md:flex"
     />
   );
 }
@@ -891,7 +891,7 @@ export function DashboardSidebar({
       {!assistantPage ? <MobileDashboardHeader navItems={navItems} pathname={pathname} /> : null}
       <Sidebar
         side="right"
-        className={`border-stone-200/80 bg-card text-stone-950 ${draggingWidth ? "transition-none" : ""}`}
+        className={`border-border/80 bg-card text-foreground ${draggingWidth ? "transition-none" : ""}`}
         style={
           mode === "expanded" && sidebarWidth !== null && sidebarWidth !== SIDEBAR_DEFAULT_WIDTH
             ? { width: sidebarWidth }

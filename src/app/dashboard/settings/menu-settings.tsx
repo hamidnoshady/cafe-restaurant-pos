@@ -91,7 +91,7 @@ export function MenuSettings() {
         <ErrorBox>{error}</ErrorBox>
         {success ? <InfoBox>{success}</InfoBox> : null}
         {preview ? (
-          <div className="mt-4 rounded-xl border border-stone-200/80 p-4">
+          <div className="mt-4 rounded-xl border border-border/80 p-4">
             <h3 className="mb-2 text-sm font-semibold">نتیجهٔ پیش‌نمایش</h3>
             <p className="text-sm text-muted-foreground">
               {toPersianDigits(preview.items)} آیتم در {toPersianDigits(preview.categories)} دسته، {toPersianDigits(preview.modifierGroups)} گروه افزودنی و {toPersianDigits(preview.modifiers)} افزودنی پیدا شد.

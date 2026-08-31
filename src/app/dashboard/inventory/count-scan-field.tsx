@@ -171,7 +171,7 @@ export function CountScanField({
       {feedback ? (
         <p
           className={`mt-2 text-xs leading-5 ${
-            feedback.kind === "ok" ? "text-emerald-700" : "text-rose-700"
+            feedback.kind === "ok" ? "text-emerald-700 dark:text-emerald-300" : "text-rose-700 dark:text-rose-300"
           }`}
           role="status"
           aria-live="polite"

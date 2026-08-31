@@ -51,7 +51,7 @@ function StatCard({
   return (
     <div className={`min-w-0 p-4 sm:p-5 ${cardClass}`}>
       <p className="text-xs font-medium leading-5 text-muted-foreground">{label}</p>
-      <p className="mt-2 truncate text-xl font-bold tracking-tight text-stone-950 sm:text-2xl">{value}</p>
+      <p className="mt-2 truncate text-xl font-bold tracking-tight text-foreground sm:text-2xl">{value}</p>
       {hint ? <p className="mt-1 text-xs leading-5 text-muted-foreground">{hint}</p> : null}
     </div>
   );
@@ -150,16 +150,16 @@ export function OverviewSection({ onGoToSection }: { onGoToSection: (key: Growth
           {overview.campaigns.top.length === 0 ? (
             <EmptyState>هنوز کمپینی روی فروشی اعمال نشده است.</EmptyState>
           ) : (
-            <ul className="divide-y divide-stone-200/80 text-sm">
+            <ul className="divide-y divide-border/80 text-sm">
               {overview.campaigns.top.map((row) => (
                 <li key={row.promotionId} className="flex items-center justify-between gap-3 py-2.5">
                   <div className="min-w-0">
-                    <span className="font-medium text-stone-950">{row.promotionName}</span>
+                    <span className="font-medium text-foreground">{row.promotionName}</span>
                     <span className="mr-2 text-xs text-muted-foreground">
                       {formatPersianNumber(row.applications)} بار اعمال
                     </span>
                   </div>
-                  <span className="shrink-0 font-semibold text-amber-700">{money.format(row.discountRial)}</span>
+                  <span className="shrink-0 font-semibold text-amber-700 dark:text-amber-300">{money.format(row.discountRial)}</span>
                 </li>
               ))}
             </ul>
@@ -179,11 +179,11 @@ export function OverviewSection({ onGoToSection }: { onGoToSection: (key: Growth
           {overview.commission.top.length === 0 ? (
             <EmptyState>هنوز پورسانتی ثبت نشده است.</EmptyState>
           ) : (
-            <ul className="divide-y divide-stone-200/80 text-sm">
+            <ul className="divide-y divide-border/80 text-sm">
               {overview.commission.top.map((row) => (
                 <li key={row.employeeId} className="flex items-center justify-between gap-3 py-2.5">
-                  <span className="min-w-0 font-medium text-stone-950">{row.employeeName}</span>
-                  <span className="shrink-0 font-semibold text-emerald-700">{money.format(row.amount)}</span>
+                  <span className="min-w-0 font-medium text-foreground">{row.employeeName}</span>
+                  <span className="shrink-0 font-semibold text-emerald-700 dark:text-emerald-300">{money.format(row.amount)}</span>
                 </li>
               ))}
             </ul>
@@ -204,11 +204,11 @@ export function OverviewSection({ onGoToSection }: { onGoToSection: (key: Growth
           {overview.activity.length === 0 ? (
             <EmptyState>هنوز رویدادی ثبت نشده است؛ اولین فروش با کمپین یا امتیاز، اینجا ظاهر می‌شود.</EmptyState>
           ) : (
-            <ul className="divide-y divide-stone-200/80 text-sm">
+            <ul className="divide-y divide-border/80 text-sm">
               {overview.activity.map((row, index) => (
                 <li key={`${row.at}-${index}`} className="flex items-start justify-between gap-3 py-2.5">
                   <div className="min-w-0">
-                    <p className="leading-6 text-stone-950">{activityText(row, money.format.bind(money))}</p>
+                    <p className="leading-6 text-foreground">{activityText(row, money.format.bind(money))}</p>
                     <p className="mt-0.5 text-xs text-muted-foreground">
                       <StatusBadge tone="neutral">{ACTIVITY_KIND_LABELS[row.kind] ?? row.kind}</StatusBadge>{" "}
                       <span className="ms-1">{toPersianDigits(formatJalali(row.at))}</span>

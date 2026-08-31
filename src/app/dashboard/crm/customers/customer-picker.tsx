@@ -76,11 +76,11 @@ export function CustomerPicker({ directoryHref }: { directoryHref: string }) {
       ) : matches.length === 0 ? (
         <EmptyState>مشتری‌ای با این مشخصات پیدا نشد.</EmptyState>
       ) : (
-        <ul className="divide-y divide-stone-200/80 text-sm">
+        <ul className="divide-y divide-border/80 text-sm">
           {matches.map((match) => (
             <li key={match.id} className="py-2.5">
               <Link href={crmCustomerHref(match.id)} className="hover:underline">
-                <span className="font-medium text-stone-950">{match.name}</span>
+                <span className="font-medium text-foreground">{match.name}</span>
                 {match.phone ? (
                   <span className="mr-2 text-xs text-muted-foreground">
                     {toPersianDigits(formatPhoneDisplay(match.phone))}

@@ -293,7 +293,7 @@ export function StockCountsSection({
               <button
                 type="button"
                 onClick={() => setEditingId(c.id)}
-                className="flex min-w-0 w-full flex-col gap-2 px-4 py-3 text-start text-sm transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-400/40 sm:flex-row sm:items-center sm:justify-between"
+                className="flex min-w-0 w-full flex-col gap-2 px-4 py-3 text-start text-sm transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-400/40 dark:focus-visible:ring-amber-400/40 sm:flex-row sm:items-center sm:justify-between"
               >
                 <span className="min-w-0 break-words font-medium">
                   {toPersianDigits(c.line_count)} قلم{" "}
@@ -462,7 +462,7 @@ function StockCountModal({
       >
         <header className="mb-4 flex items-start justify-between gap-3 border-b border-border pb-4">
           <div>
-            <p className="text-xs font-semibold text-amber-700">جزئیات شمارش</p>
+            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">جزئیات شمارش</p>
             <h3
               id="stock-count-modal-heading"
               className="mt-1 text-lg font-bold"
@@ -506,7 +506,7 @@ function StockCountModal({
             <div>
               <p className="mb-2 text-sm font-medium">اقلام شمارش‌شده</p>
               {draftLines.length === 0 && addedItemIds.length === 0 ? (
-                <p className="rounded-xl border border-dashed border-border bg-stone-50 px-4 py-6 text-center text-sm text-muted-foreground">
+                <p className="rounded-xl border border-dashed border-border bg-muted px-4 py-6 text-center text-sm text-muted-foreground">
                   قلمی باقی نمانده است؛ ذخیرهٔ این تغییرات یعنی حذف کامل شمارش.
                 </p>
               ) : (

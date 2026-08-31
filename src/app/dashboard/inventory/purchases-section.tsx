@@ -674,7 +674,7 @@ export function PurchasesSection({
                         </dl>
 
                         {returning ? (
-                          <form onSubmit={submitReturn} className="mt-4 space-y-3 rounded-xl border border-amber-200 bg-amber-50/60 p-3">
+                          <form onSubmit={submitReturn} className="mt-4 space-y-3 rounded-xl border border-amber-200 dark:border-amber-500/30 bg-amber-50/60 dark:bg-amber-500/15 p-3">
                             <p className="text-sm font-semibold">برگشت کالا به تأمین‌کننده</p>
                             <p className="text-xs text-muted-foreground">مقدار برگشتی را در واحد پایه وارد کنید. قیمت‌ها در سیستم به ریال ذخیره می‌شوند و اینجا به تومان نمایش داده می‌شوند.</p>
                             <div className="space-y-2">

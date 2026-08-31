@@ -253,7 +253,7 @@ export default function ProjectDetailPage() {
         {/* Notes sidebar */}
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-stone-900">
+            <h2 className="text-sm font-semibold text-foreground">
               یادداشت‌ها ({notes.length})
             </h2>
             <Button
@@ -308,11 +308,11 @@ export default function ProjectDetailPage() {
               {notes.map((note) => (
                 <div
                   key={note.id}
-                  className="group rounded-xl border border-stone-200/80 bg-card p-3"
+                  className="group rounded-xl border border-border/80 bg-card p-3"
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex items-center gap-1.5">
-                      <StickyNoteIcon className="size-3.5 shrink-0 text-amber-600" />
+                      <StickyNoteIcon className="size-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
                       <h3 className="text-sm font-medium">{note.title}</h3>
                     </div>
                     <button

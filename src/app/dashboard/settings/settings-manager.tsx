@@ -135,10 +135,10 @@ export function SettingsManager({ tabs, features, currentUserId, isOwner }: Sett
           <div className="flex items-start gap-3">
             {(() => {
               const Icon = TAB_ICONS[activeTabMeta.key];
-              return <Icon className="mt-0.5 size-5 shrink-0 text-amber-700" aria-hidden="true" />;
+              return <Icon className="mt-0.5 size-5 shrink-0 text-amber-700 dark:text-amber-300" aria-hidden="true" />;
             })()}
             <div>
-              <h2 className="font-bold text-stone-950">{activeTabMeta.label}</h2>
+              <h2 className="font-bold text-foreground">{activeTabMeta.label}</h2>
               <p className="mt-1 text-sm leading-6 text-muted-foreground">{activeTabMeta.description}</p>
             </div>
           </div>

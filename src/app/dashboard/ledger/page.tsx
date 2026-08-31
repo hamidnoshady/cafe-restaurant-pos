@@ -19,7 +19,7 @@ export default async function LedgerPage() {
   return (
     <PageShell>
       {holooCompanion ? (
-        <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-950">
+        <div className="mb-4 rounded-2xl border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/15 px-4 py-3 text-sm leading-6 text-amber-950 dark:text-amber-200">
           دفتر رسمی در هلو نگهداری می‌شود؛ این دفتر برای گزارش، پایش و تطبیق آینه می‌شود.
         </div>
       ) : null}

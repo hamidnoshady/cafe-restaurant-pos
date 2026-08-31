@@ -12,7 +12,7 @@ import { api, Field, inputClass, PrimaryButton, SecondaryButton } from "../ui";
 import type { InventoryItem, Runner } from "./inventory-manager";
 import { SectionCardSkeleton, cardClass } from "../page-chrome";
 
-const productionInputClass = `${inputClass} min-h-[52px] !border-stone-200 !bg-card shadow-none placeholder:text-stone-400 focus-visible:border-amber-500 focus-visible:ring-amber-400/30`;
+const productionInputClass = `${inputClass} min-h-[52px] !border-border !bg-card shadow-none placeholder:text-muted-foreground focus-visible:border-amber-500 dark:focus-visible:border-amber-500/60 focus-visible:ring-amber-400/30 dark:focus-visible:ring-amber-400/40`;
 
 interface FormulaInputRow {
   inventoryItemId: string;
@@ -242,7 +242,7 @@ function FormulaCard({
       </div>
 
       {creating ? (
-        <form onSubmit={create} className="mb-5 grid min-w-0 gap-3 rounded-xl border border-stone-200 p-4 sm:grid-cols-2">
+        <form onSubmit={create} className="mb-5 grid min-w-0 gap-3 rounded-xl border border-border p-4 sm:grid-cols-2">
           <Field label="نام فرمول">
             <input
               className={productionInputClass}
@@ -295,7 +295,7 @@ function FormulaCard({
 
       {selected ? (
         <>
-          <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+          <div className="mb-3 rounded-xl border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/15 px-4 py-3 text-sm text-amber-950 dark:text-amber-200">
             <p>
               هر بار پخت: {formatQuantity(selected.outputQuantity)} {selected.outputUnit} از «
               {selected.outputItemName}»

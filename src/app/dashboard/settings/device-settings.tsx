@@ -143,7 +143,7 @@ export function DeviceSettings() {
               <div
                 key={device.id}
                 className={`flex items-center justify-between rounded-lg border px-3 py-2 text-sm ${
-                  device.revokedAt ? "border-stone-200/60 opacity-60" : "border-input"
+                  device.revokedAt ? "border-border/60 opacity-60" : "border-input"
                 }`}
               >
                 <div>

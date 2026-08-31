@@ -93,7 +93,7 @@ const SYNC_STATUS_LABELS: Record<string, string> = {
 
 function StatusRow({ label, value, tone }: { label: string; value: string; tone?: "error" }) {
   return (
-    <div className="flex items-center justify-between border-b border-stone-200/60 py-2 text-sm last:border-b-0">
+    <div className="flex items-center justify-between border-b border-border/60 py-2 text-sm last:border-b-0">
       <span className="text-muted-foreground">{label}</span>
       <span className={tone === "error" ? "font-medium text-destructive" : "font-medium"}>{value}</span>
     </div>

@@ -265,16 +265,16 @@ export function CameraBarcodeScanner({
       }}
     >
       <DialogContent className="max-h-[92vh] overflow-y-auto p-0 sm:max-w-lg">
-        <DialogHeader className="border-b border-stone-200/80 px-4 py-3 sm:px-5">
+        <DialogHeader className="border-b border-border/80 px-4 py-3 sm:px-5">
           <DialogTitle className="flex items-center gap-2 text-base">
-            <CameraIcon className="size-4 shrink-0 text-amber-700" aria-hidden="true" />
+            <CameraIcon className="size-4 shrink-0 text-amber-700 dark:text-amber-300" aria-hidden="true" />
             {title}
           </DialogTitle>
           <DialogDescription className="text-xs leading-5">{description}</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3 p-4 sm:p-5">
-          <div className="relative overflow-hidden rounded-2xl border border-stone-200 bg-stone-950">
+          <div className="relative overflow-hidden rounded-2xl border border-border bg-black">
             <video
               ref={videoRef}
               className="aspect-[3/4] w-full object-cover"
@@ -284,7 +284,7 @@ export function CameraBarcodeScanner({
             />
             {/* Aiming frame — visual only; detection runs on the full frame. */}
             <div
-              className="pointer-events-none absolute inset-[18%] rounded-xl border-2 border-amber-400/90 shadow-[0_0_0_9999px_rgb(0_0_0/0.35)]"
+              className="pointer-events-none absolute inset-[18%] rounded-xl border-2 border-amber-400/90 dark:border-amber-500/50 shadow-[0_0_0_9999px_rgb(0_0_0/0.35)]"
               aria-hidden="true"
             />
             {status === "starting" ? (
@@ -300,7 +300,7 @@ export function CameraBarcodeScanner({
           </div>
 
           {error ? (
-            <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs leading-5 text-rose-800" role="alert">
+            <p className="rounded-xl border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-500/15 px-3 py-2 text-xs leading-5 text-rose-800 dark:text-rose-200" role="alert">
               {error}
             </p>
           ) : null}
@@ -333,8 +333,8 @@ export function CameraBarcodeScanner({
             </Button>
           </div>
 
-          <form onSubmit={submitManual} className="space-y-2 rounded-xl border border-stone-200 bg-stone-50/80 p-3">
-            <label className="block text-xs font-medium text-stone-700" htmlFor="camera-scan-manual">
+          <form onSubmit={submitManual} className="space-y-2 rounded-xl border border-border bg-muted/80 p-3">
+            <label className="block text-xs font-medium text-foreground/80" htmlFor="camera-scan-manual">
               ورود دستی کد
               <span className="ms-1 font-normal text-muted-foreground">
                 (اگر دوربین نخواند)
@@ -344,7 +344,7 @@ export function CameraBarcodeScanner({
               <input
                 id="camera-scan-manual"
                 dir="ltr"
-                className="min-h-11 flex-1 rounded-lg border border-stone-200 bg-white px-3 text-sm outline-none focus-visible:border-amber-500 focus-visible:ring-3 focus-visible:ring-amber-400/40"
+                className="min-h-11 flex-1 rounded-lg border border-border bg-white dark:bg-card px-3 text-sm outline-none focus-visible:border-amber-500 dark:focus-visible:border-amber-500/60 focus-visible:ring-3 focus-visible:ring-amber-400/40 dark:focus-visible:ring-amber-400/40"
                 value={manualCode}
                 onChange={(e) => setManualCode(e.target.value)}
                 placeholder="مثلاً 6260123456789"

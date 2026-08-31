@@ -41,10 +41,10 @@ interface DesktopView {
 }
 
 const STATE_LABELS: Record<PairingCodeSummary["state"], { label: string; className: string }> = {
-  valid: { label: "آماده استفاده", className: "bg-emerald-100 text-emerald-800" },
-  code_already_redeemed: { label: "استفاده‌شده", className: "bg-sky-100 text-sky-800" },
-  code_expired: { label: "منقضی", className: "bg-stone-200 text-stone-600" },
-  code_revoked: { label: "لغوشده", className: "bg-stone-200 text-stone-600" },
+  valid: { label: "آماده استفاده", className: "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-800 dark:text-emerald-200" },
+  code_already_redeemed: { label: "استفاده‌شده", className: "bg-sky-100 dark:bg-sky-500/20 text-sky-800 dark:text-sky-200" },
+  code_expired: { label: "منقضی", className: "bg-muted text-muted-foreground" },
+  code_revoked: { label: "لغوشده", className: "bg-muted text-muted-foreground" },
 };
 
 function formatDateTime(iso: string): string {
@@ -213,7 +213,7 @@ export function DesktopPanel() {
           )}
         </div>
 
-        <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50/70 p-4 text-xs leading-6 text-amber-900">
+        <div className="mt-5 rounded-xl border border-amber-200 dark:border-amber-500/30 bg-amber-50/70 dark:bg-amber-500/15 p-4 text-xs leading-6 text-amber-900 dark:text-amber-200">
           <p className="font-semibold">اشتباه رایج</p>
           <p>
             «توکن همگام‌سازی» در بخش تنظیمات (مقداری که با <code dir="ltr">POS1-</code> شروع می‌شود) کد اتصال
@@ -236,7 +236,7 @@ export function DesktopPanel() {
               return (
                 <li
                   key={code.id}
-                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-stone-200 p-3 text-sm"
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border p-3 text-sm"
                 >
                   <span className={`rounded-full px-2 py-0.5 text-xs ${state.className}`}>{state.label}</span>
                   <span className="text-xs text-muted-foreground">ساخته‌شده: {formatDateTime(code.createdAt)}</span>

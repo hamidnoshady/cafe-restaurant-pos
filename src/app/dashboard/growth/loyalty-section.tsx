@@ -141,11 +141,11 @@ export function LoyaltySection() {
         {due.length === 0 ? (
           <EmptyState>هنوز مشتری‌ای در موعد خرید مجدد نیست.</EmptyState>
         ) : (
-          <ul className="divide-y divide-stone-200/80 text-sm">
+          <ul className="divide-y divide-border/80 text-sm">
             {due.map((r) => (
               <li key={`${r.customerId}-${r.productName}`} className="flex items-center justify-between gap-3 py-2.5">
                 <div className="min-w-0">
-                  <span className="font-medium text-stone-950">{r.customerName}</span>
+                  <span className="font-medium text-foreground">{r.customerName}</span>
                   <span className="mr-2 text-xs text-muted-foreground">{r.productName}</span>
                 </div>
                 <span className="shrink-0 text-xs text-muted-foreground">
@@ -201,12 +201,12 @@ function ProgramsPanel({
 
   return (
     <SectionCard title="برنامهٔ وفاداری" bodyClassName="space-y-3 p-4 sm:p-5">
-      <ul className="divide-y divide-stone-200/80 text-sm">
+      <ul className="divide-y divide-border/80 text-sm">
         {programs.map((p) => (
           <li key={p.id} className="flex items-center justify-between gap-2 py-2">
-            <span className="font-medium text-stone-950">
+            <span className="font-medium text-foreground">
               {p.name}
-              {p.isDefault ? <span className="mr-2 text-xs text-amber-700">(پیش‌فرض)</span> : null}
+              {p.isDefault ? <span className="mr-2 text-xs text-amber-700 dark:text-amber-300">(پیش‌فرض)</span> : null}
             </span>
             <span className="text-xs text-muted-foreground">
               {formatPersianNumber(p.earnPointsPer100000)} امتیاز / ۱۰٬۰۰۰ تومان · هر امتیاز {money.format(p.pointValueRial)}
@@ -328,7 +328,7 @@ function CustomerPanel({
       {customer && !balanceLoaded ? (
         <LoadingSkeleton rows={1} compact label="در حال بارگذاری مانده مشتری" />
       ) : customer && balance ? (
-        <div className="grid grid-cols-2 gap-2 rounded-xl border border-stone-200/80 p-3 text-sm">
+        <div className="grid grid-cols-2 gap-2 rounded-xl border border-border/80 p-3 text-sm">
           <div>
             <span className="text-muted-foreground">امتیاز:</span> <b>{formatPersianNumber(balance.points)}</b>
           </div>

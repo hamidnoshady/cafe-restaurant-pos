@@ -144,7 +144,7 @@ export function TwoFactorSettings({ isOwner }: { isOwner: boolean }) {
                 <img
                   src={handover.totpQr}
                   alt="کد QR ورود دومرحله‌ای"
-                  className="size-48 rounded-lg bg-card p-2"
+                  className="size-48 rounded-lg bg-white p-2"
                 />
               </div>
             ) : null}

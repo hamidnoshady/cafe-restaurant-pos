@@ -38,9 +38,9 @@ interface PendingItem {
   unit: string;
 }
 
-const inventoryInputClass = `${inputClass} min-h-[52px] !border-stone-200 !bg-card shadow-none placeholder:text-stone-400 focus-visible:border-amber-500 focus-visible:ring-amber-400/30`;
+const inventoryInputClass = `${inputClass} min-h-[52px] !border-border !bg-card shadow-none placeholder:text-muted-foreground focus-visible:border-amber-500 dark:focus-visible:border-amber-500/60 focus-visible:ring-amber-400/30 dark:focus-visible:ring-amber-400/40`;
 const actionClass =
-  "min-h-[52px] border-stone-200 bg-card px-4 text-stone-700 hover:border-amber-300 hover:bg-amber-50 hover:text-stone-950";
+  "min-h-[52px] border-border bg-card px-4 text-foreground/80 hover:border-amber-300 dark:hover:border-amber-500/40 hover:bg-amber-50 dark:hover:bg-amber-500/15 hover:text-foreground";
 
 export function BarcodesSection({
   items,
@@ -149,7 +149,7 @@ export function BarcodesSection({
         {pending === null ? (
           <LoadingSkeleton rows={3} />
         ) : pending.length === 0 ? (
-          <p className="text-sm text-emerald-700">
+          <p className="text-sm text-emerald-700 dark:text-emerald-300">
             همهٔ اقلام فعال بارکد دارند؛ انبار آمادهٔ شمارش است.
           </p>
         ) : (
@@ -177,8 +177,8 @@ export function BarcodesSection({
             </ul>
           </>
         )}
-        {notice ? <p className="mt-3 text-sm text-emerald-700">{notice}</p> : null}
-        {error ? <p className="mt-3 text-sm text-rose-700">{error}</p> : null}
+        {notice ? <p className="mt-3 text-sm text-emerald-700 dark:text-emerald-300">{notice}</p> : null}
+        {error ? <p className="mt-3 text-sm text-rose-700 dark:text-rose-300">{error}</p> : null}
       </SectionCard>
 
       <SectionCard

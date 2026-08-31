@@ -149,7 +149,7 @@ export function InventoryManager() {
       <ErrorBox>{error}</ErrorBox>
 
       {lowStock.length > 0 ? (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+        <div className="rounded-xl border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/15 px-4 py-3 text-sm text-amber-950 dark:text-amber-200">
           <p className="mb-1 font-semibold">هشدار کمبود موجودی</p>
           <ul className="list-inside list-disc space-y-0.5 leading-6">
             {lowStock.map((it) => (

@@ -41,8 +41,8 @@ export default async function McpConsentPage({
   const enabled = await isFeatureEnabled(session.businessId, "api_platform");
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-stone-50 p-4">
-      <div className="w-full max-w-lg rounded-2xl border border-stone-200/80 bg-white p-6 shadow-[0_1px_2px_rgb(41_37_36/0.035)] sm:p-8">
+    <main className="flex min-h-screen items-center justify-center bg-muted p-4">
+      <div className="w-full max-w-lg rounded-2xl border border-border/80 bg-white dark:bg-card p-6 shadow-[0_1px_2px_rgb(41_37_36/0.035)] sm:p-8">
         <ConsentForm
           isOwner={session.role === "owner"}
           featureEnabled={enabled}

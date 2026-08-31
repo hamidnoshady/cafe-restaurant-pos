@@ -67,15 +67,15 @@ export default function FinishPage() {
       <ErrorBox>{error}</ErrorBox>
 
       {completed ? (
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-6 text-center">
+        <div className="rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-500/15 p-6 text-center">
           <p className="mb-2 text-2xl">🎉</p>
-          <p className="mb-1 font-bold text-emerald-800">راه‌اندازی کامل شد!</p>
-          <p className="mb-4 text-sm text-emerald-700">
+          <p className="mb-1 font-bold text-emerald-800 dark:text-emerald-200">راه‌اندازی کامل شد!</p>
+          <p className="mb-4 text-sm text-emerald-700 dark:text-emerald-300">
             کسب‌وکار شما آمادهٔ ثبت سفارش است. امکانات فروش در فاز ۲ فعال می‌شود.
           </p>
           <Link
             href="/dashboard"
-            className="inline-block rounded-lg bg-emerald-700 px-5 py-2 text-sm font-semibold text-white transition-colors hover:bg-emerald-800"
+            className="inline-block rounded-lg bg-emerald-700 dark:bg-emerald-300 px-5 py-2 text-sm font-semibold text-white transition-colors hover:bg-emerald-800 dark:hover:bg-emerald-200"
           >
             رفتن به داشبورد
           </Link>
@@ -90,7 +90,7 @@ export default function FinishPage() {
                   <span className="flex items-center gap-2">
                     <span
                       className={`flex h-5 w-5 items-center justify-center rounded-full text-[11px] ${
-                        done ? "bg-emerald-700 text-white" : "bg-muted text-muted-foreground"
+                        done ? "bg-emerald-700 dark:bg-emerald-300 text-white" : "bg-muted text-muted-foreground"
                       }`}
                     >
                       {done ? "✓" : "•"}

@@ -238,7 +238,7 @@ export function StockCountSection({
         {scanFeedback ? (
           <p
             className={`mt-2 text-xs leading-5 ${
-              scanFeedback.kind === "ok" ? "text-emerald-700" : "text-rose-700"
+              scanFeedback.kind === "ok" ? "text-emerald-700 dark:text-emerald-300" : "text-rose-700 dark:text-rose-300"
             }`}
             role="status"
             aria-live="polite"
@@ -275,7 +275,7 @@ export function StockCountSection({
         </div>
 
         {tally.length > 0 ? (
-          <ul className="mt-3 divide-y divide-stone-200/80 text-sm">
+          <ul className="mt-3 divide-y divide-border/80 text-sm">
             {tally.map((i) => {
               const value = counted[i.id]?.trim();
               const variance =
@@ -285,14 +285,14 @@ export function StockCountSection({
               return (
                 <li key={i.id} className="flex flex-col gap-2 py-2 sm:flex-row sm:items-center sm:justify-between">
                   <span className="min-w-0 break-words">
-                    <span className="font-medium text-stone-950">{i.name}</span>{" "}
+                    <span className="font-medium text-foreground">{i.name}</span>{" "}
                     <span className="text-xs text-muted-foreground">
                       (سیستم: {formatQuantity(i.quantity)})
                     </span>
                     {variance && !variance.isZero() ? (
                       <span
                         className={`ms-2 text-xs ${
-                          variance.isNegative() ? "text-rose-700" : "text-emerald-700"
+                          variance.isNegative() ? "text-rose-700 dark:text-rose-300" : "text-emerald-700 dark:text-emerald-300"
                         }`}
                       >
                         {variance.isNegative() ? "کسری" : "اضافه"}{" "}
@@ -346,20 +346,20 @@ export function StockCountSection({
         ) : history.length === 0 ? (
           <EmptyState>انبارگردانی ثبت نشده است.</EmptyState>
         ) : (
-          <ul className="mt-3 divide-y divide-stone-200/80 text-sm">
+          <ul className="mt-3 divide-y divide-border/80 text-sm">
             {history.map((c) => (
               <li key={c.id} className="flex flex-col gap-1 py-3">
                 <div className="flex items-center justify-between gap-3">
-                  <span className="font-medium text-stone-950">
+                  <span className="font-medium text-foreground">
                     {formatPersianNumber(c.lineCount)} قلم {c.note ? `— ${c.note}` : ""}
                   </span>
                   <span className="text-xs text-muted-foreground">{formatJalali(c.countedAt)}</span>
                 </div>
                 <div className="flex items-center justify-between gap-3">
                   <span className="text-xs">
-                    <span className="text-rose-700">کسری {money.format(Number(c.shortageValue))}</span>
+                    <span className="text-rose-700 dark:text-rose-300">کسری {money.format(Number(c.shortageValue))}</span>
                     {" · "}
-                    <span className="text-emerald-700">اضافه {money.format(Number(c.surplusValue))}</span>
+                    <span className="text-emerald-700 dark:text-emerald-300">اضافه {money.format(Number(c.surplusValue))}</span>
                   </span>
                   {c.reversed ? (
                     <span className="text-xs text-muted-foreground">برگشت‌خورده</span>

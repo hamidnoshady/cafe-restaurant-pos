@@ -99,17 +99,17 @@ const VERDICT_STYLE: Record<
 > = {
   pass: {
     icon: CheckCircle2Icon,
-    box: "border-emerald-200 bg-emerald-50 text-emerald-950",
+    box: "border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-500/15 text-emerald-950 dark:text-emerald-50",
     label: "تأیید اولیه",
   },
   warn: {
     icon: TriangleAlertIcon,
-    box: "border-amber-200 bg-amber-50 text-amber-950",
+    box: "border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/15 text-amber-950 dark:text-amber-200",
     label: "نیاز به بررسی",
   },
   fail: {
     icon: XCircleIcon,
-    box: "border-rose-200 bg-rose-50 text-rose-950",
+    box: "border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-500/15 text-rose-950 dark:text-rose-50",
     label: "ناقص",
   },
 };
@@ -325,7 +325,7 @@ export function InvoiceOcrPanel({
       ) : null}
 
       {error ? (
-        <p className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs leading-5 text-rose-800" role="alert">
+        <p className="mt-3 rounded-xl border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-500/15 px-3 py-2 text-xs leading-5 text-rose-800 dark:text-rose-200" role="alert">
           {error}
         </p>
       ) : null}
@@ -334,7 +334,7 @@ export function InvoiceOcrPanel({
         <img
           src={previewUrl}
           alt="پیش‌نمایش فاکتور"
-          className="mt-3 max-h-48 rounded-xl border border-stone-200 object-contain"
+          className="mt-3 max-h-48 rounded-xl border border-border object-contain"
         />
       ) : null}
 
@@ -400,10 +400,10 @@ export function InvoiceOcrPanel({
                     : "بدون اتصال";
               const statusClass =
                 line.matchStatus === "matched"
-                  ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                  ? "border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-500/15 text-emerald-900 dark:text-emerald-100"
                   : line.matchStatus === "ambiguous"
-                    ? "border-amber-200 bg-amber-50 text-amber-950"
-                    : "border-rose-200 bg-rose-50 text-rose-900";
+                    ? "border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/15 text-amber-950 dark:text-amber-200"
+                    : "border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-500/15 text-rose-900 dark:text-rose-100";
               const candidateOptions =
                 line.candidates.length > 0
                   ? [
@@ -418,11 +418,11 @@ export function InvoiceOcrPanel({
               return (
                 <li
                   key={line.key}
-                  className="rounded-xl border border-stone-200 bg-stone-50/50 p-3"
+                  className="rounded-xl border border-border bg-muted/50 p-3"
                 >
                   <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-stone-950">{line.name}</p>
+                      <p className="truncate text-sm font-medium text-foreground">{line.name}</p>
                       <p className="text-[11px] text-muted-foreground">
                         {line.barcode ? `بارکد ${toPersianDigits(line.barcode)} · ` : null}
                         {line.confidence != null
@@ -434,12 +434,12 @@ export function InvoiceOcrPanel({
                       <span className={`rounded-full border px-2 py-0.5 text-[11px] ${statusClass}`}>
                         {statusLabel}
                       </span>
-                      <label className="flex items-center gap-1.5 text-xs text-stone-700">
+                      <label className="flex items-center gap-1.5 text-xs text-foreground/80">
                         <input
                           type="checkbox"
                           checked={line.include}
                           onChange={(e) => updateLine(line.key, { include: e.target.checked })}
-                          className="size-4 rounded border-stone-300"
+                          className="size-4 rounded border-border"
                         />
                         انتقال
                       </label>
@@ -482,7 +482,7 @@ export function InvoiceOcrPanel({
               );
             })}
             {lines.length === 0 ? (
-              <li className="rounded-xl border border-dashed border-stone-200 px-3 py-6 text-center text-sm text-muted-foreground">
+              <li className="rounded-xl border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">
                 قلمی از فاکتور استخراج نشد.
               </li>
             ) : null}

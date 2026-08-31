@@ -65,8 +65,8 @@ export function CartLineCard({
       className={
         "rounded-xl border p-3 text-sm animate-in fade-in slide-in-from-top-1 duration-150 " +
         (hasAddOns
-          ? "border-amber-200 bg-amber-50"
-          : "border-stone-200/80 bg-card")
+          ? "border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/15"
+          : "border-border/80 bg-card")
       }
     >
       {/* Header: the item and ITS number selector together. The stepper is on
@@ -74,7 +74,7 @@ export function CartLineCard({
           unmistakably attached to this line. */}
       <div className="flex items-center gap-2.5">
         <div
-          className="flex shrink-0 items-center gap-0.5 rounded-lg border border-stone-200/80 bg-stone-50 p-0.5"
+          className="flex shrink-0 items-center gap-0.5 rounded-lg border border-border/80 bg-muted p-0.5"
           role="group"
           aria-label={
             hasAddOns
@@ -90,12 +90,12 @@ export function CartLineCard({
                 : "کاهش تعداد " + line.name
             }
             onClick={() => onStep(line.key, -1)}
-            className="flex size-10 items-center justify-center rounded-md text-stone-600 transition-colors hover:bg-amber-100 hover:text-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 active:scale-95 motion-reduce:transition-none"
+            className="flex size-10 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-amber-100 dark:hover:bg-amber-500/20 hover:text-amber-700 dark:hover:text-amber-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 active:scale-95 motion-reduce:transition-none"
           >
             <MinusIcon className="size-4" aria-hidden="true" />
           </button>
           <span
-            className="min-w-7 text-center text-sm font-bold text-stone-950"
+            className="min-w-7 text-center text-sm font-bold text-foreground"
             aria-live="polite"
           >
             {toPersianDigits(line.quantity)}
@@ -110,18 +110,18 @@ export function CartLineCard({
                 : "افزایش تعداد " + line.name
             }
             onClick={() => onStep(line.key, 1)}
-            className="flex size-10 items-center justify-center rounded-md text-amber-700 transition-colors hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 active:scale-95 motion-reduce:transition-none"
+            className="flex size-10 items-center justify-center rounded-md text-amber-700 dark:text-amber-300 transition-colors hover:bg-amber-100 dark:hover:bg-amber-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 active:scale-95 motion-reduce:transition-none"
           >
             <PlusIcon className="size-4" aria-hidden="true" />
           </button>
         </div>
         <p
-          className="min-w-0 flex-1 truncate font-bold text-stone-950"
+          className="min-w-0 flex-1 truncate font-bold text-foreground"
           title={line.name}
         >
           {line.name}
         </p>
-        <p className="shrink-0 text-sm font-bold text-amber-700">
+        <p className="shrink-0 text-sm font-bold text-amber-700 dark:text-amber-300">
           {money.format(breakdown.total)}
         </p>
       </div>
@@ -130,32 +130,32 @@ export function CartLineCard({
           with its own caption and per-unit money, so the chips read as "what
           each unit carries" rather than as another cart row. */}
       {hasAddOns ? (
-        <div className="me-1 mt-2 rounded-lg border border-amber-200/70 bg-amber-50 px-2.5 py-2">
+        <div className="me-1 mt-2 rounded-lg border border-amber-200/70 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/15 px-2.5 py-2">
           <ModifierBadges modifiers={line.modifiers} tone="amber" showCaption />
-          <p className="mt-1.5 flex flex-wrap items-center gap-x-1 text-[11px] text-stone-500">
+          <p className="mt-1.5 flex flex-wrap items-center gap-x-1 text-[11px] text-muted-foreground">
             <span>{money.format(line.unitPrice, { withUnit: false })}</span>
             <span aria-hidden="true">+</span>
-            <span className="font-bold text-amber-700">
+            <span className="font-bold text-amber-700 dark:text-amber-300">
               {formatModifierDelta(breakdown.addOns, {
                 withUnit: false,
                 unit: money.unit,
               })}
             </span>
             <span aria-hidden="true">=</span>
-            <span className="font-bold text-stone-950">
+            <span className="font-bold text-foreground">
               {money.format(breakdown.unit)}
             </span>
-            <span className="text-stone-500">برای هر واحد</span>
+            <span className="text-muted-foreground">برای هر واحد</span>
           </p>
         </div>
       ) : (
-        <p className="me-1 mt-1.5 text-xs text-stone-500">
+        <p className="me-1 mt-1.5 text-xs text-muted-foreground">
           {money.format(line.unitPrice)} برای هر واحد
         </p>
       )}
 
       {line.note ? (
-        <p className="me-1 mt-2 text-xs text-stone-500">
+        <p className="me-1 mt-2 text-xs text-muted-foreground">
           یادداشت: {line.note}
         </p>
       ) : null}
@@ -163,11 +163,11 @@ export function CartLineCard({
       {/* Line actions: changing the configuration (edit) and dropping it. Edit
           is how "one of these without the topping" is fixed after the fact
           without deleting and re-ringing the whole line. */}
-      <div className="mt-2 flex items-center justify-start gap-1 border-t border-stone-200/80/70 pt-2">
+      <div className="mt-2 flex items-center justify-start gap-1 border-t border-border/70 pt-2">
         <button
           type="button"
           onClick={() => onEdit(line.key)}
-          className="flex min-h-9 items-center gap-1.5 rounded-lg px-2.5 text-xs font-bold text-amber-700 transition-colors hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45"
+          className="flex min-h-9 items-center gap-1.5 rounded-lg px-2.5 text-xs font-bold text-amber-700 dark:text-amber-300 transition-colors hover:bg-amber-100 dark:hover:bg-amber-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45"
         >
           <PencilIcon className="size-3.5" aria-hidden="true" />
           تغییر افزودنی‌ها

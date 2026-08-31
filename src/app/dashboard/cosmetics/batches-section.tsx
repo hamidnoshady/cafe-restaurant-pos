@@ -11,7 +11,7 @@ import { api, Field, inputClass } from "../ui";
 import { JalaliDatePicker } from "../jalali-date-picker";
 import { SectionCardSkeleton, cardClass } from "../page-chrome";
 
-const accInputClass = `${inputClass} min-h-[52px] !border-stone-200 !bg-card shadow-none placeholder:text-stone-400 focus-visible:border-amber-500 focus-visible:ring-amber-400/30`;
+const accInputClass = `${inputClass} min-h-[52px] !border-border !bg-card shadow-none placeholder:text-muted-foreground focus-visible:border-amber-500 dark:focus-visible:border-amber-500/60 focus-visible:ring-amber-400/30 dark:focus-visible:ring-amber-400/40`;
 
 interface BatchItem {
   id: string;
@@ -126,17 +126,17 @@ export function BatchesSection() {
   return (
     <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_24rem]">
       <section className={`min-w-0 overflow-hidden ${cardClass} `}>
-        <div className="border-b border-stone-200/80 px-4 py-4 sm:px-5">
-          <h2 className="font-semibold text-stone-950">بچ‌های نزدیک به انقضا</h2>
+        <div className="border-b border-border/80 px-4 py-4 sm:px-5">
+          <h2 className="font-semibold text-foreground">بچ‌های نزدیک به انقضا</h2>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">
             بچ‌های منقضی قابل فروش نیستند و با یک کلیک از موجودی حذف می‌شوند.
           </p>
         </div>
-        <ul className="divide-y divide-stone-200/80">
+        <ul className="divide-y divide-border/80">
           {nearExpiry.map((row) => (
             <li key={`${row.itemId}-${row.batchNumber}`} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-5">
               <div className="min-w-0">
-                <span className="font-medium text-stone-950">{row.itemName}</span>
+                <span className="font-medium text-foreground">{row.itemName}</span>
                 <span className="mr-2 text-xs text-muted-foreground">
                   بچ {row.batchNumber} · {formatQuantity(row.quantity)} عدد
                   {row.expiryDate ? ` · انقضا ${toPersianDigits(formatJalali(row.expiryDate))}` : ""}
@@ -144,10 +144,10 @@ export function BatchesSection() {
                 <span
                   className={`ms-2 rounded-full px-2 py-0.5 text-xs font-medium ${
                     row.bucket === "expired"
-                      ? "bg-rose-100 text-rose-800"
+                      ? "bg-rose-100 dark:bg-rose-500/20 text-rose-800 dark:text-rose-200"
                       : row.bucket === "under30"
-                        ? "bg-amber-100 text-amber-900"
-                        : "bg-stone-100 text-stone-700"
+                        ? "bg-amber-100 dark:bg-amber-500/20 text-amber-900 dark:text-amber-200"
+                        : "bg-muted text-foreground/80"
                   }`}
                 >
                   {BUCKET_LABELS[row.bucket]}
@@ -168,7 +168,7 @@ export function BatchesSection() {
 
       <aside className="min-w-0">
         <div className={`${cardClass} p-4 sm:p-5`}>
-          <h2 className="font-semibold text-stone-950">ورود بچ</h2>
+          <h2 className="font-semibold text-foreground">ورود بچ</h2>
           <form onSubmit={receive} className="mt-4 space-y-3">
             <Field label="کالا">
               <SearchableSelect
@@ -194,9 +194,9 @@ export function BatchesSection() {
             <Field label={`بهای تمام‌شده هر واحد (${money.unitLabel})`}>
               <PersianNumberInput className={accInputClass} value={unitCost} onChange={(e) => setUnitCost(e.target.value)} dir="ltr" inputMode="numeric" />
             </Field>
-            {error ? <p className="text-xs text-rose-700">{error}</p> : null}
-            {done ? <p className="text-xs text-emerald-700">{done}</p> : null}
-            <Button type="submit" disabled={busy} size="lg" className="min-h-[52px] w-full border border-amber-300 px-5 font-semibold">
+            {error ? <p className="text-xs text-rose-700 dark:text-rose-300">{error}</p> : null}
+            {done ? <p className="text-xs text-emerald-700 dark:text-emerald-300">{done}</p> : null}
+            <Button type="submit" disabled={busy} size="lg" className="min-h-[52px] w-full border border-amber-300 dark:border-amber-500/40 px-5 font-semibold">
               ثبت بچ
             </Button>
           </form>

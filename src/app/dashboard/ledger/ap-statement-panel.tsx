@@ -56,7 +56,7 @@ export function ApStatementPanel({
       >
         <header className="mb-4 flex items-start justify-between gap-3 border-b border-border pb-4">
           <div>
-            <p className="text-xs font-semibold text-amber-700">جزئیات حساب</p>
+            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">جزئیات حساب</p>
             <h3 id="ap-statement-heading" className="mt-1 text-lg font-bold">صورتحساب {supplierName}</h3>
           </div>
           <button type="button" onClick={onClose} className="rounded-lg border border-border px-3 text-sm font-medium text-muted-foreground">
@@ -67,14 +67,14 @@ export function ApStatementPanel({
         {lines === null ? (
           <LoadingSkeleton rows={3} />
         ) : lines.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-border bg-stone-50 px-4 py-8 text-center text-sm text-muted-foreground">
+          <p className="rounded-xl border border-dashed border-border bg-muted px-4 py-8 text-center text-sm text-muted-foreground">
             هنوز فعالیتی برای این تأمین‌کننده ثبت نشده است.
           </p>
         ) : (
           <>
             <div className="hidden overflow-x-auto rounded-xl border border-border lg:block">
               <table className="min-w-[700px] w-full text-sm">
-                <thead className="bg-stone-50">
+                <thead className="bg-muted">
                   <tr className="border-b border-border text-muted-foreground">
                     <th scope="col" className="px-3 py-3 text-start font-semibold">تاریخ</th>
                     <th scope="col" className="px-3 py-3 text-start font-semibold">نوع</th>
@@ -101,13 +101,13 @@ export function ApStatementPanel({
 
             <div className="space-y-3 lg:hidden">
               {lines.map((l, i) => (
-                <article key={i} className="rounded-xl border border-border bg-stone-50 p-4">
+                <article key={i} className="rounded-xl border border-border bg-muted p-4">
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div>
                       <p className="text-xs text-muted-foreground">{toPersianDigits(formatJalali(l.date))}</p>
                       <h4 className="mt-1 font-semibold">{l.description}</h4>
                     </div>
-                    <span className="rounded-full bg-stone-100 px-2.5 py-1 text-xs font-medium text-stone-600">{TYPE_LABELS[l.type]}</span>
+                    <span className="rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">{TYPE_LABELS[l.type]}</span>
                   </div>
                   <dl className="mt-3 grid grid-cols-3 gap-2 border-t border-border pt-3 text-sm">
                     <div>

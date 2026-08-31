@@ -157,7 +157,7 @@ export function SetupDataSkeleton({ rows = 4 }: { rows?: number }) {
             </div>
           ))}
         </div>
-        <div className="flex justify-between border-t border-stone-200/80 pt-4">
+        <div className="flex justify-between border-t border-border/80 pt-4">
           <Skeleton className="h-10 w-24 rounded-lg" />
           <Skeleton className="h-10 w-28 rounded-lg" />
         </div>

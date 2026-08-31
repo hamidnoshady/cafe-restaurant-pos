@@ -191,7 +191,7 @@ export function PairForm({ onBack }: { onBack: () => void }) {
               {probing ? "در حال آزمایش…" : "آزمایش اتصال"}
             </button>
             {probe.kind === "ok" ? (
-              <span className="text-xs text-emerald-600" dir="ltr">
+              <span className="text-xs text-emerald-600 dark:text-emerald-400" dir="ltr">
                 ✓ {probe.url}
               </span>
             ) : null}

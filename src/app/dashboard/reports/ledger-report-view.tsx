@@ -107,14 +107,14 @@ function ReportLineName({
 
   if (!clickable)
     return (
-      <span className="font-semibold text-stone-950">{line.accountName}</span>
+      <span className="font-semibold text-foreground">{line.accountName}</span>
     );
 
   return (
     <button
       type="button"
       onClick={() => drill!.onDrillDown(line.accountCode, line.accountName)}
-      className="min-h-10 rounded-lg px-1 text-start font-semibold text-stone-950 underline-offset-4 hover:text-amber-800 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45"
+      className="min-h-10 rounded-lg px-1 text-start font-semibold text-foreground underline-offset-4 hover:text-amber-800 dark:hover:text-amber-300 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45"
     >
       {line.accountName}
     </button>
@@ -142,15 +142,15 @@ function Section({
   const showPrevious = previousLines !== undefined;
 
   return (
-    <section className="border-b border-stone-100 py-5 first:pt-0 last:border-b-0">
-      <h3 className="mb-3 text-base font-bold text-stone-950">{heading}</h3>
+    <section className="border-b border-border py-5 first:pt-0 last:border-b-0">
+      <h3 className="mb-3 text-base font-bold text-foreground">{heading}</h3>
 
-      <div className="hidden overflow-hidden rounded-xl border border-stone-200/80 sm:block">
+      <div className="hidden overflow-hidden rounded-xl border border-border/80 sm:block">
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
             <caption className="sr-only">{heading}</caption>
-            <thead className="bg-stone-50 text-stone-500">
-              <tr className="border-b border-stone-200/80">
+            <thead className="bg-muted text-muted-foreground">
+              <tr className="border-b border-border/80">
                 <th
                   scope="col"
                   className="px-4 py-3 text-start text-xs font-semibold"
@@ -187,19 +187,19 @@ function Section({
                 return (
                   <tr
                     key={line.accountCode || line.accountName}
-                    className="border-b border-stone-100 last:border-b-0"
+                    className="border-b border-border last:border-b-0"
                   >
-                    <td className="px-4 py-3.5 text-stone-500">
+                    <td className="px-4 py-3.5 text-muted-foreground">
                       {line.accountCode || "—"}
                     </td>
                     <td className="px-4 py-3.5">
                       <ReportLineName line={line} drill={drill} />
                     </td>
-                    <td className="px-4 py-3.5 text-end tabular-nums font-medium text-stone-950">
+                    <td className="px-4 py-3.5 text-end tabular-nums font-medium text-foreground">
                       {money.format(line.amount)}
                     </td>
                     {showPrevious ? (
-                      <td className="px-4 py-3.5 text-end tabular-nums text-stone-500">
+                      <td className="px-4 py-3.5 text-end tabular-nums text-muted-foreground">
                         {previousValue !== null
                           ? money.format(previousValue)
                           : "—"}
@@ -212,15 +212,15 @@ function Section({
                 <tr>
                   <td
                     colSpan={showPrevious ? 4 : 3}
-                    className="px-4 py-8 text-center text-sm text-stone-500"
+                    className="px-4 py-8 text-center text-sm text-muted-foreground"
                   >
                     بدون سطر
                   </td>
                 </tr>
               ) : null}
             </tbody>
-            <tfoot className="bg-stone-50">
-              <tr className="border-t-2 border-stone-200/80 font-bold text-stone-950">
+            <tfoot className="bg-muted">
+              <tr className="border-t-2 border-border/80 font-bold text-foreground">
                 <th scope="row" className="px-4 py-3.5 text-start" colSpan={2}>
                   {totalLabel}
                 </th>
@@ -228,7 +228,7 @@ function Section({
                   {money.format(total)}
                 </td>
                 {showPrevious ? (
-                  <td className="px-4 py-3.5 text-end tabular-nums text-stone-500">
+                  <td className="px-4 py-3.5 text-end tabular-nums text-muted-foreground">
                     {previousTotal != null ? money.format(previousTotal) : "—"}
                   </td>
                 ) : null}
@@ -246,27 +246,27 @@ function Section({
           return (
             <article
               key={line.accountCode || line.accountName}
-              className="rounded-xl border border-stone-200/80 bg-stone-50 p-4"
+              className="rounded-xl border border-border/80 bg-muted p-4"
             >
               <div className="flex items-start gap-3">
-                <span className="mt-1 shrink-0 text-xs font-medium text-stone-500">
+                <span className="mt-1 shrink-0 text-xs font-medium text-muted-foreground">
                   {line.accountCode || "—"}
                 </span>
                 <div className="min-w-0 flex-1">
                   <ReportLineName line={line} drill={drill} />
                 </div>
               </div>
-              <dl className="mt-3 grid gap-3 border-t border-stone-100 pt-3">
+              <dl className="mt-3 grid gap-3 border-t border-border pt-3">
                 <div className="flex items-center justify-between gap-3">
-                  <dt className="text-xs text-stone-500">مبلغ</dt>
-                  <dd className="tabular-nums font-bold text-stone-950">
+                  <dt className="text-xs text-muted-foreground">مبلغ</dt>
+                  <dd className="tabular-nums font-bold text-foreground">
                     {money.format(line.amount)}
                   </dd>
                 </div>
                 {showPrevious ? (
                   <div className="flex items-center justify-between gap-3">
-                    <dt className="text-xs text-stone-500">دورهٔ قبل</dt>
-                    <dd className="tabular-nums text-stone-600">
+                    <dt className="text-xs text-muted-foreground">دورهٔ قبل</dt>
+                    <dd className="tabular-nums text-muted-foreground">
                       {previousValue !== null
                         ? money.format(previousValue)
                         : "—"}
@@ -278,21 +278,21 @@ function Section({
           );
         })}
         {lines.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-stone-200/80 bg-stone-50 px-4 py-8 text-center text-sm text-stone-500">
+          <p className="rounded-xl border border-dashed border-border/80 bg-muted px-4 py-8 text-center text-sm text-muted-foreground">
             بدون سطر
           </p>
         ) : null}
-        <dl className="rounded-xl border border-stone-200/80 bg-stone-50 p-4">
+        <dl className="rounded-xl border border-border/80 bg-muted p-4">
           <div className="flex items-center justify-between gap-3">
-            <dt className="text-sm font-bold text-stone-950">{totalLabel}</dt>
-            <dd className="tabular-nums font-bold text-stone-950">
+            <dt className="text-sm font-bold text-foreground">{totalLabel}</dt>
+            <dd className="tabular-nums font-bold text-foreground">
               {money.format(total)}
             </dd>
           </div>
           {showPrevious ? (
-            <div className="mt-2 flex items-center justify-between gap-3 border-t border-stone-200/80 pt-2">
-              <dt className="text-xs text-stone-500">دورهٔ قبل</dt>
-              <dd className="tabular-nums text-stone-500">
+            <div className="mt-2 flex items-center justify-between gap-3 border-t border-border/80 pt-2">
+              <dt className="text-xs text-muted-foreground">دورهٔ قبل</dt>
+              <dd className="tabular-nums text-muted-foreground">
                 {previousTotal != null ? money.format(previousTotal) : "—"}
               </dd>
             </div>
@@ -314,19 +314,19 @@ function SummaryStat({
 }) {
   const money = useMoney();
   return (
-    <div className="rounded-xl border border-stone-200/80 bg-stone-50 p-4">
-      <dt className="text-sm text-stone-500">{label}</dt>
+    <div className="rounded-xl border border-border/80 bg-muted p-4">
+      <dt className="text-sm text-muted-foreground">{label}</dt>
       <dd
         className={
           value < 0
             ? "mt-2 font-bold tabular-nums text-destructive"
-            : "mt-2 font-bold tabular-nums text-stone-950"
+            : "mt-2 font-bold tabular-nums text-foreground"
         }
       >
         {money.format(value)}
       </dd>
       {previous != null ? (
-        <p className="mt-1 text-xs text-stone-500">
+        <p className="mt-1 text-xs text-muted-foreground">
           دورهٔ قبل: {money.format(previous)}
         </p>
       ) : null}
@@ -351,17 +351,17 @@ export function FoodCostVarianceView({ report }: { report: FoodCostVariance }) {
   const money = useMoney();
   return (
     <div>
-      <section className="border-b border-stone-100 pb-5">
-        <h3 className="mb-3 text-base font-bold text-stone-950">
+      <section className="border-b border-border pb-5">
+        <h3 className="mb-3 text-base font-bold text-foreground">
           بهای تمام‌شده نظری هر قلم منو
         </h3>
 
-        <div className="hidden overflow-hidden rounded-xl border border-stone-200/80 sm:block">
+        <div className="hidden overflow-hidden rounded-xl border border-border/80 sm:block">
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm">
               <caption className="sr-only">بهای تمام‌شده نظری هر قلم منو</caption>
-              <thead className="bg-stone-50 text-stone-500">
-                <tr className="border-b border-stone-200/80">
+              <thead className="bg-muted text-muted-foreground">
+                <tr className="border-b border-border/80">
                   <th scope="col" className="px-4 py-3 text-start text-xs font-semibold">قلم منو</th>
                   <th scope="col" className="px-4 py-3 text-end text-xs font-semibold">تعداد فروش</th>
                   <th scope="col" className="px-4 py-3 text-end text-xs font-semibold">درآمد</th>
@@ -371,21 +371,21 @@ export function FoodCostVarianceView({ report }: { report: FoodCostVariance }) {
               </thead>
               <tbody>
                 {report.items.map((item) => (
-                  <tr key={item.menuItemId ?? item.menuItemName} className="border-b border-stone-100 last:border-b-0">
-                    <td className="px-4 py-3.5 font-semibold text-stone-950">{item.menuItemName}</td>
-                    <td className="px-4 py-3.5 text-end tabular-nums text-stone-600">
+                  <tr key={item.menuItemId ?? item.menuItemName} className="border-b border-border last:border-b-0">
+                    <td className="px-4 py-3.5 font-semibold text-foreground">{item.menuItemName}</td>
+                    <td className="px-4 py-3.5 text-end tabular-nums text-muted-foreground">
                       {formatPersianNumber(item.unitsSold)}
                     </td>
-                    <td className="px-4 py-3.5 text-end tabular-nums text-stone-950">{money.format(item.revenue)}</td>
-                    <td className="px-4 py-3.5 text-end tabular-nums text-stone-950">{money.format(item.theoreticalCost)}</td>
-                    <td className="px-4 py-3.5 text-end tabular-nums font-medium text-stone-950">
+                    <td className="px-4 py-3.5 text-end tabular-nums text-foreground">{money.format(item.revenue)}</td>
+                    <td className="px-4 py-3.5 text-end tabular-nums text-foreground">{money.format(item.theoreticalCost)}</td>
+                    <td className="px-4 py-3.5 text-end tabular-nums font-medium text-foreground">
                       {formatPct(item.foodCostPct)}
                     </td>
                   </tr>
                 ))}
                 {report.items.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-4 py-8 text-center text-sm text-stone-500">
+                    <td colSpan={5} className="px-4 py-8 text-center text-sm text-muted-foreground">
                       در این بازه فروشی ثبت نشده
                     </td>
                   </tr>
@@ -397,30 +397,30 @@ export function FoodCostVarianceView({ report }: { report: FoodCostVariance }) {
 
         <div className="space-y-2 sm:hidden">
           {report.items.map((item) => (
-            <article key={item.menuItemId ?? item.menuItemName} className="rounded-xl border border-stone-200/80 bg-stone-50 p-4">
-              <h4 className="font-semibold text-stone-950">{item.menuItemName}</h4>
-              <dl className="mt-3 grid grid-cols-2 gap-3 border-t border-stone-100 pt-3">
+            <article key={item.menuItemId ?? item.menuItemName} className="rounded-xl border border-border/80 bg-muted p-4">
+              <h4 className="font-semibold text-foreground">{item.menuItemName}</h4>
+              <dl className="mt-3 grid grid-cols-2 gap-3 border-t border-border pt-3">
                 <div>
-                  <dt className="text-xs text-stone-500">تعداد فروش</dt>
-                  <dd className="tabular-nums text-stone-950">{formatPersianNumber(item.unitsSold)}</dd>
+                  <dt className="text-xs text-muted-foreground">تعداد فروش</dt>
+                  <dd className="tabular-nums text-foreground">{formatPersianNumber(item.unitsSold)}</dd>
                 </div>
                 <div>
-                  <dt className="text-xs text-stone-500">درآمد</dt>
-                  <dd className="tabular-nums text-stone-950">{money.format(item.revenue)}</dd>
+                  <dt className="text-xs text-muted-foreground">درآمد</dt>
+                  <dd className="tabular-nums text-foreground">{money.format(item.revenue)}</dd>
                 </div>
                 <div>
-                  <dt className="text-xs text-stone-500">بهای نظری</dt>
-                  <dd className="tabular-nums text-stone-950">{money.format(item.theoreticalCost)}</dd>
+                  <dt className="text-xs text-muted-foreground">بهای نظری</dt>
+                  <dd className="tabular-nums text-foreground">{money.format(item.theoreticalCost)}</dd>
                 </div>
                 <div>
-                  <dt className="text-xs text-stone-500">درصد بهای غذا</dt>
-                  <dd className="tabular-nums font-bold text-stone-950">{formatPct(item.foodCostPct)}</dd>
+                  <dt className="text-xs text-muted-foreground">درصد بهای غذا</dt>
+                  <dd className="tabular-nums font-bold text-foreground">{formatPct(item.foodCostPct)}</dd>
                 </div>
               </dl>
             </article>
           ))}
           {report.items.length === 0 ? (
-            <p className="rounded-xl border border-dashed border-stone-200/80 bg-stone-50 px-4 py-8 text-center text-sm text-stone-500">
+            <p className="rounded-xl border border-dashed border-border/80 bg-muted px-4 py-8 text-center text-sm text-muted-foreground">
               در این بازه فروشی ثبت نشده
             </p>
           ) : null}
@@ -436,14 +436,14 @@ export function FoodCostVarianceView({ report }: { report: FoodCostVariance }) {
         <SummaryStat label="مابه‌التفاوت توضیح‌نیافته (منهای ضایعات)" value={report.unexplainedVariance} />
       </dl>
 
-      <dl className="mt-5 rounded-xl border border-stone-200/80 bg-stone-50 p-4">
+      <dl className="mt-5 rounded-xl border border-border/80 bg-muted p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <dt className="font-bold text-stone-950">درصد واریانس نسبت به بهای نظری</dt>
+          <dt className="font-bold text-foreground">درصد واریانس نسبت به بهای نظری</dt>
           <dd
             className={
               report.variance > 0
                 ? "text-lg font-bold tabular-nums text-destructive"
-                : "text-lg font-bold tabular-nums text-stone-950"
+                : "text-lg font-bold tabular-nums text-foreground"
             }
           >
             {formatPct(report.variancePct)}
@@ -535,12 +535,12 @@ export function ProfitAndLossView({
         />
       </dl>
 
-      <dl className="mt-5 rounded-xl border border-stone-200/80 bg-stone-50 p-4">
+      <dl className="mt-5 rounded-xl border border-border/80 bg-muted p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <dt className="font-bold text-stone-950">سود (زیان) خالص</dt>
+          <dt className="font-bold text-foreground">سود (زیان) خالص</dt>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
             {previous ? (
-              <span className="text-sm text-stone-500">
+              <span className="text-sm text-muted-foreground">
                 دورهٔ قبل: {money.format(previous.netIncome)}
               </span>
             ) : null}
@@ -548,7 +548,7 @@ export function ProfitAndLossView({
               className={
                 current.netIncome < 0
                   ? "text-lg font-bold tabular-nums text-destructive"
-                  : "text-lg font-bold tabular-nums text-stone-950"
+                  : "text-lg font-bold tabular-nums text-foreground"
               }
             >
               {money.format(current.netIncome)}
@@ -655,25 +655,25 @@ export function BalanceSheetView({
         drill={drill}
       />
 
-      <dl className="mt-5 grid gap-3 rounded-xl border border-stone-200/80 bg-stone-50 p-4 sm:grid-cols-3">
+      <dl className="mt-5 grid gap-3 rounded-xl border border-border/80 bg-muted p-4 sm:grid-cols-3">
         {[
           ["جمع دارایی‌ها", current.totalAssets],
           ["جمع بدهی‌ها", current.totalLiabilities],
           ["جمع حقوق صاحبان سرمایه", current.totalEquity],
         ].map(([label, amount]) => (
           <div key={label as string} className="flex items-center justify-between gap-3 sm:flex-col sm:items-start sm:gap-1">
-            <dt className="text-xs text-stone-500">{label}</dt>
-            <dd className="tabular-nums font-bold text-stone-950">{money.format(amount as number)}</dd>
+            <dt className="text-xs text-muted-foreground">{label}</dt>
+            <dd className="tabular-nums font-bold text-foreground">{money.format(amount as number)}</dd>
           </div>
         ))}
       </dl>
 
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-stone-200/80 bg-stone-50 p-4">
-        <span className="font-bold text-stone-950">وضعیت تراز</span>
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/80 bg-muted p-4">
+        <span className="font-bold text-foreground">وضعیت تراز</span>
         <span
           className={
             current.balanced
-              ? "inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1.5 text-sm font-bold text-emerald-700"
+              ? "inline-flex items-center gap-2 rounded-full bg-emerald-50 dark:bg-emerald-500/15 px-3 py-1.5 text-sm font-bold text-emerald-700 dark:text-emerald-300"
               : "inline-flex items-center gap-2 rounded-full bg-destructive/10 px-3 py-1.5 text-sm font-bold text-destructive"
           }
         >
@@ -681,7 +681,7 @@ export function BalanceSheetView({
             aria-hidden="true"
             className={
               current.balanced
-                ? "size-2 rounded-full bg-emerald-500"
+                ? "size-2 rounded-full bg-emerald-500 dark:bg-emerald-500"
                 : "size-2 rounded-full bg-destructive"
             }
           />
@@ -705,18 +705,18 @@ export function CashFlowView({
   return (
     <div>
       <section>
-        <h3 className="mb-3 text-base font-bold text-stone-950">
+        <h3 className="mb-3 text-base font-bold text-foreground">
           گردش وجوه نقد بر اساس نوع رویداد
         </h3>
 
-        <div className="hidden overflow-hidden rounded-xl border border-stone-200/80 sm:block">
+        <div className="hidden overflow-hidden rounded-xl border border-border/80 sm:block">
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm">
               <caption className="sr-only">
                 گردش وجوه نقد بر اساس نوع رویداد
               </caption>
-              <thead className="bg-stone-50 text-stone-500">
-                <tr className="border-b border-stone-200/80">
+              <thead className="bg-muted text-muted-foreground">
+                <tr className="border-b border-border/80">
                   <th
                     scope="col"
                     className="px-4 py-3 text-start text-xs font-semibold"
@@ -748,16 +748,16 @@ export function CashFlowView({
                   return (
                     <tr
                       key={line.sourceType}
-                      className="border-b border-stone-100 last:border-b-0"
+                      className="border-b border-border last:border-b-0"
                     >
-                      <td className="px-4 py-3.5 font-semibold text-stone-950">
+                      <td className="px-4 py-3.5 font-semibold text-foreground">
                         {line.label}
                       </td>
-                      <td className="px-4 py-3.5 text-end tabular-nums font-medium text-stone-950">
+                      <td className="px-4 py-3.5 text-end tabular-nums font-medium text-foreground">
                         {money.format(line.amount)}
                       </td>
                       {previous ? (
-                        <td className="px-4 py-3.5 text-end tabular-nums text-stone-500">
+                        <td className="px-4 py-3.5 text-end tabular-nums text-muted-foreground">
                           {previousValue !== null
                             ? money.format(previousValue)
                             : "—"}
@@ -770,7 +770,7 @@ export function CashFlowView({
                   <tr>
                     <td
                       colSpan={previous ? 3 : 2}
-                      className="px-4 py-8 text-center text-sm text-stone-500"
+                      className="px-4 py-8 text-center text-sm text-muted-foreground"
                     >
                       بدون رویداد نقدی
                     </td>
@@ -790,20 +790,20 @@ export function CashFlowView({
             return (
               <article
                 key={line.sourceType}
-                className="rounded-xl border border-stone-200/80 bg-stone-50 p-4"
+                className="rounded-xl border border-border/80 bg-muted p-4"
               >
-                <h4 className="font-semibold text-stone-950">{line.label}</h4>
-                <dl className="mt-3 space-y-2 border-t border-stone-100 pt-3">
+                <h4 className="font-semibold text-foreground">{line.label}</h4>
+                <dl className="mt-3 space-y-2 border-t border-border pt-3">
                   <div className="flex items-center justify-between gap-3">
-                    <dt className="text-xs text-stone-500">مبلغ</dt>
-                    <dd className="tabular-nums font-bold text-stone-950">
+                    <dt className="text-xs text-muted-foreground">مبلغ</dt>
+                    <dd className="tabular-nums font-bold text-foreground">
                       {money.format(line.amount)}
                     </dd>
                   </div>
                   {previous ? (
                     <div className="flex items-center justify-between gap-3">
-                      <dt className="text-xs text-stone-500">دورهٔ قبل</dt>
-                      <dd className="tabular-nums text-stone-600">
+                      <dt className="text-xs text-muted-foreground">دورهٔ قبل</dt>
+                      <dd className="tabular-nums text-muted-foreground">
                         {previousValue !== null
                           ? money.format(previousValue)
                           : "—"}
@@ -815,33 +815,33 @@ export function CashFlowView({
             );
           })}
           {current.lines.length === 0 ? (
-            <p className="rounded-xl border border-dashed border-stone-200/80 bg-stone-50 px-4 py-8 text-center text-sm text-stone-500">
+            <p className="rounded-xl border border-dashed border-border/80 bg-muted px-4 py-8 text-center text-sm text-muted-foreground">
               بدون رویداد نقدی
             </p>
           ) : null}
         </div>
       </section>
 
-      <dl className="mt-5 space-y-3 rounded-xl border border-stone-200/80 bg-stone-50 p-4">
+      <dl className="mt-5 space-y-3 rounded-xl border border-border/80 bg-muted p-4">
         <div className="flex items-center justify-between gap-3 text-sm">
-          <dt className="text-stone-500">موجودی ابتدای دوره</dt>
-          <dd className="tabular-nums font-semibold text-stone-950">
+          <dt className="text-muted-foreground">موجودی ابتدای دوره</dt>
+          <dd className="tabular-nums font-semibold text-foreground">
             {money.format(current.openingCash)}
           </dd>
         </div>
         <div className="flex items-center justify-between gap-3 text-sm">
-          <dt className="text-stone-500">موجودی پایان دوره</dt>
-          <dd className="tabular-nums font-semibold text-stone-950">
+          <dt className="text-muted-foreground">موجودی پایان دوره</dt>
+          <dd className="tabular-nums font-semibold text-foreground">
             {money.format(current.closingCash)}
           </dd>
         </div>
-        <div className="flex items-center justify-between gap-3 border-t border-stone-200/80 pt-3">
-          <dt className="font-bold text-stone-950">تغییر خالص وجه نقد</dt>
+        <div className="flex items-center justify-between gap-3 border-t border-border/80 pt-3">
+          <dt className="font-bold text-foreground">تغییر خالص وجه نقد</dt>
           <dd
             className={
               current.netChange < 0
                 ? "font-bold tabular-nums text-destructive"
-                : "font-bold tabular-nums text-stone-950"
+                : "font-bold tabular-nums text-foreground"
             }
           >
             {money.format(current.netChange)}
