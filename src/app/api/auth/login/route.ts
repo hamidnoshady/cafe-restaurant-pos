@@ -15,13 +15,19 @@ import {
   membershipsForPlatformUser,
   type Membership,
 } from "@/lib/memberships";
-import { 
-  getAccountMfaEnrolments, 
-  getMfaGracePeriod, 
-  markMfaGracePeriod, 
-  signMfaPendingToken 
+import {
+  getAccountMfaEnrolments,
+  getMfaGracePeriod,
+  markMfaGracePeriod,
+  signMfaPendingToken,
 } from "@/lib/mfa-service";
-import { enrolmentRequirement } from "@/lib/mfa";
+import {
+  enrolmentRequirement,
+  graceDaysRemaining,
+  mfaAppliesToRole,
+  MFA_GRACE_DAYS_TENANT,
+} from "@/lib/mfa";
+import { getMfaPolicy } from "@/lib/mfa-policy";
 
 interface PlatformUserRow extends Record<string, unknown> {
   id: string;
@@ -199,10 +205,19 @@ export async function POST(request: NextRequest) {
     ]);
 
     // MFA Enrolment / Verification check
-    // Determine the MFA requirement based on their role in this chosen business.
-    // If they are owner or have full permissions... Actually, let's keep it simple: owners require MFA.
-    const requiresMfa = chosen.role === "owner"; // Phase 24 specifies owner or full permission set
-    
+    //
+    // Who it applies to: the `owner` role always, and `manager` only where the
+    // business has opted in (settings key `mfa.policy`) — the extension the
+    // phase spec describes as off by default. Cashier/waiter PIN logins never
+    // reach this route at all.
+    const mfaPolicy = await getMfaPolicy(chosen.businessId);
+    const requiresMfa = mfaAppliesToRole(chosen.role, mfaPolicy.requireForManagers);
+
+    // `grace` is resolved before the session is minted but does not stop it —
+    // see below.
+    let graceNotice: { mfaState: "grace"; graceUntil: string | null; graceDaysLeft: number | null } | null =
+      null;
+
     if (requiresMfa) {
       const enrolments = await getAccountMfaEnrolments("platform_user", usableIdentity.id);
       let graceUntil = await getMfaGracePeriod("platform_user", usableIdentity.id);
@@ -210,7 +225,7 @@ export async function POST(request: NextRequest) {
 
       if (!hasGraceRecord && enrolments.length === 0) {
         // Stamp grace at first login after deploy
-        await markMfaGracePeriod("platform_user", usableIdentity.id, 14); // 14 days for tenants
+        await markMfaGracePeriod("platform_user", usableIdentity.id, MFA_GRACE_DAYS_TENANT);
         graceUntil = await getMfaGracePeriod("platform_user", usableIdentity.id);
       }
 
@@ -222,7 +237,18 @@ export async function POST(request: NextRequest) {
       };
 
       const req = enrolmentRequirement(mfaState);
-      if (req !== "not_required") {
+
+      // Only `required` is a gate.
+      //
+      // Grace exists precisely so that turning 2FA on does not lock out every
+      // Owner on the platform the day it ships — an account still inside its
+      // window is signed in exactly as before and shown a dismissible nag with
+      // a countdown (see PasswordForm in src/app/login/login-form.tsx). Treating
+      // it as a gate, as this route did until now, made the window a hard
+      // lockout with a friendlier name and contradicted the phase spec, which
+      // asks for "an enrolment prompt with a 'later' button and a visible
+      // countdown" during the window and a hard gate only afterwards.
+      if (req === "required") {
         // Issue mfa_pending token instead of full session
         const mfaToken = await signMfaPendingToken({
           sub: usableIdentity.id,
@@ -230,18 +256,32 @@ export async function POST(request: NextRequest) {
           authRealm: "tenant_password",
           businessId: chosen.businessId,
         });
-        
+
         return NextResponse.json({
           mfaRequired: true,
           mfaState: req,
-          mfaToken
+          mfaToken,
+          // Which second factor to ask for, so the client can show "enter the
+          // code from your authenticator" rather than waiting for an SMS that
+          // is never coming. Null means the account is not enrolled at all and
+          // the screen has to enrol it first.
+          mfaMethod: enrolments.length > 0 ? enrolments[0].method : null,
         });
+      }
+
+      if (req === "grace") {
+        graceNotice = {
+          mfaState: "grace",
+          graceUntil: graceUntil ? new Date(graceUntil).toISOString() : null,
+          graceDaysLeft: graceDaysRemaining(graceUntil),
+        };
       }
     }
 
     const res = NextResponse.json({
       user: { id: chosen.userId, role: chosen.role, fullName: chosen.fullName },
       business: { id: chosen.businessId, name: chosen.businessName, slug: chosen.businessSlug },
+      ...(graceNotice ?? {}),
     });
     res.cookies.set(
       SESSION_COOKIE,

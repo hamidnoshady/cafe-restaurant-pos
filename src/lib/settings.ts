@@ -33,6 +33,15 @@ export const SETTING_KEYS = {
   deploymentMode: "deployment.mode",
   /** OnlinePlatformsConfig (src/lib/online-platforms-service.ts) — per-platform commission %, e.g. SnapFood (issue #160 §4) */
   onlinePlatforms: "online_platforms.config",
+  /**
+   * MfaPolicy (src/lib/mfa-policy.ts) — { requireForManagers: boolean }.
+   *
+   * Phase 24 Wave 2's documented opt-in: a business may extend the two-factor
+   * requirement from `owner` to `manager`. Off by default, and absent from the
+   * table until someone turns it on, so every existing business keeps exactly
+   * today's behaviour.
+   */
+  mfaPolicy: "mfa.policy",
 } as const;
 
 export async function getSetting<T>(businessId: string, key: string): Promise<T | null> {

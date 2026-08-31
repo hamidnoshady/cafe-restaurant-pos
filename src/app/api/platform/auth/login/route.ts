@@ -19,7 +19,7 @@ import {
   markMfaGracePeriod, 
   signMfaPendingToken 
 } from "@/lib/mfa-service";
-import { enrolmentRequirement } from "@/lib/mfa";
+import { enrolmentRequirement, graceDaysRemaining, MFA_GRACE_DAYS_PLATFORM } from "@/lib/mfa";
 
 interface PlatformAdminRow extends Record<string, unknown> {
   id: string;
@@ -101,19 +101,29 @@ export async function POST(request: NextRequest) {
 
     if (!hasGraceRecord && enrolments.length === 0) {
       // 7 days for platform admins
-      await markMfaGracePeriod("platform_admin", usable.id, 7); 
+      await markMfaGracePeriod("platform_admin", usable.id, MFA_GRACE_DAYS_PLATFORM);
       graceUntil = await getMfaGracePeriod("platform_admin", usable.id);
     }
 
     const mfaState = {
       hasPrimary: enrolments.length > 0,
       graceUntil,
-      hasGraceRecord: true, // We just marked it if it was missing
+      // Whether a *pre-existing* record was found. Passing `true`
+      // unconditionally (as this did) made a freshly stamped 14-day window read
+      // as an expired one the moment `graceUntil` was momentarily null, which
+      // is the difference between "you have a week" and "you are locked out".
+      hasGraceRecord,
       role: usable.role
     };
 
     const req = enrolmentRequirement(mfaState);
-    if (req !== "not_required") {
+
+    // Only `required` withholds the session. During grace the admin is signed
+    // in and the console shows the enrolment nag — the behaviour the phase spec
+    // describes, and the reason the window exists at all: a hard gate from day
+    // one locks out every platform admin simultaneously, with nobody left to
+    // rescue them.
+    if (req === "required") {
       const mfaToken = await signMfaPendingToken({
         sub: usable.id,
         method: enrolments.length > 0 ? enrolments[0].method : null,
@@ -123,7 +133,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         mfaRequired: true,
         mfaState: req,
-        mfaToken
+        mfaToken,
+        mfaMethod: enrolments.length > 0 ? enrolments[0].method : null,
       });
     }
 
@@ -137,6 +148,13 @@ export async function POST(request: NextRequest) {
 
     const res = NextResponse.json({
       admin: { id: usable.id, fullName: usable.full_name, role: usable.role },
+      ...(req === "grace"
+        ? {
+            mfaState: "grace" as const,
+            graceUntil: graceUntil ? new Date(graceUntil).toISOString() : null,
+            graceDaysLeft: graceDaysRemaining(graceUntil),
+          }
+        : {}),
     });
     res.cookies.set(PLATFORM_SESSION_COOKIE, token, platformSessionCookieOptions());
     return res;

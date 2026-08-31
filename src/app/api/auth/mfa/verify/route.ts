@@ -1,12 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifyMfaPendingToken, getAccountMfaEnrolments, getMfaSecretKey } from "@/lib/mfa-service";
+import { verifyMfaPendingToken, getAccountMfaEnrolments } from "@/lib/mfa-service";
+import { verifyMfaCode } from "@/lib/mfa-verify";
+import { countRemainingRecoveryCodes } from "@/lib/mfa-recovery";
 import { query, withoutTenantScope } from "@/lib/db";
-import { createHmac, createDecipheriv, timingSafeEqual } from "node:crypto";
-import { getRealmSecret } from "@/lib/jwt-secret";
-import { TOTP, NobleCryptoPlugin, ScureBase32Plugin } from "otplib";
 import { signSession, SESSION_COOKIE, sessionCookieOptions } from "@/lib/auth";
 import { membershipsForPlatformUser } from "@/lib/memberships";
 
+/**
+ * Second-factor verification for the tenant password realm — the step that
+ * turns an `mfa_pending` token into a real session.
+ *
+ * Accepts either the enrolled factor's code, or (with `useRecoveryCode`) one of
+ * the ten single-use codes issued at enrolment. The recovery path is what makes
+ * a lost phone a bad afternoon rather than a database edit, and it is
+ * deliberately explicit rather than sniffed from the shape of the input: a
+ * mistyped TOTP code must never silently burn a recovery code.
+ */
 export async function POST(request: NextRequest) {
   const auth = request.headers.get("authorization");
   const bearer = auth?.startsWith("Bearer ") ? auth.slice("Bearer ".length).trim() : "";
@@ -17,7 +26,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  let body: { code?: string };
+  let body: { code?: string; useRecoveryCode?: boolean };
   try {
     body = await request.json();
   } catch {
@@ -29,92 +38,46 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "missing_code" }, { status: 400 });
   }
 
+  const useRecoveryCode = body.useRecoveryCode === true;
   const enrolments = await getAccountMfaEnrolments("platform_user", payload.sub);
-  const activeEnrolment = enrolments.find(e => e.method === payload.method) || enrolments.find(e => e.is_primary);
+  const activeEnrolment =
+    enrolments.find((e) => e.method === payload.method) || enrolments.find((e) => e.is_primary);
 
-  if (!activeEnrolment) {
+  // A recovery code is honoured against the account, not against a method —
+  // the whole reason it is being used is that the enrolled method is out of
+  // reach. Without an enrolment *and* without a recovery attempt there is
+  // nothing to check against.
+  if (!activeEnrolment && !useRecoveryCode) {
     return NextResponse.json({ error: "not_enrolled" }, { status: 400 });
   }
 
-  const valid = await withoutTenantScope("platform", async () => {
-    if (activeEnrolment.method === "totp") {
-      const { rows } = await query<{ totp_secret: Buffer }>(
-        `SELECT totp_secret FROM mfa_enrolments WHERE subject_realm = 'platform_user' AND subject_id = $1 AND method = 'totp'`,
-        [payload.sub]
-      );
-      if (rows.length === 0 || !rows[0].totp_secret) return false;
-      const data = rows[0].totp_secret;
-      const iv = data.subarray(0, 12);
-      const tag = data.subarray(12, 28);
-      const ciphertext = data.subarray(28);
-      
-      let totpSecretPlain = "";
-      try {
-        const key = await getMfaSecretKey();
-        const decipher = createDecipheriv("aes-256-gcm", key, iv);
-        decipher.setAuthTag(tag);
-        totpSecretPlain = Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8");
-      } catch (err) {
-        console.error("Failed to decrypt TOTP secret", err);
-        return false;
-      }
-
-      const totp = new TOTP({
-        crypto: new NobleCryptoPlugin(),
-        base32: new ScureBase32Plugin(),
-      });
-      const res = await totp.verify(code, { secret: totpSecretPlain });
-      const isValid = res.valid;
-      if (isValid) {
-        await query(`UPDATE mfa_enrolments SET confirmed_at = now() WHERE subject_realm = 'platform_user' AND subject_id = $1 AND method = 'totp' AND confirmed_at IS NULL`, [payload.sub]);
-      }
-      return isValid;
-    }
-
-    if (activeEnrolment.method === "sms_otp") {
-      const secretKey = await getRealmSecret("platform");
-      const hmac = createHmac("sha256", secretKey).update(code).digest("hex");
-
-      const { rows } = await query<{ id: string; hashed_otp: string; attempts: number }>(
-        `SELECT id, hashed_otp, attempts 
-         FROM mfa_challenges 
-         WHERE subject_realm = 'platform_user' AND subject_id = $1 AND expires_at > now() 
-         ORDER BY created_at DESC LIMIT 1`,
-        [payload.sub]
-      );
-
-      if (rows.length === 0) return false;
-      
-      const challenge = rows[0];
-      if (challenge.attempts >= 5) {
-        return false;
-      }
-
-      const isMatch = timingSafeEqual(Buffer.from(challenge.hashed_otp, "hex"), Buffer.from(hmac, "hex"));
-      
-      if (!isMatch) {
-        await query(`UPDATE mfa_challenges SET attempts = attempts + 1 WHERE id = $1`, [challenge.id]);
-        return false;
-      }
-
-      await query(`DELETE FROM mfa_challenges WHERE id = $1`, [challenge.id]);
-      await query(`UPDATE mfa_enrolments SET confirmed_at = now() WHERE subject_realm = 'platform_user' AND subject_id = $1 AND method = 'sms_otp' AND confirmed_at IS NULL`, [payload.sub]);
-      return true;
-    }
-    return false;
+  const outcome = await verifyMfaCode({
+    subjectRealm: "platform_user",
+    subjectId: payload.sub,
+    method: activeEnrolment?.method ?? null,
+    code,
+    useRecoveryCode,
   });
 
-  if (!valid) {
+  if (outcome === "rejected") {
     // A failed OTP counts toward the Wave 1 lockout streak.
     const { recordAuthFailure } = await import("@/lib/login-lockout-service");
-    const { rows } = await withoutTenantScope("platform", () => 
-      query(`SELECT email FROM platform_users WHERE id = $1`, [payload.sub])
+    const { rows } = await withoutTenantScope("platform", () =>
+      query(`SELECT email FROM platform_users WHERE id = $1`, [payload.sub]),
     );
     if (rows[0]) {
       await recordAuthFailure("tenant_password", rows[0].email as string);
     }
-    return NextResponse.json({ error: "invalid_code" }, { status: 401 });
+    return NextResponse.json(
+      { error: useRecoveryCode ? "invalid_recovery_code" : "invalid_code" },
+      { status: 401 },
+    );
   }
+
+  const recoveryCodesRemaining =
+    outcome === "recovery_code"
+      ? await countRemainingRecoveryCodes("platform_user", payload.sub)
+      : null;
 
   return withoutTenantScope("login", async () => {
     // Generate real session
@@ -144,6 +107,10 @@ export async function POST(request: NextRequest) {
     const res = NextResponse.json({
       user: { id: chosen.userId, role: chosen.role, fullName: chosen.fullName },
       business: { id: chosen.businessId, name: chosen.businessName, slug: chosen.businessSlug },
+      // Surfaced so the UI can say «۶ کد بازیابی باقی مانده» right after one is
+      // spent. Someone down to their last code needs to know before, not after.
+      usedRecoveryCode: outcome === "recovery_code",
+      recoveryCodesRemaining,
     });
     res.cookies.set(SESSION_COOKIE, token, sessionCookieOptions());
     return res;

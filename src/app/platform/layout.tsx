@@ -64,6 +64,11 @@ const NAV: NavItem[] = [
   },
   { label: "به‌روزرسانی‌ها", href: "/platform/updates" },
   { label: "پایگاه دانش", href: "/platform/knowledge" },
+  // Phase 24 Wave 2 — the 2FA enrolment readout and the Kavenegar connection.
+  // `system.read` rather than an owner-only capability: knowing that the
+  // platform's 2FA deadline is three days away is not privileged information,
+  // and the page hides its own write controls from anyone who lacks them.
+  { label: "امنیت", href: "/platform/security", cap: "system.read" },
   { label: "مدیران", href: "/platform/admins", cap: "admins.manage" },
 ];
 

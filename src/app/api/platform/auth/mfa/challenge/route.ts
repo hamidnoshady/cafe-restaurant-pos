@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyMfaPendingToken, getAccountMfaEnrolments } from "@/lib/mfa-service";
 import { checkMfaChallengeRateLimit, recordMfaChallenge } from "@/lib/mfa-rate-limit";
 import { getSmsProvider } from "@/lib/sms-config";
+import { KavenegarError } from "@/lib/sms-kavenegar";
 import { query, withoutTenantScope } from "@/lib/db";
 import { createHmac, randomInt } from "node:crypto";
 import { getRealmSecret } from "@/lib/jwt-secret";
@@ -68,7 +69,16 @@ export async function POST(request: NextRequest) {
     await provider.sendOtp(activeEnrolment.phone_e164, otp);
   } catch (err) {
     console.error("SMS dispatch failed", err);
-    return NextResponse.json({ error: "sms_dispatch_failed" }, { status: 502 });
+    // A Kavenegar failure now arrives as a KavenegarError carrying the
+    // carrier's numeric status mapped to a Persian sentence. Only the
+    // *user-actionable* half is handed back: told "شمارهٔ گیرنده نامعتبر است"
+    // an Owner can fix their number, but told the same thing when the real
+    // cause is an empty SMS credit balance they will retype it twenty times
+    // and then phone support — so an operator-side fault stays generic to the
+    // user and detailed in the server log.
+    const message =
+      err instanceof KavenegarError && !err.operatorFault ? err.message : undefined;
+    return NextResponse.json({ error: "sms_dispatch_failed", message }, { status: 502 });
   }
 
   const phone = activeEnrolment.phone_e164;

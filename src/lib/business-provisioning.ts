@@ -30,6 +30,8 @@ import { seedPaymentMethods } from "./payment-methods-service";
 import { isMobilePhone, phoneE164 } from "./phone";
 import { generateSecret, generateURI } from "otplib";
 import { provisionMfaEnrolment } from "./mfa-service";
+import { issueRecoveryCodes } from "./mfa-recovery";
+import { totpQrDataUrl } from "./totp-qr";
 
 export interface ProvisionBusinessInput {
   businessName: string;
@@ -88,8 +90,22 @@ export interface ProvisionedBusiness {
   /** users.id — the owner's membership in the new business. */
   userId: string;
   platformUserId: string;
+  /**
+   * Phase 24 Wave 2 — the Owner's first second factor, returned exactly once.
+   *
+   * A `local` install has no internet and therefore no SMS, so provisioning
+   * enrols TOTP and hands the secret back for the caller to *show*. Until this
+   * was surfaced, a local Owner was enrolled in a factor whose secret nothing
+   * ever displayed — a 2FA requirement with no possible way to satisfy it.
+   * Present only on the local path; a connected install enrols SMS to
+   * `ownerPhone` instead and has nothing secret to show.
+   */
   totpSecret?: string;
   totpUrl?: string;
+  /** The `totpUrl` as a scannable PNG data URL. */
+  totpQr?: string | null;
+  /** Ten single-use recovery codes, plaintext, shown once and never again. */
+  recoveryCodes?: string[];
 }
 
 /** An email already registered, offered a *different* password. */
@@ -371,6 +387,7 @@ export async function provisionBusiness(
 
       let totpSecret: string | undefined;
       let totpUrl: string | undefined;
+      let totpQr: string | null | undefined;
 
       if (input.deploymentMode === "local") {
         await client.query(
@@ -387,13 +404,32 @@ export async function provisionBusiness(
           secret: totpSecret,
           strategy: "totp"
         });
+        totpQr = await totpQrDataUrl(totpUrl);
         await provisionMfaEnrolment(client, "platform_user", platformUserId, "totp", true, null, Buffer.from(totpSecret || ""));
       } else {
         await provisionMfaEnrolment(client, "platform_user", platformUserId, "sms_otp", true, input.ownerPhone, null);
       }
 
+      // Both paths get recovery codes, in the same transaction as the
+      // enrolment they back: a rolled-back provision must not leave live codes
+      // for a business that was never created. They are the only way back in
+      // for an Owner whose phone (or authenticator) is gone, so an enrolment
+      // without them is the lockout this wave exists to prevent.
+      const recoveryCodes = await issueRecoveryCodes("platform_user", platformUserId, client);
+
       await client.query("COMMIT");
-      return { businessId, businessSlug: slug, businessSubdomain: subdomain, locationId, userId, platformUserId, totpSecret, totpUrl };
+      return {
+        businessId,
+        businessSlug: slug,
+        businessSubdomain: subdomain,
+        locationId,
+        userId,
+        platformUserId,
+        totpSecret,
+        totpUrl,
+        totpQr,
+        recoveryCodes,
+      };
     } catch (err) {
       await client.query("ROLLBACK");
       throw err;
