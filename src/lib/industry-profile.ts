@@ -63,12 +63,13 @@ export const MODULE_KEYS = [
   "ai",
   "settings",
   // Phase 35 — module keys for the app ecosystem and the phases that build on
-  // it. None is added to any industry's `modules` yet: `workspace` is the
-  // ecosystem shell (gated by the `workspace` feature flag, not a trade module)
-  // and `crm`/`website`/`messaging` are the subjects of phases 36–38, which
-  // wire up their own pages. They exist now so the app registry
-  // (src/lib/apps.ts) can give them a place and so a later phase need not touch
-  // the union again.
+  // it. `workspace` is the ecosystem shell (gated by the `workspace` feature
+  // flag, not a trade module) and is added to no industry's `modules`.
+  // `crm` (Phase 36) and `website` (Phase 36b/reversal) are wired into
+  // `CORE_MODULES` below; `messaging` is still the subject of a later phase
+  // and stays unassigned until it wires up its own pages. They exist now so
+  // the app registry (src/lib/apps.ts) can give them a place and so a later
+  // phase need not touch the union again.
   "workspace",
   "crm",
   "website",
@@ -175,6 +176,11 @@ const CORE_MODULES: readonly ModuleKey[] = [
   "loyalty",
   "promotions",
   "commission",
+  // Website manager (#378) ships to every trade too: a jeweller wants a
+  // storefront exactly as a café wants a menu site, and the module gates the
+  // one CMS connection this app holds rather than a trade-specific screen —
+  // see the "website" app in src/lib/apps.ts and docs/eshobe-cms-integration.md.
+  "website",
   "ledger",
   "integrations",
   "reports",
@@ -340,6 +346,9 @@ export const PAGE_MODULE_PREFIXES: readonly (readonly [string, ModuleKey])[] = [
   // `crm` module key: a business that has customers has a CRM, and gating the
   // app on a module no industry profile lists yet would hide it from everyone.
   ["/dashboard/crm", "customers"],
+  // The website manager's own app (issue #378) — pulled out of Growth &
+  // Marketing to be a peer of it, not a section inside it (src/lib/apps.ts).
+  ["/dashboard/website", "website"],
   ["/dashboard/stock", "stock"],
 ];
 
@@ -372,6 +381,10 @@ const API_MODULE_PREFIXES: readonly (readonly [string, ModuleKey])[] = [
   // picker calls it. What the `crm` module gates is the CRM's own surfaces —
   // segments, the pipeline, cases, consent history.
   ["/api/crm", "crm"],
+  // Only the website manager's own screen — `/api/cms/revalidate` is the
+  // CMS's inbound publish webhook (HMAC-verified, no session, no
+  // `withTenantScope`) and must stay outside this list.
+  ["/api/cms/website", "website"],
   ["/api/stock", "stock"],
 ];
 

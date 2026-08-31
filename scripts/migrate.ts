@@ -40,12 +40,26 @@ export const MIGRATION_ADVISORY_LOCK_ID = "7310318183545164275";
  * produce. Adopting the checksum is therefore schema-neutral; the stored
  * checksum is only updated when it still equals the known-broken value below,
  * so no genuine file tampering or unrelated drift is ever masked.
+ *
+ * 0127_bug_reports.sql had its leading comment block reworded (the "report
+ * button" UI it originally described was replaced by the sidebar footer
+ * icon) after it had already been applied. Only comment lines changed —
+ * every statement (CREATE TABLE, the index, the RLS policy) is byte-for-byte
+ * identical — so a database that applied the original wording has the exact
+ * schema the reworded file produces. Adopting the checksum is schema-neutral
+ * for the same reason as 0103 above.
  */
 const CHECKSUM_REPAIRS: ReadonlyMap<string, string> = new Map([
   [
     "0103_holoo_integration.sql",
     // sha256 of the original, broken revision (over-strict provider_credentials).
     "889ff7579bd57c57882cde73de2a2bb5cdc7b5f76ffb377532fca3ef6bd614e8",
+  ],
+  [
+    "0127_bug_reports.sql",
+    // sha256 of the original revision (comment block described the since-removed
+    // floating "report" button instead of the sidebar footer icon).
+    "f780470a9aeebc4400ea14c3fee5ade194d4aa598c5bd79840802b2aa372b5ff",
   ],
 ]);
 

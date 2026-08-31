@@ -130,6 +130,8 @@ export const PROMPT_FRAGMENTS: Record<FragmentKey, string> = {
     "همهٔ اعداد این برنامه از آینهٔ محلی داده‌های فروشگاه می‌آیند؛ اگر چیزی تازه همگام نشده، بگو کاربر دکمهٔ همگام‌سازی را بزند (در حالت افزونه، داده‌ها با اجرای بعدی افزونه می‌رسند).",
   ].join("\n"),
 
+  "app:website": "",
+
   "app:settings": "",
 
   // ── Project instructions (injected when conversation has a project) ───

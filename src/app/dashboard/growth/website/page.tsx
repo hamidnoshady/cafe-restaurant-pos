@@ -1,18 +1,11 @@
 import { redirect } from "next/navigation";
-import { getSession } from "@/lib/auth";
-import { WebsiteSection } from "../website-section";
 
 /**
- * The Growth app's website manager — «وب‌سایت» (issue #378).
- *
- * Owner/manager only (like the connections app it shares its credential
- * model with); a cashier lands in their one floor surface instead.
+ * The website manager moved out of Growth & Marketing into its own app
+ * (src/lib/apps.ts) — an integration with an external system of record
+ * (eshobe-cms), not a marketing engine. This route stays so every bookmark,
+ * saved bottom-nav slot and assistant link keeps working.
  */
-export default async function GrowthWebsitePage() {
-  const session = await getSession();
-  if (!session) redirect("/login");
-  if (session.role === "cashier") redirect("/dashboard/growth/loyalty");
-  if (!["owner", "manager", "cashier"].includes(session.role)) redirect("/dashboard");
-
-  return <WebsiteSection />;
+export default function GrowthWebsiteRedirect() {
+  redirect("/dashboard/website");
 }

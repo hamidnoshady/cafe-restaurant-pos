@@ -19,7 +19,6 @@ export const GROWTH_SECTION_KEYS = [
   "gift-cards",
   "loyalty",
   "commission",
-  "website",
 ] as const;
 
 export type GrowthSectionKey = (typeof GROWTH_SECTION_KEYS)[number];
@@ -36,9 +35,6 @@ export function growthSectionHref(key: GrowthSectionKey): string {
  * in.
  */
 export function canViewGrowthSection(role: string, key: GrowthSectionKey): boolean {
-  // The website manager holds a machine credential (the business's CMS key)
-  // and moves e-commerce order status — owner/manager only, the same line
-  // the connections app draws.
   if (role === "cashier") return key === "loyalty";
   return ["owner", "manager"].includes(role);
 }

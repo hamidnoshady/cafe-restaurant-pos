@@ -16,6 +16,7 @@ import {
   ContactIcon,
   FolderIcon,
   GemIcon,
+  GlobeIcon,
   LayoutDashboardIcon,
   LayoutGridIcon,
   LockIcon,
@@ -28,7 +29,6 @@ import {
   TruckIcon,
   UsersIcon,
   WatchIcon,
-  GlobeIcon,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -139,6 +139,8 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   "/dashboard/crm": ContactIcon,
   // Phase 40 — the WordPress & WooCommerce manager's home.
   "/dashboard/wp": GlobeIcon,
+  // Issue #378 — the website manager's own app, pulled out of Growth.
+  "/dashboard/website": GlobeIcon,
 };
 
 /**

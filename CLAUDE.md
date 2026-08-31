@@ -356,8 +356,13 @@ Two more, because both of these are load-bearing and easy to undo by accident:
   `storeCachedAnswer()`, not just at the call site.
 - **The Growth & Marketing app (`/dashboard/growth`) is the container for every
   customer-growing surface** (Phase 36b): loyalty, campaigns/gift cards and commission are
-  its sections today; CRM (#367), messaging (#372) and the website manager (#378) become
-  sections of it, not new sidebar peers. Its dashboard never keeps a number of its own —
+  its sections today; messaging (#372) becomes a section of it, not a new sidebar peer.
+  CRM (#367) and the website manager (#378) were seated here as forward references and
+  were both later pulled out into their own apps once built — CRM because the customer
+  record is read by every app, not owned by the one that markets to it; the website
+  manager because it is an integration with an external system of record (eshobe-cms,
+  see [docs/eshobe-cms-integration.md](docs/eshobe-cms-integration.md)), not a marketing
+  engine over this app's own tables. Its dashboard never keeps a number of its own —
   every balance on it is reconstructed from `journal_lines` the way the trial balance does
   (`growth-overview.ts`), and marketing moves money only through the posting rules its
   services already own (`GROWTH_BRIDGE_CODES` is exactly ۲۳۰۰/۲۴۱۰/۲۴۲۰/۵۲۱۰). The old flat
@@ -367,6 +372,38 @@ Two more, because both of these are load-bearing and easy to undo by accident:
   nav slot is the app's own menu (`growth/growth-nav.ts`), with nothing from accounting listed
   beside it. A new section means an entry in that list — never a new flat page, and never a
   second menu drawn inside the page.
+
+## The Website app — read before touching `/dashboard/website` or `/api/cms/*`
+
+This app (POS/accounting/CRM) and [`eshobe-cms`](https://github.com/hamidnoshady/eshobe-cms)
+(the Payload 3 multi-tenant website platform) are **separate deployments**, connected
+server-to-server over REST — never embedded, never sharing a database. The contract between
+them, both sides' setup steps and the credential model live in
+[docs/eshobe-cms-integration.md](docs/eshobe-cms-integration.md); read it before touching
+either side.
+
+- **`website` is its own app** (`src/lib/apps.ts`), a peer of «رشد و بازاریابی» in the rail,
+  not a section inside it — see the note on the `website` app entry for why (it holds one
+  external system's credential, the same shape as a WooCommerce or MCP connection, not a
+  marketing engine over this app's own tables). Its one page is
+  `/dashboard/website` (`src/app/dashboard/website/`); `/dashboard/growth/website` redirects
+  into it for old bookmarks.
+- **The browser never sees the CMS key.** `connectCmsWebsite`/`provisionCmsWebsite`
+  (`src/lib/cms/website-service.ts`) store it encrypted (`eshobe_cms_connections`, AES-256-GCM
+  via `src/lib/integrations/secrets.ts`) and every later call decrypts it server-side inside
+  `src/lib/cms/client.ts`, the only HTTP client for the CMS.
+- **A read from the CMS is best-effort; a write is never reported as applied unless the CMS
+  answered 2xx.** A down CMS must never take the POS down — see `client.ts`'s
+  `CmsApiError`/`CmsNetworkError` split.
+- **The revalidation webhook (`POST /api/cms/revalidate`) is not tenant-scoped by session** —
+  it verifies an HMAC signature over the raw body instead (`src/lib/cms/webhook.ts`), because
+  the CMS calls it with no user in the room. It must stay outside `withTenantScope` and outside
+  the `website` module gate in `API_MODULE_PREFIXES` (`src/lib/industry-profile.ts`) — gating
+  it would 403 the CMS's own publish notifications.
+- **Never put a platform key where a site key belongs.** A platform key can provision a site
+  and issue/revoke its keys; it cannot read or write that site's content. Reversing the two —
+  handing a site key provisioning power, or a platform key content access — is the CMS-side
+  patch's whole security property (see the integration doc §5/§6).
 
 ## The assistant's replies — read before adding an AI tool or touching the chat
 

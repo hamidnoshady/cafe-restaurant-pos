@@ -69,9 +69,18 @@ ESHOBE_CMS_PLATFORM_API_KEY=                 # optional platform key (provisioni
 
 1. **DNS**: customer domains → the CMS server; `cms.eshobe.com` (or whatever
    the control plane is) → the CMS. Caddy (in the eshobe-cms repo) serves
-   customer domains and the control plane from one deployment; it already
-   blocks `/api/*` on customer domains — check the Caddyfile so the control
-   plane is the only origin that serves the API.
+   customer domains and the control plane from one deployment, and blocks
+   `/api/*` on customer domains by default. This app's client (`src/lib/cms/client.ts`)
+   forwards the site's own domain as `Host` on every call, even when the URL it
+   dials is the control-plane origin — Caddy's HTTP routing keys on `Host`, not
+   on the TLS SNI a `fetch()` negotiates, so a site-scoped call lands on the
+   *customer-domain* block regardless of which origin it was dialed through. The
+   `@cms_content` carve-out in the CMS's Caddyfile is what lets it through there;
+   the application's own access layer (`src/access/siteApiKey.ts`,
+   `src/access/siteRead.ts` on the CMS side) is the real boundary, the same trust
+   split `/api/site`'s pre-existing carve-out already made. Platform-level calls
+   (`provisionSite`, `issueSiteApiKey`, …) carry no `siteDomain`, so they keep
+   `Host` as the control plane's own name and need no carve-out at all.
 2. **API keys (CMS side)**: the WAVE-9 §9.4 feature is delivered by
    `eshobe-cms-api-keys.patch` (see §5). After applying it:
    - `pnpm install && pnpm generate:types && pnpm typecheck && pnpm test:int`
@@ -115,10 +124,15 @@ await updateOrderStatus(cms, orderId, "paid");           // e-commerce ops
 
 ## 5. The Website Manager screen (issue #378)
 
-The owner/manager surface lives in the Growth & Marketing app
-(`/dashboard/growth/website`, «وب‌سایت»). It is a **connections-style**
-screen, not a second CMS admin: the CMS stays the content source of truth,
-this screen answers "is my site connected, and what does my store look like".
+The owner/manager surface is its own app (`/dashboard/website`, «وب‌سایت»,
+`src/lib/apps.ts`) — a peer of «رشد و بازاریابی» in the rail, not a section
+inside it: the credential this screen holds is an integration with an
+external system of record, the same shape as the WooCommerce or MCP
+connections, not a marketing engine over this app's own tables. It is a
+**connections-style** screen, not a second CMS admin: the CMS stays the
+content source of truth, this screen answers "is my site connected, and what
+does my store look like". `/dashboard/growth/website` (its original,
+forward-referenced home) redirects here for old bookmarks.
 
 | Route | What it does |
 |---|---|
@@ -158,36 +172,66 @@ All owner/manager, all server-side — the browser never sees a CMS key.
 On the CMS, the site descriptor (`GET /api/site`) also returns `id` so the
 connect flow can record which site the key belongs to.
 
-## 5. The CMS-side patch (`eshobe-cms-api-keys.patch`)
+## 5. The CMS side (WAVE-9 §9.4, `eshobe-cms`)
 
-Slice 9.4 as implemented against the eshobe-cms main branch:
+Landed directly in the `eshobe-cms` repo (not a patch to apply):
 
-- `src/access/siteApiKey.ts` — key resolution (`Bearer eshobe_live_…` →
-  sha256 lookup → site), access wrappers (`apiKeyAware`, `apiKeyCreateAware`,
-  `platformApiKeyAware`, `forceApiKeySite`), issued by `api-keys` rows.
-- `src/collections/ApiKeys.ts` — the credential collection
-  (platform-admin only; deliberately **not** in the multi-tenant plugin map).
+- `src/lib/api-keys.ts` — pure key generation/hashing (`eshobe_live_…`, sha256,
+  a bearer-token parser). Framework-free, like `src/lib/slug.ts`.
+- `src/collections/ApiKeys.ts` — the credential collection (platform-admin
+  only; deliberately **not** in the multi-tenant plugin's `collections` map).
+  A `beforeValidate` hook mints the key on create and stashes the raw value on
+  `req.context` for the issuing endpoint to return exactly once.
+- `src/access/siteApiKey.ts` — key resolution (`Bearer eshobe_live_…` → sha256
+  lookup → site, memoised per request like `siteRead.ts`'s `Host` lookup) and
+  the access wrappers every collection composes: `apiKeyAware` (read — a site
+  key sees its own site's drafts too), `apiKeyCreateAware`/`apiKeyUpdateAware`
+  (write — site-scoped, never a publish), `platformApiKeyAware` (`sites`'
+  own read, `provision-site`), `forceApiKeySite` (a `beforeChange` hook that
+  overwrites `data.site` with the key's own site — access only checks a valid
+  key exists, this is what stops it naming a *different* site in the payload).
+- `src/collections/hooks/restrictApiKeyOrderWrite.ts` — a site key's one order
+  write is a status transition; every other field reverts to what the document
+  already held.
 - `src/endpoints/apiKeys.ts` — `POST /api/api-keys/issue`,
-  `GET /api/api-keys/list`, `POST /api/api-keys/revoke` (platform auth).
-- `src/access/siteRead.ts` — an API key now supplies the tenant where the
-  `Host` would have, and key holders see drafts; platform keys denied.
-- Access wiring on `pages`, `posts`, `products`, `categories`, `media`,
-  `orders`, `sites` + `POST /api/provision-site` accepts a platform key.
+  `GET /api/api-keys/list`, `POST /api/api-keys/revoke` (platform-admin
+  session or a platform key).
+- Access wiring: `pages`/`posts` read; `products` read/create/update/delete;
+  `orders` read/update (status only); `sites` read accepts a platform key too.
+  `categories`/`media`/`store` needed no change — already host-scoped public
+  reads with no draft state, which a site key's forwarded `Host` already
+  satisfies.
+- `src/endpoints/siteDescriptor.ts` (`GET /api/site`) falls back to a site
+  key when `Host` resolves nothing — the case WAVE-9 names explicitly
+  ("a builder can call from a non-customer origin"); the fallback response is
+  never publicly cached (`cache-control: private, no-store`), unlike the
+  `Host`-resolved one.
+- `src/provisioning/provisionSite.ts` and `provisionSiteEndpoint` accept a
+  platform key alongside a platform-admin session, at both the endpoint guard
+  and the service function's own re-check.
+- `Caddyfile` — a new `@cms_content` carve-out for `/api/{pages,posts,products,
+  categories,store,orders}` on the customer-domain block. This app's client
+  forwards a site's domain as `Host` even when dialing the control-plane
+  origin (see §1 above), which routes there rather than to the control-plane
+  block; the application's access layer is the real boundary, the same trust
+  split `/api/site`'s pre-existing carve-out already made.
+- `next.config.ts` — `SITE_PREVIEW_ORIGINS` extends the `frame-ancestors` CSP
+  so this app's live-preview iframe (§"DNS checklist + live preview" above) is
+  allowed to frame a customer site.
 
-Apply with `git apply ~/eshobe-cms-api-keys.patch` (or cherry-pick the
-commits from the session branch), then:
+After pulling these changes:
 
 ```bash
 pnpm install
 pnpm generate:types   # adds the ApiKey interface to payload-types.ts
-pnpm payload migrate:create ApiKeys   # dev uses push; prod needs the migration
+pnpm payload migrate:create add-api-keys   # dev uses push; prod needs the migration
 pnpm typecheck && pnpm test:int
 ```
 
-Security properties the patch keeps: a key never names a tenant (the payload's
-`site` is overwritten on create); a key is confined to one site on reads,
-updates and deletes; revoking is immediate (`disabledAt`); platform keys
-cannot read or write site content; the raw key is never stored and never
+Security properties this keeps: a key never names a tenant (the payload's
+`site` is overwritten on create); a key is confined to one site on reads and
+updates; revoking is immediate (`disabledAt`); platform keys cannot read or
+write site content; the raw key is never stored and never
 returned twice.
 
 ## 6. Failure handling

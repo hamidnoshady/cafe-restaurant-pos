@@ -5,8 +5,9 @@
 > under one app key, but the three surfaces stayed three flat sidebar pages.
 > This phase builds the app that key was promising. The next phases keep their
 > issue numbers — CRM is #367 ("Phase 36" in issue numbering), messaging #372,
-> the website manager #378 — and CRM's audience grows *this* app rather than
-> adding a new sidebar peer.
+> the website manager #378. CRM and the website manager were both expected to
+> grow this app as sections; both instead became their own apps once built —
+> see "Revised once more" below.
 
 ## Why
 
@@ -167,12 +168,35 @@ Criterion 6 of the exit list above is met by `growth-nav.ts` now (the filter run
 where the menu is built), and the app's own sidebar is covered by
 `src/lib/app-shells.test.ts` and `src/app/dashboard/growth/growth-nav.test.ts`.
 
+## Revised once more — CRM and the website manager left, both
+
+This phase (and this doc, above) assumed CRM (#367) and the website manager
+(#378) would grow this app as sections. Both were built later and both moved
+out into their own apps instead, for the same underlying reason stated
+differently for each:
+
+- **CRM** — `docs/phases/Phase-36-App-Ecosystem.md`. The customer record is
+  read by every app (Sales creates it, Growth messages it, the ledger
+  settles against it); seating it behind the door of the one department
+  that markets to it would have put a shared source of truth behind one
+  app's door.
+- **The website manager** — `docs/eshobe-cms-integration.md`. It holds one
+  credential to an external system of record (eshobe-cms, a separately
+  deployed multi-tenant CMS), the same shape as the WooCommerce or MCP
+  connections this app already keeps as their own peers rather than as
+  Growth sections. It never reads or writes a Growth engine's tables, so
+  folding it in here would have made a different product's page read as a
+  tab of this one's marketing suite.
+
+`website` moved to its own app entry in `src/lib/apps.ts` (`/dashboard/website`);
+`/dashboard/growth/website` redirects there for old bookmarks. Nothing else in
+this phase's scope changed — the four engines, their posting rules and this
+app's own sidebar are exactly as the revision above left them.
+
 ## Out of scope, deliberately
 
-- **CRM (segments, consent, the customer file)** — issue #367. It grows this
-  app («مخاطبان» becomes a section) rather than forking a new one.
-- **SMS/email marketing (#372) and the website manager (#378)** — the module
-  keys already sit under the growth app in `apps.ts`.
+- **SMS/email marketing (#372)** — the module key already sits under the
+  growth app in `apps.ts`.
 - Campaign budgets and a marketing-expense cost centre (#376 exists for the
   messaging phase; project cost centres are #377's subject).
 - Changing any engine's arithmetic, posting rule or account number.
