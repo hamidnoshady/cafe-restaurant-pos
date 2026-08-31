@@ -18,7 +18,7 @@ import { captureScreenshot } from "./capture-screenshot";
 export interface BugReportDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** True while a screenshot is being captured — the dialog and floating button hide themselves so they don't appear in the shot. */
+  /** True while a screenshot is being captured, so the dialog is hidden from the shot. */
   capturing: boolean;
   onCapturingChange: (capturing: boolean) => void;
 }
@@ -59,8 +59,8 @@ export function BugReportDialog({ open, onOpenChange, capturing, onCapturingChan
 
   const handleSubmit = async () => {
     const trimmed = description.trim();
-    if (!trimmed && !screenshot) {
-      toast.error("توضیح مشکل یا تصویر را وارد کنید.");
+    if (!trimmed) {
+      toast.error("توضیح مشکل را وارد کنید.");
       textareaRef.current?.focus();
       return;
     }

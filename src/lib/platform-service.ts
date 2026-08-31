@@ -1228,6 +1228,137 @@ export async function listGrants(businessId?: string): Promise<ImpersonationGran
 }
 
 // ---------------------------------------------------------------------------
+// User bug reports
+// ---------------------------------------------------------------------------
+
+export interface PlatformBugReportSummary {
+  id: string;
+  businessId: string;
+  businessName: string;
+  locationId: string | null;
+  locationName: string | null;
+  userId: string | null;
+  userName: string | null;
+  userRole: string | null;
+  description: string;
+  pageUrl: string | null;
+  viewport: string | null;
+  hasScreenshot: boolean;
+  status: string;
+  createdAt: string;
+}
+
+export interface PlatformBugReport extends PlatformBugReportSummary {
+  screenshot: string | null;
+  userAgent: string | null;
+}
+
+interface PlatformBugReportRow extends Record<string, unknown> {
+  id: string;
+  business_id: string;
+  business_name: string;
+  location_id: string | null;
+  location_name: string | null;
+  user_id: string | null;
+  user_name: string | null;
+  user_role: string | null;
+  description: string;
+  screenshot: string | null;
+  has_screenshot: boolean;
+  page_url: string | null;
+  user_agent: string | null;
+  viewport: string | null;
+  status: string;
+  created_at: string;
+}
+
+function toPlatformBugReport(row: PlatformBugReportRow): PlatformBugReport {
+  return {
+    id: row.id,
+    businessId: row.business_id,
+    businessName: row.business_name,
+    locationId: row.location_id,
+    locationName: row.location_name,
+    userId: row.user_id,
+    userName: row.user_name,
+    userRole: row.user_role,
+    description: row.description,
+    screenshot: row.screenshot,
+    pageUrl: row.page_url,
+    userAgent: row.user_agent,
+    viewport: row.viewport,
+    hasScreenshot: row.has_screenshot,
+    status: row.status,
+    createdAt: row.created_at,
+  };
+}
+
+/**
+ * Every report filed by a tenant member, newest first. Screenshots are kept
+ * out of the list response because one report can contain a multi-megabyte data
+ * URL; the detail endpoint loads one only when an operator opens a report.
+ */
+export async function listBugReports({
+  status = "",
+  search = "",
+  limit = 200,
+}: { status?: string; search?: string; limit?: number } = {}): Promise<PlatformBugReportSummary[]> {
+  const safeLimit = Number.isFinite(limit) ? Math.floor(limit) : 200;
+  const boundedLimit = Math.min(Math.max(safeLimit, 1), 500);
+  const normalizedStatus = status.trim().slice(0, 40);
+  const normalizedSearch = search.trim().slice(0, 200);
+  const { rows } = await withoutTenantScope("platform", () =>
+    query<PlatformBugReportRow>(
+      `SELECT br.id::text AS id, br.business_id::text AS business_id, b.name AS business_name,
+              br.location_id::text AS location_id, l.name AS location_name,
+              br.user_id::text AS user_id, u.full_name AS user_name,
+              u.role::text AS user_role, br.description, NULL::text AS screenshot,
+              (br.screenshot IS NOT NULL) AS has_screenshot,
+              br.page_url, NULL::text AS user_agent, br.viewport, br.status, br.created_at
+         FROM bug_reports br
+         JOIN businesses b ON b.id = br.business_id
+         LEFT JOIN locations l ON l.id = br.location_id
+         LEFT JOIN users u ON u.id = br.user_id
+        WHERE ($1 = '' OR br.status = $1)
+          AND ($2 = '' OR concat_ws(' ', b.name, u.full_name, br.description, br.page_url) ILIKE '%' || $2 || '%')
+        ORDER BY br.created_at DESC
+        LIMIT $3`,
+      [normalizedStatus, normalizedSearch, boundedLimit],
+    ),
+  );
+  return rows.map((row) => {
+    const report = toPlatformBugReport(row);
+    return {
+      ...report,
+      screenshot: null,
+      userAgent: null,
+      hasScreenshot: row.has_screenshot,
+    };
+  });
+}
+
+/** One report, including its optional screenshot and browser context. */
+export async function getBugReport(reportId: string): Promise<PlatformBugReport | null> {
+  const { rows } = await withoutTenantScope("platform", () =>
+    query<PlatformBugReportRow>(
+      `SELECT br.id::text AS id, br.business_id::text AS business_id, b.name AS business_name,
+              br.location_id::text AS location_id, l.name AS location_name,
+              br.user_id::text AS user_id, u.full_name AS user_name,
+              u.role::text AS user_role, br.description, br.screenshot,
+              (br.screenshot IS NOT NULL) AS has_screenshot,
+              br.page_url, br.user_agent, br.viewport, br.status, br.created_at
+         FROM bug_reports br
+         JOIN businesses b ON b.id = br.business_id
+         LEFT JOIN locations l ON l.id = br.location_id
+         LEFT JOIN users u ON u.id = br.user_id
+        WHERE br.id = $1::uuid`,
+      [reportId],
+    ),
+  );
+  return rows[0] ? toPlatformBugReport(rows[0]) : null;
+}
+
+// ---------------------------------------------------------------------------
 // Audit trail
 // ---------------------------------------------------------------------------
 
