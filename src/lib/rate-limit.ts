@@ -13,16 +13,36 @@ export interface RateLimitEntry {
   windowStart: number;
 }
 
+export function isPrivateIp(ip: string): boolean {
+  return (
+    ip.startsWith("10.") ||
+    ip.startsWith("192.168.") ||
+    ip.startsWith("127.") ||
+    /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(ip) ||
+    ip === "::1" ||
+    ip.toLowerCase().startsWith("fc00:") ||
+    ip.toLowerCase().startsWith("fe80:")
+  );
+}
+
 export function clientIpFrom(headers: Headers, trustedHops: number): string {
+  const realIp = headers.get("x-real-ip");
+  if (realIp) return realIp;
+
   const forwarded = headers.get("x-forwarded-for");
   if (forwarded) {
     const parts = forwarded.split(",").map((s) => s.trim());
-    const index = Math.max(0, parts.length - 1 - trustedHops);
-    return parts[index];
+
+    if (trustedHops > 0) {
+      const index = Math.max(0, parts.length - 1 - trustedHops);
+      return parts[index];
+    }
+
+    for (let i = parts.length - 1; i >= 0; i--) {
+      if (!isPrivateIp(parts[i])) return parts[i];
+    }
+    return parts[parts.length - 1];
   }
-  
-  const realIp = headers.get("x-real-ip");
-  if (realIp) return realIp;
 
   return "unknown";
 }

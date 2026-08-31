@@ -18,33 +18,13 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { redeemPairingCode } from "./pairing-service";
+import { clientIpFrom } from "./rate-limit";
 
 /** The caller's address, for the `redeemed_ip` audit column. Best-effort by nature. */
 function clientIp(request: NextRequest): string | null {
-  const edgeIp = (request as unknown as { ip?: string }).ip;
-  const realIp = request.headers.get("x-real-ip") ?? edgeIp ?? null;
-  if (realIp) return realIp;
-
-  const forwarded = request.headers.get("x-forwarded-for");
-  if (!forwarded) return null;
-  const parts = forwarded.split(",");
-  for (let i = parts.length - 1; i >= 0; i--) {
-    const ip = parts[i].trim();
-    if (!isPrivateIp(ip)) return ip;
-  }
-  return parts[parts.length - 1].trim();
-}
-
-function isPrivateIp(ip: string): boolean {
-  return (
-    ip.startsWith("10.") ||
-    ip.startsWith("192.168.") ||
-    ip.startsWith("127.") ||
-    /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(ip) ||
-    ip === "::1" ||
-    ip.toLowerCase().startsWith("fc00:") ||
-    ip.toLowerCase().startsWith("fe80:")
-  );
+  const ip = clientIpFrom(request.headers, 0);
+  if (ip !== "unknown") return ip;
+  return (request as unknown as { ip?: string }).ip ?? null;
 }
 
 const STATUS_BY_ERROR: Record<string, number> = {

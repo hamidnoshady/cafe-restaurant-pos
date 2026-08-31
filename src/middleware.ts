@@ -234,18 +234,6 @@ function clientIp(request: NextRequest): string {
   return (request as any).ip || "unknown";
 }
 
-function isPrivateIp(ip: string): boolean {
-  return (
-    ip.startsWith("10.") ||
-    ip.startsWith("192.168.") ||
-    ip.startsWith("127.") ||
-    /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(ip) ||
-    ip === "::1" ||
-    ip.toLowerCase().startsWith("fc00:") ||
-    ip.toLowerCase().startsWith("fe80:")
-  );
-}
-
 function rateLimited(retryAfterMs: number): NextResponse {
   return NextResponse.json(
     { error: "rate_limited" },
