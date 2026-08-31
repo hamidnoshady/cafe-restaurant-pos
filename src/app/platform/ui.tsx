@@ -76,6 +76,8 @@ export function errorMessage(code: string | undefined): string {
     observability_not_configured: "پایش هنوز تنظیم نشده است؛ متغیرهای OPENOBSERVE را در سرور وارد کنید.",
     observability_unreachable: "سرویس پایش در دسترس نیست. آخرین داده‌های موفق نمایش داده می‌شود.",
     invalid_level: "سطح لاگ نامعتبر است.",
+    // App availability (migration 0128) — «به‌زودی»، «در حال تعمیر» و…
+    invalid_app_state: "وضعیت برنامه نامعتبر است.",
   };
   return map[code ?? ""] ?? "خطای غیرمنتظره. دوباره تلاش کنید.";
 }

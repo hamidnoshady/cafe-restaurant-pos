@@ -34,6 +34,11 @@ const APP_PASSWORD = "rls-test-password";
 const EXEMPT_TABLES = new Set([
   "schema_migrations",
   "feature_flags",
+  // Migration 0128 — app availability's global half. Same reasoning as
+  // feature_flags: a catalogue of deployment-wide states with no business_id.
+  // Its per-business counterpart, business_app_availability, is deliberately
+  // absent from this list and is RLS-protected like every other tenant table.
+  "app_availability",
   "platform_admins",
   "platform_audit_log",
   // Phase 24 — Login lockout for password, platform and directory realms. The attempt
