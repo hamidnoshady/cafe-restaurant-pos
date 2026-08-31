@@ -42,11 +42,37 @@ until pg_isready -d "$DATABASE_URL" >/dev/null 2>&1; do
 done
 echo "Postgres is ready."
 
+# Resolve the TypeScript runner ONCE, and loudly.
+#
+# The runner image is built with `npm ci --omit=dev` (Dockerfile, prod-deps
+# stage), so only `dependencies` exist here — anything in `devDependencies`
+# is silently absent at runtime. tsx is deliberately in `dependencies`:
+# `npm start` runs `tsx server.ts` and both boot steps below are TypeScript
+# scripts. When it is missing anyway, the bare shell error ("line 46:
+# ./node_modules/.bin/tsx: not found") names neither the cause nor the fix, so
+# say both here instead. `npm test` asserts this too
+# (src/lib/runtime-dependencies.test.ts), so it fails on a developer's machine
+# long before it fails on a café's.
+TSX="./node_modules/.bin/tsx"
+if [ ! -x "$TSX" ]; then
+  if [ -f "./node_modules/tsx/dist/cli.mjs" ]; then
+    # The package landed but the bin shim is missing or unlinked — run its CLI
+    # directly rather than failing a boot over a missing symlink.
+    TSX="node ./node_modules/tsx/dist/cli.mjs"
+  else
+    echo "FATAL: tsx is not installed in this image." >&2
+    echo "       The entrypoint and 'npm start' both run TypeScript, and the" >&2
+    echo "       runtime image installs with 'npm ci --omit=dev', so tsx must" >&2
+    echo "       be listed in package.json \"dependencies\"." >&2
+    exit 1
+  fi
+fi
+
 echo "Applying database migrations ..."
-./node_modules/.bin/tsx scripts/migrate.ts
+$TSX scripts/migrate.ts
 
 echo "Resolving the server's runtime database connection ..."
-RUNTIME_DATABASE_URL_RESOLVED="$(./node_modules/.bin/tsx scripts/derive-runtime-database-url.ts)"
+RUNTIME_DATABASE_URL_RESOLVED="$($TSX scripts/derive-runtime-database-url.ts)"
 if [ -z "$RUNTIME_DATABASE_URL_RESOLVED" ]; then
   echo "FATAL: could not resolve a runtime database connection (see error above)." >&2
   exit 1

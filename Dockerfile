@@ -3,9 +3,14 @@
 # Production image for the POS app (Next.js custom server in server.ts).
 #
 # The app does NOT use `next start`; `npm start` runs `tsx server.ts`, which
-# boots Next in production mode AND the `/ws` WebSocket sync channel. So the
-# runtime image keeps the full dependency tree (tsx is a devDependency) plus
-# the source tree, `.next` build output, migrations and scripts.
+# boots Next in production mode AND the `/ws` WebSocket sync channel. So tsx is
+# a RUNTIME dependency: it is listed under "dependencies" in package.json,
+# because the prod-deps stage below installs with `npm ci --omit=dev` and a
+# devDependency would be dropped from the image at exactly the moment the
+# entrypoint calls it. Alongside it the runtime image keeps the source tree,
+# `.next` build output, migrations and scripts — the scripts it runs at boot
+# are TypeScript too, so anything they import (dotenv, pg) must also be a
+# runtime dependency. src/lib/runtime-dependencies.test.ts guards this.
 #
 # Chromium is intentionally NOT installed here: only the print-agent renders
 # receipts, and that runs on the till PC next to the printer — not in this
@@ -58,7 +63,9 @@ ENV APP_IMAGE_SHA=$GIT_SHA
 # su-exec is used to drop privileges from root after fixing volume permissions.
 RUN apk add --no-cache postgresql16-client su-exec
 
-# Production tree only (tsx is now in dependencies).
+# Production tree only — `npm ci --omit=dev`, so dependencies only. tsx belongs
+# there (see the note at the top of this file): the entrypoint runs TS scripts
+# and `npm start` runs `tsx server.ts`.
 COPY --from=prod-deps --chown=node:node /app/node_modules ./node_modules
 COPY --from=builder --chown=node:node /app/.next ./.next
 COPY --from=builder --chown=node:node /app/public ./public
@@ -71,6 +78,13 @@ COPY --from=builder --chown=node:node /app/tsconfig.json ./tsconfig.json
 COPY --from=builder --chown=node:node /app/package.json ./package.json
 COPY --chown=node:node docker-entrypoint.sh ./docker-entrypoint.sh
 RUN chmod +x ./docker-entrypoint.sh
+
+# Fail the BUILD, not a café's Monday morning, if tsx ever drops out of the
+# production tree again. `npm ci --omit=dev` makes that failure invisible until
+# the container boots and the entrypoint cannot find its TypeScript runner —
+# so assert it here, where the fix is a one-line package.json change.
+RUN test -x ./node_modules/.bin/tsx \
+  || { echo "tsx is missing from the production dependency tree: it is required at runtime (entrypoint + 'npm start'), so it belongs in package.json \"dependencies\", not \"devDependencies\"."; exit 1; }
 
 EXPOSE 3000
 
