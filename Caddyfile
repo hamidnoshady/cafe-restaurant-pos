@@ -1,0 +1,8 @@
+{
+    local_certs
+}
+
+{$POS_LOCAL_HOST:pos.cafe.lan} {
+    tls internal
+    reverse_proxy app:3000
+}

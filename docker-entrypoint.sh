@@ -43,10 +43,10 @@ done
 echo "Postgres is ready."
 
 echo "Applying database migrations ..."
-npm run db:migrate
+./node_modules/.bin/tsx scripts/migrate.ts
 
 echo "Resolving the server's runtime database connection ..."
-RUNTIME_DATABASE_URL_RESOLVED="$(npx tsx scripts/derive-runtime-database-url.ts)"
+RUNTIME_DATABASE_URL_RESOLVED="$(./node_modules/.bin/tsx scripts/derive-runtime-database-url.ts)"
 if [ -z "$RUNTIME_DATABASE_URL_RESOLVED" ]; then
   echo "FATAL: could not resolve a runtime database connection (see error above)." >&2
   exit 1
@@ -54,5 +54,10 @@ fi
 export BACKUP_DATABASE_URL="${BACKUP_DATABASE_URL:-$DATABASE_URL}"
 export DATABASE_URL="$RUNTIME_DATABASE_URL_RESOLVED"
 
+# Phase 24: Fix volume permissions and hand off to non-root user
+if [ -d "/app/backups" ]; then
+  chown -R node:node /app/backups
+fi
+
 echo "Starting POS server ..."
-exec "$@"
+exec su-exec node "$@"

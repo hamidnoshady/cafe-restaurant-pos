@@ -31,15 +31,19 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
 
-  const validated = validateProvisionBody(body);
-  if (!validated.input) return NextResponse.json({ error: validated.error }, { status: 400 });
-  const input = validated.input;
-
   // The first-run wizard's mode choice. Anything other than the literal
   // 'local' is treated as connected, which is what every non-desktop caller
   // (public signup, the platform console) already sends by omission.
   const deploymentMode =
     (body as { deploymentMode?: unknown }).deploymentMode === "local" ? "local" : "connected";
+
+  // Resolved before validation, not after: Phase 24 makes the Owner's mobile
+  // required on a connected install (it is where their SMS second factor is
+  // sent) and pointless on a local one, which enrols TOTP instead. Passing the
+  // mode is what lets the validator tell those two cases apart.
+  const validated = validateProvisionBody(body, { deploymentMode });
+  if (!validated.input) return NextResponse.json({ error: validated.error }, { status: 400 });
+  const input = validated.input;
 
   let created;
   try {
@@ -61,7 +65,23 @@ export async function POST(request: NextRequest) {
     fullName: input.ownerName,
     platformUserId: created.platformUserId,
   });
-  const res = NextResponse.json({ ok: true });
+  const res = NextResponse.json({
+    ok: true,
+    // Phase 24 Wave 2 — the Owner's second factor, returned exactly once.
+    //
+    // `provisionBusiness` enrols TOTP on a local install (no internet, so no
+    // SMS) and mints ten recovery codes on both paths. Nothing else can ever
+    // show these values again: the TOTP secret is stored encrypted and the
+    // recovery codes only as bcrypt hashes. The wizard's last step displays
+    // them, and that is the entire window in which they exist.
+    mfa: {
+      method: created.totpSecret ? ("totp" as const) : ("sms_otp" as const),
+      totpSecret: created.totpSecret ?? null,
+      totpUrl: created.totpUrl ?? null,
+      totpQr: created.totpQr ?? null,
+      recoveryCodes: created.recoveryCodes ?? [],
+    },
+  });
   res.cookies.set(SESSION_COOKIE, token, sessionCookieOptions());
   return res;
 }

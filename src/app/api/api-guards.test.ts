@@ -73,10 +73,10 @@ const PUBLIC_ROUTES: Record<string, string> = {
   "rollup/ingest": "server-to-server — authenticated by a per-location bearer token, not a session",
   "server-sync/pull":
     "server-to-server — authenticated by a per-business bearer token (server_sync_tokens), " +
-    "falling back to the legacy global REMOTE_SYNC_TOKEN; not a session",
+    "falling back to the legacy global REMOTE_SYNC_TOKEN if ALLOW_LEGACY_SYNC_TOKEN is set; not a session",
   "server-sync/push":
     "server-to-server — authenticated by a per-business bearer token (server_sync_tokens), " +
-    "falling back to the legacy global REMOTE_SYNC_TOKEN; not a session",
+    "falling back to the legacy global REMOTE_SYNC_TOKEN if ALLOW_LEGACY_SYNC_TOKEN is set; not a session",
   "server-sync/update-check":
     "server-to-server — authenticated by a per-business bearer token (server_sync_tokens) only, " +
     "deliberately no legacy REMOTE_SYNC_TOKEN fallback; not a session",
@@ -150,6 +150,37 @@ const PUBLIC_ROUTES: Record<string, string> = {
 };
 
 
+/**
+ * Phase 24 — the login interstitial. Guarded by the MFA pending token
+ * (see isMfaPendingGuarded), never by a session, because a session is exactly
+ * what must not exist until the second factor is presented.
+ */
+const MFA_PENDING_ROUTES: Record<string, string> = {
+  "auth/mfa/challenge":
+    "sends the tenant OTP for a password login that has passed step one — the five-minute " +
+    "pending token is the credential, and issuing a session first is what MFA exists to prevent",
+  "auth/mfa/verify":
+    "checks the tenant second factor and only then mints the session — necessarily runs while " +
+    "the caller still has no session",
+  "auth/mfa/enrol":
+    "enrols a tenant second factor during the grace window, reached from the same interstitial " +
+    "and holding the same pending token",
+  "platform/auth/mfa/challenge": "the platform-admin twin of auth/mfa/challenge",
+  "platform/auth/mfa/verify": "the platform-admin twin of auth/mfa/verify",
+  "platform/auth/mfa/enrol": "the platform-admin twin of auth/mfa/enrol",
+};
+
+/**
+ * Phase 24 Wave 5 — routes only this server's own middleware may call.
+ * Guarded by the internal secret (see isInternalCallGuarded).
+ */
+const INTERNAL_ROUTES: Record<string, string> = {
+  "internal/rate-limit":
+    "the Postgres half of the rate limiter — middleware runs in the Edge runtime and cannot " +
+    "reach the database, and the call is made for requests that have no session, so it " +
+    "authenticates the x-internal-auth secret instead",
+};
+
 /** Routes that guard via getSession() with route-specific logic instead of requireRole. */
 const SELF_GUARDING_ROUTES: Record<string, string> = {
   "auth/me": "returns the caller's own session (or null) — nothing else",
@@ -170,6 +201,16 @@ const SELF_GUARDING_ROUTES: Record<string, string> = {
   // Phase 15 — the super-admin console bootstraps from this: it returns the
   // caller's own platform session (or null) and nothing else.
   "platform/auth/me": "returns the caller's own platform session (or null) — nothing else",
+  // Phase 24 Wave 2 — the signed-in user's own second factor. Every path reads
+  // `platformUserId` off the session and never from the body, so there is no
+  // shape of this route that touches another identity's enrolment; that
+  // ownership *is* the authorization, exactly as for auth/businesses. It exists
+  // because the /api/auth/mfa/{challenge,verify,enrol} trio authenticates on
+  // the pre-session `mfa_pending` token, which someone already signed in during
+  // their grace window does not have.
+  "auth/mfa/self":
+    "enrols / re-issues recovery codes for the caller's own identity — the session's own " +
+    "platformUserId is the authorization, and no other account is reachable",
   // AI Hub Wave 1 (issue #141) — a conversation is visible only to the member
   // who started it (actor_user_id), not by role, so ai-conversations.ts's own
   // ownership filter is the authorization, the same shape as auth/businesses.
@@ -204,6 +245,44 @@ function isApiKeyGuarded(src: string): boolean {
  */
 function isMcpGuarded(src: string): boolean {
   return /withMcpScope\(/.test(src);
+}
+
+/**
+ * Phase 24 — the second step of a password login, guarded by the interstitial
+ * MFA token rather than a session.
+ *
+ * These routes sit in the gap the whole feature exists to create: the password
+ * has been verified, so the caller is not anonymous, but no session may be
+ * minted until a second factor is presented. A session guard is therefore
+ * impossible by construction — issuing one first is precisely the thing MFA
+ * is meant to prevent.
+ *
+ * `signMfaPendingToken` mints the credential they check: a JWT carrying
+ * `realm: "mfa"`, signed with the MFA realm's own derived key (jwt-secret.ts)
+ * and expiring in five minutes. `verifyMfaPendingToken` refuses anything whose
+ * realm claim differs, so neither a tenant nor a platform session token can be
+ * replayed here, and each handler additionally pins `authRealm` to the realm
+ * it belongs to — a tenant pending-token cannot drive the platform-admin
+ * verify, or the reverse.
+ *
+ * This is a guard, not an exemption: an unauthenticated caller gets 401.
+ */
+function isMfaPendingGuarded(src: string): boolean {
+  return /verifyMfaPendingToken\(/.test(src) && /authRealm !==/.test(src);
+}
+
+/**
+ * Phase 24 Wave 5 — routes callable only by this server's own middleware.
+ *
+ * The Edge runtime cannot reach Postgres, so the durable rate-limit counter is
+ * asked for over HTTP. That call is made *for* requests that have no session
+ * (a login attempt is the entire point of the IP bucket), so no session guard
+ * can apply; instead the caller proves it is our own middleware with the
+ * `x-internal-auth` secret derived from JWT_SECRET (src/lib/internal-auth.ts).
+ * `isInternalCall` refuses anything else with 401, so this is a guard.
+ */
+function isInternalCallGuarded(src: string): boolean {
+  return /isInternalCall\(/.test(src);
 }
 
 /** All requireRole(...) argument lists found in a file, as role-name arrays. */
@@ -242,6 +321,23 @@ describe("every API route is guarded", () => {
         return;
       }
       if (PUBLIC_ROUTES[key]) return; // documented public route
+      // Phase 24 — the two credentials that are neither a session nor an
+      // absence of one: the interstitial MFA pending token, and the internal
+      // middleware-to-server secret. Both refuse an unauthenticated caller.
+      if (MFA_PENDING_ROUTES[key]) {
+        expect(
+          isMfaPendingGuarded(src),
+          `src/app/api/${key}/route.ts must verify an MFA pending token and pin its authRealm`,
+        ).toBe(true);
+        return;
+      }
+      if (INTERNAL_ROUTES[key]) {
+        expect(
+          isInternalCallGuarded(src),
+          `src/app/api/${key}/route.ts must authenticate the internal middleware credential`,
+        ).toBe(true);
+        return;
+      }
       if (SELF_GUARDING_ROUTES[key]) {
         // Tenant self-guarding routes read getSession(); the platform console's
         // self-guarding route (auth/me) reads getPlatformSession() instead.

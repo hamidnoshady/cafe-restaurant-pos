@@ -62,6 +62,10 @@ export interface BackupConfig {
    * wizard sets it from a real OS folder dialog.
    */
   directory: string;
+  /** encryption passphrase for `.dump.enc` artifacts — never sent to the cloud */
+  passphrase?: string;
+  /** whether local and USB artifacts are encrypted (default true) */
+  encryptLocal?: boolean;
   cloud: BackupCloudConfig;
 }
 
@@ -71,6 +75,8 @@ export const DEFAULT_BACKUP_CONFIG: BackupConfig = {
   anchorTime: "03:30",
   localRetention: 14,
   directory: "",
+  passphrase: "",
+  encryptLocal: true,
   cloud: {
     enabled: false,
     endpoint: "",
@@ -115,6 +121,8 @@ export function validateBackupConfig(body: unknown): BackupConfigValidation {
     return { ok: false, error: "invalid_directory" };
   }
   const directory = typeof b.directory === "string" ? b.directory.trim() : "";
+  const passphrase = typeof b.passphrase === "string" ? b.passphrase : "";
+  const encryptLocal = typeof b.encryptLocal === "boolean" ? b.encryptLocal : true;
 
   const rawCloud = (b.cloud ?? {}) as Record<string, unknown>;
   if (typeof rawCloud !== "object" || rawCloud === null) return { ok: false, error: "invalid_cloud" };
@@ -143,15 +151,38 @@ export function validateBackupConfig(body: unknown): BackupConfigValidation {
     if (!cloud.accessKeyId || !cloud.secretAccessKey) {
       return { ok: false, error: "missing_cloud_credentials" };
     }
-    if (cloud.passphrase.length < MIN_PASSPHRASE_LENGTH) {
-      return { ok: false, error: "weak_passphrase" };
-    }
+  }
+
+  // The passphrase floor applies to whichever one is populated.
+  const resolvedPassphrase = passphrase || cloud.passphrase;
+
+  // Cloud upload cannot proceed without a real passphrase. Accepting an empty
+  // one here would let `runCloudUpload` derive its AES key from "" via scrypt
+  // and ship an artifact anyone who obtains it can decrypt — the whole ledger
+  // and customer list, off-site, behind a key that is public knowledge.
+  //
+  // Deliberately *not* applied to `encryptLocal`: that flag defaults to on and
+  // documents a plaintext fallback (see Phase-24 §5 "Decisions"), so requiring
+  // a passphrase for it would refuse to save any config on the installs that
+  // have never set one, and their artifacts never leave the premises anyway.
+  // `getBackupConfigMasked` raises the plaintext warning for that case.
+  if (cloudEnabled && !resolvedPassphrase) {
+    return { ok: false, error: "passphrase_required" };
+  }
+  if ((encryptLocal || cloudEnabled) && resolvedPassphrase && resolvedPassphrase.length < MIN_PASSPHRASE_LENGTH) {
+    return { ok: false, error: "weak_passphrase" };
   }
 
   return {
     ok: true,
-    config: { enabled, intervalHours, anchorTime, localRetention, directory, cloud },
+    config: { enabled, intervalHours, anchorTime, localRetention, directory, passphrase, encryptLocal, cloud },
   };
+}
+
+export function backupPassphrase(config: BackupConfig): string {
+  if (config.passphrase) return config.passphrase;
+  if (config.cloud.passphrase) return config.cloud.passphrase;
+  return process.env.BACKUP_PASSPHRASE || "";
 }
 
 // ---------------------------------------------------------------------------
@@ -210,7 +241,8 @@ export function parseArtifactTimestamp(name: string): string | null {
 
 /** Object key an artifact is uploaded under (encrypted, hence `.enc`). */
 export function cloudKeyFor(prefix: string, artifactName: string): string {
-  return `${prefix}${artifactName}.enc`;
+  const name = artifactName.endsWith(".enc") ? artifactName : `${artifactName}.enc`;
+  return `${prefix}${name}`;
 }
 
 /**

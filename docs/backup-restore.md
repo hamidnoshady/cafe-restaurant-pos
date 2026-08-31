@@ -21,7 +21,10 @@ scratch database before anything destructive.
 - **Cloud**: the same artifact, **encrypted** with the Owner's passphrase
   (AES-256-GCM, scrypt key derivation), uploaded as
   `<prefix>pos-backup-….dump.enc` to any S3-compatible storage (ArvanCloud,
-  AWS S3, Backblaze B2, a MinIO on a NAS, …). The provider only ever holds
+  AWS S3, Backblaze B2, a MinIO on a NAS, …).
+  
+  **IMPORTANT**: Since Phase 24, local and USB artifacts are ALSO encrypted 
+  with this passphrase by default. The provider only ever holds
   ciphertext. Uploads that fail (no internet at backup time) are retried
   automatically until a newer artifact supersedes them. A standalone desktop
   install (`deployment.mode = local`) has no cloud half — the dashboard hides
@@ -49,7 +52,7 @@ scratch database before anything destructive.
 
 ## Key management (read this before you need it)
 
-Cloud artifacts are unrecoverable without the encryption passphrase. Keep it:
+Local, USB, and cloud artifacts are ALL unrecoverable without the encryption passphrase. Keep it:
 
 1. In the Owner's password manager, **and**
 2. On paper (sealed envelope) wherever the business keeps its other

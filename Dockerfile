@@ -32,6 +32,12 @@ RUN npm run build
 # runner's COPY always succeeds and future assets are picked up automatically.
 RUN mkdir -p public
 
+# ---- prod-deps: production dependencies only ---------------------------------
+FROM node:20-alpine AS prod-deps
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
+
 # ---- runner: the image that actually runs in Komodo -------------------------
 FROM node:20-alpine AS runner
 WORKDIR /app
@@ -49,20 +55,21 @@ ENV APP_IMAGE_SHA=$GIT_SHA
 # postgresql-client gives pg_isready / pg_dump / pg_restore. The app's backup
 # system (Phase 10) shells out to pg_dump/pg_restore, and the entrypoint uses
 # pg_isready to wait for the DB before migrating.
-RUN apk add --no-cache postgresql16-client
+# su-exec is used to drop privileges from root after fixing volume permissions.
+RUN apk add --no-cache postgresql16-client su-exec
 
-# Full dependency tree (tsx + next + runtime libs) and the built app.
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/.next ./.next
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/src ./src
-COPY --from=builder /app/migrations ./migrations
-COPY --from=builder /app/scripts ./scripts
-COPY --from=builder /app/server.ts ./server.ts
-COPY --from=builder /app/next.config.ts ./next.config.ts
-COPY --from=builder /app/tsconfig.json ./tsconfig.json
-COPY --from=builder /app/package.json ./package.json
-COPY docker-entrypoint.sh ./docker-entrypoint.sh
+# Production tree only (tsx is now in dependencies).
+COPY --from=prod-deps --chown=node:node /app/node_modules ./node_modules
+COPY --from=builder --chown=node:node /app/.next ./.next
+COPY --from=builder --chown=node:node /app/public ./public
+COPY --from=builder --chown=node:node /app/src ./src
+COPY --from=builder --chown=node:node /app/migrations ./migrations
+COPY --from=builder --chown=node:node /app/scripts ./scripts
+COPY --from=builder --chown=node:node /app/server.ts ./server.ts
+COPY --from=builder --chown=node:node /app/next.config.ts ./next.config.ts
+COPY --from=builder --chown=node:node /app/tsconfig.json ./tsconfig.json
+COPY --from=builder --chown=node:node /app/package.json ./package.json
+COPY --chown=node:node docker-entrypoint.sh ./docker-entrypoint.sh
 RUN chmod +x ./docker-entrypoint.sh
 
 EXPOSE 3000

@@ -36,6 +36,21 @@ const EXEMPT_TABLES = new Set([
   "feature_flags",
   "platform_admins",
   "platform_audit_log",
+  // Phase 24 — Login lockout for password, platform and directory realms. The attempt
+  // happens before any business is known, so it has no business_id. It belongs to
+  // the login identity across the platform.
+  "auth_login_attempts",
+  "mfa_enrolments",
+  "mfa_challenges",
+  "mfa_recovery_codes",
+  "mfa_grace_periods",
+  "platform_sms_config",
+  // Phase 24 Wave 5 — the durable rate-limit counter (migration 0074). Its
+  // keys are IP addresses and hashed bearer tokens, counted before any
+  // business is known: the login bucket exists precisely for requests that
+  // have no session yet, so there is no business_id to scope by. The row is a
+  // key, a count and a window start — no tenant data at all.
+  "rate_limits",
   // Phase 17 — a global plan catalogue (branch/member/order-count ceilings),
   // the same shape as feature_flags: every business reads the same few rows,
   // there is nothing to isolate.
@@ -271,6 +286,11 @@ describe("every tenant table is protected", () => {
       "platform_ai_gateway",
       "platform_audit_log",
       "platform_push_config",
+      // Phase 24 — the deployment-wide SMS gateway credentials (Kavenegar) the
+      // MFA challenge sends through. A singleton with no business_id, the same
+      // shape as platform_ai_config: one account, configured once by a
+      // super-admin, holding no tenant data.
+      "platform_sms_config",
       "platform_update_config",
     ]);
   });

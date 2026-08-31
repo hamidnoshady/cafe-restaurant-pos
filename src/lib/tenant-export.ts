@@ -14,7 +14,10 @@
  * covers the export half of the Phase 17 scope item; see the phase doc.
  */
 import ExcelJS from "exceljs";
+import { getBusinessDek } from "./business-keys";
 import { query, withTenant } from "./db";
+import { decryptOptional } from "./field-crypto";
+import { ENCRYPTED_TABLES } from "./encrypted-columns";
 import { cellValue } from "./report-export";
 import { selfReferencingColumns, sortRowsByParent, tenantTablesInDependencyOrder, listForeignKeys } from "./tenant-tables";
 
@@ -55,6 +58,15 @@ export async function exportTenantData(businessId: string): Promise<TenantExport
       generatedByTable.get(r.table_name)!.add(r.column_name);
     }
 
+    // Phase 24 Wave 3 — the export has to decrypt. A `SELECT *` on an
+    // encrypted table otherwise dumps a `bytea` blob where the customer's
+    // phone should be: unreadable in the Excel workbook, and unrestorable from
+    // the SQL on any install that does not hold this business's key. Owner-only
+    // is already the highest bar in the application, and Wave 1's `?encrypt=1`
+    // protects the resulting *file* — that is where the confidentiality of an
+    // export lives, not in shipping ciphertext nobody can open.
+    const dek = await getBusinessDek(businessId);
+
     const out: TenantExportTable[] = [];
     for (const name of order) {
       const safeName = assertSafeIdentifier(name);
@@ -63,7 +75,20 @@ export async function exportTenantData(businessId: string): Promise<TenantExport
       const parentColumn = selfRefs.get(name);
       const orderedRows = parentColumn ? sortRowsByParent(rows, "id", parentColumn) : rows;
       const generated = generatedByTable.get(name);
-      const columns = fields.map((f) => f.name).filter((c) => !generated?.has(c));
+      const encrypted = ENCRYPTED_TABLES[name]?.columns ?? [];
+      for (const row of orderedRows) {
+        for (const col of encrypted) {
+          row[col.column] = decryptOptional(row[col.encColumn], dek, (row[col.column] as string) ?? null);
+        }
+      }
+      // The ciphertext twins and blind indexes are dropped from the artifact
+      // rather than exported: both are meaningless under any other business's
+      // key, and a restore that carried them would produce rows whose `_enc`
+      // cannot be decrypted while the plaintext beside it is correct — the one
+      // state the dual-write window must never be left in. A restored install
+      // re-encrypts with `npm run db:encrypt-fields`.
+      const derived = new Set(encrypted.flatMap((c) => [c.encColumn, c.bidxColumn].filter(Boolean) as string[]));
+      const columns = fields.map((f) => f.name).filter((c) => !generated?.has(c) && !derived.has(c));
       out.push({ name, columns, rows: orderedRows });
     }
     return out;

@@ -43,6 +43,7 @@ import {
   isPlainArtifactName,
   makeArtifactName,
   selectPrunable,
+  backupPassphrase,
   type BackupAlert,
   type BackupConfig,
 } from "./backup";
@@ -87,8 +88,15 @@ export async function setBackupConfig(businessId: string, config: BackupConfig):
 /** Config for the Owner UI: secrets are never echoed back, only "is set" flags. */
 export async function getBackupConfigMasked(businessId: string) {
   const config = await getBackupConfig(businessId);
+  const warnings: string[] = [];
+  if (!backupPassphrase(config)) {
+    warnings.push("No encryption passphrase is set. Backups will be stored in plaintext and cloud upload will fail.");
+  }
   return {
     ...config,
+    passphrase: "",
+    hasPassphrase: Boolean(config.passphrase || config.cloud.passphrase),
+    warnings,
     cloud: {
       ...config.cloud,
       secretAccessKey: "",
@@ -251,21 +259,37 @@ export async function runLocalBackup(businessId: string, trigger: RunTrigger): P
   inFlight.add(businessId);
   try {
     const config = await getBackupConfig(businessId);
-    const artifact = makeArtifactName();
-    const runId = await startRun(businessId, "local", trigger, artifact, null);
+    
+    let artifact = makeArtifactName();
+    let finalArtifactName = artifact;
+    
+    const pp = backupPassphrase(config);
+    const doEncryptLocal = pp.length > 0 && config.encryptLocal !== false;
+    if (doEncryptLocal) {
+      finalArtifactName = `${artifact}.enc`;
+    }
+
+    const runId = await startRun(businessId, "local", trigger, finalArtifactName, null);
     try {
       const dir = backupDir(config.directory);
       await fs.mkdir(dir, { recursive: true });
-      const finalPath = path.join(dir, artifact);
-      const tmpPath = `${finalPath}.tmp`;
+      const finalPath = path.join(dir, finalArtifactName);
+      const tmpPath = path.join(dir, `${artifact}.tmp`);
+      
       await runPgDump(tmpPath);
-      const data = await fs.readFile(tmpPath);
+      let data = await fs.readFile(tmpPath);
+      
+      if (doEncryptLocal) {
+        data = encryptBackup(data, pp) as any;
+        await fs.writeFile(tmpPath, data);
+      }
+      
       await fs.rename(tmpPath, finalPath);
 
       const secondary = backupSecondaryDir();
       if (secondary) {
         await fs.mkdir(secondary, { recursive: true });
-        await fs.copyFile(finalPath, path.join(secondary, artifact), fsConstants.COPYFILE_FICLONE).catch(
+        await fs.copyFile(finalPath, path.join(secondary, finalArtifactName), fsConstants.COPYFILE_FICLONE).catch(
           (err) => {
             throw new Error(`secondary copy to ${secondary} failed: ${errText(err)}`);
           },
@@ -275,7 +299,7 @@ export async function runLocalBackup(businessId: string, trigger: RunTrigger): P
       await pruneDirectory(dir, config.localRetention);
 
       await finishRun(runId, { status: "success", sizeBytes: data.length, sha256: sha256Hex(data) });
-      return { status: "ok", runId, artifact, sizeBytes: data.length };
+      return { status: "ok", runId, artifact: finalArtifactName, sizeBytes: data.length };
     } catch (err) {
       await finishRun(runId, { status: "failed", error: errText(err) });
       return { status: "failed", error: errText(err) };
@@ -310,10 +334,20 @@ export async function runCloudUpload(
   const key = cloudKeyFor(config.cloud.prefix, artifact);
   const runId = await startRun(businessId, "cloud", trigger, artifact, key);
   try {
-    const plain = await fs.readFile(path.join(backupDir(config.directory), artifact));
-    const encrypted = encryptBackup(plain, config.cloud.passphrase);
+    let data = await fs.readFile(path.join(backupDir(config.directory), artifact));
+    if (!isEncryptedBackup(data)) {
+      const pp = backupPassphrase(config);
+      // `validateBackupConfig` refuses to enable cloud without a passphrase,
+      // but a config stored before that check — or one whose passphrase came
+      // only from a since-removed BACKUP_PASSPHRASE — could still land here.
+      // Failing the run is the only safe answer: encrypting with "" derives
+      // the key from a publicly known input, so the artifact would be
+      // plaintext to anyone who fetches it from the bucket.
+      if (!pp) throw new Error("passphrase_required");
+      data = encryptBackup(data, pp) as any;
+    }
     const s3 = s3ConfigOf(config);
-    await s3Put(s3, key, encrypted);
+    await s3Put(s3, key, data);
 
     try {
       const objects = await s3List(s3, config.cloud.prefix);
@@ -327,10 +361,10 @@ export async function runCloudUpload(
 
     await finishRun(runId, {
       status: "success",
-      sizeBytes: encrypted.length,
-      sha256: sha256Hex(encrypted),
+      sizeBytes: data.length,
+      sha256: sha256Hex(data),
     });
-    return { status: "ok", key, sizeBytes: encrypted.length };
+    return { status: "ok", key, sizeBytes: data.length };
   } catch (err) {
     await finishRun(runId, { status: "failed", error: errText(err) });
     return { status: "failed", error: errText(err) };

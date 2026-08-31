@@ -5,22 +5,42 @@ import { SESSION_COOKIE, sessionCookieOptions, signSession } from "@/lib/auth";
 import { hostRoutingEnabled, parseHost, requestHost, rootDomain } from "@/lib/host";
 import { resolveBusinessByLabel } from "@/lib/host-resolution";
 import {
+  checkAuthLockout,
+  recordAuthFailure,
+  recordAuthSuccess,
+} from "@/lib/login-lockout-service";
+import { PASSWORD_LOCKOUT_POLICY } from "@/lib/login-lockout";
+import {
   membershipBlockedReason,
   membershipsForPlatformUser,
   type Membership,
 } from "@/lib/memberships";
+import {
+  getAccountMfaEnrolments,
+  getMfaGracePeriod,
+  markMfaGracePeriod,
+  signMfaPendingToken,
+} from "@/lib/mfa-service";
+import {
+  enrolmentRequirement,
+  graceDaysRemaining,
+  mfaAppliesToRole,
+  MFA_GRACE_DAYS_TENANT,
+} from "@/lib/mfa";
+import { getMfaPolicy } from "@/lib/mfa-policy";
 
 interface PlatformUserRow extends Record<string, unknown> {
   id: string;
   full_name: string;
   password_hash: string;
   is_active: boolean;
+  token_version: number;
 }
 
 /** A bcrypt hash of nothing in particular, used to keep timing uniform. */
 const DUMMY_HASH = "$2b$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy";
 
-function sessionFor(membership: Membership, platformUserId: string) {
+function sessionFor(membership: Membership, platformUserId: string, tokenVersion: number) {
   return signSession({
     sub: membership.userId,
     role: membership.role,
@@ -30,6 +50,7 @@ function sessionFor(membership: Membership, platformUserId: string) {
     locationId: membership.locationId,
     fullName: membership.fullName,
     platformUserId,
+    tokenVersion,
   });
 }
 
@@ -104,7 +125,7 @@ export async function POST(request: NextRequest) {
 
   return withoutTenantScope("login", async () => {
     const { rows } = await query<PlatformUserRow>(
-      `SELECT id, full_name, password_hash, is_active FROM platform_users WHERE email = $1`,
+      `SELECT id, full_name, password_hash, is_active, token_version FROM platform_users WHERE email = $1`,
       [email.trim().toLowerCase()],
     );
 
@@ -114,9 +135,26 @@ export async function POST(request: NextRequest) {
     const identity = rows[0];
     const usableIdentity = identity?.is_active ? identity : null;
     const passwordOk = await bcrypt.compare(password, usableIdentity?.password_hash ?? DUMMY_HASH);
+
+    // The lockout gate answers *before* the credential verdict is acted on.
+    // Checking it afterwards would make it useless twice over: a wrong
+    // password would return 401 without ever consulting the lockout (so it
+    // throttles nothing), and a locked account would answer 423 only when the
+    // password happened to be right — an oracle confirming the password.
+    const lockout = await checkAuthLockout("tenant_password", email.trim().toLowerCase(), PASSWORD_LOCKOUT_POLICY);
+    if (lockout.locked) {
+      return NextResponse.json(
+        { error: "account_locked", lockedUntil: lockout.lockedUntil },
+        { status: 423 },
+      );
+    }
+
     if (!usableIdentity || !passwordOk) {
+      await recordAuthFailure("tenant_password", email.trim().toLowerCase());
       return NextResponse.json({ error: "invalid_credentials" }, { status: 401 });
     }
+
+    await recordAuthSuccess("tenant_password", email.trim().toLowerCase());
 
     const memberships = await membershipsForPlatformUser(usableIdentity.id);
     if (memberships.length === 0) {
@@ -166,13 +204,88 @@ export async function POST(request: NextRequest) {
       usableIdentity.id,
     ]);
 
+    // MFA Enrolment / Verification check
+    //
+    // Who it applies to: the `owner` role always, and `manager` only where the
+    // business has opted in (settings key `mfa.policy`) — the extension the
+    // phase spec describes as off by default. Cashier/waiter PIN logins never
+    // reach this route at all.
+    const mfaPolicy = await getMfaPolicy(chosen.businessId);
+    const requiresMfa = mfaAppliesToRole(chosen.role, mfaPolicy.requireForManagers);
+
+    // `grace` is resolved before the session is minted but does not stop it —
+    // see below.
+    let graceNotice: { mfaState: "grace"; graceUntil: string | null; graceDaysLeft: number | null } | null =
+      null;
+
+    if (requiresMfa) {
+      const enrolments = await getAccountMfaEnrolments("platform_user", usableIdentity.id);
+      let graceUntil = await getMfaGracePeriod("platform_user", usableIdentity.id);
+      const hasGraceRecord = graceUntil !== null;
+
+      if (!hasGraceRecord && enrolments.length === 0) {
+        // Stamp grace at first login after deploy
+        await markMfaGracePeriod("platform_user", usableIdentity.id, MFA_GRACE_DAYS_TENANT);
+        graceUntil = await getMfaGracePeriod("platform_user", usableIdentity.id);
+      }
+
+      const mfaState = {
+        hasPrimary: enrolments.length > 0,
+        graceUntil,
+        hasGraceRecord,
+        role: chosen.role
+      };
+
+      const req = enrolmentRequirement(mfaState);
+
+      // Only `required` is a gate.
+      //
+      // Grace exists precisely so that turning 2FA on does not lock out every
+      // Owner on the platform the day it ships — an account still inside its
+      // window is signed in exactly as before and shown a dismissible nag with
+      // a countdown (see PasswordForm in src/app/login/login-form.tsx). Treating
+      // it as a gate, as this route did until now, made the window a hard
+      // lockout with a friendlier name and contradicted the phase spec, which
+      // asks for "an enrolment prompt with a 'later' button and a visible
+      // countdown" during the window and a hard gate only afterwards.
+      if (req === "required") {
+        // Issue mfa_pending token instead of full session
+        const mfaToken = await signMfaPendingToken({
+          sub: usableIdentity.id,
+          method: enrolments.length > 0 ? enrolments[0].method : null,
+          authRealm: "tenant_password",
+          businessId: chosen.businessId,
+        });
+
+        return NextResponse.json({
+          mfaRequired: true,
+          mfaState: req,
+          mfaToken,
+          // Which second factor to ask for, so the client can show "enter the
+          // code from your authenticator" rather than waiting for an SMS that
+          // is never coming. Null means the account is not enrolled at all and
+          // the screen has to enrol it first.
+          mfaMethod: enrolments.length > 0 ? enrolments[0].method : null,
+        });
+      }
+
+      if (req === "grace") {
+        graceNotice = {
+          mfaState: "grace",
+          graceUntil: graceUntil ? new Date(graceUntil).toISOString() : null,
+          graceDaysLeft: graceDaysRemaining(graceUntil),
+        };
+      }
+    }
+
     const res = NextResponse.json({
       user: { id: chosen.userId, role: chosen.role, fullName: chosen.fullName },
       business: { id: chosen.businessId, name: chosen.businessName, slug: chosen.businessSlug },
+      ...(graceNotice ?? {}),
     });
     res.cookies.set(
       SESSION_COOKIE,
-      await sessionFor(chosen, usableIdentity.id),
+      await sessionFor(chosen, usableIdentity.id, usableIdentity.token_version),
       sessionCookieOptions(),
     );
     return res;

@@ -1,0 +1,88 @@
+import { NextRequest, NextResponse } from "next/server";
+import { verifyMfaPendingToken, getAccountMfaEnrolments } from "@/lib/mfa-service";
+import { checkMfaChallengeRateLimit, recordMfaChallenge } from "@/lib/mfa-rate-limit";
+import { getSmsProvider } from "@/lib/sms-config";
+import { KavenegarError } from "@/lib/sms-kavenegar";
+import { query, withoutTenantScope } from "@/lib/db";
+import { createHmac, randomInt } from "node:crypto";
+import { getRealmSecret } from "@/lib/jwt-secret";
+
+export async function POST(request: NextRequest) {
+  const auth = request.headers.get("authorization");
+  const bearer = auth?.startsWith("Bearer ") ? auth.slice("Bearer ".length).trim() : "";
+  if (!bearer) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
+  const payload = await verifyMfaPendingToken(bearer);
+  if (!payload || payload.authRealm !== "platform_admin") {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+
+  const identity = await withoutTenantScope("platform", async () => {
+    const { rows } = await query<{ email: string }>(`SELECT email FROM platform_admins WHERE id = $1`, [payload.sub]);
+    return rows[0];
+  });
+  
+  if (!identity) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+
+  const rateLimit = await checkMfaChallengeRateLimit(identity.email);
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: "rate_limited", retryAfterMs: rateLimit.retryAfterMs },
+      { status: 429 }
+    );
+  }
+
+  const enrolments = await getAccountMfaEnrolments("platform_admin", payload.sub);
+  const activeEnrolment = enrolments.find(e => e.method === payload.method) || enrolments.find(e => e.is_primary);
+
+  if (!activeEnrolment) {
+    return NextResponse.json({ error: "invalid_method" }, { status: 400 });
+  }
+
+  if (activeEnrolment.method === "totp") {
+    return NextResponse.json({ status: "ready" });
+  }
+
+  if (!activeEnrolment.phone_e164) {
+    return NextResponse.json({ error: "missing_phone" }, { status: 400 });
+  }
+
+  const otp = String(randomInt(0, 1000000)).padStart(6, "0");
+  
+  const secretKey = await getRealmSecret("platform");
+  const hmac = createHmac("sha256", secretKey).update(otp).digest("hex");
+  
+  await withoutTenantScope("platform", () => 
+    query(
+      `INSERT INTO mfa_challenges (subject_realm, subject_id, hashed_otp, expires_at)
+       VALUES ('platform_admin', $1, $2, now() + interval '2 minutes')`,
+      [payload.sub, hmac]
+    )
+  );
+
+  await recordMfaChallenge(identity.email);
+
+  try {
+    const provider = await getSmsProvider();
+    await provider.sendOtp(activeEnrolment.phone_e164, otp);
+  } catch (err) {
+    console.error("SMS dispatch failed", err);
+    // A Kavenegar failure now arrives as a KavenegarError carrying the
+    // carrier's numeric status mapped to a Persian sentence. Only the
+    // *user-actionable* half is handed back: told "شمارهٔ گیرنده نامعتبر است"
+    // an Owner can fix their number, but told the same thing when the real
+    // cause is an empty SMS credit balance they will retype it twenty times
+    // and then phone support — so an operator-side fault stays generic to the
+    // user and detailed in the server log.
+    const message =
+      err instanceof KavenegarError && !err.operatorFault ? err.message : undefined;
+    return NextResponse.json({ error: "sms_dispatch_failed", message }, { status: 502 });
+  }
+
+  const phone = activeEnrolment.phone_e164;
+  const maskedPhone = phone.length > 4 ? `+${phone.slice(1, 4)}***${phone.slice(-4)}` : "***";
+
+  return NextResponse.json({ status: "sent", maskedPhone });
+}

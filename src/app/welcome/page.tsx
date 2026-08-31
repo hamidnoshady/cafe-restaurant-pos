@@ -76,6 +76,8 @@ function LocalBootstrapForm({ onBack }: { onBack: () => void }) {
   const [industry, setIndustry] = useState<Industry>("food_service");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  /** The one-time TOTP/recovery-code handover, shown between bootstrap and the wizard. */
+  const [mfa, setMfa] = useState<MfaHandover | null>(null);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -113,8 +115,22 @@ function LocalBootstrapForm({ onBack }: { onBack: () => void }) {
       setError(map[data.error] ?? "خطا در راه‌اندازی اولیه. دوباره تلاش کنید.");
       return;
     }
-    // Bootstrap signs the Owner in; go straight to the wizard.
+    // Bootstrap signs the Owner in. Before handing them to the wizard, show
+    // the one and only copy of their second factor: a local install enrols
+    // TOTP (there is no internet for an SMS), and until Phase 24's follow-up
+    // nothing displayed the secret it had just created — leaving the Owner
+    // enrolled in a factor they could never satisfy.
+    const data: { mfa?: MfaHandover } = await res.json().catch(() => ({}));
+    setBusy(false);
+    if (data.mfa && (data.mfa.totpSecret || data.mfa.recoveryCodes.length > 0)) {
+      setMfa(data.mfa);
+      return;
+    }
     router.replace("/setup/business");
+  }
+
+  if (mfa) {
+    return <MfaHandoverCard mfa={mfa} onDone={() => router.replace("/setup/business")} />;
   }
 
   return (
@@ -246,6 +262,122 @@ function LocalBootstrapForm({ onBack }: { onBack: () => void }) {
           )}
         </button>
       </form>
+    </div>
+  );
+}
+
+/** What `/api/setup/bootstrap` hands back once, and never again. */
+interface MfaHandover {
+  method: "totp" | "sms_otp";
+  totpSecret: string | null;
+  totpUrl: string | null;
+  totpQr: string | null;
+  recoveryCodes: string[];
+}
+
+/**
+ * Phase 24 Wave 2 — the first-run second-factor handover.
+ *
+ * `provisionBusiness` has enrolled the Owner in TOTP (a local install has no
+ * internet, so an SMS second factor would lock them out of their own till the
+ * first time the connection dropped) and minted ten recovery codes. Both exist
+ * in plaintext for exactly the length of this screen: the secret is stored
+ * encrypted and the codes only as bcrypt hashes, so a reload here really does
+ * lose them.
+ *
+ * Hence the deliberate friction — an explicit checkbox rather than a "next"
+ * button. The alternative, which is what shipped before this screen existed, is
+ * an Owner who discovers at their second login that they are enrolled in a
+ * factor nobody ever showed them.
+ */
+function MfaHandoverCard({ mfa, onDone }: { mfa: MfaHandover; onDone: () => void }) {
+  const [confirmed, setConfirmed] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  return (
+    <div className="w-full max-w-md rounded-2xl bg-card p-8 shadow-sm">
+      <h1 className="mb-1 text-2xl font-bold">ورود دومرحله‌ای مالک</h1>
+      <p className="mb-6 text-sm text-muted-foreground">
+        روی نصب محلی، ورود مالک با «برنامهٔ رمزساز» محافظت می‌شود؛ چون بدون اینترنت پیامکی ارسال
+        نمی‌شود. این صفحه فقط همین یک بار نمایش داده می‌شود.
+      </p>
+
+      {mfa.totpQr ? (
+        <div className="mb-4 flex justify-center">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={mfa.totpQr}
+            alt="کد QR ورود دومرحله‌ای"
+            className="size-52 rounded-lg bg-white p-2"
+          />
+        </div>
+      ) : null}
+
+      {mfa.totpSecret ? (
+        <div className="mb-4">
+          <p className="mb-1 text-sm text-muted-foreground">
+            کد QR را با Google Authenticator (یا هر برنامهٔ مشابه) اسکن کنید، یا این کد را دستی وارد
+            کنید:
+          </p>
+          <p
+            dir="ltr"
+            className="rounded-lg border border-input bg-muted/50 px-3 py-2 font-mono text-sm tracking-wider"
+          >
+            {mfa.totpSecret}
+          </p>
+        </div>
+      ) : null}
+
+      {mfa.recoveryCodes.length > 0 ? (
+        <div className="mb-4">
+          <p className="mb-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-sm">
+            این ۱۰ کد بازیابی را چاپ کنید یا جای امنی بنویسید. اگر گوشی‌تان را از دست بدهید، تنها
+            راه ورود همین‌هاست.
+          </p>
+          <div
+            dir="ltr"
+            className="grid grid-cols-2 gap-1 rounded-lg border border-input bg-muted/50 px-3 py-2 font-mono text-sm tracking-wider"
+          >
+            {mfa.recoveryCodes.map((c) => (
+              <span key={c}>{c}</span>
+            ))}
+          </div>
+          <button
+            type="button"
+            className="mt-2 w-full rounded-lg border border-input py-2 text-sm font-semibold transition hover:bg-primary/10"
+            onClick={async () => {
+              try {
+                await navigator.clipboard.writeText(mfa.recoveryCodes.join("\n"));
+                setCopied(true);
+              } catch {
+                // Clipboard access can be refused; the codes are on screen anyway.
+                setCopied(false);
+              }
+            }}
+          >
+            {copied ? "کپی شد" : "کپی کدها"}
+          </button>
+        </div>
+      ) : null}
+
+      <label className="mb-4 flex items-start gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={confirmed}
+          onChange={(e) => setConfirmed(e.target.checked)}
+          className="mt-1 size-4"
+        />
+        <span>کد QR را اسکن کردم و کدهای بازیابی را در جای امنی ذخیره کردم.</span>
+      </label>
+
+      <button
+        type="button"
+        disabled={!confirmed}
+        onClick={onDone}
+        className="w-full rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/85 disabled:opacity-50 outline-none focus-visible:ring focus-visible:ring-ring/50"
+      >
+        ادامه به راه‌اندازی
+      </button>
     </div>
   );
 }

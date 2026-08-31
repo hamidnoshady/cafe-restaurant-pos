@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
 import { getPool, query } from "@/lib/db";
-import { parseDate, tableConflicts } from "@/lib/reservation-service";
+import {
+  decryptReservationPhones,
+  encryptReservationPhone,
+  parseDate,
+  tableConflicts,
+} from "@/lib/reservation-service";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { openSession } from "@/lib/table-session-service";
 import { broadcast } from "@/lib/realtime";
@@ -18,14 +23,24 @@ type ReservationRow = {
   seated_session_id: string | null;
 };
 
-async function loadReservation(locationId: string, id: string): Promise<ReservationRow | null> {
-  const { rows } = await query<ReservationRow>(
-    `SELECT id, table_id, customer_name, customer_phone, party_size, reserved_at,
+async function loadReservation(
+  businessId: string,
+  locationId: string,
+  id: string,
+): Promise<ReservationRow | null> {
+  const { rows } = await query<ReservationRow & { customer_phone_enc?: unknown }>(
+    `SELECT id, table_id, customer_name, customer_phone, customer_phone_enc, party_size, reserved_at,
             duration_minutes, status, seated_session_id
        FROM reservations WHERE id = $1 AND location_id = $2`,
     [id, locationId],
   );
-  return rows[0] ?? null;
+  if (!rows[0]) return null;
+  // Decrypt here rather than at each use: the phone travels on to
+  // `openSession` as the table session's guest phone, and a seated guest
+  // showing up as ciphertext on the floor plan is exactly the kind of thing a
+  // dual-write window leaks if the decryption sits at the edge instead.
+  const [reservation] = await decryptReservationPhones(businessId, rows);
+  return reservation;
 }
 
 interface PatchBody {
@@ -52,7 +67,7 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
   const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
 
-  const reservation = await loadReservation(location.id, id);
+  const reservation = await loadReservation(session.businessId, location.id, id);
   if (!reservation) return NextResponse.json({ error: "reservation_not_found" }, { status: 404 });
 
   let body: PatchBody;
@@ -79,7 +94,7 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
   if (reservation.status !== "booked") {
     return NextResponse.json({ error: "reservation_not_booked" }, { status: 409 });
   }
-  return updateReservation(location.id, reservation, body);
+  return updateReservation(session.businessId, location.id, reservation, body);
 });
 
 async function seatReservation(
@@ -128,7 +143,12 @@ async function seatReservation(
   }
 }
 
-async function updateReservation(locationId: string, reservation: ReservationRow, body: PatchBody) {
+async function updateReservation(
+  businessId: string,
+  locationId: string,
+  reservation: ReservationRow,
+  body: PatchBody,
+) {
   const fields: string[] = [];
   const values: unknown[] = [];
   let i = 1;
@@ -171,7 +191,18 @@ async function updateReservation(locationId: string, reservation: ReservationRow
     if (!name) return NextResponse.json({ error: "missing_fields" }, { status: 400 });
     set("customer_name", name);
   }
-  if (body.customerPhone !== undefined) set("customer_phone", body.customerPhone?.trim() || null);
+  if (body.customerPhone !== undefined) {
+    // Written as a triple. The BEFORE UPDATE trigger added in
+    // 0125_field_encryption_columns.sql would otherwise null the ciphertext
+    // for changing the plaintext alone — correct, but it would also drop the
+    // blind index and take the booking out of phone lookup until the next
+    // backfill run.
+    const phone = body.customerPhone?.trim() || null;
+    const cipher = await encryptReservationPhone(businessId, phone);
+    set("customer_phone", phone);
+    set("customer_phone_enc", cipher.enc);
+    set("customer_phone_bidx", cipher.bidx);
+  }
   if (body.partySize !== undefined) {
     const n = Number(body.partySize);
     if (!Number.isFinite(n) || n <= 0) return NextResponse.json({ error: "invalid_party_size" }, { status: 400 });
@@ -211,7 +242,7 @@ export const DELETE = withTenantScope(async (_request: NextRequest, context: { p
 
   const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
-  const reservation = await loadReservation(location.id, id);
+  const reservation = await loadReservation(session.businessId, location.id, id);
   if (!reservation) return NextResponse.json({ error: "reservation_not_found" }, { status: 404 });
 
   await query("DELETE FROM reservations WHERE id = $1", [id]);
