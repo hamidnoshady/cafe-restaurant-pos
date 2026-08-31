@@ -181,35 +181,64 @@ class POS_Connector_Queue {
 	 * A failed row is left in the table rather than deleted: "this order never
 	 * reached the accounting system, and here is why" is exactly what someone
 	 * reconciling a missing sale needs to find.
+	 *
+	 * The backoff is the bug fix behind this method's shape: 1.1.x flipped the
+	 * status back to 'pending' but never moved `available_at`, so a row the
+	 * app rejected (a malformed order, an unresolved variation) was due again
+	 * on the very next sweep, sat at the head of `due()` — which is ordered by
+	 * id ASC — and failed again every five minutes for up to eight attempts.
+	 * Every event queued behind it waited while the same bad row consumed the
+	 * batch slot. The exponential backoff (the same constants the comment on
+	 * BACKOFF_BASE_SECONDS describes) moves the bad row out of the way, so the
+	 * hundreds of good events behind it flow; `due()` already refuses rows
+	 * whose time has not come.
 	 */
 	public static function mark_failed( $id, $error ) {
 		global $wpdb;
 		$table = self::table_name();
+		$delay = min(
+			self::BACKOFF_MAX_SECONDS,
+			self::BACKOFF_BASE_SECONDS * pow( 2, self::attempts_of( $id ) )
+		);
+		$available = gmdate( 'Y-m-d H:i:s', time() + $delay );
 		$wpdb->query(
 			$wpdb->prepare(
 				"UPDATE {$table}
 					SET attempts = attempts + 1,
 						last_error = %s,
 						status = CASE WHEN attempts + 1 >= %d THEN 'failed' ELSE 'pending' END,
+						available_at = %s,
 						updated_at = %s
 					WHERE id = %d",
 				(string) $error,
 				self::MAX_ATTEMPTS,
+				$available,
 				current_time( 'mysql', true ),
 				(int) $id
 			)
 		);
 	}
 
+	/** A queue row's current attempt count, so the backoff can grow per row. */
+	private static function attempts_of( $id ) {
+		global $wpdb;
+		$table = self::table_name();
+		$attempts = $wpdb->get_var(
+			$wpdb->prepare( "SELECT attempts FROM {$table} WHERE id = %d", (int) $id )
+		);
+		return max( 0, (int) $attempts );
+	}
+
 	/** Put a permanently-failed row back in line — the "retry" button on the admin screen. */
 	public static function retry_failed() {
 		global $wpdb;
 		$table = self::table_name();
+		$now   = current_time( 'mysql', true );
 		return (int) $wpdb->query(
 			$wpdb->prepare(
-				"UPDATE {$table} SET status = 'pending', attempts = 0, available_at = %s, updated_at = %s WHERE status = 'failed'",
-				current_time( 'mysql', true ),
-				current_time( 'mysql', true )
+				"UPDATE {$table} SET status = 'pending', attempts = 0, last_error = NULL, available_at = %s, updated_at = %s WHERE status = 'failed'",
+				$now,
+				$now
 			)
 		);
 	}

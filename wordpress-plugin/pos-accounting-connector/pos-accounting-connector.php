@@ -3,7 +3,7 @@
  * Plugin Name:       POS Accounting Connector
  * Plugin URI:        https://github.com/hamidnoshady/cafe-restaurant-pos
  * Description:       اتصال امن دوطرفه فروشگاه ووکامرس به سامانهٔ فروش و حسابداری: ارسال سفارش، برگشت وجه، محصول و مشتری؛ دریافت موجودی و قیمت.
- * Version:           1.1.0
+ * Version:           1.2.0
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * WC requires at least: 7.0
@@ -49,7 +49,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'POS_CONNECTOR_VERSION', '1.1.0' );
+define( 'POS_CONNECTOR_VERSION', '1.2.0' );
 define( 'POS_CONNECTOR_FILE', __FILE__ );
 define( 'POS_CONNECTOR_PATH', plugin_dir_path( __FILE__ ) );
 
@@ -62,6 +62,10 @@ define( 'POS_CONNECTOR_CRON_HOOK', 'pos_connector_sync' );
 define( 'POS_CONNECTOR_CRON_RESYNC_ORDERS', 'pos_connector_resync_orders' );
 /** The catalogue sweep: re-send the whole catalogue, variations included. */
 define( 'POS_CONNECTOR_CRON_RESYNC_PRODUCTS', 'pos_connector_resync_products' );
+/** The customer sweep: re-send the whole customer book (the backfill). */
+define( 'POS_CONNECTOR_CRON_RESYNC_CUSTOMERS', 'pos_connector_resync_customers' );
+/** The content sweep: re-send posts, pages and media. */
+define( 'POS_CONNECTOR_CRON_RESYNC_CONTENT', 'pos_connector_resync_content' );
 
 require_once POS_CONNECTOR_PATH . 'includes/class-pos-log.php';
 require_once POS_CONNECTOR_PATH . 'includes/class-pos-client.php';
@@ -191,6 +195,15 @@ function pos_connector_activate() {
 	}
 	pos_connector_schedule_event( POS_CONNECTOR_CRON_RESYNC_ORDERS, $settings['resync_orders_schedule'] );
 	pos_connector_schedule_event( POS_CONNECTOR_CRON_RESYNC_PRODUCTS, $settings['resync_products_schedule'] );
+	// Daily backfills. Customers and content have no real-time cost worth a
+	// finer cadence; the daily sweep is the backstop for anything a hook or
+	// the initial export missed.
+	if ( ! wp_next_scheduled( POS_CONNECTOR_CRON_RESYNC_CUSTOMERS ) ) {
+		wp_schedule_event( time() + HOUR_IN_SECONDS, 'daily', POS_CONNECTOR_CRON_RESYNC_CUSTOMERS );
+	}
+	if ( ! wp_next_scheduled( POS_CONNECTOR_CRON_RESYNC_CONTENT ) ) {
+		wp_schedule_event( time() + 2 * HOUR_IN_SECONDS, 'daily', POS_CONNECTOR_CRON_RESYNC_CONTENT );
+	}
 }
 register_activation_hook( __FILE__, 'pos_connector_activate' );
 
@@ -201,6 +214,8 @@ function pos_connector_deactivate() {
 	wp_clear_scheduled_hook( POS_CONNECTOR_CRON_HOOK );
 	wp_clear_scheduled_hook( POS_CONNECTOR_CRON_RESYNC_ORDERS );
 	wp_clear_scheduled_hook( POS_CONNECTOR_CRON_RESYNC_PRODUCTS );
+	wp_clear_scheduled_hook( POS_CONNECTOR_CRON_RESYNC_CUSTOMERS );
+	wp_clear_scheduled_hook( POS_CONNECTOR_CRON_RESYNC_CONTENT );
 }
 register_deactivation_hook( __FILE__, 'pos_connector_deactivate' );
 
@@ -227,6 +242,8 @@ function pos_connector_settings() {
 		// Per-sweep bookkeeping, so the screen can say which one is stale.
 		'last_orders_sweep_at'     => '',
 		'last_products_sweep_at'   => '',
+		'last_customers_sweep_at'  => '',
+		'last_content_sweep_at'    => '',
 		'last_run_stats'           => array(),
 	);
 	$stored = get_option( POS_CONNECTOR_OPTION, array() );

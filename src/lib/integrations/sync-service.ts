@@ -46,7 +46,7 @@ import {
 } from "./woo-catalogue";
 import {
   ensureMenuCategory,
-  replaceProductTerms,
+  recordProductTermsFromPayload,
   syncTaxonomyTree,
   termsByRemoteId,
   type TaxonomySyncOutcome,
@@ -292,15 +292,13 @@ async function recordProductShape(connection: ConnectionRow, product: WooProduct
     remoteParentId: product.parent_id ? String(product.parent_id) : null,
   };
   await mergeMappingMeta(connection.business_id, connection.id, "product", String(product.id), meta);
-  await replaceProductTerms(
-    connection.business_id,
-    connection.id,
-    String(product.id),
-    [
-      ...(product.categories ?? []).map((c) => ({ taxonomy: "product_cat", termRemoteId: String(c.id) })),
-      ...(product.tags ?? []).map((t) => ({ taxonomy: "product_tag", termRemoteId: String(t.id) })),
-    ],
-  );
+  // Upsert the product's category/tag terms into the taxonomy mirror AND
+  // record the product→term assignments. In plugin mode the app cannot dial
+  // the store, so these inline terms are the *only* way the taxonomy mirror
+  // is ever populated — before this, a plugin-connected store's categories
+  // column and taxonomy browser stayed empty no matter how many products
+  // synced. See upsertTermFromPayload for why upsert rather than replace.
+  await recordProductTermsFromPayload(connection.business_id, connection.id, String(product.id), product);
   // A variation inherits its parent's categories on the store's own display,
   // so the mirror does too — otherwise a variation would appear in no
   // category at all while its parent sits in three.
@@ -724,7 +722,11 @@ export async function syncOrders(
   let page = 1;
 
   for (;;) {
-    const orders = await client.listOrders({
+    // Paged with the store's X-WP-TotalPages header, not guessed from a full
+    // last page: the old short-page stop also ended the loop one page early
+    // whenever the store's last page happened to hold exactly `per_page`
+    // rows, which is how some orders "synced" and the rest never did.
+    const { items: orders, totalPages } = await client.listOrdersPage({
       per_page: PER_PAGE,
       page,
       after: since,
@@ -740,7 +742,7 @@ export async function syncOrders(
       else if (outcome.status === "duplicate") duplicates += 1;
       else failed += 1;
     }
-    if (orders.length < PER_PAGE) break;
+    if (!totalPages || page >= totalPages) break;
     page += 1;
     if (options.maxPages && page > options.maxPages) break;
   }
@@ -772,18 +774,27 @@ export async function syncCustomers(businessId: string, connectionId: string): P
   let total = 0;
 
   for (;;) {
-    const customers: WooCustomer[] = await client.listCustomers({ per_page: PER_PAGE, page });
+    // Paged via the store's own X-WP-TotalPages header. The old loop called
+    // `listCustomers` — a single-page request — and, while it passed `page`
+    // as a parameter, guessed the end from "a short page" alone. That was
+    // fine on a mock and wrong on a live store whose first page was full and
+    // whose host withheld the paging header on the convenience endpoint: the
+    // loop only ran once. listCustomersPage reads the authoritative header
+    // and falls back to the short-page rule, exactly like the product pull.
+    const { items: customers, totalPages } = await client.listCustomersPage({ per_page: PER_PAGE, page });
     total += customers.length;
     for (const customer of customers) {
       if ((await upsertCustomerFromWoo(connection, customer)) === "created") created += 1;
       else updated += 1;
     }
-    if (customers.length < PER_PAGE) break;
+    if (!totalPages || page >= totalPages || customers.length === 0) break;
     page += 1;
   }
 
   await query(
-    `UPDATE integration_connections SET last_sync_at = now(), status = 'active', last_error = NULL, updated_at = now()
+    `UPDATE integration_connections
+        SET last_sync_at = now(), last_customer_sync_at = now(),
+            status = 'active', last_error = NULL, updated_at = now()
       WHERE business_id = $1 AND id = $2`,
     [businessId, connectionId],
   );

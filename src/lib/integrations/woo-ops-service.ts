@@ -182,7 +182,7 @@ export async function enqueueOperation(
 export async function enqueueExport(
   businessId: string,
   connectionId: string,
-  entityType: "catalogue_export" | "customer_export" | "orders_export",
+  entityType: "catalogue_export" | "customer_export" | "orders_export" | "content_export",
   options: { sinceDays?: number } = {},
 ): Promise<void> {
   await query(

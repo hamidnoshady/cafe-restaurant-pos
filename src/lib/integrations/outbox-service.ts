@@ -202,9 +202,18 @@ async function applyOutboundEvent(
     case "catalogue_export":
     case "customer_export":
     case "orders_export":
+    case "content_export":
       // Plugin-only: they ask the plugin to send what only it can see. In
-      // REST mode there is nothing to apply, and leaving them queued would
-      // dead-letter a job that was never meant for this side.
+      // REST mode there is nothing to apply (the app pulled the data
+      // itself), and leaving them queued would dead-letter a job that was
+      // never meant for this side.
+      return;
+    case "post_upsert":
+    case "media_create":
+      // Plugin-side jobs for WordPress content. REST mode writes content
+      // directly through the manager's API route (wpUpsertPost), so nothing
+      // is drained here; in plugin mode the plugin leases and applies these
+      // rows itself.
       return;
     default:
       return;

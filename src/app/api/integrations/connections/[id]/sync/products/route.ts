@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
-import { getConnection } from "@/lib/integrations/connections-service";
+import { getConnection, wooClientFor } from "@/lib/integrations/connections-service";
 import { enqueuePluginExport } from "@/lib/integrations/plugin-service";
 import { syncProducts } from "@/lib/integrations/sync-service";
+import { enqueueContentExport, syncWpContentRest } from "@/lib/integrations/wp-content-service";
 
 /**
  * "Sync products now", in whichever direction this connection runs.
@@ -23,11 +24,23 @@ export const POST = withTenantScope(async (_request: Request, context: { params:
 
   if (connection.link_mode === "plugin") {
     await enqueuePluginExport(session.businessId, id, "catalogue_export");
+    // The content mirror rides the products toggle — the WP Manager reads
+    // posts/pages/media from the same pull loop, so keep both fresh together.
+    if (connection.sync_products) await enqueueContentExport(session.businessId, id);
     return NextResponse.json({ ok: true, queued: true });
   }
 
   try {
     const outcome = await syncProducts(session.businessId, id);
+    if (connection.sync_products) {
+      // REST mode: pull wp/v2 content with the same credentials. A failure
+      // here must not fail the catalogue the button is named for.
+      try {
+        await syncWpContentRest(connection, wooClientFor(connection));
+      } catch (err) {
+        return NextResponse.json({ ok: true, ...outcome, contentError: (err as Error).message });
+      }
+    }
     return NextResponse.json({ ok: true, ...outcome });
   } catch (err) {
     if ((err as Error).message === "not_found") return NextResponse.json({ error: "not_found" }, { status: 404 });

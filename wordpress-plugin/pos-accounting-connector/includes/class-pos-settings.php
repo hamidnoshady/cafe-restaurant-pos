@@ -31,6 +31,8 @@ class POS_Connector_Settings {
 		// until somebody presses the button and watches what happens.
 		add_action( 'admin_post_pos_connector_resync_products', array( __CLASS__, 'handle_resync_products' ) );
 		add_action( 'admin_post_pos_connector_resync_orders', array( __CLASS__, 'handle_resync_orders' ) );
+		add_action( 'admin_post_pos_connector_resync_customers', array( __CLASS__, 'handle_resync_customers' ) );
+		add_action( 'admin_post_pos_connector_resync_content', array( __CLASS__, 'handle_resync_content' ) );
 		add_action( 'admin_post_pos_connector_schedule', array( __CLASS__, 'handle_schedule' ) );
 	}
 
@@ -142,6 +144,20 @@ class POS_Connector_Settings {
 		self::redirect_back( 'orders_queued' );
 	}
 
+	public static function handle_resync_customers() {
+		self::guard( 'pos_connector_resync_customers' );
+		POS_Connector_Sync::export_customers();
+		POS_Connector_Log::info( 'export', 'بازخوانی دستی مشتریان در صف قرار گرفت.' );
+		self::redirect_back( 'customers_queued' );
+	}
+
+	public static function handle_resync_content() {
+		self::guard( 'pos_connector_resync_content' );
+		POS_Connector_Sync::export_content();
+		POS_Connector_Log::info( 'export', 'بازخوانی دستی محتوا در صف قرار گرفت.' );
+		self::redirect_back( 'content_queued' );
+	}
+
 	/**
 	 * Save the sweep cadences and re-arm WP-Cron to match.
 	 *
@@ -200,6 +216,8 @@ class POS_Connector_Settings {
 			'retried'            => array( 'success', 'رویدادهای ناموفق دوباره در صف قرار گرفتند.' ),
 			'products_queued'    => array( 'success', 'کل کاتالوگ (با تنوع‌ها) در صف ارسال قرار گرفت.' ),
 			'orders_queued'      => array( 'success', 'سفارش‌های بازهٔ انتخابی در صف ارسال قرار گرفتند.' ),
+			'customers_queued'   => array( 'success', 'همهٔ مشتریان در صف ارسال قرار گرفتند.' ),
+			'content_queued'     => array( 'success', 'نوشته‌ها، برگه‌ها و رسانه‌ها در صف ارسال قرار گرفتند.' ),
 			'schedule_saved'     => array( 'success', 'زمان‌بندی ذخیره شد.' ),
 		);
 		return isset( $map[ $key ] ) ? $map[ $key ] : null;
@@ -273,7 +291,9 @@ class POS_Connector_Settings {
 				<?php foreach ( array(
 					'pos_connector_test'     => __( 'آزمایش اتصال', 'pos-accounting-connector' ),
 					'pos_connector_sync_now' => __( 'همگام‌سازی همین حالا', 'pos-accounting-connector' ),
-					'pos_connector_retry'    => __( 'تلاش دوباره برای ناموفق‌ها', 'pos-accounting-connector' ),
+					'pos_connector_retry'           => __( 'تلاش دوباره برای ناموفق‌ها', 'pos-accounting-connector' ),
+					'pos_connector_resync_customers' => __( 'بازخوانی همهٔ مشتریان', 'pos-accounting-connector' ),
+					'pos_connector_resync_content'   => __( 'بازخوانی محتوا و رسانه', 'pos-accounting-connector' ),
 				) as $action => $label ) : ?>
 					<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="display:inline-block;margin-inline-end:8px">
 						<?php wp_nonce_field( $action ); ?>

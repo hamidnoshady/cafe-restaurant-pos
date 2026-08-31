@@ -33,6 +33,7 @@ import { writeIntegrationAudit } from "./audit";
 import { getBusinessIndustry } from "../industry-guard";
 import { connectionLocationId, resolveOrderCustomerId, upsertCustomerFromWoo, upsertProductFromWoo } from "./sync-service";
 import { wooLineCandidateIds } from "./woo-catalogue";
+import { upsertWpContent } from "./wp-content-service";
 import type { WooCustomer, WooOrder, WooOrderLineItem, WooProduct, WooRefund } from "./woocommerce-client";
 import type { Industry } from "../industries";
 
@@ -190,6 +191,12 @@ async function applyIngestEvent(connection: ConnectionRow, event: WebhookEvent):
       if (connection.sync_customers) {
         await upsertCustomerFromWoo(connection, event.payload as unknown as WooCustomer);
       }
+    } else if (event.topic.endsWith("content.updated") || event.topic.endsWith("content.created")) {
+      // Phase 40 — WordPress posts/pages/media, pushed by the plugin. The
+      // commerce sync toggles don't gate this: content mirroring is the WP
+      // Manager app's own job, and a shop that only syncs orders still has
+      // pages it would be harmless to see.
+      await upsertWpContent(connection, event.payload as never);
     }
     // Any other topic is acknowledged and left alone — we never want a
     // re-delivery storm for an event we don't handle yet.

@@ -44,6 +44,8 @@ class POS_Connector_Sync {
 		add_action( POS_CONNECTOR_CRON_HOOK, array( __CLASS__, 'run' ) );
 		add_action( POS_CONNECTOR_CRON_RESYNC_PRODUCTS, array( __CLASS__, 'run_resync_products' ) );
 		add_action( POS_CONNECTOR_CRON_RESYNC_ORDERS, array( __CLASS__, 'run_resync_orders' ) );
+		add_action( POS_CONNECTOR_CRON_RESYNC_CUSTOMERS, array( __CLASS__, 'run_resync_customers' ) );
+		add_action( POS_CONNECTOR_CRON_RESYNC_CONTENT, array( __CLASS__, 'run_resync_content' ) );
 
 		$settings = pos_connector_settings();
 		if ( empty( $settings['enabled'] ) ) {
@@ -77,6 +79,25 @@ class POS_Connector_Sync {
 		if ( ! empty( $settings['sync_customers'] ) ) {
 			add_action( 'woocommerce_created_customer', array( __CLASS__, 'on_customer_changed' ), 20, 1 );
 			add_action( 'woocommerce_update_customer', array( __CLASS__, 'on_customer_changed' ), 20, 1 );
+			// The daily customer sweep. New WooCommerce customers are caught
+			// by the two hooks above; this covers accounts created by an
+			// importer, a migration from another shop, or any checkout path
+			// where a hook never fired — the backstop the products and orders
+			// sweeps already were, and the reason a store with 600 customers
+			// could show 20 after three days (the initial export only ever
+			// ran once, and nothing ever re-asked for the book).
+			add_action( POS_CONNECTOR_CRON_RESYNC_CUSTOMERS, array( __CLASS__, 'run_resync_customers' ) );
+		}
+
+		// WordPress core content (posts, pages, media) for the WP Manager
+		// app. It rides the products toggle (the catalogue the owner already
+		// chose to mirror), keeping one «what do we send?» decision rather
+		// than a fourth switch nobody knew to flip. Transitions cover create,
+		// edit, trash and restore in one hook; 'add_attachment' is separate
+		// because attachments transition 'new' -> 'inherit'.
+		if ( ! empty( $settings['sync_products'] ) ) {
+			add_action( 'transition_post_status', array( __CLASS__, 'on_post_status_changed' ), 20, 3 );
+			add_action( 'add_attachment', array( __CLASS__, 'on_attachment_added' ), 20, 1 );
 		}
 	}
 
@@ -165,6 +186,87 @@ class POS_Connector_Sync {
 			return;
 		}
 		POS_Connector_Queue::enqueue( 'customer.updated', $customer_id, self::customer_payload( $customer ) );
+	}
+
+	// -----------------------------------------------------------------------
+	// WordPress content: posts, pages, media
+	// -----------------------------------------------------------------------
+
+	/** The post types the content mirror cares about. Products are NOT here — they go through Woo hooks. */
+	private static function mirrored_post_types() {
+		return array( 'post', 'page' );
+	}
+
+	/**
+	 * A post/page transitioned status (created, published, updated, trashed,
+	 * restored). One hook covers all of them — `save_post` would need three
+	 * save paths and miss trash/restore.
+	 */
+	public static function on_post_status_changed( $new_status, $old_status, $post ) {
+		if ( ! $post || is_wp_error( $post ) ) {
+			return;
+		}
+		if ( ! in_array( $post->post_type, self::mirrored_post_types(), true ) ) {
+			return;
+		}
+		// Auto-drafts and revisions are noise, not content.
+		if ( 'auto-draft' === $new_status || wp_is_post_revision( $post ) ) {
+			return;
+		}
+		if ( self::already_seen( 'content:' . $post->post_type, $post->ID ) ) {
+			return;
+		}
+		// Trash and restore both go as `content.updated`: the payload's own
+		// `status` field carries 'trash'/'publish', and the queue's
+		// (topic, remote_id) dedup means a trash followed by a restore in the
+		// same sweep sends the latest state rather than two fighting events.
+		POS_Connector_Queue::enqueue( 'content.updated', $post->post_type . ':' . $post->ID, self::content_payload( $post ) );
+	}
+
+	/** A media attachment was uploaded. */
+	public static function on_attachment_added( $attachment_id ) {
+		if ( self::already_seen( 'content:attachment', $attachment_id ) ) {
+			return;
+		}
+		$post = get_post( $attachment_id );
+		if ( ! $post || 'attachment' !== $post->post_type ) {
+			return;
+		}
+		POS_Connector_Queue::enqueue( 'content.updated', 'attachment:' . $attachment_id, self::content_payload( $post ) );
+	}
+
+	/**
+	 * One post/page/attachment in the app's content-payload shape — the
+	 * WordPress core REST fields the manager app reads.
+	 */
+	public static function content_payload( $post ) {
+		$payload = array(
+			'id'            => (int) $post->ID,
+			'type'          => 'attachment' === $post->post_type ? 'attachment' : $post->post_type,
+			'status'        => $post->post_status,
+			'slug'          => $post->post_name,
+			'link'          => get_permalink( $post->ID ) ?: '',
+			'date'          => $post->post_date ? mysql2date( DATE_ATOM, $post->post_date ) : null,
+			'date_modified' => $post->post_modified ? mysql2date( DATE_ATOM, $post->post_modified ) : null,
+			'title'         => array(
+				'rendered' => get_the_title( $post ),
+				'raw'      => $post->post_title,
+			),
+			'author_name'   => get_the_author_meta( 'display_name', (int) $post->post_author ),
+		);
+
+		if ( 'attachment' === $post->post_type ) {
+			$payload['source_url'] = wp_get_attachment_url( $post->ID ) ?: '';
+			$payload['mime_type']  = $post->post_mime_type;
+			$payload['media_type'] = strtok( (string) $post->post_mime_type, '/' ) ?: 'file';
+			$payload['alt_text']   = get_post_meta( $post->ID, '_wp_attachment_image_alt', true );
+		} else {
+			// Excerpt/content are delivered raw so the manager's editor can
+			// round-trip them; rendered HTML lives on the public site.
+			$payload['content']     = $post->post_content;
+			$payload['excerpt']     = $post->post_excerpt;
+		}
+		return $payload;
 	}
 
 	private static function already_seen( $kind, $id ) {
@@ -809,11 +911,101 @@ class POS_Connector_Sync {
 				self::export_orders( isset( $payload['sinceDays'] ) && $payload['sinceDays'] ? (int) $payload['sinceDays'] : (int) $settings['resync_orders_days'] );
 				return;
 
+			case 'content_export':
+				self::export_content();
+				return;
+
+			case 'post_upsert':
+				self::apply_post_upsert( $payload );
+				return;
+
+			case 'media_create':
+				self::apply_media_create( $remote, $payload );
+				return;
+
 			default:
 				// An unknown job type from a newer server. Acking it as done
 				// rather than failing keeps an older plugin from dead-lettering
 				// work it simply does not understand yet.
 				POS_Connector_Log::info( 'job:unknown', $type );
+		}
+	}
+
+	/**
+	 * Apply a create/update to a WordPress post or page.
+	 *
+	 * Field-by-field, the same closed-list discipline `product_update` uses:
+	 * a payload key this plugin does not recognise is not written blind.
+	 * The status is validated against WordPress's own set so a mis-sent value
+	 * cannot push a page into an unknown state.
+	 */
+	private static function apply_post_upsert( array $payload ) {
+		$type = isset( $payload['post_type'] ) && 'page' === $payload['post_type'] ? 'page' : 'post';
+		$id   = isset( $payload['id'] ) ? (int) $payload['id'] : 0;
+
+		$allowed_status = array( 'publish', 'draft', 'pending', 'private', 'future' );
+		$data           = array();
+		if ( isset( $payload['title'] ) ) {
+			$data['post_title'] = wp_kses_post( (string) $payload['title'] );
+		}
+		if ( isset( $payload['content'] ) ) {
+			// Content is the owner's own HTML from their own accounting app;
+			// wp_kses_post keeps the same tag set the post editor allows.
+			$data['post_content'] = wp_kses_post( (string) $payload['content'] );
+		}
+		if ( isset( $payload['excerpt'] ) ) {
+			$data['post_excerpt'] = sanitize_text_field( (string) $payload['excerpt'] );
+		}
+		if ( isset( $payload['slug'] ) ) {
+			$data['post_name'] = sanitize_title( (string) $payload['slug'] );
+		}
+		if ( isset( $payload['status'] ) ) {
+			$status = (string) $payload['status'];
+			if ( ! in_array( $status, $allowed_status, true ) ) {
+				throw new Exception( 'invalid_post_status' );
+			}
+			$data['post_status'] = $status;
+		}
+		if ( empty( $data ) ) {
+			throw new Exception( 'empty_post_update' );
+		}
+
+		if ( $id > 0 ) {
+			$exists = get_post( $id );
+			if ( ! $exists || $exists->post_type !== $type ) {
+				throw new Exception( 'post_not_found' );
+			}
+			$data['ID']          = $id;
+			$data['post_type']   = $type;
+			$result              = wp_update_post( $data, true );
+		} else {
+			$data['post_type']   = $type;
+			$data['post_status'] = isset( $data['post_status'] ) ? $data['post_status'] : 'draft';
+			$result              = wp_insert_post( $data, true );
+		}
+		if ( is_wp_error( $result ) ) {
+			throw new Exception( $result->get_error_message() );
+		}
+	}
+
+	/**
+	 * Create a media attachment from a URL the manager supplied (the image
+	 * picker references files already on the store or on a public URL).
+	 */
+	private static function apply_media_create( $remote_id, array $payload ) {
+		if ( empty( $payload['url'] ) ) {
+			throw new Exception( 'missing_media_url' );
+		}
+		if ( ! function_exists( 'media_sideload_image' ) ) {
+			require_once ABSPATH . 'wp-admin/includes/media.php';
+			require_once ABSPATH . 'wp-admin/includes/file.php';
+			require_once ABSPATH . 'wp-admin/includes/image.php';
+		}
+		$parent_id = ! empty( $payload['parent'] ) ? (int) $payload['parent'] : 0;
+		$desc      = isset( $payload['title'] ) ? (string) $payload['title'] : '';
+		$attachment_id = media_sideload_image( esc_url_raw( (string) $payload['url'] ), $parent_id, $desc, 'id' );
+		if ( is_wp_error( $attachment_id ) ) {
+			throw new Exception( $attachment_id->get_error_message() );
 		}
 	}
 
@@ -935,61 +1127,170 @@ class POS_Connector_Sync {
 	}
 
 	/**
-	 * Re-send every order changed in the last `$days` days.
+	 * Re-send orders changed in the last `$days` days, oldest changed first.
 	 *
 	 * `wc_get_orders` with `date_modified` is the whole point: it finds the
 	 * orders that changed *since the last sweep*, including the ones whose
-	 * hooks never fired. Bounded by ORDER_SWEEP_LIMIT so a store with a busy
-	 * week cannot fill a night with one run.
+	 * hooks never fired. Bounded by ORDER_SWEEP_LIMIT *per page* and paged so
+	 * a store with a busy week is not silently truncated to the first 200 —
+	 * the cap now bounds a single page; the sweep walks pages until the window
+	 * is drained or the hard ceiling is reached, and the log says when a
+	 * ceiling was hit so the next sweep's shorter window still backfills.
 	 */
 	public static function export_orders( $days = 7 ) {
 		$days = max( 1, min( 365, (int) $days ) );
 		$after = gmdate( 'Y-m-d H:i:s', time() - ( $days * DAY_IN_SECONDS ) );
 
-		$orders = wc_get_orders(
-			array(
-				'limit'         => self::ORDER_SWEEP_LIMIT,
-				'date_modified' => '>' . $after,
-				'orderby'       => 'date',
-				'order'         => 'ASC',
-				// Refunds and subscriptions are not orders; drafts and trashed
-				// rows are not sales.
-				'status'        => array_keys( wc_get_order_statuses() ),
-				'return'        => 'objects',
-			)
-		);
-
-		foreach ( $orders as $order ) {
-			POS_Connector_Queue::enqueue( 'order.updated', $order->get_id(), self::order_payload( $order ) );
-		}
+		$enqueued = 0;
+		$page     = 1;
+		do {
+			$orders = wc_get_orders(
+				array(
+					'limit'         => self::ORDER_SWEEP_LIMIT,
+					'offset'        => ( $page - 1 ) * self::ORDER_SWEEP_LIMIT,
+					'date_modified' => '>' . $after,
+					'orderby'       => 'date',
+					'order'         => 'ASC',
+					// Refunds and subscriptions are not orders; drafts and trashed
+					// rows are not sales.
+					'status'        => array_keys( wc_get_order_statuses() ),
+					'return'        => 'objects',
+				)
+			);
+			foreach ( $orders as $order ) {
+				POS_Connector_Queue::enqueue( 'order.updated', $order->get_id(), self::order_payload( $order ) );
+				++$enqueued;
+			}
+			++$page;
+			// Hard ceiling: 100 pages of the page size (20k orders) keeps one
+			// cron run finite on a runaway backlog; the next sweep drains more.
+		} while ( count( $orders ) === self::ORDER_SWEEP_LIMIT && $page <= 100 );
 
 		POS_Connector_Log::info(
 			'export',
-			sprintf( '%d سفارشِ %d روز گذشته در صف ارسال قرار گرفت.', count( $orders ), $days )
+			sprintf( '%d سفارشِ %d روز گذشته در صف ارسال قرار گرفت.', $enqueued, $days )
 		);
-		return count( $orders );
+		return $enqueued;
 	}
 
 	public static function export_customers() {
-		$paged = 1;
+		// Two populations, deliberately: the `customer` role is the ordinary
+		// book, and `_last_order` is the meta WooCommerce writes on any user
+		// who has ever checked out as a registered shopper — including ones an
+		// importer or a shop manager created without a role. A site whose
+		// «مشتری‌ها» screen counts 600 users was once synced to 20 here
+		// because the export only queued what the role query returned on its
+		// first pass and nothing ever asked for the rest. The queue's
+		// (topic, remote_id) dedup makes the overlap free.
+		$customer_ids = array();
+		$paged        = 1;
 		do {
 			$users = get_users(
 				array(
-					'role'   => 'customer',
-					'number' => 100,
-					'paged'  => $paged,
-					'fields' => 'ID',
+					'role__in' => array( 'customer', 'subscriber' ),
+					'number'   => 100,
+					'paged'    => $paged,
+					'fields'   => 'ID',
+					'orderby'  => 'ID',
+					'order'    => 'ASC',
 				)
 			);
 			foreach ( $users as $user_id ) {
-				$customer = new WC_Customer( $user_id );
-				if ( $customer->get_id() ) {
-					POS_Connector_Queue::enqueue( 'customer.updated', $user_id, self::customer_payload( $customer ) );
-				}
+				$customer_ids[ (int) $user_id ] = (int) $user_id;
 			}
 			++$paged;
-		} while ( count( $users ) === 100 );
+			// Hard cap: a site with ten thousand accounts must not enqueue
+			// forever inside one cron run; the daily sweep backfills the rest.
+		} while ( count( $users ) === 100 && $paged <= 500 );
 
-		POS_Connector_Log::info( 'export', 'مشتریان در صف ارسال قرار گرفتند.' );
+		// Anyone WooCommerce has ever recorded an order against — catches
+		// role-less accounts and legacy customers the role sweep misses.
+		$paged = 1;
+		do {
+			$order_users = get_users(
+				array(
+					'number'     => 100,
+					'paged'      => $paged,
+					'fields'     => 'ID',
+					'orderby'    => 'ID',
+					'order'      => 'ASC',
+					'meta_key'   => '_last_order', // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key
+				)
+			);
+			foreach ( $order_users as $user_id ) {
+				$customer_ids[ (int) $user_id ] = (int) $user_id;
+			}
+			++$paged;
+		} while ( count( $order_users ) === 100 && $paged <= 500 );
+
+		foreach ( $customer_ids as $user_id ) {
+			$customer = new WC_Customer( $user_id );
+			if ( $customer->get_id() ) {
+				POS_Connector_Queue::enqueue( 'customer.updated', $user_id, self::customer_payload( $customer ) );
+			}
+		}
+
+		POS_Connector_Log::info( 'export', sprintf( '%d مشتری در صف ارسال قرار گرفت.', count( $customer_ids ) ) );
 	}
-}
+
+	/**
+	 * Queue every post, page and media attachment as a content event — the
+	 * «همگام‌سازی محتوا» action, and the answer the app's `content_export`
+	 * job. Mirrors export_products: pages of 100, every type the manager
+	 * shows, queued rather than posted so the events inherit the batch/retry
+	 * path.
+	 */
+	public static function export_content() {
+		$count = 0;
+		foreach ( array( 'post', 'page', 'attachment' ) as $type ) {
+			$paged = 1;
+			do {
+				$posts = get_posts(
+					array(
+						'post_type'      => $type,
+						'post_status'    => 'attachment' === $type ? 'inherit' : array( 'publish', 'draft', 'pending', 'private', 'trash' ),
+						'posts_per_page' => 100,
+						'paged'          => $paged,
+						'orderby'        => 'ID',
+						'order'          => 'ASC',
+						'no_found_rows'  => true,
+					)
+				);
+				foreach ( $posts as $post ) {
+					if ( wp_is_post_revision( $post ) || 'auto-draft' === $post->post_status ) {
+						continue;
+					}
+					POS_Connector_Queue::enqueue(
+						'content.updated',
+						$type . ':' . $post->ID,
+						self::content_payload( $post )
+					);
+					++$count;
+				}
+				++$paged;
+			} while ( count( $posts ) === 100 && $paged <= 500 );
+		}
+		POS_Connector_Log::info( 'export', sprintf( '%d محتوای وردپرس در صف ارسال قرار گرفت.', $count ) );
+	}
+
+	/** The customer sweep: re-queue the whole customer book. */
+	public static function run_resync_customers() {
+		$settings = pos_connector_settings();
+		if ( empty( $settings['enabled'] ) || empty( $settings['sync_customers'] ) ) {
+			return;
+		}
+		self::export_customers();
+		pos_connector_update_settings( array( 'last_customers_sweep_at' => current_time( 'mysql', true ) ) );
+		self::run();
+	}
+
+	/** The content sweep: re-queue posts, pages and media. */
+	public static function run_resync_content() {
+		$settings = pos_connector_settings();
+		if ( empty( $settings['enabled'] ) ) {
+			return;
+		}
+		self::export_content();
+		pos_connector_update_settings( array( 'last_content_sweep_at' => current_time( 'mysql', true ) ) );
+		self::run();
+	}
