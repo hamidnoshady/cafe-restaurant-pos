@@ -284,16 +284,30 @@ export async function addRepairPart(
   return mapPart(rows[0]);
 }
 
-export async function removeRepairPart(id: string): Promise<void> {
+/**
+ * Removes a part only if it belongs to the given repair ticket.
+ *
+ * The route already verifies the ticket in the URL is at the caller's active
+ * branch, so the parent-child predicate here closes the IDOR: a caller with
+ * access to one ticket must not be able to remove a part from another
+ * branch's (or customer's) ticket by passing a foreign part id. RLS on
+ * `repair_ticket_parts` scopes by business only (via its parent ticket), not
+ * by branch, so this application-level check is load-bearing.
+ *
+ * Returns `false` when the part does not exist under the supplied ticket.
+ */
+export async function removeRepairPart(id: string, ticketId: string): Promise<boolean> {
   const { rows } = await query<{ status: RepairStatus }>(
-    `SELECT t.status FROM repair_ticket_parts p JOIN repair_tickets t ON t.id = p.ticket_id WHERE p.id = $1`,
-    [id],
+    `SELECT t.status FROM repair_ticket_parts p JOIN repair_tickets t ON t.id = p.ticket_id
+      WHERE p.id = $1 AND p.ticket_id = $2`,
+    [id, ticketId],
   );
-  if (!rows[0]) return;
+  if (!rows[0]) return false;
   if (rows[0].status === "closed" || rows[0].status === "cancelled") {
     throw new Error("تیکت بسته‌شده یا لغوشده را نمی‌توان تغییر داد.");
   }
-  await query(`DELETE FROM repair_ticket_parts WHERE id = $1`, [id]);
+  await query(`DELETE FROM repair_ticket_parts WHERE id = $1 AND ticket_id = $2`, [id, ticketId]);
+  return true;
 }
 
 /** Edits the labor charge / VAT rate agreed with the customer while the ticket is still open. */

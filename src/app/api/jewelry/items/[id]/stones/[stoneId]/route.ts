@@ -19,7 +19,8 @@ export const DELETE = withTenantScope(
       return NextResponse.json({ error: "item_not_found" }, { status: 404 });
     }
 
-    await removeStone(stoneId);
+    const removed = await removeStone(stoneId, id);
+    if (!removed) return NextResponse.json({ error: "stone_not_found" }, { status: 404 });
     return NextResponse.json({ ok: true });
   },
 );
