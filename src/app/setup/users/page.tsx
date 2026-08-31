@@ -1,5 +1,7 @@
 "use client";
 
+import { SetupDataSkeleton } from "../ui";
+
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useCallback, useEffect, useState } from "react";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -33,11 +35,12 @@ export default function UsersStep() {
   const [pin, setPin] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [loaded, setLoaded] = useState(false);
 
   const load = useCallback(() => {
     api<{ users: UserRow[] }>("/api/setup/users").then(({ data }) => {
       if (data.users) setUsers(data.users);
-    });
+    }).finally(() => setLoaded(true));
   }, []);
   useEffect(load, [load]);
 
@@ -64,6 +67,8 @@ export default function UsersStep() {
     setPin("");
     load();
   }
+
+  if (!loaded) return <SetupDataSkeleton rows={4} />;
 
   return (
     <StepShell

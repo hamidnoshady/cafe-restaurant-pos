@@ -15,6 +15,7 @@ import { formatJalali } from "@/lib/jalali";
 import { toPersianDigits } from "@/lib/digits";
 import { useMoney } from "@/components/money/money-context";
 import { ErrorBox, Field, InfoBox, PrimaryButton, api, errorMessage, inputClass } from "./ui";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface Shift {
   id: string;
@@ -41,16 +42,27 @@ export function ShiftButton() {
   const [loaded, setLoaded] = useState(false);
 
   const load = useCallback(async () => {
-    const { ok, data } = await api<ActiveShiftResponse>("/api/shifts/active");
-    if (ok) setShift(data.shift);
-    setLoaded(true);
+    try {
+      const { ok, data } = await api<ActiveShiftResponse>("/api/shifts/active");
+      if (ok) setShift(data.shift);
+    } catch {
+      // Leave the action available; opening it will surface any request error.
+    } finally {
+      setLoaded(true);
+    }
   }, []);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  if (!loaded) return null;
+  if (!loaded) {
+    return (
+      <div role="status" aria-live="polite" aria-busy="true" aria-label="در حال بارگذاری وضعیت شیفت">
+        <Skeleton aria-hidden="true" className="mb-2 h-8 w-full rounded-lg" />
+      </div>
+    );
+  }
 
   return (
     <>

@@ -1,5 +1,7 @@
 "use client";
 
+import { SectionCardSkeleton } from "@/app/dashboard/page-chrome";
+
 import { useEffect, useState } from "react";
 import { api, errorMessage, inputClass, PrimaryButton, SecondaryButton } from "../ui";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -117,7 +119,7 @@ export function ChartOfAccountsSection({ busy, run }: { busy: boolean; run: Runn
   }
 
   if (!accounts) {
-    return <section aria-live="polite" className="rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-5 text-sm text-muted-foreground">در حال بارگذاری…</section>;
+    return <SectionCardSkeleton rows={4} />;
   }
 
   const parentOptions = accounts.filter((a) => a.isActive);

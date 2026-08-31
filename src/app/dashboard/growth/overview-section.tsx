@@ -1,5 +1,7 @@
 "use client";
 
+import { SectionCardSkeleton } from "@/app/dashboard/page-chrome";
+
 /**
  * The Growth app's management dashboard (Phase 36b) — its «داشبورد».
  *
@@ -70,9 +72,7 @@ export function OverviewSection({ onGoToSection }: { onGoToSection: (key: Growth
 
   if (!overview) {
     return (
-      <div aria-live="polite" className={`px-5 py-6 text-sm text-stone-500 ${cardClass}`}>
-        در حال بارگذاری…
-      </div>
+      <SectionCardSkeleton rows={4} />
     );
   }
 

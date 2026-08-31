@@ -13,7 +13,7 @@ import { formatPersianNumber } from "@/lib/digits";
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Loader2Icon } from "lucide-react";
-import { api, Button, Card, ErrorBox, Field, InfoBox, inputClass, useCan } from "../ui";
+import { api, Button, Card, ErrorBox, Field, InfoBox, inputClass, useCan, PlatformPageSkeleton } from "../ui";
 
 interface GatewayConfig {
   enabled: boolean;
@@ -274,9 +274,7 @@ export default function PlatformAiPage() {
     }
   }, [draft]);
 
-  if (loading) {
-    return <p className="text-sm text-white/50">در حال بارگذاری تنظیمات دروازه…</p>;
-  }
+  if (loading) return <PlatformPageSkeleton />;
 
   const status = data?.status;
 

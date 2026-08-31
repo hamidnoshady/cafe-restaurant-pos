@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingSkeleton, SectionCardSkeleton } from "@/app/dashboard/page-chrome";
+
 /**
  * The Website Manager (issue #378) — «وب‌سایت» under Growth & Marketing.
  *
@@ -21,6 +23,7 @@ import { Button } from "@/components/ui/button";
 import { formatPersianNumber, toPersianDigits } from "@/lib/digits";
 import type { CmsConnectionSummary } from "@/lib/cms/connections";
 import type { CmsOrder, SiteDescriptor } from "@/lib/cms/types";
+import { Skeleton } from "@/components/ui/skeleton";
 import { cardClass, EmptyState, SectionCard, StatusBadge } from "../page-chrome";
 import { api, errorMessageOrRaw, Field, inputClass, PrimaryButton, SecondaryButton, ErrorBox } from "../ui";
 import { cmsDnsHint } from "@/lib/cms/dns";
@@ -76,6 +79,7 @@ export function WebsiteSection() {
   const [dnsStatus, setDnsStatus] = useState<CmsDnsStatus | null>(null);
   const [dnsLoading, setDnsLoading] = useState(false);
   const [previewReady, setPreviewReady] = useState(false);
+  const [previewKey, setPreviewKey] = useState(0);
 
   const loadOverview = useCallback(() => {
     api<{ overview: WebsiteOverview }>("/api/cms/website/overview").then(({ ok, data }) => {
@@ -120,9 +124,7 @@ export function WebsiteSection() {
 
   if (loading) {
     return (
-      <div aria-live="polite" className={`px-5 py-6 text-sm text-stone-500 ${cardClass}`}>
-        در حال بارگذاری…
-      </div>
+      <SectionCardSkeleton rows={4} />
     );
   }
 
@@ -199,8 +201,12 @@ export function WebsiteSection() {
       <PreviewCard
         status={dnsStatus}
         ready={previewReady}
+        frameKey={previewKey}
         onLoad={() => setPreviewReady(true)}
-        onRefresh={() => setPreviewReady(false)}
+        onRefresh={() => {
+          setPreviewReady(false);
+          setPreviewKey((key) => key + 1);
+        }}
       />
 
       {overview ? (
@@ -396,7 +402,11 @@ function DnsChecklistCard({
   if (!status) {
     return (
       <SectionCard title="دامنه و انتشار سایت" description="سه قدم تا فعال‌شدن سایت روی اینترنت.">
-        <EmptyState>برای بررسی، «بررسی DNS» را بزنید.</EmptyState>
+        {loading ? (
+          <LoadingSkeleton rows={3} compact label="در حال بررسی وضعیت DNS" />
+        ) : (
+          <EmptyState>برای بررسی، «بررسی DNS» را بزنید.</EmptyState>
+        )}
         <div className="mt-3">
           <SecondaryButton onClick={onCheck} disabled={loading}>
             <RefreshCwIcon className="size-4" />
@@ -454,11 +464,13 @@ function DnsChecklistCard({
 function PreviewCard({
   status,
   ready,
+  frameKey,
   onLoad,
   onRefresh,
 }: {
   status: CmsDnsStatus | null;
   ready: boolean;
+  frameKey: number;
   onLoad: () => void;
   onRefresh: () => void;
 }) {
@@ -508,13 +520,26 @@ function PreviewCard({
             <span className="truncate">{url}</span>
           </div>
           {/* key remounts the frame on refresh so the page reloads cleanly */}
-          <iframe
-            key={String(ready)}
-            src={url}
-            title="پیش‌نمایش سایت"
-            className="h-[560px] w-full bg-white"
-            onLoad={onLoad}
-          />
+          <div className="relative h-[560px]">
+            {!ready ? (
+              <div
+                role="status"
+                aria-live="polite"
+                aria-busy="true"
+                aria-label="در حال بارگذاری پیش‌نمایش سایت"
+                className="absolute inset-0 z-10 bg-white p-4"
+              >
+                <Skeleton aria-hidden="true" className="h-full w-full rounded-xl" />
+              </div>
+            ) : null}
+            <iframe
+              key={frameKey}
+              src={url}
+              title="پیش‌نمایش سایت"
+              className={`h-full w-full bg-white transition-opacity motion-reduce:transition-none ${ready ? "opacity-100" : "opacity-0"}`}
+              onLoad={onLoad}
+            />
+          </div>
         </div>
       )}
     </SectionCard>

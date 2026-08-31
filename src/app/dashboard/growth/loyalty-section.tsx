@@ -17,7 +17,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { formatPersianNumber, toPersianDigits } from "@/lib/digits";
 import { useMoney } from "@/components/money/money-context";
 import { formatJalali } from "@/lib/jalali";
-import { EmptyState, SectionCard } from "../page-chrome";
+import { EmptyState, LoadingSkeleton, SectionCard, SectionCardSkeleton } from "../page-chrome";
 import { api, ErrorBox, Field, InfoBox, inputClass } from "../ui";
 
 interface Program {
@@ -48,26 +48,64 @@ export function LoyaltySection() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [customerId, setCustomerId] = useState("");
   const [balance, setBalance] = useState<{ points: number; storeCredit: number } | null>(null);
+  const [balanceLoaded, setBalanceLoaded] = useState(true);
   const [due, setDue] = useState<RepurchaseRow[]>([]);
   const [error, setError] = useState("");
   const [done, setDone] = useState("");
+  const [loaded, setLoaded] = useState(false);
 
-  const load = useCallback(() => {
-    api<{ programs: Program[] }>("/api/loyalty/programs").then(({ ok, data }) => ok && setPrograms(data.programs));
-    api<{ customers?: Customer[] }>("/api/customers").then(({ ok, data }) => ok && setCustomers(data.customers ?? []));
-    api<{ customers: RepurchaseRow[] }>("/api/loyalty/repurchase").then(({ ok, data }) => ok && setDue(data.customers));
+  const load = useCallback(async () => {
+    const [programResult, customerResult, repurchaseResult] = await Promise.allSettled([
+      api<{ programs: Program[] }>("/api/loyalty/programs"),
+      api<{ customers?: Customer[] }>("/api/customers"),
+      api<{ customers: RepurchaseRow[] }>("/api/loyalty/repurchase"),
+    ]);
+    if (programResult.status === "fulfilled" && programResult.value.ok) {
+      setPrograms(programResult.value.data.programs);
+    }
+    if (customerResult.status === "fulfilled" && customerResult.value.ok) {
+      setCustomers(customerResult.value.data.customers ?? []);
+    }
+    if (repurchaseResult.status === "fulfilled" && repurchaseResult.value.ok) {
+      setDue(repurchaseResult.value.data.customers);
+    }
+    setLoaded(true);
   }, []);
-  useEffect(load, [load]);
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   useEffect(() => {
     setBalance(null);
-    if (!customerId) return;
-    api<{ points: number; storeCredit: number }>(`/api/loyalty/customers/${customerId}`).then(({ ok, data }) => {
-      if (ok) setBalance(data);
-    });
+    if (!customerId) {
+      setBalanceLoaded(true);
+      return;
+    }
+    let cancelled = false;
+    setBalanceLoaded(false);
+    void api<{ points: number; storeCredit: number }>(`/api/loyalty/customers/${customerId}`)
+      .then(({ ok, data }) => {
+        if (!cancelled && ok) setBalance(data);
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) setBalanceLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [customerId]);
 
   const customer = customers.find((c) => c.id === customerId);
+
+  if (!loaded) {
+    return (
+      <div className="grid gap-4 lg:grid-cols-2">
+        <SectionCardSkeleton rows={4} />
+        <SectionCardSkeleton rows={4} />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4 sm:space-y-5">
@@ -89,6 +127,7 @@ export function LoyaltySection() {
           customerId={customerId}
           setCustomerId={setCustomerId}
           balance={balance}
+          balanceLoaded={balanceLoaded}
           onChanged={(m) => {
             setDone(m);
             load();
@@ -224,6 +263,7 @@ function CustomerPanel({
   customerId,
   setCustomerId,
   balance,
+  balanceLoaded,
   onChanged,
   onError,
 }: {
@@ -232,6 +272,7 @@ function CustomerPanel({
   customerId: string;
   setCustomerId: (v: string) => void;
   balance: { points: number; storeCredit: number } | null;
+  balanceLoaded: boolean;
   onChanged: (m: string) => void;
   onError: (m: string) => void;
 }) {
@@ -284,7 +325,9 @@ function CustomerPanel({
         />
       </Field>
 
-      {customer && balance ? (
+      {customer && !balanceLoaded ? (
+        <LoadingSkeleton rows={1} compact label="در حال بارگذاری مانده مشتری" />
+      ) : customer && balance ? (
         <div className="grid grid-cols-2 gap-2 rounded-xl border border-stone-200/80 p-3 text-sm">
           <div>
             <span className="text-muted-foreground">امتیاز:</span> <b>{formatPersianNumber(balance.points)}</b>

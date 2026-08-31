@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
+
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { GridLayout, useContainerWidth, type Layout, type LayoutItem } from "react-grid-layout";
 import { SparklesIcon, XIcon } from "lucide-react";
@@ -73,7 +75,7 @@ function requestWidgetExplanation(widget: WidgetRow, data: ChartDatum[]) {
 
 function WidgetBody({ widget, canExplain }: { widget: WidgetRow; canExplain: boolean }) {
   const data = useWidgetData(widget.report_config);
-  if (data === null) return <p className="p-2 text-xs text-muted-foreground">در حال بارگذاری…</p>;
+  if (data === null) return <LoadingSkeleton rows={2} compact />;
 
   const chart =
     widget.chart_type === "number" ? (
@@ -233,7 +235,7 @@ export function DashboardGrid({ canEdit, canExplain }: { canEdit: boolean; canEx
       */}
       <div ref={containerRef} dir="ltr">
         {widgets === null ? (
-          <p dir="rtl" className="text-sm text-muted-foreground">در حال بارگذاری داشبورد…</p>
+          <LoadingSkeleton rows={4} label="در حال بارگذاری داشبورد" />
         ) : widgets.length === 0 ? (
           <p dir="rtl" className="flex min-h-52 items-center justify-center rounded-2xl border border-dashed border-border bg-card p-6 text-center text-sm text-muted-foreground shadow-[0_2px_7px_rgb(41_37_36/0.04)]">
             {canEdit

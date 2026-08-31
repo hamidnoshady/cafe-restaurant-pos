@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
+
 import { useCallback, useEffect, useState } from "react";
 import { formatQuantity } from "@/lib/digits";
 import { SectionNav } from "../section-nav";
@@ -140,7 +142,7 @@ export function InventoryManager() {
   }
 
   if (!data)
-    return <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>;
+    return <LoadingSkeleton rows={3} />;
 
   return (
     <div className={`${styles.workspace} min-w-0 space-y-4 sm:space-y-5`}>

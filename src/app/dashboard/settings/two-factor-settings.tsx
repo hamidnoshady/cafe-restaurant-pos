@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
+
 /**
  * Phase 24 Wave 2 — two-factor authentication, from inside the dashboard.
  *
@@ -198,7 +200,7 @@ export function TwoFactorSettings({ isOwner }: { isOwner: boolean }) {
             </Button>
           </div>
         ) : state === null ? (
-          <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>
+          <LoadingSkeleton rows={3} />
         ) : !state.applies ? (
           <p className="text-sm text-muted-foreground">
             ورود دومرحله‌ای برای نقش شما الزامی نیست.

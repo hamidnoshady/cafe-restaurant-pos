@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, errorMessage as sharedErrorMessage } from "../ui";
 import { IndustryManagerShell, type Runner } from "../industry-manager-shell";
+import { SectionCardSkeleton } from "../page-chrome";
 import { VariantsSection } from "../accessories/variants-section";
 import { ReportsSection } from "../accessories/reports-section";
 import { BatchesSection } from "./batches-section";
@@ -30,7 +31,7 @@ const TABS = [
 type TabKey = (typeof TABS)[number]["key"];
 
 export function CosmeticsManager() {
-  const [items, setItems] = useState<VariantRow[]>([]);
+  const [items, setItems] = useState<VariantRow[] | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState<TabKey>("items");
@@ -66,7 +67,13 @@ export function CosmeticsManager() {
       onTabChange={setTab}
       error={error}
     >
-      {tab === "items" ? <VariantsSection items={items} busy={busy} run={run} apiBase="/api/cosmetics" /> : null}
+      {tab === "items" ? (
+        items === null ? (
+          <SectionCardSkeleton rows={5} />
+        ) : (
+          <VariantsSection items={items} busy={busy} run={run} apiBase="/api/cosmetics" />
+        )
+      ) : null}
       {tab === "batches" ? <BatchesSection /> : null}
       {tab === "merchandising" ? <MerchandisingSection /> : null}
       {tab === "reports" ? <ReportsSection apiBase="/api/cosmetics" /> : null}

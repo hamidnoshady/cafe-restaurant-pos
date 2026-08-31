@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
+
 /**
  * Owner's cross-location view (Phase 9). Three cards:
  *  1. Comparison — sales/COGS/waste/staff for every remote location that has
@@ -149,7 +151,7 @@ function ComparisonCard() {
     >
       {error ? <ErrorBox>{error}</ErrorBox> : null}
       {!overview ? (
-        <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>
+        <LoadingSkeleton rows={3} />
       ) : overview.locations.length === 0 ? (
         <InfoBox>
           هنوز شعبه‌ای داده‌ای ارسال نکرده است. ابتدا در بخش «شعبه‌های ثبت‌شده» یک شعبه ثبت کنید و
@@ -302,7 +304,7 @@ function RegistryCard() {
       ) : null}
 
       {!locations ? (
-        <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>
+        <LoadingSkeleton rows={3} />
       ) : locations.length === 0 ? (
         <p className="mb-4 text-sm text-muted-foreground">هنوز شعبه‌ای ثبت نشده است.</p>
       ) : (

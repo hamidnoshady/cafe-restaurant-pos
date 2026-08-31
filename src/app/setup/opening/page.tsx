@@ -1,5 +1,7 @@
 "use client";
 
+import { SetupDataSkeleton } from "../ui";
+
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useCallback, useEffect, useState } from "react";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -68,13 +70,14 @@ export default function OpeningStep() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
+  const [loaded, setLoaded] = useState(false);
 
   const load = useCallback(() => {
     api<OpeningResponse>("/api/setup/opening").then(({ data }) => {
       if (data.accounts) setAccounts(data.accounts);
       setOpeningEntry(data.openingEntry ?? null);
       setExistingInventory(data.inventoryItems ?? []);
-    });
+    }).finally(() => setLoaded(true));
   }, []);
   useEffect(load, [load]);
 
@@ -152,6 +155,8 @@ export default function OpeningStep() {
     setNotice("سند افتتاحیه با موفقیت ثبت شد (بدهکار = بستانکار).");
     load();
   }
+
+  if (!loaded) return <SetupDataSkeleton rows={4} />;
 
   return (
     <StepShell

@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
+
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -237,7 +239,7 @@ export function NotificationSettings() {
     await load();
   }
 
-  if (loading) return <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>;
+  if (loading) return <LoadingSkeleton rows={3} />;
 
   const grouped = new Map<NotificationGroup, EventMeta[]>();
   for (const event of events) {

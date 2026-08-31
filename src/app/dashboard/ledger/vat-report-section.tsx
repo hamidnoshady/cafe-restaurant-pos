@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
+
 import { useEffect, useState } from "react";
 import { useMoney } from "@/components/money/money-context";
 import { JalaliDatePicker } from "../jalali-date-picker";
@@ -60,7 +62,7 @@ export function VatReportSection({ refreshKey }: { refreshKey: number }) {
       </div>
 
       {!report ? (
-        <p aria-live="polite" className="py-10 text-center text-sm text-muted-foreground">در حال بارگذاری…</p>
+        <LoadingSkeleton rows={3} className="mt-5" />
       ) : (
         <div className="mt-5 space-y-5">
           <div className="grid gap-3 sm:grid-cols-3">

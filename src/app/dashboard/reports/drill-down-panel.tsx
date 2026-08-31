@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
+
 import { useEffect, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
@@ -64,7 +66,7 @@ export function DrillDownPanel({ target, onClose }: { target: DrillDownTarget; o
         </div>
 
         {lines === null ? (
-          <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>
+          <LoadingSkeleton rows={3} />
         ) : lines.length === 0 ? (
           <p className="text-sm text-muted-foreground">سندی برای این حساب در این بازه یافت نشد.</p>
         ) : (

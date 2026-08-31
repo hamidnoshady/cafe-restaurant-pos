@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
+
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
 /**
  * Phase 25 Wave 3 — the retail industries' selling screen.
@@ -154,7 +156,7 @@ export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
   // the domain-event engine per line, which knows one destination per sale,
   // so `ledgerSettlementFor` narrows the chosen way to what that engine
   // understands. Splitting a bill is the order path's (see PaymentWays).
-  const { methods: paymentWays } = usePaymentMethods();
+  const { methods: paymentWays, loaded: paymentWaysLoaded } = usePaymentMethods();
   const settlementWays = paymentWays.filter((way) => ledgerSettlementFor(way.settlement) !== null);
   const [paymentWayId, setPaymentWayId] = useState("");
   const selectedWay = settlementWays.find((way) => way.id === paymentWayId) ?? settlementWays[0];
@@ -370,22 +372,26 @@ export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
                 />
               </Field>
               <Field label="روش پرداخت">
-                <div className="flex flex-wrap gap-2">
-                  {settlementWays.map((way) => (
-                    <button
-                      key={way.id}
-                      type="button"
-                      onClick={() => setPaymentWayId(way.id)}
-                      className={`min-h-11 flex-1 rounded-xl border px-3 text-sm transition-colors ${
-                        selectedWay?.id === way.id
-                          ? "border-amber-500 bg-amber-50 font-medium text-amber-900"
-                          : "border-stone-200 text-stone-700 hover:border-amber-300"
-                      }`}
-                    >
-                      {way.name}
-                    </button>
-                  ))}
-                </div>
+                {!paymentWaysLoaded ? (
+                  <LoadingSkeleton rows={3} compact label="در حال بارگذاری روش‌های پرداخت" />
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {settlementWays.map((way) => (
+                      <button
+                        key={way.id}
+                        type="button"
+                        onClick={() => setPaymentWayId(way.id)}
+                        className={`min-h-11 flex-1 rounded-xl border px-3 text-sm transition-colors ${
+                          selectedWay?.id === way.id
+                            ? "border-amber-500 bg-amber-50 font-medium text-amber-900"
+                            : "border-stone-200 text-stone-700 hover:border-amber-300"
+                        }`}
+                      >
+                        {way.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </Field>
               <Field label="توضیح">
                 <input className={inputClass} value={note} onChange={(e) => setNote(e.target.value)} />
@@ -593,7 +599,9 @@ function BarcodeScanField({
           onScan={(scanned) => void resolve(scanned)}
         />
       </div>
-      {scanBusy ? <p className="mt-2 text-xs text-muted-foreground">در حال جستجو…</p> : null}
+      {scanBusy ? (
+        <LoadingSkeleton rows={1} compact className="mt-2" label="در حال جست‌وجوی کالا" />
+      ) : null}
       {scanError ? <p className="mt-2 text-xs leading-5 text-rose-700">{scanError}</p> : null}
     </Panel>
   );
@@ -1139,7 +1147,7 @@ function RecentInvoices({ invoices, loading }: { invoices: InvoiceSummary[]; loa
   return (
     <Panel title="فاکتورهای اخیر" hint="آخرین فاکتورهای ثبت‌شده در این شعبه.">
       {loading ? (
-        <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>
+        <LoadingSkeleton rows={3} />
       ) : invoices.length === 0 ? (
         <p className="rounded-xl border border-dashed border-stone-200 px-3 py-6 text-center text-sm text-muted-foreground">
           هنوز فاکتوری ثبت نشده است.

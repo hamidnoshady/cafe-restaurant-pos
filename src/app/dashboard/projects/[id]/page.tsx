@@ -1,5 +1,7 @@
 "use client";
 
+import { DashboardPageSkeleton } from "@/app/dashboard/page-chrome";
+
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
@@ -125,13 +127,7 @@ export default function ProjectDetailPage() {
     setNotes((prev) => prev.filter((n) => n.id !== noteId));
   }
 
-  if (!project) {
-    return (
-      <PageShell className="pb-6">
-        <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>
-      </PageShell>
-    );
-  }
+  if (!project) return <DashboardPageSkeleton />;
 
   const titlesWeight = notes.map((n) => n.title);
   const currentWeight = instructionWeight(project.instructions, titlesWeight);

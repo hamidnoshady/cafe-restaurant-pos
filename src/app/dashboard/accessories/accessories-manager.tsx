@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, errorMessage as sharedErrorMessage } from "../ui";
 import { IndustryManagerShell, type Runner } from "../industry-manager-shell";
+import { SectionCardSkeleton } from "../page-chrome";
 import { VariantsSection } from "./variants-section";
 import { ReportsSection } from "./reports-section";
 
@@ -38,7 +39,7 @@ const TABS = [
 type TabKey = (typeof TABS)[number]["key"];
 
 export function AccessoriesManager() {
-  const [items, setItems] = useState<VariantRow[]>([]);
+  const [items, setItems] = useState<VariantRow[] | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState<TabKey>("items");
@@ -74,7 +75,9 @@ export function AccessoriesManager() {
       onTabChange={setTab}
       error={error}
     >
-      {tab === "items" ? <VariantsSection items={items} busy={busy} run={run} /> : null}
+      {tab === "items" ? (
+        items === null ? <SectionCardSkeleton rows={5} /> : <VariantsSection items={items} busy={busy} run={run} />
+      ) : null}
       {tab === "reports" ? <ReportsSection /> : null}
     </IndustryManagerShell>
   );

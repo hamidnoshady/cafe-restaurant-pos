@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
+
 /**
  * Phase 20 Wave 7 — the admin security center's first landing point
  * (team.manage-gated, same permission as shift history and the audit log):
@@ -172,7 +174,7 @@ export function SecurityCenterSettings() {
         <ErrorBox>{error}</ErrorBox>
         {notice ? <InfoBox>{notice}</InfoBox> : null}
 
-        {sessions === null && <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>}
+        {sessions === null && <LoadingSkeleton rows={3} />}
         {sessions !== null && sessions.length === 0 && (
           <p className="text-sm text-muted-foreground">هیچ نشست فعالی وجود ندارد.</p>
         )}
@@ -213,7 +215,7 @@ export function SecurityCenterSettings() {
           آخرین پین‌های نادرست یا احرازهویت‌های بیومتریک ناموفق.
         </p>
 
-        {failedAttempts === null && <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>}
+        {failedAttempts === null && <LoadingSkeleton rows={3} />}
         {failedAttempts !== null && failedAttempts.length === 0 && (
           <p className="text-sm text-muted-foreground">تلاش ناموفقی ثبت نشده است.</p>
         )}

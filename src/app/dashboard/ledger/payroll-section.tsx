@@ -1,5 +1,7 @@
 "use client";
 
+import { SectionCardSkeleton } from "@/app/dashboard/page-chrome";
+
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useEffect, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
@@ -104,9 +106,7 @@ export function PayrollSection({ busy, run, refreshKey }: { busy: boolean; run: 
 
   if (!staff || !runs) {
     return (
-      <section aria-live="polite" className="rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card px-5 py-6 text-sm text-muted-foreground">
-        در حال بارگذاری…
-      </section>
+      <SectionCardSkeleton rows={4} />
     );
   }
 

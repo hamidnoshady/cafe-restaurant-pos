@@ -1,5 +1,7 @@
 "use client";
 
+import { SectionCardSkeleton } from "@/app/dashboard/page-chrome";
+
 import { useCallback, useEffect, useState } from "react";
 import {
   CalendarDaysIcon,
@@ -87,12 +89,7 @@ export function LedgerManager({ role }: { role: string }) {
 
   if (!accounts) {
     return (
-      <div
-        aria-live="polite"
-        className="rounded-2xl border border-stone-200/80 bg-white px-5 py-6 text-sm text-stone-500 shadow-[0_1px_2px_rgb(41_37_36/0.03)]"
-      >
-        در حال بارگذاری…
-      </div>
+      <SectionCardSkeleton rows={4} />
     );
   }
 

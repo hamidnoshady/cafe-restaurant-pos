@@ -1,5 +1,7 @@
 "use client";
 
+import { SectionCardSkeleton } from "@/app/dashboard/page-chrome";
+
 import { useEffect, useState } from "react";
 import { useMoney } from "@/components/money/money-context";
 import { formatJalali } from "@/lib/jalali";
@@ -53,9 +55,7 @@ export function EntriesSection({ refreshKey, busy, run }: { refreshKey: number; 
 
   if (!entries) {
     return (
-      <section aria-live="polite" className="rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-5 text-sm text-muted-foreground">
-        در حال بارگذاری…
-      </section>
+      <SectionCardSkeleton rows={4} />
     );
   }
 

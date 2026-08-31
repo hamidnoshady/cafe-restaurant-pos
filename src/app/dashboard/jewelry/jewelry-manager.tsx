@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, errorMessage as sharedErrorMessage } from "../ui";
 import { IndustryManagerShell, type Runner } from "../industry-manager-shell";
+import { SectionCardSkeleton } from "../page-chrome";
 import { ItemsSection } from "./items-section";
 import { PricesSection } from "./prices-section";
 import { ConsignorsSection } from "./consignors-section";
@@ -81,9 +82,9 @@ function jewelryErrorMessage(code: string | undefined): string {
 }
 
 export function JewelryManager() {
-  const [items, setItems] = useState<WeightItem[]>([]);
-  const [prices, setPrices] = useState<GoldPriceRow[]>([]);
-  const [consignors, setConsignors] = useState<Consignor[]>([]);
+  const [items, setItems] = useState<WeightItem[] | null>(null);
+  const [prices, setPrices] = useState<GoldPriceRow[] | null>(null);
+  const [consignors, setConsignors] = useState<Consignor[] | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState<TabKey>("items");
@@ -136,10 +137,22 @@ export function JewelryManager() {
       error={error}
     >
       {tab === "items" ? (
-        <ItemsSection items={items} prices={prices} consignors={consignors} busy={busy} run={run} />
+        items === null || prices === null || consignors === null ? (
+          <SectionCardSkeleton rows={5} />
+        ) : (
+          <ItemsSection items={items} prices={prices} consignors={consignors} busy={busy} run={run} />
+        )
       ) : null}
-      {tab === "prices" ? <PricesSection prices={prices} busy={busy} run={run} /> : null}
-      {tab === "consignors" ? <ConsignorsSection consignors={consignors} busy={busy} run={run} /> : null}
+      {tab === "prices" ? (
+        prices === null ? <SectionCardSkeleton rows={4} /> : <PricesSection prices={prices} busy={busy} run={run} />
+      ) : null}
+      {tab === "consignors" ? (
+        consignors === null ? (
+          <SectionCardSkeleton rows={4} />
+        ) : (
+          <ConsignorsSection consignors={consignors} busy={busy} run={run} />
+        )
+      ) : null}
       {tab === "reports" ? <ReportsSection busy={busy} run={run} /> : null}
     </IndustryManagerShell>
   );

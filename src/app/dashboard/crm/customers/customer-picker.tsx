@@ -12,7 +12,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { toPersianDigits } from "@/lib/digits";
 import { formatPhoneDisplay } from "@/lib/phone";
-import { EmptyState } from "../../page-chrome";
+import { EmptyState, LoadingSkeleton } from "../../page-chrome";
 import { api, inputClass } from "../../ui";
 import { crmCustomerHref } from "../crm-routes";
 
@@ -25,20 +25,32 @@ interface Match {
 export function CustomerPicker({ directoryHref }: { directoryHref: string }) {
   const [query, setQuery] = useState("");
   const [matches, setMatches] = useState<Match[] | null>(null);
+  const [searching, setSearching] = useState(false);
 
   useEffect(() => {
     if (query.trim().length < 2) {
       setMatches(null);
+      setSearching(false);
       return;
     }
+    let cancelled = false;
+    setSearching(true);
     const timer = setTimeout(() => {
-      api<{ customers: Match[] }>(`/api/customers?q=${encodeURIComponent(query.trim())}`).then(
-        ({ ok, data }) => {
-          if (ok) setMatches(data.customers);
-        },
-      );
+      void api<{ customers: Match[] }>(`/api/customers?q=${encodeURIComponent(query.trim())}`)
+        .then(({ ok, data }) => {
+          if (!cancelled) setMatches(ok ? data.customers : []);
+        })
+        .catch(() => {
+          if (!cancelled) setMatches([]);
+        })
+        .finally(() => {
+          if (!cancelled) setSearching(false);
+        });
     }, 250);
-    return () => clearTimeout(timer);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [query]);
 
   return (
@@ -51,7 +63,9 @@ export function CustomerPicker({ directoryHref }: { directoryHref: string }) {
         autoFocus
       />
 
-      {matches === null ? (
+      {searching ? (
+        <LoadingSkeleton rows={3} compact label="در حال جست‌وجوی مشتری" />
+      ) : matches === null ? (
         <p className="text-xs text-muted-foreground">
           حداقل دو نویسه بنویسید. برای مدیریت فهرست کامل،{" "}
           <Link href={directoryHref} className="underline">

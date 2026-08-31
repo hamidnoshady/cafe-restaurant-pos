@@ -255,16 +255,66 @@ export function SubNav({
 }
 
 /** Placeholder rows while a list loads, so a page never flashes empty. */
-export function SkeletonRows({ rows = 4 }: { rows?: number }) {
+export function SkeletonRows({
+  rows = 4,
+  label = "در حال بارگذاری اطلاعات",
+  className,
+}: {
+  rows?: number;
+  label?: string;
+  className?: string;
+}) {
   return (
-    <div className="space-y-2" aria-hidden>
-      {Array.from({ length: rows }).map((_, i) => (
-        <div
-          key={i}
-          className="h-12 animate-pulse rounded-xl border border-white/5 bg-white/3"
-          style={{ animationDelay: `${i * 90}ms` }}
-        />
-      ))}
+    <div
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+      aria-label={label}
+      className={`space-y-2 ${className ?? ""}`}
+    >
+      <div aria-hidden="true" className="space-y-2">
+        {Array.from({ length: rows }).map((_, i) => (
+          <div
+            key={i}
+            className="h-12 animate-pulse rounded-xl border border-white/5 bg-white/3 motion-reduce:animate-none"
+            style={{ animationDelay: `${i * 90}ms` }}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Page-shaped fallback for navigation and the console's initial auth check. */
+export function PlatformPageSkeleton({ fullScreen = false }: { fullScreen?: boolean }) {
+  return (
+    <div
+      className={fullScreen ? "min-h-screen bg-slate-950 p-4 sm:p-8" : "min-w-0"}
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+      aria-label="در حال بارگذاری صفحه مدیریت"
+    >
+      <div className="mx-auto w-full max-w-6xl" aria-hidden="true">
+        <div className="mb-6 flex items-start justify-between gap-4 border-b border-white/10 pb-5">
+          <div className="min-w-0 flex-1 space-y-3">
+            <div className="h-7 w-48 animate-pulse rounded-lg bg-white/8 motion-reduce:animate-none" />
+            <div className="h-3.5 w-[30rem] max-w-full animate-pulse rounded bg-white/5 motion-reduce:animate-none" />
+          </div>
+          <div className="h-9 w-24 shrink-0 animate-pulse rounded-lg bg-white/8 motion-reduce:animate-none" />
+        </div>
+        <div className="mb-5 grid gap-3 sm:grid-cols-3">
+          {[0, 1, 2].map((item) => (
+            <div key={item} className="space-y-3 rounded-xl border border-white/10 bg-white/3 p-4">
+              <div className="h-3 w-20 animate-pulse rounded bg-white/5 motion-reduce:animate-none" />
+              <div className="h-7 w-24 animate-pulse rounded bg-white/8 motion-reduce:animate-none" />
+            </div>
+          ))}
+        </div>
+        <div className="rounded-xl border border-white/10 bg-white/3 p-4 sm:p-5">
+          <SkeletonRows rows={6} />
+        </div>
+      </div>
     </div>
   );
 }

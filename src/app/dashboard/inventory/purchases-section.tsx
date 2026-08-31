@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
+
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useCallback, useEffect, useState, useMemo } from "react";
 import Decimal from "decimal.js";
@@ -584,7 +586,7 @@ export function PurchasesSection({
                 {isExpanded ? (
                   <div className="mt-3 rounded-xl border border-border bg-muted/30 p-3">
                     {!detail ? (
-                      <p className="text-xs text-muted-foreground">در حال بارگذاری…</p>
+                      <LoadingSkeleton rows={3} compact />
                     ) : editing ? (
                       <form onSubmit={saveEdit} className="space-y-3">
                         <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-3">

@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
+
 /**
  * The CRM app's customer directory (Phase 36).
  *
@@ -178,7 +180,7 @@ export function DirectorySection({ role }: { role: string }) {
         </div>
 
         {!customers ? (
-          <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>
+          <LoadingSkeleton rows={3} />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">

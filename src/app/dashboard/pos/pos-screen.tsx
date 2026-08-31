@@ -185,6 +185,7 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
   const [couriers, setCouriers] = useState<Courier[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [customerQuery, setCustomerQuery] = useState("");
+  const [customerSearchLoading, setCustomerSearchLoading] = useState(true);
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [activeCategory, setActiveCategory] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState("");
@@ -236,7 +237,7 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
   // The ways this business takes money, in its own order — no longer three
   // hard-coded buttons. `paymentDraft` is what the cashier has chosen,
   // including a split across several of them (src/lib/payment-draft.ts).
-  const { methods: paymentMethods } = usePaymentMethods();
+  const { methods: paymentMethods, loaded: paymentMethodsLoaded } = usePaymentMethods();
   const [paymentDraft, setPaymentDraft] = useState<PaymentDraft>(() =>
     emptyPaymentDraft([]),
   );
@@ -305,17 +306,27 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
    * query on mount is what fills the picker with the most recent customers.
    */
   useEffect(() => {
+    let cancelled = false;
+    setCustomerSearchLoading(true);
     const timer = setTimeout(
       () => {
-        api<{ customers?: Customer[] }>(
+        void api<{ customers?: Customer[] }>(
           "/api/customers?q=" + encodeURIComponent(customerQuery.trim()),
-        ).then(({ ok, data }) => {
-          if (ok) setCustomers(data.customers ?? []);
-        });
+        )
+          .then(({ ok, data }) => {
+            if (!cancelled && ok) setCustomers(data.customers ?? []);
+          })
+          .catch(() => undefined)
+          .finally(() => {
+            if (!cancelled) setCustomerSearchLoading(false);
+          });
       },
       customerQuery.trim() ? 250 : 0,
     );
-    return () => clearTimeout(timer);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [customerQuery]);
 
   const activeCategories = useMemo(
@@ -1526,6 +1537,7 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
             options={customerOptions}
             onChange={selectCustomer}
             onQueryChange={setCustomerQuery}
+            loading={customerSearchLoading}
           />
         </div>
 
@@ -1804,6 +1816,7 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
                 options={customerOptions}
                 onChange={selectCustomer}
                 onQueryChange={setCustomerQuery}
+                loading={customerSearchLoading}
               />
             </div>
             <div className="p-4">
@@ -1978,6 +1991,7 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
                 <section aria-label="روش دریافت وجه">
                   <PaymentWays
                     methods={paymentMethods}
+                    loaded={paymentMethodsLoaded}
                     draft={paymentDraft}
                     onChange={setPaymentDraft}
                     due={totals.total}
@@ -2492,11 +2506,13 @@ function CustomerField({
   options,
   onChange,
   onQueryChange,
+  loading,
 }: {
   value: string;
   options: SelectOption[];
   onChange: (value: string) => void;
   onQueryChange: (query: string) => void;
+  loading: boolean;
 }) {
   return (
     <label className="mt-3 block text-xs font-semibold text-stone-600">
@@ -2506,6 +2522,7 @@ function CustomerField({
         value={value}
         onChange={onChange}
         onQueryChange={onQueryChange}
+        loading={loading}
         options={options}
         ariaLabel="انتخاب مشتری"
         placeholder="بدون مشتری"

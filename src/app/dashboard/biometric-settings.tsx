@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
+
 import { useEffect, useState } from "react";
 import { browserSupportsWebAuthn, startRegistration } from "@simplewebauthn/browser";
 import { formatJalali } from "@/lib/jalali";
@@ -63,10 +65,18 @@ function BiometricPanel({ onClose }: { onClose: () => void }) {
   const [label, setLabel] = useState("");
 
   async function load() {
-    const res = await fetch("/api/auth/webauthn/credentials");
-    if (res.ok) {
-      const data: { credentials: Credential[] } = await res.json();
-      setCredentials(data.credentials);
+    try {
+      const res = await fetch("/api/auth/webauthn/credentials");
+      if (res.ok) {
+        const data: { credentials: Credential[] } = await res.json();
+        setCredentials(data.credentials);
+      } else {
+        setCredentials([]);
+        setError("بارگذاری دستگاه‌های ثبت‌شده ممکن نشد.");
+      }
+    } catch {
+      setCredentials([]);
+      setError("بارگذاری دستگاه‌های ثبت‌شده ممکن نشد.");
     }
   }
 
@@ -131,7 +141,7 @@ function BiometricPanel({ onClose }: { onClose: () => void }) {
           به‌جای پین، با اثر انگشت یا چهره این دستگاه وارد شوید. برای هر دستگاهی که استفاده می‌کنید جداگانه ثبت‌نام کنید.
         </p>
 
-        {credentials === null && <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>}
+        {credentials === null && <LoadingSkeleton rows={3} />}
         {credentials !== null && credentials.length === 0 && (
           <p className="mb-3 text-sm text-muted-foreground">هنوز دستگاهی ثبت نشده است.</p>
         )}

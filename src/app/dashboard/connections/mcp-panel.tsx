@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
+
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
 /**
  * «دستیارهای هوش مصنوعی» — connecting Claude, ChatGPT, Codex and anything else
@@ -368,7 +370,7 @@ export function McpPanel() {
 
       <SectionCard title="اتصال‌های موجود">
         {loading ? (
-          <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>
+          <LoadingSkeleton rows={3} />
         ) : connections.length === 0 ? (
           <p className="text-sm text-muted-foreground">هنوز هیچ دستیاری به این کسب‌وکار وصل نشده است.</p>
         ) : (

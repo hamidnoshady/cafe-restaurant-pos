@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
+
 /**
  * The assistant's own in-app navigation (Phase 36b revision).
  *
@@ -77,7 +79,7 @@ export function AiSidebar({
 
       <nav aria-label="مکالمه‌ها" className="min-w-0 flex-1 space-y-1 overflow-y-auto p-2">
         {loading ? (
-          <p className="px-2 py-3 text-sm text-stone-400">در حال بارگذاری…</p>
+          <LoadingSkeleton rows={4} compact className="px-2 py-3" />
         ) : conversations.length === 0 ? (
           <p className="px-2 py-3 text-sm text-stone-400">هنوز مکالمه‌ای ثبت نشده است.</p>
         ) : (

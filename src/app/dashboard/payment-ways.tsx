@@ -17,6 +17,7 @@ import {
 } from "@/lib/payment-draft";
 import type { PaymentMethodView, PaymentSettlement } from "@/lib/payment-methods";
 import { api } from "./ui";
+import { Skeleton } from "@/components/ui/skeleton";
 
 /** A settlement's icon — a way a business added is recognisable by how it settles. */
 const SETTLEMENT_ICONS: Record<PaymentSettlement, typeof BanknoteIcon> = {
@@ -49,10 +50,12 @@ export function usePaymentMethods(): {
   const [loaded, setLoaded] = useState(false);
 
   const reload = useCallback(() => {
-    void api<{ paymentMethods: PaymentMethodView[] }>("/api/payment-methods").then(({ ok, data }) => {
-      if (ok) setMethods(data.paymentMethods ?? []);
-      setLoaded(true);
-    });
+    void api<{ paymentMethods: PaymentMethodView[] }>("/api/payment-methods")
+      .then(({ ok, data }) => {
+        if (ok) setMethods(data.paymentMethods ?? []);
+      })
+      .catch(() => undefined)
+      .finally(() => setLoaded(true));
   }, []);
 
   useEffect(reload, [reload]);
@@ -72,11 +75,13 @@ export interface PaymentWaysProps {
   /** The bill the split has to cover, in Rial. */
   due: number;
   disabled?: boolean;
+  /** False only during the hook's first request; prevents a false "no methods" state. */
+  loaded?: boolean;
   /** Distinguishes the ids of two panels rendered at once (the POS has a desktop and a sheet copy). */
   idPrefix?: string;
 }
 
-export function PaymentWays({ methods, draft, onChange, due, disabled, idPrefix = "pay" }: PaymentWaysProps) {
+export function PaymentWays({ methods, draft, onChange, due, disabled, loaded = true, idPrefix = "pay" }: PaymentWaysProps) {
   const money = useMoney();
   const remaining = draftRemaining(draft, due, money.unit);
 
@@ -131,28 +136,42 @@ export function PaymentWays({ methods, draft, onChange, due, disabled, idPrefix 
         </button>
       </div>
 
-      <div className="grid grid-cols-3 gap-2">
-        {methods.map((method) => {
-          const Icon = paymentWayIcon(method);
-          const selected = !draft.split && draft.methodId === method.id;
-          return (
-            <button
-              key={method.id}
-              type="button"
-              onClick={() => chooseWay(method.id)}
-              disabled={disabled}
-              className={
-                "flex min-h-14 items-center justify-center gap-2 rounded-xl border px-2 text-center text-sm font-bold transition duration-200 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 disabled:opacity-55 motion-reduce:transition-none " +
-                (selected ? CHIP_ON : CHIP_OFF)
-              }
-            >
-              <Icon className="size-4 shrink-0" aria-hidden="true" />
-              <span className="min-w-0 truncate">{method.name}</span>
-            </button>
-          );
-        })}
-      </div>
-      {methods.length === 0 ? (
+      {!loaded ? (
+        <div
+          className="grid grid-cols-3 gap-2"
+          role="status"
+          aria-live="polite"
+          aria-busy="true"
+          aria-label="در حال بارگذاری روش‌های دریافت وجه"
+        >
+          {[0, 1, 2].map((item) => (
+            <Skeleton key={item} aria-hidden="true" className="h-14 rounded-xl" />
+          ))}
+        </div>
+      ) : (
+        <div className="grid grid-cols-3 gap-2">
+          {methods.map((method) => {
+            const Icon = paymentWayIcon(method);
+            const selected = !draft.split && draft.methodId === method.id;
+            return (
+              <button
+                key={method.id}
+                type="button"
+                onClick={() => chooseWay(method.id)}
+                disabled={disabled}
+                className={
+                  "flex min-h-14 items-center justify-center gap-2 rounded-xl border px-2 text-center text-sm font-bold transition duration-200 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 disabled:opacity-55 motion-reduce:transition-none " +
+                  (selected ? CHIP_ON : CHIP_OFF)
+                }
+              >
+                <Icon className="size-4 shrink-0" aria-hidden="true" />
+                <span className="min-w-0 truncate">{method.name}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {loaded && methods.length === 0 ? (
         <p className="mt-2 text-xs text-stone-400">روشی برای دریافت وجه تعریف نشده است.</p>
       ) : null}
 

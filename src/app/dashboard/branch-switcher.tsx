@@ -12,6 +12,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface Branch {
   id: string;
@@ -32,16 +33,36 @@ export function BranchSwitcher({ compact = false }: { compact?: boolean }) {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const res = await fetch("/api/locations/active");
-      if (!res.ok || cancelled) return;
-      setState(await res.json());
+      try {
+        const res = await fetch("/api/locations/active");
+        if (!res.ok || cancelled) {
+          if (!cancelled) setState({ active: null, locations: [], canSwitch: false });
+          return;
+        }
+        setState(await res.json());
+      } catch {
+        if (!cancelled) setState({ active: null, locations: [], canSwitch: false });
+      }
     })();
     return () => {
       cancelled = true;
     };
   }, []);
 
-  if (!state?.canSwitch || !state.active) return null;
+  if (state === null) {
+    return (
+      <div
+        role="status"
+        aria-live="polite"
+        aria-busy="true"
+        aria-label="در حال بارگذاری شعبه فعال"
+        className={compact ? "" : "mb-3"}
+      >
+        <Skeleton aria-hidden="true" className={compact ? "h-11 w-40 rounded-xl" : "h-12 w-full rounded-lg"} />
+      </div>
+    );
+  }
+  if (!state.canSwitch || !state.active) return null;
 
   async function switchTo(locationId: string) {
     if (locationId === state?.active?.id) return;

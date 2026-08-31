@@ -9,7 +9,7 @@
  * never shows two usable codes.
  */
 import { useCallback, useEffect, useState } from "react";
-import { api, errorMessage, Button, Card, ErrorBox, InfoBox, useCan } from "../../ui";
+import { api, errorMessage, Button, Card, ErrorBox, InfoBox, useCan, SkeletonRows } from "../../ui";
 import { useBusiness } from "./context";
 
 interface PairingCodeSummary {
@@ -40,7 +40,7 @@ export function PairingPanel() {
   const can = useCan();
   const allowed = can("business.provision");
 
-  const [codes, setCodes] = useState<PairingCodeSummary[]>([]);
+  const [codes, setCodes] = useState<PairingCodeSummary[] | null>(null);
   const [issuedCode, setIssuedCode] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -130,7 +130,9 @@ export function PairingPanel() {
         {busy ? "در حال ساخت…" : "ساخت کد اتصال"}
       </Button>
 
-      {codes.length === 0 ? (
+      {codes === null ? (
+        <SkeletonRows rows={3} className="mt-4" />
+      ) : codes.length === 0 ? (
         <p className="mt-4 text-sm text-white/40">هنوز کدی صادر نشده است.</p>
       ) : (
         <div className="mt-4 space-y-2">

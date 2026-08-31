@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
+
 import { useCallback, useEffect, useState } from "react";
 import { ChevronDownIcon, ChevronUpIcon, TrashIcon } from "lucide-react";
 import { CUSTOM_PAYMENT_SETTLEMENTS, type PaymentMethodView, type PaymentSettlement } from "@/lib/payment-methods";
@@ -100,7 +102,7 @@ export function PaymentMethodsSettings() {
     );
   }
 
-  if (loading) return <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>;
+  if (loading) return <LoadingSkeleton rows={3} />;
 
   return (
     <div className="space-y-6">

@@ -1,5 +1,7 @@
 "use client";
 
+import { SectionCardSkeleton } from "@/app/dashboard/page-chrome";
+
 import { useCallback, useEffect, useState } from "react";
 import { CheckIcon, Loader2Icon, RotateCcwIcon, WandSparklesIcon } from "lucide-react";
 import { toast } from "sonner";
@@ -156,9 +158,7 @@ export function AiAutopilotActivity() {
 
   if (loading) {
     return (
-      <SectionCard bodyClassName="min-w-0 p-4 text-sm text-muted-foreground sm:p-5">
-        <Loader2Icon className="me-2 inline size-4 animate-spin" /> در حال خواندن سابقهٔ اجرای خودکار…
-      </SectionCard>
+      <SectionCardSkeleton rows={4} label="در حال خواندن سابقه اجرای خودکار" />
     );
   }
 

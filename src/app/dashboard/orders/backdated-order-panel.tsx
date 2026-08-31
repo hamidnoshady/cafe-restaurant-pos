@@ -21,6 +21,7 @@ import { formatJalali } from "@/lib/jalali";
 import { useMoney } from "@/components/money/money-context";
 import { JalaliDatePicker } from "../jalali-date-picker";
 import { api, errorMessage } from "../ui";
+import { LoadingSkeleton } from "../page-chrome";
 import { CARD, DANGER_BUTTON, OPS_INPUT, PRIMARY_BUTTON, SECONDARY_BUTTON, STEPPER_BUTTON } from "./ops-styles";
 
 interface MenuItem {
@@ -89,6 +90,7 @@ export function BackdatedOrderPanel() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
+  const [loaded, setLoaded] = useState(false);
 
   const loadEntries = useCallback(async () => {
     const { ok, data } = await api<{ entries: BackdatedEntry[] }>("/api/orders/backdated");
@@ -96,15 +98,19 @@ export function BackdatedOrderPanel() {
   }, []);
 
   useEffect(() => {
-    void api<{ items: MenuItem[] }>("/api/menu").then(({ ok, data }) => {
-      if (ok) setMenuItems((data.items ?? []).filter((item) => item.is_active !== false));
-    });
-    void api<{ paymentMethods: PaymentMethod[] }>("/api/payment-methods").then(({ ok, data }) => {
-      if (!ok) return;
-      setPaymentMethods(data.paymentMethods ?? []);
-      setMethodId((current) => current || (data.paymentMethods ?? [])[0]?.id || "");
-    });
-    void loadEntries();
+    void Promise.all([
+      api<{ items: MenuItem[] }>("/api/menu").then(({ ok, data }) => {
+        if (ok) setMenuItems((data.items ?? []).filter((item) => item.is_active !== false));
+      }),
+      api<{ paymentMethods: PaymentMethod[] }>("/api/payment-methods").then(({ ok, data }) => {
+        if (!ok) return;
+        setPaymentMethods(data.paymentMethods ?? []);
+        setMethodId((current) => current || (data.paymentMethods ?? [])[0]?.id || "");
+      }),
+      loadEntries(),
+    ])
+      .catch(() => setError("بارگذاری اطلاعات سفارش گذشته ممکن نشد."))
+      .finally(() => setLoaded(true));
   }, [loadEntries]);
 
   const selectedMethod = paymentMethods.find((method) => method.id === methodId) ?? null;
@@ -169,6 +175,14 @@ export function BackdatedOrderPanel() {
     );
     reset();
     void loadEntries();
+  }
+
+  if (!loaded) {
+    return (
+      <section className={`${CARD} p-4`}>
+        <LoadingSkeleton rows={6} label="در حال بارگذاری فرم سفارش گذشته" />
+      </section>
+    );
   }
 
   return (

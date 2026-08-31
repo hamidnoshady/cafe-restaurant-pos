@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Loader2Icon } from "lucide-react";
+import { FormLoadingSkeleton } from "@/components/form-loading-skeleton";
 import { ModeChoice } from "./mode-choice";
 import { PairForm } from "./pair-form";
 import {
@@ -40,9 +41,11 @@ export default function WelcomePage() {
 
   if (checking) {
     return (
-      <div className="flex min-h-screen items-center justify-center text-sm text-muted-foreground">
-        در حال بررسی…
-      </div>
+      <main className="flex min-h-screen items-center justify-center p-4">
+        <div className="w-full max-w-md rounded-2xl border border-stone-200/80 bg-card p-6 shadow-[0_1px_2px_rgb(41_37_36/0.035)]">
+          <FormLoadingSkeleton rows={3} label="در حال بررسی وضعیت راه‌اندازی" />
+        </div>
+      </main>
     );
   }
 

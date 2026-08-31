@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
+
 /**
  * Phase 20 Wave 4 — pairs *this* browser/terminal as a registered device and
  * lists/revokes every device paired for the business. Pairing is the only
@@ -131,7 +133,7 @@ export function DeviceSettings() {
       </SectionCard>
 
       <SectionCard title="دستگاه‌های ثبت‌شده">
-        {devices === null && <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>}
+        {devices === null && <LoadingSkeleton rows={3} />}
         {devices !== null && devices.length === 0 && (
           <p className="text-sm text-muted-foreground">هنوز دستگاهی ثبت نشده است.</p>
         )}

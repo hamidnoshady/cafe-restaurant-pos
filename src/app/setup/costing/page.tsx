@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { api, ErrorBox, errorMessage, InfoBox, PrimaryButton, StepShell } from "../ui";
+import { api, ErrorBox, errorMessage, InfoBox, PrimaryButton, SetupDataSkeleton, StepShell } from "../ui";
 import { nextPath, skipToPath, stepsFor } from "../steps";
 import { useSetupIndustry } from "../industry-context";
 import { industryProfile, type SalesModel } from "@/lib/industry-profile";
@@ -82,6 +82,7 @@ export default function CostingStep() {
   const copy = COPY[industryProfile(industry).salesModel];
   const [method, setMethod] = useState<Method>("weighted_average");
   const [locked, setLocked] = useState(false);
+  const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -90,13 +91,22 @@ export default function CostingStep() {
       router.replace(skipToPath("costing", steps));
       return;
     }
-    api<CostingResponse>("/api/setup/costing").then(({ data }) => {
-      if (data.costing?.method) setMethod(data.costing.method);
-      setLocked(Boolean(data.locked));
-    });
-  }, [available]);
+    setLoaded(false);
+    void api<CostingResponse>("/api/setup/costing")
+      .then(({ ok, data }) => {
+        if (!ok) {
+          setError(errorMessage(data.error));
+          return;
+        }
+        if (data.costing?.method) setMethod(data.costing.method);
+        setLocked(Boolean(data.locked));
+      })
+      .catch(() => setError("بارگذاری روش قیمت‌گذاری ممکن نشد."))
+      .finally(() => setLoaded(true));
+  }, [available, router]);
 
   if (!available) return null;
+  if (!loaded) return <SetupDataSkeleton rows={2} />;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();

@@ -25,6 +25,7 @@ import {
 } from "@/lib/business-day";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface BusinessDayInfo {
   enabled: boolean;
@@ -50,6 +51,7 @@ export function BusinessDayRangePresets({
   onClear: () => void;
 }) {
   const [info, setInfo] = useState<BusinessDayInfo | null>(null);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -61,7 +63,10 @@ export function BusinessDayRangePresets({
       // A branch with no business day still gets working presets from the
       // buttons below once this resolves; a failure just leaves them disabled
       // rather than guessing a date the server did not give us.
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setLoaded(true);
+      });
     return () => {
       cancelled = true;
     };
@@ -69,22 +74,36 @@ export function BusinessDayRangePresets({
 
   return (
     <div className="mt-3">
-      <div className="flex flex-wrap items-center gap-2">
-        {PRESETS.map((preset) => (
-          <button
-            key={preset.key}
-            type="button"
-            disabled={!info}
-            onClick={() => info && onSelect(businessDateRange(preset.key, info.businessDate))}
-            className={CHIP_CLASS + " disabled:opacity-50"}
-          >
-            {preset.label}
+      {!loaded ? (
+        <div
+          role="status"
+          aria-live="polite"
+          aria-busy="true"
+          aria-label="در حال بارگذاری بازه‌های روز کاری"
+          className="flex flex-wrap items-center gap-2"
+        >
+          {[0, 1, 2, 3, 4].map((item) => (
+            <Skeleton key={item} aria-hidden="true" className="h-9 w-24 rounded-lg" />
+          ))}
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-center gap-2">
+          {PRESETS.map((preset) => (
+            <button
+              key={preset.key}
+              type="button"
+              disabled={!info}
+              onClick={() => info && onSelect(businessDateRange(preset.key, info.businessDate))}
+              className={CHIP_CLASS + " disabled:opacity-50"}
+            >
+              {preset.label}
+            </button>
+          ))}
+          <button type="button" onClick={onClear} className={CHIP_CLASS}>
+            همهٔ داده‌ها
           </button>
-        ))}
-        <button type="button" onClick={onClear} className={CHIP_CLASS}>
-          همهٔ داده‌ها
-        </button>
-      </div>
+        </div>
+      )}
 
       {info?.enabled && info.startMinutes !== null ? (
         <p className="mt-2 text-xs text-stone-500">

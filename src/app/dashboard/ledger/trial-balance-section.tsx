@@ -1,5 +1,7 @@
 "use client";
 
+import { SectionCardSkeleton } from "@/app/dashboard/page-chrome";
+
 import { useEffect, useState } from "react";
 import { useMoney } from "@/components/money/money-context";
 import { api } from "../ui";
@@ -40,13 +42,7 @@ export function TrialBalanceSection({ refreshKey }: { refreshKey: number }) {
 
   if (!data) {
     return (
-      <section
-        aria-live="polite"
-        aria-label="در حال بارگذاری تراز آزمایشی"
-        className="rounded-2xl border border-stone-200/80 bg-white px-5 py-6 text-sm text-stone-500 shadow-[0_1px_2px_rgb(41_37_36/0.03)]"
-      >
-        در حال بارگذاری…
-      </section>
+      <SectionCardSkeleton rows={4} label="در حال بارگذاری تراز آزمایشی" />
     );
   }
 

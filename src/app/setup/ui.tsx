@@ -6,6 +6,7 @@ import { useState } from "react";
 import { CircleAlertIcon, InfoIcon } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { nextPath, prevPath, stepIndex, stepsFor, STEPS } from "./steps";
 import type { WizardStep } from "@/lib/wizard-steps";
 import { useSetupIndustry } from "./industry-context";
@@ -136,6 +137,32 @@ export function SecondaryButton({
     <Button type="button" variant="outline" onClick={onClick} disabled={disabled} className="px-4">
       {children}
     </Button>
+  );
+}
+
+/** Data-shaped fallback for client-loaded wizard steps. */
+export function SetupDataSkeleton({ rows = 4 }: { rows?: number }) {
+  return (
+    <div role="status" aria-live="polite" aria-busy="true" aria-label="در حال بارگذاری اطلاعات مرحله">
+      <div aria-hidden="true" className="space-y-6">
+        <header className="space-y-2">
+          <Skeleton className="h-7 w-44" />
+          <Skeleton className="h-4 w-[28rem] max-w-full" />
+        </header>
+        <div className="space-y-4">
+          {Array.from({ length: rows }, (_, row) => (
+            <div key={row} className="space-y-2">
+              <Skeleton className="h-4 w-24" />
+              <Skeleton className="h-10 w-full rounded-lg" />
+            </div>
+          ))}
+        </div>
+        <div className="flex justify-between border-t border-stone-200/80 pt-4">
+          <Skeleton className="h-10 w-24 rounded-lg" />
+          <Skeleton className="h-10 w-28 rounded-lg" />
+        </div>
+      </div>
+    </div>
   );
 }
 

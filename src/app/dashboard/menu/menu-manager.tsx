@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
+
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import {
   useCallback,
@@ -104,7 +106,7 @@ export function MenuManager() {
   }
 
   if (!data)
-    return <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>;
+    return <LoadingSkeleton rows={3} />;
 
   return (
     <div className="space-y-8">
@@ -618,12 +620,12 @@ function PricingPanel({
 
   const load = useCallback(() => {
     setLoading(true);
-    api<{ suggestion: SuggestedPrice }>(
+    void api<{ suggestion: SuggestedPrice }>(
       `/api/menu/items/${item.id}/suggested-price`,
-    ).then(({ ok, data }) => {
-      setSuggestion(ok ? data.suggestion : null);
-      setLoading(false);
-    });
+    )
+      .then(({ ok, data }) => setSuggestion(ok ? data.suggestion : null))
+      .catch(() => setSuggestion(null))
+      .finally(() => setLoading(false));
   }, [item.id]);
 
   useEffect(() => {
@@ -659,7 +661,7 @@ function PricingPanel({
   return (
     <div className="mt-2 space-y-2 rounded-xl border border-stone-200/80 bg-stone-50/60 p-3 text-xs">
       {loading ? (
-        <p className="text-muted-foreground">در حال محاسبه…</p>
+        <LoadingSkeleton rows={2} compact label="در حال محاسبه قیمت پیشنهادی" />
       ) : !suggestion ? (
         <p className="text-muted-foreground">محاسبه ممکن نشد.</p>
       ) : (

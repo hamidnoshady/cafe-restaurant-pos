@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
+
 import { useCallback, useEffect, useState } from "react";
 import { ACCOUNT_TYPES, FNB_COA_TEMPLATE, type AccountType, type TemplateAccount } from "@/lib/coa-template";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -96,7 +98,7 @@ export function AccountsSettings() {
     setSaved(true);
   }
 
-  if (loading) return <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>;
+  if (loading) return <LoadingSkeleton rows={3} />;
 
   return (
     <div className="space-y-6">

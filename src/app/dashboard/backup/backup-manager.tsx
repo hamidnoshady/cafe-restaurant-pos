@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
+
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
 /**
  * Backup dashboard (Phase 10). Four cards:
@@ -325,7 +327,7 @@ function RestoreCard({ onChanged }: { onChanged: () => void }) {
       ) : null}
 
       {!view ? (
-        <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>
+        <LoadingSkeleton rows={3} />
       ) : artifacts.length === 0 ? (
         <EmptyState>نسخهٔ پشتیبان {source === "local" ? "محلی" : "ابری"} موفقی یافت نشد.</EmptyState>
       ) : (
@@ -549,7 +551,7 @@ function StatusCard({
       {message ? <InfoBox>{message}</InfoBox> : null}
 
       {!health ? (
-        <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>
+        <LoadingSkeleton rows={3} />
       ) : (
         <>
           <div
@@ -578,7 +580,7 @@ function StatusCard({
 
       <h3 className="mb-2 mt-6 text-sm font-medium text-muted-foreground">اجراهای اخیر</h3>
       {!runs ? (
-        <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>
+        <LoadingSkeleton rows={3} />
       ) : runs.length === 0 ? (
         <p className="text-sm text-muted-foreground">هنوز پشتیبانی گرفته نشده است.</p>
       ) : (
@@ -650,7 +652,7 @@ function SettingsCard({ onSaved }: { onSaved: () => void }) {
   if (!config) {
     return (
       <SectionCard title="تنظیمات پشتیبان‌گیری">
-        <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>
+        <LoadingSkeleton rows={3} />
       </SectionCard>
     );
   }

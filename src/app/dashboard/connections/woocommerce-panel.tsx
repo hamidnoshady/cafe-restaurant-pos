@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
+
 /**
  * «فروشگاه ووکامرس» — the WooCommerce connection panel, carried over from the
  * old standalone `/dashboard/integrations` page and extended for the second
@@ -356,7 +358,7 @@ export function WooCommercePanel() {
 
       <SectionCard title="فروشگاه‌های متصل">
         {loading ? (
-          <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>
+          <LoadingSkeleton rows={3} />
         ) : connections.length === 0 ? (
           <p className="text-sm text-muted-foreground">هنوز فروشگاهی متصل نشده است.</p>
         ) : (

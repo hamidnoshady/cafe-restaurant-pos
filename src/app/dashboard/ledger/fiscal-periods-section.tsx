@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
+
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useEffect, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
@@ -131,7 +133,7 @@ export function FiscalPeriodsSection({
     setRefreshKey((k) => k + 1);
   }
 
-  if (!years) return <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>;
+  if (!years) return <LoadingSkeleton rows={3} />;
 
   const selectedYear = years.find((y) => y.id === selectedYearId) ?? null;
   const allPeriodsSoftClosed = (periods?.length ?? 0) > 0 && periods!.every((p) => p.status === "soft_closed");

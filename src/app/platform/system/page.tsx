@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 import { formatPersianNumber } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
-import { api, errorMessage, ErrorBox, Card, StatCard, InfoBox, fmtDate } from "../ui";
+import { api, errorMessage, ErrorBox, Card, StatCard, InfoBox, fmtDate, SkeletonRows } from "../ui";
 
 interface SystemStatus {
   migrations?: { filename: string; appliedAt: string }[];
@@ -70,7 +70,7 @@ export default function SystemPage() {
         <h1 className="mb-6 text-xl font-bold">سیستم</h1>
         <ErrorBox>{error}</ErrorBox>
         {!error ? (
-          <p className="text-sm text-white/50">در حال بارگذاری وضعیت سامانه…</p>
+          <SkeletonRows rows={5} label="در حال بارگذاری وضعیت سامانه" />
         ) : (
           <ButtonLikeRetry onClick={() => void load()} />
         )}

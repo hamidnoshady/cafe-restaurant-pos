@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
+
 import { useCallback, useEffect, useState } from "react";
 import { formatPersianNumber, toPersianDigits } from "@/lib/digits";
 import { useMoney } from "@/components/money/money-context";
@@ -64,7 +66,7 @@ export function ReportsSection() {
   }, []);
   useEffect(load, [load]);
 
-  if (!data) return <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>;
+  if (!data) return <LoadingSkeleton rows={3} />;
 
   return (
     <div className="min-w-0 space-y-4">

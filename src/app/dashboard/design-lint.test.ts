@@ -143,6 +143,15 @@ const RULES: readonly Rule[] = [
     pattern: /[a-z]+-\[#(?:[0-9a-fA-F]{3,8})\]|(?:fill|stroke)="#[0-9a-fA-F]{3,8}"/,
     allowed: [],
   },
+  {
+    id: "bare loading copy",
+    why: "Data-loading regions reserve their final shape with LoadingSkeleton/SectionCardSkeleton instead of showing a lone progress sentence (docs/design-system.md §Charts and loading).",
+    pattern: /<(?:p|div|span)\b[^>]*>\s*در حال (?:بارگذاری|خواندن|جستجو|جست‌وجو|محاسبه|آماده‌سازی پیش‌نمایش)[^<{]*</,
+    allowed: [
+      // Accessible-only copy paired with the structural skeleton below it.
+      "settings/business-settings.tsx",
+    ],
+  },
 ];
 
 /** relPath (posix) of every non-test .ts/.tsx file under src/app/dashboard. */

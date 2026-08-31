@@ -417,7 +417,7 @@ export default function BusinessesPage() {
   // useSearchParams needs a Suspense boundary at prerender; the shell keeps
   // the fallback cheap because the real list only ever depends on data anyway.
   return (
-    <Suspense>
+    <Suspense fallback={<SkeletonRows rows={8} label="در حال بارگذاری فهرست کسب‌وکارها" />}>
       <BusinessesListInner />
     </Suspense>
   );

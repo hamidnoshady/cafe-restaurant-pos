@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
+
 /**
  * Phase 21 Wave 7 — the item-level audit trail, shared by the jewelry and
  * watch boards (both sell high-value goods where "who changed this, and
@@ -52,7 +54,7 @@ export function ItemAuditPanel({ itemId }: { itemId: string }) {
 
   return (
     <div className="rounded-xl bg-amber-50/60 p-3 sm:p-4">
-      {trail === null ? <p className="text-xs text-muted-foreground">در حال بارگذاری…</p> : null}
+      {trail === null ? <LoadingSkeleton rows={3} compact /> : null}
       {trail?.length === 0 ? (
         <p className="text-xs text-muted-foreground">رویدادی ثبت نشده است.</p>
       ) : null}

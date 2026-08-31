@@ -18,6 +18,7 @@ import { useMoney } from "@/components/money/money-context";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import type { PaymentMethodView } from "@/lib/payment-methods";
 import { api, errorMessage } from "../ui";
+import { LoadingSkeleton } from "../page-chrome";
 import { usePaymentMethods } from "../payment-ways";
 import {
   DANGER_BUTTON,
@@ -111,12 +112,12 @@ export function ClosedOrderAmendment({
       : "",
   );
   const [method, setMethod] = useState("");
-  const { methods: paymentMethods } = usePaymentMethods();
+  const { methods: paymentMethods, loaded: paymentMethodsLoaded } = usePaymentMethods();
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
-  const [history, setHistory] = useState<AmendmentHistoryRow[]>([]);
+  const [history, setHistory] = useState<AmendmentHistoryRow[] | null>(null);
 
   const liveItems = useMemo(
     () => items.filter((item) => item.status !== "voided"),
@@ -136,9 +137,9 @@ export function ClosedOrderAmendment({
 
   const loadHistory = useMemo(
     () => () => {
-      api<{ amendments: AmendmentHistoryRow[] }>(
-        `/api/orders/${orderId}/amend`,
-      ).then(({ ok, data }) => ok && setHistory(data.amendments));
+      api<{ amendments: AmendmentHistoryRow[] }>(`/api/orders/${orderId}/amend`)
+        .then(({ ok, data }) => setHistory(ok ? data.amendments : []))
+        .catch(() => setHistory([]));
     },
     [orderId],
   );
@@ -413,13 +414,17 @@ export function ClosedOrderAmendment({
               />
             ) : null}
             <div className="min-w-0 flex-1">
-              <SearchableSelect
-                value={method}
-                onChange={setMethod}
-                ariaLabel="روش تسویه"
-                className={OPS_INPUT}
-                options={amendmentMethodOptions(paymentMethods)}
-              />
+              {!paymentMethodsLoaded ? (
+                <LoadingSkeleton rows={1} compact label="در حال بارگذاری روش‌های تسویه" />
+              ) : (
+                <SearchableSelect
+                  value={method}
+                  onChange={setMethod}
+                  ariaLabel="روش تسویه"
+                  className={OPS_INPUT}
+                  options={amendmentMethodOptions(paymentMethods)}
+                />
+              )}
             </div>
           </div>
 
@@ -464,7 +469,9 @@ export function ClosedOrderAmendment({
         </div>
       ) : null}
 
-      {history.length > 0 ? (
+      {history === null ? (
+        <LoadingSkeleton rows={2} compact className="mt-4 border-t border-destructive/30 pt-3" />
+      ) : history.length > 0 ? (
         <ul className="mt-4 space-y-1.5 border-t border-destructive/30 pt-3 text-xs leading-6 text-stone-500">
           {history.map((row) => (
             <li key={row.id}>

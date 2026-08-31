@@ -9,6 +9,7 @@ import { useMoney } from "@/components/money/money-context";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { api, Field, inputClass } from "../ui";
 import { JalaliDatePicker } from "../jalali-date-picker";
+import { SectionCardSkeleton } from "../page-chrome";
 
 const accInputClass = `${inputClass} min-h-[52px] !border-stone-200 !bg-white shadow-none placeholder:text-stone-400 focus-visible:border-amber-500 focus-visible:ring-amber-400/30`;
 
@@ -47,16 +48,24 @@ export function BatchesSection() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [done, setDone] = useState("");
+  const [loaded, setLoaded] = useState(false);
 
-  const load = useCallback(() => {
-    api<{ items: BatchItem[] }>("/api/cosmetics/items").then(({ ok, data }) => {
-      if (ok) setItems(data.items.filter((i) => i.tracking === "batch"));
-    });
-    api<{ rows: NearExpiryRow[] }>("/api/cosmetics/reports/near-expiry").then(({ ok, data }) => {
-      if (ok) setNearExpiry(data.rows);
-    });
+  const load = useCallback(async () => {
+    const [itemsResult, expiryResult] = await Promise.allSettled([
+      api<{ items: BatchItem[] }>("/api/cosmetics/items"),
+      api<{ rows: NearExpiryRow[] }>("/api/cosmetics/reports/near-expiry"),
+    ]);
+    if (itemsResult.status === "fulfilled" && itemsResult.value.ok) {
+      setItems(itemsResult.value.data.items.filter((i) => i.tracking === "batch"));
+    }
+    if (expiryResult.status === "fulfilled" && expiryResult.value.ok) {
+      setNearExpiry(expiryResult.value.data.rows);
+    }
+    setLoaded(true);
   }, []);
-  useEffect(load, [load]);
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   const batchItems = items.filter((i) => i.tracking === "batch");
 
@@ -103,6 +112,15 @@ export function BatchesSection() {
     }
     setDone("بچ منقضی از موجودی حذف و در حساب ۵۱۶۰ ثبت شد.");
     load();
+  }
+
+  if (!loaded) {
+    return (
+      <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_24rem]">
+        <SectionCardSkeleton rows={5} />
+        <SectionCardSkeleton rows={5} />
+      </div>
+    );
   }
 
   return (

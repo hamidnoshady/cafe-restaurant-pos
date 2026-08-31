@@ -10,7 +10,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { toPersianDigits, formatPersianNumber } from "@/lib/digits";
-import { api, errorMessage, useCan, ErrorBox, InfoBox, Card, Field, Button, inputClass } from "../ui";
+import { api, errorMessage, useCan, ErrorBox, InfoBox, Card, Field, Button, inputClass, PlatformPageSkeleton } from "../ui";
 
 interface ConfigView {
   s3Endpoint: string;
@@ -124,14 +124,7 @@ export default function UpdatesPage() {
     await load();
   }
 
-  if (loading) {
-    return (
-      <div className="mx-auto w-full max-w-4xl">
-        <h1 className="mb-6 text-xl font-bold">به‌روزرسانی نصب‌های محلی</h1>
-        <p className="text-sm text-white/50">در حال بارگذاری…</p>
-      </div>
-    );
-  }
+  if (loading) return <PlatformPageSkeleton />;
 
   return (
     <div className="mx-auto w-full max-w-4xl space-y-4 sm:space-y-6">

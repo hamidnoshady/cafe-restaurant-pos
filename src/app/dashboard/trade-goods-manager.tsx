@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, errorMessage as sharedErrorMessage } from "./ui";
 import { IndustryManagerShell, type Runner } from "./industry-manager-shell";
+import { SectionCardSkeleton } from "./page-chrome";
 import { VariantsSection } from "./accessories/variants-section";
 import { ReportsSection } from "./accessories/reports-section";
 
@@ -33,7 +34,7 @@ export function TradeGoodsManager({
   navLabel: string;
   errorTitle: string;
 }) {
-  const [items, setItems] = useState<TradeGoodsVariantRow[]>([]);
+  const [items, setItems] = useState<TradeGoodsVariantRow[] | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState<"items" | "reports">("items");
@@ -72,7 +73,13 @@ export function TradeGoodsManager({
       onTabChange={setTab}
       error={error}
     >
-      {tab === "items" ? <VariantsSection items={items} busy={busy} run={run} apiBase={apiBase} /> : null}
+      {tab === "items" ? (
+        items === null ? (
+          <SectionCardSkeleton rows={5} />
+        ) : (
+          <VariantsSection items={items} busy={busy} run={run} apiBase={apiBase} />
+        )
+      ) : null}
       {tab === "reports" ? <ReportsSection apiBase={apiBase} /> : null}
     </IndustryManagerShell>
   );

@@ -8,7 +8,7 @@ import { CameraScanTrigger } from "@/components/scanner/camera-barcode-scanner";
 import { formatPersianNumber, formatQuantity, toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import { useMoney } from "@/components/money/money-context";
-import { EmptyState, SectionCard } from "../page-chrome";
+import { EmptyState, LoadingSkeleton, SectionCard } from "../page-chrome";
 import { api, Field, inputClass } from "../ui";
 
 /**
@@ -77,13 +77,13 @@ export function StockCountSection({
   const [scanFeedback, setScanFeedback] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
   const [manualId, setManualId] = useState("");
   const [busy, setBusy] = useState(false);
-  const [history, setHistory] = useState<CountSummary[]>([]);
+  const [history, setHistory] = useState<CountSummary[] | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   const loadHistory = useCallback(() => {
-    api<{ counts: CountSummary[] }>("/api/stock/counts").then(({ ok, data }) => {
-      if (ok) setHistory(data.counts);
-    });
+    api<{ counts: CountSummary[] }>("/api/stock/counts")
+      .then(({ ok, data }) => setHistory(ok ? data.counts : []))
+      .catch(() => setHistory([]));
   }, []);
   useEffect(loadHistory, [loadHistory]);
 
@@ -341,7 +341,9 @@ export function StockCountSection({
         title="انبارگردانی‌های اخیر"
         description="یک انبارگردانی ثبت‌شده ویرایش نمی‌شود؛ برای اصلاح، آن را برگشت بزنید و شمارش تازه ثبت کنید."
       >
-        {history.length === 0 ? (
+        {history === null ? (
+          <LoadingSkeleton rows={4} />
+        ) : history.length === 0 ? (
           <EmptyState>انبارگردانی ثبت نشده است.</EmptyState>
         ) : (
           <ul className="mt-3 divide-y divide-stone-200/80 text-sm">

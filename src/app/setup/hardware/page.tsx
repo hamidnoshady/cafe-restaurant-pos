@@ -1,5 +1,7 @@
 "use client";
 
+import { SetupDataSkeleton } from "../ui";
+
 import { useCallback, useEffect, useState } from "react";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { kickDrawer, testPrint } from "@/lib/print-agent-client";
@@ -29,12 +31,13 @@ export default function HardwareStep() {
   const [ip, setIp] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [loaded, setLoaded] = useState(false);
   const [preview, setPreview] = useState("");
 
   const load = useCallback(() => {
     api<{ printers: Printer[] }>("/api/setup/hardware").then(({ data }) => {
       if (data.printers) setPrinters(data.printers);
-    });
+    }).finally(() => setLoaded(true));
   }, []);
   useEffect(load, [load]);
 
@@ -81,6 +84,8 @@ export default function HardwareStep() {
         : `${data.preview ?? ""}\n\n(دستگاه چاپ محلی در دسترس نیست — این فقط یک پیش‌نمایش شبیه‌سازی‌شده است.)`,
     );
   }
+
+  if (!loaded) return <SetupDataSkeleton rows={4} />;
 
   return (
     <StepShell

@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingSkeleton, SectionCardSkeleton } from "@/app/dashboard/page-chrome";
+
 /**
  * The 360° customer file (Phase 36) — the app's centrepiece.
  *
@@ -138,9 +140,7 @@ export function CustomerFileSection({ customerId, role }: { customerId: string; 
 
   if (!file) {
     return (
-      <div aria-live="polite" className={`px-5 py-6 text-sm text-stone-500 ${cardClass}`}>
-        در حال بارگذاری…
-      </div>
+      <SectionCardSkeleton rows={4} />
     );
   }
 
@@ -364,7 +364,7 @@ export function CustomerFileSection({ customerId, role }: { customerId: string; 
         }
       >
         {!events ? (
-          <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>
+          <LoadingSkeleton rows={3} />
         ) : events.length === 0 ? (
           <EmptyState>رویدادی برای نمایش نیست.</EmptyState>
         ) : (

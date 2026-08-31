@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ChevronDownIcon, ChevronUpIcon, Loader2Icon, MessageSquareIcon } from "lucide-react";
+import { ChevronDownIcon, ChevronUpIcon, MessageSquareIcon } from "lucide-react";
+import { LoadingSkeleton } from "../page-chrome";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useFeatureLocked } from "@/components/feature-lock";
@@ -65,7 +66,10 @@ export function AiRecentConversations({
         if (!cancelled) setItems(conversations.filter((item) => item.mode === "dashboard"));
       })
       .catch((reason: unknown) => {
-        if (!cancelled) toast.error(reason instanceof Error ? reason.message : "خواندن گفتگوهای اخیر ممکن نشد.");
+        if (!cancelled) {
+          setItems([]);
+          toast.error(reason instanceof Error ? reason.message : "خواندن گفتگوهای اخیر ممکن نشد.");
+        }
       });
     return () => {
       cancelled = true;
@@ -97,9 +101,7 @@ export function AiRecentConversations({
       </button>
 
       {collapsed ? null : items === null ? (
-        <p className="flex items-center gap-2 px-2 py-1.5 text-xs text-muted-foreground">
-          <Loader2Icon className="size-3.5 shrink-0 animate-spin" /> در حال خواندن…
-        </p>
+        <LoadingSkeleton rows={3} className="px-2 py-1.5" label="در حال خواندن گفتگوها" />
       ) : items.length === 0 ? (
         <p className="px-2 py-1.5 text-xs text-muted-foreground">هنوز گفتگویی ثبت نشده است.</p>
       ) : (

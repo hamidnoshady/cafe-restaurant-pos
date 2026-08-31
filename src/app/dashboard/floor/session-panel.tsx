@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
+
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -57,19 +59,29 @@ export function SessionPanel({
 }) {
   const money = useMoney();
   const [detail, setDetail] = useState<SessionDetail | null>(null);
+  const [detailLoaded, setDetailLoaded] = useState(false);
   const [freeTables, setFreeTables] = useState<{ id: string; name: string }[]>([]);
   const [mergeTableId, setMergeTableId] = useState("");
   const [showSplit, setShowSplit] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
-    const res = await api<SessionDetail>(`/api/table-sessions/${sessionId}`);
-    if (res.ok) setDetail(res.data);
-    const tRes = await api<{ tables: { id: string; name: string; status: string }[] }>("/api/tables");
-    if (tRes.ok) setFreeTables(tRes.data.tables.filter((t) => t.status === "free"));
-  }, [sessionId]);
+    try {
+      const res = await api<SessionDetail>(`/api/table-sessions/${sessionId}`);
+      if (res.ok) setDetail(res.data);
+      else setError("بارگذاری نشست میز ممکن نشد.");
+      const tRes = await api<{ tables: { id: string; name: string; status: string }[] }>("/api/tables");
+      if (tRes.ok) setFreeTables(tRes.data.tables.filter((t) => t.status === "free"));
+    } catch {
+      setError("بارگذاری نشست میز ممکن نشد.");
+    } finally {
+      setDetailLoaded(true);
+    }
+  }, [sessionId, setError]);
 
   useEffect(() => {
+    setDetail(null);
+    setDetailLoaded(false);
     void load();
   }, [load]);
 
@@ -90,7 +102,11 @@ export function SessionPanel({
     return true;
   }
 
-  if (!detail) return <p className="mt-4 text-xs text-muted-foreground">در حال بارگذاری نشست…</p>;
+  if (!detail) {
+    return detailLoaded ? null : (
+      <LoadingSkeleton rows={3} compact className="mt-4" label="در حال بارگذاری نشست" />
+    );
+  }
 
   const { session, tables, orders, bill } = detail;
 
@@ -192,6 +208,7 @@ function SplitDialog({
   });
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [customerQuery, setCustomerQuery] = useState("");
+  const [customersLoading, setCustomersLoading] = useState(true);
   const [assignments, setAssignments] = useState<Record<string, number>>({});
   const [shares, setShares] = useState<number[] | null>(null);
   const [shareCustomerNames, setShareCustomerNames] = useState<string[]>([]);
@@ -219,12 +236,22 @@ function SplitDialog({
   ], [guestCount]);
 
   useEffect(() => {
+    let cancelled = false;
+    setCustomersLoading(true);
     const timer = setTimeout(() => {
-      void api<{ customers: Customer[] }>(`/api/customers?q=${encodeURIComponent(customerQuery)}`).then(({ ok, data }) => {
-        if (ok) setCustomers(data.customers);
-      });
+      void api<{ customers: Customer[] }>(`/api/customers?q=${encodeURIComponent(customerQuery)}`)
+        .then(({ ok, data }) => {
+          if (!cancelled && ok) setCustomers(data.customers);
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          if (!cancelled) setCustomersLoading(false);
+        });
     }, customerQuery.trim() ? 200 : 0);
-    return () => clearTimeout(timer);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [customerQuery]);
 
   function setGuestCount(value: string) {
@@ -311,6 +338,7 @@ function SplitDialog({
                   value={customerIds[index] ?? ""}
                   onChange={(value) => setCustomerIds((previous) => previous.map((current, itemIndex) => itemIndex === index ? value || null : current))}
                   onQueryChange={setCustomerQuery}
+                  loading={customersLoading}
                   options={customerOptions}
                   ariaLabel={`مشتری مهمان ${index + 1}`}
                   searchPlaceholder="جستجوی نام یا شماره…"

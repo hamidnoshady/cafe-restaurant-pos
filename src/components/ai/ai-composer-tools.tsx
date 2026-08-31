@@ -15,12 +15,12 @@
 import { useEffect, useState } from "react";
 import {
   BarChart3Icon,
-  Loader2Icon,
   MessageSquareIcon,
   SearchIcon,
   SettingsIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import {
   DropdownMenu,
@@ -116,9 +116,16 @@ export function AiComposerTools({
               className="mb-2 w-full rounded-lg border border-input bg-transparent px-2.5 py-1.5 text-xs outline-none focus-visible:border-ring"
             />
             {searching ? (
-              <p className="flex items-center gap-1.5 px-1 py-1 text-[11px] text-muted-foreground">
-                <Loader2Icon className="size-3 animate-spin" /> در حال جست‌وجو…
-              </p>
+              <div
+                role="status"
+                aria-live="polite"
+                aria-busy="true"
+                aria-label="در حال جست‌وجو"
+                className="space-y-1.5 px-1 py-1"
+              >
+                <Skeleton aria-hidden="true" className="h-5 w-full rounded-md" />
+                <Skeleton aria-hidden="true" className="h-5 w-4/5 rounded-md" />
+              </div>
             ) : null}
             {noResults ? (
               <p className="px-1 py-1 text-[11px] text-muted-foreground">

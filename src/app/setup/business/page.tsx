@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { api, ErrorBox, errorMessage, Field, inputClass, PrimaryButton, StepShell } from "../ui";
+import { api, ErrorBox, errorMessage, Field, inputClass, PrimaryButton, SetupDataSkeleton, StepShell } from "../ui";
 import { nextPath } from "../steps";
 
 interface StateResponse {
@@ -19,19 +19,27 @@ export default function BusinessStep() {
   const [address, setAddress] = useState("");
   const [phone, setPhone] = useState("");
   const [currencyDisplay, setCurrencyDisplay] = useState<"toman" | "rial">("toman");
+  const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    api<StateResponse>("/api/setup/state").then(({ data }) => {
-      if (data.business?.name) setBusinessName(data.business.name);
-      if (data.location) {
-        setLocationName(data.location.name);
-        setAddress(data.location.address ?? "");
-        setPhone(data.location.phone ?? "");
-      }
-      if (data.prefs?.currencyDisplay) setCurrencyDisplay(data.prefs.currencyDisplay);
-    });
+    void api<StateResponse>("/api/setup/state")
+      .then(({ ok, data }) => {
+        if (!ok) {
+          setError("بارگذاری اطلاعات کسب‌وکار ممکن نشد.");
+          return;
+        }
+        if (data.business?.name) setBusinessName(data.business.name);
+        if (data.location) {
+          setLocationName(data.location.name);
+          setAddress(data.location.address ?? "");
+          setPhone(data.location.phone ?? "");
+        }
+        if (data.prefs?.currencyDisplay) setCurrencyDisplay(data.prefs.currencyDisplay);
+      })
+      .catch(() => setError("بارگذاری اطلاعات کسب‌وکار ممکن نشد."))
+      .finally(() => setLoaded(true));
   }, []);
 
   async function submit(e: React.FormEvent) {
@@ -49,6 +57,8 @@ export default function BusinessStep() {
     }
     router.push(nextPath("business"));
   }
+
+  if (!loaded) return <SetupDataSkeleton rows={5} />;
 
   return (
     <StepShell

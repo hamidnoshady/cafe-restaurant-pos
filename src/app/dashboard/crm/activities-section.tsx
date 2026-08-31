@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingSkeleton, SectionCardSkeleton } from "@/app/dashboard/page-chrome";
+
 /**
  * Activities and tasks (Phase 36).
  *
@@ -90,9 +92,7 @@ export function ActivitiesSection() {
 
   if (!activities) {
     return (
-      <div aria-live="polite" className={`px-5 py-6 text-sm text-stone-500 ${cardClass}`}>
-        در حال بارگذاری…
-      </div>
+      <SectionCardSkeleton rows={4} />
     );
   }
 
@@ -221,21 +221,36 @@ function ActivityDialog({ onClose, onSaved }: { onClose: () => void; onSaved: ()
   const [customerQuery, setCustomerQuery] = useState("");
   const [customerId, setCustomerId] = useState<string | null>(null);
   const [matches, setMatches] = useState<{ id: string; name: string }[]>([]);
+  const [matchesLoading, setMatchesLoading] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
   // Attaching an activity to a customer is what makes it show on their file, so
   // the picker searches the live directory rather than asking for an id.
   useEffect(() => {
-    if (customerQuery.trim().length < 2 || customerId) return;
+    if (customerQuery.trim().length < 2 || customerId) {
+      setMatches([]);
+      setMatchesLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setMatchesLoading(true);
     const timer = setTimeout(() => {
-      api<{ customers: { id: string; name: string }[] }>(
+      void api<{ customers: { id: string; name: string }[] }>(
         `/api/customers?q=${encodeURIComponent(customerQuery.trim())}`,
-      ).then(({ ok, data }) => {
-        if (ok) setMatches(data.customers.slice(0, 6));
-      });
+      )
+        .then(({ ok, data }) => {
+          if (!cancelled && ok) setMatches(data.customers.slice(0, 6));
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          if (!cancelled) setMatchesLoading(false);
+        });
     }, 250);
-    return () => clearTimeout(timer);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [customerQuery, customerId]);
 
   const save = async () => {
@@ -312,7 +327,9 @@ function ActivityDialog({ onClose, onSaved }: { onClose: () => void; onSaved: ()
                 value={customerQuery}
                 onChange={(e) => setCustomerQuery(e.target.value)}
               />
-              {matches.length > 0 ? (
+              {matchesLoading ? (
+                <LoadingSkeleton rows={1} compact className="mt-1" label="در حال جست‌وجوی مشتری" />
+              ) : matches.length > 0 ? (
                 <ul className="mt-1 flex flex-wrap gap-1.5">
                   {matches.map((match) => (
                     <li key={match.id}>

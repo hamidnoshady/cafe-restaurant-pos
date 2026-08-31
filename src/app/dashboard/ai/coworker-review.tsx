@@ -1,5 +1,7 @@
 "use client";
 
+import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
+
 /**
  * Phase 32 — «بازبینی حساب‌ها» on demand.
  *
@@ -81,10 +83,7 @@ export function CoworkerReview() {
         </p>
       ) : null}
       {loading && findings === null ? (
-        <div className="flex items-center justify-center px-4 py-8 text-sm text-muted-foreground">
-          <Loader2Icon className="ml-2 size-4 animate-spin" />
-          در حال بررسی دفترها…
-        </div>
+        <div className="p-4 sm:p-5"><LoadingSkeleton rows={4} label="در حال بررسی دفترها" /></div>
       ) : findings === null || findings.length === 0 ? (
         <div className="p-4 sm:p-5">
           <EmptyState>{summarizeFindings(findings ?? [], unavailable)}</EmptyState>

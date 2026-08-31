@@ -24,7 +24,7 @@ import { PersianNumberInput } from "@/components/ui/persian-number-input";
  * and stays a stack of cards below that.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   BanknoteIcon,
@@ -56,6 +56,7 @@ import {
   type PaymentDraft,
 } from "@/lib/payment-draft";
 import { PaymentWays, usePaymentMethods } from "../payment-ways";
+import { LoadingSkeleton } from "../page-chrome";
 import { formatQueueLabel } from "@/lib/orders";
 import { crmCustomerHref } from "../crm/crm-routes";
 import { kickDrawer, printReceipt } from "@/lib/print-agent-client";
@@ -240,6 +241,8 @@ export function OrderDetailModal({
   onChanged?: () => void;
 }) {
   const [order, setOrder] = useState<OrderRow | null>(null);
+  const [orderLoaded, setOrderLoaded] = useState(false);
+  const loadRequest = useRef(0);
   const [items, setItems] = useState<OrderItemRow[]>([]);
   const [modifiers, setModifiers] = useState<ModifierRow[]>([]);
   const [menu, setMenu] = useState<MenuData | null>(null);
@@ -260,7 +263,7 @@ export function OrderDetailModal({
   // The business's own payment ways, and what the cashier has chosen — a
   // single way or a split across several (src/lib/payment-draft.ts). Shared
   // with the POS through <PaymentWays>, so the two checkouts stay identical.
-  const { methods: paymentMethods } = usePaymentMethods();
+  const { methods: paymentMethods, loaded: paymentMethodsLoaded } = usePaymentMethods();
   const [paymentDraft, setPaymentDraft] = useState<PaymentDraft>(() => emptyPaymentDraft([]));
   const needsCustomer = draftNeedsCustomer(paymentDraft, paymentMethods);
   // The ways land a render or two after the dialog opens, so the draft starts
@@ -274,10 +277,12 @@ export function OrderDetailModal({
   const [paying, setPaying] = useState(false);
   const [customerQuery, setCustomerQuery] = useState("");
   const [customerResults, setCustomerResults] = useState<Customer[]>([]);
+  const [customerResultsLoading, setCustomerResultsLoading] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(
     null,
   );
   const [tables, setTables] = useState<{ id: string; name: string; status: string }[]>([]);
+  const [tablesLoaded, setTablesLoaded] = useState(false);
   const [selectedTableId, setSelectedTableId] = useState("");
   const [showNewCustomer, setShowNewCustomer] = useState(false);
   const [newCustomerPhone, setNewCustomerPhone] = useState("");
@@ -286,58 +291,73 @@ export function OrderDetailModal({
   const money = useMoney();
 
   const load = useCallback(async () => {
-    if (!orderId) return;
-    const { ok, data } = await api<{
-      order: OrderRow;
-      items: OrderItemRow[];
-      modifiers: ModifierRow[];
-      error?: string;
-    }>(`/api/orders/${orderId}`);
-    if (!ok) {
-      setError(errorMessage(data.error));
+    if (!orderId) {
+      setOrderLoaded(true);
       return;
     }
-    setOrder(data.order);
-    setSelectedTableId(data.order.table_id ?? "");
-    setItems(data.items);
-    setModifiers(data.modifiers);
-    // An order that already names a customer keeps naming them: the credit
-    // checkout below re-uses this selection instead of making the cashier
-    // search the directory again for a customer the order already has.
-    // Only when nothing is picked yet — `load()` also runs after an item edit,
-    // and must not throw away a pick the cashier just made mid-checkout. The
-    // open-effect below clears it, so each fresh dialog starts from the order.
-    setSelectedCustomer(
-      (current) =>
-        current ??
-        (data.order.customer_id && data.order.customer_name
-          ? {
-              id: data.order.customer_id,
-              name: data.order.customer_name,
-              phone: data.order.customer_phone,
-            }
-          : null),
-    );
-    setDiscountType(data.order.discount_type ?? "");
-    // `discount_value` is stored in Rial for an `amount` discount; the input
-    // below is Toman, so present it back in Toman and re-convert on save.
-    setDiscountValue(
-      data.order.discount_value
-        ? String(
-            data.order.discount_type === "amount"
-              ? money.toInput(Number(data.order.discount_value))
-              : data.order.discount_value,
-          )
-        : "",
-    );
-    setNoteDraft(data.order.note ?? "");
+    const requestId = ++loadRequest.current;
+    try {
+      const { ok, data } = await api<{
+        order: OrderRow;
+        items: OrderItemRow[];
+        modifiers: ModifierRow[];
+        error?: string;
+      }>(`/api/orders/${orderId}`);
+      if (requestId !== loadRequest.current) return;
+      if (!ok) {
+        setError(errorMessage(data.error));
+        return;
+      }
+      setOrder(data.order);
+      setSelectedTableId(data.order.table_id ?? "");
+      setItems(data.items);
+      setModifiers(data.modifiers);
+      // An order that already names a customer keeps naming them: the credit
+      // checkout below re-uses this selection instead of making the cashier
+      // search the directory again for a customer the order already has.
+      // Only when nothing is picked yet — `load()` also runs after an item edit,
+      // and must not throw away a pick the cashier just made mid-checkout. The
+      // open-effect below clears it, so each fresh dialog starts from the order.
+      setSelectedCustomer(
+        (current) =>
+          current ??
+          (data.order.customer_id && data.order.customer_name
+            ? {
+                id: data.order.customer_id,
+                name: data.order.customer_name,
+                phone: data.order.customer_phone,
+              }
+            : null),
+      );
+      setDiscountType(data.order.discount_type ?? "");
+      // `discount_value` is stored in Rial for an `amount` discount; the input
+      // below is Toman, so present it back in Toman and re-convert on save.
+      setDiscountValue(
+        data.order.discount_value
+          ? String(
+              data.order.discount_type === "amount"
+                ? money.toInput(Number(data.order.discount_value))
+                : data.order.discount_value,
+            )
+          : "",
+      );
+      setNoteDraft(data.order.note ?? "");
+    } catch {
+      if (requestId === loadRequest.current) {
+        setError("بارگذاری اطلاعات سفارش ممکن نشد.");
+      }
+    } finally {
+      if (requestId === loadRequest.current) setOrderLoaded(true);
+    }
   }, [orderId]);
 
   // A closed dialog holds no order: reopening on a different row must never
   // flash the previous order's lines while the fetch is in flight.
   useEffect(() => {
     if (!open) return;
+    let cancelled = false;
     setOrder(null);
+    setOrderLoaded(false);
     setItems([]);
     setModifiers([]);
     setError("");
@@ -351,29 +371,57 @@ export function OrderDetailModal({
     setCustomerQuery("");
     setShowNewCustomer(false);
     setPaymentDraft(emptyPaymentDraft(paymentMethods));
+    setTables([]);
+    setTablesLoaded(false);
     void load();
-    void api<{ tables: { id: string; name: string; status: string }[] }>("/api/tables").then(({ ok, data }) => {
-      if (ok) setTables(data.tables);
-    });
+    void api<{ tables: { id: string; name: string; status: string }[] }>("/api/tables")
+      .then(({ ok, data }) => {
+        if (!cancelled && ok) setTables(data.tables);
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) setTablesLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+      loadRequest.current += 1;
+    };
   }, [load, open]);
 
   useEffect(() => {
     if (!open || menu) return;
-    void api<MenuData>("/api/menu").then(({ ok, data }) => ok && setMenu(data));
+    void api<MenuData>("/api/menu")
+      .then(({ ok, data }) =>
+        setMenu(ok ? data : { items: [], modifierGroups: [], modifiers: [], itemModifierGroups: [] }),
+      )
+      .catch(() => setMenu({ items: [], modifierGroups: [], modifiers: [], itemModifierGroups: [] }));
   }, [menu, open]);
 
   useEffect(() => {
-    if (selectedCustomer) {
+    if (!open || selectedCustomer) {
       setCustomerResults([]);
+      setCustomerResultsLoading(false);
       return;
     }
+    let cancelled = false;
+    setCustomerResultsLoading(true);
     const timer = setTimeout(() => {
       void api<{ customers: Customer[] }>(
         `/api/customers?q=${encodeURIComponent(customerQuery)}`,
-      ).then(({ ok, data }) => ok && setCustomerResults(data.customers));
+      )
+        .then(({ ok, data }) => {
+          if (!cancelled && ok) setCustomerResults(data.customers);
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          if (!cancelled) setCustomerResultsLoading(false);
+        });
     }, 250);
-    return () => clearTimeout(timer);
-  }, [customerQuery, selectedCustomer]);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [customerQuery, open, selectedCustomer]);
 
   const addOnsByItem = useMemo(() => {
     const map = new Map<
@@ -926,7 +974,7 @@ export function OrderDetailModal({
                         : ""}
                     </>
                   ) : (
-                    "در حال بارگذاری اطلاعات سفارش…"
+                    orderLoaded ? "اطلاعات سفارش در دسترس نیست." : "در حال بارگذاری اطلاعات سفارش…"
                   )}
                 </DialogDescription>
               </div>
@@ -997,15 +1045,32 @@ export function OrderDetailModal({
 
           <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-5">
             {!order ? (
-              <div
-                className="space-y-3"
-                aria-busy="true"
-                aria-label="در حال بارگذاری جزئیات سفارش"
-              >
-                <div className="ops-skeleton h-32 rounded-2xl" />
-                <div className="ops-skeleton h-40 rounded-2xl" />
-                <div className="ops-skeleton h-24 rounded-2xl" />
-              </div>
+              !orderLoaded ? (
+                <div
+                  className="space-y-3"
+                  aria-busy="true"
+                  aria-label="در حال بارگذاری جزئیات سفارش"
+                >
+                  <div className="ops-skeleton h-32 rounded-2xl" />
+                  <div className="ops-skeleton h-40 rounded-2xl" />
+                  <div className="ops-skeleton h-24 rounded-2xl" />
+                </div>
+              ) : (
+                <div className="rounded-xl border border-destructive/20 bg-destructive/[0.035] px-4 py-6 text-center text-sm text-destructive">
+                  <p>{error || "اطلاعات سفارش در دسترس نیست."}</p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setError("");
+                      setOrderLoaded(false);
+                      void load();
+                    }}
+                    className={`${SECONDARY_BUTTON} mt-3`}
+                  >
+                    تلاش دوباره
+                  </button>
+                </div>
+              )
             ) : (
               <>
                 {error ? (
@@ -1101,44 +1166,50 @@ export function OrderDetailModal({
                         <h3 className="mb-3 font-semibold text-stone-950">
                           افزودن قلم
                         </h3>
-                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                          <div className="min-w-0 flex-1">
-                            <SearchableSelect
-                              value={addItemId}
-                              onChange={setAddItemId}
-                              ariaLabel="انتخاب آیتم برای افزودن"
-                              className={OPS_INPUT}
-                              options={[
-                                { value: "", label: "آیتم…" },
-                                ...activeItems.map((i) => ({
-                                  value: i.id,
-                                  label: i.name,
-                                })),
-                              ]}
-                            />
-                          </div>
-                          <PersianNumberInput
-                            className={`${OPS_INPUT} sm:w-20`}
-                            dir="ltr"
-                            inputMode="numeric"
-                            aria-label="تعداد"
-                            value={addQty}
-                            onChange={(event) => setAddQty(event.target.value)}
-                          />
-                          <button
-                            type="button"
-                            onClick={startAddItem}
-                            disabled={busy || !addItemId}
-                            className={`${PRIMARY_BUTTON} sm:w-auto sm:min-w-28`}
-                          >
-                            <PlusIcon className="size-4" aria-hidden="true" />
-                            افزودن
-                          </button>
-                        </div>
-                        <p className="mt-2 text-xs leading-5 text-stone-500">
-                          آیتم‌هایی که گروه افزودنی دارند، پیش از ثبت پنجرهٔ
-                          انتخاب افزودنی را باز می‌کنند.
-                        </p>
+                        {!menu ? (
+                          <LoadingSkeleton rows={2} compact label="در حال بارگذاری منو" />
+                        ) : (
+                          <>
+                            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                              <div className="min-w-0 flex-1">
+                                <SearchableSelect
+                                  value={addItemId}
+                                  onChange={setAddItemId}
+                                  ariaLabel="انتخاب آیتم برای افزودن"
+                                  className={OPS_INPUT}
+                                  options={[
+                                    { value: "", label: "آیتم…" },
+                                    ...activeItems.map((i) => ({
+                                      value: i.id,
+                                      label: i.name,
+                                    })),
+                                  ]}
+                                />
+                              </div>
+                              <PersianNumberInput
+                                className={`${OPS_INPUT} sm:w-20`}
+                                dir="ltr"
+                                inputMode="numeric"
+                                aria-label="تعداد"
+                                value={addQty}
+                                onChange={(event) => setAddQty(event.target.value)}
+                              />
+                              <button
+                                type="button"
+                                onClick={startAddItem}
+                                disabled={busy || !addItemId}
+                                className={`${PRIMARY_BUTTON} sm:w-auto sm:min-w-28`}
+                              >
+                                <PlusIcon className="size-4" aria-hidden="true" />
+                                افزودن
+                              </button>
+                            </div>
+                            <p className="mt-2 text-xs leading-5 text-stone-500">
+                              آیتم‌هایی که گروه افزودنی دارند، پیش از ثبت پنجرهٔ
+                              انتخاب افزودنی را باز می‌کنند.
+                            </p>
+                          </>
+                        )}
                       </section>
                     ) : null}
 
@@ -1270,27 +1341,31 @@ export function OrderDetailModal({
                           those, so offering them would only produce an error.
                         */}
                         <p className="mb-2 text-xs text-stone-500">میز این سفارش را می‌توانید تغییر دهید. میزی که مهمان دارد هم قابل انتخاب است؛ هر سفارش صورت‌حساب جدای خودش را دارد.</p>
-                        <SearchableSelect
-                          value={selectedTableId}
-                          onChange={(value) => void saveOrderTable(value)}
-                          ariaLabel="تعیین میز سفارش"
-                          className={OPS_INPUT}
-                          options={[
-                            { value: "", label: "بدون میز" },
-                            ...tables
-                              .filter(
-                                (table) =>
-                                  !isTableUnavailable(table.status) ||
-                                  table.id === selectedTableId,
-                              )
-                              .map((table) => ({
-                                value: table.id,
-                                label: isTableOccupied(table.status)
-                                  ? `${table.name} — مهمان دارد`
-                                  : table.name,
-                              })),
-                          ]}
-                        />
+                        {!tablesLoaded ? (
+                          <LoadingSkeleton rows={1} compact label="در حال بارگذاری میزها" />
+                        ) : (
+                          <SearchableSelect
+                            value={selectedTableId}
+                            onChange={(value) => void saveOrderTable(value)}
+                            ariaLabel="تعیین میز سفارش"
+                            className={OPS_INPUT}
+                            options={[
+                              { value: "", label: "بدون میز" },
+                              ...tables
+                                .filter(
+                                  (table) =>
+                                    !isTableUnavailable(table.status) ||
+                                    table.id === selectedTableId,
+                                )
+                                .map((table) => ({
+                                  value: table.id,
+                                  label: isTableOccupied(table.status)
+                                    ? `${table.name} — مهمان دارد`
+                                    : table.name,
+                                })),
+                            ]}
+                          />
+                        )}
                       </section>
                     ) : null}
 
@@ -1354,7 +1429,9 @@ export function OrderDetailModal({
                               value={customerQuery}
                               onChange={(event) => setCustomerQuery(event.target.value)}
                             />
-                            {customerResults.length > 0 ? (
+                            {customerResultsLoading ? (
+                              <LoadingSkeleton rows={2} compact className="mt-2" label="در حال جست‌وجوی مشتری" />
+                            ) : customerResults.length > 0 ? (
                               <ul className="mt-2 max-h-44 overscroll-contain overflow-y-auto rounded-xl border border-stone-200/80 bg-white" onWheel={(event) => event.stopPropagation()}>
                                 {customerResults.map((candidate) => (
                                   <li key={candidate.id}>
@@ -1365,7 +1442,7 @@ export function OrderDetailModal({
                                 ))}
                               </ul>
                             ) : null}
-                            {customerQuery.trim() && !showNewCustomer ? (
+                            {customerQuery.trim() && !showNewCustomer && !customerResultsLoading ? (
                               <button type="button" onClick={() => setShowNewCustomer(true)} className={`mt-2 min-h-11 text-xs font-bold text-amber-700 ${FOCUS}`}>
                                 + مشتری جدید «{customerQuery.trim()}»
                               </button>
@@ -1489,6 +1566,7 @@ export function OrderDetailModal({
                         <div className="mb-3">
                           <PaymentWays
                             methods={paymentMethods}
+                            loaded={paymentMethodsLoaded}
                             draft={paymentDraft}
                             onChange={(draft) => {
                               setPaymentDraft(draft);
@@ -1550,7 +1628,9 @@ export function OrderDetailModal({
                                     setCustomerQuery(event.target.value)
                                   }
                                 />
-                                {customerResults.length > 0 ? (
+                                {customerResultsLoading ? (
+                                  <LoadingSkeleton rows={2} compact className="mt-2" label="در حال جست‌وجوی مشتری" />
+                                ) : customerResults.length > 0 ? (
                                   <ul className="mt-2 max-h-44 divide-y divide-stone-100 overflow-y-auto rounded-xl border border-stone-200/80 bg-white">
                                     {customerResults.map((customer) => (
                                       <li key={customer.id}>
@@ -1570,7 +1650,7 @@ export function OrderDetailModal({
                                     ))}
                                   </ul>
                                 ) : null}
-                                {customerQuery.trim() && !showNewCustomer ? (
+                                {customerQuery.trim() && !showNewCustomer && !customerResultsLoading ? (
                                   <button
                                     type="button"
                                     onClick={() => setShowNewCustomer(true)}
