@@ -20,6 +20,7 @@ import { formatMoneyText, type MoneyUnit } from "@/lib/money";
 import { useMoney } from "@/components/money/money-context";
 import { BranchSwitcher } from "./branch-switcher";
 import { useRealtime } from "./use-realtime";
+import { cardClass } from "./page-chrome";
 
 type LoadStage = "loading" | "kpis" | "chart" | "orders";
 type KitchenStatus = "new" | "preparing" | "ready";
@@ -188,7 +189,7 @@ function KpiCard({
 
   return (
     <article
-      className={`ops-card-enter min-h-36 rounded-2xl border border-stone-200/80 bg-white p-4 shadow-[0_1px_2px_rgba(37,37,34,0.04)] sm:p-5 ${className}`}
+      className={`ops-card-enter min-h-36 ${cardClass} p-4 sm:p-5 ${className}`}
       style={{ animationDelay: `${entryDelay}ms` }}
       aria-busy={loading}
     >
@@ -351,7 +352,7 @@ function OrdersSkeleton() {
       </div>
       <div className="space-y-3 md:hidden">
         {[0, 1, 2, 3].map((row) => (
-          <div key={row} className="rounded-xl border border-stone-200/80 bg-white p-4">
+          <div key={row} className="rounded-xl border border-stone-200/80 bg-card p-4">
             <div className="flex items-center justify-between gap-3"><Skeleton className="h-5 w-16 rounded-full" /><span className="inline-flex rounded-full border border-stone-200/80 bg-stone-50 px-2 py-1 text-[11px] text-stone-500">در حال آماده‌سازی</span></div>
             <Skeleton className={`mt-4 h-4 rounded-full ${row % 2 ? "w-2/3" : "w-4/5"}`} />
             <div className="mt-4 flex justify-between"><Skeleton className="h-3 w-16 rounded-full" /><Skeleton className="h-3 w-12 rounded-full" /></div>
@@ -395,7 +396,7 @@ function OrdersTable({ orders, timeZone }: { orders: OverviewData["activeOrders"
           <Link
             key={order.id}
             href={`/dashboard/orders/${order.id}`}
-            className="ops-order-row block rounded-xl border border-stone-200/80 bg-white p-4 shadow-[0_1px_2px_rgba(37,37,34,0.03)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 active:scale-[0.98]"
+            className="ops-order-row block rounded-xl border border-stone-200/80 bg-card p-4 shadow-[0_1px_2px_rgb(41_37_36/0.03)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 active:scale-[0.98]"
             style={{ animationDelay: `${index * 60}ms` }}
             aria-label={`مشاهده سفارش ${toPersianDigits(order.orderNumber)}`}
           >
@@ -523,7 +524,7 @@ export function OperationsOverview({
   return (
     <section className="w-full" aria-labelledby="operations-heading">
       <h1 id="operations-heading" className="sr-only">نمای کلی عملیات امروز</h1>
-      <header className="mb-5 hidden items-start justify-between gap-4 rounded-2xl border border-stone-200/80 bg-white px-5 py-4 shadow-[0_1px_2px_rgba(37,37,34,0.03)] md:flex">
+      <header className={`mb-5 hidden items-start justify-between gap-4 ${cardClass} px-5 py-4 shadow-[0_1px_2px_rgb(41_37_36/0.03)] md:flex`}>
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
             <p className="text-2xl font-bold tracking-[-0.03em] text-stone-950">نمای کلی عملیات امروز</p>
@@ -537,7 +538,7 @@ export function OperationsOverview({
             <span className="max-w-36 truncate">{data?.businessName ?? "کسب‌وکار"}</span>
           </div>
           <BranchSwitcher compact />
-          <Link href="/dashboard/orders" className="relative inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl border border-stone-200/80 bg-white text-stone-600 transition-colors hover:bg-stone-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 active:scale-[0.98]" aria-label="مشاهده سفارش‌های باز">
+          <Link href="/dashboard/orders" className="relative inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl border border-stone-200/80 bg-card text-stone-600 transition-colors hover:bg-stone-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 active:scale-[0.98]" aria-label="مشاهده سفارش‌های باز">
             <BellIcon className="size-5" aria-hidden="true" />
             {data && data.activeOrderCount > 0 ? <span className="absolute -left-1 -top-1 inline-flex min-w-5 items-center justify-center rounded-full bg-amber-100 px-1 text-[10px] font-bold leading-5 text-amber-700">{toPersianDigits(String(data.activeOrderCount))}</span> : null}
           </Link>
@@ -568,18 +569,18 @@ export function OperationsOverview({
         <KpiCard icon={ShoppingCartIcon} label="میانگین سفارش" hint="میانگین هر فاکتور" value={data?.kpis.averageOrderValue ?? "0"} money loading={!showKpis} animateNumber={hasResolvedInitialData} reducedMotion={reducedMotion} entryDelay={120} className="min-w-[calc(100%-48px)] snap-start" />
       </div>
 
-      <section className="mb-5 overflow-hidden rounded-2xl border border-stone-200/80 bg-white p-4 shadow-[0_1px_2px_rgba(37,37,34,0.03)] sm:p-5" aria-labelledby="sales-trend-heading">
+      <section className={`mb-5 overflow-hidden ${cardClass} p-4 shadow-[0_1px_2px_rgb(41_37_36/0.03)] sm:p-5`} aria-labelledby="sales-trend-heading">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div><h2 id="sales-trend-heading" className="font-semibold text-stone-950">روند فروش امروز</h2><p className="mt-1 text-xs text-stone-500">فروش‌های تکمیل‌شده به تفکیک ساعت{businessDayNote ? ` — ${businessDayNote}` : ""}</p></div>
           <div className="inline-flex min-h-11 w-fit rounded-xl border border-stone-200/80 bg-stone-50 p-1" role="group" aria-label="نمایش روند فروش">
-            <button type="button" onClick={() => setCumulative(false)} aria-pressed={!cumulative} className={`min-h-9 rounded-lg px-3 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 active:scale-[0.98] ${!cumulative ? "bg-white text-stone-950 shadow-[0_1px_2px_rgba(37,37,34,0.05)]" : "text-stone-500"}`}>ساعتی</button>
-            <button type="button" onClick={() => setCumulative(true)} aria-pressed={cumulative} className={`min-h-9 rounded-lg px-3 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 active:scale-[0.98] ${cumulative ? "bg-white text-stone-950 shadow-[0_1px_2px_rgba(37,37,34,0.05)]" : "text-stone-500"}`}>تجمعی</button>
+            <button type="button" onClick={() => setCumulative(false)} aria-pressed={!cumulative} className={`min-h-9 rounded-lg px-3 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 active:scale-[0.98] ${!cumulative ? "bg-card text-stone-950 shadow-[0_1px_2px_rgb(41_37_36/0.05)]" : "text-stone-500"}`}>ساعتی</button>
+            <button type="button" onClick={() => setCumulative(true)} aria-pressed={cumulative} className={`min-h-9 rounded-lg px-3 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 active:scale-[0.98] ${cumulative ? "bg-card text-stone-950 shadow-[0_1px_2px_rgb(41_37_36/0.05)]" : "text-stone-500"}`}>تجمعی</button>
           </div>
         </div>
         {showChart ? <SalesTrendChart key={cumulative ? "cumulative" : "hourly"} hourly={data.hourly} cumulative={cumulative} reducedMotion={reducedMotion} startMinutes={data.businessDay?.enabled ? data.businessDay.startMinutes : null} /> : <SalesTrendSkeleton />}
       </section>
 
-      <section className="rounded-2xl border border-stone-200/80 bg-white p-4 shadow-[0_1px_2px_rgba(37,37,34,0.03)] sm:p-5" aria-labelledby="active-orders-heading">
+      <section className={`${cardClass} p-4 shadow-[0_1px_2px_rgb(41_37_36/0.03)] sm:p-5`} aria-labelledby="active-orders-heading">
         <div className="mb-4 flex items-start justify-between gap-3">
           <div><h2 id="active-orders-heading" className="font-semibold text-stone-950">سفارش‌های فعال</h2><p className="mt-1 text-xs text-stone-500">وضعیت سفارش‌های باز همین شعبه</p></div>
           <Link href="/dashboard/orders" className="hidden min-h-11 items-center gap-1 rounded-xl border border-stone-200/80 px-3 text-sm font-medium text-stone-950 transition-colors hover:bg-stone-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 active:scale-[0.98] sm:inline-flex">مشاهده همه<ChevronLeftIcon className="size-4" aria-hidden="true" /></Link>
@@ -591,7 +592,7 @@ export function OperationsOverview({
       {error ? (
         <div className="mt-4 flex flex-col gap-3 rounded-xl border border-destructive/20 bg-destructive/[0.035] px-4 py-3 text-sm text-destructive sm:flex-row sm:items-center sm:justify-between" role="status">
           <span>{error}</span>
-          <button type="button" onClick={() => void load()} className="min-h-11 rounded-lg border border-destructive/25 bg-white px-3 text-sm font-medium text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/35 active:scale-[0.98]">تلاش دوباره</button>
+          <button type="button" onClick={() => void load()} className="min-h-11 rounded-lg border border-destructive/25 bg-card px-3 text-sm font-medium text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/35 active:scale-[0.98]">تلاش دوباره</button>
         </div>
       ) : null}
       <p className="sr-only" aria-live="polite">{syncLabel}</p>

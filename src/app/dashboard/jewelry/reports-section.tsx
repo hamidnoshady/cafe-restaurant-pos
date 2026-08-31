@@ -9,11 +9,11 @@ import { formatJalali } from "@/lib/jalali";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { api, Field, inputClass } from "../ui";
 import { PURITY_LABELS, type Purity, type Runner } from "./jewelry-manager";
-import { SectionCardSkeleton } from "../page-chrome";
+import { SectionCardSkeleton, cardClass } from "../page-chrome";
 
-const jewelryInputClass = `${inputClass} min-h-[52px] !border-stone-200 !bg-white shadow-none placeholder:text-stone-400 focus-visible:border-amber-500 focus-visible:ring-amber-400/30`;
+const jewelryInputClass = `${inputClass} min-h-[52px] !border-stone-200 !bg-card shadow-none placeholder:text-stone-400 focus-visible:border-amber-500 focus-visible:ring-amber-400/30`;
 const secondaryActionClass =
-  "min-h-[44px] border-stone-200 bg-white px-3 text-xs text-stone-700 hover:border-amber-300 hover:bg-amber-50 hover:text-stone-950 focus-visible:border-amber-500 focus-visible:ring-amber-400/30";
+  "min-h-[44px] border-stone-200 bg-card px-3 text-xs text-stone-700 hover:border-amber-300 hover:bg-amber-50 hover:text-stone-950 focus-visible:border-amber-500 focus-visible:ring-amber-400/30";
 
 interface WeightCount {
   id: string;
@@ -101,7 +101,7 @@ export function ReportsSection({ busy, run }: { busy: boolean; run: Runner }) {
   return (
     <div className="grid min-w-0 gap-4 md:grid-cols-[minmax(0,1fr)_18rem] lg:gap-5 lg:grid-cols-[minmax(0,1fr)_21rem] xl:grid-cols-[minmax(0,1fr)_24rem]">
       <div className="order-2 min-w-0 space-y-4 md:order-1">
-        <section aria-labelledby="jewelry-reconciliation-heading" className="min-w-0 overflow-hidden rounded-2xl bg-card">
+        <section aria-labelledby="jewelry-reconciliation-heading" className={`min-w-0 overflow-hidden ${cardClass} `}>
           <div className="border-b border-stone-200/80 px-4 py-4 sm:px-5">
             <h2 id="jewelry-reconciliation-heading" className="font-semibold text-stone-950">
               تطبیق وزنی
@@ -147,7 +147,7 @@ export function ReportsSection({ busy, run }: { busy: boolean; run: Runner }) {
           </ul>
         </section>
 
-        <section aria-labelledby="jewelry-counts-heading" className="min-w-0 overflow-hidden rounded-2xl bg-card">
+        <section aria-labelledby="jewelry-counts-heading" className={`min-w-0 overflow-hidden ${cardClass} `}>
           <div className="border-b border-stone-200/80 px-4 py-4 sm:px-5">
             <h2 id="jewelry-counts-heading" className="font-semibold text-stone-950">
               تاریخچهٔ شمارش
@@ -172,7 +172,7 @@ export function ReportsSection({ busy, run }: { busy: boolean; run: Runner }) {
           </ul>
         </section>
 
-        <section aria-labelledby="jewelry-consignor-statements-heading" className="min-w-0 overflow-hidden rounded-2xl bg-card">
+        <section aria-labelledby="jewelry-consignor-statements-heading" className={`min-w-0 overflow-hidden ${cardClass} `}>
           <div className="border-b border-stone-200/80 px-4 py-4 sm:px-5">
             <h2 id="jewelry-consignor-statements-heading" className="font-semibold text-stone-950">
               صورت‌حساب امانت‌گذاران
@@ -194,7 +194,7 @@ export function ReportsSection({ busy, run }: { busy: boolean; run: Runner }) {
       </div>
 
       <aside className="order-1 min-w-0 md:order-2">
-        <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-[0_1px_2px_rgb(41_37_36/0.035)] md:sticky md:top-4 sm:p-5">
+        <div className={`${cardClass} p-4 md:sticky md:top-4 sm:p-5`}>
           <h2 className="font-semibold text-stone-950">ثبت شمارش فیزیکی</h2>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">
             وزن اندازه‌گیری‌شده با ترازو را ثبت کنید؛ وزن سیستمی همان لحظه ذخیره می‌شود.

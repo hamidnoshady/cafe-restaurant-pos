@@ -4,6 +4,7 @@ import { getBusinessIndustry } from "@/lib/industry-guard";
 import { industryProfile, labelFor } from "@/lib/industry-profile";
 import { getSetting, SETTING_KEYS } from "@/lib/settings";
 import { MoneyProvider } from "@/components/money/money-context";
+import { cardClass } from "@/app/dashboard/page-chrome";
 import { StepNav } from "./step-nav";
 import { SetupAssistant } from "./setup-assistant";
 import { SetupIndustryProvider } from "./industry-context";
@@ -28,7 +29,7 @@ export default async function SetupLayout({
       <MoneyProvider unit={currencyDisplay}>
       <div className="mx-auto flex min-h-screen max-w-5xl gap-6 p-4 sm:p-6">
         <aside className="hidden w-60 shrink-0 sm:block">
-          <div className="sticky top-6 rounded-2xl bg-card p-4 shadow-sm">
+          <div className={`sticky top-6 ${cardClass} p-4`}>
             <p className="mb-1 font-bold">راه‌اندازی اولیه</p>
             {/*
               Which trade this business is registered as -- it decides the step
@@ -47,7 +48,7 @@ export default async function SetupLayout({
             <StepNav />
           </div>
         </aside>
-          <main className="min-w-0 flex-1 rounded-2xl bg-card p-6 shadow-sm">{children}</main>
+          <main className={`min-w-0 flex-1 ${cardClass} p-6`}>{children}</main>
           <SetupAssistant />
         </div>
       </MoneyProvider>

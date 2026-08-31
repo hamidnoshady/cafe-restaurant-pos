@@ -572,7 +572,7 @@ function StatusCard({
               health.alert.level === "ok"
                 ? "border-primary/30 bg-primary/5 text-primary"
                 : health.alert.level === "warning"
-                  ? "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400"
+                  ? "border-amber-500/40 bg-amber-500/10 text-amber-700"
                   : "border-destructive/40 bg-destructive/10 text-destructive"
             }`}
           >
@@ -694,7 +694,7 @@ function SettingsCard({ onSaved }: { onSaved: () => void }) {
   return (
     <SectionCard title="تنظیمات پشتیبان‌گیری">
       {config.warnings && config.warnings.length > 0 ? (
-        <div className="mb-6 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-400">
+        <div className="mb-6 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-700">
           <ul className="list-inside list-disc">
             {config.warnings.map((w, i) => (
               <li key={i}>{w}</li>

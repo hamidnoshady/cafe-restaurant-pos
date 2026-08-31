@@ -130,10 +130,21 @@ own bottom padding gets added to it and the bar drifts.
 ## Reviewing a change
 
 The design-system bans (cool neutrals, heavy shadows, hand-rolled shells and card chrome,
-`dark:` variants, raw hex classes, bare `<h1>`) are **enforced by
-[`src/app/dashboard/design-lint.test.ts`](../src/app/dashboard/design-lint.test.ts)** — it
-runs with `npm test` and fails on a new violation outside its documented baseline. Run it
-alone with `npx vitest run src/app/dashboard/design-lint.test.ts`. The same checks by hand:
+`dark:` variants, raw hex classes, raw `bg-white`, spinner loaders, bare loading copy,
+bare `<h1>`) are **enforced by two tests that keep no baseline**:
+
+- [`src/app/dashboard/design-lint.test.ts`](../src/app/dashboard/design-lint.test.ts) —
+  every dashboard file, plus a page-frame rule: every route renders `PageShell` itself or
+  through a component it imports.
+- [`src/app/design-lint.test.ts`](../src/app/design-lint.test.ts) — the same bans on every
+  other tenant-facing surface (login, welcome, setup, invite, consent, business directory,
+  `src/components` minus the shadcn layer), so no business type's screens drift from
+  حسابداری's look.
+- [`src/app/loading-coverage.test.ts`](../src/app/loading-coverage.test.ts) — every layout
+  realm sits under a skeleton boundary, and every client component that fetches on mount
+  renders a `*Skeleton`.
+
+They run with `npm test`. The same checks by hand:
 
 These greps should each return nothing new under `src/app/dashboard/`:
 

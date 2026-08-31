@@ -19,6 +19,7 @@ import {
   jalaliWeekdayColumn,
   todayJalali,
 } from "@/lib/jalali";
+import { popoverPanelClass } from "./page-chrome";
 
 // The control class, kept here (not imported from ./ui) so this component stays
 // theme-agnostic and can be dropped into the super-admin/platform console as
@@ -146,7 +147,7 @@ export function JalaliDatePicker({
           aria-label="انتخاب تاریخ شمسی"
           className={
             popoverClass ??
-            "absolute z-50 mt-1 w-64 rounded-xl border border-border bg-popover p-3 text-popover-foreground shadow-lg"
+            `absolute z-50 mt-1 w-64 ${popoverPanelClass} p-3`
           }
         >
           <div className="mb-2 flex items-center justify-between">

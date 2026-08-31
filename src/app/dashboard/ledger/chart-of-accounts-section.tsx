@@ -9,6 +9,7 @@ import type { Runner } from "./ledger-manager";
 import { ACCOUNT_LEVEL_LABELS, WELL_KNOWN_CODES, type AccountLevel, type NormalBalance } from "@/lib/coa-template";
 import { AccountHistoryPanel } from "./account-history-panel";
 import { AccountStatementPanel } from "./account-statement-panel";
+import { cardClass } from "../page-chrome";
 
 type AccountType = "asset" | "liability" | "equity" | "revenue" | "expense";
 
@@ -126,7 +127,7 @@ export function ChartOfAccountsSection({ busy, run }: { busy: boolean; run: Runn
 
   return (
     <div className="space-y-4">
-      <section className="rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-4 sm:p-5">
+      <section className={`${cardClass} p-4 sm:p-5`}>
         <p className="text-xs font-semibold text-amber-700">ساختار مالی</p>
         <h2 className="mt-1">افزودن حساب</h2>
         <p className="mt-2 text-sm text-muted-foreground">فقط حساب‌های مجاز جدید را اضافه کنید؛ حساب‌های سیستمی و دارای سند همچنان با قوانین فعلی محافظت می‌شوند.</p>
@@ -169,7 +170,7 @@ export function ChartOfAccountsSection({ busy, run }: { busy: boolean; run: Runn
         </form>
       </section>
 
-      <section className="rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-4 sm:p-5">
+      <section className={`${cardClass} p-4 sm:p-5`}>
         <div className="mb-4">
           <p className="text-xs font-semibold text-amber-700">فهرست ساختار</p>
           <h2 className="mt-1">سرفصل حساب‌ها</h2>

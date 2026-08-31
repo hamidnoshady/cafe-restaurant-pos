@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { toast } from "sonner";
-import { BugIcon, CameraIcon, Loader2Icon, SendIcon, Trash2Icon } from "lucide-react";
+import { BugIcon, CameraIcon, SendIcon, Trash2Icon } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -143,7 +143,7 @@ export function BugReportDialog({ open, onOpenChange, capturing, onCapturingChan
             </div>
           ) : (
             <Button type="button" variant="outline" onClick={handleCapture} disabled={capturing} className="w-full">
-              {capturing ? <Loader2Icon aria-hidden="true" className="animate-spin" /> : <CameraIcon aria-hidden="true" />}
+              <CameraIcon aria-hidden="true" />
               {capturing ? "در حال گرفتن تصویر…" : "گرفتن تصویر از صفحه"}
             </Button>
           )}
@@ -151,7 +151,7 @@ export function BugReportDialog({ open, onOpenChange, capturing, onCapturingChan
 
         <DialogFooter showCloseButton>
           <Button type="button" onClick={handleSubmit} disabled={submitting || capturing}>
-            {submitting ? <Loader2Icon aria-hidden="true" className="animate-spin" /> : <SendIcon aria-hidden="true" />}
+            <SendIcon aria-hidden="true" />
             {submitting ? "در حال ارسال…" : "ارسال گزارش"}
           </Button>
         </DialogFooter>

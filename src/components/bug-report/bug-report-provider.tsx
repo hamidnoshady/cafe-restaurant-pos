@@ -59,7 +59,7 @@ export function BugReportProvider({ children }: { children: React.ReactNode }) {
         onClick={openReport}
         aria-label="گزارش مشکل"
         title="گزارش مشکل"
-        className={`fixed start-4 bottom-[calc(var(--app-bottom-nav)+0.75rem)] z-40 flex h-12 items-center gap-2 rounded-full bg-destructive px-4 text-sm font-semibold text-white shadow-lg shadow-destructive/30 ring-1 ring-foreground/10 transition-[transform,opacity] hover:scale-105 focus-visible:opacity-100 active:scale-95 md:hidden ${
+        className={`fixed start-4 bottom-[calc(var(--app-bottom-nav)+0.75rem)] z-40 flex h-12 items-center gap-2 rounded-full bg-destructive px-4 text-sm font-semibold text-white shadow-[0_12px_32px_-6px_rgb(41_37_36/0.25)] ring-1 ring-foreground/10 transition-[transform,opacity] hover:scale-105 focus-visible:opacity-100 active:scale-95 md:hidden ${
           capturing ? "hidden" : ""
         }`}
       >

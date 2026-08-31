@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckIcon, Loader2Icon, SparklesIcon } from "lucide-react";
+import { CheckIcon, SparklesIcon } from "lucide-react";
 import { ACTION_CATALOG, type ProposedAction } from "@/lib/ai";
 import { Button } from "@/components/ui/button";
 
@@ -32,14 +32,14 @@ export function AiProposalCard({
         {JSON.stringify(proposal.payload, null, 2)}
       </pre>
       {applied ? (
-        <p className="flex items-center gap-1 font-medium text-emerald-600 dark:text-emerald-400">
+        <p className="flex items-center gap-1 font-medium text-emerald-600">
           <CheckIcon className="size-4" /> ثبت شد
         </p>
       ) : (
         <div className="flex gap-2">
           <Button size="sm" onClick={onApply} disabled={applying}>
-            {applying ? <Loader2Icon className="animate-spin" /> : <CheckIcon />}
-            تأیید و اجرا
+            <CheckIcon aria-hidden="true" />
+            {applying ? "در حال اجرا…" : "تأیید و اجرا"}
           </Button>
           <Button size="sm" variant="ghost" onClick={onDismiss} disabled={applying}>
             رد

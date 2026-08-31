@@ -25,7 +25,7 @@ import { formatJalali } from "@/lib/jalali";
 import { useMoney } from "@/components/money/money-context";
 import { labelFor } from "@/lib/industry-profile";
 import type { Industry } from "@/lib/industries";
-import { PageHeader } from "./page-chrome";
+import { PageHeader, cardClass } from "./page-chrome";
 
 interface RetailOverview {
   today: { invoiceCount: number; total: string };
@@ -132,7 +132,7 @@ export function RetailOverview({ industry }: { industry: Industry }) {
       </div>
 
       {industry === "cosmetics" ? (
-        <section className="mb-5 rounded-2xl border border-stone-200/80 bg-white p-4 sm:p-5">
+        <section className={`mb-5 ${cardClass} p-4 sm:p-5`}>
           <div className="mb-3 flex items-center justify-between gap-2">
             <h2 className="flex items-center gap-2 font-semibold text-stone-950">
               <AlertTriangleIcon aria-hidden="true" className="size-4" />
@@ -178,7 +178,7 @@ export function RetailOverview({ industry }: { industry: Industry }) {
       ) : null}
 
       {industry === "jewelry" ? (
-        <section className="mb-5 rounded-2xl border border-stone-200/80 bg-white p-4 sm:p-5">
+        <section className={`mb-5 ${cardClass} p-4 sm:p-5`}>
           <div className="mb-3 flex items-center justify-between gap-2">
             <h2 className="flex items-center gap-2 font-semibold text-stone-950">
               <GemIcon aria-hidden="true" className="size-4" />
@@ -223,7 +223,7 @@ export function RetailOverview({ industry }: { industry: Industry }) {
         </Link>
         <Link
           href={`/dashboard/${industry}`}
-          className="inline-flex min-h-12 flex-1 items-center justify-center rounded-xl border border-stone-200/80 bg-white px-4 text-sm font-semibold text-stone-600 transition-colors hover:bg-stone-50"
+          className="inline-flex min-h-12 flex-1 items-center justify-center rounded-xl border border-stone-200/80 bg-card px-4 text-sm font-semibold text-stone-600 transition-colors hover:bg-stone-50"
         >
           مدیریت {labelFor(industry, "catalogue")} ←
         </Link>
@@ -244,7 +244,7 @@ function Kpi({
   value: ReactNode;
 }) {
   return (
-    <div className="rounded-2xl border border-stone-200/80 bg-white p-4 shadow-[0_1px_2px_rgba(37,37,34,0.03)]">
+    <div className={`${cardClass} p-4 shadow-[0_1px_2px_rgb(41_37_36/0.03)]`}>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="text-sm font-medium text-stone-500">{label}</p>

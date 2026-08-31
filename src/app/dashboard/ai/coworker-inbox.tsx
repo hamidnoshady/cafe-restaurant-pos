@@ -18,7 +18,7 @@ import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
  * would hide the one that didn't.
  */
 import { useCallback, useEffect, useState } from "react";
-import { CheckIcon, Loader2Icon, XIcon } from "lucide-react";
+import { CheckIcon, XIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useFeatureLocked } from "@/components/feature-lock";
@@ -146,12 +146,8 @@ export function CoworkerInbox({ onChange }: { onChange?: () => void }) {
           {actionable ? (
             <div className="flex shrink-0 items-center gap-2">
               <Button size="sm" onClick={() => void decide(run.id, "approve")} disabled={busyId === run.id}>
-                {busyId === run.id ? (
-                  <Loader2Icon className="size-4 animate-spin" />
-                ) : (
-                  <CheckIcon className="size-4" />
-                )}
-                تأیید و ثبت
+                <CheckIcon className="size-4" aria-hidden="true" />
+                {busyId === run.id ? "در حال ثبت…" : "تأیید و ثبت"}
               </Button>
               <Button
                 size="sm"

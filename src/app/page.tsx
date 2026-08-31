@@ -12,6 +12,7 @@ import {
 import { resolveBusinessByLabel } from "@/lib/host-resolution";
 import { hasAnyUser, isSetupComplete } from "@/lib/setup-state";
 import { BusinessDirectory } from "./business-directory";
+import { cardClass } from "./dashboard/page-chrome";
 
 /**
  * Shown when `ROOT_DOMAIN` is set but the request's hostname is not under it.
@@ -24,7 +25,7 @@ import { BusinessDirectory } from "./business-directory";
 function UnresolvableHost() {
   return (
     <main className="flex min-h-screen items-center justify-center p-6">
-      <div className="w-full max-w-md rounded-2xl bg-card p-8 text-center shadow-sm">
+      <div className={`w-full max-w-md ${cardClass} p-8 text-center`}>
         <h1 className="mb-2 text-lg font-bold">این نشانی به کسب‌وکاری تعلق ندارد</h1>
         <p className="text-sm text-muted-foreground">
           نشانی اینترنتی کسب‌وکار خود را وارد کنید یا با پشتیبانی تماس بگیرید.

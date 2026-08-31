@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2Icon } from "lucide-react";
+import { cardClass } from "@/app/dashboard/page-chrome";
 import {
   classifyConnectionCode,
   normalizeServerAddress,
@@ -140,7 +140,7 @@ export function PairForm({ onBack }: { onBack: () => void }) {
   }
 
   return (
-    <div className="w-full max-w-md rounded-2xl bg-card p-8 shadow-sm">
+    <div className={`w-full max-w-md ${cardClass} p-8`}>
       <button
         type="button"
         onClick={onBack}
@@ -188,14 +188,7 @@ export function PairForm({ onBack }: { onBack: () => void }) {
               disabled={probing || !remoteUrl.trim()}
               className="rounded-lg border border-input px-3 py-1.5 text-xs font-medium hover:border-primary disabled:opacity-50 flex items-center justify-center gap-1.5 outline-none focus-visible:ring focus-visible:ring-ring/50"
             >
-              {probing ? (
-                <>
-                  <Loader2Icon className="size-3.5 animate-spin" /> در حال
-                  آزمایش…
-                </>
-              ) : (
-                "آزمایش اتصال"
-              )}
+              {probing ? "در حال آزمایش…" : "آزمایش اتصال"}
             </button>
             {probe.kind === "ok" ? (
               <span className="text-xs text-emerald-600" dir="ltr">
@@ -238,14 +231,7 @@ export function PairForm({ onBack }: { onBack: () => void }) {
           disabled={busy || codeKind !== "pairing_code"}
           className="w-full rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/85 disabled:opacity-50 outline-none focus-visible:ring focus-visible:ring-ring/50"
         >
-          {busy ? (
-            <span className="flex items-center justify-center gap-2">
-              <Loader2Icon className="size-4 animate-spin" /> در حال دریافت
-              تنظیمات…
-            </span>
-          ) : (
-            "اتصال و دریافت تنظیمات"
-          )}
+          {busy ? "در حال دریافت تنظیمات…" : "اتصال و دریافت تنظیمات"}
         </button>
       </form>
     </div>

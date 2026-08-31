@@ -3,7 +3,7 @@
 import { SectionCardSkeleton } from "@/app/dashboard/page-chrome";
 
 import { useCallback, useEffect, useState } from "react";
-import { CheckIcon, Loader2Icon, RotateCcwIcon, WandSparklesIcon } from "lucide-react";
+import { WandSparklesIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useFeatureLocked } from "@/components/feature-lock";
@@ -203,7 +203,7 @@ export function AiAutopilotActivity() {
                 {entry.status === "proposed" ? (
                   <div className="mt-2 flex gap-2">
                     <Button size="sm" disabled={busy} onClick={() => void applyDeferred(entry)}>
-                      {busy ? <Loader2Icon className="animate-spin" /> : <CheckIcon />} تأیید و اجرا
+                      {busy ? "در حال اجرا…" : "تأیید و اجرا"}
                     </Button>
                     <Button size="sm" variant="ghost" disabled={busy} onClick={() => void dismiss(entry)}>
                       رد
@@ -219,7 +219,7 @@ export function AiAutopilotActivity() {
                     disabled={busy}
                     onClick={() => void revert(entry)}
                   >
-                    {busy ? <Loader2Icon className="animate-spin" /> : <RotateCcwIcon />} بازگرداندن
+                    {busy ? "در حال بازگرداندن…" : "بازگرداندن"}
                   </Button>
                 ) : null}
                 {entry.status === "applied" && !meta?.revertible ? (

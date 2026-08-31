@@ -13,7 +13,7 @@ import { PersianNumberInput } from "@/components/ui/persian-number-input";
  * appears, so adding a template adds its form with no change here.
  */
 import { useCallback, useEffect, useState } from "react";
-import { Loader2Icon, PlayIcon, PlusIcon, Trash2Icon } from "lucide-react";
+import { PlayIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useFeatureLocked } from "@/components/feature-lock";
@@ -626,8 +626,7 @@ export function CoworkerJobs({ canAutoApply, onChange }: { canAutoApply: boolean
 
             <div className="flex items-center gap-2">
               <Button onClick={() => void save()} disabled={saving}>
-                {saving ? <Loader2Icon className="size-4 animate-spin" /> : null}
-                سپردن این کار
+                {saving ? "در حال سپردن…" : "سپردن این کار"}
               </Button>
               <Button variant="outline" onClick={() => setDraftTemplate(null)} disabled={saving}>
                 انصراف

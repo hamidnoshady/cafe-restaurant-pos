@@ -215,7 +215,7 @@ export function AiAssistant({ mode, currentStep }: Props) {
             and comes to full strength on touch/hover/focus, so the control you
             are actually reaching for is the solid one.
           */
-          className="fixed bottom-[calc(var(--app-bottom-nav)+var(--app-bottom-dock)+0.75rem)] left-4 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-primary to-primary/80 text-primary-foreground opacity-70 shadow-lg shadow-primary/30 ring-1 ring-foreground/10 transition-[transform,opacity] hover:scale-105 hover:opacity-100 focus-visible:opacity-100 active:scale-95 active:opacity-100 md:bottom-5 md:left-5"
+          className="fixed bottom-[calc(var(--app-bottom-nav)+var(--app-bottom-dock)+0.75rem)] left-4 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-primary to-primary/80 text-primary-foreground opacity-70 shadow-[0_12px_32px_-6px_rgb(41_37_36/0.25)] ring-1 ring-foreground/10 transition-[transform,opacity] hover:scale-105 hover:opacity-100 focus-visible:opacity-100 active:scale-95 active:opacity-100 md:bottom-5 md:left-5"
         >
           <SparklesIcon className="size-6" />
           {unseenCount > 0 && (
@@ -243,14 +243,14 @@ export function AiAssistant({ mode, currentStep }: Props) {
             ref={panelRef}
             role="dialog"
             aria-label="دستیار هوشمند"
-            className="fixed z-50 flex flex-col overflow-hidden border-stone-200/80 bg-card shadow-2xl ring-1 ring-foreground/10
+            className="fixed z-50 flex flex-col overflow-hidden rounded-3xl border border-stone-200/80 bg-card shadow-[0_12px_32px_-6px_rgb(41_37_36/0.18)] ring-1 ring-foreground/10
               inset-x-0 bottom-0 h-[min(88dvh,720px)] rounded-t-3xl border-t
-              dark:border-stone-700/60
+
               sm:inset-x-auto sm:bottom-[calc(var(--app-bottom-nav)+var(--app-bottom-dock)+0.75rem)] sm:left-4 sm:h-[min(76dvh,660px)] sm:w-[min(94vw,420px)] sm:rounded-3xl sm:border md:bottom-5 md:left-5"
           >
             {/* Grab handle, phones only. */}
             <div className="flex justify-center pt-2 sm:hidden" aria-hidden="true">
-              <span className="h-1.5 w-10 rounded-full bg-stone-300 dark:bg-stone-600" />
+              <span className="h-1.5 w-10 rounded-full bg-stone-300" />
             </div>
 
             <AiChatHeader

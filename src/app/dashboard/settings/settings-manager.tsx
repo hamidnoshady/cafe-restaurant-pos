@@ -44,6 +44,7 @@ import { ServerSyncSettings } from "./server-sync-settings";
 import { BusinessDaySettings } from "./business-day-settings";
 import { ShiftHistorySettings } from "./shift-history-settings";
 import { TaxSettings } from "./tax-settings";
+import { cardClass } from "../page-chrome";
 
 interface SettingsManagerProps {
   tabs: ResolvedSettingsTab[];
@@ -130,7 +131,7 @@ export function SettingsManager({ tabs, features, currentUserId, isOwner }: Sett
         bar and this is the only thing naming the section.
       */}
       {activeTabMeta ? (
-        <div className="hidden rounded-2xl border border-stone-200/80 bg-card px-5 py-4 shadow-[0_1px_2px_rgb(41_37_36/0.025)] md:block">
+        <div className={`hidden ${cardClass} px-5 py-4 shadow-[0_1px_2px_rgb(41_37_36/0.025)] md:block`}>
           <div className="flex items-start gap-3">
             {(() => {
               const Icon = TAB_ICONS[activeTabMeta.key];

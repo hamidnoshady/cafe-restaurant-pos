@@ -93,6 +93,7 @@ import { KnowledgeHelpButton } from "../knowledge-help";
 import { apiOrQueue, useOfflineQueue } from "../offline-queue";
 import { api, ErrorBox, errorMessage, inputClass } from "../ui";
 import { firstPrinter, useBusinessInfo, usePrinters } from "../use-printers";
+import { cardClass } from "../page-chrome";
 
 interface Category {
   id: string;
@@ -1082,7 +1083,7 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
         simply runs down the page and the page scrolls, the way every other
         screen does; from `md` up the two-column till is unchanged.
       */}
-      <div className="flex flex-col overflow-hidden rounded-2xl border border-stone-200/80 bg-white shadow-[0_1px_3px_rgba(37,37,34,0.03)] md:min-h-0 md:flex-1">
+      <div className={`flex flex-col overflow-hidden ${cardClass} shadow-[0_1px_3px_rgb(41_37_36/0.03)] md:min-h-0 md:flex-1`}>
         <div className="border-b border-stone-200/80 p-3 md:p-4">
           <div className="mb-3 hidden flex-wrap items-center gap-2 md:flex">
             <div className="flex min-w-0 flex-1 items-center gap-2">
@@ -1125,7 +1126,7 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
               type="button"
               onClick={load}
               disabled={isRefreshing}
-              className="flex size-11 items-center justify-center rounded-xl border border-stone-200/80 bg-white text-stone-500 transition duration-200 hover:bg-stone-50 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 disabled:opacity-60 motion-reduce:transition-none"
+              className="flex size-11 items-center justify-center rounded-xl border border-stone-200/80 bg-card text-stone-500 transition duration-200 hover:bg-stone-50 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 disabled:opacity-60 motion-reduce:transition-none"
               aria-label={
                 isRefreshing ? "در حال به‌روزرسانی صندوق" : "به‌روزرسانی صندوق"
               }
@@ -1248,7 +1249,7 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
                 className={`min-h-14 shrink-0 rounded-xl border px-4 text-sm font-bold transition duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 active:scale-[0.98] motion-reduce:transition-none ${
                   activeCategory === category.id
                     ? "border-amber-200 bg-amber-100 text-amber-700 shadow-none"
-                    : "border-stone-200/80 bg-white text-stone-600 hover:border-amber-200 hover:bg-stone-50"
+                    : "border-stone-200/80 bg-card text-stone-600 hover:border-amber-200 hover:bg-stone-50"
                 }`}
                 aria-keyshortcuts={index < 9 ? `Alt+${index + 1}` : undefined}
               >
@@ -1306,7 +1307,7 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
                     ? "border-amber-500 bg-amber-50 ring-1 ring-amber-500/25"
                     : inCart > 0
                       ? "border-amber-200 bg-amber-50"
-                      : "border-stone-200/80 bg-white hover:border-amber-200 hover:bg-stone-50") +
+                      : "border-stone-200/80 bg-card hover:border-amber-200 hover:bg-stone-50") +
                   (flashItemId === item.id
                     ? " ring-2 ring-amber-500 ring-offset-1"
                     : "")
@@ -1429,7 +1430,7 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
         scroll. `min-h-40` on the list is its floor, and the column itself
         scrolls once the three sections together outgrow the viewport.
       */}
-      <div className="hidden max-h-[46dvh] w-full shrink-0 flex-col overflow-y-auto rounded-2xl border border-stone-200/80 bg-white shadow-[0_1px_3px_rgba(37,37,34,0.03)] md:flex md:max-h-none md:w-[23rem] xl:w-[25rem]">
+      <div className={`hidden max-h-[46dvh] w-full shrink-0 flex-col overflow-y-auto ${cardClass} shadow-[0_1px_3px_rgb(41_37_36/0.03)] md:flex md:max-h-none md:w-[23rem] xl:w-[25rem]`}>
         <div className="shrink-0 border-b border-stone-200/80 p-4">
           <ErrorBox>{error}</ErrorBox>
           <OrderTypeTabs value={orderType} onChange={changeOrderType} />
@@ -1580,7 +1581,7 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
 
         {/* Sticky, so the column scrolling never takes the pay button
             off-screen the way a plain flow footer would. */}
-        <div className="sticky bottom-0 z-10 shrink-0 border-t border-border bg-white p-4">
+        <div className="sticky bottom-0 z-10 shrink-0 border-t border-border bg-card p-4">
           <div className="mb-3 flex gap-2">
             <SearchableSelect
               value={discountType}
@@ -1666,7 +1667,7 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
           className={
             "flex min-h-14 w-full items-center justify-between gap-3 rounded-2xl px-4 text-sm font-bold shadow-[0_8px_20px_rgba(233,161,27,0.22)] transition duration-200 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 motion-reduce:transition-none " +
             (cart.length === 0
-              ? "border border-stone-200/80 bg-white text-stone-600 shadow-none"
+              ? "border border-stone-200/80 bg-card text-stone-600 shadow-none"
               : "bg-amber-500 text-stone-950")
           }
           aria-label={
@@ -2287,7 +2288,7 @@ function PosLoadingState({
 }) {
   if (!loading && error) {
     return (
-      <section className="mx-auto flex min-h-[55dvh] max-w-md flex-col items-center justify-center rounded-2xl border border-stone-200/80 bg-white p-6 text-center">
+      <section className={`mx-auto flex min-h-[55dvh] max-w-md flex-col items-center justify-center ${cardClass} p-6 text-center`}>
         <WifiOffIcon className="size-7 text-amber-700" aria-hidden="true" />
         <h1 className="mt-4 text-base font-bold text-stone-950">
           صندوق در دسترس نیست
@@ -2310,13 +2311,13 @@ function PosLoadingState({
       aria-busy="true"
       aria-label="در حال بارگذاری صندوق"
     >
-      <div className="grid gap-3 rounded-2xl border border-stone-200/80 bg-white p-3 md:grid-cols-[0.8fr_1.2fr_0.7fr]">
+      <div className={`grid gap-3 ${cardClass} p-3 md:grid-cols-[0.8fr_1.2fr_0.7fr]`}>
         <div className="ops-skeleton h-12 rounded-xl" />
         <div className="ops-skeleton h-12 rounded-xl" />
         <div className="ops-skeleton h-12 rounded-xl" />
       </div>
       <div className="flex min-h-0 flex-1 flex-col gap-3 md:flex-row">
-        <section className="flex min-h-0 flex-1 flex-col rounded-2xl border border-stone-200/80 bg-white p-4">
+        <section className={`flex min-h-0 flex-1 flex-col ${cardClass} p-4`}>
           <div className="flex gap-2 overflow-hidden">
             {[1, 2, 3, 4].map((item) => (
               <div
@@ -2331,7 +2332,7 @@ function PosLoadingState({
             ))}
           </div>
         </section>
-        <aside className="hidden w-[23rem] shrink-0 rounded-2xl border border-stone-200/80 bg-white p-4 md:block">
+        <aside className={`hidden w-[23rem] shrink-0 ${cardClass} p-4 md:block`}>
           <div className="ops-skeleton h-7 w-28 rounded-lg" />
           <div className="mt-4 grid grid-cols-3 gap-2">
             {[1, 2, 3].map((item) => (
@@ -2444,7 +2445,7 @@ function CheckoutActions({
         type="button"
         onClick={onOpenOrder}
         disabled={disabled}
-        className="mt-2 min-h-12 w-full rounded-xl border border-stone-200/80 bg-white px-4 text-sm font-semibold text-stone-600 transition duration-200 hover:bg-stone-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 disabled:opacity-55 motion-reduce:transition-none"
+        className="mt-2 min-h-12 w-full rounded-xl border border-stone-200/80 bg-card px-4 text-sm font-semibold text-stone-600 transition duration-200 hover:bg-stone-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 disabled:opacity-55 motion-reduce:transition-none"
       >
         {busy ? "در حال ثبت…" : "ثبت سفارش باز (بدون دریافت وجه)"}
       </button>

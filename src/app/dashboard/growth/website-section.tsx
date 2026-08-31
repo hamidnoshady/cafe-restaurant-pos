@@ -527,7 +527,7 @@ function PreviewCard({
                 aria-live="polite"
                 aria-busy="true"
                 aria-label="در حال بارگذاری پیش‌نمایش سایت"
-                className="absolute inset-0 z-10 bg-white p-4"
+                className="absolute inset-0 z-10 bg-card p-4"
               >
                 <Skeleton aria-hidden="true" className="h-full w-full rounded-xl" />
               </div>
@@ -536,7 +536,7 @@ function PreviewCard({
               key={frameKey}
               src={url}
               title="پیش‌نمایش سایت"
-              className={`h-full w-full bg-white transition-opacity motion-reduce:transition-none ${ready ? "opacity-100" : "opacity-0"}`}
+              className={`h-full w-full bg-card transition-opacity motion-reduce:transition-none ${ready ? "opacity-100" : "opacity-0"}`}
               onLoad={onLoad}
             />
           </div>

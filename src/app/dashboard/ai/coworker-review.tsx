@@ -11,7 +11,7 @@ import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
  */
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { Loader2Icon, RefreshCwIcon } from "lucide-react";
+import { RefreshCwIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useFeatureLocked } from "@/components/feature-lock";
@@ -68,8 +68,8 @@ export function CoworkerReview() {
       }
       actions={
         <Button size="sm" variant="outline" onClick={() => void load()} disabled={loading || locked}>
-          {loading ? <Loader2Icon className="size-4 animate-spin" /> : <RefreshCwIcon className="size-4" />}
-          بازبینی دوباره
+          <RefreshCwIcon className="size-4" aria-hidden="true" />
+          {loading ? "در حال بازبینی…" : "بازبینی دوباره"}
         </Button>
       }
       flush

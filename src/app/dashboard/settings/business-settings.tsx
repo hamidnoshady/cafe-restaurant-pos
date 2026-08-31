@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ErrorBox, Field, InfoBox, api, errorMessage, inputClass } from "../ui";
-import { SectionCard } from "../page-chrome";
+import { SectionCard, cardClass } from "../page-chrome";
 
 interface BusinessState {
   business: { name: string } | null;
@@ -157,10 +157,9 @@ export function BusinessSettings() {
 
   if (loading) {
     return (
-      <div className="space-y-4" aria-live="polite">
-        <span className="sr-only">در حال بارگذاری…</span>
+      <div role="status" aria-live="polite" aria-busy="true" aria-label="در حال بارگذاری تنظیمات" className="space-y-4">
         {[0, 1, 2].map((row) => (
-          <div key={row} className="ops-skeleton h-40 rounded-2xl" />
+          <div key={row} aria-hidden="true" className="ops-skeleton h-40 rounded-2xl" />
         ))}
       </div>
     );
@@ -268,7 +267,7 @@ export function BusinessSettings() {
         of every screen, and whatever sits there gets covered. A line of text
         can afford that; the form's only submit cannot.
       */}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-stone-200/80 bg-card px-4 py-3 shadow-[0_1px_2px_rgb(41_37_36/0.035)]">
+      <div className={`flex flex-wrap items-center justify-between gap-3 ${cardClass} px-4 py-3`}>
         <Button type="submit" size="lg" disabled={saving || !dirty} className="px-6 font-semibold">
           {saving ? "در حال ذخیره…" : "ذخیرهٔ اطلاعات"}
         </Button>

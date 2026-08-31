@@ -9,10 +9,11 @@ import { useInventorySearch } from "@/lib/inventory-search";
 import { useMoney } from "@/components/money/money-context";
 import { api, Field, inputClass } from "../ui";
 import type { InventoryItem, Runner } from "./inventory-manager";
+import { cardClass } from "../page-chrome";
 
-const inventoryInputClass = `${inputClass} min-h-[52px] !border-stone-200 !bg-white shadow-none placeholder:text-stone-400 focus-visible:border-amber-500 focus-visible:ring-amber-400/30`;
+const inventoryInputClass = `${inputClass} min-h-[52px] !border-stone-200 !bg-card shadow-none placeholder:text-stone-400 focus-visible:border-amber-500 focus-visible:ring-amber-400/30`;
 const secondaryActionClass =
-  "min-h-[52px] border-stone-200 bg-white px-4 text-stone-700 hover:border-amber-300 hover:bg-amber-50 hover:text-stone-950 focus-visible:border-amber-500 focus-visible:ring-amber-400/30";
+  "min-h-[52px] border-stone-200 bg-card px-4 text-stone-700 hover:border-amber-300 hover:bg-amber-50 hover:text-stone-950 focus-visible:border-amber-500 focus-visible:ring-amber-400/30";
 
 export function ItemsSection({
   items,
@@ -62,7 +63,7 @@ export function ItemsSection({
     <div className="grid min-w-0 gap-4 md:grid-cols-[minmax(0,1fr)_18rem] lg:gap-5 lg:grid-cols-[minmax(0,1fr)_21rem] xl:grid-cols-[minmax(0,1fr)_24rem]">
       <section
         aria-labelledby="inventory-items-heading"
-        className="order-2 min-w-0 overflow-hidden rounded-2xl bg-card md:order-1"
+        className={`order-2 min-w-0 overflow-hidden ${cardClass} md:order-1`}
       >
         <div className="border-b border-stone-200/80 px-4 py-4 sm:px-5">
           <h2
@@ -103,7 +104,7 @@ export function ItemsSection({
       </section>
 
       <aside className="order-1 min-w-0 md:order-2">
-        <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-[0_1px_2px_rgb(41_37_36/0.035)] md:sticky md:top-4 sm:p-5">
+        <div className={`${cardClass} p-4 md:sticky md:top-4 sm:p-5`}>
           <h2 className="font-semibold text-stone-950">افزودن قلم انبار</h2>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">
             اطلاعات پایهٔ قلم را وارد کنید؛ آستانه سفارش مجدد اختیاری است.
@@ -275,7 +276,7 @@ function ItemRow({
           type="button"
           variant="outline"
           size="lg"
-          className="min-h-[52px] border-destructive/25 bg-white px-4 text-destructive hover:border-destructive/40 hover:bg-destructive/5 focus-visible:border-destructive/40 focus-visible:ring-destructive/20"
+          className="min-h-[52px] border-destructive/25 bg-card px-4 text-destructive hover:border-destructive/40 hover:bg-destructive/5 focus-visible:border-destructive/40 focus-visible:ring-destructive/20"
           disabled={busy}
           onClick={() => {
             if (

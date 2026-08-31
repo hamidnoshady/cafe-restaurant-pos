@@ -36,7 +36,7 @@ import { CameraScanTrigger } from "@/components/scanner/camera-barcode-scanner";
 import { ledgerSettlementFor } from "@/lib/payment-methods";
 import { api, ErrorBox, Field, inputClass } from "../ui";
 import { usePaymentMethods } from "../payment-ways";
-import { PageHeader, PageShell } from "../page-chrome";
+import { PageHeader, PageShell, cardClass } from "../page-chrome";
 import { KnowledgeHelpButton } from "../knowledge-help";
 
 type Purity = "18" | "21" | "24";
@@ -309,7 +309,7 @@ export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
         </div>
 
         <aside className="min-w-0">
-          <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-[0_1px_2px_rgb(41_37_36/0.035)] lg:sticky lg:top-4 sm:p-5">
+          <div className={`${cardClass} p-4lg:sticky lg:top-4 sm:p-5`}>
             <h2 className="font-semibold text-stone-950">فاکتور جاری</h2>
 
             {lines.length === 0 ? (
@@ -423,7 +423,7 @@ function Row({ label, value, strong }: { label: string; value: string; strong?: 
 
 function Panel({ title, hint, children }: { title: string; hint: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-2xl border border-stone-200 bg-white p-4 shadow-[0_1px_2px_rgb(41_37_36/0.035)] sm:p-5">
+    <section className={`${cardClass} p-4 sm:p-5`}>
       <h2 className="font-semibold text-stone-950">{title}</h2>
       <p className="mt-1 text-xs leading-5 text-muted-foreground">{hint}</p>
       <div className="mt-4">{children}</div>

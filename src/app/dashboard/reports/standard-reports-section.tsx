@@ -23,6 +23,7 @@ import {
   type ProfitAndLoss,
 } from "./ledger-report-view";
 import { rowsToChartData, type ChartType, type ReportRow } from "./report-ui";
+import { cardClass } from "../page-chrome";
 
 interface StandardReportDef {
   key: string;
@@ -48,7 +49,7 @@ const LEDGER_KEYS = new Set(["profit_and_loss", "balance_sheet", "cash_flow", "f
 const COMPARABLE_LEDGER_KEYS = new Set(["profit_and_loss", "balance_sheet", "cash_flow"]);
 const CONTROL_CLASS = [
   inputClass,
-  "min-h-[52px] border-stone-200/80 bg-white text-stone-950",
+  "min-h-[52px] border-stone-200/80 bg-card text-stone-950",
 ].join(" ");
 
 type LedgerReportData =
@@ -172,7 +173,7 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
     <div className="grid gap-4 md:grid-cols-[minmax(12.5rem,15rem)_minmax(0,1fr)] md:items-start lg:gap-5">
       <aside
         aria-labelledby="prepared-reports-heading"
-        className="min-w-0 rounded-2xl border border-stone-200/80 bg-white p-3 shadow-[0_1px_2px_rgb(41_37_36/0.03)] md:sticky md:top-5"
+        className={`min-w-0 ${cardClass} p-3 shadow-[0_1px_2px_rgb(41_37_36/0.03)] md:sticky md:top-5`}
       >
         <div className="border-b border-stone-100 px-2 pb-3">
           <p className="text-xs font-semibold text-amber-700">
@@ -217,7 +218,7 @@ export function StandardReportsSection({ canExplain }: { canExplain: boolean }) 
       <section
         aria-live="polite"
         aria-labelledby="prepared-report-preview-heading"
-        className="min-w-0 rounded-2xl border border-stone-200/80 bg-white p-4 shadow-[0_1px_2px_rgb(41_37_36/0.03)] sm:p-5"
+        className={`min-w-0 ${cardClass} p-4 shadow-[0_1px_2px_rgb(41_37_36/0.03)] sm:p-5`}
       >
         {!selected ? (
           <div className="flex min-h-48 items-center rounded-xl border border-dashed border-stone-200/80 bg-stone-50 px-5 text-sm text-stone-500">

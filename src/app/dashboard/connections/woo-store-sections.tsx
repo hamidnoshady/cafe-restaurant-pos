@@ -176,7 +176,7 @@ export function CatalogueSection({ connectionId, busy, call }: SectionProps) {
             { label: "ناموجود", value: summary.outOfStock ?? 0 },
             { label: "بدون دسته", value: summary.uncategorised ?? 0 },
           ].map((chip) => (
-            <span key={chip.label} className="rounded-full bg-white px-2 py-0.5 text-[11px] text-stone-700">
+            <span key={chip.label} className="rounded-full bg-card px-2 py-0.5 text-[11px] text-stone-700">
               {chip.label}: {Number(chip.value).toLocaleString("fa-IR")}
             </span>
           ))}
@@ -214,7 +214,7 @@ export function CatalogueSection({ connectionId, busy, call }: SectionProps) {
 
       <ul className="max-h-80 space-y-1 overflow-y-auto">
         {visible.map((product) => (
-          <li key={product.remoteId} className="rounded-lg border border-stone-200/70 bg-white p-2">
+          <li key={product.remoteId} className="rounded-lg border border-stone-200/70 bg-card p-2">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="font-medium">{product.name}</span>
               <span className="flex flex-wrap items-center gap-1">
@@ -352,7 +352,7 @@ export function TaxonomiesSection({ connectionId }: { connectionId: string }) {
   return (
     <div className="mt-2 max-h-80 space-y-1 overflow-y-auto rounded-md bg-stone-50 p-2 text-xs">
       {groups.map((group) => (
-        <div key={group.taxonomy} className="rounded-lg border border-stone-200/70 bg-white">
+        <div key={group.taxonomy} className="rounded-lg border border-stone-200/70 bg-card">
           <button
             type="button"
             className="flex w-full items-center justify-between gap-2 p-2 text-right"
@@ -441,7 +441,7 @@ export function StoreOrdersSection({ connectionId, busy, call }: SectionProps) {
       ) : null}
 
       {orders.map((order) => (
-        <div key={order.remoteId} className="rounded-lg border border-stone-200/70 bg-white p-2">
+        <div key={order.remoteId} className="rounded-lg border border-stone-200/70 bg-card p-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="font-medium" dir="ltr">
               #{order.number}
@@ -604,7 +604,7 @@ export function SyncSettingsSection({
   return (
     <div className="mt-2 space-y-3 rounded-md bg-stone-50 p-2 text-xs">
       <div className="grid gap-2 sm:grid-cols-2">
-        <label className="flex items-start gap-2 rounded-lg border border-stone-200/70 bg-white p-2">
+        <label className="flex items-start gap-2 rounded-lg border border-stone-200/70 bg-card p-2">
           <input
             type="checkbox"
             className="mt-0.5"
@@ -622,7 +622,7 @@ export function SyncSettingsSection({
           </span>
         </label>
 
-        <label className="flex items-start gap-2 rounded-lg border border-stone-200/70 bg-white p-2">
+        <label className="flex items-start gap-2 rounded-lg border border-stone-200/70 bg-card p-2">
           <input
             type="checkbox"
             className="mt-0.5"

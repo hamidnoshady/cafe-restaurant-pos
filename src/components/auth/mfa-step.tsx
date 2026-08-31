@@ -16,7 +16,6 @@
  * as a `theme` prop rather than being negotiated with Tailwind variants.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2Icon } from "lucide-react";
 import { toPersianDigits } from "@/lib/digits";
 
 export type MfaMethod = "totp" | "sms_otp";
@@ -480,12 +479,12 @@ export function MfaStep({
   );
 }
 
+/**
+ * The busy label every waiting button shares — text, not a spinner: the
+ * dashboard's motion budget is skeletons for regions and words for actions.
+ */
 function Spinner() {
-  return (
-    <span className="flex items-center justify-center gap-2">
-      <Loader2Icon className="size-4 animate-spin" /> لطفاً صبر کنید…
-    </span>
-  );
+  return <span className="animate-pulse">لطفاً صبر کنید…</span>;
 }
 
 /**

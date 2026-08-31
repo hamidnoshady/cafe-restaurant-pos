@@ -8,9 +8,9 @@ import { printLabel } from "@/lib/print-agent-client";
 import { labelFieldsForTrade, type LabelData } from "@/lib/label-template";
 import { firstPrinter, useBusinessInfo, usePrinters } from "../use-printers";
 import { api, Field, inputClass } from "../ui";
-import { LoadingSkeleton, SectionCardSkeleton } from "../page-chrome";
+import { LoadingSkeleton, SectionCardSkeleton, cardClass } from "../page-chrome";
 
-const accInputClass = `${inputClass} min-h-[52px] !border-stone-200 !bg-white shadow-none placeholder:text-stone-400 focus-visible:border-amber-500 focus-visible:ring-amber-400/30`;
+const accInputClass = `${inputClass} min-h-[52px] !border-stone-200 !bg-card shadow-none placeholder:text-stone-400 focus-visible:border-amber-500 focus-visible:ring-amber-400/30`;
 
 interface ItemRow {
   id: string;
@@ -99,7 +99,7 @@ export function MerchandisingSection() {
 
 function PanelShell({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-2xl border border-stone-200 bg-white p-4 shadow-[0_1px_2px_rgb(41_37_36/0.035)] sm:p-5">
+    <section className={`${cardClass} p-4 sm:p-5`}>
       <h2 className="font-semibold text-stone-950">{title}</h2>
       <div className="mt-4 space-y-3">{children}</div>
     </section>

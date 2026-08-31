@@ -19,7 +19,7 @@ import { TABLE_STATUS_LABELS, type TableStatus } from "@/lib/table-sessions";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useRealtime } from "../use-realtime";
 import { KnowledgeHelpButton } from "../knowledge-help";
-import { PageShell } from "../page-chrome";
+import { PageShell, cardClass } from "../page-chrome";
 import {
   api,
   ErrorBox,
@@ -95,8 +95,7 @@ const LEGEND: TableStatus[] = [
 ];
 const GRID = 10;
 const snap = (n: number) => Math.max(0, Math.round(n / GRID) * GRID);
-const SURFACE =
-  "rounded-2xl border border-stone-200/80 bg-white shadow-[0_1px_3px_rgba(37,37,34,0.03)]";
+const SURFACE = cardClass;
 const CONTROL =
   "min-h-12 rounded-xl border px-3 text-sm font-bold transition duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 active:scale-[0.98] motion-reduce:transition-none";
 
@@ -216,7 +215,7 @@ export function FloorPlan({ canEdit }: { canEdit: boolean }) {
               type="button"
               onClick={() => void load()}
               disabled={isRefreshing}
-              className={`${CONTROL} flex shrink-0 items-center gap-2 border-stone-200/80 bg-white text-stone-600 hover:bg-stone-50 disabled:opacity-60`}
+              className={`${CONTROL} flex shrink-0 items-center gap-2 border-stone-200/80 bg-card text-stone-600 hover:bg-stone-50 disabled:opacity-60`}
               aria-label={
                 isRefreshing
                   ? "در حال به‌روزرسانی پلان سالن"
@@ -247,8 +246,8 @@ export function FloorPlan({ canEdit }: { canEdit: boolean }) {
                   onClick={() => setWorkspaceMode("view")}
                   className={`min-h-10 rounded-lg px-3 text-sm font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 motion-reduce:transition-none ${
                     mode === "view"
-                      ? "bg-amber-100 text-amber-700 shadow-[0_1px_2px_rgba(37,37,34,0.05)]"
-                      : "text-stone-500 hover:bg-white"
+                      ? "bg-amber-100 text-amber-700 shadow-[0_1px_2px_rgb(41_37_36/0.05)]"
+                      : "text-stone-500 hover:bg-card"
                   }`}
                 >
                   نمای سالن
@@ -260,8 +259,8 @@ export function FloorPlan({ canEdit }: { canEdit: boolean }) {
                   onClick={() => setWorkspaceMode("edit")}
                   className={`min-h-10 rounded-lg px-3 text-sm font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 motion-reduce:transition-none ${
                     mode === "edit"
-                      ? "bg-amber-100 text-amber-700 shadow-[0_1px_2px_rgba(37,37,34,0.05)]"
-                      : "text-stone-500 hover:bg-white"
+                      ? "bg-amber-100 text-amber-700 shadow-[0_1px_2px_rgb(41_37_36/0.05)]"
+                      : "text-stone-500 hover:bg-card"
                   }`}
                 >
                   ویرایش پلان
@@ -278,7 +277,7 @@ export function FloorPlan({ canEdit }: { canEdit: boolean }) {
                 <button
                   type="button"
                   onClick={() => scrollToEditor("floor-sections-editor")}
-                  className={`${CONTROL} border-stone-200/80 bg-white text-stone-600 hover:bg-stone-50`}
+                  className={`${CONTROL} border-stone-200/80 bg-card text-stone-600 hover:bg-stone-50`}
                 >
                   بخش‌ها و گارسون‌ها
                 </button>
@@ -408,7 +407,7 @@ function FloorPlanSkeleton() {
           ].map(([vertical, horizontal], index) => (
             <span
               key={index}
-              className={`absolute ${vertical} ${horizontal} size-20 animate-pulse rounded-2xl border border-stone-200/80 bg-white motion-reduce:animate-none`}
+              className={`absolute ${vertical} ${horizontal} size-20 animate-pulse ${cardClass} motion-reduce:animate-none`}
             />
           ))}
         </div>
@@ -602,7 +601,7 @@ function Canvas({
               onClick={() => onSelect(t.id)}
               aria-pressed={selectedId === t.id}
               aria-label={`میز ${t.name}، ${TABLE_STATUS_LABELS[t.status]}، ${toPersianDigits(t.capacity)} نفره${section ? `، بخش ${section}` : ""}`}
-              className={`absolute flex min-h-16 min-w-16 flex-col items-center justify-center border-2 p-1.5 text-center text-xs shadow-[0_1px_2px_rgba(37,37,34,0.08)] transition-[color,background-color,border-color,box-shadow,transform] duration-200 focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2 active:scale-[0.98] motion-reduce:transition-none ${STATUS_STYLE[t.status]} ${
+              className={`absolute flex min-h-16 min-w-16 flex-col items-center justify-center border-2 p-1.5 text-center text-xs shadow-[0_1px_2px_rgb(41_37_36/0.08)] transition-[color,background-color,border-color,box-shadow,transform] duration-200 focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2 active:scale-[0.98] motion-reduce:transition-none ${STATUS_STYLE[t.status]} ${
                 selectedId === t.id
                   ? "z-10 ring-2 ring-amber-500 ring-offset-2 ring-offset-stone-50"
                   : ""
@@ -759,7 +758,7 @@ function ViewPanel({
                   تعداد نفرات
                 </span>
                 <PersianNumberInput
-                  className={`${inputClass} min-h-12 border-stone-200/80 bg-white`}
+                  className={`${inputClass} min-h-12 border-stone-200/80 bg-card`}
                   inputMode="numeric"
                   dir="ltr"
                   value={partySize}
@@ -774,7 +773,7 @@ function ViewPanel({
                   <span className="font-normal text-stone-500">(اختیاری)</span>
                 </span>
                 <input
-                  className={`${inputClass} min-h-12 border-stone-200/80 bg-white`}
+                  className={`${inputClass} min-h-12 border-stone-200/80 bg-card`}
                   value={guestName}
                   onChange={(e) => setGuestName(e.target.value)}
                   placeholder="نام مهمان"
@@ -955,7 +954,7 @@ function SectionEditor({
             نام بخش جدید
           </span>
           <input
-            className={`${inputClass} min-h-12 border-stone-200/80 bg-white`}
+            className={`${inputClass} min-h-12 border-stone-200/80 bg-card`}
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="مثلاً سالن اصلی"
@@ -966,7 +965,7 @@ function SectionEditor({
           type="button"
           onClick={addSection}
           disabled={busy}
-          className={`mt-3 w-full ${CONTROL} border-stone-200/80 bg-white text-stone-600 hover:bg-stone-100 disabled:opacity-60`}
+          className={`mt-3 w-full ${CONTROL} border-stone-200/80 bg-card text-stone-600 hover:bg-stone-100 disabled:opacity-60`}
         >
           افزودن بخش
         </button>
@@ -975,7 +974,7 @@ function SectionEditor({
         {sections.map((s) => (
           <li
             key={s.id}
-            className="rounded-xl border border-stone-200/80 bg-white p-3"
+            className="rounded-xl border border-stone-200/80 bg-card p-3"
           >
             <div className="flex items-center justify-between gap-2">
               <span className="min-w-0 truncate text-sm font-bold text-stone-950">

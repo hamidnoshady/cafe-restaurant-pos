@@ -131,7 +131,7 @@ export function ChatBubble({
         <span
           aria-hidden="true"
           className={cn(
-            "mt-6 grid size-7 shrink-0 place-items-center rounded-full bg-gradient-to-br from-primary to-primary/60 text-primary-foreground shadow-sm ring-1 ring-primary/20",
+            "mt-6 grid size-7 shrink-0 place-items-center rounded-full bg-gradient-to-br from-primary to-primary/60 text-primary-foreground ring-1 ring-primary/20",
             busy && "animate-pulse",
           )}
         >
@@ -161,7 +161,7 @@ export function ChatBubble({
             "min-w-0 overflow-hidden text-sm leading-7 shadow-[0_1px_2px_rgb(41_37_36/0.04)]",
             isUser
               ? "rounded-2xl rounded-tl-md bg-gradient-to-br from-primary to-primary/85 px-4 py-2.5 text-primary-foreground"
-              : "rounded-2xl rounded-tr-md border border-stone-200/70 bg-card px-4 py-2.5 text-foreground dark:border-stone-700/50",
+              : "rounded-2xl rounded-tr-md border border-stone-200/70 bg-card px-4 py-2.5 text-foreground",
           )}
         >
           {isUser ? (

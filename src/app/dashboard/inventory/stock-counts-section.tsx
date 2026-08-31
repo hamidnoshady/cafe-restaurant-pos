@@ -20,6 +20,7 @@ import { useInventorySearch } from "@/lib/inventory-search";
 import { api, errorMessage, Field, inputClass, PrimaryButton } from "../ui";
 import { CountScanField, type ScanMatch } from "./count-scan-field";
 import type { InventoryItem, Runner } from "./inventory-manager";
+import { cardClass, overlayPanelClass } from "../page-chrome";
 
 interface StockCount {
   id: string;
@@ -158,7 +159,7 @@ export function StockCountsSection({
 
   return (
     <div className="space-y-6">
-      <section className="min-w-0 rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-5">
+      <section className={`min-w-0 ${cardClass} p-5`}>
         <h2 className="mb-1 font-semibold">شمارش فیزیکی انبار</h2>
         <p className="mb-3 text-xs text-muted-foreground">
           فقط اقلامی که مقدار شمارش‌شده برایشان وارد شود ثبت می‌شوند؛ اختلاف با
@@ -281,7 +282,7 @@ export function StockCountsSection({
         </form>
       </section>
 
-      <section className="min-w-0 rounded-2xl border border-stone-200/80 shadow-[0_1px_2px_rgb(41_37_36/0.035)] bg-card p-5">
+      <section className={`min-w-0 ${cardClass} p-5`}>
         <h2 className="mb-3 font-semibold">شمارش‌های اخیر</h2>
         <p className="mb-3 text-xs text-muted-foreground">
           برای دیدن اقلام هر شمارش و ویرایش یا حذف آن، روی شمارش بزنید.
@@ -456,7 +457,7 @@ function StockCountModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="stock-count-modal-heading"
-        className="max-h-[88vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-card p-4 shadow-lg sm:max-h-[80vh] sm:p-5"
+        className={`${overlayPanelClass} max-h-[88vh] w-full max-w-2xl overflow-y-auto p-4 sm:max-h-[80vh] sm:p-5`}
         onClick={(e) => e.stopPropagation()}
       >
         <header className="mb-4 flex items-start justify-between gap-3 border-b border-border pb-4">

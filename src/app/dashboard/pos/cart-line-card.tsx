@@ -66,7 +66,7 @@ export function CartLineCard({
         "rounded-xl border p-3 text-sm animate-in fade-in slide-in-from-top-1 duration-150 " +
         (hasAddOns
           ? "border-amber-200 bg-amber-50"
-          : "border-stone-200/80 bg-white")
+          : "border-stone-200/80 bg-card")
       }
     >
       {/* Header: the item and ITS number selector together. The stepper is on

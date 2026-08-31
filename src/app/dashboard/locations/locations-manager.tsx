@@ -18,7 +18,7 @@ import { useMoney } from "@/components/money/money-context";
 import { JalaliDatePicker } from "../jalali-date-picker";
 import { BarChart } from "../charts";
 import { ErrorBox, Field, InfoBox, PrimaryButton, SecondaryButton, api, inputClass } from "../ui";
-import { SectionCard } from "../page-chrome";
+import { EmptyState, SectionCard, StatusBadge } from "../page-chrome";
 
 interface StaffRow {
   staffId: string;
@@ -84,15 +84,10 @@ function formatSyncTime(iso: string | null): string {
   return `${toPersianDigits(formatJalali(iso))} ${toPersianDigits(time)}`;
 }
 
+/** Sync health, in the shared state-pill tones — red for «قطع», green for «به‌روز». */
 function StaleBadge({ stale }: { stale: boolean }) {
-  return stale ? (
-    <span className="rounded-full bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive">
-      قطع همگام‌سازی
-    </span>
-  ) : (
-    <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-      به‌روز
-    </span>
+  return (
+    <StatusBadge tone={stale ? "danger" : "positive"}>{stale ? "قطع همگام‌سازی" : "به‌روز"}</StatusBadge>
   );
 }
 
@@ -208,7 +203,7 @@ function ComparisonCard() {
             <h3 className="mb-2 text-sm font-medium text-muted-foreground">برترین کارکنان هر شعبه</h3>
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               {overview.locations.map((l) => (
-                <div key={l.id} className="rounded-xl border p-3">
+                <div key={l.id} className="rounded-xl border border-stone-100 bg-stone-50/60 p-3">
                   <p className="mb-2 text-sm font-semibold">{l.name}</p>
                   {l.topStaff.length === 0 ? (
                     <p className="text-xs text-muted-foreground">داده‌ای ثبت نشده است.</p>
@@ -306,7 +301,7 @@ function RegistryCard() {
       {!locations ? (
         <LoadingSkeleton rows={3} />
       ) : locations.length === 0 ? (
-        <p className="mb-4 text-sm text-muted-foreground">هنوز شعبه‌ای ثبت نشده است.</p>
+        <EmptyState>هنوز شعبه‌ای ثبت نشده است.</EmptyState>
       ) : (
         <ul className="mb-4 divide-y">
           {locations.map((l) => (

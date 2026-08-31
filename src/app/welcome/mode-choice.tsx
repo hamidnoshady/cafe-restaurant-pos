@@ -1,5 +1,7 @@
 "use client";
 
+import { cardClass } from "@/app/dashboard/page-chrome";
+
 /**
  * First screen of the desktop first-run wizard: local-only, or claim an
  * existing online business.
@@ -20,7 +22,7 @@ export function ModeChoice({ onChoose }: { onChoose: (mode: "local" | "connect")
         <button
           type="button"
           onClick={() => onChoose("local")}
-          className="rounded-2xl border border-input bg-card p-6 text-start shadow-sm transition hover:border-primary hover:shadow-md"
+          className={`group ${cardClass} p-6 text-start transition hover:border-amber-300 hover:bg-amber-50/40 focus-visible:outline-none focus-visible:ring focus-visible:ring-amber-400/40`}
         >
           <p className="mb-2 text-lg font-bold">راه‌اندازی محلی</p>
           <p className="mb-4 text-sm text-muted-foreground">
@@ -36,7 +38,7 @@ export function ModeChoice({ onChoose }: { onChoose: (mode: "local" | "connect")
         <button
           type="button"
           onClick={() => onChoose("connect")}
-          className="rounded-2xl border border-input bg-card p-6 text-start shadow-sm transition hover:border-primary hover:shadow-md"
+          className={`group ${cardClass} p-6 text-start transition hover:border-amber-300 hover:bg-amber-50/40 focus-visible:outline-none focus-visible:ring focus-visible:ring-amber-400/40`}
         >
           <p className="mb-2 text-lg font-bold">اتصال به پلتفرم آنلاین</p>
           <p className="mb-4 text-sm text-muted-foreground">

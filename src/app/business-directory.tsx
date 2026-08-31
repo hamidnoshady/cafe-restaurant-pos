@@ -12,7 +12,7 @@
  * exists on a business's own origin, which is what makes it host-scoped.
  */
 import { useState } from "react";
-import { Loader2Icon } from "lucide-react";
+import { cardClass } from "@/app/dashboard/page-chrome";
 
 interface DirectoryEntry {
   name: string;
@@ -57,7 +57,7 @@ export function BusinessDirectory() {
 
   return (
     <main className="flex min-h-screen items-center justify-center p-4">
-      <div className="w-full max-w-sm rounded-2xl bg-card p-8 shadow-sm">
+      <div className={`w-full max-w-sm ${cardClass} p-8`}>
         <h1 className="mb-1 text-center text-xl font-bold">
           سیستم فروش کافه و رستوران
         </h1>
@@ -77,7 +77,7 @@ export function BusinessDirectory() {
                 <li key={b.subdomain}>
                   <a
                     href={b.url ?? "#"}
-                    className="flex items-center justify-between rounded-lg border border-input px-4 py-3 transition hover:border-primary"
+                    className="flex items-center justify-between rounded-xl border border-stone-200/80 bg-card px-4 py-3 transition hover:border-amber-300 hover:bg-amber-50/40 focus-visible:outline-none focus-visible:ring focus-visible:ring-amber-400/40"
                   >
                     <span>
                       <span className="block font-semibold">{b.name}</span>
@@ -138,13 +138,7 @@ export function BusinessDirectory() {
               disabled={busy}
               className="w-full rounded-lg bg-primary py-2.5 font-semibold text-primary-foreground transition hover:bg-primary/85 disabled:opacity-50 outline-none focus-visible:ring focus-visible:ring-ring/50"
             >
-              {busy ? (
-                <span className="flex items-center justify-center gap-2">
-                  <Loader2Icon className="size-4 animate-spin" /> در حال بررسی…
-                </span>
-              ) : (
-                "نمایش کسب‌وکارها"
-              )}
+              {busy ? "در حال بررسی…" : "نمایش کسب‌وکارها"}
             </button>
           </form>
         )}

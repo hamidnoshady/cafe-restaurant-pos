@@ -7,6 +7,7 @@ import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import { useMoney } from "@/components/money/money-context";
 import { api } from "../ui";
+import { overlayPanelClass } from "../page-chrome";
 
 interface DrillDownLine {
   entryId: string;
@@ -55,7 +56,7 @@ export function DrillDownPanel({ target, onClose }: { target: DrillDownTarget; o
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
       <div
-        className="max-h-[80vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-card p-5 shadow-lg"
+        className={`${overlayPanelClass} max-h-[80vh] w-full max-w-2xl overflow-y-auto p-5`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-4 flex items-center justify-between">

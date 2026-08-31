@@ -9,8 +9,9 @@ import { formatJalali } from "@/lib/jalali";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { api, Field, inputClass } from "../ui";
 import { PURITY_LABELS, type GoldPriceRow, type Purity, type Runner } from "./jewelry-manager";
+import { cardClass } from "../page-chrome";
 
-const jewelryInputClass = `${inputClass} min-h-[52px] !border-stone-200 !bg-white shadow-none placeholder:text-stone-400 focus-visible:border-amber-500 focus-visible:ring-amber-400/30`;
+const jewelryInputClass = `${inputClass} min-h-[52px] !border-stone-200 !bg-card shadow-none placeholder:text-stone-400 focus-visible:border-amber-500 focus-visible:ring-amber-400/30`;
 
 export function PricesSection({ prices, busy, run }: { prices: GoldPriceRow[]; busy: boolean; run: Runner }) {
   const money = useMoney();
@@ -33,7 +34,7 @@ export function PricesSection({ prices, busy, run }: { prices: GoldPriceRow[]; b
     <div className="grid min-w-0 gap-4 md:grid-cols-[minmax(0,1fr)_18rem] lg:gap-5 lg:grid-cols-[minmax(0,1fr)_21rem]">
       <section
         aria-labelledby="jewelry-prices-heading"
-        className="order-2 min-w-0 overflow-hidden rounded-2xl bg-card md:order-1"
+        className={`order-2 min-w-0 overflow-hidden ${cardClass} md:order-1`}
       >
         <div className="border-b border-stone-200/80 px-4 py-4 sm:px-5">
           <h2 id="jewelry-prices-heading" className="font-semibold text-stone-950">
@@ -64,7 +65,7 @@ export function PricesSection({ prices, busy, run }: { prices: GoldPriceRow[]; b
       </section>
 
       <aside className="order-1 min-w-0 md:order-2">
-        <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-[0_1px_2px_rgb(41_37_36/0.035)] md:sticky md:top-4 sm:p-5">
+        <div className={`${cardClass} p-4 md:sticky md:top-4 sm:p-5`}>
           <h2 className="font-semibold text-stone-950">ثبت نرخ امروز</h2>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">نرخ هر گرم طلا ({money.unitLabel}) برای هر عیار جداگانه ثبت می‌شود.</p>
 

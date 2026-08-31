@@ -40,8 +40,8 @@ export function AiChatHeader({
         : "گزارش‌ها و کارها";
 
   return (
-    <header className="flex items-center gap-2.5 border-b border-stone-200/70 bg-gradient-to-b from-primary/10 to-transparent px-3.5 py-2.5 dark:border-stone-700/50">
-      <span className="relative grid size-9 shrink-0 place-items-center rounded-full bg-gradient-to-br from-primary via-primary to-primary/70 text-primary-foreground shadow-md shadow-primary/30">
+    <header className="flex items-center gap-2.5 border-b border-stone-200/70 bg-gradient-to-b from-primary/10 to-transparent px-3.5 py-2.5">
+      <span className="relative grid size-9 shrink-0 place-items-center rounded-full bg-gradient-to-br from-primary via-primary to-primary/70 text-primary-foreground">
         <BotIcon className="size-4.5" />
         <span
           aria-hidden="true"

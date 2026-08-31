@@ -126,7 +126,7 @@ export function PullToRefresh({
       >
         <Loader2Icon
           aria-hidden="true"
-          className={`size-5 text-[#B97905] ${refreshing ? "animate-spin" : ""}`}
+          className={`size-5 text-amber-700 ${refreshing ? "animate-pulse" : ""}`}
           style={
             refreshing
               ? undefined
