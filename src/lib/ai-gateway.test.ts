@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildGatewayRuntime,
   defaultGatewayConfig,
+  GATEWAY_ROUTING_STRATEGIES,
   emptyBusinessGateway,
   gatewayManagementUrl,
   gatewayMcpToolsBody,
@@ -24,12 +25,16 @@ import {
   mcpServersFromText,
   mcpServersToText,
   normaliseBusinessGatewayInput,
+  normaliseRoutingStrategy,
   normalizeMcpServers,
   parseGatewayModels,
   parseGeneratedKey,
   parseKeySpend,
   parseResponseCostHeader,
+  parseRouterSettings,
   resolveChatModel,
+  routerSettingsUrl,
+  routingStrategyMatches,
   rialFromGatewayUsd,
   resolveEmbeddingModel,
   resolveGatewayAuthKey,
@@ -268,6 +273,11 @@ describe("key scoping", () => {
 });
 
 describe("management endpoints", () => {
+  it("points the router settings call at the management root, not /v1", () => {
+    expect(routerSettingsUrl("http://litellm:4000/v1")).toBe("http://litellm:4000/router/settings");
+    expect(routerSettingsUrl("http://litellm:4000")).toBe("http://litellm:4000/router/settings");
+  });
+
   it("strips the /v1 suffix so management routes resolve", () => {
     expect(gatewayManagementUrl("http://litellm:4000/v1")).toBe("http://litellm:4000");
     expect(gatewayManagementUrl("http://litellm:4000/v1/")).toBe("http://litellm:4000");
@@ -330,6 +340,85 @@ describe("list coercion", () => {
 
   it("round-trips through the console textarea", () => {
     expect(toStringList(toListText(["a", "b"]))).toEqual(["a", "b"]);
+  });
+});
+
+describe("the proxy's routing vocabulary", () => {
+  it("offers only strategies the proxy implements", () => {
+    // LiteLLM ignores a routing_strategy it does not recognise, without an
+    // error, so every value the console can offer has to be a real one.
+    expect(GATEWAY_ROUTING_STRATEGIES).toEqual([
+      "simple-shuffle",
+      "least-busy",
+      "latency-based-routing",
+      "cost-based-routing",
+      "usage-based-routing-v2",
+      "usage-based-routing",
+      "provider-budget-routing",
+    ]);
+    for (const strategy of GATEWAY_ROUTING_STRATEGIES) {
+      expect(validateGatewayInput({ routingStrategy: strategy })).not.toContain("ai_gateway_bad_routing");
+    }
+  });
+
+  it("no longer offers the name the proxy never understood", () => {
+    expect(GATEWAY_ROUTING_STRATEGIES).not.toContain("usage-based-router");
+  });
+
+  it("folds a legacy stored value onto its successor instead of rejecting it", () => {
+    expect(normaliseRoutingStrategy("usage-based-router")).toBe("usage-based-routing-v2");
+    expect(validateGatewayInput({ routingStrategy: "usage-based-router" })).not.toContain(
+      "ai_gateway_bad_routing",
+    );
+  });
+
+  it("normalises case and padding, and refuses anything else", () => {
+    expect(normaliseRoutingStrategy("  Simple-Shuffle ")).toBe("simple-shuffle");
+    expect(normaliseRoutingStrategy("round-robin")).toBeNull();
+    expect(normaliseRoutingStrategy("")).toBeNull();
+    expect(normaliseRoutingStrategy(undefined)).toBeNull();
+  });
+
+  it("compares the stored strategy with the one the proxy reports", () => {
+    // A proxy that does not report its strategy is not a mismatch: the console
+    // must not claim a fault it cannot see.
+    expect(routingStrategyMatches("simple-shuffle", null)).toBe(true);
+    expect(routingStrategyMatches("simple-shuffle", "simple-shuffle")).toBe(true);
+    // The legacy spelling and its successor are the same choice.
+    expect(routingStrategyMatches("usage-based-router", "usage-based-routing-v2")).toBe(true);
+    expect(routingStrategyMatches("simple-shuffle", "latency-based-routing")).toBe(false);
+  });
+
+  it("reads the proxy's live router settings", () => {
+    const parsed = parseRouterSettings({
+      current_values: {
+        routing_strategy: "simple-shuffle",
+        fallbacks: [{ "pos-chat": ["pos-cheap"] }],
+      },
+      fields: [
+        { field_name: "num_retries", field_value: 3, options: null },
+        {
+          field_name: "routing_strategy",
+          field_value: "simple-shuffle",
+          options: ["simple-shuffle", "least-busy"],
+        },
+      ],
+    });
+    expect(parsed.routingStrategy).toBe("simple-shuffle");
+    expect(parsed.routingOptions).toEqual(["simple-shuffle", "least-busy"]);
+    expect(parsed.fallbacks).toEqual([{ from: "pos-chat", to: ["pos-cheap"] }]);
+  });
+
+  it("falls back to the field list, and to nothing at all, when values are missing", () => {
+    expect(
+      parseRouterSettings({
+        fields: [{ field_name: "routing_strategy", field_value: "least-busy", options: null }],
+      }).routingStrategy,
+    ).toBe("least-busy");
+
+    const empty = parseRouterSettings(null);
+    expect(empty).toEqual({ routingStrategy: null, routingOptions: [], fallbacks: [] });
+    expect(parseRouterSettings({ current_values: { routing_strategy: 42 } }).routingStrategy).toBeNull();
   });
 });
 

@@ -60,6 +60,10 @@ interface GatewayStatus {
   ok: boolean;
   latencyMs: number | null;
   models: string[];
+  /** The strategy the proxy reports it is running, when it reports one. */
+  proxyRoutingStrategy: string | null;
+  /** The strategy stored here differs from the one the proxy is running. */
+  routingMismatch: boolean;
   error: string | null;
 }
 
@@ -82,12 +86,20 @@ interface BusinessSummary {
   businessName: string;
 }
 
+/**
+ * The routing strategies the LiteLLM proxy implements, mirrored from
+ * `GATEWAY_ROUTING_STRATEGIES` in `src/lib/ai-gateway.ts` (which mirrors the
+ * proxy's own vocabulary). A value the proxy does not know is ignored without
+ * an error, so the console must never offer one.
+ */
 const ROUTING_OPTIONS = [
-  { value: "simple-shuffle", label: "simple-shuffle — توزیع ساده" },
-  { value: "least-busy", label: "least-busy — کم‌ترین بار" },
-  { value: "usage-based-router", label: "usage-based-router — بر پایهٔ مصرف" },
+  { value: "simple-shuffle", label: "simple-shuffle — توزیع وزنی (پیش‌فرض و پیشنهادی)" },
+  { value: "least-busy", label: "least-busy — کم‌ترین درخواست در جریان" },
   { value: "latency-based-routing", label: "latency-based-routing — کم‌ترین تأخیر" },
-  { value: "cost-based-routing", label: "cost-based-routing — کم‌ترین هزینه" },
+  { value: "cost-based-routing", label: "cost-based-routing — کم‌ترین هزینه (ناهمگام)" },
+  { value: "usage-based-routing-v2", label: "usage-based-routing-v2 — بر پایهٔ مصرف TPM (ناهمگام)" },
+  { value: "usage-based-routing", label: "usage-based-routing — نسخهٔ قدیمی (منسوخ)" },
+  { value: "provider-budget-routing", label: "provider-budget-routing — بر پایهٔ بودجهٔ ارائه‌دهنده" },
 ];
 
 const DURATION_OPTIONS = [
@@ -324,6 +336,21 @@ export default function PlatformAiPage() {
                 {status.models.join("، ")}
               </p>
             ) : null}
+            {status.ok && status.proxyRoutingStrategy ? (
+              <p className="mt-2 text-xs">
+                <span className="text-white/50">روش توزیع واقعی دروازه: </span>
+                <span dir="ltr" className={status.routingMismatch ? "text-amber-300" : "text-white/80"}>
+                  {status.proxyRoutingStrategy}
+                </span>
+                {status.routingMismatch ? (
+                  <span className="text-amber-300">
+                    {" "}
+                    — با مقدار ذخیره‌شدهٔ این صفحه یکی نیست؛ این مقدار از راه API تغییر نمی‌کند و باید در
+                    config.yaml اصلاح شود.
+                  </span>
+                ) : null}
+              </p>
+            ) : null}
           </div>
         ) : null}
         {can("ai.config.manage") ? (
@@ -360,24 +387,35 @@ export default function PlatformAiPage() {
                 autoComplete="off"
               />
             </Field>
-            <Field label="نام مستعار مدل گفت‌وگو" hint="خالی یعنی همان مدل تنظیم‌شدهٔ پلتفرم.">
+            <Field
+              label="نام مستعار مدل گفت‌وگو"
+              hint="یکی از نام‌های model_list دروازه (مثلاً pos-chat)؛ نام مدل واقعی ارائه‌دهنده اینجا نوشته نمی‌شود. خالی یعنی همان مدل تنظیم‌شدهٔ پلتفرم."
+            >
               <input
                 className={inputClass}
                 dir="ltr"
+                placeholder="pos-chat"
                 value={draft.chatModel}
                 onChange={(event) => setDraft({ ...draft, chatModel: event.target.value })}
               />
             </Field>
-            <Field label="نام مستعار مدل بردارسازی (Embeddings)" hint="می‌تواند از ارائه‌دهندهٔ دیگری بیاید.">
+            <Field
+              label="نام مستعار مدل بردارسازی (Embeddings)"
+              hint="یکی از نام‌های model_list دروازه (مثلاً pos-embed)؛ می‌تواند از ارائه‌دهندهٔ دیگری بیاید."
+            >
               <input
                 className={inputClass}
                 dir="ltr"
+                placeholder="pos-embed"
                 value={draft.embeddingModel}
                 onChange={(event) => setDraft({ ...draft, embeddingModel: event.target.value })}
               />
             </Field>
             <div className="lg:col-span-2">
-              <Field label="زنجیرهٔ جایگزین (Fallbacks)" hint="هر سطر یا کاما یک مدل؛ به ترتیب پس از خطای مدل اصلی امتحان می‌شود.">
+              <Field
+                label="زنجیرهٔ جایگزین (Fallbacks)"
+                hint="هر سطر یا کاما یک نام مستعار از model_list (مثلاً pos-cheap). این فهرست با هر درخواست به‌صورت fallbacks فرستاده می‌شود و باید با router_settings.fallbacks دروازه هم‌خوان باشد."
+              >
                 <textarea
                   className={inputClass}
                   dir="ltr"
@@ -387,7 +425,10 @@ export default function PlatformAiPage() {
                 />
               </Field>
             </div>
-            <Field label="روش توزیع">
+            <Field
+              label="روش توزیع (routing_strategy)"
+              hint="تنظیم سمت دروازه است و با درخواست ارسال نمی‌شود؛ باید با router_settings.routing_strategy در config.yaml یکی باشد. «بررسی ارتباط» مقدار واقعی دروازه را می‌خواند و اختلاف را گزارش می‌کند."
+            >
               <SearchableSelect
                 className={inputClass}
                 value={draft.routingStrategy}
