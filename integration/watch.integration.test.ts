@@ -515,6 +515,34 @@ describe("repair tickets", () => {
     await repairs.setRepairStatus(ticket.id, "cancelled");
     expect((await itemsService.getSerial(serial.id))?.status).toBe("in_stock");
   });
+
+  it("refuses to remove a part from the wrong ticket (parent-child scoping)", async () => {
+    const ticket = await repairs.createRepairTicket({
+      locationId: biz.locationId,
+      itemDescription: "ساعت مشتری A",
+    });
+    const otherTicket = await repairs.createRepairTicket({
+      locationId: biz.locationId,
+      itemDescription: "ساعت مشتری B",
+    });
+    const part = await repairs.addRepairPart(ticket.id, {
+      description: "باتری",
+      quantity: "1",
+      unitCost: 300_000,
+      charge: 800_000,
+    });
+
+    // Supplying a valid part id against a different ticket must be a no-op.
+    const removed = await repairs.removeRepairPart(part.id, otherTicket.id);
+    expect(removed).toBe(false);
+    const parts = await repairs.listRepairParts(ticket.id);
+    expect(parts.map((p) => p.id)).toContain(part.id);
+
+    // Removing through the owning ticket still works.
+    const owned = await repairs.removeRepairPart(part.id, ticket.id);
+    expect(owned).toBe(true);
+    expect(await repairs.listRepairParts(ticket.id)).toHaveLength(0);
+  });
 });
 
 /** Phase 27 Wave 10 — service reminders, pre-owned provenance, repair estimates. */

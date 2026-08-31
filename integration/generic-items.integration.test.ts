@@ -328,8 +328,33 @@ describe("items-service: gem/stone add-ons (Phase 21 Wave 4)", () => {
       carat: "0.5",
       cost: 20_000_000,
     });
-    await itemsService.removeStone(stone.id);
+    const removed = await itemsService.removeStone(stone.id, ring.id);
+    expect(removed).toBe(true);
     expect(await itemsService.listStones(ring.id)).toHaveLength(0);
+  });
+
+  it("refuses to remove a stone from the wrong item (parent-child scoping)", async () => {
+    const ring = await itemsService.createItem({
+      locationId: biz.locationId,
+      name: "انگشتر",
+      tracking: "weight",
+    });
+    const otherRing = await itemsService.createItem({
+      locationId: biz.locationId,
+      name: "انگشتر دوم",
+      tracking: "weight",
+    });
+    const stone = await itemsService.addStone(ring.id, {
+      stoneType: "الماس",
+      carat: "0.5",
+      cost: 20_000_000,
+    });
+
+    const removed = await itemsService.removeStone(stone.id, otherRing.id);
+    expect(removed).toBe(false);
+    // The actual owner's stone is untouched.
+    const stones = await itemsService.listStones(ring.id);
+    expect(stones.map((s) => s.id)).toContain(stone.id);
   });
 
   it("leaving net_weight untouched: adding a stone does not change item_weight_attributes", async () => {

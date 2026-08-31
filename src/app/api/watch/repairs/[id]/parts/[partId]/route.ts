@@ -19,7 +19,8 @@ export const DELETE = withTenantScope(
     }
 
     try {
-      await removeRepairPart(partId);
+      const removed = await removeRepairPart(partId, id);
+      if (!removed) return NextResponse.json({ error: "part_not_found" }, { status: 404 });
       return NextResponse.json({ ok: true });
     } catch (err) {
       return NextResponse.json({ error: "validation_failed", message: (err as Error).message }, { status: 400 });

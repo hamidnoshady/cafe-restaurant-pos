@@ -482,8 +482,22 @@ export async function listStones(itemId: string): Promise<ItemStone[]> {
   return rows.map(mapStone);
 }
 
-export async function removeStone(id: string): Promise<void> {
-  await query(`DELETE FROM item_stones WHERE id = $1`, [id]);
+/**
+ * Removes a stone only if it belongs to the given item.
+ *
+ * The route verifies the parent item is at the caller's active branch, so the
+ * parent-child predicate here is what prevents IDOR: a caller with access to
+ * one item must not be able to delete a stone attached to another branch's
+ * item by passing a foreign stone id. RLS on `item_stones` scopes by business
+ * only (via its parent item), not by branch, so this application-level check
+ * is load-bearing.
+ */
+export async function removeStone(id: string, itemId: string): Promise<boolean> {
+  const { rowCount } = await query(
+    `DELETE FROM item_stones WHERE id = $1 AND item_id = $2`,
+    [id, itemId],
+  );
+  return (rowCount ?? 0) > 0;
 }
 
 /** Sum of an item's stone costs (0 if it has none) — the add-on to metal cost when computing COGS at sale time. */
