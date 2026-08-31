@@ -38,6 +38,7 @@
     "dotenv": "^17.0.0",
     "exceljs": "^4.4.0",
     "gsap": "^3.15.0",
+    "html2canvas-pro": "^2.4.0",
     "jose": "^6.0.0",
     "lucide-react": "^1.25.0",
     "mssql": "^12.7.0",

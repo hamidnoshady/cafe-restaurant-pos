@@ -9,6 +9,7 @@ import { getSetting, SETTING_KEYS } from "@/lib/settings";
 import { visibleSettingsTabs } from "@/lib/settings-tabs";
 import { AiAssistant } from "@/components/ai/ai-assistant";
 import { MoneyProvider } from "@/components/money/money-context";
+import { BugReportProvider } from "@/components/bug-report/bug-report-provider";
 import { LockProvider } from "./lock-screen";
 import { DashboardSidebar, type NavItem } from "./dashboard-sidebar";
 import { DashboardMain } from "./dashboard-main";
@@ -170,6 +171,7 @@ export default async function DashboardLayout({
   return (
     <LockProvider fullName={session.fullName}>
       <MoneyProvider unit={currencyDisplay}>
+        <BugReportProvider>
         {/*
           A *definite* height, not `min-h-screen` — this is the fix for "the app
           doesn't scroll on my phone".
@@ -204,6 +206,7 @@ export default async function DashboardLayout({
           <AiAssistant mode={assistantMode} />
         ) : null}
         </div>
+        </BugReportProvider>
       </MoneyProvider>
     </LockProvider>
   );
