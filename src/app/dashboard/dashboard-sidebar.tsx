@@ -75,6 +75,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { BugReportFooterButton } from "@/components/bug-report/report-buttons";
 import { BiometricSettingsButton } from "./biometric-settings";
 import { BranchSwitcher } from "./branch-switcher";
 import { LockButton } from "./lock-screen";
@@ -530,6 +531,7 @@ function DashboardSidebarFooter({
         {PIN_ROLES.includes(role) && <ShiftButton />}
         {PIN_ROLES.includes(role) && <BiometricSettingsButton />}
         {PIN_ROLES.includes(role) && <LockButton />}
+        <BugReportFooterButton />
         <LogoutButton />
       </div>
     </SidebarFooter>
@@ -672,6 +674,10 @@ function MobileBottomNavigation({
           </Link>
         );
       })}
+      {/* A fixed, non-configurable slot: the bug-report entry always sits here,
+          next to the user's chosen pages, so reporting a problem is one tap
+          away on a phone without crowding the pages themselves. */}
+      <BugReportFooterButton variant="bottomnav" />
     </nav>
   );
 }
