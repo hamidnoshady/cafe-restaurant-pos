@@ -1,5 +1,48 @@
-import { describe, it, expect } from "vitest";
-import { clientIpFrom } from "./rate-limit";
+import { describe, it, expect, afterEach } from "vitest";
+import { clientIpFrom, internalBaseOrigin } from "./rate-limit";
+
+describe("internalBaseOrigin", () => {
+  const savedPort = process.env.PORT;
+  const savedInternal = process.env.INTERNAL_BASE_URL;
+
+  afterEach(() => {
+    if (savedPort === undefined) delete process.env.PORT;
+    else process.env.PORT = savedPort;
+    if (savedInternal === undefined) delete process.env.INTERNAL_BASE_URL;
+    else process.env.INTERNAL_BASE_URL = savedInternal;
+  });
+
+  it("defaults to this process's loopback listener, not the request's public origin", () => {
+    // Aimed at the public origin behind a TLS-terminating proxy, the call
+    // died with "fetch failed" (no NAT hairpin / local DNS for the public
+    // hostname) and the durable counter silently fell back per-process.
+    expect(internalBaseOrigin({})).toBe("http://127.0.0.1:3000");
+  });
+
+  it("tracks PORT", () => {
+    expect(internalBaseOrigin({ PORT: "8080" })).toBe("http://127.0.0.1:8080");
+    // Garbage PORT falls back to 3000 rather than producing a bad URL.
+    expect(internalBaseOrigin({ PORT: "not-a-port" })).toBe("http://127.0.0.1:3000");
+  });
+
+  it("lets INTERNAL_BASE_URL override for split-tier deploys", () => {
+    expect(
+      internalBaseOrigin({ INTERNAL_BASE_URL: "http://internal-runtime:3100" }),
+    ).toBe("http://internal-runtime:3100");
+  });
+
+  it("trims whitespace and strips trailing slashes so the path join never doubles up", () => {
+    expect(
+      internalBaseOrigin({ INTERNAL_BASE_URL: "  http://127.0.0.1:3000///  " }),
+    ).toBe("http://127.0.0.1:3000");
+  });
+
+  it("ignores a whitespace-only INTERNAL_BASE_URL", () => {
+    expect(internalBaseOrigin({ INTERNAL_BASE_URL: "   " })).toBe(
+      "http://127.0.0.1:3000",
+    );
+  });
+});
 
 describe("rate-limit clientIpFrom", () => {
   it("resolves IP using trusted hops when > 0", () => {

@@ -75,13 +75,43 @@ function noteDurableFailure(reason: string): void {
   }
 }
 
+/**
+ * Where middleware calls the durable counter that lives in this same process.
+ *
+ * The default is the process's own loopback listener, not the request's
+ * public origin — deliberately. In a container behind a TLS-terminating proxy
+ * the public hostname is very often *unreachable from inside the container*:
+ * NAT hairpinning is not guaranteed, the proxy may refuse to talk to its own
+ * public address, and the container's /etc/hosts knows nothing about it. The
+ * fetch then dies at the transport layer ("fetch failed") on every single
+ * limited request and the limiter quietly falls back to the per-process Map —
+ * which is exactly the reset-on-restart, not-shared-across-replicas behaviour
+ * this counter exists to remove, but with no failure visible to the user.
+ *
+ * Loopback has none of that exposure: it never leaves the host, needs no DNS
+ * or proxy, and the data the route touches lives in Postgres anyway — so
+ * hitting whichever local replica answered the request is just as durable and
+ * just as shared across replicas as routing the call any other way.
+ *
+ * INTERNAL_BASE_URL stays as an explicit override for the unusual layout where
+ * the Node runtime serving /api/internal is a different container/host from
+ * the one running middleware (e.g. a split-tier deploy). It does not need to
+ * be set for a plain reverse-proxy install; the default already handles that.
+ */
+export function internalBaseOrigin(env?: Record<string, string | undefined>): string {
+  const source = env ?? process.env;
+  const configured = source.INTERNAL_BASE_URL?.trim();
+  if (configured) return configured.replace(/\/+$/, "");
+  const port = Number(source.PORT) || 3000;
+  return `http://127.0.0.1:${port}`;
+}
+
 export async function checkRateLimit(
   _store: Map<string, RateLimitEntry> | null,
   key: string,
   limit: number,
   windowMs: number,
   now: number,
-  requestUrl?: string,
 ): Promise<RateLimitResult> {
   // Phase 24 Wave 5 — the durable counter lives in Postgres, which this (Edge)
   // runtime cannot reach, so it is asked for over HTTP. The call is signed
@@ -93,14 +123,13 @@ export async function checkRateLimit(
   // window forever. It stays in the signature for the in-memory fallback
   // below, which is per-process and has no such exposure.
   //
-  // INTERNAL_BASE_URL overrides the origin for deployments where the request's
-  // own origin is not reachable from inside the runtime — behind a proxy that
-  // terminates a public hostname the container cannot resolve, for instance.
+  // The target defaults to this process's loopback listener (see
+  // internalBaseOrigin) so it works behind a proxy that terminates the public
+  // hostname; INTERNAL_BASE_URL overrides it for split-tier deployments.
   try {
     const token = await internalAuthToken();
     if (token) {
-      const configured = process.env.INTERNAL_BASE_URL?.trim();
-      const origin = configured || (requestUrl ? new URL(requestUrl).origin : "http://127.0.0.1:3000");
+      const origin = internalBaseOrigin();
       const res = await fetch(`${origin}/api/internal/rate-limit`, {
         method: "POST",
         headers: { "Content-Type": "application/json", [INTERNAL_AUTH_HEADER]: token },

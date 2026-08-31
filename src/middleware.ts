@@ -333,7 +333,6 @@ async function handleRateLimits(
       AUTH_IP_LIMIT,
       AUTH_IP_WINDOW_MS,
       now,
-      request.url
     );
     if (!result.allowed) return rateLimited(result.retryAfterMs);
   }
@@ -349,7 +348,6 @@ async function handleRateLimits(
       SYNC_TOKEN_LIMIT,
       SYNC_TOKEN_WINDOW_MS,
       now,
-      request.url
     );
     if (!result.allowed) return rateLimited(result.retryAfterMs);
   }
@@ -357,7 +355,7 @@ async function handleRateLimits(
   if (isMcpPath(pathname)) {
     const authHeader = request.headers.get("authorization");
     const key = authHeader ? `mcp:${hashKey(authHeader)}` : `ip:${clientIp(request)}`;
-    const result = await checkRateLimit(mcpLimits, key, MCP_LIMIT, MCP_WINDOW_MS, now, request.url);
+    const result = await checkRateLimit(mcpLimits, key, MCP_LIMIT, MCP_WINDOW_MS, now);
     if (!result.allowed) return rateLimited(result.retryAfterMs);
   }
 
@@ -372,7 +370,6 @@ async function handleRateLimits(
       API_KEY_LIMIT,
       API_KEY_WINDOW_MS,
       now,
-      request.url
     );
     if (!result.allowed) return rateLimited(result.retryAfterMs);
   }
@@ -704,7 +701,6 @@ async function handle(request: NextRequest, requestHeaders: Headers) {
       BUSINESS_API_LIMIT,
       BUSINESS_API_WINDOW_MS,
       now,
-      request.url
     );
     if (!result.allowed) return rateLimited(result.retryAfterMs);
   }
