@@ -174,10 +174,17 @@ export async function crmOverview(businessId: string): Promise<CrmOverview> {
       [businessId, window.from, window.to, prior.from],
     ),
     query<{ count: string }>(
+      // Phase 24 Wave 3 — the same `coalesce(phone_bidx, phone_e164)` key
+      // duplicateCandidates() matches on (crm-service.ts). It has to be the
+      // same expression: this is the count shown beside that list, and a
+      // count computed a different way from the list it labels is worse than
+      // no count at all.
       `SELECT count(*)::text AS count
          FROM customers a JOIN customers b
-           ON b.business_id = a.business_id AND b.phone_e164 = a.phone_e164 AND a.id < b.id
-        WHERE a.business_id = $1 AND a.phone_e164 IS NOT NULL
+           ON b.business_id = a.business_id
+          AND coalesce(b.phone_bidx, b.phone_e164) = coalesce(a.phone_bidx, a.phone_e164)
+          AND a.id < b.id
+        WHERE a.business_id = $1 AND coalesce(a.phone_bidx, a.phone_e164) IS NOT NULL
           AND a.merged_into_id IS NULL AND b.merged_into_id IS NULL`,
       [businessId],
     ),

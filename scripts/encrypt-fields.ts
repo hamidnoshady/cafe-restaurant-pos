@@ -27,7 +27,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { getPool, query, withTenant, withoutTenantScope } from "../src/lib/db";
 import { getBusinessDek } from "../src/lib/business-keys";
-import { encryptField, phoneBlindIndex } from "../src/lib/field-crypto";
+import { encryptField, phoneBlindIndex, phoneLast4 } from "../src/lib/field-crypto";
 import { ENCRYPTED_TABLES } from "../src/lib/encrypted-columns";
 import { isFieldEncryptionEnabled, masterKeyStatus } from "../src/lib/master-key";
 
@@ -135,17 +135,23 @@ export async function encryptTable(
     const dek = await getBusinessDek(businessId);
     if (!dek) throw new Error(`no encryption key for business ${businessId}`);
 
-    // UPDATE … FROM (VALUES …) — one statement per batch. The casts are
-    // explicit because a VALUES list of all-NULLs for a column would otherwise
-    // come back as `text` and fail against `bytea`.
+    // UPDATE … FROM (VALUES …) — one statement per batch. A VALUES alias list
+    // takes column *names* only (`AS v(id, phone_enc)`), never types, so every
+    // type is pinned by an explicit `$n::type` cast on the value itself —
+    // which is needed regardless: a column whose batch happens to be all NULLs
+    // would otherwise infer as `text` and fail against `bytea`.
     const setColumns: string[] = [];
-    const valueColumns: string[] = ["id uuid"];
+    const valueColumns: string[] = ["id"];
     for (const col of columns) {
       setColumns.push(`${col.encColumn} = v.${col.encColumn}`);
-      valueColumns.push(`${col.encColumn} bytea`);
+      valueColumns.push(col.encColumn);
       if (col.bidxColumn) {
         setColumns.push(`${col.bidxColumn} = v.${col.bidxColumn}`);
-        valueColumns.push(`${col.bidxColumn} text`);
+        valueColumns.push(col.bidxColumn);
+      }
+      if (col.last4Column) {
+        setColumns.push(`${col.last4Column} = v.${col.last4Column}`);
+        valueColumns.push(col.last4Column);
       }
     }
 
@@ -163,6 +169,7 @@ export async function encryptTable(
         const text = typeof plain === "string" && plain !== "" ? plain : null;
         push(text ? encryptField(text, dek) : null, "bytea");
         if (col.bidxColumn) push(text ? phoneBlindIndex(text, dek) : null, "text");
+        if (col.last4Column) push(text ? phoneLast4(text) : null, "text");
       }
       tuples.push(`(${placeholders.join(", ")})`);
     }
@@ -227,7 +234,7 @@ export async function main() {
       try {
         const { encrypted } = await encryptTable(business.id, table, options);
         totalRows += encrypted;
-        console.log(`    ${table}: ${encrypted} row(s) ${options.dryRun ? "would be" : ""} encrypted`);
+        console.log(`    ${table}: ${encrypted} row(s) ${options.dryRun ? "would be encrypted" : "encrypted"}`);
       } catch (err) {
         // One business's failure — a shredded key, a table that does not exist
         // on an older install — must not abandon the rest. The pass is

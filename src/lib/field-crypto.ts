@@ -131,6 +131,21 @@ export function blindIndex(value: string, dek: Buffer): string {
  * Returns null for a value with no digits in it at all; there is nothing to
  * look up, and NULL is cheaper to index than a hash of "".
  */
+/**
+ * The last four digits of a phone number, folded out of Persian numerals and
+ * any punctuation first. Needs no key: this is the deliberate plaintext
+ * remnant that keeps last-four search working at the till once `phone` itself
+ * is ciphertext — see the argument in
+ * `migrations/0125_field_encryption_columns.sql`.
+ *
+ * Null for anything with fewer than four digits, which is not a phone number
+ * and would otherwise put a two-digit bucket in an index.
+ */
+export function phoneLast4(phone: string | null | undefined): string | null {
+  const digits = phoneDigits(phone);
+  return digits.length >= 4 ? digits.slice(-4) : null;
+}
+
 export function phoneBlindIndex(phone: string | null | undefined, dek: Buffer): string | null {
   const digits = phoneDigits(phone);
   if (!digits) return null;

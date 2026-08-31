@@ -9,6 +9,7 @@ import {
   isEncryptedField,
   MAGIC,
   phoneBlindIndex,
+  phoneLast4,
 } from "./field-crypto";
 import { generateDek, unwrapDek, wrapDek } from "./business-keys";
 import { decodeMasterKey } from "./master-key";
@@ -122,6 +123,31 @@ describe("blind index", () => {
 
   it("distinguishes two different numbers", () => {
     expect(phoneBlindIndex("09121234567", dek)).not.toBe(phoneBlindIndex("09121234568", dek));
+  });
+});
+
+describe("phoneLast4", () => {
+  it("takes the last four digits however the number was written", () => {
+    for (const spelling of ["09121234567", "0912 123 4567", "+98 912 123 4567", "۰۹۱۲۱۲۳۴۵۶۷"]) {
+      expect(phoneLast4(spelling)).toBe("4567");
+    }
+  });
+
+  it("needs no key — it is the deliberate plaintext remnant, not a secret", () => {
+    // If this ever needs a DEK, the till loses last-four search on a
+    // no-master-key install, which is the opposite of the point.
+    expect(phoneLast4.length).toBe(1);
+  });
+
+  it("returns null for anything too short to be a phone number", () => {
+    expect(phoneLast4("123")).toBeNull();
+    expect(phoneLast4("")).toBeNull();
+    expect(phoneLast4(null)).toBeNull();
+    expect(phoneLast4("no digits")).toBeNull();
+  });
+
+  it("never leaks more than four digits", () => {
+    expect(phoneLast4("00989121234567")).toHaveLength(4);
   });
 });
 

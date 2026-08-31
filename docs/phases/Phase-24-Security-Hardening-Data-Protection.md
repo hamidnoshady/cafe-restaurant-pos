@@ -33,16 +33,43 @@ What is actually true of the code today:
   `integration/field-encryption.integration.test.ts` asserts the registry against
   `information_schema.columns`.
 
-  **Step 3 — dropping the plaintext columns — has NOT happened, and there is prerequisite work
-  before it can.** In order: partial/prefix phone search (`customers-service.ts`'s
-  `phone ILIKE '%…%'`) has to be accepted as lost, `customers.phone_e164` has to move to
-  `phone_bidx` (0118's duplicate detection and segment resolution self-join on it, so leaving
-  it plaintext would make encrypting `phone` theatre), and the writers that still touch the
-  plaintext directly (`crm-service.ts`'s merge and phone normalisation, the Holoo import, the
-  integrations sync) have to dual-write. Until then a BEFORE UPDATE trigger nulls a row's
-  ciphertext whenever its plaintext changes without it, so a stale ciphertext is impossible and
-  the next backfill run repairs the row. Tier A (the platform-scope secrets) is also still
-  plaintext — see `TIER_A_PENDING` in `src/lib/encrypted-columns.ts`.
+  Two decisions were settled rather than deferred, because both get harder after step 3:
+
+  - **Partial phone search.** A blind index does equality and nothing else, so encrypting
+    `phone` ends substring search on it. Rather than accept that wholesale, `customers` carries
+    `phone_last4` — the last four digits, plaintext and indexed — because reading the last four
+    off a receipt is the actual workflow at a till, and losing it silently is the sort of
+    regression noticed three weeks late. Arbitrary substring and *prefix* search are accepted
+    as lost: `0912…` matches half an Iranian customer base. The cost is four digits per
+    customer in a dump, beside a name that was already plaintext; four digits cannot be dialled
+    or messaged. The full argument is in the migration header.
+  - **`phone_e164` → `phone_bidx`.** Done now, not at step 3: `findDuplicates`
+    (`crm-service.ts`) and the duplicate count (`crm-overview.ts`) match on
+    `coalesce(phone_bidx, phone_e164)` — the same prefer-ciphertext-fall-back-to-plaintext rule
+    the read paths use, expressed as a join, collapsing to `phone_bidx` alone when the
+    plaintext columns go. Writing `phone_e164` also moved into `customers-service.ts`, which
+    fixed a pre-existing bug on the way: `crm-service.syncCustomerPhone` had **never had a
+    caller**, so a customer typed into the dashboard had a NULL canonical phone and was
+    invisible to duplicate detection, segments and the SMS-reachable count until somebody ran
+    `npm run db:normalize-phones` by hand.
+
+  **Step 3 — dropping the plaintext columns — has NOT happened, and prerequisites remain.**
+  In order: the remaining equality lookups on `phone_e164` have to move to `phone_bidx`
+  (`ai-tools.ts:872`, and `integrations/sync-service.ts`'s customer matching at :413 and :479);
+  `with_mobile` / `sms_reachable` count `phone_e164 IS NOT NULL`, which is "has a parseable
+  phone" and does not survive as `phone_bidx IS NOT NULL` (a blind index is written for
+  landlines too), so those need their own flag; and the writers that still touch the plaintext
+  directly (`crm-service.ts`'s merge, the Holoo import, the integrations sync) should dual-write
+  rather than lean on the invalidation trigger. Tier A (the platform-scope secrets) is also
+  still plaintext — see `TIER_A_PENDING` in `src/lib/encrypted-columns.ts`.
+
+  **`migrations/0126_business_encryption_keys_rls.sql`** fixes a latent bug in 0072's
+  scaffolding, found only once Wave 3 gave that table its first reader: its RLS policy omitted
+  `app_rls_bypass()`, which every other tenant policy honours. On any install where the app
+  connects as the unprivileged `pos_app` role — i.e. every correctly configured one, and not
+  the docker-compose default where `pos` is a superuser and RLS is a silent no-op — minting a
+  DEK under the platform bypass failed with "new row violates row-level security policy", which
+  would have broken business creation outright once a master key was configured.
 
 ## Context: what exists today
 
@@ -705,6 +732,23 @@ cannot know which column is which and would silently encrypt the wrong things. A
 the registry against `information_schema.columns` — the same mechanism
 `tenant-isolation.integration.test.ts` uses against `pg_policy`, and the thing that stops a
 future migration quietly adding a plaintext PII column.
+
+**One deliberate exception to "no encryption logic in the database", and it is not the thing
+that rule prohibits.** `migrations/0125_field_encryption_columns.sql` installs a BEFORE UPDATE
+trigger on `customers` and `reservations` that nulls a row's `*_enc`/`*_bidx` (and
+`phone_last4`) whenever its plaintext column changes without them in the same statement. **Do
+not remove it as cleanup.** It holds no key, performs no cryptography, and knows two tables by
+name; what the rule above forbids is a *generic, transparent* layer guessing which columns to
+encrypt across the whole schema. The trigger exists because these tables are written from more
+places than the services this wave touched — `crm-service.ts`'s merge, the Holoo import, the
+integrations sync — and a writer that updates the plaintext alone would otherwise leave readers
+serving the *previous* value, since reads prefer the ciphertext. A silent wrong answer is worse
+than an unencrypted one. With the trigger, such a write degrades to "correct but not yet
+encrypted", and the next `npm run db:encrypt-fields` repairs the row, which is precisely what
+makes the backfill's `WHERE col_enc IS NULL` resumability load-bearing rather than decorative.
+`NEW.col_enc IS NOT DISTINCT FROM OLD.col_enc` is what distinguishes an aware writer (updates
+both, left alone) from an unaware one (nulled). Removing it does not fail any test that a
+green suite would catch quickly — it fails as stale data in production.
 
 **Interaction with RLS: none, by construction.** `business_id` stays plaintext, so every policy
 in `migrations/0021` is unaffected. The one real interaction is `src/lib/tenant-export.ts`,

@@ -7,7 +7,8 @@
  */
 import { getBusinessDek } from "./business-keys";
 import { query } from "./db";
-import { decryptOptional, encryptOptional, phoneBlindIndex } from "./field-crypto";
+import { decryptOptional, encryptOptional, phoneBlindIndex, phoneLast4 } from "./field-crypto";
+import { phoneDigits, phoneE164 } from "./phone";
 
 export interface Customer extends Record<string, unknown> {
   id: string;
@@ -58,10 +59,63 @@ function decryptCustomerRow(row: Customer & EncryptedCustomerRow, dek: Buffer | 
   return customer;
 }
 
-/** The encrypted twins for a phone value: `[ciphertext, blind index]`, both null when there is no key. */
-function phoneCiphertext(phone: string | null, dek: Buffer | null): [Buffer | null, string | null] {
-  if (!dek) return [null, null];
-  return [encryptOptional(phone, dek), phone ? phoneBlindIndex(phone, dek) : null];
+/**
+ * Everything derived from a typed phone number, written together as one set.
+ *
+ *  - `phone_enc` / `phone_bidx` — the ciphertext and its equality index; null
+ *    on an install with no master key.
+ *  - `phone_e164` — the canonical +98… form. It was **not** being maintained
+ *    on this path at all before Phase 24 Wave 3: `crm-service.syncCustomerPhone`
+ *    exists for exactly this and has never had a caller, so a customer created
+ *    or edited from the dashboard was invisible to duplicate detection, to
+ *    segment resolution and to the SMS-reachable count until somebody ran
+ *    `npm run db:normalize-phones` by hand. Writing it here, beside the blind
+ *    index that will replace it, fixes that and keeps the two canonical forms
+ *    from drifting apart.
+ */
+interface PhoneColumns {
+  enc: Buffer | null;
+  bidx: string | null;
+  e164: string | null;
+  last4: string | null;
+}
+
+function phoneColumns(phone: string | null, dek: Buffer | null): PhoneColumns {
+  return {
+    enc: dek ? encryptOptional(phone, dek) : null,
+    bidx: dek && phone ? phoneBlindIndex(phone, dek) : null,
+    e164: phone ? phoneE164(phone) : null,
+    // Written unconditionally, key or no key: it is the plaintext remnant that
+    // keeps last-four search alive after step 3, and a business that enables
+    // encryption later should not have to re-derive it.
+    last4: phoneLast4(phone),
+  };
+}
+
+/**
+ * How a typed search term matches a phone, in the order the columns will
+ * outlive each other:
+ *
+ *   1. `phone_bidx` — an exact match on the whole number, and the only phone
+ *      search that survives step 3 intact.
+ *   2. `phone_last4` — the till workflow: four or more digits that are not a
+ *      whole number are read as "the last four I can see".
+ *   3. `phone ILIKE '%…%'` — arbitrary substring, alive only while the
+ *      plaintext column is.
+ */
+interface PhoneSearchKeys {
+  bidx: string | null;
+  last4: string | null;
+}
+
+function phoneSearchKeys(term: string, dek: Buffer | null): PhoneSearchKeys {
+  const digits = phoneDigits(term);
+  if (!digits) return { bidx: null, last4: null };
+  const whole = phoneE164(term) !== null;
+  return {
+    bidx: dek ? phoneBlindIndex(term, dek) : null,
+    last4: !whole && digits.length >= 4 ? digits.slice(-4) : null,
+  };
 }
 
 /** Name/phone search for the checkout picker, active customers only, newest first, capped at 20. */
@@ -76,19 +130,15 @@ export async function searchCustomers(businessId: string, q: string): Promise<Cu
     );
     return rows.map((row) => decryptCustomerRow(row, dek));
   }
-  // Three ways to match, and they are not interchangeable. `name ILIKE` and
-  // `phone ILIKE` are the substring search that exists today; `phone_bidx =`
-  // is an exact match on the canonical number, which is the only phone search
-  // that will survive step 3 of the migration. A cashier typing the last four
-  // digits still finds the customer today and will not once the plaintext
-  // column is dropped — the accepted loss recorded in the phase doc.
-  const bidx = dek ? phoneBlindIndex(term, dek) : null;
+  const keys = phoneSearchKeys(term, dek);
   const { rows } = await query<Customer & EncryptedCustomerRow>(
     `SELECT id, name, phone, phone_enc AS "phoneEnc" FROM customers
       WHERE business_id = $1 AND is_active
-        AND (name ILIKE $2 OR phone ILIKE $2 OR ($3::text IS NOT NULL AND phone_bidx = $3))
+        AND (name ILIKE $2 OR phone ILIKE $2
+             OR ($3::text IS NOT NULL AND phone_bidx = $3)
+             OR ($4::text IS NOT NULL AND phone_last4 = $4))
       ORDER BY created_at DESC LIMIT 20`,
-    [businessId, `%${term}%`, bidx],
+    [businessId, `%${term}%`, keys.bidx, keys.last4],
   );
   return rows.map((row) => decryptCustomerRow(row, dek));
 }
@@ -113,11 +163,17 @@ export async function listCustomers(
   const params: unknown[] = [businessId];
   if (!options.includeInactive) conditions.push("is_active");
   if (term) {
+    const keys = phoneSearchKeys(term, dek);
     params.push(`%${term}%`);
     const like = params.length;
-    params.push(dek ? phoneBlindIndex(term, dek) : null);
+    params.push(keys.bidx);
+    const bidx = params.length;
+    params.push(keys.last4);
+    const last4 = params.length;
     conditions.push(
-      `(name ILIKE $${like} OR phone ILIKE $${like} OR ($${params.length}::text IS NOT NULL AND phone_bidx = $${params.length}))`,
+      `(name ILIKE $${like} OR phone ILIKE $${like}` +
+        ` OR ($${bidx}::text IS NOT NULL AND phone_bidx = $${bidx})` +
+        ` OR ($${last4}::text IS NOT NULL AND phone_last4 = $${last4}))`,
     );
   }
   const where = conditions.join(" AND ");
@@ -153,12 +209,12 @@ export async function createCustomer(businessId: string, input: CreateCustomerIn
   const phone = input.phone?.trim() || null;
   const address = input.address?.trim() || null;
   const notes = input.notes?.trim() || null;
-  const [phoneEnc, phoneBidx] = phoneCiphertext(phone, dek);
+  const phoneCols = phoneColumns(phone, dek);
 
   const { rows } = await query<Customer & EncryptedCustomerRow>(
     `INSERT INTO customers (business_id, name, phone, address, notes, email, birthday, tags, marketing_consent, sms_consent,
-                            phone_enc, phone_bidx, address_enc, notes_enc)
-     VALUES ($1, $2, $3, $4, $5, $6, $7::date, $8, $9, $10, $11, $12, $13, $14)
+                            phone_enc, phone_bidx, phone_e164, phone_last4, address_enc, notes_enc)
+     VALUES ($1, $2, $3, $4, $5, $6, $7::date, $8, $9, $10, $11, $12, $13, $14, $15, $16)
      RETURNING ${DIRECTORY_COLUMNS}`,
     [
       businessId,
@@ -171,8 +227,10 @@ export async function createCustomer(businessId: string, input: CreateCustomerIn
       input.tags ?? [],
       input.marketingConsent ?? false,
       input.smsConsent ?? false,
-      phoneEnc,
-      phoneBidx,
+      phoneCols.enc,
+      phoneCols.bidx,
+      phoneCols.e164,
+      phoneCols.last4,
       dek ? encryptOptional(address, dek) : null,
       dek ? encryptOptional(notes, dek) : null,
     ],
@@ -224,10 +282,12 @@ export async function updateCustomer(
   // value, which is the one failure mode of a dual-write window.
   if (input.phone !== undefined) {
     const phone = input.phone?.trim() || null;
-    const [phoneEnc, phoneBidx] = phoneCiphertext(phone, dek);
+    const cols = phoneColumns(phone, dek);
     add("phone", phone);
-    add("phone_enc", phoneEnc);
-    add("phone_bidx", phoneBidx);
+    add("phone_enc", cols.enc);
+    add("phone_bidx", cols.bidx);
+    add("phone_e164", cols.e164);
+    add("phone_last4", cols.last4);
   }
   if (input.address !== undefined) {
     const address = input.address?.trim() || null;

@@ -27,6 +27,8 @@
 import { query, withTenant } from "./db";
 import { listCustomerBalances } from "./ar-service";
 import { businessToday } from "./business-day-service";
+import { getBusinessDek } from "./business-keys";
+import { encryptOptional, phoneBlindIndex, phoneLast4 } from "./field-crypto";
 import { normalizePhone } from "./phone";
 import {
   duplicateConfidence,
@@ -442,10 +444,14 @@ export interface DuplicateCandidate {
 /**
  * Find probable duplicates.
  *
- * Matching is on the **canonical phone** (`phone_e164`, produced by
- * `phone.ts`) rather than the typed string, which is the only reason this
- * finds anything at all: `0912…` and `+98912…` are the same customer and
- * different text. Email matches case-insensitively; an identical *name* alone
+ * Matching is on the **canonical phone** rather than the typed string, which
+ * is the only reason this finds anything at all: `0912…` and `+98912…` are the
+ * same customer and different text. Since Phase 24 Wave 3 the canonical form
+ * is `coalesce(phone_bidx, phone_e164)` — the blind index where the row has
+ * been encrypted, the plaintext canonical form where it has not yet. Both are
+ * derived from the same `phone.ts` normalisation, so the two agree; the
+ * coalesce is what keeps this working on an install with no master key, and it
+ * collapses to `phone_bidx` alone when the plaintext columns are dropped. Email matches case-insensitively; an identical *name* alone
  * is offered at low confidence because «محمد محمدی» is not one person.
  *
  * Nothing here merges. The result is a list of questions for a human.
@@ -500,10 +506,25 @@ export async function findDuplicates(
 
   // `a.id < b.id` yields each unordered pair exactly once — without it every
   // duplicate would be reported twice, mirrored.
+  //
+  // Phase 24 Wave 3 — matched on `coalesce(phone_bidx, phone_e164)`, which is
+  // the same prefer-the-ciphertext-fall-back-to-plaintext rule the read paths
+  // use, expressed as a join. Both columns hold one canonical value per
+  // number (the blind index is an HMAC *of* the e164 form), and their value
+  // spaces cannot collide — 32 hex characters versus `+98…`. When the
+  // plaintext columns are dropped this becomes a plain `b.phone_bidx =
+  // a.phone_bidx`.
+  //
+  // Mid-backfill, a pair where only one side has been encrypted yet does not
+  // match. That direction is deliberate: the cost is a duplicate suggestion
+  // that appears one backfill run later, not a wrong pair offered for merge.
+  const phoneKey = "coalesce(%s.phone_bidx, %s.phone_e164)";
   const { rows: byPhone } = await query<Record<string, unknown>>(
     `SELECT ${selectPair} FROM customers a JOIN customers b
-        ON b.business_id = a.business_id AND b.phone_e164 = a.phone_e164 AND a.id < b.id
-      WHERE a.business_id = $1 AND a.phone_e164 IS NOT NULL
+        ON b.business_id = a.business_id
+       AND ${phoneKey.replace(/%s/g, "b")} = ${phoneKey.replace(/%s/g, "a")}
+       AND a.id < b.id
+      WHERE a.business_id = $1 AND ${phoneKey.replace(/%s/g, "a")} IS NOT NULL
         AND a.merged_into_id IS NULL AND b.merged_into_id IS NULL
       LIMIT $2`,
     [businessId, limit],
@@ -517,7 +538,8 @@ export async function findDuplicates(
         AND a.merged_into_id IS NULL AND b.merged_into_id IS NULL
         -- Already reported by the stronger phone rule; reporting the same pair
         -- twice would make the list look worse than the data is.
-        AND (a.phone_e164 IS NULL OR b.phone_e164 IS NULL OR a.phone_e164 <> b.phone_e164)
+        AND (${phoneKey.replace(/%s/g, "a")} IS NULL OR ${phoneKey.replace(/%s/g, "b")} IS NULL
+             OR ${phoneKey.replace(/%s/g, "a")} <> ${phoneKey.replace(/%s/g, "b")})
       LIMIT $2`,
     [businessId, limit],
   );
@@ -529,7 +551,8 @@ export async function findDuplicates(
        AND lower(btrim(b.name)) = lower(btrim(a.name)) AND a.id < b.id
       WHERE a.business_id = $1 AND btrim(a.name) <> ''
         AND a.merged_into_id IS NULL AND b.merged_into_id IS NULL
-        AND (a.phone_e164 IS NULL OR b.phone_e164 IS NULL OR a.phone_e164 <> b.phone_e164)
+        AND (${phoneKey.replace(/%s/g, "a")} IS NULL OR ${phoneKey.replace(/%s/g, "b")} IS NULL
+             OR ${phoneKey.replace(/%s/g, "a")} <> ${phoneKey.replace(/%s/g, "b")})
         AND (a.email IS NULL OR b.email IS NULL OR lower(a.email) <> lower(b.email))
       LIMIT $2`,
     [businessId, limit],
@@ -890,18 +913,39 @@ export async function scoredPopulation(businessId: string): Promise<RfmScore[]> 
   );
 }
 
-/** Keep `phone_e164` in step with a typed phone number — called on customer create/update. */
+/**
+ * Keep every canonical form of a phone number in step with the typed one:
+ * `phone_e164`, and (Phase 24 Wave 3) the ciphertext and its blind index.
+ *
+ * Historical note worth keeping, because it explains a data shape you will
+ * meet in the wild: the docstring here used to say "called on customer
+ * create/update", and it never was — this function had no callers at all, so
+ * `phone_e164` was only ever populated by the integrations sync, the merge
+ * path and `npm run db:normalize-phones`. Customers typed into the dashboard
+ * had a NULL canonical phone, which quietly excluded them from duplicate
+ * detection, segment resolution and the SMS-reachable count. The create/update
+ * path in `customers-service.ts` now writes all of these itself; this remains
+ * for callers that hold only an id and a number.
+ */
 export async function syncCustomerPhone(
   businessId: string,
   customerId: string,
   phone: string | null,
 ): Promise<void> {
   const e164 = phone ? normalizePhone(phone).e164 : null;
-  await query(`UPDATE customers SET phone_e164 = $3 WHERE business_id = $1 AND id = $2`, [
-    businessId,
-    customerId,
-    e164,
-  ]);
+  const dek = await getBusinessDek(businessId);
+  await query(
+    `UPDATE customers SET phone_e164 = $3, phone_enc = $4, phone_bidx = $5, phone_last4 = $6
+      WHERE business_id = $1 AND id = $2`,
+    [
+      businessId,
+      customerId,
+      e164,
+      dek ? encryptOptional(phone, dek) : null,
+      dek && phone ? phoneBlindIndex(phone, dek) : null,
+      phoneLast4(phone),
+    ],
+  );
 }
 
 /**

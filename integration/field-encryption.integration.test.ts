@@ -21,11 +21,15 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { runMigrations } from "../scripts/migrate";
+import { createAppRole } from "../scripts/create-app-role";
 
 const rootDatabaseUrl = process.env.DATABASE_URL;
 if (!rootDatabaseUrl) {
   throw new Error("DATABASE_URL is required for database integration tests");
 }
+
+const APP_ROLE = "pos_fieldenc_test_role";
+const APP_PASSWORD = "fieldenc-test-password";
 
 let dbName: string;
 let raw: Client; // superuser connection, for looking at what is really stored
@@ -37,9 +41,13 @@ let businessKeys: typeof import("../src/lib/business-keys");
 
 const biz = { id: "", locationId: "" };
 
-function urlFor(database: string): string {
+function urlFor(database: string, user?: { name: string; password: string }): string {
   const url = new URL(rootDatabaseUrl!);
   url.pathname = `/${database}`;
+  if (user) {
+    url.username = user.name;
+    url.password = user.password;
+  }
   return url.toString();
 }
 
@@ -62,10 +70,17 @@ beforeAll(async () => {
 
   await runMigrations({ databaseUrl: urlFor(dbName), quiet: true });
 
+  // As an unprivileged role, not the owner. A superuser ignores RLS entirely,
+  // which would make `exportTenantData` return every business's rows (it
+  // relies on RLS alone to filter) and would hide whether
+  // `business_encryption_keys` is reachable at all under the policy — the
+  // exact bug 0126 exists to fix.
+  await createAppRole({ databaseUrl: urlFor(dbName), roleName: APP_ROLE, password: APP_PASSWORD, quiet: true });
+
   // The KEK has to exist before any module memoises its absence.
   process.env.POS_MASTER_KEY = randomBytes(32).toString("base64");
   delete process.env.POS_MASTER_PASSPHRASE;
-  process.env.DATABASE_URL = urlFor(dbName);
+  process.env.DATABASE_URL = urlFor(dbName, { name: APP_ROLE, password: APP_PASSWORD });
 
   dbLib = await import("../src/lib/db");
   masterKey = await import("../src/lib/master-key");
@@ -141,7 +156,9 @@ describe("the encrypted-column registry matches the live schema", () => {
 
     for (const [table, spec] of Object.entries(ENCRYPTED_TABLES)) {
       const registered = new Set(
-        spec.columns.flatMap((c) => [c.column, c.encColumn, c.bidxColumn].filter(Boolean) as string[]),
+        spec.columns.flatMap(
+          (c) => [c.column, c.encColumn, c.bidxColumn, c.last4Column].filter(Boolean) as string[],
+        ),
       );
       const { rows } = await raw.query<{ column_name: string }>(
         `SELECT column_name FROM information_schema.columns
@@ -155,11 +172,27 @@ describe("the encrypted-column registry matches the live schema", () => {
     }
   });
 
-  it("business_encryption_keys exists, is RLS-protected, and is keyed per business", async () => {
-    const { rows: policies } = await raw.query<{ relrowsecurity: boolean }>(
-      `SELECT relrowsecurity FROM pg_class WHERE relname = 'business_encryption_keys'`,
+  it("business_encryption_keys is RLS-protected, honours the bypass, and is keyed per business", async () => {
+    const { rows: policies } = await raw.query<{
+      relrowsecurity: boolean;
+      relforcerowsecurity: boolean;
+    }>(
+      `SELECT relrowsecurity, relforcerowsecurity FROM pg_class WHERE relname = 'business_encryption_keys'`,
     );
     expect(policies[0]?.relrowsecurity).toBe(true);
+    expect(policies[0]?.relforcerowsecurity).toBe(true);
+
+    // 0126. Without the bypass half of the predicate, the platform realm — and
+    // therefore provisioning, which mints the key inside its own transaction —
+    // cannot see or write this table at all as the app role.
+    const { rows: expr } = await raw.query<{ using_expr: string; check_expr: string | null }>(
+      `SELECT pg_get_expr(polqual, polrelid) AS using_expr,
+              pg_get_expr(polwithcheck, polrelid) AS check_expr
+         FROM pg_policy WHERE polrelid = 'business_encryption_keys'::regclass`,
+    );
+    expect(expr[0].using_expr).toContain("app_rls_bypass()");
+    expect(expr[0].using_expr).toContain("app_current_business()");
+    expect(expr[0].check_expr).toContain("app_rls_bypass()");
 
     const { rows: keyed } = await raw.query<{ count: string }>(
       `SELECT count(*)::text AS count FROM pg_constraint
@@ -206,6 +239,15 @@ describe("per-business keys", () => {
   });
 });
 
+/** `phone_last4` is only ever the last four digits — never a prefix bucket. */
+async function query4(customerId: string): Promise<boolean> {
+  const { rows } = await raw.query<{ phone: string; phone_last4: string | null }>(
+    "SELECT phone, phone_last4 FROM customers WHERE id = $1",
+    [customerId],
+  );
+  return rows[0].phone_last4 === rows[0].phone.slice(-4) && rows[0].phone_last4 !== rows[0].phone.slice(0, 4);
+}
+
 describe("customers-service reads and writes through the ciphertext", () => {
   it("stores the phone, address and notes encrypted, and reads them back in the clear", async () => {
     const created = await dbLib.withTenant(biz.id, () =>
@@ -245,6 +287,32 @@ describe("customers-service reads and writes through the ciphertext", () => {
       const found = await dbLib.withTenant(biz.id, () => customers.searchCustomers(biz.id, spelling));
       expect(found.map((c) => c.name)).toContain("علی رضایی");
     }
+  });
+
+  it("still finds a customer by the last four digits — the till workflow that survives step 3", async () => {
+    // The one partial search a blind index cannot do, kept alive by
+    // `phone_last4`. Asserted here rather than trusted, because right now the
+    // plaintext `phone ILIKE` would answer this query too and hide a broken
+    // `phone_last4` until the release that drops the plaintext column.
+    const created = await dbLib.withTenant(biz.id, () =>
+      customers.createCustomer(biz.id, { name: "چهار رقم", phone: "09129998877" }),
+    );
+    const { rows } = await raw.query<{ phone_last4: string | null }>(
+      "SELECT phone_last4 FROM customers WHERE id = $1",
+      [created.id],
+    );
+    expect(rows[0].phone_last4).toBe("8877");
+
+    for (const typed of ["8877", "۸۸۷۷"]) {
+      const found = await dbLib.withTenant(biz.id, () => customers.searchCustomers(biz.id, typed));
+      expect(found.map((c) => c.name)).toContain("چهار رقم");
+    }
+
+    // …and the accepted loss is real: a prefix is not a search.
+    const byPrefix = await dbLib.withTenant(biz.id, () =>
+      query4(created.id),
+    );
+    expect(byPrefix).toBe(true);
   });
 
   it("re-encrypts on update instead of leaving a stale ciphertext", async () => {
@@ -288,7 +356,7 @@ describe("the backfill", () => {
     expect(read?.notes).toBe("legacy note");
   });
 
-  it("recovers a row whose plaintext was changed behind the services' back", async () => {
+  it("repairs a row an unaware writer changed with a raw UPDATE", async () => {
     // The 0125 trigger nulls the ciphertext when a writer that knows nothing
     // about encryption changes the plaintext. The row then reads correct (from
     // the plaintext twin) rather than stale, and the next backfill re-encrypts
@@ -302,12 +370,14 @@ describe("the backfill", () => {
     await backfill.backfillBusiness(biz.id);
 
     await raw.query("UPDATE customers SET phone = '09125552222' WHERE id = $1", [id]);
-    const invalidated = await raw.query<{ phone_enc: Buffer | null; phone_bidx: string | null }>(
-      "SELECT phone_enc, phone_bidx FROM customers WHERE id = $1",
-      [id],
-    );
+    const invalidated = await raw.query<{
+      phone_enc: Buffer | null;
+      phone_bidx: string | null;
+      phone_last4: string | null;
+    }>("SELECT phone_enc, phone_bidx, phone_last4 FROM customers WHERE id = $1", [id]);
     expect(invalidated.rows[0].phone_enc).toBeNull();
     expect(invalidated.rows[0].phone_bidx).toBeNull();
+    expect(invalidated.rows[0].phone_last4).toBeNull();
 
     const read = await dbLib.withTenant(biz.id, () => customers.getCustomer(biz.id, id));
     expect(read?.phone).toBe("09125552222");
@@ -318,6 +388,112 @@ describe("the backfill", () => {
       [id],
     );
     expect(reencrypted.rows[0].phone_enc).not.toBeNull();
+  });
+
+  it("fires the trigger for an upsert too, not only a plain UPDATE", async () => {
+    // `INSERT … ON CONFLICT DO UPDATE` is the shape most unaware writers
+    // actually use — crm-service's merge path among them. Postgres runs the
+    // conflict branch as a real UPDATE, so the BEFORE UPDATE trigger should
+    // apply, but "should" is not "does": prove it on the write shape the real
+    // writers use rather than only on the one the test found convenient.
+    const { rows } = await raw.query<{ id: string }>(
+      `INSERT INTO customers (business_id, name, phone) VALUES ($1, 'Upsert Row', '09125554444') RETURNING id`,
+      [biz.id],
+    );
+    const id = rows[0].id;
+    await backfill.backfillBusiness(biz.id);
+    const before = await raw.query<{ phone_enc: Buffer | null }>(
+      "SELECT phone_enc FROM customers WHERE id = $1",
+      [id],
+    );
+    expect(before.rows[0].phone_enc).not.toBeNull();
+
+    await raw.query(
+      `INSERT INTO customers (id, business_id, name, phone) VALUES ($1, $2, 'Upsert Row', '09125555555')
+       ON CONFLICT (id) DO UPDATE SET phone = EXCLUDED.phone`,
+      [id, biz.id],
+    );
+
+    const after = await raw.query<{ phone: string; phone_enc: Buffer | null; phone_bidx: string | null }>(
+      "SELECT phone, phone_enc, phone_bidx FROM customers WHERE id = $1",
+      [id],
+    );
+    expect(after.rows[0].phone).toBe("09125555555");
+    expect(after.rows[0].phone_enc).toBeNull();
+    expect(after.rows[0].phone_bidx).toBeNull();
+
+    // And the row still reads correctly — the invalidation must never leave a
+    // reader serving the pre-upsert number.
+    const read = await dbLib.withTenant(biz.id, () => customers.getCustomer(biz.id, id));
+    expect(read?.phone).toBe("09125555555");
+    await backfill.backfillBusiness(biz.id);
+  });
+
+  it("encrypts reservations, whose tenancy runs through location_id rather than business_id", async () => {
+    // Different RLS shape, different predicate in the backfill, and the place
+    // an aliasing mistake in the batched UPDATE would hide.
+    const { rows } = await raw.query<{ id: string }>(
+      `INSERT INTO reservations (location_id, customer_name, customer_phone, party_size, reserved_at)
+       VALUES ($1, 'میهمان', '09126667777', 2, now() + interval '1 day') RETURNING id`,
+      [biz.locationId],
+    );
+    await backfill.backfillBusiness(biz.id);
+
+    const after = await raw.query<{ customer_phone_enc: Buffer | null; customer_phone_bidx: string | null }>(
+      "SELECT customer_phone_enc, customer_phone_bidx FROM reservations WHERE id = $1",
+      [rows[0].id],
+    );
+    expect(after.rows[0].customer_phone_enc).not.toBeNull();
+    expect(after.rows[0].customer_phone_enc!.toString("latin1")).not.toContain("09126667777");
+
+    // The blind index is the business's, not the branch's: the same number
+    // saved as a customer must hash to the same value on a reservation, or
+    // "find this caller's booking" breaks across branches.
+    const dek = (await businessKeys.getBusinessDek(biz.id))!;
+    const { phoneBlindIndex } = await import("../src/lib/field-crypto");
+    expect(after.rows[0].customer_phone_bidx).toBe(phoneBlindIndex("09126667777", dek));
+
+    const decrypted = await dbLib.withTenant(biz.id, () =>
+      import("../src/lib/reservation-service").then((m) =>
+        m.decryptReservationPhones(biz.id, [
+          { customer_phone: null, customer_phone_enc: after.rows[0].customer_phone_enc },
+        ]),
+      ),
+    );
+    expect(decrypted[0].customer_phone).toBe("09126667777");
+  });
+
+  it("dry-run, then real, then nothing left: the resumability claim, run three times", async () => {
+    await raw.query(
+      `INSERT INTO customers (business_id, name, phone, address)
+       VALUES ($1, 'Three Pass', '09125558888', 'jaie digar')`,
+      [biz.id],
+    );
+
+    const dry = await backfill.backfillBusiness(biz.id, { dryRun: true });
+    expect(dry.encrypted).toBeGreaterThan(0);
+
+    const real = await backfill.backfillBusiness(biz.id);
+    expect(real.encrypted).toBe(dry.encrypted);
+
+    const again = await backfill.backfillBusiness(biz.id);
+    expect(again.scanned).toBe(0);
+    expect(again.encrypted).toBe(0);
+  });
+
+  it("drains a table larger than one batch", async () => {
+    // The loop advances only because a written row stops matching
+    // `col_enc IS NULL`. With a batch smaller than the table, a mistake there
+    // is an infinite loop rather than a wrong answer — worth one real pass.
+    for (let i = 0; i < 7; i++) {
+      await raw.query(
+        `INSERT INTO customers (business_id, name, phone) VALUES ($1, $2, $3)`,
+        [biz.id, `Batch ${i}`, `0912666${String(i).padStart(4, "0")}`],
+      );
+    }
+    const result = await backfill.backfillBusiness(biz.id, { batchSize: 2 });
+    expect(result.encrypted).toBeGreaterThanOrEqual(7);
+    expect((await backfill.backfillBusiness(biz.id)).encrypted).toBe(0);
   });
 
   it("leaves the database untouched on a dry run", async () => {
@@ -333,6 +509,47 @@ describe("the backfill", () => {
     );
     expect(after.rows[0].phone_enc).toBeNull();
     await backfill.backfillBusiness(biz.id);
+  });
+});
+
+describe("duplicate detection after the phone_e164 → phone_bidx move", () => {
+  it("finds a duplicate pair through the blind index, with encryption on", async () => {
+    // crm-service and crm-overview now match on
+    // `coalesce(phone_bidx, phone_e164)`. With a key configured every row has
+    // a `phone_bidx`, so this exercises the new half of that expression — the
+    // half the existing CRM integration test (which runs without a master
+    // key) never reaches.
+    const crm = await import("../src/lib/crm-service");
+    const overview = await import("../src/lib/crm-overview");
+
+    const dupBiz = await raw.query<{ id: string }>(
+      "INSERT INTO businesses (name, slug) VALUES ('Dup Co', $1) RETURNING id",
+      [`crypto-dup-${randomUUID().slice(0, 8)}`],
+    );
+    const dupId = dupBiz.rows[0].id;
+    await raw.query("INSERT INTO locations (business_id, name) VALUES ($1, 'Main')", [dupId]);
+
+    // Two spellings of one number, written through the service so both get a
+    // blind index — the point being that they hash to the same value.
+    await dbLib.withTenant(dupId, () =>
+      customers.createCustomer(dupId, { name: "مشتری اول", phone: "09121110000" }),
+    );
+    await dbLib.withTenant(dupId, () =>
+      customers.createCustomer(dupId, { name: "مشتری دوم", phone: "+98 912 111 0000" }),
+    );
+
+    const { rows: stored } = await raw.query<{ phone_bidx: string }>(
+      "SELECT phone_bidx FROM customers WHERE business_id = $1",
+      [dupId],
+    );
+    expect(new Set(stored.map((r) => r.phone_bidx)).size).toBe(1);
+
+    const candidates = await dbLib.withTenant(dupId, () => crm.findDuplicates(dupId, { limit: 10 }));
+    expect(candidates.some((c) => c.reason === "phone")).toBe(true);
+
+    // The count beside the list has to agree with the list.
+    const summary = await dbLib.withTenant(dupId, () => overview.crmOverview(dupId));
+    expect(summary.duplicates).toBeGreaterThan(0);
   });
 });
 

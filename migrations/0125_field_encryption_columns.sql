@@ -46,15 +46,46 @@
 -- canonicalisation, deliberately — so step 3 must move those joins over rather
 -- than leave a plaintext canonical phone behind, which would make encrypting
 -- `phone` theatre.
+--
+-- `phone_last4` is a deliberate, decided exception: the last four digits, in
+-- the clear, indexed.
+--
+-- The choice it settles: a blind index supports equality and nothing else, so
+-- encrypting `phone` ends substring search on it. Two of the things people
+-- type into the customer picker are a name (unaffected — `name` is Tier C and
+-- stays plaintext) and the last four digits of a number they are reading off
+-- a receipt or hearing on the phone. The second is the actual workflow at a
+-- till, and losing it silently is the kind of regression that gets noticed in
+-- production three weeks after the release that caused it.
+--
+-- What it costs: a dump leaks four digits per customer beside a name that was
+-- already plaintext. Four digits cannot be dialled, cannot be messaged, and
+-- leave on the order of a hundred thousand candidates for the full number, so
+-- the mass-contactable PII this wave exists to protect stays protected.
+--
+-- What is NOT preserved, and is accepted as lost: arbitrary substring and
+-- *prefix* search. `0912…` matches half an Iranian customer base and is worth
+-- nothing as a search; a middle-of-the-number substring is rare enough that
+-- the honest answer is to type the last four instead.
+--
+-- It is maintained like every other derived column here — written by the
+-- service, invalidated by the trigger below when an unaware writer touches
+-- the plaintext, and repaired by the backfill — rather than computed in SQL,
+-- because the digits have to be folded from Persian numerals first
+-- (`phoneDigits` in src/lib/phone.ts) and a `regexp_replace` on `\D` would
+-- silently disagree with the application on exactly those rows.
 -- ---------------------------------------------------------------------------
 ALTER TABLE customers
     ADD COLUMN phone_enc   bytea,
     ADD COLUMN phone_bidx  text,
+    ADD COLUMN phone_last4 text,
     ADD COLUMN address_enc bytea,
     ADD COLUMN notes_enc   bytea;
 
 CREATE INDEX idx_customers_phone_bidx ON customers (business_id, phone_bidx)
     WHERE phone_bidx IS NOT NULL;
+CREATE INDEX idx_customers_phone_last4 ON customers (business_id, phone_last4)
+    WHERE phone_last4 IS NOT NULL;
 
 -- ---------------------------------------------------------------------------
 -- reservations — the walk-in's callback number.
@@ -94,6 +125,7 @@ BEGIN
     IF NEW.phone IS DISTINCT FROM OLD.phone AND NEW.phone_enc IS NOT DISTINCT FROM OLD.phone_enc THEN
         NEW.phone_enc := NULL;
         NEW.phone_bidx := NULL;
+        NEW.phone_last4 := NULL;
     END IF;
     IF NEW.address IS DISTINCT FROM OLD.address AND NEW.address_enc IS NOT DISTINCT FROM OLD.address_enc THEN
         NEW.address_enc := NULL;

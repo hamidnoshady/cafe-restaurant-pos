@@ -26,6 +26,13 @@ export interface EncryptedColumn {
   encColumn: string;
   /** Present only where equality lookup has to keep working. */
   bidxColumn?: string;
+  /**
+   * Present only on `customers.phone`: the last four digits, plaintext and
+   * indexed, so that the one partial search people actually perform at a till
+   * survives step 3. The decision and its cost are argued in
+   * `migrations/0125_field_encryption_columns.sql`.
+   */
+  last4Column?: string;
   tier: EncryptionTier;
   /** Why this column is encrypted / what the blind index costs. */
   note: string;
@@ -45,11 +52,12 @@ export const ENCRYPTED_TABLES: Record<string, EncryptedTable> = {
         column: "phone",
         encColumn: "phone_enc",
         bidxColumn: "phone_bidx",
+        last4Column: "phone_last4",
         tier: "Tier B",
         note:
-          "Backs lookup at the till. The blind index keeps exact match working; partial and " +
-          "prefix search against the phone stop working once the plaintext column is dropped — " +
-          "an accepted, deliberate loss recorded in the phase doc.",
+          "Backs lookup at the till. The blind index keeps exact match working and phone_last4 " +
+          "keeps last-four search working; arbitrary substring and prefix search against the " +
+          "phone are the accepted, deliberate loss once the plaintext column is dropped.",
       },
       {
         column: "address",
@@ -122,6 +130,7 @@ export function encryptedPhysicalColumns(): { table: string; column: string; dat
     for (const col of spec.columns) {
       out.push({ table, column: col.encColumn, dataType: "bytea" });
       if (col.bidxColumn) out.push({ table, column: col.bidxColumn, dataType: "text" });
+      if (col.last4Column) out.push({ table, column: col.last4Column, dataType: "text" });
     }
   }
   return out;
