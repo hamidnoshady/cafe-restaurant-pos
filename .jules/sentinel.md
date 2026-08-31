@@ -30,3 +30,8 @@
 **Vulnerability:** IP spoofing via X-Forwarded-For header by trusting the left-most or right-most IP.
 **Learning:** In multi-proxy setups without explicit trusted proxies, the right-most IP might erroneously target an internal proxy, but blindly trusting the left-most IP introduces a critical spoofing vulnerability. If an attacker sends a crafted header, the spoofed IP is picked.
 **Prevention:** Parse X-Forwarded-For from right to left, checking against private/local network ranges, and select the first public IP.
+
+## 2024-05-18 - Client IP Extraction Spoofing via X-Forwarded-For
+**Vulnerability:** `clientIpFrom` in rate limiting trusted proxy counts and unconditionally picked the IP `N` hops away from the right, or the left-most IP. This allowed attackers to append spoofed IPs and bypass rate limiting or log fake IPs.
+**Learning:** In environments without strictly configured explicit trusted proxy IPs, picking the left-most or relying on a static hop count is dangerous because intermediate proxies might append to `x-forwarded-for` blindly.
+**Prevention:** To reliably get the client IP, iterate the `x-forwarded-for` header right-to-left and pick the first public (non-private) IP.
