@@ -16,6 +16,7 @@ import {
   ContactIcon,
   FolderIcon,
   GemIcon,
+  GlobeIcon,
   LayoutDashboardIcon,
   LayoutGridIcon,
   LockIcon,
@@ -136,6 +137,8 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   // Phase 36 — the CRM app's home. `/dashboard/customers` keeps the plain
   // people glyph above; this is the app that now owns that record.
   "/dashboard/crm": ContactIcon,
+  // Issue #378 — the website manager's own app, pulled out of Growth.
+  "/dashboard/website": GlobeIcon,
 };
 
 /**

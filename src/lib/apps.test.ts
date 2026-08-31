@@ -33,11 +33,17 @@ describe("appForModule", () => {
     expect(appForModule("orders")).toBe("sales");
   });
 
-  it("keeps the still-unbuilt phase keys under Growth & Marketing", () => {
-    // The website manager and SMS/email act *on* an audience rather than owning
-    // the customer record, so they stay with the engines that will use them.
-    expect(appForModule("website")).toBe("growth");
+  it("keeps the still-unbuilt messaging key under Growth & Marketing", () => {
+    // SMS/email acts *on* an audience rather than owning the customer record,
+    // so it stays with the engines that will use it.
     expect(appForModule("messaging")).toBe("growth");
+  });
+
+  it("gives the website manager its own app, not a section of Growth", () => {
+    // Originally seated under Growth (#378) as a forward reference; it is an
+    // integration with an external system of record (eshobe-cms), not a
+    // marketing engine, so it is a peer app instead.
+    expect(appForModule("website")).toBe("website");
   });
 
   it("treats the assistant and the workspace shell as not-apps", () => {
@@ -84,11 +90,19 @@ describe("appForKey / modulesForApp", () => {
     const growth = appForKey("growth");
     expect(growth.label).toBe("رشد و بازاریابی");
     expect(modulesForApp("growth")).toEqual(
-      expect.arrayContaining(["loyalty", "promotions", "commission", "website", "messaging"]),
+      expect.arrayContaining(["loyalty", "promotions", "commission", "messaging"]),
     );
-    // The engines act on customers; they do not own the record.
+    // The engines act on customers; they do not own the record. The website
+    // manager is its own app now, not one of Growth's engines.
     expect(modulesForApp("growth")).not.toContain("crm");
     expect(modulesForApp("growth")).not.toContain("customers");
+    expect(modulesForApp("growth")).not.toContain("website");
+  });
+
+  it("returns the Website app owning the CMS connection", () => {
+    const website = appForKey("website");
+    expect(website.label).toBe("وب‌سایت");
+    expect(modulesForApp("website")).toEqual(["website"]);
   });
 
   it("returns the CRM app owning both the customer record and the CRM surfaces", () => {
@@ -128,6 +142,12 @@ describe("visibleApps", () => {
   it("always shows Growth & Marketing — every trade has loyalty", () => {
     for (const industry of INDUSTRIES) {
       expect(visibleApps({ industry }).map((app) => app.key)).toContain("growth");
+    }
+  });
+
+  it("always shows the Website app — every trade has the website module", () => {
+    for (const industry of INDUSTRIES) {
+      expect(visibleApps({ industry }).map((app) => app.key)).toContain("website");
     }
   });
 });

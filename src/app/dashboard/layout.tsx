@@ -65,6 +65,15 @@ function navItemsFor(industry: Industry): NavItem[] {
       href: "/dashboard/growth",
       roles: ["owner", "manager", "cashier"],
     },
+    // Its own app (issue #378) — an integration with an external system of
+    // record (eshobe-cms), not a Growth engine. Owner/manager only, the same
+    // line the connections app draws for its own machine credentials.
+    {
+      label: "وب‌سایت",
+      module: "website",
+      href: "/dashboard/website",
+      roles: ["owner", "manager"],
+    },
     {
       label: "خرید و انبار",
       module: "stock",

@@ -125,6 +125,8 @@ export const PROMPT_FRAGMENTS: Record<FragmentKey, string> = {
 
   "app:connections": "",
 
+  "app:website": "",
+
   "app:settings": "",
 
   // ── Project instructions (injected when conversation has a project) ───

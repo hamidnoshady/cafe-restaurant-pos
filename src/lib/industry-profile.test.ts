@@ -214,11 +214,12 @@ describe("defaultDisabledFeatures", () => {
 describe("Phase 35 module keys", () => {
   it("declares the ecosystem and future-phase keys without assigning them to any industry yet", () => {
     // These keys exist so the app registry (src/lib/apps.ts) can give them a
-    // place, but neither is wired into a trade yet: `workspace` is the
-    // ecosystem shell (feature-flag gated) and `website`/`messaging` get their
-    // pages in phases 37–38. Locking this prevents a profile from silently
-    // gaining one and changing module-gated routing.
-    const futureKeys = ["workspace", "website", "messaging"] as const;
+    // place, but this one is not wired into a trade yet: `workspace` is the
+    // ecosystem shell (feature-flag gated) and `messaging` gets its pages in a
+    // later phase. Locking this prevents a profile from silently gaining it
+    // and changing module-gated routing. `crm` and `website` graduated out of
+    // this list once built — see the tests below.
+    const futureKeys = ["workspace", "messaging"] as const;
     for (const key of futureKeys) {
       expect(MODULE_KEYS, key).toContain(key);
       for (const industry of INDUSTRIES) {
@@ -233,6 +234,16 @@ describe("Phase 35 module keys", () => {
     // A trade that lost this key would 403 on every /api/crm route.
     for (const industry of INDUSTRIES) {
       expect(hasModule(industry, "crm"), `${industry} should have crm`).toBe(true);
+    }
+  });
+
+  it("gives every trade the website manager, now that it is its own app", () => {
+    // Every trade wants a web presence — a jeweller's storefront as much as a
+    // café's menu site — and the module gates the one CMS connection this app
+    // holds (src/lib/apps.ts's "website" app), not a trade-specific screen.
+    // A trade that lost this key would 403 on every /api/cms/website route.
+    for (const industry of INDUSTRIES) {
+      expect(hasModule(industry, "website"), `${industry} should have website`).toBe(true);
     }
   });
 });
