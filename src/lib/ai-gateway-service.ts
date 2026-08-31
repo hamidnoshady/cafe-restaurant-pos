@@ -34,11 +34,15 @@ import {
   keyUpdateUrl,
   livelinessUrl,
   modelInfoUrl,
+  normaliseRoutingStrategy,
   normalizeMcpServers,
   parseGatewayModels,
   parseGeneratedKey,
   parseKeySpend,
+  parseRouterSettings,
   resolveChatModel,
+  routerSettingsUrl,
+  routingStrategyMatches,
   toPublicGatewayConfig,
   toStringList,
   validateBusinessGatewayInput,
@@ -49,7 +53,7 @@ import {
   type BusinessGateway,
   type BusinessGatewayInput,
   type GatewayProbe,
-  type GatewayRoutingStrategy,
+  type ProxyRouterSettings,
   type PublicAiGatewayConfig,
   type PublicBusinessGateway,
 } from "./ai-gateway";
@@ -112,7 +116,10 @@ function rowToGateway(row: GatewayRow): AiGatewayConfig {
     chatModel: row.chat_model ?? "",
     embeddingModel: row.embedding_model ?? "",
     fallbackModels: toStringList(row.fallback_models),
-    routingStrategy: (row.routing_strategy ?? fallback.routingStrategy) as GatewayRoutingStrategy,
+    // A strategy the proxy does not implement (an older console could store
+    // one) folds onto the closest real value instead of reaching the UI as an
+    // option the proxy would silently ignore.
+    routingStrategy: normaliseRoutingStrategy(row.routing_strategy) ?? fallback.routingStrategy,
     virtualKeysEnabled: row.virtual_keys_enabled,
     allowBusinessModels: row.allow_business_models,
     publishedModels: toStringList(row.published_models),
@@ -160,6 +167,11 @@ function envGatewayConfig(): Partial<AiGatewayInput> {
     chatModel: env.LITELLM_CHAT_MODEL?.trim() || undefined,
     embeddingModel: env.LITELLM_EMBEDDING_MODEL?.trim() || undefined,
     fallbackModels: env.LITELLM_FALLBACK_MODELS ? env.LITELLM_FALLBACK_MODELS.split(",").map((m) => m.trim()).filter(Boolean) : undefined,
+    // Mirrors router_settings.routing_strategy in the gateway's config.yaml.
+    // An unrecognised value is dropped rather than stored: the proxy would
+    // ignore it silently, and the console must not offer a choice that does
+    // nothing.
+    routingStrategy: normaliseRoutingStrategy(env.LITELLM_ROUTING_STRATEGY) ?? undefined,
     defaultMaxBudgetUsd: Number.isFinite(budget) && budget > 0 ? budget : null,
     defaultTpmLimit: Number.isSafeInteger(tpm) && tpm > 0 ? tpm : null,
     defaultRpmLimit: Number.isSafeInteger(rpm) && rpm > 0 ? rpm : null,
@@ -178,7 +190,10 @@ export function mergeGatewayConfig(draft: AiGatewayInput, current: AiGatewayConf
     chatModel: draft.chatModel ?? current.chatModel,
     embeddingModel: draft.embeddingModel ?? current.embeddingModel,
     fallbackModels: draft.fallbackModels === undefined ? current.fallbackModels : toStringList(draft.fallbackModels),
-    routingStrategy: (draft.routingStrategy ?? current.routingStrategy) as GatewayRoutingStrategy,
+    routingStrategy:
+      normaliseRoutingStrategy(draft.routingStrategy) ??
+      normaliseRoutingStrategy(current.routingStrategy) ??
+      current.routingStrategy,
     virtualKeysEnabled: draft.virtualKeysEnabled ?? current.virtualKeysEnabled,
     allowBusinessModels: draft.allowBusinessModels ?? current.allowBusinessModels,
     publishedModels:
@@ -245,7 +260,9 @@ export async function saveAiGatewayConfig(input: AiGatewayInput): Promise<AiGate
       (input.chatModel ?? current.chatModel).trim(),
       (input.embeddingModel ?? current.embeddingModel).trim(),
       JSON.stringify(toStringList(input.fallbackModels ?? current.fallbackModels)),
-      (input.routingStrategy ?? current.routingStrategy) as GatewayRoutingStrategy,
+      normaliseRoutingStrategy(input.routingStrategy) ??
+        normaliseRoutingStrategy(current.routingStrategy) ??
+        current.routingStrategy,
       input.virtualKeysEnabled ?? current.virtualKeysEnabled,
       input.allowBusinessModels ?? current.allowBusinessModels,
       JSON.stringify(toStringList(input.publishedModels ?? current.publishedModels)),
@@ -548,13 +565,38 @@ export async function probeGateway(config: AiGatewayConfig): Promise<GatewayProb
   const started = Date.now();
   const health = await gatewayRequest(config, livelinessUrl(config.baseUrl), { method: "GET" });
   if (!ok(health.status)) {
-    return { ok: false, latencyMs: null, models: [], error: asError(health.status).message };
+    return {
+      ok: false,
+      latencyMs: null,
+      models: [],
+      proxyRoutingStrategy: null,
+      routingMismatch: false,
+      error: asError(health.status).message,
+    };
   }
   const latencyMs = Date.now() - started;
-  const models = config.masterKey
-    ? await listGatewayModels(config)
-    : [];
-  return { ok: true, latencyMs, models, error: null };
+  const models = config.masterKey ? await listGatewayModels(config) : [];
+  // `routing_strategy` is a proxy-side setting with no per-request or write
+  // counterpart, so the only honest thing the console can do is read what the
+  // proxy is running and say when the stored value disagrees with it.
+  const router = await readProxyRouterSettings(config);
+  return {
+    ok: true,
+    latencyMs,
+    models,
+    proxyRoutingStrategy: router.routingStrategy,
+    routingMismatch: !routingStrategyMatches(config.routingStrategy, router.routingStrategy),
+    error: null,
+  };
+}
+
+/** The proxy's live router settings, or an empty view when it does not answer. */
+export async function readProxyRouterSettings(config: AiGatewayConfig): Promise<ProxyRouterSettings> {
+  if (!config.masterKey) return { routingStrategy: null, routingOptions: [], fallbacks: [] };
+  const res = await gatewayRequest(config, routerSettingsUrl(config.baseUrl), { method: "GET" });
+  return ok(res.status)
+    ? parseRouterSettings(res.body)
+    : { routingStrategy: null, routingOptions: [], fallbacks: [] };
 }
 
 /** Model aliases the gateway is serving. Empty when the admin key is absent. */

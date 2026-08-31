@@ -21,16 +21,55 @@ import type { AiConfig } from "./ai";
 // Configuration shapes
 // ---------------------------------------------------------------------------
 
-/** The routing strategies the LiteLLM proxy actually implements. */
+/**
+ * The routing strategies the LiteLLM proxy actually implements, in the order
+ * the console should offer them.
+ *
+ * This list is a mirror of the proxy's own vocabulary — the `RoutingStrategy`
+ * enum in `litellm/types/router.py` plus `simple-shuffle`, which is the default
+ * and is offered by the proxy's `GET /router/settings` as an option. A value
+ * that is not in that vocabulary is silently ignored by the proxy, which is
+ * worse than a rejected one, so the console must not be able to offer it.
+ *
+ * Two of these are documented as unsuitable for production and are marked as
+ * such in the console: `usage-based-routing` is deprecated (its v2 replacement
+ * tracks usage asynchronously), and both usage-based strategies add a Redis
+ * round-trip per request.
+ */
 export const GATEWAY_ROUTING_STRATEGIES = [
   "simple-shuffle",
   "least-busy",
-  "usage-based-router",
   "latency-based-routing",
   "cost-based-routing",
+  "usage-based-routing-v2",
+  "usage-based-routing",
+  "provider-budget-routing",
 ] as const;
 
 export type GatewayRoutingStrategy = (typeof GATEWAY_ROUTING_STRATEGIES)[number];
+
+/**
+ * Names earlier revisions of this console stored that the proxy never
+ * understood. `usage-based-router` was never a LiteLLM value; the strategy it
+ * was reaching for is `usage-based-routing-v2`.
+ */
+const LEGACY_ROUTING_STRATEGIES: Record<string, GatewayRoutingStrategy> = {
+  "usage-based-router": "usage-based-routing-v2",
+};
+
+/**
+ * Fold a stored or posted strategy onto the proxy's vocabulary.
+ * Returns `null` for anything the proxy would ignore, so callers can reject it
+ * instead of storing a value that would quietly do nothing.
+ */
+export function normaliseRoutingStrategy(value: unknown): GatewayRoutingStrategy | null {
+  const text = trimmed(value).toLowerCase();
+  if (!text) return null;
+  if ((GATEWAY_ROUTING_STRATEGIES as readonly string[]).includes(text)) {
+    return text as GatewayRoutingStrategy;
+  }
+  return LEGACY_ROUTING_STRATEGIES[text] ?? null;
+}
 
 /** How often a virtual key's budget resets. LiteLLM accepts e.g. "30d", "1mo". */
 export const GATEWAY_BUDGET_DURATIONS = ["1d", "7d", "30d", "1mo"] as const;
@@ -135,6 +174,14 @@ export interface GatewayProbe {
   latencyMs: number | null;
   /** Model aliases the gateway is serving, when the admin key allowed listing them. */
   models: string[];
+  /**
+   * The routing strategy the proxy reports it is running, from its own
+   * `/router/settings`. `null` when the proxy did not answer — which is not a
+   * mismatch, just an unreadable one.
+   */
+  proxyRoutingStrategy: string | null;
+  /** True when the strategy stored here is not the one the proxy is running. */
+  routingMismatch: boolean;
   /** A short, human-readable failure reason — Persian, shown verbatim in the console. */
   error: string | null;
 }
@@ -337,6 +384,18 @@ export function modelInfoUrl(baseUrl: string): string {
   return `${gatewayManagementUrl(baseUrl)}/model/info`;
 }
 
+/**
+ * The proxy's live router configuration — the strategy it is actually running,
+ * the fallback chains it declares, and the strategies it offers.
+ *
+ * Read-only: LiteLLM exposes no endpoint that changes `routing_strategy` at
+ * runtime, so this is how the console *verifies* the stored value rather than
+ * pushing it. The proxy's own answer always wins over what is stored here.
+ */
+export function routerSettingsUrl(baseUrl: string): string {
+  return `${gatewayManagementUrl(baseUrl)}/router/settings`;
+}
+
 export function keyGenerateUrl(baseUrl: string): string {
   return `${gatewayManagementUrl(baseUrl)}/key/generate`;
 }
@@ -371,6 +430,82 @@ export function parseGatewayModels(payload: unknown): string[] {
     })
     .filter((name) => name.length > 0);
   return [...new Set(names)].sort((a, b) => a.localeCompare(b));
+}
+
+/** One `model_name -> [fallback model_names]` rule the proxy declares. */
+export interface ProxyFallbackRule {
+  from: string;
+  to: string[];
+}
+
+/** What the proxy's own router reports, from `GET /router/settings`. */
+export interface ProxyRouterSettings {
+  /** The strategy the proxy is actually running; `null` when it does not say. */
+  routingStrategy: string | null;
+  /** The strategies this proxy build offers, when it reports them. */
+  routingOptions: string[];
+  /** The fallback rules the proxy declares in `router_settings`. */
+  fallbacks: ProxyFallbackRule[];
+}
+
+const EMPTY_ROUTER_SETTINGS: ProxyRouterSettings = {
+  routingStrategy: null,
+  routingOptions: [],
+  fallbacks: [],
+};
+
+/**
+ * `/router/settings` answers
+ * `{ fields: [{ field_name, field_value, options }], current_values: {…} }`.
+ *
+ * `current_values` is the authoritative view (the proxy merges the live router
+ * with its own config there); `fields[]` carries the same values plus the
+ * strategies this build offers. Both are read, because an older proxy may
+ * populate only one of them, and an absent value must stay `null` rather than
+ * being mistaken for a match.
+ */
+export function parseRouterSettings(payload: unknown): ProxyRouterSettings {
+  const row = payload as {
+    current_values?: Record<string, unknown>;
+    fields?: unknown;
+  } | null;
+  if (!row || typeof row !== "object") return { ...EMPTY_ROUTER_SETTINGS };
+
+  const current = row.current_values && typeof row.current_values === "object" ? row.current_values : {};
+  const fields = Array.isArray(row.fields) ? (row.fields as Record<string, unknown>[]) : [];
+  const field = fields.find((entry) => trimmed(entry?.field_name) === "routing_strategy");
+
+  const fromCurrent = typeof current.routing_strategy === "string" ? current.routing_strategy : "";
+  const fromField = field && typeof field.field_value === "string" ? field.field_value : "";
+  const routingStrategy = trimmed(fromCurrent) || trimmed(fromField) || null;
+
+  const routingOptions =
+    field && Array.isArray(field.options) ? toStringList(field.options) : [];
+
+  // `fallbacks` is `List[Dict[str, List[str]]]` — one entry per model group.
+  const rawFallbacks = Array.isArray(current.fallbacks) ? current.fallbacks : [];
+  const fallbacks: ProxyFallbackRule[] = [];
+  for (const entry of rawFallbacks) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+    for (const [from, to] of Object.entries(entry as Record<string, unknown>)) {
+      const targets = toStringList(to);
+      if (trimmed(from) && targets.length > 0) {
+        fallbacks.push({ from: trimmed(from), to: targets });
+      }
+    }
+  }
+
+  return { routingStrategy, routingOptions, fallbacks };
+}
+
+/**
+ * Whether the console's stored strategy is the one the proxy is running.
+ * A proxy that does not report its strategy (`null`) is not a mismatch — the
+ * console must not claim a fault it cannot see.
+ */
+export function routingStrategyMatches(configured: string, proxy: string | null): boolean {
+  if (!proxy) return true;
+  return normaliseRoutingStrategy(configured) === normaliseRoutingStrategy(proxy);
 }
 
 /** `/key/generate` answers `{ key: "sk-…", … }`. */
@@ -527,10 +662,7 @@ export function validateGatewayInput(input: AiGatewayInput): string[] {
   if (input.publishedModels !== undefined && !Array.isArray(input.publishedModels)) {
     errors.push("ai_gateway_bad_published_models");
   }
-  if (
-    input.routingStrategy !== undefined &&
-    !GATEWAY_ROUTING_STRATEGIES.includes(input.routingStrategy as GatewayRoutingStrategy)
-  ) {
+  if (input.routingStrategy !== undefined && normaliseRoutingStrategy(input.routingStrategy) === null) {
     errors.push("ai_gateway_bad_routing");
   }
   if (input.defaultBudgetDuration !== undefined && !trimmed(input.defaultBudgetDuration)) {

@@ -15,6 +15,31 @@
 # the alias, so which vendor actually serves it stays a platform decision that
 # can change without touching this application. The application's own aliases
 # live in /platform/ai/gateway and must match these.
+#
+# The console values this file expects (super-admin → /platform/ai/gateway):
+#
+#   نشانی دروازه            http://litellm:4000/v1
+#   کلید مدیر                $LITELLM_MASTER_KEY   (same secret as below)
+#   مدل گفت‌وگو              pos-chat
+#   مدل بردارسازی            pos-embed
+#   زنجیرهٔ جایگزین          pos-cheap
+#   روش توزیع                simple-shuffle        (mirror of router_settings)
+#   مدل‌های قابل انتخاب      pos-chat, pos-cheap   (only if the business model
+#                                                  picker is switched on)
+#
+# A routing strategy only has something to do when an alias has more than one
+# deployment behind it. Each alias below has exactly one, so today the router's
+# job is failover between *aliases* (`fallbacks`), not load balancing within
+# one. To let the router balance, add a second deployment under the same
+# model_name — same alias, different vendor or key:
+#
+#   - model_name: pos-chat
+#     litellm_params:
+#       model: anthropic/claude-3-5-haiku-20241022
+#       api_key: os.environ/ANTHROPIC_API_KEY
+#       rpm: 60
+#       tpm: 40000        # set tpm as well: with rpm/tpm present,
+#                         # simple-shuffle becomes a *weighted* pick
 
 model_list:
   # Primary chat model. Point this at whichever vendor you have contracted.
@@ -117,9 +142,46 @@ litellm_settings:
   drop_params: true
 
 router_settings:
+  # The router's own choice of deployment when an alias has several. This is a
+  # proxy-side setting: LiteLLM has no endpoint that changes it at runtime
+  # (`GET /router/settings` is read-only), so it is edited here and the
+  # application's /platform/ai/gateway field must say the same thing — the
+  # console's "بررسی ارتباط" reads the live value and reports a disagreement.
+  #
+  # simple-shuffle is LiteLLM's documented production default: it is the only
+  # strategy under which weighted in-group failover applies, and the
+  # usage-based strategies add a Redis round-trip to every request.
   routing_strategy: simple-shuffle
+
+  # Check a request against the deployment's context window *before* paying for
+  # it, and enforce the router's concurrency limits. Required for
+  # context-window routing and context_window_fallbacks to do anything.
+  enable_pre_call_checks: true
+
+  # The automatic part of the router: a deployment that keeps failing is put on
+  # cooldown and traffic moves to its peers without anyone being paged.
+  allowed_fails: 3
+  cooldown_time: 30
+
   # Tried in order; also sent per-request by the application, which keeps the
   # chain editable from /platform/ai/gateway without restarting this service.
   fallbacks:
     - pos-chat:
         - pos-cheap
+
+  # The same chain for any model group with no rule of its own, so a new alias
+  # added to model_list is not silently left without a failover target.
+  default_fallbacks:
+    - pos-cheap
+
+  # Per-alias strategies, once one alias has several deployments and different
+  # surfaces want different behaviour from it. Aliases not claimed by a group
+  # fall through to routing_strategy above.
+  #
+  # routing_groups:
+  #   - group_name: assistant-hot-path
+  #     models: [pos-chat]
+  #     routing_strategy: latency-based-routing
+  #     routing_strategy_args:
+  #       ttl: 60
+  #       lowest_latency_buffer: 0.2
