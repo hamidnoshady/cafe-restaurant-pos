@@ -4,6 +4,7 @@ import { getPool, query } from "@/lib/db";
 import {
   decryptReservationPhones,
   encryptReservationPhone,
+  lockTableForReservationWrite,
   parseDate,
   tableConflicts,
 } from "@/lib/reservation-service";
@@ -212,26 +213,42 @@ async function updateReservation(
 
   if (fields.length === 0) return NextResponse.json({ error: "bad_request" }, { status: 400 });
 
-  // Re-check overlap if the table/time/duration moved.
-  if (
-    effectiveTableId &&
-    (body.tableId !== undefined || body.reservedAt !== undefined || body.durationMinutes !== undefined)
-  ) {
-    const conflicts = await tableConflicts(
-      locationId,
-      effectiveTableId,
-      effectiveReservedAt,
-      effectiveDuration,
-      reservation.id,
-    );
-    if (conflicts.length > 0 && !body.allowConflict) {
-      return NextResponse.json({ error: "reservation_conflict", conflicts }, { status: 409 });
-    }
-  }
-
   set("updated_at", new Date().toISOString());
-  await query(`UPDATE reservations SET ${fields.join(", ")} WHERE id = $1`, [reservation.id, ...values]);
-  return NextResponse.json({ ok: true });
+  const recheckOverlap =
+    effectiveTableId &&
+    (body.tableId !== undefined || body.reservedAt !== undefined || body.durationMinutes !== undefined);
+
+  // Same table-lock-then-recheck sequence as booking (see
+  // lockTableForReservationWrite): without it, two concurrent edits moving
+  // different reservations onto the same table/time can each pass the
+  // overlap check against the other's not-yet-committed row.
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    if (recheckOverlap) {
+      await lockTableForReservationWrite(client, locationId, effectiveTableId!);
+      const conflicts = await tableConflicts(
+        locationId,
+        effectiveTableId!,
+        effectiveReservedAt,
+        effectiveDuration,
+        reservation.id,
+        client,
+      );
+      if (conflicts.length > 0 && !body.allowConflict) {
+        await client.query("ROLLBACK");
+        return NextResponse.json({ error: "reservation_conflict", conflicts }, { status: 409 });
+      }
+    }
+    await client.query(`UPDATE reservations SET ${fields.join(", ")} WHERE id = $1`, [reservation.id, ...values]);
+    await client.query("COMMIT");
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 /** Delete a reservation outright (rarely needed; cancel is preferred). */

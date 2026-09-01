@@ -215,6 +215,14 @@ export async function redeemPoints(
   const program = await getDefaultProgram(input.businessId, client);
   if (!program) throw new Error("برنامه وفاداری تعریف نشده است.");
 
+  // The balance is a SUM over an append-only ledger, not one row — there is
+  // nothing for SELECT ... FOR UPDATE to lock. Without this, two concurrent
+  // redemptions for the same customer can both read the same balance, both
+  // pass the check below, and both insert: the ledger nets negative and the
+  // customer is issued store credit for points they didn't have.
+  await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
+    `loyalty-points:${input.businessId}:${input.customerId}`,
+  ]);
   const balance = await pointsBalance(input.businessId, input.customerId, client);
   if (input.points > balance) throw new Error("امتیاز کافی نیست.");
 
@@ -297,6 +305,12 @@ export async function useStoreCredit(
   if (!Number.isInteger(input.amount) || input.amount <= 0) {
     throw new Error("مبلغ مصرف اعتبار باید یک عدد صحیح مثبت (ریال) باشد.");
   }
+  // Same race as redeemPoints above: the balance is reconstructed from
+  // domain_events, so two concurrent spends must be serialized by an
+  // advisory lock rather than a row lock.
+  await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
+    `loyalty-store-credit:${input.businessId}:${input.customerId}`,
+  ]);
   const balance = await storeCreditBalance(input.businessId, input.customerId, client);
   if (input.amount > balance) throw new Error("اعتبار فروشگاهی کافی نیست.");
 
