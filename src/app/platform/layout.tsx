@@ -42,6 +42,11 @@ interface NavItem {
 
 const NAV: NavItem[] = [
   { label: "کسب‌وکارها", href: "/platform", exact: true, alsoActive: ["/platform/businesses"] },
+  // Platform billing: Zarinpal config, credit packages, plan builder and the
+  // payments ledger. Read surfaces are visible to any admin; the pages hide
+  // their own write controls from operators without `billing.manage`.
+  { label: "پرداخت‌ها", href: "/platform/billing" },
+  { label: "پلن‌ساز", href: "/platform/plans" },
   // Migration 0128 — the deployment-wide app switchboard («به‌زودی»، «در حال
   // تعمیر»، …). Readable by any admin; the page hides its own write controls
   // from an operator without `features.write`, the same way the flags panel does.

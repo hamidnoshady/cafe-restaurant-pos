@@ -1,0 +1,105 @@
+# Platform billing — wallet credits, plan builder & online payments
+
+The super-admin platform has its own payment system: every important,
+meterable function spends from a per-business **wallet** of credit, credits are
+bought by top-up through an Iranian payment gateway (**Zarinpal**), and the
+super-admin builds **plans** by picking functions and giving each a cost —
+including *free for a limited time* or *free for a limited number of uses*.
+
+All money is stored as **integer Rial**. The UI displays Toman.
+
+## What the super-admin controls
+
+Two new console entries (super-admin sidebar):
+
+- **پرداخت‌ها** (`/platform/billing`)
+  - Gateway settings — Zarinpal merchant ID, sandbox/live toggle, callback URL,
+    manual (bank-transfer) fallback.
+  - Credit **packages** (name / price / credit granted — credit can exceed price
+    for a bonus), activate/deactivate/delete.
+  - Every payment across businesses, filterable by status, with **تأیید / رد**
+    buttons for manual-gateway payments.
+- **پلن‌ساز** (`/platform/plans`) — the plan builder:
+  - Create billing plans (name + optional monthly base fee).
+  - For each plan, **add functions (feature flags)** and choose a cost model:
+    - `included` — part of the plan, no extra charge.
+    - `monthly` — a fixed monthly add-on fee.
+    - `per_use` — **metered**: each use costs `price` from the business wallet.
+    - `addon` — one-off purchase the business then owns.
+  - Optional promotion on a metered function:
+    - **free until a date** (`free_until`) — limited time, and/or
+    - **free for N uses** (`free_limit`) — limited use.
+
+Each business also gets a **کیف پول و پرداخت** tab in its console workspace
+(`/platform/businesses/{id}/billing`) showing balance, ledger, entitlements,
+per-feature usage and payments, with manual grant/deduct controls.
+
+## What the business sees
+
+- A **small credit badge** (coin icon + balance in Toman) in the dashboard
+  chrome on every page — desktop sidebar header and the mobile header. It polls
+  `/api/billing/wallet` and links to the billing page.
+- **اعتبار و پرداخت‌ها** (`/dashboard/billing`, owner/manager): balance,
+  top-up packages, custom-amount top-up, plans, and payment history.
+- Top-up redirects to Zarinpal; Zarinpal returns to the configured callback,
+  the page verifies the payment, and the wallet is credited.
+
+## Payment flow (Zarinpal)
+
+1. Business picks a package → `POST /api/billing/payments` creates a
+   `billing_payments` row (`pending`) and calls Zarinpal `payment/request.json`.
+2. The row moves to `redirect` with the gateway **authority**; the browser is
+   sent to `https://payment.zarinpal.com/pg/StartPay/{authority}`
+   (or `sandbox.zarinpal.com` when sandbox is on).
+3. Zarinpal returns the browser to `callback_url?payment=<id>&Authority=…&Status=OK|NOK`.
+4. The return page calls `POST /api/billing/payments/verify`, which calls
+   Zarinpal `payment/verify.json`; on code 100/101 the payment is **settled**
+   (wallet credited + ledger entry) exactly once.
+
+Gateway configuration lives in the `platform_payment_config` singleton and is
+edited on `/platform/billing`. With gateway = `manual`, payments are created
+and then approved/rejected by an admin (bank-transfer flow).
+
+## How a function bills a use
+
+Server code for a metered function calls one helper **before doing the work**:
+
+```ts
+import { chargeForFeature } from "@/lib/billing-guard";
+
+const gate = await chargeForFeature(businessId, "backup", { note: "…", userId });
+if (!gate.ok) return gate.response;   // 402 no credits / 403 not entitled
+```
+
+- Not entitled at all → `403 feature_not_entitled`.
+- Entitled but wallet too low → `402 insufficient_credits` (with `topUpUrl`).
+- Free promo / zero price / function not priced → the work proceeds, not billed.
+  (Billing is **opt-in per function**: a feature with no plan-builder price row
+  behaves exactly as before — existing functions are unaffected.)
+
+`/api/backup/run` is wired as the reference integration.
+
+## Data model (migration 0130)
+
+| Table | Tenant? | Purpose |
+| --- | --- | --- |
+| `platform_payment_config` | global | Gateway singleton (merchant id, sandbox, callback) |
+| `credit_packages` | global | Top-up package catalogue |
+| `billing_plans` / `billing_plan_features` | global | Plan builder: per-plan, per-feature price model + promo |
+| `business_wallets` | tenant (RLS) | Balance + lifetime totals |
+| `wallet_ledger` | tenant (RLS) | Every credit/debit, row-locked, exactly-once per payment |
+| `billing_payments` | tenant (RLS) | Top-up / plan / add-on payment transactions |
+| `business_entitlements` | tenant (RLS) | Owned features (plan/addon/promo/manual) + expiry |
+| `feature_usage` | tenant (RLS) | Per-feature use/charge counters (drives free-use quotas) |
+
+All business-owned tables use `FORCE ROW LEVEL SECURITY` with the same tenant
+policy as the rest of the platform (`app_rls_bypass() OR business_id =
+app_current_business()`), so they pass the tenant-isolation test.
+
+## Configuration
+
+Gateway settings are stored in the database (edited in the console), so no
+deployment env vars are required beyond the existing `DATABASE_URL` and
+`JWT_SECRET`. Set the **callback URL** to the public `/dashboard/billing`
+address of the deployment (e.g. `https://app.example.com/dashboard/billing`),
+turn **sandbox off** for live payments, and paste the Zarinpal merchant ID.

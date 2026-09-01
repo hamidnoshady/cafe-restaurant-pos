@@ -29,6 +29,7 @@ import {
   TrendingUpIcon,
   TruckIcon,
   UsersIcon,
+  WalletIcon,
   WatchIcon,
   type LucideIcon,
 } from "lucide-react";
@@ -50,6 +51,7 @@ import type { AppKey } from "@/lib/apps";
 import type { AppAvailabilityState } from "@/lib/app-availability";
 import { appShellForPathname, isInsideAnyAppShell, type AppShellDef } from "@/lib/app-shells";
 import { AppStateBadge } from "./app-availability-gate";
+import { CreditBadge } from "./credit-badge";
 import { APP_NAV_BUTTON_CLASS } from "./sidebar-nav-styles";
 import { appShellNavFor, type AppShellNavProps } from "./app-shell-nav";
 import type { ModuleKey } from "@/lib/industry-profile";
@@ -133,6 +135,7 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   "/dashboard/ledger": CalculatorIcon,
   "/dashboard/reports": BarChart3Icon,
   "/dashboard/ai": BotIcon,
+  "/dashboard/billing": WalletIcon,
   "/dashboard/settings": SettingsIcon,
   // Phase 36b — the Growth & Marketing app's home; the trend glyph the
   // workspace rail already uses for «رشد و بازاریابی».
@@ -474,6 +477,8 @@ function SidebarBrand({ title, subtitle }: { title: string; subtitle: string }) 
           <p className="text-xs text-muted-foreground">{subtitle}</p>
         </div>
         <div className="flex shrink-0 items-center gap-1">
+          <span className="hidden md:block group-data-[state=collapsed]/sidebar:hidden"><CreditBadge /></span>
+          <span className="hidden group-data-[state=collapsed]/sidebar:md:block"><CreditBadge compact /></span>
           <span className="hidden md:block group-data-[state=collapsed]/sidebar:hidden"><ThemeToggle /></span>
           <SidebarTrigger className="hidden text-muted-foreground md:inline-flex" />
         </div>
@@ -687,7 +692,8 @@ function MobileDashboardHeader({ navItems, pathname }: Pick<SidebarProps, "navIt
         <p className="truncate text-sm font-bold text-foreground">{active?.label ?? "داشبورد"}</p>
         <p className="mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground"><CalendarDaysIcon className="size-3" aria-hidden="true" />{today}</p>
       </div>
-      <span className="flex min-h-11 min-w-11 items-center justify-center" role="status" aria-label={online ? "اتصال برقرار است" : "اتصال قطع است"}>
+      <CreditBadge />
+      <span className="flex min-h-11 min-w-8 items-center justify-center" role="status" aria-label={online ? "اتصال برقرار است" : "اتصال قطع است"}>
         <span className={`size-2.5 rounded-full ${online ? "bg-emerald-500 dark:bg-emerald-500" : "bg-destructive"}`} aria-hidden="true" />
       </span>
     </header>
