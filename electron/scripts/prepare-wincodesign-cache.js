@@ -47,7 +47,7 @@ const path = require("path");
 // name below simply won't match, this script becomes a no-op, and the build
 // falls back to electron-builder's own download.
 const NAME = "winCodeSign";
-const VERSION = "2.6.0";
+const VERSION = "231615067";
 const DIR_NAME = `${NAME}-${VERSION}`;
 const URL = `https://github.com/electron-userland/electron-builder-binaries/releases/download/${DIR_NAME}/${DIR_NAME}.7z`;
 

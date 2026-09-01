@@ -1,6 +1,6 @@
 {
   "name": "cafe-pos-desktop",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "private": true,
   "author": "Cafe POS",
   "description": "Standalone Windows installer for the Cafe/Restaurant POS — no Docker, no Docker Desktop, no manual database setup.",
@@ -21,8 +21,14 @@
     "appId": "com.cafepos.desktop",
     "productName": "Cafe POS",
     "asar": true,
-    "asarUnpack": ["node_modules/**"],
-    "files": ["main.js", "preload.js", "package.json"],
+    "asarUnpack": [
+      "node_modules/**"
+    ],
+    "files": [
+      "main.js",
+      "preload.js",
+      "package.json"
+    ],
     "win": {
       "target": "nsis",
       "icon": "../windows/cafe-pos.ico"
@@ -42,15 +48,42 @@
       "deleteAppDataOnUninstall": false
     },
     "extraResources": [
-      { "from": "../.next", "to": "app/.next" },
-      { "from": "../public", "to": "app/public" },
-      { "from": "../src", "to": "app/src" },
-      { "from": "../migrations", "to": "app/migrations" },
-      { "from": "../scripts", "to": "app/scripts" },
-      { "from": "../server.ts", "to": "app/server.ts" },
-      { "from": "../next.config.ts", "to": "app/next.config.ts" },
-      { "from": "../tsconfig.json", "to": "app/tsconfig.json" },
-      { "from": "../package.json", "to": "app/package.json" },
+      {
+        "from": "../.next",
+        "to": "app/.next"
+      },
+      {
+        "from": "../public",
+        "to": "app/public"
+      },
+      {
+        "from": "../src",
+        "to": "app/src"
+      },
+      {
+        "from": "../migrations",
+        "to": "app/migrations"
+      },
+      {
+        "from": "../scripts",
+        "to": "app/scripts"
+      },
+      {
+        "from": "../server.ts",
+        "to": "app/server.ts"
+      },
+      {
+        "from": "../next.config.ts",
+        "to": "app/next.config.ts"
+      },
+      {
+        "from": "../tsconfig.json",
+        "to": "app/tsconfig.json"
+      },
+      {
+        "from": "../package.json",
+        "to": "app/package.json"
+      },
       {
         "from": "../node_modules",
         "to": "app/node_modules",
