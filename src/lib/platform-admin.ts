@@ -36,6 +36,9 @@ export type PlatformCapability =
   | "features.write"
   | "business.suspend"
   | "ai.credits.manage"
+  // Platform billing: gateway config, credit packages, plan builder, wallet
+  // grants and payment approval.
+  | "billing.manage"
   // Owner-only business data operations
   | "business.edit"
   | "business.reset"
@@ -70,6 +73,7 @@ const CAPABILITIES: Record<PlatformAdminRole, PlatformCapability[]> = {
     "features.write",
     "business.suspend",
     "ai.credits.manage",
+    "billing.manage",
     "impersonate.revoke",
     "knowledge.manage",
   ],
@@ -79,6 +83,7 @@ const CAPABILITIES: Record<PlatformAdminRole, PlatformCapability[]> = {
     "features.write",
     "business.suspend",
     "ai.credits.manage",
+    "billing.manage",
     "impersonate.revoke",
     "knowledge.manage",
     "impersonate.full",

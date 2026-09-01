@@ -103,6 +103,9 @@ function navItemsFor(industry: Industry): NavItem[] {
     { label: "اتصال‌ها", module: "integrations", href: "/dashboard/connections", roles: ["owner", "manager"] },
     { label: "گزارش‌ها", module: "reports", href: "/dashboard/reports", roles: ["owner", "manager", "accountant"], flag: "reporting" },
     { label: "دستیار هوشمند", module: "ai", href: "/dashboard/ai", roles: ["owner", "manager"], flag: "ai_assistant" },
+    // Wallet/credits & plans. The small credit badge in the chrome links here
+    // too; the nav entry gives owners/managers a permanent door.
+    { label: "اعتبار و پرداخت‌ها", module: "settings", href: "/dashboard/billing", roles: ["owner", "manager"] },
     { label: "تنظیمات", module: "settings", href: "/dashboard/settings" },
   ];
 }

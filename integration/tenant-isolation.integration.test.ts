@@ -83,6 +83,16 @@ const EXEMPT_TABLES = new Set([
   "knowledge_base_entries",
   // Phase 37 & Phase 39 — deployment-wide LLM gateway settings.
   "platform_ai_gateway",
+  // Platform billing (migration 0130) — global catalogues/config with no
+  // business_id, same shape as feature_flags/plans: the gateway config
+  // singleton, the credit-package catalogue and the plan-builder tables.
+  // Every business-owned billing table (business_wallets, wallet_ledger,
+  // billing_payments, business_entitlements, feature_usage) is RLS-protected
+  // and deliberately NOT listed here.
+  "platform_payment_config",
+  "credit_packages",
+  "billing_plans",
+  "billing_plan_features",
 ]);
 
 let databaseName: string;
@@ -290,6 +300,9 @@ describe("every tenant table is protected", () => {
       "platform_admins",
       "platform_ai_gateway",
       "platform_audit_log",
+      // Migration 0130 — singleton payment gateway config (Zarinpal merchant
+      // id etc.), no business_id; the business side of billing is RLS-protected.
+      "platform_payment_config",
       "platform_push_config",
       // Phase 24 — the deployment-wide SMS gateway credentials (Kavenegar) the
       // MFA challenge sends through. A singleton with no business_id, the same
