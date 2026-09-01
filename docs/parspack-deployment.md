@@ -1,65 +1,81 @@
 # Deploying to ParsPack
 
-ParsPack's "ساخت اپلیکیشن" (build application) console is a managed PaaS: it terminates
-TLS, routes by hostname itself, and hands your container an internal name (the browser's
-real host only survives in `X-Forwarded-Host`). That is exactly the case
-[`TRUST_FORWARDED_HOST`](../.env.example) exists for — see the "Multi-business tenancy"
-section of [README.md](../README.md). This doc is the walkthrough for that platform
-specifically; the other `docker-compose.*.yml` files in the repo root (`komodo`, `srv1`,
-`local`) target a self-managed Traefik/DirectAdmin box instead and don't apply here.
+`docker-compose.parspack.yml` deploys three services together in one ParsPack app: the
+POS itself, its Postgres 16, and OpenObserve (fleet log monitoring). This doc is the
+walkthrough for ParsPack specifically, following its documented Compose flow
+(<https://docs.parspack.com/paas/deploy/docker/docker-compose/>). The other
+`docker-compose.*.yml` files in the repo root (`komodo`, `srv1`, `local`) target a
+self-managed Traefik/DirectAdmin box instead and don't apply here.
 
-## Which app type
+## ParsPack's Compose constraints — read this before touching the file
 
-Under the **Docker** category, pick **Docker Compose**, not a bare Docker Container: the
-app needs its own PostgreSQL 16 alongside it, and Compose lets ParsPack stand both up from
-one file. Point it at this repo with `docker-compose.parspack.yml` (added alongside this
-doc) as the compose file — it builds the app from the root `Dockerfile` and runs a
-`postgres:16-alpine` service next to it on a private network. Don't use ParsPack's
-"دیتابیس‌ها" managed-Postgres product for this unless you'd rather manage the connection
-string yourself; either works, since all the app needs is a `DATABASE_URL` it can reach —
-see "If you'd rather use a managed database" below.
+ParsPack's Compose engine reads your `docker-compose.yaml`, identifies its services, and
+provisions each one. Three things it does differently from `docker compose up` on your own
+box, which `docker-compose.parspack.yml` is already written around:
 
-Fill in the ParsPack form:
-- **نام اپلیکیشن**: whatever name you like.
-- **Node Port**: leave this off/default. It's for exposing a raw TCP port outside HTTP
-  routing (databases, custom protocols); this is an ordinary HTTP app that ParsPack's edge
-  should proxy to on its normal web port. If ParsPack's own docs say otherwise for Compose
-  apps specifically, follow those — this one detail is ParsPack-panel behavior I can't
-  verify from inside the repo.
-- **دسترسی عمومی به اپلیکیشن (Public access)**: **on** — this is the app your staff and
-  customers reach.
+- **No `build:` — every service needs a pre-built `image:`.** ParsPack pulls images; it
+  doesn't build them from a Dockerfile. `db` and `observability` already use public images
+  (`postgres:16-alpine`, `openobserve/openobserve`), but the POS app has to be built and
+  pushed by you first — see "Build and push the app image" below.
+- **No bind-mount volumes.** Only named volumes are supported, and ParsPack lets you set a
+  disk size for each one — `pos-pgdata`, `pos-backups` and `zo-data` already are, so nothing
+  to change there.
+- **Public vs. isolated access is a per-service toggle in the ParsPack panel**, decided
+  after it reads the file — not a `ports:` mapping. You'll set this when it lists the three
+  detected services (see "Deploying" below).
 
-## Environment variables (پارامترها و متغیرها)
+## Build and push the app image
 
-Add these under "افزودن پارامترها/متغیرها". Required first, then the ones you only need
-for specific features.
+Nothing in this repo publishes a container image automatically — there's no CI (see
+`CLAUDE.md`). Build the image yourself from the repo root and push it somewhere ParsPack can
+pull from (GHCR shown here; Docker Hub or another registry works the same way):
 
-| Variable | Value | Why |
-|---|---|---|
-| `POSTGRES_PASSWORD` | `openssl rand -hex 32` | Password for the bundled `db` service. |
-| `JWT_SECRET` | `openssl rand -hex 32` | Signs session cookies. Never reuse the placeholder in `.env.example`. |
-| `TRUST_FORWARDED_HOST` | `on` | **The one setting most likely to be missed.** Without it, every request arrives with ParsPack's internal container hostname in the `Host` header and the app fails closed (see `.env.example`'s note on this var, and `GET /api/host/resolve?debug=1` once deployed if anything 502s). |
+```bash
+docker build -t ghcr.io/<you>/cafe-restaurant-pos:parspack .
+docker push ghcr.io/<you>/cafe-restaurant-pos:parspack
+```
 
-That's the minimum for a single business reachable at one domain — leave `ROOT_DOMAIN`
-unset and the app serves `/dashboard` unscoped on whatever domain you point at it. Only add
-the rest if they apply to you:
+Make the image (or the registry credential) something ParsPack's pull can actually reach —
+a public GHCR package is the simplest option. Re-run these two commands and redeploy the
+ParsPack app whenever you ship a change; there's no auto-rebuild.
 
-| Variable | Value | When you need it |
-|---|---|---|
-| `WEBAUTHN_ORIGIN` | `https://your-domain` | Only if staff use fingerprint/biometric login (Owner/Manager WebAuthn). Must match the exact origin in the browser's address bar. |
-| `SESSION_HOURS` | e.g. `12` | Only to change the default Owner/Manager session length. |
-| `ROOT_DOMAIN` / `SUBDOMAIN_ROUTING` | see below | Only if you're hosting **more than one** business off this deployment. |
+## Environment (`.env.parspack.example`)
 
-Don't set `DATABASE_URL` yourself — the compose file below wires it to the bundled `db`
-service from `POSTGRES_PASSWORD`. `docker-entrypoint.sh` runs migrations and provisions the
-restricted `pos_app` role automatically on every deploy (see the README's tenancy section);
-there's no separate migration step to run on ParsPack.
+Copy `.env.parspack.example`, fill it in, and upload the filled-in copy in the app's
+"پارامترها و متغیرها" step — ParsPack requires this for any compose variable with no
+default, which is exactly how the required ones (`POS_IMAGE`, `JWT_SECRET`,
+`POSTGRES_PASSWORD`, `OPENOBSERVE_ROOT_EMAIL`, `OPENOBSERVE_ROOT_PASSWORD`) are written in
+`docker-compose.parspack.yml`. Everything else in that file already has a sane default.
+
+Don't set `DATABASE_URL` or `OPENOBSERVE_URL` yourself — the compose file wires both to the
+bundled `db`/`observability` services. `docker-entrypoint.sh` runs migrations and provisions
+the restricted `pos_app` role automatically on every deploy (see the README's tenancy
+section); there's no separate migration step to run on ParsPack.
+
+## Deploying
+
+1. In ParsPack, under **Docker → Docker Compose**, connect this repo (or upload an archive
+   containing `docker-compose.parspack.yml`) as the source.
+2. Upload your filled-in `.env.parspack.example` when prompted for variables.
+3. ParsPack lists the three services it found (`db`, `observability`, `app`). For each:
+   - **`app`** → mark **public** (this is what staff/customers reach; container port 3000).
+   - **`db`** and **`observability`** → leave **isolated** (no public access). Only make
+     `observability` public if you specifically want its dashboard/alerts UI reachable
+     directly — see the OpenObserve section below.
+   - Set a disk size for each named volume ParsPack detects (`pos-pgdata`, `pos-backups`,
+     `zo-data`).
+4. Choose resources — **dedicated** for `db` (and `observability` if you expect real load)
+   is the recommended choice; `app` can usually stay on shared resources for a single café.
+5. Save each service's settings (ثبت تغییرات), then create the app (ایجاد اپلیکیشن).
+
+The entrypoint waits for Postgres, applies migrations, and starts the server on first boot
+and every redeploy — nothing manual after this.
 
 ## Single business vs. hosting several (subdomains)
 
-Most café/restaurant deployments are **one business, one domain** — the default above.
-Point your domain at the app in ParsPack, and you're done; nothing about `ROOT_DOMAIN` or
-wildcard certificates applies.
+Most café/restaurant deployments are **one business, one domain** — the default in
+`.env.parspack.example`. Point your domain at the `app` service in ParsPack, and you're
+done; nothing about `ROOT_DOMAIN` or wildcard certificates applies.
 
 Only set `ROOT_DOMAIN` (and `SUBDOMAIN_ROUTING=on`) if you intend to run this deployment as
 a platform serving **multiple businesses**, each at its own subdomain
@@ -72,15 +88,6 @@ a platform serving **multiple businesses**, each at its own subdomain
 
 If the wildcard cert isn't ready yet, `SUBDOMAIN_ROUTING=off` keeps the deployment on one
 origin without disabling the rest of the app.
-
-## Backups
-
-The app's scheduled backup feature (`BACKUP_DIR`, Phase 10) writes into the `app`
-container's filesystem. `docker-compose.parspack.yml` mounts a named volume for it, but
-**confirm ParsPack's Compose apps persist named volumes across redeploys** — if a redeploy
-gives you a fresh disk, in-container backups disappear with it. Until confirmed, treat
-`pg_dump`-based off-box backups (or ParsPack's own database backup product, if you switch to
-their managed Postgres) as the durable copy, not this volume.
 
 ## eshobe-cms — don't add it here
 
@@ -101,36 +108,30 @@ app parameters once it's reachable:
 Nothing else changes — the Website app is unused (and its connect flow just stays empty)
 until these are set.
 
-## OpenObserve — optional, add only if you want fleet log monitoring
+## OpenObserve — bundled, and still optional
 
-Unlike eshobe-cms, OpenObserve genuinely can live in this stack: it's a single extra
-container this app ships log/metric data *to*, not a separate product with its own tenants.
-It's entirely optional — with no `OPENOBSERVE_*` env set the app behaves exactly as without
-it, and the super-admin «پایش» tab just shows a setup guide instead of live data. See
-[docs/openobserve.md](openobserve.md) for the full picture.
+`docker-compose.parspack.yml` includes an `observability` service and the matching
+`OPENOBSERVE_*` wiring on `app` by default, giving you the super-admin «پایش» tab
+(`/platform/system/logs`) — a live tail of errors and slow/failed requests. See
+[docs/openobserve.md](openobserve.md) for the full picture (what it ships, alert recipes,
+retention).
 
-`docker-compose.parspack.observability.yml` adds an `observability` service plus the env
-wiring the `app` service needs to ship logs to it, on the same private network the compose
-file already sets up. Use it with:
+It's still entirely optional: with no `OPENOBSERVE_*` env set the app behaves exactly as
+without it, and that tab just shows a setup guide instead of live data. To drop it, delete
+the `observability` service and the `OPENOBSERVE_*` lines under `app.environment` from
+`docker-compose.parspack.yml`, and the `zo-data` volume.
 
-```bash
-docker compose -f docker-compose.parspack.yml -f docker-compose.parspack.observability.yml up -d
-```
+To reach the OpenObserve UI itself (for building dashboards/alerts — the console's tab works
+fine without this), mark `observability` **public** in step 3 above and set
+`OPENOBSERVE_PUBLIC_URL` to whatever domain ParsPack attaches to it. The app's own log
+shipping never needs that — it always talks to `observability` over the internal network.
 
-If ParsPack's Docker Compose app only accepts a single file (rather than a `-f`/`-f` command
-you control), merge the `observability` service and the `app.environment` additions from
-that overlay into `docker-compose.parspack.yml` by hand before creating the app — there's
-nothing ParsPack-specific about the merge, it's the same file either way. Set
-`OPENOBSERVE_ROOT_EMAIL`/`OPENOBSERVE_ROOT_PASSWORD` as app parameters either way, and see
-the same "confirm named volumes persist across redeploys" caveat as the backups section
-above — it applies to `zo-data` too.
+## If you'd rather use a managed database instead of the bundled one
 
-## If you'd rather use a managed database
-
-You can skip the bundled `db` service and point `DATABASE_URL` at a Postgres instance from
+You can skip the `db` service and point `DATABASE_URL` at a Postgres instance from
 ParsPack's own "دیتابیس‌ها" catalogue (choose version 16) instead — delete the `db` service
-from the compose file, drop the `depends_on`, and set `DATABASE_URL` to that instance's
-connection string as an app parameter. The entrypoint's automatic `pos_app` role
+from the compose file, drop it from `app.depends_on`, and set `DATABASE_URL` to that
+instance's connection string as an app parameter. The entrypoint's automatic `pos_app` role
 provisioning (see above) needs the connecting user to be able to `CREATE ROLE`; if
 ParsPack's managed Postgres doesn't grant that, run `npm run db:app-role` yourself against
 it once and set `DATABASE_URL`/`RUNTIME_DATABASE_URL` to the restricted role instead.
