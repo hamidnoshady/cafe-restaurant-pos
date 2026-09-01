@@ -446,7 +446,7 @@ function SetupGuide() {
           <li>
             در سرور مرکزی، استک را با فایل اضافه بالا بیاورید:{" "}
             <code dir="ltr" className="rounded bg-white/8 px-1.5 py-0.5 text-xs">
-              docker compose -f docker-compose.komodo.yml -f docker-compose.observability.yml up -d
+              docker compose -f archive/deploy/docker-compose.komodo.yml -f archive/deploy/docker-compose.observability.yml up -d
             </code>
           </li>
           <li>

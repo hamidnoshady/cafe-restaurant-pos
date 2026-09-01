@@ -1,5 +1,11 @@
 # Deploying on a local network (Komodo + Traefik)
 
+> **Retired.** This Komodo/Traefik recipe is no longer the deployed target —
+> the app now deploys to Runflare (see `docs/server-migration.md` §Platform
+> recipes A). The compose file and env template it references now live under
+> `archive/deploy/`. Kept here as a reference for anyone still running this
+> shape of stack.
+
 How to run the POS on an always-on server managed by [Komodo](https://komo.do),
 published over HTTPS through Traefik, so the cashier, waiter/garson phones, and
 kitchen display all connect to it from the cafe's WiFi.
@@ -46,8 +52,8 @@ just a **browser** pointed at your HTTPS subdomain:
 |---|---|
 | `Dockerfile` | Multi-stage build; runtime runs the custom server (`npm start` → `tsx server.ts`), the same as local. |
 | `docker-entrypoint.sh` | Waits for Postgres, applies migrations, then starts the server. Runs on every deploy. |
-| `docker-compose.komodo.yml` | The stack: `app` + `db`, wired to Traefik via labels. |
-| `.env.komodo.example` | The variables the stack needs. |
+| `archive/deploy/docker-compose.komodo.yml` | The stack: `app` + `db`, wired to Traefik via labels. |
+| `archive/deploy/.env.komodo.example` | The variables the stack needs. |
 | `.dockerignore` | Keeps secrets and local state out of the image. |
 
 ## Steps
@@ -62,8 +68,8 @@ and the **certresolver name** from your Traefik static config — you'll need bo
 ### 2. Create the Stack in Komodo
 
 Point a Komodo **Stack** at this repo and set the compose file to
-`docker-compose.komodo.yml`. In the Stack's **Environment**, paste the values
-from `.env.komodo.example` and fill them in. At minimum:
+`archive/deploy/docker-compose.komodo.yml`. In the Stack's **Environment**, paste the values
+from `archive/deploy/.env.komodo.example` and fill them in. At minimum:
 
 - `POS_DOMAIN` — your subdomain
 - `JWT_SECRET` — `openssl rand -hex 32`

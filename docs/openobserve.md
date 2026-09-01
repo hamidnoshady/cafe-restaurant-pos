@@ -70,13 +70,13 @@ header → which tenant origin was hit), `status`, `duration_ms`.
 
 ## Installing it
 
-### A. Central server (Komodo / docker-compose.komodo.yml)
+### A. Central server (Komodo / archive/deploy/docker-compose.komodo.yml — retired)
 
 ```bash
 # once, on the server, in the stack folder:
 export OPENOBSERVE_ROOT_EMAIL=ops@yourdomain.ir
 export OPENOBSERVE_ROOT_PASSWORD="$(openssl rand -base64 18)"
-docker compose -f docker-compose.komodo.yml -f docker-compose.observability.yml up -d
+docker compose -f archive/deploy/docker-compose.komodo.yml -f archive/deploy/docker-compose.observability.yml up -d
 ```
 
 That is the whole install: the overlay starts OpenObserve on the private
@@ -97,7 +97,7 @@ Two choices, mixable:
    internet is up; the shipper drops (and counts) while it isn't — which is
    the correct café-box behavior anyway.
 2. **Self-contained LAN**: `docker compose -f docker-compose.local.yml -f
-   docker-compose.observability.local.yml up -d` — a local collector at
+   archive/deploy/docker-compose.observability.local.yml up -d` — a local collector at
    `http://<lan-ip>:5080`, 14-day retention, nothing leaves the premises.
 
 ### C. Bare-metal / systemd
@@ -147,7 +147,7 @@ subdomain.
    true`, `shipper.sent` climbing; or the console page «پایش» shows rows.
    If the internal hostname does not resolve, fall back to the subdomain.
 
-The compose overlays and `docker-compose.observability.yml` remain the
+The compose overlays and `archive/deploy/docker-compose.observability.yml` remain the
 reference for what these services do; RunFlare just assembles them from its
 own building blocks.
 

@@ -19,7 +19,7 @@
  *
  * This is NOT the product: no compression, no retention, no dashboards, no
  * auth beyond the basic check, data gone on restart. Real deployments run the
- * official container — docker-compose.observability.yml does it in one
+ * official container — archive/deploy/docker-compose.observability.yml does it in one
  * command. The mock exists so the INTEGRATION (wire format, times in µs,
  * response shapes) is exercised in the same environment the app runs in, and
  * so `npm run dev` on a fresh clone can light up the monitoring tab.
@@ -201,5 +201,5 @@ const server = http.createServer((req, res) => {
 
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`> OpenObserve DEV MOCK on http://127.0.0.1:${PORT} (user: ${USER} · pass: ${PASS})`);
-  console.log("> remember: in-memory only, for npm run dev — real deployments: docker-compose.observability.yml");
+  console.log("> remember: in-memory only, for npm run dev — real deployments: archive/deploy/docker-compose.observability.yml");
 });

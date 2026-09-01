@@ -50,13 +50,15 @@ taken while the app runs is consistent but will be missing whatever happens
 between then and cutover.
 
 ```bash
-docker compose -f docker-compose.srv1.yml stop app
+docker compose -f your-compose-file.yml stop app
+# (e.g. docker-compose.local.yml, or archive/deploy/docker-compose.srv1.yml
+# for the retired VPS recipe — pick whichever stack this old host runs)
 ```
 
 Then dump. From the db container (works on any of the compose stacks):
 
 ```bash
-docker compose -f docker-compose.srv1.yml exec -T db \
+docker compose -f your-compose-file.yml exec -T db \
   pg_dump -U pos -d pos --format=custom > pos-migration.dump
 ```
 
@@ -159,9 +161,11 @@ temporarily expose over the internet. That maps onto this app cleanly.
 
 **Shape of it:** one project, one service (the app, built from the repo's
 `Dockerfile`) + one managed Postgres database. Runflare terminates TLS and
-routes your domain to the service, so you use **neither** `docker-compose.srv1.yml`
-(assumes OpenLiteSpeed→Traefik on loopback) **nor** `docker-compose.komodo.yml`
-(assumes Traefik labels). Those compose files are for VPS hosts; here the
+routes your domain to the service, so you use **neither**
+`archive/deploy/docker-compose.srv1.yml` (assumes OpenLiteSpeed→Traefik on
+loopback) **nor** `archive/deploy/docker-compose.komodo.yml` (assumes Traefik
+labels) — both retired now that this app deploys to Runflare. Those compose
+files were for VPS hosts; here the
 platform is the orchestrator.
 
 1. **Create the project**, then a **Postgres** database in it (`portal.runflare.com`).
@@ -247,35 +251,36 @@ upload and log commands exist too but aren't reproduced here — check
 <https://runflare.com/docs/work-with-cli/> for their exact syntax rather than
 guessing, since it changes.
 
-### B. Another plain VPS (Docker Compose)
+### B. Another plain VPS (Docker Compose) — retired, kept for reference
 
-The old server's own shape — same compose file, new box.
+The old server's own shape — same compose file, new box. The compose file for
+this recipe now lives at `archive/deploy/docker-compose.srv1.yml`.
 
 ```bash
 # on the new host: clone, copy the SAME .env, then Postgres only
-docker compose -f docker-compose.srv1.yml up -d db
+docker compose -f archive/deploy/docker-compose.srv1.yml up -d db
 
 # Dry run, then apply — inside the app image, which ships postgresql16-client.
 # --entrypoint sh is deliberate: docker-entrypoint.sh rewrites DATABASE_URL to
 # the unprivileged pos_app role before running your command, and pos_app cannot
 # CREATE/DROP DATABASE. Bypassing it keeps the superuser URL from compose.
-docker compose -f docker-compose.srv1.yml run --rm \
+docker compose -f archive/deploy/docker-compose.srv1.yml run --rm \
   -v "$PWD/pos-migration.dump:/tmp/pos.dump:ro" \
   --entrypoint sh app -c 'npm run db:restore -- /tmp/pos.dump'
 
-docker compose -f docker-compose.srv1.yml run --rm \
+docker compose -f archive/deploy/docker-compose.srv1.yml run --rm \
   -v "$PWD/pos-migration.dump:/tmp/pos.dump:ro" \
   --entrypoint sh app -c 'npm run db:restore -- /tmp/pos.dump --apply --yes'
 
-docker compose -f docker-compose.srv1.yml up -d
+docker compose -f archive/deploy/docker-compose.srv1.yml up -d
 ```
 
 Pick the compose file that matches the **new** host's front door, not the old
-one's: `docker-compose.srv1.yml` for a host where a panel (DirectAdmin/
-OpenLiteSpeed) owns 443 and proxies to Traefik on loopback;
-`docker-compose.komodo.yml` for Traefik-with-labels on a shared external
-network. Mixing them up is the most common cause of "deployed fine, 502 in the
-browser".
+one's: `archive/deploy/docker-compose.srv1.yml` for a host where a panel
+(DirectAdmin/OpenLiteSpeed) owns 443 and proxies to Traefik on loopback;
+`archive/deploy/docker-compose.komodo.yml` for Traefik-with-labels on a shared
+external network. Mixing them up is the most common cause of "deployed fine,
+502 in the browser".
 
 To carry the old backup artifacts too:
 
@@ -286,9 +291,9 @@ docker run --rm -v pos-backups:/b -v "$PWD":/out alpine tar czf /out/backups.tgz
 docker run --rm -v pos-backups:/b -v "$PWD":/in alpine tar xzf /in/backups.tgz -C /b
 ```
 
-### C. Komodo (or any git-driven Docker orchestrator)
+### C. Komodo (or any git-driven Docker orchestrator) — retired, kept for reference
 
-Same as B with `docker-compose.komodo.yml`, except the stack's env lives in
+Same as B with `archive/deploy/docker-compose.komodo.yml`, except the stack's env lives in
 Komodo's **Environment** field rather than a `.env` file — copy it across
 verbatim from the old stack, then deploy. Full walkthrough of that stack:
 [docs/deployment-local-network.md](deployment-local-network.md). Note the

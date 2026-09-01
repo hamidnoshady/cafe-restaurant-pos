@@ -36,7 +36,9 @@ services:
 
   app:
     build:
-      context: .
+      # Moved into archive/deploy/ (retired — see archive/README.md); the
+      # build context is the repo root, two directories up from here.
+      context: ../..
       dockerfile: Dockerfile
     restart: unless-stopped
     depends_on:
