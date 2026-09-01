@@ -46,6 +46,9 @@ app.prepare().then(async () => {
   // AsyncLocalStorage stub that then breaks every page render.
   const { SESSION_COOKIE, resolveSessionFromToken } = await import("./src/lib/auth");
   const { registerConnection } = await import("./src/lib/realtime");
+  // Pure, dependency-free host parsing — safe to load here alongside the rest.
+  const { websocketOriginAllowed } = await import("./src/lib/host");
+  type HostEnv = import("./src/lib/host").HostEnv;
   const { runRollupSyncTick } = await import("./src/lib/rollup-service");
   const { ROLLUP_SYNC_INTERVAL_MS } = await import("./src/lib/rollup");
   const { runBackupTick } = await import("./src/lib/backup-service");
@@ -228,21 +231,33 @@ app.prepare().then(async () => {
       return;
     }
 
-    // Check Origin
-    const origin = req.headers.origin;
-    if (origin) {
-      try {
-        const originUrl = new URL(origin);
-        if (originUrl.host !== req.headers.host) {
-          socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
-          socket.destroy();
-          return;
-        }
-      } catch {
-        socket.write("HTTP/1.1 400 Bad Request\r\n\r\n");
-        socket.destroy();
-        return;
-      }
+    // Check Origin.
+    //
+    // The comparison has to be against the host the BROWSER used, not the one
+    // in this request's `Host` header. Behind a managed platform edge
+    // (Runflare, ParsPack and most PaaS/CDN edges — the TRUST_FORWARDED_HOST
+    // case documented in .env.example) the edge routes by hostname itself and
+    // hands this container an internal name like `web-1234.internal:3000`,
+    // while the browser's real hostname rides in `X-Forwarded-Host`. Comparing
+    // `Origin` to the raw `Host` there rejected EVERY upgrade with 403, so
+    // `/ws` never connected, useRealtime() reconnect-looped forever, and every
+    // screen that derives its status strip from that socket sat on "اتصال به
+    // سرور قطع است" even though the app and database were perfectly healthy.
+    //
+    // resolveRequestHost() is the same helper middleware and the login family
+    // use, so the socket's idea of "this request's host" cannot drift from
+    // theirs. With TRUST_FORWARDED_HOST off it still returns `Host`, keeping
+    // the strict same-origin behaviour behind Traefik and on the desktop app.
+    const allowed = websocketOriginAllowed(
+      req.headers.origin,
+      req.headers.host,
+      req.headers["x-forwarded-host"] as string | undefined,
+      process.env as HostEnv,
+    );
+    if (!allowed) {
+      socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
+      socket.destroy();
+      return;
     }
 
     wss.handleUpgrade(req, socket, head, (ws) => {

@@ -8,6 +8,7 @@ import {
   subdomainRoutingEnabled,
   swapHostLabel,
   trustForwardedHost,
+  websocketOriginAllowed,
 } from "./host";
 
 const ROOT = "pos.eshobe.com";
@@ -210,5 +211,64 @@ describe("trustForwardedHost", () => {
     for (const value of ["on", " ON ", "true", "1"]) {
       expect(trustForwardedHost({ TRUST_FORWARDED_HOST: value }), value).toBe(true);
     }
+  });
+});
+
+describe("websocketOriginAllowed", () => {
+  const BIZ = "acme.pos.eshobe.com";
+
+  it("allows a browser whose Origin matches the Host (Traefik / desktop)", () => {
+    expect(websocketOriginAllowed(`https://${BIZ}`, BIZ, null, {})).toBe(true);
+  });
+
+  it("rejects a cross-origin upgrade when Host is authoritative", () => {
+    expect(websocketOriginAllowed("https://evil.example.com", BIZ, null, {})).toBe(false);
+  });
+
+  it("ignores a forged X-Forwarded-Host unless the platform is declared to rewrite Host", () => {
+    // Same default as resolveRequestHost: an attacker who can reach the app
+    // directly must not be able to name their own expected host.
+    expect(
+      websocketOriginAllowed("https://evil.example.com", BIZ, "evil.example.com", {}),
+    ).toBe(false);
+  });
+
+  it("compares against X-Forwarded-Host behind a managed platform edge", () => {
+    // The regression this function exists for: Runflare/ParsPack hand the
+    // container an internal Host, so comparing Origin to it 403s every single
+    // upgrade and the dashboard shows "connection to server lost" forever.
+    const env = { TRUST_FORWARDED_HOST: "on" };
+    expect(
+      websocketOriginAllowed(`https://${BIZ}`, "web-1234.internal:3000", BIZ, env),
+    ).toBe(true);
+    expect(
+      websocketOriginAllowed("https://evil.example.com", "web-1234.internal:3000", BIZ, env),
+    ).toBe(false);
+  });
+
+  it("takes the first entry when several proxies appended to X-Forwarded-Host", () => {
+    expect(
+      websocketOriginAllowed(`https://${BIZ}`, "web-1234.internal:3000", `${BIZ}, edge.internal`, {
+        TRUST_FORWARDED_HOST: "on",
+      }),
+    ).toBe(true);
+  });
+
+  it("ignores a port rewritten by the edge, and case", () => {
+    expect(websocketOriginAllowed(`https://${BIZ}`, `${BIZ}:3000`, null, {})).toBe(true);
+    expect(websocketOriginAllowed(`https://ACME.pos.eshobe.com`, BIZ, null, {})).toBe(true);
+  });
+
+  it("allows a non-browser client that sends no Origin at all", () => {
+    // The desktop shell, the print agent and platform health probes send none;
+    // Origin is a browser-supplied header and browsers are what this defends
+    // against.
+    expect(websocketOriginAllowed(undefined, BIZ, null, {})).toBe(true);
+    expect(websocketOriginAllowed(null, BIZ, null, {})).toBe(true);
+  });
+
+  it("rejects an unparseable Origin, and a request with no host at all", () => {
+    expect(websocketOriginAllowed("not-a-url", BIZ, null, {})).toBe(false);
+    expect(websocketOriginAllowed(`https://${BIZ}`, "", null, {})).toBe(false);
   });
 });

@@ -202,6 +202,43 @@ export function resolveRequestHost(
   return hostHeader?.trim() ?? "";
 }
 
+/**
+ * Whether a WebSocket upgrade's `Origin` names this same deployment.
+ *
+ * Lives here, next to `resolveRequestHost`, because the two must agree: the
+ * custom server (server.ts) accepts `/ws` upgrades and has to compare `Origin`
+ * against the host the BROWSER used, which behind a managed platform edge is
+ * `X-Forwarded-Host` and not `Host`. Comparing against the raw `Host` there
+ * 403s every upgrade — the edge hands the container an internal name like
+ * `web-1234.internal:3000` that no browser `Origin` can ever match — so live
+ * sync never connects and the dashboard sits on "اتصال به سرور قطع است" while
+ * the app and database are perfectly healthy.
+ *
+ * A missing `Origin` is allowed: non-browser clients (the desktop shell, the
+ * print agent, health probes) do not send one, and it is browsers alone that
+ * this check defends against. Ports are compared too — `normalizeHost` strips
+ * them, and same-origin policy does distinguish them, but the edge routinely
+ * rewrites the port between browser and container, so matching on hostname is
+ * the only comparison that holds across every shipped deployment.
+ */
+export function websocketOriginAllowed(
+  origin: string | null | undefined,
+  hostHeader: string | null | undefined,
+  forwardedHost: string | null | undefined,
+  env: HostEnv,
+): boolean {
+  if (!origin) return true;
+  let originHost: string;
+  try {
+    originHost = new URL(origin).host;
+  } catch {
+    return false;
+  }
+  const expected = resolveRequestHost(hostHeader, forwardedHost, env);
+  if (!expected) return false;
+  return normalizeHost(originHost) === normalizeHost(expected);
+}
+
 /** `resolveRequestHost` against the ambient environment and a request's headers. */
 export function requestHost(headers: {
   get(name: string): string | null;

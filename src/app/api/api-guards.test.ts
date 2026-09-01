@@ -59,6 +59,11 @@ const PUBLIC_ROUTES: Record<string, string> = {
     "the host that serves that business now — reached precisely because the caller's session is " +
     "absent or belongs to another origin, so it cannot require one; reads no tenant data and " +
     "only ever emits a redirect",
+  "health":
+    "liveness probe — returns a static ok/timestamp and nothing else: no session, no database, " +
+    "no tenant data. Both callers are unauthenticated by definition: the hosting platform's own " +
+    "health check (which has no cookie to send), and the dashboard status strip asking 'is this " +
+    "origin answering?' — the question navigator.onLine cannot answer",
   "setup/bootstrap": "first-run only — refuses with 409 as soon as any user exists",
   "setup/signup":
     "self-service business registration — creates the tenant a session would otherwise be scoped to; " +

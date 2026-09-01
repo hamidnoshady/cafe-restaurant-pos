@@ -128,6 +128,10 @@ const PUBLIC_PATHS = [
   // answer questions the Edge runtime cannot, because they need Postgres, for
   // callers who by definition have no usable session on this origin.
   "/api/host",
+  // Liveness probe. Both the client status strip and the hosting platform's
+  // own health check hit it without a session, and a probe that gets
+  // redirected into the host resolver reads as "the app is down".
+  "/api/health",
 ];
 
 /**

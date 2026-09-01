@@ -64,6 +64,41 @@ export async function apiOrQueue<T = Record<string, unknown>>(
 
 let flushing = false;
 
+/**
+ * Whether the server on this origin is actually answering.
+ *
+ * `navigator.onLine` only says the device has a network interface up — it is
+ * true on a captive Wi-Fi portal, true when the hosting edge is returning 502,
+ * and true when the container was replaced mid-session. Deployments behind a
+ * managed platform therefore showed "اتصال به سرور قطع است" (or the inverse:
+ * a green dot with every write failing) with nothing able to correct it,
+ * because no code ever asked the server. This does, against /api/health, which
+ * needs no session and touches no database.
+ *
+ * `onLine === false` is still trusted immediately in the negative direction:
+ * the browser is authoritative that there is no network at all, and skipping
+ * the probe there avoids a guaranteed-failing request every few seconds.
+ */
+export async function probeServer(): Promise<boolean> {
+  if (typeof navigator !== "undefined" && !navigator.onLine) return false;
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
+    try {
+      const res = await fetch("/api/health", {
+        method: "GET",
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      return res.ok;
+    } finally {
+      clearTimeout(timer);
+    }
+  } catch {
+    return false;
+  }
+}
+
 /** Sends every queued action to the server in FIFO order; removes what the server accepted (applied or a flagged conflict — either way there's nothing left to retry). */
 export async function flushQueue(): Promise<void> {
   if (flushing) return;
@@ -106,13 +141,23 @@ export function useOfflineQueue(): { pendingCount: number; isOnline: boolean } {
   }, []);
 
   useEffect(() => {
-    setIsOnline(navigator.onLine);
+    let cancelled = false;
     refreshCount();
     listeners.add(refreshCount);
 
+    // The probe, not `navigator.onLine`, decides what the banner says — see
+    // probeServer() above for why the browser's own flag is not enough. The
+    // flag is still used as a *trigger*, because it fires the instant the NIC
+    // comes back and saves waiting out the poll interval.
+    async function refreshOnlineState() {
+      const reachable = await probeServer();
+      if (cancelled) return;
+      setIsOnline(reachable);
+      if (reachable) await flushQueue();
+    }
+
     function onOnline() {
-      setIsOnline(true);
-      void flushQueue();
+      void refreshOnlineState();
     }
     function onOffline() {
       setIsOnline(false);
@@ -120,10 +165,11 @@ export function useOfflineQueue(): { pendingCount: number; isOnline: boolean } {
     window.addEventListener("online", onOnline);
     window.addEventListener("offline", onOffline);
 
-    void flushQueue();
-    const interval = setInterval(() => void flushQueue(), 15_000);
+    void refreshOnlineState();
+    const interval = setInterval(() => void refreshOnlineState(), 15_000);
 
     return () => {
+      cancelled = true;
       listeners.delete(refreshCount);
       window.removeEventListener("online", onOnline);
       window.removeEventListener("offline", onOffline);
