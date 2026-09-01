@@ -1,4 +1,5 @@
 /** Server-side reservation helpers (DB-touching). Pure timing math is in ./reservations. */
+import type { PoolClient } from "pg";
 import { getBusinessDek } from "./business-keys";
 import { query } from "./db";
 import { decryptOptional, encryptOptional, phoneBlindIndex } from "./field-crypto";
@@ -28,8 +29,11 @@ export async function tableConflicts(
   reservedAt: Date,
   durationMinutes: number,
   excludeId: string | null,
+  client?: PoolClient,
 ): Promise<ConflictRow[]> {
-  const { rows } = await query<ConflictRow>(
+  const run = <T extends Record<string, unknown>>(text: string, params: unknown[]) =>
+    client ? client.query<T>(text, params as never) : query<T>(text, params);
+  const { rows } = await run<ConflictRow>(
     `SELECT id, customer_name, reserved_at, duration_minutes
        FROM reservations
       WHERE location_id = $1 AND table_id = $2 AND status = ANY($3::reservation_status[])`,
@@ -46,6 +50,26 @@ export async function tableConflicts(
   return conflicts.map((c) => byId.get(c.id!)).filter((r): r is ConflictRow => Boolean(r));
 }
 
+/**
+ * Serializes reservation writes against one table, in the caller's
+ * transaction. Without this, two near-simultaneous bookings for the same
+ * table can both run {@link tableConflicts} before either has committed its
+ * INSERT/UPDATE — each sees zero conflicts and both succeed, double-booking
+ * the table. Postgres has no row to lock here (the conflict is against a
+ * *set* of reservation rows, not one), so this takes a session-scoped
+ * advisory lock keyed on the table instead: the second caller blocks until
+ * the first's transaction ends, then re-runs its conflict check against the
+ * now-committed state.
+ */
+export async function lockTableForReservationWrite(
+  client: PoolClient,
+  locationId: string,
+  tableId: string,
+): Promise<void> {
+  await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
+    `reservation-table:${locationId}:${tableId}`,
+  ]);
+}
 
 /**
  * Phase 24 Wave 3 — `reservations.customer_phone` is Tier B PII, so it is

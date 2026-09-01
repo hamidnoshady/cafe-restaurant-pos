@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
-import { query } from "@/lib/db";
+import { getPool, query } from "@/lib/db";
 import {
   decryptReservationPhones,
   encryptReservationPhone,
+  lockTableForReservationWrite,
   parseDate,
   tableConflicts,
 } from "@/lib/reservation-service";
@@ -81,44 +82,64 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
 
-  let tableId: string | null = null;
-  if (body.tableId) {
-    const { rows: table } = await query(
-      "SELECT id FROM dining_tables WHERE id = $1 AND location_id = $2 AND is_active",
-      [body.tableId, location.id],
-    );
-    if (table.length === 0) return NextResponse.json({ error: "table_not_found" }, { status: 404 });
-    tableId = body.tableId;
-
-    // Overlap detection against other active reservations on the same table.
-    const conflicts = await tableConflicts(location.id, tableId, reservedAt, duration, null);
-    if (conflicts.length > 0 && !body.allowConflict) {
-      return NextResponse.json({ error: "reservation_conflict", conflicts }, { status: 409 });
-    }
-  }
-
+  const tableId: string | null = body.tableId ?? null;
   const customerPhone = body.customerPhone?.trim() || null;
   const phoneCipher = await encryptReservationPhone(session.businessId, customerPhone);
 
-  const { rows } = await query<{ id: string }>(
-    `INSERT INTO reservations
-        (location_id, table_id, customer_name, customer_phone, party_size, reserved_at, duration_minutes, note, created_by,
-         customer_phone_enc, customer_phone_bidx)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-     RETURNING id`,
-    [
-      location.id,
-      tableId,
-      customerName,
-      customerPhone,
-      partySize,
-      reservedAt.toISOString(),
-      duration,
-      body.note?.trim() || null,
-      session.sub,
-      phoneCipher.enc,
-      phoneCipher.bidx,
-    ],
-  );
-  return NextResponse.json({ ok: true, id: rows[0].id });
+  // Booking a table takes the table's advisory lock for the whole
+  // check-then-insert sequence, so two near-simultaneous requests for the
+  // same table can't both pass the overlap check before either commits (see
+  // lockTableForReservationWrite). A table-less reservation has nothing to
+  // lock against and skips straight to the insert.
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    if (tableId) {
+      await lockTableForReservationWrite(client, location.id, tableId);
+
+      const { rows: table } = await client.query(
+        "SELECT id FROM dining_tables WHERE id = $1 AND location_id = $2 AND is_active",
+        [tableId, location.id],
+      );
+      if (table.length === 0) {
+        await client.query("ROLLBACK");
+        return NextResponse.json({ error: "table_not_found" }, { status: 404 });
+      }
+
+      // Overlap detection against other active reservations on the same table.
+      const conflicts = await tableConflicts(location.id, tableId, reservedAt, duration, null, client);
+      if (conflicts.length > 0 && !body.allowConflict) {
+        await client.query("ROLLBACK");
+        return NextResponse.json({ error: "reservation_conflict", conflicts }, { status: 409 });
+      }
+    }
+
+    const { rows } = await client.query<{ id: string }>(
+      `INSERT INTO reservations
+          (location_id, table_id, customer_name, customer_phone, party_size, reserved_at, duration_minutes, note, created_by,
+           customer_phone_enc, customer_phone_bidx)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+       RETURNING id`,
+      [
+        location.id,
+        tableId,
+        customerName,
+        customerPhone,
+        partySize,
+        reservedAt.toISOString(),
+        duration,
+        body.note?.trim() || null,
+        session.sub,
+        phoneCipher.enc,
+        phoneCipher.bidx,
+      ],
+    );
+    await client.query("COMMIT");
+    return NextResponse.json({ ok: true, id: rows[0].id });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
 });
