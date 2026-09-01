@@ -16,6 +16,7 @@ import { randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { runMigrations } from "../scripts/migrate";
+import { APP_KEYS } from "../src/lib/apps";
 
 const rootDatabaseUrl = process.env.DATABASE_URL;
 if (!rootDatabaseUrl) {
@@ -91,7 +92,11 @@ beforeEach(async () => {
 describe("effectiveAppAvailability", () => {
   it("seeds every registry app as available, so the migration changes no behaviour", async () => {
     const map = await service.effectiveAppAvailability(biz.id);
-    for (const app of ["sales", "crm", "growth", "operations", "accounting", "connections", "settings"] as const) {
+    // Driven off the registry rather than a copy of it: a phase that adds an
+    // app (Phase 40's `wp`, say) should extend this assertion automatically,
+    // not fail it. The claim is "every app the registry knows about", and
+    // that is exactly what an app with no seeded row must still resolve to.
+    for (const app of APP_KEYS) {
       expect(map[app].state).toBe("available");
       expect(map[app].usable).toBe(true);
       expect(map[app].badged).toBe(false);
@@ -176,9 +181,10 @@ describe("the console's readouts", () => {
     await service.setBusinessAppAvailability(biz.id, "crm", { state: "available" }, null);
 
     const apps = await service.platformAppAvailability();
-    expect(apps.map((a) => a.app).sort()).toEqual(
-      ["accounting", "connections", "crm", "growth", "operations", "sales", "settings"].sort(),
-    );
+    // Same reasoning as above: the console must list the registry, whatever is
+    // currently in it, including an app added after migration 0128 seeded its
+    // rows (which resolves to the `available` default rather than going missing).
+    expect(apps.map((a) => a.app).sort()).toEqual([...APP_KEYS].sort());
     const crm = apps.find((a) => a.app === "crm")!;
     expect(crm.state).toBe("maintenance");
     // A blank note is not a note: the business is shown the stock sentence.
