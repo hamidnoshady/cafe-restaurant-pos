@@ -112,6 +112,15 @@ export interface CreateOrderInput {
   openedBy: string | null;
   /** required when type === 'delivery', ignored otherwise. */
   delivery?: DeliveryInput | null;
+  /**
+   * Client-generated id for this submission attempt (a `crypto.randomUUID()`
+   * minted once per attempt and reused across retries of it — the same
+   * contract as sync-events.ts's `clientEventId`). A repeat with the same id
+   * for the same location returns the order already created rather than
+   * inserting a second one, so a lost response or a proxy retry on the
+   * synchronous POST /api/orders path can't double-order.
+   */
+  clientRequestId?: string | null;
 }
 
 export interface CreateOrderOutput {
@@ -119,6 +128,57 @@ export interface CreateOrderOutput {
   orderNumber: number;
   type: OrderType;
   totals: OrderTotals;
+}
+
+interface OrderRow extends Record<string, unknown> {
+  id: string;
+  order_number: string;
+  type: OrderType;
+  subtotal: string;
+  discount: string;
+  tax: string;
+  total: string;
+}
+
+interface Queryable {
+  query<T extends Record<string, unknown> = Record<string, unknown>>(
+    text: string,
+    params?: unknown[],
+  ): Promise<{ rows: T[] }>;
+}
+
+/**
+ * Looks up a prior order by its client-generated submission id. Used both
+ * before the INSERT (the common case: the earlier attempt already committed)
+ * and after a unique-violation on it (two near-simultaneous attempts raced
+ * the check-then-insert above; the loser reads back what the winner just
+ * committed instead of surfacing a 500 for what was, from the till's point
+ * of view, a single submission).
+ */
+async function findOrderByClientRequestId(
+  queryable: Queryable,
+  locationId: string,
+  clientRequestId: string,
+): Promise<CreateOrderOutput | null> {
+  const { rows } = await queryable.query<OrderRow>(
+    `SELECT id, order_number, type, subtotal, discount, tax, total
+       FROM orders WHERE location_id = $1 AND client_request_id = $2`,
+    [locationId, clientRequestId],
+  );
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    id: row.id,
+    orderNumber: Number(row.order_number),
+    type: row.type,
+    totals: {
+      subtotal: Number(row.subtotal),
+      discount: Number(row.discount),
+      tax: Number(row.tax),
+      total: Number(row.total),
+      lines: [],
+    },
+  };
 }
 
 /** Same validation + transaction as POST /api/orders. */
@@ -201,9 +261,28 @@ export async function createOrder(
   const { cartLines, preparedItems } = resolved;
   const totals = computeOrderTotals(cartLines, input.discount, deliveryFee);
 
+  const clientRequestId = input.clientRequestId?.trim() || null;
+
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
+
+    if (clientRequestId) {
+      // A replay of a submission this location already accepted — a lost
+      // response, a proxy retry, or two near-simultaneous taps — returns the
+      // order already created instead of burning an order_number and
+      // inserting a second one. Checked before the INSERT, inside this same
+      // transaction, the same shape as sync-events.ts's client_event_id replay.
+      const existing = await findOrderByClientRequestId(
+        client,
+        input.locationId,
+        clientRequestId,
+      );
+      if (existing) {
+        await client.query("COMMIT");
+        return { ok: true, data: existing };
+      }
+    }
 
     const { rows: counter } = await client.query<{ next_number: string }>(
       `INSERT INTO order_number_counters (location_id, next_number) VALUES ($1, 2)
@@ -227,8 +306,8 @@ export async function createOrder(
     const discountType = input.discount.type;
     const { rows: orderRows } = await client.query<{ id: string }>(
       `INSERT INTO orders (location_id, order_number, type, status, table_id, table_session_id, customer_id, guest_count,
-              subtotal, discount, discount_type, discount_value, service_charge, tax, total, note, opened_by)
-       VALUES ($1, $2, $3, 'open', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+              subtotal, discount, discount_type, discount_value, service_charge, tax, total, note, opened_by, client_request_id)
+       VALUES ($1, $2, $3, 'open', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
        RETURNING id`,
       [
         input.locationId,
@@ -247,6 +326,7 @@ export async function createOrder(
         totals.total,
         input.note?.trim() || null,
         input.openedBy,
+        clientRequestId,
       ],
     );
     const orderId = orderRows[0].id;
@@ -314,6 +394,25 @@ export async function createOrder(
     };
   } catch (err) {
     await client.query("ROLLBACK");
+    if (
+      clientRequestId &&
+      err instanceof Error &&
+      "code" in err &&
+      (err as { code?: string }).code === "23505" &&
+      (err as { constraint?: string }).constraint ===
+        "uq_orders_location_client_request_id"
+    ) {
+      // Lost the race against a near-simultaneous duplicate submission: the
+      // other request's INSERT committed between our pre-check and our own
+      // INSERT. Read back what it created rather than surfacing a 500 for
+      // what the till only ever sent once.
+      const existing = await findOrderByClientRequestId(
+        { query },
+        input.locationId,
+        clientRequestId,
+      );
+      if (existing) return { ok: true, data: existing };
+    }
     throw err;
   } finally {
     client.release();

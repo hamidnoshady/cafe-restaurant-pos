@@ -2,7 +2,7 @@
 
 import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { toPersianDigits } from "@/lib/digits";
 import type { KitchenTicketData } from "@/lib/kitchen-ticket-template";
@@ -130,6 +130,13 @@ export function TableOrderPanel({
   const [info, setInfo] = useState("");
   const [busy, setBusy] = useState(false);
   const printers = usePrinters();
+  // Minted once for the first "send to kitchen" attempt that opens a new
+  // order for this table, and reused across a manual resubmit after a failed
+  // attempt (a lost response, a proxy retry) so the server's idempotency
+  // check on POST /api/orders sees one id — cleared once an order actually
+  // exists, since every send after that goes through the add-items branch
+  // below instead.
+  const clientRequestIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     api<MenuData>("/api/menu").then(({ ok, data }) => {
@@ -251,6 +258,15 @@ export function TableOrderPanel({
       modifierIds: l.modifierIds,
       note: l.note || undefined,
     }));
+    if (!table.order_id && !clientRequestIdRef.current) {
+      clientRequestIdRef.current = crypto.randomUUID();
+    }
+    const createBody = {
+      type: "dine_in" as const,
+      tableId: table.id,
+      items,
+      clientRequestId: clientRequestIdRef.current,
+    };
     const res = table.order_id
       ? await apiOrQueue(
           `/api/orders/${table.order_id}/items`,
@@ -263,13 +279,10 @@ export function TableOrderPanel({
         )
       : await apiOrQueue(
           "/api/orders",
-          {
-            method: "POST",
-            body: { type: "dine_in", tableId: table.id, items },
-          },
+          { method: "POST", body: createBody },
           {
             type: "order.create",
-            payload: { type: "dine_in", tableId: table.id, items },
+            payload: createBody,
             description: `سفارش حضوری — ${table.name}`,
           },
         );
@@ -277,6 +290,10 @@ export function TableOrderPanel({
     if (!res.ok)
       return setError(errorMessage((res.data as { error?: string }).error));
 
+    // Once queued or created, this attempt is settled one way or another —
+    // the offline queue's own clientEventId owns retrying a queued one from
+    // here, so the next "send to kitchen" is a new attempt and needs a fresh id.
+    clientRequestIdRef.current = null;
     if (res.queued) {
       setInfo(
         "اتصال قطع است — این ارسال ذخیره شد و پس از اتصال مجدد به آشپزخانه ارسال می‌شود.",
