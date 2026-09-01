@@ -59,10 +59,15 @@ export async function createSupplierReturn(client:PoolClient,params:{
    if(BigInt(value)>BigInt(item.carrying_value_rial))throw new Error("supplier_return_value_exceeds_carrying_value");
    const nextStock=subtractQuantity(quantityText(item.stock),quantity);
    const nextValue=BigInt(item.carrying_value_rial)-BigInt(value);
+   const nextStockDecimal = new Decimal(nextStock);
+   const positiveNextStock = Decimal.max(nextStockDecimal, new Decimal("0"));
+   const avg = positiveNextStock.lte(0)
+     ? "0"
+     : new Decimal(nextValue.toString()).div(positiveNextStock).toDecimalPlaces(9, Decimal.ROUND_HALF_UP).toFixed();
    await client.query(
     `UPDATE inventory_items SET carrying_value_rial=$2,
-      avg_cost=CASE WHEN $3::numeric=0 THEN 0 ELSE $2::bigint::numeric/$3::numeric END WHERE id=$1`,
-    [item.inventory_item_id,nextValue.toString(),nextStock]);
+      avg_cost=$3 WHERE id=$1`,
+    [item.inventory_item_id, positiveNextStock.lte(0) ? "0" : nextValue.toString(), avg]);
    const {rows:movements}=await client.query<{id:string}>(
     `INSERT INTO stock_movements
      (location_id,inventory_item_id,type,quantity,unit_cost,cost_value_rial,source_type,source_id,created_by,inventory_event_id)

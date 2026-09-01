@@ -67,26 +67,44 @@ export async function insertMovement(
 
 export async function adjustCarryingValue(
   client: PoolClient,
-  params: { inventoryItemId: string; deltaRial: bigint },
+  params: { inventoryItemId: string; deltaRial: bigint; quantity?: Decimal },
 ): Promise<void> {
-  const { rows } = await client.query<{ carrying: string; physical: string }>(
+  const { rows } = await client.query<{ carrying: string; physical: string; avg_cost: string }>(
     `SELECT COALESCE(carrying_value_rial,0)::text carrying,
-            COALESCE((SELECT sum(quantity) FROM stock_movements WHERE inventory_item_id=$1),0)::text physical
+            COALESCE((SELECT sum(quantity) FROM stock_movements WHERE inventory_item_id=$1),0)::text physical,
+            COALESCE(avg_cost,0)::text avg_cost
        FROM inventory_items WHERE id=$1 FOR UPDATE`,
     [params.inventoryItemId],
   );
   const carrying = BigInt(rows[0]?.carrying ?? "0");
   const physical = new Decimal(rows[0]?.physical ?? "0");
+  const positivePhysical = Decimal.max(physical, new Decimal("0"));
   const next = carrying + params.deltaRial;
-  const average = physical.eq(0)
-    ? "0"
-    : new Decimal(next.toString())
-        .div(physical)
-        .toDecimalPlaces(9, Decimal.ROUND_HALF_UP)
-        .toFixed();
+
+  let average: string;
+  let nextCarrying: string;
+
+  if (positivePhysical.gt(0)) {
+    nextCarrying = next.toString();
+    average = new Decimal(next.toString())
+      .div(positivePhysical)
+      .toDecimalPlaces(9, Decimal.ROUND_HALF_UP)
+      .toFixed();
+  } else {
+    nextCarrying = "0";
+    if (params.quantity && params.quantity.gt(0) && params.deltaRial >= 0n) {
+      average = unitCostFromValue(params.deltaRial, params.quantity);
+    } else {
+      const priorAvg = Number(rows[0]?.avg_cost ?? "0");
+      average = Number.isFinite(priorAvg) && priorAvg >= 0
+        ? new Decimal(rows[0].avg_cost).toDecimalPlaces(9, Decimal.ROUND_HALF_UP).toFixed()
+        : "0";
+    }
+  }
+
   await client.query("UPDATE inventory_items SET carrying_value_rial=$2, avg_cost=$3 WHERE id=$1", [
     params.inventoryItemId,
-    next.toString(),
+    nextCarrying,
     average,
   ]);
 }
@@ -271,6 +289,7 @@ export async function reverseConsumedInventory(
         await adjustCarryingValue(client, {
           inventoryItemId: row.inventory_item_id,
           deltaRial: positiveValue,
+          quantity: positiveQuantity,
         });
       }
     }

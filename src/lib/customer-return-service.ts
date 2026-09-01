@@ -9,6 +9,7 @@ import {
   type RialText,
 } from "./inventory-exact";
 import { getCostingMethod } from "./inventory-service";
+import { unitCostFromValue } from "./inventory-reversal";
 import { liveSaleInventoryEventId } from "./order-amendment-service";
 import { postExactCustomerRefundEntry, postExactOperationalInventoryEntry } from "./ledger-service";
 import { WELL_KNOWN_CODES } from "./coa-template";
@@ -149,12 +150,27 @@ export async function createCustomerReturn(
         lotId = lots[0].id;
       } else {
         await client.query("SELECT id FROM inventory_items WHERE id=$1 FOR UPDATE", [snapshot.inventory_item_id]);
+        const { rows: stockRows } = await client.query<{ quantity: string }>(
+          "SELECT COALESCE(sum(quantity),0)::text quantity FROM stock_movements WHERE inventory_item_id=$1",
+          [snapshot.inventory_item_id],
+        );
+        const physical = new Decimal(stockRows[0]?.quantity ?? "0");
+        const positivePhysical = Decimal.max(physical, new Decimal("0"));
+        const { rows: itemRows } = await client.query<{ carrying_value_rial: string | null }>(
+          "SELECT carrying_value_rial::text FROM inventory_items WHERE id=$1",
+          [snapshot.inventory_item_id],
+        );
+        const nextValue = BigInt(itemRows[0]?.carrying_value_rial ?? "0") + value;
+        const average = positivePhysical.lte(0)
+          ? (new Decimal(restoredQty).gt(0) ? unitCostFromValue(value, new Decimal(restoredQty)) : "0")
+          : new Decimal(nextValue.toString())
+              .div(positivePhysical)
+              .toDecimalPlaces(9, Decimal.ROUND_HALF_UP)
+              .toFixed();
+        const nextCarrying = positivePhysical.lte(0) ? "0" : nextValue.toString();
         await client.query(
-          `UPDATE inventory_items SET carrying_value_rial=COALESCE(carrying_value_rial,0)+$2,
-             avg_cost=(COALESCE(carrying_value_rial,0)+$2)::numeric/
-               NULLIF((SELECT sum(quantity) FROM stock_movements WHERE inventory_item_id=$1),0)
-           WHERE id=$1`,
-          [snapshot.inventory_item_id, value.toString()],
+          "UPDATE inventory_items SET carrying_value_rial=$2, avg_cost=$3 WHERE id=$1",
+          [snapshot.inventory_item_id, nextCarrying, average],
         );
       }
       await client.query(

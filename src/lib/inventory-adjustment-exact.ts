@@ -66,6 +66,12 @@ async function surplusUnitCost(
   carryingValue: string | null,
   positivePhysical: Decimal,
 ): Promise<string> {
+  const sanitize = (raw: string | null | undefined): string => {
+    const num = Number(raw ?? "0");
+    return !Number.isFinite(num) || num < 0
+      ? "0"
+      : new Decimal(raw ?? "0").toDecimalPlaces(9, Decimal.ROUND_HALF_UP).toFixed();
+  };
   if (method === "fifo") {
     const { rows } = await client.query<{ quantity: string; value: string }>(
       `SELECT COALESCE(sum(remaining_qty),0)::text quantity,
@@ -78,12 +84,12 @@ async function surplusUnitCost(
     if (quantity.gt(0)) {
       return new Decimal(rows[0].value).div(quantity).toDecimalPlaces(9, Decimal.ROUND_HALF_UP).toFixed();
     }
-    return unitCostText(avgCost);
+    return unitCostText(sanitize(avgCost));
   }
   if (carryingValue !== null && positivePhysical.gt(0)) {
     return new Decimal(carryingValue).div(positivePhysical).toDecimalPlaces(9, Decimal.ROUND_HALF_UP).toFixed();
   }
-  return unitCostText(avgCost);
+  return unitCostText(sanitize(avgCost));
 }
 
 /**

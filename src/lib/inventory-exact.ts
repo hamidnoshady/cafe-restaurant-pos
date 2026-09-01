@@ -16,10 +16,11 @@ const RIAL_TEXT = /^(?:0|[1-9]\d*)$/;
 
 function canonicalDecimal(input: string, maximumScale: number, field: string): string {
   if (typeof input !== "string" || !DECIMAL_TEXT.test(input)) throw new Error(`invalid_${field}`);
-  const scale = input.includes(".") ? input.length - input.indexOf(".") - 1 : 0;
-  if (scale > maximumScale) throw new Error(`${field}_precision_exceeded`);
   const canonical = input.replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "");
-  return canonical === "" ? "0" : canonical;
+  const clean = canonical === "" ? "0" : canonical;
+  const scale = clean.includes(".") ? clean.length - clean.indexOf(".") - 1 : 0;
+  if (scale > maximumScale) throw new Error(`${field}_precision_exceeded`);
+  return clean;
 }
 
 export function quantityText(input: string): QuantityText {
