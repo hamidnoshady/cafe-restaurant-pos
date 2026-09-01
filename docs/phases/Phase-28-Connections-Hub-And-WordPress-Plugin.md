@@ -174,3 +174,23 @@ master REST keys.
 - [x] The new tenant-scoped table (`integration_plugin_nonces`) passes the generated RLS
       isolation test with no hand-written case.
 - [x] `npx tsc --noEmit`, `npm test`, `npm run test:db`, `npm run build` green.
+
+## Current ownership correction (Phase 40)
+
+The original Wave 2 table above records the behavior shipped in Phase 28. The
+product boundary is now stricter: WordPress/WooCommerce is not part of the
+generic technical Connections app and is not an Accounting section.
+
+- `/dashboard/connections` now renders desktop pairing, Holoo, API keys and MCP.
+- `/dashboard/wp` owns the WordPress/WooCommerce manager, including its
+  connection and selected store-management workflows.
+- `/dashboard/connections?tab=woocommerce` and `/dashboard/integrations` remain
+  compatibility URLs and redirect to `/dashboard/wp/connections`.
+- The WooCommerce connection key remains recognisable to old internal callers,
+  but `visibleConnectionKinds` filters it out of the technical hub.
+
+The underlying integration gateway, plugin channel, webhooks and sync services
+remain shared infrastructure. That does not change system ownership: WP Manager
+owns the store-management surface and mapped store mirror, while other apps read
+only the data they need for their own workflows. See
+[Phase 40 — app ownership boundaries](Phase-40-App-Ownership-And-WP-Manager.md).

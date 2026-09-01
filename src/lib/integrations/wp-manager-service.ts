@@ -42,7 +42,7 @@ export async function wpOverviewStats(
             count(*) FILTER (WHERE link_mode = 'plugin')::text AS plugin,
             count(*) FILTER (WHERE link_mode = 'rest_api')::text AS rest
        FROM integration_connections
-      WHERE business_id = $1 ${scope}`,
+      WHERE business_id = $1 AND provider = 'woocommerce' ${scope}`,
     params,
   );
 
@@ -52,6 +52,7 @@ export async function wpOverviewStats(
     `SELECT entity_type AS entity, count(DISTINCT remote_id)::text AS n
        FROM integration_mappings
       WHERE business_id = $1
+        AND connection_id IN (SELECT id FROM integration_connections WHERE business_id = $1 AND provider = 'woocommerce')
         ${connectionId ? "AND connection_id = $2" : ""}
         AND entity_type IN ('product', 'order', 'customer', 'refund')
       GROUP BY entity_type`,
@@ -61,7 +62,9 @@ export async function wpOverviewStats(
 
   const { rows: termRows } = await query<{ n: string }>(
     `SELECT count(*)::text AS n FROM integration_woo_terms
-      WHERE business_id = $1 ${connectionId ? "AND connection_id = $2" : ""}`,
+      WHERE business_id = $1
+        AND connection_id IN (SELECT id FROM integration_connections WHERE business_id = $1 AND provider = 'woocommerce')
+        ${connectionId ? "AND connection_id = $2" : ""}`,
     connectionId ? [businessId, connectionId] : [businessId],
   );
 
@@ -71,7 +74,11 @@ export async function wpOverviewStats(
     ? await wpContentCounts(businessId, connectionId)
     : (
         await query<{ wp_type: string; n: string }>(
-          `SELECT wp_type, count(*)::text AS n FROM integration_wp_content WHERE business_id = $1 GROUP BY wp_type`,
+          `SELECT wp_type, count(*)::text AS n
+             FROM integration_wp_content
+            WHERE business_id = $1
+              AND connection_id IN (SELECT id FROM integration_connections WHERE business_id = $1 AND provider = 'woocommerce')
+            GROUP BY wp_type`,
           [businessId],
         )
       ).rows.reduce(
@@ -86,7 +93,9 @@ export async function wpOverviewStats(
 
   const { rows: outboxRows } = await query<{ status: string; n: string }>(
     `SELECT status, count(*)::text AS n FROM integration_outbox_events
-      WHERE business_id = $1 ${connectionId ? "AND connection_id = $2" : ""}
+      WHERE business_id = $1
+        AND connection_id IN (SELECT id FROM integration_connections WHERE business_id = $1 AND provider = 'woocommerce')
+        ${connectionId ? "AND connection_id = $2" : ""}
       GROUP BY status`,
     connectionId ? [businessId, connectionId] : [businessId],
   );
@@ -94,7 +103,9 @@ export async function wpOverviewStats(
 
   const { rows: inboxRows } = await query<{ status: string; n: string }>(
     `SELECT status, count(*)::text AS n FROM integration_webhook_events
-      WHERE business_id = $1 ${connectionId ? "AND connection_id = $2" : ""}
+      WHERE business_id = $1
+        AND connection_id IN (SELECT id FROM integration_connections WHERE business_id = $1 AND provider = 'woocommerce')
+        ${connectionId ? "AND connection_id = $2" : ""}
         AND status IN ('pending', 'failed')
       GROUP BY status`,
     connectionId ? [businessId, connectionId] : [businessId],
@@ -159,7 +170,9 @@ export async function wpStoreCustomers(
                 AND w.remote_id = m.remote_id) AS last_seen
        FROM integration_mappings m
        LEFT JOIN customers c ON c.id = m.local_id
-      WHERE m.business_id = $1 AND m.connection_id = $2 AND m.entity_type = 'customer'
+      WHERE m.business_id = $1 AND m.connection_id = $2
+        AND m.connection_id IN (SELECT id FROM integration_connections WHERE business_id = $1 AND provider = 'woocommerce')
+        AND m.entity_type = 'customer'
       ORDER BY name
       LIMIT 500`,
     [businessId, connectionId],
@@ -202,12 +215,15 @@ export async function wpQueue(businessId: string, connectionId: string): Promise
             last_error AS error, attempts, created_at::text
        FROM integration_outbox_events
       WHERE business_id = $1 AND connection_id = $2
+        AND connection_id IN (SELECT id FROM integration_connections WHERE business_id = $1 AND provider = 'woocommerce')
         AND status IN ('pending', 'failed', 'processing', 'dead')
     UNION ALL
     SELECT id::text, 'in' AS direction, event_topic AS kind, status, remote_id,
             error, 0 AS attempts, created_at::text
        FROM integration_webhook_events
-      WHERE business_id = $1 AND connection_id = $2 AND status IN ('failed', 'pending')
+      WHERE business_id = $1 AND connection_id = $2
+        AND connection_id IN (SELECT id FROM integration_connections WHERE business_id = $1 AND provider = 'woocommerce')
+        AND status IN ('failed', 'pending')
     ORDER BY created_at DESC
       LIMIT 200`,
     [businessId, connectionId],

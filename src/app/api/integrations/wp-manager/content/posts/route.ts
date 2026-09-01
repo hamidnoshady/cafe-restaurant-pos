@@ -32,7 +32,7 @@ export const POST = withTenantScope(async (request: Request) => {
   }
   const connectionId = String(body.connectionId ?? "");
   const connection = await getConnection(session.businessId, connectionId);
-  if (!connection) return NextResponse.json({ error: "not_found" }, { status: 404 });
+  if (!connection || connection.provider !== "woocommerce") return NextResponse.json({ error: "not_found" }, { status: 404 });
 
   const postType = body.post_type === "page" ? "page" : "post";
   const patch: Record<string, unknown> = {};

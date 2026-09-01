@@ -15,6 +15,9 @@
 
 export const GROWTH_SECTION_KEYS = [
   "overview",
+  // Read-only customer data used by Growth. CRM remains the canonical owner;
+  // this section is a projection, not a second customer system.
+  "customers",
   "campaigns",
   "gift-cards",
   "loyalty",
@@ -22,6 +25,13 @@ export const GROWTH_SECTION_KEYS = [
 ] as const;
 
 export type GrowthSectionKey = (typeof GROWTH_SECTION_KEYS)[number];
+
+/** The route of Growth's customer data projection. */
+export function growthCustomerHref(customerId?: string): string {
+  return customerId
+    ? `/dashboard/growth/customers?customerId=${encodeURIComponent(customerId)}`
+    : "/dashboard/growth/customers";
+}
 
 /** The route for a section. The overview is the app root; the rest nest under it. */
 export function growthSectionHref(key: GrowthSectionKey): string {
@@ -35,8 +45,16 @@ export function growthSectionHref(key: GrowthSectionKey): string {
  * in.
  */
 export function canViewGrowthSection(role: string, key: GrowthSectionKey): boolean {
+  // Customer data is read-only here. Accountants reach it from A/R, while
+  // customer edits and the 360° file remain CRM-owned.
+  if (key === "customers") return ["owner", "manager", "accountant"].includes(role);
   if (role === "cashier") return key === "loyalty";
   return ["owner", "manager"].includes(role);
+}
+
+/** Whether a role has at least one Growth surface to open. */
+export function canOpenGrowth(role: string): boolean {
+  return GROWTH_SECTION_KEYS.some((key) => canViewGrowthSection(role, key));
 }
 
 /**

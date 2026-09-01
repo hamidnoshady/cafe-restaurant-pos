@@ -42,7 +42,7 @@ export function WpContentSection() {
   const [editing, setEditing] = useState<ContentRow | "new" | null>(null);
 
   useEffect(() => {
-    api<{ connections: ConnectionLite[] }>("/api/integrations/connections").then((res) => {
+    api<{ connections: ConnectionLite[] }>("/api/integrations/connections?provider=woocommerce").then((res) => {
       if (res.ok) {
         setConnections(res.data.connections);
         setSelectedId(res.data.connections[0]?.id ?? "");

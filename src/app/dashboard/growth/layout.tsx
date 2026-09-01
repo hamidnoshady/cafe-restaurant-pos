@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
+import { canOpenGrowth } from "./growth-routes";
 import { GrowthAppShell } from "./growth-app-shell";
 
 /**
@@ -17,13 +18,14 @@ import { GrowthAppShell } from "./growth-app-shell";
  * business's own nav, accounting included, and read as a sub-menu of a page
  * rather than as the navigation of a separate app.
  *
- * The role gate stays here, server-side: a member who is not owner, manager or
- * cashier never lands in the app at all.
+ * The role gate stays here, server-side: a member who has no Growth surface
+ * never lands in the app at all. Accountants are admitted only for the
+ * read-only customer projection, whose link comes from Accounting's A/R view.
  */
 export default async function GrowthLayout({ children }: { children: React.ReactNode }) {
   const session = await getSession();
   if (!session) redirect("/login");
-  if (!["owner", "manager", "cashier"].includes(session.role)) redirect("/dashboard");
+  if (!canOpenGrowth(session.role)) redirect("/dashboard");
 
   return <GrowthAppShell>{children}</GrowthAppShell>;
 }

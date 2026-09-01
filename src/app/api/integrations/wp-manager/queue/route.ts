@@ -16,7 +16,7 @@ export const GET = withTenantScope(async (request: Request) => {
   const connectionId = new URL(request.url).searchParams.get("connectionId");
   if (!connectionId) return NextResponse.json({ error: "missing_connection" }, { status: 400 });
   const connection = await getConnection(session.businessId, connectionId);
-  if (!connection) return NextResponse.json({ error: "not_found" }, { status: 404 });
+  if (!connection || connection.provider !== "woocommerce") return NextResponse.json({ error: "not_found" }, { status: 404 });
 
   const rows = await wpQueue(session.businessId, connectionId);
   return NextResponse.json({ rows });

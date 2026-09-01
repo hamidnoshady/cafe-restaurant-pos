@@ -565,7 +565,7 @@ Loyalty, campaigns and gift cards, and seller commission are one app at `/dashbo
 with a management dashboard of its own («میز کار رشد») the way accounting has one, not three flat
 sidebar pages. It is a separate app rather than a page inside one: its launcher sits next to
 حسابداری in the workspace rail, and inside its routes the dashboard's sidebar *is* the app's own
-menu — its five sections and nothing else, no accounting entries alongside a sub-menu of its own.
+menu — its six sections and nothing else, no accounting entries alongside a sub-menu of its own.
 The old `/dashboard/loyalty`, `/dashboard/promotions` and `/dashboard/commission` routes redirect
 into the app's sections.
 
@@ -583,6 +583,9 @@ into the app's sections.
   report (how often each campaign fired and what it cost) beside the form.
 - **Roles** — a cashier lands directly on «وفاداری و اعتبار», the one growth surface the sell
   side works with, and never sees commission (compensation data) or the KPI dashboard.
+- **Customer projection** — Accounting's A/R customer actions open
+  `/dashboard/growth/customers` (optionally selecting the customer). Growth reads the shared
+  customer service for its workflow, while CRM remains the canonical record and edit path.
 
 SMS/email marketing grows this app rather than adding a new sidebar peer. CRM (customer
 segments, consent, the customer file) and the website manager were both seated here as
@@ -591,13 +594,28 @@ below and [docs/phases/Phase-36c-CRM-App.md](docs/phases/Phase-36c-CRM-App.md).
 
 See [docs/phases/Phase-36b-Growth-Marketing-App.md](docs/phases/Phase-36b-Growth-Marketing-App.md).
 
+## Cross-app data ownership and the WP Manager (Phase 40)
+
+Every app keeps ownership of its own system. A reader may receive or synchronise only the data
+needed for its own workflow; it does not get a second canonical table or a second system owner.
+`src/lib/app-data-rules.ts` is the executable contract and tests enforce one owner per data domain.
+
+In particular, Accounting keeps receivables and ledger entries, CRM keeps canonical customer
+records, Growth keeps growth programs, and WP Manager keeps the mapped WordPress/WooCommerce store
+mirror and all store-management screens. Accounting's customer views link into Growth's read-only
+customer projection; Growth links to CRM when a canonical edit is needed. Technical desktop/API/
+MCP/Holoo connections live at `/dashboard/connections`, while the WP Manager connection and store
+workflows live at `/dashboard/wp`. Legacy WooCommerce URLs redirect to the WP Manager.
+
+See [docs/phases/Phase-40-App-Ownership-And-WP-Manager.md](docs/phases/Phase-40-App-Ownership-And-WP-Manager.md).
+
 ## The Website app (وب‌سایت)
 
 A peer app at `/dashboard/website` (`src/lib/apps.ts`), not a section of Growth & Marketing:
 it holds one encrypted credential to [`eshobe-cms`](https://github.com/hamidnoshady/eshobe-cms),
-a separately deployed, multi-tenant Payload 3 website platform — the same shape as the
-WooCommerce or MCP connections this app already keeps as their own peers, not a marketing
-engine over Growth's own tables. The two apps are connected over REST with a per-site API
+a separately deployed, multi-tenant Payload 3 website platform — the same cross-app boundary as
+WP Manager's WooCommerce system and the technical Connections app, not a marketing engine over
+Growth's own tables. The two apps are connected over REST with a per-site API
 key, never embedded and never sharing a database; the full contract (credentials, endpoints,
 webhook, DNS/preview setup on both sides) is
 [docs/eshobe-cms-integration.md](docs/eshobe-cms-integration.md).
@@ -895,10 +913,12 @@ waste, trial balance) becomes a suite an accountant can actually close a year on
 - **Financial statements** — P&L, balance sheet, and cash flow, each with period comparison and
   drill-down to the journal entries behind any figure.
 - **AR/AP subledgers** — customer/supplier balances, invoices/bills, receipts/payments, aging
-  buckets, statements. The customer *directory* itself — create, edit, archive/delete, address
-  and notes — is a standalone page at `/dashboard/customers` (Owner/Manager/Cashier/Accountant,
-  gated by the `customers.view`/`customers.manage` permissions), independent of the `ledger`
-  feature flag; it links into each customer's AR statement for whoever can also see the ledger.
+  buckets and statements. The Accounting customer workflow links into Growth at
+  `/dashboard/growth/customers` (including the selected customer for an A/R statement), where
+  Growth shows a read-only projection for its own workflows. The customer *directory* and
+  canonical record remain CRM-owned: `/dashboard/customers` is a compatibility redirect to the
+  CRM directory (Owner/Manager/Cashier/Accountant, gated by the `customers.view`/`customers.manage`
+  permissions), independent of the `ledger` feature flag.
 - **Bank & cash reconciliation**, **expense management** (categorised, with attachments and
   recurring expenses), and **payroll entries** (accrual/payment postings, not a payroll engine).
 - **Manual journals** — draft → review → post, reversal rather than deletion, recurring

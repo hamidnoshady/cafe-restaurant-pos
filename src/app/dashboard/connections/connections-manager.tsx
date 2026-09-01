@@ -6,7 +6,6 @@ import { FeatureLock } from "@/components/feature-lock";
 import type { ConnectionKind, ConnectionKindKey } from "@/lib/connection-kinds";
 import { SectionNav } from "../section-nav";
 import { DesktopPanel } from "./desktop-panel";
-import { WooCommercePanel } from "./woocommerce-panel";
 import { HolooPanel } from "./holoo-panel";
 import { ApiTokensPanel } from "./api-tokens-panel";
 import { McpPanel } from "./mcp-panel";
@@ -61,7 +60,6 @@ export function ConnectionsManager({
 
         <FeatureLock locked={locked} title={activeKind.label}>
           {active === "desktop" ? <DesktopPanel /> : null}
-          {active === "woocommerce" ? <WooCommercePanel /> : null}
           {active === "holoo" ? <HolooPanel /> : null}
           {active === "mcp" ? <McpPanel /> : null}
           {active === "api" ? <ApiTokensPanel /> : null}

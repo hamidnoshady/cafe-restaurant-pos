@@ -19,6 +19,7 @@ import {
   HeartIcon,
   MegaphoneIcon,
   TrendingUpIcon,
+  UsersIcon,
   type LucideIcon,
 } from "lucide-react";
 import { canViewGrowthSection, type GrowthSectionKey } from "./growth-routes";
@@ -38,6 +39,12 @@ export const GROWTH_NAV_ITEMS: readonly GrowthNavItem[] = [
     label: "میز کار رشد",
     description: "اعداد کلیدی و رویدادها",
     icon: TrendingUpIcon,
+  },
+  {
+    key: "customers",
+    label: "مشتریان",
+    description: "دادهٔ مشتری برای استفادهٔ رشد",
+    icon: UsersIcon,
   },
   {
     key: "campaigns",

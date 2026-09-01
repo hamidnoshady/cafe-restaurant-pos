@@ -96,11 +96,17 @@ function navItemsFor(industry: Industry): NavItem[] {
     { label: INDUSTRY_LABELS.tools_fittings, module: "tools_fittings", href: "/dashboard/tools-fittings", roles: ["owner", "manager"] },
     { label: INDUSTRY_LABELS.haberdashery, module: "haberdashery", href: "/dashboard/haberdashery", roles: ["owner", "manager"] },
     { label: "حسابداری", module: "ledger", href: "/dashboard/ledger", roles: ["owner", "manager", "accountant"], flag: "ledger" },
-    // Not flag-gated, unlike the WooCommerce page it replaced: the hub's three
-    // tabs have three different entitlements and one — connecting the desktop
-    // app — is not an entitlement at all, so gating the entry would hide the
-    // free connection behind the paid ones. Each tab locks itself.
-    { label: "اتصال‌ها", module: "integrations", href: "/dashboard/connections", roles: ["owner", "manager"] },
+    // Technical connections are their own utility app. WooCommerce is not
+    // listed here: its management surface belongs to the standalone WP Manager
+    // below, so Accounting never becomes the doorway to the store.
+    { label: "اتصال‌های فنی", module: "connections", href: "/dashboard/connections", roles: ["owner", "manager"] },
+    {
+      label: "مدیریت وردپرس و ووکامرس",
+      module: "integrations",
+      href: "/dashboard/wp",
+      roles: ["owner", "manager"],
+      flag: "integrations",
+    },
     { label: "گزارش‌ها", module: "reports", href: "/dashboard/reports", roles: ["owner", "manager", "accountant"], flag: "reporting" },
     { label: "دستیار هوشمند", module: "ai", href: "/dashboard/ai", roles: ["owner", "manager"], flag: "ai_assistant" },
     // Wallet/credits & plans. The small credit badge in the chrome links here

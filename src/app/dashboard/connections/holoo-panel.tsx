@@ -265,7 +265,7 @@ export function HolooPanel() {
                   <Button type="button" size="sm" variant="outline" disabled={actionBusy === `${c.id}:companion`} onClick={() => setCompanion(c.id, !c.settings?.companionActivatedAt)}>
                     {c.settings?.companionActivatedAt ? "خاموش‌کردن همراه" : "فعال‌کردن همراه"}
                   </Button>
-                  <a className="text-xs text-primary underline-offset-4 hover:underline" href={`/dashboard/integrations/holoo?connectionId=${c.id}`}>ویزارد مهاجرت</a>
+                  <a className="text-xs text-primary underline-offset-4 hover:underline" href={`/dashboard/connections/holoo?connectionId=${c.id}`}>ویزارد مهاجرت</a>
                   {testResult[c.id] ? <span className="text-xs text-muted-foreground">{testResult[c.id]}</span> : null}
                 </div>
                 {c.settings?.writeMode === "direct_sql" ? (

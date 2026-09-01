@@ -14,6 +14,13 @@ describe("appShellForPathname", () => {
     expect(appShellForPathname("/dashboard/growth/campaigns/12")?.app).toBe("growth");
   });
 
+  it("hands the complete WordPress/WooCommerce manager to the WP shell", () => {
+    expect(appShellForPathname("/dashboard/wp")?.app).toBe("wp");
+    for (const section of ["connections", "products", "orders", "customers", "content", "queue"]) {
+      expect(appShellForPathname(`/dashboard/wp/${section}`)?.app).toBe("wp");
+    }
+  });
+
   it("leaves every other dashboard route to the business nav", () => {
     // The point of the change is one-directional: حسابداری keeps the nav the
     // business knows, and the workspace home keeps its rail.
@@ -26,6 +33,7 @@ describe("appShellForPathname", () => {
       "/dashboard/commission",
       "/dashboard/projects",
       "/dashboard/settings",
+      "/dashboard/connections",
     ]) {
       expect(appShellForPathname(pathname)).toBeNull();
     }

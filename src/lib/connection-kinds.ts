@@ -1,16 +1,12 @@
 /**
- * What a business can connect to, and who may set each one up.
+ * What the technical Connections app can connect to, and who may set each one up.
  *
- * The dashboard used to have one page called «فروشگاه آنلاین» that could
- * connect to exactly one thing — a WooCommerce store — while the two other
- * connections the product actually supports were nowhere or elsewhere: the
- * desktop install had no self-service entry point at all (its pairing code was
- * issuable only from the super-admin console, which is how owners ended up
- * pasting a server-sync token into it), and the public API's keys, built in
- * Phase 19, had no screen to issue them from. Three connections, one of which
- * had a page.
- *
- * This is the list they now share, kept pure so its visibility rules are unit
+ * The dashboard once mixed the WordPress/WooCommerce store with technical
+ * connections. The store kind remains in this compatibility catalogue because
+ * older callers and URLs know its key, but it is not returned by
+ * `visibleConnectionKinds`; WP Manager owns that connection and its workflows.
+ * The technical connections the product supports are desktop, Holoo, API keys
+ * and MCP. This is the list they now share, kept pure so its visibility rules are unit
  * tested rather than asserted by reading JSX. It follows `settings-tabs.ts`'s
  * shape deliberately — same role/feature/module vocabulary — because it is the
  * same kind of decision.
@@ -101,14 +97,16 @@ export interface ConnectionKindVisibilityOptions {
  * different: it is not a purchase, and a manager has no business being shown
  * an owner-only credential form at all.
  *
- * The industry module is `integrations` for every tab, and `integrations` is a
- * core module every trade has — but it is checked rather than assumed, so that
- * a future profile which drops it drops this page with it, the way every other
- * module-gated surface behaves.
+ * The industry module is `connections` for this technical hub, and it is a core
+ * module every trade has — but it is checked rather than assumed, so that a
+ * future profile which drops it drops this page with it. The separate
+ * `integrations` module belongs to the WP Manager.
  */
 export function visibleConnectionKinds(options: ConnectionKindVisibilityOptions): ConnectionKind[] {
-  if (options.industry && !hasModule(options.industry, "integrations")) return [];
-  return CONNECTION_KINDS.filter((kind) => kind.allowedRoles.includes(options.role));
+  if (options.industry && !hasModule(options.industry, "connections")) return [];
+  return CONNECTION_KINDS.filter(
+    (kind) => kind.key !== "woocommerce" && kind.allowedRoles.includes(options.role),
+  );
 }
 
 export function isConnectionKindKey(value: string | null | undefined): value is ConnectionKindKey {
@@ -120,8 +118,7 @@ export function isConnectionKindKey(value: string | null | undefined): value is 
  *
  * Falls back to the first visible tab rather than to a fixed default: an
  * unrecognised value, or one naming a tab this role cannot see, must not
- * produce an empty page — and for a Manager (who sees only WooCommerce) the
- * "first visible" tab is the only sensible landing spot.
+ * produce an empty page.
  */
 export function resolveConnectionKind(
   requested: string | null | undefined,

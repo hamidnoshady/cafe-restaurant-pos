@@ -4,13 +4,13 @@
  * Host for the existing WooCommerce store sections
  * (CatalogueSection / StoreOrdersSection / TaxonomiesSection) inside the WP
  * Manager app: pick a connection, then render the section against it. Those
- * components were built to be embedded with a `connectionId` prop inside the
- * connections hub's expandable rows; here the connection is chosen once.
+ * components accept a `connectionId` prop so every WP Manager surface can use
+ * the same selected store; the connection is chosen once here.
  */
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../ui";
 import { cardClass, EmptyState, SectionCardSkeleton } from "../page-chrome";
-import { CatalogueSection, StoreOrdersSection, TaxonomiesSection } from "../connections/woo-store-sections";
+import { CatalogueSection, StoreOrdersSection, TaxonomiesSection } from "./woo-store-sections";
 import { PluginWaitNote } from "./plugin-wait-note";
 import { ConnectionPicker, type ConnectionLite } from "./connection-lite";
 
@@ -23,7 +23,7 @@ function useConnectionHost() {
   const [selectedId, setSelectedId] = useState("");
 
   useEffect(() => {
-    api<{ connections: Connection[] }>("/api/integrations/connections").then((res) => {
+    api<{ connections: Connection[] }>("/api/integrations/connections?provider=woocommerce").then((res) => {
       if (res.ok) {
         setConnections(res.data.connections);
         setSelectedId(res.data.connections[0]?.id ?? "");

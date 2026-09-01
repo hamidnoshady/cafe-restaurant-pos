@@ -59,6 +59,11 @@ export const MODULE_KEYS = [
   "stock",
   "ledger",
   "integrations",
+  // Technical connection management (desktop pairing, API and MCP). WooCommerce
+  // and WordPress management is a separate `integrations` module owned by the
+  // WP Manager app; keeping these keys distinct prevents the two products from
+  // sharing a navigation door.
+  "connections",
   "reports",
   "ai",
   "settings",
@@ -183,6 +188,7 @@ const CORE_MODULES: readonly ModuleKey[] = [
   "website",
   "ledger",
   "integrations",
+  "connections",
   "reports",
   "ai",
   "settings",
@@ -349,6 +355,11 @@ export const PAGE_MODULE_PREFIXES: readonly (readonly [string, ModuleKey])[] = [
   // The website manager's own app (issue #378) — pulled out of Growth &
   // Marketing to be a peer of it, not a section inside it (src/lib/apps.ts).
   ["/dashboard/website", "website"],
+  // Technical connections and the WP manager are separate app surfaces. Do not
+  // collapse these into one generic integrations prefix: the former owns
+  // desktop/API/MCP credentials, the latter owns WordPress/WooCommerce.
+  ["/dashboard/connections", "connections"],
+  ["/dashboard/wp", "integrations"],
   ["/dashboard/stock", "stock"],
 ];
 
@@ -385,6 +396,10 @@ const API_MODULE_PREFIXES: readonly (readonly [string, ModuleKey])[] = [
   // CMS's inbound publish webhook (HMAC-verified, no session, no
   // `withTenantScope`) and must stay outside this list.
   ["/api/cms/website", "website"],
+  // WP Manager read models are an app-owned surface. The generic connection
+  // endpoints are deliberately not listed here because they also serve the
+  // technical connection hub; their own role/tenant guards remain in force.
+  ["/api/integrations/wp-manager", "integrations"],
   ["/api/stock", "stock"],
 ];
 

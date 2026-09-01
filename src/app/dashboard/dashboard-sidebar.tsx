@@ -23,6 +23,7 @@ import {
   LockIcon,
   MessageSquarePlusIcon,
   PackageIcon,
+  PlugIcon,
   SettingsIcon,
   ShoppingCartIcon,
   SparklesIcon,
@@ -203,13 +204,16 @@ const WORKSPACE_APP_LAUNCHERS: readonly {
     key: "wp",
     label: "مدیریت وردپرس",
     icon: GlobeIcon,
-    // The old flat connection page still exists (module-gated); it and the
-    // store sections launch into the manager app.
-    hrefs: [
-      "/dashboard/wp",
-      "/dashboard/connections",
-      "/dashboard/integrations",
-    ],
+    // The WP Manager has its own home and its own connection screen. Do not
+    // fall back to the technical connection hub: that would put WooCommerce
+    // back behind the Accounting/Connections door.
+    hrefs: ["/dashboard/wp"],
+  },
+  {
+    key: "connections",
+    label: "اتصال‌های فنی",
+    icon: PlugIcon,
+    hrefs: ["/dashboard/connections"],
   },
 ];
 

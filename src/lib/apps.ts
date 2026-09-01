@@ -108,8 +108,9 @@ export const APPS: AppDef[] = [
     // is an audience-growing surface like a campaign. It is really an
     // integration with its own external system of record — a separate
     // deployment (eshobe-cms) that this app holds one encrypted credential
-    // for, the same shape as the WooCommerce or MCP connections, not a
-    // marketing engine that reads and writes this app's own tables. Folding
+    // for, the same cross-app shape as the standalone WP Manager and technical
+    // Connections apps, not a marketing engine that reads and writes this
+    // app's own tables. Folding
     // it into Growth would have made a page of a different product read as a
     // section of this one's marketing tab. It is its own app instead, a peer
     // of Growth rather than a folder inside it — see
@@ -150,24 +151,22 @@ export const APPS: AppDef[] = [
     label: "مدیریت وردپرس و ووکامرس",
     description:
       "مدیریت کامل فروشگاه آنلاین: محصولات، سفارش‌ها، مشتریان، دسته‌بندی‌ها، محتوا و رسانه‌های سایت وردپرسی.",
-    // Phase 40 — the fifth app. It owns the `integrations` module (the store
-    // connection surfaces that used to sit as a «اتصال‌ها» section): products,
-    // orders, customers, taxonomies, WordPress content and media, and the
-    // outbox queue are all its management surfaces. The integration *engines*
-    // stay in src/lib/integrations so the other apps keep using them — the
-    // POS pushes stock, CRM reads store customers, Growth segments them — but
-    // the owner-facing management lives here.
+    // Phase 40 — the app owns the WordPress/WooCommerce system and its local
+    // mirror. Its connection, catalogue, order, customer, taxonomy, content,
+    // media and queue screens all stay behind this app. Other apps consume the
+    // mirrored data through their own workflows; none of them owns a second WP
+    // management screen.
     modules: ["integrations"],
   },
   {
     key: "connections",
-    label: "اتصال‌ها",
+    label: "اتصال‌های فنی",
     description:
-      "اتصال کسب‌وکار به خدمات بیرونی: همگام‌سازی دسکتاپ و دستیارهای هوشمند. فروشگاه آنلاین به «مدیریت وردپرس» منتقل شد.",
-    // The WooCommerce/WordPress surfaces moved to the wp app above; this
-    // entry stays so the registry keeps its shape and any future non-store
-    // connection (desktop sync, MCP assistants) has an app to live in.
-    modules: [],
+      "اتصال برنامه دسکتاپ، کلیدهای API و دستیارهای هوشمند؛ اتصال وردپرس و ووکامرس در برنامهٔ مستقل خودش است.",
+    // Keep technical connections separate from the WP manager. This prevents a
+    // WooCommerce connection tab from making the manager look like a page of
+    // Accounting, while preserving a home for desktop/API/MCP credentials.
+    modules: ["connections"],
   },
   {
     key: "settings",

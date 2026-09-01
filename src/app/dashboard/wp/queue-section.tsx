@@ -62,7 +62,7 @@ export function WpQueueSection() {
   const [rows, setRows] = useState<QueueRow[] | null>(null);
 
   useEffect(() => {
-    api<{ connections: ConnectionLite[] }>("/api/integrations/connections").then((res) => {
+    api<{ connections: ConnectionLite[] }>("/api/integrations/connections?provider=woocommerce").then((res) => {
       if (res.ok) {
         setConnections(res.data.connections);
         setSelectedId(res.data.connections[0]?.id ?? "");
