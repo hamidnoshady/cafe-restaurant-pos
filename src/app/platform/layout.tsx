@@ -48,6 +48,9 @@ const NAV: NavItem[] = [
   { label: "برنامه‌ها", href: "/platform/apps" },
   { label: "رویدادها", href: "/platform/audit" },
   { label: "گزارش‌های خطا", href: "/platform/bug-reports", cap: "audit.read" },
+  // Migration 0130 — the support desk: every business's support tickets,
+  // answered from the console. Every admin role holds `support.manage`.
+  { label: "پشتیبانی", href: "/platform/support", cap: "support.manage" },
   {
     label: "سیستم",
     href: "/platform/system",

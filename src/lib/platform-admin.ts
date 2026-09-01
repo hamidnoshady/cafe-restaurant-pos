@@ -42,6 +42,12 @@ export type PlatformCapability =
   // Learning content: the per-section knowledge-base URLs every business's
   // «آموزش» modal opens.
   | "knowledge.manage"
+  // The support desk (migration 0130): reading and answering every business's
+  // support tickets. Given to every admin role — answering tickets is the
+  // `support` role's whole job, and there is no read-only half worth
+  // separating: the console's ticket page is read surfaces plus the reply box,
+  // and every write is audited.
+  | "support.manage"
   // Impersonation, split by blast radius
   | "impersonate.readOnly"
   | "impersonate.full"
@@ -63,9 +69,10 @@ const READ: PlatformCapability[] = ["businesses.read", "audit.read", "system.rea
  * can do without tracing an inheritance chain.
  */
 const CAPABILITIES: Record<PlatformAdminRole, PlatformCapability[]> = {
-  support: [...READ, "impersonate.readOnly"],
+  support: [...READ, "support.manage", "impersonate.readOnly"],
   engineer: [
     ...READ,
+    "support.manage",
     "impersonate.readOnly",
     "features.write",
     "business.suspend",
@@ -75,6 +82,7 @@ const CAPABILITIES: Record<PlatformAdminRole, PlatformCapability[]> = {
   ],
   owner: [
     ...READ,
+    "support.manage",
     "impersonate.readOnly",
     "features.write",
     "business.suspend",

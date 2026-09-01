@@ -104,6 +104,12 @@ function navItemsFor(industry: Industry): NavItem[] {
     { label: "گزارش‌ها", module: "reports", href: "/dashboard/reports", roles: ["owner", "manager", "accountant"], flag: "reporting" },
     { label: "دستیار هوشمند", module: "ai", href: "/dashboard/ai", roles: ["owner", "manager"], flag: "ai_assistant" },
     { label: "تنظیمات", module: "settings", href: "/dashboard/settings" },
+    // Migration 0130 — the support desk. Every member may open a ticket
+    // (asking for help is not a privileged act), so there is no `roles` gate;
+    // the `settings` module anchors it because every industry has settings.
+    // Owners and managers see the whole business queue, the rest only their
+    // own tickets — enforced server-side in src/lib/support-service.ts.
+    { label: "پشتیبانی", module: "settings", href: "/dashboard/support" },
   ];
 }
 
