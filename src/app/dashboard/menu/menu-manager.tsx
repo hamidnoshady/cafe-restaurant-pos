@@ -105,8 +105,7 @@ export function MenuManager() {
     return true;
   }
 
-  if (!data)
-    return <LoadingSkeleton rows={3} />;
+  if (!data) return <LoadingSkeleton rows={3} />;
 
   return (
     <div className="space-y-8">
@@ -279,6 +278,23 @@ function ItemSection({
       .map((si) => si.item);
   }, [searchableItems, deferredQuery, data.items]);
 
+  // ⚡ Bolt: Extract grouping logic into a useMemo map to prevent O(N*C) operations
+  // during render. Instead of filtering the whole array for every category,
+  // we group them once in O(N) and do an O(1) map lookup during render.
+  const itemsByCategory = useMemo(() => {
+    const map = new Map<string, Item[]>();
+    for (const item of filteredItems) {
+      if (!item.category_id) continue;
+      let arr = map.get(item.category_id);
+      if (!arr) {
+        arr = [];
+        map.set(item.category_id, arr);
+      }
+      arr.push(item);
+    }
+    return map;
+  }, [filteredItems]);
+
   return (
     <SectionCard title="آیتم‌ها">
       <form
@@ -329,7 +345,7 @@ function ItemSection({
       />
       <div className="space-y-4">
         {data.categories.map((c) => {
-          const items = filteredItems.filter((i) => i.category_id === c.id);
+          const items = itemsByCategory.get(c.id) ?? [];
           if (items.length === 0) return null;
           const isCollapsed = collapsedCategories.has(c.id);
           return (

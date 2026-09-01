@@ -4,3 +4,7 @@
 ## 2025-02-23 - Memoizing Arrays Without Hoisting Filter Breaks Cache
 **Learning:** Extracting an options array into a `useMemo` to prevent per-render reallocation fails if the data it depends on is created via `.filter()` directly in the render body. `.filter()` creates a new array reference every render, causing the `useMemo` dependency check to fail and recalculate anyway.
 **Action:** Always move the `.filter()` operation inside the `useMemo` block and depend on the raw data array, or memoize the `.filter()` result itself before passing it to subsequent derived state hooks.
+
+## 2026-09-01 - Extract Category Filtering from Render Loop
+**Learning:** Filtering a large array of N items for each of C categories within a render loop causes O(N*C) computations, which blocks the main thread during high-frequency events like text searching. Extracting it to a useMemo block using `.filter()` creates new arrays each time, breaking the cache unless dependencies are correct.
+**Action:** Use a single O(N) pass to group items into a `Map<string, Item[]>` inside `useMemo`, allowing O(1) lookups during the category render loop and maintaining stable references.
