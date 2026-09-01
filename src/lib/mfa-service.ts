@@ -333,7 +333,7 @@ export async function listMfaAccountStatus(now: Date = new Date()): Promise<MfaA
          JOIN users u ON u.platform_user_id = s.id
          JOIN businesses b ON b.id = u.business_id
         WHERE s.is_active
-          AND b.status <> 'deleted'
+          AND b.status <> 'archived'
           AND (
             u.role = 'owner'
             OR (u.role = 'manager' AND COALESCE((
