@@ -24,6 +24,7 @@ pos-pgdata
 .design-sync
 .ds-sync
 ds-bundle
+archive
 **/*.test.ts
 .DS_Store
 npm-debug.log*

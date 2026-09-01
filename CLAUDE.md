@@ -56,7 +56,7 @@ What follows from that:
 Note also, unrelated to the above and unchanged by it: don't assume a container image exists for
 a given commit. The self-update path (`src/lib/app-update.ts`, `scripts/check-app-update.ts`,
 `/platform/updates`) and the pull-based compose files (`docker-compose.local.yml`,
-`docker-compose.srv1.yml`) all expect
+`archive/deploy/docker-compose.srv1.yml`) all expect
 `ghcr.io/hamidnoshady/cafe-restaurant-pos:sha-<short-sha>` images that nothing in this repo has
 ever published. Those images are produced outside it.
 

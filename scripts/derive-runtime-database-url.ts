@@ -3,8 +3,9 @@
  * distinct from `DATABASE_URL`, which the Docker entrypoint uses to run
  * migrations and must therefore stay a privileged (table-owning) connection.
  *
- * This exists because every shipped compose file (`docker-compose.komodo.yml`,
- * `docker-compose.local.yml`, `docker-compose.srv1.yml`) hands the app
+ * This exists because every shipped compose file (`docker-compose.local.yml`,
+ * plus the retired `archive/deploy/docker-compose.komodo.yml` and
+ * `archive/deploy/docker-compose.srv1.yml`) hands the app
  * container exactly one `DATABASE_URL`: the Postgres superuser also used for
  * migrations. `assertRlsEffective()` (src/lib/db.ts) correctly refuses to
  * start with that connection in production — a superuser ignores every RLS
