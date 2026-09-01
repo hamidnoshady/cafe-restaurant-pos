@@ -1,0 +1,91 @@
+# Production stack for ParsPack's "Docker Compose" PaaS app.
+#
+# ParsPack is a managed platform/CDN edge (like the "Runflare and most
+# PaaS/CDN edges" case documented in .env.example), not a self-hosted Traefik
+# box: it terminates TLS and routes by hostname itself, then hands this
+# container an internal name while the browser's real host rides in
+# X-Forwarded-Host. That's why TRUST_FORWARDED_HOST is set below and there
+# are no Traefik labels here, unlike docker-compose.komodo.yml/srv1.yml.
+#
+# See docs/parspack-deployment.md for the full walkthrough — which ParsPack
+# app type to pick, which parameters to fill in, and the single-business vs.
+# multi-business (subdomain) choice.
+#
+# Usage in ParsPack (ساخت اپلیکیشن → Docker → Docker Compose):
+#   1. Point the app at this repo and this compose file.
+#   2. Set at least POSTGRES_PASSWORD and JWT_SECRET as app parameters/variables.
+#   3. Turn on public access for the app service.
+#   4. Deploy — the entrypoint waits for Postgres, runs migrations, and starts
+#      the server automatically on every deploy.
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-pos}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-pos}
+    volumes:
+      - pos-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-pos} -d ${POSTGRES_DB:-pos}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - internal
+    # Not published to the host — only the app (same internal network) talks to it.
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      # Superuser on purpose: docker-entrypoint.sh migrates with this, then
+      # provisions a restricted pos_app role from it and launches the server
+      # with that instead — see scripts/derive-runtime-database-url.ts and the
+      # README's tenancy section.
+      DATABASE_URL: postgres://${POSTGRES_USER:-pos}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-pos}
+      # MUST be a real secret. Generate with: openssl rand -hex 32
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
+      SESSION_HOURS: ${SESSION_HOURS:-12}
+      # ParsPack is a managed edge, not Traefik: it hands this container an
+      # internal Host header and puts the real one in X-Forwarded-Host. Without
+      # this the app resolves an unknown tenant host on every request and fails
+      # closed. See .env.example's note on this var and
+      # GET /api/host/resolve?debug=1 if anything 404s/502s after deploy.
+      TRUST_FORWARDED_HOST: "on"
+      # This stack is the only server for its business/businesses — nothing
+      # syncs to it from elsewhere.
+      DEPLOYMENT_ROLE: central
+      BACKUP_DIR: /app/backups
+      # Only needed if staff use biometric/WebAuthn login — set to your real
+      # https:// domain as a ParsPack app parameter if so.
+      WEBAUTHN_ORIGIN: ${WEBAUTHN_ORIGIN:-}
+      # Leave ROOT_DOMAIN unset for a single business at one domain (the
+      # common case). Only set it if this deployment hosts several businesses
+      # on subdomains of it — see docs/parspack-deployment.md for what that
+      # additionally requires (wildcard DNS + wildcard TLS).
+      ROOT_DOMAIN: ${ROOT_DOMAIN:-}
+      SUBDOMAIN_ROUTING: ${SUBDOMAIN_ROUTING:-off}
+      PLATFORM_BASE_URL: ${PLATFORM_BASE_URL:-}
+    ports:
+      - "3000:3000"
+    volumes:
+      - pos-backups:/app/backups
+    networks:
+      - internal
+
+volumes:
+  pos-pgdata:
+  pos-backups:
+
+networks:
+  internal:
