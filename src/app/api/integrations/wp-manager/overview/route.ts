@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
+import { getConnection } from "@/lib/integrations/connections-service";
 import { wpOverviewStats } from "@/lib/integrations/wp-manager-service";
 
 /**
@@ -12,6 +13,12 @@ export const GET = withTenantScope(async (request: Request) => {
   if (error) return error;
 
   const connectionId = new URL(request.url).searchParams.get("connectionId");
+  if (connectionId) {
+    const connection = await getConnection(session.businessId, connectionId);
+    if (!connection || connection.provider !== "woocommerce") {
+      return NextResponse.json({ error: "not_found" }, { status: 404 });
+    }
+  }
   const stats = await wpOverviewStats(session.businessId, connectionId);
   return NextResponse.json({ stats });
 });

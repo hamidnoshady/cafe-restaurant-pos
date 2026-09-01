@@ -13,7 +13,8 @@ export default async function GrowthOverviewPage() {
   const session = await getSession();
   if (!session) redirect("/login");
   if (session.role === "cashier") redirect("/dashboard/growth/loyalty");
-  if (!["owner", "manager", "cashier"].includes(session.role)) redirect("/dashboard");
+  if (session.role === "accountant") redirect("/dashboard/growth/customers");
+  if (!["owner", "manager"].includes(session.role)) redirect("/dashboard");
 
   return <GrowthSection section="overview" />;
 }

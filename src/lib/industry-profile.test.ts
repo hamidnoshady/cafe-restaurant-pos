@@ -254,6 +254,7 @@ describe("moduleForApiPath", () => {
     expect(moduleForApiPath("/api/tables/abc/close")).toBe("tables");
     expect(moduleForApiPath("/api/menu/items")).toBe("menu");
     expect(moduleForApiPath("/api/inventory/counts")).toBe("inventory");
+    expect(moduleForApiPath("/api/integrations/wp-manager/overview")).toBe("integrations");
   });
 
   it("does not match a prefix that is only a string prefix", () => {
@@ -287,6 +288,8 @@ describe("moduleForPagePath", () => {
   it("maps a page and its children", () => {
     expect(moduleForPagePath("/dashboard/floor")).toBe("tables");
     expect(moduleForPagePath("/dashboard/orders/abc")).toBe("orders");
+    expect(moduleForPagePath("/dashboard/wp/connections")).toBe("integrations");
+    expect(moduleForPagePath("/dashboard/connections")).toBe("connections");
   });
 
   it("leaves the dashboard root and settings ungated", () => {

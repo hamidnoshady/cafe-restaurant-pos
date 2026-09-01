@@ -6,11 +6,13 @@ import { createHolooConnection, type HolooWriteMode } from "@/lib/integrations/h
 import type { HolooCurrencyUnit } from "@/lib/integrations/holoo/holoo-money";
 import type { WooCurrencyUnit } from "@/lib/integrations/woo-money";
 
-export const GET = withTenantScope(async () => {
+export const GET = withTenantScope(async (request: Request) => {
   const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
+  const provider = new URL(request.url).searchParams.get("provider");
   const connections = await listConnections(session.businessId);
-  return NextResponse.json({ connections });
+  const filtered = provider ? connections.filter((connection) => connection.provider === provider) : connections;
+  return NextResponse.json({ connections: filtered });
 });
 
 interface CreateBody {

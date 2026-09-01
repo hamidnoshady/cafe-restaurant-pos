@@ -3,8 +3,9 @@
 import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
 
 /**
- * «فروشگاه ووکامرس» — the WooCommerce connection panel, carried over from the
- * old standalone `/dashboard/integrations` page and extended for the second
+ * «اتصال فروشگاه» — the WP Manager's WooCommerce connection and management
+ * panel. It preserves the connection workflows from the old standalone
+ * `/dashboard/integrations` page and extends them for the second
  * way a store can now connect.
  *
  * The two modes are presented as a choice up front rather than as an advanced
@@ -145,7 +146,7 @@ function ShowOnceSecret({ title, value, note, onDone }: { title: string; value: 
   );
 }
 
-export function WooCommercePanel() {
+export function WpConnectionPanel() {
   const [connections, setConnections] = useState<Connection[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
@@ -241,7 +242,7 @@ export function WooCommercePanel() {
 
   async function createConnection() {
     const data = await call<{ webhookSecret?: string; linkToken?: string | null }>(
-      "/api/integrations/connections",
+      "/api/integrations/connections?provider=woocommerce",
       "POST",
       form,
     );

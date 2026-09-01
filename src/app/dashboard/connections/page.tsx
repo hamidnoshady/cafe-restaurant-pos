@@ -9,13 +9,14 @@ import { KnowledgeHelpButton } from "../knowledge-help";
 import { ConnectionsManager } from "./connections-manager";
 
 /**
- * Everything this business connects *to*, in one place: the desktop install,
- * the online store, and the API keys a developer builds against.
+ * Technical connections this business uses: the desktop install, Holoo and
+ * developer/assistant access. WooCommerce is intentionally not rendered here;
+ * the WP Manager owns the complete WordPress/WooCommerce system.
  *
- * Deliberately not gated as a whole. Its three tabs have three different
- * entitlements — and one of them, desktop pairing, is not an entitlement at
- * all — so gating the page would hide the free thing behind the paid ones.
- * Each tab carries its own lock instead.
+ * Deliberately not gated as a whole. The technical tabs have different
+ * entitlements — and desktop pairing is not an entitlement at all — so gating
+ * the page would hide the free thing behind the paid ones. Each tab carries
+ * its own lock instead.
  */
 export default async function ConnectionsPage({
   searchParams,
@@ -24,6 +25,11 @@ export default async function ConnectionsPage({
 }) {
   const session = await getSession();
   if (!session) redirect("/login");
+
+  const { tab } = await searchParams;
+  // WooCommerce used to live in this generic hub. Keep old bookmarks working,
+  // but do not render the store manager here: the WP app owns that system now.
+  if (tab === "woocommerce") redirect("/dashboard/wp/connections");
 
   const [features, { rows }] = await withTenant(session.businessId, () =>
     Promise.all([
@@ -38,14 +44,13 @@ export default async function ConnectionsPage({
   // all rather than an empty one.
   if (kinds.length === 0) redirect("/dashboard");
 
-  const { tab } = await searchParams;
   const active = resolveConnectionKind(tab, kinds)!;
 
   return (
     <PageShell>
       <PageHeader
         title="اتصال‌ها"
-        description="اتصال این کسب‌وکار به برنامهٔ دسکتاپ، فروشگاه اینترنتی و برنامه‌های توسعه‌دهندگان — همراه با آزمایش اتصال، وضعیت همگام‌سازی و مدیریت کلیدها."
+        description="اتصال این کسب‌وکار به برنامهٔ دسکتاپ، هلو و برنامه‌های توسعه‌دهندگان — همراه با آزمایش اتصال و مدیریت کلیدها."
         actions={<KnowledgeHelpButton section="connections" />}
       />
       <ConnectionsManager

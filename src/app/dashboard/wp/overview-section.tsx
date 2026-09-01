@@ -104,7 +104,7 @@ export function WpOverviewSection() {
 
   const load = useCallback(async () => {
     const [connRes, statsRes] = await Promise.all([
-      api<{ connections: Connection[] }>("/api/integrations/connections"),
+      api<{ connections: Connection[] }>("/api/integrations/connections?provider=woocommerce"),
       api<{ stats: WpOverviewStats }>("/api/integrations/wp-manager/overview"),
     ]);
     if (connRes.ok) {

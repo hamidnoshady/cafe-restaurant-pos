@@ -7,7 +7,7 @@ import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import { useMoney } from "@/components/money/money-context";
 import { api } from "../ui";
-import { crmCustomerHref } from "../crm/crm-routes";
+import { growthCustomerHref } from "../growth/growth-routes";
 import { UNKNOWN_CUSTOMER_KEY } from "@/lib/aging";
 import { overlayPanelClass } from "../page-chrome";
 
@@ -60,18 +60,18 @@ export function ArStatementPanel({
             <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">جزئیات حساب</p>
             <h3 id="ar-statement-heading" className="mt-1 text-lg font-bold">صورتحساب {customerName}</h3>
             {/*
-              Phase 36d — the way back into the CRM. Someone looking at a debt
-              is one click from the person's whole history: what they buy, the
-              open complaint that might be why they have not paid, who last
-              spoke to them. Hidden for unattributed A/R lines, which belong to
-              no customer record and would link nowhere.
+              The customer view is a Growth data projection. Someone looking at
+              a debt can continue with the customer workflows there; the
+              canonical record and full file remain owned by CRM. Hidden for
+              unattributed A/R lines, which belong to no customer record and
+              would link nowhere.
             */}
             {customerId !== UNKNOWN_CUSTOMER_KEY ? (
               <a
-                href={crmCustomerHref(customerId)}
+                href={growthCustomerHref(customerId)}
                 className="mt-1 inline-block text-xs font-semibold text-teal-700 dark:text-teal-300 underline-offset-4 hover:underline"
               >
-                پروندهٔ مشتری در CRM
+                مشتریان در برنامهٔ رشد
               </a>
             ) : null}
           </div>

@@ -104,9 +104,13 @@ export const PAGE_FEATURE_PREFIXES: [string, string][] = [
   ["/dashboard/locations", "offline_mode"],
   ["/dashboard/backup", "backup"],
   ["/dashboard/ai", "ai_assistant"],
+  // The legacy `/dashboard/integrations` route still hosts the Holoo compatibility
+  // page, while the standalone WP Manager owns `/dashboard/wp`.
   ["/dashboard/integrations", "integrations"],
-  // `/dashboard/connections` is deliberately absent: the hub carries three
-  // connections with three different entitlements (and one with none), so it
+  ["/dashboard/wp", "integrations"],
+  ["/dashboard/connections/holoo", "integrations"],
+  // `/dashboard/connections` is deliberately absent: the technical hub carries
+  // connections with different entitlements (and desktop with none), so it
   // gates each tab rather than the page. See src/lib/connection-kinds.ts.
 ];
 

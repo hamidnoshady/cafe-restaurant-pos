@@ -56,6 +56,12 @@ tools and posting rules; not a second write path* — this phase added:
   instead of the engine's name-less shape. That widening also fixed a real
   bug: the old page rendered `p.name` from a payload that never carried one.
 
+Accounting's customer surfaces are a later cross-app reader, not a change to
+this app's ownership. The A/R customer list and statement link into
+`/dashboard/growth/customers`, where Growth shows a read-only customer
+projection. CRM remains the canonical customer-record owner; Growth reads the
+shared customer service and links back to CRM for edits. See Phase 40.
+
 ## What the dashboard shows
 
 | Card | Source of truth |
@@ -151,7 +157,7 @@ So the sidebar slot itself is now handed to the app:
 
 What this changes for the business, and what it does not:
 
-- Inside `/dashboard/growth*` the sidebar lists the app's five sections and
+- Inside `/dashboard/growth*` the sidebar lists the app's six sections and
   **nothing else** — no حسابداری, no گزارش‌ها. The accounting suite keeps the
   business nav exactly as it was; `appShellForPathname` is the only thing that
   decides whose menu a route gets.
@@ -182,9 +188,9 @@ differently for each:
   app's door.
 - **The website manager** — `docs/eshobe-cms-integration.md`. It holds one
   credential to an external system of record (eshobe-cms, a separately
-  deployed multi-tenant CMS), the same shape as the WooCommerce or MCP
-  connections this app already keeps as their own peers rather than as
-  Growth sections. It never reads or writes a Growth engine's tables, so
+  deployed multi-tenant CMS), the same shape as the standalone WP Manager and
+  technical Connections apps rather than as a Growth section. It never reads or
+  writes a Growth engine's tables, so
   folding it in here would have made a different product's page read as a
   tab of this one's marketing suite.
 

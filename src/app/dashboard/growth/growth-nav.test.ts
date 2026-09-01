@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { GROWTH_NAV_ITEMS, growthNavItemsForRole } from "./growth-nav";
-import { canViewGrowthSection, GROWTH_SECTION_KEYS, growthSectionHref, isGrowthSectionPathname } from "./growth-routes";
+import {
+  canOpenGrowth,
+  canViewGrowthSection,
+  GROWTH_SECTION_KEYS,
+  growthCustomerHref,
+  growthSectionHref,
+  isGrowthSectionPathname,
+} from "./growth-routes";
 
 describe("GROWTH_NAV_ITEMS", () => {
   it("lists every section of the app, exactly once, in menu order", () => {
@@ -40,20 +47,22 @@ describe("growthNavItemsForRole", () => {
 
   it("shows a cashier only the floor surface, and never a page they are redirected off", () => {
     // The menu and the route guard must agree exactly: an entry that leads to a
-    // redirect is a button that does nothing.
+    // redirect is a button that does nothing. Customers are a read-only
+    // projection for Accounting, not a cashier Growth workflow.
     expect(growthNavItemsForRole("cashier").map((item) => item.key)).toEqual(["loyalty"]);
   });
 
   it("shows a role the app does not admit nothing at all", () => {
     // `growth/layout.tsx` redirects these roles out of the app; a menu with
     // entries that all redirect away would be the same door with extra steps.
-    for (const role of ["accountant", "waiter", "kitchen", ""]) {
+    for (const role of ["waiter", "kitchen", ""]) {
       expect(growthNavItemsForRole(role)).toEqual([]);
     }
+    expect(growthNavItemsForRole("accountant").map((item) => item.key)).toEqual(["customers"]);
   });
 
   it("is the same gate the pages enforce", () => {
-    for (const role of ["owner", "manager", "cashier"]) {
+    for (const role of ["owner", "manager", "cashier", "accountant"]) {
       const shown = new Set(growthNavItemsForRole(role).map((item) => item.key));
       for (const key of GROWTH_SECTION_KEYS) {
         expect(shown.has(key)).toBe(canViewGrowthSection(role, key));
@@ -62,12 +71,22 @@ describe("growthNavItemsForRole", () => {
   });
 });
 
+describe("customer data projection", () => {
+  it("opens the customer section in Growth without moving ownership", () => {
+    expect(growthCustomerHref()).toBe("/dashboard/growth/customers");
+    expect(growthCustomerHref("customer/42")).toBe("/dashboard/growth/customers?customerId=customer%2F42");
+    expect(canViewGrowthSection("accountant", "customers")).toBe(true);
+    expect(canOpenGrowth("accountant")).toBe(true);
+  });
+});
+
 describe("isGrowthSectionPathname", () => {
   it("lights the overview only on the app's root", () => {
     // Every section page lives under the root path, so a prefix match here would
-    // leave «میز کار رشد» active on all five pages.
+    // leave «میز کار رشد» active on all six pages.
     expect(isGrowthSectionPathname("/dashboard/growth", "overview")).toBe(true);
     expect(isGrowthSectionPathname("/dashboard/growth/campaigns", "overview")).toBe(false);
+    expect(isGrowthSectionPathname("/dashboard/growth/customers", "customers")).toBe(true);
   });
 
   it("keeps a section active on its page and anything nested under it", () => {

@@ -8,22 +8,22 @@ import {
 import { INDUSTRIES } from "./industries";
 
 describe("visibleConnectionKinds", () => {
-  it("gives an Owner every connection", () => {
+  it("gives an Owner every technical connection, but not the WP-owned store connection", () => {
     expect(visibleConnectionKinds({ role: "owner" }).map((k) => k.key)).toEqual([
       "desktop",
-      "woocommerce",
       "holoo",
       "mcp",
       "api",
     ]);
   });
 
-  it("gives a Manager only the store, not the credential-issuing tabs", () => {
-    // Every one of the others hands out a credential that reaches a whole
+  it("gives a Manager only the technical connection that their role can use", () => {
+    // Every other technical tab hands out a credential that reaches a whole
     // business: a pairing code redeems a full snapshot, an API key reads a
     // branch's orders, menu, inventory and reports, and an MCP connection can
-    // be granted the right to change them.
-    expect(visibleConnectionKinds({ role: "manager" }).map((k) => k.key)).toEqual(["woocommerce", "holoo"]);
+    // be granted the right to change them. The WooCommerce connection is
+    // intentionally absent because WP Manager owns it.
+    expect(visibleConnectionKinds({ role: "manager" }).map((k) => k.key)).toEqual(["holoo"]);
   });
 
   it("gives a floor role nothing, so the page redirects rather than rendering empty", () => {
@@ -32,9 +32,9 @@ describe("visibleConnectionKinds", () => {
     }
   });
 
-  it("keeps every tab for every industry — `integrations` is a core module", () => {
+  it("keeps every technical tab for every industry — `connections` is a core module", () => {
     for (const industry of INDUSTRIES) {
-      expect(visibleConnectionKinds({ role: "owner", industry })).toHaveLength(CONNECTION_KINDS.length);
+      expect(visibleConnectionKinds({ role: "owner", industry })).toHaveLength(CONNECTION_KINDS.length - 1);
     }
   });
 
@@ -48,6 +48,11 @@ describe("visibleConnectionKinds", () => {
     // not something a business buys.
     expect(owner.find((k) => k.key === "desktop")?.feature).toBeUndefined();
   });
+
+  it("keeps the WooCommerce key for old callers without exposing it in this hub", () => {
+    expect(isConnectionKindKey("woocommerce")).toBe(true);
+    expect(visibleConnectionKinds({ role: "owner" }).some((k) => k.key === "woocommerce")).toBe(false);
+  });
 });
 
 describe("resolveConnectionKind", () => {
@@ -55,7 +60,7 @@ describe("resolveConnectionKind", () => {
   const manager = visibleConnectionKinds({ role: "manager" });
 
   it("honours a valid, visible request", () => {
-    expect(resolveConnectionKind("woocommerce", owner)).toBe("woocommerce");
+    expect(resolveConnectionKind("holoo", owner)).toBe("holoo");
     expect(resolveConnectionKind("api", owner)).toBe("api");
   });
 
@@ -67,8 +72,8 @@ describe("resolveConnectionKind", () => {
 
   it("never lands a Manager on a tab their role cannot see", () => {
     // A shared link to ?tab=api must not render an owner-only credential form.
-    expect(resolveConnectionKind("api", manager)).toBe("woocommerce");
-    expect(resolveConnectionKind("desktop", manager)).toBe("woocommerce");
+    expect(resolveConnectionKind("api", manager)).toBe("holoo");
+    expect(resolveConnectionKind("desktop", manager)).toBe("holoo");
   });
 
   it("returns null when there is nothing to show", () => {

@@ -194,9 +194,9 @@ const ERROR_MESSAGES: Record<string, string> = {
     bad_checksum: "توکن معتبر نیست؛ یک نویسه اشتباه تایپ یا جابه‌جا شده است.",
     // Phase 23 Wave 2 — deployment role
     central_server: "این سرور، سرور مرکزی است و تنظیمات اتصال برای آن معنا ندارد.",
-    // Phase 28 — the connections hub. Three connections, three vocabularies of
-    // failure; the ones a person can act on are named here rather than falling
-    // through to «خطای غیرمنتظره».
+    // Phase 28/40 — technical Connections and WP Manager integration actions.
+    // Their vocabularies of failure are named here rather than falling through
+    // to «خطای غیرمنتظره».
     not_central_server: "این نصب محلی است و کد اتصال صادر نمی‌کند؛ کد را از حساب ابری بگیرید.",
     code_not_found: "این کد پیدا نشد یا دیگر معتبر نیست.",
     api_key_not_found: "این کلید پیدا نشد یا قبلاً باطل شده است.",

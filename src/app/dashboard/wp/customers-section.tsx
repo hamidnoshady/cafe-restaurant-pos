@@ -15,6 +15,7 @@ import { cardClass, EmptyState, SectionCardSkeleton, StatusBadge } from "../page
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import { ConnectionPicker, type ConnectionLite } from "./connection-lite";
+import { crmCustomerHref } from "../crm/crm-routes";
 import { PluginWaitNote } from "./plugin-wait-note";
 
 interface StoreCustomer {
@@ -35,7 +36,7 @@ export function WpCustomersSection() {
   const [info, setInfo] = useState("");
 
   useEffect(() => {
-    api<{ connections: ConnectionLite[] }>("/api/integrations/connections").then((res) => {
+    api<{ connections: ConnectionLite[] }>("/api/integrations/connections?provider=woocommerce").then((res) => {
       if (res.ok) {
         setConnections(res.data.connections);
         setSelectedId(res.data.connections[0]?.id ?? "");
@@ -124,7 +125,7 @@ export function WpCustomersSection() {
                   {c.lastSeen ? formatJalali(c.lastSeen, { withTime: true }) : ""}
                 </span>
                 <Link
-                  href={`/dashboard/customers/${c.localId}`}
+                  href={crmCustomerHref(c.localId)}
                   className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 text-xs text-foreground/80 transition-colors hover:bg-stone-50 dark:hover:bg-stone-800"
                 >
                   پرونده
