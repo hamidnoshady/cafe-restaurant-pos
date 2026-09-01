@@ -1,4 +1,27 @@
-# Production stack for ParsPack's "Docker Compose" PaaS app.
+# Production stack for ParsPack's "Docker Compose" PaaS app: the POS app,
+# its Postgres 16, and OpenObserve (fleet log monitoring) together in one
+# deployment. See docs/parspack-deployment.md for the full walkthrough —
+# this header only covers what's specific to *this file*.
+#
+# ParsPack's Compose engine (docs.parspack.com/paas/deploy/docker/docker-compose)
+# has real constraints this file is written against — read these before editing:
+#
+#   - NO `build:` — every service must be a pre-built `image:`. ParsPack pulls
+#     images, it does not build them. You must build and push this repo's
+#     Dockerfile yourself first and set POS_IMAGE to where you pushed it (see
+#     the doc for the exact commands) — that's why `app.image` below is a
+#     variable, not `postgres:16-alpine`-style literal like `db`/`observability`.
+#   - NO bind-mount volumes — only named volumes, which is already how
+#     pos-pgdata/pos-backups/zo-data are declared below; don't change that.
+#   - Public vs. isolated access is chosen PER SERVICE in the ParsPack panel
+#     after it reads this file (not from a `ports:` key) — mark `app` public
+#     and leave `db`/`observability` isolated. `ports:` on `app` is kept only
+#     as an explicit hint at its container port (3000); it isn't otherwise
+#     meaningful on ParsPack.
+#   - Any `${VAR}` below with no `:-default` has no default on purpose: per
+#     ParsPack's docs, a variable like that MUST be supplied via a `.env` file
+#     uploaded in the app's "پارامترها و متغیرها" step. Use
+#     .env.parspack.example as the template for that file.
 #
 # ParsPack is a managed platform/CDN edge (like the "Runflare and most
 # PaaS/CDN edges" case documented in .env.example), not a self-hosted Traefik
@@ -7,21 +30,16 @@
 # X-Forwarded-Host. That's why TRUST_FORWARDED_HOST is set below and there
 # are no Traefik labels here, unlike docker-compose.komodo.yml/srv1.yml.
 #
-# See docs/parspack-deployment.md for the full walkthrough — which ParsPack
-# app type to pick, which parameters to fill in, and the single-business vs.
-# multi-business (subdomain) choice.
+# OpenObserve is bundled directly in this file (rather than a separate
+# overlay, the way docker-compose.komodo.yml pairs with
+# docker-compose.observability.yml) because ParsPack deploys one compose file
+# per app. It's still optional — delete the `observability` service and the
+# OPENOBSERVE_* lines under `app.environment` if you don't want it; the app
+# behaves identically either way (see docs/openobserve.md).
 #
-# Want fleet log monitoring (OpenObserve)? It's optional and NOT in this file
-# — see docker-compose.parspack.observability.yml and docs/parspack-deployment.md.
-# eshobe-cms (the Website app's backend) is a separate deployment and never
-# belongs in this compose file at all — same doc explains why.
-#
-# Usage in ParsPack (ساخت اپلیکیشن → Docker → Docker Compose):
-#   1. Point the app at this repo and this compose file.
-#   2. Set at least POSTGRES_PASSWORD and JWT_SECRET as app parameters/variables.
-#   3. Turn on public access for the app service.
-#   4. Deploy — the entrypoint waits for Postgres, runs migrations, and starts
-#      the server automatically on every deploy.
+# eshobe-cms (the Website app's backend) is a SEPARATE deployment and never
+# belongs in this file — see the "eshobe-cms" section of
+# docs/parspack-deployment.md.
 
 services:
   db:
@@ -29,7 +47,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-pos}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB:-pos}
     volumes:
       - pos-pgdata:/var/lib/postgresql/data
@@ -40,16 +58,42 @@ services:
       retries: 10
     networks:
       - internal
-    # Not published to the host — only the app (same internal network) talks to it.
+    # Mark this ISOLATED (not public) in ParsPack's per-service step.
+
+  observability:
+    image: public.ecr.aws/zinclabs/openobserve:${OPENOBSERVE_VERSION:-latest}
+    restart: unless-stopped
+    environment:
+      # First-run root account only; rotate the password in the OpenObserve
+      # UI afterwards if you like — this env var stays the recovery credential.
+      ZO_ROOT_USER_EMAIL: ${OPENOBSERVE_ROOT_EMAIL}
+      ZO_ROOT_USER_PASSWORD: ${OPENOBSERVE_ROOT_PASSWORD}
+      ZO_DATA_DIR: /data
+      ZO_COMPACT_DATA_RETENTION_DAYS: ${OPENOBSERVE_RETENTION_DAYS:-60}
+      ZO_COMPACT_LOCAL_STORAGE: "true"
+    volumes:
+      - zo-data:/data
+    networks:
+      - internal
+    # Mark this ISOLATED by default in ParsPack's per-service step. Only make
+    # it public if you want the OpenObserve UI (dashboards/alerts) reachable
+    # directly — then set OPENOBSERVE_PUBLIC_URL to whatever domain ParsPack
+    # attaches to it. The app itself never needs that URL to be public; it
+    # only ever talks to `observability` over the internal network.
 
   app:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    # No `build:` on ParsPack — see the file header. Push your own image and
+    # point this at it, e.g. ghcr.io/<you>/cafe-restaurant-pos:parspack.
+    image: ${POS_IMAGE}
     restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
+      # Soft dependency in spirit only — compose can't express "start after,
+      # but don't fail if it's down". An observability outage must never take
+      # the POS down with it; the shipper just counts drops until it returns.
+      observability:
+        condition: service_started
     environment:
       NODE_ENV: production
       PORT: "3000"
@@ -57,9 +101,9 @@ services:
       # provisions a restricted pos_app role from it and launches the server
       # with that instead — see scripts/derive-runtime-database-url.ts and the
       # README's tenancy section.
-      DATABASE_URL: postgres://${POSTGRES_USER:-pos}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-pos}
+      DATABASE_URL: postgres://${POSTGRES_USER:-pos}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-pos}
       # MUST be a real secret. Generate with: openssl rand -hex 32
-      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
+      JWT_SECRET: ${JWT_SECRET}
       SESSION_HOURS: ${SESSION_HOURS:-12}
       # ParsPack is a managed edge, not Traefik: it hands this container an
       # internal Host header and puts the real one in X-Forwarded-Host. Without
@@ -81,16 +125,30 @@ services:
       ROOT_DOMAIN: ${ROOT_DOMAIN:-}
       SUBDOMAIN_ROUTING: ${SUBDOMAIN_ROUTING:-off}
       PLATFORM_BASE_URL: ${PLATFORM_BASE_URL:-}
+      # OpenObserve wiring — the shipper activates the moment these exist. See
+      # docs/openobserve.md; delete these 7 lines along with the
+      # `observability` service above if you don't want it.
+      OPENOBSERVE_URL: http://observability:5080
+      OPENOBSERVE_USER: ${OPENOBSERVE_ROOT_EMAIL}
+      OPENOBSERVE_PASSWORD: ${OPENOBSERVE_ROOT_PASSWORD}
+      OPENOBSERVE_ORG: ${OPENOBSERVE_ORG:-default}
+      OPENOBSERVE_LOG_STREAM: ${OPENOBSERVE_LOG_STREAM:-pos_app_logs}
+      OPENOBSERVE_SERVICE: ${OPENOBSERVE_SERVICE:-pos-parspack}
+      OPENOBSERVE_ENV: ${OPENOBSERVE_ENV:-production}
+      OPENOBSERVE_PUBLIC_URL: ${OPENOBSERVE_PUBLIC_URL:-}
     ports:
       - "3000:3000"
     volumes:
       - pos-backups:/app/backups
     networks:
       - internal
+    # Mark this PUBLIC in ParsPack's per-service step — this is the one your
+    # staff and customers reach.
 
 volumes:
   pos-pgdata:
   pos-backups:
+  zo-data:
 
 networks:
   internal:
