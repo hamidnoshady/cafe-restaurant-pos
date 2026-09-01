@@ -416,18 +416,9 @@ export async function chargeFeatureUse(input: {
       return { charged: false, balanceRial: n(rows[0]?.balance_rial) };
     }
 
-    // Count the metered use (usage rows are not money but we keep the counters
-    // inside the flow so a failed charge never counts a use).
-    await client.query(
-      `INSERT INTO feature_usage (business_id, feature_key, used_count, charged_count, spent_rial)
-       VALUES ($1, $2, 1, 1, $3)
-       ON CONFLICT (business_id, feature_key) DO UPDATE SET
-         used_count = feature_usage.used_count + 1,
-         charged_count = feature_usage.charged_count + 1,
-         spent_rial = feature_usage.spent_rial + $3,
-         updated_at = now()`,
-      [input.businessId, input.featureKey, price],
-    );
+    // The paid use is counted inside the wallet transaction (below), only
+    // after the balance check succeeds — a refused charge must not tick the
+    // charged/spent counters.
 
     return await withWalletTx(client, input.businessId, async (c) => {
       const { rows } = await c.query<{ balance_rial: string }>(
@@ -438,6 +429,18 @@ export async function chargeFeatureUse(input: {
       if (balance < price) {
         throw new WalletInsufficientFundsError(price, balance);
       }
+      // Count the use on the same locked transaction so usage never moves
+      // without the matching debit.
+      await c.query(
+        `INSERT INTO feature_usage (business_id, feature_key, used_count, charged_count, spent_rial)
+         VALUES ($1, $2, 1, 1, $3)
+         ON CONFLICT (business_id, feature_key) DO UPDATE SET
+           used_count = feature_usage.used_count + 1,
+           charged_count = feature_usage.charged_count + 1,
+           spent_rial = feature_usage.spent_rial + $3,
+           updated_at = now()`,
+        [input.businessId, input.featureKey, price],
+      );
       const { balanceAfterRial } = await writeLedger(c, {
         businessId: input.businessId,
         kind: "feature_charge",

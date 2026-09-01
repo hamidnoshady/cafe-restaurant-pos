@@ -69,6 +69,11 @@ describe("route-level skeleton coverage", () => {
       "dashboard/lock-screen.tsx", // PIN pad; the fetch is the submit
       "dashboard/offline-queue.tsx", // queue-flushing glue, renders no data
       "dashboard/inventory/count-scan-field.tsx", // per-scan lookup with instant inline feedback
+      // Fixed-size chrome pill (a coin icon + balance) in the sidebar/mobile
+      // header; it reserves its own shape and shows an ellipsis before the
+      // first read, so there is no data region to skeleton — it is chrome, not
+      // a page manager.
+      "dashboard/credit-badge.tsx",
     ]);
     const offenders: string[] = [];
     for (const file of walkTsFiles(APP_DIR)) {

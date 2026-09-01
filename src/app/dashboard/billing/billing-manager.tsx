@@ -10,7 +10,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import {
   CheckCircle2Icon,
-  Loader2Icon,
   SparklesIcon,
   WalletIcon,
   XCircleIcon,
@@ -18,7 +17,8 @@ import {
 import { toLatinDigits, toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import { Button } from "@/components/ui/button";
-import { PageHeader, SectionCard } from "../page-chrome";
+import { PageHeader, SectionCard, SectionCardSkeleton, cardClass } from "../page-chrome";
+import { cn } from "@/lib/utils";
 import { ErrorBox, InfoBox, api, errorMessage, inputClass } from "../ui";
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
 
@@ -172,11 +172,11 @@ export function BillingManager() {
 
   if (loading) {
     return (
-      <div className="space-y-4">
+      <div className="space-y-4" aria-busy="true" aria-label="در حال بارگذاری">
         <PageHeader title="اعتبار و پرداخت‌ها" description="شارژ حساب، پلن‌ها و تاریخچهٔ پرداخت" />
-        <div className="flex justify-center py-12 text-muted-foreground">
-          <Loader2Icon className="size-6 animate-spin" />
-        </div>
+        <SectionCardSkeleton label="اعتبار فعلی" rows={2} />
+        <SectionCardSkeleton label="شارژ اعتبار" rows={4} />
+        <SectionCardSkeleton label="تاریخچهٔ پرداخت‌ها" rows={5} />
       </div>
     );
   }
@@ -207,7 +207,7 @@ export function BillingManager() {
           </div>
           {busy === "verify" && (
             <span className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2Icon className="size-4 animate-spin" /> در حال بررسی نتیجهٔ پرداخت…
+              در حال بررسی نتیجهٔ پرداخت…
             </span>
           )}
         </div>
@@ -224,7 +224,7 @@ export function BillingManager() {
             return (
               <div
                 key={pkg.id}
-                className="flex flex-col rounded-2xl border border-border bg-card p-4 shadow-sm"
+                className={cn("flex flex-col p-4", cardClass)}
               >
                 <p className="font-bold">{pkg.name}</p>
                 <p className="mt-2 text-xl font-extrabold tabular-nums">
@@ -240,11 +240,7 @@ export function BillingManager() {
                   disabled={busy !== null}
                   onClick={() => topupPackage(pkg)}
                 >
-                  {busy === `pkg-${pkg.id}` ? (
-                    <Loader2Icon className="size-4 animate-spin" />
-                  ) : (
-                    `پرداخت ${toman(pkg.priceRial)} تومان`
-                  )}
+                  {busy === `pkg-${pkg.id}` ? "در حال انتقال به درگاه…" : `پرداخت ${toman(pkg.priceRial)} تومان`}
                 </Button>
               </div>
             );
@@ -265,7 +261,7 @@ export function BillingManager() {
               />
             </div>
             <Button variant="secondary" disabled={busy !== null} onClick={topupCustom}>
-              {busy === "custom" ? <Loader2Icon className="size-4 animate-spin" /> : "پرداخت و شارژ"}
+              {busy === "custom" ? "در حال انتقال…" : "پرداخت و شارژ"}
             </Button>
           </div>
         </div>
@@ -276,9 +272,9 @@ export function BillingManager() {
         <SectionCard title="پلن‌ها">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {plans.map((plan) => (
-              <div key={plan.key} className="flex flex-col rounded-2xl border border-border bg-card p-4 shadow-sm">
+              <div key={plan.key} className={cn("flex flex-col p-4", cardClass)}>
                 <p className="flex items-center gap-2 font-bold">
-                  <SparklesIcon className="size-4 text-amber-500" /> {plan.name}
+                  <SparklesIcon className="size-4 text-amber-600 dark:text-amber-400" /> {plan.name}
                 </p>
                 {plan.description && <p className="mt-1 text-xs text-muted-foreground">{plan.description}</p>}
                 <p className="mt-3 text-lg font-extrabold tabular-nums">
@@ -293,7 +289,7 @@ export function BillingManager() {
                     disabled={busy !== null}
                     onClick={() => void startPayment({ kind: "plan", planKey: plan.key }, `plan-${plan.key}`)}
                   >
-                    {busy === `plan-${plan.key}` ? <Loader2Icon className="size-4 animate-spin" /> : "خرید اشتراک"}
+                    {busy === `plan-${plan.key}` ? "در حال انتقال…" : "خرید اشتراک"}
                   </Button>
                 )}
               </div>
@@ -320,11 +316,11 @@ export function BillingManager() {
                 <div className="flex shrink-0 items-center gap-3">
                   <span className="font-semibold tabular-nums">{toman(p.amountRial)} تومان</span>
                   {p.status === "verified" ? (
-                    <CheckCircle2Icon className="size-5 text-emerald-500" />
+                    <CheckCircle2Icon className="size-5 text-emerald-600 dark:text-emerald-400" />
                   ) : p.status === "failed" || p.status === "cancelled" ? (
                     <XCircleIcon className="size-5 text-destructive" />
                   ) : (
-                    <Loader2Icon className="size-5 animate-spin text-muted-foreground" />
+                    <span className="size-2.5 rounded-full bg-muted-foreground/50" aria-label="در انتظار" />
                   )}
                 </div>
               </li>
