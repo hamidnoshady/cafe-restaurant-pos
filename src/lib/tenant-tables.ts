@@ -22,6 +22,11 @@ export const EXEMPT_TABLES = new Set([
   "platform_push_config",
   "ai_prompt_templates",
   "knowledge_base_entries",
+  // Migration 0128 — the platform-wide state of each app («به‌زودی», «در حال
+  // تعمیر», …). A global catalogue with no business_id, exactly the shape
+  // `feature_flags` has; the per-business overrides live in
+  // `business_app_availability`, which IS tenant data and is not exempt.
+  "app_availability",
 ]);
 
 export interface ForeignKeyEdge {

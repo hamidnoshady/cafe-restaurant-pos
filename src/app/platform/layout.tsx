@@ -42,6 +42,10 @@ interface NavItem {
 
 const NAV: NavItem[] = [
   { label: "کسب‌وکارها", href: "/platform", exact: true, alsoActive: ["/platform/businesses"] },
+  // Migration 0128 — the deployment-wide app switchboard («به‌زودی»، «در حال
+  // تعمیر»، …). Readable by any admin; the page hides its own write controls
+  // from an operator without `features.write`, the same way the flags panel does.
+  { label: "برنامه‌ها", href: "/platform/apps" },
   { label: "رویدادها", href: "/platform/audit" },
   { label: "گزارش‌های خطا", href: "/platform/bug-reports", cap: "audit.read" },
   {

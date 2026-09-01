@@ -543,6 +543,22 @@ Since Phase 35 the app can reach a person who is not looking at a screen, over *
   migrated onto that model, by decision** — see the phase doc's "Revised" scope note before assuming
   otherwise. Industry-gated pages and routes use `src/lib/industry-guard.ts`, the industry-keyed
   counterpart of `features.ts`.
+- **App availability (migration 0128)** — the *third* gating axis, and the only one that is
+  temporary and announced rather than hidden. A feature flag answers "did this business buy
+  it?", a module "does this trade have it at all?"; this answers **"is the app released and
+  working right now?"** — `available` / `beta` / `coming_soon` / `maintenance` / `disabled`,
+  per app in `src/lib/apps.ts`. Set platform-wide at `/platform/apps`, overridable for one
+  tenant on its «قابلیت‌ها و اتصال» tab; both behind `features.write`. Rules live in
+  `src/lib/app-availability.ts` (framework-free, unit-tested), the DB half in
+  `src/lib/app-availability-service.ts` (`app_availability` = a global catalogue with no RLS,
+  like `feature_flags`; `business_app_availability` = tenant data, RLS'd, like
+  `business_features`). Enforcement mirrors the other two axes: `withTenantScope` refuses a
+  blocked app's routes with **503 `app_unavailable`**, and the dashboard layout wraps its
+  children in `AppAvailabilityGate`. The deliberate difference: a blocked app **stays in the
+  nav** wearing its state badge and its pages render the explanation screen — «به‌زودی» and
+  «در حال تعمیر» are facts a business should be told, not absences to guess at. An override
+  replaces the platform row wholesale (never field-by-field), `beta` is usable and only
+  labels, and `available_from` is stored Gregorian and always rendered Shamsi.
 - **In-house production (Phase 29)** — some F&B items are *made*, not assembled: a cake is built
   from raw materials once, yields 8 slices, and each slice is sold through its own serving recipe.
   A formula (`production_formulas`) and a run (`production_runs`) sit between the two, under the

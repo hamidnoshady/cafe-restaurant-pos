@@ -1,5 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSession, type Role } from "@/lib/auth";
+import { appForModule } from "@/lib/apps";
+import { effectiveAppAvailability } from "@/lib/app-availability-service";
 import { query, withTenant } from "@/lib/db";
 import { effectiveFeatures, isLockableFeature } from "@/lib/features";
 import { INDUSTRY_LABELS, type Industry } from "@/lib/industries";
@@ -12,6 +14,7 @@ import { BugReportProvider } from "@/components/bug-report/bug-report-provider";
 import { LockProvider } from "./lock-screen";
 import { DashboardSidebar, type NavItem } from "./dashboard-sidebar";
 import { DashboardMain } from "./dashboard-main";
+import { AppAvailabilityGate } from "./app-availability-gate";
 
 /**
  * The dashboard nav.
@@ -136,7 +139,7 @@ export default async function DashboardLayout({
   // doc comment in src/lib/auth.ts. Without this, the query below can come
   // back empty non-deterministically and, since it gates access, incorrectly
   // sign an active member out.
-  const [{ rows }, features, { rows: bizRows }, prefs] = await withTenant(
+  const [{ rows }, features, { rows: bizRows }, prefs, appAvailability] = await withTenant(
     session.businessId,
     () =>
       Promise.all([
@@ -147,6 +150,11 @@ export default async function DashboardLayout({
         effectiveFeatures(session.businessId),
         query<{ industry: Industry }>("SELECT industry FROM businesses WHERE id = $1", [session.businessId]),
         getSetting<{ currencyDisplay?: "toman" | "rial" }>(session.businessId, SETTING_KEYS.businessPrefs),
+        // Migration 0128 — the app's own state («به‌زودی», «در حال تعمیر», …),
+        // resolved platform row + per-business override. Orthogonal to the
+        // feature flags above: a flag says whether the business is entitled to
+        // a capability, this says whether the app it lives in is working.
+        effectiveAppAvailability(session.businessId),
       ]),
     { locationId: session.locationId, userId: session.sub },
   );
@@ -160,7 +168,23 @@ export default async function DashboardLayout({
   const navItems = navItemsFor(industry)
     .filter((item) => canSee(item, member.role, permissions, features, industry))
     .filter((item) => item.href !== "/dashboard/settings" || settingsTabs.length > 0)
-    .map((item) => ({ ...item, locked: Boolean(item.flag && !features[item.flag]) }));
+    .map((item) => {
+      // An app that is off is *announced*, not hidden: the entry stays and
+      // carries its state's badge («به‌زودی», «در حال تعمیر», «نسخهٔ آزمایشی»),
+      // and its page renders the explanation screen instead of the app. That
+      // is why this is a `map` and not another `filter` — see
+      // src/lib/app-availability.ts for why the two off-switches differ.
+      const app = appForModule(item.module);
+      const availability = app ? appAvailability[app] : undefined;
+      return {
+        ...item,
+        locked: Boolean(item.flag && !features[item.flag]),
+        appState:
+          availability && availability.badged
+            ? { state: availability.state, label: availability.label, usable: availability.usable }
+            : undefined,
+      };
+    });
   // Phase 35 Wave 2 — the workspace shell is gated on this flag. Off (the
   // default) keeps the classic sidebar; on means the workspace rail is used
   // for the chat home and projects surface.
@@ -199,7 +223,9 @@ export default async function DashboardLayout({
           variant={workspaceEnabled ? "workspace" : "classic"}
           industry={industry}
         />
-        <DashboardMain workspaceEnabled={workspaceEnabled}>{children}</DashboardMain>
+        <DashboardMain workspaceEnabled={workspaceEnabled}>
+          <AppAvailabilityGate availability={appAvailability}>{children}</AppAvailabilityGate>
+        </DashboardMain>
         </div>
         </BugReportProvider>
       </MoneyProvider>

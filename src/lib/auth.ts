@@ -9,6 +9,8 @@ import {
   type Role,
   type SessionPayload,
 } from "./auth-edge";
+import { appForApiPath } from "./app-availability";
+import { isAppAvailable } from "./app-availability-service";
 import { query, withoutTenantScope } from "./db";
 import { sessionStatus } from "./employee";
 import { featureForApiPath, isFeatureEnabled } from "./features";
@@ -170,6 +172,19 @@ export function withTenantScope<Args extends unknown[]>(
         const module = request ? moduleForApiPath(request.nextUrl.pathname) : null;
         if (module && !(await isModuleEnabled(session.businessId, module))) {
           return NextResponse.json({ error: "module_unavailable", module }, { status: 403 });
+        }
+
+        // App availability — the third axis, and the newest (migration 0128).
+        // A flag answers "is this business entitled to it", a module "does this
+        // trade have it at all"; this answers "is the app working right now" —
+        // «به‌زودی», «در حال تعمیر», «غیرفعال». Refused here rather than left to
+        // the UI for the same reason the two guards above are: an app that is
+        // down for maintenance must be down for the fetch a page fires on
+        // mount, not merely badged in the sidebar. `beta` is usable and so
+        // never reaches this branch.
+        const app = request ? appForApiPath(request.nextUrl.pathname) : null;
+        if (app && !(await isAppAvailable(session.businessId, app))) {
+          return NextResponse.json({ error: "app_unavailable", app }, { status: 503 });
         }
 
         // Phase 26 Wave 7 — Holoo ownership guard. A row the companion mirror

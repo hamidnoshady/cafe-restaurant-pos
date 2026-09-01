@@ -46,7 +46,9 @@ import {
 } from "@/lib/sidebar-state";
 import { isAssistantSurface } from "@/lib/assistant-route";
 import type { AppKey } from "@/lib/apps";
+import type { AppAvailabilityState } from "@/lib/app-availability";
 import { appShellForPathname, isInsideAnyAppShell, type AppShellDef } from "@/lib/app-shells";
+import { AppStateBadge } from "./app-availability-gate";
 import { APP_NAV_BUTTON_CLASS } from "./sidebar-nav-styles";
 import { appShellNavFor, type AppShellNavProps } from "./app-shell-nav";
 import type { ModuleKey } from "@/lib/industry-profile";
@@ -219,6 +221,15 @@ export interface NavItem {
    * read-only preview. Server-computed; the padlock here only labels it.
    */
   locked?: boolean;
+  /**
+   * The state of the *app* this entry belongs to, when it is anything other
+   * than plain «فعال» (migration 0128 / src/lib/app-availability.ts). Present
+   * only for a badged state, so rendering is `appState ? <badge> : null`.
+   * `usable: false` means the link goes to the explanation screen rather than
+   * the app — the entry is deliberately still here, because "coming soon" is
+   * news the business should have rather than an absence they should guess at.
+   */
+  appState?: { state: AppAvailabilityState; label: string; usable: boolean };
   /** Server-filtered against the member's effective permission set before reaching the client. */
   requiredAnyPermission?: Permission[];
 }
@@ -294,11 +305,30 @@ function NavLinks({
                     href={item.href}
                     onClick={onNavigate}
                     aria-current={active ? "page" : undefined}
-                    aria-label={item.locked ? `${item.label} (فعال نیست)` : item.label}
-                    title={item.locked ? `${item.label} — برای کسب‌وکار شما فعال نیست` : undefined}
+                    aria-label={
+                      item.locked
+                        ? `${item.label} (فعال نیست)`
+                        : item.appState
+                          ? `${item.label} (${item.appState.label})`
+                          : item.label
+                    }
+                    title={
+                      item.locked
+                        ? `${item.label} — برای کسب‌وکار شما فعال نیست`
+                        : item.appState && !item.appState.usable
+                          ? `${item.label} — ${item.appState.label}`
+                          : undefined
+                    }
                   >
                     <Icon aria-hidden="true" className="size-5 shrink-0" />
                     <span className="group-data-[state=collapsed]/sidebar:hidden">{item.label}</span>
+                    {item.appState ? (
+                      <AppStateBadge
+                        state={item.appState.state}
+                        label={item.appState.label}
+                        className="ms-auto shrink-0 group-data-[state=collapsed]/sidebar:hidden"
+                      />
+                    ) : null}
                     {item.locked ? (
                       <LockIcon
                         aria-hidden="true"
@@ -336,9 +366,17 @@ function WorkspaceRail({ navItems, pathname }: { navItems: NavItem[]; pathname: 
   // app absorbed so a member whose saved bottom-nav still holds an old flat
   // route lands in the app rather than on a 404. An app with no reachable
   // route (its modules are not this trade's) is simply not listed.
+  // An app's state («به‌زودی», «در حال تعمیر», …) travels on the nav entries the
+  // layout already resolved, so the rail badges the launcher with exactly what
+  // the flat sidebar shows for the same app rather than re-deriving it.
+  const stateByHref = new Map(
+    navItems.flatMap((item) => (item.href && item.appState ? [[item.href, item.appState] as const] : [])),
+  );
   const launchers = WORKSPACE_APP_LAUNCHERS.flatMap((launcher) => {
     const href = launcher.hrefs.find((candidate) => hrefs.includes(candidate));
-    return href ? [{ ...launcher, href, active: isActive(pathname, href) }] : [];
+    return href
+      ? [{ ...launcher, href, active: isActive(pathname, href), appState: stateByHref.get(href) }]
+      : [];
   });
 
   return (
@@ -390,6 +428,13 @@ function WorkspaceRail({ navItems, pathname }: { navItems: NavItem[]; pathname: 
                       <Link href={launcher.href}>
                         <Icon aria-hidden="true" className="size-5 shrink-0" />
                         <span className="group-data-[state=collapsed]/sidebar:hidden">{launcher.label}</span>
+                        {launcher.appState ? (
+                          <AppStateBadge
+                            state={launcher.appState.state}
+                            label={launcher.appState.label}
+                            className="ms-auto shrink-0 group-data-[state=collapsed]/sidebar:hidden"
+                          />
+                        ) : null}
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
