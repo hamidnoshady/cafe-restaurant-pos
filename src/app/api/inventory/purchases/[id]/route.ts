@@ -215,7 +215,7 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
       await client.query(`UPDATE purchases SET supplier_id = $1 WHERE id = $2`, [supplierId, id]);
     }
     if (nextStatus !== "received") {
-      await client.query(`UPDATE purchases SET status=$2, ordered_at=CASE WHEN $2='ordered' THEN now() ELSE ordered_at END WHERE id=$1`, [id,nextStatus]);
+      await client.query(`UPDATE purchases SET status=$2::purchase_status, ordered_at=CASE WHEN $2::purchase_status='ordered' THEN now() ELSE ordered_at END WHERE id=$1`, [id,nextStatus]);
       await client.query("COMMIT"); return NextResponse.json({ok:true});
     }
     const { rows: items } = await client.query<{
