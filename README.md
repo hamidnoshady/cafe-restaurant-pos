@@ -613,6 +613,31 @@ webhook, DNS/preview setup on both sides) is
 - Order status changes (`PATCH /api/cms/website/orders/[id]`) are the one e-commerce write
   here — the CMS's own hooks settle stock and snapshot the change.
 
+## Support ticketing (پشتیبانی, migration 0130)
+
+A full support channel between a business and the platform team, on both sides of the tenant
+boundary (same RLS-shape as bug reports — see the console's **پشتیبانی** page).
+
+**Member side** — every signed-in member has a **پشتیبانی** entry in the sidebar
+(`/dashboard/support`). Anyone may open a ticket: subject, category (فنی / صورتحساب / حساب
+کاربری / پیشنهاد / سایر), priority and a description, with an optional image attachment per
+message. The ticket is a conversation thread — the member replies from the same screen, closes
+or reopens their own ticket, and sees every platform answer. Owners and managers additionally
+see the whole business queue (`canSeeAllBusinessTickets`); everyone else only their own tickets
+(enforced in `src/lib/support-service.ts`, on top of RLS).
+
+**Platform side** — the console's **پشتیبانی** page (`/platform/support`, every admin role via
+the `support.manage` capability) is a cross-tenant queue with stats (open, waiting on member,
+urgent-open, unassigned), filters (status / priority / category / search / «فقطِ من»), the full
+conversation, and the lifecycle controls: reply (hands the ticket back as «در انتظار پاسخ
+شما»), status, priority, category and assignee. A member's reply reopens a resolved or closed
+ticket; an admin reply to a closed ticket leaves it closed. Every platform write lands in
+`platform_audit_log` (`support.ticket.reply` / `support.ticket.update`).
+
+Data lives in `support_tickets` + `support_ticket_messages` (migration 0130), both RLS-forced on
+`business_id`; the vocabulary and transitions are pure functions in
+`src/lib/support-tickets.ts`.
+
 ## The business day (روز کاری)
 
 A branch's trading day does not have to start at local midnight. `locations.business_day_start_minutes`
@@ -842,6 +867,11 @@ The console (dark chrome, deliberately unlike the tenant dashboard's light theme
 - **Support / impersonation** — enter a business read-only or full-access; impossible without an
   audit record naming the admin, the business and the time window. Every impersonated action is
   tagged in `platform_audit_log`, viewable in the console's **Audit** tab.
+- **Support desk** (migration 0130) — every business's support tickets in one cross-tenant queue:
+  reply to the member, re-prioritise, re-categorise, assign to a colleague, and move the ticket
+  through its lifecycle (`open → in_progress → waiting_customer → resolved → closed`). Available
+  to every admin role (`support.manage`); every console write is audited. See
+  [Support ticketing](#support-ticketing-پشتیبانی) below.
 - **System** — migration status, RLS effectiveness, pool health, per-business backups.
 - **Updates** — the S3-compatible bucket the standalone desktop installer's self-update checks
   (owner-only to configure — it holds a real secret key), plus which businesses' on-site

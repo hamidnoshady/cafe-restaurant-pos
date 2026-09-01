@@ -16,14 +16,16 @@ import {
 } from "./platform-admin";
 
 describe("platformCan — role → capability presets", () => {
-  it("support reads everything and may only impersonate read-only", () => {
+  it("support reads everything, runs the support desk, and may only impersonate read-only", () => {
     expect(platformCan("support", "businesses.read")).toBe(true);
     expect(platformCan("support", "audit.read")).toBe(true);
     expect(platformCan("support", "system.read")).toBe(true);
     expect(platformCan("support", "usage.read")).toBe(true);
     expect(platformCan("support", "ai.read")).toBe(true);
+    // Migration 0130 — answering support tickets is the support role's job.
+    expect(platformCan("support", "support.manage")).toBe(true);
     expect(platformCan("support", "impersonate.readOnly")).toBe(true);
-    // …but changes nothing.
+    // …but changes nothing else.
     expect(platformCan("support", "features.write")).toBe(false);
     expect(platformCan("support", "business.suspend")).toBe(false);
     expect(platformCan("support", "ai.credits.manage")).toBe(false);
@@ -39,6 +41,7 @@ describe("platformCan — role → capability presets", () => {
   });
 
   it("engineer adds operational writes but not the owner-only powers", () => {
+    expect(platformCan("engineer", "support.manage")).toBe(true);
     expect(platformCan("engineer", "features.write")).toBe(true);
     expect(platformCan("engineer", "business.suspend")).toBe(true);
     expect(platformCan("engineer", "ai.credits.manage")).toBe(true);

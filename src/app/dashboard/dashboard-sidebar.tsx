@@ -19,6 +19,7 @@ import {
   GlobeIcon,
   LayoutDashboardIcon,
   LayoutGridIcon,
+  LifeBuoyIcon,
   LockIcon,
   MessageSquarePlusIcon,
   PackageIcon,
@@ -143,6 +144,8 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   "/dashboard/wp": GlobeIcon,
   // Issue #378 — the website manager's own app, pulled out of Growth.
   "/dashboard/website": GlobeIcon,
+  // Migration 0130 — the support desk.
+  "/dashboard/support": LifeBuoyIcon,
 };
 
 /**

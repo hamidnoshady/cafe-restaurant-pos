@@ -19,6 +19,8 @@ import { disableFeatures, seedChartOfAccounts } from "./business-provisioning";
 import type { Industry } from "./industries";
 import { industryProfile } from "./industry-profile";
 import { clampImpersonationMinutes } from "./platform-admin";
+import { platformAudit } from "./platform-auth";
+import { isTicketCategory, isTicketPriority, isTicketStatus, statusAfterAdminReply } from "./support-tickets";
 import {
   generateImpersonationHandoffToken,
   hashImpersonationHandoffToken,
@@ -1356,6 +1358,434 @@ export async function getBugReport(reportId: string): Promise<PlatformBugReport 
     ),
   );
   return rows[0] ? toPlatformBugReport(rows[0]) : null;
+}
+
+// ---------------------------------------------------------------------------
+// Support ticketing — the platform half (migration 0130)
+//
+// The member half lives in src/lib/support-service.ts; this is the console's
+// cross-tenant view of the same two tables, read and written through the
+// documented `withoutTenantScope("platform", …)` bypass, the same shape as
+// bug reports. Every write is audited to platform_audit_log.
+// ---------------------------------------------------------------------------
+
+export interface PlatformSupportTicketSummary {
+  id: string;
+  businessId: string;
+  businessName: string;
+  locationId: string | null;
+  locationName: string | null;
+  userId: string | null;
+  userName: string | null;
+  userRole: string | null;
+  subject: string;
+  category: string;
+  priority: string;
+  status: string;
+  assignedAdminId: string | null;
+  assignedAdminName: string | null;
+  messageCount: number;
+  lastMessageAt: string | null;
+  lastMessagePreview: string | null;
+  createdAt: string;
+  updatedAt: string;
+  closedAt: string | null;
+}
+
+export interface PlatformSupportTicketMessage {
+  id: string;
+  ticketId: string;
+  authorType: "member" | "admin";
+  userId: string | null;
+  userName: string | null;
+  adminId: string | null;
+  adminName: string | null;
+  body: string;
+  attachment: string | null;
+  createdAt: string;
+}
+
+interface PlatformSupportTicketMessageRow extends Record<string, unknown> {
+  id: string;
+  ticket_id: string;
+  author_type: "member" | "admin";
+  user_id: string | null;
+  user_name: string | null;
+  admin_id: string | null;
+  admin_name: string | null;
+  body: string;
+  attachment: string | null;
+  created_at: string;
+}
+
+function toPlatformSupportTicketMessage(row: PlatformSupportTicketMessageRow): PlatformSupportTicketMessage {
+  return {
+    id: row.id,
+    ticketId: row.ticket_id,
+    authorType: row.author_type,
+    userId: row.user_id,
+    userName: row.user_name,
+    adminId: row.admin_id,
+    adminName: row.admin_name,
+    body: row.body,
+    attachment: row.attachment,
+    createdAt: row.created_at,
+  };
+}
+
+export interface PlatformSupportTicketDetail extends PlatformSupportTicketSummary {
+  messages: PlatformSupportTicketMessage[];
+}
+
+interface PlatformSupportTicketRow extends Record<string, unknown> {
+  id: string;
+  business_id: string;
+  business_name: string;
+  location_id: string | null;
+  location_name: string | null;
+  user_id: string | null;
+  user_name: string | null;
+  user_role: string | null;
+  subject: string;
+  category: string;
+  priority: string;
+  status: string;
+  assigned_admin_id: string | null;
+  assigned_admin_name: string | null;
+  message_count: string;
+  last_message_at: string | null;
+  last_message_preview: string | null;
+  created_at: string;
+  updated_at: string;
+  closed_at: string | null;
+}
+
+const PLATFORM_TICKET_SELECT = `
+  SELECT t.id::text AS id, t.business_id::text AS business_id, b.name AS business_name,
+         t.location_id::text AS location_id, l.name AS location_name,
+         t.user_id::text AS user_id, u.full_name AS user_name, u.role::text AS user_role,
+         t.subject, t.category, t.priority, t.status,
+         t.assigned_admin_id::text AS assigned_admin_id, pa.full_name AS assigned_admin_name,
+         (SELECT count(*) FROM support_ticket_messages m WHERE m.ticket_id = t.id)::text AS message_count,
+         (SELECT max(m.created_at) FROM support_ticket_messages m WHERE m.ticket_id = t.id) AS last_message_at,
+         (SELECT left(m.body, 200) FROM support_ticket_messages m WHERE m.ticket_id = t.id ORDER BY m.created_at DESC LIMIT 1) AS last_message_preview,
+         t.created_at, t.updated_at, t.closed_at
+    FROM support_tickets t
+    JOIN businesses b ON b.id = t.business_id
+    LEFT JOIN locations l ON l.id = t.location_id
+    LEFT JOIN users u ON u.id = t.user_id
+    LEFT JOIN platform_admins pa ON pa.id = t.assigned_admin_id
+`;
+
+function toPlatformSupportTicket(row: PlatformSupportTicketRow): PlatformSupportTicketSummary {
+  return {
+    id: row.id,
+    businessId: row.business_id,
+    businessName: row.business_name,
+    locationId: row.location_id,
+    locationName: row.location_name,
+    userId: row.user_id,
+    userName: row.user_name,
+    userRole: row.user_role,
+    subject: row.subject,
+    category: row.category,
+    priority: row.priority,
+    status: row.status,
+    assignedAdminId: row.assigned_admin_id,
+    assignedAdminName: row.assigned_admin_name,
+    messageCount: Number(row.message_count),
+    lastMessageAt: row.last_message_at,
+    lastMessagePreview: row.last_message_preview,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    closedAt: row.closed_at,
+  };
+}
+
+/** Every business's tickets, newest activity first, with the console's filters. */
+export async function listSupportTickets({
+  status = "",
+  priority = "",
+  category = "",
+  search = "",
+  businessId = "",
+  assignedToMe = false,
+  adminId = "",
+  limit = 200,
+}: {
+  status?: string;
+  priority?: string;
+  category?: string;
+  search?: string;
+  businessId?: string;
+  assignedToMe?: boolean;
+  adminId?: string;
+  limit?: number;
+} = {}): Promise<PlatformSupportTicketSummary[]> {
+  const safeLimit = Number.isFinite(limit) ? Math.floor(limit) : 200;
+  const boundedLimit = Math.min(Math.max(safeLimit, 1), 500);
+  const { rows } = await withoutTenantScope("platform", () =>
+    query<PlatformSupportTicketRow>(
+      `${PLATFORM_TICKET_SELECT}
+        WHERE ($1 = '' OR t.status = $1)
+          AND ($2 = '' OR t.priority = $2)
+          AND ($3 = '' OR t.category = $3)
+          AND ($4 = '' OR t.business_id = $4::uuid)
+          AND ($5 = false OR t.assigned_admin_id = NULLIF($6, '')::uuid)
+          AND ($7 = '' OR concat_ws(' ', b.name, u.full_name, t.subject,
+               (SELECT string_agg(m.body, ' ') FROM support_ticket_messages m WHERE m.ticket_id = t.id)
+              ) ILIKE '%' || $7 || '%')
+       ORDER BY t.updated_at DESC
+       LIMIT $8`,
+      [status.trim().slice(0, 40), priority.trim().slice(0, 20), category.trim().slice(0, 20), businessId.trim(), assignedToMe, adminId, search.trim().slice(0, 200), boundedLimit],
+    ),
+  );
+  return rows.map(toPlatformSupportTicket);
+}
+
+/** One ticket with its full conversation, for the console. */
+export async function getSupportTicket(ticketId: string): Promise<PlatformSupportTicketDetail | null> {
+  const { rows } = await withoutTenantScope("platform", () =>
+    query<PlatformSupportTicketRow>(`${PLATFORM_TICKET_SELECT} WHERE t.id = $1::uuid`, [ticketId]),
+  );
+  const row = rows[0];
+  if (!row) return null;
+
+  const { rows: messages } = await withoutTenantScope("platform", () =>
+    query<PlatformSupportTicketMessageRow>(
+      `SELECT m.id::text AS id, m.ticket_id::text AS ticket_id, m.author_type AS author_type,
+              m.user_id::text AS user_id, u.full_name AS user_name,
+              m.admin_id::text AS admin_id, pa.full_name AS admin_name,
+              m.body, m.attachment, m.created_at
+         FROM support_ticket_messages m
+         LEFT JOIN users u ON u.id = m.user_id
+         LEFT JOIN platform_admins pa ON pa.id = m.admin_id
+        WHERE m.ticket_id = $1::uuid
+        ORDER BY m.created_at ASC`,
+      [ticketId],
+    ),
+  );
+  return { ...toPlatformSupportTicket(row), messages: messages.map(toPlatformSupportTicketMessage) };
+}
+
+/**
+ * The console's answer to a ticket. The reply hands the ticket back to the
+ * member (`waiting_customer`) unless it is closed, and every reply is audited.
+ */
+export async function addSupportMessage({
+  ticketId,
+  adminId,
+  body,
+  attachment,
+  ipAddress,
+  userAgent,
+}: {
+  ticketId: string;
+  adminId: string;
+  body: string;
+  attachment: string | null;
+  ipAddress?: string | null;
+  userAgent?: string | null;
+}): Promise<PlatformSupportTicketMessage> {
+  return withoutTenantScope("platform", async () => {
+    const { rows: ticketRows } = await query<{ id: string; business_id: string; status: string }>(
+      `SELECT id::text AS id, business_id::text AS business_id, status FROM support_tickets WHERE id = $1::uuid`,
+      [ticketId],
+    );
+    const ticket = ticketRows[0];
+    if (!ticket) throw new SupportTicketNotFoundError();
+
+    const nextStatus = statusAfterAdminReply(ticket.status);
+    const { rows } = await query<{ id: string }>(
+      `INSERT INTO support_ticket_messages (ticket_id, business_id, author_type, admin_id, body, attachment)
+       VALUES ($1::uuid, $2::uuid, 'admin', $3, $4, $5)
+       RETURNING id::text AS id`,
+      [ticketId, ticket.business_id, adminId, body, attachment],
+    );
+    await query(
+      `UPDATE support_tickets SET status = $2, updated_at = now() WHERE id = $1::uuid`,
+      [ticketId, nextStatus],
+    );
+
+    await platformAudit({
+      adminId,
+      businessId: ticket.business_id,
+      action: "support.ticket.reply",
+      entity: "support_ticket",
+      entityId: ticketId,
+      payload: { status: nextStatus },
+      ipAddress,
+      userAgent,
+    });
+
+    const { rows: messageRows } = await query<PlatformSupportTicketMessageRow>(
+      `SELECT m.id::text AS id, m.ticket_id::text AS ticket_id, m.author_type AS author_type,
+              m.user_id::text AS user_id, u.full_name AS user_name,
+              m.admin_id::text AS admin_id, pa.full_name AS admin_name,
+              m.body, m.attachment, m.created_at
+         FROM support_ticket_messages m
+         LEFT JOIN users u ON u.id = m.user_id
+         LEFT JOIN platform_admins pa ON pa.id = m.admin_id
+        WHERE m.id = $1::uuid`,
+      [rows[0].id],
+    );
+    return toPlatformSupportTicketMessage(messageRows[0]);
+  });
+}
+
+/**
+ * The console's lifecycle controls: status, priority, category, assignment.
+ * Every changed field is audited individually.
+ */
+export async function updateSupportTicket({
+  ticketId,
+  adminId,
+  status,
+  priority,
+  category,
+  assignedAdminId,
+  ipAddress,
+  userAgent,
+}: {
+  ticketId: string;
+  adminId: string;
+  status?: string;
+  priority?: string;
+  category?: string;
+  assignedAdminId?: string | null;
+  ipAddress?: string | null;
+  userAgent?: string | null;
+}): Promise<PlatformSupportTicketDetail | null> {
+  return withoutTenantScope("platform", async () => {
+    const { rows } = await query<PlatformSupportTicketRow>(`${PLATFORM_TICKET_SELECT} WHERE t.id = $1::uuid`, [ticketId]);
+    const ticket = rows[0];
+    if (!ticket) throw new SupportTicketNotFoundError();
+
+    const changes: Record<string, string | null> = {};
+    if (status !== undefined) {
+      if (!isTicketStatus(status)) throw new Error("invalid_status");
+      if (status !== ticket.status) changes.status = status;
+    }
+    if (priority !== undefined) {
+      if (!isTicketPriority(priority)) throw new Error("invalid_priority");
+      if (priority !== ticket.priority) changes.priority = priority;
+    }
+    if (category !== undefined) {
+      if (!isTicketCategory(category)) throw new Error("invalid_category");
+      if (category !== ticket.category) changes.category = category;
+    }
+    if (assignedAdminId !== undefined) {
+      const next = assignedAdminId || null;
+      if (next !== ticket.assigned_admin_id) changes.assigned_admin_id = next;
+    }
+
+    if (Object.keys(changes).length === 0) {
+      return getSupportTicket(ticketId);
+    }
+
+    if (changes.assigned_admin_id !== undefined && changes.assigned_admin_id !== null) {
+      const { rows: admins } = await query<{ id: string }>(
+        `SELECT id FROM platform_admins WHERE id = $1::uuid AND is_active`,
+        [changes.assigned_admin_id],
+      );
+      if (!admins[0]) throw new Error("invalid_assignee");
+    }
+
+    const sets: string[] = ["updated_at = now()"];
+    const values: unknown[] = [ticketId];
+    if (changes.status !== undefined) {
+      values.push(changes.status);
+      sets.push(`status = $${values.length}`);
+      // Closing stamps the timestamp; leaving closed clears it. Same parameter,
+      // so the two can never disagree.
+      sets.push(`closed_at = CASE WHEN $${values.length} = 'closed' THEN now() ELSE NULL END`);
+    }
+    if (changes.priority !== undefined) {
+      values.push(changes.priority);
+      sets.push(`priority = $${values.length}`);
+    }
+    if (changes.category !== undefined) {
+      values.push(changes.category);
+      sets.push(`category = $${values.length}`);
+    }
+    if (changes.assigned_admin_id !== undefined) {
+      values.push(changes.assigned_admin_id);
+      sets.push(`assigned_admin_id = $${values.length}`);
+    }
+    await query(
+      `UPDATE support_tickets t SET ${sets.join(", ")} WHERE t.id = $1::uuid`,
+      values,
+    );
+
+    await platformAudit({
+      adminId,
+      businessId: ticket.business_id,
+      action: "support.ticket.update",
+      entity: "support_ticket",
+      entityId: ticketId,
+      payload: changes,
+      ipAddress,
+      userAgent,
+    });
+
+    return getSupportTicket(ticketId);
+  });
+}
+
+/** Counts for the console's stat cards, in one pass. */
+export async function supportTicketStats(): Promise<{
+  total: number;
+  open: number;
+  inProgress: number;
+  waitingCustomer: number;
+  resolved: number;
+  closed: number;
+  urgentOpen: number;
+  unassignedOpen: number;
+}> {
+  const { rows } = await withoutTenantScope("platform", () =>
+    query<{ total: string; open: string; in_progress: string; waiting_customer: string; resolved: string; closed: string; urgent_open: string; unassigned_open: string }>(
+      `SELECT count(*)::text AS total,
+              count(*) FILTER (WHERE status = 'open')::text AS open,
+              count(*) FILTER (WHERE status = 'in_progress')::text AS in_progress,
+              count(*) FILTER (WHERE status = 'waiting_customer')::text AS waiting_customer,
+              count(*) FILTER (WHERE status = 'resolved')::text AS resolved,
+              count(*) FILTER (WHERE status = 'closed')::text AS closed,
+              count(*) FILTER (WHERE status IN ('open', 'in_progress', 'waiting_customer') AND priority = 'urgent')::text AS urgent_open,
+              count(*) FILTER (WHERE status IN ('open', 'in_progress', 'waiting_customer') AND assigned_admin_id IS NULL)::text AS unassigned_open
+         FROM support_tickets`,
+    ),
+  );
+  const row = rows[0];
+  return {
+    total: Number(row.total),
+    open: Number(row.open),
+    inProgress: Number(row.in_progress),
+    waitingCustomer: Number(row.waiting_customer),
+    resolved: Number(row.resolved),
+    closed: Number(row.closed),
+    urgentOpen: Number(row.urgent_open),
+    unassignedOpen: Number(row.unassigned_open),
+  };
+}
+
+/**
+ * The assignee roster for the support desk. Only id + name of *active* admins —
+ * a support operator needs to hand a ticket to a colleague without gaining the
+ * owner-only admin roster (`admins.manage` keeps the full profile there).
+ */
+export async function listAssignablePlatformAdmins(): Promise<{ id: string; fullName: string }[]> {
+  const { rows } = await query<{ id: string; full_name: string }>(
+    `SELECT id::text AS id, full_name FROM platform_admins WHERE is_active ORDER BY full_name`,
+  );
+  return rows.map((r) => ({ id: r.id, fullName: r.full_name }));
+}
+
+/** The ticket is not in this database (or was deleted). */
+export class SupportTicketNotFoundError extends Error {
+  constructor() {
+    super("ticket_not_found");
+  }
 }
 
 // ---------------------------------------------------------------------------
