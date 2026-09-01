@@ -82,6 +82,49 @@ gives you a fresh disk, in-container backups disappear with it. Until confirmed,
 `pg_dump`-based off-box backups (or ParsPack's own database backup product, if you switch to
 their managed Postgres) as the durable copy, not this volume.
 
+## eshobe-cms — don't add it here
+
+If you're also using the Website app (`/dashboard/website`), **eshobe-cms is not a service
+of this app and doesn't belong in this compose file.** Per
+[docs/eshobe-cms-integration.md](eshobe-cms-integration.md) it's a separate deployment (its
+own repo, its own hosting) that this app talks to over REST with a per-business API key —
+embedding it here would duplicate infrastructure and reopen the tenant isolation it already
+solved. If you have (or plan to run) an eshobe-cms deployment elsewhere, just add these as
+app parameters once it's reachable:
+
+| Variable | Value |
+|---|---|
+| `ESHOBE_CMS_URL` | the CMS's control-plane origin, e.g. `https://cms.yourdomain.ir` |
+| `ESHOBE_CMS_WEBHOOK_SECRET` | the CMS's `PAYLOAD_SECRET`, for verifying its publish webhook |
+| `ESHOBE_CMS_PLATFORM_API_KEY` | optional, only if you provision CMS sites from this app |
+
+Nothing else changes — the Website app is unused (and its connect flow just stays empty)
+until these are set.
+
+## OpenObserve — optional, add only if you want fleet log monitoring
+
+Unlike eshobe-cms, OpenObserve genuinely can live in this stack: it's a single extra
+container this app ships log/metric data *to*, not a separate product with its own tenants.
+It's entirely optional — with no `OPENOBSERVE_*` env set the app behaves exactly as without
+it, and the super-admin «پایش» tab just shows a setup guide instead of live data. See
+[docs/openobserve.md](openobserve.md) for the full picture.
+
+`docker-compose.parspack.observability.yml` adds an `observability` service plus the env
+wiring the `app` service needs to ship logs to it, on the same private network the compose
+file already sets up. Use it with:
+
+```bash
+docker compose -f docker-compose.parspack.yml -f docker-compose.parspack.observability.yml up -d
+```
+
+If ParsPack's Docker Compose app only accepts a single file (rather than a `-f`/`-f` command
+you control), merge the `observability` service and the `app.environment` additions from
+that overlay into `docker-compose.parspack.yml` by hand before creating the app — there's
+nothing ParsPack-specific about the merge, it's the same file either way. Set
+`OPENOBSERVE_ROOT_EMAIL`/`OPENOBSERVE_ROOT_PASSWORD` as app parameters either way, and see
+the same "confirm named volumes persist across redeploys" caveat as the backups section
+above — it applies to `zo-data` too.
+
 ## If you'd rather use a managed database
 
 You can skip the bundled `db` service and point `DATABASE_URL` at a Postgres instance from

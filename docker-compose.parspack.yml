@@ -11,6 +11,11 @@
 # app type to pick, which parameters to fill in, and the single-business vs.
 # multi-business (subdomain) choice.
 #
+# Want fleet log monitoring (OpenObserve)? It's optional and NOT in this file
+# — see docker-compose.parspack.observability.yml and docs/parspack-deployment.md.
+# eshobe-cms (the Website app's backend) is a separate deployment and never
+# belongs in this compose file at all — same doc explains why.
+#
 # Usage in ParsPack (ساخت اپلیکیشن → Docker → Docker Compose):
 #   1. Point the app at this repo and this compose file.
 #   2. Set at least POSTGRES_PASSWORD and JWT_SECRET as app parameters/variables.
