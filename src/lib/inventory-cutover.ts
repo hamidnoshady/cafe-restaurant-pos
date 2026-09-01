@@ -301,13 +301,17 @@ export async function applyInventoryCutover(
         ],
       );
     }
+    const phys = new Decimal(line.physicalQuantity);
+    const positivePhys = Decimal.max(phys, new Decimal("0"));
+    const avg = positivePhys.lte(0)
+      ? "0"
+      : new Decimal(line.carryingValueRial).div(positivePhys).toDecimalPlaces(9, Decimal.ROUND_HALF_UP).toFixed();
     await client.query(
       `UPDATE inventory_items
           SET carrying_value_rial=$2::bigint,
-              avg_cost=CASE WHEN $3::numeric=0 THEN 0
-                            ELSE ($2::bigint)::numeric/$3::numeric END
+              avg_cost=$3
         WHERE id=$1`,
-      [line.inventoryItemId, line.carryingValueRial, line.physicalQuantity],
+      [line.inventoryItemId, positivePhys.lte(0) ? "0" : line.carryingValueRial, avg],
     );
     await client.query(
       `INSERT INTO inventory_cutover_lines

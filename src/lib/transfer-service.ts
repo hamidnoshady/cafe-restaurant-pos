@@ -5,6 +5,7 @@ import {
   subtractQuantity, type QuantityText, type RialText,
 } from "./inventory-exact";
 import { getCostingMethod } from "./inventory-service";
+import { unitCostFromValue } from "./inventory-reversal";
 import { postExactOperationalInventoryEntry } from "./ledger-service";
 import { WELL_KNOWN_CODES } from "./coa-template";
 
@@ -106,10 +107,13 @@ export async function shipInventoryTransfer(client: PoolClient, params: {
       const value=proportionalDepletionValue(quantityText(stock[0].quantity),rialText(items[0].carrying_value_rial),quantity);
       const remainingValue=BigInt(items[0].carrying_value_rial)-BigInt(value);
       const remainingQuantity=new Decimal(stock[0].quantity).minus(new Decimal(quantity));
+      const positiveRemaining = Decimal.max(remainingQuantity, new Decimal("0"));
+      const avg = positiveRemaining.lte(0)
+        ? "0"
+        : new Decimal(remainingValue.toString()).div(positiveRemaining).toDecimalPlaces(9, Decimal.ROUND_HALF_UP).toFixed();
       await client.query(
-        `UPDATE inventory_items SET carrying_value_rial=$2::bigint,
-         avg_cost=CASE WHEN $3::numeric=0 THEN 0 ELSE ($2::bigint)::numeric/$3::numeric END WHERE id=$1`,
-        [line.source_inventory_item_id,remainingValue.toString(),remainingQuantity.toFixed()]);
+        `UPDATE inventory_items SET carrying_value_rial=$2::bigint, avg_cost=$3 WHERE id=$1`,
+        [line.source_inventory_item_id, positiveRemaining.lte(0) ? "0" : remainingValue.toString(), avg]);
       await client.query(
         `INSERT INTO stock_movements
          (location_id,inventory_item_id,type,quantity,unit_cost,cost_value_rial,source_type,source_id,created_by,inventory_event_id)
@@ -180,9 +184,13 @@ export async function receiveInventoryTransfer(client: PoolClient, params: {
       const { rows: stock }=await client.query<{quantity:string}>(
         "SELECT COALESCE(sum(quantity),0)::text quantity FROM stock_movements WHERE inventory_item_id=$1",
         [a.destination_inventory_item_id]);
+      const positivePhysical = Decimal.max(new Decimal(stock[0]?.quantity ?? "0"), new Decimal("0"));
+      const avg = positivePhysical.lte(0)
+        ? (new Decimal(a.quantity).gt(0) ? unitCostFromValue(BigInt(a.value_rial), new Decimal(a.quantity)) : "0")
+        : new Decimal(newValue.toString()).div(positivePhysical).toDecimalPlaces(9, Decimal.ROUND_HALF_UP).toFixed();
       await client.query(
-        "UPDATE inventory_items SET carrying_value_rial=$2,avg_cost=($2::bigint)::numeric/$3::numeric WHERE id=$1",
-        [a.destination_inventory_item_id,newValue.toString(),stock[0].quantity]);
+        "UPDATE inventory_items SET carrying_value_rial=$2,avg_cost=$3 WHERE id=$1",
+        [a.destination_inventory_item_id, positivePhysical.lte(0) ? "0" : newValue.toString(), avg]);
     }
     total+=BigInt(a.value_rial);
   }
@@ -249,10 +257,17 @@ export async function cancelInventoryTransfer(client: PoolClient, params: {
       const {rows:stock}=await client.query<{quantity:string}>(
         "SELECT COALESCE(sum(quantity),0)::text quantity FROM stock_movements WHERE inventory_item_id=$1",
         [allocation.source_inventory_item_id]);
+      const { rows: itemRows } = await client.query<{ carrying_value_rial: string | null }>(
+        "SELECT carrying_value_rial::text FROM inventory_items WHERE id=$1",
+        [allocation.source_inventory_item_id]);
+      const nextVal = BigInt(itemRows[0]?.carrying_value_rial ?? "0") + BigInt(allocation.value_rial);
+      const positivePhysical = Decimal.max(new Decimal(stock[0]?.quantity ?? "0"), new Decimal("0"));
+      const avg = positivePhysical.lte(0)
+        ? (new Decimal(allocation.quantity).gt(0) ? unitCostFromValue(BigInt(allocation.value_rial), new Decimal(allocation.quantity)) : "0")
+        : new Decimal(nextVal.toString()).div(positivePhysical).toDecimalPlaces(9, Decimal.ROUND_HALF_UP).toFixed();
       await client.query(
-        `UPDATE inventory_items SET carrying_value_rial=COALESCE(carrying_value_rial,0)+$2,
-         avg_cost=(COALESCE(carrying_value_rial,0)+$2)::numeric/$3::numeric WHERE id=$1`,
-        [allocation.source_inventory_item_id,allocation.value_rial,stock[0].quantity]);
+        `UPDATE inventory_items SET carrying_value_rial=$2, avg_cost=$3 WHERE id=$1`,
+        [allocation.source_inventory_item_id, positivePhysical.lte(0) ? "0" : nextVal.toString(), avg]);
     }
     total+=BigInt(allocation.value_rial);
   }

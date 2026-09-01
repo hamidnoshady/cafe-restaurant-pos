@@ -75,7 +75,12 @@ export async function consumeInventoryExact(
   const shortageQuantity = quantityText(shortageDecimal.toFixed());
   const method = await getCostingMethod(input.businessId, client);
   let postedCost = 0n;
-  let fallbackUnitCost = unitCostText(item.avg_cost);
+  const rawAvgCost = item.avg_cost ?? "0";
+  const parsedAvgCost = Number(rawAvgCost);
+  const safeAvgCost = !Number.isFinite(parsedAvgCost) || parsedAvgCost < 0
+    ? "0"
+    : new Decimal(rawAvgCost).toDecimalPlaces(9, Decimal.ROUND_HALF_UP).toFixed();
+  let fallbackUnitCost = unitCostText(safeAvgCost);
 
   if (method === "fifo") {
     let needed = quantity;
@@ -125,7 +130,12 @@ export async function consumeInventoryExact(
         ],
       );
       postedCost += rialBigInt(value);
-      fallbackUnitCost = unitCostText(lot.unit_cost);
+      const rawLotUnitCost = lot.unit_cost ?? "0";
+      const parsedLotCost = Number(rawLotUnitCost);
+      const safeLotCost = !Number.isFinite(parsedLotCost) || parsedLotCost < 0
+        ? "0"
+        : new Decimal(rawLotUnitCost).toDecimalPlaces(9, Decimal.ROUND_HALF_UP).toFixed();
+      fallbackUnitCost = unitCostText(safeLotCost);
       needed = subtractQuantity(needed, take);
     }
     if (new Decimal(needed).gt(0)) {

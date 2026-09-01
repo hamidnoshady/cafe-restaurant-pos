@@ -711,4 +711,42 @@ describe("editing a closed order", () => {
     expect(rows[0].payload.newTotal).toBe(55_000);
     expect(await accountBalance("4310", "2026-04-09")).toBe(-50_000);
   });
+
+  it("handles amending an order under weighted-average costing when stock was oversold", async () => {
+    await db.query(`UPDATE settings SET value = '{"method":"weighted_average"}'::jsonb WHERE business_id = $1 AND key = 'inventory.costing'`, [biz.id]);
+
+    // Initial stock is 1000g.
+    // Order 1 sells 800g (200g left in stock).
+    const order1 = await sellOrder({
+      lines: [
+        { menuItemId: biz.menuItemId, quantity: 40 },
+        { menuItemId: biz.menuItemId, quantity: 40 },
+      ], // 800g
+      method: "cash",
+      soldOn: "2026-04-12",
+    });
+    // Order 2 sells 500g (200g from stock + 300g shortage; stock is now -300g).
+    const order2 = await sellOrder({
+      lines: [{ menuItemId: biz.menuItemId, quantity: 50 }], // 500g
+      method: "cash",
+      soldOn: "2026-04-12",
+    });
+    // Order 3 sells 500g (all shortage; stock is now -800g).
+    const order3 = await sellOrder({
+      lines: [{ menuItemId: biz.menuItemId, quantity: 50 }], // 500g
+      method: "cash",
+      soldOn: "2026-04-12",
+    });
+
+    // Now amend Order 2:
+    // Reversal adds back 500g (stock becomes -300g).
+    // positiveQuantity is 200g, positiveValue is 100,000 Rial.
+    const result = await amend(order2.id, {
+      kind: "edit",
+      reason: "اصلاح سفارش دوم",
+      lines: [{ orderItemId: order2.itemIds[0], quantity: 40 }], // 400g
+    });
+
+    expect(result.newTotal).toBe(4_400_000);
+  });
 });
