@@ -92,6 +92,12 @@ interface CreateOrderBody {
   discount?: { type?: "percent" | "amount"; value?: number };
   items?: CartItemInput[];
   delivery?: { address?: string; phone?: string; fee?: number; courierId?: string; note?: string };
+  /**
+   * Optional client-minted id for this submission attempt (see
+   * order-mutations.ts's createOrder). Absent from an older/cached frontend
+   * bundle, which is why it stays optional here rather than required.
+   */
+  clientRequestId?: string;
 }
 
 /** Builds the cart, computes totals, and creates Orders + OrderItems (+ modifiers) atomically. */
@@ -132,6 +138,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
     discount,
     items,
     openedBy: session.sub,
+    clientRequestId: body.clientRequestId ?? null,
     delivery: body.type === "delivery" && body.delivery
       ? {
           address: body.delivery.address ?? "",

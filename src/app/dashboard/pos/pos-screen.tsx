@@ -262,6 +262,11 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
   const { isOnline, pendingCount } = useOfflineQueue();
   const searchInputRef = useRef<HTMLInputElement>(null);
   const submissionInFlight = useRef(false);
+  // Minted once per submission attempt and reused across retries of that same
+  // attempt (a lost response the cashier resubmits, a proxy retry) so the
+  // server's idempotency check on POST /api/orders sees one id, not a fresh
+  // one each time — cleared once the order is actually created.
+  const clientRequestIdRef = useRef<string | null>(null);
 
   const load = useCallback(() => {
     setIsRefreshing(true);
@@ -793,8 +798,12 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
 
     submissionInFlight.current = true;
     setBusy(true);
+    if (!clientRequestIdRef.current) {
+      clientRequestIdRef.current = crypto.randomUUID();
+    }
     const orderBody = {
       type: orderType,
+      clientRequestId: clientRequestIdRef.current,
       tableId: orderType === "dine_in" ? effectiveTableId : undefined,
       customerId: customer?.id ?? undefined,
       guestCount: effectiveGuestCount ? Number(effectiveGuestCount) : undefined,
@@ -1002,6 +1011,7 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
     setCartSheetOpen(false);
     setBusy(false);
     submissionInFlight.current = false;
+    clientRequestIdRef.current = null;
     load();
     return true;
   }
