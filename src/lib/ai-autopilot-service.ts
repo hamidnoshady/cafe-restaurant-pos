@@ -309,7 +309,7 @@ async function collectCategoryFacts(
                   COALESCE(SUM(r.quantity * i.avg_cost), 0)::text AS recipe_cost
              FROM menu_items m
              JOIN locations l ON l.id = m.location_id
-             JOIN recipes r ON r.menu_item_id = m.id
+             JOIN menu_item_ingredients r ON r.menu_item_id = m.id
              JOIN inventory_items i ON i.id = r.inventory_item_id
             WHERE l.business_id = $1 AND m.is_active
             GROUP BY m.id, m.name, m.price
