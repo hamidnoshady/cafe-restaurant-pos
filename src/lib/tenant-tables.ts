@@ -22,6 +22,25 @@ export const EXEMPT_TABLES = new Set([
   "platform_push_config",
   "ai_prompt_templates",
   "knowledge_base_entries",
+  // Migration 0131 — the in-product knowledge base (categories, tags, articles
+  // and the article↔tag join). Platform-maintained content in exactly the
+  // shape of knowledge_base_entries: the same category tree and the same
+  // published articles teach every business, so there is no business_id to
+  // scope by. Written only through /api/platform/knowledge/*; tenant routes
+  // read published rows through /api/knowledge/*.
+  "knowledge_categories",
+  "knowledge_tags",
+  "knowledge_articles",
+  "knowledge_article_tags",
+  // Platform billing catalogues (migration 0130): the seeded gateway config
+  // singleton, credit packages and plan-builder rows. Platform content with
+  // no business_id, already documented exempt in the tenant-isolation test;
+  // exporting them into a tenant dump used to collide with the seeded rows
+  // on restore (duplicate key on billing_plans_pkey).
+  "platform_payment_config",
+  "credit_packages",
+  "billing_plans",
+  "billing_plan_features",
   // Migration 0128 — the platform-wide state of each app («به‌زودی», «در حال
   // تعمیر», …). A global catalogue with no business_id, exactly the shape
   // `feature_flags` has; the per-business overrides live in

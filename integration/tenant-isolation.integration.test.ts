@@ -81,6 +81,16 @@ const EXEMPT_TABLES = new Set([
   // Knowledge base (migration 0117): the super-admin-maintained learning page
   // (a URL) per dashboard section.
   "knowledge_base_entries",
+  // Knowledge base content (migration 0131): the in-product «مرکز آموزش»
+  // catalogue — categories/tags/articles and the article↔tag join. The same
+  // published guides teach every business, so there is no business_id to
+  // scope by; written only through /api/platform/knowledge/*, read
+  // (published only) through /api/knowledge/*. Mirrored in
+  // src/lib/tenant-tables.ts.
+  "knowledge_categories",
+  "knowledge_tags",
+  "knowledge_articles",
+  "knowledge_article_tags",
   // Phase 37 & Phase 39 — deployment-wide LLM gateway settings.
   "platform_ai_gateway",
   // Platform billing (migration 0130) — global catalogues/config with no

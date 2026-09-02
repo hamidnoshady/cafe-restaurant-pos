@@ -3,21 +3,27 @@
 /**
  * «آموزش» — the knowledge-base icon that sits in a dashboard page's header.
  *
- * The super-admin stores one learning page (a URL) per section in the console
- * (`/platform/knowledge`); this button asks `GET /api/knowledge` for the
- * section the page belongs to and opens that URL in a modal, so a member can
- * learn the screen they are standing on without leaving it. Pages pass their
- * own `section` key; a shared shell that spans several sections (the Growth
- * app's header) omits it and the current route resolves the section instead.
+ * The super-admin can teach a section two ways (both from the console's
+ * «پایگاه دانش»): an external learning-page URL per section (migration 0117),
+ * opened here in a modal, and an in-product guide — a published
+ * knowledge-base article claiming this section (migration 0131), which this
+ * modal deep-links to «مرکز آموزش». Both can exist for one section; the
+ * modal then offers the in-app guide first and the external page under it.
  *
- * When no page is stored yet — or the network fails — the modal says so
- * plainly; the icon never breaks the page it is mounted in. The iframe's host
- * may refuse to be embedded; the «باز کردن در تب جدید» link is always there
- * as the fallback that never can fail.
+ * Pages pass their own `section` key; a shared shell that spans several
+ * sections (the Growth app's header) omits it and the current route resolves
+ * the section instead. When nothing is stored yet — or the network fails —
+ * the modal says so plainly; the icon never breaks the page it is mounted in.
  */
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ExternalLinkIcon, GraduationCapIcon } from "lucide-react";
+import {
+  ArrowLeftIcon,
+  BookOpenIcon,
+  ExternalLinkIcon,
+  GraduationCapIcon,
+} from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -35,10 +41,15 @@ interface KnowledgeEntry {
   url: string;
 }
 
+interface KnowledgeGuide {
+  slug: string;
+  title: string;
+}
+
 type EntryState =
   | { status: "idle" }
   | { status: "loading" }
-  | { status: "ready"; entry: KnowledgeEntry | null }
+  | { status: "ready"; entry: KnowledgeEntry | null; guide: KnowledgeGuide | null }
   | { status: "error" };
 
 export function KnowledgeHelpButton({ section }: { section?: string }) {
@@ -55,14 +66,15 @@ export function KnowledgeHelpButton({ section }: { section?: string }) {
     if (!resolvedKey) return;
     setState({ status: "loading" });
     try {
-      const { ok, data } = await api<{ entry: KnowledgeEntry | null }>(
-        `/api/knowledge?section=${encodeURIComponent(resolvedKey)}`,
-      );
+      const { ok, data } = await api<{
+        entry: KnowledgeEntry | null;
+        guide?: KnowledgeGuide | null;
+      }>(`/api/knowledge?section=${encodeURIComponent(resolvedKey)}`);
       if (!ok) {
         setState({ status: "error" });
         return;
       }
-      setState({ status: "ready", entry: data.entry ?? null });
+      setState({ status: "ready", entry: data.entry ?? null, guide: data.guide ?? null });
     } catch {
       setState({ status: "error" });
     }
@@ -83,6 +95,8 @@ export function KnowledgeHelpButton({ section }: { section?: string }) {
     if (state.status === "idle" || state.status === "error") void fetchEntry();
   }
 
+  const ready = state.status === "ready" ? state : null;
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <button
@@ -98,7 +112,7 @@ export function KnowledgeHelpButton({ section }: { section?: string }) {
         <DialogHeader>
           <DialogTitle>آموزش: {label}</DialogTitle>
           <DialogDescription>
-            راهنمای این بخش — می‌توانید آن را در تب جدید هم باز کنید.
+            راهنمای این بخش — نسخهٔ کامل در مرکز آموزش، با قابلیت جست‌وجو و پیوند به هر تیتر.
           </DialogDescription>
         </DialogHeader>
 
@@ -117,25 +131,63 @@ export function KnowledgeHelpButton({ section }: { section?: string }) {
               تلاش دوباره
             </button>
           </div>
-        ) : state.status === "ready" && state.entry ? (
-          <div className="relative h-[65svh] min-h-[320px]">
-            {!frameLoaded ? (
-              <div
-                role="status"
-                aria-live="polite"
-                aria-busy="true"
-                aria-label="در حال بارگذاری صفحه آموزشی"
-                className="absolute inset-0 z-10"
+        ) : ready && (ready.entry || ready.guide) ? (
+          <div className="space-y-4">
+            {ready.guide ? (
+              <Link
+                href={`/dashboard/knowledge/a/${encodeURIComponent(ready.guide.slug)}`}
+                onClick={() => setOpen(false)}
+                className="flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-100/70 px-4 py-3 transition-colors hover:bg-amber-100 dark:border-amber-500/30 dark:bg-amber-500/15 dark:hover:bg-amber-500/25"
               >
-                <Skeleton aria-hidden="true" className="h-full w-full rounded-xl" />
-              </div>
+                <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-amber-500/15 text-amber-800 dark:bg-amber-500/25 dark:text-amber-200">
+                  <BookOpenIcon className="size-5" aria-hidden="true" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-bold text-amber-950 dark:text-amber-100">
+                    راهنمای داخلی: {ready.guide.title}
+                  </span>
+                  <span className="mt-0.5 block text-xs text-amber-900/70 dark:text-amber-200/70">
+                    در مرکز آموزش باز کنید — جست‌وجو، فهرست محتوا و پیوند به هر تیتر فعال است.
+                  </span>
+                </span>
+                <ArrowLeftIcon className="size-4 shrink-0 text-amber-800 dark:text-amber-200" aria-hidden="true" />
+              </Link>
             ) : null}
-            <iframe
-              src={state.entry.url}
-              title={`آموزش ${label}`}
-              onLoad={() => setFrameLoaded(true)}
-              className={`h-full w-full rounded-xl border border-border/80 bg-card transition-opacity motion-reduce:transition-none ${frameLoaded ? "opacity-100" : "opacity-0"}`}
-            />
+
+            {ready.entry ? (
+              <>
+                <div className="relative h-[55svh] min-h-[300px]">
+                  {!frameLoaded ? (
+                    <div
+                      role="status"
+                      aria-live="polite"
+                      aria-busy="true"
+                      aria-label="در حال بارگذاری صفحه آموزشی"
+                      className="absolute inset-0 z-10"
+                    >
+                      <Skeleton aria-hidden="true" className="h-full w-full rounded-xl" />
+                    </div>
+                  ) : null}
+                  <iframe
+                    src={ready.entry.url}
+                    title={`آموزش ${label}`}
+                    onLoad={() => setFrameLoaded(true)}
+                    className={`h-full w-full rounded-xl border border-border/80 bg-card transition-opacity motion-reduce:transition-none ${frameLoaded ? "opacity-100" : "opacity-0"}`}
+                  />
+                </div>
+                <a
+                  href={ready.entry.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+                  dir="ltr"
+                >
+                  <span className="truncate">{ready.entry.url}</span>
+                  <ExternalLinkIcon className="size-4 shrink-0" aria-hidden="true" />
+                  <span dir="rtl">باز کردن در تب جدید</span>
+                </a>
+              </>
+            ) : null}
           </div>
         ) : (
           <div className="flex min-h-[320px] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border px-4 text-center">
@@ -144,24 +196,19 @@ export function KnowledgeHelpButton({ section }: { section?: string }) {
               هنوز صفحهٔ آموزشی برای این بخش ثبت نشده است.
             </p>
             <p className="text-xs text-muted-foreground">
-              از تیم پشتیبانی بخواهید راهنمای این بخش را در پایگاه دانش ثبت کند.
+              از تیم پشتیبانی بخواهید راهنمای این بخش را در پایگاه دانش ثبت کند — یا به مرکز
+              آموزش سر بزنید.
             </p>
+            <Link
+              href="/dashboard/knowledge"
+              onClick={() => setOpen(false)}
+              className="mt-1 inline-flex items-center gap-1.5 rounded-lg border border-border/80 px-4 py-2 text-sm font-medium text-foreground/80 transition-colors hover:bg-muted"
+            >
+              <BookOpenIcon className="size-4" aria-hidden="true" />
+              مرکز آموزش
+            </Link>
           </div>
         )}
-
-        {state.status === "ready" && state.entry ? (
-          <a
-            href={state.entry.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
-            dir="ltr"
-          >
-            <span className="truncate">{state.entry.url}</span>
-            <ExternalLinkIcon className="size-4 shrink-0" aria-hidden="true" />
-            <span dir="rtl">باز کردن در تب جدید</span>
-          </a>
-        ) : null}
       </DialogContent>
     </Dialog>
   );

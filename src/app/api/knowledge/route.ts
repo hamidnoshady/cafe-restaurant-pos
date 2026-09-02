@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireMember, withTenantScope } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { knowledgeSection } from "@/lib/knowledge-base";
+import { kbGuideForSection } from "@/lib/knowledge-service";
 
 /**
  * The member-facing side of the knowledge base (migration 0117). A page's
@@ -32,7 +33,14 @@ export const GET = withTenantScope(async (request: NextRequest) => {
   );
   const entry = rows[0];
 
+  // Migration 0131 — alongside the optional external page, the in-product
+  // guide that teaches this section (a published article claiming the section
+  // key). The «آموزش» modal links «مرکز آموزش» so a member can read the
+  // built-in, Persian, fully-anchored guide without leaving the app.
+  const guide = await kbGuideForSection(known.key);
+
   return NextResponse.json({
     entry: entry ? { section: entry.section, label: known.label, url: entry.url } : null,
+    guide,
   });
 });

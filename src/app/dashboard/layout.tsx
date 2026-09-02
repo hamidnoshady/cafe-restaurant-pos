@@ -113,6 +113,10 @@ function navItemsFor(industry: Industry): NavItem[] {
     // too; the nav entry gives owners/managers a permanent door.
     { label: "اعتبار و پرداخت‌ها", module: "settings", href: "/dashboard/billing", roles: ["owner", "manager"] },
     { label: "تنظیمات", module: "settings", href: "/dashboard/settings" },
+    // Migration 0131 — the in-product knowledge base («مرکز آموزش»): every
+    // member learns the platform here, so like the support desk it has no
+    // role gate; the `settings` module anchors it because every trade has it.
+    { label: "مرکز آموزش", module: "settings", href: "/dashboard/knowledge" },
     // Migration 0130 — the support desk. Every member may open a ticket
     // (asking for help is not a privileged act), so there is no `roles` gate;
     // the `settings` module anchors it because every industry has settings.

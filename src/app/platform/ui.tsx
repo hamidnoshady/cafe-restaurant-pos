@@ -78,6 +78,17 @@ export function errorMessage(code: string | undefined): string {
     invalid_level: "سطح لاگ نامعتبر است.",
     // App availability (migration 0128) — «به‌زودی»، «در حال تعمیر» و…
     invalid_app_state: "وضعیت برنامه نامعتبر است.",
+    // Knowledge base content (migration 0131)
+    invalid_slug: "نامک باید حروف کوچک انگلیسی، رقم و خط تیره باشد (مثل pos-basics).",
+    missing_title: "عنوان را وارد کنید.",
+    missing_label: "نام برچسب را وارد کنید.",
+    slug_taken: "این نامک قبلاً استفاده شده است.",
+    category_has_children: "این دسته زیردسته دارد؛ اول زیردسته‌ها را منتقل یا حذف کنید.",
+    category_has_articles: "این دسته راهنما دارد؛ اول راهنماها را به دستهٔ دیگری منتقل کنید.",
+    category_cycle: "دستهٔ والد نامعتبر است.",
+    parent_not_found: "دستهٔ والد پیدا نشد.",
+    invalid_video_url: "آدرس ویدیو باید با http:// یا https:// شروع شود.",
+    invalid_cover_url: "آدرس تصویر باید با http:// یا https:// شروع شود.",
   };
   return map[code ?? ""] ?? "خطای غیرمنتظره. دوباره تلاش کنید.";
 }
