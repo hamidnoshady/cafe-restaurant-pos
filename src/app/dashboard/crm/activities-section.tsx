@@ -105,7 +105,12 @@ export function ActivitiesSection() {
       <ErrorBox>{error}</ErrorBox>
 
       <SectionCard
-        title="کارها و پیگیری‌ها"
+        title={
+          <div>
+            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">پیگیری‌ها و وظایف</p>
+            <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">کارها و پیگیری‌ها</h2>
+          </div>
+        }
         description={
           overdue > 0
             ? `${toPersianDigits(String(overdue))} کار از موعدش گذشته است.`

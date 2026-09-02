@@ -84,12 +84,15 @@ export function PricingSettings() {
       <ErrorBox>{error}</ErrorBox>
       {saved ? <InfoBox>تنظیمات قیمت‌گذاری ذخیره شد.</InfoBox> : null}
 
-      <SectionCard title="هدف حاشیه سود پیش‌فرض">
-        <p className="mb-4 text-sm text-muted-foreground">
-          این درصد برای پیشنهاد قیمت هر آیتم منو استفاده می‌شود (بهای مواد + سربار عملیاتی، تقسیم بر باقیمانده پس از این
-          حاشیه سود از قیمت فروش) مگر آنکه آن آیتم مقدار اختصاصی خودش را داشته باشد. خالی بگذارید تا تا زمان تعیین این
-          عدد، قیمتی پیشنهاد نشود.
-        </p>
+      <SectionCard
+        title={
+          <div>
+            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">سیاست‌گذاری قیمت</p>
+            <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">هدف حاشیه سود پیش‌فرض</h2>
+          </div>
+        }
+        description="این درصد برای پیشنهاد قیمت هر آیتم منو استفاده می‌شود (بهای مواد + سربار عملیاتی، تقسیم بر باقیمانده پس از این حاشیه سود از قیمت فروش) مگر آنکه آن آیتم مقدار اختصاصی خودش را داشته باشد. خالی بگذارید تا تا زمان تعیین این عدد، قیمتی پیشنهاد نشود."
+      >
         <div className="max-w-xs">
           <Field label="درصد حاشیه سود">
             <div className="relative">
@@ -110,12 +113,15 @@ export function PricingSettings() {
         </div>
       </SectionCard>
 
-      <SectionCard title="سربار برآوردی برای کسب‌وکار تازه">
-        <p className="mb-4 text-sm text-muted-foreground">
-          سربار (اجاره، آب و برق، حقوق) در حالت عادی خودکار و از روی ۳۰ روز اخیر دفتر حسابداری محاسبه می‌شود. تا وقتی
-          فروش کافی برای این محاسبه ثبت نشده — مثلاً در روزهای اول کسب‌وکار — این عدد به‌جای آن استفاده می‌شود. به‌محض
-          آنکه محاسبهٔ خودکار ممکن شود، این مقدار نادیده گرفته می‌شود.
-        </p>
+      <SectionCard
+        title={
+          <div>
+            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">سربار کسب‌وکار</p>
+            <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">سربار برآوردی برای کسب‌وکار تازه</h2>
+          </div>
+        }
+        description="سربار (اجاره، آب و برق، حقوق) در حالت عادی خودکار و از روی ۳۰ روز اخیر دفتر حسابداری محاسبه می‌شود. تا وقتی فروش کافی برای این محاسبه ثبت نشده — مثلاً در روزهای اول کسب‌وکار — این عدد به‌جای آن استفاده می‌شود. به‌محض آنکه محاسبهٔ خودکار ممکن شود، این مقدار نادیده گرفته می‌شود."
+      >
         <div className="max-w-xs">
           <Field label="درصد سربار برآوردی">
             <div className="relative">

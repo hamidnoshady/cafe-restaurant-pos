@@ -89,7 +89,12 @@ export function CasesSection() {
       <ErrorBox>{error}</ErrorBox>
 
       <SectionCard
-        title="تیکت‌های خدمات"
+        title={
+          <div>
+            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">میز خدمت</p>
+            <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">تیکت‌های خدمات</h2>
+          </div>
+        }
         description="شکایت‌ها و درخواست‌های مشتریان، با زمان هدف رسیدگی بر پایهٔ اولویت."
         actions={
           <div className="flex flex-wrap items-center gap-2">

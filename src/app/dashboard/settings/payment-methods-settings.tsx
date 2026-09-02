@@ -109,12 +109,15 @@ export function PaymentMethodsSettings() {
       <ErrorBox>{error}</ErrorBox>
       {info ? <InfoBox>{info}</InfoBox> : null}
 
-      <SectionCard title="روش‌های دریافت وجه">
-        <p className="mb-4 text-sm text-muted-foreground">
-          همین فهرست و همین ترتیب در صندوق فروش و صفحهٔ سفارش‌ها نمایش داده می‌شود. صندوق‌دار می‌تواند مبلغ یک فاکتور را
-          بین چند روش تقسیم کند؛ مثلاً بخشی نقدی و بخشی با کارت‌خوان.
-        </p>
-
+      <SectionCard
+        title={
+          <div>
+            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">درگاه‌ها و روش‌ها</p>
+            <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">روش‌های دریافت وجه</h2>
+          </div>
+        }
+        description="همین فهرست و همین ترتیب در صندوق فروش و صفحهٔ سفارش‌ها نمایش داده می‌شود. صندوق‌دار می‌تواند مبلغ یک فاکتور را بین چند روش تقسیم کند؛ مثلاً بخشی نقدی و بخشی با کارت‌خوان."
+      >
         <ul className="space-y-2">
           {methods.map((method, index) => {
             const Icon = paymentWayIcon(method);
@@ -223,7 +226,12 @@ export function PaymentMethodsSettings() {
       </SectionCard>
 
       <SectionCard
-        title="افزودن روش پرداخت"
+        title={
+          <div>
+            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">افزودن روش</p>
+            <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">افزودن روش پرداخت</h2>
+          </div>
+        }
         description="نام را به دلخواه بنویسید (مثلاً «پوز بانک ملت» یا «کیف پول»). «نحوهٔ تسویه» تعیین می‌کند مبلغ به کدام حساب دفتر کل بنشیند و پس از اولین دریافت با این روش قابل تغییر نیست."
         bodyClassName="p-0"
       >

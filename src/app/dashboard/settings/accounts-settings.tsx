@@ -105,10 +105,15 @@ export function AccountsSettings() {
       <ErrorBox>{error}</ErrorBox>
       {saved ? <InfoBox>سرفصل حساب‌ها ذخیره شد.</InfoBox> : null}
 
-      <SectionCard title="سرفصل حساب‌ها">
-        <p className="mb-4 text-sm text-muted-foreground">
-          ساختار حساب‌های مالی را اینجا نگه‌داری کنید. اگر اسناد حسابداری ثبت شده باشند، برای حفظ یکپارچگی دیگر جایگزین‌کردن ساختار ممکن نیست.
-        </p>
+      <SectionCard
+        title={
+          <div>
+            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">درگاه‌ها و روش‌ها</p>
+            <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">روش‌های دریافت وجه</h2>
+          </div>
+        }
+        description="همین فهرست و همین ترتیب در صندوق فروش و صفحهٔ سفارش‌ها نمایش داده می‌شود. صندوق‌دار می‌تواند مبلغ یک فاکتور را بین چند روش تقسیم کند؛ مثلاً بخشی نقدی و بخشی با کارت‌خوان."
+      >
         <div className="mb-4 flex flex-wrap gap-2">
           <SecondaryButton onClick={() => { setAccounts(normalise(FNB_COA_TEMPLATE)); setSaved(false); }}>
             بازگردانی الگوی کافه و رستوران

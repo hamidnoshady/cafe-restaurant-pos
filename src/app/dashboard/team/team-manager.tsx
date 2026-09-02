@@ -1,6 +1,6 @@
 "use client";
 
-import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
+import { LoadingSkeleton, SectionCard } from "../page-chrome";
 
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
 
@@ -140,23 +140,30 @@ export function TeamManager({ currentUserId }: { currentUserId: string }) {
     <div className="space-y-6">
       <ErrorBox>{error}</ErrorBox>
 
-      <section className="rounded-lg border p-4">
-        <h2 className="mb-3 font-semibold">اعضا</h2>
-        <div className="space-y-2">
+      <SectionCard
+        title={
+          <div>
+            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">مدیریت اعضا</p>
+            <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">اعضا و دسترسی‌ها</h2>
+          </div>
+        }
+        description="اعضای کسب‌وکار، نقش‌ها و سطوح دسترسی آن‌ها را در سامانه مدیریت کنید."
+      >
+        <div className="space-y-3">
           {members.map((member) => (
-            <div key={member.id} className="rounded-md border p-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <p className="font-medium">
+            <div key={member.id} className="rounded-xl border border-border/80 p-4 transition-colors hover:bg-stone-50/70 dark:hover:bg-muted/50">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="font-semibold text-foreground">
                     {member.fullName}
                     {member.id === currentUserId && (
-                      <span className="ms-2 text-xs text-muted-foreground">(شما)</span>
+                      <span className="ms-2 text-xs font-normal text-muted-foreground">(شما)</span>
                     )}
                     {!member.isActive && (
-                      <span className="ms-2 rounded bg-muted px-2 py-0.5 text-xs">غیرفعال</span>
+                      <span className="ms-2 rounded-full bg-muted px-2.5 py-0.5 text-xs text-muted-foreground">غیرفعال</span>
                     )}
                   </p>
-                  <p className="text-xs text-muted-foreground">
+                  <p className="mt-1 text-xs text-muted-foreground">
                     {ROLE_LABELS[member.role] ?? member.role}
                     {member.email ? ` · ${member.email}` : ""}
                     {member.hasPin ? " · ورود با رمز عددی" : ""}
@@ -183,6 +190,7 @@ export function TeamManager({ currentUserId }: { currentUserId: string }) {
                       if (!confirm(`«${member.fullName}» از این کسب‌وکار حذف شود؟`)) return;
                       void mutate(`/api/team/${member.id}`, { method: "DELETE" });
                     }}
+                    className="border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
                   >
                     حذف
                   </SecondaryButton>
@@ -204,7 +212,7 @@ export function TeamManager({ currentUserId }: { currentUserId: string }) {
             </div>
           ))}
         </div>
-      </section>
+      </SectionCard>
 
       <InviteSection invitations={invitations} onChanged={load} onError={setError} />
       <AddStaffSection onChanged={load} onError={setError} />
@@ -318,8 +326,15 @@ function InviteSection({
   }
 
   return (
-    <section className="rounded-lg border p-4">
-      <h2 className="mb-3 font-semibold">دعوت همکار</h2>
+    <SectionCard
+      title={
+        <div>
+          <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">دعوت و همکاری</p>
+          <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">دعوت همکار</h2>
+        </div>
+      }
+      description="همکاران جدید را با ارسال لینک دعوت به سیستم اضافه کنید."
+    >
       <div className="grid gap-3 sm:grid-cols-3">
         <Field label="نام">
           <input className={inputClass} value={fullName} onChange={(e) => setFullName(e.target.value)} />
@@ -340,14 +355,14 @@ function InviteSection({
           />
         </Field>
       </div>
-      <div className="mt-3">
+      <div className="mt-4">
         <PrimaryButton onClick={invite} disabled={busy || !email || !fullName}>
           ساخت لینک دعوت
         </PrimaryButton>
       </div>
 
       {link && (
-        <div className="mt-3">
+        <div className="mt-4">
           <InfoBox>
             این لینک فقط همین یک‌بار نمایش داده می‌شود. آن را برای همکارتان بفرستید:
             <input className={`${inputClass} mt-2`} dir="ltr" readOnly value={link} />
@@ -356,9 +371,9 @@ function InviteSection({
       )}
 
       {invitations.length > 0 && (
-        <ul className="mt-4 space-y-1 text-sm">
+        <ul className="mt-4 divide-y divide-border/80 text-sm">
           {invitations.map((invitation) => (
-            <li key={invitation.id} className="flex items-center justify-between gap-2">
+            <li key={invitation.id} className="flex flex-wrap items-center justify-between gap-2 py-2.5">
               <span>
                 {invitation.fullName} · <span dir="ltr">{invitation.email}</span> ·{" "}
                 {ROLE_LABELS[invitation.role] ?? invitation.role} ·{" "}
@@ -382,7 +397,7 @@ function InviteSection({
           ))}
         </ul>
       )}
-    </section>
+    </SectionCard>
   );
 }
 
@@ -416,11 +431,15 @@ function AddStaffSection({
   }
 
   return (
-    <section className="rounded-lg border p-4">
-      <h2 className="mb-3 font-semibold">افزودن کارکنان صندوق و آشپزخانه</h2>
-      <p className="mb-3 text-sm text-muted-foreground">
-        این کارکنان با رمز عددی چهاررقمی روی دستگاه مشترک وارد می‌شوند و ایمیل ندارند.
-      </p>
+    <SectionCard
+      title={
+        <div>
+          <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">پرسنل صندوق و آشپزخانه</p>
+          <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">افزودن کارکنان صندوق و آشپزخانه</h2>
+        </div>
+      }
+      description="این کارکنان با رمز عددی چهاررقمی روی دستگاه مشترک وارد می‌شوند و ایمیل ندارند."
+    >
       <div className="grid gap-3 sm:grid-cols-3">
         <Field label="نام">
           <input className={inputClass} value={fullName} onChange={(e) => setFullName(e.target.value)} />
@@ -445,11 +464,11 @@ function AddStaffSection({
           />
         </Field>
       </div>
-      <div className="mt-3">
+      <div className="mt-4">
         <PrimaryButton onClick={add} disabled={busy || !fullName || pin.length !== 4}>
           افزودن
         </PrimaryButton>
       </div>
-    </section>
+    </SectionCard>
   );
 }

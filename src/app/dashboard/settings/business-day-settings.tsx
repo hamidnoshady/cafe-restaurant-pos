@@ -149,14 +149,15 @@ export function BusinessDaySettings() {
     );
 
   return (
-    <SectionCard title={`روز کاری${locationName ? ` — ${locationName}` : ""}`}>
-      <p className="mb-4 text-sm text-muted-foreground">
-        اگر کار شعبه از شب تا بامداد ادامه دارد، ساعت شروع روز کاری را تعیین
-        کنید تا کل یک سرویس — مثلاً ۱۸:۰۰ تا ۰۳:۰۰ بامداد — یک روز کاری واحد
-        حساب شود و داشبورد، فهرست سفارش‌ها و گزارش‌ها نیمه‌شب دو تکه نشوند. این
-        تنظیم اختیاری است؛ تا وقتی فعالش نکنید همه‌چیز مثل قبل بر مبنای روز
-        تقویمی کار می‌کند.
-      </p>
+    <SectionCard
+      title={
+        <div>
+          <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">سرویس و شعبه</p>
+          <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">روز کاری{locationName ? ` — ${locationName}` : ""}</h2>
+        </div>
+      }
+      description="اگر کار شعبه از شب تا بامداد ادامه دارد، ساعت شروع روز کاری را تعیین کنید تا کل یک سرویس — مثلاً ۱۸:۰۰ تا ۰۳:۰۰ بامداد — یک روز کاری واحد حساب شود و داشبورد، فهرست سفارش‌ها و گزارش‌ها نیمه‌شب دو تکه نشوند. این تنظیم اختیاری است؛ تا وقتی فعالش نکنید همه‌چیز مثل قبل بر مبنای روز تقویمی کار می‌کند."
+    >
 
       <ErrorBox>{error}</ErrorBox>
       {notice ? <InfoBox>{notice}</InfoBox> : null}

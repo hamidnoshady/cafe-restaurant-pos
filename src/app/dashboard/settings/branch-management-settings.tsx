@@ -56,11 +56,14 @@ export function BranchManagementSettings({ features }: BranchManagementSettingsP
 
   return (
     <section className="min-w-0 space-y-4 sm:space-y-5">
-      <header>
-        <h2 className="font-semibold text-foreground">مدیریت شعب</h2>
-        <p className="mt-1 text-sm leading-6 text-muted-foreground">
-          ساختار شعب کسب‌وکار و همگام‌سازی داده‌های شعب را از یک بخش مدیریت کنید.
-        </p>
+      <header className="mb-5 flex flex-wrap items-start justify-between gap-3 border-b border-border/80 pb-5 sm:mb-6 sm:pb-6">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">مدیریت شعب</p>
+          <h1 className="mt-1 text-2xl font-bold tracking-tight text-stone-950 dark:text-stone-100 sm:text-[1.7rem]">مدیریت شعب</h1>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
+            ساختار شعب کسب‌وکار و همگام‌سازی داده‌های شعب را از یک بخش مدیریت کنید.
+          </p>
+        </div>
       </header>
 
       <SectionNav

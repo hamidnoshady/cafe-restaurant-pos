@@ -130,10 +130,15 @@ export function SecurityCenterSettings() {
 
   return (
     <div className="space-y-6">
-      <SectionCard title="کارمندان قفل‌شده">
-        <p className="mb-4 text-sm text-muted-foreground">
-          به‌دلیل تلاش‌های ناموفق مکرر، ورود این کارکنان موقتاً مسدود شده است.
-        </p>
+      <SectionCard
+        title={
+          <div>
+            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">امنیت و دسترسی</p>
+            <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">کارمندان قفل‌شده</h2>
+          </div>
+        }
+        description="به‌دلیل تلاش‌های ناموفق مکرر، ورود این کارکنان موقتاً مسدود شده است."
+      >
         {lockedEmployees !== null && lockedEmployees.length === 0 && (
           <p className="text-sm text-muted-foreground">هیچ کارمندی قفل نیست.</p>
         )}
@@ -167,10 +172,15 @@ export function SecurityCenterSettings() {
         )}
       </SectionCard>
 
-      <SectionCard title="نشست‌های فعال">
-        <p className="mb-4 text-sm text-muted-foreground">
-          کارکنانی که هم‌اکنون وارد سیستم هستند. پایان‌دادن به یک نشست بلافاصله اثر می‌کند.
-        </p>
+      <SectionCard
+        title={
+          <div>
+            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">نشست‌های فعال</p>
+            <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">نشست‌های فعال</h2>
+          </div>
+        }
+        description="کارکنانی که هم‌اکنون وارد سیستم هستند. پایان‌دادن به یک نشست بلافاصله اثر می‌کند."
+      >
         <ErrorBox>{error}</ErrorBox>
         {notice ? <InfoBox>{notice}</InfoBox> : null}
 
@@ -210,11 +220,15 @@ export function SecurityCenterSettings() {
         )}
       </SectionCard>
 
-      <SectionCard title="تلاش‌های ورود ناموفق">
-        <p className="mb-4 text-sm text-muted-foreground">
-          آخرین پین‌های نادرست یا احرازهویت‌های بیومتریک ناموفق.
-        </p>
-
+      <SectionCard
+        title={
+          <div>
+            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">ممیزی ورود</p>
+            <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">تلاش‌های ورود ناموفق</h2>
+          </div>
+        }
+        description="آخرین پین‌های نادرست یا احرازهویت‌های بیومتریک ناموفق."
+      >
         {failedAttempts === null && <LoadingSkeleton rows={3} />}
         {failedAttempts !== null && failedAttempts.length === 0 && (
           <p className="text-sm text-muted-foreground">تلاش ناموفقی ثبت نشده است.</p>

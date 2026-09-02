@@ -137,7 +137,15 @@ export function LoyaltySection() {
         />
       </div>
 
-      <SectionCard title="مشتریان آمادهٔ خرید مجدد" description="پیش‌بینی از تاریخچهٔ خرید خود مشتری؛ موعدِ گذشته یعنی وقت تماس یا پیام">
+      <SectionCard
+        title={
+          <div>
+            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">بازگشت مشتری</p>
+            <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">مشتریان آمادهٔ خرید مجدد</h2>
+          </div>
+        }
+        description="پیش‌بینی از تاریخچهٔ خرید خود مشتری؛ موعدِ گذشته یعنی وقت تماس یا پیام"
+      >
         {due.length === 0 ? (
           <EmptyState>هنوز مشتری‌ای در موعد خرید مجدد نیست.</EmptyState>
         ) : (
@@ -200,7 +208,15 @@ function ProgramsPanel({
   }
 
   return (
-    <SectionCard title="برنامهٔ وفاداری" bodyClassName="space-y-3 p-4 sm:p-5">
+    <SectionCard
+      title={
+        <div>
+          <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">طرح‌های امتیازدهی</p>
+          <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">برنامهٔ وفاداری</h2>
+        </div>
+      }
+      bodyClassName="space-y-3 p-4 sm:p-5"
+    >
       <ul className="divide-y divide-border/80 text-sm">
         {programs.map((p) => (
           <li key={p.id} className="flex items-center justify-between gap-2 py-2">
@@ -315,7 +331,15 @@ function CustomerPanel({
   }
 
   return (
-    <SectionCard title="مشتری و اعتبار" bodyClassName="space-y-3 p-4 sm:p-5">
+    <SectionCard
+      title={
+        <div>
+          <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">امور مالی مشتریان</p>
+          <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">مشتری و اعتبار</h2>
+        </div>
+      }
+      bodyClassName="space-y-3 p-4 sm:p-5"
+    >
       <Field label="مشتری">
         <SearchableSelect
           value={customerId}

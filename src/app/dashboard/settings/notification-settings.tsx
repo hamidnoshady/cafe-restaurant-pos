@@ -254,7 +254,12 @@ export function NotificationSettings() {
       {info ? <InfoBox>{info}</InfoBox> : null}
 
       <SectionCard
-        title="دستگاه‌های دریافت اعلان"
+        title={
+          <div>
+            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">سخت‌افزار و مرورگر</p>
+            <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">دستگاه‌های دریافت اعلان</h2>
+          </div>
+        }
         description="اعلان‌ها روی گوشی و رایانه — حتی وقتی برنامه بسته است — به هر دستگاهی می‌رسد که اینجا ثبت شده باشد."
         actions={
           <div className="flex flex-wrap gap-2">
@@ -320,7 +325,15 @@ export function NotificationSettings() {
       </SectionCard>
 
       {[...grouped.entries()].map(([group, groupEvents]) => (
-        <SectionCard key={group} title={NOTIFICATION_GROUP_LABELS[group]}>
+        <SectionCard
+          key={group}
+          title={
+            <div>
+              <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">دسته‌بندی اعلان</p>
+              <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">{NOTIFICATION_GROUP_LABELS[group]}</h2>
+            </div>
+          }
+        >
           <ul className="space-y-4">
             {groupEvents.map((event) => {
               const preference = preferenceFor(event.key);

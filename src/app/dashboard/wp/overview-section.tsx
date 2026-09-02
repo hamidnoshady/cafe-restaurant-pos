@@ -21,7 +21,7 @@ import {
   AlertTriangleIcon,
 } from "lucide-react";
 import { api } from "../ui";
-import { cardClass, EmptyState, SectionCardSkeleton, StatusBadge } from "../page-chrome";
+import { cardClass, EmptyState, SectionCard, SectionCardSkeleton, StatusBadge } from "../page-chrome";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import type { WpOverviewStats } from "@/lib/integrations/wp-manager-service";
@@ -164,7 +164,15 @@ export function WpOverviewSection() {
   return (
     <div className="space-y-4 sm:space-y-5">
       {/* Connection picker */}
-      <div className={`${cardClass} p-4 sm:p-5`}>
+      <SectionCard
+        title={
+          <div>
+            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">مدیریت فروشگاه</p>
+            <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">اتصال و وضعیت همگام‌سازی</h2>
+          </div>
+        }
+        description="فروشگاه متصل را انتخاب کنید و وضعیت همگام‌سازی کاتالوگ، سفارش‌ها و مشتریان را بررسی نمایید."
+      >
         <div className="flex flex-wrap items-center gap-3">
           <select
             className="min-w-[14rem] flex-1 rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus-visible:border-teal-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/30"
@@ -193,19 +201,19 @@ export function WpOverviewSection() {
           <div className="ms-auto flex flex-wrap gap-2">
             <Button variant="outline" size="sm" disabled={busy !== ""} onClick={() => runSync("products")}>
               <RefreshCwIcon className="size-4" />
-              همگام‌سازی محصولات
+              محصولات
             </Button>
             <Button variant="outline" size="sm" disabled={busy !== ""} onClick={() => runSync("orders")}>
               <RefreshCwIcon className="size-4" />
-              همگام‌سازی سفارش‌ها
+              سفارش‌ها
             </Button>
             <Button variant="outline" size="sm" disabled={busy !== ""} onClick={() => runSync("customers")}>
               <RefreshCwIcon className="size-4" />
-              همگام‌سازی مشتریان
+              مشتریان
             </Button>
             <Button variant="outline" size="sm" disabled={busy !== ""} onClick={() => runSync("content")}>
               <RefreshCwIcon className="size-4" />
-              همگام‌سازی محتوا
+              محتوا
             </Button>
           </div>
         </div>
@@ -216,7 +224,7 @@ export function WpOverviewSection() {
             آخرین خطا: {selected.lastError}
           </p>
         ) : null}
-        <div className="mt-3 grid gap-x-8 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mt-4 grid gap-x-8 gap-y-2 border-t border-border/80 pt-4 sm:grid-cols-2 lg:grid-cols-4">
           <SyncRow label="آخرین ارتباط کلی" value={selected?.lastSyncAt ?? null} />
           <SyncRow label="آخرین همگام‌سازی کاتالوگ" value={selected?.lastCatalogueSyncAt ?? null} />
           <SyncRow label="آخرین همگام‌سازی سفارش‌ها" value={selected?.lastOrderSyncAt ?? null} />
@@ -225,7 +233,7 @@ export function WpOverviewSection() {
             value={selected?.linkMode === "plugin" ? selected?.lastPluginSeenAt ?? null : null}
           />
         </div>
-      </div>
+      </SectionCard>
 
       {/* KPI tiles */}
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">

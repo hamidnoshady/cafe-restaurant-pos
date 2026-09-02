@@ -152,7 +152,12 @@ export function CustomerFileSection({ customerId, role }: { customerId: string; 
 
       {file.mergedIntoId ? (
         <SectionCard
-          title="این پرونده ادغام شده است"
+          title={
+            <div>
+              <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">وضعیت پرونده</p>
+              <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">این پرونده ادغام شده است</h2>
+            </div>
+          }
           description="محتوای آن به پروندهٔ دیگری منتقل شده و اینجا فقط برای سابقه نگه داشته می‌شود."
         >
           <Button asChild variant="outline">
@@ -162,7 +167,12 @@ export function CustomerFileSection({ customerId, role }: { customerId: string; 
       ) : null}
 
       <SectionCard
-        title={file.name}
+        title={
+          <div>
+            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">پرونده ۳۶۰ درجه</p>
+            <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">{file.name}</h2>
+          </div>
+        }
         description={[
           file.phone ? toPersianDigits(formatPhoneDisplay(file.phone)) : null,
           file.email,
@@ -257,7 +267,15 @@ export function CustomerFileSection({ customerId, role }: { customerId: string; 
       </SectionCard>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <SectionCard title="رضایت ارتباط" description="پایهٔ هر ارسال آینده؛ تغییرش ثبت می‌شود.">
+        <SectionCard
+          title={
+            <div>
+              <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">حریم و رضایت</p>
+              <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">رضایت ارتباط</h2>
+            </div>
+          }
+          description="پایهٔ هر ارسال آینده؛ تغییرش ثبت می‌شود."
+        >
           <ul className="divide-y divide-border/80 text-sm">
             <ConsentRow
               label="پیامک"
@@ -283,7 +301,15 @@ export function CustomerFileSection({ customerId, role }: { customerId: string; 
           ) : null}
         </SectionCard>
 
-        <SectionCard title="یادداشت‌ها" description="آنچه دربارهٔ این مشتری باید به یاد بماند.">
+        <SectionCard
+          title={
+            <div>
+              <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">یادداشت‌های مشتری</p>
+              <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">یادداشت‌ها</h2>
+            </div>
+          }
+          description="آنچه دربارهٔ این مشتری باید به یاد بماند."
+        >
           <div className="mb-3 flex gap-2">
             <input
               className={inputClass}

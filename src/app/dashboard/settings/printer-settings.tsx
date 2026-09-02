@@ -142,18 +142,33 @@ export function PrinterSettings() {
       <ErrorBox>{error}</ErrorBox>
       {notice ? <InfoBox>{notice}</InfoBox> : null}
 
-      <SectionCard title="افزودن چاپگر">
-        <p className="mb-4 text-sm text-muted-foreground">چاپگرهای رسید و آشپزخانه را به شعبهٔ فعال وصل کنید. عامل چاپ محلی باید روی دستگاه صندوق اجرا باشد.</p>
+      <SectionCard
+        title={
+          <div>
+            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">سخت‌افزار و فیش</p>
+            <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">افزودن چاپگر</h2>
+          </div>
+        }
+        description="چاپگرهای رسید و آشپزخانه را به شعبهٔ فعال وصل کنید. عامل چاپ محلی باید روی دستگاه صندوق اجرا باشد."
+      >
         <PrinterForm value={draft} onChange={setDraft} onSubmit={create} submitLabel="افزودن چاپگر" busy={busy} />
       </SectionCard>
 
       <section className="space-y-4">
-        <div>
-          <h2 className="font-semibold">چاپگرهای این شعبه</h2>
-          <p className="mt-1 text-sm text-muted-foreground">هر نوع چاپگر می‌تواند یک چاپگر پیش‌فرض داشته باشد؛ صندوق از آن برای چاپ خودکار استفاده می‌کند.</p>
-        </div>
-        {printers.length === 0 ? <p className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">هنوز چاپگری ثبت نشده است.</p> : null}
-        {printers.map((printer) => <PrinterCard key={printer.id} printer={printer} busy={busy} onSave={update} onDelete={remove} onAgentAction={agentAction} />)}
+        <SectionCard
+          title={
+            <div>
+              <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">مدیریت دستگاه‌ها</p>
+              <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">چاپگرهای این شعبه</h2>
+            </div>
+          }
+          description="هر نوع چاپگر می‌تواند یک چاپگر پیش‌فرض داشته باشد؛ صندوق از آن برای چاپ خودکار استفاده می‌کند."
+        >
+          {printers.length === 0 ? <p className="rounded-xl border border-dashed border-border p-4 text-center text-sm text-muted-foreground">هنوز چاپگری ثبت نشده است.</p> : null}
+          <div className="space-y-4">
+            {printers.map((printer) => <PrinterCard key={printer.id} printer={printer} busy={busy} onSave={update} onDelete={remove} onAgentAction={agentAction} />)}
+          </div>
+        </SectionCard>
       </section>
     </div>
   );
