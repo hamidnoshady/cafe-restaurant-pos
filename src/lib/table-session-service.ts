@@ -210,25 +210,40 @@ export async function computeSessionBill(sessionId: string): Promise<SessionBill
 
   const lines: SessionBill["lines"] = [];
   let total = 0;
+  if (orders.length === 0) return { total, lines };
+
+  // One query for every order's items instead of one round trip per order —
+  // a session with several rounds otherwise multiplies DB round trips by
+  // its order count on every bill view and every table payment.
+  type ItemRow = {
+    order_id: string;
+    id: string;
+    name_snapshot: string;
+    unit_price: string;
+    quantity: number;
+    tax_rate: string;
+    mod_deltas: string[] | null;
+  };
+  const { rows: allItems } = await query<ItemRow>(
+    `SELECT oi.order_id, oi.id, oi.name_snapshot, oi.unit_price, oi.quantity,
+            COALESCE(mc.tax_rate, 0) AS tax_rate,
+            ARRAY(SELECT price_delta FROM order_item_modifiers oim WHERE oim.order_item_id = oi.id) AS mod_deltas
+       FROM order_items oi
+       LEFT JOIN menu_items mi ON mi.id = oi.menu_item_id
+       LEFT JOIN menu_categories mc ON mc.id = mi.category_id
+      WHERE oi.order_id = ANY($1::uuid[]) AND oi.status != 'voided'
+      ORDER BY oi.order_id, oi.created_at`,
+    [orders.map((o) => o.id)],
+  );
+  const itemsByOrder = new Map<string, ItemRow[]>();
+  for (const it of allItems) {
+    const bucket = itemsByOrder.get(it.order_id);
+    if (bucket) bucket.push(it);
+    else itemsByOrder.set(it.order_id, [it]);
+  }
+
   for (const order of orders) {
-    const { rows: items } = await query<{
-      id: string;
-      name_snapshot: string;
-      unit_price: string;
-      quantity: number;
-      tax_rate: string;
-      mod_deltas: string[] | null;
-    }>(
-      `SELECT oi.id, oi.name_snapshot, oi.unit_price, oi.quantity,
-              COALESCE(mc.tax_rate, 0) AS tax_rate,
-              ARRAY(SELECT price_delta FROM order_item_modifiers oim WHERE oim.order_item_id = oi.id) AS mod_deltas
-         FROM order_items oi
-         LEFT JOIN menu_items mi ON mi.id = oi.menu_item_id
-         LEFT JOIN menu_categories mc ON mc.id = mi.category_id
-        WHERE oi.order_id = $1 AND oi.status != 'voided'
-        ORDER BY oi.created_at`,
-      [order.id],
-    );
+    const items = itemsByOrder.get(order.id) ?? [];
     if (items.length === 0) continue;
 
     const cartLines: CartLine[] = items.map((it) => ({

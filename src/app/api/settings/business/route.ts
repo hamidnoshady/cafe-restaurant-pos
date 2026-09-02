@@ -23,6 +23,13 @@ function text(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
+const MAX_NAME = 200;
+const MAX_ADDRESS = 500;
+const MAX_PHONE = 32;
+const MAX_TAX_ID = 50;
+const MAX_WEBSITE = 300;
+const MAX_RECEIPT_FOOTER = 500;
+
 /** Operational business settings. Unlike /api/setup/business this never advances the wizard. */
 export const GET = withTenantScope(async () => {
   const { session, error } = await requirePermission(PERMISSIONS.settingsManage);
@@ -60,6 +67,24 @@ export const PUT = withTenantScope(async (request: NextRequest) => {
   if (!businessName || !locationName) {
     return NextResponse.json({ error: "missing_fields" }, { status: 400 });
   }
+  const address = text(body.address);
+  const phone = text(body.phone);
+  const legalName = text(body.legalName);
+  const taxId = text(body.taxId);
+  const website = text(body.website);
+  const receiptFooter = text(body.receiptFooter);
+  if (
+    businessName.length > MAX_NAME ||
+    locationName.length > MAX_NAME ||
+    address.length > MAX_ADDRESS ||
+    phone.length > MAX_PHONE ||
+    legalName.length > MAX_NAME ||
+    taxId.length > MAX_TAX_ID ||
+    website.length > MAX_WEBSITE ||
+    receiptFooter.length > MAX_RECEIPT_FOOTER
+  ) {
+    return NextResponse.json({ error: "field_too_long" }, { status: 400 });
+  }
   const email = text(body.email);
   if (email && !/^\S+@\S+\.\S+$/.test(email)) {
     return NextResponse.json({ error: "invalid_email" }, { status: 400 });
@@ -74,18 +99,18 @@ export const PUT = withTenantScope(async (request: NextRequest) => {
     calendar: "jalali",
   };
   const profile: BusinessProfile = {
-    legalName: text(body.legalName) || undefined,
-    taxId: text(body.taxId) || undefined,
+    legalName: legalName || undefined,
+    taxId: taxId || undefined,
     email: email || undefined,
-    website: text(body.website) || undefined,
-    receiptFooter: text(body.receiptFooter) || undefined,
+    website: website || undefined,
+    receiptFooter: receiptFooter || undefined,
   };
 
   await query("UPDATE businesses SET name = $1 WHERE id = $2", [businessName, session.businessId]);
   await query("UPDATE locations SET name = $1, address = $2, phone = $3 WHERE id = $4", [
     locationName,
-    text(body.address) || null,
-    text(body.phone) || null,
+    address || null,
+    phone || null,
     location.id,
   ]);
   await Promise.all([

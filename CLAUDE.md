@@ -15,8 +15,9 @@ conventions are load-bearing; don't casually deviate from them.
 
 ## Test and build, locally — before every commit
 
-Run these from the repo root before considering any change done. **This is the only gate** —
-there is no CI (see below) — so a change nobody ran these on is a change nobody tested:
+Run these from the repo root before considering any change done, even though CI (see below)
+also runs them — CI runs on push, well after you've decided a change is finished, so it's not
+a substitute for running the checklist yourself first:
 
 ```bash
 npm install               # first time, or after a dependency change
@@ -35,23 +36,28 @@ it (see `src/lib/orders.test.ts` for the pattern: pure functions, integer-Rial f
 DB). If you changed the schema, add a new forward-only `migrations/NNNN_name.sql` file —
 never edit an already-applied migration.
 
-## CI — there isn't any
+## CI — `.github/workflows/test.yml`
 
-There is no CI. `.github/workflows/test.yml` ran the checklist above on every push to `main`
-and every PR against it; it was removed once the runners stopped working — every run, on
-branches and on `main` alike, failed before executing a single step (an account-level Actions
-problem, not a code one), so the only thing it produced was a permanent red ✗ on every PR that
-said nothing about the change. A gate that fails identically whatever you push is worse than no
-gate, because it trains you to ignore it.
+CI was removed for a while (every run, on branches and on `main` alike, failed before executing
+a single step — an account-level Actions problem, not a code one — so the only thing it produced
+was a permanent red ✗ on every PR that said nothing about the change) and was restored once the
+runners started billing again. It runs the same checklist as above — type check, unit tests,
+integration tests, production build — on every push to `main` and every PR against it, as four
+independent jobs in parallel (not one sequential job) so the run's wall-clock time is the slowest
+single check, not their sum; a `required` job fans the four back in to one status check for
+branch protection. If it ever goes back to failing identically on every push regardless of what
+changed, that's the same account-level symptom as before, not a reason to start ignoring it —
+check the Actions tab for what's actually failing before assuming the gate itself is broken.
 
 What follows from that:
 
-- **Run the local checklist above, every time, in full.** Nothing else will catch a change that
-  breaks the type check or a test — least of all a reviewer looking at a diff.
+- **Run the local checklist above yourself, every time, in full — don't wait on CI.** CI is a
+  backstop, not your first signal; nothing else will catch a change that breaks the type check or
+  a test as fast as running it yourself.
 - Don't report a change as done on the strength of a partial run. `npm test` passing while
   `npm run test:db` was never started is not a green checklist; say which steps you actually ran.
-- Restoring the workflow is a fine idea once the runners bill again — `git log -- .github/` has
-  it, and it needs no changes beyond existing.
+- Keep `.github/workflows/test.yml` in sync with the checklist above — if a step is added, removed
+  or renamed here, update the workflow (and vice versa) in the same change.
 
 Note also, unrelated to the above and unchanged by it: don't assume a container image exists for
 a given commit. The self-update path (`src/lib/app-update.ts`, `scripts/check-app-update.ts`,

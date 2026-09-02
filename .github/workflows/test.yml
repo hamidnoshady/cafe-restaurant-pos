@@ -1,0 +1,125 @@
+# Tests every push to main and every PR against it. Deliberately test-only: no
+# image build, no registry push, no deploy — this gate exists to keep main green,
+# and runs the same local checklist CLAUDE.md documents (tsc, unit tests,
+# integration tests, build) so a change that passes locally passes here.
+#
+# Speed: the four checks are independent of each other, so they run as four
+# parallel jobs instead of one long sequential job — wall-clock time is the
+# slowest single check, not the sum of all four. Each job restores npm's
+# download cache (keyed on package-lock.json) via actions/setup-node, so
+# `npm ci` only re-links packages instead of re-downloading them on a cache
+# hit. `required` fans in all four so branch protection only needs to name
+# one status check.
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# A new push to the same branch/PR makes the previous run pointless.
+concurrency:
+  group: test-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Session signing is not what's under test here, but the auth/webauthn
+  # suites do need a real (non-placeholder) secret, and vitest/next build
+  # don't read .env. Throwaway value, CI-only, never used to sign anything real.
+  JWT_SECRET: ci-only-throwaway-secret-0123456789abcdef0123456789abcdef
+
+jobs:
+  typecheck:
+    name: type check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit
+
+  unit-tests:
+    name: unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm test
+
+  build:
+    name: production build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+
+  integration-tests:
+    name: integration tests (real database)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        # Same major version as production and docker-compose. The integration
+        # tests each create their own scratch database and migrate it, so this
+        # role has to be able to CREATE DATABASE — the image's POSTGRES_USER is.
+        image: postgres:16
+        env:
+          POSTGRES_USER: pos
+          POSTGRES_PASSWORD: pos
+          POSTGRES_DB: pos
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgres://pos:pos@localhost:5432/pos
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+
+      - name: Apply migrations
+        run: npm run db:migrate
+
+      - name: Re-apply migrations (must be a no-op)
+        run: npm run db:migrate
+
+      - name: Integration tests
+        run: npm run test:db
+
+  # Single required status check for branch protection, instead of naming all
+  # four jobs individually. Fails if any of them failed, was cancelled, or
+  # never ran.
+  required:
+    name: all checks passed
+    runs-on: ubuntu-latest
+    needs: [typecheck, unit-tests, build, integration-tests]
+    if: always()
+    steps:
+      - name: Check job results
+        run: |
+          if [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" = "true" ]; then
+            echo "One or more required checks failed." >&2
+            exit 1
+          fi

@@ -1,7 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requirePermission, withTenantScope } from "@/lib/auth";
 import { PERMISSIONS } from "@/lib/permissions";
-import { createCustomer, listCustomers, searchCustomers } from "@/lib/customers-service";
+import {
+  createCustomer,
+  listCustomers,
+  searchCustomers,
+  MAX_CUSTOMER_ADDRESS,
+  MAX_CUSTOMER_NAME,
+  MAX_CUSTOMER_NOTES,
+  MAX_CUSTOMER_PHONE,
+} from "@/lib/customers-service";
 
 /**
  * `q` alone (no `page`) is the checkout credit-payment picker's search — kept
@@ -49,12 +57,21 @@ export const POST = withTenantScope(async (request: NextRequest) => {
 
   const name = body.name?.trim();
   if (!name) return NextResponse.json({ error: "name_required" }, { status: 400 });
+  if (name.length > MAX_CUSTOMER_NAME) return NextResponse.json({ error: "name_too_long" }, { status: 400 });
 
-  const customer = await createCustomer(session.businessId, {
-    name,
-    phone: body.phone,
-    address: body.address,
-    notes: body.notes,
-  });
+  const phone = body.phone?.trim() || undefined;
+  if (phone && phone.length > MAX_CUSTOMER_PHONE) {
+    return NextResponse.json({ error: "phone_too_long" }, { status: 400 });
+  }
+  const address = body.address?.trim() || undefined;
+  if (address && address.length > MAX_CUSTOMER_ADDRESS) {
+    return NextResponse.json({ error: "address_too_long" }, { status: 400 });
+  }
+  const notes = body.notes?.trim() || undefined;
+  if (notes && notes.length > MAX_CUSTOMER_NOTES) {
+    return NextResponse.json({ error: "notes_too_long" }, { status: 400 });
+  }
+
+  const customer = await createCustomer(session.businessId, { name, phone, address, notes });
   return NextResponse.json({ customer }, { status: 201 });
 });

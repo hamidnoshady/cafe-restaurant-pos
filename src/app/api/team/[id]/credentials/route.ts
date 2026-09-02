@@ -1,9 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession, requirePermission, withTenantScope } from "@/lib/auth";
+import { query } from "@/lib/db";
 import { PERMISSIONS } from "@/lib/permissions";
 import { toLatinDigits } from "@/lib/digits";
 import { isValidPin } from "@/lib/team";
 import { TeamError, setPassword, setPin, verifyPassword } from "@/lib/team-service";
+import {
+  checkAuthLockout,
+  recordAuthFailure,
+  recordAuthSuccess,
+} from "@/lib/login-lockout-service";
+import { PASSWORD_LOCKOUT_POLICY } from "@/lib/login-lockout";
 
 /**
  * Sets a member's PIN or password.
@@ -49,8 +56,36 @@ export const PUT = withTenantScope(async (request: NextRequest, context: { param
     }
 
     if (body.password !== undefined) {
-      if (isSelf && !(await verifyPassword(session.sub, body.currentPassword ?? ""))) {
-        return NextResponse.json({ error: "invalid_current_password" }, { status: 403 });
+      if (isSelf) {
+        // The same brute-force surface as a login form: a hijacked or
+        // walked-up-to session could otherwise script this field against the
+        // real password with nothing but the shared per-business API budget
+        // to slow it down. Shares the exact login lockout (tenant_password,
+        // 5/15min) rather than a separate counter, since both are attempts
+        // to guess the same platform_users password.
+        const { rows } = await query<{ email: string | null }>(
+          `SELECT email FROM users WHERE id = $1 AND business_id = $2`,
+          [session.sub, session.businessId],
+        );
+        const email = rows[0]?.email;
+        if (email) {
+          const lockout = await checkAuthLockout("tenant_password", email, PASSWORD_LOCKOUT_POLICY);
+          if (lockout.locked) {
+            return NextResponse.json(
+              { error: "account_locked", lockedUntil: lockout.lockedUntil },
+              { status: 423 },
+            );
+          }
+        }
+
+        const ok = await verifyPassword(session.sub, body.currentPassword ?? "");
+        if (email) {
+          if (ok) await recordAuthSuccess("tenant_password", email);
+          else await recordAuthFailure("tenant_password", email);
+        }
+        if (!ok) {
+          return NextResponse.json({ error: "invalid_current_password" }, { status: 403 });
+        }
       }
       await setPassword(session.businessId, id, body.password, session.sub);
       return NextResponse.json({ ok: true });

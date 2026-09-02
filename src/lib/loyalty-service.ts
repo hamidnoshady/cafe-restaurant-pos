@@ -88,6 +88,13 @@ export async function upsertProgram(
   if (!name) throw new Error("نام برنامه وفاداری نمی‌تواند خالی باشد.");
   if ((input.earnPointsPer100000 ?? 1) < 0) throw new Error("نرخ کسب امتیاز نمی‌تواند منفی باشد.");
   if ((input.pointValueRial ?? 1000) <= 0) throw new Error("ارزش ریالی هر امتیاز باید مثبت باشد.");
+  if (
+    input.pointsExpiryDays !== undefined &&
+    input.pointsExpiryDays !== null &&
+    (!Number.isInteger(input.pointsExpiryDays) || input.pointsExpiryDays <= 0)
+  ) {
+    throw new Error("روزهای انقضای امتیاز باید عدد صحیح مثبت باشد یا خالی بماند.");
+  }
 
   const client = await getPool().connect();
   try {
