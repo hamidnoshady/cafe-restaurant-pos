@@ -1,6 +1,21 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  typescript: {
+    /**
+     * `next build` re-runs a full `tsc` program check by default, against the
+     * same tsconfig.json as .github/workflows/test.yml's `typecheck` job
+     * (`npx tsc --noEmit`) — which already gates every push to `main` before
+     * any code reaches a place that gets built into a Docker image. Redoing
+     * it a second time inside the image build (Dockerfile, and Runflare's
+     * own from-source build in production) is pure duplicate work on a
+     * ~1,500-file project, with nothing catching a type error there that CI
+     * hasn't already caught. Skip it ONLY in that context — DOCKER_BUILD is
+     * set nowhere else, so a plain `npm run build` (locally, or in CI's own
+     * `build` job) still type-checks in full and stays the real gate.
+     */
+    ignoreBuildErrors: process.env.DOCKER_BUILD === "1",
+  },
   async headers() {
     const commonHeaders = [
       { key: "X-Content-Type-Options", value: "nosniff" },

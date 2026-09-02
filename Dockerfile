@@ -26,7 +26,7 @@ COPY package.json package-lock.json ./
 # full re-download — the biggest single lever on deploy time we don't control
 # from inside the Dockerfile alone. Harmless (a plain `docker build` with no
 # cache backend just skips it) when it isn't.
-RUN --mount=type=cache,target=/root/.npm npm ci
+RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund
 
 # ---- builder: produce the .next production build ----------------------------
 FROM node:20-alpine AS builder
@@ -37,6 +37,11 @@ COPY . .
 # pages that read cookies() render dynamically at request time, not at build.
 ENV NODE_ENV=production
 ENV JWT_SECRET=build-time-placeholder-not-used-at-runtime
+# Skips next build's redundant full type-check — see the DOCKER_BUILD doc
+# comment in next.config.ts. CI's own `typecheck` job already covers it on
+# every push to main before a commit is ever built into an image, here or on
+# Runflare (which builds from this same Dockerfile in production).
+ENV DOCKER_BUILD=1
 RUN npm run build
 # The app currently ships no public/ assets (fonts are bundled via the source
 # tree), but Next serves public/ when present — make sure the dir exists so the
