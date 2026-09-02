@@ -25,7 +25,7 @@
  */
 
 import { query, withTenant } from "./db";
-import { listCustomerBalances } from "./ar-service";
+import { getCustomerArBalance } from "./ar-service";
 import { businessToday } from "./business-day-service";
 import { getBusinessDek } from "./business-keys";
 import { encryptOptional, phoneBlindIndex, phoneKind, phoneLast4 } from "./field-crypto";
@@ -160,11 +160,10 @@ export async function getCustomerFile(
   if (!row) return null;
 
   const today = await businessToday(businessId);
-  // Ask the books rather than recomputing. Returns [] when the business has no
-  // A/R account yet, which is a real state for a cash-only cafe — distinct from
-  // "has an account and owes nothing", hence the hasLedger flag below.
-  const balances = await listCustomerBalances(businessId);
-  const arBalance = balances.find((b) => b.customerId === customerId) ?? null;
+  // Ask the books rather than recomputing. `hasLedger` is false when the
+  // business has no A/R account yet, which is a real state for a cash-only
+  // cafe — distinct from "has an account and owes nothing".
+  const arBalance = await getCustomerArBalance(businessId, customerId);
   const lastPurchaseDate = (row.lastPurchaseDate as string | null) ?? null;
   const firstPurchaseDate = (row.firstPurchaseDate as string | null) ?? null;
   const orderCount = Number(row.orderCount ?? 0);
@@ -212,8 +211,8 @@ export async function getCustomerFile(
       scoredAt: (row.rfmScoredAt as string | null) ?? null,
     },
     accounting: {
-      receivableRial: arBalance ? arBalance.balance : 0,
-      hasLedger: balances.length > 0,
+      receivableRial: arBalance.balance,
+      hasLedger: arBalance.hasLedger,
     },
   };
 }

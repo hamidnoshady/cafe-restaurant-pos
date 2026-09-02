@@ -58,7 +58,10 @@ export async function ensurePaymentMethods(businessId: string): Promise<void> {
     [businessId],
   );
   if (Number(rows[0]?.count ?? 0) > 0) return;
+  await seedForBusiness(businessId);
+}
 
+async function seedForBusiness(businessId: string): Promise<void> {
   const { rows: bizRows } = await query<{ industry: string }>("SELECT industry FROM businesses WHERE id = $1", [
     businessId,
   ]);
@@ -98,14 +101,21 @@ export async function listPaymentMethods(
   businessId: string,
   options: ListPaymentMethodsOptions = {},
 ): Promise<PaymentMethodView[]> {
-  await ensurePaymentMethods(businessId);
-  const { rows } = await query<PaymentMethodRow>(
-    `SELECT ${SELECT_COLUMNS}
-       FROM payment_methods
-      WHERE business_id = $1 ${options.includeInactive ? "" : "AND is_active"}`,
-    [businessId],
-  );
-  return sortPaymentMethods(rows.map(toView));
+  // One read covering every row (active or not) doubles as the "has this
+  // business been seeded yet" check, so the common case — already seeded —
+  // costs one round trip instead of the seed-check-then-list pair this used
+  // to run on every call.
+  let { rows } = await query<PaymentMethodRow>(`SELECT ${SELECT_COLUMNS} FROM payment_methods WHERE business_id = $1`, [
+    businessId,
+  ]);
+  if (rows.length === 0) {
+    await seedForBusiness(businessId);
+    ({ rows } = await query<PaymentMethodRow>(`SELECT ${SELECT_COLUMNS} FROM payment_methods WHERE business_id = $1`, [
+      businessId,
+    ]));
+  }
+  const views = options.includeInactive ? rows.map(toView) : rows.filter((r) => r.is_active).map(toView);
+  return sortPaymentMethods(views);
 }
 
 /**

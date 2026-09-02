@@ -99,6 +99,38 @@ export async function listCustomerBalances(businessId: string): Promise<Customer
   return [...byCustomer.values()].filter((c) => c.balance !== 0).sort((a, b) => b.balance - a.balance);
 }
 
+export interface CustomerArBalance {
+  /** Positive means the customer owes the business. */
+  balance: number;
+  /** False when the chart of accounts has no A/R account yet. */
+  hasLedger: boolean;
+}
+
+/**
+ * One customer's AR balance, computed directly instead of through
+ * {@link listCustomerBalances}'s whole-book scan. `getCustomerFile` only
+ * ever needed a single customer's figure out of that list — asking for it
+ * directly means the customer-file screen no longer redoes a
+ * business-history-sized aggregation (every AR journal line, every
+ * customer) just to read one row back out of it.
+ */
+export async function getCustomerArBalance(businessId: string, customerId: string): Promise<CustomerArBalance> {
+  const accountId = await arAccountId(businessId);
+  if (!accountId) return { balance: 0, hasLedger: false };
+
+  const { rows } = await query<{ debit: string; credit: string }>(
+    `SELECT COALESCE(SUM(jl.debit), 0)::text AS debit, COALESCE(SUM(jl.credit), 0)::text AS credit
+       FROM journal_lines jl
+       JOIN journal_entries je ON je.id = jl.entry_id
+       LEFT JOIN order_amendments am ON je.source_type = 'order_amendment' AND am.id = je.source_id
+       LEFT JOIN orders o ON o.id = CASE WHEN je.source_type = 'order' THEN je.source_id ELSE am.order_id END
+       LEFT JOIN ar_receipts r ON je.source_type = 'ar_receipt' AND r.id = je.source_id
+      WHERE je.business_id = $1 AND jl.account_id = $2 AND COALESCE(o.customer_id, r.customer_id) = $3`,
+    [businessId, accountId, customerId],
+  );
+  return { balance: Number(rows[0]?.debit ?? 0) - Number(rows[0]?.credit ?? 0), hasLedger: true };
+}
+
 export interface ArStatementLine {
   date: string;
   type: "invoice" | "receipt" | "other";
