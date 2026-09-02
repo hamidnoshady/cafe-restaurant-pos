@@ -361,16 +361,28 @@ function CustomerFormDialog({
         </DialogHeader>
         <ErrorBox>{localError}</ErrorBox>
         <Field label="نام">
-          <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} />
+          <input className={inputClass} maxLength={200} value={name} onChange={(e) => setName(e.target.value)} />
         </Field>
         <Field label="تلفن (اختیاری)">
-          <input className={inputClass} dir="ltr" value={phone} onChange={(e) => setPhone(e.target.value)} />
+          <input
+            className={inputClass}
+            dir="ltr"
+            maxLength={32}
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+          />
         </Field>
         <Field label="آدرس (اختیاری)">
-          <input className={inputClass} value={address} onChange={(e) => setAddress(e.target.value)} />
+          <input className={inputClass} maxLength={500} value={address} onChange={(e) => setAddress(e.target.value)} />
         </Field>
         <Field label="یادداشت (اختیاری)">
-          <textarea className={inputClass} rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
+          <textarea
+            className={inputClass}
+            rows={2}
+            maxLength={2000}
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+          />
         </Field>
         <DialogFooter>
           <Button type="button" variant="outline" onClick={onClose} disabled={busy}>

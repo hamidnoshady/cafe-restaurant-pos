@@ -27,6 +27,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   if (!categoryId || !name || !Number.isSafeInteger(price) || price < 0) {
     return NextResponse.json({ error: "missing_fields" }, { status: 400 });
   }
+  if (name.length > 200) return NextResponse.json({ error: "item_name_too_long" }, { status: 400 });
 
   const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });

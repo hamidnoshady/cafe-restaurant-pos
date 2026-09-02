@@ -28,7 +28,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
 
-  if (!body.code?.trim() || !body.initialValue) {
+  if (!body.code?.trim() || !Number.isFinite(body.initialValue) || (body.initialValue as number) <= 0) {
     return NextResponse.json({ error: "missing_fields" }, { status: 400 });
   }
 

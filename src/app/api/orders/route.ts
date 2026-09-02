@@ -127,6 +127,9 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });
 
+  if (body.guestCount !== undefined && (!Number.isInteger(body.guestCount) || body.guestCount < 0)) {
+    return NextResponse.json({ error: "invalid_guest_count" }, { status: 400 });
+  }
   const guestCount = Number.isFinite(body.guestCount) ? Number(body.guestCount) : null;
   const result = await createOrder({
     locationId: location.id,

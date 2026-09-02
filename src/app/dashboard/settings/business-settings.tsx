@@ -175,6 +175,7 @@ export function BusinessSettings() {
           <Field label="نام کسب‌وکار">
             <input
               className={inputClass}
+              maxLength={200}
               value={form.businessName}
               onChange={(e) => change("businessName", e.target.value)}
               required
@@ -183,6 +184,7 @@ export function BusinessSettings() {
           <Field label="نام حقوقی / صاحب امتیاز" hint="روی فاکتور رسمی چاپ می‌شود.">
             <input
               className={inputClass}
+              maxLength={200}
               value={form.legalName}
               onChange={(e) => change("legalName", e.target.value)}
               placeholder="اختیاری"
@@ -192,6 +194,7 @@ export function BusinessSettings() {
             <input
               className={inputClass}
               dir="ltr"
+              maxLength={50}
               value={form.taxId}
               onChange={(e) => change("taxId", e.target.value)}
               placeholder="اختیاری"
@@ -211,6 +214,7 @@ export function BusinessSettings() {
             <input
               className={inputClass}
               dir="ltr"
+              maxLength={300}
               value={form.website}
               onChange={(e) => change("website", e.target.value)}
               placeholder="https://example.com"
@@ -228,6 +232,7 @@ export function BusinessSettings() {
           <Field label="نام شعبه">
             <input
               className={inputClass}
+              maxLength={200}
               value={form.locationName}
               onChange={(e) => change("locationName", e.target.value)}
               required
@@ -238,6 +243,7 @@ export function BusinessSettings() {
               className={inputClass}
               dir="ltr"
               inputMode="tel"
+              maxLength={32}
               value={form.phone}
               onChange={(e) => change("phone", e.target.value)}
             />
@@ -246,6 +252,7 @@ export function BusinessSettings() {
         <Field label="نشانی">
           <textarea
             className={`${inputClass} h-auto min-h-24 py-2`}
+            maxLength={500}
             value={form.address}
             onChange={(e) => change("address", e.target.value)}
           />
@@ -255,6 +262,7 @@ export function BusinessSettings() {
       <SectionCard title="متن پایین رسید" description="مثلاً پیام تشکر، شرایط مرجوعی یا راه ارتباطی.">
         <textarea
           className={`${inputClass} h-auto min-h-24 py-2`}
+          maxLength={500}
           value={form.receiptFooter}
           onChange={(e) => change("receiptFooter", e.target.value)}
           placeholder="از خرید شما متشکریم"

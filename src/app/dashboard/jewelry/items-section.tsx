@@ -144,6 +144,7 @@ export function ItemsSection({
             <Field label="نام کالا">
               <input
                 className={jewelryInputClass}
+                maxLength={200}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="مثلاً دستبند طرح بافت"
