@@ -59,12 +59,17 @@ What follows from that:
 - Keep `.github/workflows/test.yml` in sync with the checklist above — if a step is added, removed
   or renamed here, update the workflow (and vice versa) in the same change.
 
-Note also, unrelated to the above and unchanged by it: don't assume a container image exists for
-a given commit. The self-update path (`src/lib/app-update.ts`, `scripts/check-app-update.ts`,
-`/platform/updates`) and the pull-based compose files (`docker-compose.local.yml`,
-`archive/deploy/docker-compose.srv1.yml`) all expect
-`ghcr.io/hamidnoshady/cafe-restaurant-pos:sha-<short-sha>` images that nothing in this repo has
-ever published. Those images are produced outside it.
+Note also, unrelated to the above and unchanged by it: `.github/workflows/build-and-push.yml`
+builds and pushes `ghcr.io/hamidnoshady/cafe-restaurant-pos:sha-<short-sha>` (and `:latest`) to
+GHCR after `test` passes on `main` — but only main-branch, post-test commits get an image; don't
+assume one exists for a branch, a PR, or a commit CI hasn't finished with yet. This is what the
+self-update path (`src/lib/app-update.ts`, `scripts/check-app-update.ts`, `/platform/updates`) and
+the pull-based compose files (`docker-compose.local.yml`,
+`archive/deploy/docker-compose.srv1.yml`) expect — it existed as a documented contract with
+nothing fulfilling it before this workflow. **Production (Runflare) does not consume this image
+yet** — it still builds from the `Dockerfile` itself per `docs/server-migration.md`'s Runflare
+recipe; repointing it at the prebuilt tag is a separate, deliberate step (Runflare service config
++ GHCR pull credentials), not something this workflow does on its own.
 
 ## Tenancy — read before touching the database
 

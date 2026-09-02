@@ -44,8 +44,8 @@ echo "Postgres is ready."
 
 # Resolve the TypeScript runner ONCE, and loudly.
 #
-# The runner image is built with `npm ci --omit=dev` (Dockerfile, prod-deps
-# stage), so only `dependencies` exist here — anything in `devDependencies`
+# The runner image is built from a tree pruned with `npm prune --omit=dev`
+# (Dockerfile, prod-deps stage), so only `dependencies` exist here — anything in `devDependencies`
 # is silently absent at runtime. tsx is deliberately in `dependencies`:
 # `npm start` runs `tsx server.ts` and both boot steps below are TypeScript
 # scripts. When it is missing anyway, the bare shell error ("line 46:
@@ -62,7 +62,7 @@ if [ ! -x "$TSX" ]; then
   else
     echo "FATAL: tsx is not installed in this image." >&2
     echo "       The entrypoint and 'npm start' both run TypeScript, and the" >&2
-    echo "       runtime image installs with 'npm ci --omit=dev', so tsx must" >&2
+    echo "       runtime image prunes devDependencies out, so tsx must" >&2
     echo "       be listed in package.json \"dependencies\"." >&2
     exit 1
   fi

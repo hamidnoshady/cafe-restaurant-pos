@@ -5,7 +5,7 @@
 # The app does NOT use `next start`; `npm start` runs `tsx server.ts`, which
 # boots Next in production mode AND the `/ws` WebSocket sync channel. So tsx is
 # a RUNTIME dependency: it is listed under "dependencies" in package.json,
-# because the prod-deps stage below installs with `npm ci --omit=dev` and a
+# because the prod-deps stage below prunes dev dependencies out and a
 # devDependency would be dropped from the image at exactly the moment the
 # entrypoint calls it. Alongside it the runtime image keeps the source tree,
 # `.next` build output, migrations and scripts — the scripts it runs at boot
@@ -20,7 +20,13 @@
 FROM node:20-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci
+# Cache mount keyed on the image's npm cache dir: on a builder that persists
+# BuildKit cache between deploys (e.g. registry cache export/import), this
+# turns an unchanged package-lock.json into a install from cache instead of a
+# full re-download — the biggest single lever on deploy time we don't control
+# from inside the Dockerfile alone. Harmless (a plain `docker build` with no
+# cache backend just skips it) when it isn't.
+RUN --mount=type=cache,target=/root/.npm npm ci
 
 # ---- builder: produce the .next production build ----------------------------
 FROM node:20-alpine AS builder
@@ -37,11 +43,18 @@ RUN npm run build
 # runner's COPY always succeeds and future assets are picked up automatically.
 RUN mkdir -p public
 
-# ---- prod-deps: production dependencies only ---------------------------------
+# ---- prod-deps: strip dev dependencies out of the already-installed tree ----
+# Deliberately not a second `npm ci --omit=dev`: that would re-resolve and
+# re-download the ~36 production packages a second time for no reason, since
+# the `deps` stage already installed them (alongside the 14 dev-only ones
+# `npm run build` needed). `npm prune` is a local operation on the tree we
+# already have — no registry round trip — so this is strictly a subset of the
+# work the old second `npm ci` did.
 FROM node:20-alpine AS prod-deps
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev
+COPY --from=deps /app/node_modules ./node_modules
+RUN npm prune --omit=dev
 
 # ---- runner: the image that actually runs in Komodo -------------------------
 FROM node:20-alpine AS runner
@@ -63,9 +76,9 @@ ENV APP_IMAGE_SHA=$GIT_SHA
 # su-exec is used to drop privileges from root after fixing volume permissions.
 RUN apk add --no-cache postgresql16-client su-exec
 
-# Production tree only — `npm ci --omit=dev`, so dependencies only. tsx belongs
-# there (see the note at the top of this file): the entrypoint runs TS scripts
-# and `npm start` runs `tsx server.ts`.
+# Production tree only — dev dependencies pruned out, so dependencies only.
+# tsx belongs there (see the note at the top of this file): the entrypoint
+# runs TS scripts and `npm start` runs `tsx server.ts`.
 COPY --from=prod-deps --chown=node:node /app/node_modules ./node_modules
 COPY --from=builder --chown=node:node /app/.next ./.next
 COPY --from=builder --chown=node:node /app/public ./public

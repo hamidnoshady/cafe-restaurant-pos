@@ -1,11 +1,11 @@
 /**
  * Guards the one dependency rule the Docker image depends on.
  *
- * The runner stage of the Dockerfile installs with `npm ci --omit=dev`
- * (prod-deps stage), so **anything in `devDependencies` does not exist in the
- * production image** — not even packages that happen to be pulled in
- * transitively by a production dependency, because those paths are incidental
- * and move without warning.
+ * The runner stage of the Dockerfile installs from a tree that's had dev
+ * dependencies pruned out (`npm prune --omit=dev`, prod-deps stage), so
+ * **anything in `devDependencies` does not exist in the production image** —
+ * not even packages that happen to be pulled in transitively by a production
+ * dependency, because those paths are incidental and move without warning.
  *
  * Two things run in that image and are written in TypeScript:
  *
@@ -16,7 +16,7 @@
  * So `tsx` — and every package those scripts import — has to be a runtime
  * dependency. It is not enough for `tsx` to be present during development: it
  * used to arrive only as an *optional peer* of vitest, which made `npm ci`
- * locally install it and `npm ci --omit=dev` in the image drop it, producing a
+ * locally install it and the image's dev-dependency prune drop it, producing a
  * boot failure whose only symptom was a shell error from the entrypoint
  * (`./node_modules/.bin/tsx: not found`) after "Applying database migrations".
  *
@@ -121,7 +121,7 @@ function importedPackages(entrypoint: string): Set<string> {
 
 const pkg = readJson("package.json");
 
-describe("runtime dependencies survive `npm ci --omit=dev`", () => {
+describe("runtime dependencies survive the image's `npm prune --omit=dev`", () => {
   /**
    * The scripts the container CMD and the entrypoint actually execute. Other
    * scripts (`test`, `build`, `dev`) legitimately use devDependencies and are
@@ -156,7 +156,7 @@ describe("runtime dependencies survive `npm ci --omit=dev`", () => {
       expect(
         Object.keys(pkg.dependencies),
         `"${script}" runs "${binary}", which must be in dependencies: the ` +
-          `image is built with npm ci --omit=dev, so devDependencies are ` +
+          `image prunes devDependencies out before it ships, so they are ` +
           `absent at runtime.`,
       ).toContain(binary);
     },
@@ -194,7 +194,7 @@ describe("runtime dependencies survive `npm ci --omit=dev`", () => {
       expect(
         missing,
         `${entrypoint} (and its local imports) import ${missing.join(", ")}, ` +
-          `which npm ci --omit=dev will not install into the image. Move ` +
+          `which the image's dev-dependency prune will strip out. Move ` +
           `them to "dependencies" in package.json.`,
       ).toEqual([]);
     },
