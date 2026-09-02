@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   ArmchairIcon,
   BarChart3Icon,
+  BookOpenIcon,
   BotIcon,
   CalendarDaysIcon,
   CalculatorIcon,
@@ -150,6 +151,8 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   "/dashboard/website": GlobeIcon,
   // Migration 0130 — the support desk.
   "/dashboard/support": LifeBuoyIcon,
+  // Migration 0131 — the in-product knowledge base («مرکز آموزش»).
+  "/dashboard/knowledge": BookOpenIcon,
 };
 
 /**

@@ -74,6 +74,16 @@ export const EXEMPT_TABLES = new Set([
   "credit_packages",
   "billing_plans",
   "billing_plan_features",
+  // Migration 0131 — the in-product knowledge base (categories, tags, articles
+  // and the article↔tag join). Platform-maintained content in exactly the
+  // shape of knowledge_base_entries: the same category tree and the same
+  // published articles teach every business, so there is no business_id to
+  // scope by. Written only through /api/platform/knowledge/*; tenant routes
+  // read published rows through /api/knowledge/*.
+  "knowledge_categories",
+  "knowledge_tags",
+  "knowledge_articles",
+  "knowledge_article_tags",
 ]);
 
 export interface ForeignKeyEdge {
