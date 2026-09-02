@@ -250,7 +250,7 @@ async function createWindow() {
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
-    title: "Cafe POS",
+    title: "Business Suite",
     autoHideMenuBar: true,
     webPreferences: { preload: path.join(__dirname, "preload.js") },
   });

@@ -166,7 +166,7 @@ function LocalBootstrapForm({ onBack }: { onBack: () => void }) {
             className="w-full rounded-lg border border-input px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-ring/30"
             value={businessName}
             onChange={(e) => setBusinessName(e.target.value)}
-            placeholder="مثلاً کافه بهار"
+            placeholder="مثلاً فروشگاه بهار"
             required
           />
         </label>

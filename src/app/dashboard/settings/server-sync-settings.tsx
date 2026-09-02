@@ -243,7 +243,7 @@ export function ServerSyncSettings() {
       <div className="space-y-6">
         <SectionCard title="این سرور، سرور مرکزی است">
           <p className="mb-4 text-sm text-muted-foreground">
-            نصب‌های محلی (مثلاً لپ‌تاپ کافه) به این سرور همگام می‌شوند؛ خودِ این سرور به جایی همگام نمی‌شود، بنابراین
+            نصب‌های محلی (مثلاً لپ‌تاپ شعبه) به این سرور همگام می‌شوند؛ خودِ این سرور به جایی همگام نمی‌شود، بنابراین
             آدرس و توکن اتصال اینجا تنظیم نمی‌شود. توکن هر نصب هنگام «جفت‌سازی» در کنسول مدیریت ساخته می‌شود.
           </p>
           <ErrorBox>{error}</ErrorBox>
@@ -273,7 +273,7 @@ export function ServerSyncSettings() {
     <div className="space-y-6">
       <SectionCard title="اتصال به سرور مرکزی">
         <p className="mb-4 text-sm text-muted-foreground">
-          این نصب (مثلاً لپ‌تاپ کافه) با سرور مرکزی به‌صورت دوطرفه همگام می‌شود. توکن مشترک باید در هر دو سمت یکسان
+          این نصب (مثلاً لپ‌تاپ شعبه) با سرور مرکزی به‌صورت دوطرفه همگام می‌شود. توکن مشترک باید در هر دو سمت یکسان
           باشد.
         </p>
         <ErrorBox>{error}</ErrorBox>

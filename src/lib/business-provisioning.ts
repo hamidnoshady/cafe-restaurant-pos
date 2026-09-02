@@ -402,7 +402,7 @@ export async function provisionBusiness(
         totpSecret = generateSecret();
         totpUrl = generateURI({
           label: email,
-          issuer: "CafePOS",
+          issuer: "Business Suite",
           secret: totpSecret,
           strategy: "totp"
         });

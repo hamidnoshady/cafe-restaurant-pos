@@ -60,7 +60,7 @@ export function rpId(): string {
 }
 
 export function rpName(): string {
-  return process.env.WEBAUTHN_RP_NAME || "سیستم فروش کافه و رستوران";
+  return process.env.WEBAUTHN_RP_NAME || "پلتفرم مدیریت کسب‌وکار";
 }
 
 export function expectedOrigin(): string | string[] {

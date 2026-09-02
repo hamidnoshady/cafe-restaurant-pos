@@ -13,7 +13,7 @@ import { cardClass } from "@/app/dashboard/page-chrome";
 export function ModeChoice({ onChoose }: { onChoose: (mode: "local" | "connect") => void }) {
   return (
     <div className="w-full max-w-3xl">
-      <h1 className="mb-1 text-2xl font-bold">به سیستم فروش خوش آمدید</h1>
+      <h1 className="mb-1 text-2xl font-bold">به پلتفرم مدیریت کسب‌وکار خوش آمدید</h1>
       <p className="mb-6 text-sm text-muted-foreground">
         این نصب را چگونه راه‌اندازی می‌کنید؟
       </p>

@@ -681,7 +681,7 @@ function ConnectPanel({
             <Field label="نام سایت">
               <input
                 className={inputClass}
-                placeholder="کافه اصفهان"
+                placeholder="فروشگاه اصفهان"
                 value={name}
                 onChange={(event) => setName(event.target.value)}
                 required
@@ -691,7 +691,7 @@ function ConnectPanel({
               <input
                 className={inputClass}
                 dir="ltr"
-                placeholder="cafe.esfahan.ir"
+                placeholder="shop.esfahan.ir"
                 value={domain}
                 onChange={(event) => setDomain(event.target.value)}
                 required

@@ -14,11 +14,11 @@ const vazirmatn = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "سیستم فروش کافه و رستوران",
-  description: "Cafe/Restaurant POS",
+  title: "پلتفرم مدیریت کسب‌وکار",
+  description: "Business Suite — multi-app SaaS platform for business management",
   // Next 15 auto-links /manifest.webmanifest from manifest.ts; these add the
   // icon + iOS/standalone hints so the installed app looks and launches native.
-  applicationName: "Café POS",
+  applicationName: "Business Suite",
   icons: {
     icon: [
       { url: "/icon.svg", type: "image/svg+xml" },
@@ -32,7 +32,7 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "Café POS",
+    title: "Business Suite",
   },
 };
 
