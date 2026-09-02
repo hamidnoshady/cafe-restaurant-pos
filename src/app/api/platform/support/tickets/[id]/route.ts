@@ -5,6 +5,7 @@ import {
   SupportTicketNotFoundError,
   updateSupportTicket,
 } from "@/lib/platform-service";
+import { clientIpFrom } from "@/lib/rate-limit";
 
 interface Ctx {
   params: Promise<{ id: string }>;
@@ -53,7 +54,7 @@ export const PATCH = withPlatformScope(async (request: NextRequest, ctx: Ctx) =>
         body.assignedAdminId === null || typeof body.assignedAdminId === "string"
           ? (body.assignedAdminId as string | null)
           : undefined,
-      ipAddress: request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip"),
+      ipAddress: (request as any).ip ?? clientIpFrom(request.headers, 0),
       userAgent: request.headers.get("user-agent"),
     });
     return NextResponse.json({ ticket });

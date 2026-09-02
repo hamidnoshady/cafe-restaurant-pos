@@ -35,3 +35,7 @@
 **Vulnerability:** `clientIpFrom` in rate limiting trusted proxy counts and unconditionally picked the IP `N` hops away from the right, or the left-most IP. This allowed attackers to append spoofed IPs and bypass rate limiting or log fake IPs.
 **Learning:** In environments without strictly configured explicit trusted proxy IPs, picking the left-most or relying on a static hop count is dangerous because intermediate proxies might append to `x-forwarded-for` blindly.
 **Prevention:** To reliably get the client IP, iterate the `x-forwarded-for` header right-to-left and pick the first public (non-private) IP.
+## 2025-02-28 - Secure Client IP Extraction
+**Vulnerability:** Directly extracting `x-forwarded-for` header can allow an attacker to spoof their IP address.
+**Learning:** Blindly trusting the `x-forwarded-for` or `x-real-ip` headers can lead to IP address spoofing vulnerabilities.
+**Prevention:** Instead of reading the header blindly, use a centralized IP extraction mechanism (e.g. `clientIpFrom`) that securely navigates proxy chains and validates IPs.
