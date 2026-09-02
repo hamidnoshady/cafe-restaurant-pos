@@ -45,6 +45,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
 
   const name = body.name?.trim();
   if (!name) return NextResponse.json({ error: "missing_fields" }, { status: 400 });
+  if (name.length > 200) return NextResponse.json({ error: "item_name_too_long" }, { status: 400 });
 
   const weightInput = {
     purity: body.purity ?? "",

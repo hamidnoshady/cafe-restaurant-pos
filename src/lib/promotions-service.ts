@@ -154,6 +154,9 @@ export async function upsertPromotion(businessId: string, input: PromotionInput)
   if (!Number.isInteger(input.value) || input.value < 0) {
     throw new Error("مقدار کمپین باید یک عدد صحیح غیرمنفی باشد.");
   }
+  if (input.kind === "percent" && input.value > 100) {
+    throw new Error("درصد کمپین نمی‌تواند بیشتر از ۱۰۰ باشد.");
+  }
 
   const { rows } = await query<PromotionRow>(
     `INSERT INTO promotions

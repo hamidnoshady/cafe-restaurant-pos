@@ -10,6 +10,12 @@ import { query } from "./db";
 import { decryptOptional, encryptOptional, phoneBlindIndex, phoneKind, phoneLast4 } from "./field-crypto";
 import { phoneDigits, phoneE164 } from "./phone";
 
+/** Server-side length caps mirrored by the directory form's `maxLength`s — see directory-section.tsx. */
+export const MAX_CUSTOMER_NAME = 200;
+export const MAX_CUSTOMER_PHONE = 32;
+export const MAX_CUSTOMER_ADDRESS = 500;
+export const MAX_CUSTOMER_NOTES = 2000;
+
 export interface Customer extends Record<string, unknown> {
   id: string;
   name: string;

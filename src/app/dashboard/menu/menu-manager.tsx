@@ -314,6 +314,7 @@ function ItemSection({
         <Field label="نام آیتم">
           <input
             className={inputClass}
+            maxLength={200}
             value={name}
             onChange={(e) => setName(e.target.value)}
             required
