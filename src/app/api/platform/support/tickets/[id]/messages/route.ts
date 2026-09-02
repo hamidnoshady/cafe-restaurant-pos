@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requirePlatformCapability, withPlatformScope } from "@/lib/platform-auth";
 import { addSupportMessage, SupportTicketNotFoundError } from "@/lib/platform-service";
+import { clientIpFrom } from "@/lib/rate-limit";
 import { validateTicketInput } from "@/lib/support-service";
 
 interface Ctx {
@@ -39,7 +40,7 @@ export const POST = withPlatformScope(async (request: NextRequest, ctx: Ctx) => 
       adminId: session.padmin,
       body: text,
       attachment,
-      ipAddress: request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip"),
+      ipAddress: (request as any).ip ?? clientIpFrom(request.headers, 0),
       userAgent: request.headers.get("user-agent"),
     });
     return NextResponse.json({ message }, { status: 201 });
