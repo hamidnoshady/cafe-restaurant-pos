@@ -72,7 +72,7 @@ export default function BusinessStep() {
             className={inputClass}
             value={businessName}
             onChange={(e) => setBusinessName(e.target.value)}
-            placeholder="مثلاً کافه بهار"
+            placeholder="مثلاً فروشگاه بهار"
             required
           />
         </Field>

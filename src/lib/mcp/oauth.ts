@@ -223,7 +223,7 @@ export function protectedResourceMetadata(issuer: string) {
     authorization_servers: [issuer],
     scopes_supported: ALL_MCP_SCOPES,
     bearer_methods_supported: ["header"],
-    resource_name: "Café/Restaurant POS",
+    resource_name: "Business Suite",
     resource_documentation: `${issuer}/dashboard/connections?tab=mcp`,
   };
 }

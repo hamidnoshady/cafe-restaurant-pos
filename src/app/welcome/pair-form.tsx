@@ -174,7 +174,7 @@ export function PairForm({ onBack }: { onBack: () => void }) {
               setRemoteUrl(e.target.value);
               setProbe({ kind: "idle" });
             }}
-            placeholder="mycafe.example.com"
+            placeholder="mybusiness.example.com"
             required
           />
           <span className="mt-1 block text-xs text-muted-foreground">

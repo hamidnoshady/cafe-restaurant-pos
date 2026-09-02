@@ -11,9 +11,9 @@ import type { MetadataRoute } from "next";
  */
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "سیستم فروش کافه و رستوران",
-    short_name: "Café POS",
-    description: "Cafe/Restaurant POS — point of sale, kitchen, and management",
+    name: "پلتفرم مدیریت کسب‌وکار",
+    short_name: "Business Suite",
+    description: "Business Suite — multi-app SaaS platform for business management",
     // Standalone = its own window, no browser tabs/address bar (looks native).
     display: "standalone",
     // Fixes the installed app's identity so it isn't treated as a new/duplicate

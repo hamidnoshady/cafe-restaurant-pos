@@ -14,7 +14,7 @@ import { getAccountMfaEnrolments, provisionMfaEnrolment, type MfaSubjectRealm } 
 import { issueRecoveryCodes } from "./mfa-recovery";
 
 /** The label an authenticator app shows above the six digits. */
-export const TOTP_ISSUER = "CafePOS";
+export const TOTP_ISSUER = "Business Suite";
 
 export type EnrolMethod = "totp" | "sms_otp";
 

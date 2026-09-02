@@ -52,7 +52,7 @@ export interface AiTask {
 export const SUGGESTED_PROMPTS: Record<"wizard" | "dashboard" | "floor", string[]> = {
   wizard: [
     "برای تکمیل این مرحله چه اطلاعاتی لازم است؟",
-    "یک منوی اولیهٔ ساده برای کافه پیشنهاد بده.",
+    "یک منوی اولیهٔ ساده برای کسب‌وکار پیشنهاد بده.",
     "تنظیمات مالیات و روش قیمت‌گذاری را بررسی کن.",
   ],
   dashboard: [
