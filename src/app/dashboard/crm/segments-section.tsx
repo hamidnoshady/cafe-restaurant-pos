@@ -119,7 +119,12 @@ export function SegmentsSection() {
       {info ? <InfoBox>{info}</InfoBox> : null}
 
       <SectionCard
-        title="بخش‌بندی مشتریان"
+        title={
+          <div>
+            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">رفتار خرید</p>
+            <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">بخش‌بندی مشتریان</h2>
+          </div>
+        }
         description="گروه‌های پویا بر پایهٔ رفتار خرید. هر بار که باز می‌شوند، دوباره محاسبه می‌شوند."
         actions={
           <div className="flex gap-1">

@@ -86,8 +86,15 @@ export function TaxSettings() {
       <ErrorBox>{error}</ErrorBox>
       {saved ? <InfoBox>تنظیمات مالیات ذخیره شد.</InfoBox> : null}
 
-      <SectionCard title="نرخ پیش‌فرض">
-        <p className="mb-4 text-sm text-muted-foreground">این نرخ هنگام ساخت دستهٔ جدید منو پیشنهاد می‌شود؛ نرخ هر دسته را می‌توانید جداگانه تغییر دهید.</p>
+      <SectionCard
+        title={
+          <div>
+            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">امور مالیاتی</p>
+            <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">نرخ پیش‌فرض</h2>
+          </div>
+        }
+        description="این نرخ هنگام ساخت دستهٔ جدید منو پیشنهاد می‌شود؛ نرخ هر دسته را می‌توانید جداگانه تغییر دهید."
+      >
         <div className="max-w-xs">
           <Field label="درصد مالیات">
             <div className="relative">
@@ -98,8 +105,15 @@ export function TaxSettings() {
         </div>
       </SectionCard>
 
-      <SectionCard title="نرخ دسته‌های منو">
-        <p className="mb-4 text-sm text-muted-foreground">برای کالاهای معاف یا دارای نرخ متفاوت، نرخ همین دسته را ویرایش کنید.</p>
+      <SectionCard
+        title={
+          <div>
+            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">دسته‌بندی منو</p>
+            <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">نرخ دسته‌های منو</h2>
+          </div>
+        }
+        description="برای کالاهای معاف یا دارای نرخ متفاوت، نرخ همین دسته را ویرایش کنید."
+      >
         {categories.length === 0 ? <p className="text-sm text-muted-foreground">هنوز دسته‌ای در منو ثبت نشده است.</p> : null}
         <div className="space-y-2">
           {categories.map((category) => (

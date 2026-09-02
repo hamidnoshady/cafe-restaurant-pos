@@ -100,10 +100,15 @@ export function ShiftHistorySettings() {
 
   return (
     <div className="space-y-6">
-      <SectionCard title="شیفت‌ها">
-        <p className="mb-4 text-sm text-muted-foreground">
-          تاریخچهٔ ورود/خروج کارکنان صندوق، گارسون و آشپزخانه. شیفت بازمانده (فراموش‌شده) را می‌توانید از همین‌جا ببندید.
-        </p>
+      <SectionCard
+        title={
+          <div>
+            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">عملکرد پرسنل</p>
+            <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">شیفت‌ها</h2>
+          </div>
+        }
+        description="تاریخچهٔ ورود/خروج کارکنان صندوق، گارسون و آشپزخانه. شیفت بازمانده (فراموش‌شده) را می‌توانید از همین‌جا ببندید."
+      >
         <ErrorBox>{error}</ErrorBox>
         {notice ? <InfoBox>{notice}</InfoBox> : null}
 

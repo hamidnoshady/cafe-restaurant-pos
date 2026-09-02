@@ -92,7 +92,15 @@ export function CommissionSection() {
           }}
           onError={setError}
         />
-        <SectionCard title="رتبه‌بندی فروشندگان" description="مجموع پورسانت انباشته — همان عددی که به‌عنوان بدهی حقوق ثبت شده است">
+        <SectionCard
+          title={
+            <div>
+              <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">گزارش پورسانت</p>
+              <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">رتبه‌بندی فروشندگان</h2>
+            </div>
+          }
+          description="مجموع پورسانت انباشته — همان عددی که به‌عنوان بدهی حقوق ثبت شده است"
+        >
           {report.length === 0 ? (
             <EmptyState>هنوز پورسانتی ثبت نشده است.</EmptyState>
           ) : (
@@ -115,7 +123,14 @@ export function CommissionSection() {
         </SectionCard>
       </div>
 
-      <SectionCard title="قوانین پورسانت">
+      <SectionCard
+        title={
+          <div>
+            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">مقررات مالی</p>
+            <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">قوانین پورسانت</h2>
+          </div>
+        }
+      >
         {rules.length === 0 ? (
           <EmptyState>هنوز قانونی تعریف نشده است.</EmptyState>
         ) : (

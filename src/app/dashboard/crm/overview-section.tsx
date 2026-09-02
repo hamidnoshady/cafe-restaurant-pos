@@ -123,7 +123,12 @@ export function CrmOverviewSection({
 
       {firstRun ? (
         <SectionCard
-          title="شروع کار با پروندهٔ مشتریان"
+          title={
+            <div>
+              <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">شروع سریع</p>
+              <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">شروع کار با پروندهٔ مشتریان</h2>
+            </div>
+          }
           description="هنوز مشتری‌ای ثبت نشده است. سه قدم اول برنامهٔ ارتباط با مشتری:"
         >
           <div className="grid gap-3 sm:grid-cols-3">
@@ -181,7 +186,12 @@ export function CrmOverviewSection({
 
       <div className="grid gap-4 lg:grid-cols-2">
         <SectionCard
-          title="چرخهٔ عمر مشتریان"
+          title={
+            <div>
+              <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">تحلیل رفتار (RFM)</p>
+              <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">چرخهٔ عمر مشتریان</h2>
+            </div>
+          }
           description="بر پایهٔ تازگی، تکرار و مبلغ خرید (RFM)"
           actions={
             <Button variant="ghost" size="xs" onClick={recompute} disabled={scoring}>
@@ -232,7 +242,12 @@ export function CrmOverviewSection({
         </SectionCard>
 
         <SectionCard
-          title="قیف فروش"
+          title={
+            <div>
+              <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">معامله و فروش</p>
+              <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">قیف فروش</h2>
+            </div>
+          }
           description="معامله‌های باز و ارزش وزنی آن‌ها"
           actions={
             <Button variant="ghost" size="xs" onClick={() => onGoToSection("deals")}>
@@ -278,7 +293,12 @@ export function CrmOverviewSection({
 
       <div className="grid gap-4 lg:grid-cols-2">
         <SectionCard
-          title="بهترین مشتریان"
+          title={
+            <div>
+              <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">عملکرد فروش</p>
+              <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">بهترین مشتریان</h2>
+            </div>
+          }
           description="بیشترین خرید تحقق‌یافته"
           actions={
             <Button variant="ghost" size="icon-sm" onClick={load} aria-label="بازخوانی">
@@ -308,7 +328,12 @@ export function CrmOverviewSection({
         </SectionCard>
 
         <SectionCard
-          title="خدمات و رسیدگی"
+          title={
+            <div>
+              <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">میز خدمت</p>
+              <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">خدمات و رسیدگی</h2>
+            </div>
+          }
           description="تیکت‌های باز و زمان رسیدگی"
           actions={
             <Button variant="ghost" size="xs" onClick={() => onGoToSection("cases")}>
@@ -341,7 +366,12 @@ export function CrmOverviewSection({
 
       <div className="grid gap-4 lg:grid-cols-2">
         <SectionCard
-          title="رضایت ارتباط"
+          title={
+            <div>
+              <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">حریم و رضایت</p>
+              <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">رضایت ارتباط</h2>
+            </div>
+          }
           description="چه سهمی از مشتریان واقعاً قابل پیام دادن‌اند"
           actions={
             <Button variant="ghost" size="xs" onClick={() => onGoToSection("consent")}>
@@ -371,7 +401,12 @@ export function CrmOverviewSection({
         </SectionCard>
 
         <SectionCard
-          title="پل حسابداری"
+          title={
+            <div>
+              <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">دفاتر مالی</p>
+              <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">پل حسابداری</h2>
+            </div>
+          }
           description="اعدادی که این برنامه با دفتر حساب‌ها مشترک دارد"
         >
           <ul className="divide-y divide-border/80 text-sm">
@@ -393,7 +428,12 @@ export function CrmOverviewSection({
 
       {overview.duplicates > 0 ? (
         <SectionCard
-          title="مشتریان تکراری"
+          title={
+            <div>
+              <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">یکپارچه‌سازی</p>
+              <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">مشتریان تکراری</h2>
+            </div>
+          }
           description="پرونده‌هایی که احتمالاً یک نفرند"
           actions={
             <Button variant="ghost" size="xs" onClick={() => onGoToSection("duplicates")}>

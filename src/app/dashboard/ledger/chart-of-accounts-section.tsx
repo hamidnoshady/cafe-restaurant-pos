@@ -127,9 +127,9 @@ export function ChartOfAccountsSection({ busy, run }: { busy: boolean; run: Runn
 
   return (
     <div className="space-y-4">
-      <section className={`${cardClass} p-4 sm:p-5`}>
+      <section aria-labelledby="add-account-heading" className={`${cardClass} p-4 sm:p-5`}>
         <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">ساختار مالی</p>
-        <h2 className="mt-1">افزودن حساب</h2>
+        <h2 id="add-account-heading" className="mt-1">افزودن حساب</h2>
         <p className="mt-2 text-sm text-muted-foreground">فقط حساب‌های مجاز جدید را اضافه کنید؛ حساب‌های سیستمی و دارای سند همچنان با قوانین فعلی محافظت می‌شوند.</p>
         {localError ? <p className="mt-4 rounded-xl border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">{localError}</p> : null}
         <form onSubmit={submit} className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -170,10 +170,10 @@ export function ChartOfAccountsSection({ busy, run }: { busy: boolean; run: Runn
         </form>
       </section>
 
-      <section className={`${cardClass} p-4 sm:p-5`}>
+      <section aria-labelledby="chart-accounts-heading" className={`${cardClass} p-4 sm:p-5`}>
         <div className="mb-4">
           <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">فهرست ساختار</p>
-          <h2 className="mt-1">سرفصل حساب‌ها</h2>
+          <h2 id="chart-accounts-heading" className="mt-1">سرفصل حساب‌ها</h2>
         </div>
         <div className="hidden overflow-x-auto lg:block">
           <table className="w-full text-sm">

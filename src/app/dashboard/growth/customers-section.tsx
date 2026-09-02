@@ -70,7 +70,12 @@ export function GrowthCustomersSection({ selectedCustomerId }: { selectedCustome
     <div className="space-y-4">
       <ErrorBox>{error}</ErrorBox>
       <SectionCard
-        title="مشتریان"
+        title={
+          <div>
+            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">مشتریان وفادار</p>
+            <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">مشتریان</h2>
+          </div>
+        }
         description="این نمای رشد از پروندهٔ مشترک مشتریان می‌خواند؛ ویرایش و پروندهٔ کامل در CRM انجام می‌شود."
         actions={
           <Link

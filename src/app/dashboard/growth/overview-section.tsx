@@ -86,7 +86,12 @@ export function OverviewSection({ onGoToSection }: { onGoToSection: (key: Growth
 
       {firstRun ? (
         <SectionCard
-          title="شروع برنامهٔ رشد"
+          title={
+            <div>
+              <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">شروع سریع</p>
+              <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">شروع برنامهٔ رشد</h2>
+            </div>
+          }
           description="سه قدم کوچک برای شروع برنامهٔ رشد و بازاریابی."
         >
           <div className="grid gap-3 sm:grid-cols-3">
@@ -138,7 +143,12 @@ export function OverviewSection({ onGoToSection }: { onGoToSection: (key: Growth
 
       <div className="grid gap-4 lg:grid-cols-2">
         <SectionCard
-          title="برترین کمپین‌ها"
+          title={
+            <div>
+              <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">کمپین‌های تخفیف</p>
+              <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">برترین کمپین‌ها</h2>
+            </div>
+          }
           description="بیشترین تخفیف مصرف‌شده در ۳۰ روز گذشته"
           actions={
             <Button variant="ghost" size="xs" onClick={() => onGoToSection("campaigns")}>
@@ -167,7 +177,12 @@ export function OverviewSection({ onGoToSection }: { onGoToSection: (key: Growth
         </SectionCard>
 
         <SectionCard
-          title="برترین فروشندگان"
+          title={
+            <div>
+              <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">پورسانت فروش</p>
+              <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">برترین فروشندگان</h2>
+            </div>
+          }
           description="پورسانت انباشته در ۳۰ روز گذشته"
           actions={
             <Button variant="ghost" size="xs" onClick={() => onGoToSection("commission")}>
@@ -193,7 +208,12 @@ export function OverviewSection({ onGoToSection }: { onGoToSection: (key: Growth
 
       <div className="grid gap-4 lg:grid-cols-2">
         <SectionCard
-          title="آخرین رویدادهای رشد"
+          title={
+            <div>
+              <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">رویدادهای سیستم</p>
+              <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">آخرین رویدادهای رشد</h2>
+            </div>
+          }
           description="جریان یکپارچهٔ چهار موتور: کمپین، امتیاز، کارت هدیه و پورسانت"
           actions={
             <Button variant="ghost" size="icon-sm" onClick={load} aria-label="بازخوانی">

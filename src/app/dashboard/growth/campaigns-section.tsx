@@ -137,7 +137,12 @@ export function CampaignsSection() {
           onError={setError}
         />
         <SectionCard
-          title="اثربخشی کمپین‌ها"
+          title={
+            <div>
+              <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">اثربخشی کمپین</p>
+              <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">اثربخشی کمپین‌ها</h2>
+            </div>
+          }
           description="چند بار هر کمپین روی فروش اعمال شد و چقدر تخفیف داد — ۳۰ روز گذشته"
         >
           {!effect || effect.length === 0 ? (
@@ -165,7 +170,12 @@ export function CampaignsSection() {
       </div>
 
       <SectionCard
-        title="کمپین‌ها"
+        title={
+          <div>
+            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">مدیریت کمپین‌ها</p>
+            <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">کمپین‌ها</h2>
+          </div>
+        }
         description={`${formatPersianNumber(counts.live)} در حال اجرا · ${formatPersianNumber(counts.scheduled)} زمان‌بندی‌شده · ${formatPersianNumber(counts.paused)} متوقف · ${formatPersianNumber(counts.ended)} پایان‌یافته`}
       >
         {promotions.length === 0 ? (

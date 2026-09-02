@@ -73,7 +73,15 @@ export function GiftCardsSection() {
       {done ? <InfoBox>{done}</InfoBox> : null}
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <SectionCard title="صدور کارت هدیه" bodyClassName="space-y-3 p-4 sm:p-5">
+        <SectionCard
+          title={
+            <div>
+              <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">اعتبار هدیه</p>
+              <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">صدور کارت هدیه</h2>
+            </div>
+          }
+          bodyClassName="space-y-3 p-4 sm:p-5"
+        >
           <div className="grid grid-cols-[1fr_1fr_auto] items-end gap-2">
             <Field label="کد کارت جدید">
               <input className={inputClass} dir="ltr" value={code} onChange={(e) => setCode(e.target.value)} />
@@ -97,7 +105,15 @@ export function GiftCardsSection() {
           </p>
         </SectionCard>
 
-        <SectionCard title="مصرف و مانده" bodyClassName="space-y-3 p-4 sm:p-5">
+        <SectionCard
+          title={
+            <div>
+              <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">استعلام و استفاده</p>
+              <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">مصرف و مانده</h2>
+            </div>
+          }
+          bodyClassName="space-y-3 p-4 sm:p-5"
+        >
           <div className="grid grid-cols-[1fr_1fr_auto] items-end gap-2">
             <Field label="کد کارت">
               <input className={inputClass} dir="ltr" value={redeemCode} onChange={(e) => setRedeemCode(e.target.value)} />
