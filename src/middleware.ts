@@ -123,6 +123,16 @@ const PUBLIC_PATHS = [
   // but mints nothing — the whole point is that no session exists on the apex —
   // so like every other credential exchange it cannot require one.
   "/api/auth/directory",
+  // Phase 24 — the tenant-password MFA interstitial. Guarded by the five-minute
+  // `mfa_pending` bearer token, never by a session — issuing a session first is
+  // exactly what MFA exists to prevent, so by definition the caller has none
+  // yet. These three were missing here entirely, which meant the generic
+  // "no session -> 401" branch below rejected every one of them before the
+  // route handler (which does check the bearer token) ever ran: any account
+  // with MFA required could never finish signing in.
+  "/api/auth/mfa/challenge",
+  "/api/auth/mfa/verify",
+  "/api/auth/mfa/enrol",
   // Phase 23: host resolution — "what business is this hostname?" (/resolve)
   // and "you're at the wrong address, here's the right one" (/redirect). Both
   // answer questions the Edge runtime cannot, because they need Postgres, for
@@ -150,6 +160,11 @@ const PLATFORM_PUBLIC_PATHS = [
   // either realm, and the one-time code in the body is the credential — the
   // same shape as accept-invite. The handler resolves it or refuses.
   "/api/platform/pairing/redeem",
+  // The platform-admin twin of the tenant MFA interstitial above — same
+  // bearer-token guard, same reason it must be reachable pre-session.
+  "/api/platform/auth/mfa/challenge",
+  "/api/platform/auth/mfa/verify",
+  "/api/platform/auth/mfa/enrol",
 ];
 
 /**
@@ -274,6 +289,28 @@ const AUTH_RATE_LIMITED_PATHS = [
   "/api/platform/pairing/redeem",
   "/api/pairing/redeem",
   "/api/setup/pair",
+  // Self-service business registration accepts an *existing* platform user's
+  // email with a guessed password (adding a business to an already-registered
+  // account authenticates against that account's real password — see
+  // business-provisioning.ts's EmailPasswordMismatchError) and had no per-IP
+  // throttle of its own at all: unlike every route above it sits outside this
+  // list, so an attacker could try passwords against a known Owner email
+  // indefinitely, limited only by bcrypt's own cost. It shares the same
+  // per-IP bucket as every other credential exchange rather than going
+  // unlimited.
+  "/api/setup/signup",
+  // Phase 24 — the tenant/platform MFA interstitial (see PUBLIC_PATHS above):
+  // `verify` checks a 6-digit TOTP/SMS code or a 10-code recovery list against
+  // a pending login, and `enrol` is reachable with the same bearer token.
+  // `challenge` already carries its own per-identity limiter
+  // (mfa-rate-limit.ts) but shares this bucket too, same as every other
+  // pre-session endpoint, since it is still a plain per-IP target.
+  "/api/auth/mfa/challenge",
+  "/api/auth/mfa/verify",
+  "/api/auth/mfa/enrol",
+  "/api/platform/auth/mfa/challenge",
+  "/api/platform/auth/mfa/verify",
+  "/api/platform/auth/mfa/enrol",
 ];
 
 /** The session-less, bearer-token server-to-server routes (see PUBLIC_PATHS below for why each is public). */
