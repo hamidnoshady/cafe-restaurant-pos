@@ -21,6 +21,7 @@ import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { runMigrations } from "../scripts/migrate";
 import { createAppRole } from "../scripts/create-app-role";
+import { EXEMPT_TABLES } from "../src/lib/tenant-tables";
 
 const rootDatabaseUrl = process.env.DATABASE_URL;
 if (!rootDatabaseUrl) {
@@ -30,70 +31,11 @@ if (!rootDatabaseUrl) {
 const APP_ROLE = "pos_rls_test_role";
 const APP_PASSWORD = "rls-test-password";
 
-/** Tables that hold no tenant data and are documented as exempt in 0021. */
-const EXEMPT_TABLES = new Set([
-  "schema_migrations",
-  "feature_flags",
-  // Migration 0128 — app availability's global half. Same reasoning as
-  // feature_flags: a catalogue of deployment-wide states with no business_id.
-  // Its per-business counterpart, business_app_availability, is deliberately
-  // absent from this list and is RLS-protected like every other tenant table.
-  "app_availability",
-  "platform_admins",
-  "platform_audit_log",
-  // Phase 24 — Login lockout for password, platform and directory realms. The attempt
-  // happens before any business is known, so it has no business_id. It belongs to
-  // the login identity across the platform.
-  "auth_login_attempts",
-  "mfa_enrolments",
-  "mfa_challenges",
-  "mfa_recovery_codes",
-  "mfa_grace_periods",
-  "platform_sms_config",
-  // Phase 24 Wave 5 — the durable rate-limit counter (migration 0074). Its
-  // keys are IP addresses and hashed bearer tokens, counted before any
-  // business is known: the login bucket exists precisely for requests that
-  // have no session yet, so there is no business_id to scope by. The row is a
-  // key, a count and a window start — no tenant data at all.
-  "rate_limits",
-  // Phase 17 — a global plan catalogue (branch/member/order-count ceilings),
-  // the same shape as feature_flags: every business reads the same few rows,
-  // there is nothing to isolate.
-  "plans",
-  // Platform-wide singleton config for the desktop installer's update
-  // distribution (migration 0038) — carries no business_id/location_id,
-  // nothing to scope by, same shape as feature_flags/plans.
-  "platform_update_config",
-  // Phase 18 & Phase 39 — singleton platform provider config (platform_ai_gateway)
-  // plus globally shared priced catalogues.
-  "ai_credit_packages",
-  "ai_subscription_plans",
-  // Phase 35 — one deployment-wide VAPID key pair for Web Push (migration
-  // 0102). Same shape as platform_ai_gateway: a singleton with no business_id,
-  // and rotating it would invalidate every business's registered devices at
-  // once, which is exactly why it is not per-tenant. The five notification_*
-  // tables that DO carry business data are deliberately not in this list.
-  "platform_push_config",
-  // Phase 35 — platform-wide prompt-fragment overrides for the assistant
-  // (migration 0112). Same shape: no business_id / location_id column,
-  // nothing to scope by.
-  "ai_prompt_templates",
-  // Knowledge base (migration 0117): the super-admin-maintained learning page
-  // (a URL) per dashboard section.
-  "knowledge_base_entries",
-  // Phase 37 & Phase 39 — deployment-wide LLM gateway settings.
-  "platform_ai_gateway",
-  // Platform billing (migration 0130) — global catalogues/config with no
-  // business_id, same shape as feature_flags/plans: the gateway config
-  // singleton, the credit-package catalogue and the plan-builder tables.
-  // Every business-owned billing table (business_wallets, wallet_ledger,
-  // billing_payments, business_entitlements, feature_usage) is RLS-protected
-  // and deliberately NOT listed here.
-  "platform_payment_config",
-  "credit_packages",
-  "billing_plans",
-  "billing_plan_features",
-]);
+// EXEMPT_TABLES (tables with no tenant data, documented as exempt in 0021 +
+// platform additions) is imported from tenant-tables.ts rather than kept as a
+// second copy here — a hand-maintained duplicate is exactly what let the two
+// drift apart before (migration 0130 updated this test's list but not
+// tenant-export's, so a tenant export silently included global billing rows).
 
 let databaseName: string;
 let ownerClient: Client;
