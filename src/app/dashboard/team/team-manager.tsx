@@ -1,6 +1,6 @@
 "use client";
 
-import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
+import { LoadingSkeleton, SectionCard } from "../page-chrome";
 
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
 

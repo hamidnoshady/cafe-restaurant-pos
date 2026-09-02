@@ -21,7 +21,7 @@ import {
   AlertTriangleIcon,
 } from "lucide-react";
 import { api } from "../ui";
-import { cardClass, EmptyState, SectionCardSkeleton, StatusBadge } from "../page-chrome";
+import { cardClass, EmptyState, SectionCard, SectionCardSkeleton, StatusBadge } from "../page-chrome";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import type { WpOverviewStats } from "@/lib/integrations/wp-manager-service";
