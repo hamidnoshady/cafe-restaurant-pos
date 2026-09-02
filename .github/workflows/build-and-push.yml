@@ -1,0 +1,81 @@
+# Builds the production image and publishes it to GHCR — the missing half of
+# the Runflare-builds-from-source deployment described in
+# docs/server-migration.md. Two things this unlocks, once production is
+# repointed at the pushed tag instead of building from the Dockerfile itself:
+#
+#   1. Deploys become "pull a prebuilt image" instead of "build the whole app
+#      from scratch on the hosting platform" — the actual slow part of a
+#      deploy (npm ci + next build over ~1,500 source files) moves onto
+#      GitHub's runners, which get real layer caching (cache-from/cache-to:
+#      type=gha below), and the platform side is just a fast pull + restart.
+#   2. It's what src/lib/app-update.ts / scripts/check-app-update.ts already
+#      expect but have never had: a real
+#      ghcr.io/hamidnoshady/cafe-restaurant-pos:sha-<short-sha> tag for every
+#      commit on main, which the café-laptop self-update flow polls for. That
+#      feature has been shipped but dark — this is what turns it on.
+#
+# Deliberately its own workflow, not folded into test.yml: that workflow's
+# whole point (see its own header comment and CLAUDE.md's CI section) is to
+# stay a fast, test-only gate. This one only runs after `test` has already
+# passed on the same commit (workflow_run below), so nothing failing tests
+# is ever published.
+#
+# NOTE: this workflow alone does not change what production runs. Runflare
+# still builds from source per docs/server-migration.md until its service is
+# repointed at this image — that's a separate, deliberate step (see the repo
+# owner before flipping it: it also needs GHCR pull credentials configured
+# there). The package this pushes to is private, matching docs/server-sync.md
+# ("this is a closed-source product").
+name: build and push image
+
+on:
+  workflow_run:
+    workflows: ["test"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  build-and-push:
+    name: build and push (GHCR)
+    runs-on: ubuntu-latest
+    if: github.event.workflow_run.conclusion == 'success'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The exact commit `test` just passed on, not whatever main has
+          # moved to since — the tag below has to name the code that was
+          # actually tested.
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Compute short sha
+        id: sha
+        run: echo "short=${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
+        env:
+          GITHUB_SHA: ${{ github.event.workflow_run.head_sha }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          build-args: |
+            GIT_SHA=${{ steps.sha.outputs.short }}
+          tags: |
+            ${{ env.IMAGE }}:sha-${{ steps.sha.outputs.short }}
+            ${{ env.IMAGE }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
