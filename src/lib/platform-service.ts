@@ -14,6 +14,7 @@
  * is exercised by the platform integration test.
  */
 import { getPool, query, withoutTenantScope } from "./db";
+import { getPlatformBackupHealth } from "./platform-backup-service";
 import type { PoolClient } from "pg";
 import { disableFeatures, seedChartOfAccounts } from "./business-provisioning";
 import type { Industry } from "./industries";
@@ -1856,7 +1857,24 @@ export interface SystemStatus {
   pool: { total: number; idle: number; waiting: number };
   rlsEffective: boolean;
   backups: { businessId: string; businessName: string; status: string; ranAt: string | null }[];
+  /**
+   * The deployment's own whole-database backup (migration 0132), which belongs
+   * to no business and so cannot appear in the per-business list above. Surfaced
+   * here because this is where an operator looks when something is wrong, and
+   * because the alert line is the difference between "the tenant backups are all
+   * green" meaning *we are safe* and meaning *we have nothing but the tenants*.
+   */
+  platformBackup: PlatformBackupLine | null;
   counts: { businesses: number; platformUsers: number; platformAdmins: number };
+}
+
+export interface PlatformBackupLine {
+  status: string;
+  ranAt: string | null;
+  alert: string;
+  alertLevel: "ok" | "warning" | "error";
+  artifacts: number;
+  servingEnabled: boolean;
 }
 
 /**
@@ -1868,7 +1886,7 @@ export interface SystemStatus {
 export async function systemStatus(pendingMigrations: number): Promise<SystemStatus> {
   const pool = getPool();
 
-  const [migrations, backups, counts, rls] = await withoutTenantScope("platform", () =>
+  const [migrations, backups, counts, rls, backupHealth] = await withoutTenantScope("platform", () =>
     Promise.all([
       query<{ filename: string; applied_at: string }>(
         `SELECT filename, applied_at FROM schema_migrations ORDER BY filename DESC LIMIT 30`,
@@ -1888,6 +1906,10 @@ export async function systemStatus(pendingMigrations: number): Promise<SystemSta
       query<{ privileged: boolean }>(
         `SELECT (rolsuper OR rolbypassrls) AS privileged FROM pg_roles WHERE rolname = current_user`,
       ),
+      // Best-effort by design: the system page is the one screen that must come
+      // up even when the backup subsystem cannot answer, so a failure here
+      // degrades to "no line" rather than to a red page.
+      getPlatformBackupHealth().catch(() => null),
     ]),
   );
 
@@ -1906,6 +1928,16 @@ export async function systemStatus(pendingMigrations: number): Promise<SystemSta
       status: b.status,
       ranAt: b.ran_at,
     })),
+    platformBackup: backupHealth
+      ? {
+          status: backupHealth.localLastSuccessAt ? "success" : backupHealth.localLastError ? "failed" : "none",
+          ranAt: backupHealth.localLastSuccessAt,
+          alert: backupHealth.alert.reason,
+          alertLevel: backupHealth.alert.level,
+          artifacts: backupHealth.artifactsOnDisk,
+          servingEnabled: backupHealth.servingEnabled,
+        }
+      : null,
     counts: {
       businesses: Number(counts.rows[0]?.businesses ?? 0),
       platformUsers: Number(counts.rows[0]?.platform_users ?? 0),

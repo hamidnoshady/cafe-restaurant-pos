@@ -1,0 +1,1555 @@
+"use client";
+
+/**
+ * The console's whole-system backup panel (migration 0132).
+ *
+ * Five cards, in the order an operator needs them — and deliberately in the
+ * order the danger increases:
+ *
+ *   ۱ سلامت    — the one-line answer to «کپی دیشب را داریم؟», plus «پشتیبان‌گیری فوری».
+ *   ۲ تنظیمات   — schedule, retention, destinations, passphrase, cloud bucket.
+ *   ۳ دسترسی   — which credentials may *pull* this server's backups (serving).
+ *   ۴ بازیابی   — the address half: pull another server's artifact, verify it in a
+ *                scratch database, and only then replace this one.
+ *   ۵ تاریخچه   — every run and every restore, with the artifact name verbatim so
+ *                it can be pasted into `npm run db:restore` on a machine that has
+ *                no console left to click.
+ *
+ * Secrets never come back from the server (`hasPassphrase` / `hasSecretAccessKey`
+ * only), so the form writes "unchanged" rather than echoing a value: an empty
+ * passphrase field keeps the stored one, and the explicit «پاک کردن» button is the
+ * only way to clear it.
+ */
+import { useEffect, useMemo, useState } from "react";
+import {
+  Check,
+  Copy,
+  Database,
+  Download,
+  Loader2,
+  RefreshCw,
+  ShieldAlert,
+  Trash2,
+  Unplug,
+  Wand2,
+} from "lucide-react";
+import { toPersianDigits } from "@/lib/digits";
+// `BackupAlert` is a type-only import on purpose: `src/lib/backup.ts` and
+// `src/lib/platform-backup.ts` both live in `node:crypto` territory (the AES-GCM
+// envelope), and a *value* import of either into a client component fails the
+// webpack build with "Reading from node:crypto is not handled by plugins". Which
+// is also why the confirm phrase below is fetched rather than imported — the one
+// string this page must show is the one string the server already answers with.
+import type { BackupAlert } from "@/lib/backup";
+import {
+  api,
+  Button,
+  Card,
+  EmptyState,
+  ErrorBox,
+  Field,
+  fmtDate,
+  InfoBox,
+  inputClass,
+  selectClass,
+  SkeletonRows,
+  StatCard,
+  useCan,
+} from "../ui";
+
+interface Health {
+  enabled: boolean;
+  cloudEnabled: boolean;
+  servingEnabled: boolean;
+  intervalHours: number;
+  anchorTime: string;
+  timezone: string;
+  localLastSuccessAt: string | null;
+  localLastError: string | null;
+  cloudLastSuccessAt: string | null;
+  cloudLastError: string | null;
+  alert: BackupAlert;
+  artifactsOnDisk: number;
+  newestArtifact: string | null;
+}
+
+interface Config {
+  enabled: boolean;
+  intervalHours: number;
+  anchorTime: string;
+  timezone: string;
+  directory: string;
+  secondaryDirectory: string;
+  localRetention: number;
+  encryptLocal: boolean;
+  passphrase: string;
+  hasPassphrase: boolean;
+  servingEnabled: boolean;
+  allowInsecurePeers: boolean;
+  warnings?: string[];
+  cloud: {
+    enabled: boolean;
+    endpoint: string;
+    region: string;
+    bucket: string;
+    prefix: string;
+    accessKeyId: string;
+    secretAccessKey: string;
+    hasSecretAccessKey: boolean;
+    retention: number;
+  };
+}
+
+interface RunRow {
+  id: string;
+  kind: "local" | "cloud";
+  trigger: "scheduled" | "manual" | "peer";
+  status: "running" | "success" | "failed";
+  artifact: string | null;
+  sizeBytes: number | null;
+  sha256: string | null;
+  error: string | null;
+  startedAt: string;
+  finishedAt: string | null;
+  manifest: Record<string, unknown> | null;
+}
+
+interface ArtifactRow {
+  artifact: string;
+  kind: "local" | "cloud";
+  sizeBytes: number | null;
+  sha256: string | null;
+  createdAt: string | null;
+  encrypted: boolean;
+  exists: boolean;
+}
+
+interface TokenRow {
+  id: string;
+  label: string;
+  hint: string;
+  createdAt: string;
+  lastUsedAt: string | null;
+  uses: number;
+  expiresAt: string | null;
+  revokedAt: string | null;
+}
+
+interface PeerRow {
+  id: string;
+  label: string;
+  baseUrl: string;
+  enabled: boolean;
+  hasToken: boolean;
+  tokenHint: string;
+  lastCheckAt: string | null;
+  lastCheckStatus: string | null;
+  lastError: string | null;
+  secure: boolean;
+}
+
+interface PeerArtifact {
+  artifact: string;
+  sizeBytes: number;
+  sha256: string;
+  createdAt: string;
+  encrypted: boolean;
+}
+
+interface PeerManifest {
+  app: string;
+  version: string;
+  databaseName: string;
+  pgServerMajor: number;
+  schemaMigrations: number;
+  latestMigration: string;
+  businessCount: number;
+  artifacts: PeerArtifact[];
+}
+
+interface RestoreRun {
+  id: string;
+  source: string;
+  artifact: string;
+  mode: "verify" | "apply";
+  status: "running" | "success" | "failed";
+  summary: { migrations?: number; latestMigration?: string; tables?: { name: string; rows: number }[] } | null;
+  error: string | null;
+  startedAt: string;
+}
+
+const ALERT_LABELS: Record<string, string> = {
+  ok: "سالم",
+  disabled: "پشتیبان‌گیری خودکار غیرفعال است",
+  local_failed: "آخرین پشتیبان‌گیری کل سیستم ناموفق بود",
+  local_stale: "مدت زیادی از آخرین پشتیبان موفق گذشته است",
+  cloud_failed: "آخرین بارگذاری در فضای ابری ناموفق بود",
+  cloud_stale: "مدت زیادی از آخرین پشتیبان ابری موفق گذشته است",
+};
+
+const CODES: Record<string, string> = {
+  backup_failed: "پشتیبان‌گیری ناموفق بود.",
+  backup_busy: "یک پشتیبان‌گیری دیگر همین حالا در حال اجراست؛ صبر کنید و دوباره تلاش کنید.",
+  restore_failed: "بازگردانی انجام نشد.",
+  restore_busy: "یک بازگردانی دیگر در حال اجراست؛ کمی بعد دوباره تلاش کنید.",
+  confirmation_required: "برای بازگردانی، عبارت تأیید را دقیق وارد کنید.",
+  passphrase_required: "عبارت عبور رمزنگاری ذخیره نشده است؛ آن را وارد کنید.",
+  decrypt_failed: "رمزگشایی نسخهٔ پشتیبان ناموفق بود — عبارت عبور را بررسی کنید.",
+  checksum_mismatch: "کنترل جمع‌بندی فایل ناموفق بود؛ فایل دانلودشده همان نسخه نیست.",
+  peer_unreachable: "سرور مقصر در دسترس نیست. آدرس و اتصال شبکه را بررسی کنید.",
+  peer_auth_failed: "کلید این سرور در آن سمت رد شد (لغو یا منقضی شده باشد).",
+  bad_manifest: "پاسخ سرور مقابل قابل خواندن نیست؛ ممکن است نسخهٔ قدیمی باشد.",
+  newer_schema: "آن پشتیبان از نسخهٔ جدیدتری از برنامه گرفته شده؛ اول همین سرور را به‌روزرسانی کنید.",
+  newer_postgres: "نسخهٔ Postgres سرور مقابل جدیدتر از این سرور است و pg_restore آن را نمی‌خواند.",
+  no_artifacts: "سرور مقابل هیچ نسخهٔ پشتیبانی برای تبادل ندارد.",
+  unknown_artifact: "این نسخه در فهرست سرور مقابل پیدا نشد.",
+  no_backup_yet: "هنوز هیچ پشتیبانی روی این سرور گرفته نشده است.",
+  https_required: "برای آدرس http باید «اجازهٔ اتصال ناامن» را در تنظیمات روشن کنید.",
+  invalid_url: "آدرس نامعتبر است؛ آن را کامل با http:// یا https:// وارد کنید.",
+  url_has_no_artifact_name: "بخش آخر آدرس باید نام یک فایل پشتیبان باشد.",
+  artifact_url_mismatch: "نام فایل با آدرس واردشده هم‌خوانی ندارد.",
+  artifact_too_large: "حجم فایل پشتیبان از حد مجاز این سرور بیشتر است.",
+  peer_not_found: "این سرور ثبت نشده است.",
+  peer_disabled: "این سرور غیرفعال است؛ ابتدا آن را فعال کنید.",
+  missing_token: "برای این سرور کلید وارد نشده است.",
+  missing_peer: "سرور مقابل را انتخاب کنید.",
+  missing_label: "برای کلید یا سرور یک نام بنویسید.",
+  not_this_app: "سرور مقابل نسخهٔ پشتیبان این برنامه را ارائه نمی‌کند.",
+  missing_artifact: "نسخهٔ پشتیبان را انتخاب کنید.",
+  artifact_not_found: "این فایل دیگر روی دیسک این سرور نیست.",
+  cloud_not_configured: "اطلاعات فضای ابری برای این سرور تنظیم نشده است.",
+  unsafe_artifact_name: "نام فایل پشتیبان معتبر نیست.",
+  invalid_interval: "بازهٔ پشتیبان‌گیری نامعتبر است.",
+  invalid_anchor_time: "ساعت پشتیبان‌گیری نامعتبر است.",
+  invalid_timezone: "منطقهٔ زمانی معتبر نیست.",
+  invalid_local_retention: "تعداد نگهداری نسخه‌ها باید بین ۱ تا ۳۶۵ باشد.",
+  invalid_cloud_retention: "تعداد نگهداری نسخه‌های ابری باید بین ۱ تا ۳۶۵ باشد.",
+  invalid_cloud_endpoint: "نشانی فضای ابری باید با http یا https شروع شود.",
+  invalid_cloud_prefix: "پیشوند نباید با / شروع شود.",
+  missing_cloud_bucket: "نام باکت را وارد کنید.",
+  missing_cloud_credentials: "کلید دسترسی و کلید محرمانه هر دو لازم‌اند.",
+  weak_passphrase: "عبارت عبور رمزنگاری باید دست‌کم ۸ نویسه باشد.",
+  secondary_same_as_primary: "پوشهٔ دوم نباید همان پوشهٔ اول باشد.",
+  invalid_expiry: "تعداد روزهای انقضا نامعتبر است.",
+};
+
+function text(code: string | undefined, extra?: string): string {
+  if (!code) return "خطای غیرمنتظره.";
+  const base = CODES[code] ?? code;
+  return extra && !CODES[code] ? `${base}: ${extra}` : extra ? `${base} ${extra}` : base;
+}
+
+function bytes(n: number | null | undefined): string {
+  if (n === null || n === undefined) return "—";
+  if (n < 1024) return `${toPersianDigits(n)} بایت`;
+  const mb = n / (1024 * 1024);
+  return `${toPersianDigits(mb < 10 ? mb.toFixed(1) : Math.round(mb).toString())} مگابایت`;
+}
+
+export function BackupManager() {
+  const can = useCan();
+  const canManage = can("backup.manage");
+  const canRestore = can("backup.restore");
+
+  const [health, setHealth] = useState<Health | null>(null);
+  const [config, setConfig] = useState<Config | null>(null);
+  const [runs, setRuns] = useState<RunRow[]>([]);
+  const [local, setLocal] = useState<ArtifactRow[]>([]);
+  const [tokens, setTokens] = useState<TokenRow[]>([]);
+  const [peers, setPeers] = useState<PeerRow[]>([]);
+  const [restores, setRestores] = useState<RestoreRun[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const [confirmPhrase, setConfirmPhrase] = useState("");
+
+  async function load() {
+    const [status, cfg, tk, pr, phraseRes] = await Promise.all([
+      api<{ health?: Health; runs?: RunRow[]; local?: ArtifactRow[]; restores?: RestoreRun[] }>(
+        "/api/platform/backup/status",
+      ),
+      api<{ config?: Config }>("/api/platform/backup/config"),
+      api<{ tokens?: TokenRow[]; servingEnabled?: boolean }>("/api/platform/backup/tokens"),
+      api<{ peers?: PeerRow[] }>("/api/platform/backup/peers"),
+      api<{ confirmPhrase?: string }>("/api/platform/backup/restore"),
+    ]);
+    if (phraseRes.ok && phraseRes.data.confirmPhrase) setConfirmPhrase(phraseRes.data.confirmPhrase);
+    if (status.ok && status.data.health) {
+      setHealth(status.data.health);
+      setRuns(status.data.runs ?? []);
+      setLocal(status.data.local ?? []);
+      setRestores(status.data.restores ?? []);
+      setError(null);
+    } else {
+      setError(text((status.data as { error?: string }).error));
+    }
+    if (cfg.ok && cfg.data.config) setConfig(cfg.data.config);
+    if (tk.ok) setTokens(tk.data.tokens ?? []);
+    if (pr.ok) setPeers(pr.data.peers ?? []);
+    setLoading(false);
+  }
+
+  useEffect(() => {
+    void load();
+  }, []);
+
+  async function runNow() {
+    setBusy("run");
+    setNote(null);
+    const res = await api<{ result?: { local: { status: string } } }>("/api/platform/backup/run", { method: "POST" });
+    await load();
+    setBusy(null);
+    setNote(
+      res.ok
+        ? "نسخهٔ جدید از کل پایگاه‌داده گرفته شد."
+        : text((res.data as { error?: string }).error, (res.data as { detail?: string }).detail),
+    );
+  }
+
+  async function saveConfig(patch: Record<string, unknown>, key: string) {
+    setBusy(key);
+    const res = await api("/api/platform/backup/config", { method: "PUT", body: JSON.stringify(patch) });
+    if (res.ok) {
+      await load();
+      setNote("تنظیمات ذخیره شد.");
+    } else {
+      setNote(text((res.data as { error?: string }).error));
+    }
+    setBusy(null);
+  }
+
+  const alertTone = health?.alert.level === "error" ? "bad" : health?.alert.level === "warning" ? "warn" : "ok";
+
+  return (
+    <div className="space-y-4 sm:space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-bold">پشتیبان‌گیری کامل سیستم</h1>
+          <p className="mt-1 text-xs text-white/35">
+            یک نسخه از تمام پایگاه‌داده — همهٔ کسب‌وکارها، تنظیمات پلت‌فرمن و خودِ ساختار —
+            با زمان‌بندی خودتان؛ و بازیابی همان نسخه روی سروری دیگر، فقط با وارد کردن آدرس.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" onClick={() => void load()} disabled={busy !== null}>
+            <RefreshCw className="me-1.5 h-4 w-4" />
+            تازه‌سازی
+          </Button>
+          {canManage ? (
+            <Button onClick={() => void runNow()} disabled={busy !== null}>
+              {busy === "run" ? (
+                <Loader2 className="me-1.5 h-4 w-4 animate-spin motion-reduce:animate-none" />
+              ) : (
+                <Wand2 className="me-1.5 h-4 w-4" />
+              )}
+              پشتیبان‌گیری فوری
+            </Button>
+          ) : null}
+        </div>
+      </div>
+
+      {error ? <ErrorBox>{error}</ErrorBox> : null}
+      {note ? <InfoBox>{note}</InfoBox> : null}
+
+      {loading || !health || !config ? (
+        <Card>
+          <SkeletonRows rows={4} label="در حال بارگذاری وضعیت پشتیبان‌گیری" />
+        </Card>
+      ) : (
+        <>
+          <HealthCard health={health} config={config} />
+
+          {canManage ? (
+            <ConfigCard
+              config={config}
+              busy={busy}
+              onSave={(patch, key) => void saveConfig(patch, key)}
+            />
+          ) : null}
+
+          {canManage ? (
+            <ServingCard
+              config={config}
+              tokens={tokens}
+              busy={busy}
+              onSave={(patch, key) => void saveConfig(patch, key)}
+              onReload={() => void load()}
+            />
+          ) : null}
+
+          <RestoreCard
+            peers={peers}
+            canManage={canManage}
+            canRestore={canRestore}
+            confirmPhrase={confirmPhrase}
+            busy={busy}
+            setBusy={setBusy}
+            onReload={() => void load()}
+            onSave={(patch, key) => void saveConfig(patch, key)}
+          />
+
+          <HistoryCard
+            runs={runs}
+            local={local}
+            restores={restores}
+            health={health}
+            tone={alertTone}
+            canRestore={canRestore}
+            confirmPhrase={confirmPhrase}
+            onChanged={() => void load()}
+          />
+        </>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// ۱ — health
+// ---------------------------------------------------------------------------
+
+function HealthCard({ health, config }: { health: Health; config: Config }) {
+  const level = health.alert.level;
+  const tone = level === "error" ? "bad" : level === "warning" ? "warn" : "ok";
+  return (
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <StatCard
+        label="وضعیت پشتیبان‌گیری کل سیستم"
+        value={ALERT_LABELS[health.alert.reason] ?? ALERT_LABELS[level] ?? "—"}
+        tone={tone}
+        hint={
+          level === "ok"
+            ? `آخرین نسخه: ${fmtDate(health.localLastSuccessAt)}`
+            : health.localLastError
+              ? health.localLastError.slice(0, 120)
+              : undefined
+        }
+        icon={<Database className="h-4 w-4" />}
+      />
+      <StatCard
+        label="زمان‌بندی"
+        value={health.enabled ? `هر ${toPersianDigits(health.intervalHours)} ساعت` : "غیرفعال"}
+        tone={health.enabled ? "neutral" : "warn"}
+        hint={
+          health.enabled
+            ? `ساعت ${toPersianDigits(health.anchorTime)} — ${health.timezone} · نگهداری ${toPersianDigits(
+                config.localRetention,
+              )} نسخه`
+            : "برای فعال‌سازی به بخش تنظیمات بروید"
+        }
+      />
+      <StatCard
+        label="نسخه‌های قابل بازیابی روی دیسک"
+        value={toPersianDigits(health.artifactsOnDisk)}
+        hint={health.newestArtifact ? `تازه‌ترین: ${health.newestArtifact}` : "هنوز نسخه‌ای روی دیسک نیست"}
+      />
+      <StatCard
+        label="ارسال به سرور دیگر"
+        value={health.servingEnabled ? "فعال" : "خاموش"}
+        tone={health.servingEnabled ? "warn" : "neutral"}
+        hint={
+          health.cloudEnabled
+            ? "فضای ابری هم روشن است"
+            : health.servingEnabled
+              ? "هر سروری که کلید درست را داشته باشد می‌تواند بردارد"
+              : "تا روشن نشود، هیچ آدرسی پاسخ نمی‌دهد"
+        }
+        icon={<ShieldAlert className="h-4 w-4" />}
+      />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// ۲ — settings
+// ---------------------------------------------------------------------------
+
+const INTERVALS = [1, 2, 3, 4, 6, 8, 12, 24];
+
+function ConfigCard({
+  config,
+  busy,
+  onSave,
+}: {
+  config: Config;
+  busy: string | null;
+  onSave: (patch: Record<string, unknown>, key: string) => void;
+}) {
+  const [form, setForm] = useState(config);
+  const [clearSecrets, setClearSecrets] = useState<{ passphrase: boolean; cloudSecret: boolean }>({
+    passphrase: false,
+    cloudSecret: false,
+  });
+  useEffect(() => setForm(config), [config]);
+
+  const dirty =
+    form.enabled !== config.enabled ||
+    form.intervalHours !== config.intervalHours ||
+    form.anchorTime !== config.anchorTime ||
+    form.timezone !== config.timezone ||
+    form.directory !== config.directory ||
+    form.secondaryDirectory !== config.secondaryDirectory ||
+    form.localRetention !== config.localRetention ||
+    form.encryptLocal !== config.encryptLocal ||
+    form.servingEnabled !== config.servingEnabled ||
+    form.allowInsecurePeers !== config.allowInsecurePeers ||
+    form.cloud.enabled !== config.cloud.enabled ||
+    form.cloud.endpoint !== config.cloud.endpoint ||
+    form.cloud.region !== config.cloud.region ||
+    form.cloud.bucket !== config.cloud.bucket ||
+    form.cloud.prefix !== config.cloud.prefix ||
+    form.cloud.accessKeyId !== config.cloud.accessKeyId ||
+    form.cloud.retention !== config.cloud.retention ||
+    Boolean(form.passphrase) ||
+    Boolean(form.cloud.secretAccessKey) ||
+    clearSecrets.passphrase ||
+    clearSecrets.cloudSecret;
+
+  const patch = (): Record<string, unknown> => ({
+    enabled: form.enabled,
+    intervalHours: Number(form.intervalHours),
+    anchorTime: form.anchorTime,
+    timezone: form.timezone,
+    directory: form.directory.trim(),
+    secondaryDirectory: form.secondaryDirectory.trim(),
+    localRetention: Number(form.localRetention),
+    encryptLocal: form.encryptLocal,
+    servingEnabled: form.servingEnabled,
+    allowInsecurePeers: form.allowInsecurePeers,
+    // An untouched secret is simply absent from the body, which the API reads as
+    // "keep what is stored"; an explicit "" clears it.
+    ...(form.passphrase ? { passphrase: form.passphrase } : clearSecrets.passphrase ? { passphrase: "" } : {}),
+    cloud: {
+      enabled: form.cloud.enabled,
+      endpoint: form.cloud.endpoint.trim(),
+      region: form.cloud.region.trim(),
+      bucket: form.cloud.bucket.trim(),
+      prefix: form.cloud.prefix.trim(),
+      accessKeyId: form.cloud.accessKeyId.trim(),
+      retention: Number(form.cloud.retention),
+      ...(form.cloud.secretAccessKey
+        ? { secretAccessKey: form.cloud.secretAccessKey }
+        : clearSecrets.cloudSecret
+          ? { secretAccessKey: "" }
+          : {}),
+    },
+  });
+
+  return (
+    <Card title="تنظیمات پشتیبان‌گیری">
+      {(config.warnings ?? []).length > 0 ? (
+        <InfoBox>
+          <ul className="list-inside list-disc space-y-1">
+            {config.warnings!.map((w) => (
+              <li key={w}>{w}</li>
+            ))}
+          </ul>
+        </InfoBox>
+      ) : null}
+
+      <div className="grid gap-x-4 gap-y-0 md:grid-cols-2">
+        <div>
+          <Toggle
+            label="پشتیبان‌گیری خودکار از کل سیستم"
+            checked={form.enabled}
+            onChange={(v) => setForm({ ...form, enabled: v })}
+          />
+          <Field label="بازه (ساعت)">
+            <select
+              className={selectClass}
+              value={String(form.intervalHours)}
+              onChange={(e) => setForm({ ...form, intervalHours: Number(e.target.value) })}
+            >
+              {INTERVALS.map((h) => (
+                <option key={h} value={h} className="bg-slate-900">
+                  هر {toPersianDigits(h)} ساعت
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="ساعت شروع (به وقت همان منطقه)" hint="مثلاً 03:30 یعنی هر شب، نیم ساعت پس از سه‌بام">
+            <input className={inputClass} value={form.anchorTime} onChange={(e) => setForm({ ...form, anchorTime: e.target.value.trim() })} />
+          </Field>
+          <Field label="منطقهٔ زمانی" hint="نام IANA؛ مثل Asia/Tehran یا Europe/Berlin">
+            <input className={inputClass} value={form.timezone} onChange={(e) => setForm({ ...form, timezone: e.target.value.trim() })} />
+          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="نگهداری نسخه روی دیسک">
+              <input
+                type="number"
+                min={1}
+                max={365}
+                className={inputClass}
+                value={String(form.localRetention)}
+                onChange={(e) => setForm({ ...form, localRetention: Number(e.target.value) })}
+              />
+            </Field>
+            <Field label="نگهداری نسخه در ابر">
+              <input
+                type="number"
+                min={1}
+                max={365}
+                className={inputClass}
+                value={String(form.cloud.retention)}
+                onChange={(e) => setForm({ ...form, cloud: { ...form.cloud, retention: Number(e.target.value) } })}
+              />
+            </Field>
+          </div>
+        </div>
+
+        <div>
+          <Field
+            label="پوشهٔ مقصد"
+            hint={
+              config.directory
+                ? "خالی بگذارید تا مسیر پیش‌فرض سرور استفاده شود"
+                : "خالی = پوشهٔ backups/platform در کنار برنامه"
+            }
+          >
+            <input
+              className={inputClass}
+              dir="ltr"
+              placeholder="/mnt/nas/pos-platform"
+              value={form.directory}
+              onChange={(e) => setForm({ ...form, directory: e.target.value })}
+            />
+          </Field>
+          <Field label="پوشهٔ دوم (USB یا NAS) — اختیاری" hint="کپی نشدن به آن، خودِ پشتیبان را ناموفق می‌کند">
+            <input
+              className={inputClass}
+              dir="ltr"
+              placeholder="/mnt/usb"
+              value={form.secondaryDirectory}
+              onChange={(e) => setForm({ ...form, secondaryDirectory: e.target.value })}
+            />
+          </Field>
+
+          <Toggle
+            label="رمزگذاری نسخه‌های محلی"
+            checked={form.encryptLocal}
+            onChange={(v) => setForm({ ...form, encryptLocal: v })}
+            hint="با عبارت عبورِ همین سرور؛ بدون آن، نسخه روی دیسک خواناست"
+          />
+          <Field
+            label={config.hasPassphrase ? "عبارت عبور (برای تغییر، نو را بنویسید)" : "عبارت عبور رمزنگاری"}
+            hint="بازیابی بدون این عبارت ممکن نیست. آن را جای دیگری هم ذخیره کنید."
+          >
+            <input
+              type="password"
+              className={inputClass}
+              dir="ltr"
+              autoComplete="new-password"
+              placeholder={config.hasPassphrase ? "••••••••  (ذخیره شده)" : "دست‌کم ۸ نویسه"}
+              value={form.passphrase}
+              onChange={(e) => setForm({ ...form, passphrase: e.target.value })}
+            />
+          </Field>
+          {config.hasPassphrase || clearSecrets.passphrase ? (
+            <button
+              type="button"
+              className="mb-3 text-xs text-white/45 underline decoration-white/20 hover:text-white/70"
+              onClick={() => setClearSecrets((s) => ({ ...s, passphrase: !s.passphrase }))}
+            >
+              {clearSecrets.passphrase ? "لغو پاک‌کردن عبارت عبور" : "پاک کردن عبارت عبور ذخیره‌شده"}
+            </button>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="mt-4 border-t border-white/10 pt-4">
+        <Toggle
+          label="ارسال نسخه‌ها به فضای ابری (S3)"
+          checked={form.cloud.enabled}
+          onChange={(v) => setForm({ ...form, cloud: { ...form.cloud, enabled: v } })}
+          hint="همان فایل رمزشده در هر فضای سازگار با S3: آروان، Backblaze، MinIO روی NAS"
+        />
+        <div className="mt-3 grid gap-x-4 md:grid-cols-2">
+          <Field label="Endpoint">
+            <input className={inputClass} dir="ltr" placeholder="https://s3.ir-thr-at1.arvanstorage.ir" value={form.cloud.endpoint} onChange={(e) => setForm({ ...form, cloud: { ...form.cloud, endpoint: e.target.value } })} />
+          </Field>
+          <Field label="Bucket">
+            <input className={inputClass} dir="ltr" value={form.cloud.bucket} onChange={(e) => setForm({ ...form, cloud: { ...form.cloud, bucket: e.target.value } })} />
+          </Field>
+          <Field label="Region">
+            <input className={inputClass} dir="ltr" value={form.cloud.region} onChange={(e) => setForm({ ...form, cloud: { ...form.cloud, region: e.target.value } })} />
+          </Field>
+          <Field label="پیشوند کلیدها">
+            <input className={inputClass} dir="ltr" value={form.cloud.prefix} onChange={(e) => setForm({ ...form, cloud: { ...form.cloud, prefix: e.target.value } })} />
+          </Field>
+          <Field label="Access key id">
+            <input className={inputClass} dir="ltr" value={form.cloud.accessKeyId} onChange={(e) => setForm({ ...form, cloud: { ...form.cloud, accessKeyId: e.target.value } })} />
+          </Field>
+          <Field label={form.cloud.hasSecretAccessKey ? "Secret key (برای تغییر، نو را بنویسید)" : "Secret key"}>
+            <input type="password" className={inputClass} dir="ltr" autoComplete="new-password" placeholder={form.cloud.hasSecretAccessKey ? "••••••••  (ذخیره شده)" : ""} value={form.cloud.secretAccessKey} onChange={(e) => setForm({ ...form, cloud: { ...form.cloud, secretAccessKey: e.target.value } })} />
+          </Field>
+        </div>
+        {form.cloud.hasSecretAccessKey ? (
+          <button
+            type="button"
+            className="text-xs text-white/45 underline decoration-white/20 hover:text-white/70"
+            onClick={() => setClearSecrets((s) => ({ ...s, cloudSecret: !s.cloudSecret }))}
+          >
+            {clearSecrets.cloudSecret ? "لغو پاک‌کردن کلید محرمانه" : "پاک کردن کلید محرمانهٔ ذخیره‌شده"}
+          </button>
+        ) : null}
+      </div>
+
+      <div className="mt-4 flex items-center gap-2">
+        <Button onClick={() => onSave(patch(), "config")} disabled={!dirty || busy === "config"}>
+          {busy === "config" ? <Loader2 className="me-1.5 h-4 w-4 animate-spin motion-reduce:animate-none" /> : null}
+          ذخیرهٔ تنظیمات
+        </Button>
+        {dirty ? (
+          <button type="button" className="text-xs text-white/40 hover:text-white/70" onClick={() => { setForm(config); setClearSecrets({ passphrase: false, cloudSecret: false }); }}>
+            بازگردانی تغییرات این فرم
+          </button>
+        ) : null}
+      </div>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// ۳ — serving (the OLD server's half of the address feature)
+// ---------------------------------------------------------------------------
+
+function ServingCard({
+  config,
+  tokens,
+  busy,
+  onSave,
+  onReload,
+}: {
+  config: Config;
+  tokens: TokenRow[];
+  busy: string | null;
+  onSave: (patch: Record<string, unknown>, key: string) => void;
+  onReload: () => void;
+}) {
+  const [label, setLabel] = useState("");
+  const [days, setDays] = useState("30");
+  const [issued, setIssued] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function issue() {
+    setError(null);
+    const res = await api<{ token?: string; error?: string }>("/api/platform/backup/tokens", {
+      method: "POST",
+      body: JSON.stringify({ label, expiresInDays: Number(days) || null }),
+    });
+    if (res.ok && res.data.token) {
+      setIssued(res.data.token);
+      setLabel("");
+      onReload();
+    } else {
+      setError(text(res.data.error));
+    }
+  }
+
+  async function revoke(id: string) {
+    await api(`/api/platform/backup/tokens/${id}`, { method: "DELETE" });
+    onReload();
+  }
+
+  return (
+    <Card title="دسترسی سرور دیگر به این نسخه‌ها">
+      <InfoBox>
+        با روشن کردن این گزینه، سروری که آدرس همین سرور و یکی از کلیدهای زیر را داشته باشد
+        می‌تواند فهرست نسخه‌ها را ببیند و فایل پشتیبان را بردارد — نه بیشتر. هیچ ورود دیگری
+        از این مسیر باز نمی‌شود و تا این کلیدها را نسازید، حتی با آدرس درست چیزی دریافت نمی‌کنید.
+      </InfoBox>
+
+      <Toggle
+        label="اجازهٔ دریافت نسخه‌ها توسط سرور دیگر"
+        checked={config.servingEnabled}
+        onChange={(v) => onSave({ servingEnabled: v, allowInsecurePeers: config.allowInsecurePeers }, "serving")}
+        hint={
+          config.servingEnabled
+            ? "روشن است؛ هر کلید فعال، دسترسی کامل به همهٔ نسخه‌ها دارد"
+            : "خاموش = مسیرها ۴۰۴ پاسخ می‌دهند، انگار وجود ندارند"
+        }
+      />
+      {busy === "serving" ? <p className="text-xs text-white/40">در حال ذخیره…</p> : null}
+
+      {issued ? (
+        <div className="mb-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3">
+          <p className="mb-2 text-xs text-emerald-200/80">
+            همین حالا کپی کنید — این تنها بار است که کلید کامل نشان داده می‌شود. در سرور جدید، در
+            بخش «بازیابی از آدرس»، همان را در فیلد کلید وارد کنید.
+          </p>
+          <div className="flex items-center gap-2">
+            <code dir="ltr" className="min-w-0 flex-1 truncate rounded-lg bg-black/40 px-2 py-1.5 text-xs">
+              {issued}
+            </code>
+            <CopyButton value={issued} />
+          </div>
+          <button type="button" className="mt-2 text-xs text-white/45 hover:text-white/70" onClick={() => setIssued(null)}>
+            دیدم، پنهانش کن
+          </button>
+        </div>
+      ) : null}
+
+      <div className="mb-3 flex flex-wrap items-end gap-2">
+        <div className="min-w-0 flex-1">
+          <Field label="نام کلید" hint="مثلاً «سرور جدید – مهاجرت ۱۴۰۵»">
+            <input className={inputClass} value={label} onChange={(e) => setLabel(e.target.value)} />
+          </Field>
+        </div>
+        <div className="w-32">
+          <Field label="انقضا (روز)">
+            <input className={inputClass} type="number" min={1} value={days} onChange={(e) => setDays(e.target.value)} />
+          </Field>
+        </div>
+        <Button onClick={() => void issue()} disabled={!label.trim() || busy === "issue"}>
+          {busy === "issue" ? <Loader2 className="me-1.5 h-4 w-4 animate-spin motion-reduce:animate-none" /> : null}
+          ساخت کلید
+        </Button>
+      </div>
+      {error ? <ErrorBox>{error}</ErrorBox> : null}
+
+      {tokens.length === 0 ? (
+        <EmptyState title="هنوز کلیدی نساخته‌اید" hint="بدون کلید، حتی سروری که آدرسش را می‌دانید چیزی دریافت نمی‌کند." />
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[46rem] text-sm">
+            <thead>
+              <tr className="border-b border-white/10 text-xs text-white/40">
+                <th className="py-2 text-start font-medium">نام</th>
+                <th className="py-2 text-start font-medium">کلید</th>
+                <th className="py-2 text-start font-medium">ساخته</th>
+                <th className="py-2 text-start font-medium">آخرین استفاده</th>
+                <th className="py-2 text-start font-medium">بار</th>
+                <th className="py-2 text-start font-medium">انقضا</th>
+                <th className="py-2" />
+              </tr>
+            </thead>
+            <tbody>
+              {tokens.map((t) => {
+                return (
+                  <tr key={t.id} className="border-b border-white/5 last:border-0">
+                    <td className="py-2">{t.label}</td>
+                    <td className="py-2 font-mono text-xs text-white/50" dir="ltr">{t.hint}</td>
+                    <td className="py-2 text-xs text-white/50">{fmtDate(t.createdAt)}</td>
+                    <td className="py-2 text-xs text-white/50">{t.lastUsedAt ? fmtDate(t.lastUsedAt) : "هرگز"}</td>
+                    <td className="py-2 text-xs tabular-nums text-white/50">{toPersianDigits(t.uses)}</td>
+                    <td className="py-2 text-xs text-white/50">{t.expiresAt ? fmtDate(t.expiresAt, true) : "ندارد"}</td>
+                    <td className="py-2 text-end">
+                      {t.revokedAt ? (
+                        <span className="text-xs text-white/30">لغو شده</span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => void revoke(t.id)}
+                          className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-red-300/80 transition-colors hover:bg-red-500/10"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          لغو
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// ۴ — restore by address (the NEW server's half)
+// ---------------------------------------------------------------------------
+
+function RestoreCard({
+  peers,
+  canManage,
+  canRestore,
+  confirmPhrase,
+  busy,
+  setBusy,
+  onReload,
+  onSave,
+}: {
+  peers: PeerRow[];
+  canManage: boolean;
+  canRestore: boolean;
+  confirmPhrase: string;
+  busy: string | null;
+  setBusy: (v: string | null) => void;
+  onReload: () => void;
+  onSave: (patch: Record<string, unknown>, key: string) => void;
+}) {
+  const [label, setLabel] = useState("");
+  const [baseUrl, setBaseUrl] = useState("");
+  const [token, setToken] = useState("");
+  const [formError, setFormError] = useState<string | null>(null);
+
+  const [selected, setSelected] = useState<string>(peers[0]?.id ?? "");
+  const [check, setCheck] = useState<{ manifest: PeerManifest; warnings: string[] } | null>(null);
+  const [checkError, setCheckError] = useState<string | null>(null);
+  const [artifact, setArtifact] = useState<string>("");
+  const [passphrase, setPassphrase] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [result, setResult] = useState<{ status: string; summary?: unknown; notice?: string } | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const peer = useMemo(() => peers.find((p) => p.id === selected) ?? null, [peers, selected]);
+  useEffect(() => {
+    setSelected((cur) => (cur && peers.some((p) => p.id === cur) ? cur : (peers[0]?.id ?? "")));
+  }, [peers]);
+  // A new check replaces the list the operator may have picked from, so the
+  // stale selection is cleared rather than left pointing at an artifact that is
+  // no longer on screen.
+  useEffect(() => {
+    setCheck(null);
+    setCheckError(null);
+    setResult(null);
+    setActionError(null);
+    setArtifact("");
+  }, [selected]);
+
+  async function addPeer() {
+    setFormError(null);
+    const res = await api<{ peer?: PeerRow; error?: string }>("/api/platform/backup/peers", {
+      method: "POST",
+      body: JSON.stringify({ label, baseUrl, token, enabled: true }),
+    });
+    if (res.ok) {
+      setLabel("");
+      setBaseUrl("");
+      setToken("");
+      onReload();
+      if (res.data.peer) setSelected(res.data.peer.id);
+    } else {
+      setFormError(text((res.data as { error?: string }).error));
+    }
+  }
+
+  async function removePeer(id: string) {
+    await api(`/api/platform/backup/peers/${id}`, { method: "DELETE" });
+    onReload();
+  }
+
+  async function togglePeer(id: string, enabled: boolean) {
+    await api(`/api/platform/backup/peers/${id}`, { method: "PUT", body: JSON.stringify({ enabled }) });
+    onReload();
+  }
+
+  async function runCheck() {
+    if (!peer) return;
+    setBusy("check");
+    setCheckError(null);
+    const res = await api<{ manifest?: PeerManifest; warnings?: string[]; error?: string }>(
+      `/api/platform/backup/peers/${peer.id}/check`,
+      { method: "POST" },
+    );
+    if (res.ok && res.data.manifest) {
+      const list = res.data.manifest.artifacts ?? [];
+      setCheck({ manifest: res.data.manifest, warnings: res.data.warnings ?? [] });
+      setArtifact(list[0]?.artifact ?? "");
+    } else {
+      setCheck(null);
+      setCheckError(text(res.data.error));
+    }
+    setBusy(null);
+  }
+
+  async function restore(apply: boolean) {
+    if (!peer || !artifact) return;
+    setBusy(apply ? "apply" : "verify");
+    setActionError(null);
+    setResult(null);
+    const res = await api<{ status?: string; summary?: unknown; notice?: string; error?: string; detail?: string }>(
+      "/api/platform/backup/restore",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          source: "peer",
+          peerId: peer.id,
+          artifact,
+          apply,
+          ...(passphrase ? { passphrase } : {}),
+          ...(apply ? { confirm } : {}),
+        }),
+      },
+    );
+    setBusy(null);
+    if (res.ok) {
+      setResult({ status: res.data.status ?? "verified", summary: res.data.summary, notice: res.data.notice });
+      setConfirm("");
+      onReload();
+    } else {
+      setActionError(text(res.data.error, res.data.detail));
+    }
+  }
+
+  const chosen = check?.manifest.artifacts.find((a) => a.artifact === artifact) ?? null;
+
+  return (
+    <Card title="بازیابی از آدرس (سرور قدیم ← این سرور)">
+      <InfoBox>
+        روی سرور جدید همین صفحه را باز کنید، آدرس سرور قدیم و کلیدی که آنجا ساخته‌اید را وارد
+        کنید، و نسخه را اول «اعتبارسنجی» کنید. اعتبارسنجی فایل را دانلود و در یک پایگاه‌دادهٔ
+        موقت بازمی‌گرداند و چیزی را در این سرور تغییر نمی‌دهد. «بازگردانی کامل» همان فایل را
+        جای پایگاه‌دادهٔ جاری می‌گذارد و برگشت‌پذیر نیست.
+      </InfoBox>
+
+      <div className="grid gap-x-4 md:grid-cols-3">
+        <Field label="نام سرور مقابل">
+          <input className={inputClass} value={label} onChange={(e) => setLabel(e.target.value)} placeholder="سرور قدیم" />
+        </Field>
+        <Field label="آدرس (با http:// یا https://)">
+          <input className={inputClass} dir="ltr" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value.trim())} placeholder="https://pos.example.com" />
+        </Field>
+        <Field label="کلید دسترسی آن سرور">
+          <input className={inputClass} dir="ltr" type="password" autoComplete="off" value={token} onChange={(e) => setToken(e.target.value.trim())} placeholder="POS1-…" />
+        </Field>
+      </div>
+      {formError ? <ErrorBox>{formError}</ErrorBox> : null}
+      {canManage ? (
+        <Button onClick={() => void addPeer()} disabled={!label.trim() || !baseUrl.trim() || busy === "add-peer"}>
+          {busy === "add-peer" ? <Loader2 className="me-1.5 h-4 w-4 animate-spin motion-reduce:animate-none" /> : null}
+          افزودن این سرور
+        </Button>
+      ) : null}
+
+      {peers.length === 0 ? (
+        <div className="mt-4">
+          <EmptyState
+            title="هنوز سروری ثبت نشده"
+            hint={
+              canManage
+                ? "برای بازیابی، اول آدرس سروری که نسخه‌ها آن‌جا هستند را ثبت کنید."
+                : "ثبت سرور، و هر بازیابی از آن، به دسترسی «پشتیبان‌گیری» نیاز دارد."
+            }
+          />
+        </div>
+      ) : (
+        <div className="mt-4 space-y-3">
+          <div className="space-y-1.5">
+            {peers.map((p) => (
+              <label
+                key={p.id}
+                className={`flex cursor-pointer flex-wrap items-center gap-2 rounded-xl border px-3 py-2 transition-colors ${
+                  selected === p.id ? "border-sky-400/50 bg-sky-500/10" : "border-white/10 hover:bg-white/5"
+                }`}
+              >
+                <input type="radio" name="peer" className="accent-sky-500" checked={selected === p.id} onChange={() => setSelected(p.id)} />
+                <span className="min-w-0 flex-1 truncate text-sm">{p.label}</span>
+                <code dir="ltr" className="truncate text-xs text-white/40">{p.baseUrl}</code>
+                {!p.hasToken ? <span className="text-xs text-amber-300">کلید ندارد</span> : null}
+                {!p.secure ? <span className="text-xs text-amber-300">http</span> : null}
+                <span className="text-xs text-white/35">
+                  {p.lastCheckAt ? `بررسی: ${fmtDate(p.lastCheckAt)}` : "بررسی نشده"}
+                  {p.lastCheckStatus === "failed" ? " · ناموفق" : ""}
+                </span>
+                {canManage ? (
+                  <>
+                    {/* Both live inside the row's <label>, so each one has to stop the
+                        label from also activating its radio — otherwise "delete this
+                        server" silently re-selects the row you are deleting. */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        void togglePeer(p.id, !p.enabled);
+                      }}
+                      className="text-xs text-white/45 hover:text-white/70"
+                    >
+                      {p.enabled ? "غیرفعال" : "فعال"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        void removePeer(p.id);
+                      }}
+                      aria-label={`حذف ${p.label}`}
+                      className="text-white/35 transition-colors hover:text-red-300"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </>
+                ) : null}
+              </label>
+            ))}
+          </div>
+
+          {peer && !peer.enabled ? (
+            <InfoBox>این سرور غیرفعال است؛ برای بررسی یا بازیابی اول آن را فعال کنید.</InfoBox>
+          ) : null}
+
+          <div className="flex flex-wrap items-center gap-2">
+            {!canManage ? (
+              <InfoBox>
+                بررسی اتصال و بازیابی از همین سرور انجام می‌شود، پس به دسترسی
+                «پشتیبان‌گیری» نیاز دارد؛ فهرست پایین فقط برای اطلاع است.
+              </InfoBox>
+            ) : null}
+            <Button
+              variant="ghost"
+              onClick={() => void runCheck()}
+              disabled={!peer || busy === "check" || !canManage}
+            >
+              {busy === "check" ? <Loader2 className="me-1.5 h-4 w-4 animate-spin motion-reduce:animate-none" /> : <Unplug className="me-1.5 h-4 w-4" />}
+              بررسی اتصال و خواندن فهرست
+            </Button>
+            {check ? (
+              <span className="text-xs text-white/45">
+                {toPersianDigits(check.manifest.artifacts.length)} نسخه · {toPersianDigits(check.manifest.schemaMigrations)} مهاجرت ·
+                Postgres {toPersianDigits(check.manifest.pgServerMajor)} · {toPersianDigits(check.manifest.businessCount)} کسب‌وکار
+              </span>
+            ) : null}
+          </div>
+          {checkError ? <ErrorBox>{checkError}</ErrorBox> : null}
+
+          {check && check.warnings.length > 0 ? (
+            <InfoBox>
+              <ul className="list-inside list-disc space-y-1">
+                {check.warnings.map((w) => (
+                  <li key={w}>{w}</li>
+                ))}
+              </ul>
+            </InfoBox>
+          ) : null}
+
+          {check && canManage ? (
+            <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+              <div className="mb-2 flex flex-wrap items-center gap-2">
+                <span className="text-xs text-white/45">نسخه</span>
+                <select className={`${selectClass} h-9 w-auto min-w-[22rem]`} value={artifact} onChange={(e) => setArtifact(e.target.value)}>
+                  {check.manifest.artifacts.map((a) => (
+                    <option key={a.artifact} value={a.artifact} className="bg-slate-900">
+                      {a.artifact} — {bytes(a.sizeBytes)}
+                      {a.encrypted ? " (رمزشده)" : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {chosen?.sha256 ? (
+                <p className="mb-2 text-[11px] text-white/35" dir="ltr">
+                  sha256: {chosen.sha256.slice(0, 32)}…
+                </p>
+              ) : null}
+
+              <div className="grid gap-x-3 md:grid-cols-2">
+                <Field label="عبارت عبور (اگر این سرور آن را ذخیره نکرده)" hint="برای همین یک بار استفاده می‌شود و جایی ذخیره نمی‌شود">
+                  <input type="password" className={inputClass} dir="ltr" autoComplete="new-password" value={passphrase} onChange={(e) => setPassphrase(e.target.value)} />
+                </Field>
+                {canRestore ? (
+                  <Field label={confirmPhrase ? `برای بازگردانی این را دقیق بنویسید: ${confirmPhrase}` : "در حال خواندن عبارت تأیید…"}>
+                    <input className={inputClass} dir="rtl" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+                  </Field>
+                ) : (
+                  <InfoBox>اعتبارسنجی را می‌توانید؛ بازگردانی کامل فقط برای نقش «مدیر ارشد» است.</InfoBox>
+                )}
+              </div>
+
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <Button variant="ghost" onClick={() => void restore(false)} disabled={!artifact || busy === "verify"}>
+                  {busy === "verify" ? <Loader2 className="me-1.5 h-4 w-4 animate-spin motion-reduce:animate-none" /> : <ShieldAlert className="me-1.5 h-4 w-4" />}
+                  اعتبارسنجی در پایگاه‌دادهٔ موقت
+                </Button>
+                {canRestore ? (
+                  <Button
+                    variant="danger"
+                    onClick={() => void restore(true)}
+                    disabled={!artifact || !confirmPhrase || confirm.trim() !== confirmPhrase || busy === "apply"}
+                  >
+                    {busy === "apply" ? <Loader2 className="me-1.5 h-4 w-4 animate-spin motion-reduce:animate-none" /> : <Download className="me-1.5 h-4 w-4" />}
+                    بازگردانی کامل روی این سرور
+                  </Button>
+                ) : null}
+              </div>
+              {actionError ? <ErrorBox>{actionError}</ErrorBox> : null}
+              {result ? <RestoreResult result={result} /> : null}
+            </div>
+          ) : null}
+
+          <p className="text-[11px] text-white/35">
+            اگر رمزنگاری محلی روشن باشد ولی عبارت عبور این سرور خالی باشد، فایل رمزگشایی نمی‌شود و
+            بازگردانی پیش از هر تغییری می‌ایستد. آن را در همان پاکت بسته‌بندی نگه دارید که رمز عبور
+            مالک در آن است.
+          </p>
+        </div>
+      )}
+
+      <p className="mt-3 text-[11px] text-white/35">
+        سروری که http دارد فقط وقتی بررسی می‌شود که «اجازهٔ اتصال ناامن» در تنظیمات روشن باشد —
+        روی شبکهٔ داخلی، همان NAS که فایل‌ها روی آن است، همین لازم است.
+      </p>
+    </Card>
+  );
+}
+
+function RestoreResult({ result }: { result: { status?: string; summary?: unknown; notice?: string } }) {
+  const summary = result.summary as
+    | { migrations?: number; latestMigration?: string; tables?: { name: string; rows: number }[] }
+    | undefined;
+  return (
+    <div className={`mt-3 rounded-xl border p-3 ${result.status === "applied" ? "border-amber-500/30 bg-amber-500/10" : "border-emerald-500/30 bg-emerald-500/10"}`}>
+      <p className="text-sm font-medium text-white/85">
+        {result.status === "applied" ? "بازگردانی انجام شد" : "اعتبارسنجی موفق بود — چیزی تغییر نکرد"}
+      </p>
+      {summary ? (
+        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-white/55">
+          <span>{toPersianDigits(summary.migrations ?? 0)} مهاجرت</span>
+          {summary.latestMigration ? <span dir="ltr">تازه‌ترین: {summary.latestMigration}</span> : null}
+          {(summary.tables ?? []).map((t) => (
+            <span key={t.name} dir="ltr">
+              {t.name}: {toPersianDigits(t.rows)}
+            </span>
+          ))}
+        </div>
+      ) : null}
+      {result.notice ? <p className="mt-2 text-xs leading-6 text-amber-200/80">{result.notice}</p> : null}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// ۵ — history
+// ---------------------------------------------------------------------------
+
+function HistoryCard({
+  runs,
+  local,
+  restores,
+  health,
+  tone,
+  canRestore,
+  confirmPhrase,
+  onChanged,
+}: {
+  runs: RunRow[];
+  local: ArtifactRow[];
+  restores: RestoreRun[];
+  health: Health;
+  tone: "neutral" | "ok" | "warn" | "bad";
+  canRestore: boolean;
+  confirmPhrase: string;
+  onChanged: () => void;
+}) {
+  const [copied, setCopied] = useState<string | null>(null);
+  const [openFor, setOpenFor] = useState<string | null>(null);
+  async function copy(value: string) {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(value);
+      setTimeout(() => setCopied(null), 1500);
+    } catch {
+      /* clipboard blocked by the browser; the value is on screen */
+    }
+  }
+
+  return (
+    <div className="grid gap-3 lg:grid-cols-2">
+      <Card title="اجرای پشتیبان‌گیری‌ها">
+        {runs.length === 0 ? (
+          <EmptyState
+            title={health.enabled ? "هنوز اجرایی ثبت نشده" : "پشتیبان‌گیری خودکار روشن نیست"}
+            hint={
+              tone === "bad"
+                ? "آخرین اجرا ناموفق بود؛ متن خطا در همین جدول است."
+                : "«پشتیبان‌گیری فوری» اولین نسخه را همین حالا می‌سازد."
+            }
+          />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[40rem] text-sm">
+              <thead>
+                <tr className="border-b border-white/10 text-xs text-white/40">
+                  <th className="py-2 text-start font-medium">شروع</th>
+                  <th className="py-2 text-start font-medium">نوع</th>
+                  <th className="py-2 text-start font-medium">وضعیت</th>
+                  <th className="py-2 text-start font-medium">حجم</th>
+                  <th className="py-2 text-start font-medium">فایل</th>
+                </tr>
+              </thead>
+              <tbody>
+                {runs.map((r) => (
+                  <tr key={r.id} className="border-b border-white/5 align-top last:border-0">
+                    <td className="py-2 text-xs text-white/55">{fmtDate(r.startedAt)}</td>
+                    <td className="py-2 text-xs">
+                      {r.kind === "local" ? "محلی" : "ابر"} · {TRIGGER_LABELS[r.trigger] ?? r.trigger}
+                    </td>
+                    <td className="py-2 text-xs">
+                      <RunBadge status={r.status} />
+                      {r.status === "failed" && r.error ? (
+                        <span className="mt-1 block max-w-[18rem] truncate text-[11px] text-red-300/70" title={r.error}>
+                          {r.error.slice(0, 90)}
+                        </span>
+                      ) : null}
+                    </td>
+                    <td className="py-2 text-xs tabular-nums text-white/55">{bytes(r.sizeBytes)}</td>
+                    <td className="py-2">
+                      {r.artifact ? (
+                        <button
+                          type="button"
+                          onClick={() => void copy(r.artifact!)}
+                          className="inline-flex max-w-[16rem] items-center gap-1 truncate font-mono text-[11px] text-white/45 transition-colors hover:text-white/80"
+                          title="کپی نام فایل"
+                        >
+                          <span dir="ltr" className="truncate">{r.artifact}</span>
+                          {copied === r.artifact ? <Check className="h-3 w-3 text-emerald-300" /> : <Copy className="h-3 w-3" />}
+                        </button>
+                      ) : (
+                        <span className="text-[11px] text-white/25">—</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      <div className="space-y-3">
+        <Card title="نسخه‌های روی این دیسک">
+          {local.length === 0 ? (
+            <EmptyState title="هیچ فایلی در پوشهٔ پشتیبان‌گیری نیست" hint="با «پشتیبان‌گیری فوری» یک نسخه بسازید." />
+          ) : (
+            <ul className="space-y-1.5">
+              {local.map((a) => (
+                <li key={a.artifact} className="space-y-1">
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    <code dir="ltr" className="min-w-0 flex-1 truncate text-white/70">{a.artifact}</code>
+                    <span className="tabular-nums text-white/40">{bytes(a.sizeBytes)}</span>
+                    {a.encrypted ? <span className="rounded-full border border-white/15 px-1.5 text-[10px] text-white/45">رمزشده</span> : null}
+                    {a.exists ? null : <span className="rounded-full border border-amber-500/30 px-1.5 text-[10px] text-amber-300">حذف‌شده</span>}
+                    {a.exists ? (
+                      <button
+                        type="button"
+                        onClick={() => setOpenFor(openFor === a.artifact ? null : a.artifact)}
+                        className="rounded-lg border border-white/15 px-2 py-0.5 text-[11px] text-white/60 transition-colors hover:bg-white/5 hover:text-white"
+                      >
+                        {openFor === a.artifact ? "بستن" : "بازیابی این نسخه"}
+                      </button>
+                    ) : null}
+                  </div>
+                  {openFor === a.artifact ? (
+                    <LocalRestore
+                      artifact={a.artifact}
+                      encrypted={a.encrypted}
+                      canRestore={canRestore}
+                      confirmPhrase={confirmPhrase}
+                      onDone={onChanged}
+                    />
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+
+        <Card title="تاریخچهٔ بازگردانی‌ها">
+          {restores.length === 0 ? (
+            <EmptyState title="هنوز بازگردانی‌ای انجام نشده" hint="هر «اعتبارسنجی» و هر «بازگردانی کامل» همین‌جا ثبت می‌شود." />
+          ) : (
+            <ul className="space-y-1.5">
+              {restores.map((r) => (
+                <li key={r.id} className="flex flex-wrap items-center gap-2 text-xs">
+                  <span className="text-white/55">{fmtDate(r.startedAt)}</span>
+                  <span className="text-white/70">{r.mode === "apply" ? "بازگردانی کامل" : "اعتبارسنجی"}</span>
+                  <span className="text-white/40">{SOURCE_LABELS[r.source] ?? r.source}</span>
+                  <code dir="ltr" className="min-w-0 flex-1 truncate text-white/45">{r.artifact}</code>
+                  <RunBadge status={r.status} />
+                  {r.error ? <span className="w-full truncate text-[11px] text-red-300/70">{r.error.slice(0, 120)}</span> : null}
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The console's `StatusBadge` labels business lifecycle states; a run has its
+ * own three, and the same rule applies to them — an operator never reads a raw
+ * English enum in this UI.
+ */
+function RunBadge({ status }: { status: string }) {
+  const map: Record<string, { label: string; cls: string }> = {
+    running: { label: "در حال اجرا", cls: "bg-sky-500/15 text-sky-300 border-sky-500/30" },
+    success: { label: "موفق", cls: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30" },
+    failed: { label: "ناموفق", cls: "bg-red-500/15 text-red-300 border-red-500/30" },
+    ok: { label: "موفق", cls: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30" },
+  };
+  const s = map[status] ?? { label: status, cls: "bg-white/10 text-white/50 border-white/20" };
+  return (
+    <span className={`inline-block rounded-full border px-2 py-0.5 text-[11px] font-medium ${s.cls}`}>
+      {s.label}
+    </span>
+  );
+}
+
+const TRIGGER_LABELS: Record<string, string> = {
+  scheduled: "خودکار",
+  manual: "دستی",
+  peer: "درخواست سرور دیگر",
+};
+
+const SOURCE_LABELS: Record<string, string> = {
+  local: "از دیسک این سرور",
+  cloud: "از فضای ابری",
+  peer: "از سرور مقابل",
+  url: "از آدرس مستقیم",
+};
+
+/**
+ * Verify (and, for an owner, apply) one of *this* server's own artifacts.
+ *
+ * The peer card handles the migration case; this one is for the machine whose
+ * database is broken but whose backup folder is intact — the operator should not
+ * have to reach a shell to find out whether the file is good, and `npm run
+ * db:restore` is the same engine with the same guarantees minus the console. So
+ * the two-step is the same as everywhere else on this page: restore into a
+ * scratch database and read the counts, then, with a typed phrase, replace the
+ * live one.
+ */
+function LocalRestore({
+  artifact,
+  encrypted,
+  canRestore,
+  confirmPhrase,
+  onDone,
+}: {
+  artifact: string;
+  encrypted: boolean;
+  canRestore: boolean;
+  confirmPhrase: string;
+  onDone: () => void;
+}) {
+  const [passphrase, setPassphrase] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<{ status: string; summary?: unknown; notice?: string } | null>(null);
+
+  async function go(apply: boolean) {
+    setBusy(apply ? "apply" : "verify");
+    setError(null);
+    setResult(null);
+    const res = await api<{ status?: string; summary?: unknown; notice?: string; error?: string; detail?: string }>(
+      "/api/platform/backup/restore",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          source: "local",
+          artifact,
+          apply,
+          ...(passphrase ? { passphrase } : {}),
+          ...(apply ? { confirm } : {}),
+        }),
+      },
+    );
+    setBusy(null);
+    if (res.ok) {
+      setResult({ status: res.data.status ?? "verified", summary: res.data.summary, notice: res.data.notice });
+      onDone();
+    } else {
+      setError(text(res.data.error, res.data.detail));
+    }
+  }
+
+  return (
+    <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+      <div className="grid gap-x-3 md:grid-cols-2">
+        <Field
+          label="عبارت عبور"
+          hint={encrypted ? "این نسخه رمزشده است؛ بدون عبارت عبور باز نمی‌شود" : "فقط اگر عبارت عبور این سرور پاک شده لازم است"}
+        >
+          <input
+            type="password"
+            className={inputClass}
+            dir="ltr"
+            autoComplete="new-password"
+            value={passphrase}
+            onChange={(e) => setPassphrase(e.target.value)}
+          />
+        </Field>
+        {canRestore ? (
+          <Field label={confirmPhrase ? `برای بازگردانی این را دقیق بنویسید: ${confirmPhrase}` : "در حال خواندن عبارت تأیید…"}>
+            <input className={inputClass} dir="rtl" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+          </Field>
+        ) : null}
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button variant="ghost" onClick={() => void go(false)} disabled={busy !== null}>
+          {busy === "verify" ? <Loader2 className="me-1.5 h-4 w-4 animate-spin motion-reduce:animate-none" /> : null}
+          اعتبارسنجی در پایگاه‌دادهٔ موقت
+        </Button>
+        {canRestore ? (
+          <Button
+            variant="danger"
+            onClick={() => void go(true)}
+            disabled={busy !== null || !confirmPhrase || confirm.trim() !== confirmPhrase}
+          >
+            {busy === "apply" ? <Loader2 className="me-1.5 h-4 w-4 animate-spin motion-reduce:animate-none" /> : null}
+            بازگردانی کامل روی این سرور
+          </Button>
+        ) : (
+          <span className="text-[11px] text-white/35">بازگردانی کامل فقط برای نقش «مدیر ارشد» است.</span>
+        )}
+      </div>
+      {error ? <ErrorBox>{error}</ErrorBox> : null}
+      {result ? <RestoreResult result={result} /> : null}
+    </div>
+  );
+}
+
+/** A labelled switch — the console's own idiom (no native checkbox styling). */
+function Toggle({
+  label,
+  checked,
+  onChange,
+  hint,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (next: boolean) => void;
+  hint?: string;
+}) {
+  return (
+    <label className="mb-4 flex cursor-pointer items-start gap-3">
+      <input
+        type="checkbox"
+        className="mt-1 h-4 w-4 shrink-0 accent-sky-500"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+      />
+      <span className="min-w-0">
+        <span className="block text-sm font-medium text-white/80">{label}</span>
+        {hint ? <span className="mt-0.5 block text-xs leading-5 text-white/40">{hint}</span> : null}
+      </span>
+    </label>
+  );
+}
+
+function CopyButton({ value, label }: { value: string; label?: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(value);
+        } catch {
+          /* clipboard blocked; the value is on screen for a manual copy */
+        }
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      }}
+      className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-white/15 px-2.5 py-1.5 text-xs text-white/70 transition-colors hover:bg-white/5"
+    >
+      {copied ? <Check className="h-3.5 w-3.5 text-emerald-300" /> : <Copy className="h-3.5 w-3.5" />}
+      {label ?? (copied ? "کپی شد" : "کپی")}
+    </button>
+  );
+}

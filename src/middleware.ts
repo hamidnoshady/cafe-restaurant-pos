@@ -90,6 +90,12 @@ const PUBLIC_PATHS = [
   // completely unreachable regardless of a valid token until this fix.
   "/api/server-sync/push",
   "/api/server-sync/pull",
+  // Migration 0132: the same shape again — the caller is another *server*
+  // migrating onto this one, authenticated with a bearer token issued in the
+  // super-admin console (`platform_backup_tokens`, hashed), never with a
+  // session. Both endpoints answer 404 while serving is disabled, so nothing is
+  // exposed by letting them through the session gate; the handlers do the auth.
+  "/api/peer/backup",
   // Phase 19: third-party integrations authenticate each request with a
   // bearer API key inside api-auth.ts, not with a tenant session cookie.
   // Prefix matching keeps every /api/v1/* route reachable pre-session.
@@ -346,6 +352,21 @@ function isMcpPath(pathname: string): boolean {
   );
 }
 
+/**
+ * The backup-serving channel (migration 0132): the manifest poll and the one
+ * large download that follows it. Prefix-bucketed like the plugin channel — one
+ * peer cycles through both, and a peer stuck in a retry loop is exactly the
+ * runaway this bucket exists to contain. A download is one request, so the sync
+ * window bounds *attempts*, not bytes, which is the right unit here.
+ *
+ * Exported for src/middleware.test.ts, which asserts both halves: that the
+ * channel is reachable without a session, and that the prefix does not swallow a
+ * path that merely resembles it.
+ */
+export function isPeerBackupPath(pathname: string): boolean {
+  return pathname === "/api/peer/backup" || pathname.startsWith("/api/peer/backup/");
+}
+
 /** All public API routes share one per-key bucket; this must stay prefix-based, not an exact route list. */
 function isPublicApiPath(pathname: string): boolean {
   return pathname === "/api/v1" || pathname.startsWith("/api/v1/");
@@ -378,7 +399,9 @@ async function handleRateLimits(
     if (!result.allowed) return rateLimited(result.retryAfterMs);
   }
 
-  if (SYNC_TOKEN_RATE_LIMITED_PATHS.includes(pathname) || isPluginChannelPath(pathname)) {
+  if (
+    SYNC_TOKEN_RATE_LIMITED_PATHS.includes(pathname) || isPluginChannelPath(pathname) || isPeerBackupPath(pathname)
+  ) {
     const authHeader = request.headers.get("authorization");
     const key = authHeader
       ? `token:${hashKey(authHeader)}`

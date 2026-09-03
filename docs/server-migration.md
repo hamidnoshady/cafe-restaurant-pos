@@ -43,6 +43,19 @@ Before touching anything, write down from the **old** host:
   turns out to be a cloud artifact you need to decrypt.
 - Postgres major version (must match on the new host — 16 everywhere here).
 
+> **Prefer the console if the old server still runs.** Migration 0132 gave the
+> super-admin console a whole-system backup that another install can pull **by
+> address**: turn on «دسترسی سرور دیگر به این نسخه‌ها» on the old one, issue a token,
+> and on the new one add that address under «بازیابی از آدرس» → verify → apply. It
+> is the same `pg_dump` artifact and the same scratch-database dry run as Steps
+> 2–4 below, without the scp, and it checks the migration count and Postgres major
+> on both sides for you. The shell procedure below stays the answer when the old
+> machine is unreachable, when you want the file in your own hands, or when the
+> console cannot be opened at all — and the drain (app stopped) rule applies to the
+> console path just as much: take a fresh manual backup with the app stopped before
+> you cutover, or everything between the last scheduled copy and the shutdown is
+> lost.
+
 ## Step 2 — take the migration dump
 
 Do this with the app **stopped**, so no order is written after the dump. A dump

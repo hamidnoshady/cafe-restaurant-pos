@@ -72,6 +72,34 @@ describe("platformCan — role → capability presets", () => {
     expect(platformCan("owner", "ai.config.manage")).toBe(true);
   });
 
+  it("backup is split so that overwriting the deployment stays owner-only", () => {
+    // Migration 0132's two capabilities, and the line between them. Running the
+    // schedule, reading history and issuing a peer token is operational work an
+    // engineer does every day; pointing a production install at another server's
+    // file and replacing every business in it destroys more data than deleting
+    // every business one at a time, so it stops at the owner.
+    for (const role of ["engineer", "owner"] as const) {
+      expect(platformCan(role, "backup.manage"), role).toBe(true);
+    }
+    for (const role of ["support", "engineer"] as const) {
+      expect(platformCan(role, "backup.restore"), role).toBe(false);
+    }
+    expect(platformCan("support", "backup.manage")).toBe(false);
+    expect(platformCan("owner", "backup.restore")).toBe(true);
+
+    // The console's read-only views (health, run history, artifact list) are not
+    // a capability of their own: they sit behind `system.read`, which every role
+    // holds — an engineer answering «کپی دیشب گرفته شد؟» must be able to look.
+    for (const role of PLATFORM_ADMIN_ROLES) {
+      expect(platformCan(role, "system.read"), role).toBe(true);
+    }
+    // …and `backup.restore` is never granted without `backup.manage`, or the
+    // restore button would appear for someone who cannot see a backup to pick.
+    for (const role of PLATFORM_ADMIN_ROLES) {
+      if (platformCan(role, "backup.restore")) expect(platformCan(role, "backup.manage"), role).toBe(true);
+    }
+  });
+
   it("higher roles are supersets of lower ones", () => {
     for (const cap of CAPABILITIES_FOR("support")) {
       expect(platformCan("engineer", cap), cap).toBe(true);

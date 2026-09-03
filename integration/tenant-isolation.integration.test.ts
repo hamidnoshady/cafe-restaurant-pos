@@ -238,14 +238,26 @@ describe("every tenant table is protected", () => {
       expect(rows[0].has_business, `${table} is exempt but carries a tenant column`).toBe(false);
     }
 
+    // Sorted, because the actual side is `.sort()`ed above — a name in the wrong
+    // slot here fails the assertion even when the set is exactly right.
     expect([...EXEMPT_TABLES].filter((t) => t.startsWith("platform_")).sort()).toEqual([
       "platform_admins",
       "platform_ai_gateway",
       "platform_audit_log",
+      // Migration 0132 — the console's whole-system backup. Its config, run
+      // history, hashed peer tokens, the peers this install may restore from, and
+      // the restore log: all deployment-wide, none of it carrying a business_id,
+      // so none of it reachable through a tenant connection. See
+      // src/lib/tenant-tables.ts for the reasoning.
+      "platform_backup_config",
+      "platform_backup_peers",
+      "platform_backup_runs",
+      "platform_backup_tokens",
       // Migration 0130 — singleton payment gateway config (Zarinpal merchant
       // id etc.), no business_id; the business side of billing is RLS-protected.
       "platform_payment_config",
       "platform_push_config",
+      "platform_restore_runs",
       // Phase 24 — the deployment-wide SMS gateway credentials (Kavenegar) the
       // MFA challenge sends through. A singleton with no business_id, the same
       // shape as platform_ai_config: one account, configured once by a

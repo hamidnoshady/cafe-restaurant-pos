@@ -149,6 +149,108 @@ per hosting platform — see
 - Version rule: run `pg_restore` of the **same or newer** major version as
   the PostgreSQL server that produced the dump (both are 16 here).
 
+## Whole-system (platform) backup, and restoring by address (migration 0132)
+
+Everything above is what an **Owner** does for **their business**. The super-admin
+console has a second, independent half for the **deployment**: «پشتیبان‌گیری» under
+`/platform/backup`, backed by `src/lib/platform-backup-service.ts`.
+
+It is not the same feature with more buttons. A per-business backup is one
+tenant's rows; this is one `pg_dump` of the **entire database** — every business,
+the platform's own tables (admins, billing, AI gateway config), and the schema —
+plus the two things the console needs to hand that file to another machine:
+
+| | Owner `/dashboard/backup` | Console `/platform/backup` |
+|---|---|---|
+| What it copies | one business's rows (export) / this database (dump) | this database, whole |
+| Schedule owner | the business | the deployment |
+| Artifact folder | `BACKUP_DIR` | `PLATFORM_BACKUP_DIR`, default `BACKUP_DIR/platform` |
+| Retention prunes | its own folder only | its own folder only |
+| Can be pulled by another server | no | yes — `/api/peer/backup/*`, off until you switch it on |
+| Who can restore | an Owner, their business | owner-role admin, this whole install |
+
+The two folders are separate namespaces **on purpose**: both name artifacts
+`pos-backup-YYYYMMDD-HHMMSS.dump`, so sharing one flat directory would let either
+side's retention delete the other's copies.
+
+### Turning it on
+
+Settings live in `platform_backup_config` (one row) and are written from the
+console; the `PLATFORM_BACKUP_*` variables in `.env.example` are defaults for the
+cases where the console is unreachable. Nothing runs until `enabled` is on —
+there is no silent nightly job on a fresh install.
+
+The console runs it the same way the Owner dashboard does: `pg_dump` as
+`BACKUP_DATABASE_URL` (the privileged connection — as `pos_app`, RLS makes
+pg_dump abort), optional AES-256-GCM encryption with the platform passphrase,
+`fsync` + rename + directory `fsync`, then the same in
+`PLATFORM_BACKUP_SECONDARY_DIR` when set, then retention. Each run writes a
+`<artifact>.manifest.json` sidecar describing what the file contains: app version,
+migration count, Postgres major, business count, size and sha256.
+
+The server also checks that schedule itself — `runPlatformBackupTick()` runs from
+`server.ts` on the same 60-second heartbeat as the per-business tick, taking a copy
+only when the configured interval has elapsed — so a process that stays up needs no
+cron entry. An operator can force one from the page at any time; the two paths share
+one in-flight guard (`backupInFlight` in the service), so a manual click during a
+scheduled run answers 409 `backup_busy` — nothing is queued and the database is
+never dumped twice at once.
+
+### Giving another server the address
+
+Two switches and a key, all in «دسترسی سرور دیگر به این نسخه‌ها»:
+
+1. `servingEnabled` — until it is on, `/api/peer/backup/manifest` and
+   `/api/peer/backup/download` answer 404, indistinguishable from "no such route".
+2. A **token** — created on that page, shown once, stored only as a sha256. The
+   peer sends it as `Authorization: Bearer …`.
+3. `allowInsecurePeers` — off; when off, peer addresses must be `https://`. Private
+   LAN addresses are allowed either way (a NAS/MinIO on the same network is the
+   normal case), but only over TLS unless you say otherwise.
+
+That channel serves exactly two things: the manifest, and one artifact by name.
+There is no write path, no listing of anything else, and no path traversal — a
+requested name that isn't `pos-backup-<stamp>.dump[.enc]` is a 404.
+
+### Restoring on the new server
+
+On the *new* install's same page, «بازیابی از آدرس»:
+
+1. **Add the peer** — a label, the old server's URL, and the token it issued.
+2. **بررسی اتصال** — fetches the manifest and compares it with this install: the
+   old server's migration count and Postgres major versus ours. A newer schema
+   there is a refusal here (`newer_schema`) — restoring it would put a database
+   this build's queries don't have in front of them.
+3. **اعتبارسنجی** — downloads the artifact (capped while streaming by
+   `PLATFORM_BACKUP_MAX_DOWNLOAD_BYTES`, sha256 computed on the bytes actually
+   received), decrypts it if needed, restores it into a scratch database
+   `<name>_restore_verify`, counts the rows, and drops the scratch. **Nothing on
+   this server changes.**
+4. **بازگردانی کامل** — the same file restored over the live database: drop and
+   recreate, `pg_restore`, re-grant `pos_app`. Requires typing a confirmation
+   phrase and the `backup.restore` capability, which the **owner** role alone
+   holds.
+
+Both the verify step and the apply step are recorded in `platform_restore_runs`,
+so a failed attempt is visible in the console with its error.
+
+Two things to know before step 4:
+
+- **The restore replaces the console's own settings too** — `platform_backup_config`,
+  admins, tokens and peers all come from the old server afterwards, because they
+  live in the database being replaced. That is intended for a migration, and
+  surprising for a "just the data please". Restart the app after applying, so every
+  pool and cache is rebuilt on the new database.
+- **Restore needs the passphrase**, if the source encrypted. Either this install
+  already has it (settings), or you type it for that one attempt — it is never
+  stored.
+
+For a *lost* machine (no old server to pull from) use the folder plus
+`npm run db:restore` as in §A/§B above; the sidecar manifests in the platform
+folder are what tell you which artifact matches this build. Moving a live install
+with a drain/verify/cutover around this is
+[docs/server-migration.md](server-migration.md).
+
 ## Per-tenant export & restore (Phase 17)
 
 Everything above is a whole-database artifact — every business hosted on

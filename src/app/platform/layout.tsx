@@ -56,6 +56,11 @@ const NAV: NavItem[] = [
   // Migration 0130 — the support desk: every business's support tickets,
   // answered from the console. Every admin role holds `support.manage`.
   { label: "پشتیبانی", href: "/platform/support", cap: "support.manage" },
+  // Migration 0132 — the whole-system backup and the peer address that can pull
+  // it. Visible to every role (a support operator answering «کپی دیشب هست؟» needs
+  // to read the health line); the page hides every control the operator's role
+  // cannot use, and the routes re-check each one.
+  { label: "پشتیبان‌گیری", href: "/platform/backup", cap: "system.read" },
   {
     label: "سیستم",
     href: "/platform/system",

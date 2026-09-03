@@ -88,6 +88,17 @@ const PUBLIC_ROUTES: Record<string, string> = {
   "server-sync/update-token":
     "server-to-server — authenticated by a per-business bearer token (server_sync_tokens) only, " +
     "deliberately no legacy REMOTE_SYNC_TOKEN fallback; not a session",
+  // Migration 0132 — the platform's own server-to-server channel, for the same
+  // reason as the sync ones: the caller is another deployment, mid-migration, with
+  // no session here and no business to be a member of. The credential is a bearer
+  // token issued in the super-admin console (platform_backup_tokens, stored
+  // hashed). Both routes answer 404 unless the console has switched backup serving
+  // on, so being listed here exposes nothing that is not already deliberately on;
+  // and they read only the platform's own artifact folder, never a tenant's rows.
+  "peer/backup/manifest":
+    "server-to-server — authenticated by a platform backup bearer token (platform_backup_tokens), " +
+    "and only while serving is enabled in the console; no session exists to require",
+  "peer/backup/download": "platform backup artifact serving — see peer/backup/manifest",
   // Phase 15 — the super-admin realm's own credential exchange. Authenticates
   // against platform_admins and mints the platform cookie; necessarily runs
   // without a platform session, exactly like the tenant auth/login.
