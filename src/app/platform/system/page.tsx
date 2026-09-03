@@ -14,6 +14,7 @@
  * whole dashboard down again.
  */
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import {
   Copy,
   Database,
@@ -32,10 +33,28 @@ interface SystemStatus {
   pool?: { total: number; idle: number; waiting: number };
   rlsEffective?: boolean;
   backups?: { businessId: string; businessName: string; status: string; ranAt: string | null }[];
+  platformBackup?: {
+    status: string;
+    ranAt: string | null;
+    alert: string;
+    alertLevel: "ok" | "warning" | "error";
+    artifacts: number;
+    servingEnabled: boolean;
+  } | null;
   counts?: { businesses: number; platformUsers: number; platformAdmins: number };
 }
 
 const AUTO_REFRESH_MS = 60_000;
+
+/** The platform backup's alert reasons, in the same words the backup page uses. */
+const PLATFORM_BACKUP_ALERT_LABELS: Record<string, string> = {
+  ok: "سالم",
+  disabled: "خاموش",
+  local_failed: "ناموفق",
+  local_stale: "کهنه",
+  cloud_failed: "ابر ناموفق",
+  cloud_stale: "ابر کهنه",
+};
 const MIGRATIONS_PREVIEW = 8;
 
 export default function SystemPage() {
@@ -82,6 +101,7 @@ export default function SystemPage() {
   const pool = status.pool ?? { total: 0, idle: 0, waiting: 0 };
   const migrations = status.migrations ?? [];
   const backups = status.backups ?? [];
+  const platformBackup = status.platformBackup ?? null;
   const pending = status.pendingMigrations ?? 0;
   const busy = pool.total - pool.idle;
   const shown = showAllMigrations ? migrations : migrations.slice(0, MIGRATIONS_PREVIEW);
@@ -233,6 +253,31 @@ export default function SystemPage() {
       </Card>
 
       <Card title="آخرین پشتیبان‌گیری هر کسب‌وکار">
+        {platformBackup ? (
+          <div className="mb-3 flex flex-col gap-2 rounded-xl border border-white/10 bg-white/2 px-3 py-2 text-sm sm:flex-row sm:items-center sm:justify-between">
+            <span className="flex flex-wrap items-center gap-2">
+              <Link href="/platform/backup" className="font-medium text-sky-300 hover:underline">
+                پشتیبان‌گیری کل سیستم
+              </Link>
+              <span
+                className={
+                  platformBackup.alertLevel === "ok"
+                    ? "rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-xs text-emerald-300"
+                    : platformBackup.alertLevel === "warning"
+                      ? "rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-xs text-amber-300"
+                      : "rounded-full border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-xs text-red-300"
+                }
+              >
+                {PLATFORM_BACKUP_ALERT_LABELS[platformBackup.alert] ?? platformBackup.alert}
+              </span>
+            </span>
+            <span className="flex flex-wrap items-center gap-2 text-xs text-white/40 sm:gap-3">
+              <span>{formatPersianNumber(platformBackup.artifacts)} نسخه روی دیسک</span>
+              {platformBackup.servingEnabled ? <span className="text-amber-300/80">ارسال به سرور دیگر روشن</span> : null}
+              <span className="whitespace-nowrap">{fmtDate(platformBackup.ranAt)}</span>
+            </span>
+          </div>
+        ) : null}
         {backups.length === 0 ? (
           <p className="text-sm text-white/50">پشتیبانی ثبت نشده است.</p>
         ) : (

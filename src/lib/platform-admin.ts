@@ -34,6 +34,12 @@ export type PlatformCapability =
   | "ai.read"
   // Operational writes
   | "features.write"
+  // Migration 0132 — the whole-system backup the console owns: its schedule and
+  // destinations, its run history, and the peer tokens that let another server
+  // pull artifacts from this one. An engineer may operate it because backing up
+  // is ordinary operations, like flags and suspension: it reads everything and
+  // overwrites nothing. …
+  | "backup.manage"
   | "business.suspend"
   | "ai.credits.manage"
   // Platform billing: gateway config, credit packages, plan builder, wallet
@@ -55,6 +61,11 @@ export type PlatformCapability =
   | "impersonate.readOnly"
   | "impersonate.full"
   | "impersonate.revoke"
+  // …but *replacing this server's entire database* with another server's is not
+  // an operations task: it is the one console action that can destroy more data
+  // than deleting every business on the platform, so it needs `backup.restore`,
+  // which no role but owner holds.
+  | "backup.restore"
   // Owner-only, most dangerous
   | "business.provision"
   | "business.archive"
@@ -83,6 +94,7 @@ const CAPABILITIES: Record<PlatformAdminRole, PlatformCapability[]> = {
     "billing.manage",
     "impersonate.revoke",
     "knowledge.manage",
+    "backup.manage",
   ],
   owner: [
     ...READ,
@@ -94,6 +106,8 @@ const CAPABILITIES: Record<PlatformAdminRole, PlatformCapability[]> = {
     "billing.manage",
     "impersonate.revoke",
     "knowledge.manage",
+    "backup.manage",
+    "backup.restore",
     "impersonate.full",
     "business.provision",
     "business.archive",

@@ -84,6 +84,18 @@ export const EXEMPT_TABLES = new Set([
   "knowledge_tags",
   "knowledge_articles",
   "knowledge_article_tags",
+  // Migration 0132 — the super-admin console's whole-system backup: its config,
+  // its run history, the hashed tokens that let another server pull artifacts,
+  // the peers this install may restore from, and the restore log. All of it
+  // belongs to the *deployment*, not to a tenant — no business_id to scope by,
+  // and a business must never read (let alone prune) the platform's backup
+  // history. The tenant export skips them for the same reason it skips
+  // platform_payment_config: they are not that business's rows.
+  "platform_backup_config",
+  "platform_backup_runs",
+  "platform_backup_tokens",
+  "platform_backup_peers",
+  "platform_restore_runs",
 ]);
 
 export interface ForeignKeyEdge {

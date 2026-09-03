@@ -88,6 +88,21 @@ export function errorMessage(code: string | undefined): string {
     category_cycle: "دستهٔ والد نامعتبر است.",
     parent_not_found: "دستهٔ والد پیدا نشد.",
     invalid_video_url: "آدرس ویدیو باید با http:// یا https:// شروع شود.",
+    // Migration 0132 — the whole-system backup and the peer restore by address.
+    // The page's own `text()` covers the long backup vocabulary; these are the
+    // shapes that can also arrive through a generic console error path.
+    backup_failed: "پشتیبان‌گیری کامل سیستم ناموفق بود.",
+    backup_busy: "یک پشتیبان‌گیری دیگر همین حالا در حال اجراست.",
+    restore_busy: "یک بازگردانی دیگر در حال اجراست؛ کمی بعد دوباره تلاش کنید.",
+    confirmation_required: "برای بازگردانی کامل، عبارت تأیید را دقیق وارد کنید.",
+    passphrase_required: "عبارت عبور رمزنگاری لازم است؛ آن را وارد کنید.",
+    checksum_mismatch: "فایل دانلودشده با نسخهٔ اعلام‌شده هم‌خوانی ندارد؛ بازگردانی متوقف شد.",
+    newer_schema: "آن پشتیبان از نسخهٔ جدیدتری گرفته شده و این سرور هنوز آن مهاجرت‌ها را ندارد.",
+    newer_postgres: "نسخهٔ PostgreSQL سرور مقابل جدیدتر است و با pg_restore این سرور بازگردانی نمی‌شود.",
+    https_required: "آدرس باید https باشد، یا «اجازهٔ اتصال ناامن» را در تنظیمات روشن کنید.",
+    peer_unreachable: "سرور مقابل در دسترس نیست.",
+    peer_auth_failed: "کلید این سرور در آن سمت پذیرفته نشد (لغو یا منقضی شده است؟).",
+    bad_manifest: "پاسخ سرور مقابل معتبر نیست.",
     invalid_cover_url: "آدرس تصویر باید با http:// یا https:// شروع شود.",
   };
   return map[code ?? ""] ?? "خطای غیرمنتظره. دوباره تلاش کنید.";

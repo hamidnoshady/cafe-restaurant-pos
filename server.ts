@@ -97,6 +97,18 @@ app.prepare().then(async () => {
   setInterval(backupTick, BACKUP_TICK_INTERVAL_MS).unref();
   setTimeout(backupTick, 45_000).unref();
 
+  // Migration 0132: the platform's own whole-database backup, on the schedule the
+  // super-admin set in the console. Deliberately a second timer rather than a
+  // step inside runBackupTick: the tenant loop is per-business and skips anything
+  // whose own backup is disabled, and a deployment whose businesses all have
+  // backups switched off must still be backed up — that install is exactly the
+  // one where the operator's copy is the only copy.
+  const { runPlatformBackupTick } = await import("./src/lib/platform-backup-service");
+  const platformBackupTick = () =>
+    runPlatformBackupTick().catch((err) => console.error("platform backup tick failed:", err));
+  setInterval(platformBackupTick, BACKUP_TICK_INTERVAL_MS).unref();
+  setTimeout(platformBackupTick, 60_000).unref();
+
   // Phase 11: bidirectional server-to-server sync (café laptop ←→ VPS). Each
   // tick pushes locally-born sync_events to the configured remote and pulls
   // the remote's events back, replaying both through the same idempotent
