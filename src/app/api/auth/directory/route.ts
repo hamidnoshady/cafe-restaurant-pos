@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { query, withoutTenantScope } from "@/lib/db";
 import { businessHost } from "@/lib/host";
 import { membershipBlockedReason, membershipsForPlatformUser } from "@/lib/memberships";
+import { isPasswordRole } from "@/lib/team";
 import {
   checkAuthLockout,
   recordAuthFailure,
@@ -89,12 +90,22 @@ export async function POST(request: NextRequest) {
     );
 
     return NextResponse.json({
-      businesses: usable.map((m) => ({
-        name: m.businessName,
-        subdomain: m.businessSubdomain,
-        role: m.role,
-        url: rootDomain ? `https://${businessHost(m.businessSubdomain, rootDomain)}` : null,
-      })),
+      businesses: usable.map((m) => {
+        let url: string | null = null;
+        if (rootDomain) {
+          const origin = `https://${businessHost(m.businessSubdomain, rootDomain)}`;
+          // Since the login split, the origin's root is the staff quick login;
+          // the owner/manager/accountant password door is the `/admin`
+          // subdirectory. Send each visitor to the door they sign in through.
+          url = isPasswordRole(m.role) ? `${origin}/admin` : origin;
+        }
+        return {
+          name: m.businessName,
+          subdomain: m.businessSubdomain,
+          role: m.role,
+          url,
+        };
+      }),
     });
   });
 }
