@@ -60,10 +60,10 @@ To skip the wizard and get a ready-to-log-in demo:
 npm run db:seed         # creates owner@example.com / owner1234 and a cashier with PIN 1234
 ```
 
-Log in at `/login`:
+Log in (the two doors are separate pages):
 
-- **Owner/Manager tab:** `owner@example.com` / `owner1234` (override via `SEED_OWNER_*` env vars before seeding)
-- **PIN tab:** `1234` (sample cashier)
+- **Owner/Manager:** `/admin` — `owner@example.com` / `owner1234` (override via `SEED_OWNER_*` env vars before seeding)
+- **Staff quick login:** `/login` — PIN `1234` (sample cashier)
 
 The seed also creates 3 sample dining tables and a small demo menu (2 categories, 3 items,
 1 modifier group) so the cashier POS screen has something to sell right away.
@@ -749,8 +749,14 @@ worker, one CSP/CORS boundary shared by every tenant — and origin is the brows
 isolation primitive.
 
 Each business is served from `{subdomain}.$ROOT_DOMAIN`, the super-admin console from
-`admin.$ROOT_DOMAIN`, and the bare domain is a "which business?" router. The session cookie
-deliberately carries **no `domain` attribute** (`sessionCookieOptions` in `src/lib/auth-edge.ts`),
+`admin.$ROOT_DOMAIN`, and the bare domain is a "which business?" router. A business's origin
+has two separate doors: the staff quick login (name-then-PIN) at `/login`, which is what the
+root of the origin shows, and the owner/manager password login under the `/admin`
+subdirectory of the same origin. Hostnames that are not under `$ROOT_DOMAIN` at all — a stale
+DNS record from an earlier zone, say — fail closed in `src/middleware.ts`: everything is a 404
+except `/` (which explains the situation), the liveness probe and the host diagnostics, so such
+a name can never act as an entrance to a login page or to the super-admin console. The session
+cookie deliberately carries **no `domain` attribute** (`sessionCookieOptions` in `src/lib/auth-edge.ts`),
 so it is host-scoped and never sent to another business's origin; `src/middleware.ts` additionally
 compares the request's host label against the session's own `businessSubdomain` claim and fails
 closed on any mismatch. Setting a cookie `domain` would silently undo all of it, which is why

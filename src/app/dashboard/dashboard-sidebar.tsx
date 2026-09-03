@@ -608,7 +608,7 @@ function DashboardSidebarFooter({
         {PIN_ROLES.includes(role) && <ShiftButton />}
         {PIN_ROLES.includes(role) && <BiometricSettingsButton />}
         {PIN_ROLES.includes(role) && <LockButton />}
-        <LogoutButton />
+        <LogoutButton returnTo={PIN_ROLES.includes(role) ? "/login" : "/admin"} />
       </div>
       <BugReportFooterButton />
     </SidebarFooter>

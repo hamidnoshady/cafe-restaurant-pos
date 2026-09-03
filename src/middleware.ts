@@ -42,6 +42,11 @@ const PUBLIC_PATHS = [
   // caller on to the dashboard, so nothing is exposed by letting it run.
   "/",
   "/login",
+  // The login split: the tenant origin's root is the staff quick login, and
+  // the owner/manager password login moved to this subdirectory of the
+  // business's own origin (src/app/admin). Like `/login` it mints nothing
+  // yet — no session exists when it is reached — so it cannot require one.
+  "/admin",
   "/api/auth/login",
   "/api/auth/pin-login",
   // Phase 20 Wave 3 — the biometric-login counterpart of pin-login: no
@@ -184,6 +189,22 @@ const PLATFORM_PUBLIC_PATHS = [
 export function isPublicPath(pathname: string): boolean {
   return PUBLIC_PATHS.some(
     (p) => pathname === p || pathname.startsWith(`${p}/`),
+  );
+}
+
+/**
+ * The handful of paths still answered on a host that parses as "unknown"
+ * (not under ROOT_DOMAIN at all). Everything else is a 404 — see the
+ * fail-closed block in `handle()` for why. Kept as its own exported
+ * predicate so the middleware test can hold the list honest: every entry
+ * here is an explanation or a probe, never anything that authenticates.
+ */
+export function unknownHostAllowedPath(pathname: string): boolean {
+  return (
+    pathname === "/" ||
+    pathname === "/api/health" ||
+    pathname === "/api/host" ||
+    pathname.startsWith("/api/host/")
   );
 }
 
@@ -671,6 +692,30 @@ async function handle(request: NextRequest, requestHeaders: Headers) {
   // `trustForwardedHost` for what that costs and when it is the only option.
   const host = hostRouting ? parseHost(requestHost(request.headers), rootDomain) : null;
 
+  // ---- A hostname nobody vouches for ----------------------------------------
+  //
+  // Under host routing the hostname IS the tenancy decision, and an "unknown"
+  // host — anything not under ROOT_DOMAIN, like a stale `admin.eshobe.com`
+  // record left over from an earlier zone — serves no tenant and no console.
+  // Fail closed: no login page, no console redirect (the old behaviour
+  // forwarded /platform on ANY hostname to admin.{root}, which made a stray
+  // DNS record read as a working entrance to the super-admin panel), no API.
+  // What stays open is deliberately tiny: `/` itself, which renders the
+  // operator-facing explanation page, the liveness probe (which a hosting
+  // platform may aim at whatever hostname it pleases), and the host
+  // diagnostics that exist precisely to debug this case.
+  if (host && host.kind === "unknown") {
+    if (!unknownHostAllowedPath(pathname)) {
+      if (pathname.startsWith("/api/")) {
+        return NextResponse.json({ error: "not_found" }, { status: 404 });
+      }
+      return new NextResponse("Not Found", {
+        status: 404,
+        headers: { "Content-Type": "text/plain; charset=utf-8" },
+      });
+    }
+  }
+
   // ---- Super-admin realm ---------------------------------------------------
   const platformResponse = await handlePlatformAdmin(request, pathname, host, rootDomain, requestHeaders);
   if (platformResponse) return platformResponse;
@@ -682,6 +727,17 @@ async function handle(request: NextRequest, requestHeaders: Headers) {
     // it. Each is sent to the sign-in its own host does have: the apex's
     // "which business?" directory, and the console's own login page.
     if (pathname === "/login") {
+      if (host?.kind === "apex") return NextResponse.redirect(new URL("/", request.url));
+      if (host?.kind === "admin") {
+        return NextResponse.redirect(new URL("/platform/login", request.url));
+      }
+    }
+
+    // The owner/manager door has the same two non-answers: on the apex there
+    // is no tenant whose admin could sign in (the directory at `/` is that
+    // host's only credential exchange), and on the console host the realm's
+    // own login is the one that mints a usable cookie.
+    if (pathname === "/admin") {
       if (host?.kind === "apex") return NextResponse.redirect(new URL("/", request.url));
       if (host?.kind === "admin") {
         return NextResponse.redirect(new URL("/platform/login", request.url));

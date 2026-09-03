@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isPeerBackupPath, isPublicPath } from "./middleware";
+import { isPeerBackupPath, isPublicPath, unknownHostAllowedPath } from "./middleware";
 
 describe("isPublicPath", () => {
   it("lets the root path through so it can choose between login and the wizard", () => {
@@ -16,6 +16,16 @@ describe("isPublicPath", () => {
     expect(isPublicPath("/api/setup/pair")).toBe(true);
   });
 
+  it("keeps the tenant admin door (/admin) session-less like /login", () => {
+    // The login split moved the owner/manager password form to this
+    // subdirectory of the business's own origin. It mints no session before
+    // it is reached, so it cannot require one — same reasoning as /login.
+    expect(isPublicPath("/admin")).toBe(true);
+    // ...but the subtree rule must not open a path that only shares the text.
+    expect(isPublicPath("/administrator")).toBe(false);
+    expect(isPublicPath("/admindash")).toBe(false);
+  });
+
   it("still gates everything that is not declared public", () => {
     expect(isPublicPath("/dashboard")).toBe(false);
     expect(isPublicPath("/dashboard/backup")).toBe(false);
@@ -26,6 +36,33 @@ describe("isPublicPath", () => {
   it("matches a public path's subtree but not a path that merely shares its prefix", () => {
     expect(isPublicPath("/api/v1/orders")).toBe(true);
     expect(isPublicPath("/logindecoy")).toBe(false);
+  });
+});
+
+describe("unknown hosts — fail closed", () => {
+  it("still serves only the explanation page, the liveness probe and host diagnostics", () => {
+    // A hostname not under ROOT_DOMAIN (a stale DNS record from an earlier
+    // zone, say) must not read as a working entrance to anything: no login
+    // page, no console redirect, no tenant API. The allowlist is exactly the
+    // paths that explain or probe, never anything that authenticates.
+    expect(unknownHostAllowedPath("/")).toBe(true);
+    expect(unknownHostAllowedPath("/api/health")).toBe(true);
+    expect(unknownHostAllowedPath("/api/host")).toBe(true);
+    expect(unknownHostAllowedPath("/api/host/resolve")).toBe(true);
+    expect(unknownHostAllowedPath("/api/host/redirect")).toBe(true);
+  });
+
+  it("closes everything else — including the old console funnel", () => {
+    expect(unknownHostAllowedPath("/login")).toBe(false);
+    expect(unknownHostAllowedPath("/admin")).toBe(false);
+    expect(unknownHostAllowedPath("/dashboard")).toBe(false);
+    // The regression this guards: /platform on an unknown host used to be
+    // forwarded to admin.{root}, which let any stray hostname act as an
+    // entrance to the super-admin panel.
+    expect(unknownHostAllowedPath("/platform")).toBe(false);
+    expect(unknownHostAllowedPath("/platform/login")).toBe(false);
+    expect(unknownHostAllowedPath("/api/auth/login")).toBe(false);
+    expect(unknownHostAllowedPath("/api/hostile")).toBe(false);
   });
 });
 
