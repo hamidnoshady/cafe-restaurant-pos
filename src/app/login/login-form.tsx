@@ -9,7 +9,11 @@ import {
   startAuthentication,
 } from "@simplewebauthn/browser";
 import { PinPad } from "@/components/auth/pin-pad";
-import { lockoutMessage, useNextPath } from "@/components/auth/login-helpers";
+import {
+  lockoutMessage,
+  retryAfterMs,
+  useNextPath,
+} from "@/components/auth/login-helpers";
 
 const ROLE_LABELS: Record<string, string> = {
   cashier: "صندوق‌دار",
@@ -58,6 +62,20 @@ interface RosterEmployee {
 /** Device-local "who signed in here recently" — never synced, just a UI shortcut. */
 const RECENTS_KEY = "pos:lastEmployees";
 const MAX_RECENTS = 5;
+
+/**
+ * Why the staff list did not arrive. The two are told apart because they read
+ * completely differently to the person standing at the till: a 429 means the
+ * per-IP ceiling on this read is momentarily spent (every terminal in the
+ * building shares one address, and this page loads on every visit to the
+ * business's origin), which clears by itself in seconds — while anything else
+ * is a failure worth reporting as one. Both used to render the same dead-end
+ * sentence with no way to retry short of reloading the page.
+ */
+type RosterFailure = "rate_limited" | "error";
+
+/** How many times a 429 is waited out before the retry button is all that is left. */
+const MAX_ROSTER_RETRIES = 2;
 
 /**
  * Phase 20 Wave 4 — this terminal's paired-device token, if an owner/manager
@@ -110,7 +128,9 @@ function PinLogin() {
   const router = useRouter();
   const next = useNextPath("/dashboard");
   const [employees, setEmployees] = useState<RosterEmployee[] | null>(null);
-  const [rosterError, setRosterError] = useState(false);
+  const [rosterFailure, setRosterFailure] = useState<RosterFailure | null>(null);
+  /** Bumped by the retry button; the roster effect keys off it. */
+  const [rosterReloadKey, setRosterReloadKey] = useState(0);
   const [selected, setSelected] = useState<RosterEmployee | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -124,22 +144,55 @@ function PinLogin() {
 
   useEffect(() => {
     let cancelled = false;
-    const deviceToken = readDeviceToken();
-    const url = deviceToken
-      ? `/api/auth/pin-login/roster?deviceToken=${encodeURIComponent(deviceToken)}`
-      : "/api/auth/pin-login/roster";
-    fetch(url)
-      .then((res) => (res.ok ? res.json() : Promise.reject()))
-      .then((data: { employees: RosterEmployee[] }) => {
-        if (!cancelled) setEmployees(data.employees ?? []);
-      })
-      .catch(() => {
-        if (!cancelled) setRosterError(true);
-      });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    async function load(attempt: number) {
+      const deviceToken = readDeviceToken();
+      const url = deviceToken
+        ? `/api/auth/pin-login/roster?deviceToken=${encodeURIComponent(deviceToken)}`
+        : "/api/auth/pin-login/roster";
+
+      let res: Response;
+      try {
+        res = await fetch(url);
+      } catch {
+        // Offline, or the server unreachable — the till's own message, not a
+        // claim about who works here.
+        if (!cancelled) setRosterFailure("error");
+        return;
+      }
+
+      if (res.ok) {
+        const data = (await res.json().catch(() => null)) as {
+          employees?: RosterEmployee[];
+        } | null;
+        if (cancelled) return;
+        setRosterFailure(null);
+        setEmployees(data?.employees ?? []);
+        return;
+      }
+
+      if (res.status === 429 && attempt < MAX_ROSTER_RETRIES) {
+        // Wait out the window the server named instead of parking the screen on
+        // an error; a second tablet waking up is not a fault the cashier can
+        // do anything about, and it clears on its own.
+        if (!cancelled) setRosterFailure("rate_limited");
+        timer = setTimeout(
+          () => void load(attempt + 1),
+          retryAfterMs(res.headers.get("Retry-After")),
+        );
+        return;
+      }
+
+      if (!cancelled) setRosterFailure(res.status === 429 ? "rate_limited" : "error");
+    }
+
+    void load(0);
     return () => {
       cancelled = true;
+      if (timer) clearTimeout(timer);
     };
-  }, []);
+  }, [rosterReloadKey]);
 
   const ordered = useMemo(() => {
     if (!employees) return [];
@@ -154,6 +207,13 @@ function PinLogin() {
       return ra - rb;
     });
   }, [employees]);
+
+  /** Re-asks for the roster from scratch — the button under a failed load. */
+  function retryRoster() {
+    setEmployees(null);
+    setRosterFailure(null);
+    setRosterReloadKey((key) => key + 1);
+  }
 
   async function submit(pin: string) {
     if (!selected) return;
@@ -238,12 +298,26 @@ function PinLogin() {
         <p className="mb-3 text-center text-sm text-muted-foreground">
           نام خود را انتخاب کنید
         </p>
-        {rosterError && (
-          <p className="text-center text-sm text-destructive">
-            دریافت فهرست کارکنان ممکن نشد.
-          </p>
+        {rosterFailure && (
+          <div className="space-y-3 text-center">
+            <p className="text-sm text-destructive">
+              {rosterFailure === "rate_limited"
+                ? "درخواست‌ها از حد مجاز گذشت؛ چند لحظه دیگر دوباره تلاش می‌کنیم."
+                : "دریافت فهرست کارکنان ممکن نشد."}
+            </p>
+            {/* The screen is the till's front door, so a failure here must never
+                be a dead end: one tap re-asks, without reloading the page and
+                losing the device token and recents that live beside it. */}
+            <button
+              type="button"
+              onClick={retryRoster}
+              className="rounded-lg border border-input px-4 py-2 text-sm font-semibold transition hover:bg-primary/10 outline-none focus-visible:ring focus-visible:ring-ring/50"
+            >
+              تلاش دوباره
+            </button>
+          </div>
         )}
-        {!rosterError && !employees && (
+        {!rosterFailure && !employees && (
           <div
             className="grid grid-cols-3 gap-2"
             role="status"
@@ -256,7 +330,7 @@ function PinLogin() {
             ))}
           </div>
         )}
-        {!rosterError && employees && employees.length === 0 && (
+        {!rosterFailure && employees && employees.length === 0 && (
           <p className="text-center text-sm text-muted-foreground">
             کارمندی برای ورود سریع یافت نشد.
           </p>

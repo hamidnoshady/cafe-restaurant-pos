@@ -48,3 +48,21 @@ export function lockoutMessage(lockedUntil: unknown): string {
   const minutes = Math.max(1, Math.ceil((until.getTime() - Date.now()) / 60_000));
   return `به‌دلیل تلاش‌های ناموفق مکرر، ورود موقتاً قفل شده است؛ ${toPersianDigits(String(minutes))} دقیقه دیگر دوباره تلاش کنید.`;
 }
+
+/**
+ * A 429's `Retry-After` in milliseconds.
+ *
+ * The staff picker's roster read has a per-IP ceiling (see ROSTER_IP_LIMIT in
+ * src/middleware.ts) and says when it clears; waiting that long beats parking
+ * the till's front screen on an error that was always going to lift by itself.
+ *
+ * Bounded at both ends because the header is not ours: a missing or malformed
+ * value falls back to a short wait rather than never retrying, and an
+ * unreasonably large one is capped so a bad response cannot leave a cashier
+ * staring at a login screen that will not refresh.
+ */
+export function retryAfterMs(header: string | null): number {
+  const seconds = Number(header);
+  if (!Number.isFinite(seconds) || seconds <= 0) return 3_000;
+  return Math.min(Math.max(seconds * 1_000, 1_000), 30_000);
+}

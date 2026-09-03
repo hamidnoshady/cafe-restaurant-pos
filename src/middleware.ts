@@ -203,6 +203,17 @@ export function unknownHostAllowedPath(pathname: string): boolean {
   return (
     pathname === "/" ||
     pathname === "/api/health" ||
+    // The rate limiter's durable counter, which middleware calls on *itself*
+    // over loopback (internalBaseOrigin in src/lib/rate-limit.ts defaults to
+    // http://127.0.0.1:{PORT}). That Host header is `127.0.0.1`, which is never
+    // under ROOT_DOMAIN — so failing closed here 404'd the call on every
+    // host-routed deployment and silently dropped every bucket back to the
+    // per-process Map: the reset-on-restart, not-shared-across-replicas
+    // behaviour Phase 24 Wave 5 exists to remove. This path serves no tenant
+    // and no console, and it authenticates with the internal secret derived
+    // from JWT_SECRET (src/lib/internal-auth.ts), so letting it through on a
+    // hostname nobody vouches for opens no entrance to anything.
+    pathname === "/api/internal/rate-limit" ||
     pathname === "/api/host" ||
     pathname.startsWith("/api/host/")
   );
@@ -241,6 +252,7 @@ const businessLimits = new Map<string, RateLimitEntry>();
 const syncTokenLimits = new Map<string, RateLimitEntry>();
 const apiKeyLimits = new Map<string, RateLimitEntry>();
 const authIpLimits = new Map<string, RateLimitEntry>();
+const rosterIpLimits = new Map<string, RateLimitEntry>();
 const mcpLimits = new Map<string, RateLimitEntry>();
 
 const BUSINESS_API_LIMIT = 300;
@@ -251,6 +263,26 @@ const API_KEY_LIMIT = 120;
 const API_KEY_WINDOW_MS = 60_000;
 const AUTH_IP_LIMIT = 20;
 const AUTH_IP_WINDOW_MS = 60_000;
+/**
+ * The staff picker's roster read gets its own bucket, and a much larger one,
+ * because it is the *landing page* of a business's origin rather than a
+ * credential attempt: src/app/page.tsx sends every signed-out visitor to
+ * /login, and /login's only content is the picker, so one of these fires on
+ * every single visit from every terminal.
+ *
+ * It used to share `AUTH_IP_LIMIT` (20/min) with the credential exchanges it
+ * precedes. That made the login screen able to lock itself out: a handful of
+ * tills behind one café NAT address — one shared public IP, and behind no
+ * proxy at all they share the literal key `ip:unknown` — spend the budget on
+ * page loads alone, after which `POST /api/auth/pin-login` answers 429 too and
+ * nobody can sign in for the rest of the window. Enumeration still needs a
+ * ceiling (this route lists a business's staff pre-session), so it keeps one;
+ * it just no longer competes with the PIN that follows it. Brute-forcing the
+ * PIN itself stays bounded twice over — by AUTH_IP_LIMIT here and by the
+ * per-employee lockout in employee-service.ts.
+ */
+const ROSTER_IP_LIMIT = 120;
+const ROSTER_IP_WINDOW_MS = 60_000;
 // Phase 34 — the MCP realm's own bucket, keyed by bearer credential (or by IP
 // where there is none yet, which is the OAuth flow). Higher than the public
 // API's, because a single model turn routinely fans out into a handful of tool
@@ -270,6 +302,7 @@ function maybeSweep(now: number) {
   sweepExpired(syncTokenLimits, now, STALE_ENTRY_MS);
   sweepExpired(apiKeyLimits, now, STALE_ENTRY_MS);
   sweepExpired(authIpLimits, now, STALE_ENTRY_MS);
+  sweepExpired(rosterIpLimits, now, STALE_ENTRY_MS);
   sweepExpired(mcpLimits, now, STALE_ENTRY_MS);
 }
 
@@ -294,11 +327,10 @@ function rateLimited(retryAfterMs: number): NextResponse {
 const AUTH_RATE_LIMITED_PATHS = [
   "/api/auth/login",
   "/api/auth/pin-login",
-  // Phase 20 Wave 2 — precedes the PIN itself but still enumerates a
-  // business's staff pre-session, so it shares the login bucket rather than
-  // going unlimited.
-  "/api/auth/pin-login/roster",
-  // Phase 20 Wave 3 — the biometric login ceremony's two steps, same reasoning as pin-login/roster above.
+  // Phase 20 Wave 3 — the biometric login ceremony's two steps. Deliberately
+  // *not* the staff picker's roster read, which preceded the PIN here until it
+  // turned out that sharing one 20/min budget let the login page's own loads
+  // starve the PIN that follows it — see isStaffRosterPath and ROSTER_IP_LIMIT.
   "/api/auth/webauthn/login/options",
   "/api/auth/webauthn/login/verify",
   "/api/platform/auth/login",
@@ -339,6 +371,29 @@ const AUTH_RATE_LIMITED_PATHS = [
   "/api/platform/auth/mfa/verify",
   "/api/platform/auth/mfa/enrol",
 ];
+
+/**
+ * The staff picker's roster read — one request per login-page load, on the
+ * landing page of every business origin, so it is bucketed on its own terms
+ * (ROSTER_IP_LIMIT) rather than sharing the credential budget.
+ *
+ * Exported for src/middleware.test.ts, which holds the separation honest: the
+ * whole bug this fixes was the roster sitting inside AUTH_RATE_LIMITED_PATHS.
+ */
+export function isStaffRosterPath(pathname: string): boolean {
+  return pathname === "/api/auth/pin-login/roster";
+}
+
+/**
+ * Whether a path draws on the credential-exchange budget (AUTH_IP_LIMIT).
+ *
+ * Exported for src/middleware.test.ts, which pins the one thing that must not
+ * regress: the staff picker's roster read is *not* in this bucket, because
+ * sharing it let the login page's own loads starve the PIN that follows.
+ */
+export function isAuthRateLimitedPath(pathname: string): boolean {
+  return AUTH_RATE_LIMITED_PATHS.includes(pathname);
+}
 
 /** The session-less, bearer-token server-to-server routes (see PUBLIC_PATHS below for why each is public). */
 const SYNC_TOKEN_RATE_LIMITED_PATHS = [
@@ -415,6 +470,27 @@ async function handleRateLimits(
       `ip:${clientIp(request)}`,
       AUTH_IP_LIMIT,
       AUTH_IP_WINDOW_MS,
+      now,
+    );
+    if (!result.allowed) return rateLimited(result.retryAfterMs);
+  }
+
+  // The staff picker's roster: its own bucket, its own map, so a floor full of
+  // terminals reloading the login screen can spend this budget all day without
+  // ever touching the one the PIN itself needs. See ROSTER_IP_LIMIT for why the
+  // two were separated.
+  //
+  // The key is namespaced, not just the Map: the durable counter in Postgres is
+  // a single row per key (`rate_limits`, upserted `ON CONFLICT (key)`), so two
+  // buckets that both asked for `ip:{addr}` would increment the *same* row and
+  // the stricter ceiling would win — the roster's reads would still spend the
+  // PIN's budget on every deployment where the durable counter is reachable.
+  if (isStaffRosterPath(pathname)) {
+    const result = await checkRateLimit(
+      rosterIpLimits,
+      `roster-ip:${clientIp(request)}`,
+      ROSTER_IP_LIMIT,
+      ROSTER_IP_WINDOW_MS,
       now,
     );
     if (!result.allowed) return rateLimited(result.retryAfterMs);

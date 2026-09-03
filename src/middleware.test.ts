@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { isPeerBackupPath, isPublicPath, unknownHostAllowedPath } from "./middleware";
+import {
+  isAuthRateLimitedPath,
+  isPeerBackupPath,
+  isPublicPath,
+  isStaffRosterPath,
+  unknownHostAllowedPath,
+} from "./middleware";
 
 describe("isPublicPath", () => {
   it("lets the root path through so it can choose between login and the wizard", () => {
@@ -50,6 +56,22 @@ describe("unknown hosts — fail closed", () => {
     expect(unknownHostAllowedPath("/api/host")).toBe(true);
     expect(unknownHostAllowedPath("/api/host/resolve")).toBe(true);
     expect(unknownHostAllowedPath("/api/host/redirect")).toBe(true);
+  });
+
+  it("still answers the rate limiter's own loopback call, which has no hostname to vouch for", () => {
+    // The regression this guards: middleware asks the Node runtime for the
+    // durable counter at http://127.0.0.1:{PORT}/api/internal/rate-limit, and
+    // `127.0.0.1` is never under ROOT_DOMAIN — so failing closed 404'd the call
+    // on every host-routed deployment and silently dropped every bucket back to
+    // the per-process Map (reset on restart, not shared across replicas). The
+    // path serves no tenant and no console and authenticates with the internal
+    // secret, so it opens no entrance by being reachable.
+    expect(unknownHostAllowedPath("/api/internal/rate-limit")).toBe(true);
+    // ...but nothing else under /api/internal/ comes along for the ride.
+    expect(unknownHostAllowedPath("/api/internal/")).toBe(false);
+    expect(unknownHostAllowedPath("/api/internal/anything-else")).toBe(false);
+    // and it is still not a *public* path — the secret remains the only way in.
+    expect(isPublicPath("/api/internal/rate-limit")).toBe(false);
   });
 
   it("closes everything else — including the old console funnel", () => {
@@ -107,5 +129,31 @@ describe("the backup-serving channel — migration 0132", () => {
     // and nothing unrelated joins the bucket
     expect(isPeerBackupPath("/api/server-sync/pull")).toBe(false);
     expect(isPeerBackupPath("/api/auth/login")).toBe(false);
+  });
+});
+
+describe("the staff picker's roster read — bucketed apart from the credentials", () => {
+  it("does not draw on the credential-exchange budget", () => {
+    // The regression this guards. Since the login split the roster read fires on
+    // *every* visit to a business's origin: src/app/page.tsx sends a signed-out
+    // visitor to /login, and the picker is that page's only content. Sharing the
+    // 20/min per-IP login bucket meant a few tills behind one café address — one
+    // public IP, and behind no proxy at all they share the key `ip:unknown` —
+    // spent it on page loads alone, after which POST /api/auth/pin-login answered
+    // 429 too and nobody could sign in until the window turned over. The screen
+    // said «دریافت فهرست کارکنان ممکن نشد» over a business that had staff.
+    expect(isStaffRosterPath("/api/auth/pin-login/roster")).toBe(true);
+    expect(isAuthRateLimitedPath("/api/auth/pin-login/roster")).toBe(false);
+  });
+
+  it("still rate-limits the credential exchanges it precedes", () => {
+    // Brute-forcing the PIN itself stays bounded here, and again by the
+    // per-employee lockout in employee-service.ts.
+    expect(isAuthRateLimitedPath("/api/auth/pin-login")).toBe(true);
+    expect(isAuthRateLimitedPath("/api/auth/login")).toBe(true);
+    expect(isAuthRateLimitedPath("/api/auth/webauthn/login/verify")).toBe(true);
+    // ...and the roster is not smuggled in as a near-miss of either name.
+    expect(isStaffRosterPath("/api/auth/pin-login")).toBe(false);
+    expect(isStaffRosterPath("/api/auth/pin-login/rosters")).toBe(false);
   });
 });
