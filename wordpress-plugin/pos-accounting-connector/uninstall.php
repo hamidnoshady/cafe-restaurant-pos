@@ -17,6 +17,11 @@ global $wpdb;
 $wpdb->query( "DROP TABLE IF EXISTS {$wpdb->prefix}pos_connector_queue" );
 $wpdb->query( "DROP TABLE IF EXISTS {$wpdb->prefix}pos_connector_log" );
 
+// Every hook the plugin ever schedules, including the two daily backfills
+// added in 1.2.0 — one left behind is an orphaned WP-Cron entry that fires
+// against a callback nothing registers any more, forever.
 wp_clear_scheduled_hook( 'pos_connector_sync' );
 wp_clear_scheduled_hook( 'pos_connector_resync_orders' );
 wp_clear_scheduled_hook( 'pos_connector_resync_products' );
+wp_clear_scheduled_hook( 'pos_connector_resync_customers' );
+wp_clear_scheduled_hook( 'pos_connector_resync_content' );

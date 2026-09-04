@@ -15,6 +15,7 @@
  *   wp pos-connector export products             queue the whole catalogue
  *   wp pos-connector export orders [--days=7]    queue recently-modified orders
  *   wp pos-connector export customers            queue every customer
+ *   wp pos-connector export content              queue every post, page and media item
  *   wp pos-connector test                        ping the accounting system
  *
  * Every write command is safe to call as often as a crontab likes: the queue
@@ -72,9 +73,11 @@ class POS_Connector_CLI {
 		WP_CLI::log( '' );
 		WP_CLI::log( WP_CLI::colorize( '%B' . __( 'زمان‌بندی', 'pos-accounting-connector' ) . '%n' ) );
 		foreach ( array(
-			POS_CONNECTOR_CRON_HOOK               => __( 'همگام‌سازی سریع', 'pos-accounting-connector' ),
-			POS_CONNECTOR_CRON_RESYNC_ORDERS      => __( 'بازخوانی سفارش‌ها', 'pos-accounting-connector' ),
-			POS_CONNECTOR_CRON_RESYNC_PRODUCTS    => __( 'بازخوانی محصولات', 'pos-accounting-connector' ),
+			POS_CONNECTOR_CRON_HOOK             => __( 'همگام‌سازی سریع', 'pos-accounting-connector' ),
+			POS_CONNECTOR_CRON_RESYNC_ORDERS    => __( 'بازخوانی سفارش‌ها', 'pos-accounting-connector' ),
+			POS_CONNECTOR_CRON_RESYNC_PRODUCTS  => __( 'بازخوانی محصولات', 'pos-accounting-connector' ),
+			POS_CONNECTOR_CRON_RESYNC_CUSTOMERS => __( 'بازخوانی مشتریان', 'pos-accounting-connector' ),
+			POS_CONNECTOR_CRON_RESYNC_CONTENT   => __( 'بازخوانی محتوا', 'pos-accounting-connector' ),
 		) as $hook => $label ) {
 			$next = wp_next_scheduled( $hook );
 			WP_CLI::log(
@@ -130,7 +133,12 @@ class POS_Connector_CLI {
 		$client   = POS_Connector_Client::from_settings();
 		$response = $client->post( '/api/integrations/wordpress/ping' );
 		if ( $response['ok'] ) {
+			// `WP_CLI::success()` prints and returns — it does not exit. Without
+			// this return the error below ran on a *successful* ping too, with
+			// an empty message, and the command exited 1: a monitored crontab
+			// reported a healthy connection as broken.
 			WP_CLI::success( __( 'اتصال برقرار است.', 'pos-accounting-connector' ) );
+			return;
 		}
 		WP_CLI::error( POS_Connector_Client::explain( $response['error'] ) );
 	}
@@ -141,7 +149,7 @@ class POS_Connector_CLI {
 	 * ## OPTIONS
 	 *
 	 * <kind>
-	 * : What to export — products, orders or customers.
+	 * : What to export — products, orders, customers or content.
 	 *
 	 * [--days=<days>]
 	 * : For `orders`, how far back to look. Default 7.
@@ -171,8 +179,15 @@ class POS_Connector_CLI {
 				POS_Connector_Sync::export_customers();
 				WP_CLI::success( __( 'مشتریان در صف قرار گرفتند.', 'pos-accounting-connector' ) );
 				return;
+			case 'content':
+				// The fourth export the plugin has answered as a job since
+				// 1.2.0. Every other one is drivable from here, and a WP-Cron
+				// that never fires is exactly when that matters.
+				POS_Connector_Sync::export_content();
+				WP_CLI::success( __( 'محتوا و رسانه در صف قرار گرفتند.', 'pos-accounting-connector' ) );
+				return;
 			default:
-				WP_CLI::error( 'نوع را مشخص کنید: products | orders | customers' );
+				WP_CLI::error( 'نوع را مشخص کنید: products | orders | customers | content' );
 		}
 	}
 }

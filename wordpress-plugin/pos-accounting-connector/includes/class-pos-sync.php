@@ -40,10 +40,28 @@ class POS_Connector_Sync {
 	/** How many orders one sweep may re-send, so a cron run finishes inside PHP's limit. */
 	const ORDER_SWEEP_LIMIT = 200;
 
+	/** Most rows one push may carry. The app's own cap is 100 events per request. */
+	const PUSH_BATCH_ROWS = 50;
+
+	/**
+	 * Most payload bytes one push may carry, comfortably under the app's 2 MB
+	 * body limit — the envelope and JSON's own escaping sit on top of what is
+	 * measured here.
+	 */
+	const PUSH_BATCH_BYTES = 1200000;
+
 	public static function init() {
+		// Every cron hook is bound unconditionally, before the `enabled` check
+		// below and outside any per-entity toggle: each run_* method re-reads
+		// the settings itself, so binding one behind a toggle would leave the
+		// sweep unregistered for a request that loaded before a handshake
+		// turned that toggle on — a schedule with nothing listening.
 		add_action( POS_CONNECTOR_CRON_HOOK, array( __CLASS__, 'run' ) );
 		add_action( POS_CONNECTOR_CRON_RESYNC_PRODUCTS, array( __CLASS__, 'run_resync_products' ) );
 		add_action( POS_CONNECTOR_CRON_RESYNC_ORDERS, array( __CLASS__, 'run_resync_orders' ) );
+		// The daily backfills: the customer book and the content mirror. They
+		// cover accounts and posts created by an importer, a migration, or any
+		// path where a hook never fired.
 		add_action( POS_CONNECTOR_CRON_RESYNC_CUSTOMERS, array( __CLASS__, 'run_resync_customers' ) );
 		add_action( POS_CONNECTOR_CRON_RESYNC_CONTENT, array( __CLASS__, 'run_resync_content' ) );
 
@@ -79,14 +97,6 @@ class POS_Connector_Sync {
 		if ( ! empty( $settings['sync_customers'] ) ) {
 			add_action( 'woocommerce_created_customer', array( __CLASS__, 'on_customer_changed' ), 20, 1 );
 			add_action( 'woocommerce_update_customer', array( __CLASS__, 'on_customer_changed' ), 20, 1 );
-			// The daily customer sweep. New WooCommerce customers are caught
-			// by the two hooks above; this covers accounts created by an
-			// importer, a migration from another shop, or any checkout path
-			// where a hook never fired — the backstop the products and orders
-			// sweeps already were, and the reason a store with 600 customers
-			// could show 20 after three days (the initial export only ever
-			// ran once, and nothing ever re-asked for the book).
-			add_action( POS_CONNECTOR_CRON_RESYNC_CUSTOMERS, array( __CLASS__, 'run_resync_customers' ) );
 		}
 
 		// WordPress core content (posts, pages, media) for the WP Manager
@@ -681,14 +691,29 @@ class POS_Connector_Sync {
 	 * about it. Returns how many were delivered.
 	 */
 	public static function push_queue( POS_Connector_Client $client ) {
-		$rows = POS_Connector_Queue::due( 50 );
+		$rows = POS_Connector_Queue::due( self::PUSH_BATCH_ROWS );
 		if ( empty( $rows ) ) {
 			return 0;
 		}
 
 		$events = array();
 		$by_id  = array();
+		$bytes  = 0;
 		foreach ( $rows as $row ) {
+			// The app refuses a body over 2 MB outright (413 payload_too_large),
+			// and it refuses the *whole* batch — so a fixed count of 50 rows was
+			// only safe while payloads were small. A page's raw HTML or a long
+			// product description makes fifty of them megabytes, and because
+			// `due()` is ordered by id the same oversized batch was rebuilt on
+			// every run, failed identically, and blocked every event behind it.
+			// Fill the batch by size instead, always sending at least one row so
+			// a single oversized event is reported against itself (and backs off)
+			// rather than jamming the queue behind it.
+			$size = strlen( (string) $row['payload'] ) + 128;
+			if ( $events && $bytes + $size > self::PUSH_BATCH_BYTES ) {
+				break;
+			}
+			$bytes   += $size;
 			$events[] = array(
 				'topic'      => $row['topic'],
 				'deliveryId' => $row['delivery_id'],
@@ -749,24 +774,48 @@ class POS_Connector_Sync {
 		$results = array();
 		$applied = 0;
 		foreach ( $jobs as $job ) {
+			$job    = (array) $job;
+			$job_id = isset( $job['id'] ) ? (string) $job['id'] : '';
+			$type   = isset( $job['type'] ) ? (string) $job['type'] : 'unknown';
+			if ( '' === $job_id ) {
+				// Nothing to ack against, so applying it could only produce
+				// work the app would lease out again.
+				POS_Connector_Log::error( 'job:' . $type, 'missing_job_id' );
+				continue;
+			}
+			// `Throwable`, not `Exception`: apply_job calls into WooCommerce and
+			// WordPress, where a deleted product or a plugin conflict raises a
+			// PHP `Error` — which `catch ( Exception )` does not catch. One such
+			// job aborted the whole run *before the ack below*, so every job
+			// already applied above it was never reported done, its lease
+			// expired, and it was applied a second time on the next run. For
+			// `refund_create` that is a second refund against the same order.
 			try {
 				self::apply_job( $job );
 				$results[] = array(
-					'id'     => $job['id'],
+					'id'     => $job_id,
 					'status' => 'done',
 				);
 				++$applied;
-			} catch ( Exception $e ) {
+			} catch ( Throwable $e ) {
 				$results[] = array(
-					'id'     => $job['id'],
+					'id'     => $job_id,
 					'status' => 'failed',
 					'error'  => $e->getMessage(),
 				);
-				POS_Connector_Log::error( 'job:' . $job['type'], $e->getMessage() );
+				POS_Connector_Log::error( 'job:' . $type, $e->getMessage() );
 			}
 		}
 
-		$client->post( '/api/integrations/wordpress/jobs/ack', array( 'results' => $results ) );
+		if ( ! empty( $results ) ) {
+			$ack = $client->post( '/api/integrations/wordpress/jobs/ack', array( 'results' => $results ) );
+			if ( ! $ack['ok'] ) {
+				// Worth its own log line: the work landed in WooCommerce but the
+				// app still holds the jobs as pending, so they will be leased
+				// again — the one state where a re-apply is not a no-op.
+				POS_Connector_Log::error( 'ack', $ack['error'] );
+			}
+		}
 		POS_Connector_Log::info( 'pull', sprintf( 'کار دریافتی: %d', count( $jobs ) ) );
 		return $applied;
 	}
@@ -1023,11 +1072,18 @@ class POS_Connector_Sync {
 			// The id resolved to an object under a different parent than the
 			// job named. Trust the parent and re-resolve from it, rather than
 			// writing to a variation that happens to share the id.
-			$found = null;
-			foreach ( wc_get_product( $parent_id )->get_children() as $child_id ) {
-				if ( (int) $child_id === (int) $remote_id ) {
-					$found = wc_get_product( $child_id );
-					break;
+			$found  = null;
+			$parent = wc_get_product( $parent_id );
+			// A parent that no longer exists is not a reason to fatal.
+			// `wc_get_product()` returns false for a deleted product, and
+			// calling ->get_children() on that raised a PHP Error that took the
+			// whole cron run down with it — every remaining job unapplied.
+			if ( $parent ) {
+				foreach ( $parent->get_children() as $child_id ) {
+					if ( (int) $child_id === (int) $remote_id ) {
+						$found = wc_get_product( $child_id );
+						break;
+					}
 				}
 			}
 			$product = $found ? $found : $product;
@@ -1294,3 +1350,4 @@ class POS_Connector_Sync {
 		pos_connector_update_settings( array( 'last_content_sweep_at' => current_time( 'mysql', true ) ) );
 		self::run();
 	}
+}
