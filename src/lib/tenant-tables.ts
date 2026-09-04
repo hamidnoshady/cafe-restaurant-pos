@@ -74,6 +74,16 @@ export const EXEMPT_TABLES = new Set([
   "credit_packages",
   "billing_plans",
   "billing_plan_features",
+  // Phase 37 (SMS/email marketing) — the platform's own message config
+  // (singleton, credentials encrypted at rest) and its global credit-package
+  // catalogue: neither carries a business_id, the same shape as
+  // platform_ai_gateway / ai_credit_packages. Every business-owned messaging
+  // table (message_business_billing, message_credit_ledger,
+  // message_top_up_requests, message_templates, message_campaigns,
+  // message_recipients, message_outbox) is RLS-protected in its migration and
+  // deliberately NOT listed here.
+  "platform_message_config",
+  "message_credit_packages",
   // Migration 0131 — the in-product knowledge base (categories, tags, articles
   // and the article↔tag join). Platform-maintained content in exactly the
   // shape of knowledge_base_entries: the same category tree and the same

@@ -628,3 +628,21 @@ Since Phase 35 the app can reach a person who is not looking at a screen, over *
   root app (own dependencies: `electron`, `electron-builder`, `embedded-postgres`).
 - `docs/phases/*.md` — one file per phase: scope, exit criteria, open questions, and (once
   built) the decisions made and where each exit criterion is satisfied in code.
+
+## Phase 37 — SMS/email marketing (messaging)
+
+> **پیام مشتری‌رو، اعتبار پلتفرمی دارد و در دفتر می‌نشیند.** Sending runs through the
+> `message_outbox` and the `runMessagingTick()` on the custom server — nothing is
+> sent inline and no user request ever waits on a provider. The cost is turned
+> into **one journal document per campaign** by the posting engine's
+> `message.campaign_cost` rule (Debit `5600 هزینهٔ تبلیغات و بازاریابی` / Credit
+> `2455 پرداختنی به پلتفرم (اعتبار پیام)`), never a hand-written ledger call, dated
+> on the branch's business day (`app_business_date`). The audience comes only from
+> `resolveSegment(..., { purpose })` (consent + a reachable address enforced by
+> the CRM bridge) — never a second member path. Provider credentials are
+> platform-owned, encrypted at rest, and never returned to a business.
+>
+> **مدل نمی‌فرستد.** Phase 31 stands: the model may draft a template/campaign but
+> pressing send is a human action. The only planned exception is a pre-authorised
+> coworker-triggered job, still bounded by the Phase 31 batch caps — and even that
+> is not yet shipped (see `docs/phases/Phase-37-Messaging.md` Wave 5).

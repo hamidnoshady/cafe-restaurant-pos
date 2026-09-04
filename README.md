@@ -595,6 +595,32 @@ below and [docs/phases/Phase-36c-CRM-App.md](docs/phases/Phase-36c-CRM-App.md).
 
 See [docs/phases/Phase-36b-Growth-Marketing-App.md](docs/phases/Phase-36b-Growth-Marketing-App.md).
 
+### SMS/email marketing (messaging — Phase 37b)
+
+An owner who has named a CRM segment can now send that segment a message, and the cost lands
+in the business's own ledger — metered like Phase 18's AI credits and posted by the engine.
+The messaging module is a Growth-app module (`src/lib/apps.ts`); see
+[docs/phases/Phase-37-Messaging.md](docs/phases/Phase-37-Messaging.md).
+
+- **Platform-owned credits** (`platform_message_config` + `message_credit_ledger`,
+  migration `0133`): the platform holds the Kavenegar/SMTP credentials (encrypted at rest) and
+  the per-segment/per-email rates; a business's balance is always the SUM of its signed ledger
+  and it requests top-ups the super-admin approves.
+- **Templates, campaigns, outbox** (migration `0134`): a body is a closed `{{…}}` variable set
+  (an unknown variable is a save-time error); launching a campaign snapshots its recipients at
+  send time; `runMessagingTick()` on the custom server drains the outbox with backoff and a
+  per-business rate cap — nothing is sent inline.
+- **Adapters behind one seam** (`src/lib/messaging/provider.ts`): Kavenegar (SMS) and SMTP
+  (email, nodemailer), each provider error surfaced with a Persian label. The audience comes
+  only from `resolveSegment(..., { purpose })`, so an unconsented member is never reached.
+- **Posted cost** (Wave 4): when a campaign completes, the engine posts one document
+  (Debit `5600 هزینهٔ تبلیغات و بازاریابی` / Credit `2455 پرداختنی به پلتفرم (اعتبار پیام)`)
+  dated on the branch's business day — never a hand-written ledger call.
+- **The model never sends.** Phase 31 stands; only a human presses send.
+
+The owner/console UI, coworker-triggered sends, project cost-centre reporting and campaign ROI
+(Wave 5) are specified in the phase doc but not yet shipped.
+
 ## Cross-app data ownership and the WP Manager (Phase 40)
 
 Every app keeps ownership of its own system. A reader may receive or synchronise only the data
