@@ -68,6 +68,12 @@ const CORE_REQUIRED_CODES: readonly string[] = [
   WELL_KNOWN_CODES.chequesIssued,
   WELL_KNOWN_CODES.chequesIssuedReturned,
   WELL_KNOWN_CODES.bouncedChequeExpense,
+  // Phase 37 Wave 4 — a marketing campaign is cross-industry, so both sides of
+  // its cost document (debit marketing expense / credit platform-message
+  // payable) must exist on every chart or four of the trades would fail with
+  // ledger_account_missing.
+  WELL_KNOWN_CODES.marketingExpense,
+  WELL_KNOWN_CODES.platformMessageCreditPayable,
 ];
 
 /** Each trade's own accounts, on top of the core every chart shares. */

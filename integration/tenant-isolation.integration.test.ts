@@ -253,6 +253,9 @@ describe("every tenant table is protected", () => {
       "platform_backup_peers",
       "platform_backup_runs",
       "platform_backup_tokens",
+      // Phase 37 — singleton message provider config + rates (no business_id;
+      // the business side of messaging billing is RLS-protected).
+      "platform_message_config",
       // Migration 0130 — singleton payment gateway config (Zarinpal merchant
       // id etc.), no business_id; the business side of billing is RLS-protected.
       "platform_payment_config",

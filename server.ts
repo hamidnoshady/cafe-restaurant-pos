@@ -191,6 +191,20 @@ app.prepare().then(async () => {
   setInterval(lowStockScan, LOW_STOCK_SCAN_INTERVAL_MS).unref();
   setTimeout(lowStockScan, 120_000).unref();
 
+  // Phase 37: drain the SMS/email marketing outbox. Producers only enqueue —
+  // an owner clicking "send" must never wait on (or fail because of) an SMTP or
+  // Kavenegar round trip. This tick is the only thing that sends: it enumerates
+  // businesses with ready rows under the documented platform bypass and wraps
+  // each business's drain in withTenant, like every other tick here. It also
+  // swallows its own errors (a provider outage must not take down a request).
+  const { runMessagingTick, MESSAGE_TICK_INTERVAL_MS } = await import(
+    "./src/lib/message-outbox-service"
+  );
+  const messagingTick = () =>
+    runMessagingTick().catch((err) => console.error("messaging tick failed:", err));
+  setInterval(messagingTick, MESSAGE_TICK_INTERVAL_MS).unref();
+  setTimeout(messagingTick, 35_000).unref();
+
   const requestListener = (req: any, res: any) => {
     const t0 = Date.now();
     const parsed = parse(req.url ?? "/", true);

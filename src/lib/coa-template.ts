@@ -242,6 +242,15 @@ export const WELL_KNOWN_CODES = {
   chequesIssued: "2121",
   chequesIssuedReturned: "2122",
   bouncedChequeExpense: "5860",
+  // Phase 37 Wave 4 — every trade can run a marketing campaign (a cross-industry
+  // feature), so the marketing/advertising expense heading is core to every
+  // chart. 5600 has been on every template since long before this phase; this
+  // well-known name just makes the messaging posting rule refer to one code.
+  marketingExpense: "5600",
+  // The credit side of the message-cost document: what the business owes the
+  // platform for message credits actually consumed. A liability every trade
+  // carries, because metered messaging is cross-industry.
+  platformMessageCreditPayable: "2455",
 } as const;
 
 /**
@@ -367,6 +376,11 @@ const SHARED_LIABILITY_ACCOUNTS: TemplateAccount[] = [
   { code: "2460", name: "بیمه پرداختنی", type: "liability", parentCode: "2300" },
   { code: "2470", name: "مالیات حقوق پرداختنی", type: "liability", parentCode: "2300" },
   { code: "2480", name: "مالیات بر درآمد (عملکرد) پرداختنی", type: "liability", parentCode: "2000" },
+  // Phase 37 Wave 4 — what the business owes the platform for message credits
+  // actually consumed. Metered messaging is cross-industry, so the heading is
+  // shared rather than F&B-only (the same reason 5600 marketing expense is on
+  // every chart).
+  { code: "2455", name: "پرداختنی به پلتفرم (اعتبار پیام)", type: "liability", parentCode: "2000" },
   // Non-current, and the reason `isNonCurrentCode` treats 2500+ as such.
   { code: "2500", name: "تسهیلات و وام پرداختنی", type: "liability", parentCode: "2000" },
 ];
