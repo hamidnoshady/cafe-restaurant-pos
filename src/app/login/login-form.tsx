@@ -64,15 +64,32 @@ const RECENTS_KEY = "pos:lastEmployees";
 const MAX_RECENTS = 5;
 
 /**
- * Why the staff list did not arrive. The two are told apart because they read
- * completely differently to the person standing at the till: a 429 means the
- * per-IP ceiling on this read is momentarily spent (every terminal in the
- * building shares one address, and this page loads on every visit to the
- * business's origin), which clears by itself in seconds — while anything else
- * is a failure worth reporting as one. Both used to render the same dead-end
- * sentence with no way to retry short of reloading the page.
+ * Why the staff list did not arrive. They are told apart because they read
+ * completely differently to the person standing at the till, and because only
+ * one of them is worth waiting out:
+ *
+ *  - `rate_limited` — a 429: the per-IP ceiling on this read is momentarily
+ *    spent (every terminal in the building shares one address, and this page
+ *    loads on every visit to the business's origin), which clears by itself
+ *    in seconds.
+ *  - `no_business` — the server could not say which business this origin
+ *    belongs to (`unknown_business`/`business_required`). Nothing the cashier
+ *    can retry their way out of: it is a deployment that has not been pointed
+ *    at a tenant, so the message names that instead of blaming the roster,
+ *    and carries the operator-facing hint in the same shape the unresolvable-
+ *    host page uses.
+ *  - `error` — anything else, which is a fault worth reporting as one.
+ *
+ * All three used to render the same dead-end sentence, which is why an origin
+ * that simply had no business attached read as "your staff list is broken".
  */
-type RosterFailure = "rate_limited" | "error";
+type RosterFailure = "rate_limited" | "no_business" | "error";
+
+const ROSTER_FAILURE_MESSAGES: Record<RosterFailure, string> = {
+  rate_limited: "درخواست‌ها از حد مجاز گذشت؛ چند لحظه دیگر دوباره تلاش می‌کنیم.",
+  no_business: "این نشانی به کسب‌وکاری وصل نیست؛ با پشتیبانی تماس بگیرید.",
+  error: "دریافت فهرست کارکنان ممکن نشد.",
+};
 
 /** How many times a 429 is waited out before the retry button is all that is left. */
 const MAX_ROSTER_RETRIES = 2;
@@ -184,7 +201,22 @@ function PinLogin() {
         return;
       }
 
-      if (!cancelled) setRosterFailure(res.status === 429 ? "rate_limited" : "error");
+      if (res.status === 429) {
+        if (!cancelled) setRosterFailure("rate_limited");
+        return;
+      }
+
+      // The 400 the login family answers when it cannot name a tenant for this
+      // origin. Worth reading the body for: it is the difference between "the
+      // roster call failed" and "this address serves no business", and only the
+      // second one tells whoever deployed it what to change.
+      const reason = (await res.json().catch(() => null)) as { error?: unknown } | null;
+      const code = typeof reason?.error === "string" ? reason.error : "";
+      if (!cancelled) {
+        setRosterFailure(
+          code === "unknown_business" || code === "business_required" ? "no_business" : "error",
+        );
+      }
     }
 
     void load(0);
@@ -300,11 +332,19 @@ function PinLogin() {
         </p>
         {rosterFailure && (
           <div className="space-y-3 text-center">
-            <p className="text-sm text-destructive">
-              {rosterFailure === "rate_limited"
-                ? "درخواست‌ها از حد مجاز گذشت؛ چند لحظه دیگر دوباره تلاش می‌کنیم."
-                : "دریافت فهرست کارکنان ممکن نشد."}
-            </p>
+            <p className="text-sm text-destructive">{ROSTER_FAILURE_MESSAGES[rosterFailure]}</p>
+            {rosterFailure === "no_business" && (
+              // Same shape as the unresolvable-host page (src/app/page.tsx):
+              // the Persian line is for the person at the till, this one is for
+              // whoever deployed the app, because they are the only one who can
+              // fix it and they will not be reading the server log.
+              <p className="text-start text-xs text-muted-foreground" dir="ltr">
+                This origin resolves to no business. Set ROOT_DOMAIN (and
+                TRUST_FORWARDED_HOST=on behind a platform that rewrites Host), or give
+                the business a subdomain matching this hostname&rsquo;s first label;{" "}
+                <code>/api/host/resolve?debug=1</code> shows what the app sees.
+              </p>
+            )}
             {/* The screen is the till's front door, so a failure here must never
                 be a dead end: one tap re-asks, without reloading the page and
                 losing the device token and recents that live beside it. */}

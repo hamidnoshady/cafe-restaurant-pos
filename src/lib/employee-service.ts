@@ -17,7 +17,7 @@ import bcrypt from "bcryptjs";
 import type { PoolClient } from "pg";
 import type { AuthenticationResponseJSON, AuthenticatorTransportFuture, RegistrationResponseJSON } from "@simplewebauthn/server";
 import { getPool, query, withoutTenantScope } from "./db";
-import { hostRoutingEnabled, parseHost, rootDomain } from "./host";
+import { hostRoutingEnabled, leadingHostLabel, parseHost, rootDomain } from "./host";
 import { postgresDateToIso } from "./jalali";
 import { resolveBusinessByLabel } from "./host-resolution";
 import { isValidPin } from "./team";
@@ -916,6 +916,13 @@ export async function revokeSession(
  * A login that arrives on the apex, the console host, or an unknown name is
  * refused rather than falling back to the body: on a host-routed deployment
  * there is no legitimate PIN login anywhere but a business's own origin.
+ *
+ * With host tenancy **off** the host is not the boundary, but it is still the
+ * best hint available: the first label is matched against `businesses`
+ * (see `leadingHostLabel`) before the last-resort "the only active business",
+ * so a platform serving several businesses from `{subdomain}.{domain}` with
+ * `ROOT_DOMAIN` unset keeps a working staff login instead of refusing every
+ * one of them with `business_required`.
  */
 export async function resolveLoginBusinessId(body: {
   businessId?: string;
@@ -967,6 +974,40 @@ export async function resolveLoginBusinessId(body: {
         businessId: rows[0]?.business_id ?? null,
         error: rows[0] ? null : "unknown_location",
       };
+    }
+
+    // Host tenancy is off, but the origin may still name its business.
+    //
+    // A deployment reached at `titea.app.eshobe.com` with no `ROOT_DOMAIN`
+    // (or with `SUBDOMAIN_ROUTING=off` while its wildcard certificate is
+    // sorted out) parses every host as "unknown", so nothing above answers
+    // and the fallback below refuses outright the moment a second business
+    // exists — which is how the staff picker came to say «دریافت فهرست
+    // کارکنان ممکن نشد» on an origin whose first label is a business's own
+    // subdomain. The owner's email login was unaffected because it resolves
+    // a tenant from that person's memberships instead, which is exactly the
+    // "admin works, staff doesn't" shape this fixes.
+    //
+    // This is a lookup, not a guess: the label decides nothing unless a
+    // `businesses` row (or one of its rename aliases) claims it. Nor is it a
+    // boundary being relaxed — with host routing off the session cookie is
+    // not host-scoped and `handleHostIsolation` does not run, so no origin
+    // check depends on which host a session was minted from; the PIN is
+    // still checked against an employee of the business resolved here.
+    const label = leadingHostLabel(body.host);
+    if (label) {
+      const { rows } = await query<{ id: string }>(
+        `SELECT b.id
+           FROM businesses b
+          WHERE b.status = 'active'
+            AND (b.subdomain = $1
+                 OR EXISTS (SELECT 1
+                              FROM business_subdomain_aliases a
+                             WHERE a.business_id = b.id AND a.alias = $1))
+          LIMIT 1`,
+        [label],
+      );
+      if (rows[0]) return { businessId: rows[0].id, error: null };
     }
 
     const { rows } = await query<{ id: string }>(
