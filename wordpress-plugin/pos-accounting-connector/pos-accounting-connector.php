@@ -3,7 +3,7 @@
  * Plugin Name:       POS Accounting Connector
  * Plugin URI:        https://github.com/hamidnoshady/cafe-restaurant-pos
  * Description:       اتصال امن دوطرفه فروشگاه ووکامرس به سامانهٔ فروش و حسابداری: ارسال سفارش، برگشت وجه، محصول و مشتری؛ دریافت موجودی و قیمت.
- * Version:           1.2.0
+ * Version:           1.2.1
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * WC requires at least: 7.0
@@ -23,11 +23,11 @@
  * Every request carries a bearer token, a timestamp, a nonce and an HMAC over
  * the exact request body. See class-pos-client.php.
  *
- * ## Three cron events, not one
+ * ## Five cron events, not one
  *
  * 1.1.0 split the single five-minute tick into three, because the three jobs
  * it was doing have three different costs and three different tolerances for
- * being late:
+ * being late; 1.2.0 added the two daily backfills at the bottom of the list:
  *
  *   pos_connector_sync             every 5 minutes — handshake, push the
  *                                  queue, lease and apply jobs. Cheap, and
@@ -40,6 +40,12 @@
  *                                  catalogue, variations included. Expensive
  *                                  on a large store, so it is the one an
  *                                  owner is expected to turn down.
+ *   pos_connector_resync_customers daily — re-send the whole customer book.
+ *   pos_connector_resync_content   daily — re-send posts, pages and media.
+ *
+ * The last two are fixed at daily and have no cadence setting: neither has a
+ * real-time cost worth a finer one, and both are backstops for what a hook or
+ * the initial export missed rather than a primary path.
  *
  * Keeping them separate is what lets a shop with 10,000 products keep a
  * five-minute order latency without paying for a five-minute catalogue
@@ -49,7 +55,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'POS_CONNECTOR_VERSION', '1.2.0' );
+define( 'POS_CONNECTOR_VERSION', '1.2.1' );
 define( 'POS_CONNECTOR_FILE', __FILE__ );
 define( 'POS_CONNECTOR_PATH', plugin_dir_path( __FILE__ ) );
 

@@ -288,10 +288,19 @@ class POS_Connector_Settings {
 
 			<h2><?php esc_html_e( 'مدیریت اتصال', 'pos-accounting-connector' ); ?></h2>
 			<p>
-				<?php foreach ( array(
-					'pos_connector_test'     => __( 'آزمایش اتصال', 'pos-accounting-connector' ),
-					'pos_connector_sync_now' => __( 'همگام‌سازی همین حالا', 'pos-accounting-connector' ),
-					'pos_connector_retry'           => __( 'تلاش دوباره برای ناموفق‌ها', 'pos-accounting-connector' ),
+				<?php
+				// Every handler registered in init() gets a button here. The
+				// catalogue and order sweeps existed everywhere but the screen
+				// from 1.1.0 on — handler, nonce check and success notice all
+				// written, and no markup that ever posted to them — so the
+				// manual «همگام‌سازی محصولات» the export doc-comment describes
+				// was reachable only from WP-CLI.
+				foreach ( array(
+					'pos_connector_test'             => __( 'آزمایش اتصال', 'pos-accounting-connector' ),
+					'pos_connector_sync_now'         => __( 'همگام‌سازی همین حالا', 'pos-accounting-connector' ),
+					'pos_connector_retry'            => __( 'تلاش دوباره برای ناموفق‌ها', 'pos-accounting-connector' ),
+					'pos_connector_resync_products'  => __( 'بازخوانی کل کاتالوگ', 'pos-accounting-connector' ),
+					'pos_connector_resync_orders'    => __( 'بازخوانی سفارش‌های اخیر', 'pos-accounting-connector' ),
 					'pos_connector_resync_customers' => __( 'بازخوانی همهٔ مشتریان', 'pos-accounting-connector' ),
 					'pos_connector_resync_content'   => __( 'بازخوانی محتوا و رسانه', 'pos-accounting-connector' ),
 				) as $action => $label ) : ?>
@@ -410,9 +419,15 @@ class POS_Connector_Settings {
 					</tr>
 						<?php
 						$schedules = array(
-							POS_CONNECTOR_CRON_HOOK            => __( 'همگام‌سازی سریع (ارسال و دریافت)', 'pos-accounting-connector' ),
-							POS_CONNECTOR_CRON_RESYNC_ORDERS   => __( 'بازخوانی سفارش‌ها', 'pos-accounting-connector' ),
-							POS_CONNECTOR_CRON_RESYNC_PRODUCTS => __( 'بازخوانی کاتالوگ', 'pos-accounting-connector' ),
+							POS_CONNECTOR_CRON_HOOK             => __( 'همگام‌سازی سریع (ارسال و دریافت)', 'pos-accounting-connector' ),
+							POS_CONNECTOR_CRON_RESYNC_ORDERS    => __( 'بازخوانی سفارش‌ها', 'pos-accounting-connector' ),
+							POS_CONNECTOR_CRON_RESYNC_PRODUCTS  => __( 'بازخوانی کاتالوگ', 'pos-accounting-connector' ),
+							// The two daily backfills. Listed for the same
+							// reason the others are: «زمان‌بندی نشده» is the
+							// answer to "why did the customer book stop
+							// filling in?", and it cannot be read anywhere else.
+							POS_CONNECTOR_CRON_RESYNC_CUSTOMERS => __( 'بازخوانی مشتریان (روزانه)', 'pos-accounting-connector' ),
+							POS_CONNECTOR_CRON_RESYNC_CONTENT   => __( 'بازخوانی محتوا (روزانه)', 'pos-accounting-connector' ),
 						);
 						foreach ( $schedules as $hook => $label ) :
 							$at = wp_next_scheduled( $hook );
