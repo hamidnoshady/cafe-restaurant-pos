@@ -25,9 +25,32 @@ export function isPrivateIp(ip: string): boolean {
   );
 }
 
+/**
+ * Whether `X-Real-IP` may be believed.
+ *
+ * It used to be read first and unconditionally, which quietly made every
+ * IP-keyed limit in this app opt-in for the attacker: Caddy — the proxy in
+ * front of both the LAN and the hosted deployment — sets `X-Forwarded-For` and
+ * says nothing about `X-Real-IP`, so a client-supplied `X-Real-IP: 1.2.3.4`
+ * arrived here untouched and became the rate-limit key. Rotating it walks past
+ * the login brute-force limiter; pinning it to somebody else's address spends
+ * their lockout budget for them.
+ *
+ * `X-Forwarded-For` does not have that problem, because `trustedHops` counts
+ * back from the end of the chain the proxy appended to, so a forged prefix is
+ * skipped. So the header is now only honoured where an operator has said their
+ * proxy overwrites it (nginx's `proxy_set_header X-Real-IP` does; Caddy does
+ * not) by setting `TRUST_X_REAL_IP=true`.
+ */
+function trustsRealIpHeader(): boolean {
+  return (process.env.TRUST_X_REAL_IP ?? "").toLowerCase() === "true";
+}
+
 export function clientIpFrom(headers: Headers, trustedHops: number): string {
-  const realIp = headers.get("x-real-ip");
-  if (realIp) return realIp;
+  if (trustsRealIpHeader()) {
+    const realIp = headers.get("x-real-ip");
+    if (realIp) return realIp;
+  }
 
   const forwarded = headers.get("x-forwarded-for");
   if (forwarded) {

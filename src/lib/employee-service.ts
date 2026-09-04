@@ -14,6 +14,7 @@
  * will call into.
  */
 import bcrypt from "bcryptjs";
+import { BCRYPT_COST } from "@/lib/password-hashing";
 import type { PoolClient } from "pg";
 import type { AuthenticationResponseJSON, AuthenticatorTransportFuture, RegistrationResponseJSON } from "@simplewebauthn/server";
 import { getPool, query, withoutTenantScope } from "./db";
@@ -266,7 +267,7 @@ export async function issueCredential(
   }
 
   await ensureEmployeeProfile(employeeId, businessId);
-  const secretHash = await bcrypt.hash(secret, 10);
+  const secretHash = await bcrypt.hash(secret, BCRYPT_COST);
 
   const client = await getPool().connect();
   try {

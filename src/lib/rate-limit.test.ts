@@ -74,11 +74,28 @@ describe("rate-limit clientIpFrom", () => {
     expect(clientIpFrom(headers, 0)).toBe("192.168.1.1");
   });
 
-  it("prioritizes x-real-ip if present", () => {
+  it("ignores x-real-ip by default, because nothing in front of us sets it", () => {
+    // Caddy appends to x-forwarded-for and never touches x-real-ip, so an
+    // x-real-ip arriving here came from the client. Believing it hands the
+    // caller their own rate-limit key.
     const headers = new Headers();
     headers.set("x-real-ip", "10.0.0.1");
     headers.set("x-forwarded-for", "1.1.1.1, 2.2.2.2");
-    expect(clientIpFrom(headers, 1)).toBe("10.0.0.1");
+    expect(clientIpFrom(headers, 1)).toBe("1.1.1.1");
+  });
+
+  it("honours x-real-ip only where the operator says the proxy overwrites it", () => {
+    const previous = process.env.TRUST_X_REAL_IP;
+    process.env.TRUST_X_REAL_IP = "true";
+    try {
+      const headers = new Headers();
+      headers.set("x-real-ip", "10.0.0.1");
+      headers.set("x-forwarded-for", "1.1.1.1, 2.2.2.2");
+      expect(clientIpFrom(headers, 1)).toBe("10.0.0.1");
+    } finally {
+      if (previous === undefined) delete process.env.TRUST_X_REAL_IP;
+      else process.env.TRUST_X_REAL_IP = previous;
+    }
   });
 
   it("returns unknown if neither is present", () => {

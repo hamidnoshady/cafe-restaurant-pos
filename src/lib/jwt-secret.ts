@@ -84,15 +84,28 @@ export async function getRealmSecret(realm: SigningRealm, previous: boolean = fa
   return promise;
 }
 
+/**
+ * Every token this app mints is signed HS256 (see the `SignJWT` call sites), so
+ * verification names that one algorithm rather than accepting whatever the
+ * token's own header asks for.
+ *
+ * jose would not have allowed the classic RS256->HS256 confusion here anyway —
+ * the key is raw secret bytes, and it refuses to verify an asymmetric alg
+ * against one — but "the library happens to stop it" is a weaker guarantee than
+ * saying which algorithm we accept, and it stops being true the day a realm is
+ * given an asymmetric key.
+ */
+const ACCEPTED_ALGORITHMS = ["HS256"];
+
 export async function verifyWithRealmSecret<T>(token: string, realm: SigningRealm): Promise<T | null> {
   const realmSecret = await getRealmSecret(realm);
   try {
-    const { payload } = await jwtVerify(token, realmSecret);
+    const { payload } = await jwtVerify(token, realmSecret, { algorithms: ACCEPTED_ALGORITHMS });
     return payload as T;
   } catch (err) {
     try {
       const prevSecret = await getRealmSecret(realm, true);
-      const { payload } = await jwtVerify(token, prevSecret);
+      const { payload } = await jwtVerify(token, prevSecret, { algorithms: ACCEPTED_ALGORITHMS });
       return payload as T;
     } catch {
       throw err;

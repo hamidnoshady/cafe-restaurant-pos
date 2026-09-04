@@ -10,6 +10,7 @@
  */
 import "dotenv/config";
 import bcrypt from "bcryptjs";
+import { BCRYPT_COST } from "../src/lib/password-hashing";
 import { Client } from "pg";
 
 async function main() {
@@ -74,7 +75,7 @@ async function main() {
     } else {
       // Phase 12: the login identity is global (platform_users) and the row in
       // `users` is this person's membership of this business.
-      const passwordHash = await bcrypt.hash(password, 10);
+      const passwordHash = await bcrypt.hash(password, BCRYPT_COST);
       const identity = await client.query(
         `INSERT INTO platform_users (email, password_hash, full_name)
          VALUES ($1, $2, $3)
@@ -100,7 +101,7 @@ async function main() {
       await client.query(
         `INSERT INTO users (business_id, location_id, role, full_name, pin_hash)
          VALUES ($1, $2, 'cashier', $3, $4)`,
-        [businessId, locationId, "صندوق‌دار نمونه", await bcrypt.hash("1234", 10)],
+        [businessId, locationId, "صندوق‌دار نمونه", await bcrypt.hash("1234", BCRYPT_COST)],
       );
       console.log("Created sample cashier with PIN 1234.");
     }
