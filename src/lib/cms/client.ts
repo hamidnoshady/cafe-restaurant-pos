@@ -320,6 +320,55 @@ export function deleteProduct(config: CmsConfig, id: string, opts?: { fetchImpl?
   return cmsRequest<null>(config, { method: "DELETE", path: `/api/products/${id}`, fetchImpl: opts?.fetchImpl });
 }
 
+export function createPost(
+  config: CmsConfig,
+  input: { title: string; content: unknown; heroImage?: string; categories?: string[] },
+  opts?: { fetchImpl?: FetchLike },
+): Promise<CmsPost> {
+  return cmsRequest<CmsPost>(config, {
+    method: "POST",
+    path: "/api/posts",
+    body: input,
+    fetchImpl: opts?.fetchImpl,
+  });
+}
+
+export function updatePost(
+  config: CmsConfig,
+  id: string,
+  patch: Partial<{ title: string; content: unknown; heroImage: string; categories: string[] }>,
+  opts?: { fetchImpl?: FetchLike },
+): Promise<CmsPost> {
+  return cmsRequest<CmsPost>(config, {
+    method: "PATCH",
+    path: `/api/posts/${id}`,
+    body: patch,
+    fetchImpl: opts?.fetchImpl,
+  });
+}
+
+export function deletePost(config: CmsConfig, id: string, opts?: { fetchImpl?: FetchLike }): Promise<null> {
+  return cmsRequest<null>(config, { method: "DELETE", path: `/api/posts/${id}`, fetchImpl: opts?.fetchImpl });
+}
+
+/**
+ * `PATCH /api/site/domain` — moves the connected site to a new domain. Site
+ * key only (`src/endpoints/updateSiteDomain.ts` in eshobe-cms); resets
+ * `domainVerified` server-side, so the DNS checklist must be re-run after.
+ */
+export function updateSiteDomain(
+  config: CmsConfig,
+  domain: string,
+  opts?: { fetchImpl?: FetchLike },
+): Promise<{ domain: string; domainVerified: boolean }> {
+  return cmsRequest<{ domain: string; domainVerified: boolean }>(config, {
+    method: "PATCH",
+    path: "/api/site/domain",
+    body: { domain },
+    fetchImpl: opts?.fetchImpl,
+  });
+}
+
 /** Order status transitions are the one write the site key makes on orders. */
 export function updateOrderStatus(
   config: CmsConfig,

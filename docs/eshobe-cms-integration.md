@@ -140,9 +140,14 @@ forward-referenced home) redirects here for old bookmarks.
 | `POST /api/cms/website/connect` | Attach an existing site (probe descriptor → store key encrypted). |
 | `POST /api/cms/website/provision` | Create a new site + issue its key + connect, in one action. |
 | `DELETE /api/cms/website/connection` | Disconnect (the CMS site and its content remain). |
-| `GET /api/cms/website/overview` | Descriptor + pages + products + orders (private, 30s SWR). |
+| `GET /api/cms/website/overview` | Descriptor + pages + posts + products + orders (private, 30s SWR). |
 | `GET /api/cms/website/dns` | DNS checklist state: does the domain resolve to the CMS (A/AAAA from here) + descriptor `domainVerified`. |
+| `POST /api/cms/website/posts`, `PATCH`/`DELETE /api/cms/website/posts/[id]` | Create/edit/delete a post. Always lands as a draft — a site key can never publish over the API (`writeUnlessPublishing`); publishing is a CMS-admin action. |
+| `POST /api/cms/website/products`, `PATCH`/`DELETE /api/cms/website/products/[id]` | Create/edit/delete a product. Same draft-only rule. |
+| `PATCH /api/cms/website/domain` | Move the connected site to a new domain (`updateSiteDomain` → CMS `PATCH /api/site/domain`, site-key only). Resets `domainVerified` server-side and updates the stored `site_domain`; the DNS checklist has to be re-run and the CMS-side box re-ticked. |
 | `PATCH /api/cms/website/orders/[id]` | Move an order status; the CMS settles stock & snapshot. |
+
+Pages stay read-only from this app — the block-based page builder is a CMS-admin surface, deliberately not duplicated here. «مدیریت محتوا در CMS» keeps that door open for anything this screen doesn't cover (page layout, media, nav, forms, publishing).
 
 ### DNS checklist + live preview
 
@@ -196,25 +201,38 @@ Landed directly in the `eshobe-cms` repo (not a patch to apply):
 - `src/endpoints/apiKeys.ts` — `POST /api/api-keys/issue`,
   `GET /api/api-keys/list`, `POST /api/api-keys/revoke` (platform-admin
   session or a platform key).
-- Access wiring: `pages`/`posts` read; `products` read/create/update/delete;
-  `orders` read/update (status only); `sites` read accepts a platform key too.
-  `categories`/`media`/`store` needed no change — already host-scoped public
-  reads with no draft state, which a site key's forwarded `Host` already
-  satisfies.
+- Access wiring: `pages` read only (page layout stays a CMS-admin surface —
+  see §5 below); `posts` and `products` read/create/update/delete, always
+  draft-only on a key-authorized write (`apiKeyCreateAware`/
+  `apiKeyUpdateAware` refuse `_status: "published"` — no key can publish);
+  `orders` read/update (status only); `sites` read accepts a platform key
+  too. `categories`/`media`/`store` needed no change — already host-scoped
+  public reads with no draft state, which a site key's forwarded `Host`
+  already satisfies.
 - `src/endpoints/siteDescriptor.ts` (`GET /api/site`) falls back to a site
   key when `Host` resolves nothing — the case WAVE-9 names explicitly
   ("a builder can call from a non-customer origin"); the fallback response is
   never publicly cached (`cache-control: private, no-store`), unlike the
-  `Host`-resolved one.
+  `Host`-resolved one. The response's `id` and `domainVerified` fields are
+  **only** included on that key-resolved, private response — never on the
+  public `Host`-resolved one (`tests/int/headless.int.spec.ts` pins the
+  omission), since both are internal to the site's own builder.
+- `src/endpoints/updateSiteDomain.ts` (`PATCH /api/site/domain`) — the one
+  write path onto `Sites` a credential can reach at all: `Sites.access.update`
+  stays `authenticated` (admin-session only) for everything else. Site-key
+  only, resets `domainVerified` to `false` on every change, and refuses a
+  domain already in use by another site.
 - `src/provisioning/provisionSite.ts` and `provisionSiteEndpoint` accept a
   platform key alongside a platform-admin session, at both the endpoint guard
   and the service function's own re-check.
-- `Caddyfile` — a new `@cms_content` carve-out for `/api/{pages,posts,products,
-  categories,store,orders}` on the customer-domain block. This app's client
-  forwards a site's domain as `Host` even when dialing the control-plane
-  origin (see §1 above), which routes there rather than to the control-plane
-  block; the application's access layer is the real boundary, the same trust
-  split `/api/site`'s pre-existing carve-out already made.
+- `Caddyfile` — a `@cms_content` carve-out for `/api/{pages,posts,products,
+  categories,store,orders}` on the customer-domain block, and a separate
+  `@site_domain` carve-out (`PATCH /api/site/domain` only) for the endpoint
+  above. This app's client forwards a site's domain as `Host` even when
+  dialing the control-plane origin (see §1 above), which routes there rather
+  than to the control-plane block; the application's access layer is the real
+  boundary, the same trust split `/api/site`'s pre-existing carve-out already
+  made.
 - `next.config.ts` — `SITE_PREVIEW_ORIGINS` extends the `frame-ancestors` CSP
   so this app's live-preview iframe (§"DNS checklist + live preview" above) is
   allowed to frame a customer site.

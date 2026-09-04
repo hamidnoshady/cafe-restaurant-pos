@@ -94,6 +94,18 @@ export async function deleteCmsConnection(businessId: string): Promise<void> {
 }
 
 /**
+ * After a successful `PATCH /api/site/domain` on the CMS, the stored
+ * `site_domain` must follow — it is what every later call forwards as `Host`
+ * (`cmsHeaders`) and what the DNS checklist's preview URL is built from.
+ */
+export async function updateCmsConnectionDomain(businessId: string, domain: string): Promise<void> {
+  await query(
+    `UPDATE eshobe_cms_connections SET site_domain = $2, updated_at = now() WHERE business_id = $1`,
+    [businessId, domain],
+  );
+}
+
+/**
  * The client config for one business — throws when the business has no CMS
  * connection (callers decide whether that is a 404 or a "not connected"
  * state) or when the stored ciphertext cannot be decrypted.

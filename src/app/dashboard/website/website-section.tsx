@@ -17,12 +17,23 @@ import { LoadingSkeleton, SectionCardSkeleton } from "@/app/dashboard/page-chrom
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { CircleCheckIcon, ExternalLinkIcon, GlobeIcon, PlugZapIcon, RefreshCwIcon, ShieldCheckIcon, Trash2Icon } from "lucide-react";
+import {
+  CircleCheckIcon,
+  ExternalLinkIcon,
+  GlobeIcon,
+  PencilIcon,
+  PlugZapIcon,
+  PlusIcon,
+  RefreshCwIcon,
+  ShieldCheckIcon,
+  Trash2Icon,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { formatPersianNumber, toPersianDigits } from "@/lib/digits";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { formatPersianNumber, toLatinDigits, toPersianDigits } from "@/lib/digits";
 import type { CmsConnectionSummary } from "@/lib/cms/connections";
-import type { CmsOrder, SiteDescriptor } from "@/lib/cms/types";
+import { lexicalToPlainText, type CmsOrder, type CmsPost, type CmsProduct, type SiteDescriptor } from "@/lib/cms/types";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cardClass, EmptyState, SectionCard, StatusBadge } from "../page-chrome";
 import { api, errorMessageOrRaw, Field, inputClass, PrimaryButton, SecondaryButton, ErrorBox } from "../ui";
@@ -80,6 +91,9 @@ export function WebsiteSection() {
   const [dnsLoading, setDnsLoading] = useState(false);
   const [previewReady, setPreviewReady] = useState(false);
   const [previewKey, setPreviewKey] = useState(0);
+  const [editingPost, setEditingPost] = useState<CmsPost | "new" | null>(null);
+  const [editingProduct, setEditingProduct] = useState<CmsProduct | "new" | null>(null);
+  const [editingDomain, setEditingDomain] = useState(false);
 
   const loadOverview = useCallback(() => {
     api<{ overview: WebsiteOverview }>("/api/cms/website/overview").then(({ ok, data }) => {
@@ -196,6 +210,8 @@ export function WebsiteSection() {
         loading={dnsLoading}
         onCheck={checkDns}
         baseUrl={connection.baseUrl}
+        currentDomain={connection.siteDomain}
+        onEditDomain={() => setEditingDomain(true)}
       />
 
       <PreviewCard
@@ -233,7 +249,52 @@ export function WebsiteSection() {
             )}
           </SectionCard>
 
-          <SectionCard title="محصولات" description="فروشگاه آنلاین (۵۰ محصول آخر).">
+          <SectionCard
+            title="نوشته‌ها"
+            description="مطالب وبلاگ سایت (۲۰ نوشتهٔ آخر). یک نوشتهٔ ساخته‌شده از این‌جا به‌صورت پیش‌نویس ذخیره می‌شود؛ انتشار آن از پنل CMS انجام می‌شود."
+            actions={
+              <SecondaryButton onClick={() => setEditingPost("new")}>
+                <PlusIcon className="size-4" />
+                نوشتهٔ جدید
+              </SecondaryButton>
+            }
+          >
+            {overview.posts.length === 0 ? (
+              <EmptyState>هنوز نوشته‌ای ساخته نشده است.</EmptyState>
+            ) : (
+              <ul className="divide-y divide-border">
+                {overview.posts.map((post) => (
+                  <li key={post.id} className="flex items-center justify-between gap-3 py-2.5">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-foreground">{post.title}</p>
+                      <p dir="ltr" className="truncate text-xs text-muted-foreground">
+                        /{post.slug}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <StatusBadge tone={post._status === "published" ? "positive" : "active"}>
+                        {STATUS_LABELS[post._status ?? "draft"]}
+                      </StatusBadge>
+                      <Button type="button" variant="outline" size="icon" onClick={() => setEditingPost(post)} aria-label={`ویرایش ${post.title}`}>
+                        <PencilIcon className="size-4" />
+                      </Button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </SectionCard>
+
+          <SectionCard
+            title="محصولات"
+            description="فروشگاه آنلاین (۵۰ محصول آخر). محصول ساخته‌شده از این‌جا پیش‌نویس است؛ انتشار از پنل CMS انجام می‌شود."
+            actions={
+              <SecondaryButton onClick={() => setEditingProduct("new")}>
+                <PlusIcon className="size-4" />
+                محصول جدید
+              </SecondaryButton>
+            }
+          >
             {overview.products.length === 0 ? (
               <EmptyState>فروشگاه هنوز محصولی ندارد.</EmptyState>
             ) : (
@@ -254,6 +315,15 @@ export function WebsiteSection() {
                       <StatusBadge tone={product._status === "published" ? "positive" : "active"}>
                         {STATUS_LABELS[product._status ?? "draft"]}
                       </StatusBadge>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        onClick={() => setEditingProduct(product)}
+                        aria-label={`ویرایش ${product.title}`}
+                      >
+                        <PencilIcon className="size-4" />
+                      </Button>
                     </div>
                   </li>
                 ))}
@@ -289,6 +359,40 @@ export function WebsiteSection() {
             }}
           />
         </>
+      ) : null}
+
+      {editingPost ? (
+        <PostDialog
+          post={editingPost === "new" ? null : editingPost}
+          onClose={() => setEditingPost(null)}
+          onSaved={() => {
+            setEditingPost(null);
+            loadOverview();
+          }}
+        />
+      ) : null}
+
+      {editingProduct ? (
+        <ProductDialog
+          product={editingProduct === "new" ? null : editingProduct}
+          currency={CURRENCY_LABELS[overview?.site.store.currency ?? "IRT"] ?? overview?.site.store.currency ?? ""}
+          onClose={() => setEditingProduct(null)}
+          onSaved={() => {
+            setEditingProduct(null);
+            loadOverview();
+          }}
+        />
+      ) : null}
+
+      {editingDomain ? (
+        <DomainDialog
+          currentDomain={connection.siteDomain}
+          onClose={() => setEditingDomain(false)}
+          onSaved={() => {
+            setEditingDomain(false);
+            reload();
+          }}
+        />
       ) : null}
     </div>
   );
@@ -393,26 +497,38 @@ function DnsChecklistCard({
   loading,
   onCheck,
   baseUrl,
+  currentDomain,
+  onEditDomain,
 }: {
   status: CmsDnsStatus | null;
   loading: boolean;
   onCheck: () => void;
   baseUrl: string;
+  currentDomain: string;
+  onEditDomain: () => void;
 }) {
+  const domainActions = (
+    <div className="flex flex-wrap gap-2">
+      <Button type="button" variant="outline" className="px-4" onClick={onEditDomain}>
+        <PencilIcon className="size-4" />
+        تغییر دامنه
+      </Button>
+      <SecondaryButton onClick={onCheck} disabled={loading}>
+        <RefreshCwIcon className="size-4" />
+        {loading ? "در حال بررسی…" : "بررسی DNS"}
+      </SecondaryButton>
+    </div>
+  );
+
   if (!status) {
     return (
-      <SectionCard title="دامنه و انتشار سایت" description="سه قدم تا فعال‌شدن سایت روی اینترنت.">
+      <SectionCard title="دامنه و انتشار سایت" description={`دامنهٔ فعلی: ${currentDomain}`}>
         {loading ? (
           <LoadingSkeleton rows={3} compact label="در حال بررسی وضعیت DNS" />
         ) : (
           <EmptyState>برای بررسی، «بررسی DNS» را بزنید.</EmptyState>
         )}
-        <div className="mt-3">
-          <SecondaryButton onClick={onCheck} disabled={loading}>
-            <RefreshCwIcon className="size-4" />
-            {loading ? "در حال بررسی…" : "بررسی DNS"}
-          </SecondaryButton>
-        </div>
+        <div className="mt-3">{domainActions}</div>
       </SectionCard>
     );
   }
@@ -426,13 +542,8 @@ function DnsChecklistCard({
   return (
     <SectionCard
       title="دامنه و انتشار سایت"
-      description="هر گام سبز شده یعنی آن بخش انجام شده است."
-      actions={
-        <SecondaryButton onClick={onCheck} disabled={loading}>
-          <RefreshCwIcon className="size-4" />
-          {loading ? "در حال بررسی…" : "بررسی DNS"}
-        </SecondaryButton>
-      }
+      description={`دامنهٔ فعلی: ${currentDomain} — هر گام سبز شده یعنی آن بخش انجام شده است.`}
+      actions={domainActions}
     >
       <ol className="space-y-2">
         {steps.map((step) => (
@@ -709,5 +820,272 @@ function ConnectPanel({
         )}
       </SectionCard>
     </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Posts, products and domain — create/edit/delete dialogs             */
+/* ------------------------------------------------------------------ */
+
+function PostDialog({
+  post,
+  onClose,
+  onSaved,
+}: {
+  post: CmsPost | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [title, setTitle] = useState(post?.title ?? "");
+  const [content, setContent] = useState(lexicalToPlainText(post?.content));
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const save = async () => {
+    setBusy(true);
+    setError("");
+    const { ok, data } = await api<{ error?: string }>(
+      post ? `/api/cms/website/posts/${post.id}` : "/api/cms/website/posts",
+      { method: post ? "PATCH" : "POST", body: JSON.stringify({ title: title.trim(), content }) },
+    );
+    setBusy(false);
+    if (!ok) {
+      setError(errorMessageOrRaw(data.error));
+      return;
+    }
+    toast.success(post ? "نوشته ذخیره شد." : "نوشته ساخته شد.");
+    onSaved();
+  };
+
+  const remove = async () => {
+    if (!post || !window.confirm(`«${post.title}» حذف شود؟`)) return;
+    setBusy(true);
+    const { ok, data } = await api<{ error?: string }>(`/api/cms/website/posts/${post.id}`, { method: "DELETE" });
+    setBusy(false);
+    if (!ok) {
+      setError(errorMessageOrRaw(data.error));
+      return;
+    }
+    toast.success("نوشته حذف شد.");
+    onSaved();
+  };
+
+  return (
+    <Dialog open onOpenChange={(next) => (next ? undefined : onClose())}>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{post ? `ویرایش نوشته` : "نوشتهٔ جدید"}</DialogTitle>
+        </DialogHeader>
+        <ErrorBox>{error}</ErrorBox>
+
+        <Field label="عنوان">
+          <input className={inputClass} value={title} onChange={(e) => setTitle(e.target.value)} />
+        </Field>
+        <Field label="متن نوشته" hint="هر خط، یک پاراگراف می‌شود. برای قالب‌بندی پیشرفته از پنل CMS استفاده کنید.">
+          <textarea className={inputClass} rows={8} value={content} onChange={(e) => setContent(e.target.value)} />
+        </Field>
+
+        <DialogFooter>
+          {post ? (
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={remove}
+              disabled={busy}
+              className="me-auto text-destructive hover:bg-destructive/10 hover:text-destructive"
+            >
+              حذف
+            </Button>
+          ) : null}
+          <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
+            انصراف
+          </Button>
+          <Button type="button" onClick={save} disabled={busy}>
+            {busy ? "در حال ذخیره…" : "ذخیره"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ProductDialog({
+  product,
+  currency,
+  onClose,
+  onSaved,
+}: {
+  product: CmsProduct | null;
+  currency: string;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [title, setTitle] = useState(product?.title ?? "");
+  const [summary, setSummary] = useState(product?.summary ?? "");
+  const [price, setPrice] = useState(product ? String(product.price) : "");
+  const [sku, setSku] = useState(product?.sku ?? "");
+  const [trackInventory, setTrackInventory] = useState(Boolean(product?.trackInventory));
+  const [inventory, setInventory] = useState(product?.inventory !== undefined && product?.inventory !== null ? String(product.inventory) : "");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const save = async () => {
+    setBusy(true);
+    setError("");
+    const { ok, data } = await api<{ error?: string }>(
+      product ? `/api/cms/website/products/${product.id}` : "/api/cms/website/products",
+      {
+        method: product ? "PATCH" : "POST",
+        body: JSON.stringify({
+          title: title.trim(),
+          summary: summary.trim() || undefined,
+          price: Number(toLatinDigits(price).replace(/[^\d]/g, "")) || 0,
+          sku: sku.trim() || undefined,
+          trackInventory,
+          inventory: trackInventory ? Number(toLatinDigits(inventory).replace(/[^\d]/g, "")) || 0 : undefined,
+        }),
+      },
+    );
+    setBusy(false);
+    if (!ok) {
+      setError(errorMessageOrRaw(data.error));
+      return;
+    }
+    toast.success(product ? "محصول ذخیره شد." : "محصول ساخته شد.");
+    onSaved();
+  };
+
+  const remove = async () => {
+    if (!product || !window.confirm(`«${product.title}» حذف شود؟`)) return;
+    setBusy(true);
+    const { ok, data } = await api<{ error?: string }>(`/api/cms/website/products/${product.id}`, { method: "DELETE" });
+    setBusy(false);
+    if (!ok) {
+      setError(errorMessageOrRaw(data.error));
+      return;
+    }
+    toast.success("محصول حذف شد.");
+    onSaved();
+  };
+
+  return (
+    <Dialog open onOpenChange={(next) => (next ? undefined : onClose())}>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{product ? "ویرایش محصول" : "محصول جدید"}</DialogTitle>
+        </DialogHeader>
+        <ErrorBox>{error}</ErrorBox>
+
+        <Field label="عنوان">
+          <input className={inputClass} value={title} onChange={(e) => setTitle(e.target.value)} />
+        </Field>
+        <Field label="توضیح کوتاه (اختیاری)">
+          <textarea className={inputClass} rows={2} value={summary} onChange={(e) => setSummary(e.target.value)} />
+        </Field>
+        <Field label={`قیمت (${currency})`}>
+          <input
+            className={inputClass}
+            value={toPersianDigits(price)}
+            onChange={(e) => setPrice(toLatinDigits(e.target.value).replace(/[^\d]/g, ""))}
+          />
+        </Field>
+        <Field label="کد کالا (اختیاری)">
+          <input className={inputClass} dir="ltr" value={sku} onChange={(e) => setSku(e.target.value)} />
+        </Field>
+        <label className="mb-3 flex items-center gap-2 text-sm text-foreground">
+          <input
+            type="checkbox"
+            checked={trackInventory}
+            onChange={(e) => setTrackInventory(e.target.checked)}
+            className="size-4 rounded border-input"
+          />
+          موجودی را بشمار
+        </label>
+        {trackInventory ? (
+          <Field label="موجودی">
+            <input
+              className={inputClass}
+              value={toPersianDigits(inventory)}
+              onChange={(e) => setInventory(toLatinDigits(e.target.value).replace(/[^\d]/g, ""))}
+            />
+          </Field>
+        ) : null}
+
+        <DialogFooter>
+          {product ? (
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={remove}
+              disabled={busy}
+              className="me-auto text-destructive hover:bg-destructive/10 hover:text-destructive"
+            >
+              حذف
+            </Button>
+          ) : null}
+          <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
+            انصراف
+          </Button>
+          <Button type="button" onClick={save} disabled={busy}>
+            {busy ? "در حال ذخیره…" : "ذخیره"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function DomainDialog({
+  currentDomain,
+  onClose,
+  onSaved,
+}: {
+  currentDomain: string;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [domain, setDomain] = useState(currentDomain);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const save = async () => {
+    setBusy(true);
+    setError("");
+    const { ok, data } = await api<{ error?: string }>("/api/cms/website/domain", {
+      method: "PATCH",
+      body: JSON.stringify({ domain: domain.trim() }),
+    });
+    setBusy(false);
+    if (!ok) {
+      setError(errorMessageOrRaw(data.error));
+      return;
+    }
+    toast.success("دامنه تغییر کرد؛ حالا باید دوباره تأیید شود.");
+    onSaved();
+  };
+
+  return (
+    <Dialog open onOpenChange={(next) => (next ? undefined : onClose())}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>تغییر دامنه</DialogTitle>
+        </DialogHeader>
+        <ErrorBox>{error}</ErrorBox>
+        <p className="mb-3 text-xs leading-5 text-muted-foreground">
+          پس از تغییر، وضعیت «تأیید دامنه» بازنشانی می‌شود و باید دوباره DNS تنظیم و در پنل CMS تأیید شود.
+        </p>
+        <Field label="دامنهٔ جدید" hint="فقط میزبان — مثل acme.ir">
+          <input className={inputClass} dir="ltr" value={domain} onChange={(e) => setDomain(e.target.value)} />
+        </Field>
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
+            انصراف
+          </Button>
+          <Button type="button" onClick={save} disabled={busy}>
+            {busy ? "در حال ذخیره…" : "ذخیره"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
