@@ -85,6 +85,50 @@ export interface LexicalRoot {
   [key: string]: unknown;
 }
 
+/**
+ * Builds a minimal valid Lexical document from plain paragraphs — there is no
+ * rich-text editor on the POS side, so a post's body is written as plain
+ * text (one paragraph per non-empty line) and wrapped in the JSON shape
+ * `posts.content` requires. Mirrors `src/provisioning/richText.ts` on the
+ * eshobe-cms side, which does the same for seeded/provisioned content.
+ */
+export function simpleLexicalRoot(text: string, direction: "ltr" | "rtl" = "rtl"): LexicalRoot {
+  const paragraphs = text.split(/\n+/).map((line) => line.trim()).filter(Boolean);
+  const children = (paragraphs.length ? paragraphs : [""]).map((line) => ({
+    type: "paragraph",
+    children: [{ type: "text", detail: 0, format: 0, mode: "normal", style: "", text: line, version: 1 }],
+    direction,
+    format: "",
+    indent: 0,
+    textFormat: 0,
+    textStyle: "",
+    version: 1,
+  }));
+  return {
+    root: { type: "root", children, direction, format: "", indent: 0, version: 1 },
+  };
+}
+
+/**
+ * The inverse of `simpleLexicalRoot`, for pre-filling the edit form: one line
+ * per top-level block, text nodes concatenated. A post written in the CMS's
+ * own rich-text editor (headings, bold, embedded blocks) flattens to plain
+ * text here — editing it from the POS and saving loses that formatting,
+ * which is the accepted cost of not shipping a second rich-text editor.
+ */
+export function lexicalToPlainText(root: LexicalRoot | null | undefined): string {
+  const extract = (node: unknown): string => {
+    if (!node || typeof node !== "object") return "";
+    const n = node as { text?: unknown; children?: unknown[] };
+    if (typeof n.text === "string") return n.text;
+    if (Array.isArray(n.children)) return n.children.map(extract).join("");
+    return "";
+  };
+  const children = root?.root?.children;
+  if (!Array.isArray(children)) return "";
+  return children.map(extract).join("\n");
+}
+
 export interface CmsMedia {
   id: string;
   alt?: string | null;

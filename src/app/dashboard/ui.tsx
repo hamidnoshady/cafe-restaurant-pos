@@ -275,6 +275,12 @@ const ERROR_MESSAGES: Record<string, string> = {
     not_connected: "هنوز اتصالی به سایت برقرار نشده است.",
     cms_config_error: "مشکل در دادهٔ ذخیره‌شدهٔ اتصال؛ دوباره متصل شوید.",
     cms_error: "خطا از سمت سرور سایت؛ بعداً دوباره تلاش کنید.",
+    // Post/product/domain management from the Website app (post-#378 CRUD)
+    title_required: "عنوان الزامی است.",
+    content_required: "متن نوشته الزامی است.",
+    invalid_price: "قیمت باید عدد صحیح و غیرمنفی باشد.",
+    invalid_inventory: "موجودی باید عدد صحیح و غیرمنفی باشد.",
+    domain_taken: "این دامنه قبلاً برای سایت دیگری ثبت شده است.",
 };
 
 export function errorMessage(code: string | undefined): string {

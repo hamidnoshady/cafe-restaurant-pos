@@ -16,16 +16,24 @@ import { promises as dns } from "node:dns";
 import {
   CmsApiError,
   CmsNetworkError,
+  createPost,
+  createProduct,
+  deletePost,
+  deleteProduct,
   fetchOrders,
   fetchPages,
+  fetchPosts,
   fetchProducts,
   fetchSiteDescriptor,
   issueSiteApiKey,
   provisionSite,
   updateOrderStatus,
+  updatePost,
+  updateProduct,
+  updateSiteDomain as updateSiteDomainOnCms,
   type CmsConfig,
 } from "./client";
-import type { CmsOrder, CmsPage, CmsProduct, SiteDescriptor } from "./types";
+import { simpleLexicalRoot, type CmsOrder, type CmsPage, type CmsPost, type CmsProduct, type SiteDescriptor } from "./types";
 import { cmsPlatformConfig } from "./config";
 import { dnsHint, ipsOverlap, type DnsCheck } from "./dns";
 import {
@@ -34,6 +42,7 @@ import {
   getCmsConfigForBusiness,
   listCmsConnections,
   saveCmsConnection,
+  updateCmsConnectionDomain,
   type CmsConnectionSummary,
 } from "./connections";
 
@@ -165,6 +174,7 @@ export async function disconnectCmsWebsite(businessId: string): Promise<void> {
 export interface WebsiteOverview {
   site: SiteDescriptor;
   pages: CmsPage[];
+  posts: CmsPost[];
   products: CmsProduct[];
   orders: CmsOrder[];
 }
@@ -179,17 +189,242 @@ export async function cmsWebsiteOverview(businessId: string): Promise<WebsiteRes
   }
 
   try {
-    const [site, pages, products, orders] = await Promise.all([
+    const [site, pages, posts, products, orders] = await Promise.all([
       fetchSiteDescriptor(config),
       fetchPages(config, { limit: 20 }),
+      fetchPosts(config, { limit: 20 }),
       fetchProducts(config, { limit: 50 }),
       fetchOrders(config, { limit: 50 }),
     ]);
-    return { ok: true, data: { site, pages: pages.docs, products: products.docs, orders: orders.docs } };
+    return {
+      ok: true,
+      data: { site, pages: pages.docs, posts: posts.docs, products: products.docs, orders: orders.docs },
+    };
   } catch (error) {
     if (error instanceof CmsNetworkError) return { ok: false, error: "cms_unreachable" };
     if (error instanceof CmsApiError && error.status === 404) return { ok: false, error: "not_connected" };
     return { ok: false, error: "cms_error" };
+  }
+}
+
+/** Shared 4xx/5xx → `WebsiteResult` error-code mapping for the CRUD writes below. */
+function mapCmsWriteError(error: unknown): WebsiteResult<never> {
+  if (error instanceof CmsNetworkError) return { ok: false, error: "cms_unreachable" };
+  if (error instanceof CmsApiError) {
+    if (error.status === 404) return { ok: false, error: "not_found" };
+    if (error.status === 403) return { ok: false, error: "forbidden" };
+    if (error.status === 409) return { ok: false, error: "domain_taken" };
+  }
+  return { ok: false, error: "cms_error" };
+}
+
+export interface CmsPostInput {
+  title: string;
+  content: string;
+  heroImage?: string;
+  categories?: string[];
+}
+
+function validatePostInput(
+  input: Partial<CmsPostInput>,
+  opts: { requireAll: boolean },
+): { ok: false; error: string } | null {
+  if ((opts.requireAll || input.title !== undefined) && !input.title?.trim()) {
+    return { ok: false, error: "title_required" };
+  }
+  if (input.title !== undefined && input.title.trim().length > 200) return { ok: false, error: "field_too_long" };
+  if ((opts.requireAll || input.content !== undefined) && !input.content?.trim()) {
+    return { ok: false, error: "content_required" };
+  }
+  return null;
+}
+
+export async function createCmsPost(businessId: string, input: CmsPostInput): Promise<WebsiteResult<CmsPost>> {
+  const invalid = validatePostInput(input, { requireAll: true });
+  if (invalid) return invalid;
+
+  let config: CmsConfig;
+  try {
+    config = await getCmsConfigForBusiness(businessId);
+  } catch {
+    return { ok: false, error: "not_connected" };
+  }
+
+  try {
+    const post = await createPost(config, {
+      title: input.title.trim(),
+      content: simpleLexicalRoot(input.content),
+      heroImage: input.heroImage,
+      categories: input.categories,
+    });
+    return { ok: true, data: post };
+  } catch (error) {
+    return mapCmsWriteError(error);
+  }
+}
+
+export async function updateCmsPost(
+  businessId: string,
+  id: string,
+  input: Partial<CmsPostInput>,
+): Promise<WebsiteResult<CmsPost>> {
+  const invalid = validatePostInput(input, { requireAll: false });
+  if (invalid) return invalid;
+
+  let config: CmsConfig;
+  try {
+    config = await getCmsConfigForBusiness(businessId);
+  } catch {
+    return { ok: false, error: "not_connected" };
+  }
+
+  try {
+    const post = await updatePost(config, id, {
+      ...(input.title !== undefined ? { title: input.title.trim() } : {}),
+      ...(input.content !== undefined ? { content: simpleLexicalRoot(input.content) } : {}),
+      ...(input.heroImage !== undefined ? { heroImage: input.heroImage } : {}),
+      ...(input.categories !== undefined ? { categories: input.categories } : {}),
+    });
+    return { ok: true, data: post };
+  } catch (error) {
+    return mapCmsWriteError(error);
+  }
+}
+
+export async function deleteCmsPost(businessId: string, id: string): Promise<WebsiteResult<null>> {
+  let config: CmsConfig;
+  try {
+    config = await getCmsConfigForBusiness(businessId);
+  } catch {
+    return { ok: false, error: "not_connected" };
+  }
+
+  try {
+    await deletePost(config, id);
+    return { ok: true, data: null };
+  } catch (error) {
+    return mapCmsWriteError(error);
+  }
+}
+
+export interface CmsProductInput {
+  title: string;
+  price: number;
+  summary?: string;
+  image?: string;
+  sku?: string;
+  trackInventory?: boolean;
+  inventory?: number;
+  compareAtPrice?: number;
+}
+
+function validateProductInput(
+  input: Partial<CmsProductInput>,
+  opts: { requireAll: boolean },
+): { ok: false; error: string } | null {
+  if ((opts.requireAll || input.title !== undefined) && !input.title?.trim()) {
+    return { ok: false, error: "title_required" };
+  }
+  if (input.title !== undefined && input.title.trim().length > 200) return { ok: false, error: "field_too_long" };
+  if (opts.requireAll || input.price !== undefined) {
+    if (!Number.isInteger(input.price) || (input.price as number) < 0) return { ok: false, error: "invalid_price" };
+  }
+  if (input.compareAtPrice !== undefined && (!Number.isInteger(input.compareAtPrice) || input.compareAtPrice < 0)) {
+    return { ok: false, error: "invalid_price" };
+  }
+  if (input.inventory !== undefined && (!Number.isInteger(input.inventory) || input.inventory < 0)) {
+    return { ok: false, error: "invalid_inventory" };
+  }
+  return null;
+}
+
+export async function createCmsProduct(businessId: string, input: CmsProductInput): Promise<WebsiteResult<CmsProduct>> {
+  const invalid = validateProductInput(input, { requireAll: true });
+  if (invalid) return invalid;
+
+  let config: CmsConfig;
+  try {
+    config = await getCmsConfigForBusiness(businessId);
+  } catch {
+    return { ok: false, error: "not_connected" };
+  }
+
+  try {
+    const product = await createProduct(config, { ...input, title: input.title.trim() });
+    return { ok: true, data: product };
+  } catch (error) {
+    return mapCmsWriteError(error);
+  }
+}
+
+export async function updateCmsProduct(
+  businessId: string,
+  id: string,
+  input: Partial<CmsProductInput>,
+): Promise<WebsiteResult<CmsProduct>> {
+  const invalid = validateProductInput(input, { requireAll: false });
+  if (invalid) return invalid;
+
+  let config: CmsConfig;
+  try {
+    config = await getCmsConfigForBusiness(businessId);
+  } catch {
+    return { ok: false, error: "not_connected" };
+  }
+
+  try {
+    const product = await updateProduct(config, id, {
+      ...input,
+      ...(input.title !== undefined ? { title: input.title.trim() } : {}),
+    });
+    return { ok: true, data: product };
+  } catch (error) {
+    return mapCmsWriteError(error);
+  }
+}
+
+export async function deleteCmsProduct(businessId: string, id: string): Promise<WebsiteResult<null>> {
+  let config: CmsConfig;
+  try {
+    config = await getCmsConfigForBusiness(businessId);
+  } catch {
+    return { ok: false, error: "not_connected" };
+  }
+
+  try {
+    await deleteProduct(config, id);
+    return { ok: true, data: null };
+  } catch (error) {
+    return mapCmsWriteError(error);
+  }
+}
+
+/**
+ * Moves the connected site to a new domain: validate the format, call the
+ * CMS (which resets `domainVerified` server-side), then keep the stored
+ * connection's `site_domain` in step — every later call forwards it as
+ * `Host`, and the DNS checklist's preview URL is built from it.
+ */
+export async function updateCmsSiteDomain(
+  businessId: string,
+  domain: string,
+): Promise<WebsiteResult<{ domain: string; domainVerified: boolean }>> {
+  const normalized = domain.trim().toLowerCase().replace(/\.$/, "");
+  if (!DOMAIN_RE.test(normalized)) return { ok: false, error: "invalid_domain" };
+
+  let config: CmsConfig;
+  try {
+    config = await getCmsConfigForBusiness(businessId);
+  } catch {
+    return { ok: false, error: "not_connected" };
+  }
+
+  try {
+    const result = await updateSiteDomainOnCms(config, normalized);
+    await updateCmsConnectionDomain(businessId, result.domain);
+    return { ok: true, data: result };
+  } catch (error) {
+    return mapCmsWriteError(error);
   }
 }
 

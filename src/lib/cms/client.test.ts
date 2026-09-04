@@ -8,11 +8,15 @@ import {
   cmsQueryString,
   cmsRequest,
   cmsUrl,
+  createPost,
+  deletePost,
   fetchPages,
   fetchSiteDescriptor,
   issueSiteApiKey,
   normalizeCmsBaseUrl,
   provisionSite,
+  updatePost,
+  updateSiteDomain,
   type CmsConfig,
   type FetchLike,
 } from "./client";
@@ -138,6 +142,36 @@ describe("typed helpers", () => {
     const key = fakeFetch(201, { id: "k1", key: "eshobe_live_xyz", prefix: "eshobe_live_xyz", role: "site", name: "POS" });
     await issueSiteApiKey(CONFIG, { siteId: "s1", name: "POS", role: "site" }, { fetchImpl: key.fetchImpl });
     expect(key.calls[0][0]).toBe("https://cms.eshobe.com/api/api-keys/issue");
+  });
+});
+
+describe("post writes", () => {
+  it("createPost/updatePost/deletePost hit the right path and method", async () => {
+    const create = fakeFetch(201, { id: "post1", title: "خبر تازه" });
+    await createPost(CONFIG, { title: "خبر تازه", content: { root: {} } }, { fetchImpl: create.fetchImpl });
+    expect(create.calls[0][0]).toBe("https://cms.eshobe.com/api/posts");
+    expect(create.calls[0][1].method).toBe("POST");
+
+    const update = fakeFetch(200, { id: "post1", title: "ویرایش‌شده" });
+    await updatePost(CONFIG, "post1", { title: "ویرایش‌شده" }, { fetchImpl: update.fetchImpl });
+    expect(update.calls[0][0]).toBe("https://cms.eshobe.com/api/posts/post1");
+    expect(update.calls[0][1].method).toBe("PATCH");
+
+    const del = fakeFetch(200, null);
+    await deletePost(CONFIG, "post1", { fetchImpl: del.fetchImpl });
+    expect(del.calls[0][0]).toBe("https://cms.eshobe.com/api/posts/post1");
+    expect(del.calls[0][1].method).toBe("DELETE");
+  });
+});
+
+describe("updateSiteDomain", () => {
+  it("PATCHes /api/site/domain with the new domain", async () => {
+    const { fetchImpl, calls } = fakeFetch(200, { domain: "acme-new.ir", domainVerified: false });
+    const result = await updateSiteDomain(CONFIG, "acme-new.ir", { fetchImpl });
+    expect(calls[0][0]).toBe("https://cms.eshobe.com/api/site/domain");
+    expect(calls[0][1].method).toBe("PATCH");
+    expect(JSON.parse(String(calls[0][1].body))).toEqual({ domain: "acme-new.ir" });
+    expect(result).toEqual({ domain: "acme-new.ir", domainVerified: false });
   });
 });
 
