@@ -29,6 +29,7 @@
 import { accessibleLocationIds } from "./location-access";
 import type { Role } from "./auth";
 import { query, withoutTenantScope, withTenant } from "./db";
+import { assertPublicHttpsUrl } from "./ssrf";
 import {
   defaultRuleFor,
   isNotificationChannel,
@@ -208,7 +209,15 @@ export async function registerNotificationDevice(
   const p256dh = typeof input.p256dh === "string" ? input.p256dh.trim() : "";
   const auth = typeof input.auth === "string" ? input.auth.trim() : "";
   if (!endpoint || !p256dh || !auth) return { ok: false, error: "notification_device_invalid" };
-  if (!/^https:\/\//i.test(endpoint)) return { ok: false, error: "notification_device_invalid" };
+  // `https://` was the whole check here, which made this the app's most reachable
+  // SSRF: any signed-in member could register an "endpoint" of
+  // `https://10.0.0.5:8120/` and have the notification tick POST to it from inside
+  // the private network, learning from `notification_deliveries.last_error` which
+  // internal ports answered. A real push endpoint is a public URL belonging to
+  // Apple, Google or Mozilla, so requiring one costs nothing.
+  if ((await assertPublicHttpsUrl(endpoint)).ok === false) {
+    return { ok: false, error: "notification_device_invalid" };
+  }
   // Reject a subscription whose keys cannot encrypt, here rather than at send
   // time: a stored row that can never be pushed to is a device the settings
   // screen would show as working forever.
@@ -608,6 +617,14 @@ async function sendPush(input: {
       status: null,
       error: error instanceof Error ? error.message : String(error),
     };
+  }
+
+  // Re-checked here and not only at registration: this is the moment the request
+  // actually leaves, and the name in a row stored days ago may resolve somewhere
+  // else by now.
+  const target = await assertPublicHttpsUrl(request.url);
+  if (!target.ok) {
+    return { outcome: "rejected", status: null, error: `endpoint_not_public: ${target.reason}` };
   }
 
   try {

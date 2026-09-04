@@ -18,6 +18,7 @@
  * codes exist to be read off paper by someone already having a bad day.
  */
 import bcrypt from "bcryptjs";
+import { BCRYPT_COST } from "@/lib/password-hashing";
 import { randomBytes } from "node:crypto";
 import { PAIRING_CODE_ALPHABET, foldDigits } from "./code-alphabet";
 import { query, withoutTenantScope } from "./db";
@@ -30,8 +31,6 @@ export const RECOVERY_CODE_LENGTH = 10;
 
 /** Where the display hyphen goes — `ABCDE-FGHJK`. Cosmetic; never stored. */
 const GROUP_SIZE = 5;
-
-const BCRYPT_COST = 10;
 
 /** Anything that can run a parameterised query — the pool, or a transaction client. */
 interface Executor {

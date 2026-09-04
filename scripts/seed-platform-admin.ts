@@ -18,6 +18,7 @@
  */
 import "dotenv/config";
 import bcrypt from "bcryptjs";
+import { BCRYPT_COST } from "../src/lib/password-hashing";
 import { Client } from "pg";
 
 const VALID_ROLES = ["support", "engineer", "owner"] as const;
@@ -55,7 +56,7 @@ async function main() {
     // unprivileged app role.
     await client.query("SELECT set_config('app.rls_bypass', 'on', true)");
 
-    const passwordHash = await bcrypt.hash(password, 10);
+    const passwordHash = await bcrypt.hash(password, BCRYPT_COST);
     const { rows } = await client.query<{ id: string; created: boolean }>(
       `INSERT INTO platform_admins (email, password_hash, full_name, role)
        VALUES ($1, $2, $3, $4::platform_admin_role)

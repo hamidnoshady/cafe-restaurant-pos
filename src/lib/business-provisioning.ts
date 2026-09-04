@@ -12,6 +12,7 @@
  * transactional behaviour is covered by the tenancy integration test.
  */
 import bcrypt from "bcryptjs";
+import { BCRYPT_COST } from "@/lib/password-hashing";
 import type { PoolClient } from "pg";
 import { getPool, withoutTenantScope } from "./db";
 import {
@@ -326,7 +327,7 @@ export async function provisionBusiness(
         const { rows } = await client.query<{ id: string }>(
           `INSERT INTO platform_users (email, password_hash, full_name)
            VALUES ($1, $2, $3) RETURNING id`,
-          [email, await bcrypt.hash(input.password, 10), ownerName],
+          [email, await bcrypt.hash(input.password, BCRYPT_COST), ownerName],
         );
         platformUserId = rows[0].id;
       }

@@ -10,6 +10,7 @@
  * through `createMembership` is what keeps that from happening again.
  */
 import bcrypt from "bcryptjs";
+import { BCRYPT_COST } from "@/lib/password-hashing";
 import type { PoolClient } from "pg";
 import { getPool, query, withoutTenantScope } from "./db";
 import type { Role } from "./auth-edge";
@@ -237,7 +238,7 @@ export async function createMembership(
         const { rows } = await client.query<{ id: string }>(
           `INSERT INTO platform_users (email, password_hash, full_name)
            VALUES ($1, $2, $3) RETURNING id`,
-          [email, await bcrypt.hash(input.password, 10), fullName],
+          [email, await bcrypt.hash(input.password, BCRYPT_COST), fullName],
         );
         platformUserId = rows[0].id;
       }
@@ -256,7 +257,7 @@ export async function createMembership(
       }
     }
 
-    const pinHash = input.pin ? await bcrypt.hash(input.pin, 10) : null;
+    const pinHash = input.pin ? await bcrypt.hash(input.pin, BCRYPT_COST) : null;
 
     const { rows: created } = await client.query<{ id: string }>(
       `INSERT INTO users
@@ -536,7 +537,7 @@ export async function setPin(
     await client.query("BEGIN");
     const { rowCount } = await client.query(
       "UPDATE users SET pin_hash = $3, updated_at = now() WHERE id = $1 AND business_id = $2",
-      [userId, businessId, await bcrypt.hash(pin, 10)],
+      [userId, businessId, await bcrypt.hash(pin, BCRYPT_COST)],
     );
     if (!rowCount) {
       await client.query("ROLLBACK");
@@ -581,7 +582,7 @@ export async function setPassword(
   if (!rows[0]) throw new TeamError("not_found", 404);
   if (!platformUserId) throw new TeamError("no_login", 409);
 
-  const hash = await bcrypt.hash(newPassword, 10);
+  const hash = await bcrypt.hash(newPassword, BCRYPT_COST);
   // Not "platform" administration — an owner acting inside their own business
   // triggered this. The bypass is narrow and already justified by the lookup
   // above: platformUserId was only ever reached via a users row this business
@@ -911,7 +912,7 @@ export async function acceptInvitation(
          VALUES ($1, $2, $3) RETURNING id`,
         [
           invitation.email,
-          await bcrypt.hash(password, 10),
+          await bcrypt.hash(password, BCRYPT_COST),
           invitation.full_name,
         ],
       );
