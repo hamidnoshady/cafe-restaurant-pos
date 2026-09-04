@@ -79,6 +79,39 @@ export function parseHost(host: string | null | undefined, rootDomain: string | 
   return { kind: "business", label };
 }
 
+/**
+ * The first DNS label of a hostname — `titea` for `titea.app.eshobe.com`.
+ *
+ * `parseHost` is the answer when host tenancy is ON: it knows ROOT_DOMAIN, so
+ * it can say whether a name is the apex, the console or a business. This is
+ * the much weaker question that is still worth asking when host tenancy is
+ * OFF — a deployment with no `ROOT_DOMAIN`, or one holding
+ * `SUBDOMAIN_ROUTING=off` while its wildcard certificate is sorted out.
+ *
+ * There, `parseHost` returns "unknown" for every request and the login family
+ * had nothing left to identify a tenant with but "the only active business",
+ * which on a platform holding two is `business_required` — the staff picker
+ * then failed with «دریافت فهرست کارکنان ممکن نشد» on an origin that plainly
+ * names its business, while the owner's email login (which resolves a tenant
+ * from the person's memberships instead) kept working. DNS is already
+ * routing `{subdomain}.{whatever}` here; reading that first label is enough
+ * to ask the database whether a business owns it.
+ *
+ * Returns "" for anything that cannot be a business label: a bare name with
+ * no dot (`localhost`), an IPv4 literal, an IPv6 literal. A label that
+ * survives is still only a *candidate* — nothing is decided until a
+ * `businesses` row claims it.
+ */
+export function leadingHostLabel(host: string | null | undefined): string {
+  const name = normalizeHost(host ?? "");
+  // IPv6 literals keep their colons after normalizeHost strips the port.
+  if (!name || name.includes(":")) return "";
+  if (/^\d+(?:\.\d+)*$/.test(name)) return "";
+  const dot = name.indexOf(".");
+  if (dot <= 0) return "";
+  return name.slice(0, dot);
+}
+
 /** `{label}.{root}` — for redirects to a business's own origin. */
 export function businessHost(label: string, rootDomain: string): string {
   return `${label}.${rootDomain.trim().toLowerCase().replace(/^\.+|\.+$/g, "")}`;

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   businessHost,
+  leadingHostLabel,
   normalizeHost,
   parseHost,
   preferredProto,
@@ -78,6 +79,37 @@ describe("parseHost", () => {
 
   it("tolerates a root domain written with stray dots", () => {
     expect(parseHost(`acme.${ROOT}`, `.${ROOT}.`)).toEqual({ kind: "business", label: "acme" });
+  });
+});
+
+describe("leadingHostLabel — naming a tenant when host routing is off", () => {
+  it("reads the first label of a real hostname", () => {
+    expect(leadingHostLabel("titea.app.eshobe.com")).toBe("titea");
+    expect(leadingHostLabel("TITEA.app.eshobe.com:3000")).toBe("titea");
+    expect(leadingHostLabel("biz-1a2b3c4d.pos.eshobe.com.")).toBe("biz-1a2b3c4d");
+  });
+
+  it("refuses everything that cannot be a business label", () => {
+    // A bare name has no label below anything, an address literal has no
+    // labels at all, and a candidate that survived either would go on to be
+    // matched against `businesses.subdomain` — cheap to refuse here instead.
+    expect(leadingHostLabel("localhost")).toBe("");
+    expect(leadingHostLabel("localhost:3000")).toBe("");
+    expect(leadingHostLabel("10.0.0.5")).toBe("");
+    expect(leadingHostLabel("203.0.113.10:3000")).toBe("");
+    expect(leadingHostLabel("[::1]:3000")).toBe("");
+    expect(leadingHostLabel("")).toBe("");
+    expect(leadingHostLabel(null)).toBe("");
+    expect(leadingHostLabel(undefined)).toBe("");
+  });
+
+  it("is not parseHost: it knows nothing about ROOT_DOMAIN, apex or console", () => {
+    // Which is the whole point — it is asked precisely when parseHost has
+    // already answered "unknown" for every host on the deployment. The label
+    // it returns is a candidate the database still has to claim.
+    expect(parseHost("titea.app.eshobe.com", "")).toEqual({ kind: "unknown", label: "" });
+    expect(leadingHostLabel("titea.app.eshobe.com")).toBe("titea");
+    expect(leadingHostLabel("admin.app.eshobe.com")).toBe("admin");
   });
 });
 

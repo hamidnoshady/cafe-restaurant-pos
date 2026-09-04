@@ -779,6 +779,18 @@ not issue `*.$ROOT_DOMAIN` over an HTTP-01 challenge, so the Traefik certresolve
 `WEBAUTHN_RP_ID` defaults to `ROOT_DOMAIN` for the same reason biometric login needs it to: a
 browser only accepts an RP ID that is a registrable suffix of the page's origin.
 
+**With the switch off, the staff login still reads the host — as a hint, not a boundary.** A
+platform that serves `{subdomain}.{domain}` while `ROOT_DOMAIN` is unset (or held at
+`SUBDOMAIN_ROUTING=off` until its wildcard certificate issues) parses every host as unknown, and
+the staff quick login — which is the whole of a business origin's front door since the login split
+— then has nothing to name a tenant with. So the PIN-login family matches the hostname's first
+label against `businesses.subdomain` (and its rename aliases) before falling back to "the only
+active business": `titea.app.eshobe.com` finds titea whether or not host tenancy is switched on.
+Nothing is guessed — the label decides nothing unless a business row claims it, and a host that
+matches none is still refused rather than pointed at some other shop. This is *not* the isolation
+boundary; that is `ROOT_DOMAIN` plus the host-scoped cookie, and it is still what you want in
+production.
+
 **Behind a managed platform rather than Traefik, set `TRUST_FORWARDED_HOST=on`.** A PaaS/CDN edge
 routes by hostname itself and gives the container an internal `Host` (`web-1234.internal:3000`),
 leaving the browser's hostname in `X-Forwarded-Host`. Tenancy is decided from `Host` by default —
