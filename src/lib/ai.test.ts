@@ -388,8 +388,23 @@ describe("Phase 31 — autopilot tagging of the action catalogue", () => {
         // by removing it, a note by deleting the row it inserted.
         "crm.customer.tag",
         "crm.customer.note",
+        // Phase 38 — the website's three DRAFTING writes. Each produces
+        // something a human still publishes or reviews; none reaches the
+        // public. `website.post.publish` is deliberately not in this list.
+        "website.post.draft",
+        "website.post.update",
+        "website.product.upsert",
       ].sort(),
     );
+  });
+
+  it("Phase 38 — never lets publishing a website post run unattended", () => {
+    const publish = ACTION_CATALOG["website.post.publish"];
+    expect(publish.alwaysConfirm).toBe(true);
+    expect(publish.autopilotCategory).toBeUndefined();
+    expect(publish.executor).toBeUndefined();
+    // And the only alwaysConfirm action so far is that one — a second entry is a decision.
+    expect(ACTION_TYPES.filter((t) => ACTION_CATALOG[t].alwaysConfirm)).toEqual(["website.post.publish"]);
   });
 
   it("gives the assistant no way to change consent or merge a customer", () => {

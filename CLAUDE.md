@@ -593,10 +593,11 @@ Since Phase 35 the app can reach a person who is not looking at a screen, over *
   physical count under `/dashboard/stock` (`/api/stock/counts*`). Both inherit an existing
   module (`inventory` and `stock` respectively) with **no new gating**, the way Phase 29's
   production tab does — gate a new tab, never the hub.
-- **Connections (Phase 28, Phase 34)** — everything a business connects *to* lives behind one hub,
-  `/dashboard/connections` (`src/lib/connection-kinds.ts`), with four kinds: the desktop
-  install, a WooCommerce store, developer API keys for `/api/v1`, and (Phase 34) the MCP
-  connector an owner points their own Claude/ChatGPT/Codex at. The page is
+- **Connections (Phase 28, Phase 34, Phase 38w)** — everything a business connects *to* lives behind one hub,
+  `/dashboard/connections` (`src/lib/connection-kinds.ts`), with five kinds: the desktop
+  install, a WooCommerce store (now WP Manager's, hidden from the hub), Holoo, the business's
+  **website** (Phase 38w — owner-only, `integrations`), developer API keys for `/api/v1`, and
+  (Phase 34) the MCP connector an owner points their own Claude/ChatGPT/Codex at. The page is
   deliberately **not** feature-gated — its tabs have three different entitlements and one
   (desktop pairing) has none — so gate a new tab, never the hub. Two rules carry the
   history: a desktop install is claimed with a **pairing code** issued by the Owner from
@@ -628,6 +629,20 @@ Since Phase 35 the app can reach a person who is not looking at a screen, over *
   root app (own dependencies: `electron`, `electron-builder`, `embedded-postgres`).
 - `docs/phases/*.md` — one file per phase: scope, exit criteria, open questions, and (once
   built) the decisions made and where each exit criterion is satisfied in code.
+- **The website is a shop window; the source of truth is here (Phase 38w).** «سایت ویترین است؛
+  منبع حقیقت اینجاست.» Product, price and stock flow **one way**, from this app to the site,
+  through `website_outbox` (`src/lib/website/sync-service.ts`) — the site never writes a price or
+  a quantity back, and nothing in this repo reads one from it. Every call to the site goes through
+  a `WebsiteAdapter` (`src/lib/website/adapter.ts`): money is integer Rial on both sides of that
+  interface (the adapter converts to the site's unit from `site_currency`), content is Markdown,
+  and only `WebsiteAdapterError` crosses back. Nothing goes to the site unless the owner marked the
+  product (`website_product_map.sync_enabled`, default off) and switched on price and/or stock
+  push separately. The outbox coalesces by UNIQUE (business, kind, product) and reads the value
+  **from the database at send time**, never from the row's payload. The assistant may *draft* a
+  post or product (`website.post.draft/update`, `website.product.upsert`, autopilot category
+  `website`) but **`website.post.publish` is `alwaysConfirm`** — no executor, no category, no MCP
+  write tool; a public text under the business's name is a person's click. Drafts use real item
+  data from the read tools and never an invented price or figure.
 
 ## Phase 37 — SMS/email marketing (messaging)
 

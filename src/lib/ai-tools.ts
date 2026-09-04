@@ -39,6 +39,8 @@ import { customersDueForRepurchase } from "./loyalty-service";
 import { getCustomerFile } from "./crm-service";
 import { customerTimeline } from "./customer-timeline-service";
 import { listSegmentsWithCounts, previewSegment } from "./crm-segments-service";
+import { listWebsitePostsTool, listWebsiteProductsTool, websiteStatusTool } from "./website/content-service";
+import { WEBSITE_ERROR_LABELS } from "./website/adapter";
 import {
   describeSegment,
   validateSegmentDefinition,
@@ -1221,6 +1223,11 @@ async function floorBillSplitPreview(scope: FloorReadScope, args: Record<string,
 
 // ---------------------------------------------------------------------------
 
+function websiteToolError(code: string): string {
+  if (code === "not_connected") return "وب‌سایتی به این کسب‌وکار متصل نیست؛ از «اتصال‌ها ← وب‌سایت» می‌توان متصل کرد.";
+  return (WEBSITE_ERROR_LABELS as Record<string, string>)[code] ?? code;
+}
+
 export async function runReadTool(
   name: string,
   args: Record<string, unknown>,
@@ -1313,6 +1320,26 @@ export async function runReadTool(
 
     case "get_customer_profile":
       return { ok: true, data: await customerProfile(businessId, args) };
+
+    // Phase 38 — the website manager's three reads. A missing connection is
+    // an answer («وب‌سایتی متصل نیست»), not an exception.
+    case "list_website_posts": {
+      const result = await listWebsitePostsTool(businessId, {
+        status: typeof args.status === "string" ? args.status : undefined,
+        limit: typeof args.limit === "number" ? args.limit : undefined,
+      });
+      return result.ok ? { ok: true, data: result.data } : { ok: false, data: { error: websiteToolError(result.error) } };
+    }
+
+    case "list_website_products": {
+      const result = await listWebsiteProductsTool(businessId, {
+        limit: typeof args.limit === "number" ? args.limit : undefined,
+      });
+      return result.ok ? { ok: true, data: result.data } : { ok: false, data: { error: websiteToolError(result.error) } };
+    }
+
+    case "get_website_status":
+      return { ok: true, data: await websiteStatusTool(businessId) };
 
     case "get_at_risk_customers":
       return { ok: true, data: await atRiskCustomers(businessId, args) };
@@ -1488,4 +1515,7 @@ export const READ_TOOL_NAMES = new Set([
   "find_items",
   "get_waste_history",
   "describe_app",
+  "list_website_posts",
+  "list_website_products",
+  "get_website_status",
 ]);

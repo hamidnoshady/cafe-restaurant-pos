@@ -28,6 +28,7 @@ import { addCustomerNote, deleteCustomerNote, setCustomerTag } from "./crm-servi
 import { isWasteReason, recordWaste } from "./waste-service";
 import { recordProductionRun, reverseProductionRun, ProductionError } from "./production-service";
 import { positiveQuantityText, type QuantityText, type RialText } from "./inventory-exact";
+import { draftWebsitePost, updateWebsitePost, upsertWebsiteProduct } from "./website/content-service";
 import type { PurchaseItemInput } from "./purchase-lines";
 
 export interface AutopilotExecutionResult {
@@ -491,6 +492,56 @@ const productionRun: AutopilotExecutor = async (ctx) => {
   }
 };
 
+/**
+ * Phase 38 — the website's three drafting writes. None of them makes anything
+ * public: `draftPost` lands as a draft by adapter contract, `updatePost`
+ * cannot touch the publish state, and a product upsert on the site is a
+ * catalogue row a human still reviews. `website.post.publish` has NO executor
+ * here, and must not get one — that click is a person's.
+ */
+const websitePostDraft: AutopilotExecutor = async (ctx) => {
+  const title = str(ctx.payload.title);
+  const body = str(ctx.payload.body);
+  if (!title || !body) return fail("invalid_payload");
+  const result = await draftWebsitePost(ctx.businessId, {
+    title,
+    body,
+    excerpt: str(ctx.payload.excerpt) ?? undefined,
+  });
+  if (!result.ok) return fail(result.error);
+  return { ok: true, result: { postId: result.data.id, slug: result.data.slug, status: result.data.status } };
+};
+
+const websitePostUpdate: AutopilotExecutor = async (ctx) => {
+  const postId = str(ctx.payload.postId);
+  if (!postId) return fail("invalid_payload");
+  const result = await updateWebsitePost(ctx.businessId, postId, {
+    ...(str(ctx.payload.title) ? { title: str(ctx.payload.title)! } : {}),
+    ...(str(ctx.payload.body) ? { body: str(ctx.payload.body)! } : {}),
+    ...(typeof ctx.payload.excerpt === "string" ? { excerpt: ctx.payload.excerpt } : {}),
+  });
+  if (!result.ok) return fail(result.error);
+  return { ok: true, result: { postId: result.data.id, status: result.data.status } };
+};
+
+const websiteProductUpsert: AutopilotExecutor = async (ctx) => {
+  const title = str(ctx.payload.title);
+  const priceRial = int(ctx.payload.priceRial);
+  if (!title || priceRial === null || priceRial <= 0) return fail("invalid_payload");
+  const stock = ctx.payload.stock === undefined ? undefined : int(ctx.payload.stock);
+  if (stock === null) return fail("invalid_payload");
+  const result = await upsertWebsiteProduct(ctx.businessId, {
+    remoteId: str(ctx.payload.remoteId) ?? undefined,
+    title,
+    sku: str(ctx.payload.sku) ?? undefined,
+    summary: str(ctx.payload.summary) ?? undefined,
+    priceRial,
+    ...(stock !== undefined ? { stock } : {}),
+  });
+  if (!result.ok) return fail(result.error);
+  return { ok: true, result: { remoteId: result.data.id, title: result.data.title, priceRial: result.data.priceRial } };
+};
+
 export const AUTOPILOT_EXECUTORS: Record<AutopilotExecutorKey, AutopilotExecutor> = {
   menuItemPatch,
   stockCount,
@@ -503,6 +554,9 @@ export const AUTOPILOT_EXECUTORS: Record<AutopilotExecutorKey, AutopilotExecutor
   crmCustomerNote,
   wasteLog,
   productionRun,
+  websitePostDraft,
+  websitePostUpdate,
+  websiteProductUpsert,
 };
 
 // ---------------------------------------------------------------------------

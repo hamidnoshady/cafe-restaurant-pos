@@ -59,6 +59,7 @@ app.prepare().then(async () => {
   const { runAiSubscriptionRenewalTick, AI_SUBSCRIPTION_TICK_INTERVAL_MS } = await import("./src/lib/ai-billing-service");
   const { runAiProactiveTick, AI_PROACTIVE_TICK_INTERVAL_MS } = await import("./src/lib/ai-proactive-service");
   const { runWooCommerceSyncTick, WOO_SYNC_TICK_INTERVAL_MS } = await import("./src/lib/integrations/outbox-service");
+  const { runWebsiteSyncTick, WEBSITE_SYNC_TICK_INTERVAL_MS } = await import("./src/lib/website/sync-service");
   const { runHolooSyncTick, HOLOO_SYNC_TICK_INTERVAL_MS } = await import("./src/lib/integrations/holoo/pull-service");
   const { runHolooPushTick, HOLOO_PUSH_TICK_INTERVAL_MS } = await import("./src/lib/integrations/holoo/push-service");
   const { runHolooReconciliationTick, HOLOO_RECONCILIATION_TICK_INTERVAL_MS } = await import("./src/lib/integrations/holoo/reconciliation-service");
@@ -145,6 +146,15 @@ app.prepare().then(async () => {
     runWooCommerceSyncTick().catch((err) => console.error("woocommerce sync tick failed:", err));
   setInterval(wooSyncTick, WOO_SYNC_TICK_INTERVAL_MS).unref();
   setTimeout(wooSyncTick, 90_000).unref();
+
+  // Phase 38 (issue #381): push product/stock/price changes to the business's
+  // website through website_outbox — the WooCommerce tick's shape exactly
+  // (bypass to enumerate, withTenant per business, one business's failure
+  // never stops the next). A site that is down simply grows its queue.
+  const websiteSyncTick = () =>
+    runWebsiteSyncTick().catch((err) => console.error("website sync tick failed:", err));
+  setInterval(websiteSyncTick, WEBSITE_SYNC_TICK_INTERVAL_MS).unref();
+  setTimeout(websiteSyncTick, 100_000).unref();
 
   // Phase 26 (issue #125) Wave 7: mirror Holoo base data for companion-mode
   // businesses. Polling (Holoo cannot call back), gated on holoo_companion,
