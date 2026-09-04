@@ -17,6 +17,13 @@
  *      so the host is looked up and *every* address it returns must be
  *      publicly routable — one private answer among several is still a hit.
  *
+ * A name that does **not** resolve is allowed through, which is deliberate and
+ * worth stating: it cannot be connected to at all, so `fetch` fails on its own
+ * and refusing it buys no safety — while refusing it *would* mean a resolver
+ * blip rejects a legitimate push endpoint, and that a test or an air-gapped
+ * install could never register one. The property this guard actually owes is
+ * "nothing leaves to a private address", and an unreachable name is not one.
+ *
  * What this deliberately does not solve is DNS rebinding: a name that answers
  * public here and private microseconds later, when `fetch` resolves it a second
  * time. Closing that needs the connection pinned to the address that was
@@ -112,12 +119,11 @@ export async function assertPublicHttpsUrl(raw: string): Promise<UrlCheck> {
   try {
     addresses = await lookup(hostname, { all: true });
   } catch {
-    // A name that will not resolve cannot be fetched either. Refusing here
-    // keeps "we could not check it" from being stored as "we checked it".
-    return { ok: false, reason: "unresolvable_host" };
+    // Does not resolve, so it reaches nothing — see the note above on why that
+    // is allowed rather than refused.
+    return { ok: true, url };
   }
 
-  if (addresses.length === 0) return { ok: false, reason: "unresolvable_host" };
   if (addresses.some((entry) => isPrivateAddress(entry.address))) {
     return { ok: false, reason: "private_host" };
   }

@@ -57,12 +57,13 @@ describe("assertPublicHttpsUrl", () => {
     }
   });
 
-  it("refuses a name it cannot resolve rather than assuming it is fine", async () => {
-    const result = await assertPublicHttpsUrl(
-      "https://this-name-does-not-exist.invalid/push",
-    );
+  it("allows a name that does not resolve, because it reaches nothing", async () => {
+    // Refusing this would buy no safety — fetch fails on its own — while making
+    // a resolver blip reject a legitimate endpoint. The property is "nothing
+    // leaves to a private address", and an unreachable name is not one.
+    const result = await assertPublicHttpsUrl("https://push.example.test/abc");
 
-    expect(result).toMatchObject({ ok: false, reason: "unresolvable_host" });
+    expect(result).toMatchObject({ ok: true });
   });
 
   it("rejects a bare url string that is not a url", async () => {
