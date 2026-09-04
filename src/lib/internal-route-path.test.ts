@@ -15,7 +15,12 @@
  * pin the two halves of the seam so it cannot regress silently again.
  */
 import { describe, expect, it } from "vitest";
-import { isPublicPath } from "@/middleware";
+import {
+  isAuthRateLimitedPath,
+  isPeerBackupPath,
+  isPublicPath,
+  isStaffRosterPath,
+} from "@/middleware";
 
 // Kept in step with the private helper in src/middleware.ts. The assertions
 // below are about which paths the rule must and must not cover.
@@ -55,23 +60,13 @@ describe("internal route path", () => {
   it("cannot recurse: the internal path is in no rate-limit bucket", () => {
     // If the internal path were itself rate-limited, serving it would call
     // checkRateLimit again, which would fetch it again — one login turning
-    // into unbounded recursion. The buckets are asserted here because they are
-    // the reason that cannot happen.
+    // into unbounded recursion. Asked of the middleware's own predicates
+    // rather than a copied list of bucket members: the copy is how this
+    // assertion would go stale the next time a bucket changes shape.
     const internal = "/api/internal/rate-limit";
-    // Exact-match auth bucket.
-    const AUTH_PATHS = [
-      "/api/auth/login",
-      "/api/auth/pin-login",
-      "/api/auth/pin-login/roster",
-      "/api/auth/webauthn/login/options",
-      "/api/auth/webauthn/login/verify",
-      "/api/platform/auth/login",
-      "/api/auth/directory",
-      "/api/platform/pairing/redeem",
-      "/api/pairing/redeem",
-      "/api/setup/pair",
-    ];
-    expect(AUTH_PATHS.includes(internal)).toBe(false);
+    expect(isAuthRateLimitedPath(internal)).toBe(false);
+    expect(isStaffRosterPath(internal)).toBe(false);
+    expect(isPeerBackupPath(internal)).toBe(false);
     // Prefix buckets.
     expect(internal.startsWith("/api/v1")).toBe(false);
     expect(internal.startsWith("/api/mcp")).toBe(false);
