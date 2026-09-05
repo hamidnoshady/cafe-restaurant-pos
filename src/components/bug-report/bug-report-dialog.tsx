@@ -23,7 +23,12 @@ export interface BugReportDialogProps {
   onCapturingChange: (capturing: boolean) => void;
 }
 
-export function BugReportDialog({ open, onOpenChange, capturing, onCapturingChange }: BugReportDialogProps) {
+export function BugReportDialog({
+  open,
+  onOpenChange,
+  capturing,
+  onCapturingChange,
+}: BugReportDialogProps) {
   const [description, setDescription] = useState("");
   const [screenshot, setScreenshot] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -44,14 +49,16 @@ export function BugReportDialog({ open, onOpenChange, capturing, onCapturingChan
       // node is actually gone before taking the snapshot.
       await new Promise<void>((resolve) => {
         const check = () => {
-          if (!document.querySelector('[data-slot="dialog-content"]')) resolve();
+          if (!document.querySelector('[data-slot="dialog-content"]'))
+            resolve();
           else requestAnimationFrame(check);
         };
         requestAnimationFrame(check);
       });
       const shot = await captureScreenshot();
       if (shot) setScreenshot(shot);
-      else toast.error("گرفتن تصویر ممکن نشد؛ می‌توانید بدون تصویر ادامه دهید.");
+      else
+        toast.error("گرفتن تصویر ممکن نشد؛ می‌توانید بدون تصویر ادامه دهید.");
     } finally {
       onCapturingChange(false);
     }
@@ -108,13 +115,16 @@ export function BugReportDialog({ open, onOpenChange, capturing, onCapturingChan
             گزارش مشکل
           </DialogTitle>
           <DialogDescription>
-            بگویید چه مشکلی پیش آمد. می‌توانید از همین صفحه عکس بگیرید و همراه توضیح بفرستید.
+            بگویید چه مشکلی پیش آمد. می‌توانید از همین صفحه عکس بگیرید و همراه
+            توضیح بفرستید.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3">
           <div className="space-y-1.5">
-            <Label htmlFor="bug-report-description">توضیح مشکل</Label>
+            <Label htmlFor="bug-report-description">
+              توضیح مشکل <span className="text-destructive">*</span>
+            </Label>
             <textarea
               ref={textareaRef}
               id="bug-report-description"
@@ -122,6 +132,8 @@ export function BugReportDialog({ open, onOpenChange, capturing, onCapturingChan
               onChange={(event) => setDescription(event.target.value)}
               placeholder="چه کاری انجام می‌دادید و چه خطایی دیدید؟"
               rows={4}
+              required
+              aria-required="true"
               className="w-full min-w-0 resize-y rounded-lg border border-input bg-transparent px-3 py-2 text-base leading-6 outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring focus-visible:ring-ring/50 md:text-sm"
             />
           </div>
@@ -129,7 +141,11 @@ export function BugReportDialog({ open, onOpenChange, capturing, onCapturingChan
           {screenshot ? (
             <div className="relative overflow-hidden rounded-lg border border-border/80">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={screenshot} alt="تصویر صفحه هنگام گزارش" className="max-h-56 w-full object-cover" />
+              <img
+                src={screenshot}
+                alt="تصویر صفحه هنگام گزارش"
+                className="max-h-56 w-full object-cover"
+              />
               <Button
                 type="button"
                 variant="destructive"
@@ -142,7 +158,13 @@ export function BugReportDialog({ open, onOpenChange, capturing, onCapturingChan
               </Button>
             </div>
           ) : (
-            <Button type="button" variant="outline" onClick={handleCapture} disabled={capturing} className="w-full">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleCapture}
+              disabled={capturing}
+              className="w-full"
+            >
               <CameraIcon aria-hidden="true" />
               {capturing ? "در حال گرفتن تصویر…" : "گرفتن تصویر از صفحه"}
             </Button>
@@ -150,7 +172,11 @@ export function BugReportDialog({ open, onOpenChange, capturing, onCapturingChan
         </div>
 
         <DialogFooter showCloseButton>
-          <Button type="button" onClick={handleSubmit} disabled={submitting || capturing}>
+          <Button
+            type="button"
+            onClick={handleSubmit}
+            disabled={submitting || capturing}
+          >
             <SendIcon aria-hidden="true" />
             {submitting ? "در حال ارسال…" : "ارسال گزارش"}
           </Button>
