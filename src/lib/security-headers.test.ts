@@ -47,6 +47,7 @@ describe("security-headers", () => {
 
   it("staticSecurityHeaders respects https parameter", () => {
     const headersHttp = staticSecurityHeaders({ https: false });
+    expect(headersHttp["Permissions-Policy"]).toContain("camera=(self)");
     expect(headersHttp["Permissions-Policy"]).toContain("publickey-credentials-get=(self)");
     expect(headersHttp["Strict-Transport-Security"]).toBeUndefined();
 

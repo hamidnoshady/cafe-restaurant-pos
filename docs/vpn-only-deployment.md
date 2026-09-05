@@ -28,4 +28,4 @@ The local stack includes a Caddy container that provides `tls internal` HTTPS fo
 
 ## 4. Why HTTPS on LAN?
 
-Without HTTPS, WebAuthn (biometric login, FaceID, Windows Hello) is entirely disabled by the browser. A `Secure` session cookie is dropped over HTTP, breaking session isolation. HTTPS is mandatory for biometric logins even on a private network.
+Without HTTPS, WebAuthn (biometric login, FaceID, Windows Hello) is entirely disabled by the browser. A `Secure` session cookie is dropped over HTTP, breaking session isolation. Mobile browsers also require a secure HTTPS context before they expose the camera used by the barcode / QR reader, so open the trusted Caddy hostname rather than a raw `http://` LAN IP. HTTPS is mandatory for biometric logins and mobile scanning even on a private network.

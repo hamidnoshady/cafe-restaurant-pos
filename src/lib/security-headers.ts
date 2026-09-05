@@ -45,7 +45,9 @@ export function staticSecurityHeaders(opts: { https: boolean }): Record<string, 
     "Referrer-Policy": "strict-origin-when-cross-origin",
     "Cross-Origin-Opener-Policy": "same-origin",
     "X-DNS-Prefetch-Control": "off",
-    "Permissions-Policy": "publickey-credentials-get=(self)",
+    // Camera access is needed by the in-app barcode / QR scanner. Keep it
+    // same-origin only; an embedded third party is never allowed to request it.
+    "Permissions-Policy": "camera=(self), publickey-credentials-get=(self)",
   };
   if (opts.https) {
     headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains";
