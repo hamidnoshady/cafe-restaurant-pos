@@ -8,7 +8,7 @@ const nextConfig: NextConfig = {
       { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
       { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
       { key: "X-DNS-Prefetch-Control", value: "off" },
-      { key: "Permissions-Policy", value: "publickey-credentials-get=(self)" },
+      { key: "Permissions-Policy", value: "camera=(self), publickey-credentials-get=(self)" },
     ];
     return [
       {
