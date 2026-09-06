@@ -32,6 +32,21 @@ comment happens to use, until you have checked this list.
   installer, or the WordPress plugin. The AI assistant is not an app (see below).
   When they name one ("the accounting app", "growth", "CRM"), stay inside that app's
   ownership boundary; don't add a peer page in another app's shell.
+- **Section** (also «بخش») means a **menu item / page *inside* an app**, never the app
+  itself. A section is one of the entries in an app's own menu or in the dashboard
+  sidebar within that app (e.g. loyalty, campaigns & gift cards and commission inside
+  the Growth app; products, orders, customers and media inside the WP manager; deals,
+  segments and cases inside CRM). **When the user says "section", they mean those
+  items inside an app.** This matters for gating: the super-admin console's
+  enable/disable (app availability, migration 0128) is set **per app** — an app is
+  enabled/disabled as a whole, and every section of it follows its owning app's state.
+  There is **no per-section enable/disable** in the super-admin console, and no
+  per-section «به‌زودی»/«در حال تعمیر». If a prompt asks to enable/disable a "section"
+  or to mark one coming-soon, treat `section` as the app's menu item, don't add a new
+  per-section table, and ask which app owns it before writing any per-section gate.
+  Note the deliberate contrast with **industry modules** (`ModuleKey`,
+  `industry-profile.ts`): a module is a trade-level capability ("does this trade have
+  inventory?"); a section is a *presentational* menu item inside an app.
 - **AI assistant** (also «دستیار هوشمند», "the assistant") means the platform's
   **main page**: the full-page chat home at `/dashboard` (when the workspace flag is
   on) and `/dashboard/ai`. It is the workspace home, not a rail app — `apps.ts`
@@ -654,6 +669,11 @@ Since Phase 35 the app can reach a person who is not looking at a screen, over *
   «در حال تعمیر» are facts a business should be told, not absences to guess at. An override
   replaces the platform row wholesale (never field-by-field), `beta` is usable and only
   labels, and `available_from` is stored Gregorian and always rendered Shamsi.
+  **This axis is per app, never per section.** A «section» is a menu item/page *inside* an
+  app (see Prompt vocabulary); enabling or disabling happens on the app, and every section
+  of that app follows its owning app's state. Do not build a per-section availability table
+  or a per-section «به‌زودی»/«در حال تعمیر» — the console already enables/disables apps, and
+  the app's sections inherit that.
 - **In-house production (Phase 29)** — some F&B items are *made*, not assembled: a cake is built
   from raw materials once, yields 8 slices, and each slice is sold through its own serving recipe.
   A formula (`production_formulas`) and a run (`production_runs`) sit between the two, under the
