@@ -164,6 +164,53 @@ intact** for a few days — the cheapest possible rollback.
 Pick the one that matches the **new** server. All of them are Step 3 above with
 platform-specific plumbing; Steps 1, 2, 4 and 5 don't change.
 
+### A′. srv1 + Komodo, pulling the GHCR image (`docker-compose.srv1.yml`)
+
+The stack the sibling [`eshobe-cms`](https://github.com/hamidnoshady/eshobe-cms)
+repo already runs on the same host, now available for this app too. Use it when
+you want deploys to be *pull a prebuilt image and restart* rather than *build
+from source on the platform*.
+
+**Shape of it:** one Komodo stack from the repo-root `docker-compose.srv1.yml` —
+the app plus its own Postgres 16 — publishing to `127.0.0.1` only, behind the
+OpenLiteSpeed → Traefik front door that already terminates TLS on that host.
+
+The image comes from `.github/workflows/publish.yml`, which runs on **every push
+to `main`** (gated by type check, unit tests and a production build on the exact
+merge commit) and pushes `ghcr.io/hamidnoshady/cafe-restaurant-pos` as
+`sha-<short>` and `latest`. srv1 cannot reach `ghcr.io` — it is filtered at the
+network layer there — so the stack pulls the same image through the
+**`ghcr-mirror.liara.ir`** pull-through cache, which is reachable. That is the
+one difference from the retired `archive/deploy/docker-compose.srv1.yml`, which
+pointed straight at `ghcr.io` and is why it was retired.
+
+1. **Create the Komodo stack** pointing at this repo and `docker-compose.srv1.yml`.
+   Komodo cannot fetch from git on this host either, so it holds the operative
+   copy in the stack's own compose configuration — this file is the
+   version-controlled reference; edit both together.
+2. **Set the stack's Environment**: at minimum `POSTGRES_PASSWORD`, `JWT_SECRET`,
+   `ROOT_DOMAIN`, `PLATFORM_BASE_URL`, `WEBAUTHN_ORIGIN`, and `POS_HOST_PORT` if
+   3000 is taken. Add `ESHOBE_CMS_*` if this deployment runs the website manager.
+3. **Deploy.** `docker-entrypoint.sh` waits for Postgres, runs migrations, derives
+   the restricted `pos_app` role and starts the server — the same sequence every
+   other recipe here relies on.
+4. **Point Traefik's `dynamic.yml`** at `http://127.0.0.1:${POS_HOST_PORT}`. The
+   exact wildcard-router block is in `archive/deploy/docker-compose.srv1.yml`'s
+   header comment; this stack does not change it.
+
+Two traps worth stating, both learned on the CMS side of the same host:
+
+- **The image tag in the compose file is literal, not `${VAR}`.** Komodo resolves
+  the image reference without Compose variable interpolation, so a variable there
+  fails the registry lookup *silently* and the stack keeps running what it had.
+- **Komodo logs the expanded compose config in plaintext**, environment included.
+  Treat anything in that stack's Environment as exposed to whoever can read
+  Komodo's logs, and rotate accordingly.
+
+Adopting this is a deliberate cutover. Merging the compose file changes nothing
+on its own: production stays on Runflare, building from the `Dockerfile`, until
+somebody creates that stack.
+
 ### A. Runflare (رانفلر)
 
 Runflare is a Kubernetes/Docker PaaS: a *project* holds *services* and

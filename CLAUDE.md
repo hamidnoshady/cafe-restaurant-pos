@@ -100,13 +100,42 @@ What follows from that:
 `.github/workflows/build-and-push.yml` is the same: dispatch it from the Actions tab when
 you want an image. It builds and pushes `docker.io/<DOCKERHUB_USERNAME>/cafe-restaurant-pos:sha-<short-sha>`
 (and `:latest`) to Docker Hub for the commit you selected — it does **not** wait on `test`,
-and it does **not** run after merge. Don't assume an image exists for a branch, a PR, or a
-commit nobody dispatched against. This is what the self-update path (`src/lib/app-update.ts`,
-`scripts/check-app-update.ts`, `/platform/updates`) and the pull-based compose files
-(`docker-compose.local.yml`, `archive/deploy/docker-compose.srv1.yml`) expect.
-**Production (Runflare) does not consume this image yet** — it still builds from the
-`Dockerfile` itself per `docs/server-migration.md`'s Runflare recipe; repointing it at the
-prebuilt tag is a separate, deliberate step, not something this workflow does on its own.
+and it does **not** run after merge. Don't assume a Docker Hub image exists for a branch, a
+PR, or a commit nobody dispatched against.
+
+### The one automatic workflow: `publish.yml` (GHCR)
+
+`.github/workflows/publish.yml` runs on **every push to `main`** (and on `v*` tags, and on
+dispatch), and that is deliberate: it is what deployment consumes. Making it manual would
+mean a merge produces no image while a deployed stack silently keeps running the previous
+one. Don't remove its `push` trigger.
+
+It is not ungated either — its `gates` job re-runs the static half of the local checklist
+(type check, unit tests, production build) on the exact merge commit before the image is
+built. The database-backed suite stays in the manual `test.yml`: it needs a service
+container and several minutes, and the local checklist is the real gate.
+
+Two details are load-bearing:
+
+- **The tag shape is `sha-<short>` plus `latest`**, matching `imageRefFor()` in
+  `src/lib/app-update-status.ts`. A long-sha tag (what the sibling `eshobe-cms` repo uses)
+  would leave the café laptop's self-update check looking for a tag that does not exist.
+  `GIT_SHA` is passed as a build arg because the `Dockerfile` bakes it into
+  `APP_IMAGE_SHA` — how a running container knows which build it is.
+- **GHCR is the registry the rest of the product already assumed.**
+  `docker-compose.local.yml` pulls `ghcr.io/hamidnoshady/cafe-restaurant-pos`, and
+  `src/lib/app-update.ts` defaults `GHCR_IMAGE` to it and mints short-lived GHCR pull
+  tokens; nothing had ever pushed there. srv1 can't reach `ghcr.io` (filtered at the
+  network layer), which is why Docker Hub was adopted — and why the root
+  `docker-compose.srv1.yml` pulls the same GHCR image through the `ghcr-mirror.liara.ir`
+  cache instead, exactly as the CMS stack on that host does. In that file the image tag is
+  **literal**: Komodo resolves the image reference without variable interpolation, so a
+  `${VAR}` there breaks the lookup silently.
+
+**Production (Runflare) does not consume any of this yet** — it still builds from the
+`Dockerfile` itself per `docs/server-migration.md`'s Runflare recipe. Repointing it, or
+standing up the Komodo stack in that doc's recipe A′, is a separate, deliberate step, not
+something merging a compose file does on its own.
 
 ## Tenancy — read before touching the database
 

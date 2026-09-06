@@ -922,8 +922,9 @@ says what to check: the app and Postgres containers must share a network, and th
 `DATABASE_URL` must be the database service's name on it.
 
 **Docker deployments (`docker-entrypoint.sh`) do this for you.** Every shipped compose file
-(`docker-compose.local.yml`, plus the retired `archive/deploy/docker-compose.komodo.yml` and
-`archive/deploy/docker-compose.srv1.yml`) hands the app container one Postgres superuser — the same one that runs migrations — because asking
+(`docker-compose.local.yml` and `docker-compose.srv1.yml`, plus the retired
+`archive/deploy/docker-compose.komodo.yml` and `archive/deploy/docker-compose.srv1.yml`)
+hands the app container one Postgres superuser — the same one that runs migrations — because asking
 every operator to hand-edit their stack's environment to carry a second role and password
 isn't worth the friction. The entrypoint migrates with that connection as usual, then runs
 `scripts/derive-runtime-database-url.ts`, which provisions `pos_app` from it (reusing its
