@@ -22,7 +22,7 @@ import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
  * and inherits retry, backoff and a visible trail.
  */
 import { useCallback, useEffect, useState } from "react";
-import { api, InfoBox, inputClass } from "../ui";
+import { api, InfoBox, inputClass } from "@/app/dashboard/ui";
 import { Button } from "@/components/ui/button";
 import { formatDateTime } from "./format";
 

@@ -31,13 +31,13 @@ describe("app data ownership rules", () => {
 
   it("keeps WordPress and WooCommerce management in the WP app", () => {
     const rule = appDataRule("wp_store_mirror");
-    expect(rule.owner).toBe("wp");
+    expect(rule.owner).toBe("website");
     expect(rule.syncStrategy).toBe("mapped-integration");
     expect(appUsesData("accounting", "wp_store_mirror")).toBe(true);
-    expect(appUsesData("wp", "wp_store_mirror")).toBe(true);
-    expect(appUsesData("wp", "technical_connections")).toBe(false);
+    expect(appUsesData("website", "wp_store_mirror")).toBe(true);
+    expect(appUsesData("website", "technical_connections")).toBe(false);
     expect(canWriteData("accounting", "wp_store_mirror")).toBe(false);
-    expect(canWriteData("wp", "wp_store_mirror")).toBe(true);
+    expect(canWriteData("website", "wp_store_mirror")).toBe(true);
   });
 
   it("returns the owner first when a workflow needs all permitted apps", () => {

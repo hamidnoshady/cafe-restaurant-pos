@@ -1,7 +1,7 @@
 "use client";
 
 /** Shared store picker for WP Manager sections. */
-import { cardClass } from "../page-chrome";
+import { cardClass } from "@/app/dashboard/page-chrome";
 
 export interface ConnectionLite {
   id: string;

@@ -1,22 +1,26 @@
 "use client";
 
-import { LoadingSkeleton, SectionCardSkeleton } from "@/app/dashboard/page-chrome";
-
 /**
- * The Website Manager (issue #378) — «وب‌سایت» under Growth & Marketing.
+ * The Eshobe CMS manager — one of the two managers inside «مدیریت وب‌سایت».
  *
- * Half connection form, half management surface, both over the headless CMS
- * API (`src/lib/cms/`). The browser never sees a CMS key: connect/provision
- * POST the credential once, the server stores it encrypted (migration 0122)
- * and every later call uses the stored site key server-side.
+ * The other is the WordPress/WooCommerce manager (`../wp`). They are peers and
+ * they stay apart: this file talks only to the platform's own site builder
+ * over `src/lib/cms/`, and never to a WordPress store.
  *
- * Connected state is one overview call: the site's descriptor (theme,
- * locales, store currency), its pages, its catalogue and its orders.
- * Order status changes are the one e-commerce write here — back on the CMS
- * their own hooks settle stock and snapshot the change.
+ * Four sections, one per page of the manager, all over the same headless CMS
+ * API. The browser never sees a CMS key: the wizard and the connect form POST
+ * the credential once, the server stores it encrypted (migration 0122) and
+ * every later call uses the stored site key server-side.
+ *
+ * Each section reads the same one overview call — the site's descriptor
+ * (theme, locales, store currency), its pages, its catalogue and its orders —
+ * because that is one cached round trip on the CMS side and it keeps the four
+ * screens from disagreeing about what the site contains. Order status changes
+ * are the one e-commerce write here; back on the CMS their own hooks settle
+ * stock and snapshot the change.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   CircleCheckIcon,
   ExternalLinkIcon,
@@ -28,6 +32,7 @@ import {
   ShieldCheckIcon,
   Trash2Icon,
 } from "lucide-react";
+import Link from "next/link";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -35,10 +40,27 @@ import { formatPersianNumber, toLatinDigits, toPersianDigits } from "@/lib/digit
 import type { CmsConnectionSummary } from "@/lib/cms/connections";
 import { lexicalToPlainText, type CmsOrder, type CmsPost, type CmsProduct, type SiteDescriptor } from "@/lib/cms/types";
 import { Skeleton } from "@/components/ui/skeleton";
-import { cardClass, EmptyState, SectionCard, StatusBadge } from "../page-chrome";
-import { api, errorMessageOrRaw, Field, inputClass, PrimaryButton, SecondaryButton, ErrorBox } from "../ui";
+import {
+  cardClass,
+  EmptyState,
+  LoadingSkeleton,
+  SectionCard,
+  SectionCardSkeleton,
+  StatusBadge,
+} from "@/app/dashboard/page-chrome";
+import {
+  api,
+  errorMessageOrRaw,
+  Field,
+  inputClass,
+  PrimaryButton,
+  SecondaryButton,
+  ErrorBox,
+} from "@/app/dashboard/ui";
 import { cmsDnsHint } from "@/lib/cms/dns";
 import type { CmsDnsStatus, WebsiteOverview } from "@/lib/cms/website-service";
+import { cmsSectionHref } from "../website-routes";
+import { CmsSyncSettings } from "./cms-sync-settings";
 
 const TYPE_LABELS: Record<string, string> = {
   business: "کسب‌وکار",
@@ -77,23 +99,30 @@ const ORDER_STATUS_TONE: Record<string, "active" | "positive" | "neutral" | "dan
   refunded: "danger",
 };
 
-type Mode = "connect" | "provision";
+/* ------------------------------------------------------------------ */
+/* The shared read every section of this manager starts from           */
+/* ------------------------------------------------------------------ */
 
-export function WebsiteSection() {
+interface CmsSite {
+  loading: boolean;
+  connection: CmsConnectionSummary | null;
+  overview: WebsiteOverview | null;
+  overviewError: string;
+  dnsStatus: CmsDnsStatus | null;
+  dnsLoading: boolean;
+  reload: () => void;
+  loadOverview: () => void;
+  checkDns: () => void;
+  setOverview: React.Dispatch<React.SetStateAction<WebsiteOverview | null>>;
+}
+
+function useCmsSite({ withDns = false }: { withDns?: boolean } = {}): CmsSite {
   const [connection, setConnection] = useState<CmsConnectionSummary | null>(null);
   const [loading, setLoading] = useState(true);
-  const [mode, setMode] = useState<Mode>("connect");
   const [overview, setOverview] = useState<WebsiteOverview | null>(null);
   const [overviewError, setOverviewError] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [updatingOrder, setUpdatingOrder] = useState("");
   const [dnsStatus, setDnsStatus] = useState<CmsDnsStatus | null>(null);
   const [dnsLoading, setDnsLoading] = useState(false);
-  const [previewReady, setPreviewReady] = useState(false);
-  const [previewKey, setPreviewKey] = useState(0);
-  const [editingPost, setEditingPost] = useState<CmsPost | "new" | null>(null);
-  const [editingProduct, setEditingProduct] = useState<CmsProduct | "new" | null>(null);
-  const [editingDomain, setEditingDomain] = useState(false);
 
   const loadOverview = useCallback(() => {
     api<{ overview: WebsiteOverview }>("/api/cms/website/overview").then(({ ok, data }) => {
@@ -125,35 +154,82 @@ export function WebsiteSection() {
         setConnection(data.connection);
         if (data.connection) {
           loadOverview();
-          checkDns();
+          if (withDns) checkDns();
         } else {
           setOverview(null);
           setDnsStatus(null);
         }
       },
     );
-  }, [loadOverview, checkDns]);
+  }, [loadOverview, checkDns, withDns]);
 
   useEffect(reload, [reload]);
 
-  if (loading) {
-    return (
-      <SectionCardSkeleton rows={4} />
-    );
-  }
+  return {
+    loading,
+    connection,
+    overview,
+    overviewError,
+    dnsStatus,
+    dnsLoading,
+    reload,
+    loadOverview,
+    checkDns,
+    setOverview,
+  };
+}
 
-  if (!connection) {
+/**
+ * What every section but the overview shows when there is no site yet.
+ *
+ * A section of a site that does not exist is a dead end, so it points at the
+ * one screen that can change that. The nav already hides these sections; this
+ * is for a bookmark or a typed URL.
+ */
+function NoSiteYet({ what }: { what: string }) {
+  return (
+    <SectionCard title={what} description="برای این بخش، اول باید سایتی روی سایت‌ساز داشته باشید.">
+      <EmptyState>هنوز سایتی ساخته یا وصل نشده است.</EmptyState>
+      <div className="mt-3">
+        <Button asChild variant="outline" className="px-4">
+          <Link href={cmsSectionHref("setup")}>
+            <GlobeIcon className="size-4" />
+            ساخت یا اتصال سایت
+          </Link>
+        </Button>
+      </div>
+    </SectionCard>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* میز کار سایت — connection, domain and the live preview              */
+/* ------------------------------------------------------------------ */
+
+export function CmsOverviewSection() {
+  const site = useCmsSite({ withDns: true });
+  const [previewReady, setPreviewReady] = useState(false);
+  const [previewKey, setPreviewKey] = useState(0);
+  const [editingDomain, setEditingDomain] = useState(false);
+
+  if (site.loading) return <SectionCardSkeleton rows={4} />;
+
+  if (!site.connection) {
     return (
-      <ConnectPanel
-        mode={mode}
-        setMode={setMode}
-        busy={busy}
-        setBusy={setBusy}
-        onDone={() => {
-          toast.success("وب‌سایت متصل شد.");
-          reload();
-        }}
-      />
+      <SectionCard
+        title="هنوز سایتی ندارید"
+        description="سایت اینترنتی کسب‌وکار را روی سایت‌ساز پلتفرم بسازید، یا سایتی که قبلاً ساخته‌اید را وصل کنید."
+      >
+        <EmptyState>ساخت سایت چهار گام دارد: دامنه، CDN، نوع سایت و ساخت.</EmptyState>
+        <div className="mt-3">
+          <Button asChild className="px-4">
+            <Link href={cmsSectionHref("setup")}>
+              <GlobeIcon className="size-4" />
+              شروع ساخت سایت
+            </Link>
+          </Button>
+        </div>
+      </SectionCard>
     );
   }
 
@@ -161,10 +237,10 @@ export function WebsiteSection() {
     <div className="space-y-4 sm:space-y-5">
       <SectionCard
         title="اتصال به سایت"
-        description={`${connection.siteDomain} — محتوای سایت و فروشگاه از CMS پلتفرم خوانده می‌شود.`}
+        description={`${site.connection.siteDomain} — محتوای سایت و فروشگاه از سایت‌ساز پلتفرم خوانده می‌شود.`}
         actions={
           <div className="flex flex-wrap gap-2">
-            <SecondaryButton onClick={reload} disabled={busy}>
+            <SecondaryButton onClick={site.reload}>
               <RefreshCwIcon className="size-4" />
               بروزرسانی
             </SecondaryButton>
@@ -172,50 +248,33 @@ export function WebsiteSection() {
               type="button"
               variant="outline"
               className="px-4"
-              onClick={() => window.open(`${connection.baseUrl}/admin`, "_blank", "noopener")}
+              onClick={() => window.open(`${site.connection!.baseUrl}/admin`, "_blank", "noopener")}
             >
               <ExternalLinkIcon className="size-4" />
-              مدیریت محتوا در CMS
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              className="px-4 text-destructive hover:text-destructive"
-              onClick={() => {
-                if (!window.confirm("قطع اتصال؟ سایت و محتوای آن روی CMS می‌ماند؛ فقط این اتصال برداشته می‌شود.")) return;
-                setBusy(true);
-                api("/api/cms/website/connection", { method: "DELETE" }).then(() => {
-                  setBusy(false);
-                  toast.success("اتصال برداشته شد.");
-                  reload();
-                });
-              }}
-            >
-              <Trash2Icon className="size-4" />
-              قطع اتصال
+              مدیریت محتوا در سایت‌ساز
             </Button>
           </div>
         }
       >
-        <ErrorBox>{overviewError}</ErrorBox>
-        {overview ? (
-          <SiteSummary site={overview.site} />
+        <ErrorBox>{site.overviewError}</ErrorBox>
+        {site.overview ? (
+          <SiteSummary site={site.overview.site} />
         ) : (
           <p className="text-sm text-muted-foreground">اتصال برقرار است؛ برای بارگذاری محتوا بروزرسانی را بزنید.</p>
         )}
       </SectionCard>
 
       <DnsChecklistCard
-        status={dnsStatus}
-        loading={dnsLoading}
-        onCheck={checkDns}
-        baseUrl={connection.baseUrl}
-        currentDomain={connection.siteDomain}
+        status={site.dnsStatus}
+        loading={site.dnsLoading}
+        onCheck={site.checkDns}
+        baseUrl={site.connection.baseUrl}
+        currentDomain={site.connection.siteDomain}
         onEditDomain={() => setEditingDomain(true)}
       />
 
       <PreviewCard
-        status={dnsStatus}
+        status={site.dnsStatus}
         ready={previewReady}
         frameKey={previewKey}
         onLoad={() => setPreviewReady(true)}
@@ -225,172 +284,13 @@ export function WebsiteSection() {
         }}
       />
 
-      {overview ? (
-        <>
-          <SectionCard title="صفحه‌ها" description="صفحه‌های منتشرشدهٔ سایت (۲۰ صفحهٔ آخر).">
-            {overview.pages.length === 0 ? (
-              <EmptyState>هنوز صفحه‌ای ساخته نشده است.</EmptyState>
-            ) : (
-              <ul className="divide-y divide-border">
-                {overview.pages.map((page) => (
-                  <li key={page.id} className="flex items-center justify-between gap-3 py-2.5">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-foreground">{page.title}</p>
-                      <p dir="ltr" className="truncate text-xs text-muted-foreground">
-                        /{page.slug}
-                      </p>
-                    </div>
-                    <StatusBadge tone={page._status === "published" ? "positive" : "active"}>
-                      {STATUS_LABELS[page._status ?? "draft"]}
-                    </StatusBadge>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </SectionCard>
-
-          <SectionCard
-            title="نوشته‌ها"
-            description="مطالب وبلاگ سایت (۲۰ نوشتهٔ آخر). یک نوشتهٔ ساخته‌شده از این‌جا به‌صورت پیش‌نویس ذخیره می‌شود؛ انتشار آن از پنل CMS انجام می‌شود."
-            actions={
-              <SecondaryButton onClick={() => setEditingPost("new")}>
-                <PlusIcon className="size-4" />
-                نوشتهٔ جدید
-              </SecondaryButton>
-            }
-          >
-            {overview.posts.length === 0 ? (
-              <EmptyState>هنوز نوشته‌ای ساخته نشده است.</EmptyState>
-            ) : (
-              <ul className="divide-y divide-border">
-                {overview.posts.map((post) => (
-                  <li key={post.id} className="flex items-center justify-between gap-3 py-2.5">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-foreground">{post.title}</p>
-                      <p dir="ltr" className="truncate text-xs text-muted-foreground">
-                        /{post.slug}
-                      </p>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-2">
-                      <StatusBadge tone={post._status === "published" ? "positive" : "active"}>
-                        {STATUS_LABELS[post._status ?? "draft"]}
-                      </StatusBadge>
-                      <Button type="button" variant="outline" size="icon" onClick={() => setEditingPost(post)} aria-label={`ویرایش ${post.title}`}>
-                        <PencilIcon className="size-4" />
-                      </Button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </SectionCard>
-
-          <SectionCard
-            title="محصولات"
-            description="فروشگاه آنلاین (۵۰ محصول آخر). محصول ساخته‌شده از این‌جا پیش‌نویس است؛ انتشار از پنل CMS انجام می‌شود."
-            actions={
-              <SecondaryButton onClick={() => setEditingProduct("new")}>
-                <PlusIcon className="size-4" />
-                محصول جدید
-              </SecondaryButton>
-            }
-          >
-            {overview.products.length === 0 ? (
-              <EmptyState>فروشگاه هنوز محصولی ندارد.</EmptyState>
-            ) : (
-              <ul className="divide-y divide-border">
-                {overview.products.map((product) => (
-                  <li key={product.id} className="flex items-center justify-between gap-3 py-2.5">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-foreground">{product.title}</p>
-                      {product.sku ? <p className="truncate text-xs text-muted-foreground">{product.sku}</p> : null}
-                    </div>
-                    <div className="flex shrink-0 items-center gap-3">
-                      <p className="text-sm font-semibold text-foreground">
-                        {formatPersianNumber(product.price)}{" "}
-                        <span className="text-xs font-normal text-muted-foreground">
-                          {CURRENCY_LABELS[overview.site.store.currency] ?? overview.site.store.currency}
-                        </span>
-                      </p>
-                      <StatusBadge tone={product._status === "published" ? "positive" : "active"}>
-                        {STATUS_LABELS[product._status ?? "draft"]}
-                      </StatusBadge>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="icon"
-                        onClick={() => setEditingProduct(product)}
-                        aria-label={`ویرایش ${product.title}`}
-                      >
-                        <PencilIcon className="size-4" />
-                      </Button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </SectionCard>
-
-          <OrdersCard
-            orders={overview.orders}
-            currency={overview.site.store.currency}
-            updatingOrder={updatingOrder}
-            onStatusChange={(order, status) => {
-              setUpdatingOrder(order.id);
-              api<{ order: CmsOrder }>(`/api/cms/website/orders/${order.id}`, {
-                method: "PATCH",
-                body: JSON.stringify({ status }),
-              }).then(({ ok, data }) => {
-                if (ok) {
-                  setOverview((current) =>
-                    current
-                      ? {
-                          ...current,
-                          orders: current.orders.map((row) => (row.id === order.id ? data.order : row)),
-                        }
-                      : current,
-                  );
-                  toast.success(`سفارش ${toPersianDigits(order.reference)} ${ORDER_STATUS_LABELS[status] ?? ""} شد.`);
-                } else {
-                  toast.error(errorMessageOrRaw((data as { error?: string }).error));
-                }
-                setUpdatingOrder("");
-              });
-            }}
-          />
-        </>
-      ) : null}
-
-      {editingPost ? (
-        <PostDialog
-          post={editingPost === "new" ? null : editingPost}
-          onClose={() => setEditingPost(null)}
-          onSaved={() => {
-            setEditingPost(null);
-            loadOverview();
-          }}
-        />
-      ) : null}
-
-      {editingProduct ? (
-        <ProductDialog
-          product={editingProduct === "new" ? null : editingProduct}
-          currency={CURRENCY_LABELS[overview?.site.store.currency ?? "IRT"] ?? overview?.site.store.currency ?? ""}
-          onClose={() => setEditingProduct(null)}
-          onSaved={() => {
-            setEditingProduct(null);
-            loadOverview();
-          }}
-        />
-      ) : null}
-
       {editingDomain ? (
         <DomainDialog
-          currentDomain={connection.siteDomain}
+          currentDomain={site.connection.siteDomain}
           onClose={() => setEditingDomain(false)}
           onSaved={() => {
             setEditingDomain(false);
-            reload();
+            site.reload();
           }}
         />
       ) : null}
@@ -398,7 +298,307 @@ export function WebsiteSection() {
   );
 }
 
-function SiteSummary({ site }: { site: SiteDescriptor }) {
+/* ------------------------------------------------------------------ */
+/* محتوا — the site's pages and posts                                  */
+/* ------------------------------------------------------------------ */
+
+export function CmsContentSection() {
+  const site = useCmsSite();
+  const [editingPost, setEditingPost] = useState<CmsPost | "new" | null>(null);
+
+  if (site.loading) return <SectionCardSkeleton rows={4} />;
+  if (!site.connection) return <NoSiteYet what="محتوای سایت" />;
+
+  return (
+    <div className="space-y-4 sm:space-y-5">
+      <ErrorBox>{site.overviewError}</ErrorBox>
+
+      <SectionCard title="صفحه‌ها" description="صفحه‌های منتشرشدهٔ سایت (۲۰ صفحهٔ آخر).">
+        {!site.overview ? (
+          <LoadingSkeleton rows={3} compact label="در حال بارگذاری صفحه‌ها" />
+        ) : site.overview.pages.length === 0 ? (
+          <EmptyState>هنوز صفحه‌ای ساخته نشده است.</EmptyState>
+        ) : (
+          <ul className="divide-y divide-border">
+            {site.overview.pages.map((page) => (
+              <li key={page.id} className="flex items-center justify-between gap-3 py-2.5">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-foreground">{page.title}</p>
+                  <p dir="ltr" className="truncate text-xs text-muted-foreground">
+                    /{page.slug}
+                  </p>
+                </div>
+                <StatusBadge tone={page._status === "published" ? "positive" : "active"}>
+                  {STATUS_LABELS[page._status ?? "draft"]}
+                </StatusBadge>
+              </li>
+            ))}
+          </ul>
+        )}
+      </SectionCard>
+
+      <SectionCard
+        title="نوشته‌ها"
+        description="مطالب وبلاگ سایت (۲۰ نوشتهٔ آخر). یک نوشتهٔ ساخته‌شده از این‌جا به‌صورت پیش‌نویس ذخیره می‌شود؛ انتشار آن از پنل سایت‌ساز انجام می‌شود."
+        actions={
+          <SecondaryButton onClick={() => setEditingPost("new")}>
+            <PlusIcon className="size-4" />
+            نوشتهٔ جدید
+          </SecondaryButton>
+        }
+      >
+        {!site.overview ? (
+          <LoadingSkeleton rows={3} compact label="در حال بارگذاری نوشته‌ها" />
+        ) : site.overview.posts.length === 0 ? (
+          <EmptyState>هنوز نوشته‌ای ساخته نشده است.</EmptyState>
+        ) : (
+          <ul className="divide-y divide-border">
+            {site.overview.posts.map((post) => (
+              <li key={post.id} className="flex items-center justify-between gap-3 py-2.5">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-foreground">{post.title}</p>
+                  <p dir="ltr" className="truncate text-xs text-muted-foreground">
+                    /{post.slug}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <StatusBadge tone={post._status === "published" ? "positive" : "active"}>
+                    {STATUS_LABELS[post._status ?? "draft"]}
+                  </StatusBadge>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={() => setEditingPost(post)}
+                    aria-label={`ویرایش ${post.title}`}
+                  >
+                    <PencilIcon className="size-4" />
+                  </Button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </SectionCard>
+
+      {editingPost ? (
+        <PostDialog
+          post={editingPost === "new" ? null : editingPost}
+          onClose={() => setEditingPost(null)}
+          onSaved={() => {
+            setEditingPost(null);
+            site.loadOverview();
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* فروشگاه — products and the orders the site took                     */
+/* ------------------------------------------------------------------ */
+
+export function CmsStoreSection() {
+  const site = useCmsSite();
+  const [editingProduct, setEditingProduct] = useState<CmsProduct | "new" | null>(null);
+  const [updatingOrder, setUpdatingOrder] = useState("");
+
+  if (site.loading) return <SectionCardSkeleton rows={4} />;
+  if (!site.connection) return <NoSiteYet what="فروشگاه سایت" />;
+
+  const currency = site.overview?.site.store.currency ?? "IRT";
+
+  return (
+    <div className="space-y-4 sm:space-y-5">
+      <ErrorBox>{site.overviewError}</ErrorBox>
+
+      <SectionCard
+        title="محصولات"
+        description="فروشگاه آنلاین (۵۰ محصول آخر). محصول ساخته‌شده از این‌جا پیش‌نویس است؛ انتشار از پنل سایت‌ساز انجام می‌شود."
+        actions={
+          <SecondaryButton onClick={() => setEditingProduct("new")}>
+            <PlusIcon className="size-4" />
+            محصول جدید
+          </SecondaryButton>
+        }
+      >
+        {!site.overview ? (
+          <LoadingSkeleton rows={3} compact label="در حال بارگذاری محصول‌ها" />
+        ) : site.overview.products.length === 0 ? (
+          <EmptyState>فروشگاه هنوز محصولی ندارد.</EmptyState>
+        ) : (
+          <ul className="divide-y divide-border">
+            {site.overview.products.map((product) => (
+              <li key={product.id} className="flex items-center justify-between gap-3 py-2.5">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-foreground">{product.title}</p>
+                  {product.sku ? <p className="truncate text-xs text-muted-foreground">{product.sku}</p> : null}
+                </div>
+                <div className="flex shrink-0 items-center gap-3">
+                  <p className="text-sm font-semibold text-foreground">
+                    {formatPersianNumber(product.price)}{" "}
+                    <span className="text-xs font-normal text-muted-foreground">
+                      {CURRENCY_LABELS[currency] ?? currency}
+                    </span>
+                  </p>
+                  <StatusBadge tone={product._status === "published" ? "positive" : "active"}>
+                    {STATUS_LABELS[product._status ?? "draft"]}
+                  </StatusBadge>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={() => setEditingProduct(product)}
+                    aria-label={`ویرایش ${product.title}`}
+                  >
+                    <PencilIcon className="size-4" />
+                  </Button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </SectionCard>
+
+      {site.overview ? (
+        <OrdersCard
+          orders={site.overview.orders}
+          currency={currency}
+          updatingOrder={updatingOrder}
+          onStatusChange={(order, status) => {
+            setUpdatingOrder(order.id);
+            api<{ order: CmsOrder }>(`/api/cms/website/orders/${order.id}`, {
+              method: "PATCH",
+              body: JSON.stringify({ status }),
+            }).then(({ ok, data }) => {
+              if (ok) {
+                site.setOverview((current) =>
+                  current
+                    ? {
+                        ...current,
+                        orders: current.orders.map((row) => (row.id === order.id ? data.order : row)),
+                      }
+                    : current,
+                );
+                toast.success(`سفارش ${toPersianDigits(order.reference)} ${ORDER_STATUS_LABELS[status] ?? ""} شد.`);
+              } else {
+                toast.error(errorMessageOrRaw((data as { error?: string }).error));
+              }
+              setUpdatingOrder("");
+            });
+          }}
+        />
+      ) : (
+        <SectionCard title="سفارش‌ها" description="سفارش‌های فروشگاه اینترنتی.">
+          <LoadingSkeleton rows={3} compact label="در حال بارگذاری سفارش‌ها" />
+        </SectionCard>
+      )}
+
+      {editingProduct ? (
+        <ProductDialog
+          product={editingProduct === "new" ? null : editingProduct}
+          currency={CURRENCY_LABELS[currency] ?? currency}
+          onClose={() => setEditingProduct(null)}
+          onSaved={() => {
+            setEditingProduct(null);
+            site.loadOverview();
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* تنظیمات — the connection itself, and what this app pushes to it     */
+/* ------------------------------------------------------------------ */
+
+export function CmsSettingsSection() {
+  const site = useCmsSite();
+  const [editingDomain, setEditingDomain] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  if (site.loading) return <SectionCardSkeleton rows={4} />;
+  if (!site.connection) return <NoSiteYet what="تنظیمات سایت" />;
+
+  return (
+    <div className="space-y-4 sm:space-y-5">
+      <SectionCard
+        title="اتصال سایت"
+        description="کلید این اتصال روی سرور و رمزنگاری‌شده نگه‌داری می‌شود و هیچ‌وقت به مرورگر داده نمی‌شود."
+        actions={
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="outline" className="px-4" onClick={() => setEditingDomain(true)}>
+              <PencilIcon className="size-4" />
+              تغییر دامنه
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="px-4 text-destructive hover:text-destructive"
+              disabled={busy}
+              onClick={() => {
+                if (!window.confirm("قطع اتصال؟ سایت و محتوای آن روی سایت‌ساز می‌ماند؛ فقط این اتصال برداشته می‌شود.")) return;
+                setBusy(true);
+                api("/api/cms/website/connection", { method: "DELETE" }).then(() => {
+                  setBusy(false);
+                  toast.success("اتصال برداشته شد.");
+                  site.reload();
+                });
+              }}
+            >
+              <Trash2Icon className="size-4" />
+              قطع اتصال
+            </Button>
+          </div>
+        }
+      >
+        <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div>
+            <dt className="text-xs text-muted-foreground">دامنهٔ سایت</dt>
+            <dd dir="ltr" className="mt-0.5 truncate text-sm font-medium text-foreground">
+              {site.connection.siteDomain}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs text-muted-foreground">آدرس سایت‌ساز</dt>
+            <dd dir="ltr" className="mt-0.5 truncate text-sm font-medium text-foreground">
+              {site.connection.baseUrl}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs text-muted-foreground">وضعیت اتصال</dt>
+            <dd className="mt-0.5">
+              <StatusBadge tone={site.connection.status === "active" ? "positive" : "neutral"}>
+                {site.connection.status === "active" ? "فعال" : "غیرفعال"}
+              </StatusBadge>
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs text-muted-foreground">کلید API</dt>
+            <dd className="mt-0.5 text-sm font-medium text-foreground">ذخیره‌شده و رمزنگاری‌شده</dd>
+          </div>
+        </dl>
+      </SectionCard>
+
+      <CmsSyncSettings />
+
+      {editingDomain ? (
+        <DomainDialog
+          currentDomain={site.connection.siteDomain}
+          onClose={() => setEditingDomain(false)}
+          onSaved={() => {
+            setEditingDomain(false);
+            site.reload();
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+export function SiteSummary({ site }: { site: SiteDescriptor }) {
   return (
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
       <div>
@@ -661,165 +861,86 @@ function PreviewCard({
 /* Not connected: connect an existing site, or provision a new one     */
 /* ------------------------------------------------------------------ */
 
-function ConnectPanel({
-  mode,
-  setMode,
-  busy,
-  setBusy,
-  onDone,
-}: {
-  mode: Mode;
-  setMode: (mode: Mode) => void;
-  busy: boolean;
-  setBusy: (busy: boolean) => void;
-  onDone: () => void;
-}) {
+/**
+ * Connecting a site that already exists on the CMS.
+ *
+ * Deliberately *only* the connect half: creating a new site is the wizard's
+ * job (`setup/setup-wizard.tsx`), because a new site needs a domain, a CDN
+ * decision, a type and a plan — four answers this three-field form has
+ * nowhere to put. What is left here is the case the wizard cannot cover: an
+ * operator built the site by hand and the business needs to point at it.
+ */
+export function ConnectExistingSite({ onDone }: { onDone: () => void }) {
   const [baseUrl, setBaseUrl] = useState("");
   const [siteDomain, setSiteDomain] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [keyName, setKeyName] = useState("");
-  const [name, setName] = useState("");
-  const [domain, setDomain] = useState("");
-  const [type, setType] = useState<"business" | "portfolio" | "store">("business");
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  const submitConnect = () => {
+  const submit = () => {
     setBusy(true);
     setError("");
-    api("/api/cms/website/connect", {
+    api<{ error?: string }>("/api/cms/website/connect", {
       method: "POST",
       body: JSON.stringify({ baseUrl, siteDomain, apiKey, keyName: keyName || undefined }),
     })
       .then(({ ok, data }) => {
         if (ok) onDone();
-        else setError(errorMessageOrRaw((data as { error?: string }).error));
-      })
-      .finally(() => setBusy(false));
-  };
-
-  const submitProvision = () => {
-    setBusy(true);
-    setError("");
-    api("/api/cms/website/provision", {
-      method: "POST",
-      body: JSON.stringify({ name, domain, type }),
-    })
-      .then(({ ok, data }) => {
-        if (ok) onDone();
-        else setError(errorMessageOrRaw((data as { error?: string }).error));
+        else setError(errorMessageOrRaw(data.error));
       })
       .finally(() => setBusy(false));
   };
 
   return (
-    <div className="space-y-4">
-      <SectionCard
-        title="وب‌سایت اینترنتی"
-        description={
-          mode === "connect"
-            ? "اتصال به سایتی که روی پلتفرم Eshobe ساخته‌اید."
-            : "ساخت سایت جدید روی پلتفرم و اتصال خودکار."
-        }
-      >
-        <div className="mb-4 flex gap-2">
-          <Button type="button" variant={mode === "connect" ? "default" : "outline"} onClick={() => setMode("connect")}>
-            <PlugZapIcon className="size-4" />
-            اتصال سایت موجود
-          </Button>
-          <Button type="button" variant={mode === "provision" ? "default" : "outline"} onClick={() => setMode("provision")}>
-            <GlobeIcon className="size-4" />
-            ساخت سایت جدید
-          </Button>
-        </div>
-
-        <ErrorBox>{error}</ErrorBox>
-
-        {mode === "connect" ? (
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              submitConnect();
-            }}
-          >
-            <Field label="آدرس سرور CMS" hint="آدرس کنترل پین پلتفرم — بدون اسلش پایانی.">
-              <input
-                className={inputClass}
-                dir="ltr"
-                placeholder="https://cms.eshobe.com"
-                value={baseUrl}
-                onChange={(event) => setBaseUrl(event.target.value)}
-                required
-              />
-            </Field>
-            <Field label="دامنهٔ سایت" hint="فقط میزبان — مثل acme.ir">
-              <input
-                className={inputClass}
-                dir="ltr"
-                placeholder="acme.ir"
-                value={siteDomain}
-                onChange={(event) => setSiteDomain(event.target.value)}
-                required
-              />
-            </Field>
-            <Field label="کلید API سایت" hint="از بخش کلیدهای API پلتفرم صادر می‌شود و فقط یک‌بار نمایش داده می‌شود.">
-              <input
-                className={inputClass}
-                dir="ltr"
-                type="password"
-                placeholder="eshobe_live_…"
-                value={apiKey}
-                onChange={(event) => setApiKey(event.target.value)}
-                required
-              />
-            </Field>
-            <Field label="نام اتصال (اختیاری)">
-              <input
-                className={inputClass}
-                placeholder="پنل مدیریت"
-                value={keyName}
-                onChange={(event) => setKeyName(event.target.value)}
-              />
-            </Field>
-            <PrimaryButton disabled={busy}>{busy ? "در حال اتصال…" : "اتصال"}</PrimaryButton>
-          </form>
-        ) : (
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              submitProvision();
-            }}
-          >
-            <Field label="نام سایت">
-              <input
-                className={inputClass}
-                placeholder="فروشگاه اصفهان"
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                required
-              />
-            </Field>
-            <Field label="دامنهٔ سایت" hint="پس از ساخت، DNS را به سرور CMS اشاره دهید.">
-              <input
-                className={inputClass}
-                dir="ltr"
-                placeholder="shop.esfahan.ir"
-                value={domain}
-                onChange={(event) => setDomain(event.target.value)}
-                required
-              />
-            </Field>
-            <Field label="نوع سایت">
-              <select className={inputClass} value={type} onChange={(event) => setType(event.target.value as typeof type)}>
-                <option value="business">کسب‌وکار</option>
-                <option value="portfolio">نمونه‌کار</option>
-                <option value="store">فروشگاه</option>
-              </select>
-            </Field>
-            <PrimaryButton disabled={busy}>{busy ? "در حال ساخت…" : "ساخت و اتصال"}</PrimaryButton>
-          </form>
-        )}
-      </SectionCard>
-    </div>
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        submit();
+      }}
+    >
+      <ErrorBox>{error}</ErrorBox>
+      <Field label="آدرس سرور سایت‌ساز" hint="آدرس کنترل‌پنل پلتفرم — بدون اسلش پایانی.">
+        <input
+          className={inputClass}
+          dir="ltr"
+          placeholder="https://cms.eshobe.com"
+          value={baseUrl}
+          onChange={(event) => setBaseUrl(event.target.value)}
+          required
+        />
+      </Field>
+      <Field label="دامنهٔ سایت" hint="فقط میزبان — مثل acme.ir">
+        <input
+          className={inputClass}
+          dir="ltr"
+          placeholder="acme.ir"
+          value={siteDomain}
+          onChange={(event) => setSiteDomain(event.target.value)}
+          required
+        />
+      </Field>
+      <Field label="کلید API سایت" hint="از بخش کلیدهای API پلتفرم صادر می‌شود و فقط یک‌بار نمایش داده می‌شود.">
+        <input
+          className={inputClass}
+          dir="ltr"
+          type="password"
+          placeholder="eshobe_live_…"
+          value={apiKey}
+          onChange={(event) => setApiKey(event.target.value)}
+          required
+        />
+      </Field>
+      <Field label="نام اتصال (اختیاری)">
+        <input
+          className={inputClass}
+          placeholder="پنل مدیریت"
+          value={keyName}
+          onChange={(event) => setKeyName(event.target.value)}
+        />
+      </Field>
+      <PrimaryButton disabled={busy}>{busy ? "در حال اتصال…" : "اتصال"}</PrimaryButton>
+    </form>
   );
 }
 
@@ -827,7 +948,7 @@ function ConnectPanel({
 /* Posts, products and domain — create/edit/delete dialogs             */
 /* ------------------------------------------------------------------ */
 
-function PostDialog({
+export function PostDialog({
   post,
   onClose,
   onSaved,
@@ -909,7 +1030,7 @@ function PostDialog({
   );
 }
 
-function ProductDialog({
+export function ProductDialog({
   product,
   currency,
   onClose,
@@ -1035,7 +1156,7 @@ function ProductDialog({
   );
 }
 
-function DomainDialog({
+export function DomainDialog({
   currentDomain,
   onClose,
   onSaved,

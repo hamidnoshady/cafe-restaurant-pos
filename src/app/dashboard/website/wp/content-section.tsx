@@ -7,10 +7,10 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Field, inputClass } from "../ui";
+import { Field, inputClass } from "@/app/dashboard/ui";
 import { RefreshCwIcon, FileTextIcon, PlusIcon, ExternalLinkIcon, PencilIcon } from "lucide-react";
-import { api } from "../ui";
-import { cardClass, EmptyState, SectionCardSkeleton, StatusBadge, TabBar } from "../page-chrome";
+import { api } from "@/app/dashboard/ui";
+import { cardClass, EmptyState, SectionCardSkeleton, StatusBadge, TabBar } from "@/app/dashboard/page-chrome";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import { ConnectionPicker, type ConnectionLite } from "./connection-lite";

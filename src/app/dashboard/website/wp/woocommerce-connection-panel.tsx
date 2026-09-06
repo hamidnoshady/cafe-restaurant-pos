@@ -17,9 +17,9 @@ import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
  */
 import { useCallback, useEffect, useState } from "react";
 import { useFeatureLocked } from "@/components/feature-lock";
-import { api, ErrorBox, errorMessageOrRaw, InfoBox, inputClass } from "../ui";
+import { api, ErrorBox, errorMessageOrRaw, InfoBox, inputClass } from "@/app/dashboard/ui";
 import { Button } from "@/components/ui/button";
-import { SectionCard } from "../page-chrome";
+import { SectionCard } from "@/app/dashboard/page-chrome";
 import { formatDateTime } from "./format";
 import {
   CatalogueSection,

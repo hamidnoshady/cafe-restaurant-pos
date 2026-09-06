@@ -50,19 +50,19 @@ export const APP_DATA_RULES: readonly AppDataRule[] = [
   {
     domain: "customer_records",
     owner: "crm",
-    readers: ["sales", "growth", "accounting", "operations", "wp"],
+    readers: ["sales", "growth", "accounting", "operations", "website"],
     syncStrategy: "shared-service",
   },
   {
     domain: "sales_documents",
     owner: "sales",
-    readers: ["accounting", "growth", "crm", "wp"],
+    readers: ["accounting", "growth", "crm", "website"],
     syncStrategy: "shared-service",
   },
   {
     domain: "ledger_entries",
     owner: "accounting",
-    readers: ["sales", "growth", "crm", "wp"],
+    readers: ["sales", "growth", "crm", "website"],
     syncStrategy: "shared-service",
   },
   {
@@ -74,14 +74,17 @@ export const APP_DATA_RULES: readonly AppDataRule[] = [
   {
     domain: "operations_catalogue",
     owner: "operations",
-    readers: ["sales", "accounting", "wp"],
+    readers: ["sales", "accounting", "website"],
     syncStrategy: "shared-service",
   },
   {
-    // The WP-owned connection profile and mapped store data travel together:
-    // other apps may read the mirror, but no other app owns the store link.
+    // The WordPress-owned connection profile and mapped store data travel
+    // together: other apps may read the mirror, but no other app owns the
+    // store link. The owner is «مدیریت وب‌سایت», which is where the WordPress
+    // manager now lives — the two website managers share one app and keep
+    // separate connections.
     domain: "wp_store_mirror",
-    owner: "wp",
+    owner: "website",
     readers: ["sales", "accounting", "growth", "crm", "operations"],
     syncStrategy: "mapped-integration",
   },

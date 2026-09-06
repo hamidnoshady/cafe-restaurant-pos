@@ -134,7 +134,7 @@ describe("route → app", () => {
     expect(appForPagePath("/dashboard/pos")).toBe("sales");
     expect(appForPagePath("/dashboard/crm/segments")).toBe("crm");
     expect(appForPagePath("/dashboard/growth")).toBe("growth");
-    expect(appForPagePath("/dashboard/wp/products")).toBe("wp");
+    expect(appForPagePath("/dashboard/website/wp/products")).toBe("website");
     expect(appForPagePath("/dashboard/connections")).toBe("connections");
     expect(appForPagePath("/dashboard/connections/holoo")).toBe("connections");
   });
@@ -143,7 +143,7 @@ describe("route → app", () => {
     expect(appForApiPath("/api/orders")).toBe("sales");
     expect(appForApiPath("/api/inventory/purchases/1")).toBe("operations");
     expect(appForApiPath("/api/crm/cases")).toBe("crm");
-    expect(appForApiPath("/api/integrations/wp-manager/overview")).toBe("wp");
+    expect(appForApiPath("/api/integrations/wp-manager/overview")).toBe("website");
   });
 
   it("leaves the shell surfaces ungated — the explanation screen has to be reachable", () => {

@@ -11,8 +11,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { RefreshCwIcon, ImageIcon, ExternalLinkIcon } from "lucide-react";
-import { api } from "../ui";
-import { cardClass, EmptyState, SectionCardSkeleton } from "../page-chrome";
+import { api } from "@/app/dashboard/ui";
+import { cardClass, EmptyState, SectionCardSkeleton } from "@/app/dashboard/page-chrome";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import { ConnectionPicker, type ConnectionLite } from "./connection-lite";

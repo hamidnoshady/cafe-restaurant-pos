@@ -9,8 +9,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { RefreshCwIcon, ArrowUpRightIcon, ArrowDownLeftIcon } from "lucide-react";
-import { api } from "../ui";
-import { cardClass, EmptyState, SectionCardSkeleton, StatusBadge } from "../page-chrome";
+import { api } from "@/app/dashboard/ui";
+import { cardClass, EmptyState, SectionCardSkeleton, StatusBadge } from "@/app/dashboard/page-chrome";
 import { formatJalali } from "@/lib/jalali";
 import { toPersianDigits } from "@/lib/digits";
 import { ConnectionPicker, type ConnectionLite } from "./connection-lite";

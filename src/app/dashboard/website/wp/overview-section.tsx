@@ -20,8 +20,8 @@ import {
   RefreshCwIcon,
   AlertTriangleIcon,
 } from "lucide-react";
-import { api } from "../ui";
-import { cardClass, EmptyState, SectionCard, SectionCardSkeleton, StatusBadge } from "../page-chrome";
+import { api } from "@/app/dashboard/ui";
+import { cardClass, EmptyState, SectionCard, SectionCardSkeleton, StatusBadge } from "@/app/dashboard/page-chrome";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import type { WpOverviewStats } from "@/lib/integrations/wp-manager-service";

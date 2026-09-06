@@ -99,10 +99,13 @@ describe("appForKey / modulesForApp", () => {
     expect(modulesForApp("growth")).not.toContain("website");
   });
 
-  it("returns the Website app owning the CMS connection", () => {
+  it("returns the one Website app owning both website managers", () => {
+    // «مدیریت وب‌سایت» is one app with two managers — the Eshobe CMS site
+    // builder and the WordPress/WooCommerce manager. Splitting them back into
+    // two rail entries is the regression this pins.
     const website = appForKey("website");
-    expect(website.label).toBe("وب‌سایت");
-    expect(modulesForApp("website")).toEqual(["website"]);
+    expect(website.label).toBe("مدیریت وب‌سایت");
+    expect(modulesForApp("website")).toEqual(["website", "integrations"]);
   });
 
   it("returns the CRM app owning both the customer record and the CRM surfaces", () => {

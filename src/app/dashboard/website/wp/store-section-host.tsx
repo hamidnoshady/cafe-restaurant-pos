@@ -8,8 +8,8 @@
  * the same selected store; the connection is chosen once here.
  */
 import { useCallback, useEffect, useState } from "react";
-import { api } from "../ui";
-import { cardClass, EmptyState, SectionCardSkeleton } from "../page-chrome";
+import { api } from "@/app/dashboard/ui";
+import { cardClass, EmptyState, SectionCardSkeleton } from "@/app/dashboard/page-chrome";
 import { CatalogueSection, StoreOrdersSection, TaxonomiesSection } from "./woo-store-sections";
 import { PluginWaitNote } from "./plugin-wait-note";
 import { ConnectionPicker, type ConnectionLite } from "./connection-lite";

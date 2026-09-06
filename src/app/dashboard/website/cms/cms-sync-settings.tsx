@@ -3,7 +3,9 @@
 import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
 
 /**
- * «وب‌سایت» — the website connection panel (Phase 38, issues #379 / #381).
+ * «تنظیمات و همگام‌سازی» — the CMS manager's wiring section (Phase 38,
+ * issues #379 / #381; moved out of the technical connections hub when both
+ * website systems became managers of «مدیریت وب‌سایت»).
  *
  * Three things, in the order an owner meets them:
  *
@@ -15,8 +17,8 @@ import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
  *   3. **The queue.** Pending / failed / stopped rows, each with «تلاش مجدد»,
  *      and «همگام‌سازی اکنون» for the impatient.
  *
- * Content — posts, product copy — is still written in `/dashboard/website`
- * and by the assistant; this tab is the wiring.
+ * Content — posts, product copy — is written in this manager's «محتوا» and
+ * «فروشگاه» sections and by the assistant; this section is the wiring.
  */
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -25,8 +27,8 @@ import { formatRial } from "@/lib/money";
 import { formatPersianNumber, toPersianDigits } from "@/lib/digits";
 import { WEBSITE_ERROR_LABELS } from "@/lib/website/adapter";
 import { WEBSITE_OUTBOX_KIND_LABELS, WEBSITE_OUTBOX_STATUS_LABELS } from "@/lib/website/sync";
-import { EmptyState, SectionCard, StatusBadge } from "../page-chrome";
-import { api, ErrorBox, errorMessageOrRaw, Field, InfoBox, inputClass } from "../ui";
+import { EmptyState, SectionCard, StatusBadge } from "@/app/dashboard/page-chrome";
+import { api, ErrorBox, errorMessageOrRaw, Field, InfoBox, inputClass } from "@/app/dashboard/ui";
 
 interface ConnectionSummary {
   id: string;
@@ -88,7 +90,7 @@ function statusTone(status: QueueRow["status"]): "active" | "positive" | "neutra
   return "neutral";
 }
 
-export function WebsitePanel() {
+export function CmsSyncSettings() {
   const [loading, setLoading] = useState(true);
   const [enabled, setEnabled] = useState(true);
   const [connection, setConnection] = useState<ConnectionSummary | null>(null);

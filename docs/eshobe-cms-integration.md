@@ -54,6 +54,11 @@ and only ever decrypts them inside the outbound HTTP client.
 | `src/lib/cms/webhook.ts` | HMAC verification (`x-eshobe-signature: sha256=<hex>`) + cache-tag derivation. |
 | `src/app/api/cms/revalidate/route.ts` | The receiver: verifies the CMS's publish webhook and purges cached CMS data by site tag. |
 | `migrations/0122_eshobe_cms_connection.sql` | `eshobe_cms_connections` — one row per business, tenant RLS. |
+| `src/lib/website/setup.ts` / `setup-service.ts` | The four-step site-building wizard: the pure step rules (unit-tested) and the `website_setup` row they read and write. |
+| `src/lib/website/domain-service.ts` | Buying a domain: price it, refuse early on an empty wallet, order through the CMS's registrar, then bill it here. |
+| `src/lib/website/billing.ts` / `billing-service.ts` | What a platform site costs and when the next period falls due; the plan catalogue, the subscription and every charge, settled against the platform wallet. |
+| `src/lib/website/managers-service.ts` | Which of the app's two managers this business actually has — one cheap local read the sidebar and the app home both build themselves from. |
+| `migrations/0138_website_management.sql` | `website_setup`, `website_service_plans` (global) and the tenant-RLS'd `website_service_subscriptions` / `website_service_charges`; also merges the `wp` app-availability rows into `website`. |
 
 ### Environment variables (`cp .env.example .env` / `.env.local.example`)
 
@@ -122,17 +127,88 @@ await updateOrderStatus(cms, orderId, "paid");           // e-commerce ops
 3. Store both: `saveCmsConnection({ businessId, siteId, siteDomain, baseUrl, apiKey, keyName })`.
 4. From then on everything uses `getCmsConfigForBusiness(businessId)`.
 
-## 5. The Website Manager screen (issue #378)
+## 5. «مدیریت وب‌سایت» — one app, two managers
 
-The owner/manager surface is its own app (`/dashboard/website`, «وب‌سایت»,
-`src/lib/apps.ts`) — a peer of «رشد و بازاریابی» in the rail, not a section
-inside it: the credential this screen holds is an integration with an
-external system of record, the same shape as the WooCommerce or MCP
-connections, not a marketing engine over this app's own tables. It is a
-**connections-style** screen, not a second CMS admin: the CMS stays the
-content source of truth, this screen answers "is my site connected, and what
-does my store look like". `/dashboard/growth/website` (its original,
-forward-referenced home) redirects here for old bookmarks.
+The owner/manager surface is **one app** (`/dashboard/website`, «مدیریت
+وب‌سایت», `src/lib/apps.ts`) with two managers inside it, and the distinction
+matters in both directions:
+
+* **سایت‌ساز اشوبه** (`/dashboard/website/cms/*`) — this document's subject: the
+  platform site, on eshobe-cms.
+* **وردپرس و ووکامرس** (`/dashboard/website/wp/*`) — a WordPress site the
+  business already runs (Phase 40; it moved here from `/dashboard/wp`, which
+  now redirects).
+
+They are peers and never fold into each other: separate connections, separate
+sections, separate headers. What they share is one door in the rail and one
+sidebar, whose menu is built from the business's **real connections**
+(`GET /api/website/managers`) — a manager with no connection lists only its
+front page and the screen that connects it, so there is never a «سفارش‌ها»
+entry over a site that does not exist.
+
+The `integrations` entitlement gates the WordPress half only
+(`/dashboard/website/wp` in `features.ts`): a business without the add-on
+still reaches the platform site it pays for.
+
+### The CMS manager's sections
+
+| Section | Route | What it is |
+|---|---|---|
+| میز کار سایت | `/dashboard/website/cms` | Connection, the DNS checklist and the live preview. |
+| ساخت سایت | `…/cms/setup` | The four-step wizard (below). |
+| محتوا | `…/cms/content` | The site's pages and posts. |
+| فروشگاه | `…/cms/store` | Products and the orders the site took. |
+| تنظیمات و همگام‌سازی | `…/cms/settings` | The connection itself, and the one-way price/stock push (Phase 38w; this section is where the connections hub's «وب‌سایت» tab moved). |
+| اشتراک و صورت‌حساب | `…/cms/billing` | What the site costs and what it has cost. |
+
+### Building a site: domain → CDN → type → build
+
+«سایت‌ساز کار سایت را می‌کند؛ پول را این‌جا می‌گیریم.» The wizard
+(`src/lib/website/setup.ts`, `website_setup`) walks the four steps in the order
+an owner works in, saving each answer as it is given so it can be abandoned on
+a phone and finished on a desk. Which step is "current" is never stored twice —
+it is derived from the answers.
+
+1. **دامنه.** Either the business owns the domain and will point DNS at the
+   platform, or the platform's registrar registers it. A quote
+   (`GET /api/cms/website/domain/quote`) has no side effects and needs no site,
+   which is why it can be asked at step one — the CMS accepts a *platform* key
+   for the quote alone. An order (`POST …/domain/order`) is site-key work and
+   is priced, wallet-checked, placed and *then* billed, in that order: charging
+   first would need a refund path that only runs on failure.
+2. **CDN.** ArvanCloud in front of the site, or a recorded «بدون CDN» — saying
+   no is a decision the wizard keeps, not a step it drops. Creating the zone is
+   platform-staff work on the CMS; the business sees its own zone through
+   `GET /api/cms/website/cdn` and can empty its own cache.
+3. **نوع سایت.** معرفی کسب‌وکار / نمونه‌کار / فروشگاه, plus a name and the plan
+   the site will run on. This is what `POST /api/provision-site` is told, so it
+   decides the new site's blocks and starter content.
+4. **ساخت.** Provision on the CMS → issue the site key → store it encrypted →
+   start the subscription, in that order. A business is never billed for a site
+   whose provisioning failed; the reverse (a site with nothing billing for it)
+   is recoverable by the operator, so that is the direction the failure falls.
+
+### Who bills for the site
+
+The CMS renders and serves; it has no wallet, no plan and no invoice. Every
+Rial — the monthly site fee, a domain registration or renewal, a one-off setup
+— is a `website_service_charges` row settled against the **same platform wallet**
+the assistant and messaging draw on (migration 0130), so one top-up covers all
+three. Two rules carry it:
+
+* **Idempotency is the UNIQUE index** `(business_id, kind, reference)`. A
+  subscription charge's reference is the period it covers, never the moment the
+  tick ran, so a retry or a second replica cannot bill twice.
+* **A wallet that cannot cover a renewal marks the subscription `past_due` and
+  leaves the site serving.** `runWebsiteBillingTick()` (hourly, on the custom
+  server) never cuts a shopfront off; the owner sees the state and a
+  «پرداخت دورهٔ جاری» button on the billing section.
+
+A quote in a currency this app cannot express in Rial is **refused** rather than
+converted at a guessed rate (`quoteToRial`): charging a business a number nobody
+can reconcile is worse than saying the platform cannot sell that TLD yet.
+
+### The API surface
 
 | Route | What it does |
 |---|---|
@@ -146,6 +222,13 @@ forward-referenced home) redirects here for old bookmarks.
 | `POST /api/cms/website/products`, `PATCH`/`DELETE /api/cms/website/products/[id]` | Create/edit/delete a product. Same draft-only rule. |
 | `PATCH /api/cms/website/domain` | Move the connected site to a new domain (`updateSiteDomain` → CMS `PATCH /api/site/domain`, site-key only). Resets `domainVerified` server-side and updates the stored `site_domain`; the DNS checklist has to be re-run and the CMS-side box re-ticked. |
 | `PATCH /api/cms/website/orders/[id]` | Move an order status; the CMS settles stock & snapshot. |
+| `GET`/`PATCH /api/cms/website/setup` | The wizard's state (plus the plan catalogue); record one step's answer. |
+| `POST /api/cms/website/setup/build` | Step 4 — provision, connect and subscribe. Owner only. |
+| `GET /api/cms/website/domain/quote` | Price a domain, with the wallet balance beside it. No side effects, no site required. |
+| `POST /api/cms/website/domain/order` | Buy/transfer/renew through the CMS's registrar and bill it here. Owner only. |
+| `GET /api/cms/website/cdn`, `POST …/cdn/purge` | The site's own CDN zone, and emptying its own edge cache. |
+| `GET /api/website/managers` | Which of the app's two managers this business has — what the sidebar and the app home are built from. |
+| `GET`/`POST /api/website/billing` | Plan, subscription and charges; start/change a plan, pay the current period, stop auto-renewal. |
 
 Pages stay read-only from this app — the block-based page builder is a CMS-admin surface, deliberately not duplicated here. «مدیریت محتوا در CMS» keeps that door open for anything this screen doesn't cover (page layout, media, nav, forms, publishing).
 

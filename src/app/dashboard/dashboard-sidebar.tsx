@@ -145,9 +145,8 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   // Phase 36 — the CRM app's home. `/dashboard/customers` keeps the plain
   // people glyph above; this is the app that now owns that record.
   "/dashboard/crm": ContactIcon,
-  // Phase 40 — the WordPress & WooCommerce manager's home.
-  "/dashboard/wp": GlobeIcon,
-  // Issue #378 — the website manager's own app, pulled out of Growth.
+  // «مدیریت وب‌سایت» — one app for both website systems (the Eshobe CMS site
+  // builder and the WordPress/WooCommerce manager, each its own section).
   "/dashboard/website": GlobeIcon,
   // Migration 0130 — the support desk.
   "/dashboard/support": LifeBuoyIcon,
@@ -204,13 +203,15 @@ const WORKSPACE_APP_LAUNCHERS: readonly {
     ],
   },
   {
-    key: "wp",
-    label: "مدیریت وردپرس",
+    key: "website",
+    label: "مدیریت وب‌سایت",
     icon: GlobeIcon,
-    // The WP Manager has its own home and its own connection screen. Do not
-    // fall back to the technical connection hub: that would put WooCommerce
-    // back behind the Accounting/Connections door.
-    hrefs: ["/dashboard/wp"],
+    // One launcher for both managers. The app home is first; `/dashboard/wp`
+    // stays in the list because a saved bottom-nav slot or bookmark from the
+    // standalone WP Manager still points there (it redirects into the app).
+    // Do not fall back to the technical connection hub: that would put
+    // WooCommerce and the CMS back behind the Accounting/Connections door.
+    hrefs: ["/dashboard/website", "/dashboard/wp"],
   },
   {
     key: "connections",

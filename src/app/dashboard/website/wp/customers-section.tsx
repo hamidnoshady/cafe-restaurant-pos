@@ -10,12 +10,12 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { ContactIcon, RefreshCwIcon, ExternalLinkIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { api } from "../ui";
-import { cardClass, EmptyState, SectionCardSkeleton, StatusBadge } from "../page-chrome";
+import { api } from "@/app/dashboard/ui";
+import { cardClass, EmptyState, SectionCardSkeleton, StatusBadge } from "@/app/dashboard/page-chrome";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import { ConnectionPicker, type ConnectionLite } from "./connection-lite";
-import { crmCustomerHref } from "../crm/crm-routes";
+import { crmCustomerHref } from "@/app/dashboard/crm/crm-routes";
 import { PluginWaitNote } from "./plugin-wait-note";
 
 interface StoreCustomer {

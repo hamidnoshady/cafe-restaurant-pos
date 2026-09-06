@@ -105,9 +105,12 @@ export const PAGE_FEATURE_PREFIXES: [string, string][] = [
   ["/dashboard/backup", "backup"],
   ["/dashboard/ai", "ai_assistant"],
   // The legacy `/dashboard/integrations` route still hosts the Holoo compatibility
-  // page, while the standalone WP Manager owns `/dashboard/wp`.
+  // page; the WordPress/WooCommerce manager is now a manager *inside* «مدیریت
+  // وب‌سایت» and lives under its prefix. Only that half is entitlement-gated:
+  // `/dashboard/website` itself (the app home and the Eshobe CMS manager) is
+  // not, so a business without `integrations` still reaches its platform site.
   ["/dashboard/integrations", "integrations"],
-  ["/dashboard/wp", "integrations"],
+  ["/dashboard/website/wp", "integrations"],
   ["/dashboard/connections/holoo", "integrations"],
   // `/dashboard/connections` is deliberately absent: the technical hub carries
   // connections with different entitlements (and desktop with none), so it
