@@ -115,7 +115,14 @@ export interface ConnectionKindVisibilityOptions {
 export function visibleConnectionKinds(options: ConnectionKindVisibilityOptions): ConnectionKind[] {
   if (options.industry && !hasModule(options.industry, "connections")) return [];
   return CONNECTION_KINDS.filter(
-    (kind) => kind.key !== "woocommerce" && kind.allowedRoles.includes(options.role),
+    (kind) =>
+      // Both website connections belong to «مدیریت وب‌سایت» (the WooCommerce
+      // store to its WordPress manager, the platform site to its CMS manager),
+      // so neither is drawn here — a business sets each one up inside the
+      // manager that uses it, and this hub keeps the technical credentials.
+      kind.key !== "woocommerce" &&
+      kind.key !== "website" &&
+      kind.allowedRoles.includes(options.role),
   );
 }
 

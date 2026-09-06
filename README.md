@@ -631,24 +631,58 @@ In particular, Accounting keeps receivables and ledger entries, CRM keeps canoni
 records, Growth keeps growth programs, and WP Manager keeps the mapped WordPress/WooCommerce store
 mirror and all store-management screens. Accounting's customer views link into Growth's read-only
 customer projection; Growth links to CRM when a canonical edit is needed. Technical desktop/API/
-MCP/Holoo connections live at `/dashboard/connections`, while the WP Manager connection and store
-workflows live at `/dashboard/wp`. Legacy WooCommerce URLs redirect to the WP Manager.
+MCP/Holoo connections live at `/dashboard/connections`, while the WordPress connection and store
+workflows live at `/dashboard/website/wp` — one of the two managers inside «مدیریت وب‌سایت» (see
+below). Legacy WooCommerce URLs, and `/dashboard/wp/*` itself, redirect there.
 
 See [docs/phases/Phase-40-App-Ownership-And-WP-Manager.md](docs/phases/Phase-40-App-Ownership-And-WP-Manager.md).
 
-## The Website app (وب‌سایت)
+## مدیریت وب‌سایت — one app, two managers
 
-A peer app at `/dashboard/website` (`src/lib/apps.ts`), not a section of Growth & Marketing:
-it holds one encrypted credential to [`eshobe-cms`](https://github.com/hamidnoshady/eshobe-cms),
-a separately deployed, multi-tenant Payload 3 website platform — the same cross-app boundary as
-WP Manager's WooCommerce system and the technical Connections app, not a marketing engine over
-Growth's own tables. The two apps are connected over REST with a per-site API
-key, never embedded and never sharing a database; the full contract (credentials, endpoints,
-webhook, DNS/preview setup on both sides) is
+There are two ways for a business here to have a website, and one app for both
+(`/dashboard/website`, `src/lib/apps.ts`):
+
+- **سایت‌ساز اشوبه** (`/dashboard/website/cms/*`) — a site on
+  [`eshobe-cms`](https://github.com/hamidnoshady/eshobe-cms), a separately deployed,
+  multi-tenant Payload 3 website platform this app holds one encrypted credential for.
+- **وردپرس و ووکامرس** (`/dashboard/website/wp/*`) — a WordPress site the business already
+  runs, managed through the plugin or the WooCommerce REST API (Phase 40).
+
+They are peers inside one door: separate connections, separate sections, separate headers,
+never folded into each other. The sidebar is built from the business's **real connections**
+(`GET /api/website/managers`), so a manager that is not set up shows only its front page and
+the screen that connects it. The `integrations` entitlement gates the WordPress half alone —
+a business without the add-on still runs the platform site it pays for.
+
+The CMS half is connected over REST with a per-site API key, never embedded and never sharing
+a database; the full contract (credentials, endpoints, webhook, DNS/preview setup on both
+sides, the build wizard and the billing model) is
 [docs/eshobe-cms-integration.md](docs/eshobe-cms-integration.md).
 
-- **Connect or provision** — attach an existing CMS site with a pasted key, or create one in
-  one action (`POST /api/cms/website/provision`); either way the key is stored encrypted
+### Building a site: دامنه → CDN → نوع سایت → ساخت
+
+«سایت‌ساز کار سایت را می‌کند؛ پول را این‌جا می‌گیریم.» The CMS renders and serves; it has no
+wallet, no plan and no invoice. `/dashboard/website/cms/setup` walks four steps, saving each
+answer as it is given:
+
+1. **دامنه** — point a domain the business owns, or buy one through the platform's registrar.
+   A quote is free and needs no site; an order is priced, wallet-checked, placed, then billed.
+2. **CDN** — ArvanCloud in front of the site, or a recorded «بدون CDN». The zone itself is
+   platform-staff work; the business reads its own zone and can purge its own cache.
+3. **نوع سایت** — معرفی کسب‌وکار / نمونه‌کار / فروشگاه, plus the plan it runs on. This is what
+   the CMS is told at provision time, so it picks the blocks and starter content.
+4. **ساخت** — provision, connect, subscribe, in that order: a business is never billed for a
+   site whose provisioning failed.
+
+Every charge — the monthly fee, a domain registration or renewal, a setup fee — is settled
+against the **same platform wallet** as the assistant and messaging (migration 0130), with the
+period as its idempotency key. A wallet that cannot cover a renewal marks the subscription
+`past_due` and leaves the site serving; nothing cuts a shopfront off from a cron.
+
+### The CMS manager, day to day
+
+- **Connect or provision** — attach an existing CMS site with a pasted key, or build one through
+  the wizard (`POST /api/cms/website/setup/build`); either way the key is stored encrypted
   (`eshobe_cms_connections`, migration 0122) and the browser never sees it.
 - **One overview call** — the site's descriptor, pages, catalogue and orders
   (`GET /api/cms/website/overview`), 30s SWR, owner/manager only.
@@ -658,16 +692,17 @@ webhook, DNS/preview setup on both sides) is
 - Order status changes (`PATCH /api/cms/website/orders/[id]`) are the one e-commerce write
   here — the CMS's own hooks settle stock and snapshot the change.
 
-## مدیریت وب‌سایت (Website manager, Phase 38w)
+### One-way price and stock sync (Phase 38w)
 
-The Website app above talks to *one* CMS. Phase 38w puts a `WebsiteAdapter`
+The manager above talks to *one* CMS. Phase 38w puts a `WebsiteAdapter`
 (`src/lib/website/adapter.ts`) between this app and whatever the site is, and wires the site into
 the things an owner actually repeats: keeping prices and stock honest, and getting a post drafted
 without retyping the menu. The rule it runs on — **سایت ویترین است؛ منبع حقیقت اینجاست** — the
 site is a shop window; price and stock are decided here and flow one way.
 
-- **Connect** from «اتصال‌ها ← وب‌سایت» (owner only, `integrations`). The key is tested before it is
-  saved and never shown again; `/dashboard/website` keeps working on the same connection.
+- **Connect** from «سایت‌ساز اشوبه ← تنظیمات و همگام‌سازی» (owner only, `integrations`; this
+  section is where the connections hub's «وب‌سایت» tab moved). The key is tested before it is
+  saved and never shown again.
 - **Mark what goes.** Nothing is sent until the owner ticks a product; «ارسال قیمت‌ها» and «ارسال
   موجودی» are two separate switches. Both menu items and retail items can be marked.
 - **A queue, not a hope.** Changes land in `website_outbox`; a background tick sends them with
@@ -887,8 +922,9 @@ says what to check: the app and Postgres containers must share a network, and th
 `DATABASE_URL` must be the database service's name on it.
 
 **Docker deployments (`docker-entrypoint.sh`) do this for you.** Every shipped compose file
-(`docker-compose.local.yml`, plus the retired `archive/deploy/docker-compose.komodo.yml` and
-`archive/deploy/docker-compose.srv1.yml`) hands the app container one Postgres superuser — the same one that runs migrations — because asking
+(`docker-compose.local.yml` and `docker-compose.srv1.yml`, plus the retired
+`archive/deploy/docker-compose.komodo.yml` and `archive/deploy/docker-compose.srv1.yml`)
+hands the app container one Postgres superuser — the same one that runs migrations — because asking
 every operator to hand-edit their stack's environment to carry a second role and password
 isn't worth the friction. The entrypoint migrates with that connection as usual, then runs
 `scripts/derive-runtime-database-url.ts`, which provisions `pos_app` from it (reusing its

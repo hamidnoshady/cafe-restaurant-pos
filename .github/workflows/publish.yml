@@ -1,0 +1,114 @@
+# Builds the production image and publishes it to GHCR, on every push to main.
+#
+# This is the one automatic workflow in the repo, and deliberately so: it is
+# what deployment consumes. `test.yml` and `build-and-push.yml` stay manual
+# (CLAUDE.md's CI section), because a checklist and a Docker Hub image are
+# things you ask for; an image for the deploy target has to exist for every
+# merge or the stack silently keeps running the previous one.
+#
+# Why GHCR, when build-and-push.yml pushes to Docker Hub. The rest of the
+# product already assumed a GHCR image and nothing ever pushed one:
+#   - docker-compose.local.yml (the café-server stack) pulls
+#     ghcr.io/hamidnoshady/cafe-restaurant-pos:${POS_IMAGE_TAG:-latest};
+#   - src/lib/app-update.ts defaults GHCR_IMAGE to that same repository and
+#     mints short-lived GHCR pull tokens for the laptop self-update flow.
+# Docker Hub was adopted because srv1 cannot reach ghcr.io at all — it is
+# filtered at the network layer on that host. That is now solved the way the
+# sibling eshobe-cms repo solved it: the srv1 stack pulls the same GHCR image
+# through the ghcr-mirror.liara.ir pull-through cache, which is reachable
+# (docker-compose.srv1.yml). build-and-push.yml is kept as-is for anyone still
+# pulling the Docker Hub tag; it is not the deploy path.
+#
+# Tag shape is load-bearing: `sha-<short>` plus `latest`, matching
+# imageRefFor() in src/lib/app-update-status.ts. A long-sha tag (the shape
+# eshobe-cms uses) would leave the café laptop's update check looking for a
+# tag that does not exist. GIT_SHA is passed as a build arg because the
+# Dockerfile bakes it into APP_IMAGE_SHA, which is how a running container
+# knows which build it is.
+#
+# The image is gated, not blind: `gates` re-runs the static half of the local
+# checklist (type check, unit tests, production build) on the exact merge
+# commit before anything is pushed. The database-backed integration suite
+# stays in the manual test.yml — it needs a service container and several
+# minutes, and the local checklist is what CLAUDE.md makes the real gate.
+#
+# NOTE: this does not by itself change what production runs. Runflare still
+# builds from source per docs/server-migration.md until its service is
+# repointed at this image — a separate, deliberate step.
+name: publish
+
+on:
+  push:
+    branches: [main]
+    tags:
+      - 'v*'
+  # Republish without a new commit (a rebuild after a base-image CVE, say).
+  workflow_dispatch:
+
+# Never cancel: a half-published image is worse than a slow queue, and two
+# merges in a row must each produce their own tag.
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # Session signing is not what's under test here, but the auth/webauthn
+  # suites need a real (non-placeholder) secret and `next build` does not read
+  # .env. Throwaway, CI-only, never used to sign anything real.
+  JWT_SECRET: ci-only-throwaway-secret-0123456789abcdef0123456789abcdef
+
+jobs:
+  gates:
+    name: pre-publish gates
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm test
+      - run: npm run build
+
+  docker-publish:
+    name: publish image (GHCR)
+    runs-on: ubuntu-latest
+    needs: [gates]
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute short sha
+        id: sha
+        run: echo "short=${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          build-args: |
+            GIT_SHA=${{ steps.sha.outputs.short }}
+          tags: |
+            ghcr.io/${{ github.repository }}:sha-${{ steps.sha.outputs.short }}
+            ghcr.io/${{ github.repository }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: true
+          sbom: true

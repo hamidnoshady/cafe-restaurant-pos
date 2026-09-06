@@ -385,6 +385,140 @@ export function updateOrderStatus(
 }
 
 /* ------------------------------------------------------------------ */
+/* Domain registrar and CDN — the two site services the CMS operates    */
+/* ------------------------------------------------------------------ */
+
+/**
+ * What the CMS's registrar charges for one domain operation.
+ *
+ * The price comes back in the *CMS's* currency (`IRT` by default) and is
+ * converted to integer Rial exactly once, in `src/lib/website/billing.ts`.
+ * The money itself never moves on the CMS: it holds the reseller account and
+ * places the order; the fee is billed against this platform's wallet — see
+ * that module's header for why the split is that way round.
+ */
+export interface RegistrarQuote {
+  availability: "unknown" | "managedHere" | "reservedInPlatform";
+  availabilityMessage: string;
+  resellerEnabled: boolean;
+  quote: {
+    catalogueCost: number;
+    currency: string;
+    marginPercentage: number;
+    operation: "register" | "transfer" | "renew";
+    period: number;
+    price: number;
+    tld: string;
+  };
+}
+
+export function fetchRegistrarQuote(
+  config: CmsConfig,
+  input: { domain: string; operation: "register" | "transfer" | "renew"; period: number },
+  opts?: { fetchImpl?: FetchLike },
+): Promise<RegistrarQuote> {
+  return cmsRequest<RegistrarQuote>(config, {
+    path: "/api/site/registrar/quote",
+    query: { domain: input.domain, operation: input.operation, period: input.period },
+    fetchImpl: opts?.fetchImpl,
+  });
+}
+
+export interface RegistrarOrderResult {
+  ok?: boolean;
+  message?: string;
+  /** The lifecycle row the CMS created for this order, when it reports one. */
+  operation?: { id?: string; state?: string; domain?: string };
+  domain?: { id?: string; domain?: string; state?: string };
+}
+
+/**
+ * `POST /api/site/registrar/domains` — register or transfer a domain for the
+ * connected site. Site key only: the CMS resolves the tenant from the key, so
+ * no request body can name another business's site.
+ */
+export function orderRegistrarDomain(
+  config: CmsConfig,
+  input: {
+    domain: string;
+    operation: "register" | "transfer" | "renew";
+    period: number;
+    nameservers?: string[];
+    contact?: Record<string, unknown>;
+    fields?: Record<string, unknown>;
+    irnicHandles?: Record<string, unknown>;
+    eppCode?: string;
+  },
+  opts?: { fetchImpl?: FetchLike },
+): Promise<RegistrarOrderResult> {
+  return cmsRequest<RegistrarOrderResult>(config, {
+    method: "POST",
+    path: "/api/site/registrar/domains",
+    body: input,
+    fetchImpl: opts?.fetchImpl,
+  });
+}
+
+/** `GET /api/site/registrar/domains` — the domains the CMS manages for this site. */
+export function fetchRegistrarDomains(
+  config: CmsConfig,
+  opts?: { fetchImpl?: FetchLike },
+): Promise<{ docs?: unknown[]; domains?: unknown[] }> {
+  return cmsRequest<{ docs?: unknown[]; domains?: unknown[] }>(config, {
+    path: "/api/site/registrar/domains",
+    fetchImpl: opts?.fetchImpl,
+  });
+}
+
+/**
+ * The site's CDN zone, as the CMS observes it.
+ *
+ * Read-only on purpose. Creating or syncing a zone changes live DNS and WAF
+ * state at the provider and stays a platform-staff operation behind a
+ * superadmin session on the CMS (`POST /api/cdn/sync`, which refuses every API
+ * key including a platform one). What a business gets here is the state of its
+ * own zone and the records it must set at its registrar — and a cache purge,
+ * which touches nothing but its own site's cache.
+ */
+export interface SiteCdnStatus {
+  configured: boolean;
+  provider: "arvancloud" | "cloudflare" | null;
+  zoneName: string | null;
+  active: boolean;
+  providerStatus: string | null;
+  lastSyncAt: string | null;
+  lastSyncOk: boolean | null;
+  lastSyncDetail: string | null;
+  lastPurgeAt: string | null;
+  nameservers: string[];
+  records: { type: string; name: string; content: string; proxied?: boolean | null }[];
+}
+
+export function fetchSiteCdnStatus(
+  config: CmsConfig,
+  opts?: { fetchImpl?: FetchLike },
+): Promise<SiteCdnStatus> {
+  return cmsRequest<SiteCdnStatus>(config, {
+    path: "/api/site/cdn",
+    fetchImpl: opts?.fetchImpl,
+  });
+}
+
+/** `POST /api/site/cdn/purge` — empties this site's edge cache, nothing else. */
+export function purgeSiteCdn(
+  config: CmsConfig,
+  urls?: string[],
+  opts?: { fetchImpl?: FetchLike },
+): Promise<{ ok: boolean; scope?: string }> {
+  return cmsRequest<{ ok: boolean; scope?: string }>(config, {
+    method: "POST",
+    path: "/api/site/cdn/purge",
+    body: urls?.length ? { urls } : {},
+    fetchImpl: opts?.fetchImpl,
+  });
+}
+
+/* ------------------------------------------------------------------ */
 /* Platform-level — requires the `role: "platform"` API key             */
 /* ------------------------------------------------------------------ */
 

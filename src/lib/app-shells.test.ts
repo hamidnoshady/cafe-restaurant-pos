@@ -14,10 +14,15 @@ describe("appShellForPathname", () => {
     expect(appShellForPathname("/dashboard/growth/campaigns/12")?.app).toBe("growth");
   });
 
-  it("hands the complete WordPress/WooCommerce manager to the WP shell", () => {
-    expect(appShellForPathname("/dashboard/wp")?.app).toBe("wp");
+  it("hands both website managers to the one website shell", () => {
+    expect(appShellForPathname("/dashboard/website")?.app).toBe("website");
+    // The CMS manager…
+    for (const section of ["setup", "content", "store", "settings", "billing"]) {
+      expect(appShellForPathname(`/dashboard/website/cms/${section}`)?.app).toBe("website");
+    }
+    // …and the WordPress/WooCommerce manager, now inside the same app.
     for (const section of ["connections", "products", "orders", "customers", "content", "queue"]) {
-      expect(appShellForPathname(`/dashboard/wp/${section}`)?.app).toBe("wp");
+      expect(appShellForPathname(`/dashboard/website/wp/${section}`)?.app).toBe("website");
     }
   });
 

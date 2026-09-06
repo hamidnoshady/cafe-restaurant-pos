@@ -57,6 +57,7 @@ app.prepare().then(async () => {
   const { assertRlsEffective } = await import("./src/lib/db");
   const { describeDeploymentRole } = await import("./src/lib/deployment-role");
   const { runAiSubscriptionRenewalTick, AI_SUBSCRIPTION_TICK_INTERVAL_MS } = await import("./src/lib/ai-billing-service");
+  const { runWebsiteBillingTick, WEBSITE_BILLING_TICK_INTERVAL_MS } = await import("./src/lib/website/billing-service");
   const { runAiProactiveTick, AI_PROACTIVE_TICK_INTERVAL_MS } = await import("./src/lib/ai-proactive-service");
   const { runWooCommerceSyncTick, WOO_SYNC_TICK_INTERVAL_MS } = await import("./src/lib/integrations/outbox-service");
   const { runWebsiteSyncTick, WEBSITE_SYNC_TICK_INTERVAL_MS } = await import("./src/lib/website/sync-service");
@@ -155,6 +156,16 @@ app.prepare().then(async () => {
     runWebsiteSyncTick().catch((err) => console.error("website sync tick failed:", err));
   setInterval(websiteSyncTick, WEBSITE_SYNC_TICK_INTERVAL_MS).unref();
   setTimeout(websiteSyncTick, 100_000).unref();
+
+  // Migration 0138: a platform website's monthly fee. The service reads the
+  // due list under the platform bypass and charges each business inside
+  // `withTenant`; a wallet that cannot cover the renewal marks the
+  // subscription past_due and leaves the site serving — cutting a shopfront
+  // off from a cron is not this tick's decision to make.
+  const websiteBillingTick = () =>
+    runWebsiteBillingTick().catch((err) => console.error("website billing tick failed:", err));
+  setInterval(websiteBillingTick, WEBSITE_BILLING_TICK_INTERVAL_MS).unref();
+  setTimeout(websiteBillingTick, 90_000).unref();
 
   // Phase 26 (issue #125) Wave 7: mirror Holoo base data for companion-mode
   // businesses. Polling (Holoo cannot call back), gated on holoo_companion,

@@ -8,11 +8,14 @@ import {
 import { INDUSTRIES } from "./industries";
 
 describe("visibleConnectionKinds", () => {
-  it("gives an Owner every technical connection, but not the WP-owned store connection", () => {
+  it("gives an Owner every technical connection, but neither website connection", () => {
+    // Both website connections belong to «مدیریت وب‌سایت» — the WooCommerce
+    // store to its WordPress manager, the platform site to its CMS manager.
+    // A business sets each one up inside the manager that uses it; this hub
+    // keeps the credentials that belong to no product screen.
     expect(visibleConnectionKinds({ role: "owner" }).map((k) => k.key)).toEqual([
       "desktop",
       "holoo",
-      "website",
       "mcp",
       "api",
     ]);
@@ -35,7 +38,7 @@ describe("visibleConnectionKinds", () => {
 
   it("keeps every technical tab for every industry — `connections` is a core module", () => {
     for (const industry of INDUSTRIES) {
-      expect(visibleConnectionKinds({ role: "owner", industry })).toHaveLength(CONNECTION_KINDS.length - 1);
+      expect(visibleConnectionKinds({ role: "owner", industry })).toHaveLength(CONNECTION_KINDS.length - 2);
     }
   });
 
@@ -50,9 +53,12 @@ describe("visibleConnectionKinds", () => {
     expect(owner.find((k) => k.key === "desktop")?.feature).toBeUndefined();
   });
 
-  it("keeps the WooCommerce key for old callers without exposing it in this hub", () => {
+  it("keeps both website keys for old callers without exposing them in this hub", () => {
     expect(isConnectionKindKey("woocommerce")).toBe(true);
-    expect(visibleConnectionKinds({ role: "owner" }).some((k) => k.key === "woocommerce")).toBe(false);
+    expect(isConnectionKindKey("website")).toBe(true);
+    const owner = visibleConnectionKinds({ role: "owner" });
+    expect(owner.some((k) => k.key === "woocommerce")).toBe(false);
+    expect(owner.some((k) => k.key === "website")).toBe(false);
   });
 });
 

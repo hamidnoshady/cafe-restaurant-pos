@@ -90,6 +90,13 @@ export const EXEMPT_TABLES = new Set([
   // published articles teach every business, so there is no business_id to
   // scope by. Written only through /api/platform/knowledge/*; tenant routes
   // read published rows through /api/knowledge/*.
+  // Migration 0138 — the website-service plan catalogue («مدیریت وب‌سایت»).
+  // The same shape as billing_plans: one deployment-wide price list the
+  // super-admin maintains, with no business_id to scope by. Its two tenant
+  // counterparts (website_service_subscriptions, website_service_charges) and
+  // the wizard state (website_setup) are RLS-protected in that migration and
+  // deliberately NOT listed here.
+  "website_service_plans",
   "knowledge_categories",
   "knowledge_tags",
   "knowledge_articles",

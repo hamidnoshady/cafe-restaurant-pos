@@ -352,14 +352,16 @@ export const PAGE_MODULE_PREFIXES: readonly (readonly [string, ModuleKey])[] = [
   // `crm` module key: a business that has customers has a CRM, and gating the
   // app on a module no industry profile lists yet would hide it from everyone.
   ["/dashboard/crm", "customers"],
-  // The website manager's own app (issue #378) — pulled out of Growth &
-  // Marketing to be a peer of it, not a section inside it (src/lib/apps.ts).
+  // «مدیریت وب‌سایت» — one app, two managers, and therefore two module
+  // answers under one prefix. The WordPress/WooCommerce manager keeps its own
+  // `integrations` module, so a trade that has WordPress but not the CMS (or
+  // the reverse) still gets exactly the manager it has. The longer prefix is
+  // listed first because the first match wins.
+  ["/dashboard/website/wp", "integrations"],
   ["/dashboard/website", "website"],
-  // Technical connections and the WP manager are separate app surfaces. Do not
-  // collapse these into one generic integrations prefix: the former owns
-  // desktop/API/MCP credentials, the latter owns WordPress/WooCommerce.
+  // Technical connections stay a separate app surface: that one owns
+  // desktop/API/MCP credentials, «مدیریت وب‌سایت» owns the site connections.
   ["/dashboard/connections", "connections"],
-  ["/dashboard/wp", "integrations"],
   ["/dashboard/stock", "stock"],
 ];
 
@@ -400,6 +402,11 @@ const API_MODULE_PREFIXES: readonly (readonly [string, ModuleKey])[] = [
   // endpoints are deliberately not listed here because they also serve the
   // technical connection hub; their own role/tenant guards remain in force.
   ["/api/integrations/wp-manager", "integrations"],
+  // The website app's own cross-manager surface: which managers this business
+  // has connected, and the billing for the platform site it runs. Both belong
+  // to the CMS half's `website` module — the WordPress half is gated by
+  // `/api/integrations/*` above and by its own `integrations` feature flag.
+  ["/api/website", "website"],
   ["/api/stock", "stock"],
 ];
 

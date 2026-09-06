@@ -288,7 +288,7 @@ describe("moduleForPagePath", () => {
   it("maps a page and its children", () => {
     expect(moduleForPagePath("/dashboard/floor")).toBe("tables");
     expect(moduleForPagePath("/dashboard/orders/abc")).toBe("orders");
-    expect(moduleForPagePath("/dashboard/wp/connections")).toBe("integrations");
+    expect(moduleForPagePath("/dashboard/website/wp/connections")).toBe("integrations");
     expect(moduleForPagePath("/dashboard/connections")).toBe("connections");
   });
 

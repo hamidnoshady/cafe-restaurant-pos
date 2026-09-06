@@ -58,10 +58,14 @@ export const APP_SHELLS: readonly AppShellDef[] = [
     description: "پرونده و بخش‌بندی مشتری، قیف فروش، کارها و تیکت‌ها.",
   },
   {
-    app: "wp",
-    prefix: "/dashboard/wp",
-    label: "مدیریت وردپرس و ووکامرس",
-    description: "محصولات، سفارش‌ها، مشتریان، دسته‌بندی‌ها، محتوا و رسانه‌های فروشگاه آنلاین.",
+    // One shell for both website managers: the app's menu lists the CMS
+    // sections and the WordPress sections as two groups, so «مدیریت وب‌سایت»
+    // is one door with two rooms rather than two apps in the rail. The
+    // WordPress pages moved under this prefix with it (/dashboard/website/wp).
+    app: "website",
+    prefix: "/dashboard/website",
+    label: "مدیریت وب‌سایت",
+    description: "سایت‌ساز اشوبه و مدیریت وردپرس و ووکامرس، هرکدام جدا.",
   },
 ];
 

@@ -17,6 +17,12 @@ import {
   CmsApiError,
   CmsNetworkError,
   createPost,
+  fetchRegistrarQuote,
+  fetchSiteCdnStatus,
+  orderRegistrarDomain,
+  purgeSiteCdn,
+  type RegistrarQuote,
+  type SiteCdnStatus,
   createProduct,
   deletePost,
   deleteProduct,
@@ -543,6 +549,156 @@ export async function cmsWebsiteDns(businessId: string): Promise<WebsiteResult<C
       previewUrl: `https://${siteDomain}/`,
     },
   };
+}
+
+/* ------------------------------------------------------------------ */
+/* Domain registrar — pricing and ordering through the CMS's reseller  */
+/* ------------------------------------------------------------------ */
+
+const REGISTRAR_OPERATIONS = ["register", "transfer", "renew"] as const;
+type RegistrarOperation = (typeof REGISTRAR_OPERATIONS)[number];
+
+/**
+ * What a domain costs, before anybody commits to anything.
+ *
+ * The wizard prices a domain at its first step — before the site exists — so
+ * this falls back to the operator's platform key when the business has no
+ * connection yet. A price list is not tenant data: the CMS answers the same
+ * catalogue price to every caller, and the availability line it returns is
+ * deliberately coarse for exactly that reason.
+ */
+export async function cmsDomainQuote(
+  businessId: string,
+  input: { domain: string; operation?: string; period?: number },
+): Promise<WebsiteResult<RegistrarQuote>> {
+  const domain = input.domain.trim().toLowerCase().replace(/\.$/, "");
+  if (!DOMAIN_RE.test(domain)) return { ok: false, error: "invalid_domain" };
+  const operation = (input.operation ?? "register") as RegistrarOperation;
+  if (!REGISTRAR_OPERATIONS.includes(operation)) return { ok: false, error: "invalid_operation" };
+  const period = input.period ?? 1;
+  if (!Number.isInteger(period) || period < 1 || period > 5) return { ok: false, error: "invalid_period" };
+
+  let config: CmsConfig | null = null;
+  try {
+    config = await getCmsConfigForBusiness(businessId);
+  } catch {
+    config = cmsPlatformConfig(process.env);
+  }
+  if (!config) return { ok: false, error: "cms_not_configured" };
+
+  try {
+    return { ok: true, data: await fetchRegistrarQuote(config, { domain, operation, period }) };
+  } catch (error) {
+    if (error instanceof CmsNetworkError) return { ok: false, error: "cms_unreachable" };
+    if (error instanceof CmsApiError && error.status === 404) return { ok: false, error: "tld_not_sold" };
+    if (error instanceof CmsApiError && error.status === 403) return { ok: false, error: "forbidden" };
+    return { ok: false, error: "quote_failed" };
+  }
+}
+
+/**
+ * Place a domain order with the CMS's registrar for the connected site.
+ *
+ * Requires a connection: the CMS resolves the tenant from the site key, so
+ * there is no request body that could name another business's site. Billing
+ * for the order is the caller's job (`src/lib/website/domain-service.ts`) —
+ * this function is only the CMS half.
+ */
+export async function orderCmsDomain(
+  businessId: string,
+  input: {
+    domain: string;
+    operation?: string;
+    period?: number;
+    nameservers?: string[];
+    contact?: Record<string, unknown>;
+    fields?: Record<string, unknown>;
+    irnicHandles?: Record<string, unknown>;
+    eppCode?: string;
+  },
+): Promise<WebsiteResult<{ reference: string | null; state: string | null }>> {
+  const domain = input.domain.trim().toLowerCase().replace(/\.$/, "");
+  if (!DOMAIN_RE.test(domain)) return { ok: false, error: "invalid_domain" };
+  const operation = (input.operation ?? "register") as RegistrarOperation;
+  if (!REGISTRAR_OPERATIONS.includes(operation)) return { ok: false, error: "invalid_operation" };
+  const period = input.period ?? 1;
+  if (!Number.isInteger(period) || period < 1 || period > 5) return { ok: false, error: "invalid_period" };
+
+  let config: CmsConfig;
+  try {
+    config = await getCmsConfigForBusiness(businessId);
+  } catch {
+    return { ok: false, error: "not_connected" };
+  }
+
+  try {
+    const result = await orderRegistrarDomain(config, {
+      domain,
+      operation,
+      period,
+      ...(input.nameservers?.length ? { nameservers: input.nameservers } : {}),
+      ...(input.contact ? { contact: input.contact } : {}),
+      ...(input.fields ? { fields: input.fields } : {}),
+      ...(input.irnicHandles ? { irnicHandles: input.irnicHandles } : {}),
+      ...(input.eppCode ? { eppCode: input.eppCode } : {}),
+    });
+    return {
+      ok: true,
+      data: {
+        reference: result.operation?.id ?? result.domain?.id ?? null,
+        state: result.operation?.state ?? result.domain?.state ?? null,
+      },
+    };
+  } catch (error) {
+    if (error instanceof CmsNetworkError) return { ok: false, error: "cms_unreachable" };
+    if (error instanceof CmsApiError && error.status === 409) return { ok: false, error: "registrar_disabled" };
+    if (error instanceof CmsApiError && error.status === 404) return { ok: false, error: "tld_not_sold" };
+    return { ok: false, error: "domain_order_failed" };
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* CDN — read the site's own zone, and purge its own cache             */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The connected site's CDN zone as the CMS observes it.
+ *
+ * A site with no zone is not an error: `configured: false` is the answer the
+ * wizard's CDN step is asking for, and it is what tells an owner their site is
+ * being served directly rather than from the edge.
+ */
+export async function cmsSiteCdn(businessId: string): Promise<WebsiteResult<SiteCdnStatus>> {
+  let config: CmsConfig;
+  try {
+    config = await getCmsConfigForBusiness(businessId);
+  } catch {
+    return { ok: false, error: "not_connected" };
+  }
+  try {
+    return { ok: true, data: await fetchSiteCdnStatus(config) };
+  } catch (error) {
+    if (error instanceof CmsNetworkError) return { ok: false, error: "cms_unreachable" };
+    if (error instanceof CmsApiError && error.status === 404) return { ok: false, error: "cms_old_version" };
+    return { ok: false, error: "cms_error" };
+  }
+}
+
+/** Empty the site's edge cache. Touches nothing but this site's own cache. */
+export async function cmsPurgeCdn(businessId: string, urls?: string[]): Promise<WebsiteResult<null>> {
+  let config: CmsConfig;
+  try {
+    config = await getCmsConfigForBusiness(businessId);
+  } catch {
+    return { ok: false, error: "not_connected" };
+  }
+  try {
+    await purgeSiteCdn(config, urls);
+    return { ok: true, data: null };
+  } catch (error) {
+    if (error instanceof CmsNetworkError) return { ok: false, error: "cms_unreachable" };
+    return { ok: false, error: "cdn_purge_failed" };
+  }
 }
 
 // `cmsDnsHint` lives in ./dns (pure) so the dashboard's client component can

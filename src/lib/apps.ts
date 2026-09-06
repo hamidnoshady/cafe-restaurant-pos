@@ -30,7 +30,6 @@ export const APP_KEYS = [
   "website",
   "operations",
   "accounting",
-  "wp",
   "connections",
   "settings",
 ] as const;
@@ -102,20 +101,28 @@ export const APPS: AppDef[] = [
   },
   {
     key: "website",
-    label: "وب‌سایت",
-    description: "سایت اینترنتی و فروشگاه آنلاین کسب‌وکار، روی پلتفرم سایت‌ساز مستقل.",
-    // Originally seated under Growth (#378) on the assumption that a website
-    // is an audience-growing surface like a campaign. It is really an
-    // integration with its own external system of record — a separate
-    // deployment (eshobe-cms) that this app holds one encrypted credential
-    // for, the same cross-app shape as the standalone WP Manager and technical
-    // Connections apps, not a marketing engine that reads and writes this
-    // app's own tables. Folding
-    // it into Growth would have made a page of a different product read as a
-    // section of this one's marketing tab. It is its own app instead, a peer
-    // of Growth rather than a folder inside it — see
-    // docs/eshobe-cms-integration.md for the connection this app owns.
-    modules: ["website"],
+    label: "مدیریت وب‌سایت",
+    description:
+      "هر دو راه داشتنِ سایت، در یک برنامه: سایت‌ساز اشوبه (Eshobe CMS) و مدیریت وردپرس و ووکامرس — هرکدام بخش مدیریت جدای خودش را دارد.",
+    // One app, two managers — and it is *one* app on purpose.
+    //
+    // Until now these were two peers in the rail: «وب‌سایت» (the eshobe-cms
+    // connection, issue #378) and «مدیریت وردپرس و ووکامرس» (Phase 40). From
+    // the rail that reads as two products for one question — "where does my
+    // website live?" — and a business that runs a WordPress shop today and
+    // moves to the platform site tomorrow had to learn a second app to do the
+    // same job. So the app is «مدیریت وب‌سایت» and the two systems are its two
+    // *managers*: /dashboard/website/cms and /dashboard/website/wp, each with
+    // its own sections, its own connection and its own settings. They are
+    // never folded into each other — that is the rule CLAUDE.md's prompt
+    // vocabulary states — they are peers inside one door.
+    //
+    // Both modules therefore belong here: `website` gates the CMS half
+    // (docs/eshobe-cms-integration.md) and `integrations` the WordPress half.
+    // `apps.ts` is only grouping; `industry-profile.ts` still answers whether
+    // a trade has either module, so a trade with just one of them opens the
+    // app and sees just that manager.
+    modules: ["website", "integrations"],
   },
   {
     key: "operations",
@@ -147,25 +154,14 @@ export const APPS: AppDef[] = [
     modules: ["ledger", "reports"],
   },
   {
-    key: "wp",
-    label: "مدیریت وردپرس و ووکامرس",
-    description:
-      "مدیریت کامل فروشگاه آنلاین: محصولات، سفارش‌ها، مشتریان، دسته‌بندی‌ها، محتوا و رسانه‌های سایت وردپرسی.",
-    // Phase 40 — the app owns the WordPress/WooCommerce system and its local
-    // mirror. Its connection, catalogue, order, customer, taxonomy, content,
-    // media and queue screens all stay behind this app. Other apps consume the
-    // mirrored data through their own workflows; none of them owns a second WP
-    // management screen.
-    modules: ["integrations"],
-  },
-  {
     key: "connections",
     label: "اتصال‌های فنی",
     description:
-      "اتصال برنامه دسکتاپ، کلیدهای API و دستیارهای هوشمند؛ اتصال وردپرس و ووکامرس در برنامهٔ مستقل خودش است.",
-    // Keep technical connections separate from the WP manager. This prevents a
-    // WooCommerce connection tab from making the manager look like a page of
-    // Accounting, while preserving a home for desktop/API/MCP credentials.
+      "اتصال برنامه دسکتاپ، کلیدهای API و دستیارهای هوشمند؛ اتصال وردپرس، ووکامرس و سایت‌ساز در «مدیریت وب‌سایت» است.",
+    // Keep technical connections separate from the website managers. This
+    // prevents a WooCommerce or CMS connection tab from making «مدیریت
+    // وب‌سایت» look like a page of Accounting, while preserving a home for
+    // desktop/API/MCP credentials.
     modules: ["connections"],
   },
   {

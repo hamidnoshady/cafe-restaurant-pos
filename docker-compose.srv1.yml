@@ -1,0 +1,120 @@
+# Production stack for srv1.eshobe.com, deployed by Komodo.
+#
+# The sibling eshobe-cms repo runs the same shape on the same host; read its
+# docker-compose.srv1.yml alongside this one. Two facts about srv1 decide
+# almost everything here:
+#
+#   1. DirectAdmin/OpenLiteSpeed owns 80/443 and terminates TLS, then
+#      reverse-proxies the subdomain to Traefik on 127.0.0.1:8090. Traefik runs
+#      network_mode: host with the *file* provider only, so container labels
+#      are never read — routing lives in Traefik's dynamic.yml, not here. This
+#      stack therefore publishes to the loopback and nothing else.
+#   2. The host cannot reach ghcr.io (filtered at the network layer) and cannot
+#      clone from GitHub either (its git links against libcurl-gnutls, whose TLS
+#      handshake is filtered upstream). Building a Next.js app on the same
+#      machine as the live customer sites is best avoided regardless.
+#
+# So the image is built by .github/workflows/publish.yml on every push to main
+# and pulled here through the ghcr-mirror.liara.ir pull-through cache, which is
+# reachable from this host. It is the same image GHCR holds — the mirror only
+# fronts it.
+#
+# The tag below is LITERAL on purpose. Komodo resolves the image reference
+# without Compose variable interpolation, so a ${VAR} there breaks the registry
+# lookup silently — the stack keeps running whatever it already had. Every
+# other value in this file is a ${VAR} reference; Komodo writes the real values
+# into a .env beside it at deploy time.
+#
+# NOTE: adopting this is a deliberate cutover, not an automatic consequence of
+# merging it. Production runs on Runflare, building from the Dockerfile, until
+# somebody points a Komodo stack at this file — see docs/server-migration.md.
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-pos}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-pos}
+    volumes:
+      - pos-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-pos} -d ${POSTGRES_DB:-pos}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - internal
+    # Deliberately not published to the host: only the app reaches it.
+
+  app:
+    image: ghcr-mirror.liara.ir/hamidnoshady/cafe-restaurant-pos:latest
+    # Without this a redeploy would happily reuse the cached :latest and the
+    # new build would never actually go live.
+    pull_policy: always
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      # Superuser on purpose: docker-entrypoint.sh migrates with this, then
+      # provisions a restricted pos_app role from it and launches the server
+      # with that instead — the process never actually runs as this role. See
+      # scripts/derive-runtime-database-url.ts and the README's tenancy section.
+      DATABASE_URL: postgres://${POSTGRES_USER:-pos}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-pos}
+      # MUST be a real secret. Generate with: openssl rand -hex 32
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
+      SESSION_HOURS: ${SESSION_HOURS:-12}
+      # Phase 23: this stack IS the central server — sites sync to it and it
+      # syncs to nothing, so the Server Sync tab drops the connection form and
+      # PUT /api/server-sync/config refuses. Declared rather than left to the
+      # POS_DOMAIN inference so the answer doesn't change if that moves.
+      DEPLOYMENT_ROLE: central
+      BACKUP_DIR: /app/backups
+      # Biometric login (Phase 20 Wave 3). Without these, webauthn.ts falls
+      # back to its "localhost" defaults, which never match this host's real
+      # origin — every registration/login ceremony fails with a generic error.
+      #
+      # The RP ID is left empty on purpose: webauthn.ts then uses ROOT_DOMAIN,
+      # which is the only value that works once businesses are served from
+      # their own subdomains (a browser requires the RP ID to be a registrable
+      # suffix of the page's origin, so pinning it to one host breaks every
+      # other). Set WEBAUTHN_RP_ID in .env only to override that.
+      WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID:-}
+      WEBAUTHN_ORIGIN: ${WEBAUTHN_ORIGIN:-https://pos.eshobe.com}
+      # Phase 23 — per-business origins. Setting ROOT_DOMAIN is what turns
+      # host-based tenancy on; it may itself be a subdomain, e.g. ac.eshobe.com
+      # with businesses at biz1.ac.eshobe.com (the wildcard certificate then has
+      # to be *.ac.eshobe.com — one for *.eshobe.com does not cover a name a
+      # level deeper). SUBDOMAIN_ROUTING is only an escape hatch: `off` while
+      # that certificate is not yet issuing. The wildcard router itself lives in
+      # Traefik's dynamic.yml — see archive/deploy/docker-compose.srv1.yml for
+      # the exact block, which this stack does not change.
+      ROOT_DOMAIN: ${ROOT_DOMAIN:-pos.eshobe.com}
+      SUBDOMAIN_ROUTING: ${SUBDOMAIN_ROUTING:-on}
+      PLATFORM_BASE_URL: ${PLATFORM_BASE_URL:-https://pos.eshobe.com}
+      # The website manager's other half (docs/eshobe-cms-integration.md). The
+      # CMS runs its own stack on this host; the platform key is optional and
+      # only needed for provisioning a site from the wizard.
+      ESHOBE_CMS_URL: ${ESHOBE_CMS_URL:-}
+      ESHOBE_CMS_PLATFORM_API_KEY: ${ESHOBE_CMS_PLATFORM_API_KEY:-}
+      ESHOBE_CMS_WEBHOOK_SECRET: ${ESHOBE_CMS_WEBHOOK_SECRET:-}
+    # Loopback only. This host runs live customer sites on 80/443 via
+    # OpenLiteSpeed; binding 0.0.0.0 here would expose the POS directly and
+    # bypass the TLS front door. Traefik connects to 127.0.0.1:${POS_HOST_PORT}.
+    ports:
+      - "127.0.0.1:${POS_HOST_PORT:-3000}:3000"
+    volumes:
+      - pos-backups:/app/backups
+    networks:
+      - internal
+
+volumes:
+  pos-pgdata:
+  pos-backups:
+
+networks:
+  internal:

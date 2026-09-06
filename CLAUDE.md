@@ -27,7 +27,7 @@ comment happens to use, until you have checked this list.
   key" keep their existing technical meaning; do not rename them, and do not treat a
   platform-wide request as a super-admin-console task.
 - **App** means a dashboard app from `src/lib/apps.ts` — accounting, growth, CRM,
-  sales, operations, website, WP manager, connections, settings — the things in the
+  sales, operations, website, connections, settings — the things in the
   workspace rail. It does **not** mean the Next.js application, the Electron desktop
   installer, or the WordPress plugin. The AI assistant is not an app (see below).
   When they name one ("the accounting app", "growth", "CRM"), stay inside that app's
@@ -53,15 +53,18 @@ comment happens to use, until you have checked this list.
   leaves `ai` unassigned on purpose. A prompt about the AI assistant is about that
   home surface (chat, tools, replies), not about MCP, coworker jobs, or autopilot
   unless those are named.
-- **Website management** means **both** website systems, not one of them:
-  1. **Eshobe CMS** — the `website` app at `/dashboard/website` (`src/lib/cms/*`,
-     [docs/eshobe-cms-integration.md](docs/eshobe-cms-integration.md)).
-  2. **WP / Woo management** — the `wp` app at `/dashboard/wp` (WordPress/WooCommerce
-     manager, Phase 40; plugin in `wordpress-plugin/`).
-  They are peers. Never fold one into the other, never treat WP Manager as a
-  Connections tab or the CMS as a Growth section, and if a prompt says "website
-  management" without naming which, consider both (or ask which) rather than
-  defaulting to the CMS.
+- **Website management** means **both** website systems, not one of them. Since
+  migration 0138 they are two **managers inside one app**, `website`
+  («مدیریت وب‌سایت», `/dashboard/website`):
+  1. **Eshobe CMS** — «سایت‌ساز اشوبه», `/dashboard/website/cms/*` (`src/lib/cms/*`,
+     `src/lib/website/*`, [docs/eshobe-cms-integration.md](docs/eshobe-cms-integration.md)).
+  2. **WP / Woo management** — «وردپرس و ووکامرس», `/dashboard/website/wp/*`
+     (Phase 40; plugin in `wordpress-plugin/`). `/dashboard/wp/*` redirects here.
+  One app is not one product: they are peers inside one door, with separate
+  connections, separate sections and separate headers. Never fold one into the
+  other, never treat either as a Connections tab or a Growth section, and if a
+  prompt says "website management" without naming which, consider both (or ask
+  which) rather than defaulting to the CMS.
 
 ## Test and build, locally — before every commit
 
@@ -112,13 +115,42 @@ What follows from that:
 `.github/workflows/build-and-push.yml` is the same: dispatch it from the Actions tab when
 you want an image. It builds and pushes `docker.io/<DOCKERHUB_USERNAME>/cafe-restaurant-pos:sha-<short-sha>`
 (and `:latest`) to Docker Hub for the commit you selected — it does **not** wait on `test`,
-and it does **not** run after merge. Don't assume an image exists for a branch, a PR, or a
-commit nobody dispatched against. This is what the self-update path (`src/lib/app-update.ts`,
-`scripts/check-app-update.ts`, `/platform/updates`) and the pull-based compose files
-(`docker-compose.local.yml`, `archive/deploy/docker-compose.srv1.yml`) expect.
-**Production (Runflare) does not consume this image yet** — it still builds from the
-`Dockerfile` itself per `docs/server-migration.md`'s Runflare recipe; repointing it at the
-prebuilt tag is a separate, deliberate step, not something this workflow does on its own.
+and it does **not** run after merge. Don't assume a Docker Hub image exists for a branch, a
+PR, or a commit nobody dispatched against.
+
+### The one automatic workflow: `publish.yml` (GHCR)
+
+`.github/workflows/publish.yml` runs on **every push to `main`** (and on `v*` tags, and on
+dispatch), and that is deliberate: it is what deployment consumes. Making it manual would
+mean a merge produces no image while a deployed stack silently keeps running the previous
+one. Don't remove its `push` trigger.
+
+It is not ungated either — its `gates` job re-runs the static half of the local checklist
+(type check, unit tests, production build) on the exact merge commit before the image is
+built. The database-backed suite stays in the manual `test.yml`: it needs a service
+container and several minutes, and the local checklist is the real gate.
+
+Two details are load-bearing:
+
+- **The tag shape is `sha-<short>` plus `latest`**, matching `imageRefFor()` in
+  `src/lib/app-update-status.ts`. A long-sha tag (what the sibling `eshobe-cms` repo uses)
+  would leave the café laptop's self-update check looking for a tag that does not exist.
+  `GIT_SHA` is passed as a build arg because the `Dockerfile` bakes it into
+  `APP_IMAGE_SHA` — how a running container knows which build it is.
+- **GHCR is the registry the rest of the product already assumed.**
+  `docker-compose.local.yml` pulls `ghcr.io/hamidnoshady/cafe-restaurant-pos`, and
+  `src/lib/app-update.ts` defaults `GHCR_IMAGE` to it and mints short-lived GHCR pull
+  tokens; nothing had ever pushed there. srv1 can't reach `ghcr.io` (filtered at the
+  network layer), which is why Docker Hub was adopted — and why the root
+  `docker-compose.srv1.yml` pulls the same GHCR image through the `ghcr-mirror.liara.ir`
+  cache instead, exactly as the CMS stack on that host does. In that file the image tag is
+  **literal**: Komodo resolves the image reference without variable interpolation, so a
+  `${VAR}` there breaks the lookup silently.
+
+**Production (Runflare) does not consume any of this yet** — it still builds from the
+`Dockerfile` itself per `docs/server-migration.md`'s Runflare recipe. Repointing it, or
+standing up the Komodo stack in that doc's recipe A′, is a separate, deliberate step, not
+something merging a compose file does on its own.
 
 ## Tenancy — read before touching the database
 
@@ -480,10 +512,26 @@ Two more, because both of these are load-bearing and easy to undo by accident:
 
 ## The Website app — read before touching `/dashboard/website` or `/api/cms/*`
 
-This section is the **Eshobe CMS** half of website management. The other half is the
-WP / Woo manager (`wp` app, `/dashboard/wp`). In prompts, "website management" means
-**both** — see Prompt vocabulary above. Never fold this app into WP Manager or the
-other way around.
+**One app, two managers.** «مدیریت وب‌سایت» (`/dashboard/website`) is the single
+door to both website systems: the Eshobe CMS site builder (`cms/`) and the
+WordPress/WooCommerce manager (`wp/`, which moved here from `/dashboard/wp`).
+They are peers and never merge — separate connections, separate sections,
+separate headers, and in prompts "website management" means both (see Prompt
+vocabulary above). What they share is one rail entry and one sidebar.
+
+- **The menu is built from real connections, not a flag.** `GET /api/website/managers`
+  answers which of the two systems this business actually has, and
+  `visibleCmsSections`/`visibleWpSections` (`website-routes.ts`, unit-tested) turn
+  that into the menu: a manager with no connection lists its front page and the
+  screen that connects it, and nothing else. A «سفارش‌ها» entry over a site that
+  does not exist is a dead end with a number on it.
+- **`integrations` gates the WordPress half only.** `/dashboard/website/wp` is in
+  `PAGE_FEATURE_PREFIXES`; `/dashboard/website` is not. A business without the
+  add-on still runs the platform site it pays for.
+- **`apps.ts` is grouping; `industry-profile.ts` still gates.** The app carries
+  both modules (`website`, `integrations`) and `/dashboard/website/wp` maps to
+  `integrations` *before* `/dashboard/website` maps to `website` — first match
+  wins, so the longer prefix is listed first.
 
 This app (POS/accounting/CRM) and [`eshobe-cms`](https://github.com/hamidnoshady/eshobe-cms)
 (the Payload 3 multi-tenant website platform) are **separate deployments**, connected
@@ -492,12 +540,6 @@ them, both sides' setup steps and the credential model live in
 [docs/eshobe-cms-integration.md](docs/eshobe-cms-integration.md); read it before touching
 either side.
 
-- **`website` is its own app** (`src/lib/apps.ts`), a peer of «رشد و بازاریابی» in the rail,
-  not a section inside it — see the note on the `website` app entry for why (it holds one
-  external system's credential, the same shape as a WooCommerce or MCP connection, not a
-  marketing engine over this app's own tables). Its one page is
-  `/dashboard/website` (`src/app/dashboard/website/`); `/dashboard/growth/website` redirects
-  into it for old bookmarks.
 - **The browser never sees the CMS key.** `connectCmsWebsite`/`provisionCmsWebsite`
   (`src/lib/cms/website-service.ts`) store it encrypted (`eshobe_cms_connections`, AES-256-GCM
   via `src/lib/integrations/secrets.ts`) and every later call decrypts it server-side inside
@@ -513,7 +555,43 @@ either side.
 - **Never put a platform key where a site key belongs.** A platform key can provision a site
   and issue/revoke its keys; it cannot read or write that site's content. Reversing the two —
   handing a site key provisioning power, or a platform key content access — is the CMS-side
-  patch's whole security property (see the integration doc §5/§6).
+  patch's whole security property (see the integration doc §5/§6). The one widened read is
+  the registrar **quote**, which places no order and writes no row, so the wizard can price a
+  domain before the site exists.
+
+### Building a site, and paying for it (migration 0138)
+
+> **سایت‌ساز کار سایت را می‌کند؛ پول را این‌جا می‌گیریم.** The CMS renders and
+> serves; it has no wallet, no plan and no invoice.
+
+- **The wizard's order is the owner's order: domain → CDN → نوع سایت → ساخت.**
+  The rules are pure and unit-tested (`src/lib/website/setup.ts`); the row is
+  `website_setup`. Which step is current is *derived* from the answers, never
+  stored twice, so the wizard resumes identically on another device. A step is
+  done when the decision it asks for has been made — a domain still registering
+  and a CDN zone still queued both count, because waiting on somebody else must
+  not block the next question. Only a *failed* domain order blocks: there is no
+  address to build on.
+- **Build order is provision → connect → subscribe.** A business is never billed
+  for a site whose provisioning failed; a site with nothing billing for it is
+  recoverable by the operator, so that is the direction the failure falls.
+- **A domain is priced, wallet-checked, ordered, then billed** — in that order
+  (`src/lib/website/domain-service.ts`). Charging first would need a refund path
+  that only ever runs on failure. If the wallet drains in between, the charge is
+  recorded *unsettled* rather than dropped: an invoice is recoverable, silently
+  not billing is not.
+- **Idempotency is the UNIQUE index** `(business_id, kind, reference)`, never a
+  read-then-write. A subscription charge's reference is the *period* it covers,
+  never the moment the tick ran.
+- **A wallet that cannot cover a renewal marks the subscription `past_due` and
+  leaves the site serving.** `runWebsiteBillingTick()` never cuts a shopfront off
+  from a cron; the owner sees the state and a «پرداخت دورهٔ جاری» button.
+- **A quote in a currency this app cannot express in Rial is refused, not
+  converted** at a guessed rate (`quoteToRial`). Charging a business a number
+  nobody can reconcile is worse than saying the platform cannot sell that TLD.
+- **Money is integer Rial in storage and Toman on screen**, and every date on
+  these screens goes through `formatJalali` — the site's billing is not exempt
+  from either rule.
 
 ## The assistant's replies — read before adding an AI tool or touching the chat
 
@@ -699,8 +777,9 @@ Since Phase 35 the app can reach a person who is not looking at a screen, over *
   production tab does — gate a new tab, never the hub.
 - **Connections (Phase 28, Phase 34, Phase 38w)** — everything a business connects *to* lives behind one hub,
   `/dashboard/connections` (`src/lib/connection-kinds.ts`), with five kinds: the desktop
-  install, a WooCommerce store (now WP Manager's, hidden from the hub), Holoo, the business's
-  **website** (Phase 38w — owner-only, `integrations`), developer API keys for `/api/v1`, and
+  install, a WooCommerce store (now the WordPress manager's, hidden from the hub), Holoo, the
+  business's **website** (Phase 38w — now the CMS manager's «تنظیمات و همگام‌سازی» section,
+  also hidden from the hub), developer API keys for `/api/v1`, and
   (Phase 34) the MCP connector an owner points their own Claude/ChatGPT/Codex at. The page is
   deliberately **not** feature-gated — its tabs have three different entitlements and one
   (desktop pairing) has none — so gate a new tab, never the hub. Two rules carry the
