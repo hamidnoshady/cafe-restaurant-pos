@@ -32,22 +32,25 @@ the authority for the remote store. Other apps may use the mirror or shared
 service, but do not acquire WordPress management screens or a competing store
 system.
 
-## Accounting customer workflow → Growth
+## Accounting customer workflow → Accounting's customer slice
 
 The Accounting A/R surfaces continue to own and calculate receivables. Their
-customer actions now link to `/dashboard/growth/customers`, including an
-optional `customerId` when opening a particular A/R statement. Growth displays a
-read-only customer projection for growth workflows and reads the shared customer
-service; it does not create or edit a customer record.
+customer actions now link to Accounting's own customers slice
+(`/dashboard/ledger?tab=customers`, with a `&party=<id>` when opening a
+particular A/R statement). This slice shows the shared customer record with the
+ledger fields an accountant needs — accounting code, tax rate and A/R balance —
+and does not send an accountant into Growth's marketing projection.
 
+Growth still has its own read-only customer projection for growth workflows and
+reads the shared customer service; it does not create or edit a customer record.
 The canonical record and full customer file remain in CRM. Growth rows link to
 `/dashboard/crm/customers/[id]` for edits and the full 360-degree file. The legacy
 `/dashboard/customers` route continues to redirect to the CRM directory for old
-bookmarks. Accountant access is limited to the Growth customer projection, not
-the Growth dashboard, campaigns, loyalty controls or commission data.
+bookmarks. Accountant access is limited to the customer projections, not the
+Growth dashboard, campaigns, loyalty controls or commission data.
 
-This gives Accounting a direct path to the app where the requested customer
-workflow opens without making Growth or Accounting the source of truth for the
+This gives Accounting a direct path to the customer workflow it needs, inside
+its own app, without making Growth or Accounting the source of truth for the
 customer record.
 
 ## WP Manager is a standalone app

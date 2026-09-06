@@ -10,7 +10,7 @@ import { useMoney } from "@/components/money/money-context";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { api, ErrorBox, errorMessage, inputClass, PrimaryButton, SecondaryButton } from "../ui";
 import { ArStatementPanel } from "./ar-statement-panel";
-import { growthCustomerHref } from "../growth/growth-routes";
+import { accountingCustomersHref } from "./ledger-routes";
 import { cardClass, overlayPanelClass } from "../page-chrome";
 
 interface CustomerBalance {
@@ -83,10 +83,10 @@ export function ArSection({ busy, run }: { busy: boolean; run: (fn: () => Promis
             <p className="mt-1 text-sm text-muted-foreground">مانده حساب‌ها و نمای سنی بدهی مشتریان، بر پایه ثبت‌های فعلی.</p>
           </div>
           <Link
-            href={growthCustomerHref()}
+            href={accountingCustomersHref()}
             className="inline-flex min-h-10 items-center rounded-lg border border-border px-3 text-xs font-semibold text-teal-700 transition-colors hover:bg-muted dark:text-teal-300"
           >
-            مشتریان در برنامهٔ رشد
+            مشتریان در حسابداری
           </Link>
           <div className="grid min-w-full grid-cols-2 gap-2 sm:min-w-0">
             <button type="button" aria-pressed={view === "balances"} onClick={() => setView("balances")} className={`min-h-12 rounded-xl border px-3 text-sm ${view === "balances" ? "border-amber-200 dark:border-amber-500/30 bg-amber-100 dark:bg-amber-500/20 font-semibold text-amber-700 dark:text-amber-300" : "border-transparent text-muted-foreground hover:border-border/80 hover:bg-muted"}`}>مانده حساب‌ها</button>

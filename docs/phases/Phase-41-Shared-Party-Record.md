@@ -19,10 +19,16 @@ same section with a scope.
 |---|---|---|---|---|
 | `crm` | CRM | Customer | read-only (code, A/R balance) | yes |
 | `accounting` | Accounting | all three | **editable** | yes |
+| `accounting-customers` | Accounting → مشتریان | Customer | **editable** | yes |
 | `operations` | Inventory | Supplier | read-only | yes |
 | `team` | Settings → team | Employee | read-only | yes |
 | `growth` | Growth | Customer | hidden | no — links to `crm` |
 | `sales` | Orders | Customer | hidden | no — links to `crm` |
+
+`accounting-customers` is the destination of the A/R customer actions: an accountant looking
+at a receivable opens Accounting's own customers slice (code, tax, balance) instead of being
+sent into Growth's marketing projection. The shared record is still the `parties` row; the
+columns and labels simply answer Accounting's question there.
 
 `src/lib/parties-scopes.ts` is the only place that table exists in code. A scope that
 wants to be added is a row there, not a fork of the directory in another app.

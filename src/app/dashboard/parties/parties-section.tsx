@@ -3,11 +3,12 @@
 /**
  * The party directory — the section every app mounts for «طرف‌حساب‌ها».
  *
- * There is exactly one of this component in the platform, and it is mounted four
- * times: the CRM's customers, the store's suppliers, the team's personnel, and
- * Accounting's whole file. Which rows appear, which columns are drawn, and whether
- * a row can be edited at all is answered by `PARTY_SCOPES`
- * (`src/lib/parties-scopes.ts`), never by a copy of this list in the app.
+ * There is exactly one of this component in the platform, and it is mounted for
+ * every scope: the CRM's customers, the store's suppliers, the team's personnel,
+ * Accounting's whole file and Accounting's customers-only slice. Which rows
+ * appear, which columns are drawn, and whether a row can be edited at all is
+ * answered by `PARTY_SCOPES` (`src/lib/parties-scopes.ts`), never by a copy of
+ * this list in the app.
  *
  * What a section may *not* do is the other half of the rule. No app keeps its own
  * add/edit form, its own inactive flag, or its own second table of "the suppliers I

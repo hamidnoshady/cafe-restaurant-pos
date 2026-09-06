@@ -27,6 +27,7 @@ import {
 const byKey = new Map(PARTY_SCOPES_DEF.map((def) => [def.key, def]));
 const crm = byKey.get("crm")!;
 const accounting = byKey.get("accounting")!;
+const accountingCustomers = byKey.get("accounting-customers")!;
 const operations = byKey.get("operations")!;
 const team = byKey.get("team")!;
 const growth = byKey.get("growth")!;
@@ -58,6 +59,7 @@ describe("the scope list", () => {
 
   it("answers a lookup by app, including the apps that have no party view", () => {
     expect(partyScopeForApp("crm")?.key).toBe("crm");
+    expect(partyScopeForApp("accounting")?.key).toBe("accounting");
     expect(partyScopeForApp("growth")?.key).toBe("growth");
     // The website app publishes posts; it has no business listing who the
     // business pays, and `null` is what stops a nav entry being invented for it.
@@ -77,6 +79,17 @@ describe("who each app lists", () => {
 
   it("accounting is the one view that sees all three", () => {
     expect(accounting.roles).toEqual(["Customer", "Employee", "Supplier"]);
+  });
+
+  it("accounting also has a customers-only view for the customer links", () => {
+    // A/R links used to open Growth's customer projection. Now they open an
+    // accounting customers screen — same shared record, only customers, with
+    // the ledger fields an accountant needs.
+    expect(accountingCustomers.roles).toEqual(["Customer"]);
+    expect(accountingCustomers.app).toBe("accounting");
+    expect(accountingCustomers.href).toBe("/dashboard/ledger?tab=customers");
+    expect(accountingCustomers.columns).toContain("accountingCode");
+    expect(accountingCustomers.columns).toContain("balance");
   });
 
   it("filters a shared list to what the scope is about", () => {

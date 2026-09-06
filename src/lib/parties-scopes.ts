@@ -21,7 +21,18 @@
 import type { AppKey } from "./apps";
 import { PARTY_ROLE_LABELS, type PartyRole } from "./parties";
 
-export const PARTY_SCOPES = ["crm", "accounting", "operations", "team", "growth", "sales"] as const;
+export const PARTY_SCOPES = [
+  "crm",
+  "accounting",
+  // Accounting's customers-only screen. It reads the same one record as the
+  // full «طرف‌حساب‌ها» view, but answers the accountant's customer question
+  // (who a customer is in the ledger) without the suppliers and staff noise.
+  "accounting-customers",
+  "operations",
+  "team",
+  "growth",
+  "sales",
+] as const;
 export type PartyScope = (typeof PARTY_SCOPES)[number];
 
 /** A column the list can draw. Which ones are drawn is the scope's business. */
@@ -112,6 +123,24 @@ export const PARTY_SCOPES_DEF: readonly PartyScopeDef[] = [
     // deep link (`?party=<id>`) an AR row or an AI answer uses.
     href: "/dashboard/ledger?tab=parties",
     columns: ["displayName", "role", "accountingCode", "tax", "status"],
+    accounting: "editable",
+    readOnly: false,
+  },
+  {
+    // Accounting's customers-only view. The full counterparty screen above is
+    // the ledger's whole file; this is the one the customer links in A/R open —
+    // so an accountant looking at a receivable lands on customers, with the
+    // ledger fields that make that record settleable, and never behind Growth's
+    // marketing projection. The record remains CRM's; this is Accounting's view
+    // of it, and the shared `PartiesSection` draws it with these columns.
+    key: "accounting-customers",
+    app: "accounting",
+    roles: ["Customer"],
+    defaultRole: "Customer",
+    label: "مشتریان",
+    description: "مشتریان با کد حسابداری، مالیات و ماندهٔ حساب",
+    href: "/dashboard/ledger?tab=customers",
+    columns: ["displayName", "phone", "accountingCode", "tax", "balance", "status"],
     accounting: "editable",
     readOnly: false,
   },
