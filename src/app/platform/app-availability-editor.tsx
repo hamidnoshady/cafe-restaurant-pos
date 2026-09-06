@@ -151,6 +151,11 @@ export function AppAvailabilityEditor({
   return (
     <Card title={title}>
       {description ? <p className="mb-4 -mt-1 text-xs leading-6 text-white/45">{description}</p> : null}
+      <p className="mb-4 -mt-1 text-[11px] leading-5 text-white/35">
+        این وضعیت برای کلِ «برنامه» تنظیم می‌شود، نه برای بخش‌های داخل آن. هر بخش (آیتم منو) درونِ یک
+        برنامه، از وضعیت همان برنامه پیروی می‌کند. فعال/غیرفعال کردن تنها در سطح سکو (مدیر سکو) انجام
+        می‌شود و برای کسب‌وکارها ارائه نمی‌شود.
+      </p>
       <ErrorBox>{error}</ErrorBox>
       {rows === null ? (
         <SkeletonRows rows={4} />
@@ -265,6 +270,33 @@ export function AppAvailabilityEditor({
 
                 {editable ? (
                   <div className="mt-3 flex flex-wrap gap-2">
+                    {/* The quick enable/disable switch — per *app*, not per section,
+                        and superadmin-only. It is deliberately *not* rendered in the
+                        per-business (tenant) scope: enabling/disabling an app is a
+                        platform-wide control for the super-admin console, not a
+                        per-tenant setting. A state other than «فعال»/«غیرفعال» (beta,
+                        coming soon, maintenance) is still shown in the dropdown below;
+                        this toggle simply flips the app between fully-on and off. */}
+                    {scope === "platform" ? (
+                      <Button
+                        variant="ghost"
+                        disabled={pending === row.app}
+                        title={
+                          draft.state === "available"
+                            ? "غیرفعال کردن این برنامه"
+                            : "فعال کردن این برنامه"
+                        }
+                        onClick={() =>
+                          save(row.app, {
+                            state: draft.state === "available" ? "disabled" : "available",
+                            note: draft.note.trim() || null,
+                            availableFrom: draft.availableFrom || null,
+                          })
+                        }
+                      >
+                        {draft.state === "available" ? "غیرفعال‌سازی" : "فعال‌سازی"}
+                      </Button>
+                    ) : null}
                     <Button
                       disabled={pending === row.app || !dirty}
                       onClick={() =>

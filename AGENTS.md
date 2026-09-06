@@ -36,6 +36,11 @@ CLAUDE.md. Don't assume the everyday English sense:
 - **App** = a dashboard app from `src/lib/apps.ts` (accounting, growth, CRM, sales,
   operations, website, WP manager, …). Not the Next.js app, not the Electron desktop
   app, not the WordPress plugin. The AI assistant is not an app.
+- **Section** = a menu item / page **inside** an app (loyalty inside Growth; products
+  inside the WP manager; deals inside CRM) — never the app itself. When the user says
+  "section" they mean those **items in apps**. App availability / enable-and-disable in
+  the super-admin console (migration 0128) is **per app**, never per section; a section
+  follows its owning app's state. Don't add a per-section enable/disable table.
 - **AI assistant** = the platform's main page: `/dashboard` (workspace on) and
   `/dashboard/ai`. Not MCP, coworker jobs, or autopilot unless those are named.
 - **Website management** = **both** website systems: Eshobe CMS (`website` app,
