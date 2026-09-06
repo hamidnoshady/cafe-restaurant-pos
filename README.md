@@ -658,6 +658,30 @@ webhook, DNS/preview setup on both sides) is
 - Order status changes (`PATCH /api/cms/website/orders/[id]`) are the one e-commerce write
   here — the CMS's own hooks settle stock and snapshot the change.
 
+## مدیریت وب‌سایت (Website manager, Phase 38w)
+
+The Website app above talks to *one* CMS. Phase 38w puts a `WebsiteAdapter`
+(`src/lib/website/adapter.ts`) between this app and whatever the site is, and wires the site into
+the things an owner actually repeats: keeping prices and stock honest, and getting a post drafted
+without retyping the menu. The rule it runs on — **سایت ویترین است؛ منبع حقیقت اینجاست** — the
+site is a shop window; price and stock are decided here and flow one way.
+
+- **Connect** from «اتصال‌ها ← وب‌سایت» (owner only, `integrations`). The key is tested before it is
+  saved and never shown again; `/dashboard/website` keeps working on the same connection.
+- **Mark what goes.** Nothing is sent until the owner ticks a product; «ارسال قیمت‌ها» and «ارسال
+  موجودی» are two separate switches. Both menu items and retail items can be marked.
+- **A queue, not a hope.** Changes land in `website_outbox`; a background tick sends them with
+  backoff. A hundred sales re-arm one stock row, and the quantity sent is read from the database
+  at that moment. Failed and stopped rows have «تلاش مجدد»; «همگام‌سازی اکنون» drains on demand.
+- **The assistant drafts, a person publishes.** `list_website_posts`, `list_website_products`,
+  `get_website_status` read; `website.post.draft`, `website.post.update`, `website.product.upsert`
+  write drafts using real item data. `website.post.publish` always needs your confirmation — even
+  with autopilot fully open, even over MCP.
+
+Money is integer Rial across the adapter (the adapter converts to the site's unit); content is
+Markdown. Details and the before/after measurements are in
+[docs/phases/Phase-38-Website-Manager.md](docs/phases/Phase-38-Website-Manager.md).
+
 ## Support ticketing (پشتیبانی, migration 0130)
 
 A full support channel between a business and the platform team, on both sides of the tenant

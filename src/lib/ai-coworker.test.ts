@@ -151,6 +151,18 @@ describe("planCoworkerActions — the approval gate", () => {
     expect(plan.decision.decision).toBe("auto_apply");
   });
 
+  it("Phase 38 — holds a website publish even in 'auto' mode with a fully open setting", () => {
+    const publish = { type: "website.post.publish" as const, title: "انتشار", summary: "", payload: { postId: "p1" } };
+    const [plan] = planCoworkerActions({
+      ...base,
+      actions: [publish],
+      approvalMode: "auto",
+      hasAuthorizer: true,
+      settingFor: () => ({ enabled: true, maxAmountRial: null, maxPercent: null, maxItemsPerRun: 99, dailyActionLimit: 99 }),
+    });
+    expect(plan.decision).toMatchObject({ decision: "needs_confirmation", reasonCode: "action_not_eligible" });
+  });
+
   it("refuses to write unattended with no human's authority behind it", () => {
     const [plan] = planCoworkerActions({ ...base, approvalMode: "auto", hasAuthorizer: false });
     expect(plan.decision).toMatchObject({ decision: "needs_confirmation", reasonCode: "no_authorizer" });

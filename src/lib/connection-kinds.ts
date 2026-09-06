@@ -5,8 +5,8 @@
  * connections. The store kind remains in this compatibility catalogue because
  * older callers and URLs know its key, but it is not returned by
  * `visibleConnectionKinds`; WP Manager owns that connection and its workflows.
- * The technical connections the product supports are desktop, Holoo, API keys
- * and MCP. This is the list they now share, kept pure so its visibility rules are unit
+ * The technical connections the product supports are desktop, Holoo, the
+ * website (Phase 38), API keys and MCP. This is the list they now share, kept pure so its visibility rules are unit
  * tested rather than asserted by reading JSX. It follows `settings-tabs.ts`'s
  * shape deliberately — same role/feature/module vocabulary — because it is the
  * same kind of decision.
@@ -15,7 +15,7 @@ import type { Role } from "./auth";
 import type { Industry } from "./industries";
 import { hasModule } from "./industry-profile";
 
-export const CONNECTION_KIND_KEYS = ["desktop", "woocommerce", "holoo", "api", "mcp"] as const;
+export const CONNECTION_KIND_KEYS = ["desktop", "woocommerce", "holoo", "website", "api", "mcp"] as const;
 export type ConnectionKindKey = (typeof CONNECTION_KIND_KEYS)[number];
 
 export interface ConnectionKind {
@@ -56,6 +56,16 @@ export const CONNECTION_KINDS: ConnectionKind[] = [
     description:
       "اتصال به دیتابیس هلو برای مهاجرت یا کار در حالت همراه: اپ روی داده‌های خود هلو کار می‌کند در حالی که دفتر رسمی هلو می‌ماند.",
     allowedRoles: ["owner", "manager"],
+    feature: "integrations",
+  },
+  {
+    key: "website",
+    label: "وب‌سایت",
+    description:
+      "اتصال وب‌سایت کسب‌وکار به همین حساب: پیش‌نویس مطلب و محصول از داده‌های واقعی، و ارسال یک‌طرفهٔ قیمت و موجودی به سایت.",
+    // The site credential can create products and rewrite prices on a public
+    // storefront; like the desktop and API tabs, that is an owner's decision.
+    allowedRoles: ["owner"],
     feature: "integrations",
   },
   {

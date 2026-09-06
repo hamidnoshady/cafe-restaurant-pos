@@ -118,6 +118,10 @@ export const MCP_READ_TOOL_SUMMARIES: Record<string, string> = {
   get_customer_timeline: "One customer's full file: purchase summary, loyalty points, lifecycle stage, contact-consent state, and their recent events (orders, payments, tickets, notes) newest first.",
   list_customer_segments: "Saved customer segments with their member counts and a plain-Persian description of each segment's rules.",
   preview_customer_segment: "Count and sample a segment definition without saving it. With purpose 'sms' or 'email' only customers who have granted that permission are counted; the unfiltered total is returned alongside so the gap can be reported.",
+  // Phase 38 — the website manager's reads.
+  list_website_posts: "The business's website posts (drafts and published) with id, title, status and dates. Get a post id here before editing it.",
+  list_website_products: "Products on the business's website with remote id, title, SKU, price in integer Rial and the site's stock figure.",
+  get_website_status: "Whether a website is connected, its domain, the last connection test, the price/stock push switches and the sync queue counts (pending / failed / dead).",
 };
 
 function readDescriptor(tool: OpenAiTool): McpToolDescriptor {
@@ -189,9 +193,12 @@ const id = (description: string) => ({ type: "string", description });
  *     the owner supplied that fact in advance. A model in a chat window has
  *     supplied nothing, so it is back to the Phase 31 position.
  *   * **Actions with no executor are absent** — the setup-wizard six, the live
- *     floor five (reservations, tables, courier), and `menu.item.create`. Their
- *     absence is not an omission to fix by writing an executor: each was left
- *     without one deliberately (see their entries in `ai.ts`).
+ *     floor five (reservations, tables, courier), `menu.item.create`, and
+ *     Phase 38's `website.post.publish`. Their absence is not an omission to
+ *     fix by writing an executor: each was left without one deliberately (see
+ *     their entries in `ai.ts`). Publishing in particular is the moment a text
+ *     becomes public under the business's name; an MCP client may draft it,
+ *     and a person clicks publish.
  */
 const WRITE_TOOL_SPECS: WriteToolSpec[] = [
   {
@@ -424,6 +431,63 @@ const WRITE_TOOL_SPECS: WriteToolSpec[] = [
         note: { type: "string", description: "یادداشت، اختیاری" },
       },
       required: ["formulaId", "batches"],
+      additionalProperties: false,
+    },
+  },
+  // Phase 38 — the website's drafting writes. Note what is NOT here:
+  // `website.post.publish`. See the header comment.
+  {
+    name: "write_website_post_draft",
+    actionType: "website.post.draft",
+    english:
+      "Create a DRAFT post on the business's website. Body is Markdown. It is never published by this tool — a person publishes from the dashboard. Use only real data from the read tools; never invent prices or figures.",
+    destructive: false,
+    inputSchema: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "عنوان مطلب" },
+        body: { type: "string", description: "متن مطلب (Markdown)" },
+        excerpt: { type: "string", description: "خلاصهٔ کوتاه، اختیاری" },
+      },
+      required: ["title", "body"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "write_website_post_update",
+    actionType: "website.post.update",
+    english:
+      "Edit a website post's title, body (Markdown) or excerpt. Cannot change whether it is published. Get the post id from list_website_posts.",
+    destructive: false,
+    inputSchema: {
+      type: "object",
+      properties: {
+        postId: id("شناسهٔ مطلب — از list_website_posts"),
+        title: { type: "string", description: "عنوان تازه، اختیاری" },
+        body: { type: "string", description: "متن تازه (Markdown)، اختیاری" },
+        excerpt: { type: "string", description: "خلاصهٔ تازه، اختیاری" },
+      },
+      required: ["postId"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "write_website_product",
+    actionType: "website.product.upsert",
+    english:
+      "Create or update a product on the business's website. Price is an integer in Rial; the adapter converts to the site's unit. Give remoteId (from list_website_products) to update, omit it to create.",
+    destructive: false,
+    inputSchema: {
+      type: "object",
+      properties: {
+        remoteId: id("شناسهٔ محصول در سایت — خالی یعنی محصول جدید"),
+        title: { type: "string", description: "عنوان محصول" },
+        sku: { type: "string", description: "کد کالا، اختیاری" },
+        summary: { type: "string", description: "توضیح کوتاه، اختیاری" },
+        priceRial: money("قیمت، ریال صحیح"),
+        stock: { type: "integer", description: "موجودی سایت، اختیاری" },
+      },
+      required: ["title", "priceRial"],
       additionalProperties: false,
     },
   },

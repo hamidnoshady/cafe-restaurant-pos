@@ -7,7 +7,7 @@
 
 import { ACTION_CATALOG, type ActionMeta, type ActionType } from "./ai";
 
-export const AUTOPILOT_CATEGORIES = ["inventory", "pricing", "money", "customer", "waste"] as const;
+export const AUTOPILOT_CATEGORIES = ["inventory", "pricing", "money", "customer", "waste", "website"] as const;
 export type AutopilotCategory = (typeof AUTOPILOT_CATEGORIES)[number];
 
 export interface AutopilotCategorySetting {
@@ -40,6 +40,11 @@ export const AUTOPILOT_CEILINGS: Record<AutopilotCategory, AutopilotCategorySett
   // than one shift a day, and — because a write-off has a real cost and no
   // honest one-click undo — a monetary ceiling it never had before.
   waste: { enabled: true, maxAmountRial: 20_000_000, maxPercent: null, maxItemsPerRun: 15, dailyActionLimit: 8 },
+  // Phase 38 — the website's drafting actions. Nothing here has a Rial
+  // effect: a draft post or an unpublished product is invisible to the
+  // public until a human publishes it, and *publishing* is deliberately in no
+  // category at all (see `website.post.publish` in ACTION_CATALOG).
+  website: { enabled: true, maxAmountRial: null, maxPercent: null, maxItemsPerRun: 5, dailyActionLimit: 5 },
 };
 
 /**
@@ -52,6 +57,7 @@ export const AUTOPILOT_DEFAULTS: Record<AutopilotCategory, AutopilotCategorySett
   money: { enabled: false, maxAmountRial: 5_000_000, maxPercent: 10, maxItemsPerRun: 1, dailyActionLimit: 2 },
   customer: { enabled: false, maxAmountRial: null, maxPercent: null, maxItemsPerRun: 10, dailyActionLimit: 10 },
   waste: { enabled: false, maxAmountRial: 2_000_000, maxPercent: null, maxItemsPerRun: 5, dailyActionLimit: 2 },
+  website: { enabled: false, maxAmountRial: null, maxPercent: null, maxItemsPerRun: 2, dailyActionLimit: 2 },
 };
 
 export const AUTOPILOT_CATEGORY_LABELS: Record<AutopilotCategory, string> = {
@@ -60,6 +66,7 @@ export const AUTOPILOT_CATEGORY_LABELS: Record<AutopilotCategory, string> = {
   money: "مالی و تخفیف",
   customer: "پروندهٔ مشتری",
   waste: "ضایعات",
+  website: "وب‌سایت",
 };
 
 function clampNumber(value: number, min: number, max: number): number {
@@ -249,6 +256,34 @@ export function evaluateAutopilotProposal(input: {
       const value = context.documentValueRial;
       if (value === undefined) return defer("missing_context");
       if (setting.maxAmountRial !== null && value > setting.maxAmountRial) return defer("amount_over_cap");
+      return { decision: "auto_apply" };
+    }
+
+    case "website.post.draft":
+    case "website.post.update": {
+      // A draft never reaches the public; what the gate checks is that the
+      // model actually wrote something, and wrote it as a *draft*. The publish
+      // action is not in this switch: it has no category and no executor, so
+      // it fell to `action_not_eligible` above — always, whatever the setting.
+      if (meta.type === "website.post.update" && (typeof payload.postId !== "string" || payload.postId.length === 0)) {
+        return defer("invalid_payload");
+      }
+      const title = payload.title;
+      const body = payload.body;
+      if (meta.type === "website.post.draft") {
+        if (typeof title !== "string" || title.trim().length === 0) return defer("invalid_payload");
+        if (typeof body !== "string" || body.trim().length === 0) return defer("invalid_payload");
+      } else if (title === undefined && body === undefined) {
+        return defer("invalid_payload");
+      }
+      if (payload.publish === true || payload.status === "published") return defer("action_not_eligible");
+      return { decision: "auto_apply" };
+    }
+
+    case "website.product.upsert": {
+      if (typeof payload.title !== "string" || payload.title.trim().length === 0) return defer("invalid_payload");
+      const price = finiteNumber(payload.priceRial);
+      if (price === null || price <= 0 || !Number.isInteger(price)) return defer("invalid_payload");
       return { decision: "auto_apply" };
     }
 

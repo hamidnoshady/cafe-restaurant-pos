@@ -172,7 +172,11 @@ export type ActionType =
   | "expense.categorize"
   | "inventory.waste.log"
   | "inventory.production.run"
-  | "menu.item.create";
+  | "menu.item.create"
+  | "website.post.draft"
+  | "website.post.update"
+  | "website.product.upsert"
+  | "website.post.publish";
 
 export type AutopilotExecutorKey =
   | "menuItemPatch"
@@ -185,7 +189,10 @@ export type AutopilotExecutorKey =
   | "customerTag"
   | "crmCustomerNote"
   | "wasteLog"
-  | "productionRun";
+  | "productionRun"
+  | "websitePostDraft"
+  | "websitePostUpdate"
+  | "websiteProductUpsert";
 
 export interface ActionMeta {
   type: ActionType;
@@ -198,6 +205,13 @@ export interface ActionMeta {
   executor?: AutopilotExecutorKey;
   coworkerOnly?: boolean;
   revertible?: "always" | "while_open" | false;
+  /**
+   * Phase 38 — the action is proposed to a human and never applied by any
+   * unattended path: no executor, no autopilot category, no MCP write tool,
+   * and `planCoworkerActions` defers it whatever the settings say. Publishing
+   * to a public website is the one action tagged so far.
+   */
+  alwaysConfirm?: true;
 }
 
 export const ACTION_CATALOG: Record<ActionType, ActionMeta> = {
@@ -430,6 +444,52 @@ export const ACTION_CATALOG: Record<ActionType, ActionMeta> = {
     label: "افزودن آیتم جدید به منو",
     payloadHint:
       "{ categoryId: string, name: string, price: number /* ریال صحیح */, description?: string, sku?: string }",
+  },
+  // Phase 38 — the website manager's four writes, through the WebsiteAdapter.
+  // Three of them produce something a human still has to publish, so they are
+  // autopilot-eligible under `website`. The fourth — publishing — is the
+  // moment a text becomes public under the business's name, and stays a
+  // human's click: no executor, no category, `alwaysConfirm`.
+  "website.post.draft": {
+    type: "website.post.draft",
+    endpoint: "/api/cms/website/drafts",
+    method: "POST",
+    label: "پیش‌نویس مطلب برای وب‌سایت",
+    payloadHint:
+      "{ title: string, body: string /* Markdown؛ فقط از داده‌های واقعی کسب‌وکار — نام و قیمت آیتم‌ها را از ابزارها بخوان، عددی از خودت نساز */, excerpt?: string } — همیشه پیش‌نویس می‌ماند و منتشر نمی‌شود",
+    autopilotCategory: "website",
+    executor: "websitePostDraft",
+    revertible: false,
+  },
+  "website.post.update": {
+    type: "website.post.update",
+    endpoint: "/api/cms/website/drafts/{postId}",
+    method: "PATCH",
+    label: "ویرایش مطلب وب‌سایت",
+    payloadHint:
+      "{ postId: string /* از list_website_posts */, title?: string, body?: string /* Markdown */, excerpt?: string } — وضعیت انتشار را تغییر نمی‌دهد",
+    autopilotCategory: "website",
+    executor: "websitePostUpdate",
+    revertible: false,
+  },
+  "website.product.upsert": {
+    type: "website.product.upsert",
+    endpoint: "/api/cms/website/catalog",
+    method: "POST",
+    label: "ثبت یا به‌روزرسانی محصول در وب‌سایت",
+    payloadHint:
+      "{ remoteId?: string /* از list_website_products؛ خالی یعنی محصول جدید */, title: string, sku?: string, summary?: string, priceRial: number /* ریال صحیح */, stock?: number }",
+    autopilotCategory: "website",
+    executor: "websiteProductUpsert",
+    revertible: false,
+  },
+  "website.post.publish": {
+    type: "website.post.publish",
+    endpoint: "/api/cms/website/drafts/{postId}/publish",
+    method: "POST",
+    label: "انتشار مطلب در وب‌سایت",
+    payloadHint: "{ postId: string } — متن را عمومی می‌کند؛ همیشه به تأیید انسان نیاز دارد",
+    alwaysConfirm: true,
   },
 };
 
@@ -910,6 +970,41 @@ export function toolDefinitions(mode: AgentMode, opts: ToolDefinitionsOptions = 
     noArgsTool(
       "list_coworker_jobs",
       "فهرست کارهای تعریف‌شدهٔ «همکار هوشمند» این کسب‌وکار و تعداد اجراهای منتظر تأیید.",
+    ),
+    // Phase 38 — the website manager's three reads. All go through the
+    // business's WebsiteAdapter; prices come back as integer Rial.
+    {
+      type: "function",
+      function: {
+        name: "list_website_posts",
+        description:
+          "مطلب‌های وب‌سایت کسب‌وکار (پیش‌نویس و منتشرشده) با شناسه، عنوان، وضعیت و تاریخ. برای ویرایش یا انتشار یک مطلب، شناسه را از همین‌جا بگیر.",
+        parameters: {
+          type: "object",
+          properties: {
+            status: { type: "string", enum: ["draft", "published"], description: "فقط پیش‌نویس‌ها یا فقط منتشرشده‌ها؛ خالی یعنی همه" },
+            limit: { type: "number", description: "چند مطلب، پیش‌فرض ۲۰ و حداکثر ۵۰" },
+          },
+          additionalProperties: false,
+        },
+      },
+    },
+    {
+      type: "function",
+      function: {
+        name: "list_website_products",
+        description:
+          "محصول‌های ثبت‌شده در وب‌سایت با شناسه، عنوان، کد، قیمت (ریال) و موجودی سایت. برای به‌روزرسانی یک محصول، remoteId را از همین‌جا بگیر.",
+        parameters: {
+          type: "object",
+          properties: { limit: { type: "number", description: "چند محصول، پیش‌فرض ۵۰ و حداکثر ۱۰۰" } },
+          additionalProperties: false,
+        },
+      },
+    },
+    noArgsTool(
+      "get_website_status",
+      "وضعیت اتصال وب‌سایت: متصل است یا نه، دامنه، آخرین آزمایش، کلیدهای ارسال قیمت و موجودی، و صف ارسال (در انتظار/ناموفق/متوقف).",
     ),
   ];
 

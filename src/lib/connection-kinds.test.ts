@@ -12,6 +12,7 @@ describe("visibleConnectionKinds", () => {
     expect(visibleConnectionKinds({ role: "owner" }).map((k) => k.key)).toEqual([
       "desktop",
       "holoo",
+      "website",
       "mcp",
       "api",
     ]);
@@ -74,6 +75,8 @@ describe("resolveConnectionKind", () => {
     // A shared link to ?tab=api must not render an owner-only credential form.
     expect(resolveConnectionKind("api", manager)).toBe("holoo");
     expect(resolveConnectionKind("desktop", manager)).toBe("holoo");
+    // Phase 38: the website credential can rewrite a public storefront.
+    expect(resolveConnectionKind("website", manager)).toBe("holoo");
   });
 
   it("returns null when there is nothing to show", () => {

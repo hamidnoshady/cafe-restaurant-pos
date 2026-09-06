@@ -300,4 +300,49 @@ describe("actionTypesForCategory", () => {
   it("gives waste no action at all — it detects and flags, it never logs waste", () => {
     expect(actionTypesForCategory("waste")).toEqual([]);
   });
+
+  it("Phase 38 — offers the website category its three drafting writes and never publish", () => {
+    expect(actionTypesForCategory("website").sort()).toEqual(
+      ["website.post.draft", "website.post.update", "website.product.upsert"].sort(),
+    );
+  });
+});
+
+describe("Phase 38 — evaluateAutopilotProposal for the website", () => {
+  // The most permissive setting the schema allows: the ceiling itself.
+  const fullyOpen: AutopilotCategorySetting = { ...AUTOPILOT_CEILINGS.website, enabled: true };
+
+  it("publish ALWAYS needs confirmation, even with the category fully open", () => {
+    const verdict = evaluate("website.post.publish", { postId: "p1" }, fullyOpen);
+    expect(verdict).toMatchObject({ decision: "needs_confirmation", reasonCode: "action_not_eligible" });
+  });
+
+  it("applies a draft with a title and body, and refuses one that tries to publish through the payload", () => {
+    expect(evaluate("website.post.draft", { title: "قهوهٔ تازه", body: "متن" }, fullyOpen)).toEqual({ decision: "auto_apply" });
+    expect(evaluate("website.post.draft", { title: "قهوهٔ تازه", body: "متن", publish: true }, fullyOpen)).toMatchObject({
+      reasonCode: "action_not_eligible",
+    });
+    expect(evaluate("website.post.draft", { title: "", body: "متن" }, fullyOpen)).toMatchObject({ reasonCode: "invalid_payload" });
+  });
+
+  it("requires a post id and at least one field for an update", () => {
+    expect(evaluate("website.post.update", { postId: "p1", body: "متن تازه" }, fullyOpen)).toEqual({ decision: "auto_apply" });
+    expect(evaluate("website.post.update", { body: "متن تازه" }, fullyOpen)).toMatchObject({ reasonCode: "invalid_payload" });
+    expect(evaluate("website.post.update", { postId: "p1" }, fullyOpen)).toMatchObject({ reasonCode: "invalid_payload" });
+  });
+
+  it("requires a positive integer Rial price on a product upsert", () => {
+    expect(evaluate("website.product.upsert", { title: "لاته", priceRial: 850_000 }, fullyOpen)).toEqual({ decision: "auto_apply" });
+    expect(evaluate("website.product.upsert", { title: "لاته", priceRial: 85_000.5 }, fullyOpen)).toMatchObject({ reasonCode: "invalid_payload" });
+    expect(evaluate("website.product.upsert", { title: "لاته", priceRial: 0 }, fullyOpen)).toMatchObject({ reasonCode: "invalid_payload" });
+  });
+
+  it("still honours the switch and the daily limit", () => {
+    expect(evaluate("website.post.draft", { title: "a", body: "b" }, { ...fullyOpen, enabled: false })).toMatchObject({
+      reasonCode: "category_disabled",
+    });
+    expect(evaluate("website.post.draft", { title: "a", body: "b" }, fullyOpen, {}, fullyOpen.dailyActionLimit)).toMatchObject({
+      reasonCode: "daily_limit_reached",
+    });
+  });
 });
