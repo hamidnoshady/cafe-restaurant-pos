@@ -172,7 +172,7 @@ export function ChatComposer({
           dragOver
             ? "border-primary ring-4 ring-primary/20"
             : focused
-              ? "border-ring ring-3 ring-ring/40"
+              ? "border-ring ring ring-ring/40"
               : "border-border/80",
         )}
       >
