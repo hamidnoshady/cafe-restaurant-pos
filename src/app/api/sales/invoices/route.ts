@@ -125,7 +125,7 @@ export const GET = withTenantScope(async (request: NextRequest) => {
     `SELECT o.id, o.order_number, o.total, o.closed_at, c.name AS customer_name,
             (SELECT count(*) FROM order_items oi WHERE oi.order_id = o.id) AS line_count
        FROM orders o
-       LEFT JOIN customers c ON c.id = o.customer_id
+       LEFT JOIN parties c ON c.id = o.customer_id
       WHERE o.location_id = $1 AND o.type = 'retail'
       ORDER BY o.order_number DESC
       LIMIT $2`,

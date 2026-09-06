@@ -101,7 +101,7 @@ export interface CreateOrderInput {
   tableId?: string | null;
   /**
    * Optional customer the sale is attributed to, picked at the till. Customers
-   * are business-wide (see customers-service.ts), so it is validated against
+   * are business-wide (see parties-service.ts), so it is validated against
    * the location's business rather than the location itself.
    */
   customerId?: string | null;
@@ -204,7 +204,7 @@ export async function createOrder(
     const params: unknown[] = [customerId];
     if (businessId) params.push(businessId);
     const { rows: customer } = await query<{ id: string }>(
-      `SELECT id FROM customers WHERE id = $1` + (businessId ? ` AND business_id = $2` : ``),
+      `SELECT id FROM parties WHERE id = $1` + (businessId ? ` AND business_id = $2` : ``),
       params,
     );
     if (customer.length === 0)

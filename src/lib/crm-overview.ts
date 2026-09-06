@@ -19,7 +19,7 @@
  */
 
 import { query } from "./db";
-import { mobileReachableSql, phonePairKeySql } from "./customers-service";
+import { mobileReachableSql, phonePairKeySql } from "./parties-service";
 import { businessToday } from "./business-day-service";
 import { WELL_KNOWN_CODES } from "./coa-template";
 import { accountBalance } from "./growth-shared";
@@ -103,7 +103,7 @@ export async function crmOverview(businessId: string): Promise<CrmOverview> {
               count(*) FILTER (WHERE created_at::date BETWEEN $4::date AND $5::date)::text AS new_prior,
               count(*) FILTER (WHERE phone IS NOT NULL AND btrim(phone) <> '')::text AS with_phone,
               count(*) FILTER (WHERE email IS NOT NULL AND btrim(email) <> '')::text AS with_email
-         FROM customers
+         FROM parties
         WHERE business_id = $1 AND merged_into_id IS NULL`,
       [businessId, window.from, window.to, prior.from, prior.to],
     ),
@@ -116,7 +116,7 @@ export async function crmOverview(businessId: string): Promise<CrmOverview> {
               count(*) FILTER (WHERE sms_consent AND ${mobileReachableSql()})::text AS sms_reachable,
               count(*) FILTER (WHERE marketing_consent AND email IS NOT NULL AND btrim(email) <> '')::text AS email_reachable,
               count(*)::text AS total
-         FROM customers
+         FROM parties
         WHERE business_id = $1 AND merged_into_id IS NULL`,
       [businessId],
     ),
@@ -184,7 +184,7 @@ export async function crmOverview(businessId: string): Promise<CrmOverview> {
       // count computed a different way from the list it labels is worse than
       // no count at all.
       `SELECT count(*)::text AS count
-         FROM customers a JOIN customers b
+         FROM parties a JOIN parties b
            ON b.business_id = a.business_id
           AND ${phonePairKeySql("b")} = ${phonePairKeySql("a")}
           AND a.id < b.id
@@ -193,7 +193,7 @@ export async function crmOverview(businessId: string): Promise<CrmOverview> {
       [businessId],
     ),
     query<{ scored_at: string | null }>(
-      `SELECT max(rfm_scored_at)::text AS scored_at FROM customers WHERE business_id = $1`,
+      `SELECT max(rfm_scored_at)::text AS scored_at FROM parties WHERE business_id = $1`,
       [businessId],
     ),
   ]);

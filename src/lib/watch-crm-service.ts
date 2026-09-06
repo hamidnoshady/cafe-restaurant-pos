@@ -193,7 +193,7 @@ export async function repairEstimateText(
             t.estimated_labor_rial::text AS estimated_labor_rial,
             t.estimated_parts_rial::text AS estimated_parts_rial,
             t.estimated_total_rial::text AS estimated_total_rial, c.name AS customer_name
-       FROM repair_tickets t LEFT JOIN customers c ON c.id = t.customer_id
+       FROM repair_tickets t LEFT JOIN parties c ON c.id = t.customer_id
       WHERE t.id = $1`,
     [ticketId],
   );

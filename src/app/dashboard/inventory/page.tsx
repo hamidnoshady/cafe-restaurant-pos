@@ -21,7 +21,7 @@ export default async function InventoryPage() {
         description="اقلام انبار، دستورالعمل مصرف (رسپی)، تأمین‌کنندگان، خرید، ضایعات و شمارش فیزیکی."
         actions={<KnowledgeHelpButton section="inventory" />}
       />
-      <InventoryManager />
+      <InventoryManager role={session.role} />
     </PageShell>
   );
 }

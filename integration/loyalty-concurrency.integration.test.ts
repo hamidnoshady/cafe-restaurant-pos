@@ -75,7 +75,7 @@ beforeEach(async () => {
     ), location AS (
       INSERT INTO locations(business_id,name) SELECT id,'Main' FROM business RETURNING id
     ), customer AS (
-      INSERT INTO customers(business_id,name) SELECT business.id,'مشتری' FROM business RETURNING id
+      INSERT INTO parties(business_id,name) SELECT business.id,'مشتری' FROM business RETURNING id
     )
     SELECT business.id AS business_id, location.id AS location_id, customer.id AS customer_id
       FROM business CROSS JOIN location CROSS JOIN customer

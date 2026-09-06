@@ -76,7 +76,7 @@ async function createShop(): Promise<Shop> {
 
 async function createCustomer(businessId: string, name: string): Promise<string> {
   const { rows } = await db.query<{ id: string }>(
-    "INSERT INTO customers (business_id, name, phone) VALUES ($1, $2, '09120000000') RETURNING id",
+    "INSERT INTO parties (business_id, name, phone) VALUES ($1, $2, '09120000000') RETURNING id",
     [businessId, name],
   );
   return rows[0].id;

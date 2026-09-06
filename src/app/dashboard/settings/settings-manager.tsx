@@ -51,6 +51,8 @@ interface SettingsManagerProps {
   features: Record<string, boolean>;
   currentUserId: string;
   isOwner: boolean;
+  /** The signed-in role, for the sections that mount a scoped party directory. */
+  role: string;
 }
 
 const TAB_ICONS: Record<SettingsTabKey, LucideIcon> = {
@@ -83,7 +85,7 @@ const SETTINGS_GROUPS: Array<{ label: string; keys: SettingsTabKey[] }> = [
   { label: "فروش آنلاین", keys: ["online-platforms"] },
 ];
 
-export function SettingsManager({ tabs, features, currentUserId, isOwner }: SettingsManagerProps) {
+export function SettingsManager({ tabs, features, currentUserId, isOwner, role }: SettingsManagerProps) {
   const searchParams = useSearchParams();
   const requestedTab = searchParams.get("tab");
   const normalizedRequestedTab = requestedTab === "branch-sync" ? "branch-management" : requestedTab;
@@ -151,7 +153,7 @@ export function SettingsManager({ tabs, features, currentUserId, isOwner }: Sett
       {activeTab === "online-platforms" ? <OnlinePlatformsSettings /> : null}
       {activeTab === "payment-methods" ? <PaymentMethodsSettings /> : null}
       {activeTab === "accounts" ? <AccountsSettings /> : null}
-      {activeTab === "team" ? <TeamManager currentUserId={currentUserId} /> : null}
+      {activeTab === "team" ? <TeamManager currentUserId={currentUserId} role={role} /> : null}
       {activeTab === "menu" ? <MenuSettings /> : null}
       {activeTab === "printers" ? <PrinterSettings /> : null}
       {activeTab === "branch-management" ? <BranchManagementSettings features={features} /> : null}

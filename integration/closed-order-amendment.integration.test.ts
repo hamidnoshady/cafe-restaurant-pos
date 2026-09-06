@@ -106,7 +106,7 @@ beforeEach(async () => {
   await db.query(`INSERT INTO settings (business_id, key, value) VALUES ($1, 'inventory.costing', '{"method":"fifo"}'::jsonb)`, [biz.id]);
 
   const { rows: customer } = await db.query<{ id: string }>(
-    "INSERT INTO customers (business_id, name) VALUES ($1, 'مشتری اعتباری') RETURNING id",
+    "INSERT INTO parties (business_id, name) VALUES ($1, 'مشتری اعتباری') RETURNING id",
     [biz.id],
   );
   biz.customerId = customer[0].id;

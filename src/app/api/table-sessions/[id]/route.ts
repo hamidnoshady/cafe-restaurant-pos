@@ -40,7 +40,7 @@ export const GET = withTenantScope(async (_request: NextRequest, context: { para
     `SELECT tsc.guest_number AS "guestNumber", tsc.customer_id AS "customerId",
             c.name AS "customerName", c.phone AS "customerPhone"
        FROM table_session_customers tsc
-       JOIN customers c ON c.id = tsc.customer_id
+       JOIN parties c ON c.id = tsc.customer_id
       WHERE tsc.session_id = $1
       ORDER BY tsc.guest_number`,
     [id],
@@ -106,7 +106,7 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
       const selectedCustomerIds = customerIds.filter((value): value is string => Boolean(value));
       if (selectedCustomerIds.length > 0) {
         const { rows: ownedCustomers } = await client.query<{ id: string }>(
-          `SELECT id FROM customers WHERE business_id = $1 AND is_active AND id = ANY($2::uuid[])`,
+          `SELECT id FROM parties WHERE business_id = $1 AND is_active AND id = ANY($2::uuid[])`,
           [session.businessId, selectedCustomerIds],
         );
         if (ownedCustomers.length !== selectedCustomerIds.length) {

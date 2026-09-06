@@ -184,7 +184,7 @@ export async function growthOverview(
         WHERE business_id = $1`,
       [businessId, from, to],
     ),
-    query<{ total: number }>(`SELECT COUNT(*)::int AS total FROM customers WHERE business_id = $1`, [businessId]),
+    query<{ total: number }>(`SELECT COUNT(*)::int AS total FROM parties WHERE business_id = $1`, [businessId]),
     query<{ programs: number }>(
       `SELECT COUNT(*)::int AS programs FROM loyalty_programs WHERE business_id = $1 AND is_active`,
       [businessId],
@@ -230,7 +230,7 @@ export async function growthOverview(
         UNION ALL
        (SELECT cp.created_at, 'points' AS kind, c.name AS subject, cp.points::text AS amount, cp.source_type
           FROM customer_points cp
-          JOIN customers c ON c.id = cp.customer_id
+          JOIN parties c ON c.id = cp.customer_id
          WHERE cp.business_id = $1
          ORDER BY cp.created_at DESC LIMIT 5)
         UNION ALL

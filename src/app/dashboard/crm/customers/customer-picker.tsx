@@ -3,7 +3,7 @@
 /**
  * Search-and-open for the customer file (Phase 36).
  *
- * Deliberately thin: it reuses `/api/customers?q=` — the same search the POS's
+ * Deliberately thin: it reuses `/api/parties?q=` — the same search the POS's
  * credit-payment picker calls — rather than adding a CRM-specific lookup, so
  * there is one definition of "find a customer by what someone typed".
  */
@@ -36,7 +36,7 @@ export function CustomerPicker({ directoryHref }: { directoryHref: string }) {
     let cancelled = false;
     setSearching(true);
     const timer = setTimeout(() => {
-      void api<{ customers: Match[] }>(`/api/customers?q=${encodeURIComponent(query.trim())}`)
+      void api<{ customers: Match[] }>(`/api/parties?roles=Customer&q=${encodeURIComponent(query.trim())}`)
         .then(({ ok, data }) => {
           if (!cancelled) setMatches(ok ? data.customers : []);
         })

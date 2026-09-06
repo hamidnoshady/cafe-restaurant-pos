@@ -63,7 +63,7 @@ async function arLines(businessId: string, accountId: string): Promise<ArLineRow
        LEFT JOIN order_amendments am ON je.source_type = 'order_amendment' AND am.id = je.source_id
        LEFT JOIN orders o ON o.id = CASE WHEN je.source_type = 'order' THEN je.source_id ELSE am.order_id END
        LEFT JOIN ar_receipts r ON je.source_type = 'ar_receipt' AND r.id = je.source_id
-       LEFT JOIN customers c ON c.id = COALESCE(o.customer_id, r.customer_id)
+       LEFT JOIN parties c ON c.id = COALESCE(o.customer_id, r.customer_id)
       WHERE je.business_id = $1 AND jl.account_id = $2
       ORDER BY je.entry_date, je.posted_at`,
     [businessId, accountId],
@@ -251,7 +251,7 @@ export async function receivePayment(params: {
     await client.query("BEGIN");
 
     const { rows: customerRows } = await client.query<{ id: string }>(
-      `SELECT id FROM customers WHERE id = $1 AND business_id = $2`,
+      `SELECT id FROM parties WHERE id = $1 AND business_id = $2`,
       [params.customerId, params.businessId],
     );
     if (!customerRows[0]) throw new ArError("customer_not_found", 404);

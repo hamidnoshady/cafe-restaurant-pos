@@ -1,6 +1,8 @@
 "use client";
 
 import { LoadingSkeleton, SectionCard } from "../page-chrome";
+import { partyScopeFor } from "@/lib/parties-scopes";
+import { PartiesSection } from "../parties/parties-section";
 
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
 
@@ -53,8 +55,11 @@ const PERMISSION_LABELS: Record<string, string> = {
   "inventory.view": "مشاهدهٔ انبار",
   "inventory.adjust": "اصلاح موجودی",
   "purchases.manage": "مدیریت خرید",
-  "customers.view": "مشاهدهٔ مشتریان",
-  "customers.manage": "مدیریت مشتریان",
+  // The party permission covers all three roles, so the label says «طرف‌حساب» — a
+  // manager granting it to a cashier is also letting them edit suppliers and
+  // personnel, and the label must not hide that.
+  "parties.view": "مشاهدهٔ طرف‌حساب‌ها",
+  "parties.manage": "مدیریت طرف‌حساب‌ها",
   "ledger.view": "مشاهدهٔ دفتر",
   "ledger.post": "ثبت سند",
   "ledger.approve": "تأیید سند",
@@ -101,7 +106,7 @@ const INVITATION_STATUS_LABELS: Record<Invitation["status"], string> = {
   expired: "منقضی",
 };
 
-export function TeamManager({ currentUserId }: { currentUserId: string }) {
+export function TeamManager({ currentUserId, role }: { currentUserId: string; role: string }) {
   const [members, setMembers] = useState<Member[]>([]);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [error, setError] = useState("");
@@ -216,6 +221,19 @@ export function TeamManager({ currentUserId }: { currentUserId: string }) {
 
       <InviteSection invitations={invitations} onChanged={load} onError={setError} />
       <AddStaffSection onChanged={load} onError={setError} />
+
+      {/*
+        Personnel as parties (scope `team`): a staff member is a counterparty for
+        payroll, advances and the phone number the shift lead calls, and those live on
+        `parties` with `employee_user_id` pointing back at the account above. Shown
+        here rather than in a screen of its own so the two views of one person cannot
+        disagree about the name — and so editing a phone number here is editing it
+        everywhere, the POS's customer picker included.
+      */}
+      <div>
+        <p className="mb-2 text-xs font-semibold text-amber-700 dark:text-amber-300">پروندهٔ کارکنان</p>
+        <PartiesSection scope={partyScopeFor("team")} role={role} />
+      </div>
     </div>
   );
 }

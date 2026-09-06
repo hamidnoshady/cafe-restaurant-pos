@@ -32,9 +32,12 @@ export function GrowthCustomersSection({ selectedCustomerId }: { selectedCustome
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      const params = new URLSearchParams({ page: "1", pageSize: "100" });
+      // Only the customers, from the shared party table: Growth's member list is
+      // not the CRM's directory, and since Phase «parties» that table also holds
+      // the suppliers and the staff.
+      const params = new URLSearchParams({ page: "1", pageSize: "100", roles: "Customer" });
       if (query.trim()) params.set("q", query.trim());
-      api<{ customers: Customer[] }>(`/api/customers?${params}`).then(({ ok, data }) => {
+      api<{ customers: Customer[] }>(`/api/parties?${params}`).then(({ ok, data }) => {
         if (ok) {
           setCustomers(data.customers);
           setError("");
@@ -53,7 +56,7 @@ export function GrowthCustomersSection({ selectedCustomerId }: { selectedCustome
   // slice of the customer list.
   useEffect(() => {
     if (!selectedCustomerId || customers === null || customers.some((customer) => customer.id === selectedCustomerId)) return;
-    api<{ customer: Customer }>(`/api/customers/${encodeURIComponent(selectedCustomerId)}`).then(({ ok, data }) => {
+    api<{ customer: Customer }>(`/api/parties/${encodeURIComponent(selectedCustomerId)}`).then(({ ok, data }) => {
       if (ok) {
         setCustomers((current) =>
           current && current.every((customer) => customer.id !== selectedCustomerId)

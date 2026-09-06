@@ -89,7 +89,7 @@ beforeEach(async () => {
   await db.query("DELETE FROM domain_events");
   await db.query("DELETE FROM journal_lines");
   await db.query("DELETE FROM journal_entries");
-  await db.query("DELETE FROM customers");
+  await db.query("DELETE FROM parties");
   await db.query("DELETE FROM users");
   await db.query("DELETE FROM accounts");
   await db.query("DELETE FROM businesses");
@@ -218,7 +218,7 @@ describe("the growth dashboard", () => {
     );
 
     const customer = await db.query<{ id: string }>(
-      "INSERT INTO customers (business_id, name) VALUES ($1, 'Sara') RETURNING id",
+      "INSERT INTO parties (business_id, name) VALUES ($1, 'Sara') RETURNING id",
       [biz.id],
     );
     await db.query(

@@ -360,7 +360,7 @@ export const ACTION_CATALOG: Record<ActionType, ActionMeta> = {
   },
   "customer.note.add": {
     type: "customer.note.add",
-    endpoint: "/api/customers/{customerId}",
+    endpoint: "/api/parties/{customerId}",
     method: "PUT",
     label: "افزودن یادداشت به پروفایل مشتری",
     payloadHint:

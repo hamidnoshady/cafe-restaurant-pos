@@ -144,7 +144,7 @@ function segmentSourceSql(): string {
                 ELSE 0 END               AS average_order,
            coalesce(ps.loyalty_points, 0) AS loyalty_points,
            coalesce(ars.ar_balance, 0)   AS ar_balance
-      FROM customers c
+      FROM parties c
       LEFT JOIN order_stats os ON os.customer_id = c.id
       LEFT JOIN point_stats ps ON ps.customer_id = c.id
       LEFT JOIN ar_stats ars ON ars.customer_id = c.id
@@ -191,7 +191,7 @@ async function buildSegmentQuery(
     WITH scoped AS (${source})
     SELECT ${select}
       FROM scoped s
-      JOIN customers c ON c.id = s.id
+      JOIN parties c ON c.id = s.id
      WHERE (${compiled.sql}) AND (${consent})
   `;
   if (!options.countOnly) {

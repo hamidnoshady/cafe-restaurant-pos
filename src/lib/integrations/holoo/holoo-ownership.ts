@@ -15,7 +15,10 @@ import { query } from "../../db";
 
 /** [path prefix, mapping entity type] — the entity type whose rows the prefix mutates. */
 export const HOLOO_GUARDED_PREFIXES: readonly (readonly [string, string])[] = [
-  ["/api/customers", "holoo_customer"],
+  // The shared party route (`src/app/api/parties`) is what every app now writes a
+  // customer through, so it — not the old customers endpoint — is where a
+  // Holoo-managed person has to be protected.
+  ["/api/parties", "holoo_customer"],
   ["/api/ledger/accounts", "holoo_account"],
   ["/api/menu/items", "holoo_goods"],
   ["/api/inventory/items", "holoo_goods"],

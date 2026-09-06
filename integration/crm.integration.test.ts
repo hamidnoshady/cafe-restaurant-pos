@@ -104,7 +104,7 @@ beforeEach(async () => {
   await db.query("DELETE FROM orders");
   await db.query("DELETE FROM journal_lines");
   await db.query("DELETE FROM journal_entries");
-  await db.query("DELETE FROM customers");
+  await db.query("DELETE FROM parties");
   await db.query("DELETE FROM accounts");
   await db.query("DELETE FROM businesses");
 
@@ -158,7 +158,7 @@ async function makeCustomer(
   } = {},
 ): Promise<string> {
   const { rows } = await db.query<{ id: string }>(
-    `INSERT INTO customers (business_id, name, phone, phone_e164, email, sms_consent, marketing_consent, tags)
+    `INSERT INTO parties (business_id, name, phone, phone_e164, email, sms_consent, marketing_consent, tags)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
     [
       businessId,

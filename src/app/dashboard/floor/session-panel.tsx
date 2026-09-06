@@ -315,7 +315,7 @@ function SplitDialog({
     const timer = setTimeout(
       () => {
         void api<{ customers: Customer[] }>(
-          `/api/customers?q=${encodeURIComponent(customerQuery)}`,
+          `/api/parties?q=${encodeURIComponent(customerQuery)}`,
         )
           .then(({ ok, data }) => {
             if (!cancelled && ok) setCustomers(data.customers);

@@ -53,6 +53,21 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
       defaultLocationId: body.defaultLocationId,
       overrides: body.permissions === undefined ? undefined : sanitizeOverrides(body.permissions),
     });
+    /*
+     * Same best-effort party as on create, and here for the repair case: a member
+     * whose account was made before the party existed (or whose name was blank at
+     * the time) gets their personnel file on the next edit of the membership. It
+     * runs after the update has committed and its failure is not the member's
+     * problem — the edit they asked for is already saved.
+     */
+    try {
+      const { ensureEmployeeParty } = await import("@/lib/parties-service");
+      await ensureEmployeeParty(session.businessId, id, {
+        displayName: body.fullName?.trim() || null,
+      });
+    } catch {
+      /* no party row for this member yet */
+    }
     return NextResponse.json({ ok: true });
   } catch (err) {
     return errorResponse(err);

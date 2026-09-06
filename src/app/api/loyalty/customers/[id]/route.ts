@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
-import { getCustomer } from "@/lib/customers-service";
+import { getCustomer } from "@/lib/parties-service";
 import { pointsBalance, storeCreditBalance } from "@/lib/loyalty-service";
 
 /** One customer's points and store-credit balances — both reconstructed, never stored. */

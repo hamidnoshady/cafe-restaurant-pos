@@ -53,7 +53,13 @@ export default async function SettingsPage() {
         }
         actions={<KnowledgeHelpButton section="settings" />}
       />
-      <SettingsManager tabs={tabs} features={features} currentUserId={session.sub} isOwner={member.role === "owner"} />
+      <SettingsManager
+        tabs={tabs}
+        features={features}
+        currentUserId={session.sub}
+        isOwner={member.role === "owner"}
+        role={session.role}
+      />
     </PageShell>
   );
 }

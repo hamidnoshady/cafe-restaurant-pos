@@ -14,6 +14,9 @@ import {
 } from "lucide-react";
 import { SectionNav } from "../section-nav";
 import { api, ErrorBox } from "../ui";
+import { useSearchParams } from "next/navigation";
+import { partyScopeFor } from "@/lib/parties-scopes";
+import { PartiesSection } from "../parties/parties-section";
 import { TrialBalanceSection } from "./trial-balance-section";
 import { EntriesSection } from "./entries-section";
 import { ManualEntrySection } from "./manual-entry-section";
@@ -44,6 +47,7 @@ const TABS = [
   { key: "manual", label: "ثبت سند دستی", icon: ClipboardListIcon },
   { key: "expenses", label: "هزینه‌ها", icon: CircleIcon },
   { key: "fiscal-periods", label: "دوره‌های مالی", icon: CalendarDaysIcon },
+  { key: "parties", label: "طرف‌حساب‌ها", icon: UsersIcon },
   { key: "ar", label: "حساب‌های دریافتنی", icon: UsersIcon },
   { key: "ap", label: "حساب‌های پرداختنی", icon: UsersIcon },
   { key: "cheques", label: "چک‌ها", icon: ScrollTextIcon },
@@ -60,7 +64,29 @@ export function LedgerManager({ role }: { role: string }) {
   const [accounts, setAccounts] = useState<AccountRow[] | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [tab, setTab] = useState<TabKey>("trial-balance");
+  /*
+   * «طرف‌حساب‌ها» is Accounting's own view of the same table the CRM, the store and
+   * the team look at (`../parties/parties-section.tsx`, scope `accounting`) — the
+   * one place a party's ledger code and national/economic codes are written.
+   *
+   * A `?party=<id>` link from another app (the CRM's read-only row, an AI answer, a
+   * notification) lands on this tab with that one file open, the way `?customer=`
+   * lands on the CRM's. The tab is only *reachable* from those links, so the
+   * default tab is unchanged: the ledger's front door stays the trial balance.
+   */
+  const searchParams = useSearchParams();
+  const partyParam = searchParams.get("party");
+  // A named tab wins over `?party=`'s implicit one, and both are checked against
+  // `TABS` so a stale bookmark cannot park the page on a section that no longer
+  // exists (the state type is `TabKey`, and an unchecked cast is how it would lie).
+  const tabParam = TABS.find((item) => item.key === searchParams.get("tab"))?.key;
+  const [tab, setTab] = useState<TabKey>(() => (tabParam ?? (partyParam ? "parties" : "trial-balance")));
+  const [editPartyId, setEditPartyId] = useState<string | null>(partyParam);
+  useEffect(() => {
+    if (!partyParam) return;
+    setTab("parties");
+    setEditPartyId(partyParam);
+  }, [partyParam]);
   const [refreshKey, setRefreshKey] = useState(0);
 
   // Wages are compensation data — restricted to owner + accountant, unlike
@@ -113,6 +139,13 @@ export function LedgerManager({ role }: { role: string }) {
           {tab === "manual" ? <ManualEntrySection accounts={accounts} busy={busy} run={run} refreshKey={refreshKey} /> : null}
           {tab === "expenses" ? <ExpenseSection accounts={accounts} busy={busy} run={run} refreshKey={refreshKey} /> : null}
           {tab === "fiscal-periods" ? <FiscalPeriodsSection busy={busy} run={run} /> : null}
+          {tab === "parties" ? (
+            <PartiesSection
+              scope={partyScopeFor("accounting")}
+              role={role}
+              editPartyId={editPartyId}
+            />
+          ) : null}
           {tab === "ar" ? <ArSection busy={busy} run={run} /> : null}
           {tab === "ap" ? <ApSection busy={busy} run={run} /> : null}
           {tab === "cheques" ? <ChequesSection busy={busy} run={run} /> : null}

@@ -82,7 +82,7 @@ describe("reindexBusinessKnowledge", () => {
     routeQuery([
       ["FROM menu_items mi", [{ ref_id: "m1", name: "نان بربری", description: "با کره", ts: null }]],
       ["FROM inventory_items ii", [{ ref_id: "i1", name: "آرد", unit: "kg" }]],
-      ["FROM customers WHERE", [{ ref_id: "c1", name: "زهرا" }]],
+      ["FROM parties WHERE", [{ ref_id: "c1", name: "زهرا" }]],
       ["FROM ai_project_notes n", [{ ref_id: "n1", project: "شعبه دوم", title: "یادداشت", content: "متن", ts: null }]],
     ]);
     mockEmbedTexts.mockImplementation(async (cfg: AiConfig, texts: string[]) => ({
@@ -110,7 +110,7 @@ describe("reindexBusinessKnowledge", () => {
     routeQuery([
       ["FROM menu_items mi", [{ ref_id: "m1", name: "نان", description: null, ts: null }]],
       ["FROM inventory_items ii", []],
-      ["FROM customers WHERE", []],
+      ["FROM parties WHERE", []],
       ["FROM ai_project_notes n", []],
     ]);
     mockEmbedTexts.mockResolvedValue({ vectors: [vector()], inputTokens: 1 });
@@ -154,7 +154,7 @@ describe("reindexBusinessKnowledge", () => {
 
   it("skips a chunk with no embeddable text, with a named reason", async () => {
     mockQuery.mockImplementation((async (sql: string) => {
-      if (String(sql).includes("FROM customers WHERE")) {
+      if (String(sql).includes("FROM parties WHERE")) {
         return { rows: [{ ref_id: "c1", name: "   " }] };
       }
       return { rows: [] };

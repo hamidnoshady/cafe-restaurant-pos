@@ -112,7 +112,7 @@ beforeEach(async () => {
   other.id = (await makeBusiness("rival")).id;
 
   const customerRow = await db.query<{ id: string }>(
-    "INSERT INTO customers (business_id, name) VALUES ($1, 'مشتری') RETURNING id",
+    "INSERT INTO parties (business_id, name) VALUES ($1, 'مشتری') RETURNING id",
     [biz.id],
   );
   party.customerId = customerRow.rows[0].id;

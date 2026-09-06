@@ -14,7 +14,7 @@ export const GET = withTenantScope(async () => {
 
   const { rows } = await query<{ id: string; plan_number: string; customer_name: string; grams: string; total_value_rial: string; paid_rial: string; status: string }>(
     `SELECT l.id, l.plan_number::text, c.name AS customer_name, l.grams::text, l.total_value_rial::text, l.paid_rial::text, l.status::text
-       FROM layaway_plans l JOIN customers c ON c.id = l.customer_id
+       FROM layaway_plans l JOIN parties c ON c.id = l.customer_id
       WHERE l.business_id = $1
       ORDER BY l.created_at DESC
       LIMIT 100`,

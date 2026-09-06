@@ -62,7 +62,7 @@ export async function completeOrderPayment(
 
   if (customerId) {
     const { rowCount } = await client.query(
-      `SELECT 1 FROM customers WHERE id = $1 AND business_id = $2`,
+      `SELECT 1 FROM parties WHERE id = $1 AND business_id = $2`,
       [customerId, businessId],
     );
     if (rowCount !== 1) {

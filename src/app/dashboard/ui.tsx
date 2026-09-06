@@ -281,6 +281,28 @@ const ERROR_MESSAGES: Record<string, string> = {
     invalid_price: "قیمت باید عدد صحیح و غیرمنفی باشد.",
     invalid_inventory: "موجودی باید عدد صحیح و غیرمنفی باشد.",
     domain_taken: "این دامنه قبلاً برای سایت دیگری ثبت شده است.",
+    // Parties (the shared «طرف‌حساب‌ها» record every app reads) — src/app/api/parties.
+    // `validation_failed` is the collection's answer to a body the form rules
+    // reject; the message per field comes from `partyFieldErrorMessage` in
+    // src/lib/parties.ts, which is why this one stays general.
+    validation_failed: "اطلاعات طرف‌حساب کامل یا معتبر نیست؛ فیلدهای مشخص‌شده را بررسی کنید.",
+    party_not_found: "این طرف‌حساب پیدا نشد یا در همین کسب‌وکار نیست.",
+    display_name_required: "نام نمایشی طرف‌حساب الزامی است.",
+    // `invalid_role` and `category_not_found` above already cover the party
+    // routes' versions of those two codes; only the party-specific ones are added.
+    invalid_person_type: "نوع شخص باید حقیقی یا حقوقی باشد.",
+    accounting_code_required: "در حالت دستی، کد حسابداری طرف‌حساب الزامی است.",
+    accounting_code_taken: "این کد حسابداری برای طرف‌حساب دیگری در همین کسب‌وکار استفاده شده است.",
+    invalid_national_id: "کد ملی معتبر نیست.",
+    national_id_taken: "این کد ملی قبلاً برای طرف‌حساب دیگری ثبت شده است.",
+    economic_code_invalid: "کد اقتصادی معتبر نیست (۱۱ رقم با رقم کنترلی).",
+    iban_invalid: "شمارهٔ شبا معتبر نیست.",
+    too_long: "مقدار یکی از فیلدها بلندتر از حد مجاز است.",
+    email_too_long: "ایمیل بلندتر از حد مجاز است.",
+    accounting_fields_forbidden: "فیلدهای حسابداری طرف‌حساب (کد، نرخ مالیات، بانک) فقط با دسترسی «مشاهدهٔ دفتر» قابل ویرایش‌اند.",
+    category_name_required: "نام دسته الزامی است.",
+    category_name_too_long: "نام دسته بیش از ۸۰ نویسه است.",
+    category_in_use: "این دسته در حال استفاده است و فقط غیرفعال می‌شود.",
 };
 
 export function errorMessage(code: string | undefined): string {

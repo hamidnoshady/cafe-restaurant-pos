@@ -15,7 +15,7 @@
  */
 import { businessToday } from "./business-day-service";
 import { shiftIsoDate } from "./business-day";
-import { phoneMatchKeys, phoneMatchSql } from "./customers-service";
+import { phoneMatchKeys, phoneMatchSql } from "./parties-service";
 import { query } from "./db";
 import { WELL_KNOWN_CODES } from "./coa-template";
 import { STANDARD_REPORTS } from "./reports";
@@ -30,7 +30,7 @@ import { getArAging } from "./ar-service";
 import { getApAging } from "./ap-service";
 import { listPayrollRuns, listStaffWages } from "./payroll-service";
 import { listBranches } from "./branch-service";
-import { getCustomer } from "./customers-service";
+import { getCustomer } from "./parties-service";
 import { computeSessionBill } from "./table-session-service";
 import { evenSplit } from "./table-sessions";
 import { nearExpiryBatches } from "./cosmetics-service";
@@ -699,7 +699,7 @@ async function atRiskCustomers(businessId: string, args: Record<string, unknown>
   }>(
     `SELECT c.id, c.name, c.phone, count(o.id)::text AS order_count,
             sum(o.total)::text AS total_spent, max(o.closed_at)::text AS last_order
-       FROM customers c
+       FROM parties c
        JOIN orders o ON o.customer_id = c.id AND o.status = 'completed'
        JOIN locations l ON l.id = o.location_id AND l.business_id = c.business_id
       WHERE c.business_id = $1 AND c.is_active
@@ -852,7 +852,7 @@ async function findCustomersTool(businessId: string, args: Record<string, unknow
   // `phone_last4` is the last-four lookup, which is the one partial search
   // kept alive past step 3. `c.phone ILIKE` is arbitrary substring and dies
   // with the plaintext column — the same accepted loss recorded for
-  // customers-service.ts, and the reason last-four is here at all.
+  // parties-service.ts, and the reason last-four is here at all.
   const keys = await phoneMatchKeys(businessId, search);
 
   const { rows } = await query<{
@@ -871,7 +871,7 @@ async function findCustomersTool(businessId: string, args: Record<string, unknow
             count(o.id)::text AS order_count,
             COALESCE(sum(o.total), 0)::text AS total_spent,
             max(o.closed_at)::text AS last_order
-       FROM customers c
+       FROM parties c
        LEFT JOIN orders o
          ON o.customer_id = c.id AND o.status = 'completed'
        LEFT JOIN locations l ON l.id = o.location_id AND l.business_id = c.business_id

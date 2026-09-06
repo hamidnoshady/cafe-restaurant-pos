@@ -27,14 +27,14 @@ export interface EncryptedColumn {
   /** Present only where equality lookup has to keep working. */
   bidxColumn?: string;
   /**
-   * Present only on `customers.phone`: the last four digits, plaintext and
+   * Present only on `parties.phone`: the last four digits, plaintext and
    * indexed, so that the one partial search people actually perform at a till
    * survives step 3. The decision and its cost are argued in
    * `migrations/0125_field_encryption_columns.sql`.
    */
   last4Column?: string;
   /**
-   * Present only on `customers.phone`: mobile / landline / unknown, so that
+   * Present only on `parties.phone`: mobile / landline / unknown, so that
    * "is this number SMS-reachable" can still be asked of a column nobody can
    * read. Also argued in the 0125 migration header.
    */
@@ -51,7 +51,10 @@ export interface EncryptedTable {
 }
 
 export const ENCRYPTED_TABLES: Record<string, EncryptedTable> = {
-  customers: {
+  // `parties` — `customers` until migration 0137 renamed the table when the record grew
+  // suppliers and personnel beside its customers. The encrypted columns are the
+  // same three and the scope is still the business's DEK.
+  parties: {
     scope: "business",
     columns: [
       {
@@ -70,13 +73,33 @@ export const ENCRYPTED_TABLES: Record<string, EncryptedTable> = {
         column: "address",
         encColumn: "address_enc",
         tier: "Tier B",
-        note: "Delivery address. Displayed on a single customer, never filtered, sorted or grouped.",
+        note: "Delivery address. Displayed on a single party, never filtered, sorted or grouped.",
       },
       {
         column: "notes",
         encColumn: "notes_enc",
         tier: "Tier B",
         note: "Free text about a person. Never queried — the highest-sensitivity, lowest-cost column here.",
+      },
+      // Migration 0137 — the party record grew the national identity number, and
+      // it is the most identifying thing in the row. The blind index exists so
+      // "do we already have this person?" can be asked of a ciphertext, which is
+      // the same argument 0125 makes for the phone, one column over.
+      {
+        column: "national_id",
+        encColumn: "national_id_enc",
+        bidxColumn: "national_id_bidx",
+        tier: "Tier A",
+        note:
+          "Iranian national identity number. Blind-indexed so duplicate detection works without " +
+          "decryption; no DB-level unique index, because an install holding the same number twice " +
+          "must still be able to migrate (see the 0137 note).",
+      },
+      {
+        column: "economic_code",
+        encColumn: "economic_code_enc",
+        tier: "Tier A",
+        note: "A party's economic code. Displayed on the ledger's party file, never filtered.",
       },
     ],
   },

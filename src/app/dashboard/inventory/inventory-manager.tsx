@@ -3,6 +3,7 @@
 import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
 
 import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { formatQuantity } from "@/lib/digits";
 import { SectionNav } from "../section-nav";
 import { api, ErrorBox } from "../ui";
@@ -33,10 +34,19 @@ export interface InventoryItem {
 }
 export interface Supplier {
   id: string;
+  /** This branch's own copy — the display value for a row no party was linked to. */
   name: string;
   phone: string | null;
   notes: string | null;
   is_active: boolean;
+  /** The shared party this alias points at, and its live identity (0137, `parties`). */
+  partyId?: string | null;
+  partyName?: string | null;
+  partyPhone?: string | null;
+  partyActive?: boolean | null;
+  /** `COALESCE(party, alias)` — what the row shows, resolved on the server. */
+  displayName?: string | null;
+  displayPhone?: string | null;
 }
 export interface MenuItemRef {
   id: string;
@@ -89,11 +99,15 @@ const TABS = [
 ] as const;
 type TabKey = (typeof TABS)[number]["key"];
 
-export function InventoryManager() {
+export function InventoryManager({ role }: { role: string }) {
   const [data, setData] = useState<InventoryData | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [tab, setTab] = useState<TabKey>("items");
+  // `?tab=` so another app can send a person to one section of this workspace (the
+  // shared party directory links here for a supplier's branch aliases); an unknown
+  // name is ignored rather than opening a section that does not exist.
+  const tabParam = useSearchParams().get("tab");
+  const [tab, setTab] = useState<TabKey>(() => (TABS.find((item) => item.key === tabParam)?.key ?? "items"));
   const [lowStock, setLowStock] = useState<LowStockItem[]>([]);
 
   // An error from one tab shouldn't keep showing once the user has moved on
@@ -181,7 +195,7 @@ export function InventoryManager() {
           />
         ) : null}
         {tab === "suppliers" ? (
-          <SuppliersSection suppliers={data.suppliers} busy={busy} run={run} />
+          <SuppliersSection suppliers={data.suppliers} busy={busy} run={run} role={role} />
         ) : null}
         {tab === "purchases" ? (
           <PurchasesSection

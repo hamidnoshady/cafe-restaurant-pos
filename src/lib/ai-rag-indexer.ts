@@ -108,7 +108,7 @@ async function collectCustomers(businessId: string, limit: number): Promise<Coll
   // Names only — a customer note can carry figures, and figures never become
   // vectors. This is the customer half of "no numbers in a vector".
   const { rows } = await query<{ ref_id: string; name: string }>(
-    `SELECT id::text AS ref_id, name FROM customers WHERE business_id = $1 ORDER BY created_at DESC LIMIT $2`,
+    `SELECT id::text AS ref_id, name FROM parties WHERE business_id = $1 ORDER BY created_at DESC LIMIT $2`,
     [businessId, limit + 1],
   );
   const truncated = rows.length > limit;

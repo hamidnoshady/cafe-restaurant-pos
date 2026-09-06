@@ -22,7 +22,7 @@ import {
  * has an answer that does not require reading every ticket.
  */
 export const GET = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requirePermission(PERMISSIONS.customersView);
+  const { session, error } = await requirePermission(PERMISSIONS.partiesView);
   if (error) return error;
 
   const search = request.nextUrl.searchParams;
@@ -49,7 +49,7 @@ interface CaseBody {
 }
 
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requirePermission(PERMISSIONS.customersManage);
+  const { session, error } = await requirePermission(PERMISSIONS.partiesManage);
   if (error) return error;
 
   let body: CaseBody;

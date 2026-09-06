@@ -17,13 +17,13 @@ import {
  * — and the difference matters because the second kind is evidence with an
  * author and the first is a label.
  *
- * `customers.manage`, not `customers.view`: writing on someone's record is a
+ * `parties.manage`, not `parties.view`: writing on someone's record is a
  * change to it. The floor holds that permission, which is the point — the
  * person who took the call is the person who should write the note.
  */
 export const GET = withTenantScope(
   async (_request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
-    const { session, error } = await requirePermission(PERMISSIONS.customersView);
+    const { session, error } = await requirePermission(PERMISSIONS.partiesView);
     if (error) return error;
 
     const { id } = await params;
@@ -33,7 +33,7 @@ export const GET = withTenantScope(
 
 export const POST = withTenantScope(
   async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
-    const { session, error } = await requirePermission(PERMISSIONS.customersManage);
+    const { session, error } = await requirePermission(PERMISSIONS.partiesManage);
     if (error) return error;
 
     let body: { body?: string; isPinned?: boolean };
@@ -59,7 +59,7 @@ export const POST = withTenantScope(
 /** Pin or unpin a note — `noteId` in the body, since the note is addressed under its customer. */
 export const PATCH = withTenantScope(
   async (request: NextRequest) => {
-    const { session, error } = await requirePermission(PERMISSIONS.customersManage);
+    const { session, error } = await requirePermission(PERMISSIONS.partiesManage);
     if (error) return error;
 
     let body: { noteId?: string; isPinned?: boolean };
@@ -77,7 +77,7 @@ export const PATCH = withTenantScope(
 );
 
 export const DELETE = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requirePermission(PERMISSIONS.customersManage);
+  const { session, error } = await requirePermission(PERMISSIONS.partiesManage);
   if (error) return error;
 
   const noteId = request.nextUrl.searchParams.get("noteId");

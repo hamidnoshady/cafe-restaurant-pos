@@ -396,7 +396,7 @@ export async function customersDueForRepurchase(
             array_agg(DISTINCT (o.closed_at AT TIME ZONE 'UTC')::date::text ORDER BY (o.closed_at AT TIME ZONE 'UTC')::date::text) AS dates
        FROM orders o
        JOIN order_items oi ON oi.order_id = o.id
-       JOIN customers c ON c.id = o.customer_id
+       JOIN parties c ON c.id = o.customer_id
       WHERE o.location_id = $1
         AND o.status = 'completed' AND o.customer_id IS NOT NULL
         AND (oi.item_id IS NOT NULL OR oi.menu_item_id IS NOT NULL)

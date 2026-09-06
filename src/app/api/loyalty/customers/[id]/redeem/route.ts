@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
 import { getPool } from "@/lib/db";
-import { getCustomer } from "@/lib/customers-service";
+import { getCustomer } from "@/lib/parties-service";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { redeemPoints } from "@/lib/loyalty-service";
 

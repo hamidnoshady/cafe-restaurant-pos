@@ -470,7 +470,7 @@ describe("an order line resolves to the row that holds the stock", () => {
     // segments and sending on. A phone that arrived with spaces must not
     // become a second person.
     const customer = await db.query<{ phone_e164: string | null; email: string | null; consent: boolean }>(
-      `SELECT phone_e164, email, marketing_consent AS consent FROM customers WHERE id = $1`,
+      `SELECT phone_e164, email, marketing_consent AS consent FROM parties WHERE id = $1`,
       [order.rows[0].customer_id],
     );
     expect(customer.rows[0].phone_e164).toBe("+989123456789");

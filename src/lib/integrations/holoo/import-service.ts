@@ -21,6 +21,7 @@ import { coaTemplateForIndustry, WELL_KNOWN_CODES } from "../../coa-template";
 import { getSetting, SETTING_KEYS } from "../../settings";
 import { planAccountImport, planGoods, planPersons, holooAccountType } from "./import-plan";
 import type { MappedAccount, MappedGoods, MappedOpeningInventory, MappedPerson } from "./mappers";
+import { createParty } from "../../parties-service";
 
 async function resolveLocationId(businessId: string, connectionLocationId: string | null): Promise<string> {
   if (connectionLocationId) return connectionLocationId;
@@ -275,9 +276,15 @@ export async function applyBaseImport(
   const personsPlan = planPersons(input.persons, personsMapped);
   for (const person of personsPlan.toCreate) {
     // Suppliers go through the existing supplier path (the `suppliers` table,
-    // keyed on location); customers through `customers`. Both are recorded
-    // under the same mapping kind — a Holoo person id is unique, and Wave 4
-    // resolves the right one per transaction type.
+    // keyed on location); the rest become parties. Both are recorded under the
+    // same mapping kind — a Holoo person id is unique, and Wave 4 resolves the
+    // right one per transaction type.
+    //
+    // The customer path used to be `INSERT INTO customers`. It goes through
+    // `createParty` now because that is where a party's rules live: the Iranian
+    // mobile is normalized before it is stored, and the ledger code is allocated in
+    // the same statement. Raw SQL here would silently import `۰۹۱۲…` as Latin
+    // digits with no code, and the two only exist in the service.
     let localId: string;
     if (person.isSupplier) {
       const { rows } = await query<{ id: string }>(
@@ -286,12 +293,11 @@ export async function applyBaseImport(
       );
       localId = rows[0].id;
     } else {
-      const { rows } = await query<{ id: string }>(
-        `INSERT INTO customers (business_id, location_id, name, phone, address)
-         VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-        [businessId, locationId, person.name, person.phone, person.address],
-      );
-      localId = rows[0].id;
+      localId = (await createParty(businessId, {
+        displayName: person.name,
+        phone: person.phone ?? null,
+        address: person.address ?? null,
+      })).id;
     }
     await upsertMapping(businessId, connectionId, "holoo_customer", person.remoteId, localId, importRunId);
     createdPersons += 1;

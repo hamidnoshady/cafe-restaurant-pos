@@ -87,7 +87,7 @@ beforeEach(async () => {
   await db.query("DELETE FROM journal_lines");
   await db.query("DELETE FROM journal_entries");
   await db.query("DELETE FROM accounts");
-  await db.query("DELETE FROM customers");
+  await db.query("DELETE FROM parties");
   await db.query("DELETE FROM locations");
   await db.query("DELETE FROM businesses");
 
@@ -104,7 +104,7 @@ beforeEach(async () => {
   biz.locationId = locRow.rows[0].id;
 
   const custRow = await db.query<{ id: string }>(
-    "INSERT INTO customers (business_id, name) VALUES ($1, 'مشتری طلا') RETURNING id",
+    "INSERT INTO parties (business_id, name) VALUES ($1, 'مشتری طلا') RETURNING id",
     [biz.id],
   );
   customer.id = custRow.rows[0].id;

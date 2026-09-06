@@ -181,7 +181,7 @@ async function assertSupplier(client: PoolClient, businessId: string, supplierId
 }
 
 async function assertCustomer(client: PoolClient, businessId: string, customerId: string): Promise<void> {
-  const { rows } = await client.query(`SELECT 1 FROM customers WHERE id = $1 AND business_id = $2`, [
+  const { rows } = await client.query(`SELECT 1 FROM parties WHERE id = $1 AND business_id = $2`, [
     customerId,
     businessId,
   ]);
