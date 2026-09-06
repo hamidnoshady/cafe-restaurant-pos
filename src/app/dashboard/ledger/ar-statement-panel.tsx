@@ -7,7 +7,7 @@ import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import { useMoney } from "@/components/money/money-context";
 import { api } from "../ui";
-import { growthCustomerHref } from "../growth/growth-routes";
+import { accountingCustomerHref } from "./ledger-routes";
 import { UNKNOWN_CUSTOMER_KEY } from "@/lib/aging";
 import { overlayPanelClass } from "../page-chrome";
 
@@ -60,18 +60,19 @@ export function ArStatementPanel({
             <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">جزئیات حساب</p>
             <h3 id="ar-statement-heading" className="mt-1 text-lg font-bold">صورتحساب {customerName}</h3>
             {/*
-              The customer view is a Growth data projection. Someone looking at
-              a debt can continue with the customer workflows there; the
-              canonical record and full file remain owned by CRM. Hidden for
-              unattributed A/R lines, which belong to no customer record and
+              Accounting's own customers slice. Someone looking at a debt can open
+              the customer in the ledger (with its accounting code, tax and
+              balance) rather than being sent into Growth's marketing projection;
+              the canonical record and full 360° file remain owned by CRM. Hidden
+              for unattributed A/R lines, which belong to no customer record and
               would link nowhere.
             */}
             {customerId !== UNKNOWN_CUSTOMER_KEY ? (
               <a
-                href={growthCustomerHref(customerId)}
+                href={accountingCustomerHref(customerId)}
                 className="mt-1 inline-block text-xs font-semibold text-teal-700 dark:text-teal-300 underline-offset-4 hover:underline"
               >
-                مشتریان در برنامهٔ رشد
+                مشتریان در حسابداری
               </a>
             ) : null}
           </div>

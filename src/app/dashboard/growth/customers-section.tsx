@@ -1,45 +1,45 @@
 "use client";
 
 /**
- * Growth's customer data view.
+ * Growth's customer view.
  *
  * The customer record is owned by CRM. Growth does not create a second customer
  * table or a second edit path; it reads the shared customer service so campaign
- * and loyalty work with the same person Accounting and Sales see. A link on
- * each row leads to the CRM when a user needs to change the canonical record.
+ * and loyalty work with the same person Accounting and Sales see. What makes this
+ * *Growth's* column set rather than Accounting's or CRM's is the data Growth acts
+ * on: lifecycle/RFM stage, loyalty points and purchase history, not ledger codes
+ * and tax rates.
  */
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ContactIcon, ExternalLinkIcon } from "lucide-react";
-import { toPersianDigits } from "@/lib/digits";
+import { useMoney } from "@/components/money/money-context";
+import { formatPersianNumber, toPersianDigits } from "@/lib/digits";
+import { LIFECYCLE_STAGES, type LifecycleStage } from "@/lib/crm-scoring";
+import type { GrowthCustomer } from "@/app/api/growth/customers/route";
 import { crmCustomerHref, crmSectionHref } from "../crm/crm-routes";
 import { cardClass, EmptyState, SectionCard, SectionCardSkeleton, StatusBadge } from "../page-chrome";
 import { api, ErrorBox, inputClass } from "../ui";
 
-interface Customer {
-  id: string;
-  name: string;
-  phone: string | null;
-  address: string | null;
-  isActive: boolean;
+function stageLabel(stage: string | null): string {
+  if (!stage) return "—";
+  return LIFECYCLE_STAGES[stage as LifecycleStage]?.label ?? stage;
 }
 
 /** A read-only projection for Growth; edits stay in CRM. */
 export function GrowthCustomersSection({ selectedCustomerId }: { selectedCustomerId?: string }) {
-  const [customers, setCustomers] = useState<Customer[] | null>(null);
+  const money = useMoney();
+  const [customers, setCustomers] = useState<GrowthCustomer[] | null>(null);
   const [query, setQuery] = useState("");
   const [error, setError] = useState("");
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      // Only the customers, from the shared party table: Growth's member list is
-      // not the CRM's directory, and since Phase «parties» that table also holds
-      // the suppliers and the staff.
-      const params = new URLSearchParams({ page: "1", pageSize: "100", roles: "Customer" });
+      const params = new URLSearchParams();
       if (query.trim()) params.set("q", query.trim());
-      api<{ customers: Customer[] }>(`/api/parties?${params}`).then(({ ok, data }) => {
+      api<{ customers: GrowthCustomer[] }>(`/api/growth/customers?${params}`).then(({ ok, data }) => {
         if (ok) {
-          setCustomers(data.customers);
+          setCustomers(data.customers ?? []);
           setError("");
         } else {
           setCustomers([]);
@@ -50,21 +50,26 @@ export function GrowthCustomersSection({ selectedCustomerId }: { selectedCustome
     return () => window.clearTimeout(timer);
   }, [query]);
 
-  // A/R can deep-link to a customer that is outside the first directory page
-  // (or archived). Fetch that one shared record so the Growth destination
-  // always makes the hand-off visible instead of silently opening an unrelated
-  // slice of the customer list.
+  // A/R used to deep-link into this projection by `selectedCustomerId`. The
+  // projection is paginated at the source, so a linked customer may be outside
+  // the first page; fetch that one shared record and prepend it so the hand-off
+  // still lands on the person they meant.
   useEffect(() => {
     if (!selectedCustomerId || customers === null || customers.some((customer) => customer.id === selectedCustomerId)) return;
-    api<{ customer: Customer }>(`/api/parties/${encodeURIComponent(selectedCustomerId)}`).then(({ ok, data }) => {
-      if (ok) {
-        setCustomers((current) =>
-          current && current.every((customer) => customer.id !== selectedCustomerId)
-            ? [data.customer, ...current]
-            : current,
-        );
-      }
-    });
+    api<{ customers: GrowthCustomer[] }>(`/api/growth/customers?id=${encodeURIComponent(selectedCustomerId)}`).then(
+      ({ ok, data }) => {
+        if (ok) {
+          const target = data.customers?.find((customer) => customer.id === selectedCustomerId);
+          if (target) {
+            setCustomers((current) =>
+              current && current.every((customer) => customer.id !== selectedCustomerId)
+                ? [target, ...current]
+                : current,
+            );
+          }
+        }
+      },
+    );
   }, [customers, selectedCustomerId]);
 
   if (customers === null) return <SectionCardSkeleton rows={5} />;
@@ -79,7 +84,7 @@ export function GrowthCustomersSection({ selectedCustomerId }: { selectedCustome
             <h2 className="mt-1 text-base sm:text-lg font-semibold text-stone-950 dark:text-stone-100">مشتریان</h2>
           </div>
         }
-        description="این نمای رشد از پروندهٔ مشترک مشتریان می‌خواند؛ ویرایش و پروندهٔ کامل در CRM انجام می‌شود."
+        description="این نمای رشد از پروندهٔ مشترک مشتریان می‌خواند؛ ستون‌ها برای کار رشد‌اند — چرخهٔ حیات، امتیاز و خرید — و ویرایش و پروندهٔ کامل در CRM انجام می‌شود."
         actions={
           <Link
             href={crmSectionHref("directory")}
@@ -103,35 +108,88 @@ export function GrowthCustomersSection({ selectedCustomerId }: { selectedCustome
         {customers.length === 0 ? (
           <EmptyState>مشتری‌ای پیدا نشد.</EmptyState>
         ) : (
-          <ul className={`${cardClass} mt-4 divide-y divide-border/80 overflow-hidden`}>
-            {customers.map((customer) => (
-              <li
-                key={customer.id}
-                className={`flex flex-wrap items-center gap-3 px-4 py-3 sm:px-5 ${
-                  customer.id === selectedCustomerId ? "bg-amber-50 dark:bg-amber-500/10" : ""
-                }`}
-              >
-                <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-teal-50 text-teal-700 dark:bg-teal-500/15 dark:text-teal-300">
-                  <ContactIcon className="size-4" aria-hidden="true" />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <Link
-                    href={crmCustomerHref(customer.id)}
-                    className="font-medium text-foreground hover:underline"
-                  >
-                    {customer.name}
-                  </Link>
-                  <p className="text-xs text-muted-foreground">
-                    {customer.phone ? toPersianDigits(customer.phone) : "بدون شمارهٔ تماس"}
-                    {customer.address ? ` · ${customer.address}` : ""}
-                  </p>
-                </div>
-                <StatusBadge tone={customer.isActive ? "positive" : "neutral"}>
-                  {customer.isActive ? "فعال" : "آرشیو"}
-                </StatusBadge>
-              </li>
-            ))}
-          </ul>
+          <>
+            <div className="hidden overflow-x-auto lg:block">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border/80 text-muted-foreground">
+                    <th className="py-2 pe-3 text-start font-medium">مشتری</th>
+                    <th className="py-2 pe-3 text-start font-medium">تلفن</th>
+                    <th className="py-2 pe-3 text-start font-medium">مرحلهٔ چرخهٔ حیات</th>
+                    <th className="py-2 pe-3 text-start font-medium">خریدها</th>
+                    <th className="py-2 pe-3 text-start font-medium">مجموع خرید</th>
+                    <th className="py-2 pe-3 text-start font-medium">امتیاز وفاداری</th>
+                    <th className="py-2 text-start font-medium">وضعیت</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/80">
+                  {customers.map((customer) => (
+                    <tr key={customer.id} className={customer.id === selectedCustomerId ? "bg-amber-50 dark:bg-amber-500/10" : ""}>
+                      <td className="py-3 pe-3">
+                        <Link
+                          href={crmCustomerHref(customer.id)}
+                          className="inline-flex items-center gap-2 font-medium text-foreground hover:underline"
+                        >
+                          <ContactIcon className="size-4 shrink-0 text-teal-700 dark:text-teal-300" aria-hidden="true" />
+                          {customer.displayName}
+                        </Link>
+                      </td>
+                      <td className="py-3 pe-3 text-muted-foreground">{customer.phone ? toPersianDigits(customer.phone) : "—"}</td>
+                      <td className="py-3 pe-3">{stageLabel(customer.lifecycleStage)}</td>
+                      <td className="py-3 pe-3 tabular-nums">{formatPersianNumber(customer.orderCount)}</td>
+                      <td className="py-3 pe-3 tabular-nums font-semibold">{money.format(customer.totalSpentRial)}</td>
+                      <td className="py-3 pe-3 tabular-nums">{formatPersianNumber(customer.points)}</td>
+                      <td className="py-3">
+                        <StatusBadge tone={customer.isActive ? "positive" : "neutral"}>
+                          {customer.isActive ? "فعال" : "آرشیو"}
+                        </StatusBadge>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="space-y-3 lg:hidden">
+              {customers.map((customer) => (
+                <article
+                  key={customer.id}
+                  className={`rounded-xl border border-border/80 bg-muted/50 p-4 ${customer.id === selectedCustomerId ? "border-amber-300 dark:border-amber-500/40" : ""}`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <Link href={crmCustomerHref(customer.id)} className="inline-flex items-center gap-2 font-semibold text-foreground hover:underline">
+                        <ContactIcon className="size-4 shrink-0 text-teal-700 dark:text-teal-300" aria-hidden="true" />
+                        {customer.displayName}
+                      </Link>
+                      <p className="mt-1 text-xs text-muted-foreground">{customer.phone ? toPersianDigits(customer.phone) : "شماره‌ای ثبت نشده"}</p>
+                    </div>
+                    <StatusBadge tone={customer.isActive ? "positive" : "neutral"}>
+                      {customer.isActive ? "فعال" : "آرشیو"}
+                    </StatusBadge>
+                  </div>
+                  <dl className="mt-3 grid grid-cols-2 gap-2 border-t border-border/80 pt-3 text-sm">
+                    <div>
+                      <dt className="text-xs text-muted-foreground">مرحلهٔ چرخهٔ حیات</dt>
+                      <dd className="mt-1 font-medium">{stageLabel(customer.lifecycleStage)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs text-muted-foreground">امتیاز وفاداری</dt>
+                      <dd className="mt-1 font-medium tabular-nums">{formatPersianNumber(customer.points)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs text-muted-foreground">خریدها</dt>
+                      <dd className="mt-1 font-medium tabular-nums">{formatPersianNumber(customer.orderCount)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs text-muted-foreground">مجموع خرید</dt>
+                      <dd className="mt-1 font-medium tabular-nums">{money.format(customer.totalSpentRial)}</dd>
+                    </div>
+                  </dl>
+                </article>
+              ))}
+            </div>
+          </>
         )}
       </SectionCard>
     </div>

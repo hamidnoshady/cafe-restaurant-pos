@@ -48,6 +48,7 @@ const TABS = [
   { key: "expenses", label: "هزینه‌ها", icon: CircleIcon },
   { key: "fiscal-periods", label: "دوره‌های مالی", icon: CalendarDaysIcon },
   { key: "parties", label: "طرف‌حساب‌ها", icon: UsersIcon },
+  { key: "customers", label: "مشتریان", icon: UsersIcon },
   { key: "ar", label: "حساب‌های دریافتنی", icon: UsersIcon },
   { key: "ap", label: "حساب‌های پرداختنی", icon: UsersIcon },
   { key: "cheques", label: "چک‌ها", icon: ScrollTextIcon },
@@ -69,10 +70,17 @@ export function LedgerManager({ role }: { role: string }) {
    * the team look at (`../parties/parties-section.tsx`, scope `accounting`) — the
    * one place a party's ledger code and national/economic codes are written.
    *
+   * «مشتریان» is the customers-only slice (`scope accounting-customers`): it is the
+   * destination the A/R customer actions point at, so an accountant looking at a
+   * receivable lands on the customers they can settle with, not on Growth's
+   * marketing projection and not on the supplier/staff rows of the party file.
+   *
    * A `?party=<id>` link from another app (the CRM's read-only row, an AI answer, a
-   * notification) lands on this tab with that one file open, the way `?customer=`
-   * lands on the CRM's. The tab is only *reachable* from those links, so the
-   * default tab is unchanged: the ledger's front door stays the trial balance.
+   * notification) lands on a tab with that one file open, the way `?customer=`
+   * lands on the CRM's. A named `?tab=` wins, so `?tab=customers&party=<id>` opens
+   * the accounting customer file rather than the whole counterparty list. The tabs
+   * are only *reachable* from those links, so the default tab is unchanged: the
+   * ledger's front door stays the trial balance.
    */
   const searchParams = useSearchParams();
   const partyParam = searchParams.get("party");
@@ -80,13 +88,15 @@ export function LedgerManager({ role }: { role: string }) {
   // `TABS` so a stale bookmark cannot park the page on a section that no longer
   // exists (the state type is `TabKey`, and an unchecked cast is how it would lie).
   const tabParam = TABS.find((item) => item.key === searchParams.get("tab"))?.key;
-  const [tab, setTab] = useState<TabKey>(() => (tabParam ?? (partyParam ? "parties" : "trial-balance")));
+  const [tab, setTab] = useState<TabKey>(() =>
+    tabParam ?? (partyParam ? "parties" : "trial-balance"),
+  );
   const [editPartyId, setEditPartyId] = useState<string | null>(partyParam);
   useEffect(() => {
     if (!partyParam) return;
-    setTab("parties");
+    setTab(tabParam ?? "parties");
     setEditPartyId(partyParam);
-  }, [partyParam]);
+  }, [partyParam, tabParam]);
   const [refreshKey, setRefreshKey] = useState(0);
 
   // Wages are compensation data — restricted to owner + accountant, unlike
@@ -142,6 +152,13 @@ export function LedgerManager({ role }: { role: string }) {
           {tab === "parties" ? (
             <PartiesSection
               scope={partyScopeFor("accounting")}
+              role={role}
+              editPartyId={editPartyId}
+            />
+          ) : null}
+          {tab === "customers" ? (
+            <PartiesSection
+              scope={partyScopeFor("accounting-customers")}
               role={role}
               editPartyId={editPartyId}
             />
