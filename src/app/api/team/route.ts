@@ -73,6 +73,24 @@ export const POST = withTenantScope(async (request: NextRequest) => {
       overrides: sanitizeOverrides(body.permissions),
       actorId: session.sub,
     });
+    // Every staff account is also a party of role `Employee` in the shared table —
+    // the same record the payroll row and the personnel phone number come from, so
+    // a wage or a shift note attached to a person never becomes a second person
+    // (`src/lib/parties-scopes.ts`, scope `team`).
+    //
+    // Deliberately *after* `createMembership` returns and deliberately swallowed:
+    // the membership is the account, the party is the file around it, and losing a
+    // login because a display name was blank would be the worse failure by far. The
+    // directory's own add form (or a later edit of this member) creates the row.
+    try {
+      const { ensureEmployeeParty } = await import("@/lib/parties-service");
+      await ensureEmployeeParty(session.businessId, userId, {
+        displayName: body.fullName?.trim() || null,
+        email: body.email ?? null,
+      });
+    } catch {
+      /* no party row yet — see the comment above */
+    }
     return NextResponse.json({ id: userId }, { status: 201 });
   } catch (err) {
     if (err instanceof TeamError) {

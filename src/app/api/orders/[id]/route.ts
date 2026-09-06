@@ -85,7 +85,7 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
       if (body.customerId !== undefined) {
         if (body.customerId) {
           const { rowCount } = await client.query(
-            `SELECT 1 FROM customers WHERE id = $1 AND business_id = $2 AND is_active`,
+            `SELECT 1 FROM parties WHERE id = $1 AND business_id = $2 AND is_active`,
             [body.customerId, session.businessId],
           );
           if (rowCount !== 1) {

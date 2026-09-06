@@ -10,7 +10,7 @@
  *     adds a new plaintext PII column to `customers`/`reservations` without
  *     registering it, fails here instead of shipping.
  *  2. **The services actually encrypt.** A customer written through
- *     `customers-service.ts` is unreadable in the raw row and readable through
+ *     `parties-service.ts` is unreadable in the raw row and readable through
  *     the service, and exact-match phone lookup still works through the blind
  *     index.
  *  3. **The backfill is idempotent and resumable**, and the stale-ciphertext
@@ -34,7 +34,7 @@ const APP_PASSWORD = "fieldenc-test-password";
 let dbName: string;
 let raw: Client; // superuser connection, for looking at what is really stored
 let dbLib: typeof import("../src/lib/db");
-let customers: typeof import("../src/lib/customers-service");
+let customers: typeof import("../src/lib/parties-service");
 let backfill: typeof import("../scripts/encrypt-fields");
 let masterKey: typeof import("../src/lib/master-key");
 let businessKeys: typeof import("../src/lib/business-keys");
@@ -85,7 +85,7 @@ beforeAll(async () => {
   dbLib = await import("../src/lib/db");
   masterKey = await import("../src/lib/master-key");
   businessKeys = await import("../src/lib/business-keys");
-  customers = await import("../src/lib/customers-service");
+  customers = await import("../src/lib/parties-service");
   backfill = await import("../scripts/encrypt-fields");
   masterKey.resetMasterKeyCache();
 
@@ -151,6 +151,24 @@ describe("the encrypted-column registry matches the live schema", () => {
       // detection and segment resolution self-join on it; `phone_bidx` is its
       // designated replacement at step 3, when the plaintext columns go.
       customers: ["phone_e164"],
+      // Migration 0137 renamed the table, so the party record inherits both of
+      // customers' allowances and adds one of its own.
+      parties: [
+        "phone_e164",
+        /*
+         * The tab documents are the party's edited shape and are not in the
+         * program at all: this registry is one spec per *scalar* column
+         * (ciphertext plus its derived lookup columns), which a jsonb document
+         * has no shape for. What the program does cover is the scalars the tabs
+         * mirror — `address`/`address_enc`, `notes`/`notes_enc`,
+         * `bank_account`/`bank_account_enc` — and those are registered below
+         * rather than allowed here, so a new PII-shaped *scalar* still fails
+         * this test the way it is meant to. Of the four tabs, `address_info` is
+         * the only one whose name even reads as PII; the others are listed here
+         * nowhere because they have nothing to allow.
+         */
+        "address_info",
+      ],
       reservations: ["note"],
     };
 
@@ -243,13 +261,13 @@ describe("per-business keys", () => {
 /** `phone_last4` is only ever the last four digits — never a prefix bucket. */
 async function query4(customerId: string): Promise<boolean> {
   const { rows } = await raw.query<{ phone: string; phone_last4: string | null }>(
-    "SELECT phone, phone_last4 FROM customers WHERE id = $1",
+    "SELECT phone, phone_last4 FROM parties WHERE id = $1",
     [customerId],
   );
   return rows[0].phone_last4 === rows[0].phone.slice(-4) && rows[0].phone_last4 !== rows[0].phone.slice(0, 4);
 }
 
-describe("customers-service reads and writes through the ciphertext", () => {
+describe("parties-service reads and writes through the ciphertext", () => {
   it("stores the phone, address and notes encrypted, and reads them back in the clear", async () => {
     const created = await dbLib.withTenant(biz.id, () =>
       customers.createCustomer(biz.id, {
@@ -267,7 +285,7 @@ describe("customers-service reads and writes through the ciphertext", () => {
       phone_bidx: string | null;
       address_enc: Buffer | null;
       notes_enc: Buffer | null;
-    }>("SELECT phone_enc, phone_bidx, address_enc, notes_enc FROM customers WHERE id = $1", [created.id]);
+    }>("SELECT phone_enc, phone_bidx, address_enc, notes_enc FROM parties WHERE id = $1", [created.id]);
     expect(rows[0].phone_enc).not.toBeNull();
     expect(rows[0].phone_enc!.subarray(0, 7).toString("latin1")).toBe("POSFLD1");
     expect(rows[0].phone_enc!.toString("latin1")).not.toContain("09121234567");
@@ -299,7 +317,7 @@ describe("customers-service reads and writes through the ciphertext", () => {
       customers.createCustomer(biz.id, { name: "چهار رقم", phone: "09129998877" }),
     );
     const { rows } = await raw.query<{ phone_last4: string | null }>(
-      "SELECT phone_last4 FROM customers WHERE id = $1",
+      "SELECT phone_last4 FROM parties WHERE id = $1",
       [created.id],
     );
     expect(rows[0].phone_last4).toBe("8877");
@@ -332,7 +350,7 @@ describe("customers-service reads and writes through the ciphertext", () => {
 describe("the backfill", () => {
   it("encrypts rows written straight to SQL, and is a no-op the second time", async () => {
     const { rows } = await raw.query<{ id: string }>(
-      `INSERT INTO customers (business_id, name, phone, address, notes)
+      `INSERT INTO parties (business_id, name, phone, address, notes)
        VALUES ($1, 'Legacy Row', '09125550000', 'somewhere', 'legacy note') RETURNING id`,
       [biz.id],
     );
@@ -342,7 +360,7 @@ describe("the backfill", () => {
     expect(first.encrypted).toBeGreaterThan(0);
 
     const after = await raw.query<{ phone_enc: Buffer | null; phone_bidx: string | null }>(
-      "SELECT phone_enc, phone_bidx FROM customers WHERE id = $1",
+      "SELECT phone_enc, phone_bidx FROM parties WHERE id = $1",
       [id],
     );
     expect(after.rows[0].phone_enc).not.toBeNull();
@@ -364,18 +382,18 @@ describe("the backfill", () => {
     // it — the property that lets the older writers in crm-service and the
     // integrations sync keep working untouched.
     const { rows } = await raw.query<{ id: string }>(
-      `INSERT INTO customers (business_id, name, phone) VALUES ($1, 'Trigger Row', '09125551111') RETURNING id`,
+      `INSERT INTO parties (business_id, name, phone) VALUES ($1, 'Trigger Row', '09125551111') RETURNING id`,
       [biz.id],
     );
     const id = rows[0].id;
     await backfill.backfillBusiness(biz.id);
 
-    await raw.query("UPDATE customers SET phone = '09125552222' WHERE id = $1", [id]);
+    await raw.query("UPDATE parties SET phone = '09125552222' WHERE id = $1", [id]);
     const invalidated = await raw.query<{
       phone_enc: Buffer | null;
       phone_bidx: string | null;
       phone_last4: string | null;
-    }>("SELECT phone_enc, phone_bidx, phone_last4 FROM customers WHERE id = $1", [id]);
+    }>("SELECT phone_enc, phone_bidx, phone_last4 FROM parties WHERE id = $1", [id]);
     expect(invalidated.rows[0].phone_enc).toBeNull();
     expect(invalidated.rows[0].phone_bidx).toBeNull();
     expect(invalidated.rows[0].phone_last4).toBeNull();
@@ -385,7 +403,7 @@ describe("the backfill", () => {
 
     await backfill.backfillBusiness(biz.id);
     const reencrypted = await raw.query<{ phone_enc: Buffer | null }>(
-      "SELECT phone_enc FROM customers WHERE id = $1",
+      "SELECT phone_enc FROM parties WHERE id = $1",
       [id],
     );
     expect(reencrypted.rows[0].phone_enc).not.toBeNull();
@@ -398,25 +416,25 @@ describe("the backfill", () => {
     // apply, but "should" is not "does": prove it on the write shape the real
     // writers use rather than only on the one the test found convenient.
     const { rows } = await raw.query<{ id: string }>(
-      `INSERT INTO customers (business_id, name, phone) VALUES ($1, 'Upsert Row', '09125554444') RETURNING id`,
+      `INSERT INTO parties (business_id, name, phone) VALUES ($1, 'Upsert Row', '09125554444') RETURNING id`,
       [biz.id],
     );
     const id = rows[0].id;
     await backfill.backfillBusiness(biz.id);
     const before = await raw.query<{ phone_enc: Buffer | null }>(
-      "SELECT phone_enc FROM customers WHERE id = $1",
+      "SELECT phone_enc FROM parties WHERE id = $1",
       [id],
     );
     expect(before.rows[0].phone_enc).not.toBeNull();
 
     await raw.query(
-      `INSERT INTO customers (id, business_id, name, phone) VALUES ($1, $2, 'Upsert Row', '09125555555')
+      `INSERT INTO parties (id, business_id, name, phone) VALUES ($1, $2, 'Upsert Row', '09125555555')
        ON CONFLICT (id) DO UPDATE SET phone = EXCLUDED.phone`,
       [id, biz.id],
     );
 
     const after = await raw.query<{ phone: string; phone_enc: Buffer | null; phone_bidx: string | null }>(
-      "SELECT phone, phone_enc, phone_bidx FROM customers WHERE id = $1",
+      "SELECT phone, phone_enc, phone_bidx FROM parties WHERE id = $1",
       [id],
     );
     expect(after.rows[0].phone).toBe("09125555555");
@@ -466,7 +484,7 @@ describe("the backfill", () => {
 
   it("dry-run, then real, then nothing left: the resumability claim, run three times", async () => {
     await raw.query(
-      `INSERT INTO customers (business_id, name, phone, address)
+      `INSERT INTO parties (business_id, name, phone, address)
        VALUES ($1, 'Three Pass', '09125558888', 'jaie digar')`,
       [biz.id],
     );
@@ -488,7 +506,7 @@ describe("the backfill", () => {
     // is an infinite loop rather than a wrong answer — worth one real pass.
     for (let i = 0; i < 7; i++) {
       await raw.query(
-        `INSERT INTO customers (business_id, name, phone) VALUES ($1, $2, $3)`,
+        `INSERT INTO parties (business_id, name, phone) VALUES ($1, $2, $3)`,
         [biz.id, `Batch ${i}`, `0912666${String(i).padStart(4, "0")}`],
       );
     }
@@ -499,13 +517,13 @@ describe("the backfill", () => {
 
   it("leaves the database untouched on a dry run", async () => {
     const { rows } = await raw.query<{ id: string }>(
-      `INSERT INTO customers (business_id, name, phone) VALUES ($1, 'Dry Run', '09125553333') RETURNING id`,
+      `INSERT INTO parties (business_id, name, phone) VALUES ($1, 'Dry Run', '09125553333') RETURNING id`,
       [biz.id],
     );
     const result = await backfill.backfillBusiness(biz.id, { dryRun: true });
     expect(result.encrypted).toBeGreaterThan(0);
     const after = await raw.query<{ phone_enc: Buffer | null }>(
-      "SELECT phone_enc FROM customers WHERE id = $1",
+      "SELECT phone_enc FROM parties WHERE id = $1",
       [rows[0].id],
     );
     expect(after.rows[0].phone_enc).toBeNull();
@@ -540,7 +558,7 @@ describe("duplicate detection after the phone_e164 → phone_bidx move", () => {
     );
 
     const { rows: stored } = await raw.query<{ phone_bidx: string }>(
-      "SELECT phone_bidx FROM customers WHERE business_id = $1",
+      "SELECT phone_bidx FROM parties WHERE business_id = $1",
       [dupId],
     );
     expect(new Set(stored.map((r) => r.phone_bidx)).size).toBe(1);
@@ -568,7 +586,7 @@ describe("phone_kind — 'can this number receive an SMS', once the number is ci
 
     const kindOf = async (id: string) => {
       const { rows } = await raw.query<{ phone_kind: string | null }>(
-        "SELECT phone_kind FROM customers WHERE id = $1",
+        "SELECT phone_kind FROM parties WHERE id = $1",
         [id],
       );
       return rows[0].phone_kind;
@@ -593,10 +611,10 @@ describe("phone_kind — 'can this number receive an SMS', once the number is ci
     const created = await dbLib.withTenant(biz.id, () =>
       customers.createCustomer(biz.id, { name: "طبقه‌بندی کهنه", phone: "09125556666" }),
     );
-    await raw.query("UPDATE customers SET phone = '02155556666' WHERE id = $1", [created.id]);
+    await raw.query("UPDATE parties SET phone = '02155556666' WHERE id = $1", [created.id]);
 
     const stale = await raw.query<{ phone_kind: string | null; phone_bidx: string | null }>(
-      "SELECT phone_kind, phone_bidx FROM customers WHERE id = $1",
+      "SELECT phone_kind, phone_bidx FROM parties WHERE id = $1",
       [created.id],
     );
     expect(stale.rows[0].phone_kind).toBeNull();
@@ -604,7 +622,7 @@ describe("phone_kind — 'can this number receive an SMS', once the number is ci
 
     await backfill.backfillBusiness(biz.id);
     const repaired = await raw.query<{ phone_kind: string | null }>(
-      "SELECT phone_kind FROM customers WHERE id = $1",
+      "SELECT phone_kind FROM parties WHERE id = $1",
       [created.id],
     );
     expect(repaired.rows[0].phone_kind).toBe("landline");
@@ -633,7 +651,7 @@ describe("phone_kind — 'can this number receive an SMS', once the number is ci
     );
     await dbLib.withTenant(smsId, () => customers.createCustomer(smsId, { name: "بدون تلفن" }));
     for (const id of [mobile.id, landline.id]) {
-      await raw.query("UPDATE customers SET sms_consent = true WHERE id = $1", [id]);
+      await raw.query("UPDATE parties SET sms_consent = true WHERE id = $1", [id]);
     }
     // Consent alone is not reachability, and the raw UPDATE above just proved
     // it does not disturb the classification (it does not touch `phone`).
@@ -653,7 +671,7 @@ describe("phone_kind — 'can this number receive an SMS', once the number is ci
     // count may only come from `phone_kind`. (Nulling `phone_e164` alone does
     // not fire the 0125 trigger, which watches `phone` — so this leaves the
     // classification intact, which is the point.)
-    await raw.query("UPDATE customers SET phone_e164 = NULL WHERE business_id = $1", [smsId]);
+    await raw.query("UPDATE parties SET phone_e164 = NULL WHERE business_id = $1", [smsId]);
     const onKindAlone = await dbLib.withTenant(smsId, () => crm.consentCoverage(smsId));
     expect(onKindAlone.withMobile).toBe(1);
     expect(onKindAlone.smsReachable).toBe(1);
@@ -662,7 +680,7 @@ describe("phone_kind — 'can this number receive an SMS', once the number is ci
     // classification, canonical number restored, and the shape rule in
     // `mobileReachableSql` has to reach the same verdict as `phone.ts` did.
     await raw.query(
-      `UPDATE customers SET phone_kind = NULL,
+      `UPDATE parties SET phone_kind = NULL,
               phone_e164 = CASE WHEN id = $2 THEN '+989121112222' ELSE '+982188889999' END
         WHERE business_id = $1 AND phone IS NOT NULL`,
       [smsId, mobile.id],
@@ -699,13 +717,13 @@ describe("the other two phone lookups converted in step 3's preparation", () => 
       customers.createCustomer(biz.id, { name: "خریدار رمزشده", phone: "09124445566" }),
     );
     const legacy = await raw.query<{ id: string }>(
-      `INSERT INTO customers (business_id, name, phone, phone_e164)
+      `INSERT INTO parties (business_id, name, phone, phone_e164)
        VALUES ($1, 'خریدار قدیمی', '09126667788', '+989126667788') RETURNING id`,
       [biz.id],
     );
     const legacyId = legacy.rows[0].id;
     const { rows: legacyRow } = await raw.query<{ phone_bidx: string | null }>(
-      "SELECT phone_bidx FROM customers WHERE id = $1",
+      "SELECT phone_bidx FROM parties WHERE id = $1",
       [legacyId],
     );
     expect(legacyRow[0].phone_bidx).toBeNull(); // the not-yet-backfilled state
@@ -731,7 +749,7 @@ describe("tenant export", () => {
   it("decrypts on the way out and never emits ciphertext", async () => {
     const tenantExport = await import("../src/lib/tenant-export");
     const tables = await tenantExport.exportTenantData(biz.id);
-    const exported = tables.find((t) => t.name === "customers")!;
+    const exported = tables.find((t) => t.name === "parties")!;
 
     expect(exported.columns).not.toContain("phone_enc");
     expect(exported.columns).not.toContain("phone_bidx");

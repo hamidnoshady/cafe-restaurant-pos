@@ -34,7 +34,7 @@ import { listMappings, localIdForRemote, mergeMappingMeta, upsertMapping } from 
 import { wooAmountToRial } from "./woo-money";
 import { writeIntegrationAudit } from "./audit";
 import { phoneE164 } from "../phone";
-import { phoneMatchKeys, phoneMatchSql } from "../customers-service";
+import { phoneMatchKeys, phoneMatchSql } from "../parties-service";
 import { syncCustomerPhone } from "../crm-service";
 import {
   inferWooProductType,
@@ -397,7 +397,7 @@ export async function upsertCustomerFromWoo(
   const existing = await localIdForRemote(businessId, connection.id, "customer", String(customer.id));
   if (existing) {
     await query(
-      `UPDATE customers SET name = $3, phone = $4, phone_e164 = $5, email = COALESCE($6, email), address = $7, updated_at = now()
+      `UPDATE parties SET name = $3, phone = $4, phone_e164 = $5, email = COALESCE($6, email), address = $7, updated_at = now()
         WHERE id = $1 AND business_id = $2`,
       [existing, businessId, name, phone, e164, email, address],
     );
@@ -417,7 +417,7 @@ export async function upsertCustomerFromWoo(
   if (e164) {
     const keys = await phoneMatchKeys(businessId, phone);
     const { rows: byPhone } = await query<{ id: string }>(
-      `SELECT id FROM customers
+      `SELECT id FROM parties
         WHERE business_id = $1 AND ${phoneMatchSql("", "$2", "$3")} AND merged_into_id IS NULL
         ORDER BY created_at LIMIT 1`,
       [businessId, keys.bidx, keys.e164],
@@ -425,7 +425,7 @@ export async function upsertCustomerFromWoo(
     if (byPhone[0]) {
       await upsertMapping(businessId, connection.id, "customer", String(customer.id), byPhone[0].id);
       await query(
-        `UPDATE customers SET address = COALESCE($3, address), email = COALESCE($4, email), updated_at = now()
+        `UPDATE parties SET address = COALESCE($3, address), email = COALESCE($4, email), updated_at = now()
           WHERE id = $1 AND business_id = $2`,
         [byPhone[0].id, businessId, address, email],
       );
@@ -434,7 +434,7 @@ export async function upsertCustomerFromWoo(
   }
   if (email) {
     const { rows: byEmail } = await query<{ id: string }>(
-      `SELECT id FROM customers
+      `SELECT id FROM parties
         WHERE business_id = $1 AND lower(email) = $2 AND merged_into_id IS NULL
         ORDER BY created_at LIMIT 1`,
       [businessId, email],
@@ -442,7 +442,7 @@ export async function upsertCustomerFromWoo(
     if (byEmail[0]) {
       await upsertMapping(businessId, connection.id, "customer", String(customer.id), byEmail[0].id);
       await query(
-        `UPDATE customers SET phone = COALESCE($3, phone), phone_e164 = COALESCE($4, phone_e164), address = COALESCE($5, address), updated_at = now()
+        `UPDATE parties SET phone = COALESCE($3, phone), phone_e164 = COALESCE($4, phone_e164), address = COALESCE($5, address), updated_at = now()
           WHERE id = $1 AND business_id = $2`,
         [byEmail[0].id, businessId, phone, e164, address],
       );
@@ -452,7 +452,7 @@ export async function upsertCustomerFromWoo(
   }
 
   const { rows } = await query<{ id: string }>(
-    `INSERT INTO customers (business_id, name, phone, phone_e164, email, address)
+    `INSERT INTO parties (business_id, name, phone, phone_e164, email, address)
      VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
     [businessId, name, phone, e164, email, address],
   );
@@ -490,7 +490,7 @@ export async function resolveOrderCustomerId(
   if (e164) {
     const keys = await phoneMatchKeys(businessId, order.billing?.phone ?? null);
     const { rows } = await query<{ id: string }>(
-      `SELECT id FROM customers WHERE business_id = $1 AND ${phoneMatchSql("", "$2", "$3")} AND merged_into_id IS NULL
+      `SELECT id FROM parties WHERE business_id = $1 AND ${phoneMatchSql("", "$2", "$3")} AND merged_into_id IS NULL
         ORDER BY created_at LIMIT 1`,
       [businessId, keys.bidx, keys.e164],
     );
@@ -502,7 +502,7 @@ export async function resolveOrderCustomerId(
       // an overwrite: a checkout that typed a work address must not replace
       // the one the shop already had.
       await query(
-        `UPDATE customers
+        `UPDATE parties
             SET email = COALESCE($3, email),
                 address = COALESCE($4, address),
                 updated_at = now()
@@ -515,7 +515,7 @@ export async function resolveOrderCustomerId(
 
   if (email) {
     const { rows } = await query<{ id: string }>(
-      `SELECT id FROM customers WHERE business_id = $1 AND lower(email) = $2 AND merged_into_id IS NULL
+      `SELECT id FROM parties WHERE business_id = $1 AND lower(email) = $2 AND merged_into_id IS NULL
         ORDER BY created_at LIMIT 1`,
       [businessId, email],
     );
@@ -537,7 +537,7 @@ export async function resolveOrderCustomerId(
   if (!name && !e164 && !email) return null;
 
   const { rows } = await query<{ id: string }>(
-    `INSERT INTO customers (business_id, name, phone, phone_e164, email, address)
+    `INSERT INTO parties (business_id, name, phone, phone_e164, email, address)
      VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
     [
       businessId,

@@ -169,7 +169,7 @@ export async function wpStoreCustomers(
                 AND w.event_topic LIKE 'customer.%'
                 AND w.remote_id = m.remote_id) AS last_seen
        FROM integration_mappings m
-       LEFT JOIN customers c ON c.id = m.local_id
+       LEFT JOIN parties c ON c.id = m.local_id
       WHERE m.business_id = $1 AND m.connection_id = $2
         AND m.connection_id IN (SELECT id FROM integration_connections WHERE business_id = $1 AND provider = 'woocommerce')
         AND m.entity_type = 'customer'

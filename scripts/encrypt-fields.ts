@@ -71,7 +71,7 @@ async function listBusinesses(only: string | null): Promise<BusinessRow[]> {
  * tables need one if they are ever queried outside a tenant scope.
  */
 const TENANT_PREDICATE: Record<string, (alias: string) => string> = {
-  customers: (t) => `${t}business_id = $1`,
+  parties: (t) => `${t}business_id = $1`,
   // Only the reservation's own column is aliased — the `business_id` inside
   // the subquery belongs to `locations` and must not be.
   reservations: (t) => `${t}location_id IN (SELECT id FROM locations WHERE business_id = $1)`,

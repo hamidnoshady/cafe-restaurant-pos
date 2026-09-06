@@ -317,7 +317,7 @@ export function PosScreen({ initialTableId }: { initialTableId?: string | null }
     const timer = setTimeout(
       () => {
         void api<{ customers?: Customer[] }>(
-          "/api/customers?q=" + encodeURIComponent(customerQuery.trim()),
+          "/api/parties?q=" + encodeURIComponent(customerQuery.trim()),
         )
           .then(({ ok, data }) => {
             if (!cancelled && ok) setCustomers(data.customers ?? []);

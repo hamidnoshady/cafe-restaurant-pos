@@ -242,7 +242,7 @@ function ActivityDialog({ onClose, onSaved }: { onClose: () => void; onSaved: ()
     setMatchesLoading(true);
     const timer = setTimeout(() => {
       void api<{ customers: { id: string; name: string }[] }>(
-        `/api/customers?q=${encodeURIComponent(customerQuery.trim())}`,
+        `/api/parties?q=${encodeURIComponent(customerQuery.trim())}`,
       )
         .then(({ ok, data }) => {
           if (!cancelled && ok) setMatches(data.customers.slice(0, 6));

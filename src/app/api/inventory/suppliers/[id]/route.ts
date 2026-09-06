@@ -36,6 +36,20 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
     values.push(val);
   };
 
+  /*
+   * What a branch may say about a supplier: its own note, and whether this branch
+   * buys from them at all. The name and the phone are the party's — a linked row
+   * refuses the edit rather than letting the alias drift away from the record the
+   * ledger pays. (`/api/parties` is where they change, and the store's own tab
+   * mounts the shared directory for exactly that.)
+   */
+  const linked = await query<{ party_id: string | null }>(
+    "SELECT party_id FROM suppliers WHERE id = $1",
+    [id],
+  );
+  if (linked.rows[0]?.party_id && (body.name !== undefined || body.phone !== undefined)) {
+    return NextResponse.json({ error: "supplier_identity_on_party" }, { status: 409 });
+  }
   if (body.name !== undefined) {
     const name = body.name.trim();
     if (!name) return NextResponse.json({ error: "missing_fields" }, { status: 400 });

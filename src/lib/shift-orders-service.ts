@@ -186,7 +186,7 @@ export async function getShiftOrdersReport(
               m.modifiers
          FROM orders o
          LEFT JOIN dining_tables dt ON dt.id = o.table_id
-         LEFT JOIN customers c ON c.id = o.customer_id
+         LEFT JOIN parties c ON c.id = o.customer_id
          LEFT JOIN users ou ON ou.id = o.opened_by
          LEFT JOIN users cu ON cu.id = o.closed_by
          LEFT JOIN order_items oi ON oi.order_id = o.id

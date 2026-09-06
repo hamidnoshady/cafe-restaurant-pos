@@ -25,7 +25,7 @@ export const GET = withTenantScope(async () => {
     promised_date: string | null;
   }>(
     `SELECT t.id, t.ticket_number::text, c.name AS customer_name, t.item_description, t.grams::text, t.status::text, t.promised_date::text
-       FROM custom_order_tickets t LEFT JOIN customers c ON c.id = t.customer_id
+       FROM custom_order_tickets t LEFT JOIN parties c ON c.id = t.customer_id
       WHERE t.location_id = $1
       ORDER BY t.ticket_number DESC
       LIMIT 100`,

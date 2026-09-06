@@ -6,7 +6,7 @@ import { customerTimeline } from "@/lib/customer-timeline-service";
 /**
  * One customer's history, merged from every app that touched them (Phase 36).
  *
- * Gated on `customers.view` rather than a role: reading one customer's history
+ * Gated on `parties.view` rather than a role: reading one customer's history
  * is the floor's work — the person on the phone needs to know when the last
  * order was and what the complaint was about — and that is exactly the
  * permission the directory already requires.
@@ -16,7 +16,7 @@ import { customerTimeline } from "@/lib/customer-timeline-service";
  */
 export const GET = withTenantScope(
   async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
-    const { session, error } = await requirePermission(PERMISSIONS.customersView);
+    const { session, error } = await requirePermission(PERMISSIONS.partiesView);
     if (error) return error;
 
     const { id } = await params;

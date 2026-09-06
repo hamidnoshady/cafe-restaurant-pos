@@ -6,7 +6,7 @@ import { completeActivity, deleteActivity, getActivity } from "@/lib/crm-service
 /** One activity. `PATCH { completed }` is the tick-box; that is the only field a list needs to change. */
 export const GET = withTenantScope(
   async (_request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
-    const { session, error } = await requirePermission(PERMISSIONS.customersView);
+    const { session, error } = await requirePermission(PERMISSIONS.partiesView);
     if (error) return error;
 
     const { id } = await params;
@@ -18,7 +18,7 @@ export const GET = withTenantScope(
 
 export const PATCH = withTenantScope(
   async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
-    const { session, error } = await requirePermission(PERMISSIONS.customersManage);
+    const { session, error } = await requirePermission(PERMISSIONS.partiesManage);
     if (error) return error;
 
     let body: { completed?: boolean };
@@ -40,7 +40,7 @@ export const PATCH = withTenantScope(
 
 export const DELETE = withTenantScope(
   async (_request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
-    const { session, error } = await requirePermission(PERMISSIONS.customersManage);
+    const { session, error } = await requirePermission(PERMISSIONS.partiesManage);
     if (error) return error;
 
     const { id } = await params;

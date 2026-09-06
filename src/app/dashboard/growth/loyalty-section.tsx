@@ -57,7 +57,7 @@ export function LoyaltySection() {
   const load = useCallback(async () => {
     const [programResult, customerResult, repurchaseResult] = await Promise.allSettled([
       api<{ programs: Program[] }>("/api/loyalty/programs"),
-      api<{ customers?: Customer[] }>("/api/customers"),
+      api<{ customers?: Customer[] }>("/api/parties?page=1&pageSize=500&roles=Customer"),
       api<{ customers: RepurchaseRow[] }>("/api/loyalty/repurchase"),
     ]);
     if (programResult.status === "fulfilled" && programResult.value.ok) {

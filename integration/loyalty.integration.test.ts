@@ -79,7 +79,7 @@ beforeEach(async () => {
   await db.query("DELETE FROM domain_events");
   await db.query("DELETE FROM journal_lines");
   await db.query("DELETE FROM journal_entries");
-  await db.query("DELETE FROM customers");
+  await db.query("DELETE FROM parties");
   await db.query("DELETE FROM accounts");
   await db.query("DELETE FROM businesses");
 
@@ -112,7 +112,7 @@ beforeEach(async () => {
 
 async function createCustomer(name = "مشتری وفادار") {
   const { rows } = await db.query<{ id: string }>(
-    "INSERT INTO customers (business_id, name) VALUES ($1, $2) RETURNING id",
+    "INSERT INTO parties (business_id, name) VALUES ($1, $2) RETURNING id",
     [biz.id, name],
   );
   return rows[0].id;

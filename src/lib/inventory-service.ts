@@ -83,9 +83,29 @@ export async function getInventoryOverview(
       "SELECT id, name, sku, unit, reorder_level, avg_cost, purchase_unit, purchase_unit_factor, is_active, is_produced FROM inventory_items WHERE location_id = $1 ORDER BY name",
       [locationId],
     ),
-    query(
-      "SELECT id, name, phone, notes, is_active FROM suppliers WHERE location_id = $1 ORDER BY name",
-      [locationId],
+    query<Record<string, unknown>>(
+      /*
+       * A supplier row is this branch's *alias* of a party (`suppliers.party_id` →
+       * `parties`, role `Supplier`), so the identity shown here is the party's: the
+       * name, the phone and the archive flag of a counterparty belong to the shared
+       * record, and a branch that renamed its own copy of a supplier's name would
+       * disagree with the ledger, the purchases screen and the CRM about who the
+       * business pays. `s.name`/`s.phone` remain only for the pre-link rows and for
+       * the branch's own note of what it called the party — the COALESCEs are that
+       * fallback, not a second source of truth.
+       */
+      `SELECT s.id, s.name, s.phone, s.notes, s.is_active,
+              s.party_id AS "partyId",
+              p.name AS "partyName",
+              p.phone AS "partyPhone",
+              p.is_active AS "partyActive",
+              COALESCE(p.name, s.name) AS "displayName",
+              COALESCE(p.phone, s.phone) AS "displayPhone"
+         FROM suppliers s
+         LEFT JOIN parties p ON p.id = s.party_id AND p.business_id = $2
+        WHERE s.location_id = $1
+        ORDER BY COALESCE(p.name, s.name)`,
+      [locationId, businessId],
     ),
     query("SELECT id, name FROM menu_items WHERE location_id = $1 AND is_active ORDER BY name", [locationId]),
     query(

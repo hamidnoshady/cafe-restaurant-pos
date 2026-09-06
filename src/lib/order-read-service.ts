@@ -30,7 +30,7 @@ const ORDER_SUMMARY_SELECT =
   "o.guest_count, o.subtotal, o.discount, o.discount_type, o.discount_value, " +
   "o.service_charge, o.tax, o.total, o.note, o.opened_at, o.closed_at, o.voided_reason " +
   "FROM orders o LEFT JOIN dining_tables dt ON dt.id = o.table_id " +
-  "LEFT JOIN customers c ON c.id = o.customer_id";
+  "LEFT JOIN parties c ON c.id = o.customer_id";
 
 /**
  * Drops the customer's name and phone from an order row.
@@ -171,7 +171,7 @@ export async function getOrderDetail(locationId: string, id: string): Promise<Or
   const { rows: orders } = await query<Record<string, unknown>>(
     "SELECT o.*, dt.name AS table_name, c.name AS customer_name, c.phone AS customer_phone " +
       "FROM orders o LEFT JOIN dining_tables dt ON dt.id = o.table_id " +
-      "LEFT JOIN customers c ON c.id = o.customer_id " +
+      "LEFT JOIN parties c ON c.id = o.customer_id " +
       "WHERE o.id = $1 AND o.location_id = $2",
     [id, locationId],
   );

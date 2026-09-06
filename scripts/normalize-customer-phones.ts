@@ -67,7 +67,7 @@ try {
 
   const { rows } = await client.query<Row>(
     `SELECT id::text, business_id::text, name, phone, phone_e164
-       FROM customers
+       FROM parties
       WHERE ${conditions.join(" AND ")}
       ORDER BY business_id, name`,
     params,
@@ -130,7 +130,7 @@ try {
   // make duplicate detection disagree with itself mid-run.
   await client.query("BEGIN");
   await client.query(
-    `UPDATE customers AS c
+    `UPDATE parties AS c
         SET phone_e164 = v.e164
        FROM (SELECT unnest($1::uuid[]) AS id, unnest($2::text[]) AS e164) AS v
       WHERE c.id = v.id`,

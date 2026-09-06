@@ -6,7 +6,7 @@ import { deleteCase, getCase } from "@/lib/crm-service";
 /** One service case. */
 export const GET = withTenantScope(
   async (_request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
-    const { session, error } = await requirePermission(PERMISSIONS.customersView);
+    const { session, error } = await requirePermission(PERMISSIONS.partiesView);
     if (error) return error;
 
     const { id } = await params;

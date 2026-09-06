@@ -113,7 +113,7 @@ export async function recordBackdatedOrder(
   }
 
   if (input.customerId) {
-    const { rowCount } = await client.query(`SELECT 1 FROM customers WHERE id = $1 AND business_id = $2`, [
+    const { rowCount } = await client.query(`SELECT 1 FROM parties WHERE id = $1 AND business_id = $2`, [
       input.customerId,
       businessId,
     ]);

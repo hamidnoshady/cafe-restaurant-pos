@@ -133,7 +133,7 @@ export const POST = withTenantScope(async (request: NextRequest, context: { para
     const order = locked.order;
     if (customerId) {
       const { rowCount: customerOwned } = await client.query(
-        `SELECT 1 FROM customers WHERE id = $1 AND business_id = $2`,
+        `SELECT 1 FROM parties WHERE id = $1 AND business_id = $2`,
         [customerId, session.businessId],
       );
       if (customerOwned !== 1) {

@@ -1,6 +1,6 @@
 /**
  * Phase 21 Wave 4 — consignment (امانی). `consignors` mirrors
- * `customers-service.ts`'s shape and simplicity (a business-wide directory,
+ * `parties-service.ts`'s shape and simplicity (a business-wide directory,
  * no separate pure-validation module — matching how customers/suppliers are
  * already validated inline in this codebase, not with dedicated pure
  * modules the way costing/pricing math is).

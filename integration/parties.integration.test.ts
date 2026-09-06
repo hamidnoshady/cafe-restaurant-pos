@@ -1,0 +1,371 @@
+/**
+ * The shared party record, against a real database.
+ *
+ * `parties` is the table four apps now read, and the properties that matter are the
+ * ones only SQL can show:
+ *
+ * 1. **One identity per business.** A customer's national ID is unique inside their
+ *    own business and freely reusable in the next one; the accounting code is
+ *    allocated per business and per role, from the prefix the chart of accounts
+ *    expects, and a code a person typed by hand is refused when it is taken.
+ * 2. **A tab the request did not mention is a tab nobody touched.** The whole
+ *    partial-write story of `updateParty` — the ledger keeps its bank details when
+ *    the POS fixes a phone number — is one `jsonb` merge, and a merge that is wrong
+ *    loses a person's IBAN silently.
+ * 3. **A party with history cannot be deleted.** `removeParty` archives instead of
+ *    deleting, and the test proves it with a real row in a real referencing table
+ *    rather than with a mock that would accept either answer.
+ * 4. **The role filter is a view, not a permission, and it is real.** A store's
+ *    supplier list must not contain the CRM's customers, and archiving a party must
+ *    hide it from every app at once.
+ */
+import { randomUUID } from "node:crypto";
+import { Client } from "pg";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { runMigrations } from "../scripts/migrate";
+
+const rootDatabaseUrl = process.env.DATABASE_URL;
+if (!rootDatabaseUrl) {
+  throw new Error("DATABASE_URL is required for database integration tests");
+}
+
+let databaseName: string;
+let db: Client;
+let dbLib: typeof import("../src/lib/db");
+let parties: typeof import("../src/lib/parties-service");
+
+const biz = { id: "", locationId: "" };
+const other = { id: "", locationId: "" };
+
+function urlFor(database: string): string {
+  const url = new URL(rootDatabaseUrl!);
+  url.pathname = `/${database}`;
+  return url.toString();
+}
+
+function maintenanceUrl(): string {
+  const url = new URL(rootDatabaseUrl!);
+  url.pathname = "/postgres";
+  return url.toString();
+}
+
+beforeAll(async () => {
+  databaseName = `pos_parties_${randomUUID().replaceAll("-", "")}`;
+  const maintenance = new Client({ connectionString: maintenanceUrl() });
+  await maintenance.connect();
+  try {
+    await maintenance.query(`CREATE DATABASE "${databaseName}"`);
+  } finally {
+    await maintenance.end();
+  }
+
+  await runMigrations({ databaseUrl: urlFor(databaseName), quiet: true });
+
+  process.env.DATABASE_URL = urlFor(databaseName);
+  dbLib = await import("../src/lib/db");
+  parties = await import("../src/lib/parties-service");
+
+  db = new Client({ connectionString: urlFor(databaseName) });
+  await db.connect();
+}, 120_000);
+
+afterAll(async () => {
+  await db?.end();
+  await dbLib?.getPool().end().catch(() => {});
+  process.env.DATABASE_URL = rootDatabaseUrl;
+  const maintenance = new Client({ connectionString: maintenanceUrl() });
+  await maintenance.connect();
+  try {
+    await maintenance.query(`DROP DATABASE IF EXISTS "${databaseName}" WITH (FORCE)`);
+  } finally {
+    await maintenance.end();
+  }
+});
+
+beforeEach(async () => {
+  // Children first: `parties.category_id` and `suppliers.party_id` both point at
+  // rows this suite creates, and `users.business_id` holds the membership an
+  // employee party is linked to.
+  await db.query("DELETE FROM suppliers");
+  await db.query("DELETE FROM party_categories");
+  await db.query("DELETE FROM parties");
+  await db.query("DELETE FROM user_locations");
+  await db.query("DELETE FROM users");
+  await db.query("DELETE FROM locations");
+  await db.query("DELETE FROM businesses");
+
+  for (const [target, name] of [
+    [biz, "Party Co"],
+    [other, "Rival Co"],
+  ] as const) {
+    const business = await db.query<{ id: string }>(
+      "INSERT INTO businesses (name, slug, industry) VALUES ($1, $2, 'food_service') RETURNING id",
+      [name, `${name.toLowerCase().replace(/\W+/g, "")}-${randomUUID().slice(0, 8)}`],
+    );
+    target.id = business.rows[0].id;
+    const location = await db.query<{ id: string }>(
+      "INSERT INTO locations (business_id, name) VALUES ($1, 'Main') RETURNING id",
+      [target.id],
+    );
+    target.locationId = location.rows[0].id;
+  }
+});
+
+describe("creating a party", () => {
+  it("allocates the accounting code from the role's prefix, per business", async () => {
+    const first = await parties.createParty(biz.id, { role: "Customer", displayName: "نانوایی شرق" });
+    const second = await parties.createParty(biz.id, { role: "Customer", displayName: "نانوایی غرب" });
+    const supplier = await parties.createParty(biz.id, { role: "Supplier", displayName: "شرکت لبنیات" });
+    const employee = await parties.createParty(biz.id, { role: "Employee", displayName: "مریم رضایی" });
+
+    expect(first.accountingCode).toBe("100001");
+    expect(second.accountingCode).toBe("100002");
+    // Each role counts in its own series — the ledger reads the prefix, not a shared counter.
+    expect(supplier.accountingCode).toBe("200001");
+    expect(employee.accountingCode).toBe("300001");
+    expect(first.accountingCodeMode).toBe("Automatic");
+
+    // And the next business starts from the top of its own series again.
+    const rival = await parties.createParty(other.id, { role: "Customer", displayName: "نانوایی رقیب" });
+    expect(rival.accountingCode).toBe("100001");
+  });
+
+  it("keeps a manual code, and refuses one that is taken", async () => {
+    await parties.createParty(biz.id, {
+      role: "Supplier",
+      displayName: "قصابی مرکزی",
+      accountingCode: "200042",
+      accountingCodeMode: "Manual",
+    });
+    await expect(
+      parties.createParty(biz.id, {
+        role: "Supplier",
+        displayName: "قصابی شمال",
+        accountingCode: "200042",
+        accountingCodeMode: "Manual",
+      }),
+    ).rejects.toMatchObject({ code: "accounting_code_taken" });
+    // A manual code is kept, not replaced by the next free automatic one.
+    const row = await db.query<{ code: string }>(
+      "SELECT accounting_code AS code FROM parties WHERE business_id = $1 AND name = $2",
+      [biz.id, "قصابی مرکزی"],
+    );
+    expect(row.rows[0].code).toBe("200042");
+  });
+
+  it("requires a manual mode to carry a code", async () => {
+    await expect(
+      parties.createParty(biz.id, { role: "Customer", displayName: "بی‌کد", accountingCodeMode: "Manual" }),
+    ).rejects.toMatchObject({ code: "accounting_code_required" });
+  });
+
+  it("derives the display name from the parts when none was given", async () => {
+    const created = await parties.createParty(biz.id, {
+      role: "Customer",
+      firstName: "حسین",
+      lastName: "کاظمی",
+    });
+    expect(created.displayName).toBe("حسین کاظمی");
+  });
+
+  it("normalizes a Persian mobile into the searchable column", async () => {
+    const created = await parties.createParty(biz.id, {
+      role: "Customer",
+      displayName: "با موبایل فارسی",
+      contactInfo: { mobile: "۰۹۱۲۳۴۵۶۷۸۹" },
+    });
+    // What was typed is what is kept: the canonical forms the search compares on
+    // (`phone_e164`, the blind index, the last four) are derived beside it, which is
+    // how the number stayed searchable without rewriting anybody's digits.
+    expect(created.phone).toBe("۰۹۱۲۳۴۵۶۷۸۹");
+
+    // The POS types Latin digits, the CRM's search box accepts whatever a person
+    // pastes; both must find the row.
+    expect((await parties.searchParties(biz.id, "09123456789")).map((row) => row.id)).toContain(created.id);
+    expect((await parties.searchParties(biz.id, "۰۹۱۲۳۴۵۶۷۸۹")).map((row) => row.id)).toContain(created.id);
+    expect((await parties.searchParties(biz.id, "+98 912 345 6789")).map((row) => row.id)).toContain(created.id);
+  });
+
+  it("keeps a national ID unique inside one business and free in the next", async () => {
+    await parties.createParty(biz.id, {
+      role: "Customer",
+      displayName: "صاحب کد ملی",
+      generalInfo: { nationalId: "0084575980" },
+    });
+    await expect(
+      parties.createParty(biz.id, {
+        role: "Customer",
+        displayName: "همین آدم دوباره",
+        generalInfo: { nationalId: "0084575980" },
+      }),
+    ).rejects.toMatchObject({ code: "national_id_taken" });
+
+    const rival = await parties.createParty(other.id, {
+      role: "Customer",
+      displayName: "مشابه در کسب‌وکار دیگر",
+      generalInfo: { nationalId: "0084575980" },
+    });
+    expect(rival.generalInfo.nationalId).toBe("0084575980");
+  });
+});
+
+describe("updating a party", () => {
+  it("leaves a tab the request did not name alone", async () => {
+    const created = await parties.createParty(biz.id, {
+      role: "Supplier",
+      displayName: "مبلغی",
+      contactInfo: { mobile: "02188776655", email: "sales@example.ir" },
+      financialInfo: { bankName: "ملی", iban: "IR830540102380270014203457" },
+      generalInfo: { taxPercentage: 12 },
+    });
+
+    const fixed = await parties.updateParty(biz.id, created.id, { phone: "02122334455" });
+    expect(fixed?.phone).toBe("02122334455");
+    // The two facts the POS does not know about, still there.
+    expect(fixed?.financialInfo.iban).toBe("IR830540102380270014203457");
+    expect(fixed?.generalInfo.taxPercentage).toBe(12);
+    expect(fixed?.contactInfo.email).toBe("sales@example.ir");
+  });
+
+  it("treats a tab sent empty as cleared", async () => {
+    const created = await parties.createParty(biz.id, {
+      role: "Customer",
+      displayName: "بی‌آدرس",
+      addressInfo: { city: "تهران", street: "ولیعصر" },
+    });
+    const cleared = await parties.updateParty(biz.id, created.id, { addressInfo: {} });
+    expect(cleared?.addressInfo.city ?? "").toBe("");
+    expect(cleared?.address ?? "").toBe("");
+  });
+
+  it("does not reactivate an archived party as a side effect of an edit", async () => {
+    const created = await parties.createParty(biz.id, { role: "Customer", displayName: "بایگانی" });
+    await parties.updateParty(biz.id, created.id, { status: false });
+    const edited = await parties.updateParty(biz.id, created.id, { notes: "تلفن جدید بعد از بایگانی" });
+    expect(edited?.status).toBe(false);
+    expect(edited?.notes).toBe("تلفن جدید بعد از بایگانی");
+  });
+});
+
+describe("listing a party", () => {
+  beforeEach(async () => {
+    await parties.createParty(biz.id, { role: "Customer", displayName: "مشتری الف" });
+    await parties.createParty(biz.id, { role: "Supplier", displayName: "تأمین‌کننده ب" });
+    await parties.createParty(biz.id, { role: "Employee", displayName: "کارمند پ" });
+  });
+
+  it("filters by role, which is a view and not a permission", async () => {
+    const all = await parties.listParties(biz.id, {});
+    expect(all.total).toBe(3);
+    const suppliers = await parties.listParties(biz.id, { roles: ["Supplier"] });
+    expect(suppliers.parties.map((row) => row.displayName)).toEqual(["تأمین‌کننده ب"]);
+    const staff = await parties.listParties(biz.id, { roles: ["Employee", "Supplier"] });
+    expect(staff.total).toBe(2);
+  });
+
+  it("hides archived parties by default and shows them on request", async () => {
+    const customer = await parties.createParty(biz.id, { role: "Customer", displayName: "بایگانی‌شده" });
+    await parties.updateParty(biz.id, customer.id, { status: false });
+
+    const active = await parties.listParties(biz.id, { roles: ["Customer"] });
+    expect(active.parties.map((row) => row.displayName)).toEqual(["مشتری الف"]);
+    const withArchived = await parties.listParties(biz.id, { roles: ["Customer"], includeInactive: true });
+    expect(withArchived.total).toBe(2);
+    // A search — the picker a cashier uses mid-sale — never offers an archived row.
+    expect(await parties.searchParties(biz.id, "بایگانی‌شده")).toEqual([]);
+  });
+
+  it("paginates", async () => {
+    const page1 = await parties.listParties(biz.id, { page: 1, pageSize: 2 });
+    const page2 = await parties.listParties(biz.id, { page: 2, pageSize: 2 });
+    expect(page1.parties).toHaveLength(2);
+    expect(page2.parties).toHaveLength(1);
+    expect(page1.total).toBe(3);
+    expect(page1.parties[1].id).not.toBe(page2.parties[0].id);
+  });
+});
+
+describe("removing a party", () => {
+  it("hard-deletes one with no history", async () => {
+    const created = await parties.createParty(biz.id, { role: "Customer", displayName: "اشتباه تایپی" });
+    expect(await parties.removeParty(biz.id, created.id)).toBe("deleted");
+    expect(await parties.getParty(biz.id, created.id)).toBeNull();
+  });
+
+  it("archives one a branch still buys from", async () => {
+    const supplier = await parties.createParty(biz.id, { role: "Supplier", displayName: "شیرینی سرای" });
+    await db.query("INSERT INTO suppliers (location_id, name, party_id) VALUES ($1, $2, $3)", [
+      biz.locationId,
+      "شیرینی سرای",
+      supplier.id,
+    ]);
+
+    expect(await parties.removeParty(biz.id, supplier.id)).toBe("archived");
+    const kept = await parties.getParty(biz.id, supplier.id);
+    expect(kept?.status).toBe(false);
+    // The alias and the party both survive: a purchase order from last year has to
+    // still resolve the name it was written under.
+    const alias = await db.query<{ count: string }>(
+      "SELECT COUNT(*)::text AS count FROM suppliers WHERE party_id = $1",
+      [supplier.id],
+    );
+    expect(alias.rows[0].count).toBe("1");
+  });
+
+  it("says not_found rather than pretending", async () => {
+    expect(await parties.removeParty(biz.id, randomUUID())).toBe("not_found");
+  });
+});
+
+describe("personnel", () => {
+  it("links one party per staff account, idempotently", async () => {
+    // `users` is the membership table in this schema (one row per person per
+    // business), which is what an employee party's `employee_user_id` points at.
+    const user = await db.query<{ id: string }>(
+      "INSERT INTO users (business_id, full_name, email, role, pin_hash) VALUES ($1, $2, $3, 'waiter', $4) RETURNING id",
+      [biz.id, "کارمند تست", `waiter-${randomUUID().slice(0, 8)}@example.ir`, "$2b$10$notarealhashnotarealhashnotarealhashno"],
+    );
+    const userId = user.rows[0].id;
+
+    const first = await parties.ensureEmployeeParty(biz.id, userId, { displayName: "علی رضایی" });
+    const again = await parties.ensureEmployeeParty(biz.id, userId, { displayName: "علی رضایی" });
+    expect(first?.id).toBe(again?.id);
+    expect(first?.role).toBe("Employee");
+    expect(first?.employeeUserId).toBe(userId);
+
+    const rows = await db.query<{ count: string }>(
+      "SELECT COUNT(*)::text AS count FROM parties WHERE business_id = $1 AND employee_user_id = $2",
+      [biz.id, userId],
+    );
+    expect(rows.rows[0].count).toBe("1");
+  });
+});
+
+describe("categories", () => {
+  it("compares names case- and space-insensitively, per business", async () => {
+    const created = await parties.createPartyCategory(biz.id, { name: "خواروبار", role: "Supplier" });
+    expect(created?.role).toBe("Supplier");
+    await expect(parties.createPartyCategory(biz.id, { name: " خواروبار " })).rejects.toMatchObject({
+      code: "category_exists",
+    });
+    // Another tenant may use the same name; it is not a shared namespace.
+    await expect(parties.createPartyCategory(other.id, { name: "خواروبار" })).resolves.toMatchObject({
+      name: "خواروبار",
+    });
+  });
+
+  it("deactivates a category in use instead of orphaning the party", async () => {
+    const category = await parties.createPartyCategory(biz.id, { name: "رستوران" });
+    const party = await parties.createParty(biz.id, { role: "Customer", displayName: "عضو دسته" });
+    await parties.updateParty(biz.id, party.id, { categoryId: category!.id });
+
+    expect(await parties.removePartyCategory(biz.id, category!.id)).toBe("kept");
+    const kept = await parties.getParty(biz.id, party.id);
+    expect(kept?.categoryId).toBe(category!.id);
+    expect(kept?.categoryName).toBe("رستوران");
+
+    // Unused, it goes away entirely.
+    const spare = await parties.createPartyCategory(biz.id, { name: "بی‌استفاده" });
+    expect(await parties.removePartyCategory(biz.id, spare!.id)).toBe("deleted");
+  });
+});

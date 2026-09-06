@@ -20,7 +20,7 @@ let databaseName: string;
 let db: Client;
 let dbLib: typeof import("../src/lib/db");
 let arService: typeof import("../src/lib/ar-service");
-let customersService: typeof import("../src/lib/customers-service");
+let customersService: typeof import("../src/lib/parties-service");
 
 const biz = { id: "", locationId: "" };
 const acct = { cash: "", bankClearing: "", revenue: "", accountsReceivable: "" };
@@ -54,7 +54,7 @@ beforeAll(async () => {
   process.env.DATABASE_URL = urlFor(databaseName);
   dbLib = await import("../src/lib/db");
   arService = await import("../src/lib/ar-service");
-  customersService = await import("../src/lib/customers-service");
+  customersService = await import("../src/lib/parties-service");
 
   db = new Client({ connectionString: urlFor(databaseName) });
   await db.connect();

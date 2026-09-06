@@ -112,7 +112,7 @@ async function seedBusiness(name: string, slug: string) {
   );
 
   const customerRow = await db.query<{ id: string }>(
-    `INSERT INTO customers (business_id, name, notes) VALUES ($1, 'Guest', 'یادداشت قبلی') RETURNING id`,
+    `INSERT INTO parties (business_id, name, notes) VALUES ($1, 'Guest', 'یادداشت قبلی') RETURNING id`,
     [businessId],
   );
 
@@ -282,7 +282,7 @@ describe("undo", () => {
     } as never);
     expect(decision.outcome).toBe("applied");
 
-    const afterApply = await db.query<{ notes: string }>("SELECT notes FROM customers WHERE id = $1", [
+    const afterApply = await db.query<{ notes: string }>("SELECT notes FROM parties WHERE id = $1", [
       alpha.customerId,
     ]);
     expect(afterApply.rows[0].notes).toBe("یادداشت جدید");
@@ -290,7 +290,7 @@ describe("undo", () => {
     await dbLib.withTenant(alpha.businessId, () =>
       autopilot.revertAutopilotAction({ businessId: alpha.businessId, auditId: decision.auditId, actorName: "مالک" }),
     );
-    const afterRevert = await db.query<{ notes: string }>("SELECT notes FROM customers WHERE id = $1", [
+    const afterRevert = await db.query<{ notes: string }>("SELECT notes FROM parties WHERE id = $1", [
       alpha.customerId,
     ]);
     expect(afterRevert.rows[0].notes).toBe("یادداشت قبلی");

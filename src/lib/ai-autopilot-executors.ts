@@ -23,7 +23,7 @@ import { createDraftPurchase, cancelDraftPurchase, PurchaseServiceError } from "
 import { applyOrderDiscount, normalizeDiscountInput } from "./order-discount-service";
 import { recordExpense, ExpenseError } from "./expense-service";
 import { createDraft, deleteDraft, ManualJournalError } from "./manual-journal-service";
-import { updateCustomer } from "./customers-service";
+import { updateCustomer } from "./parties-service";
 import { addCustomerNote, deleteCustomerNote, setCustomerTag } from "./crm-service";
 import { isWasteReason, recordWaste } from "./waste-service";
 import { recordProductionRun, reverseProductionRun, ProductionError } from "./production-service";
@@ -319,7 +319,7 @@ const customerNote: AutopilotExecutor = async (ctx) => {
   if (!customerId || !notes) return fail("invalid_payload");
 
   const { rows: before } = await query<{ notes: string | null; name: string }>(
-    `SELECT notes, name FROM customers WHERE id = $1 AND business_id = $2`,
+    `SELECT notes, name FROM parties WHERE id = $1 AND business_id = $2`,
     [customerId, ctx.businessId],
   );
   if (!before[0]) return fail("not_found");
@@ -367,7 +367,7 @@ const crmCustomerNote: AutopilotExecutor = async (ctx) => {
   if (!customerId || !body) return fail("invalid_payload");
 
   const { rows } = await query<{ id: string }>(
-    `SELECT id FROM customers WHERE id = $1 AND business_id = $2`,
+    `SELECT id FROM parties WHERE id = $1 AND business_id = $2`,
     [customerId, ctx.businessId],
   );
   if (!rows[0]) return fail("not_found");

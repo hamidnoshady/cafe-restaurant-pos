@@ -12,12 +12,12 @@ import { isActivityKind, type ActivityKind } from "@/lib/crm-shared";
  * `completedAt` *is* the task model. Two tables would have meant copying a
  * completed task into a history row, and then reconciling the two.
  *
- * Floor-accessible (`customers.manage`): the person who takes the call is the
+ * Floor-accessible (`parties.manage`): the person who takes the call is the
  * person who should log it and tick off the callback. A task list only the
  * office can write to is a task list that stops matching reality by Tuesday.
  */
 export const GET = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requirePermission(PERMISSIONS.customersView);
+  const { session, error } = await requirePermission(PERMISSIONS.partiesView);
   if (error) return error;
 
   const search = request.nextUrl.searchParams;
@@ -44,7 +44,7 @@ interface ActivityBody {
 }
 
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requirePermission(PERMISSIONS.customersManage);
+  const { session, error } = await requirePermission(PERMISSIONS.partiesManage);
   if (error) return error;
 
   let body: ActivityBody;

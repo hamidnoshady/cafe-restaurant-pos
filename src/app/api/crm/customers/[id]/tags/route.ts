@@ -15,12 +15,12 @@ import { setCustomerTag } from "@/lib/crm-service";
  * fetch. Concurrency follows for free: two people tagging the same customer at
  * once both win, because neither sends a full array.
  *
- * `customers.manage`, same as notes: writing on someone's record is a change to
+ * `parties.manage`, same as notes: writing on someone's record is a change to
  * it, and the floor legitimately holds that permission.
  */
 export const PATCH = withTenantScope(
   async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
-    const { session, error } = await requirePermission(PERMISSIONS.customersManage);
+    const { session, error } = await requirePermission(PERMISSIONS.partiesManage);
     if (error) return error;
 
     let body: { tag?: string; action?: string };

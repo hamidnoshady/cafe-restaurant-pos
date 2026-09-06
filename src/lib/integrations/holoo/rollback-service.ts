@@ -88,7 +88,7 @@ export async function rollbackImportRun(businessId: string, runId: string): Prom
     // Persons — customers or suppliers.
     const personIds = ids("holoo_customer");
     if (personIds.length) {
-      const cust = await client.query(`DELETE FROM customers WHERE id = ANY($1::uuid[]) AND business_id = $2`, [personIds, businessId]);
+      const cust = await client.query(`DELETE FROM parties WHERE id = ANY($1::uuid[]) AND business_id = $2`, [personIds, businessId]);
       const sup = await client.query(`DELETE FROM suppliers WHERE id = ANY($1::uuid[])`, [personIds]);
       reverted.holoo_customer = (cust.rowCount ?? 0) + (sup.rowCount ?? 0);
     }

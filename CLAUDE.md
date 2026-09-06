@@ -295,6 +295,51 @@ that fetches on mount. Loading is skeletons for regions and busy-label words («
 for actions — never `animate-spin`. Neither lint keeps a baseline, so any new violation
 fails `npm test`.
 
+## One party record — read before adding a customer, supplier or staff screen
+
+Every counterparty the business owes or is owed by is **one row in `parties`** (migration
+0137 renamed `customers` to `parties` and added `role`, the person type, the identity
+columns and the tab documents). Customer, supplier and employee are a `role` on that row,
+not three tables: a supplier who also buys coffee is one party, and the ledger's
+receivable, the store's purchase order and the payroll advance all point at the same `id`.
+
+- **One endpoint and one screen.** `/api/parties` (+ `/[id]`, `/categories`) and
+  `src/app/dashboard/parties/{parties-section,party-form}.tsx` are the only party write
+  path in the product; `src/lib/parties.ts` holds the contract both the form and the route
+  validate against (`PARTY_SCHEMA`, `buildPartyPayload`, `parsePartyRequestBody`), and
+  `src/lib/parties-service.ts` is the only place the party's own fields are read and
+  written. What stays outside it is deliberately narrow: the CRM's own columns on the row
+  (tags, consent, lifecycle stage, the merge pointer) and the two importers that fill a
+  party from another system — they maintain fields the directory does not own, and neither
+  may invent a party row of its own.
+- **A per-app view is a scope, not a copy.** What an app lists, which columns it draws and
+  whether it may edit at all come from `PARTY_SCOPES` in `src/lib/parties-scopes.ts`
+  (CRM=customers, the store=suppliers, the team=personnel, Accounting=all three and the
+  only one that edits the ledger fields, Growth/sales read-only). A new app that needs
+  parties mounts `PartiesSection` with its scope. It does not grow a second table of "the
+  suppliers I care about", its own add form, or its own archived flag — that is how one
+  person ends up with three names.
+- **Money-shaped fields are the ledger's.** `accountingCode`, `accountingCodeMode`,
+  `general_info.taxPercentage`, `financial_info` and the national/economic codes need
+  `ledger.view` on top of `parties.manage`; the gate reads the request body, because a form
+  sends the whole record. Codes are allocated per business by role prefix (۱ customers,
+  ۲ suppliers, ۳ staff) unless the mode is `Manual`.
+- **A tab is a document.** The four jsonb tabs store the wire keys verbatim; a tab the
+  request does not name is left exactly as stored, and `{}` means cleared. Never rebuild a
+  full body from a partial one — that is how an archive toggle wipes an address.
+- **`suppliers` is a branch alias, not a second supplier.** It keeps `location_id`, its own
+  note and `party_id`; a purchase order still references `suppliers.id`, and a row with a
+  party reads its name and phone from that party (`getInventoryOverview` resolves it with one
+  COALESCE and `PATCH /api/inventory/suppliers/:id` refuses identity edits on a linked row).
+- **Deleting is a decision, not a DELETE.** `removeParty` hard-deletes a party with no
+  history and archives one with orders, receivables, points or a branch alias — the route
+  returns which happened, and the section says so in Persian.
+- **Permissions are `parties.view` / `parties.manage`.** Nothing named `customers.*`
+  survives; stored overrides in `users.permissions` and `invitations.permissions` were
+  rewritten by 0137. In user-facing Persian the subject is «طرف‌حساب», so the assistant,
+  the knowledge articles and every label say «طرف‌حساب‌ها» for the record and keep
+  «مشتری»/«تأمین‌کننده»/«کارمند» for the role a row has.
+
 ## Counting stock — read before touching barcodes or a physical count
 
 Both item models can now be counted with a scanner, and they stay **two separate

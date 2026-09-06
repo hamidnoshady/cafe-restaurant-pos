@@ -29,7 +29,7 @@ import { getCustomerArBalance } from "./ar-service";
 import { businessToday } from "./business-day-service";
 import { getBusinessDek } from "./business-keys";
 import { encryptOptional, phoneBlindIndex, phoneKind, phoneLast4 } from "./field-crypto";
-import { mobileReachableSql, phonePairKeySql } from "./customers-service";
+import { mobileReachableSql, phonePairKeySql } from "./parties-service";
 import { normalizePhone } from "./phone";
 import {
   duplicateConfidence,
@@ -129,7 +129,7 @@ export async function getCustomerFile(
             coalesce(ps.points, 0)::int           AS "loyaltyPoints",
             coalesce(oc.open_cases, 0)::int       AS "openCases",
             coalesce(od.open_deals, 0)::int       AS "openDeals"
-       FROM customers c
+       FROM parties c
        LEFT JOIN LATERAL (
          SELECT count(*)::int AS order_count,
                 coalesce(sum(o.total), 0)::bigint AS total_spent,
@@ -314,7 +314,7 @@ export async function setConsent(
 
   return withTenant(businessId, async () => {
     const { rows: current } = await query<{ sms_consent: boolean; marketing_consent: boolean }>(
-      `SELECT sms_consent, marketing_consent FROM customers WHERE business_id = $1 AND id = $2`,
+      `SELECT sms_consent, marketing_consent FROM parties WHERE business_id = $1 AND id = $2`,
       [businessId, customerId],
     );
     if (!current[0]) return null;
@@ -325,7 +325,7 @@ export async function setConsent(
 
     if (changed) {
       await query(
-        `UPDATE customers SET ${column} = $3, updated_at = now() WHERE business_id = $1 AND id = $2`,
+        `UPDATE parties SET ${column} = $3, updated_at = now() WHERE business_id = $1 AND id = $2`,
         [businessId, customerId, update.granted],
       );
     }
@@ -383,7 +383,7 @@ export async function listConsentEvents(
             e.channel, e.granted, e.source, e.note, e.changed_by AS "changedBy",
             e.created_at AS "createdAt"
        FROM crm_consent_events e
-       JOIN customers c ON c.id = e.customer_id
+       JOIN parties c ON c.id = e.customer_id
       WHERE ${where}
       ORDER BY e.created_at DESC
       LIMIT $${params.length}`,
@@ -416,7 +416,7 @@ export async function consentCoverage(businessId: string): Promise<{
             count(*) FILTER (WHERE email IS NOT NULL AND btrim(email) <> '')::text AS with_email,
             count(*) FILTER (WHERE sms_consent AND ${mobileReachableSql()})::text AS sms_reachable,
             count(*) FILTER (WHERE marketing_consent AND email IS NOT NULL AND btrim(email) <> '')::text AS email_reachable
-       FROM customers
+       FROM parties
       WHERE business_id = $1 AND merged_into_id IS NULL`,
     [businessId],
   );
@@ -527,7 +527,7 @@ export async function findDuplicates(
   const leftPhone = phonePairKeySql("a");
   const rightPhone = phonePairKeySql("b");
   const { rows: byPhone } = await query<Record<string, unknown>>(
-    `SELECT ${selectPair} FROM customers a JOIN customers b
+    `SELECT ${selectPair} FROM parties a JOIN parties b
         ON b.business_id = a.business_id
        AND ${rightPhone} = ${leftPhone}
        AND a.id < b.id
@@ -539,7 +539,7 @@ export async function findDuplicates(
   byPhone.forEach((row) => push("phone", row));
 
   const { rows: byEmail } = await query<Record<string, unknown>>(
-    `SELECT ${selectPair} FROM customers a JOIN customers b
+    `SELECT ${selectPair} FROM parties a JOIN parties b
         ON b.business_id = a.business_id AND lower(b.email) = lower(a.email) AND a.id < b.id
       WHERE a.business_id = $1 AND a.email IS NOT NULL AND btrim(a.email) <> ''
         AND a.merged_into_id IS NULL AND b.merged_into_id IS NULL
@@ -552,7 +552,7 @@ export async function findDuplicates(
   byEmail.forEach((row) => push("email", row));
 
   const { rows: byName } = await query<Record<string, unknown>>(
-    `SELECT ${selectPair} FROM customers a JOIN customers b
+    `SELECT ${selectPair} FROM parties a JOIN parties b
         ON b.business_id = a.business_id
        AND lower(btrim(b.name)) = lower(btrim(a.name)) AND a.id < b.id
       WHERE a.business_id = $1 AND btrim(a.name) <> ''
@@ -614,7 +614,7 @@ export async function previewMerge(
     marketing_consent: boolean;
   }>(
     `SELECT id, name, tags, sms_consent, marketing_consent
-       FROM customers WHERE business_id = $1 AND id = ANY($2::uuid[])`,
+       FROM parties WHERE business_id = $1 AND id = ANY($2::uuid[])`,
     [businessId, [winnerId, loserId]],
   );
   const winner = rows.find((row) => row.id === winnerId);
@@ -688,7 +688,7 @@ export async function mergeCustomers(
     }>(
       `SELECT id, name, phone, phone_e164, email, address, birthday::text AS birthday,
               notes, tags, sms_consent, marketing_consent, merged_into_id
-         FROM customers WHERE business_id = $1 AND id = ANY($2::uuid[]) FOR UPDATE`,
+         FROM parties WHERE business_id = $1 AND id = ANY($2::uuid[]) FOR UPDATE`,
       [businessId, [winnerId, loserId]],
     );
     const winner = rows.find((row) => row.id === winnerId);
@@ -736,7 +736,7 @@ export async function mergeCustomers(
     // Field-level merge: union the tags, intersect the consent, and fill the
     // winner's empty fields from the loser (a blank is not a decision).
     await query(
-      `UPDATE customers
+      `UPDATE parties
           SET tags = $3,
               sms_consent = $4,
               marketing_consent = $5,
@@ -766,7 +766,7 @@ export async function mergeCustomers(
     // Archive, never delete: an id that was referenced anywhere must stay
     // resolvable, and the merge record itself points at it.
     await query(
-      `UPDATE customers SET is_active = false, merged_into_id = $3, updated_at = now()
+      `UPDATE parties SET is_active = false, merged_into_id = $3, updated_at = now()
         WHERE business_id = $1 AND id = $2`,
       [businessId, loserId, winnerId],
     );
@@ -839,7 +839,7 @@ export async function recomputeRfm(businessId: string): Promise<{ scored: number
             max(app_business_date(o.closed_at, l.timezone, l.business_day_start_minutes))::text AS last_purchase_date,
             count(o.id)::int AS order_count,
             coalesce(sum(o.total), 0)::text AS total_spent
-       FROM customers c
+       FROM parties c
        LEFT JOIN orders o
          ON o.customer_id = c.id AND o.status = 'completed' AND o.closed_at IS NOT NULL
        LEFT JOIN locations l ON l.id = o.location_id AND l.business_id = $1
@@ -862,7 +862,7 @@ export async function recomputeRfm(businessId: string): Promise<{ scored: number
   // One statement rather than N updates: a business with 20k customers would
   // otherwise issue 20k round trips for what is a single derived column set.
   await query(
-    `UPDATE customers c
+    `UPDATE parties c
         SET rfm_recency = v.recency, rfm_frequency = v.frequency, rfm_monetary = v.monetary,
             lifecycle_stage = v.stage, rfm_scored_at = now()
        FROM (
@@ -898,7 +898,7 @@ export async function scoredPopulation(businessId: string): Promise<RfmScore[]> 
             max(app_business_date(o.closed_at, l.timezone, l.business_day_start_minutes))::text AS last_purchase_date,
             count(o.id)::int AS order_count,
             coalesce(sum(o.total), 0)::text AS total_spent
-       FROM customers c
+       FROM parties c
        LEFT JOIN orders o
          ON o.customer_id = c.id AND o.status = 'completed' AND o.closed_at IS NOT NULL
        LEFT JOIN locations l ON l.id = o.location_id AND l.business_id = $1
@@ -929,7 +929,7 @@ export async function scoredPopulation(businessId: string): Promise<RfmScore[]> 
  * path and `npm run db:normalize-phones`. Customers typed into the dashboard
  * had a NULL canonical phone, which quietly excluded them from duplicate
  * detection, segment resolution and the SMS-reachable count. The create/update
- * path in `customers-service.ts` now writes all of these itself; this remains
+ * path in `parties-service.ts` now writes all of these itself; this remains
  * for callers that hold only an id and a number.
  */
 export async function syncCustomerPhone(
@@ -940,7 +940,7 @@ export async function syncCustomerPhone(
   const e164 = phone ? normalizePhone(phone).e164 : null;
   const dek = await getBusinessDek(businessId);
   await query(
-    `UPDATE customers SET phone_e164 = $3, phone_enc = $4, phone_bidx = $5, phone_last4 = $6, phone_kind = $7
+    `UPDATE parties SET phone_e164 = $3, phone_enc = $4, phone_bidx = $5, phone_last4 = $6, phone_kind = $7
       WHERE business_id = $1 AND id = $2`,
     [
       businessId,
@@ -975,12 +975,12 @@ export async function setCustomerTag(
 
   const { rows } = await query<{ tags: string[] }>(
     action === "add"
-      ? `UPDATE customers
+      ? `UPDATE parties
             SET tags = CASE WHEN $3 = ANY(COALESCE(tags, '{}')) THEN tags
                             ELSE array_append(COALESCE(tags, '{}'), $3) END
           WHERE business_id = $1 AND id = $2
         RETURNING COALESCE(tags, '{}') AS tags`
-      : `UPDATE customers
+      : `UPDATE parties
             SET tags = array_remove(COALESCE(tags, '{}'), $3)
           WHERE business_id = $1 AND id = $2
         RETURNING COALESCE(tags, '{}') AS tags`,
@@ -1041,7 +1041,7 @@ export async function listActivities(
   const { rows } = await query<CrmActivity>(
     `SELECT ${ACTIVITY_COLUMNS}
        FROM crm_activities a
-       LEFT JOIN customers c ON c.id = a.customer_id
+       LEFT JOIN parties c ON c.id = a.customer_id
       WHERE ${where}
       ORDER BY a.completed_at IS NOT NULL, coalesce(a.due_at, a.created_at)
       LIMIT $${params.length}`,
@@ -1093,7 +1093,7 @@ export async function getActivity(businessId: string, activityId: string): Promi
   const { rows } = await query<CrmActivity>(
     `SELECT ${ACTIVITY_COLUMNS}
        FROM crm_activities a
-       LEFT JOIN customers c ON c.id = a.customer_id
+       LEFT JOIN parties c ON c.id = a.customer_id
       WHERE a.business_id = $1 AND a.id = $2`,
     [businessId, activityId],
   );
@@ -1169,7 +1169,7 @@ export async function listDeals(
 
   const { rows } = await query<CrmDeal>(
     `SELECT ${DEAL_COLUMNS} FROM crm_deals d
-       LEFT JOIN customers c ON c.id = d.customer_id
+       LEFT JOIN parties c ON c.id = d.customer_id
       WHERE ${where}
       ORDER BY d.updated_at DESC
       LIMIT $${params.length}`,
@@ -1269,7 +1269,7 @@ export async function upsertDeal(businessId: string, input: UpsertDealInput): Pr
 export async function getDeal(businessId: string, dealId: string): Promise<CrmDeal | null> {
   const { rows } = await query<CrmDeal>(
     `SELECT ${DEAL_COLUMNS} FROM crm_deals d
-       LEFT JOIN customers c ON c.id = d.customer_id
+       LEFT JOIN parties c ON c.id = d.customer_id
       WHERE d.business_id = $1 AND d.id = $2`,
     [businessId, dealId],
   );
@@ -1349,7 +1349,7 @@ export async function listCases(
 
   const { rows } = await query<CrmCase>(
     `SELECT ${CASE_COLUMNS} FROM crm_cases k
-       LEFT JOIN customers c ON c.id = k.customer_id
+       LEFT JOIN parties c ON c.id = k.customer_id
       WHERE ${where}
       ORDER BY
         CASE k.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END,
@@ -1433,7 +1433,7 @@ export async function upsertCase(businessId: string, input: UpsertCaseInput): Pr
 export async function getCase(businessId: string, caseId: string): Promise<CrmCase | null> {
   const { rows } = await query<CrmCase>(
     `SELECT ${CASE_COLUMNS} FROM crm_cases k
-       LEFT JOIN customers c ON c.id = k.customer_id
+       LEFT JOIN parties c ON c.id = k.customer_id
       WHERE k.business_id = $1 AND k.id = $2`,
     [businessId, caseId],
   );

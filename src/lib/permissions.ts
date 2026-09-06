@@ -56,9 +56,17 @@ export const PERMISSIONS = {
   inventoryAdjust: "inventory.adjust",
   purchasesManage: "purchases.manage",
 
-  // Customers
-  customersView: "customers.view",
-  customersManage: "customers.manage",
+  /**
+   * Parties — «طرف‌حساب‌ها»: the one record behind a customer, a supplier and a
+   * member of staff (migration 0137 renamed `customers` to `parties`, and this
+   * permission is why the ledger can hand a supplier file to the same screen as a
+   * customer's). `parties.view` is the read of the record and of the pickers that
+   * depend on it; `parties.manage` is the write, and it is deliberately *not*
+   * enough to change the accounting number and the tax rate of a party the ledger
+   * settles against — those two fields are additionally gated on `ledger.view`.
+   */
+  partiesView: "parties.view",
+  partiesManage: "parties.manage",
 
   // Accounting
   ledgerView: "ledger.view",
@@ -100,7 +108,7 @@ const {
   tablesManage, reservationsManage, kitchenView, deliveryManage,
   menuView, menuEdit,
   inventoryView, inventoryAdjust, purchasesManage,
-  customersView, customersManage,
+  partiesView, partiesManage,
   ledgerView, ledgerPost, ledgerApprove, ledgerClosePeriod, accountsEdit,
   reportsView, reportsExport,
   teamManage, settingsManage, locationsManage, backupManage,
@@ -119,7 +127,7 @@ const ROLE_PRESETS: Record<Exclude<Role, "owner">, Permission[]> = {
     tablesManage, reservationsManage, kitchenView, deliveryManage,
     menuView, menuEdit,
     inventoryView, inventoryAdjust, purchasesManage,
-    customersView, customersManage,
+    partiesView, partiesManage,
     ledgerView, reportsView, reportsExport,
     settingsManage, backupManage,
   ],
@@ -129,7 +137,7 @@ const ROLE_PRESETS: Record<Exclude<Role, "owner">, Permission[]> = {
   accountant: [
     menuView,
     inventoryView,
-    customersView,
+    partiesView,
     ledgerView, ledgerPost, ledgerApprove, ledgerClosePeriod, accountsEdit,
     reportsView, reportsExport,
   ],
@@ -138,7 +146,7 @@ const ROLE_PRESETS: Record<Exclude<Role, "owner">, Permission[]> = {
     tablesManage, reservationsManage,
     menuView, deliveryManage,
     inventoryView,
-    customersView, customersManage,
+    partiesView, partiesManage,
   ],
   waiter: [
     ordersCreate,

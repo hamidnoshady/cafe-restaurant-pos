@@ -407,7 +407,7 @@ export function OrderDetailModal({
     setCustomerResultsLoading(true);
     const timer = setTimeout(() => {
       void api<{ customers: Customer[] }>(
-        `/api/customers?q=${encodeURIComponent(customerQuery)}`,
+        `/api/parties?q=${encodeURIComponent(customerQuery)}`,
       )
         .then(({ ok, data }) => {
           if (!cancelled && ok) setCustomerResults(data.customers);
@@ -464,7 +464,7 @@ export function OrderDetailModal({
     const name = customerQuery.trim();
     if (!name) return;
     const { ok, data } = await api<{ customer: Customer; error?: string }>(
-      "/api/customers",
+      "/api/parties",
       {
         method: "POST",
         body: JSON.stringify({

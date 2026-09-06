@@ -171,7 +171,7 @@ export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
   const load = useCallback(async () => {
     setLoading(true);
     const requests: Promise<unknown>[] = [
-      api<{ customers?: Customer[] }>("/api/customers").then(({ ok, data }) => {
+      api<{ customers?: Customer[] }>("/api/parties?page=1&pageSize=500&roles=Customer").then(({ ok, data }) => {
         if (ok) setCustomers(data.customers ?? []);
       }),
       api<{ invoices?: InvoiceSummary[] }>("/api/sales/invoices?limit=20").then(({ ok, data }) => {

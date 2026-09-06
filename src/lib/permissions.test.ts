@@ -31,11 +31,11 @@ describe("role presets", () => {
   });
 
   it("lets managers and cashiers manage the customer directory, but keeps the accountant view-only", () => {
-    expect(new Set(roleBasePermissions("manager")).has(PERMISSIONS.customersManage)).toBe(true);
-    expect(new Set(roleBasePermissions("cashier")).has(PERMISSIONS.customersManage)).toBe(true);
+    expect(new Set(roleBasePermissions("manager")).has(PERMISSIONS.partiesManage)).toBe(true);
+    expect(new Set(roleBasePermissions("cashier")).has(PERMISSIONS.partiesManage)).toBe(true);
     const accountant = new Set(roleBasePermissions("accountant"));
-    expect(accountant.has(PERMISSIONS.customersView)).toBe(true);
-    expect(accountant.has(PERMISSIONS.customersManage)).toBe(false);
+    expect(accountant.has(PERMISSIONS.partiesView)).toBe(true);
+    expect(accountant.has(PERMISSIONS.partiesManage)).toBe(false);
   });
 
   it("restricts kitchen and waiter to their own surfaces", () => {
@@ -44,7 +44,7 @@ describe("role presets", () => {
     expect(hasPermission("waiter", null, PERMISSIONS.ordersCreate)).toBe(true);
     expect(hasPermission("waiter", null, PERMISSIONS.ordersVoid)).toBe(false);
     expect(hasPermission("waiter", null, PERMISSIONS.reportsView)).toBe(false);
-    expect(hasPermission("waiter", null, PERMISSIONS.customersManage)).toBe(false);
+    expect(hasPermission("waiter", null, PERMISSIONS.partiesManage)).toBe(false);
   });
 
   it("does not let any non-owner role manage the team by default", () => {
