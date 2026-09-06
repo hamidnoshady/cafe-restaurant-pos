@@ -13,11 +13,46 @@ See [README.md](README.md) for setup, scripts, and the storage conventions (mone
 integer Rial, dates in ISO/Gregorian, Persian digits are display-only, etc.) — those
 conventions are load-bearing; don't casually deviate from them.
 
+## Prompt vocabulary — how the user names things
+
+These words have a specific meaning in prompts from the user. Interpret a request
+this way first; do not assume the everyday English sense, or the sense a code
+comment happens to use, until you have checked this list.
+
+- **Platform** means this whole product — the entire repo / system (POS, accounting,
+  CRM, growth, both website managers, the AI assistant, tenancy, the super-admin
+  console, desktop, the lot). A prompt about "the platform" is **not** a prompt about
+  `src/app/platform/**` unless they also say super-admin / platform console. In
+  *code* those paths, `requirePlatformAdmin`, platform credits, and a CMS "platform
+  key" keep their existing technical meaning; do not rename them, and do not treat a
+  platform-wide request as a super-admin-console task.
+- **App** means a dashboard app from `src/lib/apps.ts` — accounting, growth, CRM,
+  sales, operations, website, WP manager, connections, settings — the things in the
+  workspace rail. It does **not** mean the Next.js application, the Electron desktop
+  installer, or the WordPress plugin. The AI assistant is not an app (see below).
+  When they name one ("the accounting app", "growth", "CRM"), stay inside that app's
+  ownership boundary; don't add a peer page in another app's shell.
+- **AI assistant** (also «دستیار هوشمند», "the assistant") means the platform's
+  **main page**: the full-page chat home at `/dashboard` (when the workspace flag is
+  on) and `/dashboard/ai`. It is the workspace home, not a rail app — `apps.ts`
+  leaves `ai` unassigned on purpose. A prompt about the AI assistant is about that
+  home surface (chat, tools, replies), not about MCP, coworker jobs, or autopilot
+  unless those are named.
+- **Website management** means **both** website systems, not one of them:
+  1. **Eshobe CMS** — the `website` app at `/dashboard/website` (`src/lib/cms/*`,
+     [docs/eshobe-cms-integration.md](docs/eshobe-cms-integration.md)).
+  2. **WP / Woo management** — the `wp` app at `/dashboard/wp` (WordPress/WooCommerce
+     manager, Phase 40; plugin in `wordpress-plugin/`).
+  They are peers. Never fold one into the other, never treat WP Manager as a
+  Connections tab or the CMS as a Growth section, and if a prompt says "website
+  management" without naming which, consider both (or ask which) rather than
+  defaulting to the CMS.
+
 ## Test and build, locally — before every commit
 
-Run these from the repo root before considering any change done, even though CI (see below)
-also runs them — CI runs on push, well after you've decided a change is finished, so it's not
-a substitute for running the checklist yourself first:
+Run these from the repo root before considering any change done. CI (see below) is
+manual-only — it does not run on push, PR, or merge — so it is not a substitute for
+running the checklist yourself first:
 
 ```bash
 npm install               # first time, or after a dependency change
@@ -38,38 +73,37 @@ never edit an already-applied migration.
 
 ## CI — `.github/workflows/test.yml`
 
-CI was removed for a while (every run, on branches and on `main` alike, failed before executing
-a single step — an account-level Actions problem, not a code one — so the only thing it produced
-was a permanent red ✗ on every PR that said nothing about the change) and was restored once the
-runners started billing again. It runs the same checklist as above — type check, unit tests,
-integration tests, production build — on every push to `main` and every PR against it, as four
-independent jobs in parallel (not one sequential job) so the run's wall-clock time is the slowest
-single check, not their sum; a `required` job fans the four back in to one status check for
-branch protection. If it ever goes back to failing identically on every push regardless of what
-changed, that's the same account-level symptom as before, not a reason to start ignoring it —
-check the Actions tab for what's actually failing before assuming the gate itself is broken.
+Both workflows in `.github/workflows/` are **manual only** (`workflow_dispatch`). They do
+**not** run on push, on a pull request, or after a merge to `main`. Start them from the
+Actions tab when you want a run.
+
+`test.yml` is the same checklist as above — type check, unit tests, integration tests,
+production build — as four independent jobs in parallel (not one sequential job) so the
+run's wall-clock time is the slowest single check, not their sum; a `required` job fans
+the four back in to one status check. It is not a gate on PRs or on `main`.
 
 What follows from that:
 
-- **Run the local checklist above yourself, every time, in full — don't wait on CI.** CI is a
-  backstop, not your first signal; nothing else will catch a change that breaks the type check or
-  a test as fast as running it yourself.
+- **Run the local checklist above yourself, every time, in full — don't wait on CI.**
+  Nothing runs unless you dispatch it; nothing else will catch a change that breaks the
+  type check or a test as fast as running it yourself.
 - Don't report a change as done on the strength of a partial run. `npm test` passing while
   `npm run test:db` was never started is not a green checklist; say which steps you actually ran.
 - Keep `.github/workflows/test.yml` in sync with the checklist above — if a step is added, removed
   or renamed here, update the workflow (and vice versa) in the same change.
+- Don't re-add `push` / `pull_request` / `workflow_run` triggers. Manual-only is the
+  decision; an automatic run on CI or after merge is a regression.
 
-Note also, unrelated to the above and unchanged by it: `.github/workflows/build-and-push.yml`
-builds and pushes `ghcr.io/hamidnoshady/cafe-restaurant-pos:sha-<short-sha>` (and `:latest`) to
-GHCR after `test` passes on `main` — but only main-branch, post-test commits get an image; don't
-assume one exists for a branch, a PR, or a commit CI hasn't finished with yet. This is what the
-self-update path (`src/lib/app-update.ts`, `scripts/check-app-update.ts`, `/platform/updates`) and
-the pull-based compose files (`docker-compose.local.yml`,
-`archive/deploy/docker-compose.srv1.yml`) expect — it existed as a documented contract with
-nothing fulfilling it before this workflow. **Production (Runflare) does not consume this image
-yet** — it still builds from the `Dockerfile` itself per `docs/server-migration.md`'s Runflare
-recipe; repointing it at the prebuilt tag is a separate, deliberate step (Runflare service config
-+ GHCR pull credentials), not something this workflow does on its own.
+`.github/workflows/build-and-push.yml` is the same: dispatch it from the Actions tab when
+you want an image. It builds and pushes `docker.io/<DOCKERHUB_USERNAME>/cafe-restaurant-pos:sha-<short-sha>`
+(and `:latest`) to Docker Hub for the commit you selected — it does **not** wait on `test`,
+and it does **not** run after merge. Don't assume an image exists for a branch, a PR, or a
+commit nobody dispatched against. This is what the self-update path (`src/lib/app-update.ts`,
+`scripts/check-app-update.ts`, `/platform/updates`) and the pull-based compose files
+(`docker-compose.local.yml`, `archive/deploy/docker-compose.srv1.yml`) expect.
+**Production (Runflare) does not consume this image yet** — it still builds from the
+`Dockerfile` itself per `docs/server-migration.md`'s Runflare recipe; repointing it at the
+prebuilt tag is a separate, deliberate step, not something this workflow does on its own.
 
 ## Tenancy — read before touching the database
 
@@ -385,6 +419,11 @@ Two more, because both of these are load-bearing and easy to undo by accident:
   second menu drawn inside the page.
 
 ## The Website app — read before touching `/dashboard/website` or `/api/cms/*`
+
+This section is the **Eshobe CMS** half of website management. The other half is the
+WP / Woo manager (`wp` app, `/dashboard/wp`). In prompts, "website management" means
+**both** — see Prompt vocabulary above. Never fold this app into WP Manager or the
+other way around.
 
 This app (POS/accounting/CRM) and [`eshobe-cms`](https://github.com/hamidnoshady/eshobe-cms)
 (the Payload 3 multi-tenant website platform) are **separate deployments**, connected
