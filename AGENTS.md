@@ -4,8 +4,9 @@ Guidance for every AI coding agent working in this repository — Claude, Codex,
 Copilot, or anything else.
 
 **Read [CLAUDE.md](CLAUDE.md) first.** It is this repo's full agent guidance (testing gate,
-multi-business tenancy, the business day, payment ways, dashboard UI rules, phase layout)
-and applies to you whatever tool you run in. Two things cause the most damage when missed:
+multi-business tenancy, the business day, payment ways, dashboard UI rules, phase layout,
+prompt vocabulary) and applies to you whatever tool you run in. Two things cause the most
+damage when missed:
 
 - **The only quality gate is the local checklist** in CLAUDE.md — `npx tsc --noEmit`,
   `npm test`, `npm run test:db` (needs the Docker Postgres), `npm run build` — run in full
@@ -24,6 +25,23 @@ and applies to you whatever tool you run in. Two things cause the most damage wh
   `src/lib/jalali.ts` (`formatJalali`, `formatShiftWindow`, `jalaliToIsoDate`, `todayJalali`) or
   `Intl.DateTimeFormat` with the `fa-IR` locale (which resolves to the Persian/Shamsi calendar).
   Read the "Shamsi-only dates" section of CLAUDE.md before touching any date.
+
+## Prompt vocabulary
+
+How the user names things in prompts — full version in the "Prompt vocabulary" section of
+CLAUDE.md. Don't assume the everyday English sense:
+
+- **Platform** = this whole repo / product. Not `src/app/platform/**` (that's the
+  super-admin console) unless they also say super-admin / platform console.
+- **App** = a dashboard app from `src/lib/apps.ts` (accounting, growth, CRM, sales,
+  operations, website, WP manager, …). Not the Next.js app, not the Electron desktop
+  app, not the WordPress plugin. The AI assistant is not an app.
+- **AI assistant** = the platform's main page: `/dashboard` (workspace on) and
+  `/dashboard/ai`. Not MCP, coworker jobs, or autopilot unless those are named.
+- **Website management** = **both** website systems: Eshobe CMS (`website` app,
+  `/dashboard/website`) **and** WP / Woo management (`wp` app, `/dashboard/wp`). They
+  are peers; never fold one into the other, and don't default "website management" to
+  only the CMS.
 
 ## Design system
 

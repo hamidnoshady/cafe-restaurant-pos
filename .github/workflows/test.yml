@@ -1,24 +1,19 @@
-# Tests every push to main and every PR against it. Deliberately test-only: no
-# image build, no registry push, no deploy — this gate exists to keep main green,
-# and runs the same local checklist CLAUDE.md documents (tsc, unit tests,
-# integration tests, build) so a change that passes locally passes here.
+# Manual-only copy of the local checklist CLAUDE.md documents (tsc, unit tests,
+# integration tests, build). Does not run on push, pull request, or merge —
+# start it from the Actions tab (workflow_dispatch) when you want a CI run.
 #
 # Speed: the four checks are independent of each other, so they run as four
 # parallel jobs instead of one long sequential job — wall-clock time is the
 # slowest single check, not the sum of all four. Each job restores npm's
 # download cache (keyed on package-lock.json) via actions/setup-node, so
 # `npm ci` only re-links packages instead of re-downloading them on a cache
-# hit. `required` fans in all four so branch protection only needs to name
-# one status check.
+# hit. `required` fans in all four so a single status check names the run.
 name: test
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+  workflow_dispatch:
 
-# A new push to the same branch/PR makes the previous run pointless.
+# A new dispatch on the same branch makes the previous run pointless.
 concurrency:
   group: test-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -108,9 +103,8 @@ jobs:
       - name: Integration tests
         run: npm run test:db
 
-  # Single required status check for branch protection, instead of naming all
-  # four jobs individually. Fails if any of them failed, was cancelled, or
-  # never ran.
+  # Single status check that fails if any of the four jobs failed, was
+  # cancelled, or never ran.
   required:
     name: all checks passed
     runs-on: ubuntu-latest
