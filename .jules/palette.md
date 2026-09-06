@@ -19,3 +19,7 @@
 ## 2026-08-30 - Ensure Custom Buttons Have Focus States
 **Learning:** Interactive elements like custom `button` tags used in complex AI UI components often miss keyboard focus states, reducing accessibility for keyboard users navigating chat tools.
 **Action:** Always append `outline-none focus-visible:ring focus-visible:ring-ring/50` to custom `<button>` elements to ensure standard Tailwind focus rings are applied for keyboard navigation.
+
+## 2025-02-18 - Loading States in Form Buttons
+**Learning:** The project's design system explicitly bans the use of `animate-spin` (spinners) inside action buttons (e.g., during async form submissions), as enforced by `design-lint.test.ts`. Loading feedback for buttons must rely strictly on swapping the text label (e.g., to 'در حال ارسال…') and disabling the button.
+**Action:** Never add spinners to form buttons to indicate loading. If an async action needs a loading state, swap the text label and disable the button instead. Save spinners/skeletons for region placeholders.
