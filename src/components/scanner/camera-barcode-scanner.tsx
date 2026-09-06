@@ -509,7 +509,7 @@ export function CameraBarcodeScanner({
               <input
                 id={manualInputId}
                 dir="ltr"
-                className="min-h-11 flex-1 rounded-lg border border-border bg-white dark:bg-card px-3 text-sm outline-none focus-visible:border-amber-500 dark:focus-visible:border-amber-500/60 focus-visible:ring-3 focus-visible:ring-amber-400/40 dark:focus-visible:ring-amber-400/40"
+                className="min-h-11 flex-1 rounded-lg border border-border bg-white dark:bg-card px-3 text-sm outline-none focus-visible:border-amber-500 dark:focus-visible:border-amber-500/60 focus-visible:ring focus-visible:ring-amber-400/40 dark:focus-visible:ring-amber-400/40"
                 value={manualCode}
                 onChange={(e) => setManualCode(e.target.value)}
                 placeholder="مثلاً 6260123456789"

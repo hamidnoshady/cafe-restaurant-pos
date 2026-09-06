@@ -187,7 +187,7 @@ export function AiChatHub({
                   onClick={() => void sendMessage(suggestion)}
                   className={cn(
                     cardClass,
-                    "min-h-24 p-4 text-start text-sm leading-6 text-foreground/80 transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-amber-400/40 dark:focus-visible:ring-amber-400/40",
+                    "min-h-24 p-4 text-start text-sm leading-6 text-foreground/80 transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring focus-visible:ring-amber-400/40 dark:focus-visible:ring-amber-400/40",
                   )}
                 >
                   <span className="mb-3 grid size-8 place-items-center rounded-xl bg-amber-100/70 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300">
