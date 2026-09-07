@@ -22,7 +22,9 @@ describe("internalBaseOrigin", () => {
   it("tracks PORT", () => {
     expect(internalBaseOrigin({ PORT: "8080" })).toBe("http://127.0.0.1:8080");
     // Garbage PORT falls back to 3000 rather than producing a bad URL.
-    expect(internalBaseOrigin({ PORT: "not-a-port" })).toBe("http://127.0.0.1:3000");
+    expect(internalBaseOrigin({ PORT: "not-a-port" })).toBe(
+      "http://127.0.0.1:3000",
+    );
   });
 
   it("lets INTERNAL_BASE_URL override for split-tier deploys", () => {
@@ -48,11 +50,16 @@ describe("rate-limit clientIpFrom", () => {
   it("resolves IP using trusted hops when > 0", () => {
     const headers = new Headers();
     headers.set("x-forwarded-for", "1.1.1.1, 2.2.2.2, 3.3.3.3");
-    
-    // 1 hop -> trust the last proxy, use the second to last
-    expect(clientIpFrom(headers, 1)).toBe("2.2.2.2");
 
-    // > available hops -> clamp to 0
+    // 1 hop -> the last entry (3.3.3.3) was appended by our trusted proxy.
+    // We don't trust 3.3.3.3 itself, so we use it as the client IP.
+    expect(clientIpFrom(headers, 1)).toBe("3.3.3.3");
+
+    // 2 hops -> our proxy appended 3.3.3.3, and we also trust 3.3.3.3,
+    // which appended 2.2.2.2. We use 2.2.2.2.
+    expect(clientIpFrom(headers, 2)).toBe("2.2.2.2");
+
+    // > available hops -> clamp to 0 (the leftmost IP)
     expect(clientIpFrom(headers, 5)).toBe("1.1.1.1");
   });
 
@@ -81,7 +88,7 @@ describe("rate-limit clientIpFrom", () => {
     const headers = new Headers();
     headers.set("x-real-ip", "10.0.0.1");
     headers.set("x-forwarded-for", "1.1.1.1, 2.2.2.2");
-    expect(clientIpFrom(headers, 1)).toBe("1.1.1.1");
+    expect(clientIpFrom(headers, 1)).toBe("2.2.2.2");
   });
 
   it("honours x-real-ip only where the operator says the proxy overwrites it", () => {
