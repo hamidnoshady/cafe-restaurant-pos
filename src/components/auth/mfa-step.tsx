@@ -71,17 +71,24 @@ export const PLATFORM_MFA_THEME: MfaTheme = {
     "h-10 w-full rounded-lg border border-white/15 text-sm font-semibold text-white transition-colors hover:bg-white/10 disabled:opacity-50 outline-none focus-visible:ring focus-visible:ring-sky-500/50",
   linkButton:
     "rounded text-sm text-white/50 underline-offset-4 hover:text-white hover:underline outline-none focus-visible:ring focus-visible:ring-sky-500/50",
-  error: "rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200",
-  notice: "rounded-lg border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-sm text-sky-100",
+  error:
+    "rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200",
+  notice:
+    "rounded-lg border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-sm text-sky-100",
   codeBlock:
     "rounded-lg border border-white/15 bg-white/5 px-3 py-2 font-mono text-sm tracking-wider text-white",
 };
 
 /** Persian for the error codes the three MFA endpoints return. */
-function mfaErrorMessage(code: string | undefined, status: number, serverMessage?: string): string {
+function mfaErrorMessage(
+  code: string | undefined,
+  status: number,
+  serverMessage?: string,
+): string {
   const map: Record<string, string> = {
     invalid_code: "کد واردشده درست نیست.",
-    invalid_recovery_code: "این کد بازیابی معتبر نیست یا قبلاً استفاده شده است.",
+    invalid_recovery_code:
+      "این کد بازیابی معتبر نیست یا قبلاً استفاده شده است.",
     missing_code: "کد را وارد کنید.",
     not_enrolled: "برای این حساب هیچ روش دومرحله‌ای ثبت نشده است.",
     invalid_method: "روش انتخاب‌شده معتبر نیست.",
@@ -146,7 +153,9 @@ export function MfaStep({
   onVerified,
   onCancel,
 }: MfaStepProps) {
-  const [stage, setStage] = useState<Stage>(mfaMethod ? "challenge" : "enrol_choose");
+  const [stage, setStage] = useState<Stage>(
+    mfaMethod ? "challenge" : "enrol_choose",
+  );
   const [method, setMethod] = useState<MfaMethod | null>(mfaMethod);
   const [code, setCode] = useState("");
   const [phone, setPhone] = useState("");
@@ -175,10 +184,17 @@ export function MfaStep({
       setBusy(true);
       if (!silent) setError(null);
       try {
-        const res = await fetch(endpoints.challenge, { method: "POST", headers: authHeaders });
+        const res = await fetch(endpoints.challenge, {
+          method: "POST",
+          headers: authHeaders,
+        });
         const data = await res.json().catch(() => ({}));
         if (res.status === 429) {
-          setError(retryAfterMessage((data as { retryAfterMs?: unknown }).retryAfterMs));
+          setError(
+            retryAfterMessage(
+              (data as { retryAfterMs?: unknown }).retryAfterMs,
+            ),
+          );
           return;
         }
         if (!res.ok) {
@@ -216,7 +232,12 @@ export function MfaStep({
   // in development cannot send two messages (and bill for two).
   const challengeStarted = useRef(false);
   useEffect(() => {
-    if (stage !== "challenge" || method !== "sms_otp" || challengeStarted.current) return;
+    if (
+      stage !== "challenge" ||
+      method !== "sms_otp" ||
+      challengeStarted.current
+    )
+      return;
     challengeStarted.current = true;
     void sendChallenge(true);
   }, [stage, method, sendChallenge]);
@@ -228,7 +249,10 @@ export function MfaStep({
       const res = await fetch(endpoints.enrol, {
         method: "POST",
         headers: authHeaders,
-        body: JSON.stringify({ method: chosen, phone: chosen === "sms_otp" ? phone : undefined }),
+        body: JSON.stringify({
+          method: chosen,
+          phone: chosen === "sms_otp" ? phone : undefined,
+        }),
       });
       const data: EnrolResponse = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -253,11 +277,16 @@ export function MfaStep({
       const res = await fetch(endpoints.verify, {
         method: "POST",
         headers: authHeaders,
-        body: JSON.stringify({ code: code.trim(), useRecoveryCode: recoveryMode }),
+        body: JSON.stringify({
+          code: code.trim(),
+          useRecoveryCode: recoveryMode,
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setError(mfaErrorMessage((data as { error?: string }).error, res.status));
+        setError(
+          mfaErrorMessage((data as { error?: string }).error, res.status),
+        );
         setCode("");
         return;
       }
@@ -275,8 +304,8 @@ export function MfaStep({
         <div>
           <h2 className={theme.heading}>ورود دومرحله‌ای را فعال کنید</h2>
           <p className={theme.muted}>
-            برای این حساب هنوز روش دومرحله‌ای ثبت نشده و مهلت فعال‌سازی تمام شده است. یکی از دو روش
-            زیر را انتخاب کنید.
+            برای این حساب هنوز روش دومرحله‌ای ثبت نشده و مهلت فعال‌سازی تمام شده
+            است. یکی از دو روش زیر را انتخاب کنید.
           </p>
         </div>
         {error ? <p className={theme.error}>{error}</p> : null}
@@ -300,7 +329,8 @@ export function MfaStep({
           پیامک یک‌بارمصرف
         </button>
         <p className={theme.muted}>
-          روی نصب محلی و بدون اینترنت، برنامهٔ رمزساز تنها روشی است که همیشه کار می‌کند.
+          روی نصب محلی و بدون اینترنت، برنامهٔ رمزساز تنها روشی است که همیشه کار
+          می‌کند.
         </p>
         <div className="text-center">
           <button type="button" onClick={onCancel} className={theme.linkButton}>
@@ -322,7 +352,9 @@ export function MfaStep({
       >
         <div>
           <h2 className={theme.heading}>شمارهٔ موبایل</h2>
-          <p className={theme.muted}>کد یک‌بارمصرف هر بار به این شماره پیامک می‌شود.</p>
+          <p className={theme.muted}>
+            کد یک‌بارمصرف هر بار به این شماره پیامک می‌شود.
+          </p>
         </div>
         {error ? <p className={theme.error}>{error}</p> : null}
         <input
@@ -336,7 +368,7 @@ export function MfaStep({
           className={theme.input}
         />
         <button type="submit" disabled={busy} className={theme.primaryButton}>
-          {busy ? <Spinner /> : "ثبت شماره"}
+          {busy ? "در حال ثبت…" : "ثبت شماره"}
         </button>
         <div className="text-center">
           <button
@@ -359,15 +391,19 @@ export function MfaStep({
       <div className={theme.card}>
         <div>
           <h2 className={theme.heading}>
-            {method === "totp" ? "برنامهٔ رمزساز را تنظیم کنید" : "شماره ثبت شد"}
+            {method === "totp"
+              ? "برنامهٔ رمزساز را تنظیم کنید"
+              : "شماره ثبت شد"}
           </h2>
           {method === "totp" ? (
             <p className={theme.muted}>
-              این کد QR را در برنامهٔ رمزساز اسکن کنید. این تصویر فقط همین یک بار نمایش داده می‌شود.
+              این کد QR را در برنامهٔ رمزساز اسکن کنید. این تصویر فقط همین یک
+              بار نمایش داده می‌شود.
             </p>
           ) : (
             <p className={theme.muted}>
-              از این پس کد یک‌بارمصرف به {toPersianDigits(enrolment?.phone ?? "")} پیامک می‌شود.
+              از این پس کد یک‌بارمصرف به{" "}
+              {toPersianDigits(enrolment?.phone ?? "")} پیامک می‌شود.
             </p>
           )}
         </div>
@@ -392,7 +428,10 @@ export function MfaStep({
           </div>
         ) : null}
 
-        <RecoveryCodeSheet codes={enrolment?.recoveryCodes ?? []} theme={theme} />
+        <RecoveryCodeSheet
+          codes={enrolment?.recoveryCodes ?? []}
+          theme={theme}
+        />
 
         <button
           type="button"
@@ -444,8 +483,12 @@ export function MfaStep({
         className={theme.input}
       />
 
-      <button type="submit" disabled={busy || code.trim().length === 0} className={theme.primaryButton}>
-        {busy ? <Spinner /> : "تأیید و ورود"}
+      <button
+        type="submit"
+        disabled={busy || code.trim().length === 0}
+        className={theme.primaryButton}
+      >
+        {busy ? "در حال بررسی…" : "تأیید و ورود"}
       </button>
 
       {!recoveryMode && method === "sms_otp" ? (
@@ -495,15 +538,21 @@ function Spinner() {
  * down in the thirty seconds they are on screen. Nothing stores the plaintext,
  * so a page reload really does lose them.
  */
-export function RecoveryCodeSheet({ codes, theme }: { codes: string[]; theme: MfaTheme }) {
+export function RecoveryCodeSheet({
+  codes,
+  theme,
+}: {
+  codes: string[];
+  theme: MfaTheme;
+}) {
   const [copied, setCopied] = useState(false);
   if (codes.length === 0) return null;
 
   return (
     <div className="space-y-2">
       <p className={theme.notice}>
-        این ۱۰ کد بازیابی را چاپ کنید یا جای امنی بنویسید. اگر گوشی‌تان را از دست بدهید، تنها راه
-        ورود همین‌هاست و دیگر نمایش داده نمی‌شوند.
+        این ۱۰ کد بازیابی را چاپ کنید یا جای امنی بنویسید. اگر گوشی‌تان را از
+        دست بدهید، تنها راه ورود همین‌هاست و دیگر نمایش داده نمی‌شوند.
       </p>
       <div dir="ltr" className={`grid grid-cols-2 gap-1 ${theme.codeBlock}`}>
         {codes.map((c) => (
