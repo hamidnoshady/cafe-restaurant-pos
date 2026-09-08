@@ -12,6 +12,13 @@ import {
   ensureEmployeeProfile,
   resolveLoginBusinessId,
 } from "@/lib/employee-service";
+import { PIN_MAX_LENGTH, PIN_MIN_LENGTH } from "@/lib/team";
+import {
+  maskPhoneE164,
+  phoneOtpEnforcementFor,
+  signPhonePendingToken,
+} from "@/lib/phone-otp";
+import { memberPhoneState, pinWindowActive } from "@/lib/phone-otp-policy";
 
 interface UserRow extends Record<string, unknown> {
   id: string;
@@ -22,6 +29,9 @@ interface UserRow extends Record<string, unknown> {
   role: Role;
   full_name: string;
   pin_hash: string | null;
+  phone_e164: string | null;
+  phone_verified_at: Date | null;
+  otp_login_at: Date | null;
 }
 
 /**
@@ -40,6 +50,18 @@ interface UserRow extends Record<string, unknown> {
  * in the cookie, the DB row exists so the session can be listed/revoked and
  * so a revocation takes effect immediately (see checkEmployeeSession in
  * auth.ts) rather than waiting for the JWT's own expiry.
+ *
+ * Phase 42 — the PIN is no longer the whole story. Once the business's
+ * phone-OTP adoption window has closed (`auth.phoneOtp`, see
+ * phone-otp-policy.ts), a correct PIN alone does not mint a session: the
+ * member must also hold a verified phone number and have verified by OTP
+ * within the last 7 days. Outside that window the response carries a
+ * ten-minute `phone_pending` token instead of a cookie, and the client walks
+ * the member through the OTP step (`/api/auth/phone-otp/*`); the very same
+ * response shape is used *inside* the window when the member asked to verify
+ * their number proactively (`verifyPhone: true` — the door's «تأیید شمارهٔ
+ * موبایل» button), which is how staff spend the 14-day adoption window
+ * without an OTP being forced on them yet.
  */
 export async function POST(request: NextRequest) {
   let body: {
@@ -49,6 +71,7 @@ export async function POST(request: NextRequest) {
     businessId?: string;
     businessSlug?: string;
     deviceToken?: string;
+    verifyPhone?: boolean;
   };
   try {
     body = await request.json();
@@ -57,7 +80,7 @@ export async function POST(request: NextRequest) {
   }
 
   const pin = body.pin ? toLatinDigits(String(body.pin)) : "";
-  if (!/^\d{4}$/.test(pin)) {
+  if (!new RegExp(`^\\d{${PIN_MIN_LENGTH},${PIN_MAX_LENGTH}}$`).test(pin)) {
     return NextResponse.json({ error: "invalid_pin" }, { status: 400 });
   }
 
@@ -101,7 +124,8 @@ export async function POST(request: NextRequest) {
     const { rows } = await query<UserRow>(
       `SELECT u.id, u.business_id, b.slug::text AS business_slug,
               b.subdomain::text AS business_subdomain, u.location_id,
-              u.role, u.full_name, u.pin_hash
+              u.role, u.full_name, u.pin_hash,
+              u.phone_e164, u.phone_verified_at, u.otp_login_at
          FROM users u
          JOIN businesses b ON b.id = u.business_id
         WHERE u.is_active
@@ -140,6 +164,51 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // -----------------------------------------------------------------------
+    // Phase 42 — the phone-OTP gate. Evaluated only *after* the PIN has
+    // proved who is asking, so a wrong PIN never reveals which step would
+    // have come next.
+    // -----------------------------------------------------------------------
+    const enforcement = await phoneOtpEnforcementFor(user.business_id);
+    const phoneState = memberPhoneState(user.phone_e164, user.phone_verified_at);
+    const windowActive = pinWindowActive(user.otp_login_at);
+
+    // The member asked to verify their number this time (the door's optional
+    // button, spent during the adoption window). Honour it whenever an OTP
+    // can actually be delivered and there is something to verify — a verified
+    // number inside an open window has nothing to do.
+    const wantsVerification =
+      body.verifyPhone === true &&
+      phoneState !== "verified" &&
+      (enforcement.state === "grace" || enforcement.state === "enforced");
+
+    // Hard gate: past the adoption date (and with SMS configured), the PIN
+    // alone only opens the door inside the 7-day OTP window.
+    const gateClosed =
+      enforcement.state === "enforced" && !(phoneState === "verified" && windowActive);
+
+    if (wantsVerification || gateClosed) {
+      // The PIN was proven — the member may set a number that is not on file
+      // yet; every other path through the phone-OTP door may only be sent to
+      // a number already stored.
+      const phoneToken = await signPhonePendingToken({
+        sub: user.id,
+        businessId: user.business_id,
+        mayAttachPhone: true,
+        phone: null,
+      });
+      return NextResponse.json({
+        // `set_phone` — nothing on file: the client asks for the number
+        // first. `otp` — a number is stored (verified with a closed window,
+        // or stored-but-unverified): straight to the code entry.
+        phoneVerification: phoneState === "none" ? "set_phone" : "otp",
+        phoneState,
+        maskedPhone: user.phone_e164 ? maskPhoneE164(user.phone_e164) : null,
+        phoneToken,
+        user: { id: user.id, role: user.role, fullName: user.full_name },
+      });
+    }
+
     await ensureEmployeeProfile(user.id, user.business_id);
     const deviceLabel = request.headers.get("user-agent")?.slice(0, 120) ?? null;
     const deviceId = await resolveDeviceId(body.deviceToken, user.business_id);
@@ -163,6 +232,22 @@ export async function POST(request: NextRequest) {
 
     const res = NextResponse.json({
       user: { id: user.id, role: user.role, fullName: user.full_name },
+      // Inside the adoption window the session mints as before, but the door
+      // tells the member their number is still missing/unproven and how many
+      // days the window has left — the client renders it as a hint, not a
+      // gate. Deliberately omitted once the state is `enforced` (nothing left
+      // to count down to) and `pending_sms` (the countdown is frozen until an
+      // SMS provider is configured — showing a shrinking number that never
+      // bites would be a lie).
+      ...(enforcement.state === "grace" && phoneState !== "verified"
+        ? {
+            phoneOtp: {
+              state: enforcement.state,
+              daysLeft: enforcement.daysLeft,
+              phoneState,
+            },
+          }
+        : {}),
     });
     res.cookies.set(SESSION_COOKIE, token, sessionCookieOptions());
     return res;

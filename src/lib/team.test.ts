@@ -187,13 +187,19 @@ describe("sanitizeOverrides", () => {
 });
 
 describe("isValidPin", () => {
-  it("accepts exactly four digits", () => {
+  it("accepts four digits — the legacy length every existing member holds", () => {
     expect(isValidPin("1234")).toBe(true);
     expect(isValidPin("0000")).toBe(true);
   });
 
+  it("accepts longer PINs — Phase 42 opened the length up to twelve", () => {
+    expect(isValidPin("123456")).toBe(true);
+    expect(isValidPin("12345678")).toBe(true);
+    expect(isValidPin("123456789012")).toBe(true);
+  });
+
   it("rejects anything else", () => {
-    for (const pin of ["123", "12345", "12a4", "", " 1234", "۱۲۳۴"]) {
+    for (const pin of ["123", "1234567890123", "12a4", "", " 1234", "۱۲۳۴"]) {
       expect(isValidPin(pin), pin).toBe(false);
     }
   });

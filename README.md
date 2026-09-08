@@ -10,7 +10,7 @@ Development is phased — see [docs/phases/README.md](docs/phases/README.md) for
 - **PostgreSQL 16** — full schema for all phases migrated up front
 - **Tailwind CSS 4** — logical properties for RTL-safe layout
 - **Vazirmatn** variable font (bundled locally, works offline)
-- Auth: **JWT session cookie** (Owner/Manager email+password) + **4-digit PIN quick-login** (Cashier/Waiter/Kitchen)
+- Auth: **JWT session cookie** (Owner/Manager email+password) + **4–12-digit PIN quick-login** (Cashier/Waiter/Kitchen)
 
 ## Getting started
 
@@ -39,7 +39,7 @@ wizard (`/setup/*`) — no manual DB edits needed:
 2. **Chart of accounts** — editable pre-built F&B template
 3. **Inventory costing** — FIFO vs Weighted Average (locked after the first transaction)
 4. **Tax** — default VAT rate + per-category rates
-5. **Roles & users** — Manager (email/password) and Cashier/Waiter/Kitchen (4-digit PIN)
+5. **Roles & users** — Manager (email/password) and Cashier/Waiter/Kitchen (4–12-digit PIN)
 6. **Menu** — manual entry or CSV/Excel import (downloadable template)
 7. **Hardware** — printer pairing + test print (stubbed until Phase 5)
 8. **Opening balances** — opening inventory count + balanced opening journal entry

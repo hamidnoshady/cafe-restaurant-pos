@@ -53,6 +53,14 @@ export interface TeamMember {
   hasPin: boolean;
   /** Whether this membership can sign in with a password (has a global identity). */
   hasLogin: boolean;
+  /**
+   * Phase 42 — the member's login phone (E.164) and whether it has been
+   * proven by an OTP yet. Unproven numbers show «تأیید‌نشده» in the team
+   * screen and cannot be used for the direct phone login until the member
+   * verifies them.
+   */
+  phone: string | null;
+  phoneVerified: boolean;
   locationIds: string[];
   defaultLocationId: string | null;
   overrides: PermissionOverrides;
@@ -68,6 +76,8 @@ interface MemberRow extends Record<string, unknown> {
   is_active: boolean;
   has_pin: boolean;
   has_login: boolean;
+  phone_e164: string | null;
+  phone_verified_at: Date | null;
   default_location_id: string | null;
   permissions: unknown;
   location_ids: string[] | null;
@@ -84,6 +94,8 @@ function toMember(row: MemberRow): TeamMember {
     isActive: row.is_active,
     hasPin: row.has_pin,
     hasLogin: row.has_login,
+    phone: row.phone_e164,
+    phoneVerified: row.phone_verified_at !== null,
     locationIds: row.location_ids ?? [],
     defaultLocationId: row.default_location_id,
     overrides,
@@ -98,6 +110,7 @@ export async function listMembers(businessId: string): Promise<TeamMember[]> {
     `SELECT u.id, u.role, u.full_name, u.email, u.is_active,
             (u.pin_hash IS NOT NULL) AS has_pin,
             (u.platform_user_id IS NOT NULL) AS has_login,
+            u.phone_e164, u.phone_verified_at,
             u.location_id AS default_location_id,
             u.permissions, u.created_at,
             coalesce(
@@ -178,6 +191,12 @@ export interface CreateMembershipInput {
   password?: string | null;
   /** Required for PIN roles. */
   pin?: string | null;
+  /**
+   * Phase 42 — the member's login phone, already canonicalised by the caller
+   * (canonicalMemberPhone). Stored unverified: the member proves it with an
+   * OTP at their first door login, or from the security center.
+   */
+  phoneE164?: string | null;
   locationIds?: string[];
   defaultLocationId?: string | null;
   overrides?: PermissionOverrides;
@@ -261,8 +280,9 @@ export async function createMembership(
 
     const { rows: created } = await client.query<{ id: string }>(
       `INSERT INTO users
-         (business_id, platform_user_id, role, full_name, email, pin_hash, location_id, permissions)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+         (business_id, platform_user_id, role, full_name, email, pin_hash,
+          phone_e164, location_id, permissions)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
       [
         input.businessId,
         platformUserId,
@@ -270,6 +290,7 @@ export async function createMembership(
         fullName,
         email,
         pinHash,
+        input.phoneE164 ?? null,
         input.defaultLocationId ?? null,
         JSON.stringify(input.overrides ?? {}),
       ],
@@ -323,6 +344,26 @@ export async function isPinTaken(
     if (await bcrypt.compare(pin, row.pin_hash)) return true;
   }
   return false;
+}
+
+/**
+ * Phase 42 — whether a login phone is already another member's. Unlike the
+ * PIN (bcrypt, so only comparable by trial), the phone is stored canonical,
+ * so this is one indexed lookup. The unique index from migration 0139 backs
+ * it up; this pre-check exists to answer *before* the write with a 409 the
+ * UI can name, rather than surfacing a constraint violation.
+ */
+export async function isPhoneTaken(
+  businessId: string,
+  phoneE164: string,
+  exceptUserId?: string,
+): Promise<boolean> {
+  const { rows } = await query<{ id: string }>(
+    `SELECT id FROM users
+      WHERE business_id = $1 AND phone_e164 = $2 AND id <> COALESCE($3::uuid, '00000000-0000-0000-0000-000000000000')`,
+    [businessId, phoneE164, exceptUserId ?? null],
+  );
+  return rows.length > 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -548,6 +589,58 @@ export async function setPin(
       actorId,
       action: "team.pin_changed",
       targetUserId: userId,
+    });
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Phase 42 — an owner/manager sets (or clears) a member's login phone.
+ *
+ * The number is stored *unverified* — an owner typing a number proves
+ * nothing about who holds it — so a change always clears `phone_verified_at`
+ * and the member re-proves possession with an OTP at their next door login
+ * (or from the security center). A member changing their *own* number
+ * verifies it in the same breath through `/api/auth/phone/self`; this path
+ * is the force-set for somebody else's row, which is exactly why it cannot
+ * hand out verification.
+ */
+export async function setMemberPhone(
+  businessId: string,
+  userId: string,
+  phoneE164: string | null,
+  actorId: string | null,
+): Promise<void> {
+  if (phoneE164 && (await isPhoneTaken(businessId, phoneE164, userId))) {
+    throw new TeamError("phone_taken", 409);
+  }
+
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const { rowCount } = await client.query(
+      `UPDATE users
+          SET phone_e164 = $3,
+              phone_verified_at = NULL,
+              updated_at = now()
+        WHERE id = $1 AND business_id = $2`,
+      [userId, businessId, phoneE164],
+    );
+    if (!rowCount) {
+      await client.query("ROLLBACK");
+      throw new TeamError("not_found", 404);
+    }
+    await auditMembership(client, {
+      businessId,
+      actorId,
+      action: "team.phone_changed",
+      targetUserId: userId,
+      after: { phone: phoneE164 },
     });
     await client.query("COMMIT");
   } catch (err) {

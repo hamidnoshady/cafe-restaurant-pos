@@ -367,6 +367,12 @@ const AUTH_RATE_LIMITED_PATHS = [
   "/api/auth/mfa/challenge",
   "/api/auth/mfa/verify",
   "/api/auth/mfa/enrol",
+  // Phase 42 — the phone-OTP door's two steps: `request` spends SMS credit
+  // and `verify` guesses a 6-digit code, both pre-session (see the sibling
+  // comment in PUBLIC_PATHS). The per-identity send limiter lives in
+  // phone-otp.ts; this per-IP bucket is the outer ceiling.
+  "/api/auth/phone-otp/request",
+  "/api/auth/phone-otp/verify",
   "/api/platform/auth/mfa/challenge",
   "/api/platform/auth/mfa/verify",
   "/api/platform/auth/mfa/enrol",

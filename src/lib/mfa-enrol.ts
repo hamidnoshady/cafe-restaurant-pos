@@ -13,7 +13,14 @@ import { isMobilePhone, phoneE164 } from "./phone";
 import { getAccountMfaEnrolments, provisionMfaEnrolment, type MfaSubjectRealm } from "./mfa-service";
 import { issueRecoveryCodes } from "./mfa-recovery";
 
-/** The label an authenticator app shows above the six digits. */
+/**
+ * The label an authenticator app shows above the six digits — the fallback,
+ * and the whole label for the realms that are not one business's (the
+ * super-admin console). A tenant enrolment passes its *business's* name as
+ * the issuer, so the entry in Google Authenticator reads «کافه لمیز:
+ * owner@cafe.example» — the one spelling a person with two businesses can
+ * tell apart — rather than the same «Business Suite» twice.
+ */
 export const TOTP_ISSUER = "Business Suite";
 
 export type EnrolMethod = "totp" | "sms_otp";
@@ -39,8 +46,8 @@ export type EnrolResult =
       recoveryCodes: string[];
     };
 
-export function totpUriFor(label: string, secret: string): string {
-  return generateURI({ label, issuer: TOTP_ISSUER, secret, strategy: "totp" });
+export function totpUriFor(label: string, secret: string, issuer: string = TOTP_ISSUER): string {
+  return generateURI({ label, issuer, secret, strategy: "totp" });
 }
 
 /**
@@ -58,6 +65,12 @@ export async function enrolMfaMethod(options: {
   email: string;
   method: string | undefined;
   phone?: string;
+  /**
+   * Phase 42 — the issuer the authenticator app shows for a TOTP enrolment:
+   * the business's own name for a tenant account, so the entry is readable
+   * beside every other entry the person holds. Defaults to TOTP_ISSUER.
+   */
+  issuer?: string;
 }): Promise<EnrolResult> {
   const { subjectRealm, subjectId, email } = options;
   const method = options.method;
@@ -70,7 +83,7 @@ export async function enrolMfaMethod(options: {
 
   if (method === "totp") {
     const totpSecret = generateSecret();
-    const totpUrl = totpUriFor(email, totpSecret);
+    const totpUrl = totpUriFor(email, totpSecret, options.issuer);
     await provisionMfaEnrolment(
       { query },
       subjectRealm,
