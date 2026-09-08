@@ -285,16 +285,22 @@ function SplitDialog({
   const [busy, setBusy] = useState(false);
 
   const guestCount = Math.max(1, Math.min(50, Number(guests) || 1));
-  const customerOptions = [
-    { value: "", label: "بدون مشتری" },
-    ...customers.map((customer) => ({
-      value: customer.id,
-      label: customer.phone
-        ? `${customer.name} — ${toPersianDigits(customer.phone)}`
-        : customer.name,
-      searchString: `${customer.name} ${customer.phone ?? ""}`,
-    })),
-  ];
+
+  // ⚡ Bolt: Prevent array recreation on every keystroke. customerOptions was recomputed
+  // on every render (e.g. typing in the customerQuery box), running string normalizations.
+  const customerOptions = useMemo(
+    () => [
+      { value: "", label: "بدون مشتری" },
+      ...customers.map((customer) => ({
+        value: customer.id,
+        label: customer.phone
+          ? `${customer.name} — ${toPersianDigits(customer.phone)}`
+          : customer.name,
+        searchString: `${customer.name} ${customer.phone ?? ""}`,
+      })),
+    ],
+    [customers],
+  );
 
   // ⚡ Bolt: Prevent O(G * L) array recreation. When mode is "itemized", every line item
   // rendered its own identical array of guest options. This computes it once per guest count change.
