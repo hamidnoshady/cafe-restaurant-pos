@@ -57,7 +57,14 @@ export function clientIpFrom(headers: Headers, trustedHops: number): string {
     const parts = forwarded.split(",").map((s) => s.trim());
 
     if (trustedHops > 0) {
-      const index = Math.max(0, parts.length - 1 - trustedHops);
+      // Count back `trustedHops` entries from the end, NOT one further. The
+      // last entry was appended by our own trusted proxy and names the peer it
+      // saw, so with the default one hop that entry *is* the client. Taking
+      // `length - 1 - trustedHops` reads one position further left, which on a
+      // forged `X-Forwarded-For: 1.2.3.4` returns the attacker's own value —
+      // letting them pin the login limiter to someone else's address. This is
+      // the index Phase 24 specified; the code had drifted from it.
+      const index = Math.max(0, parts.length - trustedHops);
       return parts[index];
     }
 
