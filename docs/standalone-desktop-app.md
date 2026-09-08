@@ -80,7 +80,7 @@ allows:
   certificate is a separate, ongoing cost/process — until then, this is the
   expected (if unfriendly-looking) behavior, not a bug.
 
-## Two packaging constraints that will re-break this if changed
+## Packaging constraints that will re-break this if changed
 
 Both of these were live bugs that made the installed app fail on launch, and
 both look like harmless cleanups from the outside. They're recorded here
@@ -120,6 +120,28 @@ This flag only affects cluster *creation*. `isDataDirInitialised()` gates on
 `pgdata/PG_VERSION`, so an install that already created a WIN1256 cluster
 won't be repaired by upgrading — that `pgdata` directory has to be deleted so
 the next launch re-initialises it.
+
+**4. The `extraResources` node_modules filter must exclude
+`@embedded-postgres/{linux,darwin}-*`.** The root `package.json` depends on
+`@embedded-postgres/linux-x64` (added in #415, for the Linux/Docker
+deployments where the *app* needs an embedded cluster). Nothing on Windows
+ever loads it — `main.js` gets its Postgres from `@embedded-postgres/
+windows-x64` inside `app.asar.unpacked` — but `extraResources` copies the
+whole of `../node_modules`, so without the exclusion those 59 MB of Linux
+binaries go into the payload, and `libpq.so`/`libpq.so.5` are **symlinks**.
+7-Zip stops on them while building the NSIS archive:
+
+    WARNING: The directory name is invalid.
+    .\resources\app\node_modules\@embedded-postgres\linux-x64\native\lib\libpq.so\
+
+and electron-builder fails the whole build with `Exit code: 1` from `7za a`,
+*after* it has already produced `win-unpacked/` — so the unpacked app looks
+fine and only the installer `.exe` is missing. This is the same class of
+failure as the `winCodeSign` one that `scripts/prepare-wincodesign-cache.js`
+works around (Windows cannot create a symlink without
+`SeCreateSymbolicLinkPrivilege`), just on the payload side instead of the
+toolchain side. Don't "tidy up" the exclusion because the build is green — it
+is green *because* of it, and the failure only appears at the very last step.
 
 ## Building the installer
 
