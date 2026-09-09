@@ -49,13 +49,14 @@ export const CMS_NAV_ITEMS: readonly WebsiteNavItem<CmsSectionKey>[] = [
   { key: "setup", label: "ساخت سایت", description: "دامنه، CDN آروان، نوع سایت و ساخت." },
   { key: "content", label: "محتوا", description: "صفحه‌ها و نوشته‌های سایت." },
   { key: "store", label: "فروشگاه", description: "محصولات و سفارش‌های فروشگاه اینترنتی." },
-  { key: "settings", label: "تنظیمات و همگام‌سازی", description: "اتصال، ارسال قیمت و موجودی به سایت." },
+  { key: "settings", label: "تنظیمات همگام‌سازی", description: "اینکه قیمت و موجودی کدام کالا به سایت برود." },
   { key: "billing", label: "اشتراک و صورت‌حساب", description: "هزینهٔ سایت، دامنه و تمدید." },
 ];
 
 export const WP_NAV_ITEMS: readonly WebsiteNavItem<WpSectionKey>[] = [
   { key: "overview", label: "میز کار فروشگاه", description: "وضعیت اتصال و همگام‌سازی." },
-  { key: "connections", label: "اتصال فروشگاه", description: "ووکامرس و افزونهٔ وردپرس." },
+  // No `connections` entry: the store connection lives in the «اتصال‌های فنی»
+  // hub, and the overview links there when no store is linked yet.
   { key: "products", label: "محصولات", description: "کالاهای همگام‌شده و عملیات فروشگاه." },
   { key: "orders", label: "سفارش‌ها", description: "سفارش‌های آنلاین، وضعیت و برگشت وجه." },
   { key: "customers", label: "مشتریان فروشگاه", description: "مشتریان همگام‌شده از فروشگاه." },

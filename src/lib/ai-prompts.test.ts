@@ -28,11 +28,12 @@ describe("PROMPT_FRAGMENTS", () => {
       "rule:toman",
       "rule:mobile",
       "rule:describe_app",
+      // No `app:connections`: the «اتصال‌های فنی» hub is shell
+      // infrastructure, not an app, so it contributes no prompt fragment.
       "app:sales",
       "app:growth",
       "app:operations",
       "app:accounting",
-      "app:connections",
       "app:settings",
       "project",
     ];
@@ -150,7 +151,7 @@ describe("assembleFromFragments", () => {
   });
 
   it("produces shorter output for a single-app turn than a full turn", () => {
-    const fullKeys = fragmentsForTurn({ mode: "dashboard", apps: ["sales", "growth", "operations", "accounting", "connections", "settings"] });
+    const fullKeys = fragmentsForTurn({ mode: "dashboard", apps: ["sales", "growth", "operations", "accounting", "website", "settings"] });
     const singleKeys = fragmentsForTurn({ mode: "dashboard", apps: ["sales"] });
 
     const fullPrompt = assembleFromFragments(fullKeys, { businessName: "Test" });

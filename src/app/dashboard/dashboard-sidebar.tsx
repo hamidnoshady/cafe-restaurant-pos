@@ -49,7 +49,7 @@ import {
   type DashboardSidebarPreference,
 } from "@/lib/sidebar-state";
 import { isAssistantSurface } from "@/lib/assistant-route";
-import type { AppKey } from "@/lib/apps";
+import { appForModule, isAppKey, type AppKey } from "@/lib/apps";
 import type { AppAvailabilityState } from "@/lib/app-availability";
 import { appShellForPathname, isInsideAnyAppShell, type AppShellDef } from "@/lib/app-shells";
 import { AppStateBadge } from "./app-availability-gate";
@@ -155,7 +155,7 @@ const NAV_ICONS: Record<string, LucideIcon> = {
 };
 
 /**
- * The apps the workspace rail launches, in rail order.
+ * The apps the workspace rail launches, in rail order — plus the one hub.
  *
  * A table rather than a block of markup per app: the rail is the front door to
  * every app in the platform, so adding one (the CRM, and whatever follows it)
@@ -168,9 +168,13 @@ const NAV_ICONS: Record<string, LucideIcon> = {
  * actually reach (their trade's modules, their role, their feature flags — the
  * nav list is already filtered for all three) are considered, which is what
  * makes an app disappear from the rail for a business that does not have it.
+ *
+ * The last entry is not an app: «اتصال‌های فنی» is the shell's technical hub
+ * (src/lib/apps.ts), launched from the rail like an app but never badged and
+ * never gated.
  */
 const WORKSPACE_APP_LAUNCHERS: readonly {
-  key: AppKey;
+  key: AppKey | "connections";
   label: string;
   icon: LucideIcon;
   hrefs: readonly string[];
@@ -179,9 +183,10 @@ const WORKSPACE_APP_LAUNCHERS: readonly {
     key: "accounting",
     label: "حسابداری",
     icon: CalculatorIcon,
-    // The accounting overview is available to every member who can see this
-    // rail; ledger and reports stay reachable from the app's own sidebar.
-    hrefs: ["/dashboard/overview", "/dashboard/ledger", "/dashboard/reports"],
+    // The app's own pages first: opening «حسابداری» lands on the ledger, not
+    // on the sales overview. The overview is only the fallback for a member
+    // whose role cannot open the ledger or the reports at all.
+    hrefs: ["/dashboard/ledger", "/dashboard/reports", "/dashboard/overview"],
   },
   {
     key: "crm",
@@ -206,12 +211,13 @@ const WORKSPACE_APP_LAUNCHERS: readonly {
     key: "website",
     label: "مدیریت وب‌سایت",
     icon: GlobeIcon,
-    // One launcher for both managers. The app home is first; `/dashboard/wp`
-    // stays in the list because a saved bottom-nav slot or bookmark from the
-    // standalone WP Manager still points there (it redirects into the app).
-    // Do not fall back to the technical connection hub: that would put
-    // WooCommerce and the CMS back behind the Accounting/Connections door.
-    hrefs: ["/dashboard/website", "/dashboard/wp"],
+    // One launcher for both managers, opening the app home. (The old
+    // `/dashboard/wp` prefix still forwards into the app for bookmarks and
+    // saved bottom-nav slots, but it is not a nav entry anymore, so it is not
+    // a launcher fallback either.) Do not fall back to the technical
+    // connection hub: that would put the site managers back behind the
+    // Accounting/Connections door.
+    hrefs: ["/dashboard/website"],
   },
   {
     key: "connections",
@@ -381,16 +387,30 @@ function WorkspaceRail({ navItems, pathname }: { navItems: NavItem[]; pathname: 
   // route lands in the app rather than on a 404. An app with no reachable
   // route (its modules are not this trade's) is simply not listed.
   // An app's state («به‌زودی», «در حال تعمیر», …) travels on the nav entries the
-  // layout already resolved, so the rail badges the launcher with exactly what
-  // the flat sidebar shows for the same app rather than re-deriving it.
-  const stateByHref = new Map(
-    navItems.flatMap((item) => (item.href && item.appState ? [[item.href, item.appState] as const] : [])),
-  );
+  // layout already resolved — grouped here by *owning app*, so each launcher
+  // wears its own app's badge, exactly what the flat sidebar shows for the
+  // same app, rather than re-deriving it. Looking the state up by the
+  // launcher's resolved href instead is what once badged «حسابداری» with the
+  // *sales* app's «به‌زودی»: the launcher opened the sales overview, which is
+  // a sales page, not an accounting one. The hub entry has no app and so is
+  // never badged.
+  const stateByApp = new Map<AppKey, NonNullable<NavItem["appState"]>>();
+  for (const item of navItems) {
+    if (!item.appState) continue;
+    const owner = appForModule(item.module);
+    if (owner && !stateByApp.has(owner)) stateByApp.set(owner, item.appState);
+  }
   const launchers = WORKSPACE_APP_LAUNCHERS.flatMap((launcher) => {
     const href = launcher.hrefs.find((candidate) => hrefs.includes(candidate));
-    return href
-      ? [{ ...launcher, href, active: isActive(pathname, href), appState: stateByHref.get(href) }]
-      : [];
+    if (!href) return [];
+    return [
+      {
+        ...launcher,
+        href,
+        active: isActive(pathname, href),
+        appState: isAppKey(launcher.key) ? stateByApp.get(launcher.key) : undefined,
+      },
+    ];
   });
 
   return (

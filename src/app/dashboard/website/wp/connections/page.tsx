@@ -1,20 +1,11 @@
 import { redirect } from "next/navigation";
-import { getSession } from "@/lib/auth";
-import { WpConnectionPanel } from "../woocommerce-connection-panel";
 
 /**
- * The store connection surfaces, inside the WP Manager app.
- *
- * Reuses the existing WooCommerce panel wholesale — connection create/rotate/
- * settings live there, and duplicating them would make the two doors drift.
- * This is now the only owner-facing WooCommerce connection screen. The rest of
- * this app owns products, orders, customers, taxonomies, content, media and
- * the sync queue; the generic technical connection hub no longer renders Woo.
+ * The store connection moved to the «اتصال‌های فنی» hub: every technical
+ * connection in the product lives there, and the website app manages the
+ * sites themselves only. Kept as a redirect — bookmarks, older release
+ * notes and cached shells still point at this path.
  */
-export default async function WpConnectionsPage() {
-  const session = await getSession();
-  if (!session) redirect("/login");
-  if (session.role !== "owner" && session.role !== "manager") redirect("/dashboard");
-
-  return <WpConnectionPanel />;
+export default function WpConnectionsRedirect() {
+  redirect("/dashboard/connections?tab=woocommerce");
 }

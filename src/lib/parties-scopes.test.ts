@@ -63,8 +63,9 @@ describe("the scope list", () => {
     expect(partyScopeForApp("growth")?.key).toBe("growth");
     // The website app publishes posts; it has no business listing who the
     // business pays, and `null` is what stops a nav entry being invented for it.
+    // (Every other app mounts a scope. The «اتصال‌های فنی» hub asks no such
+    // question: it is not an app, so it is not an argument here at all.)
     expect(partyScopeForApp("website")).toBeNull();
-    expect(partyScopeForApp("connections")).toBeNull();
   });
 });
 

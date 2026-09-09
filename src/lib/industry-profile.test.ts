@@ -263,24 +263,30 @@ describe("moduleForApiPath", () => {
   });
 
   it("leaves cross-industry routes ungated", () => {
-    for (const path of [
-      "/api/auth/login",
-      "/api/customers",
-      "/api/ledger/entries",
-      "/api/reports/sales",
-      "/api/settings/business",
-      "/api/locations/active",
-    ]) {
+    for (const path of ["/api/auth/login", "/api/customers", "/api/locations/active"]) {
       expect(moduleForApiPath(path), path).toBeNull();
     }
   });
 
-  it("leaves the industry routes to their own stricter guard", () => {
-    // requireIndustryForApi already checks these against the exact industry,
-    // which is stronger than a module lookup; double-gating would be noise.
-    for (const path of ["/api/jewelry/items", "/api/watch/units", "/api/accessories/items"]) {
-      expect(moduleForApiPath(path), path).toBeNull();
-    }
+  it("attributes the app-owned APIs to their modules, so a به‌زودی blocks the API with the page", () => {
+    // The consistency rule: the module a nav entry is badged by must be the
+    // module its API answers under — otherwise an app «به‌زودی» blocks the
+    // pages while the APIs keep answering.
+    expect(moduleForApiPath("/api/ledger/entries")).toBe("ledger");
+    expect(moduleForApiPath("/api/reports/sales")).toBe("reports");
+    expect(moduleForApiPath("/api/settings/business")).toBe("settings");
+    expect(moduleForApiPath("/api/dashboard/overview")).toBe("dashboard");
+    expect(moduleForApiPath("/api/waiter/board")).toBe("waiter");
+    expect(moduleForApiPath("/api/sales/invoices")).toBe("pos");
+  });
+
+  it("attributes the industry routes to their modules on top of their stricter guard", () => {
+    // requireIndustryForApi still checks these against the exact industry in
+    // the handler; the module row is what lets an operations «به‌زودی» refuse
+    // them the way it refuses their pages.
+    expect(moduleForApiPath("/api/jewelry/items")).toBe("jewelry");
+    expect(moduleForApiPath("/api/watch/units")).toBe("watch");
+    expect(moduleForApiPath("/api/accessories/items")).toBe("accessories");
   });
 });
 
@@ -292,9 +298,12 @@ describe("moduleForPagePath", () => {
     expect(moduleForPagePath("/dashboard/connections")).toBe("connections");
   });
 
-  it("leaves the dashboard root and settings ungated", () => {
+  it("leaves the dashboard root ungated and attributes settings to its module", () => {
     expect(moduleForPagePath("/dashboard")).toBeNull();
-    expect(moduleForPagePath("/dashboard/settings")).toBeNull();
+    // The settings family belongs to the settings app — a settings «به‌زودی»
+    // must block these pages rather than let them through unbadged.
+    expect(moduleForPagePath("/dashboard/settings")).toBe("settings");
+    expect(moduleForPagePath("/dashboard/settings/team")).toBe("settings");
   });
 
   it("names only modules that exist", () => {

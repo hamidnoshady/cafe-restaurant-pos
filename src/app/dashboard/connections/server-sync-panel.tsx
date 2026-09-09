@@ -3,12 +3,13 @@
 import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
 
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
+import { useFeatureLocked } from "@/components/feature-lock";
 /**
- * Owner-only settings for the bidirectional server-to-server sync (Phase 11):
- * connects this server to a remote peer (café laptop <-> VPS) and reuses the
- * client offline-queue's idempotency engine. Previously only reachable via
- * PUT /api/server-sync/config directly (see docs/server-sync.md, which
- * already documented a "Settings → Server Sync" page that didn't exist yet).
+ * «سرور راه دور» — the «اتصال‌های فنی» hub's tab for the bidirectional
+ * server-to-server sync (Phase 11): connects this server to a remote peer
+ * (café laptop <-> VPS) and reuses the client offline-queue's idempotency
+ * engine. Owner-only, gated by the `offline_mode` feature; the old
+ * «همگام‌سازی با سرور راه دور» settings tab redirects here.
  */
 import { useCallback, useEffect, useState } from "react";
 import { toPersianDigits } from "@/lib/digits";
@@ -100,7 +101,7 @@ function StatusRow({ label, value, tone }: { label: string; value: string; tone?
   );
 }
 
-export function ServerSyncSettings() {
+export function ServerSyncPanel() {
   const [config, setConfig] = useState<ConfigView | null>(null);
   const [role, setRole] = useState<DeploymentRole>("site");
   const [resolvedRemoteUrl, setResolvedRemoteUrl] = useState("");
@@ -122,8 +123,16 @@ export function ServerSyncSettings() {
   const [copied, setCopied] = useState(false);
   /** The genuinely-moved-VPS case: the derived address is wrong and must be typed. */
   const [overriding, setOverriding] = useState(false);
+  const locked = useFeatureLocked();
 
   const load = useCallback(async () => {
+    // Locked preview: /api/server-sync/* answers `feature_disabled` without
+    // `offline_mode`, so asking would only paint the preview with a load
+    // error. The empty form underneath is the preview.
+    if (locked) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     const { ok, data } = await api<{
       config: ConfigView | null;
@@ -154,7 +163,7 @@ export function ServerSyncSettings() {
       setError(errorMessage(data.error));
     }
     setLoading(false);
-  }, []);
+  }, [locked]);
 
   useEffect(() => {
     void load();

@@ -3,24 +3,25 @@
 import { LoadingSkeleton } from "@/app/dashboard/page-chrome";
 
 /**
- * «تنظیمات و همگام‌سازی» — the CMS manager's wiring section (Phase 38,
- * issues #379 / #381; moved out of the technical connections hub when both
- * website systems became managers of «مدیریت وب‌سایت»).
+ * «تنظیمات همگام‌سازی» — what the POS pushes to the CMS site, and the queue
+ * it pushes through (Phase 38, issues #379 / #381).
  *
- * Three things, in the order an owner meets them:
+ * Two things, in the order an owner meets them:
  *
- *   1. **Connect.** CMS address, domain, key — tested before it is saved, and
- *      never shown again afterwards (the summary is masked; there is no field
- *      for the key in any response).
- *   2. **What goes to the site.** Two independent switches — prices, stock —
+ *   1. **What goes to the site.** Two independent switches — prices, stock —
  *      and the product list where each row is marked to go (default: none).
- *   3. **The queue.** Pending / failed / stopped rows, each with «تلاش مجدد»,
+ *   2. **The queue.** Pending / failed / stopped rows, each with «تلاش مجدد»,
  *      and «همگام‌سازی اکنون» for the impatient.
  *
- * Content — posts, product copy — is written in this manager's «محتوا» and
- * «فروشگاه» sections and by the assistant; this section is the wiring.
+ * The connection itself — address, domain, key, test and disconnect — is
+ * deliberately not here: every technical connection in the product lives in
+ * the «اتصال‌های فنی» hub, and this section links there when no site is
+ * connected yet. Content — posts, product copy — is written in this manager's
+ * «محتوا» and «فروشگاه» sections and by the assistant.
  */
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import { PlugZapIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatJalali } from "@/lib/jalali";
 import { formatRial } from "@/lib/money";
@@ -28,7 +29,7 @@ import { formatPersianNumber, toPersianDigits } from "@/lib/digits";
 import { WEBSITE_ERROR_LABELS } from "@/lib/website/adapter";
 import { WEBSITE_OUTBOX_KIND_LABELS, WEBSITE_OUTBOX_STATUS_LABELS } from "@/lib/website/sync";
 import { EmptyState, SectionCard, StatusBadge } from "@/app/dashboard/page-chrome";
-import { api, ErrorBox, errorMessageOrRaw, Field, InfoBox, inputClass } from "@/app/dashboard/ui";
+import { api, ErrorBox, errorMessageOrRaw, InfoBox, inputClass } from "@/app/dashboard/ui";
 
 interface ConnectionSummary {
   id: string;
@@ -116,163 +117,31 @@ export function CmsSyncSettings() {
     void load();
   }, [load]);
 
-  if (loading) return <LoadingSkeleton label="در حال بارگذاری اتصال وب‌سایت…" />;
+  if (loading) return <LoadingSkeleton label="در حال بارگذاری همگام‌سازی وب‌سایت…" />;
 
   return (
     <div className="space-y-4">
       <ErrorBox>{error}</ErrorBox>
-      {!enabled ? null : connection ? (
+      {!enabled || !connection ? (
+        <SectionCard
+          title="همگام‌سازی با سایت"
+          description="سایتی وصل نیست. ابتدا سایت را در «اتصال‌های فنی» وصل کنید — همین‌که وصل شد، اینجا مشخص می‌کنید قیمت و موجودی کدام کالا به سایت برود."
+        >
+          <Button asChild variant="outline" className="px-4">
+            <Link href="/dashboard/connections?tab=website">
+              <PlugZapIcon className="size-4" />
+              اتصال سایت
+            </Link>
+          </Button>
+        </SectionCard>
+      ) : (
         <>
-          <ConnectedCard connection={connection} onChange={load} />
           <SyncSettingsCard connection={connection} onChange={load} />
           <ProductsCard />
           <QueueCard summary={queue} onChange={load} />
         </>
-      ) : (
-        <ConnectForm onConnected={load} />
       )}
     </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Connect
-// ---------------------------------------------------------------------------
-
-function ConnectForm({ onConnected }: { onConnected: () => Promise<void> }) {
-  const [baseUrl, setBaseUrl] = useState("");
-  const [siteDomain, setSiteDomain] = useState("");
-  const [apiKey, setApiKey] = useState("");
-  const [siteCurrency, setSiteCurrency] = useState<"IRT" | "IRR">("IRT");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    setBusy(true);
-    setError(null);
-    const res = await api<{ connection: ConnectionSummary }>("/api/connections/website", {
-      method: "POST",
-      body: JSON.stringify({ adapterKey: "payload", baseUrl, siteDomain, apiKey, siteCurrency }),
-    });
-    setBusy(false);
-    if (!res.ok) {
-      setError(describeError((res.data as { error?: string }).error));
-      return;
-    }
-    setApiKey("");
-    await onConnected();
-  }
-
-  return (
-    <SectionCard
-      title="اتصال وب‌سایت"
-      description="کلید پیش از ذخیره آزمایش می‌شود؛ کلیدی که کار نکند ذخیره نمی‌شود. کلید پس از ذخیره دیگر نمایش داده نمی‌شود."
-    >
-      <form onSubmit={submit} className="max-w-xl">
-        <ErrorBox>{error}</ErrorBox>
-        <Field label="آدرس CMS" hint="مثلاً https://cms.example.com">
-          <input className={inputClass} dir="ltr" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} required />
-        </Field>
-        <Field label="دامنهٔ سایت" hint="دامنه‌ای که سایت روی آن دیده می‌شود، بدون http">
-          <input className={inputClass} dir="ltr" value={siteDomain} onChange={(e) => setSiteDomain(e.target.value)} required />
-        </Field>
-        <Field label="کلید API سایت" hint="از پنل CMS، با پیشوند eshobe_live_">
-          <input
-            className={inputClass}
-            dir="ltr"
-            type="password"
-            autoComplete="off"
-            value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
-            required
-          />
-        </Field>
-        <Field label="واحد قیمت در سایت" hint="قیمت‌ها در این برنامه همیشه ریال‌اند؛ تبدیل به واحد سایت خودکار انجام می‌شود.">
-          <select className={inputClass} value={siteCurrency} onChange={(e) => setSiteCurrency(e.target.value as "IRT" | "IRR")}>
-            <option value="IRT">تومان</option>
-            <option value="IRR">ریال</option>
-          </select>
-        </Field>
-        <Button type="submit" disabled={busy}>
-          {busy ? "در حال آزمایش اتصال…" : "آزمایش و ذخیره"}
-        </Button>
-      </form>
-    </SectionCard>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Connected
-// ---------------------------------------------------------------------------
-
-function ConnectedCard({ connection, onChange }: { connection: ConnectionSummary; onChange: () => Promise<void> }) {
-  const [busy, setBusy] = useState<"test" | "disconnect" | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  async function test() {
-    setBusy("test");
-    setError(null);
-    setMessage(null);
-    const res = await api<{ ok: boolean; siteName: string | null; error?: string }>("/api/connections/website/test", {
-      method: "POST",
-    });
-    setBusy(null);
-    if (!res.ok) setError(describeError((res.data as { error?: string }).error));
-    else setMessage(res.data.siteName ? `اتصال برقرار است — «${res.data.siteName}»` : "اتصال برقرار است.");
-    await onChange();
-  }
-
-  async function disconnect() {
-    if (!window.confirm("اتصال وب‌سایت قطع شود؟ سایت و محتوایش می‌مانند؛ فقط کلید ذخیره‌شده پاک می‌شود.")) return;
-    setBusy("disconnect");
-    await api("/api/connections/website", { method: "DELETE" });
-    setBusy(null);
-    await onChange();
-  }
-
-  return (
-    <SectionCard
-      title="اتصال فعال"
-      actions={
-        <>
-          <Button type="button" variant="outline" size="sm" onClick={test} disabled={busy !== null}>
-            {busy === "test" ? "در حال آزمایش…" : "آزمایش اتصال"}
-          </Button>
-          <Button type="button" variant="ghost" size="sm" onClick={disconnect} disabled={busy !== null}>
-            قطع اتصال
-          </Button>
-        </>
-      }
-    >
-      <ErrorBox>{error}</ErrorBox>
-      {message ? <InfoBox>{message}</InfoBox> : null}
-      <dl className="grid gap-3 text-sm sm:grid-cols-2">
-        <div>
-          <dt className="text-muted-foreground">دامنه</dt>
-          <dd dir="ltr" className="text-start font-medium">{connection.siteDomain}</dd>
-        </div>
-        <div>
-          <dt className="text-muted-foreground">وضعیت</dt>
-          <dd>
-            {connection.lastError ? (
-              <StatusBadge tone="danger">{describeError(connection.lastError)}</StatusBadge>
-            ) : (
-              <StatusBadge tone="positive">متصل</StatusBadge>
-            )}
-          </dd>
-        </div>
-        <div>
-          <dt className="text-muted-foreground">آخرین آزمایش</dt>
-          <dd>{connection.lastCheckedAt ? formatJalali(connection.lastCheckedAt, { withTime: true }) : "—"}</dd>
-        </div>
-        <div>
-          <dt className="text-muted-foreground">واحد قیمت سایت</dt>
-          <dd>{connection.siteCurrency === "IRR" ? "ریال" : connection.siteCurrency === "IRT" ? "تومان" : connection.siteCurrency}</dd>
-        </div>
-      </dl>
-    </SectionCard>
   );
 }
 

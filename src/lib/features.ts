@@ -104,11 +104,13 @@ export const PAGE_FEATURE_PREFIXES: [string, string][] = [
   ["/dashboard/locations", "offline_mode"],
   ["/dashboard/backup", "backup"],
   ["/dashboard/ai", "ai_assistant"],
-  // The legacy `/dashboard/integrations` route still hosts the Holoo compatibility
-  // page; the WordPress/WooCommerce manager is now a manager *inside* «مدیریت
-  // وب‌سایت» and lives under its prefix. Only that half is entitlement-gated:
-  // `/dashboard/website` itself (the app home and the Eshobe CMS manager) is
-  // not, so a business without `integrations` still reaches its platform site.
+  // The legacy `/dashboard/integrations` route redirects to the «اتصال‌های فنی»
+  // hub's «وردپرس و ووکامرس» tab; the WordPress/WooCommerce manager is a
+  // manager *inside* «مدیریت وب‌سایت» and lives under its prefix. Both halves
+  // stay entitlement-gated — an unentitled business lands on a locked preview,
+  // not a dead end — while `/dashboard/website` itself (the app home and the
+  // Eshobe CMS manager) is not, so a business without `integrations` still
+  // reaches its platform site.
   ["/dashboard/integrations", "integrations"],
   ["/dashboard/website/wp", "integrations"],
   ["/dashboard/connections/holoo", "integrations"],

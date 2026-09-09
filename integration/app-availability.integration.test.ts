@@ -154,14 +154,14 @@ describe("effectiveAppAvailability", () => {
   });
 
   it("clearing an override falls back to the platform state", async () => {
-    await service.setPlatformAppAvailability("connections", { state: "coming_soon" }, null);
-    await service.setBusinessAppAvailability(biz.id, "connections", { state: "available" }, null);
-    expect(await service.isAppAvailable(biz.id, "connections")).toBe(true);
+    await service.setPlatformAppAvailability("growth", { state: "coming_soon" }, null);
+    await service.setBusinessAppAvailability(biz.id, "growth", { state: "available" }, null);
+    expect(await service.isAppAvailable(biz.id, "growth")).toBe(true);
 
-    await service.setBusinessAppAvailability(biz.id, "connections", null, null);
+    await service.setBusinessAppAvailability(biz.id, "growth", null, null);
     const map = await service.effectiveAppAvailability(biz.id);
-    expect(map.connections.state).toBe("coming_soon");
-    expect(map.connections.source).toBe("platform");
+    expect(map.growth.state).toBe("coming_soon");
+    expect(map.growth.source).toBe("platform");
   });
 
   it("an override on one business never affects another", async () => {

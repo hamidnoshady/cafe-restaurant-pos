@@ -59,10 +59,13 @@ export const MODULE_KEYS = [
   "stock",
   "ledger",
   "integrations",
-  // Technical connection management (desktop pairing, API and MCP). WooCommerce
-  // and WordPress management is a separate `integrations` module owned by the
-  // WP Manager app; keeping these keys distinct prevents the two products from
-  // sharing a navigation door.
+  // The «اتصال‌های فنی» hub (/dashboard/connections): every technical
+  // connection in the product — desktop pairing, WordPress/WooCommerce, the
+  // Eshobe CMS site, Holoo, the remote server sync, MCP and API keys. The hub
+  // is shell infrastructure, not an app (src/lib/apps.ts), so this module is
+  // intentionally unassigned there: it gates *visibility* of the hub's door,
+  // never availability. `integrations` stays separate: it is the WordPress
+  // *management* half of «مدیریت وب‌سایت», not a connection.
   "connections",
   "reports",
   "ai",
@@ -321,10 +324,30 @@ export function labelFor(industry: Industry, key: LabelKey): string {
  * Dashboard page prefix → the module that owns it, for each gated page's own
  * redirect. Deliberately the same shape as `features.ts`'s
  * `PAGE_FEATURE_PREFIXES`, so the two guards read alike at their call sites.
+ *
+ * This list must stay in lock-step with the nav (`navItemsFor` in
+ * src/app/dashboard/layout.tsx): the sidebar badges an entry with the state
+ * of the app that owns its *nav* module, while `AppAvailabilityGate` blocks
+ * the page behind the state of the app that owns its *path* module. A page
+ * missing here is a page whose badge says «به‌زودی» while its door stands
+ * open — which is exactly the bug this list once had for the ledger, the
+ * reports, the sales overview and the settings pages. When a nav entry is
+ * added, its href's prefix belongs here, mapped to the same module.
+ *
+ * Deliberately ungated: `/dashboard` itself (the workspace chat home in the
+ * workspace shell — the gate treats it as the sales overview only in the
+ * classic shell, where that is what it renders), `/dashboard/projects` and
+ * `/dashboard/ai`. The explanation screen has to be reachable from somewhere.
  */
 export const PAGE_MODULE_PREFIXES: readonly (readonly [string, ModuleKey])[] = [
+  // The sales overview. `/dashboard` itself stays ungated (see above).
+  ["/dashboard/overview", "dashboard"],
   ["/dashboard/orders", "orders"],
   ["/dashboard/pos", "pos"],
+  // The flat «مشتریان» route redirects into the CRM app; mapping it to the
+  // same module keeps the badge and the gate on the same app before the
+  // redirect lands.
+  ["/dashboard/customers", "customers"],
   ["/dashboard/floor", "tables"],
   ["/dashboard/waiter", "waiter"],
   ["/dashboard/kitchen", "kitchen"],
@@ -359,24 +382,70 @@ export const PAGE_MODULE_PREFIXES: readonly (readonly [string, ModuleKey])[] = [
   // listed first because the first match wins.
   ["/dashboard/website/wp", "integrations"],
   ["/dashboard/website", "website"],
-  // Technical connections stay a separate app surface: that one owns
-  // desktop/API/MCP credentials, «مدیریت وب‌سایت» owns the site connections.
+  // The legacy WordPress manager prefix and the legacy integrations page both
+  // forward — into the website app and into the connections hub respectively —
+  // but they forward *through* the gate, so they carry the website app's
+  // module and a «به‌زودی» website shows its explanation instead of forwarding.
+  ["/dashboard/wp", "integrations"],
+  ["/dashboard/integrations", "integrations"],
+  // The «اتصال‌های فنی» hub. Its module is intentionally unassigned in
+  // `apps.ts` — the hub is shell infrastructure, not an app — so this prefix
+  // answers the module question without ever blocking the page.
   ["/dashboard/connections", "connections"],
   ["/dashboard/stock", "stock"],
+  // The accounting suite's own pages.
+  ["/dashboard/ledger", "ledger"],
+  ["/dashboard/reports", "reports"],
+  // Settings and everything anchored on it (billing, support, the knowledge
+  // centre), including the legacy routes that redirect into settings. The nav
+  // badges all of these with the settings app's state, so the gate must block
+  // on the same app rather than waving them through.
+  ["/dashboard/settings", "settings"],
+  ["/dashboard/billing", "settings"],
+  ["/dashboard/support", "settings"],
+  ["/dashboard/knowledge", "settings"],
+  ["/dashboard/team", "settings"],
+  ["/dashboard/backup", "settings"],
+  ["/dashboard/branches", "settings"],
+  ["/dashboard/locations", "settings"],
+  ["/dashboard/guides", "settings"],
+  ["/dashboard/help", "settings"],
 ];
 
 /**
  * API route prefix → the module that owns it.
  *
  * Same role as `featureForApiPath`: without it, hiding a nav entry would be
- * decoration — the routes would still answer. Prefixes not listed here belong
- * to every industry (auth, settings, locations, customers, ledger, reports, …)
- * or are already industry-gated by `requireIndustryForApi` at the handler
- * (`/api/jewelry/*`, `/api/watch/*`, `/api/accessories/*`), which is a stricter
- * check than this one and stays as it is.
+ * decoration — the routes would still answer. Two axes read this list, and
+ * they want different things from it: the industry guard refuses a module the
+ * trade does not have, while the availability guard refuses an app that is
+ * «به‌زودی» / «در حال تعمیر» / «غیرفعال». A data route missing here keeps
+ * answering while its app's pages show the explanation screen.
+ *
+ * Deliberately ungated: cross-cutting routes every surface calls (auth,
+ * customers — the POS's credit-payment picker reads the directory,
+ * parties, billing, printers, devices, notifications, support, knowledge),
+ * server-to-server and machine routes (rollup, server-sync, pairing, mcp,
+ * v1, webhooks), and the hub's own connection endpoints (`/api/connections/*`
+ * and the carved-out CMS connection routes below — the hub is not an app and
+ * must keep working while any app is down).
+ *
+ * The per-industry routes (`/api/jewelry/*` and friends) are listed here
+ * *as well as* keeping their stricter `requireIndustryForApi` handler check:
+ * the module answer is the same either way, but without a row here the
+ * availability guard could never refuse them and an operations «به‌زودی»
+ * would block the pages while the APIs kept answering.
+ *
+ * First match wins — the longer CMS prefixes below must stay above the
+ * catch-all `/api/cms/website`.
  */
 const API_MODULE_PREFIXES: readonly (readonly [string, ModuleKey])[] = [
   ["/api/orders", "orders"],
+  // Retail invoices are written and read from the selling screen itself
+  // (`/dashboard/pos` in invoice mode), so they belong to `pos`, not `orders`.
+  ["/api/sales", "pos"],
+  ["/api/dashboard", "dashboard"],
+  ["/api/waiter", "waiter"],
   ["/api/menu", "menu"],
   ["/api/tables", "tables"],
   ["/api/table-sessions", "tables"],
@@ -389,18 +458,51 @@ const API_MODULE_PREFIXES: readonly (readonly [string, ModuleKey])[] = [
   ["/api/loyalty", "loyalty"],
   ["/api/promotions", "promotions"],
   ["/api/commission", "commission"],
+  // The Growth & Marketing app's own API surface, anchored on `loyalty` like
+  // its pages: every trade with growth has loyalty.
+  ["/api/growth", "loyalty"],
   // Phase 36 — the CRM app's routes. The customer *directory* (`/api/customers`)
   // stays ungated: every trade has customers, and the POS's credit-payment
   // picker calls it. What the `crm` module gates is the CRM's own surfaces —
   // segments, the pipeline, cases, consent history.
   ["/api/crm", "crm"],
+  // The accounting suite's data routes — without these, an accounting
+  // «به‌زودی» would badge the pages while every figure kept loading.
+  ["/api/ledger", "ledger"],
+  ["/api/reports", "reports"],
+  ["/api/settings", "settings"],
+  // The per-industry data routes. See the note above: the stricter
+  // `requireIndustryForApi` check at each handler stays; this row is what lets
+  // the availability guard refuse them with the rest of operations.
+  ["/api/jewelry", "jewelry"],
+  ["/api/watch", "watch"],
+  ["/api/accessories", "accessories"],
+  ["/api/cosmetics", "cosmetics"],
+  ["/api/wholesale", "wholesale"],
+  ["/api/tools-fittings", "tools_fittings"],
+  ["/api/haberdashery", "haberdashery"],
+  // The CMS connection endpoints the «اتصال‌های فنی» hub owns — state, connect
+  // and disconnect, plus the site-domain change. Mapped to the hub's own
+  // `connections` module (which has no app, so the availability guard fails
+  // open) rather than left to the `/api/cms/website` catch-all below: the hub
+  // must keep managing the credential while the website app itself is down.
+  // The domain *purchase* endpoints stay website-owned — buying a domain is
+  // the setup wizard's business, not the hub's — so they are listed first.
+  ["/api/cms/website/domain/quote", "website"],
+  ["/api/cms/website/domain/order", "website"],
+  ["/api/cms/website/state", "connections"],
+  ["/api/cms/website/connect", "connections"],
+  ["/api/cms/website/connection", "connections"],
+  ["/api/cms/website/domain", "connections"],
   // Only the website manager's own screen — `/api/cms/revalidate` is the
   // CMS's inbound publish webhook (HMAC-verified, no session, no
   // `withTenantScope`) and must stay outside this list.
   ["/api/cms/website", "website"],
   // WP Manager read models are an app-owned surface. The generic connection
-  // endpoints are deliberately not listed here because they also serve the
-  // technical connection hub; their own role/tenant guards remain in force.
+  // endpoints (`/api/integrations/connections/*`, `/api/integrations/overview`)
+  // are deliberately not listed here because they serve the technical
+  // connection hub, which is not an app; their own role/tenant guards and the
+  // `integrations` feature flag remain in force.
   ["/api/integrations/wp-manager", "integrations"],
   // The website app's own cross-manager surface: which managers this business
   // has connected, and the billing for the platform site it runs. Both belong

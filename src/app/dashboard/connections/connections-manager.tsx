@@ -6,7 +6,10 @@ import { FeatureLock } from "@/components/feature-lock";
 import type { ConnectionKind, ConnectionKindKey } from "@/lib/connection-kinds";
 import { SectionNav } from "../section-nav";
 import { DesktopPanel } from "./desktop-panel";
+import { WpConnectionPanel } from "../website/wp/woocommerce-connection-panel";
+import { CmsConnectionPanel } from "./cms-panel";
 import { HolooPanel } from "./holoo-panel";
+import { ServerSyncPanel } from "./server-sync-panel";
 import { ApiTokensPanel } from "./api-tokens-panel";
 import { McpPanel } from "./mcp-panel";
 
@@ -60,7 +63,10 @@ export function ConnectionsManager({
 
         <FeatureLock locked={locked} title={activeKind.label}>
           {active === "desktop" ? <DesktopPanel /> : null}
+          {active === "woocommerce" ? <WpConnectionPanel /> : null}
+          {active === "website" ? <CmsConnectionPanel /> : null}
           {active === "holoo" ? <HolooPanel /> : null}
+          {active === "server_sync" ? <ServerSyncPanel /> : null}
           {active === "mcp" ? <McpPanel /> : null}
           {active === "api" ? <ApiTokensPanel /> : null}
         </FeatureLock>
