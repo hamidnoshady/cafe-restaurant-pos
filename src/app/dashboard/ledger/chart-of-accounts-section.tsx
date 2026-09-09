@@ -127,12 +127,16 @@ export function ChartOfAccountsSection({ busy, run }: { busy: boolean; run: Runn
 
   return (
     <div className="space-y-4">
-      <section aria-labelledby="add-account-heading" className={`${cardClass} p-4 sm:p-5`}>
-        <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">ساختار مالی</p>
-        <h2 id="add-account-heading" className="mt-1">افزودن حساب</h2>
-        <p className="mt-2 text-sm text-muted-foreground">فقط حساب‌های مجاز جدید را اضافه کنید؛ حساب‌های سیستمی و دارای سند همچنان با قوانین فعلی محافظت می‌شوند.</p>
-        {localError ? <p className="mt-4 rounded-xl border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">{localError}</p> : null}
-        <form onSubmit={submit} className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <section aria-labelledby="add-account-heading" className={cardClass}>
+        <header className="border-b border-border/80 px-4 py-4 sm:px-5">
+          <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">ساختار مالی</p>
+          <h2 id="add-account-heading" className="mt-1 text-base font-semibold text-foreground">افزودن حساب</h2>
+          <p className="mt-1 max-w-3xl text-xs leading-5 text-muted-foreground">
+            فقط حساب‌های مجاز جدید را اضافه کنید؛ حساب‌های سیستمی و دارای سند همچنان با قوانین فعلی محافظت می‌شوند.
+          </p>
+        </header>
+        {localError ? <p className="mx-4 mt-4 rounded-xl border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive sm:mx-5">{localError}</p> : null}
+        <form onSubmit={submit} className="grid gap-3 p-4 sm:p-5 md:grid-cols-2 xl:grid-cols-4">
           <label className="block">
             <span className="mb-1.5 block text-sm font-medium">کد حساب</span>
             <input className={inputClass} value={code} onChange={(e) => setCode(e.target.value)} placeholder="مثلاً ۶۱۰۰" required />
@@ -170,59 +174,63 @@ export function ChartOfAccountsSection({ busy, run }: { busy: boolean; run: Runn
         </form>
       </section>
 
-      <section aria-labelledby="chart-accounts-heading" className={`${cardClass} p-4 sm:p-5`}>
-        <div className="mb-4">
+      <section aria-labelledby="chart-accounts-heading" className={cardClass}>
+        <header className="border-b border-border/80 px-4 py-4 sm:px-5">
           <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">فهرست ساختار</p>
-          <h2 id="chart-accounts-heading" className="mt-1">سرفصل حساب‌ها</h2>
-        </div>
-        <div className="hidden overflow-x-auto lg:block">
-          <table className="w-full text-sm">
-            <thead><tr className="border-b border-border"><th className="py-3 pe-3 text-start">کد</th><th className="py-3 pe-3 text-start">حساب</th><th className="py-3 pe-3 text-start">نوع</th><th className="py-3 pe-3 text-start">سطح</th><th className="py-3 pe-3 text-start">ماهیت</th><th className="py-3 pe-3 text-start">والد</th><th className="py-3 pe-3 text-start">وضعیت</th><th className="py-3 text-start">عملیات</th></tr></thead>
-            <tbody>
-              {accounts.map((a) => (
-                <tr key={a.id} className="border-b border-border">
-                  <td className="py-3 pe-3 text-muted-foreground">{a.code}</td>
-                  <td className="py-3 pe-3 font-semibold">
-                    {a.name}
-                    {WELL_KNOWN_CODE_SET.has(a.code) ? <span className="ms-2 rounded-full bg-muted px-2 py-0.5 text-xs font-semibold text-amber-700 dark:text-amber-300">سیستمی</span> : null}
-                  </td>
-                  <td className="py-3 pe-3 text-muted-foreground">{TYPE_LABELS[a.type]}</td>
-                  <td className="py-3 pe-3 text-muted-foreground">{ACCOUNT_LEVEL_LABELS[a.level]}</td>
-                  <td className="py-3 pe-3 text-muted-foreground">
-                    {NORMAL_BALANCE_LABELS[a.normalBalance]}
-                    {a.isContra ? <span className="ms-1 text-xs">(کاهنده)</span> : null}
-                  </td>
-                  <td className="py-3 pe-3 text-muted-foreground">{a.parentCode ?? "—"}</td>
-                  <td className="py-3 pe-3"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${a.isActive ? "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-800 dark:text-emerald-200" : "bg-muted text-muted-foreground"}`}>{a.isActive ? "فعال" : "غیرفعال"}</span></td>
-                  <td className="py-3"><div className="flex flex-wrap gap-2"><SecondaryButton onClick={() => setStatementAccount({ id: a.id, code: a.code, name: a.name })}>گردش حساب</SecondaryButton><SecondaryButton onClick={() => setHistoryAccount({ id: a.id, code: a.code, name: a.name })}>تاریخچه</SecondaryButton><SecondaryButton onClick={() => toggleActive(a)} disabled={busy}>{a.isActive ? "غیرفعال کردن" : "فعال کردن"}</SecondaryButton>{!a.hasPostings && !a.hasChildren ? <SecondaryButton onClick={() => remove(a)} disabled={busy}>حذف</SecondaryButton> : null}</div></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+          <h2 id="chart-accounts-heading" className="mt-1 text-base font-semibold text-foreground">سرفصل حساب‌ها</h2>
+        </header>
+        <div className="p-4 sm:p-5">
+          <div className="hidden overflow-hidden rounded-xl border border-border/80 lg:block">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-stone-50 text-stone-500 dark:bg-stone-800/40 dark:text-stone-400"><tr className="border-b border-border"><th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">کد</th><th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">حساب</th><th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">نوع</th><th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">سطح</th><th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">ماهیت</th><th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">والد</th><th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">وضعیت</th><th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">عملیات</th></tr></thead>
+                <tbody>
+                  {accounts.map((a) => (
+                    <tr key={a.id} className="border-b border-border last:border-b-0">
+                      <td className="px-4 py-3 font-medium text-muted-foreground">{a.code}</td>
+                      <td className="px-4 py-3 font-semibold text-foreground">
+                        {a.name}
+                        {WELL_KNOWN_CODE_SET.has(a.code) ? <span className="ms-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-950 dark:bg-amber-500/20 dark:text-amber-200">سیستمی</span> : null}
+                      </td>
+                      <td className="px-4 py-3 text-muted-foreground">{TYPE_LABELS[a.type]}</td>
+                      <td className="px-4 py-3 text-muted-foreground">{ACCOUNT_LEVEL_LABELS[a.level]}</td>
+                      <td className="px-4 py-3 text-muted-foreground">
+                        {NORMAL_BALANCE_LABELS[a.normalBalance]}
+                        {a.isContra ? <span className="ms-1 text-xs">(کاهنده)</span> : null}
+                      </td>
+                      <td className="px-4 py-3 text-muted-foreground">{a.parentCode ?? "—"}</td>
+                      <td className="px-4 py-3"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${a.isActive ? "bg-emerald-100 text-emerald-900 dark:bg-emerald-500/15 dark:text-emerald-200" : "bg-muted text-muted-foreground"}`}>{a.isActive ? "فعال" : "غیرفعال"}</span></td>
+                      <td className="px-4 py-3"><div className="flex flex-wrap gap-2"><SecondaryButton onClick={() => setStatementAccount({ id: a.id, code: a.code, name: a.name })}>گردش حساب</SecondaryButton><SecondaryButton onClick={() => setHistoryAccount({ id: a.id, code: a.code, name: a.name })}>تاریخچه</SecondaryButton><SecondaryButton onClick={() => toggleActive(a)} disabled={busy}>{a.isActive ? "غیرفعال کردن" : "فعال کردن"}</SecondaryButton>{!a.hasPostings && !a.hasChildren ? <SecondaryButton onClick={() => remove(a)} disabled={busy}>حذف</SecondaryButton> : null}</div></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
 
-        <div className="space-y-3 lg:hidden">
-          {accounts.map((a) => (
-            <article key={a.id} className="rounded-xl border border-border/80 bg-muted p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-xs text-muted-foreground">{a.code}</p>
-                  <h3 className="mt-1 truncate">
-                    {a.name}
-                    {WELL_KNOWN_CODE_SET.has(a.code) ? <span className="ms-2 rounded-full bg-muted px-2 py-0.5 text-xs font-semibold text-amber-700 dark:text-amber-300">سیستمی</span> : null}
-                  </h3>
+          <div className="space-y-3 lg:hidden">
+            {accounts.map((a) => (
+              <article key={a.id} className="rounded-xl border border-border/80 bg-stone-50/60 p-4 dark:bg-stone-800/30">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium text-muted-foreground">{a.code}</p>
+                    <h3 className="mt-1 truncate text-sm font-semibold text-foreground">
+                      {a.name}
+                      {WELL_KNOWN_CODE_SET.has(a.code) ? <span className="ms-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-950 dark:bg-amber-500/20 dark:text-amber-200">سیستمی</span> : null}
+                    </h3>
+                  </div>
+                  <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${a.isActive ? "bg-emerald-100 text-emerald-900 dark:bg-emerald-500/15 dark:text-emerald-200" : "bg-muted text-muted-foreground"}`}>{a.isActive ? "فعال" : "غیرفعال"}</span>
                 </div>
-                <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${a.isActive ? "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-800 dark:text-emerald-200" : "bg-muted text-muted-foreground"}`}>{a.isActive ? "فعال" : "غیرفعال"}</span>
-              </div>
-              <dl className="mt-3 grid grid-cols-2 gap-2 border-t border-border pt-3 text-sm">
-                <div><dt className="text-xs text-muted-foreground">نوع</dt><dd className="mt-1">{TYPE_LABELS[a.type]}</dd></div>
-                <div><dt className="text-xs text-muted-foreground">سطح</dt><dd className="mt-1">{ACCOUNT_LEVEL_LABELS[a.level]}</dd></div>
-                <div><dt className="text-xs text-muted-foreground">ماهیت</dt><dd className="mt-1">{NORMAL_BALANCE_LABELS[a.normalBalance]}{a.isContra ? " (کاهنده)" : ""}</dd></div>
-                <div><dt className="text-xs text-muted-foreground">والد</dt><dd className="mt-1">{a.parentCode ?? "—"}</dd></div>
-              </dl>
-              <div className="mt-3 flex flex-wrap gap-2"><SecondaryButton onClick={() => setStatementAccount({ id: a.id, code: a.code, name: a.name })}>گردش حساب</SecondaryButton><SecondaryButton onClick={() => setHistoryAccount({ id: a.id, code: a.code, name: a.name })}>تاریخچه</SecondaryButton><SecondaryButton onClick={() => toggleActive(a)} disabled={busy}>{a.isActive ? "غیرفعال کردن" : "فعال کردن"}</SecondaryButton>{!a.hasPostings && !a.hasChildren ? <SecondaryButton onClick={() => remove(a)} disabled={busy}>حذف</SecondaryButton> : null}</div>
-            </article>
-          ))}
+                <dl className="mt-3 grid grid-cols-2 gap-2 border-t border-border pt-3 text-sm">
+                  <div><dt className="text-xs text-muted-foreground">نوع</dt><dd className="mt-1 text-foreground">{TYPE_LABELS[a.type]}</dd></div>
+                  <div><dt className="text-xs text-muted-foreground">سطح</dt><dd className="mt-1 text-foreground">{ACCOUNT_LEVEL_LABELS[a.level]}</dd></div>
+                  <div><dt className="text-xs text-muted-foreground">ماهیت</dt><dd className="mt-1 text-foreground">{NORMAL_BALANCE_LABELS[a.normalBalance]}{a.isContra ? " (کاهنده)" : ""}</dd></div>
+                  <div><dt className="text-xs text-muted-foreground">والد</dt><dd className="mt-1 text-foreground">{a.parentCode ?? "—"}</dd></div>
+                </dl>
+                <div className="mt-3 flex flex-wrap gap-2"><SecondaryButton onClick={() => setStatementAccount({ id: a.id, code: a.code, name: a.name })}>گردش حساب</SecondaryButton><SecondaryButton onClick={() => setHistoryAccount({ id: a.id, code: a.code, name: a.name })}>تاریخچه</SecondaryButton><SecondaryButton onClick={() => toggleActive(a)} disabled={busy}>{a.isActive ? "غیرفعال کردن" : "فعال کردن"}</SecondaryButton>{!a.hasPostings && !a.hasChildren ? <SecondaryButton onClick={() => remove(a)} disabled={busy}>حذف</SecondaryButton> : null}</div>
+              </article>
+            ))}
+          </div>
         </div>
       </section>
 

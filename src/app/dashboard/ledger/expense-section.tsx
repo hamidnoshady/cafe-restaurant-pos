@@ -97,16 +97,18 @@ export function ExpenseSection({
 
   return (
     <div className="space-y-4">
-      <section className={`${cardClass} p-4 sm:p-5`}>
-        <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">عملیات هزینه</p>
-        <h2 className="mt-1">ثبت هزینه</h2>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
-          هزینه به‌عنوان پرداخت‌شده ثبت می‌شود و بلافاصله در دفاتر موجود منعکس خواهد شد.
-        </p>
+      <section className={cardClass}>
+        <header className="border-b border-border/80 px-4 py-4 sm:px-5">
+          <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">عملیات هزینه</p>
+          <h2 className="mt-1 text-base font-semibold text-foreground">ثبت هزینه</h2>
+          <p className="mt-1 max-w-3xl text-xs leading-5 text-muted-foreground">
+            هزینه به‌عنوان پرداخت‌شده ثبت می‌شود و بلافاصله در دفاتر موجود منعکس خواهد شد.
+          </p>
+        </header>
 
-        <form onSubmit={submit} className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        <form onSubmit={submit} className="grid gap-3 p-4 sm:p-5 md:grid-cols-2 xl:grid-cols-3">
           <label className="block">
-            <span className="mb-1.5 block text-sm font-medium">دسته هزینه</span>
+            <span className="mb-1.5 block text-sm font-medium text-foreground">دسته هزینه</span>
             <SearchableSelect
               value={accountId}
               onChange={setAccountId}
@@ -117,7 +119,7 @@ export function ExpenseSection({
             />
           </label>
           <label className="block">
-            <span className="mb-1.5 block text-sm font-medium">پرداخت از</span>
+            <span className="mb-1.5 block text-sm font-medium text-foreground">پرداخت از</span>
             <SearchableSelect
               value={paymentAccountId}
               onChange={setPaymentAccountId}
@@ -128,19 +130,21 @@ export function ExpenseSection({
             />
           </label>
           <label className="block">
-            <span className="mb-1.5 block text-sm font-medium">مبلغ ({money.unitLabel})</span>
+            <span className="mb-1.5 block text-sm font-medium text-foreground">مبلغ ({money.unitLabel})</span>
             <PersianNumberInput className={inputClass} dir="ltr" inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="۰" />
           </label>
           <label className="block">
-            <span className="mb-1.5 block text-sm font-medium">تاریخ هزینه</span>
+            <span className="mb-1.5 block text-sm font-medium text-foreground">تاریخ هزینه</span>
             <JalaliDatePicker value={expenseDate} onChange={setExpenseDate} placeholder="امروز" />
           </label>
           <label className="block">
-            <span className="mb-1.5 block text-sm font-medium">طرف حساب <span className="font-normal text-muted-foreground">(اختیاری)</span></span>
+            <span className="mb-1.5 block text-sm font-medium text-foreground">
+              طرف حساب <span className="font-normal text-muted-foreground">(اختیاری)</span>
+            </span>
             <input className={inputClass} value={vendor} onChange={(e) => setVendor(e.target.value)} placeholder="نام طرف حساب" />
           </label>
           <label className="block md:col-span-2 xl:col-span-3">
-            <span className="mb-1.5 block text-sm font-medium">شرح هزینه</span>
+            <span className="mb-1.5 block text-sm font-medium text-foreground">شرح هزینه</span>
             <input className={inputClass} value={memo} onChange={(e) => setMemo(e.target.value)} placeholder="شرح و دلیل ثبت هزینه" required />
           </label>
           <div className="md:col-span-2 xl:col-span-3">
@@ -153,65 +157,87 @@ export function ExpenseSection({
         </form>
       </section>
 
-      <section className={`${cardClass} p-4 sm:p-5`}>
-        <div className="mb-4">
+      <section className={cardClass}>
+        <header className="border-b border-border/80 px-4 py-4 sm:px-5">
           <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">سوابق عملیاتی</p>
-          <h2 className="mt-1">هزینه‌های اخیر</h2>
-        </div>
-        {!expenses ? (
-          <LoadingSkeleton rows={3} />
-        ) : expenses.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-border/80 bg-muted px-4 py-8 text-center text-sm text-muted-foreground">
-            هنوز هزینه‌ای ثبت نشده است.
-          </p>
-        ) : (
-          <>
-            <div className="hidden overflow-x-auto lg:block">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border text-start">
-                    <th className="py-3 pe-3 text-start">تاریخ</th>
-                    <th className="py-3 pe-3 text-start">دسته</th>
-                    <th className="py-3 pe-3 text-start">شرح</th>
-                    <th className="py-3 pe-3 text-start">طرف حساب</th>
-                    <th className="py-3 pe-3 text-start">پرداخت از</th>
-                    <th className="py-3 text-start">مبلغ</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {expenses.map((e) => (
-                    <tr key={e.id} className="border-b border-border">
-                      <td className="whitespace-nowrap py-3 pe-3 text-muted-foreground">{toPersianDigits(formatJalali(e.expenseDate))}</td>
-                      <td className="py-3 pe-3">{e.accountCode} {e.accountName}</td>
-                      <td className="py-3 pe-3">{e.memo}</td>
-                      <td className="py-3 pe-3 text-muted-foreground">{e.vendor ?? "—"}</td>
-                      <td className="py-3 pe-3 text-muted-foreground">{e.paymentAccountCode} {e.paymentAccountName}</td>
-                      <td className="whitespace-nowrap py-3 font-semibold">{money.format(e.amount)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="space-y-3 lg:hidden">
-              {expenses.map((e) => (
-                <article key={e.id} className="rounded-xl border border-border/80 bg-muted p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <h3 className="truncate">{e.accountCode} {e.accountName}</h3>
-                      <p className="mt-1 text-xs text-muted-foreground">{toPersianDigits(formatJalali(e.expenseDate))}</p>
+          <h2 className="mt-1 text-base font-semibold text-foreground">هزینه‌های اخیر</h2>
+        </header>
+        <div className="p-4 sm:p-5">
+          {!expenses ? (
+            <LoadingSkeleton rows={3} />
+          ) : expenses.length === 0 ? (
+            <p className="rounded-xl border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">
+              هنوز هزینه‌ای ثبت نشده است.
+            </p>
+          ) : (
+            <>
+              <div className="hidden overflow-hidden rounded-xl border border-border/80 lg:block">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-stone-50 text-stone-500 dark:bg-stone-800/40 dark:text-stone-400">
+                      <tr className="border-b border-border">
+                        <th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">تاریخ</th>
+                        <th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">دسته</th>
+                        <th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">شرح</th>
+                        <th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">طرف حساب</th>
+                        <th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">پرداخت از</th>
+                        <th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">مبلغ</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {expenses.map((e) => (
+                        <tr key={e.id} className="border-b border-border last:border-b-0">
+                          <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">
+                            {toPersianDigits(formatJalali(e.expenseDate))}
+                          </td>
+                          <td className="px-4 py-3 text-foreground">
+                            {e.accountCode} {e.accountName}
+                          </td>
+                          <td className="px-4 py-3 text-foreground">{e.memo}</td>
+                          <td className="px-4 py-3 text-muted-foreground">{e.vendor ?? "—"}</td>
+                          <td className="px-4 py-3 text-muted-foreground">
+                            {e.paymentAccountCode} {e.paymentAccountName}
+                          </td>
+                          <td className="whitespace-nowrap px-4 py-3 font-semibold text-foreground">
+                            {money.format(e.amount)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div className="space-y-3 lg:hidden">
+                {expenses.map((e) => (
+                  <article key={e.id} className="rounded-xl border border-border/80 bg-stone-50/60 p-4 dark:bg-stone-800/30">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <h3 className="truncate text-sm font-semibold text-foreground">
+                          {e.accountCode} {e.accountName}
+                        </h3>
+                        <p className="mt-1 text-xs text-muted-foreground">{toPersianDigits(formatJalali(e.expenseDate))}</p>
+                      </div>
+                      <span className="whitespace-nowrap font-bold text-foreground">{money.format(e.amount)}</span>
                     </div>
-                    <span className="whitespace-nowrap font-bold">{money.format(e.amount)}</span>
-                  </div>
-                  <p className="mt-3 text-sm">{e.memo}</p>
-                  <dl className="mt-3 grid grid-cols-2 gap-2 border-t border-border pt-3 text-xs">
-                    <div><dt className="text-muted-foreground">طرف حساب</dt><dd className="mt-1 text-sm">{e.vendor ?? "—"}</dd></div>
-                    <div><dt className="text-muted-foreground">پرداخت از</dt><dd className="mt-1 text-sm">{e.paymentAccountCode} {e.paymentAccountName}</dd></div>
-                  </dl>
-                </article>
-              ))}
-            </div>
-          </>
-        )}
+                    <p className="mt-3 text-sm text-foreground">{e.memo}</p>
+                    <dl className="mt-3 grid grid-cols-2 gap-2 border-t border-border pt-3 text-xs">
+                      <div>
+                        <dt className="text-muted-foreground">طرف حساب</dt>
+                        <dd className="mt-1 text-sm text-foreground">{e.vendor ?? "—"}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-muted-foreground">پرداخت از</dt>
+                        <dd className="mt-1 text-sm text-foreground">
+                          {e.paymentAccountCode} {e.paymentAccountName}
+                        </dd>
+                      </div>
+                    </dl>
+                  </article>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
       </section>
     </div>
   );

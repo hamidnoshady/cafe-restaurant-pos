@@ -55,85 +55,118 @@ export function EntriesSection({ refreshKey, busy, run }: { refreshKey: number; 
   }
 
   if (!entries) {
-    return (
-      <SectionCardSkeleton rows={4} />
-    );
+    return <SectionCardSkeleton rows={4} />;
   }
 
   return (
-    <section className="space-y-4">
-      <header className={`${cardClass} p-5`}>
-        <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">دفاتر مالی</p>
-        <h2 className="mt-1">دفتر روزنامه</h2>
-        <p className="mt-1 text-sm text-muted-foreground">اسناد خودکار و دستیِ ثبت‌شده، با امکان برگشت فقط برای اسناد دستی مجاز.</p>
-      </header>
-
-      {entries.length === 0 ? (
-        <p className={`${cardClass} p-8 text-center text-sm text-muted-foreground`}>هنوز سندی ثبت نشده است.</p>
-      ) : (
-        <div className="space-y-3">
-          {entries.map((e) => {
-            const isReversal = !!e.reverses_entry_id;
-            const isReversed = !!e.reversed_at;
-            const canReverse = e.source_type === "manual" && !isReversal && !isReversed;
-            return (
-              <article key={e.id} className={`${cardClass} p-4 sm:p-5`}>
-                <div className="mb-4 flex flex-wrap items-start justify-between gap-3 border-b border-border pb-3">
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="truncate text-base">{e.memo || "—"}</h3>
-                      {isReversal ? <span className="rounded-full bg-amber-100 dark:bg-amber-500/20 px-2.5 py-1 text-xs font-semibold text-amber-700 dark:text-amber-300">سند برگشتی</span> : null}
-                      {isReversed ? <span className="rounded-full bg-muted px-2.5 py-1 text-xs font-semibold text-muted-foreground">برگشت‌خورده</span> : null}
+    <div className="space-y-4">
+      <section className={cardClass}>
+        <header className="border-b border-border/80 px-4 py-4 sm:px-5">
+          <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">دفاتر مالی</p>
+          <h2 className="mt-1 text-base font-semibold text-foreground">دفتر روزنامه</h2>
+          <p className="mt-1 max-w-3xl text-xs leading-5 text-muted-foreground">
+            اسناد خودکار و دستیِ ثبت‌شده، با امکان برگشت فقط برای اسناد دستی مجاز.
+          </p>
+        </header>
+        <div className="p-4 sm:p-5">
+          {entries.length === 0 ? (
+            <p className="rounded-xl border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">
+              هنوز سندی ثبت نشده است.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {entries.map((e) => {
+                const isReversal = !!e.reverses_entry_id;
+                const isReversed = !!e.reversed_at;
+                const canReverse = e.source_type === "manual" && !isReversal && !isReversed;
+                return (
+                  <article key={e.id} className={cardClass}>
+                    <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border/80 px-4 py-4 sm:px-5">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="truncate text-base font-semibold text-foreground">{e.memo || "—"}</h3>
+                          {isReversal ? (
+                            <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-950 dark:bg-amber-500/20 dark:text-amber-200">
+                              سند برگشتی
+                            </span>
+                          ) : null}
+                          {isReversed ? (
+                            <span className="rounded-full bg-muted px-2.5 py-1 text-xs font-semibold text-muted-foreground">
+                              برگشت‌خورده
+                            </span>
+                          ) : null}
+                        </div>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {SOURCE_LABELS[e.source_type ?? ""] ?? e.source_type} — {formatJalali(e.entry_date)}
+                          {e.created_by_name ? ` — ${e.created_by_name}` : ""}
+                        </p>
+                      </div>
+                      {canReverse ? (
+                        <SecondaryButton onClick={() => reverse(e.id)} disabled={busy}>
+                          برگشت سند
+                        </SecondaryButton>
+                      ) : null}
                     </div>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {SOURCE_LABELS[e.source_type ?? ""] ?? e.source_type} — {formatJalali(e.entry_date)}
-                      {e.created_by_name ? ` — ${e.created_by_name}` : ""}
-                    </p>
-                  </div>
-                  {canReverse ? (
-                    <SecondaryButton onClick={() => reverse(e.id)} disabled={busy}>
-                      برگشت سند
-                    </SecondaryButton>
-                  ) : null}
-                </div>
 
-                <div className="hidden overflow-x-auto lg:block">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-border">
-                        <th className="py-2 pe-3 text-start">حساب</th>
-                        <th className="py-2 pe-3 text-start">بدهکار</th>
-                        <th className="py-2 text-start">بستانکار</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {e.lines.map((l, i) => (
-                        <tr key={i} className="border-b border-border last:border-b-0">
-                          <td className="py-3 pe-3 text-muted-foreground">{l.account_code} {l.account_name}</td>
-                          <td className="whitespace-nowrap py-3 pe-3">{Number(l.debit) !== 0 ? money.format(Number(l.debit)) : "—"}</td>
-                          <td className="whitespace-nowrap py-3">{Number(l.credit) !== 0 ? money.format(Number(l.credit)) : "—"}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                    <div className="p-4 sm:p-5">
+                      <div className="hidden overflow-hidden rounded-xl border border-border/80 lg:block">
+                        <table className="w-full text-sm">
+                          <thead className="bg-stone-50 text-stone-500 dark:bg-stone-800/40 dark:text-stone-400">
+                            <tr className="border-b border-border">
+                              <th className="px-4 py-2.5 text-start text-xs font-medium sm:text-sm">حساب</th>
+                              <th className="px-4 py-2.5 text-start text-xs font-medium sm:text-sm">بدهکار</th>
+                              <th className="px-4 py-2.5 text-start text-xs font-medium sm:text-sm">بستانکار</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {e.lines.map((l, i) => (
+                              <tr key={i} className="border-b border-border last:border-b-0">
+                                <td className="px-4 py-3 text-muted-foreground">
+                                  {l.account_code} {l.account_name}
+                                </td>
+                                <td className="whitespace-nowrap px-4 py-3 font-medium text-foreground">
+                                  {Number(l.debit) !== 0 ? money.format(Number(l.debit)) : "—"}
+                                </td>
+                                <td className="whitespace-nowrap px-4 py-3 font-medium text-foreground">
+                                  {Number(l.credit) !== 0 ? money.format(Number(l.credit)) : "—"}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
 
-                <div className="space-y-2 lg:hidden">
-                  {e.lines.map((l, i) => (
-                    <div key={i} className="rounded-xl border border-border/80 bg-muted p-3">
-                      <p className="text-sm font-semibold">{l.account_code} {l.account_name}</p>
-                      <dl className="mt-2 grid grid-cols-2 gap-2 text-sm">
-                        <div><dt className="text-xs text-muted-foreground">بدهکار</dt><dd className="mt-1 font-semibold">{Number(l.debit) !== 0 ? money.format(Number(l.debit)) : "—"}</dd></div>
-                        <div><dt className="text-xs text-muted-foreground">بستانکار</dt><dd className="mt-1 font-semibold">{Number(l.credit) !== 0 ? money.format(Number(l.credit)) : "—"}</dd></div>
-                      </dl>
+                      <div className="space-y-2 lg:hidden">
+                        {e.lines.map((l, i) => (
+                          <div key={i} className="rounded-xl border border-border/80 bg-stone-50/60 p-3 dark:bg-stone-800/30">
+                            <p className="text-sm font-medium text-foreground">
+                              {l.account_code} {l.account_name}
+                            </p>
+                            <dl className="mt-2 grid grid-cols-2 gap-2 text-sm">
+                              <div>
+                                <dt className="text-xs text-muted-foreground">بدهکار</dt>
+                                <dd className="mt-1 font-semibold text-foreground">
+                                  {Number(l.debit) !== 0 ? money.format(Number(l.debit)) : "—"}
+                                </dd>
+                              </div>
+                              <div>
+                                <dt className="text-xs text-muted-foreground">بستانکار</dt>
+                                <dd className="mt-1 font-semibold text-foreground">
+                                  {Number(l.credit) !== 0 ? money.format(Number(l.credit)) : "—"}
+                                </dd>
+                              </div>
+                            </dl>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                  ))}
-                </div>
-              </article>
-            );
-          })}
+                  </article>
+                );
+              })}
+            </div>
+          )}
         </div>
-      )}
-    </section>
+      </section>
+    </div>
   );
 }

@@ -8,7 +8,7 @@ import Link from "next/link";
 import { toPersianDigits } from "@/lib/digits";
 import { useMoney } from "@/components/money/money-context";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import { api, ErrorBox, errorMessage, inputClass, PrimaryButton, SecondaryButton } from "../ui";
+import { api, ErrorBox, errorMessage, Field, inputClass, PrimaryButton, SecondaryButton } from "../ui";
 import { ArStatementPanel } from "./ar-statement-panel";
 import { accountingCustomersHref } from "./ledger-routes";
 import { cardClass, overlayPanelClass } from "../page-chrome";
@@ -75,54 +75,59 @@ export function ArSection({ busy, run }: { busy: boolean; run: (fn: () => Promis
     <section className="space-y-4">
       <ErrorBox>{error}</ErrorBox>
 
-      <div className={`${cardClass} p-4 sm:p-5`}>
-        <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className={cardClass}>
+        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border/80 px-4 py-4 sm:px-5">
           <div>
             <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">مطالبات مشتریان</p>
-            <h2 className="mt-1">حساب‌های دریافتنی</h2>
-            <p className="mt-1 text-sm text-muted-foreground">مانده حساب‌ها و نمای سنی بدهی مشتریان، بر پایه ثبت‌های فعلی.</p>
+            <h2 className="mt-1 text-base font-semibold text-foreground">حساب‌های دریافتنی</h2>
+            <p className="mt-1 max-w-3xl text-xs leading-5 text-muted-foreground">
+              مانده حساب‌ها و نمای سنی بدهی مشتریان، بر پایه ثبت‌های فعلی.
+            </p>
           </div>
           <Link
             href={accountingCustomersHref()}
-            className="inline-flex min-h-10 items-center rounded-lg border border-border px-3 text-xs font-semibold text-teal-700 transition-colors hover:bg-muted dark:text-teal-300"
+            className="inline-flex min-h-10 items-center rounded-lg border border-border px-3 text-xs font-semibold text-primary transition-colors hover:bg-stone-50 dark:hover:bg-stone-800/40"
           >
             مشتریان در حسابداری
           </Link>
           <div className="grid min-w-full grid-cols-2 gap-2 sm:min-w-0">
-            <button type="button" aria-pressed={view === "balances"} onClick={() => setView("balances")} className={`min-h-12 rounded-xl border px-3 text-sm ${view === "balances" ? "border-amber-200 dark:border-amber-500/30 bg-amber-100 dark:bg-amber-500/20 font-semibold text-amber-700 dark:text-amber-300" : "border-transparent text-muted-foreground hover:border-border/80 hover:bg-muted"}`}>مانده حساب‌ها</button>
-            <button type="button" aria-pressed={view === "aging"} onClick={() => setView("aging")} className={`min-h-12 rounded-xl border px-3 text-sm ${view === "aging" ? "border-amber-200 dark:border-amber-500/30 bg-amber-100 dark:bg-amber-500/20 font-semibold text-amber-700 dark:text-amber-300" : "border-transparent text-muted-foreground hover:border-border/80 hover:bg-muted"}`}>نمای سنی بدهی‌ها</button>
+            <button type="button" aria-pressed={view === "balances"} onClick={() => setView("balances")} className={`min-h-12 rounded-xl border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring focus-visible:ring-amber-400/40 dark:focus-visible:ring-amber-400/40 ${view === "balances" ? "border-amber-200 bg-amber-100 font-semibold text-amber-950 shadow-[0_1px_2px_rgb(120_53_15/0.08)] dark:border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-200" : "border-transparent text-muted-foreground hover:border-border hover:bg-stone-50 hover:text-foreground dark:hover:bg-stone-800/40"}`}>مانده حساب‌ها</button>
+            <button type="button" aria-pressed={view === "aging"} onClick={() => setView("aging")} className={`min-h-12 rounded-xl border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring focus-visible:ring-amber-400/40 dark:focus-visible:ring-amber-400/40 ${view === "aging" ? "border-amber-200 bg-amber-100 font-semibold text-amber-950 shadow-[0_1px_2px_rgb(120_53_15/0.08)] dark:border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-200" : "border-transparent text-muted-foreground hover:border-border hover:bg-stone-50 hover:text-foreground dark:hover:bg-stone-800/40"}`}>نمای سنی بدهی‌ها</button>
           </div>
         </div>
 
+        <div className="p-4 sm:p-5">
         {view === "balances" ? (
-          <div className="mt-5">
+          <div>
             {customers.length === 0 ? (
-              <p className="rounded-xl border border-dashed border-border/80 bg-muted px-4 py-8 text-center text-sm text-muted-foreground">هیچ حساب دریافتنی بازی وجود ندارد.</p>
+              <p className="rounded-xl border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">هیچ حساب دریافتنی بازی وجود ندارد.</p>
             ) : (
               <>
-                <div className="hidden overflow-x-auto lg:block">
-                  <table className="w-full text-sm">
-                    <thead><tr className="border-b border-border"><th className="py-3 pe-3 text-start">مشتری</th><th className="py-3 pe-3 text-start">تلفن</th><th className="py-3 pe-3 text-start">مانده</th><th className="py-3 text-start">اقدام</th></tr></thead>
-                    <tbody>
-                      {customers.map((c) => (
-                        <tr key={c.customerId} className="border-b border-border">
-                          <td className="py-3 pe-3"><button type="button" onClick={() => setStatementTarget({ id: c.customerId, name: c.customerName })} className="font-semibold hover:text-amber-700 dark:hover:text-amber-300 hover:underline">{c.customerName}</button></td>
-                          <td className="py-3 pe-3 text-muted-foreground">{c.customerPhone ? toPersianDigits(c.customerPhone) : "—"}</td>
-                          <td className="whitespace-nowrap py-3 pe-3 font-bold">{money.format(c.balance)}</td>
-                          <td className="py-3">{c.customerId !== "unknown" ? <button type="button" onClick={() => setReceiveTarget(c)} className="rounded-lg px-3 text-xs font-semibold text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-500/20">دریافت وجه</button> : null}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                <div className="hidden overflow-hidden rounded-xl border border-border/80 lg:block">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-stone-50 text-stone-500 dark:bg-stone-800/40 dark:text-stone-400"><tr className="border-b border-border"><th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">مشتری</th><th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">تلفن</th><th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">مانده</th><th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">اقدام</th></tr></thead>
+                      <tbody>
+                        {customers.map((c) => (
+                          <tr key={c.customerId} className="border-b border-border last:border-b-0">
+                            <td className="px-4 py-3"><button type="button" onClick={() => setStatementTarget({ id: c.customerId, name: c.customerName })} className="font-semibold text-foreground hover:text-amber-700 hover:underline dark:hover:text-amber-300">{c.customerName}</button></td>
+                            <td className="px-4 py-3 text-muted-foreground">{c.customerPhone ? toPersianDigits(c.customerPhone) : "—"}</td>
+                            <td className="whitespace-nowrap px-4 py-3 font-bold text-foreground">{money.format(c.balance)}</td>
+                            <td className="px-4 py-3">{c.customerId !== "unknown" ? <button type="button" onClick={() => setReceiveTarget(c)} className="rounded-lg px-3 text-xs font-semibold text-amber-700 transition-colors hover:bg-amber-100 dark:text-amber-300 dark:hover:bg-amber-500/20">دریافت وجه</button> : null}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
                 <div className="space-y-3 lg:hidden">
                   {customers.map((c) => (
-                    <article key={c.customerId} className="rounded-xl border border-border/80 bg-muted p-4">
+                    <article key={c.customerId} className="rounded-xl border border-border/80 bg-stone-50/60 p-4 dark:bg-stone-800/30">
                       <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0"><button type="button" onClick={() => setStatementTarget({ id: c.customerId, name: c.customerName })} className="truncate text-right font-bold hover:text-amber-700 dark:hover:text-amber-300">{c.customerName}</button><p className="mt-1 text-xs text-muted-foreground">{c.customerPhone ? toPersianDigits(c.customerPhone) : "شماره‌ای ثبت نشده"}</p></div>
-                        <span className="whitespace-nowrap font-bold">{money.format(c.balance)}</span>
+                        <div className="min-w-0"><button type="button" onClick={() => setStatementTarget({ id: c.customerId, name: c.customerName })} className="truncate text-right font-bold text-foreground hover:text-amber-700 dark:hover:text-amber-300">{c.customerName}</button><p className="mt-1 text-xs text-muted-foreground">{c.customerPhone ? toPersianDigits(c.customerPhone) : "شماره‌ای ثبت نشده"}</p></div>
+                        <span className="whitespace-nowrap font-bold text-foreground">{money.format(c.balance)}</span>
                       </div>
-                      {c.customerId !== "unknown" ? <button type="button" onClick={() => setReceiveTarget(c)} className="mt-3 rounded-lg bg-amber-100 dark:bg-amber-500/20 px-4 text-sm font-semibold text-amber-700 dark:text-amber-300">دریافت وجه</button> : null}
+                      {c.customerId !== "unknown" ? <button type="button" onClick={() => setReceiveTarget(c)} className="mt-3 rounded-lg bg-amber-100 px-4 text-sm font-semibold text-amber-950 dark:bg-amber-500/20 dark:text-amber-200">دریافت وجه</button> : null}
                     </article>
                   ))}
                 </div>
@@ -130,35 +135,38 @@ export function ArSection({ busy, run }: { busy: boolean; run: (fn: () => Promis
             )}
           </div>
         ) : (
-          <div className="mt-5">
+          <div>
             {!aging ? (
               <LoadingSkeleton rows={3} />
             ) : aging.rows.length === 0 ? (
-              <p className="rounded-xl border border-dashed border-border/80 bg-muted px-4 py-8 text-center text-sm text-muted-foreground">هیچ حساب دریافتنی بازی وجود ندارد.</p>
+              <p className="rounded-xl border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">هیچ حساب دریافتنی بازی وجود ندارد.</p>
             ) : (
               <>
-                <div className="hidden overflow-x-auto lg:block">
-                  <table className="w-full text-sm">
-                    <thead><tr className="border-b border-border"><th className="py-3 pe-3 text-start">مشتری</th>{AGING_COLUMNS.map((col) => <th key={col.key} className="py-3 pe-3 text-start">{col.label}</th>)}</tr></thead>
-                    <tbody>{aging.rows.map((r) => <tr key={r.customerId} className="border-b border-border"><td className="py-3 pe-3 font-medium">{r.customerName}</td>{AGING_COLUMNS.map((col) => <td key={col.key} className={`whitespace-nowrap py-3 pe-3 ${col.key === "total" ? "font-bold" : ""}`}>{r[col.key] ? money.format(r[col.key]) : "—"}</td>)}</tr>)}</tbody>
-                    <tfoot><tr className="border-t-2 border-input font-bold"><td className="py-3 pe-3">جمع کل</td>{AGING_COLUMNS.map((col) => <td key={col.key} className="whitespace-nowrap py-3 pe-3">{money.format(aging.totals[col.key])}</td>)}</tr></tfoot>
-                  </table>
+                <div className="hidden overflow-hidden rounded-xl border border-border/80 lg:block">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-stone-50 text-stone-500 dark:bg-stone-800/40 dark:text-stone-400"><tr className="border-b border-border"><th className="px-4 py-3 text-start text-xs font-medium sm:text-sm">مشتری</th>{AGING_COLUMNS.map((col) => <th key={col.key} className="px-4 py-3 text-start text-xs font-medium sm:text-sm">{col.label}</th>)}</tr></thead>
+                      <tbody>{aging.rows.map((r) => <tr key={r.customerId} className="border-b border-border last:border-b-0"><td className="px-4 py-3 font-medium text-foreground">{r.customerName}</td>{AGING_COLUMNS.map((col) => <td key={col.key} className={`whitespace-nowrap px-4 py-3 ${col.key === "total" ? "font-bold text-foreground" : "text-foreground"}`}>{r[col.key] ? money.format(r[col.key]) : "—"}</td>)}</tr>)}</tbody>
+                      <tfoot><tr className="border-t border-border bg-stone-50/60 font-semibold dark:bg-stone-800/30"><td className="px-4 py-3 text-foreground">جمع کل</td>{AGING_COLUMNS.map((col) => <td key={col.key} className="whitespace-nowrap px-4 py-3 font-bold text-foreground">{money.format(aging.totals[col.key])}</td>)}</tr></tfoot>
+                    </table>
+                  </div>
                 </div>
                 <div className="space-y-3 lg:hidden">
                   {aging.rows.map((r) => (
-                    <article key={r.customerId} className="rounded-xl border border-border/80 bg-muted p-4">
-                      <div className="flex justify-between gap-3"><h3>{r.customerName}</h3><span className="whitespace-nowrap font-bold">{money.format(r.total)}</span></div>
+                    <article key={r.customerId} className="rounded-xl border border-border/80 bg-stone-50/60 p-4 dark:bg-stone-800/30">
+                      <div className="flex justify-between gap-3"><h3 className="text-sm font-semibold text-foreground">{r.customerName}</h3><span className="whitespace-nowrap font-bold text-foreground">{money.format(r.total)}</span></div>
                       <dl className="mt-3 grid grid-cols-2 gap-2 border-t border-border pt-3 text-sm">
-                        {AGING_COLUMNS.filter((col) => col.key !== "total").map((col) => <div key={col.key}><dt className="text-xs text-muted-foreground">{col.label}</dt><dd className="mt-1 font-semibold">{r[col.key] ? money.format(r[col.key]) : "—"}</dd></div>)}
+                        {AGING_COLUMNS.filter((col) => col.key !== "total").map((col) => <div key={col.key}><dt className="text-xs text-muted-foreground">{col.label}</dt><dd className="mt-1 font-semibold text-foreground">{r[col.key] ? money.format(r[col.key]) : "—"}</dd></div>)}
                       </dl>
                     </article>
                   ))}
-                  <dl className="rounded-xl border border-border/80 bg-muted p-4"><dt className="text-sm text-muted-foreground">جمع کل حساب‌های دریافتنی</dt><dd className="mt-1 text-lg font-bold">{money.format(aging.totals.total)}</dd></dl>
+                  <dl className="rounded-xl border border-border/80 bg-stone-50/60 p-4 dark:bg-stone-800/30"><dt className="text-sm text-muted-foreground">جمع کل حساب‌های دریافتنی</dt><dd className="mt-1 text-lg font-bold text-foreground">{money.format(aging.totals.total)}</dd></dl>
                 </div>
               </>
             )}
           </div>
         )}
+        </div>
       </div>
 
       {statementTarget ? <ArStatementPanel customerId={statementTarget.id} customerName={statementTarget.name} onClose={() => setStatementTarget(null)} /> : null}
@@ -230,27 +238,22 @@ function ReceivePaymentDialog({
           <h3 id="receive-payment-heading" className="mt-1 text-lg font-bold">دریافت وجه از {customer.customerName}</h3>
         </header>
         <ErrorBox>{localError}</ErrorBox>
-        <div className="space-y-4">
-          <label className="flex flex-col gap-1.5 text-sm">
-            <span className="font-medium text-muted-foreground">مبلغ ({money.unitLabel})</span>
-            <PersianNumberInput className={inputClass} dir="ltr" inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value)} />
-          </label>
-          <label className="flex flex-col gap-1.5 text-sm">
-            <span className="font-medium text-muted-foreground">روش دریافت</span>
-            <SearchableSelect
-              value={method}
-              onChange={(value) => setMethod(value as "cash" | "bank")}
-              options={[
-                { value: "cash", label: "نقدی" },
-                { value: "bank", label: "بانکی" },
-              ]}
-            />
-          </label>
-          <label className="flex flex-col gap-1.5 text-sm">
-            <span className="font-medium text-muted-foreground">شرح (اختیاری)</span>
-            <input className={inputClass} value={memo} onChange={(e) => setMemo(e.target.value)} />
-          </label>
-        </div>
+        <Field label={`مبلغ (${money.unitLabel})`}>
+          <PersianNumberInput className={inputClass} dir="ltr" inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value)} />
+        </Field>
+        <Field label="روش دریافت">
+          <SearchableSelect
+            value={method}
+            onChange={(value) => setMethod(value as "cash" | "bank")}
+            options={[
+              { value: "cash", label: "نقدی" },
+              { value: "bank", label: "بانکی" },
+            ]}
+          />
+        </Field>
+        <Field label="شرح (اختیاری)">
+          <input className={inputClass} value={memo} onChange={(e) => setMemo(e.target.value)} />
+        </Field>
         <div className="mt-5 grid grid-cols-2 gap-3">
           <SecondaryButton onClick={onClose} disabled={busy}>
             انصراف

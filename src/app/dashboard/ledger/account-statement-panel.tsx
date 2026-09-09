@@ -78,12 +78,12 @@ export function AccountStatementPanel({
               {accountCode} — {accountName}
             </h3>
           </div>
-          <button type="button" onClick={onClose} className="rounded-lg border border-border px-3 text-sm font-medium text-muted-foreground">
+          <button type="button" onClick={onClose} className="rounded-lg border border-border px-3 py-1 text-sm font-medium text-muted-foreground">
             بستن
           </button>
         </header>
 
-        <div className="grid gap-3 rounded-xl border border-border bg-muted p-3 sm:grid-cols-[1fr_auto_1fr] sm:items-end sm:p-4">
+        <div className="grid gap-3 rounded-xl border border-border/80 bg-stone-50/60 p-3 sm:grid-cols-[1fr_auto_1fr] sm:items-end sm:p-4 dark:bg-stone-800/30">
           <label className="block text-sm font-medium">
             <span className="mb-1.5 block text-xs text-muted-foreground">از تاریخ</span>
             <JalaliDatePicker value={dateFrom} onChange={setDateFrom} placeholder="از ابتدا" />
@@ -99,36 +99,36 @@ export function AccountStatementPanel({
           <LoadingSkeleton rows={3} />
         ) : (
           <div className="mt-4">
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-muted px-4 py-3 text-sm">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/80 bg-stone-50/60 px-4 py-3 text-sm dark:bg-stone-800/30">
               <span className="text-muted-foreground">مانده افتتاحیه</span>
-              <span className="font-semibold tabular-nums">{money.format(statement.openingBalance)}</span>
+              <span className="font-semibold tabular-nums text-foreground">{money.format(statement.openingBalance)}</span>
             </div>
 
             {statement.lines.length === 0 ? (
-              <p className="rounded-xl border border-dashed border-border bg-muted px-4 py-8 text-center text-sm text-muted-foreground">
+              <p className="rounded-xl border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">
                 در این بازه هیچ سندی به این حساب ثبت نشده است.
               </p>
             ) : (
               <>
-                <div className="hidden overflow-x-auto rounded-xl border border-border lg:block">
+                <div className="hidden overflow-x-auto rounded-xl border border-border/80 lg:block">
                   <table className="min-w-[700px] w-full text-sm">
-                    <thead className="bg-muted">
-                      <tr className="border-b border-border text-muted-foreground">
-                        <th scope="col" className="px-3 py-3 text-start font-semibold">تاریخ</th>
-                        <th scope="col" className="px-3 py-3 text-start font-semibold">شرح</th>
-                        <th scope="col" className="px-3 py-3 text-start font-semibold">بدهکار</th>
-                        <th scope="col" className="px-3 py-3 text-start font-semibold">بستانکار</th>
-                        <th scope="col" className="px-3 py-3 text-start font-semibold">مانده</th>
+                    <thead className="bg-stone-50 text-stone-500 dark:bg-stone-800/40 dark:text-stone-400">
+                      <tr className="border-b border-border">
+                        <th scope="col" className="px-3 py-3 text-start text-xs font-medium sm:text-sm">تاریخ</th>
+                        <th scope="col" className="px-3 py-3 text-start text-xs font-medium sm:text-sm">شرح</th>
+                        <th scope="col" className="px-3 py-3 text-start text-xs font-medium sm:text-sm">بدهکار</th>
+                        <th scope="col" className="px-3 py-3 text-start text-xs font-medium sm:text-sm">بستانکار</th>
+                        <th scope="col" className="px-3 py-3 text-start text-xs font-medium sm:text-sm">مانده</th>
                       </tr>
                     </thead>
                     <tbody>
                       {statement.lines.map((l) => (
                         <tr key={l.entryId} className="border-b border-border last:border-b-0">
                           <td className="whitespace-nowrap px-3 py-3 text-muted-foreground">{toPersianDigits(formatJalali(l.date))}</td>
-                          <td className="px-3 py-3">{l.memo ?? "—"}</td>
-                          <td className="whitespace-nowrap px-3 py-3 tabular-nums">{l.debit ? money.format(l.debit) : "—"}</td>
-                          <td className="whitespace-nowrap px-3 py-3 tabular-nums">{l.credit ? money.format(l.credit) : "—"}</td>
-                          <td className="whitespace-nowrap px-3 py-3 font-semibold tabular-nums">{money.format(l.balance)}</td>
+                          <td className="px-3 py-3 text-foreground">{l.memo ?? "—"}</td>
+                          <td className="whitespace-nowrap px-3 py-3 font-medium tabular-nums text-foreground">{l.debit ? money.format(l.debit) : "—"}</td>
+                          <td className="whitespace-nowrap px-3 py-3 font-medium tabular-nums text-foreground">{l.credit ? money.format(l.credit) : "—"}</td>
+                          <td className="whitespace-nowrap px-3 py-3 font-semibold tabular-nums text-foreground">{money.format(l.balance)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -137,23 +137,23 @@ export function AccountStatementPanel({
 
                 <div className="space-y-3 lg:hidden">
                   {statement.lines.map((l) => (
-                    <article key={l.entryId} className="rounded-xl border border-border bg-muted p-4">
+                    <article key={l.entryId} className="rounded-xl border border-border/80 bg-stone-50/60 p-4 dark:bg-stone-800/30">
                       <div className="flex flex-wrap items-start justify-between gap-2">
                         <p className="text-xs text-muted-foreground">{toPersianDigits(formatJalali(l.date))}</p>
                       </div>
-                      <h4 className="mt-1 font-semibold">{l.memo ?? "—"}</h4>
+                      <h4 className="mt-1 font-semibold text-foreground">{l.memo ?? "—"}</h4>
                       <dl className="mt-3 grid grid-cols-3 gap-2 border-t border-border pt-3 text-sm">
                         <div>
                           <dt className="text-xs text-muted-foreground">بدهکار</dt>
-                          <dd className="mt-1 whitespace-nowrap font-semibold tabular-nums">{l.debit ? money.format(l.debit) : "—"}</dd>
+                          <dd className="mt-1 whitespace-nowrap font-semibold tabular-nums text-foreground">{l.debit ? money.format(l.debit) : "—"}</dd>
                         </div>
                         <div>
                           <dt className="text-xs text-muted-foreground">بستانکار</dt>
-                          <dd className="mt-1 whitespace-nowrap font-semibold tabular-nums">{l.credit ? money.format(l.credit) : "—"}</dd>
+                          <dd className="mt-1 whitespace-nowrap font-semibold tabular-nums text-foreground">{l.credit ? money.format(l.credit) : "—"}</dd>
                         </div>
                         <div>
                           <dt className="text-xs text-muted-foreground">مانده</dt>
-                          <dd className="mt-1 whitespace-nowrap font-bold tabular-nums">{money.format(l.balance)}</dd>
+                          <dd className="mt-1 whitespace-nowrap font-bold tabular-nums text-foreground">{money.format(l.balance)}</dd>
                         </div>
                       </dl>
                     </article>
@@ -162,9 +162,9 @@ export function AccountStatementPanel({
               </>
             )}
 
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-muted px-4 py-3 text-sm">
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/80 bg-stone-50/60 px-4 py-3 text-sm dark:bg-stone-800/30">
               <span className="text-muted-foreground">مانده اختتامیه</span>
-              <span className="font-bold tabular-nums">{money.format(statement.closingBalance)}</span>
+              <span className="font-bold tabular-nums text-foreground">{money.format(statement.closingBalance)}</span>
             </div>
           </div>
         )}
