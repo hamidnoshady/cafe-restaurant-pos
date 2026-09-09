@@ -97,7 +97,7 @@ Redeploy the VPS stack so the new env var takes effect.
 ### Step 4 — Configure sync in the Owner dashboard
 
 1. Open `http://<laptop-lan-ip>:3000` and log in as Owner.
-2. Go to **Settings → همگام‌سازی با سرور راه دور** (or call `PUT /api/server-sync/config`).
+2. Go to **اتصال‌های فنی → سرور راه دور** (or call `PUT /api/server-sync/config`).
 3. Set:
    - **Remote URL:** `https://pos.eshobe.com`
    - **Token:** the same token from Step 1
@@ -243,7 +243,7 @@ no token, no manual step, ever again.
 
 ## Monitoring sync status
 
-The Owner dashboard's **Settings → همگام‌سازی با سرور راه دور** page shows:
+The Owner dashboard's **اتصال‌های فنی → سرور راه دور** tab shows:
 - Last push/pull attempt and success timestamps
 - Last error (if any)
 - Recent dead letters — pulled events that failed to apply (see

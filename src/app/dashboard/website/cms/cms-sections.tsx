@@ -30,7 +30,6 @@ import {
   PlusIcon,
   RefreshCwIcon,
   ShieldCheckIcon,
-  Trash2Icon,
 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -53,7 +52,6 @@ import {
   errorMessageOrRaw,
   Field,
   inputClass,
-  PrimaryButton,
   SecondaryButton,
   ErrorBox,
 } from "@/app/dashboard/ui";
@@ -190,11 +188,17 @@ function NoSiteYet({ what }: { what: string }) {
   return (
     <SectionCard title={what} description="برای این بخش، اول باید سایتی روی سایت‌ساز داشته باشید.">
       <EmptyState>هنوز سایتی ساخته یا وصل نشده است.</EmptyState>
-      <div className="mt-3">
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Button asChild variant="outline" className="px-4">
+          <Link href="/dashboard/connections?tab=website">
+            <PlugZapIcon className="size-4" />
+            اتصال سایت موجود
+          </Link>
+        </Button>
         <Button asChild variant="outline" className="px-4">
           <Link href={cmsSectionHref("setup")}>
             <GlobeIcon className="size-4" />
-            ساخت یا اتصال سایت
+            ساخت سایت جدید
           </Link>
         </Button>
       </div>
@@ -516,84 +520,25 @@ export function CmsStoreSection() {
 
 export function CmsSettingsSection() {
   const site = useCmsSite();
-  const [editingDomain, setEditingDomain] = useState(false);
-  const [busy, setBusy] = useState(false);
 
   if (site.loading) return <SectionCardSkeleton rows={4} />;
-  if (!site.connection) return <NoSiteYet what="تنظیمات سایت" />;
+  if (!site.connection) return <NoSiteYet what="تنظیمات همگام‌سازی" />;
 
   return (
     <div className="space-y-4 sm:space-y-5">
       <SectionCard
         title="اتصال سایت"
-        description="کلید این اتصال روی سرور و رمزنگاری‌شده نگه‌داری می‌شود و هیچ‌وقت به مرورگر داده نمی‌شود."
-        actions={
-          <div className="flex flex-wrap gap-2">
-            <Button type="button" variant="outline" className="px-4" onClick={() => setEditingDomain(true)}>
-              <PencilIcon className="size-4" />
-              تغییر دامنه
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              className="px-4 text-destructive hover:text-destructive"
-              disabled={busy}
-              onClick={() => {
-                if (!window.confirm("قطع اتصال؟ سایت و محتوای آن روی سایت‌ساز می‌ماند؛ فقط این اتصال برداشته می‌شود.")) return;
-                setBusy(true);
-                api("/api/cms/website/connection", { method: "DELETE" }).then(() => {
-                  setBusy(false);
-                  toast.success("اتصال برداشته شد.");
-                  site.reload();
-                });
-              }}
-            >
-              <Trash2Icon className="size-4" />
-              قطع اتصال
-            </Button>
-          </div>
-        }
+        description={`سایت «${site.connection.siteDomain}» به همین حساب وصل است. خودِ اتصال — آزمایش، تغییر دامنه و قطع — در «اتصال‌های فنی» مدیریت می‌شود؛ اینجا فقط اینکه چه چیزی به سایت فرستاده شود.`}
       >
-        <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <div>
-            <dt className="text-xs text-muted-foreground">دامنهٔ سایت</dt>
-            <dd dir="ltr" className="mt-0.5 truncate text-sm font-medium text-foreground">
-              {site.connection.siteDomain}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-xs text-muted-foreground">آدرس سایت‌ساز</dt>
-            <dd dir="ltr" className="mt-0.5 truncate text-sm font-medium text-foreground">
-              {site.connection.baseUrl}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-xs text-muted-foreground">وضعیت اتصال</dt>
-            <dd className="mt-0.5">
-              <StatusBadge tone={site.connection.status === "active" ? "positive" : "neutral"}>
-                {site.connection.status === "active" ? "فعال" : "غیرفعال"}
-              </StatusBadge>
-            </dd>
-          </div>
-          <div>
-            <dt className="text-xs text-muted-foreground">کلید API</dt>
-            <dd className="mt-0.5 text-sm font-medium text-foreground">ذخیره‌شده و رمزنگاری‌شده</dd>
-          </div>
-        </dl>
+        <Button asChild variant="outline" className="px-4">
+          <Link href="/dashboard/connections?tab=website">
+            <PlugZapIcon className="size-4" />
+            مدیریت اتصال در اتصال‌های فنی
+          </Link>
+        </Button>
       </SectionCard>
 
       <CmsSyncSettings />
-
-      {editingDomain ? (
-        <DomainDialog
-          currentDomain={site.connection.siteDomain}
-          onClose={() => setEditingDomain(false)}
-          onSaved={() => {
-            setEditingDomain(false);
-            site.reload();
-          }}
-        />
-      ) : null}
     </div>
   );
 }
@@ -854,93 +799,6 @@ function PreviewCard({
         </div>
       )}
     </SectionCard>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* Not connected: connect an existing site, or provision a new one     */
-/* ------------------------------------------------------------------ */
-
-/**
- * Connecting a site that already exists on the CMS.
- *
- * Deliberately *only* the connect half: creating a new site is the wizard's
- * job (`setup/setup-wizard.tsx`), because a new site needs a domain, a CDN
- * decision, a type and a plan — four answers this three-field form has
- * nowhere to put. What is left here is the case the wizard cannot cover: an
- * operator built the site by hand and the business needs to point at it.
- */
-export function ConnectExistingSite({ onDone }: { onDone: () => void }) {
-  const [baseUrl, setBaseUrl] = useState("");
-  const [siteDomain, setSiteDomain] = useState("");
-  const [apiKey, setApiKey] = useState("");
-  const [keyName, setKeyName] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-
-  const submit = () => {
-    setBusy(true);
-    setError("");
-    api<{ error?: string }>("/api/cms/website/connect", {
-      method: "POST",
-      body: JSON.stringify({ baseUrl, siteDomain, apiKey, keyName: keyName || undefined }),
-    })
-      .then(({ ok, data }) => {
-        if (ok) onDone();
-        else setError(errorMessageOrRaw(data.error));
-      })
-      .finally(() => setBusy(false));
-  };
-
-  return (
-    <form
-      onSubmit={(event) => {
-        event.preventDefault();
-        submit();
-      }}
-    >
-      <ErrorBox>{error}</ErrorBox>
-      <Field label="آدرس سرور سایت‌ساز" hint="آدرس کنترل‌پنل پلتفرم — بدون اسلش پایانی.">
-        <input
-          className={inputClass}
-          dir="ltr"
-          placeholder="https://cms.eshobe.com"
-          value={baseUrl}
-          onChange={(event) => setBaseUrl(event.target.value)}
-          required
-        />
-      </Field>
-      <Field label="دامنهٔ سایت" hint="فقط میزبان — مثل acme.ir">
-        <input
-          className={inputClass}
-          dir="ltr"
-          placeholder="acme.ir"
-          value={siteDomain}
-          onChange={(event) => setSiteDomain(event.target.value)}
-          required
-        />
-      </Field>
-      <Field label="کلید API سایت" hint="از بخش کلیدهای API پلتفرم صادر می‌شود و فقط یک‌بار نمایش داده می‌شود.">
-        <input
-          className={inputClass}
-          dir="ltr"
-          type="password"
-          placeholder="eshobe_live_…"
-          value={apiKey}
-          onChange={(event) => setApiKey(event.target.value)}
-          required
-        />
-      </Field>
-      <Field label="نام اتصال (اختیاری)">
-        <input
-          className={inputClass}
-          placeholder="پنل مدیریت"
-          value={keyName}
-          onChange={(event) => setKeyName(event.target.value)}
-        />
-      </Field>
-      <PrimaryButton disabled={busy}>{busy ? "در حال اتصال…" : "اتصال"}</PrimaryButton>
-    </form>
   );
 }
 

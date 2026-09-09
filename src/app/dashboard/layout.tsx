@@ -96,17 +96,15 @@ function navItemsFor(industry: Industry): NavItem[] {
     { label: INDUSTRY_LABELS.tools_fittings, module: "tools_fittings", href: "/dashboard/tools-fittings", roles: ["owner", "manager"] },
     { label: INDUSTRY_LABELS.haberdashery, module: "haberdashery", href: "/dashboard/haberdashery", roles: ["owner", "manager"] },
     { label: "حسابداری", module: "ledger", href: "/dashboard/ledger", roles: ["owner", "manager", "accountant"], flag: "ledger" },
-    // Technical connections are their own utility app. WooCommerce is not
-    // listed here: its management surface belongs to the standalone WP Manager
-    // below, so Accounting never becomes the doorway to the store.
+    // The «اتصال‌های فنی» hub — every technical connection in the product
+    // (desktop, WordPress/WooCommerce, the CMS site, Holoo, the remote server
+    // sync, MCP, API keys). A shell utility, not an app: its module is
+    // unassigned in `apps.ts`, so it is never badged and never gated.
+    // WordPress/WooCommerce *management* is not listed here either: it lives
+    // inside «مدیریت وب‌سایت» above, and the old `/dashboard/wp` prefix
+    // forwards there (its connection screen forwards to this hub instead), so
+    // one door stays one door.
     { label: "اتصال‌های فنی", module: "connections", href: "/dashboard/connections", roles: ["owner", "manager"] },
-    {
-      label: "مدیریت وردپرس و ووکامرس",
-      module: "integrations",
-      href: "/dashboard/wp",
-      roles: ["owner", "manager"],
-      flag: "integrations",
-    },
     { label: "گزارش‌ها", module: "reports", href: "/dashboard/reports", roles: ["owner", "manager", "accountant"], flag: "reporting" },
     { label: "دستیار هوشمند", module: "ai", href: "/dashboard/ai", roles: ["owner", "manager"], flag: "ai_assistant" },
     // Wallet/credits & plans. The small credit badge in the chrome links here
@@ -243,7 +241,9 @@ export default async function DashboardLayout({
           industry={industry}
         />
         <DashboardMain workspaceEnabled={workspaceEnabled}>
-          <AppAvailabilityGate availability={appAvailability}>{children}</AppAvailabilityGate>
+          <AppAvailabilityGate availability={appAvailability} workspaceEnabled={workspaceEnabled}>
+            {children}
+          </AppAvailabilityGate>
         </DashboardMain>
         </div>
         </BugReportProvider>

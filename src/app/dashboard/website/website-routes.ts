@@ -124,11 +124,12 @@ export function visibleCmsSections(state: WebsiteManagersState): CmsSectionKey[]
 
 /**
  * The WordPress sections this business can currently use. With no store
- * linked, the connection screen is the only one that has anything to show —
- * every other section reads the mirror of a store that is not there yet.
+ * linked, only the overview has anything to show — every other section reads
+ * the mirror of a store that is not there yet — and the overview itself links
+ * to the «اتصال‌های فنی» hub, where the connection is made.
  */
 export function visibleWpSections(state: WebsiteManagersState): WpSectionKey[] {
-  if (!state.wp.connected) return ["overview", "connections"];
+  if (!state.wp.connected) return ["overview"];
   return [...WP_SECTION_KEYS];
 }
 

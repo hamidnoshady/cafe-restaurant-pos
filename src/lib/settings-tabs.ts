@@ -14,7 +14,10 @@ export const SETTINGS_TAB_KEYS = [
   "menu",
   "printers",
   "branch-management",
-  "server-sync",
+  // No `server-sync`: remote-server sync is a technical connection and lives
+  // in the «اتصال‌های فنی» hub («سرور راه دور», owner-only, `offline_mode`).
+  // «تنظیمات» keeps no copy; the old `?tab=server-sync` deep link redirects
+  // to the hub in `settings-manager.tsx`.
   "devices",
   "notifications",
   "shifts",
@@ -144,13 +147,6 @@ export const SETTINGS_TABS: SettingsTab[] = [
     description: "مدیریت شعب کسب‌وکار و همگام‌سازی داده‌های شعب با سرور مرکزی",
     allowedRoles: ["owner"],
     requiredAnyFeature: ["multi_location", "offline_mode"],
-  },
-  {
-    key: "server-sync",
-    label: "همگام‌سازی با سرور راه دور",
-    description: "اتصال دوطرفه با سرور مرکزی (VPS)، وضعیت و رویدادهای ناموفق",
-    allowedRoles: ["owner"],
-    feature: "offline_mode",
   },
   {
     key: "devices",

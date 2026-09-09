@@ -20,10 +20,14 @@ describe("appShellForPathname", () => {
     for (const section of ["setup", "content", "store", "settings", "billing"]) {
       expect(appShellForPathname(`/dashboard/website/cms/${section}`)?.app).toBe("website");
     }
-    // …and the WordPress/WooCommerce manager, now inside the same app.
-    for (const section of ["connections", "products", "orders", "customers", "content", "queue"]) {
+    // …and the WordPress/WooCommerce manager, now inside the same app. No
+    // `connections` section: the store connection lives in the «اتصال‌های
+    // فنی» hub, and the old path redirects there — but a redirect is still
+    // under this prefix, so it still wears this shell.
+    for (const section of ["products", "orders", "customers", "content", "queue"]) {
       expect(appShellForPathname(`/dashboard/website/wp/${section}`)?.app).toBe("website");
     }
+    expect(appShellForPathname("/dashboard/website/wp/connections")?.app).toBe("website");
   });
 
   it("leaves every other dashboard route to the business nav", () => {

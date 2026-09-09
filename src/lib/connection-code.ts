@@ -7,7 +7,8 @@
  * `XXXX-XXXX-XXXX`, issued for one business and redeemable once. The only
  * place that issued one used to be the super-admin console, so an owner
  * looking around their own cloud dashboard found instead the one button that
- * says «ساخت توکن» — Settings → «همگام‌سازی با سرور راه دور» — which mints a
+ * says «ساخت توکن» — «اتصال‌های فنی» → «سرور راه دور» (formerly a settings
+ * tab) — which mints a
  * `POS1-…` *sync token*: a different credential, for the already-paired
  * server-to-server channel. Pasting it into the desktop produced
  * `code_not_found`, rendered as «کد اتصال معتبر نیست» — "the token is wrong".

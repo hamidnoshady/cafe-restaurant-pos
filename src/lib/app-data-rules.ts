@@ -22,7 +22,6 @@ export const APP_DATA_DOMAINS = [
   "operations_catalogue",
   "wp_store_mirror",
   "website_content",
-  "technical_connections",
 ] as const;
 
 export type AppDataDomain = (typeof APP_DATA_DOMAINS)[number];
@@ -78,11 +77,13 @@ export const APP_DATA_RULES: readonly AppDataRule[] = [
     syncStrategy: "shared-service",
   },
   {
-    // The WordPress-owned connection profile and mapped store data travel
-    // together: other apps may read the mirror, but no other app owns the
-    // store link. The owner is «مدیریت وب‌سایت», which is where the WordPress
-    // manager now lives — the two website managers share one app and keep
-    // separate connections.
+    // The mapped store mirror belongs to «مدیریت وب‌سایت», where the
+    // WordPress manager lives: other apps may read the mirror, but no other
+    // app owns the store data. The *connection profile* behind the mirror is
+    // deliberately not a domain here — every technical connection in the
+    // product is owned by the «اتصال‌های فنی» hub, which is shell
+    // infrastructure rather than an app, so there is no cross-*app* contract
+    // to state for it.
     domain: "wp_store_mirror",
     owner: "website",
     readers: ["sales", "accounting", "growth", "crm", "operations"],
@@ -93,12 +94,6 @@ export const APP_DATA_RULES: readonly AppDataRule[] = [
     owner: "website",
     readers: ["sales", "growth"],
     syncStrategy: "mapped-integration",
-  },
-  {
-    domain: "technical_connections",
-    owner: "connections",
-    readers: [],
-    syncStrategy: "shared-service",
   },
 ];
 

@@ -3,7 +3,7 @@
  *
  * The café laptop already has an authenticated, Owner-established
  * relationship with the VPS: the per-business sync token configured at
- * Settings → همگام‌سازی با سرور راه دور (server-sync.ts). This reuses that
+ * «اتصال‌های فنی» → «سرور راه دور» (server-sync.ts). This reuses that
  * exact pairing so a laptop can learn about and fetch a newer app image
  * without ever holding a long-lived registry credential — the VPS mints a
  * short-lived GHCR pull token per request (github-app-token.ts), and only an

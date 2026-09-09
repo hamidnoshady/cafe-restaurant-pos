@@ -1,25 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole, withTenantScope } from "@/lib/auth";
-import { isFeatureEnabled } from "@/lib/features";
 import { connectWebsite, disconnectWebsite, getWebsiteConnection } from "@/lib/website/connection-service";
 import { summarizeWebsiteQueue } from "@/lib/website/catalog-service";
 import { WEBSITE_ADAPTER_KEYS } from "@/lib/website/adapter";
 
 /**
- * Phase 38 (issue #379) — the website connection, as the Connections hub sees
- * it. Owner-only: the credential can create products and rewrite prices on a
- * public storefront. Gated by the `integrations` flag like the other paid
- * connections; the hub still renders the tab locked when it is off.
+ * Phase 38 (issue #379) — the platform-site connection and the POS→site
+ * sync settings, as seen by the «اتصال‌های فنی» hub's «سایت‌ساز اشوبه» tab
+ * and «مدیریت وب‌سایت»'s sync settings. Owner and manager, deliberately
+ * ungated by any feature flag: the `integrations` flag is the WooCommerce
+ * connection's paid lock, not this site's — the hub tab for this connection
+ * carries no lock, so its APIs must answer for any owner or manager the
+ * same way `/api/cms/website/*` does.
  *
  * GET returns the masked summary and the queue counts. The API key is never
  * in any response — `WebsiteConnectionSummary` has no field for it.
  */
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner");
+  const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
 
-  const enabled = await isFeatureEnabled(session.businessId, "integrations");
-  if (!enabled) return NextResponse.json({ enabled, connection: null, queue: null });
+  const enabled = true;
 
   const [connection, queue] = await Promise.all([
     getWebsiteConnection(session.businessId),
@@ -41,12 +42,8 @@ interface ConnectBody {
 
 /** Test-then-save. A failed test stores nothing and returns the adapter's error code. */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner");
+  const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
-
-  if (!(await isFeatureEnabled(session.businessId, "integrations"))) {
-    return NextResponse.json({ error: "feature_disabled" }, { status: 403 });
-  }
 
   let body: ConnectBody;
   try {
@@ -85,7 +82,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
 
 /** Remove this app's stored key. The site and its content stay. */
 export const DELETE = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner");
+  const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
 
   await disconnectWebsite(session.businessId);

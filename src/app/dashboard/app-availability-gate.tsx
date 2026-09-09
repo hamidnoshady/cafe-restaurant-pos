@@ -72,7 +72,19 @@ export function AppStateBadge({
   );
 }
 
-function AvailabilityNotice({ availability }: { availability: ResolvedAppAvailability }) {
+function AvailabilityNotice({
+  availability,
+  backHref,
+  backLabel,
+  hideBack,
+}: {
+  availability: ResolvedAppAvailability;
+  /** Where «back» escapes to — a surface that is never gated itself. */
+  backHref: string;
+  backLabel: string;
+  /** True when this screen *is* the back target (no self-links). */
+  hideBack: boolean;
+}) {
   const Icon = STATE_ICONS[availability.state] ?? ClockIcon;
   const appLabel = appForKey(availability.app).label;
   return (
@@ -112,12 +124,14 @@ function AvailabilityNotice({ availability }: { availability: ResolvedAppAvailab
             <p className="text-sm text-muted-foreground">
               بقیهٔ بخش‌های برنامه مثل همیشه در دسترس هستند.
             </p>
-            <Link
-              href="/dashboard/overview"
-              className="inline-flex h-9 items-center rounded-lg border border-border bg-card px-4 text-sm font-medium text-foreground transition-colors hover:bg-muted"
-            >
-              بازگشت به داشبورد
-            </Link>
+            {hideBack ? null : (
+              <Link
+                href={backHref}
+                className="inline-flex h-9 items-center rounded-lg border border-border bg-card px-4 text-sm font-medium text-foreground transition-colors hover:bg-muted"
+              >
+                {backLabel}
+              </Link>
+            )}
           </div>
         </div>
       </div>
@@ -132,19 +146,43 @@ function AvailabilityNotice({ availability }: { availability: ResolvedAppAvailab
  * Which app owns the route is answered from the path (`appForPagePath`) rather
  * than threaded through every page, so a page added later is covered by the
  * module registration it already has to make. Routes with no owning app — the
- * chat home, projects, the assistant — are never gated, which is also what
- * keeps this screen's "back to the dashboard" link reachable.
+ * chat home, projects, the assistant, the connections hub — are never gated,
+ * which is also what keeps this screen's "back" link reachable.
+ *
+ * One route needs its shell to answer: `/dashboard` is the chat home (never
+ * gated) in the workspace shell, but the very same sales overview
+ * `/dashboard/overview` renders in the classic shell. Leaving it ungated in
+ * both would leave a sales «به‌زودی» bypassable from the home page, so in the
+ * classic shell it is gated as the sales app.
  */
 export function AppAvailabilityGate({
   availability,
+  workspaceEnabled = true,
   children,
 }: {
   availability: AppAvailabilityProps;
+  /** False in the classic shell, where `/dashboard` renders the sales overview. */
+  workspaceEnabled?: boolean;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const app = appForPagePath(pathname);
+  const app: AppKey | null =
+    !workspaceEnabled && pathname === "/dashboard" ? "sales" : appForPagePath(pathname);
   const state = app ? availability[app] : undefined;
   if (!state || state.usable) return <>{children}</>;
-  return <AvailabilityNotice availability={state} />;
+  // The escape hatch must itself be reachable: the chat home (never gated) in
+  // the workspace shell, the sales overview otherwise. In the classic shell
+  // that overview is itself sales-gated, so while sales is down the link
+  // would only land on this same screen — it is hidden then, and on either
+  // home, where the sidebar is the way out.
+  const backHref = workspaceEnabled ? "/dashboard" : "/dashboard/overview";
+  const backUsable = workspaceEnabled || (availability.sales?.usable ?? true);
+  return (
+    <AvailabilityNotice
+      availability={state}
+      backHref={backHref}
+      backLabel={workspaceEnabled ? "بازگشت به میز کار" : "بازگشت به داشبورد"}
+      hideBack={pathname === backHref || !backUsable}
+    />
+  );
 }

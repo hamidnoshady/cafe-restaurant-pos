@@ -153,7 +153,7 @@ export function WpOverviewSection() {
           <p className="max-w-md text-sm text-muted-foreground">
             برای مدیریت وردپرس و ووکامرس از اینجا، ابتدا فروشگاه خود را با کلیدهای REST یا افزونهٔ وردپرس متصل کنید.
           </p>
-          <Link href="/dashboard/wp/connections">
+          <Link href="/dashboard/connections?tab=woocommerce">
             <Button>اتصال فروشگاه</Button>
           </Link>
         </div>
@@ -237,24 +237,24 @@ export function WpOverviewSection() {
 
       {/* KPI tiles */}
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-        <Kpi icon={ShoppingBagIcon} label="محصول همگام‌شده" value={stats?.products ?? 0} href="/dashboard/wp/products" />
-        <Kpi icon={ReceiptTextIcon} label="سفارش آنلاین" value={stats?.orders ?? 0} href="/dashboard/wp/orders" />
-        <Kpi icon={ContactIcon} label="مشتری فروشگاه" value={stats?.customers ?? 0} href="/dashboard/wp/customers" />
-        <Kpi icon={FolderTreeIcon} label="دسته/برچسب/ویژگی" value={stats?.terms ?? 0} href="/dashboard/wp/taxonomies" />
-        <Kpi icon={FileTextIcon} label="نوشته و برگه" value={(stats?.content.posts ?? 0) + (stats?.content.pages ?? 0)} href="/dashboard/wp/content" />
-        <Kpi icon={ImageIcon} label="رسانه" value={stats?.content.media ?? 0} href="/dashboard/wp/media" />
+        <Kpi icon={ShoppingBagIcon} label="محصول همگام‌شده" value={stats?.products ?? 0} href="/dashboard/website/wp/products" />
+        <Kpi icon={ReceiptTextIcon} label="سفارش آنلاین" value={stats?.orders ?? 0} href="/dashboard/website/wp/orders" />
+        <Kpi icon={ContactIcon} label="مشتری فروشگاه" value={stats?.customers ?? 0} href="/dashboard/website/wp/customers" />
+        <Kpi icon={FolderTreeIcon} label="دسته/برچسب/ویژگی" value={stats?.terms ?? 0} href="/dashboard/website/wp/taxonomies" />
+        <Kpi icon={FileTextIcon} label="نوشته و برگه" value={(stats?.content.posts ?? 0) + (stats?.content.pages ?? 0)} href="/dashboard/website/wp/content" />
+        <Kpi icon={ImageIcon} label="رسانه" value={stats?.content.media ?? 0} href="/dashboard/website/wp/media" />
         <Kpi
           icon={RefreshCwIcon}
           label="کار در صف"
           value={stats?.pendingJobs ?? 0}
-          href="/dashboard/wp/queue"
+          href="/dashboard/website/wp/queue"
         />
         <Kpi
           icon={AlertTriangleIcon}
           label="رویداد ناموفق"
           value={(stats?.failedJobs ?? 0) + (stats?.deadJobs ?? 0) + (stats?.failedInboxEvents ?? 0)}
           tone={(stats?.failedJobs ?? 0) + (stats?.deadJobs ?? 0) + (stats?.failedInboxEvents ?? 0) > 0 ? "warn" : "default"}
-          href="/dashboard/wp/queue"
+          href="/dashboard/website/wp/queue"
         />
       </div>
     </div>

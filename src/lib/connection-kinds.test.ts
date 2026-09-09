@@ -8,26 +8,34 @@ import {
 import { INDUSTRIES } from "./industries";
 
 describe("visibleConnectionKinds", () => {
-  it("gives an Owner every technical connection, but neither website connection", () => {
-    // Both website connections belong to «مدیریت وب‌سایت» — the WooCommerce
-    // store to its WordPress manager, the platform site to its CMS manager.
-    // A business sets each one up inside the manager that uses it; this hub
-    // keeps the credentials that belong to no product screen.
+  it("gives an Owner every technical connection, websites included", () => {
+    // The hub is the one home for *every* technical connection — including
+    // the two website ones, which the managers that use them link to. Order
+    // is the hub's tab order: the connections a business meets first come
+    // first.
     expect(visibleConnectionKinds({ role: "owner" }).map((k) => k.key)).toEqual([
       "desktop",
+      "woocommerce",
+      "website",
       "holoo",
+      "server_sync",
       "mcp",
       "api",
     ]);
   });
 
-  it("gives a Manager only the technical connection that their role can use", () => {
-    // Every other technical tab hands out a credential that reaches a whole
-    // business: a pairing code redeems a full snapshot, an API key reads a
-    // branch's orders, menu, inventory and reports, and an MCP connection can
-    // be granted the right to change them. The WooCommerce connection is
-    // intentionally absent because WP Manager owns it.
-    expect(visibleConnectionKinds({ role: "manager" }).map((k) => k.key)).toEqual(["holoo"]);
+  it("gives a Manager the connections their role can use, in hub order", () => {
+    // Manager work: the WooCommerce store, the Eshobe CMS site, Holoo. Every
+    // other tab hands out a credential that reaches a whole business: a
+    // pairing code redeems a full snapshot, an API key reads a branch's
+    // orders, menu, inventory and reports, an MCP connection can be granted
+    // the right to change them, and the server-sync token reaches the whole
+    // central dataset.
+    expect(visibleConnectionKinds({ role: "manager" }).map((k) => k.key)).toEqual([
+      "woocommerce",
+      "website",
+      "holoo",
+    ]);
   });
 
   it("gives a floor role nothing, so the page redirects rather than rendering empty", () => {
@@ -38,7 +46,7 @@ describe("visibleConnectionKinds", () => {
 
   it("keeps every technical tab for every industry — `connections` is a core module", () => {
     for (const industry of INDUSTRIES) {
-      expect(visibleConnectionKinds({ role: "owner", industry })).toHaveLength(CONNECTION_KINDS.length - 2);
+      expect(visibleConnectionKinds({ role: "owner", industry })).toHaveLength(CONNECTION_KINDS.length);
     }
   });
 
@@ -47,18 +55,11 @@ describe("visibleConnectionKinds", () => {
     // business cannot ask for something it is never shown.
     const owner = visibleConnectionKinds({ role: "owner" });
     expect(owner.some((k) => k.feature === "integrations")).toBe(true);
+    expect(owner.some((k) => k.feature === "offline_mode")).toBe(true);
     expect(owner.some((k) => k.feature === "api_platform")).toBe(true);
     // …and the desktop tab has no flag at all: connecting the desktop app is
     // not something a business buys.
     expect(owner.find((k) => k.key === "desktop")?.feature).toBeUndefined();
-  });
-
-  it("keeps both website keys for old callers without exposing them in this hub", () => {
-    expect(isConnectionKindKey("woocommerce")).toBe(true);
-    expect(isConnectionKindKey("website")).toBe(true);
-    const owner = visibleConnectionKinds({ role: "owner" });
-    expect(owner.some((k) => k.key === "woocommerce")).toBe(false);
-    expect(owner.some((k) => k.key === "website")).toBe(false);
   });
 });
 
@@ -69,6 +70,7 @@ describe("resolveConnectionKind", () => {
   it("honours a valid, visible request", () => {
     expect(resolveConnectionKind("holoo", owner)).toBe("holoo");
     expect(resolveConnectionKind("api", owner)).toBe("api");
+    expect(resolveConnectionKind("woocommerce", manager)).toBe("woocommerce");
   });
 
   it("falls back to the first visible tab for anything it cannot honour", () => {
@@ -79,10 +81,9 @@ describe("resolveConnectionKind", () => {
 
   it("never lands a Manager on a tab their role cannot see", () => {
     // A shared link to ?tab=api must not render an owner-only credential form.
-    expect(resolveConnectionKind("api", manager)).toBe("holoo");
-    expect(resolveConnectionKind("desktop", manager)).toBe("holoo");
-    // Phase 38: the website credential can rewrite a public storefront.
-    expect(resolveConnectionKind("website", manager)).toBe("holoo");
+    expect(resolveConnectionKind("api", manager)).toBe("woocommerce");
+    expect(resolveConnectionKind("desktop", manager)).toBe("woocommerce");
+    expect(resolveConnectionKind("server_sync", manager)).toBe("woocommerce");
   });
 
   it("returns null when there is nothing to show", () => {

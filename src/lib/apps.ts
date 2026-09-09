@@ -30,7 +30,6 @@ export const APP_KEYS = [
   "website",
   "operations",
   "accounting",
-  "connections",
   "settings",
 ] as const;
 export type AppKey = (typeof APP_KEYS)[number];
@@ -103,7 +102,7 @@ export const APPS: AppDef[] = [
     key: "website",
     label: "مدیریت وب‌سایت",
     description:
-      "هر دو راه داشتنِ سایت، در یک برنامه: سایت‌ساز اشوبه (Eshobe CMS) و مدیریت وردپرس و ووکامرس — هرکدام بخش مدیریت جدای خودش را دارد.",
+      "مدیریت خودِ سایت‌ها، از هر دو راه: سایت‌ساز اشوبه (Eshobe CMS) و وردپرس و ووکامرس — هرکدام بخش مدیریت جدای خودش را دارد. اتصال فنی هر دو در «اتصال‌های فنی» است.",
     // One app, two managers — and it is *one* app on purpose.
     //
     // Until now these were two peers in the rail: «وب‌سایت» (the eshobe-cms
@@ -113,9 +112,16 @@ export const APPS: AppDef[] = [
     // moves to the platform site tomorrow had to learn a second app to do the
     // same job. So the app is «مدیریت وب‌سایت» and the two systems are its two
     // *managers*: /dashboard/website/cms and /dashboard/website/wp, each with
-    // its own sections, its own connection and its own settings. They are
-    // never folded into each other — that is the rule CLAUDE.md's prompt
-    // vocabulary states — they are peers inside one door.
+    // its own sections and its own settings. They are never folded into each
+    // other — that is the rule CLAUDE.md's prompt vocabulary states — they
+    // are peers inside one door.
+    //
+    // The app manages the sites themselves — content, products, orders,
+    // sync preferences. The *technical connection* behind each manager (the
+    // CMS credential, the WooCommerce/WordPress link) is not a section here:
+    // every technical connection in the product lives in the «اتصال‌های فنی»
+    // hub (/dashboard/connections), which is deliberately not an app, and any
+    // connection surface anywhere else redirects to it.
     //
     // Both modules therefore belong here: `website` gates the CMS half
     // (docs/eshobe-cms-integration.md) and `integrations` the WordPress half.
@@ -154,17 +160,6 @@ export const APPS: AppDef[] = [
     modules: ["ledger", "reports"],
   },
   {
-    key: "connections",
-    label: "اتصال‌های فنی",
-    description:
-      "اتصال برنامه دسکتاپ، کلیدهای API و دستیارهای هوشمند؛ اتصال وردپرس، ووکامرس و سایت‌ساز در «مدیریت وب‌سایت» است.",
-    // Keep technical connections separate from the website managers. This
-    // prevents a WooCommerce or CMS connection tab from making «مدیریت
-    // وب‌سایت» look like a page of Accounting, while preserving a home for
-    // desktop/API/MCP credentials.
-    modules: ["connections"],
-  },
-  {
     key: "settings",
     label: "تنظیمات",
     description: "تنظیمات کسب‌وکار، کاربران، شعب و دستگاه‌ها.",
@@ -172,13 +167,26 @@ export const APPS: AppDef[] = [
   },
 ];
 
+// NOTE — there is deliberately no "connections" app. «اتصال‌های فنی»
+// (/dashboard/connections) is the one hub for every technical connection in
+// the product — desktop pairing, WordPress/WooCommerce, the Eshobe CMS site,
+// Holoo, the remote server sync, MCP and API keys — but it is a technical
+// utility of the shell, not a سکو: it is never listed in the platform
+// switchboard, never badged, and never gated by app availability. Its module
+// (`connections`) stays intentionally unassigned below, next to `ai` and
+// `workspace`, so `appForModule` answers null for it and every guard fails
+// open. Each tab still carries its own role and feature gate
+// (src/lib/connection-kinds.ts).
+
 /**
  * Module → owning app, built once at load. A module claimed by two apps is a
  * real authoring mistake, not a runtime condition, so it throws on import —
  * the same "fail fast on invalid config" posture `industry-profile.ts` uses
- * for its prefix maps. The assistant (`ai`) and the workspace shell
- * (`workspace`) are intentionally absent: the assistant is the chat *home*,
- * not an app in the rail, and the workspace is the shell around the apps.
+ * for its prefix maps. The assistant (`ai`), the workspace shell
+ * (`workspace`) and the technical-connections hub (`connections`) are
+ * intentionally absent: the assistant is the chat *home*, not an app in the
+ * rail, the workspace is the shell around the apps, and the hub is shell
+ * infrastructure — see the NOTE above.
  */
 const MODULE_APP_MAP: Partial<Record<ModuleKey, AppKey>> = (() => {
   const map: Partial<Record<ModuleKey, AppKey>> = {};
@@ -196,7 +204,12 @@ const MODULE_APP_MAP: Partial<Record<ModuleKey, AppKey>> = (() => {
   return map;
 })();
 
-/** Which app owns a module, or null if the module is the home/shell/a future placeholder. */
+/**
+ * Which app owns a module, or null if the module is the home/shell, a future
+ * placeholder, or the technical-connections hub (`connections` — see the note
+ * above: the hub is shell infrastructure, not an app, so it has no availability
+ * state and no guard ever blocks it).
+ */
 export function appForModule(module: ModuleKey): AppKey | null {
   return MODULE_APP_MAP[module] ?? null;
 }

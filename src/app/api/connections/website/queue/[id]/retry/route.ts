@@ -4,7 +4,7 @@ import { retryWebsiteOutboxRow } from "@/lib/website/sync-service";
 
 /** Put a failed or dead row back in the queue, due now. */
 export const POST = withTenantScope(async (_request: Request, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner");
+  const { session, error } = await requireRole("owner", "manager");
   if (error) return error;
 
   const { id } = await context.params;

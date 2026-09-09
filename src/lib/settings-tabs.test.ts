@@ -110,7 +110,9 @@ describe("visibleSettingsTabs", () => {
         role: "owner",
         features: { backup: true, offline_mode: true },
       }).map((tab) => tab.key),
-    ).toEqual(["branch-management", "server-sync", "notifications", "backup"]);
+      // No `server-sync`: remote-server sync is a technical connection and
+      // lives in the «اتصال‌های فنی» hub now, not among the settings tabs.
+    ).toEqual(["branch-management", "notifications", "backup"]);
 
     expect(
       visibleSettingsTabs([], {

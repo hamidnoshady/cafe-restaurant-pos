@@ -135,8 +135,6 @@ describe("route → app", () => {
     expect(appForPagePath("/dashboard/crm/segments")).toBe("crm");
     expect(appForPagePath("/dashboard/growth")).toBe("growth");
     expect(appForPagePath("/dashboard/website/wp/products")).toBe("website");
-    expect(appForPagePath("/dashboard/connections")).toBe("connections");
-    expect(appForPagePath("/dashboard/connections/holoo")).toBe("connections");
   });
 
   it("maps an API route the same way", () => {
@@ -150,6 +148,9 @@ describe("route → app", () => {
     expect(appForPagePath("/dashboard")).toBeNull();
     expect(appForPagePath("/dashboard/projects")).toBeNull();
     expect(appForPagePath("/dashboard/ai")).toBeNull();
+    // The «اتصال‌های فنی» hub is a shell utility, not an app: turning a
+    // platform off must never lock the page that holds its credentials.
+    expect(appForPagePath("/dashboard/connections")).toBeNull();
     expect(appForApiPath("/api/auth/login")).toBeNull();
   });
 });

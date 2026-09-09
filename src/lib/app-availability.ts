@@ -188,9 +188,10 @@ export function isAppUsable(map: AppAvailabilityMap | undefined, app: AppKey | n
  * Answered through the module maps rather than a third prefix table: a route
  * already declares its module (`industry-profile.ts`) and a module already
  * declares its app (`apps.ts`), so adding a page keeps needing exactly one
- * registration, not two. The chat home, projects and the assistant have no
- * owning app and so are never blocked — the explanation screen has to be
- * reachable from somewhere.
+ * registration, not two. The chat home, projects, the assistant and the
+ * «اتصال‌های فنی» hub have no owning app and so are never blocked — the
+ * explanation screen has to be reachable from somewhere, and the hub is shell
+ * infrastructure rather than an app.
  */
 export function appForPagePath(pathname: string): AppKey | null {
   const module = moduleForPagePath(pathname);

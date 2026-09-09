@@ -25,7 +25,6 @@ import {
   FolderTreeIcon,
   ImageIcon,
   LayoutDashboardIcon,
-  PlugIcon,
   ReceiptTextIcon,
   SendIcon,
   SettingsIcon,
@@ -68,7 +67,6 @@ const CMS_ICONS: Record<CmsSectionKey, typeof LayoutDashboardIcon> = {
 
 const WP_ICONS: Record<WpSectionKey, typeof LayoutDashboardIcon> = {
   overview: LayoutDashboardIcon,
-  connections: PlugIcon,
   products: ShoppingBagIcon,
   orders: ReceiptTextIcon,
   customers: ContactIcon,
