@@ -8,11 +8,12 @@ import { formatJalali } from "@/lib/jalali";
 import { useMoney } from "@/components/money/money-context";
 import { expectedMaterialCost, productionUnitCost } from "@/lib/production";
 import { quantityText, rialText } from "@/lib/inventory-exact";
-import { api, Field, inputClass, PrimaryButton, SecondaryButton } from "../ui";
+import { api, Field, inputClass } from "../ui";
+import { Button } from "@/components/ui/button";
 import type { InventoryItem, Runner } from "./inventory-manager";
-import { SectionCardSkeleton, cardClass } from "../page-chrome";
+import { SectionCardSkeleton, SectionCard, EmptyState } from "../page-chrome";
 
-const productionInputClass = `${inputClass} min-h-[52px] !border-border !bg-card shadow-none placeholder:text-muted-foreground focus-visible:border-amber-500 dark:focus-visible:border-amber-500/60 focus-visible:ring-amber-400/30 dark:focus-visible:ring-amber-400/40`;
+
 
 interface FormulaInputRow {
   inventoryItemId: string;
@@ -209,13 +210,15 @@ function FormulaCard({
   }
 
   return (
-    <section className={`min-w-0 ${cardClass} p-5`}>
-      <h2 className="mb-1 font-semibold">فرمول‌های تولید</h2>
-      <p className="mb-3 text-xs leading-5 text-muted-foreground">
-        برای کالاهایی که خودتان می‌سازید: یک بار پخت چه موادی مصرف می‌کند و چند واحد محصول می‌دهد.
-        محصول به‌دست‌آمده مثل هر قلم انبار دیگری موجودی و بهای تمام‌شده دارد و می‌توانید آن را در
-        «دستورالعمل مصرف» به آیتم منو وصل کنید.
-      </p>
+    <SectionCard
+      title={
+        <div>
+          <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">تولید</p>
+          <h2 className="mt-1 font-semibold text-foreground">فرمول‌های تولید</h2>
+        </div>
+      }
+      description="برای کالاهایی که خودتان می‌سازید: یک بار پخت چه موادی مصرف می‌کند و چند واحد محصول می‌دهد. محصول به‌دست‌آمده مثل هر قلم انبار دیگری موجودی و بهای تمام‌شده دارد."
+    >
 
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end">
         <div className="min-w-0 flex-1">
@@ -235,9 +238,9 @@ function FormulaCard({
           </Field>
         </div>
         <div className="mb-4">
-          <SecondaryButton disabled={busy} onClick={() => setCreating((v) => !v)}>
+          <Button type="button" variant="outline" disabled={busy} onClick={() => setCreating((v) => !v)}>
             {creating ? "انصراف" : "فرمول جدید"}
-          </SecondaryButton>
+          </Button>
         </div>
       </div>
 
@@ -245,7 +248,7 @@ function FormulaCard({
         <form onSubmit={create} className="mb-5 grid min-w-0 gap-3 rounded-xl border border-border p-4 sm:grid-cols-2">
           <Field label="نام فرمول">
             <input
-              className={productionInputClass}
+              className={inputClass}
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="مثلاً تولید کیک شکلاتی"
@@ -268,7 +271,7 @@ function FormulaCard({
           </Field>
           <Field label="مقدار تولید در هر بار پخت" hint="به واحد پایهٔ محصول، مثلاً ۸ برش">
             <PersianNumberInput
-              className={productionInputClass}
+              className={inputClass}
               dir="ltr"
               inputMode="decimal"
               value={outputQuantity}
@@ -279,7 +282,7 @@ function FormulaCard({
           </Field>
           <Field label={`هزینهٔ تبدیل هر بار پخت (${money.unitLabel})`} hint="دستمزد و سربار؛ اختیاری">
             <PersianNumberInput
-              className={productionInputClass}
+              className={inputClass}
               dir="ltr"
               inputMode="numeric"
               value={conversionCost}
@@ -288,7 +291,7 @@ function FormulaCard({
             />
           </Field>
           <div className="mb-4 flex items-end sm:col-span-2">
-            <PrimaryButton disabled={busy}>ثبت فرمول</PrimaryButton>
+            <Button type="submit" size="lg" className="w-full px-5 font-semibold" disabled={busy}>ثبت فرمول</Button>
           </div>
         </form>
       ) : null}
@@ -318,7 +321,7 @@ function FormulaCard({
                 <span className="break-words">
                   {line.itemName} — {formatQuantity(line.quantity)} {line.unit}
                 </span>
-                <SecondaryButton
+                <Button type="button" variant="outline"
                   disabled={busy}
                   onClick={() => {
                     if (!window.confirm(`مادهٔ «${line.itemName}» از فرمول حذف شود؟`)) return;
@@ -331,7 +334,7 @@ function FormulaCard({
                   }}
                 >
                   حذف
-                </SecondaryButton>
+                </Button>
               </li>
             ))}
             {selected.inputs.length === 0 ? (
@@ -358,7 +361,7 @@ function FormulaCard({
             </Field>
             <Field label="مقدار مصرف در هر بار پخت">
               <PersianNumberInput
-                className={productionInputClass}
+                className={inputClass}
                 dir="ltr"
                 inputMode="decimal"
                 value={inputQuantity}
@@ -368,12 +371,12 @@ function FormulaCard({
               />
             </Field>
             <div className="mb-4 flex items-end">
-              <PrimaryButton disabled={busy}>ثبت ماده</PrimaryButton>
+              <Button type="submit" size="lg" className="w-full px-5 font-semibold" disabled={busy}>ثبت ماده</Button>
             </div>
           </form>
         </>
       ) : null}
-    </section>
+    </SectionCard>
   );
 }
 
@@ -444,13 +447,15 @@ function RunCard({
   }
 
   return (
-    <section className={`min-w-0 ${cardClass} p-5`}>
-      <h2 className="mb-1 font-semibold">ثبت تولید</h2>
-      <p className="mb-3 text-xs leading-5 text-muted-foreground">
-        با ثبت تولید، مواد اولیه از انبار کم و محصول با بهای واقعی (مواد + هزینهٔ تبدیل) به انبار
-        اضافه می‌شود. اگر مقدار به‌دست‌آمده با فرمول فرق داشت، همان مقدار واقعی را وارد کنید؛ بهای هر
-        واحد بر همان تقسیم می‌شود.
-      </p>
+    <SectionCard
+      title={
+        <div>
+          <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">عملیات تولید</p>
+          <h2 className="mt-1 font-semibold text-foreground">ثبت تولید</h2>
+        </div>
+      }
+      description="با ثبت تولید، مواد اولیه از انبار کم و محصول با بهای واقعی (مواد + هزینهٔ تبدیل) به انبار اضافه می‌شود. اگر مقدار به‌دست‌آمده با فرمول فرق داشت، همان مقدار واقعی را وارد کنید."
+    >
 
       <form onSubmit={submit} className="mb-5 grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-3">
         <Field label="فرمول">
@@ -471,7 +476,7 @@ function RunCard({
         </Field>
         <Field label="تعداد بار پخت">
           <PersianNumberInput
-            className={productionInputClass}
+            className={inputClass}
             dir="ltr"
             inputMode="decimal"
             value={batches}
@@ -484,7 +489,7 @@ function RunCard({
           hint={selected ? `به ${selected.outputUnit}` : "ابتدا فرمول را انتخاب کنید"}
         >
           <PersianNumberInput
-            className={productionInputClass}
+            className={inputClass}
             dir="ltr"
             inputMode="decimal"
             value={outputQuantity}
@@ -494,7 +499,7 @@ function RunCard({
         </Field>
         <Field label={`هزینهٔ تبدیل (${money.unitLabel})`} hint="دستمزد و سربار این بار پخت">
           <PersianNumberInput
-            className={productionInputClass}
+            className={inputClass}
             dir="ltr"
             inputMode="numeric"
             value={conversionCost}
@@ -504,14 +509,14 @@ function RunCard({
         </Field>
         <Field label="توضیح">
           <input
-            className={productionInputClass}
+            className={inputClass}
             value={note}
             onChange={(e) => setNote(e.target.value)}
             placeholder="اختیاری"
           />
         </Field>
         <div className="mb-4 flex items-end">
-          <PrimaryButton disabled={busy || !formulaId}>ثبت تولید</PrimaryButton>
+          <Button type="submit" size="lg" className="w-full px-5 font-semibold" disabled={busy || !formulaId}>ثبت تولید</Button>
         </div>
       </form>
 
@@ -524,7 +529,7 @@ function RunCard({
           <li className="px-3 py-3 text-xs text-muted-foreground">هنوز تولیدی ثبت نشده است.</li>
         ) : null}
       </ul>
-    </section>
+    </SectionCard>
   );
 }
 
@@ -557,7 +562,7 @@ function RunRow({ item, busy, run }: { item: Run; busy: boolean; run: Runner }) 
       ) : item.reversedByRunId ? (
         <span className="shrink-0 text-xs text-muted-foreground">برگشت خورده</span>
       ) : (
-        <SecondaryButton
+        <Button type="button" variant="outline"
           disabled={busy}
           onClick={() => {
             if (
@@ -575,7 +580,7 @@ function RunRow({ item, busy, run }: { item: Run; busy: boolean; run: Runner }) 
           }}
         >
           برگشت
-        </SecondaryButton>
+        </Button>
       )}
     </li>
   );

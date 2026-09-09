@@ -17,10 +17,11 @@ import { formatQuantity, toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import { useMoney } from "@/components/money/money-context";
 import { useInventorySearch } from "@/lib/inventory-search";
-import { api, errorMessage, Field, inputClass, PrimaryButton } from "../ui";
+import { api, errorMessage, Field, inputClass } from "../ui";
+import { Button } from "@/components/ui/button";
 import { CountScanField, type ScanMatch } from "./count-scan-field";
 import type { InventoryItem, Runner } from "./inventory-manager";
-import { cardClass, overlayPanelClass } from "../page-chrome";
+import { cardClass, overlayPanelClass, SectionCard, EmptyState } from "../page-chrome";
 
 interface StockCount {
   id: string;
@@ -159,12 +160,15 @@ export function StockCountsSection({
 
   return (
     <div className="space-y-6">
-      <section className={`min-w-0 ${cardClass} p-5`}>
-        <h2 className="mb-1 font-semibold">شمارش فیزیکی انبار</h2>
-        <p className="mb-3 text-xs text-muted-foreground">
-          فقط اقلامی که مقدار شمارش‌شده برایشان وارد شود ثبت می‌شوند؛ اختلاف با
-          موجودی سیستم به‌صورت خودکار به‌عنوان اصلاحیه ثبت می‌شود.
-        </p>
+      <SectionCard
+        title={
+          <div>
+            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">عملیات شمارش</p>
+            <h2 className="mt-1 font-semibold text-foreground">شمارش فیزیکی انبار</h2>
+          </div>
+        }
+        description="فقط اقلامی که مقدار شمارش‌شده برایشان وارد شود ثبت می‌شوند؛ اختلاف با موجودی سیستم به‌صورت خودکار به‌عنوان اصلاحیه ثبت می‌شود."
+      >
         <form onSubmit={submit} className="space-y-3">
           <CountScanField
             onScan={handleScan}
@@ -278,16 +282,21 @@ export function StockCountsSection({
                 : "قلم فعالی برای شمارش موجود نیست."}
             </p>
           ) : null}
-          <PrimaryButton disabled={busy}>ثبت شمارش</PrimaryButton>
+          <Button type="submit" size="lg" className="w-full px-5 font-semibold" disabled={busy}>ثبت شمارش</Button>
         </form>
-      </section>
+      </SectionCard>
 
-      <section className={`min-w-0 ${cardClass} p-5`}>
-        <h2 className="mb-3 font-semibold">شمارش‌های اخیر</h2>
-        <p className="mb-3 text-xs text-muted-foreground">
-          برای دیدن اقلام هر شمارش و ویرایش یا حذف آن، روی شمارش بزنید.
-        </p>
-        <ul className="divide-y divide-border rounded-lg border border-border">
+      <SectionCard
+        title={
+          <div>
+            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">سوابق شمارش</p>
+            <h2 className="mt-1 font-semibold text-foreground">شمارش‌های اخیر</h2>
+          </div>
+        }
+        description="برای دیدن اقلام هر شمارش و ویرایش یا حذف آن، روی شمارش بزنید."
+        flush
+      >
+        <ul className="divide-y divide-border/80">
           {(counts ?? []).map((c) => (
             <li key={c.id}>
               <button
@@ -311,7 +320,7 @@ export function StockCountsSection({
             </li>
           ) : null}
         </ul>
-      </section>
+      </SectionCard>
 
       {editingId ? (
         <StockCountModal
@@ -646,9 +655,9 @@ function StockCountModal({
             </div>
 
             <div className="flex flex-col gap-2 pt-1 sm:flex-row">
-              <PrimaryButton onClick={save} disabled={busy} type="button">
+              <Button type="button" size="lg" className="w-full px-5 font-semibold" onClick={save} disabled={busy}>
                 {busy ? "در حال ذخیره…" : "ذخیره تغییرات"}
-              </PrimaryButton>
+              </Button>
               <button
                 type="button"
                 onClick={remove}
