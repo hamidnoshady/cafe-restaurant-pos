@@ -12,6 +12,7 @@ import {
   CalculatorIcon,
   CheckIcon,
   ChefHatIcon,
+  ChevronDownIcon,
   CircleIcon,
   ClipboardListIcon,
   ContactIcon,
@@ -128,6 +129,9 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   "/dashboard/reservations": CalendarDaysIcon,
   "/dashboard/delivery": TruckIcon,
   "/dashboard/inventory": PackageIcon,
+  // Phase 42 — the products workspace group's icon (nav entries derive theirs
+  // from href; the group has none, so it names this key via `iconKey`).
+  "/dashboard/products": PackageIcon,
   "/dashboard/jewelry": GemIcon,
   "/dashboard/watch": WatchIcon,
   "/dashboard/accessories": SparklesIcon,
@@ -232,6 +236,13 @@ export interface NavItem {
   /** The industry module that owns this entry (src/lib/industry-profile.ts); already filtered out of navItems for an industry that has no such module. */
   module: ModuleKey;
   href?: string;
+  /**
+   * Phase 42 — a collapsible group («محصولات») rather than a link: the button
+   * discloses `children` beneath it. The `iconKey` names the NAV_ICONS entry
+   * the group wears, since a group has no href of its own to derive one from.
+   */
+  children?: NavItem[];
+  iconKey?: string;
   roles?: string[];
   /** Set when this page is gated by a Phase 17 feature flag; already filtered out of navItems if disabled and not lockable. */
   flag?: string;
@@ -278,6 +289,83 @@ function isActive(path: string, href: string): boolean {
   return path === href || path.startsWith(`${href}/`);
 }
 
+/** Which collapsible nav groups the member left open, per device. */
+const OPEN_NAV_GROUPS_KEY = "dashboard-sidebar-open-groups";
+
+function readOpenGroups(): Record<string, boolean> {
+  try {
+    const raw = window.localStorage.getItem(OPEN_NAV_GROUPS_KEY);
+    return raw ? (JSON.parse(raw) as Record<string, boolean>) : {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Phase 42 — a collapsible group in the flat nav («محصولات» and its
+ * sub-sections). The parent is a disclosure, not a link; children wear the
+ * same amber selection as every other nav entry, with an inline-start bar
+ * marking the one you are on. A group that holds the active page opens on
+ * its own, so a deep link never lands behind a closed door; the member's
+ * manual opens/closes are remembered per device.
+ */
+function NavGroupItem({
+  item,
+  pathname,
+  onNavigate,
+  open,
+  onToggle,
+}: {
+  item: NavItem & { children: NavItem[] };
+  pathname: string;
+  onNavigate: () => void;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const Icon = NAV_ICONS[item.iconKey ?? ""] ?? CircleIcon;
+  const childActive = item.children.some((child) => child.href && isActive(pathname, child.href));
+  return (
+    <SidebarMenuItem>
+      <SidebarMenuButton
+        asChild={false}
+        isActive={childActive}
+        tooltip={item.label}
+        className={APP_NAV_BUTTON_CLASS}
+        aria-expanded={open}
+        onClick={onToggle}
+      >
+        <Icon aria-hidden="true" className="size-5 shrink-0" />
+        <span className="group-data-[state=collapsed]/sidebar:hidden">{item.label}</span>
+        <ChevronDownIcon
+          aria-hidden="true"
+          className={`ms-auto size-4 shrink-0 text-muted-foreground transition-transform duration-200 ease-out group-data-[state=collapsed]/sidebar:hidden ${open ? "" : "-rotate-90"}`}
+        />
+      </SidebarMenuButton>
+      {open ? (
+        <ul className="ms-6 mt-1 space-y-0.5 group-data-[state=collapsed]/sidebar:hidden">
+          {item.children.map((child) => {
+            if (!child.href) return null;
+            const active = isActive(pathname, child.href);
+            return (
+              <li key={child.href}>
+                <Link
+                  href={child.href}
+                  onClick={onNavigate}
+                  data-active={active}
+                  aria-current={active ? "page" : undefined}
+                  className="flex min-h-10 w-full items-center rounded-lg border-s-2 border-transparent px-3 text-sm text-foreground/75 transition-colors hover:bg-amber-50 dark:hover:bg-amber-500/15 hover:text-amber-700 dark:hover:text-amber-300 data-[active=true]:border-amber-500 dark:data-[active=true]:border-amber-400 data-[active=true]:bg-amber-100 dark:data-[active=true]:bg-amber-500/20 data-[active=true]:font-semibold data-[active=true]:text-amber-700 dark:data-[active=true]:text-amber-200"
+                >
+                  {child.label}
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
+    </SidebarMenuItem>
+  );
+}
+
 function NavLinks({
   navItems,
   pathname,
@@ -290,6 +378,19 @@ function NavLinks({
   /** True while the business has the workspace shell: adds a «میز کار» entry back to the chat home. */
   showWorkspaceHome?: boolean;
 }) {
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
+  useEffect(() => setOpenGroups(readOpenGroups()), []);
+  const toggleGroup = useCallback((label: string) => {
+    setOpenGroups((current) => {
+      const next = { ...current, [label]: !current[label] };
+      try {
+        window.localStorage.setItem(OPEN_NAV_GROUPS_KEY, JSON.stringify(next));
+      } catch {
+        // A device that refuses storage keeps the choice for the session.
+      }
+      return next;
+    });
+  }, []);
   return (
     <SidebarContent className="px-3 py-4">
       <nav aria-label="ناوبری داشبورد">
@@ -310,6 +411,21 @@ function NavLinks({
             </SidebarMenuItem>
           ) : null}
           {navItems.map((item) => {
+            if (item.children && item.children.length > 0) {
+              const holdsActive = item.children.some(
+                (child) => child.href && isActive(pathname, child.href),
+              );
+              return (
+                <NavGroupItem
+                  key={item.label}
+                  item={item as NavItem & { children: NavItem[] }}
+                  pathname={pathname}
+                  onNavigate={onNavigate}
+                  open={Boolean(openGroups[item.label]) || holdsActive}
+                  onToggle={() => toggleGroup(item.label)}
+                />
+              );
+            }
             if (!item.href) return null;
             const Icon = NAV_ICONS[item.href] ?? CircleIcon;
             const active = isActive(pathname, item.href);

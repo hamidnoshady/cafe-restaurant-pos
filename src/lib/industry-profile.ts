@@ -358,6 +358,10 @@ export const PAGE_MODULE_PREFIXES: readonly (readonly [string, ModuleKey])[] = [
   ["/dashboard/jewelry", "jewelry"],
   ["/dashboard/watch", "watch"],
   ["/dashboard/accessories", "accessories"],
+  // Phase 42 — the products workspace is the catalogue door every retail
+  // trade-goods industry shares; anchored on `stock`, the module all five of
+  // those profiles carry, so a trade without the variant board never sees it.
+  ["/dashboard/products", "stock"],
   ["/dashboard/cosmetics", "cosmetics"],
   ["/dashboard/wholesale", "wholesale"],
   ["/dashboard/tools-fittings", "tools_fittings"],
@@ -476,6 +480,9 @@ const API_MODULE_PREFIXES: readonly (readonly [string, ModuleKey])[] = [
   // the availability guard refuse them with the rest of operations.
   ["/api/jewelry", "jewelry"],
   ["/api/watch", "watch"],
+  // Phase 42 — the shared products-workspace routes; the handlers re-check
+  // the industry set themselves (requireProductWorkspaceForApi).
+  ["/api/products", "stock"],
   ["/api/accessories", "accessories"],
   ["/api/cosmetics", "cosmetics"],
   ["/api/wholesale", "wholesale"],
