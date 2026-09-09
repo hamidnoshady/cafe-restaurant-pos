@@ -32,7 +32,7 @@ import { wooAmountToRial } from "./woo-money";
 import { writeIntegrationAudit } from "./audit";
 import { getBusinessIndustry } from "../industry-guard";
 import { connectionLocationId, resolveOrderCustomerId, upsertCustomerFromWoo, upsertProductFromWoo } from "./sync-service";
-import { wooLineCandidateIds } from "./woo-catalogue";
+import { wooLineCandidateIds, shouldImportWooOrder } from "./woo-catalogue";
 import { upsertWpContent } from "./wp-content-service";
 import type { WooCustomer, WooOrder, WooOrderLineItem, WooProduct, WooRefund } from "./woocommerce-client";
 import type { Industry } from "../industries";
@@ -158,20 +158,50 @@ async function applyIngestEvent(connection: ConnectionRow, event: WebhookEvent):
     [businessId, connection.id, event.topic, remoteId, event.deliveryId, JSON.stringify(event.payload)],
   );
 
-  if (inserted.length === 0) {
-    await query(
-      `UPDATE integration_webhook_events SET status = 'duplicate', processed_at = now()
+  let inboxId: string;
+  if (inserted.length > 0) {
+    inboxId = inserted[0].id;
+  } else {
+    // This delivery id has been seen. The whole point of the sender's retry
+    // (the plugin re-pushing a row after a backoff, the scheduled pull
+    // re-reading an unchanged order) is that the first attempt may have
+    // *failed* — so a re-delivery whose earlier attempt failed is retried,
+    // not discarded. Treating every re-delivery as a duplicate is how a
+    // single transient failure (a variation whose parent had not landed yet,
+    // a dropped connection mid-apply) permanently lost the event: the plugin
+    // saw "duplicate" as success, marked its queue row sent, and the sale or
+    // product never arrived anywhere.
+    const { rows: existing } = await query<{ id: string; status: string }>(
+      `SELECT id, status FROM integration_webhook_events
         WHERE connection_id = $1 AND delivery_id = $2`,
       [connection.id, event.deliveryId],
     );
-    return { status: "duplicate" };
+    if (existing[0]?.status !== "failed") {
+      // Processed already (or another delivery is applying it right now) —
+      // exactly the duplicate the idempotency key exists to absorb.
+      return { status: "duplicate" };
+    }
+    inboxId = existing[0].id;
+    await query(
+      `UPDATE integration_webhook_events
+          SET status = 'pending', error = NULL, processed_at = NULL
+        WHERE id = $1`,
+      [inboxId],
+    );
   }
-  const inboxId = inserted[0].id;
 
   try {
     if (event.topic.endsWith("order.created") || event.topic.endsWith("order.updated") || event.topic.endsWith("order.restored")) {
-      if (connection.sync_orders) {
-        await ingestOrder(connection, event.payload as unknown as WooOrder);
+      const order = event.payload as unknown as WooOrder;
+      // An order the store has not been paid for yet is not a sale. It is
+      // acked (processed, not failed) so the sender does not retry it, and
+      // the payload stays in the inbox — the event that moves it into a paid
+      // state carries a new delivery id and imports it then. Without this
+      // gate every abandoned cart, cancelled checkout and failed payment in
+      // the lookback window was imported as a completed, paid sale with a
+      // revenue journal entry.
+      if (connection.sync_orders && shouldImportWooOrder(order.status)) {
+        await ingestOrder(connection, order);
       }
     } else if (event.topic.endsWith("refund.created")) {
       await ingestRefund(connection, event.payload as unknown as WooRefund, inboxId);
@@ -200,7 +230,10 @@ async function applyIngestEvent(connection: ConnectionRow, event: WebhookEvent):
     }
     // Any other topic is acknowledged and left alone — we never want a
     // re-delivery storm for an event we don't handle yet.
-    await query(`UPDATE integration_webhook_events SET status = 'processed', processed_at = now() WHERE id = $1`, [inboxId]);
+    await query(
+      `UPDATE integration_webhook_events SET status = 'processed', processed_at = now(), error = NULL WHERE id = $1`,
+      [inboxId],
+    );
     return { status: "processed" };
   } catch (err) {
     const message = (err as Error).message;

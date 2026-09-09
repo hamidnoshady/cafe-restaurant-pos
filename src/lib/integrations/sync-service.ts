@@ -726,6 +726,14 @@ export async function syncOrders(
     // last page: the old short-page stop also ended the loop one page early
     // whenever the store's last page happened to hold exactly `per_page`
     // rows, which is how some orders "synced" and the rest never did.
+    //
+    // No status filter here, deliberately. The ingest's own
+    // `shouldImportWooOrder` gate decides what becomes a sale, and filtering
+    // at the source would silently drop a store whose automation moves
+    // orders straight from pending to a custom paid status — a state this
+    // app has never heard of is a sale, not something to skip. Unpaid orders
+    // cost one inbox row and nothing else: their watermark only changes when
+    // the store touches them.
     const { items: orders, totalPages } = await client.listOrdersPage({
       per_page: PER_PAGE,
       page,

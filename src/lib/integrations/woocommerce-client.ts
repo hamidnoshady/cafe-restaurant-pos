@@ -366,16 +366,44 @@ async function requestPage<T>(
     method: "GET",
     headers: { Authorization: wooAuthHeader(credentials), "Content-Type": "application/json" },
   });
-  const json = (await response.json()) as T[] & { code?: string; message?: string };
+  let json: unknown;
+  try {
+    json = await response.json();
+  } catch {
+    // A WAF interstitial, a cached HTML error page, a truncated body — none
+    // of it is a list. Letting JSON.parse's own error escape reported a
+    // bare syntax error with no status and no hint of which request made
+    // it, which is exactly the "sync just doesn't work" report that cannot
+    // be diagnosed from the app side.
+    throw new WooCommerceError(`woocommerce_list_failed_http_${response.status}`, response.status);
+  }
+  const err = (json ?? {}) as { code?: string; message?: string };
   if (!response.ok) {
-    throw new WooCommerceError(json?.message ?? "woocommerce_list_failed", response.status);
+    throw new WooCommerceError(err?.message ?? "woocommerce_list_failed", response.status);
   }
   const totalPagesHeader = response.headers?.get("X-WP-TotalPages");
   const parsed = totalPagesHeader ? Number.parseInt(totalPagesHeader, 10) : Number.NaN;
   const items = Array.isArray(json) ? json : [];
-  // A store that withholds the header (a caching proxy, an old WooCommerce)
-  // still syncs: a short last page ends the loop, exactly as before.
-  const totalPages = Number.isFinite(parsed) && parsed > 0 ? parsed : items.length > 0 ? options.page ?? 1 : 0;
+  // The page number reaches here two ways: `options.page` (the internal
+  // helpers) or `query.page` (the public listProductsPage/listOrdersPage/
+  // listCustomersPage shape). Read the *merged* query so both work — the old
+  // fallback read only `options.page`, so the public helpers' header-less
+  // fallback always believed it was on page 1.
+  const page = Number(query.page ?? options.page) || 1;
+  const perPage = Number(query.per_page ?? 0);
+  const totalPages = Number.isFinite(parsed) && parsed > 0
+    ? parsed
+    : items.length === 0
+      ? 0
+      : // A store that withholds the header (a caching proxy, an old
+        // WooCommerce) still syncs: a full page promises one more look, a
+        // short page is the last one. The previous fallback returned the
+        // *current* page as the final one, so any store whose proxy strips
+        // response headers had every sync silently truncated to its first
+        // 100 rows — "only some of my products are in the app".
+        perPage > 0 && items.length >= perPage
+        ? page + 1
+        : page;
   return { items, totalPages };
 }
 

@@ -237,8 +237,8 @@ describe("orders and refunds", () => {
 
 describe("pagination", () => {
   it("stops after one page when the store withholds X-WP-TotalPages", async () => {
-    // A caching proxy or an old WooCommerce. Guessing from a full page would
-    // cost an extra request per sync and stop early on an exact last page.
+    // A caching proxy or an old WooCommerce. An empty page means the same
+    // thing with or without the header: there is nothing more to read.
     const fetch = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => [] });
     const client = createWooCommerceClient(credentials, fetch);
     await expect(client.listProductsPage({ page: 1, per_page: 100 })).resolves.toEqual({
@@ -246,6 +246,30 @@ describe("pagination", () => {
       totalPages: 0,
     });
     expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps paging past a full page when the store withholds X-WP-TotalPages", async () => {
+    // The same proxy in front of a store with 250 products. A full page is
+    // the only evidence there is more, so it must read as "one more page",
+    // not "that was the last one" — otherwise the sync stops at 100 rows
+    // and the owner sees a fraction of their catalogue.
+    const full = { ok: true, status: 200, json: async () => Array.from({ length: 100 }, (_, i) => ({ id: i + 1 })) };
+    const fetch = vi.fn().mockResolvedValue(full);
+    const client = createWooCommerceClient(credentials, fetch);
+    await expect(client.listProductsPage({ page: 1, per_page: 100 })).resolves.toMatchObject({
+      totalPages: 2,
+    });
+    await expect(client.listProductsPage({ page: 3, per_page: 100 })).resolves.toMatchObject({
+      totalPages: 4,
+    });
+  });
+
+  it("treats a short page without the header as the last one", async () => {
+    const fetch = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => [{ id: 1 }, { id: 2 }] });
+    const client = createWooCommerceClient(credentials, fetch);
+    await expect(client.listProductsPage({ page: 4, per_page: 100 })).resolves.toMatchObject({
+      totalPages: 4,
+    });
   });
 
   it("reads the store's page count when it offers one", async () => {
@@ -261,5 +285,17 @@ describe("pagination", () => {
     const fetch = vi.fn().mockResolvedValue(json(500, { message: "boom" }));
     const client = createWooCommerceClient(credentials, fetch);
     await expect(client.listVariations(1)).rejects.toBeInstanceOf(WooCommerceError);
+  });
+
+  it("reports an HTML error page as the HTTP status rather than a JSON syntax error", async () => {
+    // A WAF interstitial or a cached error page: the body is not JSON, and
+    // the old code let JSON.parse's own "Unexpected token" escape — a
+    // syntax error with no status, which is how "the sync just doesn't
+    // work" reports arrived with nothing to act on.
+    const fetch = vi.fn().mockResolvedValue({ ok: false, status: 403, json: async () => Promise.reject(new SyntaxError("Unexpected token '<'")) });
+    const client = createWooCommerceClient(credentials, fetch);
+    await expect(client.listProductsPage({ page: 1, per_page: 100 })).rejects.toMatchObject({
+      status: 403,
+    });
   });
 });
