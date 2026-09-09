@@ -1,43 +1,50 @@
-# Builds the production image and publishes it to Docker Hub — the missing half
-# of the Runflare-builds-from-source deployment described in
-# docs/server-migration.md. Two things this unlocks, once production is
-# repointed at the pushed tag instead of building from the Dockerfile itself:
+# Builds the production image, publishes it to (private) Docker Hub, and triggers
+# Coolify to redeploy production — on every push to main.
 #
-#   1. Deploys become "pull a prebuilt image" instead of "build the whole app
-#      from scratch on the hosting platform" — the actual slow part of a
-#      deploy (npm ci + next build over ~1,500 source files) moves onto
-#      GitHub's runners, which get real layer caching (cache-from/cache-to:
-#      type=gha below), and the platform side is just a fast pull + restart.
-#   2. It's what src/lib/app-update.ts / scripts/check-app-update.ts already
-#      expect but have never had: a real
-#      docker.io/<DOCKERHUB_USERNAME>/cafe-restaurant-pos:sha-<short-sha> tag
-#      for the commit you dispatch against, which the café-laptop self-update
-#      flow polls for. That feature has been shipped but dark — this is what
-#      turns it on.
+# This is the production deploy path, and deliberately automatic: it is what
+# production (srv1, via Coolify) actually runs. While this workflow was
+# manual-only, every merge sat undeployed until somebody dispatched it by hand,
+# so production silently lagged main. An image for the deploy target has to
+# exist for every merge, hence the `push` trigger; `workflow_dispatch` is kept
+# so a rebuild can still be forced without a new commit (a base-image CVE,
+# say).
 #
-# Deliberately its own workflow, not folded into test.yml: that workflow's
-# whole point (see its own header comment and CLAUDE.md's CI section) is to
-# stay a test-only gate. Manual only — does not run on push, pull request,
-# merge, or after `test` completes. Start it from the Actions tab
-# (workflow_dispatch) when you want an image published. Run `test` first
-# yourself; nothing here re-checks that.
+# Why Docker Hub, when publish.yml pushes to GHCR. Production cannot reach
+# ghcr.io at all — it is filtered at the network layer on that host, unrelated
+# to credentials — so the image production pulls has to live on Docker Hub.
+# publish.yml's GHCR output remains, but for the café-laptop self-update flow
+# only (src/lib/app-update.ts defaults GHCR_IMAGE to that repository and mints
+# short-lived GHCR pull tokens for it); it is not what production runs.
+# The package this pushes to is private
+# (DOCKERHUB_USERNAME/cafe-restaurant-pos on Docker Hub, created private
+# manually — Docker Hub auto-creates on first push as public otherwise),
+# matching docs/server-sync.md ("this is a closed-source product"). Do not
+# make it public, and do not switch this workflow to GHCR.
 #
-# NOTE: this workflow alone does not change what production runs. Runflare
-# still builds from source per docs/server-migration.md until its service is
-# repointed at this image — that's a separate, deliberate step.
+# Tag shape is load-bearing: `sha-<short>` plus `latest`, matching
+# imageRefFor() in src/lib/app-update-status.ts. GIT_SHA is passed as a build
+# arg because the Dockerfile bakes it into APP_IMAGE_SHA, which is how a
+# running container knows which build it is.
 #
-# Pushed to Docker Hub, not GHCR: srv1.eshobe.com (a deploy target for this
-# image, see archive/deploy/docker-compose.srv1.yml) cannot reach ghcr.io at
-# all — it's blocked at the network layer on that host, unrelated to
-# credentials. Docker Hub is reachable from there, so that's what any
-# server-side puller needs regardless of which platform builds/pushes here.
-# The package this pushes to is private (DOCKERHUB_USERNAME/cafe-restaurant-pos
-# on Docker Hub, created private manually — Docker Hub auto-creates on first
-# push as public otherwise), matching docs/server-sync.md ("this is a
-# closed-source product").
+# The image is gated, not blind: `gates` re-runs the static half of the local
+# checklist (type check, production build) on the exact merge commit before
+# anything is pushed. The test suites stay in the manual test.yml — they need
+# a service container and several minutes, and that workflow stays manual by
+# design (CLAUDE.md's CI section).
+#
+# The final step redeploys production through the Coolify API
+# (COOLIFY_API_TOKEN, a repo secret with the "deploy" ability). `latest=true`
+# is load-bearing: production's compose entry for this image sets no
+# pull_policy, so a plain restart would reuse the stale cached image —
+# latest=true forces the pull regardless.
 name: build and push image
 
 on:
+  push:
+    branches: [main]
+    tags:
+      - 'v*'
+  # Rebuild and redeploy without a new commit (a base-image CVE, say).
   workflow_dispatch:
 
 permissions:
@@ -45,11 +52,31 @@ permissions:
 
 env:
   IMAGE: docker.io/${{ secrets.DOCKERHUB_USERNAME }}/cafe-restaurant-pos
+  # Session signing is not what's under test here, but `next build` does not
+  # read .env and needs a real (non-placeholder) secret to prerender.
+  # Throwaway, CI-only, never used to sign anything real.
+  JWT_SECRET: ci-only-throwaway-secret-0123456789abcdef0123456789abcdef
 
 jobs:
+  gates:
+    name: pre-deploy gates
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm run build
+
   build-and-push:
     name: build and push (Docker Hub)
     runs-on: ubuntu-latest
+    needs: [gates]
     steps:
       - uses: actions/checkout@v4
 
@@ -75,3 +102,9 @@ jobs:
             ${{ env.IMAGE }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Trigger Coolify redeploy
+        run: |
+          curl -sf -X POST \
+            "https://manage.eshobe.com/api/v1/services/jrfpvt0rctfkmzpw1ao5c1cb/restart?latest=true" \
+            -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}"
