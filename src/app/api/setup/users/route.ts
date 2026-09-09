@@ -3,7 +3,8 @@ import { query } from "@/lib/db";
 import { markStepDone } from "@/lib/settings";
 import { resolveActiveLocation, requireManager } from "@/lib/setup-state";
 import { isPinRole, isValidPin } from "@/lib/team";
-import { TeamError, createMembership, isPinTaken } from "@/lib/team-service";
+import { TeamError, createMembership, isPhoneTaken, isPinTaken } from "@/lib/team-service";
+import { canonicalMemberPhone } from "@/lib/phone-otp";
 import type { Role } from "@/lib/auth";
 import { withTenantScope } from "@/lib/auth";
 
@@ -37,7 +38,14 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requireManager();
   if (error) return error;
 
-  let body: { role?: Role; fullName?: string; email?: string; password?: string; pin?: string };
+  let body: {
+    role?: Role;
+    fullName?: string;
+    email?: string;
+    password?: string;
+    pin?: string;
+    phone?: string;
+  };
   try {
     body = await request.json();
   } catch {
@@ -83,6 +91,17 @@ export const POST = withTenantScope(async (request: NextRequest) => {
     }
   }
 
+  // Phase 42 — the login phone, optional: stored unverified, proven by the
+  // member with an OTP at their first door login.
+  let phone: string | null = null;
+  if (body.phone && String(body.phone).trim()) {
+    phone = canonicalMemberPhone(body.phone);
+    if (!phone) return NextResponse.json({ error: "invalid_phone" }, { status: 400 });
+    if (await isPhoneTaken(session.businessId, phone)) {
+      return NextResponse.json({ error: "phone_taken" }, { status: 409 });
+    }
+  }
+
   try {
     await createMembership({
       businessId: session.businessId,
@@ -91,6 +110,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
       email: role === "manager" ? (body.email ?? null) : null,
       password: role === "manager" ? (body.password ?? null) : null,
       pin,
+      phoneE164: phone,
       defaultLocationId: locationId,
       locationIds: locationId ? [locationId] : [],
       actorId: session.sub,

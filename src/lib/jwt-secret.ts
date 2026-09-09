@@ -19,7 +19,7 @@ import { jwtVerify } from "jose";
 const PLACEHOLDER = "change-me-in-production";
 const MIN_SECRET_LENGTH = 32;
 
-export type SigningRealm = "tenant" | "platform" | "mfa";
+export type SigningRealm = "tenant" | "platform" | "mfa" | "phone";
 
 const cache = new Map<SigningRealm, Promise<Uint8Array>>();
 

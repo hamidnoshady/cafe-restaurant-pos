@@ -39,6 +39,14 @@ import {
   verifyRegistration,
   type CredentialDescriptor,
 } from "./webauthn";
+import {
+  employeeLoginMode,
+  memberPhoneState,
+  pinWindowActive,
+  type EmployeeLoginMode,
+  type MemberPhoneState,
+} from "./phone-otp-policy";
+import { phoneOtpEnforcementFor } from "./phone-otp";
 
 export class EmployeeError extends Error {
   status: number;
@@ -1026,6 +1034,16 @@ export interface LoginRosterEntry {
   photoUrl: string | null;
   /** Wave 3 — whether the login screen should offer a biometric prompt for this name before falling back to the PIN pad. */
   hasWebauthn: boolean;
+  /**
+   * Phase 42 — which step the door shows after this name is picked: the PIN
+   * pad, the OTP screen, or the PIN pad followed by a set-and-verify number.
+   * Computed server-side (employeeLoginMode) from the business's phone-OTP
+   * policy plus this member's phone state and 7-day window, so the client
+   * never re-derives a security decision.
+   */
+  loginMode: EmployeeLoginMode;
+  /** Phase 42 — this member's phone state, for the door's optional «تأیید شماره» nudge during the adoption window. */
+  phoneState: MemberPhoneState;
 }
 
 interface RosterRow extends Record<string, unknown> {
@@ -1034,6 +1052,9 @@ interface RosterRow extends Record<string, unknown> {
   role: string;
   photo_url: string | null;
   has_webauthn: boolean;
+  phone_e164: string | null;
+  phone_verified_at: Date | null;
+  otp_login_at: Date | null;
 }
 
 /**
@@ -1041,8 +1062,9 @@ interface RosterRow extends Record<string, unknown> {
  * same eligibility rule pin-login itself checks (`is_active`, a PIN role, a
  * PIN actually set) so a name never appears here that pin-login would then
  * reject — and nothing more sensitive than a name, role, and photo (plus,
- * since Wave 3, a plain boolean for whether a biometric prompt makes sense)
- * is returned, since this runs before any credential has been presented.
+ * since Wave 3, a plain boolean for whether a biometric prompt makes sense,
+ * and since Phase 42 a coarse phone state, never the number itself) is
+ * returned, since this runs before any credential has been presented.
  *
  * `deviceId` (Wave 4) — resolved by the route from a device token the
  * caller's browser may be carrying — narrows `hasWebauthn` to credentials
@@ -1062,6 +1084,7 @@ export async function loginRoster(
   }
   const { rows } = await query<RosterRow>(
     `SELECT u.id, u.full_name, u.role::text AS role, e.photo_url,
+            u.phone_e164, u.phone_verified_at, u.otp_login_at,
             EXISTS (
               SELECT 1 FROM employee_credentials c
                WHERE c.employee_id = u.id AND c.credential_type = 'webauthn' AND c.status = 'active'
@@ -1076,11 +1099,25 @@ export async function loginRoster(
       ORDER BY u.full_name`,
     params,
   );
-  return rows.map((row) => ({
-    id: row.id,
-    fullName: row.full_name,
-    role: row.role,
-    photoUrl: row.photo_url,
-    hasWebauthn: row.has_webauthn,
-  }));
+
+  // Phase 42 — one policy read for the whole roster, then the per-member
+  // step is pure (employeeLoginMode): verified-number members inside their
+  // 7-day window keep the PIN pad, everyone else is routed to the OTP.
+  const { state } = await phoneOtpEnforcementFor(businessId);
+  return rows.map((row) => {
+    const phoneState = memberPhoneState(row.phone_e164, row.phone_verified_at);
+    return {
+      id: row.id,
+      fullName: row.full_name,
+      role: row.role,
+      photoUrl: row.photo_url,
+      hasWebauthn: row.has_webauthn,
+      loginMode: employeeLoginMode({
+        enforcement: state,
+        phoneState,
+        pinWindow: pinWindowActive(row.otp_login_at),
+      }),
+      phoneState,
+    };
+  });
 }

@@ -39,7 +39,7 @@ export function errorMessage(code: string | undefined, messages?: string[]): str
     invalid_email: "ایمیل معتبر نیست.",
     weak_password: "گذرواژه باید حداقل ۸ کاراکتر باشد.",
     email_taken: "این ایمیل قبلاً ثبت شده است.",
-    invalid_pin: "پین باید دقیقاً ۴ رقم باشد.",
+    invalid_pin: "پین باید ۴ تا ۱۲ رقم باشد.",
     pin_taken: "این پین در این شعبه استفاده شده است. پین دیگری انتخاب کنید.",
     already_initialized: "این سیستم قبلاً راه‌اندازی شده است.",
     costing_locked: "روش قیمت‌گذاری قفل شده و از این‌جا قابل تغییر نیست.",

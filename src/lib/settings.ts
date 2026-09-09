@@ -42,6 +42,17 @@ export const SETTING_KEYS = {
    * today's behaviour.
    */
   mfaPolicy: "mfa.policy",
+  /**
+   * PhoneOtpPolicy (src/lib/phone-otp-policy.ts) — { enforcedAt: string | null }.
+   *
+   * Phase 42's adoption window: from `enforcedAt`, every member of this
+   * business signs in with a phone-OTP (Kavenegar) at least once every 7
+   * days, with the PIN quick-login valid only inside that window. Migration
+   * 0139 stamped `now() + 14 days` for every business already running on the
+   * install; provisionBusiness stamps `now` for businesses created after it.
+   * Absent row = the feature has never been turned on for this business.
+   */
+  phoneOtpPolicy: "auth.phoneOtp",
 } as const;
 
 export async function getSetting<T>(businessId: string, key: string): Promise<T | null> {

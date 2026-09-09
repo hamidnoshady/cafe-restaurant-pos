@@ -105,6 +105,14 @@ export const POST = withTenantScope(async (request: NextRequest) => {
       email,
       method: body.method,
       phone: body.phone,
+      // Phase 42 — the issuer the authenticator app shows: this business's
+      // name, so the entry is tellable apart from every other business the
+      // person holds an entry for.
+      issuer: (
+        await query<{ name: string }>(`SELECT name FROM businesses WHERE id = $1`, [
+          session.businessId,
+        ])
+      ).rows[0]?.name,
     });
 
     if (!result.ok) {
