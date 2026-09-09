@@ -112,3 +112,9 @@ jobs:
           cache-to: type=gha,mode=max
           provenance: true
           sbom: true
+
+      - name: Trigger Coolify redeploy
+        run: |
+          curl -sf -X POST \
+            "https://manage.eshobe.com/api/v1/services/jrfpvt0rctfkmzpw1ao5c1cb/restart?latest=true" \
+            -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}"
